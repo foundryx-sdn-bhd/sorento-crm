@@ -10,6 +10,7 @@ from app.models.product_set import ProductSet, ProductSetMember
 from app.models.product_companion import ProductCompanionRule, ProductCompanionRuleHost
 from app.models.product_combo import ProductCombo, ProductComboPart
 from app.models.product_set_proposal import ProductSetProposalBatch, ProductSetProposal
+from app.models.product_compatibility import ProductCompatibility
 from app.models.product_spec import ProductSpecRegistry, ProductSpecifications, ProductSpecException, ProductSpecVerification, ProductSpecFlyerBatch, ProductSpecFlyerProposal
 from app.models.order import Order, OrderStatus, Customer, CustomerAlias, CustomerContact, CustomerMergeMap, OrderLine, SalesOrder, SalesOrderLine
 from app.models.sales_agent import SalesAgent
@@ -90,6 +91,7 @@ from app.models.ai_assistant import (
     AIAssistantUsageLog,
     AIAssistantWishlistCluster,
     AIAssistantUnansweredQuery,
+    LLMModelPrice,
 )
 from app.models.ai_prompt import AIPromptVersion, AIPromptLabel
 from app.models.chat_history import ChatHistory
@@ -209,6 +211,7 @@ __all__ = [
     "UserListColumnConfig",
     "Product",
     "ProductAlternative",
+    "ProductCompatibility",
     "ProductSet",
     "ProductSetMember",
     "ProductSetProposalBatch",
@@ -337,6 +340,7 @@ __all__ = [
     "AIAssistantMessage",
     "AIAssistantGovernanceEvent",
     "AIAssistantUsageLog",
+    "LLMModelPrice",
     "AIAssistantWishlistCluster",
     "AIAssistantUnansweredQuery",
     "AIPromptVersion",

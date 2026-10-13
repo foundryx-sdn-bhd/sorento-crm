@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Family Section</title>
+<style>
+  :root { --bg:#f9fafb; --card:#fff; --fg:#111827; --muted:#6b7280; --border:#e5e7eb; --hover:#f3f4f6; --warn-bg:#fef3c7; --warn-fg:#92400e; --sec-bg:#f3f4f6; --primary:#1b84ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 Inter, system-ui, sans-serif; padding:16px; }
+  h1 { font-size:16px; margin:0 0 4px; } .note { color:var(--muted); font-size:12px; margin:0 0 16px; }
+  .frames { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; }
+  .frame { border:1px dashed #cbd5e1; padding:12px; background:#fff; border-radius:8px; }
+  .frame > .label { font-size:11px; color:var(--muted); margin-bottom:8px; }
+  .w1280 { width:min(760px,100%); } .w375 { width:375px; max-width:100%; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; }
+  .card-h { padding:16px 20px; border-bottom:1px solid var(--border); }
+  .card-h h2 { margin:0; font-size:16px; } .card-h p { margin:2px 0 0; color:var(--muted); font-size:13px; }
+  .card-b { padding:16px 20px; display:flex; flex-direction:column; gap:24px; }
+  .row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; }
+  .row h3 { margin:0; font-size:14px; } .ms-auto { margin-left:auto; display:flex; flex-wrap:wrap; gap:8px; }
+  .btn { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); background:#fff; border-radius:6px; padding:5px 10px; font-size:13px; cursor:pointer; }
+  .btn.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
+  .badge { font-size:11px; padding:1px 8px; border-radius:999px; }
+  .badge.warn { background:var(--warn-bg); color:var(--warn-fg); } .badge.sec { background:var(--sec-bg); }
+  .item { display:flex; align-items:center; gap:8px; border:1px solid var(--border); border-radius:6px; padding:8px 12px; text-decoration:none; color:inherit; }
+  .item:hover { background:var(--hover); } .list { display:flex; flex-direction:column; gap:8px; }
+  .code { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sub { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .min0 { min-width:0; flex:1; } .dim { color:var(--muted); }
+  .fam { font-size:15px; font-weight:600; letter-spacing:.02em; }
+  .input { border:1px solid var(--border); border-radius:6px; padding:5px 10px; font-size:13px; width:180px; }
+  .empty { border:1px dashed var(--border); border-radius:6px; padding:20px 12px; text-align:center; }
+  .empty p { margin:0; font-size:13px; } .empty p + p { color:var(--muted); }
+  .faded { opacity:.45; }
+  ul.map { font-size:12px; color:var(--muted); padding-left:18px; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0b0f17; --card:#111827; --fg:#e5e7eb; --muted:#9ca3af; --border:#1f2937; --hover:#1f2937; --sec-bg:#1f2937; } :root:not([data-theme="light"]) .frame { background:#0f172a; } :root:not([data-theme="light"]) .btn { background:#111827; color:var(--fg); } }
+  :root[data-theme="dark"] { --bg:#0b0f17; --card:#111827; --fg:#e5e7eb; --muted:#9ca3af; --border:#1f2937; --hover:#1f2937; --sec-bg:#1f2937; }
+</style>
+</head>
+<body>
+<h1>Product detail, Variants tab: new Family section (CODE-VARIANTS, v1)</h1>
+<p class="note">Real case from the prod copy: SRTWC8357-RL. The Family section sits at the top of the existing Variants card; "Variant of", "Variants" and "Alternatives" below it are unchanged (faded here).</p>
+
+<div class="frames">
+  <div class="frame w1280"><div class="label">1280px, family set by the rule (auto)</div>
+    <div class="card">
+      <div class="card-h"><h2>Variants</h2><p>How this product relates to its variant family.</p></div>
+      <div class="card-b">
+        <div>
+          <div class="row"><h3>Family</h3>
+            <div class="ms-auto"><button class="btn">&#9998; Edit</button></div>
+          </div>
+          <div class="fam">SRTWC8357</div>
+          <div class="sub" style="margin:2px 0 8px">3 other products</div>
+          <div class="list">
+            <a class="item" href="#"><span class="dim">&#9095;</span><div class="min0"><div class="code" title="SRTWC8357-200-RL"><span class="dim">SRTWC8357</span>-200-RL</div><div class="sub">SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 200MM)</div></div></a>
+            <a class="item" href="#"><span class="dim">&#9095;</span><div class="min0"><div class="code" title="SRTWC8357-300-RL"><span class="dim">SRTWC8357</span>-300-RL</div><div class="sub">SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 300MM)</div></div></a>
+            <a class="item" href="#"><span class="dim">&#9095;</span><div class="min0"><div class="code" title="SRTWC8357-RL-P"><span class="dim">SRTWC8357</span>-RL-P</div><div class="sub">SORENTO ONE PIECE (RIMLESS) TOILET (P-TRAP 180MM)</div></div></a>
+          </div>
+        </div>
+        <div class="faded"><div class="row"><h3>Variant of</h3></div><p class="sub">This is a base product - it is not a variant of another product.</p></div>
+        <div class="faded"><div class="row"><h3>Variants</h3></div><div class="empty"><p>No variants</p></div></div>
+        <div class="faded"><div class="row"><h3>Alternatives</h3></div><div class="empty"><p>No alternatives</p><p>None linked yet.</p></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="frame w375"><div class="label">375px, editing (after Edit)</div>
+    <div class="card">
+      <div class="card-h"><h2>Variants</h2><p>How this product relates to its variant family.</p></div>
+      <div class="card-b">
+        <div>
+          <div class="row"><h3>Family</h3></div>
+          <div class="row"><input class="input" value="SRTWC8357" aria-label="Family code"><button class="btn primary">Save</button><button class="btn">Cancel</button></div>
+          <div class="list">
+            <a class="item" href="#"><div class="min0"><div class="code"><span class="dim">SRTWC8357</span>-200-RL</div><div class="sub">SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 200MM)</div></div></a>
+            <a class="item" href="#"><div class="min0"><div class="code"><span class="dim">SRTWC8357</span>-300-RL</div><div class="sub">SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 300MM)</div></div></a>
+            <a class="item" href="#"><div class="min0"><div class="code"><span class="dim">SRTWC8357</span>-RL-P</div><div class="sub">SORENTO ONE PIECE (RIMLESS) TOILET (P-TRAP 180MM)</div></div></a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="frame w375"><div class="label">375px, hand-set (Manual) and empty state</div>
+    <div class="card">
+      <div class="card-b">
+        <div>
+          <div class="row"><h3>Family</h3><span class="badge warn">Manual</span>
+            <div class="ms-auto"><button class="btn">&#9998; Edit</button><button class="btn">&#8634; Reset to auto</button></div>
+          </div>
+          <div class="fam">SRTWC8357</div>
+          <div class="sub">3 other products</div>
+        </div>
+        <div>
+          <div class="row"><h3>Family</h3><div class="ms-auto"><button class="btn">&#9998; Edit</button></div></div>
+          <div class="empty"><p>No family</p><p>This code has no family part.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h1 style="margin-top:24px">What each element reuses</h1>
+<ul class="map">
+  <li>Card, header, sections: the existing Variants card, <code>sorento_crm_frontend/app/(protected)/master-data-management/products/[id]/components/ProductVariantsTab.tsx</code> (Card / CardHeader / CardTitle from <code>components/ui/card</code>).</li>
+  <li>Section header row with right-aligned actions, Manual badge, Reset to auto: same row as "Variant of" in ProductVariantsTab.tsx (Badge <code>variant="warning"</code>, Button <code>variant="outline" size="sm"</code>, lucide <code>RotateCcw</code>).</li>
+  <li>Member rows: the child-variant link rows in ProductVariantsTab.tsx (<code>renderCode</code> dims the shared prefix), linking to <code>/master-data-management/products/{id}</code>.</li>
+  <li>Empty state: dashed box with heading + hint, no button, as in <code>ProductAlternativesSection.tsx</code> (DESIGN-LANGUAGE section 6).</li>
+  <li>Inline edit: <code>components/ui/input</code> + Save / Cancel buttons, edit in place (view and edit share one layout).</li>
+</ul>
+</body>
+</html>

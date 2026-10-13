@@ -515,7 +515,19 @@ export interface SupplyFailingLine {
   so_line_no?: number | null;
   item_code?: string | null;
   reason: string;
+  /**
+   * PLANNING-WHY: why a planning change row stopped a Confirm, and what the book did to it.
+   * Sent to an admin only; absent on every other refusal.
+   */
+  reason_code?: PlanningRefusalReason | null;
+  change?: string | null;
 }
+
+export type PlanningRefusalReason =
+  | 'not_decided'
+  | 'changed_again'
+  | 'already_confirmed'
+  | 'line_cancelled';
 
 /** `GET /project-sales/sales-orders/{pso_id}/supply`. */
 export interface SupplyProposal {
@@ -710,6 +722,13 @@ export interface ConfirmResult {
   lines_fulfilled_skipped?: number | null;
   /** Buys confirmed as decided over goods that landed for their line (#1362). */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /**
+   * OI-CLOSED-LINE (owner, 12 Oct 2026): a Reserve or Borrow confirmed as decided while short
+   * of free stock on its undelivered part. Only what exists is held; purchasing is told.
+   */
+  stock_short_notices?: SupplyFailingLine[] | null;
+  /** Lines this press could not write, left out so the rest of the order confirmed. */
+  lines_held_back?: SupplyFailingLine[] | null;
 }
 
 export interface FulfilmentPlanningListEnvelope {
@@ -2555,6 +2574,20 @@ export interface ConfirmManyOrderBody {
   only_line_ids?: string[];
 }
 
+/**
+ * One order of a Simulate confirm: a never-planned order is named by its CORE
+ * `sales_order_id` (no `pso_id`) and its lines carry `pending-adoption:<core line id>`; the
+ * server adopts it inside the simulation and swaps each placeholder for the new mirror line.
+ */
+export type SimulateOrderBody = Omit<ConfirmManyOrderBody, 'pso_id'> & {
+  pso_id?: string;
+  sales_order_id?: string;
+};
+
+export interface SimulateConfirmBody extends Omit<ConfirmManyBody, 'orders'> {
+  orders: SimulateOrderBody[];
+}
+
 export interface ConfirmManyBody {
   orders: ConfirmManyOrderBody[];
   /**
@@ -2591,8 +2624,20 @@ export interface PreviewTransfer {
   to_location?: string | null;
 }
 
+/** One line the admin Simulate probe found failing on its own, with the server's raw reason. */
+export interface SimulatedLineError {
+  line_no?: number | null;
+  item_code?: string | null;
+  project_line_id: string;
+  error: string;
+}
+
 /** One order's outcome. `ok` decides which half is populated. */
 export interface ConfirmManyOrderResult {
+  /** Simulate confirm only: the simulation adopted this never-planned order first. */
+  adopted?: boolean | null;
+  /** Simulate confirm only: lines that fail when run alone. */
+  simulated_errors?: SimulatedLineError[] | null;
   /** True on a preview: nothing below was committed. */
   preview?: boolean | null;
   inquiry_rows?: PreviewInquiryRow[] | null;
@@ -2636,6 +2681,8 @@ export interface ConfirmManyOrderResult {
    * purchasing adjusts it off the Buy's order inquiry row.
    */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /** The per-order twin of `ConfirmResult.stock_short_notices` (OI-CLOSED-LINE). */
+  stock_short_notices?: SupplyFailingLine[] | null;
   error?: string | null;
   failing_lines?: SupplyFailingLine[] | null;
 }
@@ -2643,4 +2690,52 @@ export interface ConfirmManyOrderResult {
 /** `POST /project-sales/fulfilment-planning/confirm-all`. */
 export interface ConfirmManyResult {
   results: ConfirmManyOrderResult[];
+}
+
+
+/** One line of a History event. Which keys are set depends on the event kind. */
+export interface PlanningHistoryLine {
+  so_line_no?: number | null;
+  item_code?: string | null;
+  action?: 'ordered' | 'cancelled' | 'reduced' | 'order_back' | null;
+  qty?: number | null;
+  previous_qty?: number | null;
+  cause?: string | null;
+  change?: string | null;
+  reason_code?: string | null;
+  reason?: string | null;
+  kind?: string | null;
+  state?: string | null;
+  remark?: string | null;
+}
+
+export type PlanningHistoryKind =
+  | 'confirm_refused'
+  | 'revision_confirmed'
+  | 'oi_cancelled'
+  | 'autocount_update'
+  | 'email_sent';
+
+/** `GET /project-sales/fulfilment-planning/history` (admin only). Newest first. */
+export interface PlanningHistoryEvent {
+  id: string;
+  kind: PlanningHistoryKind;
+  at: string | null;
+  actor: string | null;
+  pso_id: string;
+  so_no: string;
+  lines: PlanningHistoryLine[];
+  preview?: boolean;
+  revision_no?: number;
+  reissued_unchanged?: number;
+  counts?: Record<string, number>;
+  subject?: string;
+  status?: string;
+  sent_at?: string | null;
+  recipients?: string[];
+  body_text?: string | null;
+}
+
+export interface PlanningHistory {
+  events: PlanningHistoryEvent[];
 }

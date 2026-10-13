@@ -176,6 +176,19 @@ def create_analytics_connector() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS connector_revoked_at TIMESTAMP"))
         views.ensure_views(conn)
+        # CHAT-TURN-COST (`ctc_0001_turn_costs`): the price table and the column come from
+        # `create_all`; the seeds and the two cost views exist only in the migration body.
+        # `create_all` adds neither column to a table that already exists (an older database).
+        from app.services.analytics_connector import prices
+
+        conn.execute(text("ALTER TABLE ai_assistant_usage_logs ADD COLUMN IF NOT EXISTS cached_tokens INTEGER"))
+        conn.execute(text("ALTER TABLE chatbot.chat_ask_facts ADD COLUMN IF NOT EXISTS prompt_version INTEGER"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ai_assistant_usage_logs_chatbot_turn_id "
+            "ON ai_assistant_usage_logs (chatbot_turn_id)"
+        ))
+        prices.seed_prices(conn)
+        views.ensure_cost_views(conn)
     log.info("analytics_connector views created")
 
 
@@ -750,6 +763,8 @@ def seed_chatbot_policy() -> None:
     # Fix round 8 on PR #833: the `specification` entity kind, BEFORE the republish so
     # the published blocks carry its entity-kind line.
     spk = _load("_spk_0001_specification_kind", "spk_0001_specification_kind.py")
+    # REF-PROBES: the five reference kinds' rows, also before the republish.
+    rkind3 = _load("_rkind_0003_reference_kind_rows", "rkind_0003_reference_kind_rows.py")
     top_selling = _load("_chatbot_top_selling_tool", "chatbot_top_selling_tool.py")
     sales_s1 = _load("_sales_s1_reports_module", "sales_s1_reports_module.py")
     pdyn1 = _load("_pdyn_0001_status_words_sales", "pdyn_0001_status_words_sales.py")
@@ -765,6 +780,8 @@ def seed_chatbot_policy() -> None:
         domains_inserted, kinds_inserted = s0.seed_domains_and_kinds(conn)
     with engine.begin() as conn:
         kinds_inserted += int(spk.insert_kind(conn))
+    with engine.begin() as conn:
+        kinds_inserted += rkind3.insert_kinds(conn)
     with engine.begin() as conn:
         s4.publish_policy_blocks(conn)
     with engine.begin() as conn:

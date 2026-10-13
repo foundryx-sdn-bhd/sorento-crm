@@ -12,8 +12,9 @@
  * and the grid's own defaults reach the table instance.
  */
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useReactTable, getCoreRowModel, type ColumnDef, type Table } from '@tanstack/react-table';
 
 import { DataGrid } from './data-grid';
@@ -429,6 +430,43 @@ describe('A row is a link (S1-06)', () => {
 
     expect(onRowClick).toHaveBeenCalledWith(DATA[0]);
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('a click inside something a cell portalled out (a dialog, its overlay) is not the row\'s', () => {
+    // Owner finding, 12 Oct 2026: closing a lightbox opened from a cell expanded the row,
+    // because React bubbles a portal's events through the component tree, not the DOM.
+    const onRowClick = vi.fn();
+    const columns: ColumnDef<Row>[] = [
+      { id: 'name', accessorKey: 'name', header: 'Name', size: 200 },
+      {
+        id: 'portal',
+        header: 'Portal',
+        size: 200,
+        cell: ({ row }) =>
+          row.original.id === 'a1'
+            ? createPortal(<div>Portalled body</div>, document.body)
+            : null,
+      },
+    ];
+    render(<Harness onRowClick={onRowClick} columns={columns} />);
+
+    fireEvent.click(screen.getByText('Portalled body'));
+    expect(onRowClick).not.toHaveBeenCalled();
+    // Nor a middle click on it, on a row that opens a URL in a new tab.
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    cleanup();
+    render(<Harness rowHref={(r) => `/orders/${r.id}`} columns={columns} />);
+    fireEvent(
+      screen.getByText('Portalled body'),
+      new MouseEvent('auxclick', { bubbles: true, button: 1 }),
+    );
+    expect(open).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    cleanup();
+    render(<Harness onRowClick={onRowClick} columns={columns} />);
+
+    fireEvent.click(screen.getByText('Alpha'));
+    expect(onRowClick).toHaveBeenCalledWith(DATA[0]);
   });
 
   it('S4-03: a lightbox row announces itself and answers the keyboard', () => {

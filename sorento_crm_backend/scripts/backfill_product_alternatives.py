@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Backfill ``product_alternatives`` from the -NEW code rule (PRODUCT-ALTERNATIVES).
+"""Backfill ``product_alternatives`` from the code rule (PRODUCT-ALTERNATIVES).
 
-One-off pass over every product whose code has a whole ``NEW`` segment, through the same
+One-off pass over every product whose code has a whole ``NEW``, ``DIY``, ``N`` or ``PP``
+segment (Y is the alternative of X when removing one such segment from Y gives X, or when
+replacing one ``PP`` segment of Y with ``NL`` gives X), through the same
 ``reconcile_new_alternatives`` the sync, the product API and the Excel import call, so the
 backfill and the live rule can never diverge. Dry run by default: reports the pairs it
 would link and writes nothing. Idempotent: a second ``--apply`` adds nothing.
@@ -35,6 +37,10 @@ def main() -> int:
         for old_code, new_code in report.pop("pairs"):
             print(f"{old_code} -> {new_code}")
         print(report)
+        print(
+            "NOTE: CB55CR-N is the one known reverse case (the -N code is the older one); "
+            "after the prod run, unlink it by hand on the Variants tab."
+        )
     finally:
         db.close()
     return 0

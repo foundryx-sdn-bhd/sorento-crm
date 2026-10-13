@@ -28,6 +28,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -773,6 +775,7 @@ def test_a_unit_split_across_two_lines_confirms_exactly_as_proposed():
     assert response.json()["revision_no"] == 1
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_unit_met_from_the_floor_and_the_water_confirms_as_proposed():
     """B1, the water half. The group nets 0 with 10 on a floor and an SPO of 20 landing in
     time, so the unit of 30 is Reserve 10 + Timely SPO 20 - and the split hands the whole of
@@ -986,6 +989,7 @@ def test_the_proof_never_offers_a_donor_the_walk_has_already_spent():
     )
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_covered_siblings_hold_is_not_offered_again_to_the_open_line():
     """B-new. Taking the covered line out of the WALK is not the same as taking it out of
     the FACTS: its hold is still on the floor.

@@ -2817,6 +2817,25 @@ describe('#1362 (owner, 29 Sep 2026): confirmNoticeLines', () => {
     ]);
     expect(confirmNoticeLines({})).toEqual([]);
   });
+
+  it('OI-CLOSED-LINE (owner, 12 Oct 2026): names a Reserve confirmed short of free stock', async () => {
+    const { confirmNoticeLines } = await import('./fulfilmentBoard');
+    expect(
+      confirmNoticeLines({
+        stock_short_notices: [
+          {
+            line_no: 10,
+            so_line_no: 144,
+            item_code: 'ZZT-ITEM',
+            reason:
+              'Reserve 10 at BRW confirmed as decided; only 5 free at BRW when confirmed, 5 short',
+          },
+        ],
+      }),
+    ).toEqual([
+      'Line 144, ZZT-ITEM: Reserve 10 at BRW confirmed as decided; only 5 free at BRW when confirmed, 5 short',
+    ]);
+  });
 });
 
 /**

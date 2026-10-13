@@ -33,6 +33,7 @@ from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
+from app.services.chatbot.lanes.business import find as find_lane
 from app.services.chatbot.lanes.business import low_stock_ask
 from app.services.chatbot.lanes.business import chat_report
 from app.services.chatbot.lanes.business import report_ask
@@ -1408,6 +1409,9 @@ def run_fetch(
     }
     for key, values in narrow.items():
         semantic_input[key] = list(values)
+    submission_type = fetch_mod.portal_submission_type(parse_output)
+    if submission_type:
+        semantic_input["submission_type"] = submission_type
     # PLAN-chatbot-customer-scope-29sep.md D3/D4: a customer-scoped contact's turn
     # (`engine._customer_scope_gate`). The engine refuses a customer word outside its links (one fixed line, before any
     # fetch); here the links ride to `entity_ids_transformer`, which forces them on every customer-scoped tool.
@@ -1466,7 +1470,11 @@ def run_fetch(
                     },
                 )
             fragment = _fixed_reply(
-                so_status.reply_text(looked, refusal=str(customer_scope.get("refusal") or ""))
+                so_status.reply_text(
+                    looked,
+                    refusal=str(customer_scope.get("refusal") or ""),
+                    kind_word="Sales order" if parse_output.get("so_placed") is True else None,
+                )
             )
             # The reply names its own missing numbers, so the resolver's own `not_found`
             # exit (nothing placed the SO words) is not a second miss to compose
@@ -1492,7 +1500,8 @@ def run_fetch(
         if db is not None:
             from app.services.chatbot import so_status
 
-            linked = list(customer_scope.get("linked") or [])
+            # REF-PROBES: staff carry no customer links and no enforced scope (`ref_staff`).
+            linked = None if parse_output.get("ref_staff") is True else list(customer_scope.get("linked") or [])
             looked = so_status.lookup_po_refs(db, po_refs, linked=linked)
             if trace is not None:
                 trace.add(
@@ -1509,6 +1518,29 @@ def run_fetch(
                 texts.append(so_status.po_ref_reply_text(looked, ref))
             if texts:
                 fragment = _fixed_reply("\n\n".join(texts))
+                fragment["fetch"]["so_status"] = True
+                return fragment
+    # REF-PROBES: our own PO number and a purchase request number the resolver placed, answered
+    # in process (`chatbot/ref_status.py`) for staff holding `purchase_orders.placed` only. The
+    # resolver never probes these kinds for anyone else, so this is the second lock.
+    po_numbers = [w for w in jsc.array(parse_output.get("po_numbers")) if isinstance(w, str) and w.strip()]
+    pr_numbers = [w for w in jsc.array(parse_output.get("pr_numbers")) if isinstance(w, str) and w.strip()]
+    if (po_numbers or pr_numbers) and db is not None and parse_output.get("ref_staff") is True:
+        access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
+        granted_raw = access_ctx.get("attributes")
+        granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
+        if "purchase_orders.placed" in granted:
+            from app.services.chatbot import ref_status
+
+            cards: list[str] = []
+            if po_numbers:
+                cards += ref_status.lookup_purchase_orders(db, po_numbers).cards
+            if pr_numbers:
+                cards += ref_status.lookup_purchase_requests(db, pr_numbers).cards
+            if trace is not None:
+                trace.add("ref_status", {"po": po_numbers, "pr": pr_numbers, "cards": len(cards)})
+            if cards:
+                fragment = _fixed_reply("\n\n".join(cards))
                 fragment["fetch"]["so_status"] = True
                 return fragment
     # SO-NUMBER-ASK, the SO list ("all my sales orders"): the customers in scope (the
@@ -1735,6 +1767,15 @@ def run_fetch(
     # ── the read ─────────────────────────────────────────────────────────────
     tool_item = pick.items[0]["json"]
     tool_name = jsc.js_string(tool_item.get("name") or "")
+
+    # CHAT-FIND (PLAN-chat-generic-find-12oct 2.5): the parser's `find.filters` (registry keys
+    # only) pick the generic find tool over the domain's own. Only the products this message
+    # named are its subject; the args are built below by the same transformer.
+    find_items = find_lane.filter_items(parse_output)
+    if find_items:
+        tool_name = find_lane.TOOL
+        tool_item = {"name": tool_name, "_tool_pick": {"source": "find_override"}}
+        entities = find_lane.named_this_turn(parse_output, jsc.array(entities))
 
     # S4 point 2 (PLAN-chatbot-outstanding-report.md), REWRITTEN by R13 (owner ruling,
     # 13 Sep 2026): domain "order" + an outstanding `order_status` picks the report over
@@ -2218,6 +2259,13 @@ def run_fetch(
         # stay byte-inert for every non-HAS turn.
         "predicate": gate.get("predicate"),
     }
+    if tool_name == "crm_portal_link_get":
+        # DEV-FAILURES RC-B: the intro names the form the link opens, in the reply language.
+        templates = reply_copy.resolve(db) if db is not None else reply_copy.fallback_copy()
+        trigger["portal_intro"] = templates.render_in(
+            fetch_mod.PORTAL_LINK_COPY.get(submission_type or "", "portal_link"),
+            getattr(ctx.get("localizer"), "language", None),
+        )
     predicate = gate.get("predicate")
     if isinstance(predicate, dict) and not predicate.get("qualifying_total"):
         # Reviewer B2 on PR #833: a described set with nothing in it has no product to
@@ -2228,6 +2276,13 @@ def run_fetch(
         args = fetch_mod.entity_ids_transformer(trigger, space_id=space_id)
         if dry_run and tool_name == _LOW_STOCK_TOOL:
             args["dry_run"] = True
+        if tool_name == find_lane.TOOL:
+            find_args, ask = find_lane.route_args(args, find_items)
+            if find_args is None:
+                # Card rule 6: nothing to run on (no product named, no value given), so the
+                # filter's own question; never a guess.
+                return _fixed_reply(ask)
+            args = find_args
     except fetch_mod.ScopeViolation as violation:
         # D4: the defence behind the engine's gate. No tool is called.
         if trace is not None:

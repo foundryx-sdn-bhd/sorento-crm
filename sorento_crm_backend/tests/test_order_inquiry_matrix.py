@@ -170,7 +170,8 @@ def _po_link(db, company_id: str, row: OrderInquiryRow, product: Product, qty: s
     db.add(po)
     db.flush()
     line = PurchaseOrderLine(id=_uid(), company_id=company_id, purchase_order_id=po.id,
-                              product_id=product.id, qty_ordered=Decimal("999"))
+                              product_id=product.id, qty_ordered=Decimal("999"),
+                              source_ref=f"{po.po_number}:1")
     db.add(line)
     db.flush()
     db.add(OrderInquiryLink(id=_uid(), company_id=company_id, row_id=row.id,
@@ -181,12 +182,14 @@ def _po_link(db, company_id: str, row: OrderInquiryRow, product: Product, qty: s
 
 def _open_spo_allocation(db, company_id: str, *, spo_number: str, from_po_number: str,
                            product: Product, allocated_quantity: int):
-    """An OPEN SPO allocation matching a row's own PO link (from_po_number + product),
-    never itself linked to any row - the "derived cover" AC-D11/AC-X6 measure."""
+    """An OPEN SPO allocation matching a row's own PO link (from_po_number + the line
+    `_po_link` seeds + product), never itself linked to any row - the "derived cover"
+    AC-D11/AC-X6 measure. OI-SPO-EXACT: it names the PO LINE, as AutoCount's do."""
     allocation = SPOAllocation(
         id=_uid(), company_id=company_id, spo_number=spo_number,
         allocated_quantity=allocated_quantity, quantity_received=0, product_id=product.id,
-        from_po_number=from_po_number, line_status="open", receipt_status="pending",
+        from_po_number=from_po_number, from_po_line_ref=f"{from_po_number}:1",
+        line_status="open", receipt_status="pending",
     )
     db.add(allocation)
     db.flush()

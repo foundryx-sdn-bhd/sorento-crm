@@ -12,7 +12,10 @@ export interface Warehouse {
   zones_count?: number;
   /** Whether stock here may cover demand in the reorder plan. */
   counts_as_available?: boolean;
-  /** The shared pool this location draws on; null means it is its own pool. */
+  /**
+   * The shared pool this location draws on. Its own id marks a site pool (BRW, HQ), which is
+   * what puts it in the Stock Debt span; null means it stands alone.
+   */
   pool_warehouse_id?: string | null;
   /** Resolved for display, so no UUID is ever rendered. */
   pool_warehouse_code?: string | null;

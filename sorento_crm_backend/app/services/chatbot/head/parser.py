@@ -309,6 +309,9 @@ def _build_json_schema() -> dict[str, Any]:
             # for a word that fits no listed kind. Required for strict mode, tolerated
             # absent (no recorded emission carries it).
             "promotion_kind": string_or_null,
+            # DEV-FAILURES RC-B: the portal form a portal_link ask names (a
+            # `portal_service.SUPPORTED_TYPES` code), null for none. Tolerated absent.
+            "portal_form": string_or_null,
             "correction": {"type": ["boolean", "null"]},
             # PLAN-chatbot-customer-scope-29sep D2: "my" / "me" / "our" as the asker's own
             # account. Required for strict mode, tolerated absent (older prompt versions).
@@ -506,6 +509,31 @@ def _build_json_schema() -> dict[str, Any]:
             # without the word PO. Read by the business lane for a non-staff profile only
             # (`so_status.lookup_po_refs`); no code detects a PO number in the text.
             "po_refs": {"type": ["array", "null"], "items": {"type": "string"}},
+            # CHAT-FIND: which products stand in a registered relation to the named product
+            # (`product_find.FILTERS`, vocabulary in the `{{find_filters}}` prompt variable).
+            # Keys are the registry's; the named product stays an ordinary entity.
+            "find": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "filters": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "key": {"type": "string"},
+                                # The filter's typed value (a code, a number, a listed word)
+                                # and the number's unit, when its line says it takes one.
+                                "value": {"type": ["string", "number", "null"]},
+                                "unit": {"type": ["string", "null"]},
+                            },
+                            "required": ["key", "value", "unit"],
+                        },
+                    },
+                },
+                "required": ["filters"],
+            },
             "anaphora": {
                 "type": "object",
                 "additionalProperties": False,
@@ -586,6 +614,7 @@ def _build_json_schema() -> dict[str, Any]:
             "sales_basis",
             "sales_company",
             "promotion_kind",
+            "portal_form",
             "correction",
             "self_reference",
             "routing",
@@ -601,6 +630,7 @@ def _build_json_schema() -> dict[str, Any]:
             "low_stock",
             "chat_report",
             "po_refs",
+            "find",
         ],
     }
 
@@ -652,6 +682,7 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         "sales_basis",
         "sales_company",
         "promotion_kind",
+        "portal_form",
         "proceed_anyway",
         "open_question_answer",
         "self_reference",
@@ -665,6 +696,9 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
         # absent reads as "no PO number given".
         "po_refs",
+        # CHAT-FIND: no prompt version before the `{{find_filters}}` publish carries it;
+        # absent reads as "not a find".
+        "find",
     }
 )
 

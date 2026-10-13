@@ -31,7 +31,10 @@ CHAT_TOOLS: tuple[dict, ...] = (
     {
         "name": "chat_list_datasets",
         "title": "List chat datasets",
-        "description": "List the chat datasets (messages, contacts, bot_turns, episodes) with row counts and date ranges.",
+        "description": (
+            "List the chat datasets (messages, contacts, bot_turns, episodes, turn_costs, llm_calls) with row"
+            " counts and date ranges. turn_costs and llm_calls carry LLM tokens and USD cost per turn and per call."
+        ),
         "method": "GET",
         "path": f"{BASE}/datasets",
         "properties": {},

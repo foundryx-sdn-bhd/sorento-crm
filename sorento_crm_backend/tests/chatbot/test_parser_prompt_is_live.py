@@ -38,9 +38,12 @@ from app.services.chatbot_parser_prompt import (
     REPORT_ASK_ADDENDUM,
     TRAP_SPECS_FALLBACK_BLOCK,
     LOW_STOCK_FILTERS_ADDENDUM,
+    PORTAL_FORM_ADDENDUM,
     PROMOTION_KIND_ADDENDUM,
     CHAT_REPORT_ADDENDUM,
     PO_REFS_ADDENDUM,
+    FIND_ADDENDUM,
+    REF_KINDS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
     QUANTITY_ADDENDUM,
     SALES_ANALYSIS_ADDENDUM,
@@ -261,12 +264,20 @@ def _without_growth_r1_addendum(text: str) -> str:
     # STOCK-QTY-PARTIAL-FILL (#1513, 6 Oct 2026): the trap-specs fallback block sits
     # between CANONICAL_CODE_ADDENDUM and MEMORY_ADDENDUM (MEMORY stays the tail);
     # RESOLVE-SEMANTIC-FALLBACK: CANONICAL_CODE_ADDENDUM sits beneath it, after LOW_STOCK.
+    # DEV-FAILURES RC-B: PORTAL_FORM_ADDENDUM sits above the trap-specs block, beneath MEMORY.
+    if text.endswith(PORTAL_FORM_ADDENDUM):
+        text = text[: -len(PORTAL_FORM_ADDENDUM)]
     if text.endswith(TRAP_SPECS_FALLBACK_BLOCK):
         text = text[: -len(TRAP_SPECS_FALLBACK_BLOCK)]
     if text.endswith(PROMOTION_KIND_ADDENDUM):
         text = text[: -len(PROMOTION_KIND_ADDENDUM)]
     if text.endswith(CANONICAL_CODE_ADDENDUM):
         text = text[: -len(CANONICAL_CODE_ADDENDUM)]
+    # CHAT-FIND: the `{{find_filters}}` token sits right after REF_KINDS_ADDENDUM.
+    if text.endswith(FIND_ADDENDUM):
+        text = text[: -len(FIND_ADDENDUM)]
+    if text.endswith(REF_KINDS_ADDENDUM):
+        text = text[: -len(REF_KINDS_ADDENDUM)]
     # CA-3: CHAT_REPORT_ADDENDUM sits right after PO_REFS_ADDENDUM.
     if text.endswith(CHAT_REPORT_ADDENDUM):
         text = text[: -len(CHAT_REPORT_ADDENDUM)]

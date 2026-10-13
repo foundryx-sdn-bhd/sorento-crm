@@ -8,6 +8,7 @@ from app.api.v1.master_data import (
     units_of_measure,
     countries,
     products_select,
+    product_find,
     product_attachments,
     lookup_sets,
     lookup_eligibility,
@@ -20,12 +21,15 @@ from app.api.v1.master_data import (
     product_companions,
     product_alternatives,
     product_combos,
+    product_compatibility,
     sales_agents,
 )
 
 router = APIRouter()
 
 router.include_router(products_select.router, prefix="/products", tags=["products"])
+# CHAT-FIND: `/products/find` before `products.router`, whose `/{product_id}` would read it as an id.
+router.include_router(product_find.router, prefix="/products", tags=["products"])
 router.include_router(product_alternatives.router, prefix="/products", tags=["products"])
 router.include_router(products.router, prefix="/products", tags=["products"])
 router.include_router(brands.router, prefix="/brands", tags=["brands"])
@@ -51,6 +55,8 @@ router.include_router(
 # hang one on. Registered here beside product_companions, the #779 precedent this
 # slice copies.
 router.include_router(product_combos.router, tags=["product-combos"])
+# NO prefix either: `/products/{id}/compatibility` and `/product-compatibility/...`.
+router.include_router(product_compatibility.router, tags=["product-compatibility"])
 router.include_router(sales_agents.router, prefix="/sales-agents", tags=["sales-agents"])
 router.include_router(lookup_sets.router, prefix="/lookup-sets", tags=["lookup-sets"])
 router.include_router(lookup_eligibility.router, prefix="/lookup-eligibility", tags=["lookup-eligibility"])

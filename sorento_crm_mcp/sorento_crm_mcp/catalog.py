@@ -108,6 +108,34 @@ CATALOG: tuple[ToolSpec, ...] = (
         related_tools=("crm_master_product_attachments_list", "crm_inventory_stock_balance_list"),
         escalation_team="sales",
     ),
+    # CHAT-FIND (architecture option D, "reads generic"): ONE find tool whose filters are
+    # registry rows in the backend (`app/services/product_find.py`); a new question type is a
+    # new filter key there, never a new tool here.
+    ToolSpec(
+        "crm_find",
+        (
+            "Find products by filters from the find registry. `filters` = JSON list of "
+            "{key, product_ids?, value?, unit?}: a filter takes the products the message names "
+            "(`product_ids`, canonical UUIDs), a typed `value` (a code, a number with a `unit` "
+            "from the filter's list, or one of its listed words), or both, as its registry row "
+            "says. Keys: `fits` = the products linked as fitting each named product (its seat "
+            "covers when it is a WC, the WCs it fits when it is a seat cover; links on record "
+            "only, nothing inferred); takes product_ids, no value. Each group carries a `head` "
+            "line, `rows` (product_code, product_name, is_discontinued, stock) and `more` (rows "
+            "not printed). Stock follows the contact's stock visibility: on hand for staff, a "
+            "1-unit availability verdict for a dealer (never a number). 422 codes: "
+            "`unknown_filter`, `filters_required`, `product_ids_required`, `value_required`, "
+            "`bad_value`, `too_many`.\n\n"
+            "COMPANY SCOPE: pass `contact_id` + `space_id` (both or neither) to answer as that "
+            "contact; omit both for all-company results."
+        ),
+        "/api/v1/master-data/products/find",
+        (),
+        ("filters", "contact_id", "space_id"),
+        domain="products",
+        related_tools=("crm_master_products_list", "crm_inventory_stock_balance_list"),
+        escalation_team="sales",
+    ),
     ToolSpec(
         "crm_master_brands_list",
         (
@@ -1383,6 +1411,20 @@ CATALOG: tuple[ToolSpec, ...] = (
         body_params=("reason",),
         module="procurement",
         external=True,
+        domain="procurement",
+    ),
+    # --- procurement: one purchase request by its number (REF-PROBES) ---
+    ToolSpec(
+        "crm_purchase_request_by_number",
+        (
+            "Get ONE PURCHASE REQUEST by its request number (e.g. 'PR2610-0012'): customer, "
+            "status, approval status, dates and every line (item code x quantity). Read-only. "
+            "A number no request carries is a 404."
+        ),
+        "/api/v1/procurement/purchase-requests/by-number/{number}",
+        ("number",),
+        (),
+        module="procurement",
         domain="procurement",
     ),
     # --- procurement: purchase orders placed (A5, chatbot-growth-r1) ---
