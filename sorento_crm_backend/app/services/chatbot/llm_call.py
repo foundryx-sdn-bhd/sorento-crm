@@ -25,10 +25,12 @@ backoff as a 429, and ends the same way.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import re
 import time
-from typing import Any
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from app.services.llm_provider import is_timeout  # noqa: F401 - re-exported, callers import it from here
 
@@ -52,6 +54,39 @@ CALL_DEADLINE_SECONDS = 35.0
 MIN_ATTEMPT_SECONDS = 1.0
 
 _RETRY_IN_RE = re.compile(r"try again in (\d+(?:\.\d+)?)\s*(ms|s)\b", re.IGNORECASE)
+
+# CHAT-TURN-COST: the usage of each answered call inside a `capture_usage()` block. A
+# caller whose call returns only the content (the clarifier) bills the turn from here.
+_captured: contextvars.ContextVar[list[dict] | None] = contextvars.ContextVar("chatbot_llm_usage", default=None)
+
+
+@contextmanager
+def capture_usage() -> Iterator[list[dict]]:
+    """Collect `{provider, model, prompt_tokens, completion_tokens, total_tokens,
+    cached_tokens}` for every call `chat` answers inside the block."""
+    calls: list[dict] = []
+    token = _captured.set(calls)
+    try:
+        yield calls
+    finally:
+        _captured.reset(token)
+
+
+def _capture(provider: str, model: str, result: Any) -> None:
+    calls = _captured.get()
+    if calls is None:
+        return
+    calls.append(
+        {
+            "provider": provider,
+            "model": model,
+            "prompt_tokens": int(getattr(result, "prompt_tokens", 0) or 0),
+            "completion_tokens": int(getattr(result, "completion_tokens", 0) or 0),
+            "total_tokens": int(getattr(result, "total_tokens", 0) or 0),
+            "cached_tokens": int(getattr(result, "cached_tokens", 0) or 0),
+        }
+    )
+
 
 # The seams a test replaces, so no test sleeps or waits on a real clock.
 _sleep = time.sleep
@@ -130,7 +165,9 @@ def chat(
             raise TimedOut(f"no answer from {provider} within {deadline_seconds:.0f}s")
         timeout = min(float(kwargs.get("timeout") or ATTEMPT_TIMEOUT_SECONDS), remaining)
         try:
-            return client.chat(messages, model=model, **{**kwargs, "timeout": timeout})
+            result = client.chat(messages, model=model, **{**kwargs, "timeout": timeout})
+            _capture(provider, model, result)
+            return result
         except Exception as exc:  # noqa: BLE001 - inspected, then re-raised
             if is_timeout(exc):
                 # Not retried: a provider that hung for 20 s is not answering this turn,
