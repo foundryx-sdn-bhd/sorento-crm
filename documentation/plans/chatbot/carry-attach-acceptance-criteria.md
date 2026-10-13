@@ -19,7 +19,8 @@ Plan: `PLAN-carry-attach-13oct.md`.
 ## Golden set for crew's live check
 
 Each row is a fresh conversation on a test contact. Use real product codes that hold the named
-file types (SRT8308 and SRT8313 hold Technical Specifications). Code A and code B are different
+file types. On the dev copy SRT8308 and SRT8313 hold Technical Specifications but no photos;
+SRT2308-HP and SRT2313-HP hold photos, so use those for every photo row (crew live check, 13 Oct). Code A and code B are different
 products. On every checked turn read the attachments tool call: `product_ids` must be the product
 in "Expected", and the reply must never say "matched these" over a document type alone, ask for a
 type the conversation already gave, or offer an escalation for a file that exists.
@@ -47,14 +48,21 @@ the narrowing rows use brand and document type.
 | # | Turns, in order | Expected |
 |---|-----------------|----------|
 | 12 | which tap has technical drawing / sorento | turn 2 narrows the same set to Sorento taps, still technical drawings (`attachment_type_ids` unchanged) |
-| 13 | Srt8308 drawing / Srt8313 / photo | turn 3 narrows the document type: SRT8313 photo(s), not SRT8308 |
+| 13 | Srt2308-HP photo / Srt2313-HP / drawing | turn 3 narrows the document type on the same product: SRT2313-HP drawing, or the truthful "none on file" line naming SRT2313-HP |
 | 14 | attachments for Srt8313 (bot asks the type) / drawing | short reply to the ask: SRT8313 drawing |
 | 15 | attachments for Srt8313 (bot asks, numbered if shown) / 2 | the second offered type for SRT8313, never a product pick |
 | 16 | which tap has technical drawing (bot shows a brand breakdown) / sorento | short brand reply: the Sorento taps' drawings |
 | 17 | code with no 3D file + "3D" (truthful miss, escalation offer) / yes | escalates once about that code and type, no second ask |
 | 18 | photo for Srt8313 (bot asks something with a year, if it does) / 2026 | read as the answer to that question, never as a product code |
-| 19 | Srt8313 drawing / stock for Srt8313 / photo | topic switch to stock and back: turn 2 is the stock answer for SRT8313, turn 3 is SRT8313 photo(s), with no ask for the product |
+| 19 | Srt2313-HP photo / stock for Srt2313-HP / photo | topic switch to stock and back: turn 2 is the stock answer for SRT2313-HP, turn 3 is SRT2313-HP photo(s), with no ask for the product |
 | 20 | Srt8308 drawing / any promotion for sorento? / drawing for Srt8313 | switch to promotions and back: turn 2 answers promotions only (no file); turn 3 is SRT8313's drawing. A bare "Srt8313" as turn 3 would correctly stay a promotion question (the prompt's bare-value rule keeps the last domain), so the back-switch names its document word |
 
 Row 18 only applies if the bot asks a question whose short answer is a year. Attachment turns do
 not ask one today, so crew can skip it when no such question appears.
+
+## Live check notes (crew, 13 Oct, not fixed here)
+
+- "Srt8313 3d" when the dev copy has no 3D attachment type sends the drawing; main does the
+  same. Owner ruling pending; not part of this lane.
+- A dealer's "Srt8313 attachment" was read by the parser as a photo ask (history bias). Parser
+  reading, noted only.
