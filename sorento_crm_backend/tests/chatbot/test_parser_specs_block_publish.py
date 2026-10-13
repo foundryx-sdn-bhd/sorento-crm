@@ -239,7 +239,7 @@ def test_p12_the_size_rule_quotes_no_customer_message():
 
     from app.services.chatbot_parser_prompt import SIZE_AND_CLASS_RULE
 
-    allowed = {"specification", "size", "category"}
+    allowed = {"specification", "size", "category", "replace_combine"}
     quoted = re.findall(r'"([^"]*)"', SIZE_AND_CLASS_RULE)
     assert set(quoted) <= allowed, quoted
     assert "promotion" in SIZE_AND_CLASS_RULE.lower()

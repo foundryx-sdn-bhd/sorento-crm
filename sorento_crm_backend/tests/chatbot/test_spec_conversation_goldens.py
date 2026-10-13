@@ -373,3 +373,14 @@ def test_f7_back_after_a_topic_switch_with_reuse(session_factory, monkeypatch, _
     back = _live(chat, "and their stock again?", [], "reuse")
     shown = _listed(back, w["codes"], w["codes"])
     assert shown and shown <= SIX_600, (first, back)
+
+
+def test_f3b_an_axis_named_without_its_number_takes_the_last_size(session_factory, monkeypatch, _clear_overrides):
+    """4c, the live shape on the published line: "length only" parsed to a `dim_length`
+    specification with no value. The axis is the customer's; the number is the last ask's."""
+    w = _seed(session_factory)
+    chat = _Chat(session_factory, monkeypatch)
+    chat.say("600mm basin got stock?", entities=SIZE_ASK)
+    reply = _live(chat, "length only", [_spec_entity("length", "dim_length", None)], "replace_combine")
+    shown = _listed(reply, w["codes"], w["codes"])
+    assert shown and shown <= {"A-L1", "A-L2", "A-L3", "B-L1", "B-L2"}, reply
