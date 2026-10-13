@@ -69,6 +69,11 @@ for svc in backend frontend mcp; do
   if [ "$state" != "healthy" ]; then
     echo "ERROR: ${svc}_${NEW} not healthy after $((HEALTH_WAIT_TICKS * TICK_SECONDS))s"
     docker compose logs --tail=200 "${svc}_${NEW}" || true
+    # Stop the new color so a hung `alembic upgrade` in start.sh is ended rather than left
+    # running (and committing) after the release has already been reported failed. OLD keeps
+    # serving; nginx was never swapped.
+    echo "==> Stopping ${NEW} color after the failed health check"
+    docker compose stop "backend_${NEW}" "frontend_${NEW}" "mcp_${NEW}" || true
     exit 1
   fi
 done
