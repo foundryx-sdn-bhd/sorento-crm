@@ -1859,6 +1859,25 @@ describe('QuotationVersionEditor fix round 2 (QUOTATION-UX)', () => {
     await waitFor(() => expect(stagedBody()[1]).toMatchObject({ complete_set: 'c/w seat cover' }));
   });
 
+  it('labels a never-saved line by its picked product code, and the label survives a reorder', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
+    await screen.findByRole('textbox', { name: 'Description on line 2' });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Product on line 2' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+    await screen.findByRole('textbox', { name: 'Description on SRT-BASIN-02' });
+
+    await chooseMenuItem('SRT-BASIN-02', 'Line details');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Complete set on SRT-BASIN-02' }), {
+      target: { value: 'c/w trap' },
+    });
+    await chooseMenuItem('SRT-BASIN-02', 'Move up');
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_id: 'p9' }));
+    expect(screen.getByRole('textbox', { name: 'Complete set on SRT-BASIN-02' })).toHaveValue('c/w trap');
+    expect(stagedBody()[0]).toMatchObject({ complete_set: 'c/w trap' });
+  });
+
   describe('console', () => {
     let errors: ReturnType<typeof vi.spyOn>;
     beforeEach(() => {
