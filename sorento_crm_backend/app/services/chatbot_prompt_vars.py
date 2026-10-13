@@ -66,7 +66,9 @@ def _domain_words(db: Session) -> list[str]:
     for row in db.execute(sql("SELECT switch_words FROM chatbot_domains ORDER BY sort_order, name")):
         words.extend(row[0] or [])
     for row in _status_rows(db):
-        words.extend(row["trigger_words"] or [])
+        # The sub-ask measure words are not domain words (MULTI-ASK-PLAN2).
+        if "sub_ask_measures" not in (row.get("prompt_lists") or []):
+            words.extend(row["trigger_words"] or [])
     return _dedupe(words)
 
 
@@ -235,6 +237,18 @@ def render_statuses(db: Session) -> str:
     return "\n".join(_status_line(row, pad) for row in rows)
 
 
+def render_sub_ask_measures(db: Session) -> str:
+    """The words people use for each sub-ask measure (MULTI-ASK-PLAN2): one line per tagged
+    row, its value then its words. The meanings live in SUB_ASKS_ADDENDUM itself, so the
+    prompt still defines every measure when this table holds no rows."""
+    lines = []
+    for row in _listed(db, "sub_ask_measures"):
+        words = [_quoted(w) for w in row["trigger_words"] or []]
+        tokens = [f"    {_quoted(row['value'])}:"] + [w + "," for w in words[:-1]] + words[-1:]
+        lines.append(_wrap(tokens, indent="      "))
+    return "\n".join(lines)
+
+
 def render_domain_words(db: Session) -> str:
     words = [_one_line(w) for w in _domain_words(db)]
     return _wrap([w + "," for w in words[:-1]] + words[-1:])
@@ -334,6 +348,12 @@ VARIABLES: dict[str, RegistryVariable] = {
             ("chatbot_status_words",),
             lambda db: "|".join(_one_line(r["value"]) for r in _status_rows(db) if r["domain"] == "order"),
             lambda db: sum(1 for r in _status_rows(db) if r["domain"] == "order"),
+        ),
+        RegistryVariable(
+            # MULTI-ASK-PLAN2: the sub-ask measures and their words, read by SUB_ASKS_ADDENDUM.
+            "sub_ask_measures", "Sub-ask measures", "Chatbot Status Words", _STATUS_HREF,
+            ("chatbot_status_words",), render_sub_ask_measures,
+            lambda db: len(_listed(db, "sub_ask_measures")),
         ),
         RegistryVariable(
             "entity_kinds", "Entity kinds", "Chatbot Entity Kinds", "/system-management/chatbot-entity-kinds",

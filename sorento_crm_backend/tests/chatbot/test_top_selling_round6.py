@@ -238,7 +238,9 @@ class TestR1TheSoldWords:
             TRAP_SPECS_FALLBACK_BLOCK,
             LOW_STOCK_FILTERS_ADDENDUM,
             PO_REFS_ADDENDUM,
+            SUB_ASKS_ADDENDUM,
             REF_KINDS_ADDENDUM,
+            FIND_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             SELF_REFERENCE_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
@@ -251,7 +253,7 @@ class TestR1TheSoldWords:
         for words in ('"best selling", "hot selling", "top items", "most sold"', '"worst 100 hot selling bathtub"',
                       '"fanny water closet" -> {raw: "fanny", hint: "sales_agent"}', '"can show me the DO"'):
             assert words in TOP_SELLING_ADDENDUM, words
-        assert SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(PORTAL_FORM_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PROMOTION_KIND_ADDENDUM).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(REF_KINDS_ADDENDUM).removesuffix(CHAT_REPORT_ADDENDUM).removesuffix(PO_REFS_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
+        assert SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(PORTAL_FORM_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PROMOTION_KIND_ADDENDUM).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(FIND_ADDENDUM).removesuffix(REF_KINDS_ADDENDUM).removesuffix(CHAT_REPORT_ADDENDUM).removesuffix(SUB_ASKS_ADDENDUM).removesuffix(PO_REFS_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
             ESCALATION_CONFIRMATION_ADDENDUM
         ).removesuffix(SELF_REFERENCE_ADDENDUM).endswith(
             TOP_SELLING_ADDENDUM

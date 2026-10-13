@@ -31,6 +31,7 @@ const PROMPT_LIST_OPTIONS = [
   { value: 'statuses', label: 'Status bullets' },
   { value: 'status_values', label: 'order_status field values' },
   { value: 'status_field_values', label: 'status field values' },
+  { value: 'sub_ask_measures', label: 'Sub-ask measures' },
 ];
 
 const VALUE_PATTERN = /^[a-z][a-z0-9_]*$/;

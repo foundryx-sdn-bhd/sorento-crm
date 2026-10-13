@@ -69,4 +69,11 @@ describe('ChatbotStatusWordModal prompt lists', () => {
     // No domain picked yet: Save stays disabled; the draft's lists are still empty.
     expect(screen.queryByText(/Status bullets/)).not.toBeInTheDocument();
   });
+
+  // MULTI-ASK-PLAN2: the sub-ask measure glossary rows (`maskp_0002_measure_words`).
+  it('names the sub-ask measures list for a measure row', () => {
+    renderModal({ ...ROW, domain: 'order', value: 'stock', label: 'on hand now', prompt_lists: ['sub_ask_measures'] });
+    expect(screen.getByText(/Sub-ask measures/)).toBeInTheDocument();
+    expect(screen.queryByText('sub_ask_measures')).not.toBeInTheDocument();
+  });
 });
