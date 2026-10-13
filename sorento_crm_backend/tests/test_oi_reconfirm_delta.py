@@ -615,3 +615,24 @@ def test_owner_case_so323450_a_partly_linked_hole_is_not_resent(api):
     assert _TOLD == [], _remarks(_TOLD)
     assert created == 0
     assert len(_holes(world, inquiry_id, live=False)) == 3
+
+
+def test_a_fully_placed_hole_on_a_carried_line_is_left_alone(api):
+    """Review nit: the same rule for a hole wholly on a document (placed)."""
+    from app.models.project_so import INQUIRY_PLACED
+
+    _client, world = api
+    order, (line_a, line_b, line_c) = _three_lines(api)
+    inquiry_id = _order_row(world, line_a).order_inquiry_id
+    _raise(world, order, inquiry_id, 1, _three_holes(world, line_a, line_b, line_c, with_b=False))
+    row_c = next(r for r in _holes(world, inquiry_id) if r.item_code == "SRTWCX8826-S")
+    _auto_link(world, row_c, 2)
+    assert row_c.state == INQUIRY_PLACED, "premise"
+    _TOLD.clear()
+
+    _raise(world, order, inquiry_id, 2, _three_holes(world, line_a, line_b, line_c))
+
+    world.db.expire_all()
+    assert [i["item_code"] for i in _TOLD] == ["SRTWCY8826"], _remarks(_TOLD)
+    kept = world.db.get(OrderInquiryRow, row_c.id)
+    assert (kept.state, kept.qty) == (INQUIRY_PLACED, Decimal("2"))

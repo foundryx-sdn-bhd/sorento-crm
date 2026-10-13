@@ -4424,6 +4424,8 @@ class ProjectOrderInquiryService:
             if row is not None:
                 unchanged_linked.add(row.id)
                 restated.add(index)
+                # Re-filed only: note, links and state stand untouched (deliberately,
+                # unlike a still-raised hole's note, which follows the entry's wording).
                 row.supply_decision_id = decision.id
 
         open_holes: Dict[Tuple[Any, Any, Any], List[OrderInquiryRow]] = {}
