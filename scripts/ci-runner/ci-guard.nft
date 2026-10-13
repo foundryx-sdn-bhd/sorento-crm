@@ -1,9 +1,11 @@
 #!/usr/sbin/nft -f
-# Loaded inside the colima VM (ci-guard.service) before Docker starts. Jobs on
-# the Mac runners reach the internet only: never the Mac itself (lima maps
-# 192.168.5.2 to the Mac's localhost, where the dev Postgres and the lane
-# servers listen), the LAN or the tailnet. Its own table, so Docker never
-# flushes it; re-running this file replaces it.
+# Loaded inside the colima VM (ci-guard.service) before the network comes up.
+# Everything the runner user opens (its jobs, and its rootless Docker's
+# network, which slirp4netns runs as that user) reaches the internet only:
+# never the Mac (lima maps 192.168.5.2 to the Mac's localhost, where the dev
+# Postgres and the lane servers listen), the LAN or the tailnet. Loopback is
+# the job's own service containers. The runner user cannot change this table.
+# Re-running this file replaces it.
 table inet ci_guard
 delete table inet ci_guard
 table inet ci_guard {
@@ -11,17 +13,11 @@ table inet ci_guard {
     type ipv4_addr; flags interval
     elements = { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 }
   }
-  # Container traffic (runner, its Docker, the jobs' service containers).
-  chain forward {
-    type filter hook forward priority -10; policy accept
-    ct state established,related accept
-    ip daddr @private4 counter drop
-    ip6 daddr { fc00::/7, fe80::/10 } counter drop
-  }
-  # The VM's own processes (a job that escapes its privileged Docker lands here).
   chain output {
     type filter hook output priority -10; policy accept
     ct state established,related accept
-    ip daddr 192.168.5.2 counter drop
+    meta skuid "runner" oif "lo" accept
+    meta skuid "runner" ip daddr @private4 counter drop
+    meta skuid "runner" ip6 daddr != ::1 counter drop
   }
 }

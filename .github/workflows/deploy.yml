@@ -96,7 +96,7 @@ on:
         default: false
         type: boolean
       runner:
-        description: "Where this run's test and fast-gate jobs run: vars = follow the RUNNER_TESTS / RUNNER_FAST repo variables; auto = the Mac mini runners when one is online and idle, else GitHub-hosted; mac = the Mac mini runners (sorento-mac); github = GitHub-hosted. Images and the deploy always run GitHub-hosted (amd64)."
+        description: "Where this run's test and fast-gate jobs run: vars = follow the RUNNER_TESTS / RUNNER_FAST repo variables; auto = the test jobs go to the Mac mini runner when it is online and idle, else GitHub-hosted (fast-gate jobs follow RUNNER_FAST); mac = the Mac mini runner (sorento-mac); github = GitHub-hosted. Images and the deploy always run GitHub-hosted (amd64)."
         required: false
         default: vars
         type: choice
@@ -158,6 +158,9 @@ env:
 #     reliably up: a job routed to an offline self-hosted runner waits in
 #     the queue (up to 24 h) instead of failing over.
 #   - workflow_dispatch input `runner` overrides both for that run.
+#   - Every job that can land on the Mac declares its token: contents read,
+#     plus the label removal the PR gate and the ci-full refusal need. The
+#     repo default is write-all, and the Mac runner keeps state between jobs.
 #   - build-images, build-and-deploy, validate-backend and validate-mcp stay
 #     GitHub-hosted: prod images are amd64, the Mac runners are arm64.
 # Any value other than the ones above lands on GitHub-hosted. Pinned by
@@ -175,6 +178,8 @@ jobs:
   check-migration-heads:
     name: Single alembic head (fast gate)
     runs-on: ${{ (inputs.runner == 'mac' || (inputs.runner != 'github' && vars.RUNNER_FAST == 'mac')) && 'sorento-mac' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 20
     # Root job (no `needs`): gates the whole `pull_request` run on the `ci`
     # label. `github.event_name != 'pull_request'` keeps push/merge_group/
@@ -213,6 +218,8 @@ jobs:
   pii-guard:
     name: PII guard (fast gate)
     runs-on: ${{ (inputs.runner == 'mac' || (inputs.runner != 'github' && vars.RUNNER_FAST == 'mac')) && 'sorento-mac' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 20
     if: github.event_name == 'merge_group'
     steps:
@@ -901,6 +908,8 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.scm == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ${{ needs.changes.outputs.tests_runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1137,6 +1146,8 @@ jobs:
       && github.event_name != 'pull_request'
       && needs.changes.outputs.lean != 'true'
     runs-on: ${{ needs.changes.outputs.tests_runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 90
     # The suite is CPU-bound (~3 s of CPU per test across 9k tests) and a
     # standard runner has 4 vCPUs, so one job takes ~29 min no matter how the
@@ -1693,6 +1704,8 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ${{ needs.changes.outputs.tests_runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     # A shard measured about 8.5 min over 29 Sep-5 Oct, then grew to 17.7-18.9
     # min by 13 Oct on ONE vitest worker (shard 2 hit this cap in releases
     # 38406697551 and 38415596343 with its suite already green). vitest.config.ts
@@ -1752,6 +1765,8 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ${{ needs.changes.outputs.tests_runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -2199,6 +2214,8 @@ jobs:
   ci-gate:
     name: ${{ (github.event_name == 'pull_request' && github.event.label.name == 'ci' && 'CI gate') || 'CI gate (full)' }}
     runs-on: ${{ (inputs.runner == 'mac' || (inputs.runner != 'github' && vars.RUNNER_FAST == 'mac')) && 'sorento-mac' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 20
     needs:
       [
