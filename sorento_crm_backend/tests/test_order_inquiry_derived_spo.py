@@ -48,7 +48,7 @@ from .test_order_inquiry_kinds import (
     _inquiry,
     _link,
     _order_and_line,
-    _po_line,
+    _po_line as _kinds_po_line,
     _product,
     _project,
     _restore,
@@ -74,12 +74,35 @@ def _supplier(db, company_id: str) -> Supplier:
     return row
 
 
+def _line_ref(po_number: str, ordinal: int = 1) -> str:
+    """The `source_ref` of a purchase order's `ordinal`-th line, as the allocation it
+    became quotes it in `from_po_line_ref` (OI-SPO-EXACT: a derived SPO is reached through
+    the PO LINE, never through the PO number alone)."""
+    return f"{po_number}:{ordinal}"
+
+
+def _po_line(db, company_id: str, product, supplier):
+    """`test_order_inquiry_kinds._po_line`, with the line's own `source_ref` stated, the
+    way every AutoCount purchase order line carries one."""
+    po, line = _kinds_po_line(db, company_id, product, supplier)
+    line.source_ref = _line_ref(po.po_number)
+    db.flush()
+    return po, line
+
+
 def _spo(db, company_id: str, *, spo_number: str, product_id: str,
           from_po_number: str | None, allocated_quantity: int, quantity_received: int = 0,
           line_status: str = "open", receipt_status: str = "pending",
-          retired_at=None, landed: bool = False) -> SPOAllocation:
+          retired_at=None, landed: bool = False,
+          from_po_line_ref: str | None = None) -> SPOAllocation:
     """An SPOAllocation with every `open_incoming_clauses` clause under explicit
-    control, plus the two the addendum adds (`retired_at`, the quantity test)."""
+    control, plus the two the addendum adds (`retired_at`, the quantity test).
+
+    `from_po_line_ref` defaults to the FIRST line of `from_po_number` (`_line_ref`), the
+    line `_po_line` seeds: AutoCount names the source line on every allocation that names
+    a source purchase order."""
+    if from_po_number and from_po_line_ref is None:
+        from_po_line_ref = _line_ref(from_po_number)
     shipment_id = None
     if landed:
         shipment = InboundShipment(
@@ -92,7 +115,8 @@ def _spo(db, company_id: str, *, spo_number: str, product_id: str,
     allocation = SPOAllocation(
         id=_uid(), company_id=company_id, spo_number=spo_number,
         allocated_quantity=allocated_quantity, quantity_received=quantity_received,
-        product_id=product_id, from_po_number=from_po_number, line_status=line_status,
+        product_id=product_id, from_po_number=from_po_number,
+        from_po_line_ref=from_po_line_ref, line_status=line_status,
         receipt_status=receipt_status, retired_at=retired_at,
         inbound_shipment_id=shipment_id, expected_date=SOON, issue_date=date.today(),
     )
@@ -375,7 +399,7 @@ def test_ac_d12_one_allocation_is_counted_once_even_behind_two_po_lines_of_the_s
     po, first_line = _po_line(db, company_id, product, supplier)
     second_line = PurchaseOrderLine(
         id=_uid(), company_id=company_id, purchase_order_id=po.id, product_id=product.id,
-        qty_ordered=Decimal("8"),
+        qty_ordered=Decimal("8"), source_ref=_line_ref(po.po_number, 2),
     )
     db.add(second_line)
     db.flush()
@@ -451,7 +475,8 @@ def test_ac_d14_a_derived_spo_never_crosses_a_company_boundary(world):
         leaked = SPOAllocation(
             id=_uid(), company_id=other_company_id, spo_number="ZZT-LEAKED-SPO",
             allocated_quantity=5, quantity_received=0, product_id=product.id,
-            from_po_number=po.po_number, line_status="open", receipt_status="pending",
+            from_po_number=po.po_number, from_po_line_ref=_line_ref(po.po_number),
+            line_status="open", receipt_status="pending",
         )
         db.add(leaked)
         db.flush()

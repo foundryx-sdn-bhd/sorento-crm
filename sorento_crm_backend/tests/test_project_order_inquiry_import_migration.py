@@ -388,6 +388,7 @@ class World:
         from_po_number: str | None = None,
         from_so_line_ref: str | None = None,
         line_status: str = "open",
+        from_po_line_ref: str | None = None,
     ) -> SPOAllocation:
         row = SPOAllocation(
             id=_uid(),
@@ -407,6 +408,7 @@ class World:
             supplier_id=self.supplier().id,
             from_po_number=from_po_number,
             from_so_line_ref=from_so_line_ref,
+            from_po_line_ref=from_po_line_ref,
         )
         self.db.add(row)
         self.db.flush()
