@@ -1,0 +1,1216 @@
+'use client';
+
+import * as React from 'react';
+import {
+  type CellContext,
+  type ColumnDef,
+  type ExpandedState,
+  getCoreRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { arrayMove } from '@dnd-kit/sortable';
+import { MoreHorizontal, Plus, Trash2, Undo2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DataGrid } from '@/components/ui/data-grid';
+import { DataGridScroller } from '@/components/ui/data-grid-table';
+import {
+  DataGridTableDndRowHandle,
+  DataGridTableDndRows,
+} from '@/components/ui/data-grid-table-dnd-rows';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from '@/components/common/SearchableSelect';
+import AttachmentPreviewModal, {
+  type AttachmentPreviewItem,
+} from '@/components/common/AttachmentPreviewModal';
+import type {
+  QuotationLine,
+  StagedQuotationLine,
+} from '../../_shared/types/project.types';
+import {
+  formatMyrExact,
+  isDecimalString,
+  multiplyMoney,
+} from '../../_shared/lib/money';
+import { formatMyr } from './QuotationsPanel';
+import {
+  emptyDraft,
+  INLINE_CHECKED,
+  isInlineChecked,
+  isUntouched,
+  lineErrors,
+  PRICED_PER_OPTIONS,
+  totalFromDrafts,
+  trimAmount,
+  type LineDraft,
+} from './quotationLineDraft';
+import {
+  QuotationLineFileCell,
+  resolveLineFile,
+  type LineFileKind,
+} from './QuotationLineFileCell';
+import { QuotationStockChip } from './QuotationStockChip';
+import { LineFlags } from './QuotationLineFlags';
+
+/** One line of the grid: the staged (or stored) line, and its true position in the scope. */
+interface GridRow {
+  key: string;
+  /** Position in the WHOLE scope, so a search hides rows without renumbering the rest. */
+  index: number;
+  staged: StagedQuotationLine;
+}
+
+type MenuAction = 'details' | 'up' | 'down' | 'below' | 'section' | 'remove';
+
+/**
+ * Everything a cell needs beyond its own row, handed down by context rather than closed over.
+ *
+ * The columns are a module constant on purpose: a column whose cell function is re-created on a
+ * render is a different component to React, so every input in it would remount (and lose the
+ * caret) on every keystroke. Context changes re-render the cells; they never remount them.
+ */
+interface GridContextValue {
+  editing: boolean;
+  quotationId: string | null;
+  fetchProducts: (query: string) => Promise<SearchableSelectOption[]>;
+  resolveProduct: (
+    line: QuotationLine | null,
+    draft: LineDraft,
+  ) => SearchableSelectOption | undefined;
+  uomOptions: SearchableSelectOption[];
+  uomError: unknown;
+  onUomRetry: () => void;
+  brandOptions: SearchableSelectOption[];
+  stockGroup: string | null;
+  total: string | null;
+  update: (key: string, patch: LineDraft) => void;
+  selectProduct: (key: string, option: SearchableSelectOption | null) => void;
+  toggleRemoved: (key: string) => void;
+  act: (key: string, action: MenuAction) => void;
+  isFirst: (key: string) => boolean;
+  isLast: (key: string) => boolean;
+  bandOpen: Set<string>;
+  closeEmptyBand: (key: string) => void;
+  openPreview: (kind: LineFileKind, attachmentId: string) => void;
+}
+
+const GridContext = React.createContext<GridContextValue | null>(null);
+
+function useGrid(): GridContextValue {
+  const value = React.useContext(GridContext);
+  if (!value)
+    throw new Error('QuotationLinesGrid cell rendered outside the grid');
+  return value;
+}
+
+/** How a row is named in labels: the stored code, else its description, else its position. */
+export function describeLine(
+  line: QuotationLine | null,
+  index: number,
+): string {
+  return line?.product_code ?? line?.description ?? `line ${index + 1}`;
+}
+
+/**
+ * The stored line, but only while it still describes the row on screen: a product changed in this
+ * session has no photo, drawing or candidates resolved for it until Save.
+ */
+function resolvedLine(row: GridRow): QuotationLine | null {
+  const { line, draft } = row.staged;
+  if (!line) return null;
+  return (line.product_id ?? '') === (draft.product_id ?? '') ? line : null;
+}
+
+// ------------------------------------------------------------------------------ cells
+
+function ItemCell({ row }: CellContext<GridRow, unknown>) {
+  return (
+    <span className="block text-sm font-medium tabular-nums">
+      {row.original.index + 1}
+    </span>
+  );
+}
+
+function FileCell({ row, kind }: { row: GridRow; kind: LineFileKind }) {
+  const grid = useGrid();
+  const field =
+    kind === 'photo' ? 'image_attachment_id' : 'drawing_attachment_id';
+  const { staged } = row;
+  return (
+    <QuotationLineFileCell
+      kind={kind}
+      line={resolvedLine(row)}
+      label={describeLine(staged.line, row.index)}
+      pickedId={staged.draft[field] ?? ''}
+      editable={grid.editing && !staged.removed}
+      onPick={(attachmentId) => grid.update(row.key, { [field]: attachmentId })}
+      onPreview={(attachmentId) => grid.openPreview(kind, attachmentId)}
+    />
+  );
+}
+
+function PhotoCell({ row }: CellContext<GridRow, unknown>) {
+  return <FileCell row={row.original} kind="photo" />;
+}
+
+function DrawingCell({ row }: CellContext<GridRow, unknown>) {
+  return <FileCell row={row.original} kind="drawing" />;
+}
+
+/** A labelled SearchableSelect in a cell: the label is what names it to a screen reader. */
+function CellSelect({
+  label,
+  ...props
+}: { label: string } & React.ComponentProps<typeof SearchableSelect>) {
+  const id = React.useId();
+  return (
+    <>
+      <label className="sr-only" htmlFor={id}>
+        {label}
+      </label>
+      <SearchableSelect id={id} size="sm" truncateTriggerLabel {...props} />
+    </>
+  );
+}
+
+function ProductCell({ row: tableRow }: CellContext<GridRow, unknown>) {
+  const grid = useGrid();
+  const row = tableRow.original;
+  const { staged } = row;
+  const label = describeLine(staged.line, row.index);
+  const editable = grid.editing && !staged.removed;
+
+  return (
+    <div className="min-w-0 space-y-1">
+      {editable ? (
+        <CellSelect
+          label={`Product on ${label}`}
+          clearable
+          value={staged.draft.product_id ?? ''}
+          // The pick and its fill are one write, made in `onOptionChange`.
+          onChange={() => undefined}
+          onOptionChange={(option) => grid.selectProduct(row.key, option)}
+          fetchOptions={grid.fetchProducts}
+          selectedOption={grid.resolveProduct(staged.line, staged.draft)}
+          placeholder="Pick a product"
+          emptyMessage="No matches"
+        />
+      ) : (
+        <span
+          className="block truncate text-sm font-medium"
+          title={staged.line?.product_code ?? undefined}
+        >
+          {staged.draft.product_id ? (staged.line?.product_code ?? '-') : ''}
+        </span>
+      )}
+      <LineFlags
+        quotationId={grid.quotationId}
+        line={staged.line}
+        draft={staged.draft}
+      />
+      {staged.removed && (
+        <Badge variant="outline" className="text-2xs">
+          Removed on save
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function DescriptionCell({ row: tableRow }: CellContext<GridRow, unknown>) {
+  const grid = useGrid();
+  const row = tableRow.original;
+  const { staged } = row;
+  const value = staged.draft.description ?? '';
+
+  if (!grid.editing || staged.removed) {
+    return (
+      <p className="text-xs whitespace-pre-line break-words">{value || '-'}</p>
+    );
+  }
+
+  // Marked as it is typed, but never on a row nobody has typed into: empty is not wrong.
+  const message = isUntouched(staged.draft)
+    ? undefined
+    : lineErrors(staged.draft).description;
+  const errorId = `${row.key}-description-error`;
+  return (
+    <div className="min-w-0">
+      <Textarea
+        variant="sm"
+        rows={1}
+        value={value}
+        aria-label={`Description on ${describeLine(staged.line, row.index)}`}
+        aria-invalid={message ? true : undefined}
+        aria-describedby={message ? errorId : undefined}
+        placeholder="Type what the customer reads"
+        className="field-sizing-content min-h-8 resize-none px-2 py-1.5"
+        onChange={(event) =>
+          grid.update(row.key, { description: event.target.value })
+        }
+      />
+      {message && (
+        <p id={errorId} className="mt-1 text-xs text-destructive">
+          {message}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function BrandCell({ row: tableRow }: CellContext<GridRow, unknown>) {
+  const grid = useGrid();
+  const row = tableRow.original;
+  const { staged } = row;
+  const brand = staged.draft.brand_snapshot ?? '';
+
+  if (!grid.editing || staged.removed) {
+    return (
+      <span className="block truncate text-sm" title={brand || undefined}>
+        {brand || '-'}
+      </span>
+    );
+  }
+
+  return (
+    <CellSelect
+      label={`Brand on ${describeLine(staged.line, row.index)}`}
+      clearable
+      value={brand}
+      onChange={(next) => grid.update(row.key, { brand_snapshot: next })}
+      options={grid.brandOptions}
+      // A brand typed before the list existed still shows as itself.
+      selectedOption={brand ? { value: brand, label: brand } : undefined}
+      placeholder="Brand"
+      emptyMessage="No matches"
+    />
+  );
+}
+
+function QtyCell({ row: tableRow }: CellContext<GridRow, unknown>) {
+  const grid = useGrid();
+  const row = tableRow.original;
+  const { staged } = row;
+  const label = describeLine(staged.line, row.index);
+  const quantity = staged.draft.quantity ?? '';
+  const uom = staged.draft.uom ?? '';
+  const productId = staged.draft.product_id ?? '';
+  const chip = productId ? (
+    <QuotationStockChip
+      productId={productId}
+      group={grid.stockGroup}
+      quantity={quantity}
+      uom={uom}
+      label={label}
+    />
+  ) : null;
+
+  if (!grid.editing || staged.removed) {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <span className="text-sm tabular-nums">
+          {`${quantity ? trimAmount(quantity) : '-'}${uom ? ` ${uom}` : ''}`}
+        </span>
+        {chip}
+      </div>
+    );
+  }
+
+  const invalid = quantity.trim() !== '' && !isDecimalString(quantity);
+  return (
+    <div className="flex min-w-0 flex-col items-end gap-1">
+      <Input
+        variant="sm"
+        value={quantity}
+        inputMode="decimal"
+        aria-label={`Qty on ${label}`}
+        aria-invalid={invalid || undefined}
+        title={invalid ? 'Must be a number' : undefined}
+        className="w-full text-end tabular-nums"
+        onChange={(event) =>
+          grid.update(row.key, { quantity: event.target.value })
+        }
+      />
+      <div className="w-full">
+        <CellSelect
+          label={`UOM on ${label}`}
+          clearable
+          value={uom}
+          onChange={(next) => grid.update(row.key, { uom: next })}
+          options={grid.uomOptions}
+          loadError={grid.uomError}
+          onRetry={grid.onUomRetry}
+          selectedOption={grid.uomOptions.find(
+            (option) => option.value === uom,
+          )}
+          placeholder="UOM"
+          emptyMessage="No matches"
+        />
+      </div>
+      {chip}
+    </div>
+  );
+}
+
+function RateCell({ row: tableRow }: CellContext<GridRow, unknown>) {
+  const grid = useGrid();
+  const row = tableRow.original;
+  const { staged } = row;
+  const price = staged.draft.unit_price ?? '';
+  // The draft's list price first: a product picked a moment ago shows its own at once.
+  const listPrice = staged.draft.list_price || staged.line?.list_price;
+  const list = listPrice ? (
+    <span className="mt-0.5 block text-end text-xs text-muted-foreground">
+      {`List ${formatMyr(listPrice)}`}
+    </span>
+  ) : null;
+
+  if (!grid.editing || staged.removed) {
+    return (
+      <div className="text-end">
+        <span className="block text-sm tabular-nums">
+          {price ? formatMyr(price) : '-'}
+        </span>
+        {list}
+      </div>
+    );
+  }
+
+  const invalid = price.trim() !== '' && !isDecimalString(price);
+  return (
+    <div className="min-w-0">
+      <Input
+        variant="sm"
+        value={price}
+        inputMode="decimal"
+        placeholder="0.00"
+        aria-label={`Unit price on ${describeLine(staged.line, row.index)}`}
+        aria-invalid={invalid || undefined}
+        title={invalid ? 'Must be a number' : undefined}
+        className="w-full text-end tabular-nums"
+        onChange={(event) =>
+          grid.update(row.key, { unit_price: event.target.value })
+        }
+      />
+      {list}
+    </div>
+  );
+}
+
+function TotalCell({ row: tableRow }: CellContext<GridRow, unknown>) {
+  const grid = useGrid();
+  const row = tableRow.original;
+  const { staged } = row;
+  const rateOnly = isInlineChecked(staged.draft.is_rate_only);
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {/* Off the draft, so it moves while a quantity is typed. A rate-only line prints the
+          words: blank reads as "we forgot" and RM 0.00 as "free". */}
+      {rateOnly ? (
+        <Badge variant="secondary" appearance="light">
+          rate only
+        </Badge>
+      ) : (
+        <span className="text-sm font-medium tabular-nums">
+          {formatMyrExact(
+            multiplyMoney(staged.draft.quantity, staged.draft.unit_price) ??
+              '0',
+          )}
+        </span>
+      )}
+      {grid.editing && !staged.removed && (
+        <label className="flex items-center gap-1 text-2xs whitespace-nowrap text-muted-foreground">
+          <Checkbox
+            size="sm"
+            aria-label={`Rate only on ${describeLine(staged.line, row.index)}`}
+            checked={rateOnly}
+            onCheckedChange={(next) =>
+              grid.update(row.key, {
+                is_rate_only: next === true ? INLINE_CHECKED : '',
+              })
+            }
+          />
+          Rate only
+        </label>
+      )}
+    </div>
+  );
+}
+
+/** The scope total under the money column, off every live draft except removed lines. */
+function TotalFooter() {
+  const grid = useGrid();
+  return (
+    <span className="block text-end tabular-nums">
+      {grid.total === null ? '-' : formatMyrExact(grid.total)}
+    </span>
+  );
+}
+
+function ActionsCell({ row: tableRow }: CellContext<GridRow, unknown>) {
+  const grid = useGrid();
+  const row = tableRow.original;
+  const { staged } = row;
+  const label = describeLine(staged.line, row.index);
+  const [open, setOpen] = React.useState(false);
+  /** Set by an action that puts the caret somewhere itself, so the menu does not take it back. */
+  const keepFocus = React.useRef(false);
+
+  if (staged.removed) {
+    return (
+      <Button
+        type="button"
+        mode="icon"
+        variant="ghost"
+        size="sm"
+        aria-label={`Restore ${label}`}
+        onClick={() => grid.toggleRemoved(row.key)}
+      >
+        <Undo2 className="size-3.5 text-primary" />
+      </Button>
+    );
+  }
+
+  const run = (action: MenuAction) => {
+    keepFocus.current = action === 'section' || action === 'below';
+    grid.act(row.key, action);
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            mode="icon"
+            variant="ghost"
+            size="sm"
+            aria-label={`Line actions on ${label}`}
+            title="Line actions"
+            // Opens on click (and from the keyboard, which Radix handles): a pointerdown open
+            // followed by the click's own toggle would close it again.
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => setOpen(true)}
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          onCloseAutoFocus={(event) => {
+            if (keepFocus.current) event.preventDefault();
+            keepFocus.current = false;
+          }}
+        >
+          <DropdownMenuItem onSelect={() => run('details')}>
+            Line details
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={grid.isFirst(row.key)}
+            onSelect={() => run('up')}
+          >
+            Move up
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={grid.isLast(row.key)}
+            onSelect={() => run('down')}
+          >
+            Move down
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => run('below')}>
+            Insert a line below
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => run('section')}>
+            Insert a section above
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={() => run('remove')}
+          >
+            Remove line
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Button
+        type="button"
+        mode="icon"
+        variant="ghost"
+        size="sm"
+        aria-label={`Remove ${label}`}
+        title="Remove"
+        onClick={() => grid.toggleRemoved(row.key)}
+      >
+        <Trash2 className="size-3.5 text-destructive" />
+      </Button>
+    </div>
+  );
+}
+
+/** Line details, opened from the row menu: the fields that need no column (AC-QLG18). */
+function LineDetails({ row }: { row: GridRow }) {
+  const grid = useGrid();
+  const { staged } = row;
+  const label = describeLine(staged.line, row.index);
+  const unitType = staged.draft.unit_type ?? '';
+  return (
+    <div className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,16rem)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-1">
+        <p className="text-xs font-medium">Complete set</p>
+        <Input
+          variant="sm"
+          value={staged.draft.complete_set ?? ''}
+          maxLength={100}
+          placeholder="c/w seat cover, flush valve"
+          aria-label={`Complete set on ${label}`}
+          onChange={(event) =>
+            grid.update(row.key, { complete_set: event.target.value })
+          }
+        />
+      </div>
+      <div className="min-w-0 space-y-1">
+        <p className="text-xs font-medium">Priced per</p>
+        <CellSelect
+          label={`Priced per on ${label}`}
+          clearable
+          value={unitType}
+          onChange={(next) => grid.update(row.key, { unit_type: next })}
+          options={PRICED_PER_OPTIONS}
+          selectedOption={PRICED_PER_OPTIONS.find(
+            (option) => option.value === unitType,
+          )}
+          placeholder="Not set"
+          emptyMessage="No matches"
+        />
+      </div>
+      <div className="min-w-0 space-y-1">
+        <p className="text-xs font-medium">Notes</p>
+        <Textarea
+          variant="sm"
+          rows={2}
+          value={staged.draft.notes ?? ''}
+          placeholder="Why this price, what was agreed, what it replaces"
+          aria-label={`Notes on ${label}`}
+          className="field-sizing-content min-h-14 resize-none"
+          onChange={(event) =>
+            grid.update(row.key, { notes: event.target.value })
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+/** A section heading, drawn as a full-width row above the line that carries it (AC-QLG03). */
+function SectionBar({ row }: { row: GridRow }) {
+  const grid = useGrid();
+  const { staged } = row;
+  const value = staged.draft.band_label ?? '';
+  if (!grid.editing || staged.removed) {
+    return (
+      <span
+        className="block truncate text-sm font-semibold text-foreground uppercase"
+        title={value}
+      >
+        {value}
+      </span>
+    );
+  }
+  return (
+    <Input
+      variant="sm"
+      value={value}
+      data-band-key={row.key}
+      aria-label={`Section heading on ${describeLine(staged.line, row.index)}`}
+      title={value}
+      placeholder="e.g. BILL NO 3 PAGE 15/4, OPTIONAL ITEMS"
+      maxLength={150}
+      className="max-w-md font-semibold"
+      onChange={(event) =>
+        grid.update(row.key, { band_label: event.target.value })
+      }
+      onBlur={() => grid.closeEmptyBand(row.key)}
+    />
+  );
+}
+
+function ReorderHeader() {
+  return <span className="sr-only">Reorder</span>;
+}
+
+function HandleCell({ row }: CellContext<GridRow, unknown>) {
+  return <DataGridTableDndRowHandle rowId={row.original.key} />;
+}
+
+function ActionsHeader() {
+  return <span className="sr-only">Row actions</span>;
+}
+
+const NARROW = 'px-1.5';
+const TIGHT = 'px-1';
+
+/**
+ * The columns, per the approved mock (section 1): every width fits a 910px card at 1280 with the
+ * sidebar open. The handle and the row menu only exist while editing (column visibility), so the
+ * column order a user saves holds in both views.
+ */
+const COLUMNS: ColumnDef<GridRow>[] = [
+  {
+    id: 'drag_handle',
+    header: ReorderHeader,
+    cell: HandleCell,
+    size: 36,
+    minSize: 36,
+    enableResizing: false,
+    enableHiding: false,
+    meta: {
+      headerTitle: 'Reorder',
+      draggable: false,
+      headerClassName: TIGHT,
+      cellClassName: TIGHT,
+    },
+  },
+  {
+    id: 'item_no',
+    header: '#',
+    cell: ItemCell,
+    size: 32,
+    minSize: 28,
+    meta: {
+      headerTitle: '#',
+      headerClassName: NARROW,
+      cellClassName: `${NARROW} align-top`,
+    },
+  },
+  {
+    id: 'photo',
+    header: 'Photo',
+    cell: PhotoCell,
+    size: 56,
+    minSize: 52,
+    meta: {
+      headerTitle: 'Photo',
+      headerClassName: NARROW,
+      cellClassName: `${NARROW} align-top`,
+    },
+  },
+  {
+    id: 'drawing',
+    header: 'Drawing',
+    cell: DrawingCell,
+    size: 60,
+    minSize: 56,
+    meta: {
+      headerTitle: 'Drawing',
+      headerClassName: NARROW,
+      cellClassName: `${NARROW} align-top`,
+    },
+  },
+  {
+    id: 'product',
+    header: 'Product',
+    cell: ProductCell,
+    size: 124,
+    minSize: 100,
+    meta: { headerTitle: 'Product', cellClassName: 'align-top' },
+  },
+  {
+    id: 'description',
+    header: 'Description',
+    cell: DescriptionCell,
+    size: 188,
+    minSize: 140,
+    meta: {
+      headerTitle: 'Description',
+      cellClassName: 'align-top whitespace-normal',
+    },
+  },
+  {
+    id: 'brand',
+    header: 'Brand',
+    cell: BrandCell,
+    size: 96,
+    minSize: 80,
+    meta: { headerTitle: 'Brand', cellClassName: 'align-top' },
+  },
+  {
+    id: 'qty',
+    header: 'Qty',
+    cell: QtyCell,
+    size: 88,
+    minSize: 80,
+    meta: {
+      headerTitle: 'Qty',
+      headerClassName: 'text-end',
+      cellClassName: 'align-top',
+    },
+  },
+  {
+    id: 'rate',
+    header: 'Rate (RM)',
+    cell: RateCell,
+    size: 92,
+    minSize: 84,
+    meta: {
+      headerTitle: 'Rate (RM)',
+      headerClassName: 'text-end',
+      cellClassName: 'align-top',
+    },
+  },
+  {
+    id: 'total',
+    header: 'Total (RM)',
+    cell: TotalCell,
+    footer: TotalFooter,
+    size: 92,
+    minSize: 84,
+    meta: {
+      headerTitle: 'Total (RM)',
+      headerClassName: 'text-end',
+      cellClassName: 'align-top text-end',
+    },
+  },
+  {
+    id: 'row_actions',
+    header: ActionsHeader,
+    cell: ActionsCell,
+    size: 36,
+    minSize: 36,
+    enableResizing: false,
+    enableHiding: false,
+    meta: {
+      headerTitle: 'Row actions',
+      draggable: false,
+      headerClassName: TIGHT,
+      cellClassName: `${TIGHT} align-top`,
+      expandedContent: (row: GridRow) => <LineDetails row={row} />,
+    },
+  },
+];
+
+// ------------------------------------------------------------------------------- grid
+
+export interface QuotationLinesGridProps {
+  /** The lines in display order: the staged set while editing, the server's rows otherwise. */
+  lines: StagedQuotationLine[];
+  editing: boolean;
+  quotationId: string | null;
+  /** Live search: rows that fail it are hidden, never renumbered or left out of the total. */
+  rowFilter?: (line: StagedQuotationLine) => boolean;
+  emptyHint: string;
+  filterEmptyHint: string;
+  fetchProducts: GridContextValue['fetchProducts'];
+  resolveProduct: GridContextValue['resolveProduct'];
+  /** What picking a product decides for the rest of its line (null for a cleared pick). */
+  fillFromProduct: (option: SearchableSelectOption) => LineDraft;
+  uomOptions: SearchableSelectOption[];
+  uomError: unknown;
+  onUomRetry: () => void;
+  brandOptions: SearchableSelectOption[];
+  stockGroup: string | null;
+  /** Every edit, addition and reorder, as the whole staged set. Edit mode only. */
+  onStage?: (lines: StagedQuotationLine[]) => void;
+  onToggleRemoved?: (key: string) => void;
+}
+
+/**
+ * The quotation's lines as the app's DataGrid (AC-QLG01 to AC-QLG04): rows drag by a handle,
+ * columns resize and reorder and are remembered per user, a section heading is a full-width row
+ * that moves with its line, and Line details open as an expanded row.
+ *
+ * It writes nothing: in an edit session every change goes up as the whole staged set, and the
+ * document's one Save is what reaches the server.
+ */
+export function QuotationLinesGrid({
+  lines,
+  editing,
+  quotationId,
+  rowFilter,
+  emptyHint,
+  filterEmptyHint,
+  fetchProducts,
+  resolveProduct,
+  fillFromProduct,
+  uomOptions,
+  uomError,
+  onUomRetry,
+  brandOptions,
+  stockGroup,
+  onStage,
+  onToggleRemoved,
+}: QuotationLinesGridProps) {
+  const [expanded, setExpanded] = React.useState<ExpandedState>({});
+  const [bandOpen, setBandOpen] = React.useState<Set<string>>(() => new Set());
+  const [preview, setPreview] = React.useState<{
+    kind: LineFileKind;
+    index: number;
+  } | null>(null);
+  const instanceKey = React.useId();
+  const nextNewId = React.useRef(0);
+
+  /**
+   * The newest set, ahead of the next render: a product pick is two writes in one event (the
+   * pick and its fill), and each has to build on the other rather than on the props both saw.
+   */
+  const linesRef = React.useRef(lines);
+  linesRef.current = lines;
+
+  const commit = React.useCallback(
+    (next: StagedQuotationLine[]) => {
+      linesRef.current = next;
+      onStage?.(next);
+    },
+    [onStage],
+  );
+
+  const update = React.useCallback(
+    (key: string, patch: LineDraft) =>
+      commit(
+        linesRef.current.map((line) =>
+          line.key === key
+            ? { ...line, draft: { ...line.draft, ...patch } }
+            : line,
+        ),
+      ),
+    [commit],
+  );
+
+  const selectProduct = React.useCallback(
+    (key: string, option: SearchableSelectOption | null) => {
+      const held = linesRef.current.find((line) => line.key === key);
+      if (!held) return;
+      // A different product's photo or drawing cannot be this one's, so a change clears both.
+      const clearPicks: LineDraft =
+        (option?.value ?? '') !== (held.draft.product_id ?? '')
+          ? { image_attachment_id: '', drawing_attachment_id: '' }
+          : {};
+      if (!option) {
+        update(key, { product_id: '', ...clearPicks });
+        return;
+      }
+      update(key, {
+        product_id: option.value,
+        ...fillFromProduct(option),
+        ...clearPicks,
+      });
+    },
+    [fillFromProduct, update],
+  );
+
+  const focusSoon = React.useCallback((selector: string) => {
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(selector)?.focus();
+    }, 0);
+  }, []);
+
+  const newLine = React.useCallback((): StagedQuotationLine => {
+    nextNewId.current += 1;
+    return {
+      id: null,
+      key: `new:${instanceKey}:${nextNewId.current}`,
+      line: null,
+      draft: emptyDraft(),
+      removed: false,
+    };
+  }, [instanceKey]);
+
+  const openBand = React.useCallback(
+    (key: string) => {
+      setBandOpen((previous) => new Set(previous).add(key));
+      // Keys are line ids or `new:<id>:<n>`, so a quoted attribute value needs no escaping.
+      focusSoon(`[data-band-key="${key}"]`);
+    },
+    [focusSoon],
+  );
+
+  const closeEmptyBand = React.useCallback((key: string) => {
+    const held = linesRef.current.find((line) => line.key === key);
+    if (held && (held.draft.band_label ?? '').trim() !== '') return;
+    setBandOpen((previous) => {
+      if (!previous.has(key)) return previous;
+      const next = new Set(previous);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
+  const addLine = React.useCallback(
+    (withSection: boolean) => {
+      const added = newLine();
+      commit([...linesRef.current, added]);
+      if (withSection) openBand(added.key);
+    },
+    [commit, newLine, openBand],
+  );
+
+  const act = React.useCallback(
+    (key: string, action: MenuAction) => {
+      const current = linesRef.current;
+      const index = current.findIndex((line) => line.key === key);
+      if (index < 0) return;
+      switch (action) {
+        case 'details':
+          setExpanded((previous) => {
+            const map = previous === true ? {} : previous;
+            return { ...map, [key]: !map[key] };
+          });
+          return;
+        case 'up':
+          if (index > 0) commit(arrayMove(current, index, index - 1));
+          return;
+        case 'down':
+          if (index < current.length - 1)
+            commit(arrayMove(current, index, index + 1));
+          return;
+        case 'below': {
+          const added = newLine();
+          commit([
+            ...current.slice(0, index + 1),
+            added,
+            ...current.slice(index + 1),
+          ]);
+          return;
+        }
+        case 'section':
+          openBand(key);
+          return;
+        case 'remove':
+          onToggleRemoved?.(key);
+          return;
+      }
+    },
+    [commit, newLine, onToggleRemoved, openBand],
+  );
+
+  const handleRowDragEnd = React.useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const current = linesRef.current;
+      const from = current.findIndex((line) => line.key === String(active.id));
+      const to = current.findIndex((line) => line.key === String(over.id));
+      if (from < 0 || to < 0) return;
+      commit(arrayMove(current, from, to));
+    },
+    [commit],
+  );
+
+  const allRows = React.useMemo<GridRow[]>(
+    () => lines.map((staged, index) => ({ key: staged.key, index, staged })),
+    [lines],
+  );
+  const visibleRows = React.useMemo(
+    () =>
+      rowFilter ? allRows.filter((row) => rowFilter(row.staged)) : allRows,
+    [allRows, rowFilter],
+  );
+  // Out of the money the moment a line is staged for removal; never out of it for a search.
+  const total = React.useMemo(
+    () =>
+      totalFromDrafts(
+        lines.filter((line) => !line.removed).map((line) => line.draft),
+      ),
+    [lines],
+  );
+
+  const firstKey = lines[0]?.key;
+  const lastKey = lines[lines.length - 1]?.key;
+
+  /** Each viewer's gallery: every line that HAS that picture, in table order. */
+  const galleries = React.useMemo(() => {
+    const build = (
+      kind: LineFileKind,
+    ): (AttachmentPreviewItem & { attachmentId: string })[] =>
+      allRows.flatMap((row) => {
+        const line = resolvedLine(row);
+        const field =
+          kind === 'photo' ? 'image_attachment_id' : 'drawing_attachment_id';
+        const shown = resolveLineFile(
+          kind,
+          line,
+          row.staged.draft[field] ?? '',
+        );
+        if (!shown) return [];
+        const code = line?.product_code ?? 'Product';
+        return [
+          {
+            id: `${row.key}:${shown.attachmentId}`,
+            attachmentId: shown.attachmentId,
+            name: shown.filename ?? `${code} ${kind}`,
+            url: shown.previewUrl,
+            downloadUrl: `/api/v1/resource-management/attachments/${shown.attachmentId}/download`,
+          },
+        ];
+      });
+    return { photo: build('photo'), drawing: build('drawing') };
+  }, [allRows]);
+
+  const openPreview = React.useCallback(
+    (kind: LineFileKind, attachmentId: string) => {
+      const index = galleries[kind].findIndex(
+        (item) => item.attachmentId === attachmentId,
+      );
+      if (index >= 0) setPreview({ kind, index });
+    },
+    [galleries],
+  );
+
+  const context = React.useMemo<GridContextValue>(
+    () => ({
+      editing,
+      quotationId,
+      fetchProducts,
+      resolveProduct,
+      uomOptions,
+      uomError,
+      onUomRetry,
+      brandOptions,
+      stockGroup,
+      total,
+      update,
+      selectProduct,
+      toggleRemoved: (key) => onToggleRemoved?.(key),
+      act,
+      isFirst: (key) => key === firstKey,
+      isLast: (key) => key === lastKey,
+      bandOpen,
+      closeEmptyBand,
+      openPreview,
+    }),
+    [
+      act,
+      bandOpen,
+      brandOptions,
+      closeEmptyBand,
+      editing,
+      fetchProducts,
+      firstKey,
+      lastKey,
+      onToggleRemoved,
+      onUomRetry,
+      openPreview,
+      quotationId,
+      resolveProduct,
+      selectProduct,
+      stockGroup,
+      total,
+      uomError,
+      uomOptions,
+      update,
+    ],
+  );
+
+  const table = useReactTable({
+    columns: COLUMNS,
+    data: visibleRows,
+    getRowId: (row) => row.key,
+    getCoreRowModel: getCoreRowModel(),
+    getRowCanExpand: () => true,
+    state: {
+      // The handle and the menu are edit-only; hidden rather than removed, so a saved column
+      // order holds in both views.
+      columnVisibility: { drag_handle: editing, row_actions: editing },
+      expanded: editing ? expanded : {},
+    },
+    onExpandedChange: setExpanded,
+    enableSorting: false,
+    columnResizeMode: 'onChange',
+  });
+
+  const renderSection = React.useCallback(
+    (row: GridRow) => {
+      const label = (row.staged.draft.band_label ?? '').trim();
+      return label || (editing && bandOpen.has(row.key)) ? (
+        <SectionBar row={row} />
+      ) : null;
+    },
+    [bandOpen, editing],
+  );
+
+  const galleryItems = preview ? galleries[preview.kind] : [];
+
+  return (
+    <GridContext.Provider value={context}>
+      <div className="min-w-0 space-y-2">
+        <DataGrid
+          table={table}
+          recordCount={visibleRows.length}
+          isLoading={false}
+          // Rows render under the default layout while the saved one loads, rather than as
+          // skeletons: an editor must never hide the lines somebody is about to type into.
+          loadingMode="spinner"
+          listingKey="projects.projects.view::quotation-lines"
+          tableLayout={{ width: 'fixed', columnsResizable: true, dense: true }}
+          tableClassNames={{ headerRow: 'text-xs' }}
+          emptyMessage={lines.length === 0 ? emptyHint : filterEmptyHint}
+          renderGroupHeader={renderSection}
+          rowClassName={(row: GridRow) =>
+            row.staged.removed
+              ? 'text-muted-foreground line-through opacity-70'
+              : undefined
+          }
+        >
+          <div className="min-w-0 overflow-hidden rounded-lg border border-border">
+            <DataGridScroller>
+              <DataGridTableDndRows
+                handleDragEnd={handleRowDragEnd}
+                dataIds={visibleRows.map((row) => row.key)}
+                columnsDraggable
+              />
+            </DataGridScroller>
+            {editing && (
+              <div className="flex flex-wrap items-center gap-1 border-t border-border px-2 py-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-primary hover:text-primary"
+                  onClick={() => addLine(false)}
+                >
+                  <Plus className="size-4" aria-hidden />
+                  Add a line
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-primary hover:text-primary"
+                  onClick={() => addLine(true)}
+                >
+                  <Plus className="size-4" aria-hidden />
+                  Add a section
+                </Button>
+              </div>
+            )}
+          </div>
+        </DataGrid>
+
+        {/* The same viewer Resource Management uses. Mounted only while open. */}
+        {preview && galleryItems.length > 0 && (
+          <AttachmentPreviewModal
+            open
+            onOpenChange={(next) => {
+              if (!next) setPreview(null);
+            }}
+            items={galleryItems}
+            startIndex={preview.index}
+          />
+        )}
+      </div>
+    </GridContext.Provider>
+  );
+}
