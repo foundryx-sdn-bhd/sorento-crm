@@ -250,6 +250,7 @@ def resolve_theme(stored: Optional[dict[str, Any]], defaults: dict[str, Any]) ->
     """Stored overrides over defaults. A stored value that no longer validates is ignored
     field by field (logged), so one bad value can never stop mail from rendering."""
     merged = dict(defaults)
+    footer_overridden = False
     for key, value in (stored or {}).items():
         if key not in EmailTheme.model_fields or value is None or value == "":
             continue
@@ -259,6 +260,11 @@ def resolve_theme(stored: Optional[dict[str, Any]], defaults: dict[str, Any]) ->
             logger.warning("email theme field %s ignored: %s", key, exc)
             continue
         merged[key] = getattr(checked, key)
+        footer_overridden = footer_overridden or key == "footer_note"
+    if not footer_overridden:
+        # The default sentence names the company the theme actually uses, so a name set on
+        # the Email Theme screen reaches the footer too, not only the header.
+        merged["footer_note"] = DEFAULT_FOOTER_NOTE.format(company=merged["company_name"])
     if not merged.get("button_color"):
         merged["button_color"] = merged["primary_color"]
     socials = merged.get("social_links") or []

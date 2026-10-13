@@ -446,6 +446,11 @@ export interface SalesOrderLineInquiry {
    */
   inquiry_id?: string | null;
   row_id?: string | null;
+  /** PR 1622 (mock v3): set only while purchasing's refusal of this line is open. */
+  ack_state?: string | null;
+  rejected_reason?: string | null;
+  rejected_by_name?: string | null;
+  rejected_at?: string | null;
 }
 
 export interface SalesOrder {

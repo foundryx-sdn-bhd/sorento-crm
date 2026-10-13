@@ -35,6 +35,7 @@ import { spoDetailHref, spoNumberFromLabel } from '@/lib/spo-detail';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
 import { DecisionTrailButton } from '../../_shared/components/DecisionTrailButton';
 import { OrderInquiryStatePill } from '../../_shared/components/OrderInquiryVerbPill';
+import { OrderInquiryRejectedBadge } from '../../_shared/components/OrderInquiryRejectedBadge';
 import {
   PILL_TONE,
   SHORT_LABELS,
@@ -935,11 +936,20 @@ export function BoardCellBreakdownDialog({
               >
                 {inquiry.inquiry_no ?? '-'}
               </span>
-              <OrderInquiryStatePill state={inquiry.state} />
+              {/* PR 1622 (owner, mock v3): an open purchasing refusal is this inquiry's
+                  status, with who/when/why behind the info icon. */}
+              {inquiry.ack_state === 'rejected' ? (
+                <OrderInquiryRejectedBadge
+                  refusal={inquiry}
+                  testId={`breakdown-oi-rejected-${row.original.key}`}
+                />
+              ) : (
+                <OrderInquiryStatePill state={inquiry.state} />
+              )}
             </div>
           );
         },
-        size: 110,
+        size: 190,
         minSize: 90,
         meta: { headerTitle: 'Order inquiry' },
       },

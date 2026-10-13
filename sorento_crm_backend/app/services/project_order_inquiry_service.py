@@ -42,6 +42,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -178,6 +179,11 @@ _HANDOVER_COMMITTED_TX_KEY = "oi_handover_committed_tx"
 #: `_HANDOVER_PENDING_KEY` / `_HANDOVER_COMMITTED_TX_KEY` above, copied not adapted.
 _UNDO_PENDING_KEY = "oi_undo_pending"
 _UNDO_COMMITTED_TX_KEY = "oi_undo_committed_tx"
+
+#: `Session.info` key for the `order_inquiry_rejected` email + the raiser's in-app notice
+#: (`PLAN-oi-reject-notify-13oct.md`), one item per order inquiry a reject touched, queued
+#: by `_uncover_and_notify_rejection` and fired once the session actually commits.
+_REJECT_PENDING_KEY = "oi_reject_pending"
 
 #: #1312 (Q4, grill recommended answer): the handover email's own attachment budget -
 #: Google Workspace allows 25 MB per message including ~33% base64 overhead, so 15 MB
@@ -1742,6 +1748,14 @@ class ProjectOrderInquiryService:
                     raised_row.note = (
                         f"Planning keeps this Buy: {entry['landed_note']} stay linked "
                         "to this line; adjust the linkage if the Buy replaces them"
+                    )
+                if entry.get("cs_note"):
+                    # PR 1622 (owner, 13 Oct): CS's own words on this Buy reach purchasing
+                    # here, the row's "Why this instruction" on the worklist.
+                    # `;` joins a note's fragments, so it never appears inside one (review N1).
+                    cs_note = "CS: " + str(entry["cs_note"]).replace(";", ",")
+                    raised_row.note = (
+                        f"{raised_row.note}; {cs_note}" if raised_row.note else cs_note
                     )
                 if redirected_this_call:
                     # AC-OH-40..42: the fresh row states, in one place, what old supply it
@@ -4682,6 +4696,11 @@ class ProjectOrderInquiryService:
                 OrderInquiryRow.verb.in_((IV_ORDER, IV_CANCEL_BALANCE)),
                 OrderInquiryRow.supply_decision_id.isnot(None),
                 OrderInquiryRow.supply_decision_id != decision.id,
+                # The same rule as the branch above, for the reject on a MULTI-line order:
+                # `uncover_lines` re-confirms the rest of the order through this branch,
+                # and retiring the refused row here left the board (which skips cancelled
+                # rows) with nothing to say why the line came back (PR 1622 hand test).
+                OrderInquiryRow.ack_state != ACK_REJECTED,
             )
         stale = query.all()
         # SO422492 BUG A: a line AutoCount changed that CS has not decided yet leaves the
@@ -7036,6 +7055,146 @@ class ProjectOrderInquiryService:
         self._reject_one(row, reason=text_reason, actor_user_id=actor_user_id)
         return self.serialize_rows([row])[0]
 
+    def _uncover_and_notify_rejection(
+        self, rows: Sequence[OrderInquiryRow], *, reason: str, actor_user_id: str
+    ) -> None:
+        """Uncover the refused lines, then queue the raiser's notice (`PLAN-oi-reject-
+        notify-13oct.md`).
+
+        The notice is BUILT before the uncover, which re-confirms the order and may retire
+        or re-raise rows. Any handover email the uncover's re-confirm queued is dropped:
+        it would tell purchasing, in the decider's name, about a change purchasing just
+        made themselves.
+        """
+        notices = self._rejection_notices(rows, reason=reason, actor_user_id=actor_user_id)
+        handover_before = len(self.db.info.get(_HANDOVER_PENDING_KEY) or [])
+        self._uncover_rejected_lines(rows, actor_user_id=actor_user_id)
+        handover = self.db.info.get(_HANDOVER_PENDING_KEY)
+        if handover is not None:
+            del handover[handover_before:]
+            if not handover:
+                self.db.info.pop(_HANDOVER_PENDING_KEY, None)
+        if notices:
+            tx_chain = _transaction_chain(self.db)
+            for notice in notices:
+                notice["tx_chain"] = tx_chain
+            self.db.info.setdefault(_REJECT_PENDING_KEY, []).extend(notices)
+
+    def _rejection_notices(
+        self, rows: Sequence[OrderInquiryRow], *, reason: str, actor_user_id: str
+    ) -> List[Dict[str, Any]]:
+        """One `order_inquiry_rejected` context per order inquiry the refused rows belong
+        to: a batch spanning two inquiries tells each raiser about their own lines only.
+
+        `raiser` is `None` when the raiser IS the rejecter, or is not an active user:
+        nobody to tell. The automation still runs so an admin-added recipient hears.
+        """
+        from app.config import settings
+        from app.models.user import User
+        from app.services.automation_triggers import build_order_inquiry_link
+
+        by_inquiry: Dict[str, List[OrderInquiryRow]] = {}
+        for row in rows:
+            by_inquiry.setdefault(str(row.order_inquiry_id), []).append(row)
+        actor = self._handover_actor(actor_user_id)
+        action_id = str(uuid.uuid4())
+        notices: List[Dict[str, Any]] = []
+        for inquiry_id, inquiry_rows in by_inquiry.items():
+            inquiry = (
+                self.db.query(OrderInquiry).filter(OrderInquiry.id == inquiry_id).first()
+            )
+            if inquiry is None:
+                continue
+            facts = self._handover_order_facts(inquiry.project_sales_order_id)
+            raiser = None
+            raiser_id = str(inquiry.raised_by) if inquiry.raised_by else None
+            if raiser_id and raiser_id != str(actor_user_id):
+                user = self.db.query(User).filter(User.id == raiser_id).first()
+                if (
+                    user is not None
+                    and user.email
+                    and user.status == "ACTIVE"
+                    and not user.is_trashed
+                ):
+                    raiser = {"name": user.name or user.email, "email": user.email}
+            rejected_at = max(
+                (row.rejected_at for row in inquiry_rows if row.rejected_at),
+                default=None,
+            ) or datetime.utcnow()
+            lines = [
+                {
+                    "item_code": row.item_code,
+                    "qty": _qty_str(row.qty),
+                    "delivery_date": (
+                        row.delivery_date.strftime("%d/%m/%Y")
+                        if row.delivery_date
+                        else None
+                    ),
+                }
+                for row in inquiry_rows
+            ]
+            # Where CS acts on it (owner, mock v3): the SALES ORDER page, Lines tab, on the
+            # first refused line (`?line=` highlights one row; every refused line carries
+            # the Rejected badge). The context key stays `board_link` so the seeded
+            # template is unchanged. No core SO (a draft never published) leaves only the
+            # inquiry to open.
+            board_path = None
+            pso = (
+                self.db.query(ProjectSalesOrder)
+                .filter(ProjectSalesOrder.id == inquiry.project_sales_order_id)
+                .first()
+                if inquiry.project_sales_order_id
+                else None
+            )
+            if pso is not None and pso.so_id:
+                mirror_lines = (
+                    self.db.query(ProjectSalesOrderLine)
+                    .filter(
+                        ProjectSalesOrderLine.id.in_(
+                            [str(row.so_line_id) for row in inquiry_rows if row.so_line_id]
+                        )
+                    )
+                    .all()
+                )
+                first = min(
+                    (ml for ml in mirror_lines if ml.core_sales_order_line_id),
+                    key=lambda ml: (ml.line_no or 0),
+                    default=None,
+                )
+                board_path = f"/scm/sales-orders/{pso.so_id}?tab=lines" + (
+                    f"&line={first.core_sales_order_line_id}" if first is not None else ""
+                )
+            frontend = (settings.frontend_base_url or "").rstrip("/")
+            notices.append(
+                {
+                    "inquiry_id": inquiry_id,
+                    "board_path": board_path,
+                    "action_id": action_id,
+                    "raiser_user_id": raiser_id if raiser else None,
+                    "context": {
+                        "reject": {
+                            "inquiry_no": inquiry.inquiry_no,
+                            "so_number": facts.get("so_number"),
+                            "customer": facts.get("customer"),
+                            "project": facts.get("project"),
+                            "reason": reason,
+                            "rejected_at": rejected_at.replace(tzinfo=timezone.utc)
+                            .astimezone(_MY_TZ)
+                            .strftime("%d/%m/%Y %H:%M"),
+                            "lines": lines,
+                            "line_count": len(lines),
+                            "link": build_order_inquiry_link(inquiry_id),
+                            "board_link": (
+                                f"{frontend}{board_path}" if board_path else None
+                            ),
+                        },
+                        "actor": actor,
+                        "raiser": raiser,
+                    },
+                }
+            )
+        return notices
+
     def reject_rows(
         self, row_ids: Sequence[str], *, reason: str, actor_user_id: str
     ) -> Dict[str, Any]:
@@ -7060,7 +7219,9 @@ class ProjectOrderInquiryService:
             self._assert_rejectable(row)
         for row in rows:
             self._stamp_rejected(row, reason=text_reason, actor_user_id=actor_user_id)
-        self._uncover_rejected_lines(rows, actor_user_id=actor_user_id)
+        self._uncover_and_notify_rejection(
+            rows, reason=text_reason, actor_user_id=actor_user_id
+        )
         return {
             "rejected": len(rows),
             "results": [{"row_id": str(row.id), "ok": True} for row in rows],
@@ -7106,7 +7267,7 @@ class ProjectOrderInquiryService:
         written between two refusals moves the rows the second one is about.
         """
         self._stamp_rejected(row, reason=reason, actor_user_id=actor_user_id)
-        self._uncover_rejected_line(row, actor_user_id=actor_user_id)
+        self._uncover_and_notify_rejection([row], reason=reason, actor_user_id=actor_user_id)
 
     def _stamp_rejected(
         self, row: OrderInquiryRow, *, reason: str, actor_user_id: str
@@ -7133,24 +7294,18 @@ class ProjectOrderInquiryService:
         self.db.flush()
         self._refresh_inquiry_states({row.order_inquiry_id})
 
-    def _uncover_rejected_line(self, row: OrderInquiryRow, *, actor_user_id: str) -> None:
-        """Send the rejected row's sales-order line back to the board undecided.
+    def _uncover_rejected_lines(
+        self, rows: Sequence[OrderInquiryRow], *, actor_user_id: str
+    ) -> None:
+        """Send the rejected rows' sales-order lines back to the board undecided: one call
+        per sales order, every refused line of that order named in it.
 
         NOT best-effort: every failure below this point takes the rejection down with it,
         because a row marked rejected on a line the board still reads as decided and
         promised is the exact state the board exists to make impossible. What it DOES
         answer quietly is a row that traces to no line at all - an amendment exception, a
         form row the book carries no line for. That row has no decision to uncover, which
-        is an ordinary outcome and not a failure. Everything else goes through the ONE
-        seam: a fresh revision carrying every line but this one.
-        """
-        self._uncover_rejected_lines([row], actor_user_id=actor_user_id)
-
-    def _uncover_rejected_lines(
-        self, rows: Sequence[OrderInquiryRow], *, actor_user_id: str
-    ) -> None:
-        """The same un-decide for a BATCH: one call per sales order, every refused line of
-        that order named in it.
+        is an ordinary outcome and not a failure.
 
         Grouped rather than looped (B4): each call writes a revision of the WHOLE order, so
         a second call for a sibling line would be undoing and redoing the first one's work
@@ -12186,5 +12341,98 @@ def register_order_inquiry_post_commit_dispatch() -> None:
                 session.info[_UNDO_PENDING_KEY] = undo_kept
             else:
                 session.info.pop(_UNDO_PENDING_KEY, None)
+
+        # Same C2 rule for the reject notices.
+        reject_pending = session.info.get(_REJECT_PENDING_KEY)
+        if reject_pending:
+            reject_kept = [
+                item
+                for item in reject_pending
+                if not any(
+                    tx is previous_transaction for tx in item.get("tx_chain") or ()
+                )
+            ]
+            if reject_kept:
+                session.info[_REJECT_PENDING_KEY] = reject_kept
+            else:
+                session.info.pop(_REJECT_PENDING_KEY, None)
+
+    @event.listens_for(Session, "after_commit")
+    def _fire_pending_reject(session):  # noqa: ANN001
+        """One `order_inquiry_rejected` email and one in-app notice to the raiser per
+        order inquiry a reject touched (`PLAN-oi-reject-notify-13oct.md`), on a FRESH
+        session for the reason `_fire_pending_changed_with_links` gives. Each item is
+        its own try: one inquiry's failure never costs another raiser their notice.
+
+        `after_commit` fires on every savepoint release too, so a release while a nested
+        transaction is still open (see `_mark_handover_transaction_committed`) is not the
+        commit this waits for: the queue stays put until the root commits.
+        """
+        if session.info.get("confirm_preview"):
+            return
+        if session.get_nested_transaction() is not None:
+            return
+        pending = session.info.pop(_REJECT_PENDING_KEY, None)
+        if not pending:
+            return
+        from app.database import SessionLocal
+        from app.services.automation_service import AutomationService
+        from app.services.notification_service import NotificationService
+
+        fresh = SessionLocal()
+        try:
+            for item in pending:
+                try:
+                    AutomationService(fresh).dispatch_event(
+                        "order_inquiry_rejected",
+                        context=item["context"],
+                        source_kind="order_inquiry",
+                        source_id=item["inquiry_id"],
+                    )
+                except Exception:  # noqa: BLE001 - a post-commit side effect never raises
+                    fresh.rollback()
+                    logger.exception(
+                        "Automation dispatch(order_inquiry_rejected) failed for %s",
+                        item.get("inquiry_id"),
+                    )
+                if not item.get("raiser_user_id"):
+                    continue
+                reject = item["context"]["reject"]
+                count = reject["line_count"]
+                lines_word = "line" if count == 1 else "lines"
+                heading = " ".join(
+                    part for part in (reject.get("so_number"), reject.get("customer")) if part
+                )
+                body = f"Reason: {reject['reason']}"
+                if heading:
+                    body = f"{heading}. {body}"
+                try:
+                    NotificationService(fresh).create_in_app_only(
+                        user_id=item["raiser_user_id"],
+                        type="info",
+                        title=(
+                            f"{reject['inquiry_no']}: {count} {lines_word} rejected "
+                            "by purchasing"
+                        ),
+                        body=body,
+                        data={
+                            # The app-relative path, so the bell routes in-app
+                            # (`NotificationItem.tsx` `toInternalPath`).
+                            "link": item.get("board_path")
+                            or f"/project-sales/order-inquiries/{item['inquiry_id']}",
+                        },
+                        source_entity_type="order_inquiry",
+                        source_entity_id=item["inquiry_id"],
+                        dedup_key=f"{item['inquiry_id']}:rejected:{item['action_id']}",
+                        event_type="order_inquiry_rejected",
+                    )
+                except Exception:  # noqa: BLE001 - a post-commit side effect never raises
+                    fresh.rollback()
+                    logger.exception(
+                        "In-app notice (order_inquiry_rejected) failed for %s",
+                        item.get("inquiry_id"),
+                    )
+        finally:
+            fresh.close()
 
     _POST_COMMIT_DISPATCH_REGISTERED = True
