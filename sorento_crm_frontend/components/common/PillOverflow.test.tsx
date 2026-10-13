@@ -145,6 +145,17 @@ describe('PillOverflow: fitting pills to the container it measures', () => {
     expect(row.getByText('+2')).toBeInTheDocument();
   });
 
+  it('leaves room for "+N" on the same line rather than wrapping it under the pills', () => {
+    // Two 100px pills fit 260px (204), but not with a 60px "+1" beside them (268): one pill
+    // and "+2" keep the row to one line (Project Sales brands, owner 13 Oct).
+    containerWidth = 260;
+    const row = renderPills();
+
+    expect(row.getByText('AAA')).toBeInTheDocument();
+    expect(row.queryByText('BBB')).not.toBeInTheDocument();
+    expect(row.getByText('+2')).toBeInTheDocument();
+  });
+
   it('reflows to the whole set once the observed container grows, with no remount (AC-3b.1)', async () => {
     containerWidth = 160;
     const row = renderPills();

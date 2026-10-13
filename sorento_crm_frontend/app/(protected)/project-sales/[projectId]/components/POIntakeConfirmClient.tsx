@@ -182,7 +182,7 @@ export function POIntakeConfirmClient({
 
   const crumbs = [
     { title: 'Project Sales' },
-    { title: 'Pipeline', path: '/project-sales/pipeline' },
+    { title: 'Projects', path: '/project-sales/pipeline' },
     { title: project.data?.title ?? 'Project', path: `/project-sales/${projectId}` },
   ];
 
@@ -358,7 +358,7 @@ export function POIntakeConfirmClient({
   );
 }
 
-const CRUMBS_LOADING = [{ title: 'Project Sales' }, { title: 'Pipeline', path: '/project-sales/pipeline' }];
+const CRUMBS_LOADING = [{ title: 'Project Sales' }, { title: 'Projects', path: '/project-sales/pipeline' }];
 
 /** The one status pill the header carries: what stage of reading and confirming it is at. */
 function StatusPill({ version }: { version: POVersion }) {

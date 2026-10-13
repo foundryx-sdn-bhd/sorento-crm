@@ -280,6 +280,13 @@ class ProjectResponse(BaseModel):
     lead_created_at: Optional[datetime] = None
     lead_owner_user_id: Optional[str] = None
 
+    # The customer, read through the lead (a project has no customer column of its own).
+    # Null with no lead, or with a lead whose buyer is not known yet.
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_attn: Optional[str] = None
+
     status_id: Optional[str] = None
     status_key: Optional[str] = None
     status_label: Optional[str] = None

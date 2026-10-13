@@ -9,7 +9,7 @@
  */
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 if (!window.matchMedia) {
@@ -70,24 +70,36 @@ vi.mock('@/components/common/SearchableSelect', () => ({
     onChange,
     options,
     placeholder,
+    id,
+    createOption,
   }: {
     value: string;
     onChange: (next: string) => void;
     options?: { value: string; label: string }[];
     placeholder?: string;
+    id?: string;
+    createOption?: { label: (q: string) => React.ReactNode; onCreate: (q: string) => void };
   }) => (
-    <select
-      aria-label={placeholder ?? 'select'}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-    >
-      <option value="">{placeholder ?? ''}</option>
-      {(options ?? []).map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+    <>
+      <select
+        id={id}
+        aria-label={placeholder ?? 'select'}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">{placeholder ?? ''}</option>
+        {(options ?? []).map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {createOption ? (
+        <button type="button" onClick={() => createOption.onCreate('Gamuda Builders')}>
+          {createOption.label('Gamuda Builders')}
+        </button>
+      ) : null}
+    </>
   ),
 }));
 
@@ -152,10 +164,13 @@ describe('LeadWizardDialog', () => {
     next();
 
     expect(await screen.findByLabelText('Their reference')).toBeInTheDocument();
+    // The stepper names the step; the fieldset does not print it a second time.
+    expect(screen.getAllByText('Who told us')).toHaveLength(2); // sr-only circle + label
+
     expect(screen.getByLabelText('Contact name')).toBeInTheDocument();
-    expect(screen.getByLabelText('Often none')).toBeInTheDocument();
+    expect(screen.getByLabelText('Search firms')).toBeInTheDocument();
     // The buyer is nowhere near this step.
-    expect(screen.queryByLabelText('Usually not known yet')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Search buyers')).not.toBeInTheDocument();
   });
 
   it('records a lead with an informant and no buyer at all', async () => {
@@ -169,7 +184,7 @@ describe('LeadWizardDialog', () => {
     });
     next();
 
-    fireEvent.change(await screen.findByLabelText('-'), {
+    fireEvent.change(await screen.findByLabelText('Select a source'), {
       target: { value: 'bci' },
     });
     fireEvent.change(screen.getByLabelText('Their reference'), {
@@ -181,10 +196,10 @@ describe('LeadWizardDialog', () => {
     next();
 
     // Buyer step: deliberately left empty.
-    expect(await screen.findByLabelText('Usually not known yet')).toHaveValue('');
+    expect(await screen.findByLabelText('Search buyers')).toHaveValue('');
     next();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Record lead' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Create lead' }));
 
     await waitFor(() => expect(createLead).toHaveBeenCalledTimes(1));
     expect(createLead).toHaveBeenCalledWith(
@@ -212,14 +227,14 @@ describe('LeadWizardDialog', () => {
     next();
     next();
 
-    const owner = await screen.findByLabelText('Leave with marketing for now');
+    const owner = await screen.findByLabelText('Select a salesperson');
     await waitFor(() => expect(getUserLookup).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getByRole('option', { name: 'Ali' })).toBeInTheDocument(),
     );
     fireEvent.change(owner, { target: { value: 'u-ali' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Record lead' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create lead' }));
 
     await waitFor(() => expect(assignLead).toHaveBeenCalledTimes(1));
     expect(assignLead).toHaveBeenCalledWith('l1', {
@@ -239,12 +254,12 @@ describe('LeadWizardDialog', () => {
     next();
     next();
 
-    const owner = await screen.findByLabelText('Leave with marketing for now');
+    const owner = await screen.findByLabelText('Select a salesperson');
     await waitFor(() =>
       expect(screen.getByRole('option', { name: 'Ali' })).toBeInTheDocument(),
     );
     fireEvent.change(owner, { target: { value: 'u-ali' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Record lead' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create lead' }));
 
     await waitFor(() => expect(createLead).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
@@ -257,7 +272,7 @@ describe('LeadWizardDialog', () => {
       target: { value: 'Tower behind the showroom' },
     });
     next();
-    fireEvent.change(await screen.findByLabelText('-'), {
+    fireEvent.change(await screen.findByLabelText('Select a source'), {
       target: { value: 'referral' },
     });
     next();
@@ -265,5 +280,101 @@ describe('LeadWizardDialog', () => {
 
     expect(await screen.findByText('Not known yet')).toBeInTheDocument();
     expect(screen.getByText('Referral')).toBeInTheDocument();
+  });
+
+  it('is titled Create lead and carries no explanatory prose (owner, 13 Oct)', () => {
+    renderWizard();
+    expect(screen.getByRole('heading', { name: 'Create lead' })).toBeInTheDocument();
+    expect(screen.queryByText(/A lead claims nothing/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Vague is fine/)).not.toBeInTheDocument();
+  });
+
+  it('shows progress as a numbered stepper, not a row of badges', () => {
+    renderWizard();
+    const steps = screen.getByRole('list', { name: 'Steps' });
+    expect(steps).toBeInTheDocument();
+    expect(within(steps).getAllByRole('listitem')).toHaveLength(4);
+    expect(
+      within(steps).getByText('The development').closest('[aria-current="step"]'),
+    ).not.toBeNull();
+  });
+
+  it('offers to create the buyer from inside the dropdown when nothing matches', async () => {
+    renderWizard();
+    fireEvent.change(screen.getByLabelText(/What is it/), {
+      target: { value: 'Tower behind the showroom' },
+    });
+    next();
+    next();
+
+    expect(screen.queryByText(/The buyer is not a customer yet/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No match. Create the buyer instead/)).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Create .Gamuda Builders./ }));
+    expect(screen.getByLabelText(/Buyer name/)).toHaveValue('Gamuda Builders');
+    next();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Create lead' }));
+    await waitFor(() => expect(createLead).toHaveBeenCalledTimes(1));
+    expect(createLead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer_id: null,
+        new_customer: expect.objectContaining({ customer_name: 'Gamuda Builders' }),
+      }),
+    );
+  });
+
+  it('lists who told us as separate labelled fields, never a dot-joined line', async () => {
+    renderWizard();
+    fireEvent.change(screen.getByLabelText(/What is it/), {
+      target: { value: 'Tower behind the showroom' },
+    });
+    next();
+    fireEvent.change(await screen.findByLabelText('Select a source'), {
+      target: { value: 'referral' },
+    });
+    fireEvent.change(screen.getByLabelText('Contact name'), {
+      target: { value: 'Lim' },
+    });
+    next();
+    next();
+
+    await screen.findByText('Referral');
+    expect(screen.getByText('Source')).toBeInTheDocument();
+    expect(screen.getByText('Contact')).toBeInTheDocument();
+    expect(screen.getByText('Lim')).toBeInTheDocument();
+    expect(screen.queryByText(/ · /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/They accept or decline it/)).not.toBeInTheDocument();
+  });
+
+  it('starts from a title handed in by the caller and reports the created lead', async () => {
+    const client = new QueryClient();
+    const onDone = vi.fn();
+    render(
+      <QueryClientProvider client={client}>
+        <LeadWizardDialog onDone={onDone} initialTitle="Setia Alam Phase 3B" />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByLabelText(/What is it/)).toHaveValue('Setia Alam Phase 3B');
+    next();
+    next();
+    next();
+    fireEvent.click(await screen.findByRole('button', { name: 'Create lead' }));
+    await waitFor(() =>
+      expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ id: 'l1' })),
+    );
+  });
+
+  it('does not let its submit bubble to a form it is opened from', async () => {
+    const outerSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
+    const client = new QueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <form onSubmit={outerSubmit}>
+          <LeadWizardDialog onDone={vi.fn()} initialTitle="Tower" />
+        </form>
+      </QueryClientProvider>,
+    );
+    next();
+    expect(outerSubmit).not.toHaveBeenCalled();
   });
 });
