@@ -787,7 +787,12 @@ function FormLines({
                 Edit scope
               </Button>
               {canRemove && (
-                <Button type="button" size="sm" variant="outline" onClick={() => onRemove(active)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => onRemove(active)}
+                >
                   <Trash2 className="size-4" aria-hidden />
                   Remove scope
                 </Button>

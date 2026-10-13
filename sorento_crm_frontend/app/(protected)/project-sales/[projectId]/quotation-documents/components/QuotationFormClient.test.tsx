@@ -580,7 +580,11 @@ describe('QuotationFormClient create', () => {
     await openLines();
 
     const added = await addScope('Guard House');
-    fireEvent.click(within(added).getByRole('button', { name: 'Remove scope' }));
+    // Owner, 13 Oct: a red destructive button with the trash icon, not an outline one.
+    const remove = within(added).getByRole('button', { name: 'Remove scope' });
+    expect(remove.className).toMatch(/bg-destructive/);
+    expect(remove.querySelector('svg')).not.toBeNull();
+    fireEvent.click(remove);
 
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Guard House' })).toBeNull());
     expect(screen.getByRole('region', { name: 'Scope 1' })).toBeInTheDocument();
