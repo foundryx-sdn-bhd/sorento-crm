@@ -1748,6 +1748,10 @@ def test_a_buy_the_board_cannot_avoid_still_says_borrowing_is_possible():
             own.warehouse_code,
         ]
         assert "borrow" in contribution["sources"][-1]["reason"].lower()
+        # BORROW-OWN-LOC review S4: the own location's 0-free row is never named as a place
+        # borrowing is possible from.
+        offered = contribution["sources"][-1]["reason"].split("Borrowing is possible from")[1]
+        assert own.warehouse_code not in offered, offered
         # AC-V4: the note and step 1 are ONE statement. This line's location carries no
         # ownership group, so step 1 has no "our locations" to draw from - and the donor is
         # still on the row's own candidate list, which is what the Buy's sentence names.
