@@ -23,6 +23,27 @@ Per-file timing in the log: about 1.4s per file, back to back, including 10ms pu
 `.ts` files. That is a single worker paying jsdom environment + setup per file in series
 (`environment 291s, setup 153s` of the 1131s).
 
+## Why it is not a hang
+
+Vitest 4.1.1 `Vitest.exit()` (`node_modules/vitest/dist/chunks/cli-api.*.js`) arms an
+unref'd `teardownTimeout` (10s default) timer that prints `close timed out after ...` and
+calls `process.exit()`. A process that cannot exit after its summary is killed 10s later
+with that warning. Neither cancelled log contains it. A `hanging-process` reporter or a
+lower `teardownTimeout` would add nothing: the fail-fast on a real hang already exists.
+
 ## Fix
 
-To be filled in from local measurements (see below).
+Vitest's default `maxWorkers` is `availableParallelism - 1`, which is 1 on the 2-vCPU
+runner. `vitest.config.ts` now sets `maxWorkers: os.availableParallelism()` under `CI`
+(the same switch `retry` already uses), so both CI vitest steps (the shards and the
+`--changed` PR job) use both cores. Local runs keep the default.
+
+Measured in the sandbox, `CI=true taskset -c 0,1` (two CPUs, as on the runner):
+
+| Run | Workers | Duration | Result |
+| --- | --- | --- | --- |
+| `--shard=2/16` | default (1) | 227.1s | 95 files / 925 tests green |
+| `--shard=2/16` | 2 | 149.5s | 95 files / 925 tests green |
+
+`timeout-minutes: 20` stays; its comment in `deploy.yml` now records the measured
+shard time. No product or test code changes.
