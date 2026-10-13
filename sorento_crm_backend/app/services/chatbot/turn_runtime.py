@@ -1782,6 +1782,9 @@ def _report_status_means_order_domain(out: dict[str, Any]) -> None:
         return
     report_statuses = OUTSTANDING_ORDER_STATUS | set(contracts.SALES_FIGURE_STATUSES)
     status = jsc.js_string(out.get("status") or "").strip()
+    if jsc.js_string(out.get("order_status") or "").strip() in _EXPLICIT_REPORT_STATUSES:
+        # An explicit sales report status of the parser's own beats the v3 `status` key beside it.
+        status = jsc.js_string(out.get("order_status") or "").strip()
     # PROMPT-DYNAMIC reviewer pass 2: the parser can now name `sales` off the switch word
     # ("sales orders for hanlim") with no sales status. Only the three sales statuses are
     # the sales domain; anything else under `sales` is the order ask it was before R7.
@@ -1829,6 +1832,10 @@ def _picks_the_open_drill_offer(out: dict[str, Any], pending: Any) -> bool:
     return picked_positions(pending, out) is not None
 
 
+#: Order statuses the parser sets for a sales report ask; `status` beside one never overrides it.
+_EXPLICIT_REPORT_STATUSES = frozenset({"sales_ranking", "top_selling", "sales_report"})
+
+
 def _narrows_held_sales_report(out: dict[str, Any], pending: Any = None) -> bool:
     """The parser read a scoped sales ranking, or a plain sales report that names no domain word (its
     own refinement signal: `domain_in_message` strictly false, no topic reset), naming ONE product and no
@@ -1843,7 +1850,22 @@ def _narrows_held_sales_report(out: dict[str, Any], pending: Any = None) -> bool
         and out.get("domain_in_message") is False
         and out.get("topic_reset") is not True
     )
-    if not (scoped_ranking or refinement):
+    # A status-less reading ("only <code>" with no order_status): a sales domain (or none), no domain word,
+    # and the one product as the message's only entity. A dealer locator, a receivables ask and the like
+    # name another domain and never narrow a sales report.
+    from app.services.chatbot import contracts
+
+    current = [e for e in jsc.array(out.get("entities")) if isinstance(e, dict) and e.get("current_message") is not False]
+    status_less = (
+        not status
+        and not jsc.js_string(out.get("status") or "").strip()
+        and out.get("domain_hint") in (None, "", "order", contracts.SALES_DOMAIN)
+        and out.get("domain_in_message") is False
+        and out.get("topic_reset") is not True
+        and len(current) == 1
+        and jsc.nullish_str(current[0].get("hint")).strip().lower() == "product"
+    )
+    if not (scoped_ranking or refinement or status_less):
         return False
     if _picks_the_open_drill_offer(out, pending):
         return False
@@ -1936,6 +1958,10 @@ def lane_parse_output(
     if focus is not None and not document:
         document = list(focus.document)
     status = out.get("status") or (focus.status if focus is not None else None)
+    if out.get("status") and jsc.js_string(out.get("order_status") or "").strip() in _EXPLICIT_REPORT_STATUSES:
+        # The parser's own sales report status is never re-projected from its v3 `status` key beside it
+        # (a focus status still projects: it is what keeps a flipped answer inside the open top selling ask).
+        status = None
     if status:
         key = (",".join(sorted(document)), status)
         out["order_status"] = _DOCUMENT_STATUS_TO_ORDER_STATUS.get(key, status)
@@ -2010,6 +2036,19 @@ def lane_parse_output(
         from app.services.chatbot.turn.state import frame_from_report
 
         out["sales_ranking_frame"] = frame_from_report(focus.report)
+    if (
+        jsc.js_string(verdict.get("order_status") or "").strip() == "sales_report"
+        and verdict.get("scope_intent") == "specific"
+        and verdict.get("entity_op") == "replace"
+        and sum(
+            1 for e in jsc.array(out.get("entities"))
+            if isinstance(e, dict) and e.get("current_message") is not False
+            and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
+        ) == 1
+    ):
+        # The parser marked it "only that one" (a specific scope that replaces the subject): the exact code,
+        # held report or none. A family total ("total sales FAM") is not marked so.
+        out["sales_report_narrowed"] = True
     held_plain = focus.report if focus is not None and isinstance(focus.report, dict) and focus.report.get("kind") == "sales_report" else None
     if held_plain is not None and _narrows_held_sales_report(verdict, pending or open_offer):
         # Read off the parser's own verdict: `out["order_status"]` was re-projected from the focus status above.

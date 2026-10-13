@@ -259,7 +259,13 @@ def as_ranking_refine(verdict: dict[str, Any], held_report: Any, top_selling_slo
     held_ranking = isinstance(held_report, dict) and bool(held_report) and not held_report.get("kind")
     if not held_ranking or (isinstance(top_selling_slot, dict) and top_selling_slot.get("asked")):
         return verdict
-    if jsc.js_string(verdict.get("group_by") or "").strip() or verdict.get("rank_group") is not None:
+    # The held ranking's own axis echoed back is no axis of its own; another axis is a new ask. A
+    # `rank_group` of "unclear" says nothing, like an absent one.
+    raw_group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
+    held_axis = _dict(held_report.get("args")).get("group_by")
+    if raw_group and GROUP_BY.get(raw_group, raw_group) != held_axis:
+        return verdict
+    if verdict.get("rank_group") not in (None, "unclear"):
         return verdict
     if verdict.get("domain_in_message") is not False or jsc.array(verdict.get("entities")):
         return verdict
@@ -310,6 +316,12 @@ def as_outstanding_ranking(verdict: dict[str, Any]) -> dict[str, Any]:
     """Engine seam, before `hold_words`: the parser read "top 5 customers ... outstanding" as the plain
     outstanding report but filled a ranking shape (an axis the sales ranking offers, and a count or a
     direction). That is a sales ranking on the outstanding basis; a plain outstanding ask names no axis."""
+    if (
+        jsc.js_string(verdict.get("order_status") or "").strip() == ASK_NAME
+        and verdict.get("status") == "outstanding"
+        and verdict.get("basis") == "outstanding"
+    ):
+        return {**verdict, "status": None}  # the v3 `status` key must not turn the ranking into the report
     if jsc.js_string(verdict.get("order_status") or "").strip() != "outstanding":
         return verdict
     group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
@@ -317,7 +329,7 @@ def as_outstanding_ranking(verdict: dict[str, Any]) -> dict[str, Any]:
         return verdict
     if verdict.get("top_n") is None and verdict.get("rank_direction") is None:
         return verdict
-    out = {**verdict, "order_status": ASK_NAME, "basis": verdict.get("basis") or "outstanding"}
+    out = {**verdict, "order_status": ASK_NAME, "basis": verdict.get("basis") or "outstanding", "status": None}
     if out.get("measure") is None:
         out["measure"] = {"quantity": "qty", "amount": "amount"}.get(out.get("rank_by"))
     return out
