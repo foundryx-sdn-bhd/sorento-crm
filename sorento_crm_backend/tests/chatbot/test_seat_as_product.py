@@ -29,7 +29,10 @@ WC_TWO = "ZZTWC8122"
 COVERS_TWO = ["ZZTSCBD333-UF", "ZZTSCBD333A-UF"]
 WC_NONE = "ZZTWC8999"
 OTHER = "ZZTWT5608"
-FITS = {"filters": [{"key": "fits", "value": None, "unit": None}]}
+#: The parse of a fit ask: `value` is the word of THIS message naming the other side.
+FITS = {"filters": [{"key": "fits", "value": "seat cover", "unit": None}]}
+#: The same filter with no other-side word in the message (a carried fit ask, or a leak).
+FITS_UNSAID = {"filters": [{"key": "fits", "value": None, "unit": None}]}
 
 #: One envelope for every tool: what differs between two turns is then only what the lane
 #: sent and how the existing structurer printed the same rows.
@@ -40,6 +43,13 @@ ENVELOPE = json.dumps(
         "items": [{"product_code": COVER_ONE, "quantity_on_hand": 11}],
     }
 )
+
+
+def _seed_ids(session_factory) -> dict[str, str]:
+    from app.models.product import Product
+
+    db = session_factory()
+    return {code: str(pid) for pid, code in db.query(Product.id, Product.product_code).filter(Product.product_code.like("ZZT%"))}
 
 
 def _seed(session_factory) -> dict[str, str]:
@@ -445,3 +455,125 @@ def test_step7_a_bare_seat_cover_ask_continues_a_file_ask_like_the_bare_cover_co
     )
     assert a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)
+
+
+def _focus_codes(session_factory) -> list[str]:
+    from tests.chatbot.test_outstanding_lane import _session_of
+
+    focus = _session_of(session_factory).get("focus") or {}
+    return [
+        p.get("canonical_code") or p.get("code") for p in focus.get("products") or [] if isinstance(p, dict)
+    ]
+
+
+def test_c_after_a_seat_cover_answer_the_focus_holds_the_cover_codes(session_factory, monkeypatch) -> None:
+    """Crew live check row 12: "only the 333A one" after "seat cover for SRTWC8122" jumped to the WC,
+    while after the typed codes it narrows. The conversation's subject is what was answered."""
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_focus")
+    _turn(
+        session_factory, monkeypatch, text=f"stock {' '.join(COVERS_TWO)}", msg_id="ZZT-seat-focus-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(c) for c in COVERS_TWO],
+    )
+    control = _focus_codes(session_factory)
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_focus")
+    _turn(
+        session_factory, monkeypatch, text=f"stock seat cover for {WC_TWO}", msg_id="ZZT-seat-focus-asked",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_TWO)], find=FITS,
+    )
+    asked = _focus_codes(session_factory)
+    assert control, "the control must settle a focus"
+    assert asked == control, (asked, control)
+
+
+# --------------------------------------------------------------------------- across turns (crew v94 check)
+
+
+def test_x1_a_carried_relation_never_reaches_a_message_with_its_own_ask(session_factory) -> None:
+    """Row 7: after a seat-cover exchange, "SRTWC8383-RL-MBL technical drawing" (its own ask, no
+    other side said) was answered for the cover. The parser's own flags decide: nothing said,
+    and a domain word in the message."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    verdict = _verdict(WC_ONE, find=FITS_UNSAID, domain_in_message=True)
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict)
+    assert out is verdict and lines == []
+
+
+def test_x2_pointing_at_an_answered_cover_is_a_narrowing_not_a_fit_ask(session_factory) -> None:
+    """Row 12: "only the 333A one" after the covers were answered. A carried relation does not
+    re-apply to a code the conversation just answered (it is on the focus)."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    verdict = _verdict(COVERS_TWO[1], find=FITS_UNSAID, domain_in_message=False)
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict, COVERS_TWO)
+    assert out is verdict and lines == []
+
+
+def test_x3_a_bare_new_code_after_a_fit_ask_carries_the_fit_ask(session_factory) -> None:
+    """Crew ruling 13 Oct: "SRTWC8122 seat cover" then "SRTWC8383-RL-MBL" is the same ask for the
+    new WC; the parser carries `fits` (BARE ENTITY CONTINUATION) with nothing said."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    verdict = _verdict(WC_ONE, find=FITS_UNSAID, domain_in_message=False)
+    out, _lines = find_lane.as_linked_products(_scoped(session_factory), verdict, COVERS_TWO)
+    assert _codes(out) == [COVER_ONE]
+
+
+def test_x4_said_in_this_message_applies_whatever_the_flags(session_factory) -> None:
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    verdict = _verdict(WC_ONE, domain_in_message=True)
+    out, _lines = find_lane.as_linked_products(_scoped(session_factory), verdict, [WC_ONE])
+    assert _codes(out) == [COVER_ONE]
+
+
+def test_x5_the_carry_through_the_engine_answers_the_new_wcs_cover(session_factory, monkeypatch) -> None:
+    """Two turns, real resolver: the bare WC after a seat-cover answer fetches ITS cover, exactly as
+    typing the cover code after that answer does."""
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"stock seat cover for {WC_TWO}", msg_id="ZZT-seat-x5-1",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_TWO)], find=FITS,
+    )
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_x5")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=COVER_ONE, msg_id="ZZT-seat-x5-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(COVER_ONE)],
+        domain_in_message=False,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_x5")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=WC_ONE, msg_id="ZZT-seat-x5-2",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_ONE)],
+        find=FITS_UNSAID, domain_in_message=False,
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+
+
+def test_x6_narrowing_through_the_engine_keeps_the_answered_cover(session_factory, monkeypatch) -> None:
+    """Row 12 end to end: a leaked `fits` on "only the 333A one" must fetch the 333A cover itself,
+    never swap it for its WC."""
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"stock seat cover for {WC_TWO}", msg_id="ZZT-seat-x6-1",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_TWO)], find=FITS,
+    )
+    _reply, calls = _turn(
+        session_factory, monkeypatch, text="only the 333A one", msg_id="ZZT-seat-x6-2",
+        domain_hint="inventory", intent_hint="check_stock",
+        entities=[{**_product(COVERS_TWO[1]), "current_message": True}], find=FITS_UNSAID,
+        domain_in_message=False, entity_op="replace",
+    )
+    ids = _seed_ids(session_factory)
+    assert calls and calls[-1][1].get("product_ids") == [ids[COVERS_TWO[1]]], calls
