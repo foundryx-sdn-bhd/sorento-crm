@@ -689,6 +689,12 @@ export interface QuotationLineDrawing {
   candidates?: QuotationLineFileCandidate[];
 }
 
+/** The photo and drawing cells for a product on a line not saved yet. */
+export interface QuotationLineImages {
+  product_image: QuotationLineImage;
+  technical_drawing: QuotationLineDrawing;
+}
+
 export interface QuotationLine {
   id: string;
   version_id: string;

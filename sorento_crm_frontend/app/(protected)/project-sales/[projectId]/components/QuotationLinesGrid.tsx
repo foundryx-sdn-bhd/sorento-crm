@@ -45,6 +45,7 @@ import {
   isDecimalString,
   multiplyMoney,
 } from '../../_shared/lib/money';
+import { useQuotationLineImages } from '../../_shared/hooks/useProjects';
 import { formatMyr } from './QuotationsPanel';
 import {
   emptyDraft,
@@ -61,6 +62,7 @@ import {
   QuotationLineFileCell,
   resolveLineFile,
   type LineFileKind,
+  type LineFileShown,
 } from './QuotationLineFileCell';
 import { QuotationStockChip } from './QuotationStockChip';
 import { LineFlags } from './QuotationLineFlags';
@@ -104,7 +106,10 @@ interface GridContextValue {
   isLast: (key: string) => boolean;
   bandOpen: Set<string>;
   closeEmptyBand: (key: string) => void;
-  openPreview: (kind: LineFileKind, attachmentId: string) => void;
+  openPreview: (kind: LineFileKind, shown: LineFileShown) => void;
+  /** Rows whose description was left at least once: an empty one is marked from then on. */
+  visited: Set<string>;
+  markVisited: (key: string) => void;
 }
 
 const GridContext = React.createContext<GridContextValue | null>(null);
@@ -168,15 +173,52 @@ function FileCell({ row, kind }: { row: GridRow; kind: LineFileKind }) {
   const grid = useGrid();
   const field = PICK_FIELD[kind];
   const { staged } = row;
+  const stored = fileLine(row, kind);
+  // No stored answer for this product (a new line, or a product picked in this session): ask for
+  // the product's own cells, the same answer a saved line with no picks gets.
+  const productId = staged.draft.product_id ?? '';
+  const live = useQuotationLineImages(!stored && productId ? productId : null);
+  const line = React.useMemo<QuotationLine | null>(() => {
+    if (stored) return stored;
+    if (!productId || !live.data) return null;
+    return {
+      ...(staged.line ?? {
+        id: row.key,
+        version_id: '',
+        is_non_standard: false,
+        is_below_floor: false,
+      }),
+      product_id: productId,
+      product_code:
+        grid.resolveProduct(staged.line, staged.draft)?.label ?? null,
+      image_attachment_id: null,
+      drawing_attachment_id: null,
+      product_image: live.data.product_image,
+      technical_drawing: live.data.technical_drawing,
+      unit_price: staged.draft.unit_price ?? '',
+      quantity: staged.draft.quantity ?? '',
+      line_total: '0',
+      sort_order: row.index,
+    };
+  }, [
+    grid,
+    live.data,
+    productId,
+    row.index,
+    row.key,
+    staged.draft,
+    staged.line,
+    stored,
+  ]);
   return (
     <QuotationLineFileCell
       kind={kind}
-      line={fileLine(row, kind)}
+      line={line}
       label={describeLine(staged.line, row.index)}
       pickedId={staged.draft[field] ?? ''}
       editable={grid.editing && !staged.removed}
       onPick={(attachmentId) => grid.update(row.key, { [field]: attachmentId })}
-      onPreview={(attachmentId) => grid.openPreview(kind, attachmentId)}
+      onPreview={(shown) => grid.openPreview(kind, shown)}
     />
   );
 }
@@ -261,10 +303,12 @@ function DescriptionCell({ row: tableRow }: CellContext<GridRow, unknown>) {
     );
   }
 
-  // Marked as it is typed, but never on a row nobody has typed into: empty is not wrong.
-  const message = isUntouched(staged.draft)
-    ? undefined
-    : lineErrors(staged.draft).description;
+  // Marked as it is typed, or once the cell has been left empty, but never on a row nobody has
+  // reached yet: empty is not wrong until somebody has been there.
+  const message =
+    isUntouched(staged.draft) && !grid.visited.has(row.key)
+      ? undefined
+      : lineErrors(staged.draft).description;
   const errorId = `${row.key}-description-error`;
   return (
     <div className="min-w-0">
@@ -280,6 +324,7 @@ function DescriptionCell({ row: tableRow }: CellContext<GridRow, unknown>) {
         onChange={(event) =>
           grid.update(row.key, { description: event.target.value })
         }
+        onBlur={() => grid.markVisited(row.key)}
       />
       {message && (
         <p id={errorId} className="mt-1 text-xs text-destructive">
@@ -875,9 +920,17 @@ export function QuotationLinesGrid({
   const [expanded, setExpanded] = React.useState<ExpandedState>({});
   const [bandOpen, setBandOpen] = React.useState<Set<string>>(() => new Set());
   const [preview, setPreview] = React.useState<{
-    kind: LineFileKind;
+    items: AttachmentPreviewItem[];
     index: number;
   } | null>(null);
+  const [visited, setVisited] = React.useState<Set<string>>(() => new Set());
+  const markVisited = React.useCallback(
+    (key: string) =>
+      setVisited((previous) =>
+        previous.has(key) ? previous : new Set(previous).add(key),
+      ),
+    [],
+  );
   const instanceKey = React.useId();
   const nextNewId = React.useRef(0);
 
@@ -1078,11 +1131,28 @@ export function QuotationLinesGrid({
   }, [allRows]);
 
   const openPreview = React.useCallback(
-    (kind: LineFileKind, attachmentId: string) => {
-      const index = galleries[kind].findIndex(
-        (item) => item.attachmentId === attachmentId,
+    (kind: LineFileKind, shown: LineFileShown) => {
+      const gallery = galleries[kind];
+      const index = gallery.findIndex(
+        (item) => item.attachmentId === shown.attachmentId,
       );
-      if (index >= 0) setPreview({ kind, index });
+      if (index >= 0) {
+        setPreview({ items: gallery, index });
+        return;
+      }
+      // A line not saved yet is not in the gallery (its picture is not stored anywhere): its
+      // own picture opens on its own.
+      setPreview({
+        items: [
+          {
+            id: shown.attachmentId,
+            name: shown.filename ?? kind,
+            url: shown.previewUrl,
+            downloadUrl: `/api/v1/resource-management/attachments/${shown.attachmentId}/download`,
+          },
+        ],
+        index: 0,
+      });
     },
     [galleries],
   );
@@ -1108,6 +1178,8 @@ export function QuotationLinesGrid({
       bandOpen,
       closeEmptyBand,
       openPreview,
+      visited,
+      markVisited,
     }),
     [
       act,
@@ -1118,6 +1190,7 @@ export function QuotationLinesGrid({
       fetchProducts,
       firstKey,
       lastKey,
+      markVisited,
       onToggleRemoved,
       onUomRetry,
       openPreview,
@@ -1129,6 +1202,7 @@ export function QuotationLinesGrid({
       uomError,
       uomOptions,
       update,
+      visited,
     ],
   );
 
@@ -1159,7 +1233,7 @@ export function QuotationLinesGrid({
     [bandOpen, editing],
   );
 
-  const galleryItems = preview ? galleries[preview.kind] : [];
+  const galleryItems = preview?.items ?? [];
 
   return (
     <GridContext.Provider value={context}>

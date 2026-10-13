@@ -1349,6 +1349,13 @@ class QuotationLineDrawingResponse(BaseModel):
     candidates: List[QuotationLineFileCandidate] = Field(default_factory=list)
 
 
+class QuotationLineImagesResponse(BaseModel):
+    """The photo and drawing cells for a product on a line not saved yet (no picks)."""
+
+    product_image: QuotationLineImageResponse
+    technical_drawing: QuotationLineDrawingResponse
+
+
 class ProjectQuotationLineResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -104,7 +104,7 @@ export function QuotationLineFileCell({
   pickedId: string;
   editable: boolean;
   onPick: (attachmentId: string) => void;
-  onPreview: (attachmentId: string) => void;
+  onPreview: (shown: LineFileShown) => void;
 }) {
   const [open, setOpen] = React.useState(false);
   if (!line) return null;
@@ -117,7 +117,7 @@ export function QuotationLineFileCell({
   const thumbnail = shown ? (
     <button
       type="button"
-      onClick={() => onPreview(shown.attachmentId)}
+      onClick={() => onPreview(shown)}
       className="block rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       title={shown.filename ?? undefined}
     >

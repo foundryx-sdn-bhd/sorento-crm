@@ -25,6 +25,7 @@ overwrite.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Sequence, Set
 
 from sqlalchemy import or_
@@ -187,6 +188,23 @@ def line_images(
     return cells
 
 
+def product_cells(db: Session, product_id: str) -> Dict[str, Any]:
+    """The photo and drawing cells of a line with this product and no picks yet, candidates included.
+
+    For a line that is not saved (or whose product was just changed): it has no row to read, but
+    the person editing it still needs the product's pictures and the picker. Answered through
+    ``line_images`` itself, so a draft and a saved line cannot be told two different things.
+    """
+    draft = SimpleNamespace(
+        id="draft",
+        version_id=None,
+        product_id=str(product_id),
+        image_attachment_id=None,
+        drawing_attachment_id=None,
+    )
+    return line_images(db, [draft])["draft"]
+
+
 def freeze_version_images(db: Session, version_id: str) -> int:
     """Stamp the photograph and the drawing onto every line of a version that has none.
 
@@ -239,4 +257,4 @@ def freeze_version_images(db: Session, version_id: str) -> int:
     return filled
 
 
-__all__ = ["freeze_version_images", "line_images", "resolved_attachment_ids"]
+__all__ = ["freeze_version_images", "line_images", "product_cells", "resolved_attachment_ids"]
