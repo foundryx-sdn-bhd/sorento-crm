@@ -54,7 +54,7 @@ the narrowing rows use brand and document type.
 | 17 | code with no 3D file + "3D" (truthful miss, escalation offer) / yes | escalates once about that code and type, no second ask |
 | 18 | photo for Srt8313 (bot asks something with a year, if it does) / 2026 | read as the answer to that question, never as a product code |
 | 19 | Srt8313 drawing / stock for Srt8313 / photo | topic switch to stock and back: turn 2 is the stock answer for SRT8313, turn 3 is SRT8313 photo(s), with no ask for the product |
-| 20 | Srt8308 drawing / any promotion for sorento? / Srt8313 | switch to promotions and back: turn 3 is a new attachment ask with no document type, so the bot asks the type for SRT8313. It must not answer a promotion and must not reuse the drawing type the promotion turn dropped |
+| 20 | Srt8308 drawing / any promotion for sorento? / drawing for Srt8313 | switch to promotions and back: turn 2 answers promotions only (no file); turn 3 is SRT8313's drawing. A bare "Srt8313" as turn 3 would correctly stay a promotion question (the prompt's bare-value rule keeps the last domain), so the back-switch names its document word |
 
 Row 18 only applies if the bot asks a question whose short answer is a year. Attachment turns do
 not ask one today, so crew can skip it when no such question appears.
