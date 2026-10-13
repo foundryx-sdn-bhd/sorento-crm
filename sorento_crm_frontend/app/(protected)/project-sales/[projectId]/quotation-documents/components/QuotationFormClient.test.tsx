@@ -355,12 +355,15 @@ async function openLines(scope = 'Scope 1') {
   return card;
 }
 
-/** The scope's name, typed straight into its card header (owner, 13 Oct), staged by the form. */
+/** The quotation page's Edit scope dialog: name (and series, notes), staged by the form. */
 async function nameScope(card: HTMLElement, label: string) {
-  fireEvent.change(within(card).getByRole('textbox', { name: 'Scope name' }), {
+  fireEvent.click(within(card).getByRole('button', { name: 'Edit scope' }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByRole('textbox', { name: /^Scope/ }), {
     target: { value: label },
   });
-  await waitFor(() => expect(screen.getByRole('region', { name: label })).toBeInTheDocument());
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 }
 
 /** The quotation page's Add a scope: the + at the end of the scope strip, then its name dialog. */
@@ -433,6 +436,21 @@ describe('QuotationFormClient create', () => {
     expect(screen.getByLabelText('Attn')).toHaveValue('');
   });
 
+  it('opens Edit scope from a pen beside the name and shows no series out here (owner, 13 Oct)', async () => {
+    renderForm();
+    const card = await openLines();
+
+    const pen = within(card).getByRole('button', { name: 'Edit scope' });
+    expect(pen).not.toHaveTextContent('Edit scope');
+    expect(pen.querySelector('svg')).not.toBeNull();
+    expect(within(card).queryByText('No series')).toBeNull();
+
+    fireEvent.click(pen);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('textbox', { name: /^Scope/ })).toBeInTheDocument();
+    expect(within(dialog).getByText('Series')).toBeInTheDocument();
+  });
+
   it('AC-QF011/012: opens with the letterhead and one empty scope ready for products', async () => {
     renderForm();
 
@@ -446,32 +464,8 @@ describe('QuotationFormClient create', () => {
       expect(screen.getByLabelText('Subject')).toHaveValue('Menara Test'),
     );
     const card = await openLines();
-    // Owner, 13 Oct: the name is edited in place, no Edit scope dialog in between.
-    expect(within(card).getByRole('textbox', { name: 'Scope name' })).toBeInTheDocument();
-    expect(within(card).queryByRole('button', { name: 'Edit scope' })).toBeNull();
+    expect(within(card).getByRole('button', { name: 'Edit scope' })).toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Add a section' })).toBeInTheDocument();
-  });
-
-  it('edits the scope name, series and notes in place and saves them', async () => {
-    renderForm();
-    const card = await openLines();
-    await nameScope(card, 'Guard House');
-    const named = screen.getByRole('region', { name: 'Guard House' });
-    fireEvent.change(within(named).getByRole('textbox', { name: 'Scope notes' }), {
-      target: { value: 'Excludes the gate' },
-    });
-    await addLine(named, 1).then((cell) =>
-      fireEvent.change(cell, { target: { value: 'Gate lock' } }),
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save quotation' }));
-    await waitFor(() => expect(createQuotationDocument).toHaveBeenCalled());
-    const body = createQuotationDocument.mock.calls[0][1] as {
-      scopes: { scope_label: string; notes?: string | null }[];
-    };
-    expect(body.scopes[0]).toEqual(
-      expect.objectContaining({ scope_label: 'Guard House', notes: 'Excludes the gate' }),
-    );
   });
 
   it('AC-QF070: the Lines tab is the quotation page\'s own lines editor, not a new one', async () => {

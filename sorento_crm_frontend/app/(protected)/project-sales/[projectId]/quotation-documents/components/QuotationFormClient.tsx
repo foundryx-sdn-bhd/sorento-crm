@@ -2,20 +2,16 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, ListOrdered, Mail, Plus, ScrollText, Trash2 } from 'lucide-react';
+import { FileText, ListOrdered, Mail, Pencil, Plus, ScrollText, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
-import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/common/PageHeader';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { projectCrumbs } from '../../../_shared/lib/crumbs';
 import {
   useProject,
-  useProjectSeries,
   useQuotations,
   useQuotationVersions,
 } from '../../../_shared/hooks/useProjects';
@@ -33,11 +29,11 @@ import type {
 import type {
   Project,
   ProjectQuotation,
-  ProjectSeries,
   StagedQuotationLine,
 } from '../../../_shared/types/project.types';
 import { OutcomePill } from '../../../_shared/components/OutcomePill';
 import { isDecimalString, sumMoney } from '../../../_shared/lib/money';
+import { QuotationDialog } from '../../components/QuotationDialog';
 import {
   QuotationVersionEditor,
   stagedLinesToBody,
@@ -70,7 +66,7 @@ type FormScope = {
   id: string | null;
   scope_label: string;
   series_id: string;
-  /** Undefined until the notes field is typed in, so an untouched saved note is not sent. */
+  /** Undefined until the Edit scope dialog sets it, so an untouched saved note is not sent. */
   notes?: string | null;
 };
 
@@ -171,7 +167,6 @@ export function QuotationFormClient({
   const project = useProject(projectId);
   const saved = useQuotationDocument(projectId, documentId);
   const quotations = useQuotations(isEdit ? projectId : undefined);
-  const series = useProjectSeries();
   const mutations = useQuotationDocumentMutations(projectId, documentId);
   // The company's letter and terms, for the create form's own tabs. Edit reads the saved text.
   const letterTemplates = useQuotationLetterTemplates(projectId, !isEdit);
@@ -189,6 +184,7 @@ export function QuotationFormClient({
   const edit = useQuotationEditSession();
   const [activeKey, setActiveKey] = React.useState<string | null>(null);
   const [addingScope, setAddingScope] = React.useState(false);
+  const [editingScopeKey, setEditingScopeKey] = React.useState<string | null>(null);
   /** Saved scopes removed on this form, deleted by the one PATCH (#1341, Q2). */
   const [removedIds, setRemovedIds] = React.useState<string[]>([]);
   const [tab, setTab] = React.useState<FormTab>('header');
@@ -366,7 +362,7 @@ export function QuotationFormClient({
         series_id: scope.series_id || null,
       };
       if (scope.id) item.id = scope.id;
-      if (scope.notes !== undefined) item.notes = scope.notes?.trim() || null;
+      if (scope.notes !== undefined) item.notes = scope.notes;
       // A new scope carries whatever was staged under it. A saved one carries its lines only when
       // they moved, the rule the quotation page's Save kept: the write replaces the WHOLE set, and
       // a scope the customer holds is never staged, so it is never sent.
@@ -515,14 +511,13 @@ export function QuotationFormClient({
                 scopes={scopes ?? []}
                 savedScopes={savedScopes ?? []}
                 quotations={quotations.data ?? []}
-                series={series.data ?? []}
                 activeKey={activeKey}
                 onSelect={setActiveKey}
                 scopeTotal={scopeTotal}
                 edit={edit}
                 canRemoveSaved={canRemoveSaved}
                 onAddScope={() => setAddingScope(true)}
-                onChangeScope={updateScope}
+                onEditScope={setEditingScopeKey}
                 onRemove={(scope) => {
                   setDirty(true);
                   if (scope.id) {
@@ -557,6 +552,34 @@ export function QuotationFormClient({
               }}
             />
 
+            {/* The quotation page's own Edit scope dialog: name, series and notes, staged. */}
+            {editingScopeKey && project.data && (() => {
+              const scope = (scopes ?? []).find((row) => row.key === editingScopeKey);
+              if (!scope) return null;
+              const savedRow = (quotations.data ?? []).find((row) => row.id === scope.id);
+              return (
+                <QuotationDialog
+                  project={project.data}
+                  quotation={
+                    {
+                      ...(savedRow ?? {}),
+                      id: scope.id ?? '',
+                      scope_label: scope.scope_label,
+                      series_id: scope.series_id || null,
+                      notes: scope.notes !== undefined ? scope.notes : (savedRow?.notes ?? null),
+                    } as ProjectQuotation
+                  }
+                  onSubmit={(body) =>
+                    updateScope(scope.key, {
+                      scope_label: body.scope_label,
+                      series_id: body.series_id ?? '',
+                      notes: body.notes,
+                    })
+                  }
+                  onDone={() => setEditingScopeKey(null)}
+                />
+              );
+            })()}
           </FormPanel>
 
           <FormPanel open={tab === 'cover-letter'} label="Cover letter">
@@ -644,7 +667,7 @@ function placeholderDocument(projectId: string): QuotationDocument {
 /**
  * The Lines tab of the form: the quotation page's Lines tab from origin/main, moved here (#1341,
  * round 3). The same scope strip (`QuotationScopeTabs`, with Add a scope at its end), the same
- * scope card (name, outcome, series, Edit scope), and under it the same `QuotationVersionEditor`
+ * scope card (name with its Edit scope pen, outcome), and under it the same `QuotationVersionEditor`
  * in its staged edit mode, bound to the same `useQuotationEditSession` handlers the quotation
  * page's Edit used. Only one scope's editor is mounted at a time, exactly as there; the staged
  * lines live in the session, so switching scope or tab loses nothing.
@@ -654,28 +677,26 @@ function FormLines({
   scopes,
   savedScopes,
   quotations,
-  series,
   activeKey,
   onSelect,
   scopeTotal,
   edit,
   canRemoveSaved,
   onAddScope,
-  onChangeScope,
+  onEditScope,
   onRemove,
 }: {
   project: Project;
   scopes: FormScope[];
   savedScopes: QuotationScope[];
   quotations: ProjectQuotation[];
-  series: ProjectSeries[];
   activeKey: string | null;
   onSelect: (key: string) => void;
   scopeTotal: (scope: FormScope) => string;
   edit: ReturnType<typeof useQuotationEditSession>;
   canRemoveSaved: boolean;
   onAddScope: () => void;
-  onChangeScope: (key: string, patch: Partial<FormScope>) => void;
+  onEditScope: (key: string) => void;
   onRemove: (scope: FormScope) => void;
 }) {
   const active = scopes.find((scope) => scope.key === activeKey) ?? scopes[0] ?? null;
@@ -743,36 +764,26 @@ function FormLines({
 
       <section aria-label={scopeTitle(active, scopes.indexOf(active))}>
         <Card>
-          {/* Name, series and notes are edited in place (owner, 13 Oct: "edit the scope name
-              directly"), staged like everything else on this form until Save. */}
-          <CardHeader className="flex flex-col items-stretch gap-3 border-b border-border py-4 sm:flex-row sm:items-center">
-            <Input
-              aria-label="Scope name"
-              value={active.scope_label}
-              placeholder={scopeTitle(active, scopes.indexOf(active))}
-              onChange={(event) => onChangeScope(active.key, { scope_label: event.target.value })}
-              disabled={!project.can_edit}
-              className="sm:flex-1"
-            />
-            <div className="sm:w-56">
-              <SearchableSelect
-                id={`scope-series-${active.key}`}
-                value={active.series_id}
-                onChange={(next) => onChangeScope(active.key, { series_id: next })}
-                clearable
-                disabled={!project.can_edit}
-                options={series
-                  .filter((row) => row.is_active || row.id === active.series_id)
-                  .map((row) => ({
-                    value: row.id,
-                    label: row.name,
-                    description: row.brand_name ?? undefined,
-                  }))}
-                placeholder="No series"
-                emptyMessage="No series configured yet"
-              />
+          <CardHeader className="flex flex-col items-start gap-3 border-b border-border sm:flex-row sm:items-center sm:justify-between">
+            {/* Owner, 13 Oct: the pen beside the name opens the Edit scope popup (name and
+                series); the series itself is not shown out here. */}
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <CardTitle className="min-w-0 break-words text-sm">
+                {scopeTitle(active, scopes.indexOf(active))}
+              </CardTitle>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                mode="icon"
+                aria-label="Edit scope"
+                title="Edit scope"
+                onClick={() => onEditScope(active.key)}
+              >
+                <Pencil className="size-4" aria-hidden />
+              </Button>
+              {savedRow && <OutcomePill outcome={savedRow.outcome} />}
             </div>
-            {savedRow && <OutcomePill outcome={savedRow.outcome} />}
             {canRemove && (
               <Button
                 type="button"
@@ -787,15 +798,7 @@ function FormLines({
           </CardHeader>
           {/* min-w-0 is load-bearing: CardContent is a flex item, and without it the line table
               stretches the Card and the whole PAGE scrolls sideways at phone width. */}
-          <CardContent className="min-w-0 space-y-4 py-5">
-            <Textarea
-              aria-label="Scope notes"
-              rows={2}
-              value={active.notes !== undefined ? (active.notes ?? '') : (savedRow?.notes ?? '')}
-              onChange={(event) => onChangeScope(active.key, { notes: event.target.value })}
-              placeholder="Notes"
-              disabled={!project.can_edit}
-            />
+          <CardContent className="min-w-0 py-5">
             {active.id && !savedRow ? (
               <Skeleton className="h-64 w-full" />
             ) : (
