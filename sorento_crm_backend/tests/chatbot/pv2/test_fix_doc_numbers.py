@@ -70,7 +70,8 @@ def _form(db, code, name, form_type="marketing"):
 def test_u3_1_delivery_order_number_resolves_exactly(db):
     _order(db, "202609-2012")
     _order(db, "PS202609-0469")
-    res = _resolve(db, _entity("delivery_order", "Delivery 202609-2012", "202609-2012"))
+    # PV2-FIX r2: crew 14 Oct, verbatim document numbers (phrase null when only a kind word precedes it).
+    res = _resolve(db, _entity("delivery_order", None, "202609-2012"))
     assert res.status == "exact"
     assert [r.key for r in res.refs] == ["202609-2012"]
     S.assert_clean_label(res.refs[0].label)
