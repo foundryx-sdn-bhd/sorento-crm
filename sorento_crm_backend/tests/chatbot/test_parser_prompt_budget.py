@@ -198,19 +198,59 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # re-pin 10 Oct 2026 (CA-3-CHAT-DATASET, PR #1553, extractor ruling): CHAT_REPORT_ADDENDUM shrinks to
 # routing only (240 est. tokens, the focused extractor reads the fields): 51,879 est. tokens without
 # MEMORY_ADDENDUM (-450), so CEILING is 51,883 (+4).
+# MULTI-ASK-PLAN S2 (PR #1542, owner card 9 Oct 2026): SUB_ASKS_ADDENDUM (the `sub_asks` and
+# `family` keys, one entry per thing a message asks) between PO_REFS_ADDENDUM and
+# CANONICAL_CODE_ADDENDUM: 51,809 est. tokens without MEMORY_ADDENDUM (+769), so CEILING is
+# 51,813 (+4). Nothing else grew.
+# Crew live parser checks (same PR, 9 Oct 2026): received vs incoming, no period on a "last"
+# ask, `other` still an ask, and replies to the two questions read as picks: 52,119 est.
+# tokens without MEMORY_ADDENDUM (+310), so CEILING is 52,123 (+4). Nothing else grew.
+# Crew live checks round 2 (same PR): the date AND quantity of one event is one ask
+# ("last in date and quantity"): 52,165 est. tokens without MEMORY_ADDENDUM (+46), so
+# CEILING is 52,169 (+4). Nothing else grew.
+# R-LASTIN (owner ruling 9 Oct 2026, same PR): the last_receipt measure is the last SPO
+# line's delivery date, a lone "last in date and quantity" example, and a plain "sold" is
+# null whatever an earlier turn said: 52,226 est. tokens without MEMORY_ADDENDUM (+57), so
+# CEILING is 52,230 (+4). Nothing else grew.
+# Round 2a (same PR): incoming is only not-yet-arrived goods, last_receipt is one ask that
+# carries its own date and quantity, a zh example: 52,288 est. tokens without MEMORY_ADDENDUM
+# (+62), so CEILING is 52,292 (+4). Nothing else grew.
+# MULTI-ASK-PLAN r6 (owner hand test FAIL 9 Oct 2026): varied Examples (zh / en / ms, code before
+# or after, 2 to 6 asks), the SRTWT7445 six-ask example removed, the received_qty words widened,
+# 2+ things listed as sub_asks whatever they are: 52,379 est. tokens without MEMORY_ADDENDUM
+# (+91), so CEILING is 52,383 (+4). Nothing else grew.
+# Merge of main (#1527 PROMO-SUBJECT-FILTER, PROMOTION_KIND_ADDENDUM) with MULTI-ASK-PLAN r6:
+# 52,939 est. tokens without MEMORY_ADDENDUM, so CEILING is 52,943 (+4).
+# MULTI-ASK-PLAN r7 (live evidence, period and basis only from the message, 进仓库 never incoming, jual is sold,
+# a bare name asks what is wanted): 53,139 est. tokens without MEMORY_ADDENDUM (+200), so CEILING is 53,143 (+4).
+# Merge of main (#1553 CA-3, CHAT_REPORT_ADDENDUM) with MULTI-ASK-PLAN r7: 53,417 est. tokens without
+# MEMORY_ADDENDUM, so CEILING is 53,421 (+4).
 # REF-PROBES (11 Oct 2026): REF_KINDS_ADDENDUM (the reference-number kind hints, after
 # CHAT_REPORT_ADDENDUM): 52,264 est. tokens without MEMORY_ADDENDUM (+381), so CEILING is 52,268 (+4).
 # RELEASE-FIX (12 Oct 2026, PR #1598): the five REF-PROBES reference kinds get their
 # `chatbot_entity_kinds` rows (AC-1502), so the policy blocks seed carries five more
 # "Entity kind" lines: 52,437 est. tokens without MEMORY_ADDENDUM (+169), so CEILING is
 # 52,441 (+4). Nothing else grew.
+# Merge of main (#1569 REF-PROBES) with MULTI-ASK-PLAN2 (SUB_ASKS_ADDENDUM trimmed to 1,716 chars,
+# its measure list rendered from data): 52,883 est. tokens without MEMORY_ADDENDUM (+615 over
+# main's 52,264), so CEILING is 52,887 (+4).
+# Merge of main (#1598 RELEASE-FIX, five entity kind lines) with MULTI-ASK-PLAN2: 53,055 est. tokens
+# without MEMORY_ADDENDUM (52,437 on main + SUB_ASKS_ADDENDUM), so CEILING is 53,059 (+4).
 # DEV-FAILURES RC-B (12 Oct, merged over RELEASE-FIX #1598): PORTAL_FORM_ADDENDUM (the
 # `portal_form` output key, 262 chars): 52,524 est. tokens without MEMORY_ADDENDUM (+83) and
 # 53,040 with it, so CEILING is 52,528 (+4; the whole-prompt assertion is CEILING + 512).
+# Merge of main (#1583 DEV-FAILURES, PORTAL_FORM_ADDENDUM) with MULTI-ASK-PLAN2: 53,143 est. tokens
+# without MEMORY_ADDENDUM (main's 52,524 + SUB_ASKS_ADDENDUM), so CEILING is 53,147 (+4).
 # CHAT-FIND (12 Oct 2026): FIND_ADDENDUM, the `"find"` key line plus the `{{find_filters}}`
 # token (the rule and the filter lines render live from the registry, so later filters add
 # nothing here): +34 est. tokens, so CEILING is 52,562.
-CEILING = 52_562
+# Merge of main (#1601 CHAT-FIND, FIND_ADDENDUM) with MULTI-ASK-PLAN2: 53,177 est. tokens without
+# MEMORY_ADDENDUM (main's prompt + SUB_ASKS_ADDENDUM), so CEILING is 53,181 (+4).
+# MULTI-ASK-PLAN2 crew live check (13 Oct 2026): the nine measure definitions inline again in
+# SUB_ASKS_ADDENDUM (2,387 chars), so the prompt defines them with no glossary rows: 53,400 est.
+# tokens without MEMORY_ADDENDUM (+223), so CEILING is 53,404 (+4). Then the counting rule (each measure
+# named is one thing asked, live check on the prod line): 53,442 (+38), so CEILING is 53,446 (+4).
+CEILING = 53_446
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

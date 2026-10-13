@@ -554,7 +554,7 @@ _STATUS_SORTS = {"value", "label", "domain", "sort_order", "updated_at"}
 STATUS_WORDS_MAX = 100
 
 #: The parser prompt lists a status row can be in (`pdyn_0004_prompt_lists.PROMPT_LISTS`).
-STATUS_PROMPT_LISTS = ("statuses", "status_values", "status_field_values")
+STATUS_PROMPT_LISTS = ("statuses", "status_values", "status_field_values", "sub_ask_measures")
 
 # A quote or backtick in a word or label would close the quotes the prompt renders it
 # in and read as an instruction (security review L2).
