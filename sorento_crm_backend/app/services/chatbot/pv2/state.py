@@ -125,6 +125,7 @@ class Lookup(BaseModel):
     free_value: str | None = None
     row: Option | None = None
     misses: list[Miss] = Field(default_factory=list)
+    requantify: bool = False
 
 
 class ClarifyAct(BaseModel):

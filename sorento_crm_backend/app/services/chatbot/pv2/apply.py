@@ -161,6 +161,17 @@ def apply_turn(
         else:
             answered_pending = answered_pending or answered
             action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover)
+            if (
+                isinstance(action, Lookup)
+                and pending_in is not None
+                and pending_in.kind == "v1_open_question"
+                and pending_in.v1_kind == "product_pick"
+                and ask.act != "answers_bot_question"
+                and ask.entities
+                and all(e.refers_to_held and e.key is None and e.phrase is None and e.quantity is not None
+                        for e in ask.entities)
+            ):
+                action.requantify = True  # v1's requantify rule reads it, not a new subject
         actions.append(action)
         question = getattr(action, "pending", None)
         if question is not None and first_question is None:
@@ -714,8 +725,8 @@ def _apply_entities(
     return held
 
 
-#: Entity kinds that name a document: a miss on one says v1's own sentence.
-DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_order", "inbound_shipment"})
+#: Entity kinds whose miss says v1's own not-found sentence: the documents and a product.
+DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_order", "inbound_shipment", "product"})
 
 
 def _doc_not_found(

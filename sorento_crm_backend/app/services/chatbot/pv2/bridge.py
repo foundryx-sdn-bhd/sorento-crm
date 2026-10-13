@@ -19,6 +19,7 @@ from app.services.chatbot.head.parser import PARSE_OUTPUT_JSON_SCHEMA
 from app.services.chatbot.pv2.state import ConversationState, Held, Lookup, ResolvedRef
 from app.services.chatbot.turn.policy_rows import DEFAULT_DOMAIN_ROWS
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS
+from app.services.chatbot.turn.state import EXTRA_KIND_ALIASES
 from app.services.chatbot.turn.state import EXTRA_KIND_ALIASES, KIND_FIELD_MAP, Focus
 
 #: Domains whose replies tonight's gate covers (section 5); any other domain still runs
@@ -175,8 +176,15 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
     verdict["domain_hint"] = domain
     verdict["intent_hint"] = INTENT_BY_DOMAIN.get(domain or "")
     entities: list[dict[str, Any]] = []
+    seen_docs: set[str] = set()
     for kind in sorted(held.refs):
-        entities.extend(_v1_entity(r) for r in held.refs[kind])
+        for r in held.refs[kind]:
+            if kind == "order" or EXTRA_KIND_ALIASES.get(kind) == "order":
+                # One document is one v1 entity whichever order-axis kind named it.
+                if r.key in seen_docs:
+                    continue
+                seen_docs.add(r.key)
+            entities.append(_v1_entity(r))
     if held.attachment_type:
         entities.append(
             _v1_entity(ResolvedRef(kind="attachment_type", key=held.attachment_type, label=held.attachment_type))
@@ -218,10 +226,22 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
             "suppliers": [],
         }
     answer = _open_question_answer(action)
+    if action.requantify:
+        # A bare quantity under an open v1 stock pick: v1's requantify rule reads it as the
+        # turn's demand and asks the pick again; the carried products state no quantity.
+        held_qty = {r.quantity.number for r in held.refs.get("product", []) if r.quantity is not None}
+        if len(held_qty) == 1:
+            verdict["demand_qty"] = held_qty.pop()
+        for e in verdict["entities"]:
+            e["current_message"] = False
+            if e["hint"] == "product":
+                e["quantity"] = None
     if answer is not None:
-        verdict["message_type"] = "clarification"
+        # A pick stays a business query: v1 routes "clarification" to its own clarify menu.
         verdict["open_question_answer"] = answer
         verdict["entity_op"] = "reuse"
+        for e in verdict["entities"]:
+            e["current_message"] = False
         # A quantity held across the pick rides as the answer's own qty_for_all; v1 refuses
         # to stamp it when a carried entity states one.
         held_qty = {r.quantity.number for r in held.refs.get("product", []) if r.quantity is not None}
@@ -232,13 +252,12 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
                     e["quantity"] = None
         if answer["mode"] in ("yes", "no"):
             verdict["is_affirmative"] = answer["mode"] == "yes"
-            v1_kind = _v1_kind(state, action)
-            if v1_kind in ESCALATION_OFFER_KINDS:
-                # v1 `decide` accepts an escalation offer only on this flag.
-                verdict["escalation"] = {
-                    **verdict["escalation"],
-                    "is_escalation_confirmation": answer["mode"] == "yes",
-                }
+        if _v1_kind(state, action) in ESCALATION_OFFER_KINDS:
+            # v1 `decide` accepts an escalation offer only on these flags; any pick but "no" accepts.
+            accepted = answer["mode"] != "no"
+            if accepted:
+                verdict["is_affirmative"] = True
+            verdict["escalation"] = {**verdict["escalation"], "is_escalation_confirmation": accepted}
     return verdict
 
 
