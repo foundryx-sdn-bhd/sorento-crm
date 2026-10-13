@@ -531,6 +531,28 @@ def test_a_section_no_tool_ran_for_never_claims_no_stock():
     assert text.startswith(f"{BARE_HEADER}\nI could not fetch stock just now, please try again."), text
 
 
+def test_a_code_nobody_could_find_never_gets_a_try_again_section():
+    """MULTI-ASK-PLAN2 crew live check (13 Oct 2026, step 9, "SRTWT7445-ZZ stock and
+    supplier"): the code does not exist, so no tool ran for it. "I could not fetch ...
+    just now, please try again" would be false (truthful rule): a retry finds nothing
+    either. The did-you-mean names the token; the section says nothing of its own."""
+    env = {**_empty_section("SRTWT7445-ZZ", tool_has_result=False, tool_ran=False), "unresolved": ["SRTWT7445-ZZ"]}
+    text = _compose(env)
+
+    assert "please try again" not in text, text
+    assert "*stock* for SRTWT7445-ZZ:" not in text, text
+    assert "SRTWT7445-ZZ" in text, text
+
+
+def test_a_found_code_beside_a_missing_one_still_gets_the_retry_line():
+    """Only the unplaced token is spared: a section for a resolved code no tool ran for
+    keeps the existing retry wording."""
+    env = {**_empty_section(CODE, tool_has_result=False, tool_ran=False), "unresolved": ["SRTWT7445-ZZ"]}
+    text = _compose(env)
+
+    assert "I could not fetch stock just now, please try again." in text, text
+
+
 def test_a_section_the_tool_answered_but_the_lane_left_empty_never_says_no_stock():
     """The prod turn 121 envelope exactly (reviewer round 1 S1): the tool had a result,
     the withheld set left the lane with nothing under the header. Not a bare header, and
