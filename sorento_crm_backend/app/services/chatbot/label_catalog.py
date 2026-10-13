@@ -160,7 +160,10 @@ LABELS: dict[str, dict[str, str]] = {
     "EXPIRED": {"ms": "TAMAT TEMPOH", "zh": "已过期"},
     # The order summary block (presenter `_SUMMARY_FIELDS`) and its truncation notice. SO and DO
     # stay as printed (owner Q3).
-    "Customers": {"ms": "Pelanggan", "zh": "客户"},
+    # MULTI-ASK-PLAN R8 (owner, 9 Oct 2026): the product total row's customer COUNT. Was
+    # "Customers" -> "客户", so "客户: 33" read as a name. A new key, so the new wording is
+    # seeded fresh instead of losing to the stored `translation_memory` row of the old one.
+    "Customer count": {"ms": "Bil. pelanggan", "zh": "客户数"},
     "SO": {"ms": "SO", "zh": "SO"},
     "SO Date": {"ms": "Tarikh SO", "zh": "SO 日期"},
     "Ordered": {"ms": "Dipesan", "zh": "订购"},
@@ -485,7 +488,7 @@ FIELD_KEYS: dict[str, str] = {
     "open_so_qty": "Outstanding",
     "total_on_hand": "Total",
     # Slice 2 summary block (`order_date` is a DO Date there; by-label lookup covers it).
-    "customers": "Customers",
+    "customers": "Customer count",
     "so_count": "SO",
     "so_date": "SO Date",
     "so_ordered_qty": "Ordered",
@@ -674,7 +677,91 @@ INLINE = frozenset(
 
 #: Sentences too generic to match inside running text ("I have checked with the warehouse."): the
 #: composer that owns one fills it with `Localizer.fill`.
-DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."})
+# MULTI-ASK-PLAN S4 (owner card 9 Oct 2026): the per-ask runner's labels, values and two
+# questions (`turn/sub_asks.py`). "Supplier" is already catalogued above.
+LABELS.update(
+    {
+        "Received {window}": {"ms": "Diterima {window}", "zh": "{window} 入库数量"},
+        "Received": {"ms": "Diterima", "zh": "入库数量"},
+        "Last in": {"ms": "Terakhir masuk", "zh": "最后一次进库"},
+        "Last in: none on record": {"ms": "Terakhir masuk: tiada rekod", "zh": "最后一次进库: 没有记录"},
+        "Checked in: {companies}": {"ms": "Disemak di: {companies}", "zh": "已查询: {companies}"},
+        "Last cost": {"ms": "Kos terakhir", "zh": "采购价"},
+        "Stock": {"ms": "Stok", "zh": "库存"},
+        "Incoming": {"ms": "Barang masuk", "zh": "到货"},
+        "Incoming {window}": {"ms": "Barang masuk {window}", "zh": "{window} 到货"},
+        "Sold {window} ({basis})": {"ms": "Terjual {window} ({basis})", "zh": "{window} 总共卖出（{basis}）"},
+        "Sold {axis} {window} ({basis})": {"ms": "Terjual {axis} {window} ({basis})", "zh": "{window} {axis}卖出（{basis}）"},
+        "per salesman": {"ms": "mengikut jurujual", "zh": "每位业务员"},
+        "per customer": {"ms": "mengikut pelanggan", "zh": "每位客户"},
+        "per product": {"ms": "mengikut produk", "zh": "每个产品"},
+        "per brand": {"ms": "mengikut jenama", "zh": "每个品牌"},
+        "per category": {"ms": "mengikut kategori", "zh": "每个类别"},
+        "per location": {"ms": "mengikut lokasi", "zh": "每个仓库"},
+        "per channel": {"ms": "mengikut saluran", "zh": "每个渠道"},
+        "per month": {"ms": "mengikut bulan", "zh": "每月"},
+        "delivered": {"ms": "dihantar", "zh": "已出货"},
+        "ordered": {"ms": "ditempah", "zh": "下单"},
+        "not shared with you": {"ms": "tidak dikongsi dengan anda", "zh": "您没有查看权限"},
+        "not available yet": {"ms": "belum tersedia", "zh": "暂时无法提供"},
+        "none on record": {"ms": "tiada rekod", "zh": "没有记录"},
+        "couldn't check right now": {"ms": "tidak dapat disemak sekarang", "zh": "暂时无法查询"},
+        "too many sales reports just now, try again in a few minutes": {
+            "ms": "terlalu banyak laporan jualan sebentar tadi, cuba lagi dalam beberapa minit",
+            "zh": "销售报表查询太频繁，请几分钟后再试",
+        },
+        "{code} has {n} variants. Just {code}, or all {n}?": {
+            "ms": "{code} ada {n} jenis. Hanya {code}, atau semua {n}?",
+            "zh": "{code} 有 {n} 个款式。只要 {code}，还是全部 {n} 款？",
+        },
+        "Just {code}": {"ms": "Hanya {code}", "zh": "只要 {code}"},
+        "All {n}": {"ms": "Semua {n}", "zh": "全部 {n} 款"},
+        "{code} (all {n} variants)": {"ms": "{code} (semua {n} jenis)", "zh": "{code}（全部 {n} 款）"},
+        "Sold as delivered or as ordered?": {
+            "ms": "Terjual mengikut yang dihantar atau yang ditempah?",
+            "zh": "卖出按已出货还是按下单算？",
+        },
+        # Round 6 (owner hand test, 9 Oct 2026): the prefix-only scope question, the sold
+        # period question and the "what about it?" reply to a vague message.
+        "{code} has {n} variants. Which one?": {"ms": "{code} ada {n} jenis. Yang mana?", "zh": "{code} 有 {n} 个款式，要哪个？"},
+        "Or type the full code.": {"ms": "Atau taip kod penuh.", "zh": "或者输入完整的代码。"},
+        "Sold over which period?": {"ms": "Jualan untuk tempoh bila?", "zh": "卖出要算哪个时间段？"},
+        "What would you like to know about {name}? Stock, incoming, cost or sales?": {
+            "ms": "Apa yang anda ingin tahu tentang {name}? Stok, barang masuk, kos atau jualan?",
+            "zh": "你想了解 {name} 的什么？库存、到货、采购价，还是销售？",
+        },
+        "As delivered": {"ms": "Yang dihantar", "zh": "按已出货"},
+        "As ordered": {"ms": "Yang ditempah", "zh": "按下单"},
+        "{supplier} ({po}, {date})": {"ms": "{supplier} ({po}, {date})", "zh": "{supplier}（{po}，{date}）"},
+        "{currency} {cost} / unit ({po}, {date})": {
+            "ms": "{currency} {cost} / unit ({po}, {date})",
+            "zh": "{currency} {cost} / 件（{po}，{date}）",
+        },
+        "{date} ({qty}, {spo})": {"ms": "{date} ({qty}, {spo})", "zh": "{date}（{qty}，{spo}）"},
+        "{qty}, ETA {date}": {"ms": "{qty}, ETA {date}", "zh": "{qty}，ETA {date}"},
+    }
+)
+#: The per-ask runner's keys are whole labels and values of ITS reply, filled by key
+#: (`Localizer.fill`), never matched inside another reply's running text: "delivered" inside
+#: an order answer must stay exactly as that answer wrote it. "Stock" is not here: CHAT-FIND
+#: (#1601) translates a "Stock:" line in any reply, with the same words.
+_SUB_ASK_KEYS = frozenset(
+    {
+        "Received {window}", "Received", "Last in", "Last cost", "Incoming", "Incoming {window}",
+        "Sold {window} ({basis})", "Sold {axis} {window} ({basis})", "per salesman",
+        "per customer", "per product", "per brand", "per category", "per location",
+        "per channel", "per month", "delivered", "ordered", "not shared with you",
+        "not available yet", "none on record", "couldn't check right now",
+        "too many sales reports just now, try again in a few minutes",
+        "{code} has {n} variants. Just {code}, or all {n}?", "Just {code}", "All {n}",
+        "{code} (all {n} variants)", "Sold as delivered or as ordered?", "As delivered",
+        "{code} has {n} variants. Which one?", "Or type the full code.", "Sold over which period?",
+        "What would you like to know about {name}? Stock, incoming, cost or sales?",
+        "As ordered", "{supplier} ({po}, {date})", "{currency} {cost} / unit ({po}, {date})",
+        "{date} ({qty}, {spo})", "{qty}, ETA {date}",
+    }
+)
+DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."}) | _SUB_ASK_KEYS
 
 #: Report value words `Localizer.lines` translates after a catalogued label. An explicit set, never
 #: "any catalog key", so data that happens to read like a label (a status named "Status") is safe.
@@ -782,7 +869,7 @@ class Localizer:
         return _TOKEN.sub(lambda t: values.get(t.group(1), t.group(0)), self.table.get(key, key))
 
     def _text(self, s: str, *, inline: bool) -> str:
-        if s in self.table:
+        if s in self.table and s not in DIRECT_ONLY:
             return self.table[s]
         best = None
         for regex, target, fixed, is_inline in self._templates:
@@ -854,7 +941,7 @@ class Localizer:
         if done != line:
             return done
         flag = _FLAG.fullmatch(line)
-        if flag and flag.group(2) in self.table and not tokens(flag.group(2)):
+        if flag and flag.group(2) in self.table and flag.group(2) not in DIRECT_ONLY and not tokens(flag.group(2)):
             return flag.group(1) + self.table[flag.group(2)] + flag.group(3)
         number = _NUMBERED.match(line)
         prefix, rest = (number.group(0), line[number.end() :]) if number else ("", line)
@@ -866,7 +953,7 @@ class Localizer:
             if not rest.startswith(left):
                 continue
             head, found, value = rest[len(left) :].partition(sep)
-            if not found or head not in self.table or _BREAKDOWN_VALUE.match(value):
+            if not found or head not in self.table or head in DIRECT_ONLY or _BREAKDOWN_VALUE.match(value):
                 continue  # a breakdown row (`5 (O/S: 2)`) whose name collides with a label is data
             return prefix + left + self.table[head] + sep + self._value(value)
         return line

@@ -176,6 +176,19 @@ def create_analytics_connector() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS connector_revoked_at TIMESTAMP"))
         views.ensure_views(conn)
+        # CHAT-TURN-COST (`ctc_0001_turn_costs`): the price table and the column come from
+        # `create_all`; the seeds and the two cost views exist only in the migration body.
+        # `create_all` adds neither column to a table that already exists (an older database).
+        from app.services.analytics_connector import prices
+
+        conn.execute(text("ALTER TABLE ai_assistant_usage_logs ADD COLUMN IF NOT EXISTS cached_tokens INTEGER"))
+        conn.execute(text("ALTER TABLE chatbot.chat_ask_facts ADD COLUMN IF NOT EXISTS prompt_version INTEGER"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ai_assistant_usage_logs_chatbot_turn_id "
+            "ON ai_assistant_usage_logs (chatbot_turn_id)"
+        ))
+        prices.seed_prices(conn)
+        views.ensure_cost_views(conn)
     log.info("analytics_connector views created")
 
 
@@ -762,6 +775,7 @@ def seed_chatbot_policy() -> None:
     pdyn6 = _load("_pdyn_0006_agents_in_prompt", "pdyn_0006_agents_in_prompt.py")
     report_engine = _load("_report_engine_0001_prompt", "report_engine_0001_prompt.py")
     ca3_domain = _load("_ca3_0002_chat_analytics_domain", "ca3_0002_chat_analytics_domain.py")
+    measure_words = _load("_maskp_0002_measure_words", "maskp_0002_measure_words.py")
 
     with engine.begin() as conn:
         domains_inserted, kinds_inserted = s0.seed_domains_and_kinds(conn)
@@ -800,6 +814,9 @@ def seed_chatbot_policy() -> None:
     # CA-3: the chat_analytics routing domain, before the republish renders the domain list.
     with engine.begin() as conn:
         ca3_domain.apply(conn)
+    # MULTI-ASK-PLAN2: the sub-ask measure glossary rows `{{sub_ask_measures}}` renders.
+    with engine.begin() as conn:
+        measure_words.apply(conn)
     # LAST, and after every narrowing step: it renders the blocks from the tables as
     # they now stand and leaves `production` on that version.
     with engine.begin() as conn:
