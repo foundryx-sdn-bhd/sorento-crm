@@ -92,6 +92,9 @@ UPDATE orders o
   Access > Field reveals lists it with no UI change (it reads `field_reveal_keys()`).
 - Default: ON for every contact (the `delivery_orders.` prefix rule, `DEFAULT_ON_KEYS`), same as
   the other DO fields; the owner switches it off per contact. Owner confirmed (a) 13 Oct 2026.
+- Contacts that already had other DO fields switched off (199 on the prod clone) also get Branch ON:
+  no data step writes `granted=false` for them (owner ruling 13 Oct 2026, reviewer finding S1,
+  option (a)). The owner switches it off per contact where wanted.
 - Labels: `Branch` gets ms `Cawangan` / zh `分店` in `app/services/chatbot/label_catalog.py`.
 
 ### DO UI
