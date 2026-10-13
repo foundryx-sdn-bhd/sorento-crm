@@ -6,21 +6,27 @@ is another, and the project quotation is the third. Each reads this module rathe
 question a second time, because two answers to "which picture is this product" is the same as no
 answer - the tile, the mesh and the customer's quotation would silently disagree.
 
-**Nothing is ever chosen automatically, and there is deliberately no fallback.** Ordering by
-`sort_order` and taking the first row looks like a reasonable default and is not: for
-`SRTWC286-SH` the first-linked row is one of 31 files including a blank page and two other
-products' photographs. A wrong photo is a wrong product in front of a customer, and the same wrong
-photo fed to a mesh generator is that plus a bill. So a product nobody has answered for reports
+**Among several photographs nothing is chosen automatically.** Ordering by `sort_order` and
+taking the first row looks like a reasonable default and is not: for `SRTWC286-SH` the
+first-linked row is one of 31 files including a blank page and two other products' photographs. A
+wrong photo is a wrong product in front of a customer, and the same wrong photo fed to a mesh
+generator is that plus a bill. So a product with several photographs and nobody's answer reports
 `NOT_CHOSEN` and shows nothing, which is a state a screen can act on; a guess is not.
 
-Three things are excluded from being a photograph at all, in every query here, and they have to
+**One photograph and nobody's answer IS the answer** (QUOTATION-UX, owner 14 Oct, AC-QLG06): in
+dev 2,060 of 2,308 products with photographs carry exactly one, so "not chosen" there was a click
+that could only ever pick that one. `is_primary` still wins whenever it is set.
+
+Four things are excluded from being a photograph at all, in every query here, and they have to
 stay in step or a screen will count a product as done and then fail to show its picture:
 
 - a non-image mime type (the live data holds 532 PDFs linked to products - a spec sheet rendered
   as the product photo is worse than no photo),
 - a deleted attachment (611 live links point at one; Resource Management already hides them, so
   signing a URL for one puts a broken picture on a customer's document),
-- for a *chosen* image, both of the above - a choice made before the file was deleted must stop
+- a technical drawing (an image typed "Technical Specifications"): it is the TECHNICAL SPEC
+  column's picture, never the product's photograph. A typeless image still counts as a photo,
+- for a *chosen* image, all of the above - a choice made before the file was deleted must stop
   being an answer, not linger as a broken one.
 
 `render` exists because the artifacts embed bytes rather than link to them. The mean chosen image
@@ -35,13 +41,13 @@ import io
 import logging
 from dataclasses import dataclass
 from time import monotonic
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.product import Product, ProductAttachment
-from app.models.resources import Attachment
+from app.models.resources import Attachment, AttachmentType
 from app.services.storage_router import (
     extract_key,
     get_backend,
@@ -73,6 +79,28 @@ JPEG_QUALITY = 72
 RAW_FALLBACK_LIMIT = 256 * 1024
 
 
+#: The attachment type of a technical drawing. Matched on the name, as the Dealer Kit image
+#: ranking does (`dealer_kit/product_images.py`).
+DRAWING_TYPE = "Technical Specifications"
+
+
+@dataclass(frozen=True)
+class ProductFile:
+    """One image on file for a product: a photograph or a technical drawing."""
+
+    attachment: Attachment
+    is_primary: bool
+    is_drawing: bool
+
+    @property
+    def attachment_id(self) -> str:
+        return str(self.attachment.id)
+
+    @property
+    def filename(self) -> Optional[str]:
+        return self.attachment.original_filename or self.attachment.stored_filename
+
+
 @dataclass(frozen=True)
 class ProductImage:
     """What a caller needs to draw a product's picture cell, including when there is none."""
@@ -84,6 +112,8 @@ class ProductImage:
     #: Photographs somebody could choose between. Zero means the answer is an upload rather than
     #: a click, and the two need different words on screen.
     candidate_count: int = 0
+    #: Those photographs, oldest upload first, for a picker.
+    candidates: Tuple[ProductFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -102,11 +132,12 @@ OFF_CATALOG_IMAGE = ProductImage(product_id=None, state=OFF_CATALOG)
 # ----------------------------------------------------------------------- reading
 
 
-def _photograph(query):
-    """The three conditions that make an attachment a photograph, applied in one place.
+def _on_file(query):
+    """The two conditions that make an attachment an image on file, applied in one place.
 
-    Every query in this module goes through here. Two of them drifting apart is how a screen ends
-    up counting a product as answered and then rendering nothing for it.
+    Every query in this module goes through here, photographs and drawings alike. Two of them
+    drifting apart is how a screen ends up counting a product as answered and then rendering
+    nothing for it.
     """
     return query.filter(
         Attachment.mime_type.ilike("image/%"),
@@ -114,27 +145,104 @@ def _photograph(query):
     )
 
 
-def chosen_attachment_id(db: Session, product_id: Optional[str]) -> Optional[str]:
-    """The attachment somebody chose for this product, or nothing.
+def files_for(db: Session, product_ids: Sequence[Optional[str]]) -> Dict[str, List[ProductFile]]:
+    """Every image on file per product, photographs and drawings, in ONE query.
 
-    Nothing is a real answer here. There is no ordering, no first-row fallback and no filename
-    heuristic - see the module docstring for why guessing is worse than not answering.
+    Oldest upload first, then id, so "the first drawing" and the order a picker shows are the
+    same answer on every read.
     """
-    if not product_id:
-        return None
-    row = (
-        _photograph(
-            db.query(ProductAttachment.attachment_id).join(
-                Attachment, Attachment.id == ProductAttachment.attachment_id
+    unique = list(dict.fromkeys(str(pid) for pid in product_ids if pid))
+    if not unique:
+        return {}
+    rows = (
+        _on_file(
+            db.query(
+                ProductAttachment.product_id,
+                ProductAttachment.is_primary,
+                Attachment,
+                AttachmentType.type_name,
             )
+            .join(Attachment, Attachment.id == ProductAttachment.attachment_id)
+            .outerjoin(AttachmentType, AttachmentType.id == Attachment.attachment_type_id)
+        )
+        .filter(ProductAttachment.product_id.in_(unique))
+        .order_by(Attachment.created_at.asc(), Attachment.id.asc())
+        .all()
+    )
+    found: Dict[str, List[ProductFile]] = {}
+    for product_id, is_primary, attachment, type_name in rows:
+        found.setdefault(str(product_id), []).append(
+            ProductFile(
+                attachment=attachment,
+                is_primary=bool(is_primary),
+                is_drawing=type_name == DRAWING_TYPE,
+            )
+        )
+    return found
+
+
+def is_product_file(
+    db: Session,
+    *,
+    product_id: str,
+    attachment_id: str,
+    drawing: bool,
+    company_id: Optional[str],
+) -> bool:
+    """Whether this attachment is one of the product's images of that kind, for a line pick.
+
+    Linked through `product_attachments`, an image on file (``_on_file``), this company's or
+    shared, and a drawing exactly when ``drawing`` - the same kinds ``files_for`` hands a picker.
+    """
+    kind = func.coalesce(AttachmentType.type_name, "") == DRAWING_TYPE
+    found = (
+        _on_file(
+            db.query(ProductAttachment.id)
+            .join(Attachment, Attachment.id == ProductAttachment.attachment_id)
+            .outerjoin(AttachmentType, AttachmentType.id == Attachment.attachment_type_id)
         )
         .filter(
             ProductAttachment.product_id == str(product_id),
-            ProductAttachment.is_primary.is_(True),
+            ProductAttachment.attachment_id == str(attachment_id),
+            or_(Attachment.company_id.is_(None), Attachment.company_id == company_id),
+            kind if drawing else ~kind,
         )
         .first()
     )
-    return row[0] if row else None
+    return found is not None
+
+
+def _resolve(product_id: str, files: Sequence[ProductFile]) -> ProductImage:
+    """The photograph decision for one visible product, from its files."""
+    photos = tuple(f for f in files if not f.is_drawing)
+    pick = next((f for f in photos if f.is_primary), None)
+    if pick is None and len(photos) == 1:
+        pick = photos[0]
+    if pick is not None:
+        return ProductImage(
+            product_id=product_id,
+            state=CHOSEN,
+            attachment_id=pick.attachment_id,
+            filename=pick.filename,
+            candidate_count=len(photos),
+            candidates=photos,
+        )
+    return ProductImage(
+        product_id=product_id,
+        state=NOT_CHOSEN if photos else NO_PHOTOS,
+        candidate_count=len(photos),
+        candidates=photos,
+    )
+
+
+def chosen_attachment_id(db: Session, product_id: Optional[str]) -> Optional[str]:
+    """The photograph that IS this product, or nothing.
+
+    Nothing is a real answer here: several photographs and none chosen is not guessed at - see
+    the module docstring for why guessing is worse than not answering.
+    """
+    found = for_product(db, product_id)
+    return found.attachment_id if found.state == CHOSEN else None
 
 
 def for_product(db: Session, product_id: Optional[str]) -> ProductImage:
@@ -146,43 +254,23 @@ def for_product(db: Session, product_id: Optional[str]) -> ProductImage:
     )
 
 
-def images_for(db: Session, product_ids: Sequence[Optional[str]]) -> Dict[str, ProductImage]:
+def images_for(
+    db: Session,
+    product_ids: Sequence[Optional[str]],
+    files: Optional[Dict[str, List[ProductFile]]] = None,
+) -> Dict[str, ProductImage]:
     """Every product's picture state, in a bounded number of queries.
 
     Bounded and not per-product on purpose: a quotation scope runs to 52 lines and the picture
-    column is drawn on every render of it, so one round trip per row would be 52.
+    column is drawn on every render of it, so one round trip per row would be 52. ``files`` lets
+    a caller that already read ``files_for`` (the quotation, for its drawings) skip that query.
     """
     wanted = [str(pid) for pid in product_ids if pid]
     if not wanted:
         return {}
     unique = list(dict.fromkeys(wanted))
-
-    chosen = {
-        product_id: (attachment_id, filename)
-        for product_id, attachment_id, filename in _photograph(
-            db.query(
-                ProductAttachment.product_id,
-                ProductAttachment.attachment_id,
-                func.coalesce(Attachment.original_filename, Attachment.stored_filename),
-            ).join(Attachment, Attachment.id == ProductAttachment.attachment_id)
-        )
-        .filter(
-            ProductAttachment.product_id.in_(unique),
-            ProductAttachment.is_primary.is_(True),
-        )
-        .all()
-    }
-
-    counts = dict(
-        _photograph(
-            db.query(ProductAttachment.product_id, func.count(ProductAttachment.id)).join(
-                Attachment, Attachment.id == ProductAttachment.attachment_id
-            )
-        )
-        .filter(ProductAttachment.product_id.in_(unique))
-        .group_by(ProductAttachment.product_id)
-        .all()
-    )
+    if files is None:
+        files = files_for(db, unique)
 
     # Which of these products this company can actually SEE.
     #
@@ -205,22 +293,7 @@ def images_for(db: Session, product_ids: Sequence[Optional[str]]) -> Dict[str, P
         if product_id not in visible:
             resolved[product_id] = OFF_CATALOG_IMAGE
             continue
-        candidates = int(counts.get(product_id, 0))
-        pick = chosen.get(product_id)
-        if pick is not None:
-            resolved[product_id] = ProductImage(
-                product_id=product_id,
-                state=CHOSEN,
-                attachment_id=pick[0],
-                filename=pick[1],
-                candidate_count=candidates,
-            )
-        else:
-            resolved[product_id] = ProductImage(
-                product_id=product_id,
-                state=NOT_CHOSEN if candidates else NO_PHOTOS,
-                candidate_count=candidates,
-            )
+        resolved[product_id] = _resolve(product_id, files.get(product_id, []))
     return resolved
 
 
@@ -267,6 +340,17 @@ def _cached_sign(row: Attachment, *, full: bool) -> Optional[str]:
         _url_cache.clear()
     _url_cache[key] = (url, now + _URL_TTL)
     return url
+
+
+def signed_urls(row: Attachment) -> Tuple[Optional[str], Optional[str]]:
+    """``(thumbnail, original)`` for a row already loaded, through the same cache as below.
+
+    The thumbnail first: a caller drawing a cell asks for it before the original, and the order
+    signatures are made in is the order the cache fills.
+    """
+    thumb = _cached_sign(row, full=False)
+    full = _cached_sign(row, full=True)
+    return thumb, full or thumb
 
 
 def preview_urls(
@@ -468,20 +552,25 @@ def serialize(
 
 __all__: List[str] = [
     "CHOSEN",
+    "DRAWING_TYPE",
     "NOT_CHOSEN",
     "NO_PHOTOS",
     "OFF_CATALOG",
     "PRINT_BOX",
     "RAW_FALLBACK_LIMIT",
+    "ProductFile",
     "ProductImage",
     "RenderedImage",
     "choose",
     "chosen_attachment_id",
     "clear",
     "data_uri",
+    "files_for",
     "for_product",
     "images_for",
+    "is_product_file",
     "preview_urls",
     "render",
     "serialize",
+    "signed_urls",
 ]

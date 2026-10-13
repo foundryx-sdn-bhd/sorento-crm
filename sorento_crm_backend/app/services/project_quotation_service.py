@@ -66,6 +66,7 @@ LINE_FIELDS = (
     "product_code_snapshot",
     "description_snapshot",
     "image_attachment_id",
+    "drawing_attachment_id",
     "unit_price",
     "quantity",
     "uom",
@@ -344,6 +345,7 @@ def revise(
                 description_snapshot=line.description_snapshot,
                 list_price_snapshot=line.list_price_snapshot,
                 image_attachment_id=line.image_attachment_id,
+                drawing_attachment_id=line.drawing_attachment_id,
                 unit_price=line.unit_price,
                 quantity=line.quantity,
                 uom=line.uom,
@@ -586,6 +588,55 @@ def _quotation_of(db: Session, version: ProjectQuotationVersion) -> ProjectQuota
     return quotation
 
 
+#: The picked-file columns a line write accepts, with the refusal each raises (AC-QLG09).
+_PICKS = (
+    ("image_attachment_id", False, "quotation_line_image_invalid", "photo"),
+    ("drawing_attachment_id", True, "quotation_line_drawing_invalid", "drawing"),
+)
+
+
+def assert_line_picks(
+    db: Session,
+    *,
+    quotation: ProjectQuotation,
+    payload: Dict[str, Any],
+    line: Optional[ProjectQuotationLine] = None,
+) -> None:
+    """Refuse a picked photo or drawing that is not one of the line's product's own files (422).
+
+    The ids arrive from the browser, so they are checked against `product_attachments` for the
+    product the line WILL have (the payload's, else the stored one): an image, not deleted, this
+    company's (or shared), and for a drawing also typed "Technical Specifications"; a photo is
+    never a drawing. Only a value that differs from the stored one is checked, so a stamp on a
+    line whose file was deleted later does not block the next save of that line. Clearing (null)
+    is always allowed. The product's own attachments are never written from here.
+    """
+    from app.services import product_image_service as images
+
+    product_id = payload["product_id"] if "product_id" in payload else (
+        line.product_id if line is not None else None
+    )
+    for field, is_drawing, code, word in _PICKS:
+        if field not in payload or not payload[field]:
+            continue
+        value = str(payload[field])
+        if line is not None and str(getattr(line, field) or "") == value:
+            continue
+        refusal = AppException(
+            status_code=422,
+            message=f"That {word} is not one of this product's files.",
+            code=code,
+        )
+        if not product_id or not images.is_product_file(
+            db,
+            product_id=str(product_id),
+            attachment_id=value,
+            drawing=is_drawing,
+            company_id=quotation.company_id,
+        ):
+            raise refusal
+
+
 def _write_line(
     db: Session,
     *,
@@ -649,10 +700,7 @@ def _write_line(
     elif not line.description_snapshot:
         raise AppException(
             status_code=422,
-            message=(
-                "An off-catalog line needs a description -- it is what the customer "
-                "reads, and there is no product to fall back on."
-            ),
+            message="A custom item needs a description.",
             code="quotation_line_description_required",
         )
 
@@ -752,6 +800,7 @@ def replace_lines(
                 )
             kept.add(line_id)
         payload["sort_order"] = index
+        assert_line_picks(db, quotation=quotation, payload=payload, line=target)
         written.append(
             _write_line(
                 db,
@@ -897,7 +946,7 @@ def recompute_version(
 
         # Named by what a person calls the line. No id reaches the reader.
         report["changed_lines"].append(
-            line.product_code_snapshot or line.description_snapshot or "Off-catalog line"
+            line.product_code_snapshot or line.description_snapshot or "Custom item"
         )
 
     db.flush()
@@ -1198,6 +1247,7 @@ def serialize_lines(
     from app.services import project_quotation_image_service
 
     pictures = project_quotation_image_service.line_images(db, lines)
+    no_cells: Dict[str, Any] = {}
     return [
         {
             "id": line.id,
@@ -1207,7 +1257,9 @@ def serialize_lines(
             "description": line.description_snapshot,
             "list_price": line.list_price_snapshot,
             "image_attachment_id": line.image_attachment_id,
-            "product_image": pictures.get(str(line.id)),
+            "product_image": pictures.get(str(line.id), no_cells).get("product_image"),
+            "drawing_attachment_id": line.drawing_attachment_id,
+            "technical_drawing": pictures.get(str(line.id), no_cells).get("technical_drawing"),
             "unit_price": line.unit_price,
             "quantity": line.quantity,
             "uom": line.uom,

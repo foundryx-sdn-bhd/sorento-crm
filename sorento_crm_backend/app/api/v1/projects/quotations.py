@@ -419,12 +419,14 @@ async def create_line(
 ):
     try:
         validate_uuid_path(version_id, resource="Quotation version")
-        version, _quotation = _version_for_edit(db, version_id, current_user)
+        version, quotation = _version_for_edit(db, version_id, current_user)
+        body = payload.model_dump(exclude_unset=True)
+        svc.assert_line_picks(db, quotation=quotation, payload=body)
         line = svc.upsert_line(
             db,
             version=version,
             actor_user_id=current_user["id"],
-            payload=payload.model_dump(exclude_unset=True),
+            payload=body,
         )
         _notify_breaches(db, line, current_user["id"])
         db.commit()
@@ -496,14 +498,16 @@ async def update_line(
     try:
         validate_uuid_path(version_id, resource="Quotation version")
         validate_uuid_path(line_id, resource="Line")
-        version, _quotation = _version_for_edit(db, version_id, current_user)
+        version, quotation = _version_for_edit(db, version_id, current_user)
         line = _line_or_404(db, version_id, line_id)
+        body = payload.model_dump(exclude_unset=True)
+        svc.assert_line_picks(db, quotation=quotation, payload=body, line=line)
         line = svc.upsert_line(
             db,
             version=version,
             actor_user_id=current_user["id"],
             line=line,
-            payload=payload.model_dump(exclude_unset=True),
+            payload=body,
         )
         _notify_breaches(db, line, current_user["id"])
         db.commit()

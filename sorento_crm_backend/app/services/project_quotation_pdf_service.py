@@ -151,6 +151,12 @@ def _cell(value: Any) -> str:
     return escape(text) if text else ""
 
 
+def _multiline(value: Any) -> str:
+    """Escaped text with its line breaks kept: a description is typed as several lines (the
+    size on its own line, "c/w seat cover" on the next) and has to print that way."""
+    return "<br/>".join(_cell(value).splitlines())
+
+
 def _date(value: Any) -> str:
     if isinstance(value, datetime):
         return value.strftime("%d/%m/%Y")
@@ -360,6 +366,13 @@ def _scope_html(
         else {}
     )
     columns = [c for c in _COLUMNS if c != _IMAGE_COLUMN or show_image]
+    # TECHNICAL SPEC prints the line's drawing (QUOTATION-UX, AC-QLG11), stamped at issue like the
+    # photo. The column stays whether or not any line has one: it is in the sample's column set.
+    drawings = {
+        line.id: _attachment_data_uri(db, line.drawing_attachment_id, image_cache)
+        for line in lines
+        if line.drawing_attachment_id
+    }
 
     body: List[str] = []
     current_band: Optional[str] = None
@@ -389,12 +402,20 @@ def _scope_html(
             if line.is_rate_only
             else _line_money(line.line_total)
         )
+        drawing = drawings.get(line.id)
+        spec_cell = f'<img src="{escape(drawing)}"/>' if drawing else ""
+        # Typed tech-spec text from before drawings printed: kept, under the description.
+        legacy = (
+            f'<div class="legacy-spec">{_multiline(line.technical_spec)}</div>'
+            if _cell(line.technical_spec)
+            else ""
+        )
         body.append(
             "<tr>"
             f'<td class="item">{_cell(item_number(line, position))}</td>'
             f"{image_cell}"
-            f'<td class="spec">{_cell(line.technical_spec)}</td>'
-            f'<td class="desc">{_cell(line.description_snapshot)}</td>'
+            f'<td class="spec">{spec_cell}</td>'
+            f'<td class="desc">{_multiline(line.description_snapshot)}{legacy}</td>'
             f"<td>{_cell(line.brand_snapshot)}</td>"
             f"<td>{_cell(line.product_code_snapshot)}</td>"
             f'<td class="num">{qty_text}</td>'
@@ -549,6 +570,8 @@ _STYLE = """
   table.grid td.item { text-align: center; width: 24px; }
   table.grid td.img { width: 60px; }
   table.grid td.img img { width: 100%; }
+  table.grid td.spec img { width: 100%; }
+  .legacy-spec { margin-top: 3px; }
   tr.band td { background: #f4f4f4; font-weight: 700; }
   .rate-only { font-style: italic; }
   td.total-label { text-align: right; font-weight: 700; }
