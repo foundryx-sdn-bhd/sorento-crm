@@ -69,7 +69,10 @@ def test_kinds_the_asker_cannot_see_never_resolve(db, ent):
     _seed(db)
     res = _res(db, ent, ["customer_order"])
     assert not (_kinds_in(res) & LEAK), res
-    assert res.status == "none" or not (_kinds_in(res) & LEAK)
+    hidden = {"SO-PV2-1", "PO-PV2-1"}
+    shown = {r.key for r in res.refs} | {r.label for r in res.refs}
+    shown |= {o.key for o in res.options} | {o.label for o in res.options}
+    assert not (shown & hidden), f"hidden document number shown: {shown & hidden}"
 
 
 def test_positive_control_all_kinds_resolve_the_so_and_po(db):
