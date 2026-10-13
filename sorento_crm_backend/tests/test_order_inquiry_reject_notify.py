@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from datetime import timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 import sqlalchemy as sa
@@ -170,7 +172,12 @@ def test_single_reject_dispatches_one_email_and_one_in_app(api, monkeypatch):
     assert line["delivery_date"] == row.delivery_date.strftime("%d/%m/%Y")
     # Rejected by + when: the buyer, in Malaysia time, dd/mm/yyyy HH:MM.
     assert ctx["actor"]["email"].startswith(str(world.buyer))
-    assert len(rej["rejected_at"]) == len("13/10/2026 14:05")
+    world.db.refresh(row)
+    assert rej["rejected_at"] == (
+        row.rejected_at.replace(tzinfo=timezone.utc)
+        .astimezone(ZoneInfo("Asia/Kuala_Lumpur"))
+        .strftime("%d/%m/%Y %H:%M")
+    ), "the stored UTC stamp, shown in Malaysia time"
     # Recipient: the raiser.
     assert ctx["raiser"]["email"].startswith(str(world.cs_user))
 
@@ -314,6 +321,58 @@ def test_all_or_nothing_batch_refusal_sends_nothing(api, monkeypatch):
     assert resp.status_code == 422, resp.text
     assert _rejected(captured) == []
     assert captured["in_app"] == []
+
+
+def test_reject_rolled_back_after_queue_sends_nothing(api, monkeypatch):
+    """AC-RJ-8: the notice is queued, then the request fails and rolls back. Nothing is
+    sent then, and nothing leaks into the session's next, unrelated commit."""
+    client, world = api
+    _register()
+    _activate(world, world.cs_user)
+    row = _raise_one_row(api, qty="10")["row"]
+    captured = _capture(monkeypatch)
+
+    from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+    def _boom(self, rows):
+        raise RuntimeError("serialize failed after the queue step")
+
+    monkeypatch.setattr(ProjectOrderInquiryService, "serialize_rows", _boom)
+    with _as_purchasing(world) as buyer:
+        resp = buyer.post(f"{LIST}/{row.id}/reject", json={"reason": "No stock"})
+    assert resp.status_code == 500, resp.text
+    world.db.commit()
+
+    assert _rejected(captured) == []
+    assert captured["in_app"] == []
+
+
+def test_savepoint_release_does_not_fire_before_the_commit(api, monkeypatch):
+    """`after_commit` fires on a savepoint release too: a release after the notice is
+    queued must not send it mid-transaction. It goes out once, at the real commit."""
+    client, world = api
+    _register()
+    _activate(world, world.cs_user)
+    row = _raise_one_row(api, qty="10")["row"]
+    captured = _capture(monkeypatch)
+
+    from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+    original = ProjectOrderInquiryService.serialize_rows
+    seen_at_release: list[int] = []
+
+    def _with_savepoint(self, rows):
+        with self.db.begin_nested():
+            pass
+        seen_at_release.append(len(_rejected(captured)))
+        return original(self, rows)
+
+    monkeypatch.setattr(ProjectOrderInquiryService, "serialize_rows", _with_savepoint)
+    resp = _reject_one(world, row)
+    assert resp.status_code == 200, resp.text
+
+    assert seen_at_release == [0], "nothing is sent at a savepoint release"
+    assert len(_rejected(captured)) == 1
 
 
 def test_reject_again_after_new_raise_is_a_fresh_notice(api, monkeypatch):

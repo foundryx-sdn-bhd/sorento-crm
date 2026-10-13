@@ -73,7 +73,7 @@ _BODY_HTML = """\
   </tbody>
 </table>
 <p>Reason: {{ reject.reason | default("", true) }}</p>
-<p>Rejected by {{ actor.name if actor else '-' }}{% if actor %} ({{ actor.email }}){% endif %} on {{ reject.rejected_at }}.</p>
+<p>Rejected{% if actor %} by {{ actor.name }} ({{ actor.email }}){% endif %} on {{ reject.rejected_at }}.</p>
 <p><a href="{{ reject.link }}">Open in Order Inquiries</a></p>
 """.replace("__TABLE_STYLE__", _TABLE_STYLE).replace("__TH_STYLE__", _TH_STYLE).replace(
     "__TD_STYLE__", _TD_STYLE
@@ -90,7 +90,7 @@ ITEM CODE | QTY | DELIVERY DATE
 {% for line in reject.lines %}{{ line.item_code | default("", true) }} | {{ line.qty | default("", true) }} | {{ line.delivery_date | default("", true) }}
 {% endfor %}
 Reason: {{ reject.reason | default("", true) }}
-Rejected by {{ actor.name if actor else '-' }} on {{ reject.rejected_at }}.
+Rejected{% if actor %} by {{ actor.name }}{% endif %} on {{ reject.rejected_at }}.
 Open: {{ reject.link }}
 """
 

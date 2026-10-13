@@ -6999,11 +6999,10 @@ class ProjectOrderInquiryService:
         """Uncover the refused lines, then queue the raiser's notice (`PLAN-oi-reject-
         notify-13oct.md`).
 
-        The notice is BUILT before the uncover (it re-confirms the order and may retire or
-        re-raise rows) and QUEUED after it, so a best-effort savepoint rolled back inside
-        the uncover cannot discard it. Any handover email the uncover's re-confirm queued
-        is dropped: it would tell purchasing, in the decider's name, about a change
-        purchasing just made themselves.
+        The notice is BUILT before the uncover, which re-confirms the order and may retire
+        or re-raise rows. Any handover email the uncover's re-confirm queued is dropped:
+        it would tell purchasing, in the decider's name, about a change purchasing just
+        made themselves.
         """
         notices = self._rejection_notices(rows, reason=reason, actor_user_id=actor_user_id)
         handover_before = len(self.db.info.get(_HANDOVER_PENDING_KEY) or [])
@@ -7092,9 +7091,6 @@ class ProjectOrderInquiryService:
                         },
                         "actor": actor,
                         "raiser": raiser,
-                        "today": datetime.now(timezone.utc)
-                        .astimezone(_MY_TZ)
-                        .strftime("%d/%m/%Y"),
                     },
                 }
             )
@@ -12269,8 +12265,14 @@ def register_order_inquiry_post_commit_dispatch() -> None:
         order inquiry a reject touched (`PLAN-oi-reject-notify-13oct.md`), on a FRESH
         session for the reason `_fire_pending_changed_with_links` gives. Each item is
         its own try: one inquiry's failure never costs another raiser their notice.
+
+        `after_commit` fires on every savepoint release too, so a release while a nested
+        transaction is still open (see `_mark_handover_transaction_committed`) is not the
+        commit this waits for: the queue stays put until the root commits.
         """
         if session.info.get("confirm_preview"):
+            return
+        if session.get_nested_transaction() is not None:
             return
         pending = session.info.pop(_REJECT_PENDING_KEY, None)
         if not pending:

@@ -1,6 +1,6 @@
 # PLAN: notify the OI raiser when purchasing rejects rows (OI-REJECT-NOTIFY)
 
-Status: Build (track: standard, additive seed migration; cloud lane, backend only)
+Status: Review (track: standard, additive seed migration; cloud lane, backend only)
 
 UAC: `oi-reject-notify-13oct-acceptance-criteria.md` (alongside).
 
@@ -68,11 +68,11 @@ Reuse, no parallel path:
 
 - New event-driven trigger `order_inquiry_rejected` in `automation_triggers.py` (same shape as
   `order_inquiry_reserve_requested`).
-- `ProjectOrderInquiryService._record_rejection(rows, ...)` builds one context per OI EAGERLY
-  (before `uncover_lines` rewrites rows) and queues it on `Session.info` AFTER the uncover step
-  finishes, so a best-effort savepoint rollback inside `uncover_lines` cannot discard it.
-- Post-commit drain: the simple reserve-module shape (`after_commit` + `after_soft_rollback`),
-  fresh `SessionLocal()`, `AutomationService.dispatch_event` for the email and
+- `ProjectOrderInquiryService._uncover_and_notify_rejection` builds one context per OI
+  (`_rejection_notices`) BEFORE `uncover_lines` rewrites rows, queues it on `Session.info`, and
+  drops any handover item the uncover's re-confirm queued.
+- Post-commit drain: `after_commit` that ignores savepoint releases (no nested transaction open)
+  plus the file's C2 tx_chain discard on rollback, fresh `SessionLocal()`, `AutomationService.dispatch_event` for the email and
   `NotificationService.create_in_app_only` for the bell.
 - Recipient: seeded automation with `include_raiser: true`, `one_email: true`, no roles. The
   context's `raiser` is `None` when the raiser is the rejecter or not an active user.
