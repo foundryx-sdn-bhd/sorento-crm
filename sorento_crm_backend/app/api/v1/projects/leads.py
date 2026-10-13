@@ -59,6 +59,10 @@ VIEW = "projects.projects.view"
 # They used to take "projects.projects.create", which no permission registry defines, so only
 # admins passed.
 EDIT = "projects.projects.edit"
+# Putting a lead or a project in SOMEBODY ELSE'S name is a manager act, as on register
+# (projects.py, project_owner_assign_forbidden). Kept explicit here because EDIT now reaches
+# these routes for every salesperson (security review, 13 Oct).
+MANAGE = "projects.projects.manage"
 DELETE = "projects.projects.delete"
 
 
@@ -253,6 +257,21 @@ async def create_lead(
     try:
         company_id = acting_company_id(db)
         body = payload.model_dump(exclude_unset=True)
+        # Handing a lead to someone else goes through assign (the acceptance clock, the
+        # notification, the active-user check), never through create.
+        owner = body.get("owner_user_id")
+        if (
+            owner
+            and owner != current_user["id"]
+            and MANAGE not in permission_slugs(db, current_user["id"])
+        ):
+            from app.services.error_handler import AppException
+
+            raise AppException(
+                status_code=403,
+                message="Create the lead, then assign it: only a sales manager can create it in someone else's name.",
+                code="lead_owner_assign_forbidden",
+            )
         new_customer = body.pop("new_customer", None)
         if body.get("customer_id") or new_customer:
             customer = svc.select_or_create_customer(
@@ -465,9 +484,23 @@ async def qualify_lead(
     try:
         validate_uuid_path(lead_id, resource="Lead")
         lead = svc.get_lead(db, lead_id)
-        svc.assert_can_edit_lead(
-            lead, current_user["id"], permission_slugs(db, current_user["id"])
-        )
+        permissions = permission_slugs(db, current_user["id"])
+        svc.assert_can_edit_lead(lead, current_user["id"], permissions)
+        # The register route's rule: a project lands in someone else's name only by a
+        # manager. The lead's own owner is not "someone else" here, it is the default.
+        owner = payload.owner_user_id
+        if (
+            owner
+            and owner not in (current_user["id"], lead.owner_user_id)
+            and MANAGE not in permissions
+        ):
+            from app.services.error_handler import AppException
+
+            raise AppException(
+                status_code=403,
+                message="Only a sales manager can register a project for someone else.",
+                code="project_owner_assign_forbidden",
+            )
         project = svc.qualify_lead(
             db,
             lead=lead,

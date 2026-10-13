@@ -181,6 +181,7 @@ def register_project(
 
 
 MANAGE_PERMISSION = "projects.projects.manage"
+CUSTOMERS_VIEW_PERMISSION = "order_management.customers.view"
 
 TAKEOVER_JOIN = "join"
 TAKEOVER_DISPUTE = "dispute"
@@ -524,6 +525,9 @@ def serialize_projects(
     customers = _customers_for(
         db, [lead.customer_id for lead in leads.values() if lead.customer_id]
     )
+    # The phone and the main contact are the customer master's, which sits behind its own
+    # grant; a project reader without it sees the buyer's name only (security review, 13 Oct).
+    can_see_customer_contact = CUSTOMERS_VIEW_PERMISSION in permissions
 
     # Next action is DERIVED from the earliest open task (AC-N6). One bulk query for
     # the whole page, because the board renders every open project at once.
@@ -586,7 +590,8 @@ def serialize_projects(
                 **_customer_fields(
                     customers.get(leads[project.lead_id].customer_id)
                     if project.lead_id in leads
-                    else None
+                    else None,
+                    with_contact=can_see_customer_contact,
                 ),
                 "status_id": project.status_id,
                 "status_key": status.key if status else None,
@@ -1004,9 +1009,13 @@ def _customers_for(db: Session, customer_ids: List[str]) -> Dict[str, Dict[str, 
     return out
 
 
-def _customer_fields(customer: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _customer_fields(
+    customer: Optional[Dict[str, Any]], *, with_contact: bool
+) -> Dict[str, Any]:
     if customer:
-        return customer
+        if with_contact:
+            return customer
+        return {**customer, "customer_phone": None, "customer_attn": None}
     return {
         "customer_id": None,
         "customer_name": None,
