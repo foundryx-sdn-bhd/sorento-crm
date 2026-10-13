@@ -1,7 +1,8 @@
 # PLAN: index embedding_chunks.document_id so scope_seeds does not stall a release (MIGRATION-INDEX 13 Oct)
 
-Status: IN PROGRESS 2026-10-13. Small fix track by size, but it carries a migration, so it gets
-the migration evidence below. No auth/RBAC, no ingest surface change.
+Status: REVIEWED 2026-10-13 (reviewer READY, should-fix taken: 30 s lock_timeout on the
+concurrent build), awaiting CI label + merge (owner pre-approved). Small fix track by size, but it
+carries a migration, so it gets the migration evidence in PR #1615. No auth/RBAC, no ingest surface change.
 
 ## Journey
 
@@ -43,7 +44,9 @@ So the index is built on both paths:
 4. `scope_seeds_debtor_company` sets `lock_timeout = 5s`, `statement_timeout = 120s` for its
    data statements (after the autocommit block, since SET LOCAL ends with the transaction it was
    set in) and restores the previous values at the end, so later revisions in the same run do not
-   inherit them.
+   inherit them. The CONCURRENTLY build itself runs under a session `lock_timeout = 30s`
+   (restored after): it waits for every open transaction on the table, and the live colour
+   writes to it. Owner note: prod is at scope_seeds, so on prod only step 2 runs.
 
 ## Optional, separate commit, flagged for the owner
 

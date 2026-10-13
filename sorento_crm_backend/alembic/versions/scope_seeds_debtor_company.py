@@ -50,6 +50,7 @@ log = logging.getLogger("alembic.runtime.migration")
 LOCK_TIMEOUT = "5s"
 STATEMENT_TIMEOUT = "120s"
 DOCUMENT_ID_INDEX = "ix_embedding_chunks_document_id"
+INDEX_LOCK_TIMEOUT = "30s"
 
 # A per-company seed id: 'debtor:' + uuid + ':' + code. Anything else under 'debtor:' is
 # a legacy company-less seed.
@@ -148,7 +149,17 @@ def upgrade():
     # CREATE INDEX CONCURRENTLY cannot run inside a transaction; the autocommit block commits
     # the revisions before this one and builds the index on its own.
     with op.get_context().autocommit_block():
-        _ensure_document_id_index(op.get_bind(), concurrently=True)
+        bind = op.get_bind()
+        # The build waits for every open transaction on embedding_chunks (the live colour's
+        # API and worker write to it). Bound that wait so a release fails instead of hanging;
+        # the INVALID index a timeout leaves is dropped and rebuilt by the next run. Session
+        # level, since SET LOCAL does nothing outside a transaction; restored after.
+        previous = bind.execute(sa.text("SELECT current_setting('lock_timeout')")).scalar()
+        bind.execute(sa.text(f"SET lock_timeout = '{INDEX_LOCK_TIMEOUT}'"))
+        try:
+            _ensure_document_id_index(bind, concurrently=True)
+        finally:
+            bind.execute(sa.text("SELECT set_config('lock_timeout', :v, false)"), {"v": previous})
     _upgrade(build_index=False)
 
 

@@ -265,7 +265,7 @@ def test_a_code_too_long_for_source_id_is_not_copied(db, world):
     ).scalar() == 0
 
 
-def test_the_document_id_index_is_built_before_the_deletes(db, world):
+def test_the_document_id_index_is_built(db, world):
     db.execute(text(f"DROP INDEX IF EXISTS {DOC_INDEX}"))
     assert _index_state(db) is None
     _run_upgrade(db)
@@ -294,8 +294,9 @@ def test_a_held_lock_fails_the_upgrade_fast_instead_of_hanging(db):
         other.execute(text("SET LOCAL lock_timeout = '10s'"))
         other.execute(text(f'LOCK TABLE "{schema}".embedding_queue IN ACCESS EXCLUSIVE MODE'))
         started = time.monotonic()
-        with pytest.raises(sa.exc.OperationalError, match="lock timeout"):
+        with pytest.raises(sa.exc.OperationalError) as raised:
             _run_upgrade(db)
+        assert raised.value.orig.pgcode == "55P03"  # lock_not_available
         assert time.monotonic() - started < 30
         other.rollback()
 
