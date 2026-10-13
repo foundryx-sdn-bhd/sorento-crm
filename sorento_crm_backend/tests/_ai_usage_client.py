@@ -33,7 +33,9 @@ def api_client(db, permissions):
     UserPermissionService.check_user_has_permission = lambda self, uid, slug: slug in granted
     UserPermissionService.get_user_permission_slugs = lambda self, uid: list(granted)
     try:
-        yield TestClient(app)
+        client = TestClient(app)
+        client.actor = actor
+        yield client
     finally:
         UserPermissionService.check_user_has_permission = originals[0]
         UserPermissionService.get_user_permission_slugs = originals[1]

@@ -674,3 +674,15 @@ def test_cu6_a_turn_with_every_cache_use_recorded_is_not_cache_unknown():
         s = _seed(db)
         assert _row(db, "turn_costs", "id", s["priced"])["cache_unknown"] is False
         assert _row(db, "turn_costs", "id", s["priced"])["cost_usd"] is not None
+
+
+def test_cu6_llm_calls_keeps_null_cached_tokens_null():
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        tid = s["no_calls"]
+        _usage(db, turn_id=tid, contact_id=s["contact_id"], feature="chatbot_parser", model=s["m_priced"],
+               prompt=1000, cached=None, completion=10, ms=1)
+        db.flush()
+        call = _row(db, "llm_calls", "chatbot_turn_id", tid)
+        assert call["cached_tokens"] is None

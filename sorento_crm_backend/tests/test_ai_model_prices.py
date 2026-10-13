@@ -236,3 +236,40 @@ def test_mp5_delete_pending_action_deletes_the_row(db):
     get_action("llm_model_price.delete").execute(db, {"entity_id": row["id"]})
     db.flush()
     assert db.execute(text("SELECT count(*) FROM llm_model_prices WHERE id = :i"), {"i": row["id"]}).scalar() == 0
+
+
+# ---- review round: validation edges and pending-action payload -------------------------------
+
+def test_mp3_blank_model_is_422(db):
+    with api_client(db, [VIEW, EDIT]) as client:
+        assert client.post(BASE, json=_body("   ")).status_code == 422
+
+
+@pytest.mark.parametrize("field", ["input_usd_per_1m", "output_usd_per_1m", "cached_input_usd_per_1m"])
+def test_mp3_price_at_or_above_the_column_limit_is_422_on_create_and_update(db, field):
+    row = _create(db)
+    with api_client(db, [VIEW, EDIT]) as client:
+        assert client.post(BASE, json=_body(**{field: 1000000})).status_code == 422
+        put = {"input_usd_per_1m": 1, "output_usd_per_1m": 2, "cached_input_usd_per_1m": 0.1, field: 1000000}
+        assert client.put(f"{BASE}/{row['id']}", json=put).status_code == 422
+        # The largest value the column holds is still accepted.
+        assert client.post(BASE, json=_body(**{field: 999999.999999})).status_code == 201
+
+
+def test_mp5_pending_delete_with_a_malformed_entity_id_is_refused_at_creation(db):
+    from app.models.sla import SlaFormAction
+    from app.models.user import User
+
+    row = _create(db)
+    with api_client(db, [VIEW, EDIT]) as client:
+        # The pending action row needs a real actor; the harness user is not in the blank schema.
+        db.add(User(id=client.actor["id"], email=client.actor["email"], name="ZZT Actor", status="ACTIVE"))
+        db.flush()
+        body = {"action_key": "llm_model_price.delete", "entity_type": "llm_model_price", "payload": {}}
+        ok = client.post("/api/v1/pending-actions", json={**body, "entity_id": row["id"]})
+        assert ok.status_code == 202, ok.text  # control: a real id is parked
+        db.query(SlaFormAction).delete()
+        db.flush()
+        bad = client.post("/api/v1/pending-actions", json={**body, "entity_id": "not-a-uuid"})
+        assert bad.status_code in (400, 422), bad.text
+        assert db.query(SlaFormAction).count() == 0
