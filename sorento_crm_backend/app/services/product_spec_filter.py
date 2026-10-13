@@ -343,6 +343,8 @@ def resolve_size(
             extra["spec_unrecorded"] = {SIZE_KEY: int(missing)}
         # Owner ruling 13 Oct 2026 (size-miss wording, option b): "No 250 mm. Sizes on file: ...";
         # the reply echoes the size asked, so the route says which.
-        extra["spec_size_asked"] = {"value": size["value"], "unit": "mm"}
+        # One size asked only: a range or a bound has no single size to echo (review S1).
+        if (size.get("op") or "eq") == "eq" and isinstance(size.get("value"), (int, float)):
+            extra["spec_size_asked"] = {"value": size["value"], "unit": "mm"}
         return None, extra
     return out, {"spec_resolved": resolved}

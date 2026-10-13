@@ -232,8 +232,8 @@ def _spec_miss_intro(data: dict) -> str | None:
         # Owner ruling 13 Oct 2026 (option b): the size asked, then one sorted list of the sizes
         # on file over every axis, never one line per axis.
         unit = asked.get("unit") or "mm"
-        sizes = sorted(
-            {_qty(v) for a in alternatives if (a.get("unit") or unit) == unit for v in a["values"]
+        sizes = sorted(  # as numbers, then formatted (review B2: "1000 mm" sorted before "90 mm")
+            {float(v) for a in alternatives if (a.get("unit") or unit) == unit for v in a["values"]
              if isinstance(v, (int, float)) and not isinstance(v, bool)}
         )
         lines = [f"No {_spec_value(asked.get('value'), unit)}."]

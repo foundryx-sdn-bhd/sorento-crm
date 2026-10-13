@@ -667,8 +667,17 @@ _WRAPPERS = (("*_", "_*"), ("*", "*"), ("_", "_"))
 _NUMERIC_TOKENS = frozenset({"available"})
 
 
+#: A measure ("250 mm", "130.5mm") and a list of them: the size-miss sentences (owner ruling
+#: 13 Oct) name only measures, so "No {size}." never takes "No exact match." (review, b6da364a).
+_MEASURE = r"\d[\d.,]*(?: ?[A-Za-z]{1,4})?"
+_MEASURE_TOKENS = {"size": _MEASURE, "sizes": f"{_MEASURE}(?:, {_MEASURE})*"}
+
+
 def _token_pattern(name: str) -> str:
-    body = r"\d[\d,]*" if name in _NUMERIC_TOKENS else f"[^\\n]{{1,{_TOKEN_MAX}}}?"
+    if name in _MEASURE_TOKENS:
+        body = _MEASURE_TOKENS[name]
+    else:
+        body = r"\d[\d,]*" if name in _NUMERIC_TOKENS else f"[^\\n]{{1,{_TOKEN_MAX}}}?"
     return f"(?P<{name}>{body})"
 
 
