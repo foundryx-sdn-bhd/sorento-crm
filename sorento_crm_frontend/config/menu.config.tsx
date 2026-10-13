@@ -1067,6 +1067,11 @@ export const MENU_SIDEBAR: MenuConfig = [
             permission: 'system.ai_assistant_settings.view',
           },
           {
+            title: 'Model prices',
+            path: '/system-management/ai-assistant/model-prices',
+            permission: 'system.ai_assistant_settings.view',
+          },
+          {
             title: 'Wishlist',
             path: '/system-management/ai-assistant/wishlist',
             permission: 'system.ai_assistant_settings.view',
