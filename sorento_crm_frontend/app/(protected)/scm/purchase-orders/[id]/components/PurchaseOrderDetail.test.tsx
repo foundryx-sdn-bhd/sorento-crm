@@ -913,6 +913,17 @@ describe('PurchaseOrderDetail - AutoCount Cancel PO on the lines', () => {
     const cell = screen.getByTestId('qty-cancelled-l-1');
     expect(cell).toHaveTextContent('20');
     expect(cell).toHaveAttribute('title', 'XP-000077: 20 (item)');
+    // Owner, 13 Oct: the line is done (closed), so it reads Completed, not Partly cancelled.
+    expect(screen.queryByText('Partly cancelled')).not.toBeInTheDocument();
+  });
+
+  it('reads Partly cancelled while a partly cancelled line is still open', () => {
+    const order = cancelledPo();
+    order.lines[0] = { ...order.lines[0], qty_received: 100, line_status: 'open' };
+    usePurchaseOrder.mockReturnValue({ data: order, isLoading: false, isError: false });
+    renderDetail();
+    openTab('Lines');
+
     expect(screen.getByText('Partly cancelled')).toBeInTheDocument();
   });
 });

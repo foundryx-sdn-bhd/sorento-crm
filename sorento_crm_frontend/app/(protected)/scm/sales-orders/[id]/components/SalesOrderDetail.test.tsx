@@ -2504,6 +2504,12 @@ describe('SalesOrderDetail - AutoCount Cancel SO on the lines', () => {
             { doc_no: 'XS-016503', qty: 2, match_reason: 'fallback' },
           ],
         },
+        {
+          id: 'l-3', line_no: 3, sku: 'CB110LP', product_name: 'Cabinet 110 LP',
+          qty_ordered: 10, qty_delivered: 0, qty_cancelled: 4, outstanding_qty: 6, uom: 'PCS',
+          warehouse_code: 'BRW-BB', line_status: 'open', required_date: '2026-10-01',
+          cancels: [{ doc_no: 'XS-016504', qty: 4, match_reason: 'item' }],
+        },
       ],
     });
   }
@@ -2533,7 +2539,9 @@ describe('SalesOrderDetail - AutoCount Cancel SO on the lines', () => {
     );
   });
 
-  it('reads Cancelled for a whole cancel and Partly cancelled for a partial one', () => {
+  it('reads Cancelled for a whole cancel, Partly cancelled only while a partial one is open', () => {
+    // Owner, 13 Oct: a done line reads Completed (the Qty cancelled column carries the
+    // cancel); "Partly cancelled" is for a line still open.
     useSalesOrder.mockReturnValue({ data: cancelledOrder(), isLoading: false, isError: false });
     renderDetail();
     openTab('Lines');
@@ -2541,8 +2549,11 @@ describe('SalesOrderDetail - AutoCount Cancel SO on the lines', () => {
     const rows = screen.getAllByRole('row');
     const row1 = rows.find((r) => within(r).queryByText('CB110'));
     const row2 = rows.find((r) => within(r).queryByText('CB110-R'));
+    const row3 = rows.find((r) => within(r).queryByText('CB110LP'));
     expect(within(row1!).getByText('Cancelled')).toBeInTheDocument();
-    expect(within(row2!).getByText('Partly cancelled')).toBeInTheDocument();
+    expect(within(row2!).getByText('Completed')).toBeInTheDocument();
+    expect(within(row2!).queryByText('Partly cancelled')).not.toBeInTheDocument();
+    expect(within(row3!).getByText('Partly cancelled')).toBeInTheDocument();
   });
 
   it('reads 0 with no tooltip on a line nothing cancelled, like the other quantities', () => {

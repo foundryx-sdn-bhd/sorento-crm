@@ -35,11 +35,12 @@ export function cancelSourcesTitle(cancels: CancelSource[] | null | undefined): 
 
 export const PARTLY_CANCELLED = { label: 'Partly cancelled', variant: 'warning' as StatusBadgeVariant };
 
-/** Some of the line was cancelled in AutoCount, but not all of it (a whole cancel reads
- *  `cancelled` through the line's own status). */
+/** Some of the line was cancelled in AutoCount and the line is still open (owner, 13 Oct, (b)):
+ *  a done line reads its own status (Completed, or Cancelled for a whole cancel) and the Qty
+ *  cancelled column carries the cancel. */
 export function isPartlyCancelled(line: {
   qty_cancelled?: number | null;
   line_status?: string | null;
 }): boolean {
-  return Number(line.qty_cancelled ?? 0) > 0 && (line.line_status ?? 'open') !== 'cancelled';
+  return Number(line.qty_cancelled ?? 0) > 0 && (line.line_status ?? 'open') === 'open';
 }
