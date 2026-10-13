@@ -77,3 +77,14 @@ def test_d5_the_sizes_on_file_sort_as_numbers(tool):
         "spec_alternatives": [{"key": "dim_length", "label": "Length", "unit": "mm", "values": [1000, 130.5, 90, 130]}],
     })
     assert "sizes on file: 90 mm, 130 mm, 130.5 mm, 1000 mm." in out, out
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+def test_d6_a_size_miss_over_a_family_names_it(tool):
+    """Owner hand test round 2 (13 Oct): "250mm srtwc286 got stock?" reads "No 250 mm for
+    SRTWC286. Sizes on file: 150 mm, 200 mm." when the route names the family (`subject`)."""
+    out = text(tool, {
+        "spec_size_asked": {"value": 250, "unit": "mm", "subject": "ZZTWC286"},
+        "spec_alternatives": [{"key": "trap_length", "label": "Trap outlet length", "unit": "mm", "values": [200, 150]}],
+    })
+    assert "no 250 mm for zztwc286. sizes on file: 150 mm, 200 mm." in out, out
