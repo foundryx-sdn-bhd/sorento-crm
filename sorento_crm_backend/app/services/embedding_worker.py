@@ -27,7 +27,7 @@ from app.models.procurement import InboundShipment, InboundShipmentLine, SPOAllo
 from app.models.order import Order, OrderStatus, OrderLine, Customer, Transporter
 from app.models.product import ProductAttachment
 from app.models.conversation_frame import ConversationFrame
-from app.services.embedding_service import EmbeddingReadService, parse_debtor_seed_id
+from app.services.embedding_service import DEBTOR_SEED_PREFIX, EmbeddingReadService, parse_debtor_seed_id
 
 logger = logging.getLogger(__name__)
 
@@ -761,7 +761,7 @@ def _source_row_exists(db: Session, source_type: str, source_id: str) -> bool:
     with no row (mcp_tool, schema_doc, ...) and a ``debtor:`` seed read as present,
     so nothing synthetic is ever removed as "deleted"."""
     model = _SOURCE_MODEL.get(source_type)
-    if model is None or str(source_id).startswith("debtor:"):
+    if model is None or str(source_id).startswith(DEBTOR_SEED_PREFIX):
         return True
     try:
         # SAVEPOINT: a malformed id fails the statement (invalid uuid) and would
@@ -797,7 +797,7 @@ def purge_orphan_embeddings(db: Session, *, apply: bool = False) -> dict[str, An
         for source_type, model in _SOURCE_MODEL.items():
             orphans = db.query(EmbeddingDocument.id, EmbeddingDocument.source_id).filter(
                 EmbeddingDocument.source_type == source_type,
-                ~EmbeddingDocument.source_id.startswith("debtor:"),
+                ~EmbeddingDocument.source_id.startswith(DEBTOR_SEED_PREFIX),
                 ~exists().where(cast(model.id, String) == EmbeddingDocument.source_id),
             )
             rows = orphans.all()

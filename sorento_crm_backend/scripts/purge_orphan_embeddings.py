@@ -11,9 +11,9 @@ what was left behind before that, plus deletes that never raise an event (bulk
     python scripts/purge_orphan_embeddings.py           # dry run: counts per source_type
     python scripts/purge_orphan_embeddings.py --apply   # delete them (chunks first), one commit
 
-Logic: `embedding_worker.purge_orphan_embeddings`. `debtor:<code>` seeds have no row by
-design and are never touched; types with no source table (mcp_tool, schema_doc, ...) are not
-scanned. Idempotent: a second `--apply` finds nothing.
+Logic: `embedding_worker.purge_orphan_embeddings`. `debtor:<company>:<code>` seeds (and legacy
+`debtor:<code>` ones) have no row by design and are never touched; types with no source table
+(mcp_tool, schema_doc, ...) are not scanned. Idempotent: a second `--apply` finds nothing.
 """
 from __future__ import annotations
 

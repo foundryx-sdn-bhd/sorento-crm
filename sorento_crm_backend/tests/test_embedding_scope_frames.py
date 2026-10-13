@@ -35,7 +35,7 @@ from app.models.access import RespondContact
 from app.models.conversation_frame import ConversationFrame
 from app.models.embeddings import EmbeddingChunk, EmbeddingDocument, EmbeddingQueue
 from app.services.company_scope import register_company_scope_listeners
-from app.services.embedding_service import EmbeddingReadService
+from app.services.embedding_service import EmbeddingReadService, debtor_seed_id
 
 register_company_scope_listeners()
 
@@ -372,15 +372,17 @@ def test_purge_orphans_counts_on_dry_run_and_deletes_on_apply(db, world):
     pid = _seed_product(db, world["a"], f"ZZSFQ{world['suffix']}")
     live_frame = _seed_frame(db, _seed_contact(db, world["a"]))
     orphan_cert, orphan_frame = str(uuid.uuid4()), str(uuid.uuid4())
-    debtor = f"debtor:ZZSF{world['suffix']}"
+    debtor = f"debtor:ZZSF{world['suffix']}"  # legacy, company-less seed
+    seed = debtor_seed_id(world["a"], f"ZZSF{world['suffix']}")  # #1607 per-company seed
     _seed_chunk(db, "product", pid, world["a"], world["vec"])
     _seed_chunk(db, "conversation_frame", live_frame, world["a"], world["vec"])
     _seed_chunk(db, "certificate", orphan_cert, None, world["vec"])
     _seed_chunk(db, "conversation_frame", orphan_frame, None, world["vec"])
     _seed_chunk(db, "customer", debtor, None, world["vec"])  # synthetic seed, no row by design
+    _seed_chunk(db, "customer", seed, world["a"], world["vec"])
 
     def mine(counts_ids):
-        return counts_ids & {pid, live_frame, orphan_cert, orphan_frame, debtor}
+        return counts_ids & {pid, live_frame, orphan_cert, orphan_frame, debtor, seed}
 
     dry = embedding_worker.purge_orphan_embeddings(db, apply=False)
     assert mine(set(dry["source_ids"])) == {orphan_cert, orphan_frame}
@@ -396,6 +398,7 @@ def test_purge_orphans_counts_on_dry_run_and_deletes_on_apply(db, world):
     assert _doc(db, "product", pid) is not None
     assert _doc(db, "conversation_frame", live_frame) is not None
     assert _doc(db, "customer", debtor) is not None
+    assert _doc(db, "customer", seed) is not None
 
 
 # ---------------------------------------------------------------- (3) certificate codes
