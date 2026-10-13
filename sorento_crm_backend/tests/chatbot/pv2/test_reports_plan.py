@@ -4,6 +4,7 @@ from tests.chatbot.pv2.reports_schema_shim import install
 schema = install()
 ReportSpec, Filter, Period = schema.ReportSpec, schema.Filter, schema.Period
 
+import uuid
 from datetime import date
 from types import SimpleNamespace
 
@@ -35,6 +36,7 @@ def flt(dimension, keys=(), op="in", values=()):
     return Filter(dimension=dimension, op=op, keys=list(keys), values=list(values))
 
 
+B_UUID, C_UUID, U_UUID, P_UUID = (str(uuid.uuid4()) for _ in range(4))
 LAST_MONTH = period(preset="last_month")
 SEP = {"date_from": "2026-09-01", "date_to": "2026-09-30"}
 
@@ -340,13 +342,18 @@ def test_plan_chat_ranking_without_top_n_asks_it():
 
 
 def test_plan_total_needs_no_measure_or_top_n():
-    plan = r.plan_report(total(), refs={}, today=TODAY)
+    plan = r.plan_report(total(filters=[flt("brand", ["SORENTO"])]), refs={"brand": [{"key": B_UUID, "label": "SORENTO"}]}, today=TODAY)
     assert plan.status == "run"
     ra = plan.route_args
     assert "group_by" not in ra and "top_n" not in ra
     assert ra["measure"] == "amount" and ra["basis"] == "ordered"
     assert ra["date_from"] == "2026-10-01" and ra["date_to"] == "2026-10-13"
-    assert plan.header == "*Read as:* sales, ordered sales, this month"
+    assert plan.header == "*Read as:* ordered sales, brand SORENTO, this month"
+
+
+def test_plan_sales_total_without_axis_or_filter_says_catalogue():
+    plan = r.plan_report(total(), refs={}, today=TODAY)
+    assert plan.status == "say" and plan.reply == report_ask.CATALOGUE_LINE
 
 
 def test_plan_month_trend_needs_no_top_n_or_measure():
@@ -365,7 +372,9 @@ def test_plan_grain_month_is_group_by_month():
 
 
 def test_plan_grain_quarter_noted():
-    plan = r.plan_report(total(grain="quarter"), refs={}, today=TODAY)
+    plan = r.plan_report(
+        total(grain="quarter", filters=[BRAND_SORENTO]), refs={"brand": [{"key": B_UUID, "label": "SORENTO"}]}, today=TODAY
+    )
     assert plan.status == "run"
     assert "group_by" not in plan.route_args
     assert plan.notes == ["Breakdown by quarter is not available yet."]
@@ -420,9 +429,10 @@ def test_plan_threshold_noted():
     assert plan.status == "run" and plan.notes == ["Thresholds are not available yet."]
 
 
-def test_plan_top_n_over_ceiling_clamped_with_note():
+def test_plan_top_n_over_ceiling_asks_again_with_note():
     plan = r.plan_report(ranking(top_n=5000), refs={}, today=TODAY)
-    assert plan.status == "run" and plan.route_args["top_n"] == 1000
+    assert plan.status == "ask" and "top_n" in plan.missing
+    assert plan.route_args == {}
     assert plan.notes == [lanes_business.top_selling_ceiling_note({"top_n": 5000})]
 
 
@@ -466,17 +476,17 @@ def test_plan_unknown_dataset_says():
 
 
 def test_plan_brand_filter_uses_ref_key_and_label():
-    refs = {"brand": [{"key": "b-uuid-1", "label": "SORENTO"}]}
+    refs = {"brand": [{"key": B_UUID, "label": "SORENTO"}]}
     plan = r.plan_report(ranking(filters=[BRAND_SORENTO]), refs=refs, today=TODAY)
     assert plan.status == "run"
-    assert plan.route_args["brand_ids"] == ["b-uuid-1"]
-    assert "brand SORENTO" in plan.header and "b-uuid-1" not in plan.header
+    assert plan.route_args["brand_ids"] == [B_UUID]
+    assert "brand SORENTO" in plan.header and B_UUID not in plan.header
 
 
 def test_plan_refs_may_be_objects():
-    refs = {"brand": [SimpleNamespace(key="b-uuid-1", label="SORENTO")]}
+    refs = {"brand": [SimpleNamespace(key=B_UUID, label="SORENTO")]}
     plan = r.plan_report(ranking(filters=[BRAND_SORENTO]), refs=refs, today=TODAY)
-    assert plan.route_args["brand_ids"] == ["b-uuid-1"]
+    assert plan.route_args["brand_ids"] == [B_UUID]
 
 
 def test_plan_filter_without_refs_is_unresolved():
@@ -560,10 +570,10 @@ def test_plan_chat_subject_filter():
 
 # ---------------------------------------------------------------- no leaks
 
-UUID_KEYS = ["b-uuid-1", "c-uuid-9", "u-uuid-3"]
-BRAND_REFS = {"brand": [{"key": "b-uuid-1", "label": "SORENTO"}]}
-CUST_REFS = {"customer": [{"key": "c-uuid-9", "label": "ABC SDN BHD"}]}
-AGENT_REFS = {"sales_agent": [{"key": "u-uuid-3", "label": "ALI"}]}
+UUID_KEYS = [B_UUID, C_UUID, U_UUID, P_UUID]
+BRAND_REFS = {"brand": [{"key": B_UUID, "label": "SORENTO"}]}
+CUST_REFS = {"customer": [{"key": C_UUID, "label": "ABC SDN BHD"}]}
+AGENT_REFS = {"sales_agent": [{"key": U_UUID, "label": "ALI"}]}
 
 LEAK_CASES = [
     ("full", ranking(), {}, False),
@@ -591,3 +601,229 @@ def test_plan_text_never_leaks_keys_or_dots(name, s, refs, dealer):
         assert " · " not in text
         for key in UUID_KEYS:
             assert key not in text
+
+
+# ---------------------------------------------------------------- review round: refs, held spec, dealer, drill
+
+from app.services.chatbot.lanes.business import chat_report
+from app.services.reports.ask import NO_AGENT_KEY
+
+
+@pytest.mark.parametrize(
+    "dim,key",
+    [("customer", "C001"), ("brand", "SORENTO"), ("category", "basin"), ("sales_agent", "ali")],
+)
+def test_plan_non_uuid_ref_key_is_unresolved(dim, key):
+    plan = r.plan_report(ranking(filters=[flt(dim, ["x"])]), refs={dim: [{"key": key, "label": "X"}]}, today=TODAY)
+    assert plan.status == "unresolved" and plan.unresolved == [dim]
+    assert plan.route_args == {}
+
+
+def test_plan_customer_agent_non_uuid_unresolved():
+    refs = {"customer_agent": [{"key": "bob", "label": "Bob"}]}
+    plan = r.plan_report(ranking(filters=[flt("customer_agent", ["Bob"])]), refs=refs, today=TODAY)
+    assert plan.status == "unresolved" and plan.unresolved == ["customer_agent"]
+
+
+def test_plan_uuid_param_filters_carry_ids():
+    cases = {"customer": "customer_ids", "category": "category_ids", "sales_agent": "sales_agent_ids"}
+    for dim, param in cases.items():
+        k = str(uuid.uuid4())
+        plan = r.plan_report(ranking(filters=[flt(dim, ["X"])]), refs={dim: [{"key": k, "label": "X"}]}, today=TODAY)
+        assert plan.status == "run" and plan.route_args[param] == [k]
+
+
+def test_plan_sales_product_single_code_rides_as_product_code():
+    refs = {"product": [{"key": "SRTWC286", "label": "SRTWC286"}]}
+    plan = r.plan_report(ranking(filters=[flt("product", ["SRTWC286"])]), refs=refs, today=TODAY)
+    assert plan.status == "run"
+    assert plan.route_args["product_code"] == "SRTWC286" and "product_ids" not in plan.route_args
+
+
+def test_plan_sales_product_uuid_rides_as_product_ids():
+    refs = {"product": [{"key": P_UUID, "label": "Basin A"}]}
+    plan = r.plan_report(ranking(filters=[flt("product", ["Basin A"])]), refs=refs, today=TODAY)
+    assert plan.route_args["product_ids"] == [P_UUID] and "product_code" not in plan.route_args
+
+
+def test_plan_sales_product_two_codes_says():
+    refs = {"product": [{"key": "SRTWC286", "label": "A"}, {"key": "SRTWC287", "label": "B"}]}
+    plan = r.plan_report(ranking(filters=[flt("product", ["A", "B"])]), refs=refs, today=TODAY)
+    assert plan.status == "say"
+    assert plan.reply == "Filtering by several product codes at once is not available yet."
+    assert plan.spec.filters == []
+
+
+def test_plan_sales_agent_no_agent_key_allowed():
+    refs = {"sales_agent": [{"key": NO_AGENT_KEY, "label": "No agent"}]}
+    plan = r.plan_report(ranking(filters=[flt("sales_agent", ["No agent"])]), refs=refs, today=TODAY)
+    assert plan.status == "run" and plan.route_args["sales_agent_ids"] == [NO_AGENT_KEY]
+
+
+# held spec: declined parts are stripped so the line is said once
+
+
+def test_plan_spec_strips_compare():
+    plan = r.plan_report(ranking(compare_to="last_year", compare_period=LAST_MONTH), refs={}, today=TODAY)
+    assert plan.notes and plan.spec.compare_to is None and plan.spec.compare_period is None
+
+
+def test_plan_spec_strips_threshold_group_and_grain():
+    plan = r.plan_report(ranking(threshold=5.0, top_n_per_group=2, grain="quarter"), refs={}, today=TODAY)
+    assert plan.status == "run"
+    assert plan.spec.threshold is None and plan.spec.top_n_per_group is None and plan.spec.grain is None
+    assert len(plan.notes) == 3
+
+
+def test_plan_spec_strips_second_group_by():
+    plan = r.plan_report(ranking(group_by=["brand", "sales_agent"]), refs={}, today=TODAY)
+    assert plan.spec.group_by == ["brand"]
+
+
+def test_plan_spec_strips_unsupported_filters():
+    plan = r.plan_report(ranking(filters=[flt("state", ["Johor"]), BRAND_SORENTO]), refs=BRAND_REFS, today=TODAY)
+    assert plan.status == "say"
+    assert [f.dimension for f in plan.spec.filters] == ["brand"]
+    plan = r.plan_report(ranking(filters=[flt("brand", ["SORENTO"], op="not_in")]), refs=BRAND_REFS, today=TODAY)
+    assert plan.status == "say" and plan.spec.filters == []
+
+
+def test_plan_spec_strips_unsupported_group_by():
+    plan = r.plan_report(ranking(group_by=["region"]), refs={}, today=TODAY)
+    assert plan.status == "say" and plan.spec.group_by == []
+
+
+def test_plan_spec_strips_ratio_measures():
+    plan = r.plan_report(ranking(measures=["amount/qty", "qty"]), refs={}, today=TODAY)
+    assert plan.spec.measures == ["qty"]
+    plan = r.plan_report(ranking(measures=["amount/qty"]), refs={}, today=TODAY)
+    assert plan.spec.measures == []
+
+
+def test_chain_compare_said_once():
+    plan = r.plan_report(ranking(compare_to="last_year"), refs={}, today=TODAY)
+    assert plan.notes
+    held = r.edit_report(plan.spec, spec(group_by=["brand"]))
+    again = r.plan_report(held, refs={}, today=TODAY)
+    assert again.status == "run" and again.notes == [] and again.route_args["group_by"] == "brand"
+
+
+def test_chain_state_filter_said_once():
+    plan = r.plan_report(ranking(filters=[flt("state", ["Johor"])]), refs={}, today=TODAY)
+    assert plan.status == "say"
+    held = r.edit_report(plan.spec, spec(group_by=["brand"]))
+    again = r.plan_report(held, refs={}, today=TODAY)
+    assert again.status == "run" and again.route_args["group_by"] == "brand"
+
+
+def test_plan_grain_month_with_group_by_is_second_breakdown():
+    plan = r.plan_report(ranking(grain="month"), refs={}, today=TODAY)
+    assert plan.status == "run" and plan.route_args["group_by"] == "customer"
+    assert plan.notes == ["A second breakdown (by month) is not available yet."]
+
+
+def test_plan_ratio_only_ranking_asks_with_note():
+    plan = r.plan_report(ranking(measures=["amount/qty"]), refs={}, today=TODAY)
+    assert plan.status == "ask" and plan.notes == ["Ratios are not available yet."]
+
+
+# dataset inference from keys
+
+
+def test_plan_dataset_none_chat_keys_infers_chat():
+    s = spec(measures=["asks"], group_by=["topic"], period=CHAT_WEEK, top_n=5)
+    plan = r.plan_report(s, refs={}, today=TODAY)
+    assert plan.status == "run" and plan.route_args["dataset"] == "chat"
+    assert plan.spec.dataset == "chat"
+
+
+def test_plan_dataset_none_sales_keys_infers_sales():
+    plan = r.plan_report(ranking(dataset=None, group_by=["brand"]), refs={}, today=TODAY)
+    assert plan.status == "run" and "dataset" not in plan.route_args and plan.spec.dataset == "sales"
+
+
+def test_plan_chat_period_question_is_chat_wording():
+    s = spec(dataset="chat", group_by=["topic"], top_n=5)
+    plan = r.plan_report(s, refs={}, today=TODAY)
+    assert plan.status == "ask" and plan.missing == ["period"]
+    assert plan.reply == chat_report.PERIOD_QUESTION
+
+
+# dealer
+
+
+@pytest.mark.parametrize("dim", ["location", "channel", "customer_agent", "sales_agent"])
+def test_dealer_refusal_sales_filters(dim):
+    base = ranking(group_by=["product"])
+    assert r.dealer_refusal(base) is None
+    assert r.dealer_refusal(ranking(group_by=["product"], filters=[flt(dim, ["x"])])) == report_ask.DEALER_REFUSAL
+
+
+def test_dealer_refusal_sales_group_by():
+    assert r.dealer_refusal(ranking(group_by=["sales_agent"])) == report_ask.DEALER_REFUSAL
+    assert r.dealer_refusal(ranking(group_by=["customer"])) == report_ask.DEALER_REFUSAL
+    assert r.dealer_refusal(ranking(group_by=["brand"])) is None
+
+
+def test_dealer_refusal_chat_group_by():
+    chat = dict(dataset="chat", period=CHAT_WEEK, top_n=5)
+    assert r.dealer_refusal(spec(group_by=["salesperson"], **chat)) == report_ask.DEALER_REFUSAL
+    assert r.dealer_refusal(spec(group_by=["product"], **chat)) is None
+
+
+def test_dealer_say_plan_drops_offending_parts():
+    plan = r.plan_report(ranking(group_by=["product"], filters=[flt("location", ["x"]), BRAND_SORENTO]),
+                         refs=BRAND_REFS, today=TODAY, dealer=True)
+    assert plan.status == "say" and [f.dimension for f in plan.spec.filters] == ["brand"]
+    plan = r.plan_report(ranking(group_by=["sales_agent"]), refs={}, today=TODAY, dealer=True)
+    assert plan.status == "say" and plan.spec.group_by == []
+
+
+# drill refusals
+
+
+@pytest.mark.parametrize("dim,label", [("channel", "Dealer"), ("month", "Sep 2026")])
+def test_drill_not_a_source_refused(dim, label):
+    with pytest.raises(r.DrillRefused) as e:
+        r.drill_row(ranking(), row(dim, ("k",), label))
+    assert e.value.line == report_ask.NOT_A_SOURCE_LINES[dim]
+    assert isinstance(e.value, ValueError)
+
+
+def test_drill_no_keys_refused():
+    with pytest.raises(r.DrillRefused) as e:
+        r.drill_row(ranking(), row("customer", (), "ABC"))
+    plural = report_ask.AXIS_NOUNS["customer"][1]
+    assert e.value.line == report_ask.NO_KEYS_LINE.format(name="ABC", plural=plural)
+
+
+def test_drill_too_many_keys_refused():
+    with pytest.raises(r.DrillRefused) as e:
+        r.drill_row(ranking(), row("customer", tuple(f"k{i}" for i in range(51)), "ABC"))
+    assert e.value.line == report_ask.TOO_MANY_LINE.format(max=report_ask.DRILL_MAX_KEYS, plural="customers")
+
+
+def test_drill_exactly_max_keys_ok():
+    new, refs = r.drill_row(ranking(), row("customer", tuple(f"k{i}" for i in range(50)), "ABC"))
+    assert len(refs["customer"]) == 50
+
+
+def test_edit_report_cleared_period():
+    out = r.edit_report(ranking(), spec(), cleared=["period"])
+    assert out.period is None and out.top_n == 10
+    assert r.edit_report(ranking(), None, cleared=["period"]).period is None
+
+
+# ReportResolution
+
+
+def test_report_resolution_validates():
+    res = r.ReportResolution.model_validate(
+        {"status": "exact", "refs": {"brand": [{"kind": "brand", "key": B_UUID, "label": "SORENTO"}]}}
+    )
+    assert res.status == "exact" and res.refs["brand"][0]["label"] == "SORENTO"
+
+
+def test_report_resolution_rejects_extra_key():
+    with pytest.raises(Exception):
+        r.ReportResolution.model_validate({"status": "exact", "refs": {}, "surprise": 1})

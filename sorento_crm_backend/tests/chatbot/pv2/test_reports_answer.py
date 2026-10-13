@@ -4,6 +4,7 @@ from tests.chatbot.pv2.reports_schema_shim import install
 schema = install()
 ReportSpec, Filter, Period = schema.ReportSpec, schema.Filter, schema.Period
 
+import uuid
 from datetime import date
 
 import pytest
@@ -12,6 +13,7 @@ from app.services.chatbot.pv2 import reports as r
 
 TODAY = date(2026, 10, 13)
 CONTACT, SPACE = "contact-1", "space-1"
+B_UUID, U_UUID = str(uuid.uuid4()), str(uuid.uuid4())
 
 
 def spec(**kw):
@@ -235,34 +237,34 @@ def test_hand_test_b_chain():
 
     # Turn 3: "SORENTO brand" adds a brand filter.
     held = r.edit_report(held, spec(filters=[flt("brand", ["SORENTO"])]))
-    refs = {"brand": [{"key": "b-uuid-1", "label": "SORENTO"}]}
+    refs = {"brand": [{"key": B_UUID, "label": "SORENTO"}]}
     plan = r.plan_report(held, refs=refs, today=TODAY)
     assert plan.status == "run"
-    assert plan.route_args["brand_ids"] == ["b-uuid-1"] and plan.route_args["measure"] == "qty"
-    assert "b-uuid-1" not in plan.header and "brand SORENTO" in plan.header
+    assert plan.route_args["brand_ids"] == [B_UUID] and plan.route_args["measure"] == "qty"
+    assert B_UUID not in plan.header and "brand SORENTO" in plan.header
 
     # Turn 4: "by salesman instead" swaps group_by, keeps the brand filter.
     held = r.edit_report(held, spec(group_by=["sales_agent"]))
     plan = r.plan_report(held, refs=refs, today=TODAY)
     assert plan.status == "run"
-    assert plan.route_args["group_by"] == "sales_agent" and plan.route_args["brand_ids"] == ["b-uuid-1"]
+    assert plan.route_args["group_by"] == "sales_agent" and plan.route_args["brand_ids"] == [B_UUID]
     assert "by sales agent" in plan.header
 
     # Turn 5: "the 2nd one" drills into that row.
     row = r.ReportOption(
         key="ali",
         label="ALI",
-        payload={"report_row": {"dimension": "sales_agent", "keys": ["u-uuid-3"], "label": "ALI"}},
+        payload={"report_row": {"dimension": "sales_agent", "keys": [U_UUID], "label": "ALI"}},
     )
     held, drill_refs = r.drill_row(held, row)
-    assert drill_refs == {"sales_agent": [{"kind": "sales_agent", "key": "u-uuid-3", "label": "ALI"}]}
+    assert drill_refs == {"sales_agent": [{"kind": "sales_agent", "key": U_UUID, "label": "ALI"}]}
     refs = {**refs, **drill_refs}
     plan = r.plan_report(held, refs=refs, today=TODAY)
     assert plan.status == "run"
     assert "group_by" not in plan.route_args
-    assert plan.route_args["sales_agent_ids"] == ["u-uuid-3"] and plan.route_args["brand_ids"] == ["b-uuid-1"]
+    assert plan.route_args["sales_agent_ids"] == [U_UUID] and plan.route_args["brand_ids"] == [B_UUID]
     assert plan.route_args["measure"] == "qty" and plan.route_args["date_from"] == "2026-09-01"
-    assert "sales agent ALI" in plan.header and "u-uuid-3" not in plan.header
+    assert "sales agent ALI" in plan.header and U_UUID not in plan.header
 
     # Turn 6: "compare with last year" runs the same report plus the truthful line.
     before = plan.route_args
@@ -271,3 +273,38 @@ def test_hand_test_b_chain():
     assert plan.status == "run"
     assert plan.notes == ["Comparison with last year is not available yet."]
     assert plan.route_args == before
+
+
+# ---------------------------------------------------------------- review round
+
+
+def test_run_none_ids_become_empty_and_default_space(monkeypatch):
+    from app.services.chatbot.lanes.business import fetch
+
+    monkeypatch.setattr(fetch, "space_id_or_default", lambda v: "sp-default" if not v else v)
+    mcp = FakeMcp(ENVELOPE)
+    r.answer_report(ranking(), refs={}, today=TODAY, mcp_call=mcp, contact_id=None, space_id=None)
+    _, args = mcp.calls[0]
+    assert args["contact_id"] == "" and args["space_id"] == "sp-default"
+
+
+def test_ask_text_includes_notes_first():
+    reply = answer(ranking(measures=["amount/qty"]), FakeMcp())
+    assert reply.plan.status == "ask"
+    assert reply.text == "Ratios are not available yet.\n" + reply.plan.reply
+    assert reply.pending["asked"] == reply.plan.reply
+
+
+def test_chat_error_envelope_is_chat_text_and_error():
+    s = spec(dataset="chat", measures=["failed"], group_by=["topic"], period=period(preset="this_week"), top_n=5)
+    reply = answer(s, FakeMcp({"error": "boom", "status_code": 500}))
+    assert reply.text == "Could not run the chat report right now." and reply.error is True
+
+
+def test_sales_generic_error_flagged_and_refusal_not():
+    reply = answer(ranking(), FakeMcp({"error": "boom", "status_code": 500}))
+    assert reply.error is True
+    refusal = {"error": "forbidden", "status_code": 403, "detail": {"message": "Nope."}}
+    reply = answer(ranking(), FakeMcp(refusal))
+    assert reply.error is False and reply.text == "Nope."
+    assert answer(ranking(), FakeMcp(ENVELOPE)).error is False
