@@ -658,10 +658,14 @@ def _apply(row, total: Decimal, transferred: Any, header_status: Optional[str]) 
     if row.qty_cancelled != value:
         row.qty_cancelled = value
     if now_full:
-        if not row.cancelled_by_cancel_doc and row.line_status != CANCELLED:
+        if row.line_status != CANCELLED:
+            # A flag left set on a line something reopened (an SO push raising ordered, a
+            # relink that failed) is re-cancelled here, but it is not a NEW cancellation: its
+            # OI rows were retired the first time (review N1).
+            newly = not row.cancelled_by_cancel_doc
             row.line_status = CANCELLED
             row.cancelled_by_cancel_doc = True
-            return True
+            return newly
         return False
     if row.cancelled_by_cancel_doc:
         row.cancelled_by_cancel_doc = False

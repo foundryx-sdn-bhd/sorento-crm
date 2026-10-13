@@ -218,3 +218,59 @@ def test_so_detail_shows_delivered_without_the_cancel(env):
     assert lines[0]["qty_delivered"] == 4.0
     assert lines[0]["qty_cancelled"] == 6.0
     assert lines[0]["outstanding_qty"] == 0.0
+
+
+# ======================================================================= review round 2
+def test_a_full_cancel_after_the_push_raised_ordered_still_cancels(env):
+    """Review N1: XS 10 + XS 2 on 10 ordered (capped, cancelled), then AutoCount raises the line
+    to 12 ordered / 12 transferred: the push reopens it, the relink derives 12 of 12 and the
+    line must read cancelled again, not stay closed."""
+    _push_so(env, "ZZ-CX-SN1", ordered=10, delivered=10)
+    _push_xs(env, "ZZ-CX-SN1", 10)
+    _push_xs(env, "ZZ-CX-SN1", 2, doc_key=950002)
+    assert _line(env, "ZZ-CX-SN1").line_status == "cancelled"
+    _push_so(env, "ZZ-CX-SN1", ordered=12, delivered=12)
+    line = _line(env, "ZZ-CX-SN1")
+    assert (line.qty_cancelled, line.line_status) == (Decimal("12"), "cancelled")
+
+
+def test_the_partial_cancel_change_reads_the_cs_required_basis(env, monkeypatch):
+    """Review SF5: CS stated 8 of 10; a 4 cancel moves the plan 8 -> 4, as the board plans."""
+    from app.services import planning_change_service
+
+    seen = []
+    monkeypatch.setattr(planning_change_service, "build_batch",
+                        lambda db, diff, **kw: seen.append(diff) or None)
+    _push_so(env, "ZZ-CX-SN2", ordered=10, delivered=4)
+    line = _line(env, "ZZ-CX-SN2")
+    line.qty_required = Decimal("8")
+    env.db.commit()
+    seen.clear()
+    _push_xs(env, "ZZ-CX-SN2", 4)
+    changes = [c for d in seen for c in d.changes if c.kind != "unchanged"]
+    assert [(c.before.qty, c.after.qty) for c in changes] == [(8.0, 4.0)]
+
+
+def test_po_detail_shows_received_without_the_cancel(env):
+    """Review SF4: Cancel PO 6 of a 10 / 10 PO line reads received 4, cancelled 6."""
+    from app.services.scm.purchase_order_service import PurchaseOrderService
+    from tests.test_ingest_documents import _po_line, _po_record
+
+    record = _po_record(env, number="ZZ-CX-PO1", ref="ZZTDOC:PO:ZZ-CX-PO1", lines=[
+        _po_line(env, ref="SRT_DB:7001:7101", qty_ordered=10, qty_received=10)])
+    assert env.post("/api/v1/external/ingest/purchase_orders", [record]).status_code == 200
+    xp = {"DocKey": 960001, "DocNo": "ZZXP-960001", "DocDate": "2026-10-01", "Cancelled": "F",
+          "LastModified": "2026-10-01T10:00:00",
+          "Details": [{"DtlKey": 961001, "Seq": 1, "ItemCode": _code_of_ref(env, env.product_ref),
+                       "Qty": 6, "FromDocType": "PO", "FromDocNo": "ZZ-CX-PO1",
+                       "FromDocDtlKey": 7101}]}
+    res = env.client.post("/api/v1/external/ingest/cancel_purchase_orders", json={
+        "companyCode": env.company_a_code, "book": "db1", "records": [xp]})
+    assert res.status_code == 200, res.text
+    from app.models.procurement import PurchaseOrder
+
+    env.db.expire_all()
+    po_id = env.db.execute(select(PurchaseOrder.id).where(
+        PurchaseOrder.po_number == "ZZ-CX-PO1")).scalar()
+    line = PurchaseOrderService(env.db).get_one(str(po_id))["lines"][0]
+    assert (line["qty_received"], line["qty_cancelled"]) == (4.0, 6.0)

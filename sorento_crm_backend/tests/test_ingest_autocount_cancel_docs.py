@@ -618,3 +618,21 @@ def test_a_do_push_re_decides_the_cancels_naming_its_orders(env, monkeypatch):
     seen.clear()
     env.push_do([rec])  # unchanged: nothing to re-decide
     assert seen == []
+
+
+def test_a_do_that_arrives_later_turns_a_fallback_into_a_tie_break(env):
+    """Review SF3: the cancel first falls back to line 5001 (both lines explain 12); a DO then
+    explains 5001's transfer, and the re-decision moves the cancel to 5002 by the tie-break."""
+    from tests.test_ingest_autocount_do_grn import do_records
+
+    lines = _so(env, lines=((5001, "p1", 12, 12, "wh1"), (5002, "p1", 12, 12, "wh1")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=12, from_dtl=0)])])
+    assert _cancel_lines(env, 950001)[951001].sales_order_line_id == lines[5001]
+    rec = copy.deepcopy(do_records()[0])
+    rec["Details"] = [dict(rec["Details"][0], ItemCode="ZZAC-P1", Qty=12.0, Location="ZZAC-WH1",
+                           FromDocType="SO", FromDocNo="ZZSO-C001", FromDocDtlKey=5001)]
+    assert _records(env.push_do([rec]))["db1:DO:900001"]["outcome"] == "created"
+    stored = _cancel_lines(env, 950001)[951001]
+    assert (stored.match_reason, stored.sales_order_line_id) == ("tie_break", lines[5002])
+    assert _so_line(env, lines[5001]).qty_cancelled == Decimal("0")
+    assert _so_line(env, lines[5002]).qty_cancelled == Decimal("12")

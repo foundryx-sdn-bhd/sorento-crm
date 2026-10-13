@@ -114,6 +114,10 @@ R7. Every cancel line ends matched, waiting or unmatched with a reason; each bat
   measured; build when one does (incoming is already right through TransferedQty).
 - The AutoCount pull's DO / GRN apply path does not run the cancel relink (the push route does); the
   next cancel or order sync re-decides. Build when the pull becomes the DO / GRN writer.
+- Consignment / Consignment Return live in `autocount_cancel_docs` / `_lines` (`kind`) while they are
+  stored only; move them to their own tables in the lane that gives consignment behaviour.
+- The DO / GRN `/deletions` sweep does not re-decide key-less cancels (a vanished DO stays counted as
+  explaining a transfer until the next order or cancel sync re-decides).
 - A visible "Cancelled" column on the SO / PO lines tab: the API returns `qty_cancelled`; the screen
   change needs a mock first.
 
