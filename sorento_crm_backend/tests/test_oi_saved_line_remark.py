@@ -203,6 +203,10 @@ def test_which_saved_lines_were_told_does_not_outlive_its_commit():
 
     register_order_inquiry_post_commit_dispatch()
     with blank_session() as db:
+        savepoint = db.begin_nested()
         db.info[_SAVED_TOLD_KEY] = {"pso": {"line"}}
+        savepoint.commit()
+        # A planning-change apply's per-order savepoint ends before its forget runs.
+        assert db.info[_SAVED_TOLD_KEY] == {"pso": {"line"}}
         db.commit()
         assert _SAVED_TOLD_KEY not in db.info
