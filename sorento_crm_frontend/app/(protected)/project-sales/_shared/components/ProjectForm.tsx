@@ -426,7 +426,7 @@ export function ProjectForm(props: ProjectFormProps) {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="project-admin-ref">Filing reference</Label>
+              <Label htmlFor="project-admin-ref">Reference</Label>
               <Input
                 id="project-admin-ref"
                 value={adminRef}

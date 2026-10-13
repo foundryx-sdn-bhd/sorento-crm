@@ -272,13 +272,13 @@ export function PipelineClient() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Pipeline"
+        title="Projects"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div
               className="inline-flex rounded-md border border-border p-0.5"
               role="group"
-              aria-label="Pipeline view"
+              aria-label="Projects view"
             >
               <Button
                 type="button"
@@ -362,12 +362,12 @@ export function PipelineClient() {
         hasFilters ? (
           <EmptyState
             title="No projects match these filters"
-            body="Widen or clear the filters to see the rest of the pipeline."
+            body="Clear the filters to see every project."
           />
         ) : (
           <EmptyState
             title="No projects registered yet"
-            body="Register the development you are pursuing. Claiming it early is what stops two people quoting the same tender."
+            body="Register one from Start."
           />
         )
       ) : view === 'board' ? (
@@ -418,8 +418,8 @@ export function PipelineClient() {
               </p>
               <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
                 {hasFilters
-                  ? 'Widen or clear the filters to see the rest of the pipeline.'
-                  : 'Register the development you are pursuing. Claiming it early is what stops two people quoting the same tender.'}
+                  ? 'Clear the filters to see every project.'
+                  : 'Register one from Start.'}
               </p>
             </div>
           }

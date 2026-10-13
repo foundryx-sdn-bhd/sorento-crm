@@ -175,6 +175,13 @@ beforeEach(() => {
 });
 
 describe('PipelineClient', () => {
+  it('is titled Projects, not Pipeline (owner, 13 Oct)', async () => {
+    renderClient();
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pipeline' })).toBeNull();
+    await waitFor(() => expect(listProjects).toHaveBeenCalled());
+  });
+
   it('keeps the view toggle and Start in the page header', async () => {
     renderClient();
 

@@ -631,10 +631,10 @@ describe('ProjectForm: clearable selects (AC-PF011, PF015, PF022, PF023)', () =>
 });
 
 describe('ProjectForm: text and number fields (AC-PF012-014, PF017, PF018)', () => {
-  it('limits Filing reference to 64 characters', () => {
+  it('limits Reference to 64 characters', () => {
     renderForm({ mode: 'create' });
     openDetails();
-    expect(screen.getByLabelText('Filing reference')).toHaveAttribute('maxLength', '64');
+    expect(screen.getByLabelText('Reference')).toHaveAttribute('maxLength', '64');
   });
 
   it('Estimated sales value is a non-negative number field', () => {
@@ -778,7 +778,7 @@ describe('ProjectForm: create submit (AC-PF024)', () => {
     fireEvent.change(screen.getByLabelText('Address'), {
       target: { value: '123 Jalan Setia' },
     });
-    fireEvent.change(screen.getByLabelText('Filing reference'), {
+    fireEvent.change(screen.getByLabelText('Reference'), {
       target: { value: 'PS26-0099' },
     });
     fireEvent.change(screen.getByLabelText('Estimated sales value (RM)'), {

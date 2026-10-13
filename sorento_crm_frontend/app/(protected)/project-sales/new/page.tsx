@@ -21,7 +21,7 @@ export default function RegisterProjectPage() {
           title="Register a project"
           crumbs={registerProjectCrumbs()}
           actions={
-            <BackToList listPath="/project-sales/pipeline" label="Back to pipeline" />
+            <BackToList listPath="/project-sales/pipeline" label="Back to projects" />
           }
         />
         <ProjectForm mode="create" />

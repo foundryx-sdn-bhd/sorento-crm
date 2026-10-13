@@ -279,7 +279,7 @@ describe('EditProjectClient (AC-PF002, AC-PF008)', () => {
       'Menara Test',
     );
     expect((screen.getByLabelText('Location') as HTMLInputElement).value).toBe('Cyberjaya');
-    expect((screen.getByLabelText('Filing reference') as HTMLInputElement).value).toBe(
+    expect((screen.getByLabelText('Reference') as HTMLInputElement).value).toBe(
       'PS26-0042',
     );
   });
