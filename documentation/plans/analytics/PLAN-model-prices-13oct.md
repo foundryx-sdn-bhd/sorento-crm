@@ -1,6 +1,6 @@
 # PLAN: MODEL-PRICES (13 Oct 2026)
 
-Status: building (M, LEAD pattern; one additive view-only migration for CU-6; mock skipped per owner)
+Status: in review, PR #1636 (M, LEAD pattern; one additive view-only migration for CU-6; mock skipped per owner)
 
 UAC: `model-prices-acceptance-criteria.md`. Card: `CARD-model-prices-13oct.md`.
 
