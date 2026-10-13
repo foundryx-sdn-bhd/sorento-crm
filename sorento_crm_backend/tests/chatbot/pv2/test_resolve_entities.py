@@ -97,12 +97,22 @@ def test_brand_not_pinned_or_not_live_is_none_and_unrecognised(db, pinned, live,
         assert res.unrecognised is True
 
 
-def test_product_type_pinned_live_and_not_pinned(db):
+def test_product_class_pinned_live_and_not_pinned(db):
+    # Key = the index's PRODUCT CLASSES key (slug of the class label); label = the class label.
     S.category(db, class_label="Water Closet")
-    ok = one(db, ent("product_type", key="Water Closet"), product_type={"Water Closet"})
-    assert ok.status == "exact" and ok.refs[0].key == "Water Closet"
-    bad = one(db, ent("product_type", key="Water Closet", phrase="wc"), product_type=set())
+    ok = one(db, ent("product_class", key="water_closet"), product_class={"water_closet"})
+    assert ok.status == "exact" and ok.refs[0].key == "water_closet" and ok.refs[0].label == "Water Closet"
+    bad = one(db, ent("product_class", key="water_closet", phrase="wc"), product_class=set())
     assert bad.status == "none" and bad.unrecognised is True
+
+
+def test_product_type_key_is_a_product_type_value_products_carry(db):
+    p = S.product(db, "WC-ONE", cat=S.category(db, class_label="Water Closet"))
+    S.specs(db, p, klass="Water Closet", product_type="one_piece")
+    ok = one(db, ent("product_type", key="one_piece"), product_type={"one_piece"})
+    assert ok.status == "exact" and ok.refs[0].label == "One piece"
+    gone = one(db, ent("product_type", key="two_piece"), product_type={"two_piece"})
+    assert gone.status == "none" and gone.refs == []
 
 
 def test_attachment_type_pinned_and_live_is_exact_with_type_name(db):

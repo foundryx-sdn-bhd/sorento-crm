@@ -28,9 +28,10 @@ def spec(attribute=None, *, value_key=None, number=None, number_to=None, unit=No
 
 
 def held_class(label="Water Closet") -> Held:
+    key = label.lower().replace(" ", "_")
     return Held(
         domain=None,
-        refs={"product_type": [ResolvedRef(kind="product_type", key=label, label=label, phrase=None)]},
+        refs={"product_class": [ResolvedRef(kind="product_class", key=key, label=label, phrase=None)]},
         specs=[],
         attachment_type=None,
         period=None,

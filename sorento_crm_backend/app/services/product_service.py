@@ -2454,8 +2454,11 @@ class ProductCategoryService:
         from app.services.chatbot.pv2 import aliases as pv2_aliases
 
         words = pv2_aliases.clean_words(synonyms)
+        # Only an active, searchable, classified category's words reach the index (as aka of
+        # its class), so only those can clash.
+        listed = category.class_label and category.is_active is not False and category.is_searchable is not False
         pv2_aliases.refuse_conflicts(
-            self.db, "product_category", category.class_label or category.category_code, words,
+            self.db, "product_class", pv2_aliases.class_key(category.class_label) if listed else None, words,
             previous=previous,
         )
         category.search_synonyms = words

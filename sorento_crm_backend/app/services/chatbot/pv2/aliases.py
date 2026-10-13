@@ -2,34 +2,43 @@
 
 Contract: documentation/plans/chatbot/CONTRACT-PV2-13oct.md section 4.
 
-Aliases only help the MODEL pick an index key: the index prints them as "aka" under
-their key. Code never matches user text against them. Three sources, one per kind:
+Aliases only help the MODEL pick an index key: the index (`pv2/index.py`, PV2-CORE) prints
+them as "aka" under their key. Code never matches user text against them. The kinds and keys
+are the index's own, so a precedence row means the same thing to the index and to a save:
 
-  * `attachment_type`  - `attachment_types.search_synonyms`, key = `attachment_types.code`;
-  * `product_category` - `product_categories.search_synonyms`, key = `class_label`
-    (several categories share a class, and their words name the class), falling back to
-    `category_code` for an unclassified category;
-  * `spec`             - spec registry `merged_synonyms(row)`, key = `spec_key` for the
-    words naming the attribute itself (`_self`), `spec_key.value` for an enum value.
+  * `attachment_type` - key = `attachment_types.code`, words = `search_synonyms`;
+  * `product_class`   - key = slug of `product_categories.class_label` (`class_key`), words =
+    every active searchable category's `search_synonyms` + `CLASS_SYNONYMS` for that class;
+  * `spec_attribute`  - key = `spec_key`, words = the registry's `_self` words (the words that
+    name the attribute). Enum value words are not printed in the index, so they are not
+    aliases here.
 
 A word under two keys of one kind is a CLASH. Precedence is data, not code: a row in
-`chatbot_alias_precedence(kind, alias_norm, winner_key)` settles it, and the index then
-prints the word only under the winner. A staff save that would create a new clash with no
-precedence row is refused, naming the clash (`refuse_conflicts`); `publish_v2` refuses
-while `open_clashes` is non-empty.
+`chatbot_alias_precedence(kind, alias_norm, winner_key)` settles it, and the index prints the
+word only under the winner. A staff save that would create a new clash with no precedence row
+is refused, naming the clash (`refuse_conflicts`); `publish_v2` refuses while any is open.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-KINDS: tuple[str, ...] = ("attachment_type", "product_category", "spec")
+KINDS: tuple[str, ...] = ("attachment_type", "product_class", "spec_attribute")
 
 # The pseudo-value under which the registry keeps words naming the attribute itself.
 _SELF = "_self"
+# Registry keys the index does not list as attributes (`pv2/index.py` `_SPEC_SKIP`).
+_SPEC_SKIP = frozenset({"class", "brand", "product_type"})
+_SLUG_RE = re.compile(r"[^0-9a-z]+")
+
+
+def class_key(class_label: str | None) -> str:
+    """A product class's index key; the same rule as `pv2/index.py` `product_class_key`."""
+    return _SLUG_RE.sub("_", str(class_label or "").strip().lower()).strip("_")
 
 
 def norm(word: object) -> str:
@@ -89,35 +98,41 @@ def _attachment_type_aliases(db: Session) -> dict[str, list[str]]:
     return out
 
 
-def _product_category_aliases(db: Session) -> dict[str, list[str]]:
-    from app.models.base import company_scope
-    from app.models.product import ProductCategory
+def _product_class_aliases(db: Session) -> dict[str, list[str]]:
+    from app.services.product_class_signal import CLASS_SYNONYMS
 
     out: dict[str, list[str]] = {}
-    # Every company's categories: a word is an alias for a class whichever company filed it.
-    with company_scope(db, None):
-        rows = db.query(
-            ProductCategory.class_label, ProductCategory.category_code, ProductCategory.search_synonyms
-        ).all()
-    for class_label, code, words in rows:
-        _add(out, class_label or code, words or [])
+    rows = db.execute(
+        text(
+            "SELECT class_label, COALESCE(search_synonyms, '[]'::jsonb) FROM product_categories "
+            "WHERE class_label IS NOT NULL AND is_active AND is_searchable "
+            "ORDER BY class_label, category_code"
+        )
+    ).all()
+    for label, words in rows:
+        _add(out, class_key(label) or None, words or [])
+    for label, words in CLASS_SYNONYMS.items():
+        key = class_key(label)
+        if key in out:
+            _add(out, key, words)
     return out
 
 
-def _spec_aliases(db: Session) -> dict[str, list[str]]:
+def _spec_attribute_aliases(db: Session) -> dict[str, list[str]]:
     from app.services.product_spec_registry import active_registry, merged_synonyms
 
     out: dict[str, list[str]] = {}
     for row in active_registry(db):
-        for value, words in merged_synonyms(row).items():
-            _add(out, row.spec_key if value == _SELF else f"{row.spec_key}.{value}", words or [])
+        if row.spec_key in _SPEC_SKIP:
+            continue
+        _add(out, row.spec_key, merged_synonyms(row).get(_SELF) or [])
     return out
 
 
 _SOURCES = {
     "attachment_type": _attachment_type_aliases,
-    "product_category": _product_category_aliases,
-    "spec": _spec_aliases,
+    "product_class": _product_class_aliases,
+    "spec_attribute": _spec_attribute_aliases,
 }
 
 
@@ -263,42 +278,19 @@ def clean_words(words: Iterable[object] | None) -> list[str]:
     return out
 
 
-def spec_key_for(spec_key: str, value: str) -> str:
-    return spec_key if value == _SELF else f"{spec_key}.{value}"
-
-
-def spec_row_aliases(row) -> dict:
-    """What a spec registry row prints as aliases now: nothing while it is inactive."""
+def spec_row_aliases(row) -> list:
+    """The words a spec registry row prints as aliases now: its `_self` words, none while
+    it is inactive or not an index attribute."""
     from app.services.product_spec_registry import merged_synonyms
 
-    return merged_synonyms(row) if row.is_active else {}
+    if not row.is_active or row.spec_key in _SPEC_SKIP:
+        return []
+    return list(merged_synonyms(row).get(_SELF) or [])
 
 
-def refuse_spec_row_conflicts(db: Session, row, before: Mapping[str, Iterable[object]]) -> None:
-    """A spec registry save: refuse the words it adds under any key that clash elsewhere.
+def refuse_spec_row_conflicts(db: Session, row, before: Iterable[object]) -> None:
+    """A spec registry save: refuse the attribute words it adds that another attribute holds.
 
-    `before` is what the row printed before the save: `merged_synonyms(row)` for an active
-    row, {} for a new or inactive one (`spec_row_aliases`). An inactive row prints no
-    aliases, so it creates no clash; re-activating one adds all its words.
-    """
-    from app.services.product_spec_registry import merged_synonyms
-
-    if not row.is_active:
-        return
-    after = merged_synonyms(row)
-    clashes: list[Clash] = []
-    for value, words in after.items():
-        clashes.extend(
-            check_conflicts(db, "spec", spec_key_for(row.spec_key, value), words, previous=before.get(value, []))
-        )
-    # One row's own values: a new row is not in the session yet, so the live map cannot
-    # see a word it lists under two of its values.
-    own = {spec_key_for(row.spec_key, v): w for v, w in after.items()}
-    was = {spec_key_for(row.spec_key, v): w for v, w in before.items()}
-    for clash in find_clashes("spec", own, precedence(db, "spec")):
-        if clash not in find_clashes("spec", was, precedence(db, "spec")) and clash not in clashes:
-            clashes.append(clash)
-    if clashes:
-        from app.services.error_handler import AppException
-
-        raise AppException(status_code=409, message=message_for(clashes), code="ALIAS_CLASH")
+    `before` is `spec_row_aliases(row)` as it was before the save ([] for a new row), so
+    re-activating a row checks every word it brings back."""
+    refuse_conflicts(db, "spec_attribute", row.spec_key, spec_row_aliases(row), previous=before)

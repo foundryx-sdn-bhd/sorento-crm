@@ -80,25 +80,31 @@ def test_check_conflicts_same_key_is_not_a_clash(db):
     assert A.check_conflicts(db, "attachment_type", "technical_specifications", ["td"]) == []
 
 
-def test_check_conflicts_product_category_kind_keys_by_class_label(db):
+def test_check_conflicts_product_class_kind_keys_by_class_slug(db):
+    # The index's PRODUCT CLASSES key: slug of the class label (pv2/index.py product_class_key).
     S.category(db, class_label="Water Closet", synonyms=["wc"])
     S.category(db, class_label="Basin", synonyms=["sink"])
-    clashes = A.check_conflicts(db, "product_category", "Basin", ["WC"])
-    assert len(clashes) == 1 and set(clashes[0].keys) == {"Water Closet", "Basin"}
+    clashes = A.check_conflicts(db, "product_class", "basin", ["WC"])
+    assert len(clashes) == 1 and set(clashes[0].keys) == {"water_closet", "basin"}
 
 
-def test_check_conflicts_spec_kind_self_words_and_inactive_rows_ignored(db):
+def test_product_class_words_of_an_unsearchable_category_are_not_aliases(db):
+    S.category(db, class_label="Water Closet", synonyms=["wc"], searchable=False)
+    assert A.check_conflicts(db, "product_class", "basin", ["wc"]) == []
+
+
+def test_check_conflicts_spec_attribute_kind_self_words_and_inactive_rows_ignored(db):
     S.registry(db, "dim_length", "Length", "numeric", unit="mm", synonyms={"_self": ["panjang"]})
     S.registry(db, "dim_old", "Old", "numeric", unit="mm", synonyms={"_self": ["lama"]}, active=False)
-    live = A.check_conflicts(db, "spec", "dim_height", ["panjang"])
+    live = A.check_conflicts(db, "spec_attribute", "dim_height", ["panjang"])
     assert len(live) == 1 and set(live[0].keys) == {"dim_length", "dim_height"}
-    assert A.check_conflicts(db, "spec", "dim_height", ["lama"]) == []
+    assert A.check_conflicts(db, "spec_attribute", "dim_height", ["lama"]) == []
 
 
-def test_check_conflicts_spec_kind_value_words_key_is_spec_dot_value(db):
+def test_enum_value_words_are_not_index_aliases(db):
+    # The index prints an attribute's own words only, so a value word never clashes.
     S.registry(db, "trap_type", "Trap Type", "enum", allowed=["p_trap"], synonyms={"p_trap": ["p-bend"]})
-    clashes = A.check_conflicts(db, "spec", "trap_type.s_trap", ["p-bend"])
-    assert len(clashes) == 1 and set(clashes[0].keys) == {"trap_type.p_trap", "trap_type.s_trap"}
+    assert A.check_conflicts(db, "spec_attribute", "outlet", ["p-bend"]) == []
 
 
 def test_refuse_conflicts_raises_409_naming_the_clash(db):

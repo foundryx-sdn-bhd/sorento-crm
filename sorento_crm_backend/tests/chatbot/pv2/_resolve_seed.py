@@ -27,8 +27,11 @@ UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 def create_pv2_tables(db) -> None:
     for stmt in (
         "ALTER TABLE attachment_types ADD COLUMN IF NOT EXISTS search_synonyms JSONB NOT NULL DEFAULT '[]'::jsonb",
-        "CREATE TABLE IF NOT EXISTS chatbot_alias_precedence (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), "
-        "kind TEXT NOT NULL, alias_norm TEXT NOT NULL, winner_key TEXT NOT NULL, UNIQUE(kind, alias_norm))",
+        # PV2-CORE's pv2_0001_schema DDL verbatim: `id` has no default, so a writer must supply it.
+        "CREATE TABLE IF NOT EXISTS chatbot_alias_precedence (id UUID PRIMARY KEY, kind TEXT NOT NULL, "
+        "alias_norm TEXT NOT NULL, winner_key TEXT NOT NULL, "
+        "created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now(), "
+        "CONSTRAINT uq_chatbot_alias_precedence UNIQUE (kind, alias_norm))",
         "CREATE TABLE IF NOT EXISTS chatbot_unrecognised_phrases (id UUID PRIMARY KEY, phrase TEXT NOT NULL, "
         "kind TEXT NOT NULL, domain TEXT NULL, contact_id TEXT NULL, turn_id TEXT NULL, "
         "seen_count INTEGER NOT NULL DEFAULT 1, first_seen_at TIMESTAMP NOT NULL DEFAULT now(), "

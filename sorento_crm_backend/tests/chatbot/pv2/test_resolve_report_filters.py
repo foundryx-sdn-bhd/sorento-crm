@@ -31,8 +31,8 @@ def resolver(db, **pinned):
 def test_brand_and_category_keys_become_ids_with_display_labels(db):
     b = S.brand(db, "Sorento Brand", code="SORENTO")
     c = S.category(db, class_label="Basin")
-    out = resolver(db, brand={"SORENTO"}, product_type={"Basin"}).resolve_report_spec(
-        spec(("brand", "in", ["SORENTO"]), ("category", "in", ["Basin"])), held=Held()
+    out = resolver(db, brand={"SORENTO"}, product_class={"basin"}).resolve_report_spec(
+        spec(("brand", "in", ["SORENTO"]), ("category", "in", ["basin"])), held=Held()
     )
     assert out.status == "exact"
     assert out.refs["brand"] == [{"kind": "brand", "key": b.id, "label": "Sorento Brand"}]

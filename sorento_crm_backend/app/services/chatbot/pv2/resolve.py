@@ -4,7 +4,8 @@ Contract: documentation/plans/chatbot/CONTRACT-PV2-13oct.md section 4.
 
 Two kinds of input, two rules, no third:
 
-  * INDEX kinds (brand, product_type, attachment_type, spec attribute, enum value): the
+  * INDEX kinds (brand, product_class, product_type, attachment_type, spec attribute, enum
+    value; keys exactly as `pv2/index.py` prints them): the
     model's `key` is accepted only when the PINNED index printed it AND it is live. A null
     key is never resolved from `phrase`; the phrase is logged as an unknown word and the
     caller clarifies with real candidates for the held scope.
@@ -33,7 +34,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
-from app.services.chatbot.pv2.aliases import norm
+from app.services.chatbot.pv2.aliases import class_key, norm
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ class Resolver(Protocol):
 _BOOLEAN_KEYS = {"true": True, "false": False}
 
 #: Kinds whose identity is an index key, never a phrase.
-INDEX_KINDS: frozenset[str] = frozenset({"brand", "product_type", "attachment_type"})
+INDEX_KINDS: frozenset[str] = frozenset({"brand", "product_class", "product_type", "attachment_type"})
 
 #: Owner 13 Oct 23:50: at most this many customer-name candidates.
 CUSTOMER_CANDIDATE_CAP = 8
@@ -173,6 +174,21 @@ class DbResolver:
         self.db = db
         self.pinned = {kind: {str(k) for k in keys} for kind, keys in (pinned or {}).items()}
         self.customer_scope = customer_scope or {}
+
+    @classmethod
+    def from_index_keys(
+        cls, db: Session, keys: Any, *, customer_scope: Mapping[str, Any] | None = None
+    ) -> "DbResolver":
+        """A resolver over the keys one PINNED index lists (`schema.IndexKeys`, PV2-CORE)."""
+        pinned: dict[str, set[str]] = {k: set(v) for k, v in (getattr(keys, "entity_keys", None) or {}).items()}
+        pinned["attachment_type"] = set(getattr(keys, "attachment_types", None) or ())
+        pinned["spec_attribute"] = set(getattr(keys, "spec_attributes", None) or ())
+        pinned["spec_value"] = {
+            f"{attr}.{value}"
+            for attr, values in (getattr(keys, "spec_values", None) or {}).items()
+            for value in values
+        }
+        return cls(db, pinned=pinned, customer_scope=customer_scope)
 
     # ------------------------------------------------------------------ entities
     def resolve_entities(self, ents: list[Entity], *, held: Held) -> list[Resolution]:
@@ -248,34 +264,46 @@ class DbResolver:
             ):
                 if name:
                     out.setdefault(code, name)
+        elif kind == "product_class":
+            # key = slug of an active, searchable category's class label (`aliases.class_key`).
+            for label in self._class_labels():
+                if class_key(label) in keys:
+                    out.setdefault(class_key(label), label)
         elif kind == "product_type":
-            from app.models.base import company_scope
-            from app.models.product import ProductCategory
-            from app.services.product_spec_registry import (
-                display_spec_value, merged_allowed_values,
-            )
-            from app.models.product_spec import ProductSpecRegistry
+            # key = a `product_type` value: the registry's, or one products carry.
+            from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
+            from app.services.product_spec_registry import display_spec_value, merged_allowed_values
 
-            with company_scope(db, None):
-                for class_label, code, name in (
-                    db.query(ProductCategory.class_label, ProductCategory.category_code, ProductCategory.category_name)
-                    .filter(
-                        ProductCategory.is_active.is_(True),
-                        or_(ProductCategory.class_label.in_(keys), ProductCategory.category_code.in_(keys)),
-                    )
-                    .all()
-                ):
-                    if class_label in keys:
-                        out.setdefault(class_label, class_label)
-                    if code in keys:
-                        out.setdefault(code, name or code)
             row = db.query(ProductSpecRegistry).filter(ProductSpecRegistry.spec_key == "product_type").first()
+            labels = (row.value_labels if row is not None else None) or {}
+            live = set()
             if row is not None and row.is_active:
-                allowed = {str(v) for v in merged_allowed_values(row)}
-                for key in keys:
-                    if key in allowed:
-                        out.setdefault(key, display_spec_value(key, row.value_labels))
+                live |= {str(v) for v in merged_allowed_values(row)}
+            stored = ProductSpecifications.values["product_type"]["value"].astext
+            live |= {v for (v,) in db.query(stored).filter(stored.in_(keys)).distinct().all() if v}
+            for key in keys:
+                if key in live:
+                    out.setdefault(key, display_spec_value(key, labels))
         return out
+
+    def _class_labels(self) -> list[str]:
+        """Class labels of active, searchable categories, every company's (a class is not a
+        company's); the same rows `pv2/index.py` lists PRODUCT CLASSES from."""
+        from app.models.base import company_scope
+        from app.models.product import ProductCategory
+
+        with company_scope(self.db, None):
+            rows = (
+                self.db.query(ProductCategory.class_label)
+                .filter(
+                    ProductCategory.class_label.isnot(None),
+                    ProductCategory.is_active.is_(True),
+                    ProductCategory.is_searchable.isnot(False),
+                )
+                .distinct()
+                .all()
+            )
+        return sorted({r[0] for r in rows if r[0]})
 
     def _index_candidates(self, kind: str, held: Held) -> list[Option]:
         """Real candidates for a null key, within the held scope where there is one."""
@@ -284,9 +312,9 @@ class DbResolver:
             if carried is not None:
                 return carried
         pinned = sorted(self.pinned.get(kind, set()))
-        if kind in {"brand", "product_type"}:
+        if kind in {"brand", "product_class", "product_type"}:
             visible = self._visible_keys(kind, held)
-            pinned = [k for k in pinned if k in visible] or ([] if kind == "brand" else pinned)
+            pinned = [k for k in pinned if k in visible]
         labels = self._live_labels(kind, pinned)
         options = [
             Option(key=k, label=labels[k], payload={"kind": kind, "key": k, "label": labels[k]})
@@ -297,48 +325,59 @@ class DbResolver:
         return options[:INDEX_CANDIDATE_CAP]
 
     def _visible_keys(self, kind: str, held: Held) -> set[str]:
-        """Brand codes / class labels + category codes of the chat-searchable products the
-        contact can see (the listener applies company and brand scope to `Product`),
-        narrowed to the held products, brands and classes where there are any."""
+        """The brand codes / class keys / product type values of the chat-searchable products
+        the contact can see, narrowed to the held products, brands and classes where held.
+
+        Every product read is a top-level `Product` query, so the scope listener applies
+        company and brand scope (it does not reach into a subquery or an aggregate)."""
         from app.models.product import Brand, Product, ProductCategory, chat_searchable_products
+        from app.models.product_spec import ProductSpecifications
 
         cat = ProductCategory.__table__
-        # A top-level `Product` query, so the scope listener applies company and brand
-        # scope (it does not reach into a subquery).
-        visible = self.db.query(Product.brand_id, Product.category_id).filter(chat_searchable_products())
+        ptype = ProductSpecifications.values["product_type"]["value"].astext
+        pclass = ProductSpecifications.values["class"]["value"].astext
+        q = (
+            self.db.query(Product.brand_id, Product.category_id, ptype, pclass)
+            .outerjoin(ProductSpecifications, ProductSpecifications.product_id == Product.id)
+            .filter(chat_searchable_products())
+        )
         ids = self._held_product_ids(held)
         if ids:
-            visible = visible.filter(Product.id.in_(ids))
-        pairs = visible.distinct().all()
-        if not pairs:
+            q = q.filter(Product.id.in_(ids))
+        rows = q.distinct().all()
+        if not rows:
             return set()
         brand_codes = dict(
             self.db.query(Brand.id, Brand.brand_code)
-            .filter(Brand.id.in_(sorted({str(b) for b, _ in pairs if b})))
+            .filter(Brand.id.in_(sorted({str(r[0]) for r in rows if r[0]})))
             .all()
         )
-        categories = {
-            str(cid): (class_label, code)
-            for cid, class_label, code in self.db.execute(
+        category_class = dict(
+            self.db.execute(
                 cat.select()
-                .with_only_columns(cat.c.id, cat.c.class_label, cat.c.category_code)
-                .where(cat.c.id.in_(sorted({str(c) for _, c in pairs if c})))
+                .with_only_columns(cat.c.id, cat.c.class_label)
+                .where(cat.c.id.in_(sorted({str(r[1]) for r in rows if r[1]})))
             ).all()
-        }
+        )
         held_brands = {r.key for r in (held.refs or {}).get("brand") or []}
-        classes = self._held_classes(held) if kind != "product_type" else set()
+        classes = self._held_classes(held) if kind != "product_class" else set()
+        held_types = {r.key for r in (held.refs or {}).get("product_type") or []} if kind != "product_type" else set()
         out: set[str] = set()
-        for brand_id, category_id in pairs:
+        for brand_id, category_id, product_type, spec_class in rows:
             brand_code = brand_codes.get(str(brand_id)) if brand_id else None
-            class_label, category_code = categories.get(str(category_id), (None, None))
+            label = spec_class or category_class.get(str(category_id))
             if kind != "brand" and held_brands and brand_code not in held_brands:
                 continue
-            if classes and (class_label or "").casefold() not in classes:
+            if classes and (label or "").casefold() not in classes:
+                continue
+            if held_types and product_type not in held_types:
                 continue
             if kind == "brand" and brand_code:
                 out.add(brand_code)
-            if kind == "product_type":
-                out.update(k for k in (class_label, category_code) if k)
+            elif kind == "product_class" and label:
+                out.add(class_key(label))
+            elif kind == "product_type" and product_type:
+                out.add(product_type)
         return out
 
     # ------------------------------------------------------------------ attachment type
@@ -606,31 +645,37 @@ class DbResolver:
 
     # ---- numbers with no attribute: matched against the held class's real data
     def _held_classes(self, held: Held) -> set[str]:
-        from app.models.base import company_scope
+        """Casefolded class labels the held scope names: held product classes, the classes the
+        held product types' products carry, and the held products' own classes."""
         from app.models.product import Product, ProductCategory
+        from app.models.product_spec import ProductSpecifications
 
         classes: set[str] = set()
+        class_keys = {r.key for r in (held.refs or {}).get("product_class") or []}
+        if class_keys:
+            classes |= {label for label in self._class_labels() if class_key(label) in class_keys}
         types = [r.key for r in (held.refs or {}).get("product_type") or []]
         if types:
-            with company_scope(self.db, None):
-                for class_label, code in (
-                    self.db.query(ProductCategory.class_label, ProductCategory.category_code)
-                    .filter(or_(ProductCategory.class_label.in_(types), ProductCategory.category_code.in_(types)))
-                    .all()
-                ):
-                    if class_label:
-                        classes.add(class_label)
+            spec_class = ProductSpecifications.values["class"]["value"].astext
+            stored = ProductSpecifications.values["product_type"]["value"].astext
+            classes |= {
+                c for (c,) in self.db.query(spec_class).filter(stored.in_(types)).distinct().all() if c
+            }
         ids = self._held_product_ids(held)
         if ids:
-            for (class_label,) in (
-                self.db.query(ProductCategory.class_label)
+            cat = ProductCategory.__table__
+            spec_class = ProductSpecifications.values["class"]["value"].astext
+            for (label,) in (
+                self.db.query(func.coalesce(spec_class, cat.c.class_label))
                 .select_from(Product)
-                .join(ProductCategory, ProductCategory.id == Product.category_id)
-                .filter(Product.id.in_(ids), ProductCategory.class_label.isnot(None))
+                .outerjoin(ProductSpecifications, ProductSpecifications.product_id == Product.id)
+                .outerjoin(cat, cat.c.id == Product.category_id)
+                .filter(Product.id.in_(ids))
                 .distinct()
                 .all()
             ):
-                classes.add(class_label)
+                if label:
+                    classes.add(label)
         return {c.casefold() for c in classes}
 
     @staticmethod
@@ -835,17 +880,20 @@ class DbResolver:
             )
             return ("exact", [ref(str(i), n) for i, n in rows], []) if rows else ("none", [], [])
         if dimension == "category":
-            if key not in self.pinned.get("product_type", set()):
+            # The model names a product class (PRODUCT CLASSES key); the report route filters on
+            # the ids of the categories filed under that class.
+            if key not in self.pinned.get("product_class", set()):
                 return "none", [], []
-            rows = (
-                self.db.query(ProductCategory.id, ProductCategory.class_label, ProductCategory.category_name)
-                .filter(
-                    ProductCategory.is_active.is_(True),
-                    or_(ProductCategory.class_label == key, ProductCategory.category_code == key),
+            from app.models.base import company_scope
+
+            with company_scope(self.db, None):
+                rows = (
+                    self.db.query(ProductCategory.id, ProductCategory.class_label)
+                    .filter(ProductCategory.is_active.is_(True), ProductCategory.class_label.isnot(None))
+                    .all()
                 )
-                .all()
-            )
-            return ("exact", [ref(str(i), c or n) for i, c, n in rows], []) if rows else ("none", [], [])
+            got = [ref(str(i), label) for i, label in rows if class_key(label) == key]
+            return ("exact", got, []) if got else ("none", [], [])
         if dimension == "customer":
             res = self._customer(key)
             if res.status == "exact":

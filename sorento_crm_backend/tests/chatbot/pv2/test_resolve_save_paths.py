@@ -33,7 +33,10 @@ def db():
 
 def _precedence(db, kind, alias, winner):
     db.execute(
-        text("INSERT INTO chatbot_alias_precedence (kind, alias_norm, winner_key) VALUES (:k, :a, :w)"),
+        text(
+            "INSERT INTO chatbot_alias_precedence (id, kind, alias_norm, winner_key) "
+            "VALUES (gen_random_uuid(), :k, :a, :w)"
+        ),
         {"k": kind, "a": alias, "w": winner},
     )
     db.flush()
@@ -82,12 +85,19 @@ def test_attachment_type_save_without_synonyms_never_checks(db):
 # --------------------------------------------------------------------------- category
 def test_category_save_refuses_a_word_another_class_holds(db):
     S.category(db, class_label="Basin", synonyms=["sinki"])
+    sink = S.category(db, class_label="Kitchen Sink")
     with pytest.raises(AppException) as err:
-        ProductCategoryService(db).create_category(
-            ProductCategoryCreate(category_code="KSINK", category_name="Kitchen Sink", search_synonyms=["Sinki"])
-        )
+        ProductCategoryService(db).update_category(sink.id, ProductCategoryUpdate(search_synonyms=["Sinki"]))
     assert err.value.status_code == 409
-    assert '"sinki"' in _message(err.value)
+    assert '"sinki"' in _message(err.value) and "basin" in _message(err.value)
+
+
+def test_category_with_no_class_is_not_in_the_index_so_its_words_never_clash(db):
+    S.category(db, class_label="Basin", synonyms=["sinki"])
+    saved = ProductCategoryService(db).create_category(
+        ProductCategoryCreate(category_code="KSINK", category_name="Kitchen Sink", search_synonyms=["sinki"])
+    )
+    assert saved.search_synonyms == ["sinki"]
 
 
 def test_category_save_accepts_a_word_its_own_class_already_holds(db):
@@ -113,27 +123,61 @@ def editor(monkeypatch):
     monkeypatch.setattr(UserPermissionService, "check_user_has_permission", lambda *a, **k: True)
 
 
-def test_spec_registry_patch_refuses_a_word_another_value_holds(db, editor):
+def test_spec_registry_patch_refuses_a_word_another_attribute_holds(db, editor):
     from app.api.v1.master_data.spec_registry import SpecKeyUpdate, update_spec_key
 
-    S.registry(db, "trap_type", "Trap", "enum", allowed=["p_trap", "s_trap"],
-               synonyms={"p_trap": ["p trap"], "s_trap": ["s trap", "floor waste"]})
-    S.registry(db, "finish", "Finish", "enum", allowed=["matte"], synonyms={"matte": ["matte"]})
+    S.registry(db, "dim_length", "Length", "numeric", unit="mm", synonyms={"_self": ["panjang"]})
+    S.registry(db, "dim_width", "Width", "numeric", unit="mm", synonyms={"_self": ["lebar"]})
     with pytest.raises(AppException) as err:
-        update_spec_key("finish", SpecKeyUpdate(user_synonyms={"matte": ["Floor  waste"]}), _user(), db)
+        update_spec_key("dim_width", SpecKeyUpdate(user_synonyms={"_self": ["Panjang"]}), _user(), db)
     assert err.value.status_code == 409
-    assert '"floor waste"' in _message(err.value)
-    assert "trap_type.s_trap" in _message(err.value) and "finish.matte" in _message(err.value)
+    assert '"panjang"' in _message(err.value)
+    assert "dim_length" in _message(err.value) and "dim_width" in _message(err.value)
 
 
 def test_spec_registry_patch_passes_when_precedence_settles_the_word(db, editor):
     from app.api.v1.master_data.spec_registry import SpecKeyUpdate, update_spec_key
 
+    S.registry(db, "dim_length", "Length", "numeric", unit="mm", synonyms={"_self": ["size"]})
+    S.registry(db, "dim_width", "Width", "numeric", unit="mm", synonyms={"_self": ["lebar"]})
+    _precedence(db, "spec_attribute", "size", "dim_length")
+    out = update_spec_key("dim_width", SpecKeyUpdate(user_synonyms={"_self": ["size"]}), _user(), db)
+    assert out["user_synonyms"] == {"_self": ["size"]}
+
+
+def test_spec_registry_value_words_never_clash(db, editor):
+    # Enum value words are not printed in the index, so they are not aliases.
+    from app.api.v1.master_data.spec_registry import SpecKeyUpdate, update_spec_key
+
     S.registry(db, "trap_type", "Trap", "enum", allowed=["s_trap"], synonyms={"s_trap": ["floor waste"]})
     S.registry(db, "finish", "Finish", "enum", allowed=["matte"], synonyms={"matte": ["matte"]})
-    _precedence(db, "spec", "floor waste", "trap_type.s_trap")
     out = update_spec_key("finish", SpecKeyUpdate(user_synonyms={"matte": ["floor waste"]}), _user(), db)
     assert out["user_synonyms"] == {"matte": ["floor waste"]}
+
+
+def test_spec_registry_create_refuses_a_word_another_attribute_holds(db, editor):
+    import asyncio
+
+    from app.api.v1.master_data.spec_registry import SpecKeyCreate, create_spec_key
+
+    S.registry(db, "dim_length", "Length", "numeric", unit="mm", synonyms={"_self": ["panjang"]})
+    with pytest.raises(AppException) as err:
+        asyncio.run(create_spec_key(
+            SpecKeyCreate(spec_key="seat_depth", label="Seat depth", data_type="numeric", unit="mm",
+                          user_synonyms={"_self": ["panjang"]}),
+            _user(), db,
+        ))
+    assert err.value.status_code == 409 and '"panjang"' in _message(err.value)
+
+
+def test_spec_registry_reactivating_a_row_checks_every_word_it_brings_back(db, editor):
+    from app.api.v1.master_data.spec_registry import SpecKeyUpdate, update_spec_key
+
+    S.registry(db, "dim_length", "Length", "numeric", unit="mm", synonyms={"_self": ["panjang"]})
+    S.registry(db, "dim_old", "Old length", "numeric", unit="mm", synonyms={"_self": ["panjang"]}, active=False)
+    with pytest.raises(AppException) as err:
+        update_spec_key("dim_old", SpecKeyUpdate(is_active=True), _user(), db)
+    assert err.value.status_code == 409 and '"panjang"' in _message(err.value)
 
 
 # --------------------------------------------------------------------------- seed
@@ -164,14 +208,17 @@ def test_alias_seed_fills_codes_adds_aliases_and_is_idempotent(db):
     assert alias_seed.apply(db) == {"codes": 0, "aliases": 0, "precedence": 0}
 
 
-def test_seed_precedence_settles_every_clash_the_shipped_spec_seed_carries(db):
+def test_seed_precedence_settles_the_clashes_shipped_class_synonyms_carry(db):
     from app.services.product_spec_registry import seed_spec_registry
 
+    for label in ("Bathtub", "Bathtub and Jacuzzi", "Jacuzzi"):
+        S.category(db, class_label=label)
     seed_spec_registry(db)
     db.flush()
-    assert [c for c in A.open_clashes(db) if c.kind == "spec"]  # the shipped seed clashes
+    before = {(c.kind, c.alias) for c in A.open_clashes(db)}
+    assert ("product_class", "tub") in before and ("product_class", "jacuzzi") in before
     alias_seed.apply(db)
-    assert [c for c in A.open_clashes(db) if c.kind == "spec"] == []
+    assert A.open_clashes(db) == []
 
 
 def test_migration_carries_a_frozen_copy_of_the_seed():
@@ -189,55 +236,6 @@ def test_migration_imports_no_application_code():
     from tests._migration_imports import app_imports  # type: ignore[attr-defined]
 
     assert app_imports(MIGRATION) == []
-
-
-def test_spec_registry_create_refuses_a_word_another_key_holds(db, editor):
-    import asyncio
-
-    from app.api.v1.master_data.spec_registry import SpecKeyCreate, create_spec_key
-
-    S.registry(db, "trap_type", "Trap", "enum", allowed=["s_trap"], synonyms={"s_trap": ["floor waste"]})
-    with pytest.raises(AppException) as err:
-        asyncio.run(create_spec_key(
-            SpecKeyCreate(spec_key="outlet", label="Outlet", data_type="enum", allowed_values=["bottom"],
-                          user_synonyms={"bottom": ["floor waste"]}),
-            _user(), db,
-        ))
-    assert err.value.status_code == 409 and '"floor waste"' in _message(err.value)
-
-
-def test_spec_registry_create_refuses_one_word_under_two_of_its_own_values(db, editor):
-    import asyncio
-
-    from app.api.v1.master_data.spec_registry import SpecKeyCreate, create_spec_key
-
-    with pytest.raises(AppException) as err:
-        asyncio.run(create_spec_key(
-            SpecKeyCreate(spec_key="outlet", label="Outlet", data_type="enum", allowed_values=["bottom", "back"],
-                          user_synonyms={"bottom": ["rear exit"], "back": ["Rear  exit"]}),
-            _user(), db,
-        ))
-    assert err.value.status_code == 409 and '"rear exit"' in _message(err.value)
-
-
-def test_spec_registry_add_value_refuses_a_word_another_key_holds(db, editor):
-    from app.api.v1.master_data.spec_registry import SpecValueAdd, add_spec_value
-
-    S.registry(db, "trap_type", "Trap", "enum", allowed=["s_trap"], synonyms={"s_trap": ["floor waste"]})
-    S.registry(db, "finish", "Finish", "enum", allowed=["matte"], synonyms={"matte": ["matte"]})
-    with pytest.raises(AppException) as err:
-        add_spec_value("finish", SpecValueAdd(value="floor_waste"), _user(), db)  # its word is "floor waste"
-    assert err.value.status_code == 409 and '"floor waste"' in _message(err.value)
-
-
-def test_spec_registry_reactivating_a_row_checks_every_word_it_brings_back(db, editor):
-    from app.api.v1.master_data.spec_registry import SpecKeyUpdate, update_spec_key
-
-    S.registry(db, "trap_type", "Trap", "enum", allowed=["s_trap"], synonyms={"s_trap": ["floor waste"]})
-    S.registry(db, "finish", "Finish", "enum", allowed=["matte"], synonyms={"matte": ["floor waste"]}, active=False)
-    with pytest.raises(AppException) as err:
-        update_spec_key("finish", SpecKeyUpdate(is_active=True), _user(), db)
-    assert err.value.status_code == 409 and '"floor waste"' in _message(err.value)
 
 
 def test_attachment_type_create_stores_words(db):

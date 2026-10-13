@@ -51,14 +51,15 @@ TYPE_ALIASES: dict[str, tuple[str, ...]] = {
     "catalogue": ("catalog", "katalog", "brochure", "目录", "产品目录"),
 }
 
-#: (kind, alias, winner_key) for the words the shipped spec registry seed already lists under
-#: two keys (measured on SPEC_REGISTRY_SEED, 13 Oct). Crew call, owner can change the rows.
+#: (kind, alias, winner_key) for the words two index keys already share in shipped data:
+#: `CLASS_SYNONYMS` (product_class_signal.py) lists bathtub / bath tub / tub under both
+#: "Bathtub" and "Bathtub and Jacuzzi", and jacuzzi under both "Jacuzzi" and "Bathtub and
+#: Jacuzzi". The single-word class wins its own word. Crew call; the owner can change the rows.
 PRECEDENCE: tuple[tuple[str, str, str], ...] = (
-    ("spec", "mixer", "product_type.mixer_tap"),
-    ("spec", "mixer tap", "product_type.mixer_tap"),
-    ("spec", "handrail", "product_type.handrail"),
-    ("spec", "hose", "product_type.flexible_hose"),
-    ("spec", "floor waste", "product_type.floor_trap"),
+    ("product_class", "bathtub", "bathtub"),
+    ("product_class", "bath tub", "bathtub"),
+    ("product_class", "tub", "bathtub"),
+    ("product_class", "jacuzzi", "jacuzzi"),
 )
 
 
@@ -112,7 +113,10 @@ def apply(bind) -> dict[str, int]:
         if exists:
             continue
         bind.execute(
-            text("INSERT INTO chatbot_alias_precedence (kind, alias_norm, winner_key) VALUES (:k, :a, :w)"),
+            text(
+                "INSERT INTO chatbot_alias_precedence (id, kind, alias_norm, winner_key) "
+                "VALUES (gen_random_uuid(), :k, :a, :w)"
+            ),
             {"k": kind, "a": norm(alias), "w": winner},
         )
         counts["precedence"] += 1

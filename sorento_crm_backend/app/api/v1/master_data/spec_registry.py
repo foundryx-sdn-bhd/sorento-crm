@@ -884,8 +884,8 @@ async def create_spec_key(
             match_decay=decay,
             source="user",
         )
-        # PV2 (CONTRACT-PV2-13oct s.4): a word already meaning another key is refused.
-        pv2_aliases.refuse_spec_row_conflicts(db, row, {})
+        # PV2 (CONTRACT-PV2-13oct s.4): a word already naming another attribute is refused.
+        pv2_aliases.refuse_spec_row_conflicts(db, row, [])
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -1232,7 +1232,6 @@ def add_spec_value(
         )
         if row is None:
             raise handle_not_found("Spec key", spec_key)
-        aliases_before = pv2_aliases.spec_row_aliases(row)
 
         proposed = payload.value.strip()
         if not proposed:
@@ -1287,7 +1286,6 @@ def add_spec_value(
             }
 
         _validate_reachable(row.data_type, merged_allowed_values(row), merged_synonyms(row))
-        pv2_aliases.refuse_spec_row_conflicts(db, row, aliases_before)
 
         db.commit()
         db.refresh(row)

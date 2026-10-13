@@ -113,14 +113,15 @@ def test_null_brand_key_offers_only_brands_with_visible_products(db):
     assert out.unrecognised is True
 
 
-def test_null_product_type_key_with_phrase_is_never_resolved_from_the_phrase(db):
+def test_null_product_class_key_with_phrase_is_never_resolved_from_the_phrase(db):
     cat = S.category(db, class_label="Water Closet")
     S.product(db, "WC-1", cat=cat)
-    out = resolver(db, product_type={"Water Closet"}).resolve_entities(
-        [Entity(kind="product_type", key=None, phrase="Water Closet", op="set", refers_to_held=False)], held=held()
+    S.category(db, class_label="Basin")  # live class, but no product the contact can see
+    out = resolver(db, product_class={"water_closet", "basin"}).resolve_entities(
+        [Entity(kind="product_class", key=None, phrase="Water Closet", op="set", refers_to_held=False)], held=held()
     )[0]
     assert out.status == "ambiguous" and out.refs == []
-    assert [o.key for o in out.options] == ["Water Closet"]
+    assert [(o.key, o.label) for o in out.options] == [("water_closet", "Water Closet")]
     assert out.unrecognised is True
 
 
