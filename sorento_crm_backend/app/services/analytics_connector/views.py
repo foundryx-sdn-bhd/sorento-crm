@@ -221,7 +221,6 @@ SELECT t.id::text AS id,
        rc.id AS contact_id,
        t.contact_respond_id,
        rc.name AS contact_name,
-       rc.phone_number AS contact_phone,
        cu.customer_name,
        f.episode_id::text AS episode_id,
        {_mask("COALESCE(t.envelope #>> '{message,message,message,text}', t.envelope #>> '{message,message,message,attachment,description}')")} AS inbound_text,
@@ -246,7 +245,10 @@ SELECT t.id::text AS id,
        CASE WHEN calls.chatbot_turn_id IS NULL THEN 0::numeric
             WHEN calls.priced THEN calls.cost_usd END AS cost_usd,
        COALESCE(calls.priced, true) AS priced,
-       COALESCE(calls.cached_price_missing, false) AS cached_price_missing
+       COALESCE(calls.cached_price_missing, false) AS cached_price_missing,
+       -- New columns go LAST: CREATE OR REPLACE VIEW cannot insert or reorder columns, and a
+       -- database that already holds an earlier version of this view upgrades in place.
+       rc.phone_number AS contact_phone
   FROM chatbot.turns t
   LEFT JOIN LATERAL (
         SELECT r.id, r.name, r.phone_number FROM respond_contacts r

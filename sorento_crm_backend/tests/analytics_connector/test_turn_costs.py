@@ -331,6 +331,27 @@ def test_a_model_without_a_cached_price_is_priced_when_nothing_was_cached():
         assert _row(db, "turn_costs", "id", s["no_calls"])["cached_price_missing"] is False
 
 
+def test_the_cost_views_upgrade_in_place_from_round_one():
+    """A database that already ran the first published version of the cost views (a dev copy,
+    the hand-test copy) must take the current ones with CREATE OR REPLACE, which refuses to
+    insert or reorder columns: new columns go last."""
+    from sqlalchemy import text as _t
+
+    from app.services.analytics_connector.views import ensure_cost_views
+    from tests.analytics_connector import _round1_views as round1
+
+    with pg_session() as db:
+        db.execute(_t(f"DROP VIEW IF EXISTS {round1.SCHEMA}.turn_costs"))
+        db.execute(_t(f"DROP VIEW IF EXISTS {round1.SCHEMA}.llm_calls"))
+        round1.ensure_cost_views(db)
+        ensure_cost_views(db)
+        cols = set(db.execute(_t(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'analytics_connector' "
+            "AND table_name = 'turn_costs'"
+        )).scalars())
+        assert {"contact_phone", "cached_price_missing"} <= cols
+
+
 def test_cost_views_expose_no_secret_columns():
     with pg_session() as db:
         _ensure(db)
