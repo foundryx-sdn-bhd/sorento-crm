@@ -337,13 +337,19 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
     try:
         scope = business_services.customer_scope(db, contact, space_id)
     except Exception:  # noqa: BLE001 - unknown scope: held to links, no customer names at all
-        scope = {"enforced": True, "ids": []}
+        scope = {"enforced": True, "ids": [], "linked": []}
     held = (not staff) or bool((scope or {}).get("enforced"))
     try:
         regions = rules_for_contact(db, resolve_request_contact(db, contact, space_id)).regions
     except Exception:  # noqa: BLE001 - v1's closed value for an unknown contact
         regions = UNRESOLVED.regions
+    # v1 `engine._reference_scope`: enforced -> the linked ids; staff -> no restriction;
+    # any other contact -> its linked ids (none when unlinked).
+    links: list[str] | None = None
+    if (scope or {}).get("enforced") or not staff:
+        links = [str(row[0]) for row in ((scope or {}).get("linked") or [])]
     return {
+        "reference_links": links,
         "reference_kinds": resolver_reference_kinds(attrs, staff, held),
         "regions": regions,
         "customer_scope": scope,

@@ -177,8 +177,12 @@ class DbResolver:
         customer_scope: Mapping[str, Any] | None = None,
         reference_kinds: Collection[str] | None = None,
         regions: Any = None,
+        reference_links: list[str] | None = None,
     ) -> None:
         self.db = db
+        # None = no restriction (staff); a list, possibly empty = a contact held to those
+        # customers: customer-owned document matches outside it are dropped.
+        self.reference_links = None if reference_links is None else [str(i) for i in reference_links]
         self.regions = regions
         # The reference kinds this asker may see (`visible_reference_kinds`); closed default.
         self.reference_kinds = list(reference_kinds) if reference_kinds else ["customer_order"]
@@ -290,7 +294,24 @@ class DbResolver:
             enable_prefix_fallback="form" in v1_types,
         )
         res = result.resolutions[0] if result.resolutions else None
-        return list(res.matches) if res else []
+        return self._within_links(list(res.matches) if res else [])
+
+    def _within_links(self, matches: list[Any]) -> list[Any]:
+        if self.reference_links is None:
+            return matches
+        from app.models.order import Order, SalesOrder
+
+        owned = {"customer_order": Order, "sales_order": SalesOrder, "customer_po_ref": SalesOrder}
+        out: list[Any] = []
+        for m in matches:
+            model = owned.get(m.entity_type)
+            if model is None:
+                out.append(m)
+                continue
+            cid = self.db.query(model.customer_id).filter(model.id == m.uuid).scalar() if m.uuid else None
+            if cid is not None and str(cid) in self.reference_links:
+                out.append(m)
+        return out
 
     @staticmethod
     def _from_held(kind: str, held: Held) -> Resolution:
