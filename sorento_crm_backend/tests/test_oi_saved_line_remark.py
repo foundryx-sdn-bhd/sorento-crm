@@ -3,7 +3,7 @@ line, its REMARK saying what was decided, in the board's own words
 (`sorento_crm_frontend/.../_shared/lib/supplyVocabulary.ts`) and the owner's Excel spelling.
 
 `saved_line_remark(snapshot)` reads ONE frozen line snapshot (`ProjectSupplyService._snapshot`)
-and returns `(remark, stock_location)`. Pure: no database.
+and returns `(remark, stock_location)`; STOCK LOCATION is the SO line's own location. Pure: no database.
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def test_use_brw_reads_use_and_the_pool_code():
     """The shared site pool's own warehouse code is the plain site code (BRW); the line's
     own location carries the group suffix (BRW-BB). Owner, 13 Oct: "USE BRW"."""
     assert saved_line_remark(_snap(_reserve("10", "BRW", rung="pool"), own="BRW-BB")) == (
-        "USE BRW", "BRW",
+        "USE BRW", "BRW-BB",
     )
 
 
@@ -54,14 +54,16 @@ def test_use_own_location_reads_use_and_the_location():
         "USE BRW-BB", "BRW-BB",
     )
     assert saved_line_remark(_snap(_reserve("10", "BRW-IC", rung="group_take"))) == (
-        "USE BRW-IC", "BRW-IC",
+        "USE BRW-IC", "BRW-IB",
     )
 
 
-def test_a_borrow_reads_order_back_and_the_borrowed_from_location():
-    assert saved_line_remark(_snap(_borrow("10", "MWH-BB"))) == ("ORDER BACK MWH-BB", "MWH-BB")
+def test_a_borrow_reads_order_back_at_the_lines_own_location():
+    """Owner, 13 Oct: just ORDER BACK; STOCK LOCATION is the SO line's own location, which
+    is where it is ordered back to."""
+    assert saved_line_remark(_snap(_borrow("10", "MWH-BB"))) == ("ORDER BACK", "BRW-IB")
     assert saved_line_remark(_snap(_borrow("10", "DC1-BB", rung="group_borrow"))) == (
-        "ORDER BACK DC1-BB", "DC1-BB",
+        "ORDER BACK", "BRW-IB",
     )
 
 
@@ -85,7 +87,7 @@ def test_several_parts_name_each_with_its_quantity():
 
 def test_a_zero_quantity_part_is_not_named():
     snapshot = _snap(_reserve("10", "BRW", rung="pool"), _buy("0"))
-    assert saved_line_remark(snapshot) == ("USE BRW", "BRW")
+    assert saved_line_remark(snapshot) == ("USE BRW", "BRW-IB")
 
 
 def test_a_local_buy_reads_local_buy():

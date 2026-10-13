@@ -429,13 +429,13 @@ def saved_line_remark(snapshot: Mapping[str, Any]) -> Tuple[str, Optional[str]]:
     * Buy: ``ORDER`` (an Order back Buy: ``ORDER BACK`` and the document CS cited);
     * Use BRW (a reserve on the ``pool`` rung): ``USE <pool code>``, i.e. ``USE BRW``;
     * Use own location (any other reserve): ``USE <location>``, e.g. ``USE BRW-BB``;
-    * Borrow (any borrow but a document one): ``ORDER BACK <borrowed-from location>``;
+    * Borrow (any borrow but a document one): ``ORDER BACK``;
     * Borrow incoming (``supply_borrow``): the document number;
     * Use incoming (``timely_spo``): the SPO number(s).
 
     One part reads as its words alone; several read each with its quantity, joined by
-    `` & `` in the snapshot's order (``USE BRW-BB 6 & ORDER 4``). STOCK LOCATION is the
-    first part's location (the line's own for a Buy or an incoming SPO).
+    `` & `` in the snapshot's order (``USE BRW-BB 6 & ORDER 4``). STOCK LOCATION is always
+    the SO line's own location, as on the Excel sheet (owner, 13 Oct).
     """
     parts = _saved_line_parts(snapshot)
     own = snapshot.get("location") or None
@@ -481,16 +481,15 @@ def _saved_line_parts(
             # (BRW), the line's own location carries its group suffix (BRW-BB). Owner,
             # 13 Oct: "USE BRW", "USE BRW-BB", no RESERVE word.
             key = "USE" if rung == "pool" else "USE_OWN"
-            parts.append(
-                (f"USE {location}" if location else "USE", location or own, qty, key)
-            )
+            parts.append((f"USE {location}" if location else "USE", own, qty, key))
         elif kind == "borrow":
             document = (component.get("supply_document") or "").strip()
             if rung == "supply_borrow" or document:
                 parts.append((document or "BORROW INCOMING", own, qty, "INCOMING"))
             else:
-                words = f"ORDER BACK {location}" if location else "ORDER BACK"
-                parts.append((words, location or own, qty, IV_ORDER_BACK))
+                # Owner, 13 Oct: just ORDER BACK; STOCK LOCATION (the SO line's own) says
+                # where it is ordered back to.
+                parts.append(("ORDER BACK", own, qty, IV_ORDER_BACK))
         elif kind == "timely_spo":
             parts.append((spo_numbers or "INCOMING", own, qty, "INCOMING"))
     return parts

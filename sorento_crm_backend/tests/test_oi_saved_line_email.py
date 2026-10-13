@@ -89,7 +89,7 @@ def test_a_first_confirm_sends_one_line_per_saved_line_with_its_decision(api, em
     code = world.product.product_code
     assert sorted(_lines(emails[0])) == sorted([
         (code, "10", own, "ORDER"),
-        (code, "6", pool, f"USE {pool}"),
+        (code, "6", own, f"USE {pool}"),
     ]), _lines(emails[0])
 
 
@@ -140,6 +140,7 @@ def test_one_saved_line_is_one_email_line_however_many_rows_it_raised(api, email
     world.db.commit()
     order, line_a, _line_b = _order(api)
     pool = world.pool_wh.warehouse_code
+    own = world.own_wh.warehouse_code
 
     _post(api, order, [
         _line_payload(line_a.id, reserve=[{"warehouse_id": world.pool_wh.id, "qty": "6"}],
@@ -148,7 +149,7 @@ def test_one_saved_line_is_one_email_line_however_many_rows_it_raised(api, email
 
     assert len(emails) == 1, emails
     assert _lines(emails[0]) == [
-        (world.product.product_code, "10", pool, f"USE {pool} 6 & ORDER 4"),
+        (world.product.product_code, "10", own, f"USE {pool} 6 & ORDER 4"),
     ]
 
 
