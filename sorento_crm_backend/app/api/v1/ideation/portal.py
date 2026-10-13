@@ -8,6 +8,7 @@ per route (`productId` is never forwarded: the connection is scoped to the works
 bodies are rebuilt from field lists. Comment delete is the `idea_comment.delete` pending action.
 """
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Request, Response
 from sqlalchemy.orm import Session
@@ -23,7 +24,6 @@ from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
 from app.services.error_handler import AppException
 from app.services.ideation_gateway_service import call_portal, relay, ss_path
-from uuid import UUID
 
 NOTE_MAX_CHARS = 500
 _LIST_PARAMS = ("q", "column", "sort", "mine", "includeClosed", "page", "pageSize")
