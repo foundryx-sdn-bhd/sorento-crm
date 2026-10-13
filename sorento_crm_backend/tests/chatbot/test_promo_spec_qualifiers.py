@@ -16,7 +16,7 @@ from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact
 from tests.chatbot.test_promo_brand_category import _brand, _prod
-from tests.chatbot.test_promo_kind_subject import PRODUCTS_TOOL, PROMO_TOOL, _promo
+from tests.chatbot.test_promo_kind_subject import PROMO_TOOL, _promo
 from tests.chatbot.test_promo_owner_round2 import _mcp
 from tests.chatbot.test_promo_round3_detection import _go, _types, _wire
 from tests.chatbot.test_promo_subject_filter import _class, _pick_qf
@@ -105,7 +105,6 @@ def test_the_promotion_subject_prompt_tells_the_parser_to_emit_listed_qualifiers
 
 @pytest.mark.parametrize("raw", ["wall hung", "walll hugggg"])
 def test_a_qualified_promo_ask_narrows_stamp_and_pick_to_the_spec(session_factory, monkeypatch, raw):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     _wc_world(session_factory)
     captured = _mcp(monkeypatch, session_factory)
     menu = _go(session_factory, monkeypatch, _qf(_spec(raw)), f"sorento {raw} water closet promo", "zzt-sq-ask")
@@ -119,7 +118,7 @@ def test_a_qualified_promo_ask_narrows_stamp_and_pick_to_the_spec(session_factor
     assert probes and all("wall" in json.dumps(a).lower() for a in probes), probes
     reply = _go(session_factory, monkeypatch, _pick_qf(2), "2", "zzt-sq-2")
     assert "ZZT WH PROMO" in reply and "ZZT FM PROMO" not in reply, reply
-    picks = [a for n, a in captured if n == PRODUCTS_TOOL]  # owner Q4 option (a), 12 Oct
+    picks = [a for n, a in captured if n == PROMO_TOOL][len(probes):]
     assert picks and all("wall" in json.dumps(a).lower() for a in picks), picks
 
 
@@ -149,7 +148,6 @@ def test_an_unplaceable_qualifier_asks_back_never_drops_or_widens(session_factor
 
 
 def test_an_unqualified_water_closet_promo_still_returns_both(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     _wc_world(session_factory)
     _mcp(monkeypatch, session_factory)
     _go(session_factory, monkeypatch, _qf(), "sorento water closet promo", "zzt-sq-plain")

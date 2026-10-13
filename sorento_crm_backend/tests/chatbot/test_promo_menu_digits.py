@@ -19,7 +19,7 @@ from tests._mc_lookup_seed import product
 from tests.chatbot import test_outstanding_lane as lane_harness
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact, _session_of
-from tests.chatbot.test_promo_kind_subject import PRODUCTS_TOOL, PROMO_TOOL, _promo, subject_of
+from tests.chatbot.test_promo_kind_subject import PROMO_TOOL, _promo
 from tests.chatbot.test_promo_owner_round2 import _mcp, _turn, _unresolved
 from tests.chatbot.test_promo_subject_filter import _class, _pick_qf
 
@@ -116,7 +116,6 @@ def _assert_one_line_none(reply: str):
 
 
 def test_picking_a_stamped_no_promotion_level_after_a_result_answers_in_one_line(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """(A)+(B2): menu (Office no, Dealer has, End user no) -> "2" (results) -> "3": one line, no
     did-you-mean, no product codes."""
     _world(session_factory)
@@ -131,7 +130,6 @@ def test_picking_a_stamped_no_promotion_level_after_a_result_answers_in_one_line
 
 
 def test_picking_a_stamped_no_promotion_level_straight_from_the_menu_answers_in_one_line(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     _world(session_factory)
     _mcp(monkeypatch, session_factory)
     queries: list = []
@@ -143,7 +141,6 @@ def test_picking_a_stamped_no_promotion_level_straight_from_the_menu_answers_in_
 
 
 def test_a_level_read_on_the_first_turn_still_gets_the_stamped_menu_and_the_subject_filter(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """(A2) "basin cabinet promo" with the parser also reading a level (access_levels): the menu is
     the stamped one, and the pick fetch carries scope_terms ["basin cabinet"], never the carried
     product set (`product_ids`)."""
@@ -157,18 +154,15 @@ def test_a_level_read_on_the_first_turn_still_gets_the_stamped_menu_and_the_subj
     assert lines and all(l.endswith("- has promotion") or l.endswith("- no promotion") for l in lines), menu
     n = len(captured)
     reply = _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", "zzt-md-a3-pick")
-    # owner Q4 option (a), 12 Oct: the pick fetch is the promotion-products tool with spec_constraints
-    fetches = [a for name, a in captured[n:] if name == PRODUCTS_TOOL]
+    fetches = [a for name, a in captured[n:] if name == PROMO_TOOL]
     assert fetches, captured
     for a in fetches:
-        assert subject_of(a) == {"basin cabinet"}, a
-        assert not a.get("scope_terms"), a
+        assert [t.lower() for t in a.get("scope_terms") or []] == ["basin cabinet"], a
         assert not a.get("product_ids"), a
     assert "no promotion matched" not in reply.lower() and "ZZTCARRIED" not in reply, reply
 
 
 def test_after_a_pick_another_digit_picks_again_from_the_same_menu(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """(B2): "2" then "1": the second digit re-answers the same menu (Office), not a new search."""
     _world(session_factory)
     captured = _mcp(monkeypatch, session_factory)
@@ -177,8 +171,7 @@ def test_after_a_pick_another_digit_picks_again_from_the_same_menu(session_facto
     _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", "zzt-md-b2-2")
     n = len(captured)
     reply = _turn(session_factory, monkeypatch, services, _pick_qf(1), "1", "zzt-md-b2-1")
-    # owner Q4 option (a), 12 Oct: the re-pick runs the promotion-products tool
-    fetches = [a for name, a in captured[n:] if name == PRODUCTS_TOOL]
+    fetches = [a for name, a in captured[n:] if name == PROMO_TOOL]
     assert fetches and all(a.get("access_levels") == ["Sorento Office"] for a in fetches), captured[n:]
     assert "Couldn't find" not in reply and "Did you mean" not in reply, reply
     assert reply.strip() == "No Office promotion for basin cabinet.", reply
@@ -189,7 +182,6 @@ def test_after_a_pick_another_digit_picks_again_from_the_same_menu(session_facto
 
 @pytest.mark.parametrize("answer", ["typed", "digit"])
 def test_the_which_question_is_an_open_question_and_its_answer_narrows_by_brand(session_factory, monkeypatch, answer):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     brand_id = _world(session_factory)
     captured = _mcp(monkeypatch, session_factory)
     services = _brand_services(brand_id)
@@ -212,14 +204,11 @@ def test_the_which_question_is_an_open_question_and_its_answer_narrows_by_brand(
     assert probes and all(a.get("brand_ids") == [brand_id] and [t.lower() for t in a.get("scope_terms") or []] == ["basin cabinet"] for a in probes), probes
     n = len(captured)
     reply = _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", f"zzt-md-w-pick-{answer}")
-    # owner Q4 option (a), 12 Oct: the pick is the promotion-products tool; stamp and pick still
-    # agree on brand, kind and subject (the subject read from spec_constraints or scope_terms)
-    fetch = [a for name, a in captured[n:] if name == PRODUCTS_TOOL]
+    fetch = [a for name, a in captured[n:] if name == PROMO_TOOL]
     assert fetch, captured
     stamp, pick = probes[0], fetch[0]
-    for key in ("brand_ids", "promotion_types"):
+    for key in ("brand_ids", "scope_terms", "promotion_types"):  # stamp and pick never disagree
         assert stamp.get(key) == pick.get(key), (key, stamp, pick)
-    assert subject_of(stamp) == subject_of(pick) == {"basin cabinet"}, (stamp, pick)
     assert "ZZT PROMO BASIN_CABINET" in reply, reply
 
 
@@ -277,8 +266,7 @@ def test_the_which_answer_read_as_a_position_still_gets_the_stamped_menu(session
     assert probes and all(a.get("brand_ids") == [brand_id] and [t.lower() for t in a.get("scope_terms") or []] == ["basin cabinet"] for a in probes), probes
     n = len(captured)
     reply = _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", f"zzt-md-pos-pick-{typed[:1]}")
-    # owner Q4 option (a), 12 Oct: the pick turn runs the promotion-products tool
-    fetch = [a for name, a in captured[n:] if name == PRODUCTS_TOOL]
+    fetch = [a for name, a in captured[n:] if name == PROMO_TOOL]
     assert fetch and all(a.get("access_levels") == ["Sorento Dealer"] for a in fetch), captured[n:]
     assert "ZZT PROMO BASIN_CABINET" in reply, reply
 

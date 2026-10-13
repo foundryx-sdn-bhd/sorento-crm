@@ -55,14 +55,13 @@ def _mcp(monkeypatch, session_factory):
     client = TestClient(app)
     captured: list[tuple[str, dict[str, Any]]] = []
     forwarded = ("access_levels", "promotion_types", "brand_ids", "scope_terms", "product_ids")
-    from tests.chatbot.test_promo_kind_subject import promotion_route
 
     def _call(name: str, args: dict[str, Any]) -> Any:
         captured.append((name, dict(args)))
         params: dict[str, Any] = {k: args[k] for k in forwarded if args.get(k)}
         params["serving_policy"] = "true"
-        # owner Q4 option (a), 12 Oct: a described subject is answered by the promotion-products route
-        res = promotion_route(client, name, args, params)
+        res = client.get("/api/v1/marketing/promotions/", params=params)
+        assert res.status_code == 200, res.text
         return lane_harness._present_response()(name, json.dumps(res.json()))
 
     monkeypatch.setattr(lane_harness, "_capturing_mcp", lambda response=None: (_call, captured))
@@ -170,7 +169,6 @@ def test_menu_probe_narrows_by_subject_and_brand(session_factory, monkeypatch):
 
 
 def test_pick_fetches_by_subject_and_brand_never_by_the_product_set(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """T2: pick "1": scope_terms ["kitchen sink"] + brand_ids [Sorento], no product_ids; the reply
     presents the Sorento sink promotion, with no product codes and no not-matched / escalation text."""
     ids = _world(session_factory)
@@ -178,19 +176,12 @@ def test_pick_fetches_by_subject_and_brand_never_by_the_product_set(session_fact
     _turn(session_factory, monkeypatch, ids, _qf(), "only sorento kitchen sink promo", "zzt-bc-ask")
     n = len(captured)
     reply = _turn(session_factory, monkeypatch, ids, _pick_qf(1), "1", "zzt-bc-pick")
-    # owner Q4 option (a), 12 Oct: the pick fetch is the promotion-products tool with spec_constraints
-    from tests.chatbot.test_promo_kind_subject import PRODUCTS_TOOL, subject_of
-
-    fetches = [a for name, a in captured[n:] if name == PRODUCTS_TOOL]
+    fetches = [a for name, a in captured[n:] if name == PROMO_TOOL]
     assert fetches, captured
-    assert not [1 for name, _a in captured[n:] if name == PROMO_TOOL], captured[n:]
     for a in fetches:
-        assert subject_of(a) == {"kitchen sink"}, a
-        assert not a.get("scope_terms"), a
+        assert [t.lower() for t in a.get("scope_terms") or []] == ["kitchen sink"], a
         assert a.get("brand_ids") == [ids["srt"]], a
         assert not a.get("product_ids"), a
     assert "ZZT SORENTO KITCHEN SINK COMBO" in reply, reply
-    # owner Q4 option (a), 12 Oct: each product line now shows its code, so "ZZTSK" is no longer
-    # forbidden reply text; "never fetched by the product set" is the no-product_ids check above
-    for bad in ("Here's what you want", "no promotion matched", "escalate"):
+    for bad in ("Here's what you want", "no promotion matched", "escalate", "ZZTSK"):
         assert bad.lower() not in reply.lower(), reply

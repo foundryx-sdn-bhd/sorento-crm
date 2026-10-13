@@ -157,11 +157,12 @@ def tool_filter(candidates: Any, *, has_product: bool | None) -> ToolPick:
 # SPEC-PROMO-PARAMS: a described ask's subject and specs as the tools' `spec_constraints`
 # --------------------------------------------------------------------------- #
 
-_PROMOTION_PRODUCTS_TOOL = "crm_marketing_promotion_products_list"
-PROMOTION_PRODUCTS_TOOL = _PROMOTION_PRODUCTS_TOOL
-# The tools whose route takes `spec_constraints` (`sorento_crm_mcp/catalog.py`).
+_PROMOTIONS_TOOL = "crm_marketing_promotions_list"
+# The tools the chatbot sends `spec_constraints` to (`sorento_crm_mcp/catalog.py`). On promotion
+# it is the existing promotions list (owner hand test 13 Oct: the size only resolves the
+# products; the answer is the promotion documents).
 SPEC_CONSTRAINT_TOOLS = frozenset(
-    {"crm_master_products_list", "crm_inventory_stock_balance_list", _PROMOTION_PRODUCTS_TOOL}
+    {"crm_master_products_list", "crm_inventory_stock_balance_list", _PROMOTIONS_TOOL}
 )
 # The domains whose tool is one of them (`turn/policy_rows.py`).
 SPEC_CONSTRAINT_DOMAINS = frozenset({"master_products", "inventory", "promotion"})
@@ -274,7 +275,7 @@ def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | N
     return out or None
 
 
-def select_tool(domain: str | None, spec_constraints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+def select_tool(domain: str | None) -> list[dict[str, Any]]:
     """The domain's tool, read off `turn.policy.default_policy()` (AC-1594: was
     `contracts.DOMAIN_SPEC`, now the frozen seed `chatbot_domains` is migrated from). No
     embedding, no database, no network.
@@ -324,18 +325,10 @@ def select_tool(domain: str | None, spec_constraints: list[dict[str, Any]] | Non
     b5b19cec-dccc-4eda-b766-1aeb1362957b arrived with `domain_hint: "purchasing"`, a TEAM
     name, and ended `not_found`; one that got past both guards would end the same way here,
     by falling off the table rather than by zeroing a `LIKE` filter.
-
-    SPEC-PROMO-PARAMS (card section 9, slice 3, owner Q4 12 Oct): a promotion ask with a
-    described subject (`spec_constraints` non-empty) answers from the promotion products
-    tool, the promotions covering the subject together with the products on them, so
-    "which basins are on promotion" and "basin promotion" are one call. With no subject
-    the domain's first tool stands.
     """
     row = default_policy().domain(domain) if domain else None
     if row is None or not row.tools:
         return []
-    if spec_constraints and row.name == "promotion" and _PROMOTION_PRODUCTS_TOOL in row.tools:
-        return [{"name": _PROMOTION_PRODUCTS_TOOL, "similarity": 1.0}]
     return [{"name": row.tools[0], "similarity": 1.0}]
 
 
@@ -1323,20 +1316,14 @@ def entity_ids_transformer(
     if tool_name in SPEC_CONSTRAINT_TOOLS and isinstance(spec_constraints, list) and spec_constraints:
         out.pop("product_ids", None)
         out["spec_constraints"] = [dict(c) for c in spec_constraints if isinstance(c, dict)]
-        if tool_name == _PROMOTION_PRODUCTS_TOOL:
+        if tool_name == _PROMOTIONS_TOOL:
+            # A promotion the resolver matched by NAME off the same words is not the subject;
+            # only one the customer named (`promo_filter`) stays.
             named = [p for p in jsc.array(jsc.get(semantic_input, "promotion_ids")) if is_uuid(p)]
             if named:
                 out["promotion_ids"] = named
             else:
                 out.pop("promotion_ids", None)
-            # The promotions list's other two narrowings (`promo_filter`), for parity (owner
-            # Q4 option (a)): the brand of the line's product and the promotion's kind.
-            brand_ids = [b for b in jsc.array(jsc.get(semantic_input, "brand_ids")) if is_uuid(b)]
-            if brand_ids:
-                out["brand_ids"] = brand_ids
-            kinds = [k for k in jsc.array(jsc.get(semantic_input, "promotion_types")) if isinstance(k, str) and k]
-            if kinds:
-                out["promotion_types"] = kinds
 
     # group_by / top_n (A3, AC-909/AC-910): additive parser keys, uniform across
     # every list tool this plan touches. `top_n` aliases to `limit` for the

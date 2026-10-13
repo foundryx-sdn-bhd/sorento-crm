@@ -9,7 +9,7 @@ Contract assumed here (the coordinator's brief, not yet in code):
     code is present or nothing maps.
   * `semantic_input["spec_constraints"]` makes `entity_ids_transformer` emit `spec_constraints`
     (a list) and drop `product_ids`, for the three tools below.
-  * `fetch.select_tool(domain, spec_constraints=None)` picks `crm_marketing_promotion_products_list`
+  * `fetch.select_tool(domain)` keeps `crm_marketing_promotions_list` (owner hand test 13 Oct)
     for the promotion domain when spec_constraints is non-empty, else the domain's first tool.
 
 `spec_constraints_for` does not exist yet, so it is imported inside each test body: collection
@@ -201,7 +201,7 @@ def _trigger(tool):
     [
         "crm_inventory_stock_balance_list",
         "crm_master_products_list",
-        "crm_marketing_promotion_products_list",
+        "crm_marketing_promotions_list",
     ],
 )
 def test_c4_c5_transformer_carries_spec_constraints_and_drops_product_ids(tool):
@@ -225,17 +225,10 @@ def test_c4b_without_spec_constraints_product_ids_are_untouched():
 # ------------------------------------------------------------------ promotion tool choice
 
 
-def test_c6_empty_constraints_keep_the_promotions_list():
-    """RED: unexpected keyword `spec_constraints`. An empty or None list is "no subject"."""
-    for none in (None, []):
-        picked = _fetch().select_tool("promotion", spec_constraints=none)
-        assert [t["name"] for t in picked] == ["crm_marketing_promotions_list"]
-
-
-def test_c6_promotion_with_a_subject_picks_promotion_products_tool():
-    """RED: `select_tool` takes only the domain (unexpected keyword `spec_constraints`)."""
-    picked = _fetch().select_tool("promotion", spec_constraints=[{"key": "class", "op": "eq", "value": "Basin"}])
-    assert [t["name"] for t in picked] == ["crm_marketing_promotion_products_list"]
+def test_c6_a_promotion_ask_keeps_the_promotions_list():
+    """Owner hand test 13 Oct: a size in a promotion ask only resolves the products; the answer
+    is the existing promotions list, so the tool choice never switches."""
+    assert [t["name"] for t in _fetch().select_tool("promotion")] == ["crm_marketing_promotions_list"]
 
 
 def test_c6_promotion_without_a_subject_keeps_the_promotions_list():

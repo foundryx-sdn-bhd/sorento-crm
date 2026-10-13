@@ -309,13 +309,6 @@ def clamp_discount_percent_for_db(value: Optional[float]) -> Optional[float]:
     return round(v, 2)
 
 
-def _promotion_kind_clause(kind_codes: list[str]):
-    """Promotions whose type (`promotion_types.type_code`) is one of `kind_codes`: the kind
-    narrowing the promotions list and the promotion products list share."""
-    from app.models.marketing import PromotionType
-
-    return Promotion.promotion_type_id.in_(select(PromotionType.id).where(PromotionType.type_code.in_(kind_codes)))
-
 class PromotionService:
     """Service for promotion operations."""
     
@@ -627,6 +620,7 @@ class PromotionService:
         scope_terms: Optional[list[str]] = None,
         promotion_types: Optional[list[str]] = None,
         brand_ids: Optional[list[str]] = None,
+        spec_constraints: Optional[list[dict]] = None,
     ):
         """List promotions with active-first fallback semantics.
 
@@ -701,7 +695,11 @@ class PromotionService:
         # everything else and, like the subject, never widened by the inactive fallback.
         kind_codes = [c for c in (promotion_types or []) if c and c.strip()]
         if kind_codes:
-            type_clause = _promotion_kind_clause(kind_codes)
+            from app.models.marketing import PromotionType
+
+            type_clause = Promotion.promotion_type_id.in_(
+                select(PromotionType.id).where(PromotionType.type_code.in_(kind_codes))
+            )
             subject_clause = type_clause if subject_clause is None else and_(subject_clause, type_clause)
         brand_list = [b for b in (brand_ids or []) if b and b.strip()]
         if brand_list:
@@ -711,6 +709,25 @@ class PromotionService:
                 PromotionProduct.product_id == Product.id
             ).where(Product.brand_id.in_(brand_list))
             subject_clause = brand_clause if subject_clause is None else and_(subject_clause, brand_clause)
+        # SPEC-PROMO-PARAMS (owner hand test 13 Oct): a described subject ("600mm basin") only
+        # RESOLVES the products; the answer is this same promotions list, narrowed to promotions
+        # with a linked product satisfying the constraints (a bare size on any axis, as on the
+        # product and stock routes). A size no product holds matches nothing.
+        if spec_constraints:
+            from app.models.product_spec import ProductSpecifications
+            from app.services.product_spec_filter import _one, resolve_size
+
+            sized, _extra = resolve_size(self.db, spec_constraints)
+            spec_clause = (
+                text("false")
+                if sized is None
+                else exists().where(PromotionProduct.promotion_id == Promotion.id).where(
+                    PromotionProduct.product_id.in_(
+                        select(ProductSpecifications.product_id).where(and_(*[_one(c) for c in sized]))
+                    )
+                )
+            )
+            subject_clause = spec_clause if subject_clause is None else and_(subject_clause, spec_clause)
 
         (
             _ordered_query,
@@ -1270,17 +1287,8 @@ class PromotionProductService:
         contact_access_codes: Optional[list[str]] = None,
         entities: Optional[list[str]] = None,
         serving_policy: bool = False,
-        spec_constraints: Optional[list[dict]] = None,
-        hidden_spec_keys: frozenset[str] = frozenset(),
-        brand_ids: Optional[list[str]] = None,
-        promotion_types: Optional[list[str]] = None,
     ):
         """List products for a promotion, several promotions, or all promotion products.
-
-        `spec_constraints` (parsed by `product_spec_filter.parse_spec_constraints`) keeps
-        only lines whose product satisfies them; a virtual `size` constraint is resolved
-        first and, when the data cannot place it on one axis, the answer is no rows plus
-        the clarify / miss keys `resolve_size` returns (SPEC-PROMO-PARAMS).
 
         `serving_policy=True` replaces the parent-promotion active gate with the
         per-type serving policy (see `app/services/promotion_serving.py`), so the
@@ -1309,23 +1317,6 @@ class PromotionProductService:
             resolve_or_empty as _resolve_or_empty,
         )
 
-        from app.services.product_spec_filter import promoted_clause, resolve_size, spec_constraint_clause, stamp_spec_page
-
-        # The size is resolved among the products this route answers about: those on a line of
-        # a promotion live today, open to the caller's tier and of the product's own company
-        # (`promoted_clause`), not the whole catalogue. An explicit inactive-only ask
-        # (`active=False`, a staff grid) reads the catalogue as before.
-        spec_base = None if active is False else promoted_clause(self.db, contact_access_codes)
-        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys, spec_base)
-        if spec_constraints and sized_constraints is None:
-            return {
-                "data": [],
-                "pagination": {"total": 0, "page": page, "limit": limit},
-                "empty": True,
-                **spec_extra,
-            }
-        spec_constraints = sized_constraints
-
         _entity_buckets = _resolve_or_empty(self.db, entities)
         if _entity_buckets is not None and not _entity_buckets.has_resolved_filter:
             from app.schemas.common import PaginationResponse
@@ -1346,28 +1337,10 @@ class PromotionProductService:
             joinedload(PromotionProduct.product).joinedload(Product.category),
             joinedload(PromotionProduct.product).joinedload(Product.brand),
             joinedload(PromotionProduct.promotion),
-            # The line's group name is read for every row (`promotion_group_name`): loaded with
-            # the page, not one lazy query per group (reviewer S1).
-            joinedload(PromotionProduct.promotion_group),
         )
 
         if product_ids_filter:
             q = q.filter(PromotionProduct.product_id.in_(product_ids_filter))
-
-        if spec_constraints:
-            q = q.filter(
-                PromotionProduct.product_id.in_(
-                    select(Product.id).where(spec_constraint_clause(self.db, spec_constraints))
-                )
-            )
-        # Brand of the LINE's product and kind of its promotion (owner Q4 option (a), the
-        # promotions list's own two narrowings, `list_promotions`), ANDed with the rest.
-        brand_list = [b for b in (brand_ids or []) if b and str(b).strip()]
-        if brand_list:
-            q = q.filter(PromotionProduct.product_id.in_(select(Product.id).where(Product.brand_id.in_(brand_list))))
-        kind_codes = [c for c in (promotion_types or []) if c and str(c).strip()]
-        if kind_codes:
-            q = q.filter(PromotionProduct.promotion_id.in_(select(Promotion.id).where(_promotion_kind_clause(kind_codes))))
 
         if promotion_ids:
             resolved_bulk: list[str] = []
@@ -1557,9 +1530,6 @@ class PromotionProductService:
             or any_dimension_min is not None
             or any_dimension_max is not None
             or contact_access_codes is not None
-            or bool(spec_constraints)
-            or bool(brand_list)
-            or bool(kind_codes)
         )
         today = datetime.utcnow().date()
         active_clause = _promotion_active_clause(today)
@@ -1576,15 +1546,9 @@ class PromotionProductService:
                 .all()
             ]
             serving_verdict = promotion_serving.evaluate_candidates(self.db, parent_ids, today)
-            served = set(serving_verdict.served_ids)
-            live = served - serving_verdict.expired_but_usable_ids
-            if spec_constraints and live:
-                # SPEC-PROMO-PARAMS (crew live check, bec7d329): "which basins are on
-                # promotion?" listed a promotion that ended a month ago beside live ones. A
-                # live answer exists, so the expired one goes; with none live the expired
-                # ones still serve, marked (owner round 3, 9 Oct: expired hidden beside live).
-                served = live
-            q_final = q.filter(PromotionProduct.promotion_id.in_(list(served)))
+            q_final = q.filter(
+                PromotionProduct.promotion_id.in_(list(serving_verdict.served_ids))
+            )
             total = q_final.count()
         elif active is None:
             q_final = q
@@ -1606,13 +1570,10 @@ class PromotionProductService:
             "created_at": PromotionProduct.created_at,
         }
         sort_column = sort_map.get(sort_field, PromotionProduct.created_at)
-        ordered = sort_column.desc() if sort_dir == "desc" else sort_column.asc()
-        if spec_constraints:
-            # A spec-filtered answer is paged ("Reply to see more"): one promotion's lines
-            # together, and a unique tiebreak so no line repeats or drops between pages.
-            q_final = q_final.order_by(PromotionProduct.promotion_id, ordered, PromotionProduct.id)
+        if sort_dir == "desc":
+            q_final = q_final.order_by(sort_column.desc())
         else:
-            q_final = q_final.order_by(ordered)
+            q_final = q_final.order_by(sort_column.asc())
 
         offset = (page - 1) * limit
         products = q_final.offset(offset).limit(limit).all()
@@ -1642,8 +1603,6 @@ class PromotionProductService:
             )
             line.promotion_type_code = code
             line.promotion_type_name = name
-            group = getattr(line, "promotion_group", None)
-            line.promotion_group_name = getattr(group, "group_name", None) if group is not None else None
             if serving_verdict is not None:
                 line.expired_but_usable = serving_verdict.is_expired_but_usable(line.promotion_id)
 
@@ -1662,8 +1621,6 @@ class PromotionProductService:
             payload["serving_policy_applied"] = True
         if _entity_buckets is not None:
             payload["resolved_entities"] = _entity_buckets.as_echo()
-        payload.update(spec_extra)
-        stamp_spec_page(payload, spec_constraints)
         return payload
 
     def get_promotion_line(self, promotion_id: str, line_id: str):

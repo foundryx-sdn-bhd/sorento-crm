@@ -23,7 +23,7 @@ from tests._mc_lookup_seed import product
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact
 from tests.chatbot.test_promo_brand_category import _mcp
-from tests.chatbot.test_promo_kind_subject import PRODUCTS_TOOL, PROMO_TOOL, _promo, subject_of
+from tests.chatbot.test_promo_kind_subject import PROMO_TOOL, _promo
 from tests.chatbot.test_promo_subject_filter import _class, _pick_qf
 
 LEVELS = ["Sorento Office", "Sorento Dealer"]
@@ -88,7 +88,6 @@ def _qf(code_hint):
 
 @pytest.mark.parametrize("code_hint", [None, "product"], ids=["hint-none", "hint-product-control"])
 def test_a_code_beside_a_class_keeps_product_ids_and_sends_no_subject(session_factory, monkeypatch, code_hint):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     pid = _world(session_factory)
     captured = _mcp(monkeypatch, session_factory)
 
@@ -101,19 +100,16 @@ def test_a_code_beside_a_class_keeps_product_ids_and_sends_no_subject(session_fa
     turn(_qf(code_hint), f"kitchen sink {CODE} promo", f"zzt-cb-ask-{code_hint}")
     n = len(captured)
     reply = turn(_pick_qf(1), "1", f"zzt-cb-pick-{code_hint}")
-    # owner Q4 option (a), 12 Oct: the typed code stays the stricter subject: product_ids and no
-    # spec_constraints, whichever promotion tool the pick turn runs
-    calls = [a for name, a in captured[n:] if name in (PROMO_TOOL, PRODUCTS_TOOL)]
+    calls = [a for name, a in captured if name == PROMO_TOOL]
     assert calls and len(captured) > n, captured
     for a in calls:
         assert a.get("product_ids") == [pid], a
-        assert not a.get("scope_terms") and not a.get("spec_constraints"), a
+        assert not a.get("scope_terms"), a
     assert "ZZT PROMO P1 FOR THE CODE" in reply, reply
     assert "ZZT PROMO P2 OTHER SINK" not in reply, reply
 
 
 def test_a_stray_unresolved_word_beside_a_class_keeps_the_class_filter(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """"latest kitchen sink promo": "latest" (hint None) resolves to nothing, so the class is still
     the subject: probe and pick send `scope_terms ["kitchen sink"]`, no `product_ids`; Dealer has
     no sink promotion ("- no promotion"); the pick returns the sink promotion, not the WC one."""
@@ -157,12 +153,10 @@ def test_a_stray_unresolved_word_beside_a_class_keeps_the_class_filter(session_f
     menu = turn(qf, "latest kitchen sink promo", "zzt-cb-stray-ask")
     n = len(captured)
     reply = turn(_pick_qf(1), "1", "zzt-cb-stray-pick")
-    # owner Q4 option (a), 12 Oct: the class filter travels as spec_constraints on the promotion-products tool
-    calls = [a for name, a in captured[n:] if name == PRODUCTS_TOOL]
+    calls = [a for name, a in captured if name == PROMO_TOOL]
     assert calls and len(captured) > n, captured
     for a in calls:
-        assert subject_of(a) == {"kitchen sink"}, a
-        assert not a.get("scope_terms"), a
+        assert [t.lower() for t in a.get("scope_terms") or []] == ["kitchen sink"], a
         assert not a.get("product_ids"), a
     assert "1. Office - has promotion" in menu.splitlines(), menu
     assert "2. Dealer - no promotion" in menu.splitlines(), menu

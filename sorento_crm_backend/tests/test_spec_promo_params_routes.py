@@ -487,7 +487,7 @@ def test_has_active_promotion_counts_only_promotions_open_to_the_callers_tier(ap
 
 
 # --------------------------------------------------------------------------------------- #
-# Slice 2: virtual `size` key (card section 9, slice 1), inactive keys, promotion-products
+# Slice 2: virtual `size` key (card section 9, slice 1), inactive keys
 # --------------------------------------------------------------------------------------- #
 
 GRATING = {"key": "product_type", "op": "eq", "value": "floor_grating"}
@@ -643,44 +643,6 @@ def test_spec_alternatives_items_carry_label_and_unit(api, db):
     assert item["values"] == [100, 150]
 
 
-def test_promotion_products_route_filters_lines_by_spec_constraints(api, db, monkeypatch):
-    """A5. RED today: `GET /marketing/promotion-products` has no `spec_constraints` param,
-    so it is ignored and the tap line comes back with the basin line."""
-    monkeypatch.setattr(
-        UserPermissionService,
-        "get_user_permission_slugs",
-        lambda self, uid: {"marketing.promotion_products.view"},
-    )
-    basin = _p(db, "PPB", {"class": _enum("Basin")})
-    tap = _p(db, "PPT", {"class": _enum("Tap")})
-    promo = _promo(db, basin, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
-    group = promo.promotion_groups[0] if promo.promotion_groups else None
-    assert group is not None
-    db.add(
-        PromotionProduct(
-            id=str(uuid.uuid4()),
-            promotion_id=promo.id,
-            promotion_group_id=group.id,
-            product_id=tap.id,
-            company_id=DEFAULT_COMPANY_ID,
-        )
-    )
-    db.commit()
-
-    resp = api.get(
-        "/api/v1/marketing/promotion-products/",
-        params={
-            "promotion_ids": [promo.id],
-            "active": "true",
-            "limit": 100,
-            **_constraints({"key": "class", "op": "eq", "value": "Basin"}),
-        },
-    )
-    assert resp.status_code == 200, resp.text
-    codes = {row["product"]["product_code"] for row in resp.json()["data"]}
-    assert codes == _codes_of([basin])
-
-
 # --------------------------------------------------------------------------------------- #
 # Slice 2b: company scope and spec visibility on the miss detail and on `size`
 # --------------------------------------------------------------------------------------- #
@@ -811,70 +773,12 @@ def test_staff_call_without_contact_still_sees_dim_width(api, db):
 
 
 # --------------------------------------------------------------------------------------- #
-# Owner Q4 option (a), 12 Oct: promotion-products takes brand_ids and promotion_types
+# (Owner Q4 option (a), the promotion-products path, was reversed by the owner on 13 Oct.)
 # --------------------------------------------------------------------------------------- #
 
 
-def test_promotion_products_route_narrows_by_brand_and_kind_with_spec_constraints(api, db, monkeypatch):
-    """R1. RED today: `brand_ids` and `promotion_types` are not params of
-    `GET /marketing/promotion-products`, so they are ignored and every line comes back."""
-    from app.models.marketing import PromotionType
-    from app.models.product import Brand
-
-    monkeypatch.setattr(
-        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
-    )
-    standard = PromotionType(
-        type_code="zzt_standard", type_name="ZZT Standard", show_expired=True, match_markers=[], match_priority=90,
-        is_default=True,
-    )
-    flyer = PromotionType(
-        type_code="zzt_flyer", type_name="ZZT Flyer", show_expired=True, match_markers=[], match_priority=40,
-        is_default=False,
-    )
-    db.add_all([standard, flyer])
-    b1 = Brand(id=str(uuid.uuid4()), brand_code=f"ZZT{uuid.uuid4().hex[:6]}", brand_name="ZZT One", company_id=DEFAULT_COMPANY_ID)
-    b2 = Brand(id=str(uuid.uuid4()), brand_code=f"ZZT{uuid.uuid4().hex[:6]}", brand_name="ZZT Two", company_id=DEFAULT_COMPANY_ID)
-    db.add_all([b1, b2])
-    db.flush()
-    p1 = _p(db, "RB1", {"class": _enum("Basin")})
-    p2 = _p(db, "RB2", {"class": _enum("Basin")})
-    p3 = _p(db, "RB3", {"class": _enum("Tap")})
-    p1.brand_id, p2.brand_id, p3.brand_id = b1.id, b2.id, b1.id
-    db.flush()
-    live = dict(start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
-    promo_std = _promo(db, p1, **live)
-    promo_std.promotion_type_id = standard.id
-    group = promo_std.promotion_groups[0]
-    db.add(
-        PromotionProduct(
-            id=str(uuid.uuid4()), promotion_id=promo_std.id, promotion_group_id=group.id,
-            product_id=p2.id, company_id=DEFAULT_COMPANY_ID,
-        )
-    )
-    promo_fly = _promo(db, p3, **live)
-    promo_fly.promotion_type_id = flyer.id
-    db.commit()
-
-    def lines(**params):
-        resp = api.get("/api/v1/marketing/promotion-products/", params={"active": "true", "limit": 100, **params})
-        assert resp.status_code == 200, resp.text
-        return {row["product"]["product_code"] for row in resp.json()["data"]}
-
-    assert lines() == _codes_of([p1, p2, p3]), "no narrowing: every live line"
-    assert lines(brand_ids=[b1.id]) == _codes_of([p1, p3])
-    assert lines(brand_ids=[b2.id]) == _codes_of([p2])
-    assert lines(promotion_types=["zzt_flyer"]) == _codes_of([p3])
-    assert lines(brand_ids=[b1.id], promotion_types=["zzt_standard"]) == _codes_of([p1])
-    assert lines(brand_ids=[b1.id], **_constraints({"key": "class", "op": "eq", "value": "Tap"})) == _codes_of([p3])
-    assert lines(
-        brand_ids=[b1.id], promotion_types=["zzt_standard"],
-        **_constraints({"key": "class", "op": "eq", "value": "Tap"}),
-    ) == set()
-
-
 def test_inactive_class_registry_row_is_rejected_and_an_absent_one_stays_accepted(api, db):
-    """Owner Q4 option (a), 12 Oct: a `class` registry row switched off is a 422 naming it. RED if
+    """A `class` registry row switched off is a 422 naming it. RED if
     the route special-cases `class` and accepts it; an absent `class` row stays accepted as today
     (the seed has no `class` row in this schema)."""
     from app.models.product_spec import ProductSpecRegistry
@@ -1062,75 +966,6 @@ def test_n3_value_type_must_match_the_key_type(api, db):
     assert fine.status_code == 200, fine.text[:300]
 
 
-def test_promotion_products_size_and_miss_detail_see_only_promoted_products(api, db, monkeypatch):
-    """Reviewer round. RED today if size resolution and the miss detail read every product:
-    unpromoted basin B (dim_width 600, dim_length 450) makes size 600 ambiguous, lists 450 as an
-    alternative and inflates `spec_unrecorded` with unpromoted basin D."""
-    monkeypatch.setattr(
-        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
-    )
-    live = dict(start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
-    promoted_a = _p(db, "PSA", {"class": _enum("Basin"), "dim_length": _num(600)})
-    promoted_c = _p(db, "PSC", {"class": _enum("Basin")})  # promoted, no mm value recorded
-    unpromoted_b = _p(db, "PSB", {"class": _enum("Basin"), "dim_width": _num(600), "dim_length": _num(450)})
-    unpromoted_d = _p(db, "PSD", {"class": _enum("Basin")})  # not promoted, no mm value
-    _promo(db, promoted_a, **live)
-    _promo(db, promoted_c, **live)
-    db.commit()
-    assert unpromoted_b.id and unpromoted_d.id
-
-    def ask(value):
-        resp = api.get(
-            "/api/v1/marketing/promotion-products/",
-            params={
-                "active": "true", "limit": 100,
-                **_constraints({"key": "class", "op": "eq", "value": "Basin"}, {"key": "size", "op": "eq", "value": value}),
-            },
-        )
-        assert resp.status_code == 200, resp.text[:300]
-        return resp.json()
-
-    hit = ask(600)
-    assert {row["product"]["product_code"] for row in hit["data"]} == _codes_of([promoted_a]), hit
-    assert hit.get("spec_resolved") == {"size": "dim_length"}, hit
-    assert not hit.get("spec_ambiguous"), hit
-
-    miss = ask(450)
-    assert miss["data"] == []
-    assert "450" not in json.dumps(miss.get("spec_alternatives")), miss
-    assert _alts(miss).get("dim_length") == [600], miss
-    assert miss.get("spec_unrecorded") == {"size": 1}, "only the promoted basin without a size counts"
-
-
-def test_a_spec_filtered_promotion_call_lists_live_promotions_only(api, db, monkeypatch):
-    """Crew live check on bec7d329: "which basins are on promotion?" listed a promotion that
-    ended a month ago beside live ones (the serving policy keeps the newest expired one per
-    kind). With a live promotion in the answer, the expired one goes (owner round 3: expired
-    hidden beside live; with none live it still serves, `test_promo_round3_detection`)."""
-    monkeypatch.setattr(
-        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
-    )
-    live = _p(db, "PLV", {"class": _enum("Basin")})
-    gone = _p(db, "PGN", {"class": _enum("Basin")})
-    from app.models.marketing import PromotionType
-
-    kept = PromotionType(id=str(uuid.uuid4()), type_code=f"ZZT{uuid.uuid4().hex[:8]}", type_name="ZZT kept", show_expired=True)
-    db.add(kept)
-    db.flush()
-    _promo(db, live, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
-    expired = _promo(db, gone, start=TODAY - timedelta(days=120), end=TODAY - timedelta(days=30))
-    expired.promotion_type_id = kept.id  # the only row of a kind that keeps its newest expired one
-    db.commit()
-
-    resp = api.get(
-        "/api/v1/marketing/promotion-products/",
-        params={"serving_policy": "true", "limit": 100, **_constraints({"key": "class", "op": "eq", "value": "Basin"})},
-    )
-    assert resp.status_code == 200, resp.text
-    codes = {row["product"]["product_code"] for row in resp.json()["data"]}
-    assert codes == _codes_of([live]), codes
-
-
 def test_a_dealer_on_availability_gets_the_spec_filtered_products(db):
     """Crew live check on 045a0fea: a dealer (stock visibility `availability`) asking
     "600mm basin got stock?" got "no inventory matched these" while an office contact got the
@@ -1157,66 +992,6 @@ def test_a_dealer_on_availability_gets_the_spec_filtered_products(db):
     ids = {e.get("product_id") for e in result.get("stock_availability") or []}
     assert ids == {hit.id}, result.get("stock_availability")
     assert not (result.get("stock_visibility") or {}).get("needs_product"), result.get("stock_visibility")
-
-
-def test_spec_filtered_promotion_pages_neither_repeat_nor_drop_a_line(api, db, monkeypatch):
-    """Reviewer should-fix (045a0fea, kill test K3): two promotions whose lines were added
-    interleaved and share one `created_at`, paged at limit 2. Every line appears on exactly one
-    page, and each promotion's lines come together (its heading is not split line by line)."""
-    from datetime import datetime
-
-    monkeypatch.setattr(
-        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
-    )
-    same = datetime(2026, 10, 1, 9, 0, 0)
-    # A class of its own, so promotions other tests in this worker left live never join the list.
-    klass = f"ZZT Paging {uuid.uuid4().hex[:8]}"
-    first = {tag: _p(db, f"PG{tag}0", {"class": _enum(klass)}) for tag in ("A", "B")}
-    promos = {tag: _promo(db, prod, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1)) for tag, prod in first.items()}
-    owner = {first[t].product_code: promos[t].id for t in promos}
-    for i in (1, 2):
-        for tag, promo in promos.items():
-            prod = _p(db, f"PG{tag}{i}", {"class": _enum(klass)})
-            group = db.query(PromotionGroup).filter(PromotionGroup.promotion_id == promo.id).first()
-            db.add(PromotionProduct(id=str(uuid.uuid4()), promotion_id=promo.id, promotion_group_id=group.id,
-                                    product_id=prod.id, company_id=DEFAULT_COMPANY_ID))
-            db.flush()
-            owner[prod.product_code] = promo.id
-    db.query(PromotionProduct).update({PromotionProduct.created_at: same})
-    db.commit()
-
-    seen = []
-    for page in (1, 2, 3):
-        resp = api.get(
-            "/api/v1/marketing/promotion-products/",
-            params={"serving_policy": "true", "limit": 2, "page": page,
-                    **_constraints({"key": "class", "op": "eq", "value": klass})},
-        )
-        assert resp.status_code == 200, resp.text
-        seen += [row["product"]["product_code"] for row in resp.json()["data"]]
-    assert sorted(seen) == sorted(owner), seen
-    order = [owner[c] for c in seen]
-    assert order == sorted(order, key=order.index) and len({*order}) == 2, seen
-    switches = sum(1 for a, b in zip(order, order[1:]) if a != b)
-    assert switches == 1, f"a promotion's lines are split across the list: {seen}"
-
-
-def test_a_promotion_line_names_its_group(api, db, monkeypatch):
-    """Crew data on 045a0fea: SRTWB1514-BW printed twice under one promotion because it sits in
-    two groups ("LESS 40% + 5%", ">=5 UNITS, EXTRA 10%") at one price. Each line names its group."""
-    monkeypatch.setattr(
-        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
-    )
-    prod = _p(db, "PGN", {"class": _enum("Basin")})
-    _promo(db, prod, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
-    db.commit()
-    resp = api.get(
-        "/api/v1/marketing/promotion-products/",
-        params={"serving_policy": "true", "limit": 10, **_constraints({"key": "class", "op": "eq", "value": "Basin"})},
-    )
-    assert resp.status_code == 200, resp.text
-    rows = [r for r in resp.json()["data"] if r["product"]["product_code"] == prod.product_code]
-    assert rows and rows[0].get("promotion_group_name") == "G", rows
 
 
 def test_a_dealers_spec_entry_matches_the_dealers_direct_entry_for_that_code(db):
@@ -1264,7 +1039,7 @@ def test_a_ranged_size_miss_states_no_single_size(api, db):
     assert "spec_size_asked" not in resp.json(), resp.json()
 
 
-@pytest.mark.parametrize("path", ["/api/v1/inventory/stock/balance", "/api/v1/marketing/promotion-products/"])
+@pytest.mark.parametrize("path", ["/api/v1/inventory/stock/balance"])
 def test_every_spec_route_states_the_size_asked(api, db, path, monkeypatch):
     """Reviewer S2: the stock and promotion routes carry `spec_size_asked` too."""
     monkeypatch.setattr(
@@ -1279,3 +1054,31 @@ def test_every_spec_route_states_the_size_asked(api, db, path, monkeypatch):
     resp = api.get(path, params={"limit": 10, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250})})
     assert resp.status_code == 200, resp.text
     assert resp.json().get("spec_size_asked") == {"value": 250, "unit": "mm"}, resp.json()
+
+
+def test_the_promotions_list_keeps_promotions_holding_the_size_on_any_axis(api, db, monkeypatch):
+    """Owner hand test 13 Oct: a size in a promotion ask only resolves the products; the answer is
+    the promotions list narrowed to promotions with a linked product holding it (any axis)."""
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotions.view"}
+    )
+    on_length = _g(db, "PLL", dim_length=600)
+    on_width = _g(db, "PLW", dim_width=600)
+    other = _g(db, "PLO", dim_length=500)
+    keep = {_promo(db, p, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1)).id for p in (on_length, on_width)}
+    _promo(db, other, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
+    db.commit()
+    resp = api.get(
+        "/api/v1/marketing/promotions/",
+        params={"serving_policy": "true", "limit": 50, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 600})},
+    )
+    assert resp.status_code == 200, resp.text
+    assert {row["id"] for row in resp.json()["data"]} == keep, resp.json()
+
+
+def test_the_promotions_list_rejects_an_unknown_spec_key(api, db, monkeypatch):
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotions.view"}
+    )
+    resp = api.get("/api/v1/marketing/promotions/", params=_constraints({"key": "zzt_nope", "op": "eq", "value": 1}))
+    assert resp.status_code == 422, resp.text

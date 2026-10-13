@@ -732,15 +732,14 @@ def _access_ask_answer(
     asked_filter: dict[str, Any] = dict(
         turn_runtime.promo_filter(parser or {}, db, (fetch or {}).get("gate") or (payload or {}).get("gate"))
     )
-    # SPEC-PROMO-PARAMS owner Q4: the described subject rides the open pick as well, so the
-    # answering turn (which names none) makes the same promotion products call a contact
-    # with one tier makes (`lanes/business.run_fetch` reads it back off `promo_filter`).
-    from app.services.chatbot.lanes.business.fetch import constraints_for_terms, spec_constraints_for
+    # SPEC-PROMO-PARAMS (owner hand test 13 Oct): a size the ask named rides the open pick, so
+    # the answering turn (which names none) asks the same promotions list a contact with one
+    # tier gets (`lanes/business.run_fetch` reads it back off `promo_filter`). A class alone
+    # stays main's `scope_terms`.
+    from app.services.chatbot.lanes.business.fetch import carries_size, spec_constraints_for
 
-    asked_constraints = spec_constraints_for(parser or {}, db) or constraints_for_terms(
-        db, asked_filter.get("scope_terms")
-    )
-    if asked_constraints and asked_filter.get("scope_terms"):
+    asked_constraints = spec_constraints_for(parser or {}, db)
+    if asked_constraints and carries_size(asked_constraints) and asked_filter.get("scope_terms"):
         # Only when the class IS the subject (`promo_filter`, AC-17): a typed code keeps
         # its product_ids on the pick.
         asked_filter["spec_constraints"] = asked_constraints

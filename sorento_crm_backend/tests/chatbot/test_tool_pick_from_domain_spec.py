@@ -127,15 +127,10 @@ class TestDeterministicPick:
         import inspect
 
         params = list(inspect.signature(fetch_mod.select_tool).parameters)
-        # SPEC-PROMO-PARAMS owner ruling Q4 (12 Oct 2026, card section 8): a promotion ask
-        # with a described subject picks the promotion-products tool, so the pick takes the
-        # constraints. Still no db / query / services.
-        assert params == ["domain", "spec_constraints"], (
+        assert params == ["domain"], (
             "select_tool reads DOMAIN_SPEC and nothing else - a `db`, `query` or "
             f"`services` parameter is the RAG contract coming back (found {params})"
         )
-        default = inspect.signature(fetch_mod.select_tool).parameters["spec_constraints"].default
-        assert default is None
 
 
 # --------------------------------------------------------------------------- #

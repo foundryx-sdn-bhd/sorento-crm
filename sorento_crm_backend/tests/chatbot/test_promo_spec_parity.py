@@ -22,7 +22,7 @@ from tests.chatbot.test_lane_require import _seed_registry
 from tests.chatbot.test_outstanding_lane import _seed_contact
 from tests.chatbot.test_promo_brand_category import _brand, _prod
 from tests.chatbot.test_promo_kind_subject import _promo
-from tests.chatbot.test_promo_owner_round2 import _mcp
+from tests.chatbot.test_promo_owner_round2 import _mcp as _main_mcp
 from tests.chatbot.test_promo_round3_detection import _go
 from tests.chatbot.test_promo_subject_filter import _class, _pick_qf
 
@@ -58,6 +58,28 @@ def _world(session_factory) -> dict[str, Any]:
     p500 = _promo(db, "ZZT BASIN 500 PROMO", std, b500, levels=["sorento_office", "sorento_dealer", "end_user"])
     db.commit()
     return {"b600": b600, "b500": b500, "p600": p600, "p500": p500}
+
+
+def _mcp(monkeypatch, session_factory):
+    """Main's route-backed promotions list (`test_promo_owner_round2._mcp`), with
+    `spec_constraints` sent as the JSON string the MCP server sends (`server._OBJECT_UNIONS`)."""
+    import json
+
+    from tests.chatbot import test_outstanding_lane as lane_harness
+
+    captured = _main_mcp(monkeypatch, session_factory)
+    call, _ = lane_harness._capturing_mcp()
+
+    def _call(name: str, args: dict[str, Any]) -> Any:
+        sent = dict(args)
+        if isinstance(sent.get("spec_constraints"), list):
+            sent["spec_constraints"] = json.dumps(sent["spec_constraints"])
+        out = call(name, sent)
+        captured[-1] = (name, dict(args))
+        return out
+
+    monkeypatch.setattr(lane_harness, "_capturing_mcp", lambda response=None: (_call, captured))
+    return captured
 
 
 def _ask(entities: list[dict[str, Any]]) -> dict[str, Any]:

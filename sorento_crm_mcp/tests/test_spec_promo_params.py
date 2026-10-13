@@ -154,37 +154,22 @@ async def test_access_levels_list_reaches_the_backend_query(tool):
     assert query is not None and query.get("access_levels") == ["dealer"], query
 
 
-# Owner Q4 option (a), 12 Oct: promotion products is the one promotion path for a described
-# subject, so it needs brand and kind narrowing for parity with the promotions list.
-PROMO_PRODUCTS = "crm_marketing_promotion_products_list"
+# Owner hand test 13 Oct: a size in a promotion ask resolves the products; the promotions list
+# answers, narrowed by `spec_constraints`.
+PROMOTIONS = "crm_marketing_promotions_list"
 
 
-@pytest.mark.parametrize("param", ["brand_ids", "promotion_types", "spec_constraints"])
-def test_promotion_products_tool_declares_the_narrowing_params(param):
-    """RED (brand_ids, promotion_types): not in the ToolSpec, so FastMCP drops them."""
-    assert param in _spec(PROMO_PRODUCTS).query_params
-    fn = getattr(_compile_tool(_spec(PROMO_PRODUCTS)), "fn", _compile_tool(_spec(PROMO_PRODUCTS)))
-    assert param in inspect.signature(fn).parameters
-
-
-@pytest.mark.asyncio
-# real UUIDs for brand_ids: owner Q4 option (a), 12 Oct
-@pytest.mark.parametrize(
-    "param,value",
-    [
-        ("brand_ids", ["6136ea6b-1699-46ec-8e8e-f60c8bb64310", "7136ea6b-1699-46ec-8e8e-f60c8bb64311"]),
-        ("promotion_types", ["a3_flyer"]),
-    ],
-)
-async def test_promotion_products_forwards_a_list_to_the_backend(param, value):
-    """RED: the undeclared param never reaches the backend query."""
-    query = await _call(PROMO_PRODUCTS, {param: value})
-    assert query is not None and query.get(param) == value, query
+def test_the_promotions_list_declares_spec_constraints():
+    """Owner hand test 13 Oct: a size in a promotion ask only resolves the products; the answer is
+    the promotions list, which takes `spec_constraints` like the product and stock tools."""
+    assert "spec_constraints" in _spec(PROMOTIONS).query_params
+    fn = getattr(_compile_tool(_spec(PROMOTIONS)), "fn", _compile_tool(_spec(PROMOTIONS)))
+    assert "spec_constraints" in inspect.signature(fn).parameters
 
 
 @pytest.mark.asyncio
-async def test_promotion_products_forwards_spec_constraints_as_json():
+async def test_the_promotions_list_forwards_spec_constraints_as_json():
     """A list of objects crosses FastMCP and arrives as a JSON string."""
-    query = await _call(PROMO_PRODUCTS, {"spec_constraints": CONSTRAINTS})
+    query = await _call(PROMOTIONS, {"spec_constraints": CONSTRAINTS})
     assert query is not None and "spec_constraints" in query, query
     assert json.loads(query["spec_constraints"]) == CONSTRAINTS

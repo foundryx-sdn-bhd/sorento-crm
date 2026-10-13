@@ -48,11 +48,7 @@ TOOL_REQUIRED_NARROWING_FILTERS: dict[str, tuple[str, ...]] = {
     # here, "the files for this certificate" short-circuits to an empty page
     # even though the filter itself works - a silent wrong answer.
     "crm_master_product_attachments_list": ("product_ids", "attachment_ids", "certificate_ids"),
-    # SPEC-PROMO-PARAMS (owner Q4 option (a)): a described subject (`spec_constraints`),
-    # a brand or a promotion kind narrows the lines as well as an id does.
-    "crm_marketing_promotion_products_list": (
-        "promotion_ids", "product_ids", "spec_constraints", "brand_ids", "promotion_types",
-    ),
+    "crm_marketing_promotion_products_list": ("promotion_ids", "product_ids"),
     "crm_marketing_promotion_attachments_list": ("promotion_ids", "attachment_ids"),
     "crm_order_management_orders_by_product_list": ("product_ids",),
     "crm_incoming_stock_by_product": ("product_ids",),
@@ -144,7 +140,7 @@ TOOL_OBJECT_QUERY_PARAMS: dict[str, tuple[str, ...]] = {
     "crm_inventory_stock_balance_list": ("requested_quantities", "spec_constraints"),
     # SPEC-PROMO-PARAMS: a JSON LIST of {key, op, value} objects (see `_OBJECT_UNIONS`).
     "crm_master_products_list": ("spec_constraints",),
-    "crm_marketing_promotion_products_list": ("spec_constraints",),
+    "crm_marketing_promotions_list": ("spec_constraints",),
     # CHAT-FIND: a JSON LIST of {key, product_ids} filters (see `_OBJECT_UNIONS`).
     "crm_find": ("filters",),
 }

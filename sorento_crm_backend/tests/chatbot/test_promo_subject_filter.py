@@ -124,10 +124,6 @@ def _promo_calls(captured):
     return [(n, a) for n, a in captured if n == PROMO_TOOL]
 
 
-def _subject_calls(captured):
-    return [(n, a) for n, a in captured if n == "crm_marketing_promotion_products_list"]
-
-
 def _terms(args: dict[str, Any]) -> list[str]:
     return [str(t).lower() for t in (args.get("scope_terms") or [])]
 
@@ -225,14 +221,9 @@ def test_pick_turn_fetches_with_the_same_subject(session_factory, monkeypatch):
     _reply, captured, _ = _say(
         session_factory, monkeypatch, _pick_qf(1), "1", "zzt-psf-pick-answer", lambda n, a: HAS,
     )
-    # Owner ruling Q4 (12 Oct 2026, card section 8): ONE path for a described subject,
-    # `crm_marketing_promotion_products_list` with `spec_constraints`, also on the tier-pick
-    # turn. No `crm_marketing_promotions_list` + `scope_terms` any more.
-    calls = _subject_calls(captured)
-    assert calls, f"the pick must run the promotion-products fetch: {captured}"
-    assert _promo_calls(captured) == [], f"the promotions list must not run: {captured}"
-    assert all(isinstance(a.get("spec_constraints"), list) and a["spec_constraints"] for _n, a in calls), captured
-    assert all(not a.get("scope_terms") for _n, a in calls), captured
+    calls = _promo_calls(captured)
+    assert calls, f"the pick must run the promotions fetch: {captured}"
+    assert all(_terms(a) == ["bathroom furniture"] for _n, a in calls), captured
     assert all(a.get("access_levels") == ["Sorento Office"] for _n, a in calls), captured
 
 
@@ -323,13 +314,8 @@ def test_ac18_kitchen_sink_pick_fetches_with_the_sink_subject(session_factory, m
     )
     assert len(_promo_calls(probes)) == 2 and all(_terms(a) == ["kitchen sink"] for _n, a in _promo_calls(probes)), probes
     _r, captured, _ = _say(session_factory, monkeypatch, _pick_qf(1), "1", "zzt-psf-sink-pick", lambda n, a: HAS)
-    # Owner ruling Q4 (12 Oct 2026, card section 8): the pick turn calls the promotion-products
-    # tool with `spec_constraints`, the same path a single-tier contact takes.
-    calls = _subject_calls(captured)
-    assert calls, f"the pick must run the promotion-products fetch: {captured}"
-    assert _promo_calls(captured) == [], f"the promotions list must not run: {captured}"
-    assert all(isinstance(a.get("spec_constraints"), list) and a["spec_constraints"] for _n, a in calls), captured
-    assert all(not a.get("scope_terms") for _n, a in calls), captured
+    calls = _promo_calls(captured)
+    assert calls and all(_terms(a) == ["kitchen sink"] for _n, a in calls), captured
 
 
 def test_ac17_product_code_ask_keeps_the_product_ids_path(session_factory, monkeypatch):

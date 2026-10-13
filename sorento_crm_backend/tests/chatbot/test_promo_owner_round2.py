@@ -28,7 +28,7 @@ from tests.chatbot import test_outstanding_lane as lane_harness
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact
 from tests.chatbot.test_promo_kind_paths import _seed as _seed_kind_world
-from tests.chatbot.test_promo_kind_subject import PRODUCTS_TOOL, PROMO_TOOL, TODAY, _promo, _qf, promotion_route
+from tests.chatbot.test_promo_kind_subject import PROMO_TOOL, TODAY, _promo, _qf
 from tests.chatbot.test_promo_single_level import _services as _single_level_services
 from tests.chatbot.test_promo_subject_filter import _class, _pick_qf
 
@@ -62,12 +62,10 @@ def _mcp(monkeypatch, session_factory):
 
     def _call(name: str, args: dict[str, Any]) -> Any:
         captured.append((name, dict(args)))
-        params: dict[str, Any] = {
-            k: v for k, v in args.items() if k not in _SKIP and k != "spec_constraints" and v not in (None, "", [], {})
-        }
+        params: dict[str, Any] = {k: v for k, v in args.items() if k not in _SKIP and v not in (None, "", [], {})}
         params["serving_policy"] = "true"
-        # owner Q4 option (a), 12 Oct: a described subject is answered by the promotion-products route
-        res = promotion_route(client, name, args, params)
+        res = client.get("/api/v1/marketing/promotions/", params=params)
+        assert res.status_code == 200, res.text
         return lane_harness._present_response()(name, json.dumps(res.json()))
 
     monkeypatch.setattr(lane_harness, "_capturing_mcp", lambda response=None: (_call, captured))
@@ -206,7 +204,6 @@ def _furniture_world(session_factory):
 
 
 def test_a_spec_value_subject_filters_to_products_with_that_value(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """AC-24: "basin cabinet promo" (furniture_type basin_cabinet): stamped menu, the pick returns
     only promotions linked to basin_cabinet products."""
     _furniture_world(session_factory)

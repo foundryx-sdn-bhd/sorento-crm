@@ -1777,22 +1777,21 @@ def run_fetch(
         # `promo_filter` (PROMO-SUBJECT-FILTER AC-17) found the class is not the subject: a
         # product token the resolver placed is the stricter ask and keeps its product_ids.
         spec_constraints = None
-    if spec_constraints and jsc.js_string(domain or "") != "promotion" and not fetch_mod.carries_size(spec_constraints):
-        # On the product and stock lanes the resolver's described set already applies the
-        # subject and every registry key exactly (`extracted_specs`), with the counted-set
-        # answer the owner ruled on (header, brand lines, count-and-ask). Only the virtual
-        # size never reaches it (`resolve_gate`), so only a size ask hands the filtering to
-        # the route. A promotion ask with a subject always does (owner Q4: one path).
+    if spec_constraints and not fetch_mod.carries_size(spec_constraints):
+        # The resolver's described set (products, stock) and `promo_filter`'s scope terms
+        # (promotion) already apply the subject and every registry key exactly, with the answers
+        # the owner ruled on. Only the virtual size never reaches them (`resolve_gate`), so only
+        # a size ask hands the filtering to the route. On promotion that route is the existing
+        # promotions list (owner hand test 13 Oct: the size only resolves the products).
         spec_constraints = None
     if spec_constraints:
         semantic_input["spec_constraints"] = spec_constraints
         if trace is not None:
             trace.add("spec_constraints", {"constraints": spec_constraints})
-    candidates = (
-        fetch_mod.select_tool(domain, spec_constraints=spec_constraints)
-        if spec_constraints
-        else fetch_mod.select_tool(domain)
-    )
+    else:
+        # A copy the open pick carried in (`narrow`) is no instruction of its own.
+        semantic_input.pop("spec_constraints", None)
+    candidates = fetch_mod.select_tool(domain)
 
     has_product = (
         any(isinstance(e, dict) and e.get("entity_type") == "product" for e in entities)
@@ -2303,9 +2302,9 @@ def run_fetch(
         "predicate": gate.get("predicate"),
     }
     spec_filtered = bool(semantic_input.get("spec_constraints")) and tool_name in fetch_mod.SPEC_CONSTRAINT_TOOLS
-    # Owner ruling (12 Oct 2026): a spec-filtered answer is paged, a few lines first. The crew's
-    # live check on bec7d329 asked the same of a promotion list (50 lines, unpaged).
-    spec_paged = spec_filtered
+    # Owner ruling (12 Oct 2026): a spec-filtered product or stock answer is paged, a few lines
+    # first. A promotion answer is the existing promotions list (owner hand test 13 Oct).
+    spec_paged = spec_filtered and jsc.js_string(domain or "") != "promotion"
     if spec_filtered:
         # The route filters by `spec_constraints` and its rows ARE the answer: the
         # resolver's counted set (its total, its header, its product_ids slice) describes
@@ -2467,9 +2466,7 @@ def run_fetch(
         envelope = {**envelope, "items": kept}
     picked_tier = (tier_gate or {}).get("tier_pick")
     if (
-        # Owner Q4 option (a): the promotion products tool is the subject path, so it states
-        # the stamped level's miss the same way (never the resolver's word miss).
-        tool_name in (fetch_mod.TIER_PROBE_TOOL, fetch_mod.PROMOTION_PRODUCTS_TOOL)
+        tool_name == fetch_mod.TIER_PROBE_TOOL
         and picked_tier
         and semantic_input.get("scope_terms")
         and isinstance(envelope, dict)

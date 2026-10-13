@@ -201,7 +201,6 @@ def _expired_world(session_factory):
 
 
 def test_stamp_and_pick_agree_expired_only_dealer_live_office_and_expired_hidden_beside_live(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     _expired_world(session_factory)
     _mcp(monkeypatch, session_factory)
     menu = _go(session_factory, monkeypatch, _ask("Sorento", "Sorento"), "sorento grab bar promotion", "zzt-r3-exp-ask")
@@ -241,7 +240,6 @@ def test_a_live_other_brand_flyer_does_not_hide_the_expired_sorento_flyer(sessio
     [("Sorneto grab bar promotion", "Sorneto"), ("sorento grab bar promotion", "sorento"), ("SORENTO grab bar promotion", "SORENTO")],
 )
 def test_typo_and_case_variants_give_the_one_same_reply_on_both_turns(session_factory, monkeypatch, text, raw):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """Each variant is run on its own fresh world and must produce the SAME fixed reply, so the
     three are byte-identical to one another by construction (no carried state between them)."""
     _expired_world(session_factory)
@@ -265,7 +263,6 @@ def test_typo_and_case_variants_give_the_one_same_reply_on_both_turns(session_fa
 
 
 def test_brand_is_the_brand_of_linked_products_never_company_level_or_unlinked(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     def extra(w):
         db, std, flyer = w["db"], w["std"], w["flyer"]
         # stored under the Sorento company in the data, but its products are Mocha's
@@ -392,7 +389,6 @@ def test_the_product_types_line_lists_product_type_values_not_only_classes(sessi
 
 
 def test_a_listed_product_type_canonical_grounds_to_the_type_and_filters_by_it(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     _type_world(session_factory)
     _mcp(monkeypatch, session_factory)
     ents = [{"raw": "grab bra", "hint": "category", "canonical_code": "grab bar", "current_message": True, "confident": True}]

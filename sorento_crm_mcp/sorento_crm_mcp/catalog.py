@@ -319,7 +319,10 @@ CATALOG: tuple[ToolSpec, ...] = (
             "  • `scope_terms` (class phrases, e.g. \"bathroom furniture\") - only promotions with a linked "
             "product of that class; an empty match returns no promotions.\n"
             "  • `promotion_types` (promotion type codes, e.g. a3_flyer) and `brand_ids` (brand UUIDs of a linked "
-            "product); both AND with every other filter.\n\n"
+            "product); both AND with every other filter.\n"
+            "  • `spec_constraints` (JSON list of {key, op, value}, same contract as crm_master_products_list) - "
+            "only promotions with a linked product satisfying every constraint; key `size` (a number in mm) "
+            "matches a product holding it on any axis.\n\n"
             "Unfiltered MCP calls are auto-capped to limit=10 newest-first so open questions like "
             "\"what is sorento's latest promo\" return a bounded page instead of the full catalog.\n\n"
             "ACCESS LEVELS: `access_levels` filters promotions whose `access_levels` JSONB overlaps the "
@@ -330,7 +333,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         ),
         "/api/v1/marketing/promotions",
         (),
-        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "scope_terms", "promotion_types", "brand_ids", "contact_id", "space_id"),
+        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "scope_terms", "promotion_types", "brand_ids", "spec_constraints", "contact_id", "space_id"),
         domain="promotions",
         related_tools=("crm_marketing_promotion_products_list", "crm_marketing_promotion_attachments_list"),
         escalation_team="sales",
@@ -346,17 +349,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             "promotion is EXPIRED; never present an is_expired row as a live promotion.\n\n"
             "REQUIRED - at least ONE narrowing filter or the tool returns an empty page:\n"
             "  • `promotion_ids` (canonical promotion UUIDs)\n"
-            "  • `product_ids` (canonical product UUIDs)\n"
-            "  • `spec_constraints` (described products, see SPEC FILTER)\n"
-            "  • `brand_ids` (brand UUIDs: lines whose product is of that brand) / `promotion_types` "
-            "(promotion type codes, e.g. a3_flyer: lines under a promotion of that kind)\n\n"
-            "SPEC FILTER: `spec_constraints` = JSON list of {key, op, value}, the same contract as "
-            "crm_master_products_list (an enum value is the canonical stored value; synonyms are not "
-            "resolved): keeps only lines whose product satisfies every constraint, so a "
-            "described subject (\"basin\", \"250mm floor grating\") returns the promotions covering it "
-            "together with the products on them. Key `size` (a number in mm, axis not said) is resolved "
-            "by the data; when several axes hold it a product matches on any of them, and when none "
-            "does the response has no rows plus `spec_alternatives`.\n\n"
+            "  • `product_ids` (canonical product UUIDs)\n\n"
             "STRUCTURED FILTERS: PRICE price_min/max (MYR); DIMENSIONS (mm) length_min/max, width_min/max, "
             "height_min/max; axis-agnostic any_dimension_min/max; item_type; status=active|inactive|all. "
             "EXACT vs FUZZY: bare number is EXACT (min == max == value); hedge words apply ±5 mm. "
@@ -382,7 +375,6 @@ CATALOG: tuple[ToolSpec, ...] = (
             "height_min", "height_max",
             "any_dimension_min", "any_dimension_max",
             "access_levels",
-            "spec_constraints", "brand_ids", "promotion_types",
             "contact_id", "space_id",
         ),
         domain="promotions",

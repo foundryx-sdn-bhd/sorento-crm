@@ -85,7 +85,6 @@ def test_the_prompt_tells_the_parser_to_put_the_catalogue_name_in_canonical_code
 
 
 def test_a_category_entity_with_a_canonical_code_grounds_by_that_name(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """(B2) raw "seat cover", canonical_code "toilet seat" (product_type registry value toilet_seat):
     stamped menu, the pick returns only the promotion linked to toilet seat products."""
     _seed_contact(session_factory, variables={})

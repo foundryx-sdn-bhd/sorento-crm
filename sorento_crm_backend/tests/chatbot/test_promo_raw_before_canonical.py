@@ -34,7 +34,6 @@ def _qf(raw: str, canonical: str):
 
 
 def test_raw_that_is_a_registry_value_wins_over_the_parsers_canonical_class(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """(1) raw "basin cabinet" (furniture_type basin_cabinet), canonical "bathroom cabinet" (a
     synonym of the Bathroom Furniture class): menu "for basin cabinet", pick returns B not M."""
     _furniture_world(session_factory)  # basin / side / tall cabinet promos, all bathroom furniture
@@ -51,7 +50,6 @@ def test_raw_that_is_a_registry_value_wins_over_the_parsers_canonical_class(sess
 
 
 def test_canonical_still_grounds_a_raw_that_does_not_ground_on_its_own(session_factory, monkeypatch):
-    # owner Q4 option (a), 12 Oct: the promotion pick runs crm_marketing_promotion_products_list, one row per product line.
     """(2) control: raw "seat cover" grounds to nothing, canonical "toilet seat" is a registry
     product_type value: the filter is the toilet seat one."""
     _seed_contact(session_factory, variables={})

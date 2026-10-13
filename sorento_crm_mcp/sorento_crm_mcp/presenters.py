@@ -200,12 +200,12 @@ def _qty(v: Any) -> Any:
 # --------------------------------------------------------------------------
 # spec miss (SPEC-PROMO-PARAMS): a `spec_constraints` call that returned no rows
 # --------------------------------------------------------------------------
-# The three tools that take `spec_constraints` answer a zero with what the data holds:
+# The two tools that take `spec_constraints` and list products answer a zero with what the data holds:
 # `spec_alternatives` (the values that do exist, each with label and unit) and
 # `spec_unrecorded` (how many have no value recorded). A size held on several axes matches
 # any of them (owner ruling, 12 Oct 2026), so no axis question is asked. The intro states only those; nothing is added that the body does not carry.
 _SPEC_MISS_TOOLS = frozenset(
-    {"crm_master_products_list", "crm_inventory_stock_balance_list", "crm_marketing_promotion_products_list"}
+    {"crm_master_products_list", "crm_inventory_stock_balance_list"}
 )
 
 
@@ -315,10 +315,6 @@ class _Builder:
         # populated here for a tool (stock) whose aggregate is computed FROM THE ROWS the
         # presenter already has, with no backend change needed.
         self.summary_items: list[dict[str, Any]] = []
-        # Presenter-built sections `[{key, label, items}]`, for a tool whose rows belong
-        # under a parent the backend does not bucket itself (promotion products under
-        # their promotion). Same shape as the backend `groups` the envelope already carries.
-        self.groups: list[dict[str, Any]] = []
 
     def restrict(self, key: str, permission: str) -> None:
         self.restricted_fields[key] = permission
@@ -1125,75 +1121,26 @@ def _promotions(rows: list[dict], b: _Builder) -> None:
             b.attach(a.get("attachment") or a)
 
 
-def _promotion_heading(promo: dict) -> str | None:
-    """The promotion once, as its section heading: its description and, only when the
-    data holds them, its dates ("from" / "to" when one end is open)."""
-    desc = str(promo.get("description") or "").strip()
-    start = str(promo.get("start_date") or "").strip()[:10]
-    end = str(promo.get("end_date") or "").strip()[:10]
-    when = (
-        f"{start} to {end}" if start and end else f"from {start}" if start else f"until {end}" if end else ""
-    )
-    if desc and when:
-        return f"{desc} ({when})"
-    return desc or when or None
-
-
-def _promotion_products(rows: list[dict], b: _Builder, *, one_line: bool = False) -> None:
-    """One section per promotion (owner Q4 option (a), 12 Oct 2026): the promotion once as
-    the heading, then one line per product on it: code, name, the promo selling price. The
-    flat `items` carry the same lines (without the promotion) for the pick and the counts.
-    The server renames the route's `promotion_price` to `selling_price` before this runs
-    (`server._slim_promotion_products_node`); either is read, nothing else is invented."""
-    sections: dict[str, dict[str, Any]] = {}
+def _promotion_products(rows: list[dict], b: _Builder) -> None:
     for pp in rows:
         prod = pp.get("product") or {}
         promo = pp.get("promotion") or {}
-        price = pp.get("selling_price") if _filled(pp.get("selling_price")) else pp.get("promotion_price")
-        before = len(b.items)
-        if one_line:
-            # A paged, spec-filtered answer (crew live check, bec7d329): one line per
-            # product, "<code> <name>: <promo price>", the section heading carrying the
-            # promotion. The whole line is the TITLE, as `_incoming_dealer` does.
-            code = prod.get("product_code")
-            # The name when it says more than the code, else the description (crew, 045a0fea: a
-            # name that repeats the code printed no name at all).
-            name = _distinct_name(code, prod.get("product_name")) or prod.get("description")
-            head = " ".join(str(x) for x in (code, name) if _filled(x))
-            money = _money(price)
-            group = pp.get("promotion_group_name")
-            if _filled(head):
-                line = f"{head}: {money}" if money else head
-                b.raw_item(
-                    f"{line} ({group})" if _filled(group) else line,
-                    [],
-                    {"discontinued": prod.get("is_discontinued") is True, "expired": pp.get("is_expired") is True},
-                )
-        else:
-            b.item(
-                prod.get("product_code"),
-                [
-                    ("company_name", "Company", pp.get("company_name")),
-                    ("Product Code", prod.get("product_code")),
-                    ("Product Name", _distinct_name(prod.get("product_code"), prod.get("product_name"))),
-                    ("Selling Price", _money(price)),
-                    ("List Price", _money(prod.get("list_price"))),
-                    ("Dimensions", _dims(prod)),
-                ],
-                discontinued=prod.get("is_discontinued") is True,
-                expired=pp.get("is_expired") is True,
-            )
+        b.item(
+            prod.get("product_code"),
+            [
+                ("company_name", "Company", pp.get("company_name")),
+                ("Product Code", prod.get("product_code")),
+                ("Product Name", _distinct_name(prod.get("product_code"), prod.get("product_name"))),
+                ("Promotion", promo.get("description")),
+                ("Selling Price", _money(pp.get("selling_price"))),
+                ("List Price", _money(prod.get("list_price"))),
+                ("Dimensions", _dims(prod)),
+            ],
+            discontinued=prod.get("is_discontinued") is True,
+            expired=pp.get("is_expired") is True,
+        )
         for a in pp.get("promotion_attachments") or []:
             b.attach(a.get("attachment") or a)
-        if len(b.items) == before:
-            continue
-        key = str(promo.get("id") or pp.get("promotion_id") or promo.get("description") or "")
-        section = sections.get(key)
-        if section is None:
-            section = {"key": key or None, "label": _promotion_heading(promo), "items": []}
-            sections[key] = section
-            b.groups.append(section)
-        section["items"].append(b.items[-1])
 
 
 def _spec_field_value(spec: dict) -> Any:
@@ -2093,8 +2040,6 @@ def present_response(tool_name: str, raw: str) -> str:
         _stock_availability(data, b)
     elif so_outstanding:
         _orders_so_outstanding(rows, b)
-    elif tool_name == "crm_marketing_promotion_products_list" and isinstance(data.get("spec_page"), dict):
-        _promotion_products(rows, b, one_line=True)
     else:
         row_builder(rows, b)
 
@@ -2209,10 +2154,6 @@ def present_response(tool_name: str, raw: str) -> str:
         envelope["restricted_fields"] = dict(b.restricted_fields)
     if b.spec_vocabulary:
         envelope["spec_vocabulary"] = dict(b.spec_vocabulary)
-    if b.groups and has_result:
-        # Presenter-built sections (promotion products under their promotion); a backend
-        # `groups` below, when present, replaces them.
-        envelope["groups"] = b.groups
     # Uniform group_by (A3, AC-905/AC-906): the backend already bucketed the
     # rows into `groups: [{key, label, rows}]`; render each bucket's `rows`
     # through the SAME row->item mapping the flat list used, so a grouped
