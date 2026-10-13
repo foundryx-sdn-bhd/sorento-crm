@@ -18,7 +18,7 @@ inserted. Idempotent. Downgrade restores `oihr_0006`'s document, read from that 
 frozen constants.
 
 Revision ID: oihr_0007_excel_remark
-Revises: spec_in_0001_stage_label
+Revises: mpr_0001_cache_unknown_views
 Create Date: 2026-10-13
 """
 from __future__ import annotations
@@ -35,7 +35,7 @@ from alembic import op
 logger = logging.getLogger("alembic.runtime.migration")
 
 revision = "oihr_0007_excel_remark"
-down_revision = "spec_in_0001_stage_label"
+down_revision = "mpr_0001_cache_unknown_views"
 branch_labels = None
 depends_on = None
 
