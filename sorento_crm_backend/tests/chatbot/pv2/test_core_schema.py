@@ -148,3 +148,15 @@ def test_period_dates_parse():
     raw = minimal_output(minimal_ask(period={"preset": None, "n": None, "date_from": "2026-10-01", "date_to": "2026-10-13"}))
     out, _ = validate(raw, KEYS)
     assert str(out.asks[0].period.date_to) == "2026-10-13"
+
+
+def test_validate_drops_unknown_kinds_and_model_made_keys_on_lookup_kinds():
+    raw = minimal_output(minimal_ask(entities=[
+        {"kind": "brands", "key": "SORENTO", "phrase": "sorento", "op": "set", "refers_to_held": False},
+        {"kind": "product", "key": "SRTWC9999", "phrase": "srtwc 286", "op": "set", "refers_to_held": False},
+        {"kind": "customer", "key": None, "phrase": "Hanlim", "op": "set", "refers_to_held": False},
+    ]))
+    out, dropped = validate(raw, KEYS)
+    ents = out.asks[0].entities
+    assert [(e.kind, e.key, e.phrase) for e in ents] == [("product", None, "srtwc 286"), ("customer", None, "Hanlim")]
+    assert {(d.kind, d.value) for d in dropped} == {("entity_kind", "brands"), ("product", "SRTWC9999")}

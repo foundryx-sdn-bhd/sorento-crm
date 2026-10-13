@@ -9,10 +9,12 @@ from app.models.user import SystemSetting
 from app.services.chatbot.pv2.flag import parser_mode
 
 
-def _envelope(console: bool):
+def _envelope(console: bool, mode: str | None = "v2"):
+    extra = {"console_origin": True} if console else {}
+    if console and mode:
+        extra["parser_mode"] = mode
     return SimpleNamespace(
-        dry_run=console, ingress="console" if console else "respond_io",
-        model_extra={"console_origin": True} if console else {},
+        dry_run=console, ingress="console" if console else "respond_io", model_extra=extra,
     )
 
 
@@ -40,16 +42,37 @@ def test_column_default_is_v1(session_factory):
     assert db.execute(text("select chatbot_parser_mode from system_settings")).scalar() == "v1"
 
 
-def test_console_turn_is_v2(session_factory):
+def test_console_turn_opting_in_is_v2(session_factory):
     db = session_factory()
     _set_system(db, "v1")
     assert parser_mode(db, SimpleNamespace(chatbot_parser_mode=None), _envelope(True)) == "v2"
 
 
+def test_plain_console_turn_follows_the_copy(session_factory):
+    db = session_factory()
+    _set_system(db, "v1")
+    assert parser_mode(db, None, _envelope(True, mode=None)) == "v1"
+    _set_system(db, "v2")
+    assert parser_mode(db, None, _envelope(True, mode=None)) == "v2"
+
+
+def test_console_can_pin_v1_on_a_v2_copy(session_factory):
+    db = session_factory()
+    _set_system(db, "v2")
+    assert parser_mode(db, None, _envelope(True, mode="v1")) == "v1"
+
+
+def test_live_envelope_extra_is_ignored(session_factory):
+    db = session_factory()
+    _set_system(db, "v1")
+    env = SimpleNamespace(dry_run=False, ingress="respond_io", model_extra={"parser_mode": "v2"})
+    assert parser_mode(db, None, env) == "v1"
+
+
 def test_prompts_screen_run_is_not_console(session_factory):
     db = session_factory()
     _set_system(db, "v1")
-    env = SimpleNamespace(dry_run=True, ingress="console", model_extra={})
+    env = SimpleNamespace(dry_run=True, ingress="console", model_extra={"parser_mode": "v2"})
     assert parser_mode(db, None, env) == "v1"
 
 

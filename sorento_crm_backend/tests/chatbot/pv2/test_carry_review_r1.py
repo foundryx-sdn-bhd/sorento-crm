@@ -161,8 +161,13 @@ def _hook(monkeypatch, envelope, dry_run=False):
         output=out(ask(act="small_talk")), usage={}, dropped=[])
     res = types.ModuleType("app.services.chatbot.pv2.resolve")
     res.DbResolver = lambda db, pinned=None: FakeResolver()
-    monkeypatch.setitem(sys.modules, "app.services.chatbot.pv2.call", call)
-    monkeypatch.setitem(sys.modules, "app.services.chatbot.pv2.resolve", res)
+    import app.services.chatbot.pv2 as pv2_pkg
+
+    # `from app.services.chatbot.pv2 import call` reads the package attribute once the real
+    # module is loaded (the engine imports it), so stub both the attribute and sys.modules.
+    for name, mod in (("call", call), ("resolve", res)):
+        monkeypatch.setitem(sys.modules, f"app.services.chatbot.pv2.{name}", mod)
+        monkeypatch.setattr(pv2_pkg, name, mod, raising=False)
     monkeypatch.setattr("app.services.chatbot.head.access.default_space_id", lambda db: None)
     monkeypatch.setattr("app.services.chatbot.lanes.business.services._mcp_call", lambda db=None: (lambda *a, **k: {}))
 
