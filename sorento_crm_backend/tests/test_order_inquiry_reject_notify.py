@@ -546,3 +546,46 @@ def test_template_blank_so_and_customer_print_empty():
     assert "None" not in out["subject"]
     assert "None" not in out["body_html"]
     assert "None" not in out["body_text"]
+
+
+# --------------------------------------------------------------------------- #
+# Owner hand test: the email footer names Sorento, not the template's Metronic  #
+# --------------------------------------------------------------------------- #
+
+
+def _load_theme_migration():
+    versions = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+    path = versions / "oirj_0002_email_theme_company_sorento.py"
+    assert path.exists(), f"missing migration {path.name}"
+    spec = importlib.util.spec_from_file_location("zzt_oirj_theme_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize(
+    "name,stored,expected_company",
+    [
+        ("Metronic", None, "Sorento"),
+        ("Metronic", {"company_name": "Acme Admin Pick"}, "Acme Admin Pick"),
+        ("Acme Trading", None, "Acme Trading"),
+    ],
+)
+def test_theme_migration_names_sorento_only_over_the_template_name(
+    name, stored, expected_company
+):
+    from app.models.user import SystemSetting
+    from app.services.email_layout import load_theme
+
+    module = _load_theme_migration()
+    with blank_session() as db:
+        db.query(SystemSetting).delete()
+        db.add(SystemSetting(name=name, email_theme=stored))
+        db.flush()
+        _run(module, db, "upgrade")
+        _run(module, db, "upgrade")  # idempotent
+        db.expire_all()
+        theme = load_theme(db)
+        assert theme.company_name == expected_company
+        assert f"account on {expected_company}." in theme.footer_note
+        assert "Metronic" not in theme.footer_note or expected_company == "Metronic"
