@@ -152,15 +152,56 @@ def test_hand_over_text_is_none_when_nothing_says_it():
 AC = ["ACFIRST CERAMICS SDN BHD - [A/C I]", "ACFIRST CERAMICS SDN BHD - [CERAMIC]", "ACFIRST CERAMICS SDN BHD - [IBORN]"]
 
 
+def _cust_ent_model(phrase):
+    return _cust_ent(phrase)
+
+
 def _cust_ent(phrase):
     return Entity.model_construct(kind="customer", key=None, phrase=phrase, op="set", refers_to_held=False,
                                   doc_number=None, quantity=None)
 
 
-def test_one_family_with_three_accounts_is_exact_with_every_account(db):
+def _seed_acfirst(db):
     for i, name in enumerate(AC):
         S.customer(db, f"ACF{i}", name)
-    res = DbResolver(db, pinned={}).resolve_entities([_cust_ent("Acfirst ceramics")], held=Held())[0]
+
+
+def _customer_ent(**kw):
+    ent = {"kind": "customer", "key": None, "phrase": None, "op": "set", "refers_to_held": False,
+           "quantity": None, "doc_number": None}
+    ent.update(kw)
+    return ent
+
+
+def test_partial_name_of_one_family_still_asks_with_one_family_option(db):
+    # Crew ruling (b), owner 13 Oct: candidates only build options, never resolve on their own.
+    _seed_acfirst(db)
+    res = DbResolver(db, pinned={}).resolve_entities([_cust_ent("Acfirst cer")], held=Held())[0]
+    assert res.status == "ambiguous"
+    assert len(res.options) == 1
+    label = res.options[0].label
+    S.assert_clean_label(label)
+    assert label == "ACFIRST CERAMICS SDN BHD", label
+    assert not re.search(r"\d|\[", label), label
+
+
+def test_one_tap_on_the_single_family_option_holds_every_account(db):
+    _seed_acfirst(db)
+    resolver = DbResolver(db, pinned={})
+    state, actions = apply_turn(
+        mk_state(), out(_ask(domain="sales", entities=[_customer_ent(phrase="Acfirst cer")])), resolver=resolver)
+    assert len(actions[0].pending.options) == 1
+    state, actions = apply_turn(
+        state, out(_ask(act="answers_bot_question", answer={"option_key": "1", "free_value": None})),
+        resolver=resolver)
+    assert isinstance(actions[0], Lookup)
+    assert len(state.held.refs["customer"]) == 3
+
+
+def test_exact_family_name_resolves_directly_to_every_account(db):
+    _seed_acfirst(db)
+    res = DbResolver(db, pinned={}).resolve_entities(
+        [_cust_ent_model("Acfirst Ceramics Sdn Bhd")], held=Held())[0]
     assert res.status == "exact"
     assert len(res.refs) == 3
 
