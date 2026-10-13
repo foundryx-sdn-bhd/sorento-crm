@@ -1,6 +1,6 @@
 # PLAN: idea capture collects the canny-style fields (IDEA-CAPTURE, 13 Oct)
 
-Status: Hand test (reviewer READY at 018a5aa0 after fix round 2; awaiting crew live check `--from-db` on the production prompt line and the owner hand test).
+Status: Hand test (owner approved the behaviour card as filed, 13 Oct; built red-first, reviewer READY, crew live-check fix round 3 done on 80d579b4; awaiting crew re-run and the owner hand test). Out of scope: G1 (re-offer the similar list, undecided, follow-up lane) and G2 (with the owner).
 
 Decisions (13 Oct): Q1 (owner) a solution-only message gets the underlying need as Business
 problem and the user's own words as Desired outcome. Q3 (owner) field names stay English in
