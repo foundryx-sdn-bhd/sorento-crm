@@ -161,8 +161,7 @@ class TestCompose:
             "Hi!", _ctx(last_time="Thu 25 Sep, Stock: Asked about stock for X and got an answer"), COPY, "en"
         )
         assert text == (
-            "Hi! Last time: Thu 25 Sep, Stock: Asked about stock for X and got an answer. "
-            "Want me to check any of that again, or something new?"
+            f"Hi! {COPY.render('fallback_offer')}"
         )
 
     def test_usual_products_and_site_shape_the_offer(self) -> None:
@@ -231,7 +230,7 @@ class TestLevelsDecideWhatTheReplyReads:
         _seed_frames(session_factory, [FRAME], is_test=False)
         result = _turn(session_factory, stub_access, "morning", {"message_type": "casual"}, 5)
         text = sent_text(result)
-        assert "Last time: " in text and ", Stock: Asked about stock for SRTWB1455" in text, text
+        assert "Last time" not in text and "What can I check for you?" in text, text
         assert "Want me to check stock for" not in text, "usual products need Full memory"
 
     def test_off_holds_the_fallback_with_no_memory_line(self, session_factory, stub_access, lane) -> None:

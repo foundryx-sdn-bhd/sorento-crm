@@ -144,7 +144,8 @@ def test_a_granted_value_is_swapped_in_under_the_grant():
     values = {f["label"]: f["value"] for f in out["answers"][0]["fields"]}
     assert values == {"Product Code": "SRTWT107", "Total": "51 (O/S: 36)", "BRW": "0 (O/S: 12)"}
     assert "granted_value" not in str(out["answers"])
-    assert "*Total:* 51 (O/S: 36)" in out["response"]
+    assert "*BRW:* 0 (O/S: 12)" in out["response"]  # one location: the Total is dropped (card v4)
+    assert "*Total:*" not in out["response"]
 
 
 def test_a_granted_value_is_stripped_and_the_plain_value_kept_without_the_grant():

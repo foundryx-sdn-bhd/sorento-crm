@@ -150,7 +150,7 @@ def test_ac_cl07_english_localizer_resolved_for_en_changes_nothing():
     assert base == again
     assert "*Product Code:* SRTSWT3001" in base["response"]
     assert "*Total:* 51" in base["response"]
-    assert "_Data last updated: 02/10/2026 09:15:30_" in base["response"]
+    assert "_Updated 02/10/2026 09:15_" in base["response"]
 
 
 # --------------------------------------------------------------------------- #
@@ -161,12 +161,12 @@ def test_ac_cl07_english_localizer_resolved_for_en_changes_nothing():
 def test_ac_cl08_compact_ms():
     out = fetch.output_structurer(_compact_envelope(), _ctx("ms"))
     text = out["response"]
-    assert "Ringkasan stok untuk produk yang diminta." in text
+    assert "Ringkasan stok untuk produk yang diminta." not in text  # no row opener
     assert "*Kod Produk:* SRTSWT3001" in text
     assert "*Jumlah:* 51" in text
     assert "*BRW-BB:* 30" in text
     assert "*PKL-01:* 21" in text
-    assert "_Data dikemas kini: " in text
+    assert "_Dikemas kini " in text
     assert "Product Code" not in text
     assert "Total:" not in text
     assert "Data last updated" not in text
@@ -176,11 +176,11 @@ def test_ac_cl08_compact_ms():
 def test_ac_cl08_compact_zh():
     out = fetch.output_structurer(_compact_envelope(), _ctx("zh"))
     text = out["response"]
-    assert "所请求产品的库存摘要。" in text
+    assert "所请求产品的库存摘要。" not in text  # no row opener
     assert "*产品代码:* SRTSWT3001" in text
     assert "*总数:* 51" in text
     assert "*BRW-BB:* 30" in text
-    assert "_数据更新时间: " in text
+    assert "_更新时间 " in text
     assert "Product Code" not in text
     assert "Total:" not in text
     assert "Data last updated" not in text
@@ -188,14 +188,18 @@ def test_ac_cl08_compact_zh():
 
 def test_ac_cl08_the_footer_value_is_the_formatted_timestamp_untouched():
     text = fetch.output_structurer(_compact_envelope(), _ctx("ms"))["response"]
-    assert "_Data dikemas kini: 02/10/2026 09:15:30_" in text
+    assert "_Dikemas kini 02/10/2026 09:15_" in text
 
 
 def test_ac_cl08_a_missing_intro_prints_the_translated_fallback():
     env = _compact_envelope()
     env.pop("intro")
     ms = fetch.output_structurer(env, _ctx("ms"))["response"]
-    assert ms.startswith("Berikut ialah hasilnya.")
+    # WA-CONCISE: the generic opener goes whenever a row prints; it stays for zero rows.
+    assert "Berikut ialah hasilnya." not in ms
+    env["items"] = []
+    empty = fetch.output_structurer(env, _ctx("ms"))["response"]
+    assert empty.startswith("Berikut ialah hasilnya.")
 
 
 def test_ac_cl08_the_state_keeps_english_labels_and_the_input_is_not_translated_in_place():
@@ -278,13 +282,10 @@ def test_ac_cl09_the_code_and_quantity_prefix_is_never_translated():
 
 def test_ac_cl10_detailed_staff_row_zh():
     text = fetch.output_structurer(_detailed_envelope(), _ctx("zh"))["response"]
-    assert "所请求产品的库存详情。" in text
-    assert "*公司:* SORENTO" in text
+    assert "所请求产品的库存详情。" not in text  # no row opener
     assert "*产品代码:* BRBC22102W" in text
     assert '*产品名称:* WALL BASIN 22"' in text
-    assert "*仓库:* BUKIT RAJA" in text
-    assert "*系统位置:* BRW-BB" in text
-    assert "*现有数量:* 40" in text
+    assert "*BRW-BB:* 40" in text  # a location code is data, never translated
     for english in ("Company", "Product Code", "Warehouse", "System Location", "Quantity On Hand"):
         assert english not in text
 
@@ -317,6 +318,7 @@ def test_ac_cl10_a_restricted_keyed_open_so_label_is_translated_when_granted():
 
 def test_ac_cl10_an_uncatalogued_label_stays_english_in_a_translated_reply():
     env = _detailed_envelope()
+    env["result_type"] = "generic"  # the stock block keeps only its identity and location lines
     env["items"][0]["fields"].append({"key": "finish", "label": "Finish", "value": "SRT"})
     text = fetch.output_structurer(env, _ctx("zh"))["response"]
     assert "*Finish:* SRT" in text
@@ -409,11 +411,11 @@ def test_ac_cl11_no_localizer_attribute_stays_english():
 
 
 def test_ac_cl11_the_translated_line_sits_above_the_translated_footer():
-    """`compose` splits the lane text on the English `"\\n_Data last updated"` to keep the
+    """`compose` splits the lane text on the footer lead (any language) to keep the
     line above the footer; with a localized footer that split must still find it."""
-    lane = ROW_MS + "\n\n_Data dikemas kini: 02/10/2026 09:15:30_"
+    lane = ROW_MS + "\n\n_Dikemas kini 02/10/2026 09:15_"
     text = _compose(_env(lane), _loc("ms"))
-    assert text.index("Tiada stok ditemui untuk SRTSWT3001.") < text.index("_Data dikemas kini")
+    assert text.index("Tiada stok ditemui untuk SRTSWT3001.") < text.index("_Dikemas kini")
 
 
 def test_output_structurer_does_not_mutate_the_figure_inputs_it_is_handed():

@@ -318,12 +318,9 @@ class TestAC921ThePORungReachesTheCustomer:
         assert result.status == "done", result.error
         assert PO_TOOL in probes, "the PO rung never ran on a real turn"
         reply_text = (result.reply or {}).get("text") or ""
-        assert "Here's what you want:" in reply_text, reply_text
-        assert f"• product: {CODE}" in reply_text, reply_text
-        assert "But no inventory matched these." in reply_text, reply_text
         assert (
-            f"No stock and no incoming for {CODE}, but PO is placed:\n"
-            f"*Product Code:* {CODE}\n*Ordered:* 1000\n*Outstanding:* 1000\n"
+            f"*Product Code:* {CODE}\n*Stock:* none\n*Incoming:* none\n"
+            f"*Ordered:* 1000\n*Outstanding:* 1000\n"
             "*Location:* KL-WH"
         ) in reply_text, reply_text
         assert "PO Date" not in said  # PO_ROWS carries no po_date field
@@ -395,10 +392,7 @@ class TestAC922NothingOnAnyRung:
         assert result.status == "done", result.error
         assert PO_TOOL in probes
         reply_text = (result.reply or {}).get("text") or ""
-        assert "Here's what you want:" in reply_text, reply_text
-        assert f"• product: {CODE}" in reply_text, reply_text
-        assert "But no inventory matched these." in reply_text, reply_text
-        assert f"No stock, no incoming and nothing on order for {CODE}." in reply_text, reply_text
+        assert f"*Product Code:* {CODE}\n*Stock:* none\n*Incoming:* none\n*PO:* none" in reply_text, reply_text
         assert reply_text.count("Would you like me to escalate") == 1, reply_text
         # Owner ruling 22 Sep 2026, R6 (AC-EQ-8): a stock-origin ask always offers the
         # warehouse team, whether the PO rung finds rows or not.
@@ -442,10 +436,9 @@ class TestTheSuffixedCodeShapeReachesTheRung:
         # bridge ladder's own wording (module docstring "AC-1706 re-pin" section), not
         # `_climb`'s retired numbered-section shape.
         reply_text = (result.reply or {}).get("text") or ""
-        assert f"• product: {code}" in reply_text, reply_text
         assert (
-            f"No stock and no incoming for {code}, but PO is placed:\n"
-            f"*Product Code:* {code}\n*Ordered:* 1000\n*Outstanding:* 1000\n"
+            f"*Product Code:* {code}\n*Stock:* none\n*Incoming:* none\n"
+            f"*Ordered:* 1000\n*Outstanding:* 1000\n"
             "*Location:* KL-WH"
         ) in reply_text, reply_text
 
@@ -465,9 +458,7 @@ class TestTheSuffixedCodeShapeReachesTheRung:
         # 20 Sep 2026 (AC-1706 reattach, re-pinned hand pass 9 round, 21 Sep 2026): the
         # bridge ladder's own three-way miss (module docstring "AC-1706 re-pin" section).
         reply_text = (result.reply or {}).get("text") or ""
-        assert f"• product: {code}" in reply_text, reply_text
-        assert "But no inventory matched these." in reply_text, reply_text
-        assert f"No stock, no incoming and nothing on order for {code}." in reply_text, reply_text
+        assert f"*Product Code:* {code}\n*Stock:* none\n*Incoming:* none\n*PO:* none" in reply_text, reply_text
 
 
 class TestIssue736SeparatorInsensitiveRequestedSet:
@@ -572,18 +563,15 @@ class TestOwner8SepTheRungIsPerContactAndOffersOnce:
         assert PO_TOOL in probes
         # 20 Sep 2026 (AC-1706 reattach, re-pinned hand pass 9 round, 21 Sep 2026):
         # `_crossdomain_rung_text` (`lanes/business/answer.py`) is the LIVE composer now,
-        # and it never renders a PO Number line at all (no per-document heading, owner
-        # ruling 11 Sep 2026, second ruling) - measured directly, not the generic
+        # and it opens each document with its number (`*PO:* <number>`, owner ruling
+        # 4 Oct 2026, superseding the 11 Sep no-heading ruling) - measured directly, not the generic
         # composer's own "every field the envelope carries" shape this test used to pin.
-        # The old FLAG about `po_number` reaching the customer no longer applies.
         text = (result.reply or {}).get("text") or ""
-        assert f"• product: {CODE}" in text, text
         assert (
-            f"No stock and no incoming for {CODE}, but PO is placed:\n"
-            f"*Product Code:* {CODE}\n*Ordered:* 27\n*Outstanding:* 27\n"
+            f"*Product Code:* {CODE}\n*Stock:* none\n*Incoming:* none\n"
+            f"*PO:* 202607-S0031\n*Ordered:* 27\n*Outstanding:* 27\n"
             "*PO date:* 2026-06-30"
         ) in text, text
-        assert "PO Number" not in text
         assert "Location" not in text  # po_row carries no location field
         # The offer follows every miss now, even a rung-answered one (module docstring) -
         # exactly once, which is the "offers once" half of this class's own name.
@@ -649,11 +637,9 @@ class TestD7AnIncomingAskReachesThePORung:
         # own lead/trail swap (origin=incoming: "No incoming and no stock for X") through
         # the bridge ladder - module docstring's "AC-1706 re-pin" section.
         text = (result.reply or {}).get("text") or ""
-        assert "But no incoming matched these." in text, text
-        assert f"• product: {CODE}" in text, text
         assert (
-            f"No incoming and no stock for {CODE}, but PO is placed:\n"
-            f"*Product Code:* {CODE}\n*Ordered:* 1000\n*Outstanding:* 1000\n"
+            f"*Product Code:* {CODE}\n*Incoming:* none\n*Stock:* none\n"
+            f"*Ordered:* 1000\n*Outstanding:* 1000\n"
             "*Location:* KL-WH"
         ) in text, text
         assert "PO Date" not in said  # PO_ROWS carries no po_date field

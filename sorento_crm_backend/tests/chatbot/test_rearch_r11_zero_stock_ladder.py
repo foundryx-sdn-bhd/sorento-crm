@@ -57,9 +57,10 @@ LIVE_CODE = "SRTWC7015-RL-UF"
 LIVE_UUID = "60220000-0000-0000-0000-000000000002"
 
 # The owner's prod copy, verbatim (finding 1's own paste).
-INCOMING_LEAD = "But there is INCOMING stock (ETA) for the requested products:"
-NO_STOCK_FOR = f"No stock for {ZERO_CODE}"
-PO_HEADER = "but PO is placed"
+#: Card v4: a zero-stock code is ONE block, `*Stock:* 0` under its code, then its rung's lines.
+INCOMING_LEAD = f"*Product Code:* {ZERO_CODE}\n*Stock:* 0"
+NO_STOCK_FOR = "*Stock:* 0"
+PO_HEADER = "*PO:* PO-0003"
 WAREHOUSE_OFFER = "escalate to warehouse team"
 PURCHASING_OFFER = "escalate to purchasing team"
 
@@ -158,6 +159,7 @@ def _po_rows(code: str) -> dict[str, Any]:
         "items": [
             {
                 "fields": [
+                    {"key": "po_number", "label": "PO Number", "value": "PO-0003"},
                     {"key": "product_code", "label": "Product Code", "value": code},
                     {"key": "ordered_qty", "label": "Ordered Qty", "value": 10},
                     {"key": "outstanding_qty", "label": "Outstanding Qty", "value": 10},
@@ -298,9 +300,8 @@ class TestAllZeroStockHitClimbsToIncoming:
             po=EMPTY_PO,
         )
         assert result.status == "done", result.error
-        # The stock block itself is KEPT (prod prints the rows first, on hand 0).
-        zero_field = "*Quantity On Hand:* 0" if mode == "detailed" else "*Total:* 0"
-        assert zero_field in said, said
+        # Card v4: the zero stock rows give way to the code's own block (`*Stock:* 0`).
+        assert "*Quantity On Hand:* 0" not in said and "*Total:* 0" not in said, said
         # Then the ladder, in the owner's prod copy.
         assert _tool_calls(probes, INCOMING_TOOL), (
             f"a hit whose rows all read 0 must climb to the incoming rung: {probes}"

@@ -344,7 +344,7 @@ def test_dealer_reply_carries_no_allocation_quantity_or_container(console):
 def test_staff_incoming_reply_is_unchanged(console):
     c = console(dealer=False, salesperson=True)
     reply = c.say(f"incoming {CODE}", INCOMING)
-    assert reply.startswith("Here is the incoming stock I found.\n\n1. ")
+    assert reply.startswith("1. ")
     assert "*Container:* ZZTCONT0" in reply and "*Container:* ZZTCONT1" in reply
     assert "*Incoming Quantity:*" in reply
     assert f"*ETA:* {TOLD_ETA}" in reply

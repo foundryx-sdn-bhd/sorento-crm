@@ -221,8 +221,8 @@ def _assert_every_product_with_figures(text: str) -> None:
             None,
         )
         assert block is not None, f"{code} missing from the reply:\n{text}"
-        assert f"Quantity On Hand: {on_hand}" in block, block
-        assert f"Outstanding: {outstanding}" in block, block
+        # Card v4: one `<location>: <on hand> (O/S: <outstanding>)` line per row.
+        assert f": {on_hand} (O/S: {outstanding})" in block, block
     assert "have stock" not in text.lower(), text
     assert "has stock" not in text.lower(), text
     assert "Showing" not in text, text

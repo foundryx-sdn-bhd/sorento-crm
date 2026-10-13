@@ -467,8 +467,8 @@ class TestHitScopeBlock:
         payload = payload_calls[-1]
         expected_scope = _expected_scope_block(qf, payload["gate"], payload["resolved"])
         expected_fragment = structurer_calls[-1].get("response") or ""
-        assert "Here are the orders I found." in expected_fragment, (
-            "test setup sanity: the production hit fragment must carry its own intro"
+        assert expected_fragment.startswith("ZZT-ORD-1"), (
+            "test setup sanity: the production hit fragment is the order block (card v4: no opener; an ungranted contact sees the order number alone)"
         )
         expected_text = f"{expected_scope}\n\n{expected_fragment}"
 
@@ -558,7 +558,7 @@ class TestScopeBlockAfterPick:
         assert "No matching results found" not in reply2, (
             f"AC-1695: the family's own order genuinely exists - never a bare miss: {reply2!r}"
         )
-        assert "Here are the orders I found." in reply2, reply2
+        assert "ZZT-ORD-PICK-1" in reply2, reply2
         assert code in reply2, (
             f"AC-1695: the ORIGINAL product token must still scope the post-pick reply: {reply2!r}"
         )
@@ -722,8 +722,7 @@ class TestIncomingMissLadderProduct:
             msg_id="zzt-r5-incoming-ladder", mcp_call=mcp_call, answer_mcp_probe=answer_probe,
         )
         reply = (result.reply or {}).get("text") or ""
-        assert "But no incoming matched these." in reply, reply
-        assert "But here are the stock details for the requested products:" in reply, reply
+        assert f"*Product Code:* {code}\n*Incoming:* none" in reply, reply
         assert code in reply, reply
         # Measured live writing this test: today `turn/fetch.py::_climb`'s OWN rung
         # genuinely answers this turn (its own raw MCP-presenter intro, "Stock details

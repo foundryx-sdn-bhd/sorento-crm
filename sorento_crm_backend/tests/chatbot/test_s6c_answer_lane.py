@@ -1218,7 +1218,7 @@ class TestThirdCodeWithNoStockAndNoIncomingIsNamedWithEscalation:
         assert "MSK11A-QT" in block, (
             f"the third code must be NAMED rather than silently dropped: {block!r}"
         )
-        assert "no stock" in block.lower() and "no incoming" in block.lower(), (
+        assert "*Product Code:* MSK11A-QT\n*Stock:* none\n*Incoming:* none" in block, (
             f"MSK11A-QT must be stated as having no stock and no incoming: {block!r}"
         )
         # The offer is written ONCE by `tail/compose.crossdomain_compose` from
@@ -2782,11 +2782,8 @@ class TestAZeroStockCodeIsNamedBeforeTheIncomingBlock:
 
     def test_the_stock_miss_is_stated_above_the_incoming_lead(self) -> None:
         block = self._render([self._incoming_row("MSK11A-QT")])
-        assert "No stock for MSK11A-QT" in block, (
+        assert block == "*Product Code:* MSK11A-QT\n*Stock:* none\n*Container:* TEMU6355180\n*ETA:* 2026-10-02", (
             f"the customer asked about stock and was never told there is none: {block!r}"
-        )
-        assert block.index("No stock for MSK11A-QT") < block.index("INCOMING stock"), (
-            f"the stock answer must finish before the incoming block starts: {block!r}"
         )
 
     def test_the_incoming_direction_says_no_incoming(self) -> None:
@@ -2794,17 +2791,13 @@ class TestAZeroStockCodeIsNamedBeforeTheIncomingBlock:
         The word follows the question that was asked, exactly as the both-empty sentence
         already does."""
         block = self._render([self._incoming_row("MSK11A-QT")], origin_domain="incoming")
-        assert "No incoming for MSK11A-QT" in block, block
-        assert block.index("No incoming for MSK11A-QT") < block.index("stock details"), block
+        assert block == "*Product Code:* MSK11A-QT\n*Incoming:* none\n*Container:* TEMU6355180\n*ETA:* 2026-10-02", block
 
     def test_a_code_with_nothing_on_either_side_keeps_its_own_sentence(self) -> None:
         """Guard, #705's H: a code the probe answered with NOTHING still gets the single
         combined sentence and the escalation offer, not two half-sentences."""
         block = self._render([])
-        assert "No stock and no incoming for MSK11A-QT" in block, block
-        assert "No stock for MSK11A-QT." not in block, (
-            f"the both-empty case must not also emit the one-sided line: {block!r}"
-        )
+        assert block == "*Product Code:* MSK11A-QT\n*Stock:* none\n*Incoming:* none", block
         assert "escalate" not in block.lower(), block  # compose writes the offer (8 Sep 2026)
 
     def test_a_code_the_primary_render_did_echo_is_not_called_missing(self) -> None:
@@ -2815,7 +2808,7 @@ class TestAZeroStockCodeIsNamedBeforeTheIncomingBlock:
         block = self._render(
             [self._incoming_row("MSK11A-QT")], returned_codes=[]
         )
-        assert "No stock for MSK11A-QT" not in block, (
+        assert "*Stock:*" not in block, (
             f"an absence was asserted where the render could not establish one: {block!r}"
         )
-        assert "INCOMING stock" in block, block
+        assert block == "*Product Code:* MSK11A-QT\n*Container:* TEMU6355180\n*ETA:* 2026-10-02", block

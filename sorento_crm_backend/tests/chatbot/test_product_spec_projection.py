@@ -49,8 +49,9 @@ def test_no_attributes_asked_keeps_base_fields_plus_one_compact_specs_line():
     fields = out["answers"][0]["fields"]
     labels = [f["label"] for f in fields]
     # today's four fields, unchanged
-    assert labels[:4] == ["Company", "Product Code", "Product Name", "List Price"]
-    assert "Dimensions" in labels
+    assert labels[:3] == ["Company", "Product Code", "Product Name"]
+    # card v4 (AC-19): price and dimensions print only when asked
+    assert "List Price" not in labels and "Dimensions" not in labels
     # exactly ONE additional line, not four separate spec fields
     specs_fields = [f for f in fields if f["label"] == "Specs"]
     assert len(specs_fields) == 1
@@ -95,18 +96,18 @@ def test_no_spec_key_at_all_is_the_plain_four_field_answer():
     out = fetch.output_structurer(envelope, {"semantic_input": {}})
     fields = out["answers"][0]["fields"]
     assert not any(f["label"] == "Specs" for f in fields)
-    assert [f["label"] for f in fields] == ["Company", "Product Code", "Product Name", "List Price", "Dimensions"]
+    assert [f["label"] for f in fields] == ["Company", "Product Code", "Product Name"]
 
 
 def test_single_key_ask_returns_base_fields_plus_that_key():
-    """D12 (8 Sep 2026): base fields (Product Name, List Price, Dimensions included)
-    are ALWAYS on the page - an ask narrows only which SPEC key joins them."""
+    """D12 (8 Sep 2026): base fields are on the page - an ask narrows only which SPEC key
+    joins them. Card v4 (AC-19): List Price and Dimensions join only when asked."""
     envelope = _product_envelope(specs=_FOUR_SPECS)
     ctx = {"semantic_input": {"requested_attributes": ["wattage"]}}
     out = fetch.output_structurer(envelope, ctx)
     fields = out["answers"][0]["fields"]
     labels = [f["label"] for f in fields]
-    assert labels == ["Company", "Product Code", "Product Name", "List Price", "Dimensions", "Wattage"]
+    assert labels == ["Company", "Product Code", "Product Name", "Wattage"]
     assert fields[-1]["value"] == "60 W"
 
 
@@ -120,7 +121,7 @@ def test_single_key_ask_matches_by_label_synonym_word():
     assert any(f["label"] == "Wattage" for f in fields)
 
 
-_BASE_LABELS = ["Company", "Product Code", "Product Name", "List Price", "Dimensions"]
+_BASE_LABELS = ["Company", "Product Code", "Product Name"]
 
 
 def test_asked_key_the_product_lacks_answers_no_label_recorded():
@@ -185,8 +186,14 @@ def _labels(out: dict, index: int = 0) -> list[str]:
     return [f["label"] for f in out["answers"][index]["fields"]]
 
 
-_ITEM_BASE_LABELS = ["Company", "Product Code", "Product Name", "List Price", "Dimensions"]
-_ITEM_BASE_LABELS_WITH_DESC = ["Company", "Product Code", "Product Name", "Description", "List Price", "Dimensions"]
+_ITEM_BASE_LABELS = ["Company", "Product Code", "Product Name"]
+_ITEM_BASE_LABELS_WITH_DESC = ["Company", "Product Code", "Product Name", "Description"]
+#: Card v4 (AC-19): the base word asked decides which of the two on-demand lines prints.
+_ASKED_LINE = {
+    "price": ["List Price"], "list price": ["List Price"], "harga": ["List Price"], "cost": ["List Price"],
+    "dimension": ["Dimensions"], "size": ["Dimensions"], "ukuran": ["Dimensions"],
+    "saiz": ["Dimensions"],
+}
 
 
 class TestD12BaseFieldsAlwaysRenderOnlySpecsAreOnDemand:
@@ -201,7 +208,7 @@ class TestD12BaseFieldsAlwaysRenderOnlySpecsAreOnDemand:
                 _family_envelope([_item("SRTWC286-SH", specs=[_SEAT], description="Wall hung closet")], _MATERIAL_VOCAB),
                 {"semantic_input": {"requested_attributes": [word]}},
             )
-            assert _labels(out) == _ITEM_BASE_LABELS_WITH_DESC, word
+            assert _labels(out) == _ITEM_BASE_LABELS_WITH_DESC + _ASKED_LINE[word], word
             assert "recorded for" not in out["response"], word
 
     def test_a_single_token_entry_matches_the_whole_ask_only(self):
@@ -218,13 +225,13 @@ class TestD12BaseFieldsAlwaysRenderOnlySpecsAreOnDemand:
     def test_a_multi_token_entry_is_still_found_inside_a_longer_ask(self):
         out = fetch.output_structurer(_family_envelope([_item("SRTWC286-SH")], {}),
                                       {"semantic_input": {"requested_attributes": ["the list price please"]}})
-        assert _labels(out) == _ITEM_BASE_LABELS
+        assert _labels(out) == _ITEM_BASE_LABELS + ["List Price"]
         assert "recorded for" not in out["response"]
 
     def test_two_base_property_words_together_produce_no_miss_for_either(self):
         out = fetch.output_structurer(_family_envelope([_item("SRTWC286-SH")], {}),
                                       {"semantic_input": {"requested_attributes": ["price", "size"]}})
-        assert _labels(out) == _ITEM_BASE_LABELS
+        assert _labels(out) == _ITEM_BASE_LABELS + ["List Price", "Dimensions"]
         assert "recorded for" not in out["response"]
 
 
@@ -295,12 +302,15 @@ def test_no_attribute_asked_is_byte_identical_to_the_compact_specs_path():
     out = fetch.output_structurer(envelope, {"semantic_input": {"requested_attributes": []}})
     assert "recorded for" not in out["response"]
     assert "spec_misses" not in envelope
-    assert _labels(out, 0) == ["Company", "Product Code", "Product Name", "List Price", "Dimensions", "Specs"]
-    assert _labels(out, 1) == ["Company", "Product Code", "Product Name", "List Price", "Dimensions"]
-    assert before["items"][1] == envelope["items"][1]  # untouched item, same object shape
+    assert _labels(out, 0) == ["Company", "Product Code", "Product Name", "Specs"]
+    assert _labels(out, 1) == ["Company", "Product Code", "Product Name"]
+    # an item with no spec keeps its fields, less the two on-demand lines (card v4, AC-19)
+    assert envelope["items"][1]["fields"] == [
+        f for f in before["items"][1]["fields"] if f["label"] not in ("List Price", "Dimensions")
+    ]
 
 
-def test_product_details_names_no_property_and_still_shows_price_and_dimensions():
+def test_product_details_names_no_property_and_shows_neither_price_nor_dimensions():
     """D12 (owner ruling, 8 Sep 2026, turn 8f4a8526 "SRTJC802A-1500 product details"):
     "product details" names no property (prompt fix, both bodies) - `requested_attributes`
     reaches this function empty, which is the no-attribute path and always carried the
@@ -308,5 +318,6 @@ def test_product_details_names_no_property_and_still_shows_price_and_dimensions(
     test above."""
     envelope = _family_envelope([_item("SRTJC802A-1500")], {})
     out = fetch.output_structurer(envelope, {"semantic_input": {"requested_attributes": []}})
-    assert "*List Price:*" in out["response"]
-    assert "*Dimensions:*" in out["response"]
+    # Card v4 (AC-19, supersedes D12's always-on price and dimensions).
+    assert "*List Price:*" not in out["response"]
+    assert "*Dimensions:*" not in out["response"]

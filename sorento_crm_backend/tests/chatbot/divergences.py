@@ -176,6 +176,25 @@ DIVERGENCES: list[Divergence] = [
         ),
         strip_paths=(("response",), ("set_header",), ("set_described",)),
     ),
+    # WA-CONCISE (card v4, owner "ok can", 3 Oct 2026): a stock, incoming, order or product
+    # list reply drops its opener, prints one fact per line, and its footer reads
+    # `_Updated dd/mm/yyyy HH:MM_`. These two captures are such replies, so `response`
+    # moves; `set_header`/`set_described` ride along for the blanket entry below, which
+    # `find()` would otherwise never reach. Every other key is still compared.
+    *(
+        Divergence(
+            node="output-structurer",
+            fixture=name,
+            hazard="WA-CONCISE card v4",
+            reason=(
+                "the reply text is the card v4 block form (no opener, `*Label:* value` per "
+                "line, `_Updated ..._` footer); field-scoped to `response` plus the "
+                "set-header keys the blanket entry strips."
+            ),
+            strip_paths=(("response",), ("set_header",), ("set_described",)),
+        )
+        for name in ("gr-15152103", "gr-15158334")
+    ),
     # E2/E3 (attribute-first asks, AC-1316/AC-1317, `lanes/business/fetch.py::
     # output_structurer`): a HAS turn's set-answer header now travels out as its OWN
     # `set_header` key, not only baked into `response` - the turn re-architecture's

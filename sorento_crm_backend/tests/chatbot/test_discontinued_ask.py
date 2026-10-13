@@ -94,7 +94,7 @@ def test_without_the_discontinued_ask_a_live_product_answer_is_unchanged():
     """Control: a plain product ask keeps today's card and says nothing about status."""
     reply = _answer(_product("SRTWT9613-BL", discontinued=False), attrs=[])
     assert "discontinued" not in reply.lower()
-    assert "*List Price:* MYR 710.00" in reply
+    assert "*Product Code:* SRTWT9613-BL" in reply
 
 
 def _body(reply: str) -> str:
@@ -159,12 +159,11 @@ def test_with_another_property_the_card_gains_a_discontinued_field_line():
         _product("SRTBF11821", discontinued=True, alternatives=["SRTBF11821-NEW"]),
         attrs=["price", "discontinued"],
     )
-    assert "Here are the matching products." in reply
     assert "*List Price:* MYR 710.00" in reply
     assert "1. *Product Code:* SRTWT9613-BL" in reply
     live, gone = reply.split("2. ")
-    assert live.rstrip().endswith("*Dimensions:* Not defined\n*Discontinued:* ✅ No")
-    assert "*Dimensions:* Not defined\n*Discontinued:* ⚠️ Yes\nAlternative: SRTBF11821-NEW" in gone
+    assert live.rstrip().endswith("*Discontinued:* ✅ No")
+    assert "*Discontinued:* ⚠️ Yes\nAlternative: SRTBF11821-NEW" in gone
     assert "PRODUCT DISCONTINUED" not in reply
 
 
@@ -257,7 +256,7 @@ def test_the_data_freshness_footer_stays_under_the_status_lines():
     envelope = _envelope(_product("SRTWT9613-BL", discontinued=False))
     envelope["last_updated_at"] = "2026-10-03T18:42:40"
     out = fetch.output_structurer(envelope, {"semantic_input": {"requested_attributes": ["discontinued"]}})
-    assert out["response"].startswith("SRTWT9613-BL: ✅ Not discontinued.\n\n_Data last updated: ")
+    assert out["response"].startswith("SRTWT9613-BL: ✅ Not discontinued.\n\n_Updated 03/10/2026 18:42_")
 
 
 def test_a_stock_reply_is_untouched_by_a_discontinued_ask():

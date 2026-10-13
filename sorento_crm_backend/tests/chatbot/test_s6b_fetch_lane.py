@@ -794,10 +794,9 @@ class TestOutputStructurer:
         )
         assert out["requested_attributes"] == [], "the echoed ask itself is untouched"
 
-    def test_bare_product_ask_stays_eta_only(self):
-        """No `requested_attributes`, and the resolved entity is a `product` - a bare
-        product ask must NOT be widened into a timeline; only identity + the always-kept
-        ETA (and its delay, which rides along with it) survive."""
+    def test_bare_product_ask_is_a_timeline_too(self):
+        """No `requested_attributes`, and the resolved entity is a `product` - a bare ask
+        keeps every checkpoint, the same as an ETA ask (owner round 4, F4)."""
         fetch = _import_fetch()
         envelope = self._checkpoint_envelope({"liner_code": "CMA"})
         ctx = {
@@ -814,9 +813,8 @@ class TestOutputStructurer:
         out = fetch.output_structurer(envelope, ctx)
 
         kept = {f["key"] for f in out["answers"][0]["fields"]}
-        assert kept == {"product_code", "estimated_arrival_date", "eta_delay_date"}, (
-            "a bare product ask keeps only identity + the always-kept ETA (and its "
-            "always-kept delay), never widens into a full checkpoint timeline"
+        assert set(fetch.CLEARANCE_CHECKPOINT_ORDER) <= kept, (
+            "a bare product ask keeps every checkpoint field the access gate let through"
         )
 
     def test_container_ask_with_an_attribute_is_not_widened(self):
@@ -852,9 +850,8 @@ class TestOutputStructurer:
         assert "collection_date" not in kept
 
     def test_bare_container_ask_falls_back_to_parser_hint(self):
-        """`_names_a_shipment` checks the RESOLVED entity list first and only falls back to
-        the parser's own raw `hint` when the resolved list carries no type at all - this
-        pins that fallback branch directly rather than only through a resolved entity."""
+        """A bare ask is a timeline whether the resolved entity list or only the parser's raw
+        `hint` names the entity, whatever the hint is (owner round 4, F4)."""
         fetch = _import_fetch()
 
         timeline_envelope = self._checkpoint_envelope()
@@ -881,10 +878,9 @@ class TestOutputStructurer:
             "entities": [],
         }
         eta_out = fetch.output_structurer(eta_envelope, eta_ctx)
-        eta_kept = {f["key"] for f in eta_out["answers"][0]["fields"]}
-        assert eta_kept == {"product_code", "estimated_arrival_date", "eta_delay_date"}, (
-            "a raw parser hint of 'product' must NOT widen into a timeline - only "
-            "identity + the always-kept ETA (and its always-kept delay) survive"
+        eta_kept = [f["key"] for f in eta_out["answers"][0]["fields"] if f["key"] != "product_code"]
+        assert eta_kept == list(fetch.CLEARANCE_CHECKPOINT_ORDER), (
+            "a raw parser hint of 'product' widens into the full timeline too"
         )
 
 

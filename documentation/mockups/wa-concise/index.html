@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhatsApp Concise Replies</title>
+<style>
+:root {
+  --bg: #f4f4f5; --panel: #ffffff; --ink: #18181b; --muted: #71717a; --line: #e4e4e7;
+  --chat: #efeae2; --bubble: #ffffff; --bubble-after: #d9fdd3; --cut: #fee2e2; --cut-ink: #991b1b;
+  --accent: #15803d; --warn: #b45309;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #09090b; --panel: #18181b; --ink: #f4f4f5; --muted: #a1a1aa; --line: #27272a;
+    --chat: #0b141a; --bubble: #202c33; --bubble-after: #005c4b; --cut: #450a0a; --cut-ink: #fecaca;
+    --accent: #4ade80; --warn: #fbbf24;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #09090b; --panel: #18181b; --ink: #f4f4f5; --muted: #a1a1aa; --line: #27272a;
+  --chat: #0b141a; --bubble: #202c33; --bubble-after: #005c4b; --cut: #450a0a; --cut-ink: #fecaca;
+  --accent: #4ade80; --warn: #fbbf24;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 32px 0 8px; }
+h3 { font-size: 15px; margin: 0 0 4px; }
+p, li { color: var(--ink); }
+.muted { color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 12px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table-wrap { overflow-x: auto; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+.chat { background: var(--chat); border-radius: 10px; padding: 12px; }
+.label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.bubble { background: var(--bubble); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; font-size: 13.5px; box-shadow: 0 1px 0.5px rgba(0,0,0,.13); }
+.after .bubble { background: var(--bubble-after); }
+.saved { color: var(--accent); font-weight: 600; }
+.tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-right: 4px; }
+.callout { border-left: 3px solid var(--warn); padding-left: 12px; }
+code { font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>WhatsApp concise replies</h1>
+  <p class="muted">Lane WA-CONCISE, behaviour card v4, 3 Oct 2026 (v4: today's field order and labels, every label bold, one fact per line; only repeated or empty facts go). Person names, drivers and lorry plates are replaced with placeholders. Data: dev copy <code>sorento_cagent_stack</code>, outgoing replies 1 Aug to 18 Sep 2026 (12,607 replies). Person names, drivers and plates masked; codes, quantities, dates and company names are real.</p>
+
+  <div class="panel callout">
+    <h3>Cost reality first</h3>
+    <p>Meta bills per message, and almost every reply is already one message. The v1 rules alone took the sample from 7.84M to 7.26M characters (7.5%); the v2 line format cuts more text, but billed messages move only from <b>12,938 to 12,931</b> once WA-MSG-TRIM's 3,900-character split lands (14,083 to 13,932 at today's 1,800). These rules make replies easier to read; they do not cut the bill. The bill is driven by one reply per incoming message, which stays as ruled.</p>
+  </div>
+
+  <h2>Before and after (real replies)</h2>
+  <div id="examples"></div>
+
+  <h2>The rules</h2>
+  <div class="panel table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Rule</th><th>When / sample size</th></tr></thead>
+                  <tbody>
+        <tr><td>L1</td><td><b>Today's fields, today's order, every label bold</b> (<code>*Label:* value</code>), one fact per line, no blank line inside a block, one blank line between blocks. Orders: presenters.py:424-436 (Company, Order Number, Customer, Order Date, Actual Delivery Date, Status, Pickup Time, Transporter, Driver, Lorry Plate, Warehouse, Products). Incoming: presenters.py:849-873 (Company, Product Code, Product Name, Container, ETA and every other date, Incoming Quantity, Warehouse Allocations, Unallocated Quantity). Stock: presenters.py:1348-1352 and 1403-1447 (Company, Product Code, then locations). Values unchanged.</td><td>Stock, incoming and order replies</td></tr>
+        <tr><td>L2</td><td><b>Stock rows merge per company and product.</b> Today one product prints one block per location, each repeating Company, Product Code and Warehouse. Now: <code>*Company:*</code> (only when the reply spans two companies), <code>*Product Code:*</code>, then one <code>*BRW:* 28 (O/S: 0)</code> line per location. <code>*Total:*</code> only when more than one location.</td><td>Detailed and compact stock</td></tr>
+        <tr><td>L3</td><td><b>"No incoming" once.</b> The "Here's what you want: &bull; product: X / But no incoming matched these." echo, "No incoming for X.", the "But here are the stock details..." lead and the "stock is 0 at every location and nothing on order" sentence become lines in the product's block: <code>*Incoming:* none</code>, <code>*Stock:* 0</code>, <code>*PO:* none</code>.</td><td>Incoming ask, stock shown instead (478 + 737 replies)</td></tr>
+        <tr><td>L4</td><td>Zero locations print as today ("*BRW:* 0"); hiding them stays the per-contact setting.</td><td>Owner Q2</td></tr>
+        <tr><td>R5</td><td>No opener when rows follow ("Stock details found for the requested products." and 4 others). A single block has no "1.".</td><td>5,285 replies</td></tr>
+        <tr><td>R6</td><td>One named order: the "Customer: all customers / Product: all products / Order: X / Dates: all dates" header goes.</td><td>133 replies</td></tr>
+        <tr><td>R7</td><td>Footer "_Updated 18/09/2026 17:32_" (was "_Data last updated: 18/09/2026 17:32:08_").</td><td>5,683 replies</td></tr>
+        <tr><td>R8</td><td>Product list: List Price and Dimensions only when the customer asks for price or dimensions.</td><td>Owner Q5</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Not changed</h2>
+  <div class="panel">
+    <ul>
+      <li>Availability replies for dealers (one sentence per product, ETA date or "no stock and no incoming") are not touched by any rule.</li>
+      <li>"Would you like me to escalate to ... team?" stays word for word (the yes/no reader depends on it).</li>
+      <li>One reply per incoming message, complaint/SLA notices, Respond.io auto messages, the escalation merge, compact view and 3,900 split (WA-MSG-TRIM).</li>
+      <li>Values are never translated. Numbering stays, because number picks depend on it.</li>
+    </ul>
+  </div>
+
+  <h2>Edge cases</h2>
+  <div class="panel">
+    <ul>
+      <li><b>No stock:</b> "*Incoming:* none", "*Stock:* 0", "*PO:* none" on three lines in the product block. "PO: none" stands for today's "nothing on order" (PO lines and unshipped SPO allocations, answer.py:1406).</li><li><b>PO placed:</b> "*PO:* placed" followed by the PO lines as today.</li>
+      <li><b>No ETA:</b> "*Incoming:* none" appears once, in the product block. An incoming row without an ETA keeps today's wording for it. Dealer availability lines unchanged.</li>
+      <li><b>Sorento + Mocha:</b> one block per company and product, "*Company:*" first as today (example 5). A company that returned nothing keeps its "*Mocha:* no stock records for X." line.</li><li><b>Many locations:</b> one line per location (SRT382-6-DIY had 13), no blank lines between them.</li><li><b>Files:</b> "I have attached the file(s) below." stays whenever a file really goes out. In example 3 no file is recorded with the reply (UNVERIFIED whether one was sent), so the after drops it.</li><li><b>Picks:</b> lists of several blocks keep their numbers ("1. *Product Code:* X") because number picks depend on them; a single product has no number.</li>
+      <li><b>en / ms / zh:</b> reply templates are English (10 of 14,640 outgoing contain Chinese, all are "Here is what I heard" echoes). Rules are language-independent.</li>
+      <li><b>Staff vs dealer:</b> the escalation offer is still gated exactly as today.</li>
+    </ul>
+  </div>
+</main>
+<script>
+const EXAMPLES = [
+  {
+    title: "1. Incoming ask, nothing incoming, some stock (reply #72137, 18 Sep)",
+    rules: ["L1", "L2", "L3"],
+    before: `Here's what you want:
+• product: SRTWT5844-GM
+
+But no incoming matched these.
+No incoming for SRTWT5844-GM.
+
+But here are the stock details for the requested products:
+
+- *Product Code:* SRTWT5844-GM
+*Total:* 24 (O/S: 10)
+*BRW:* 24 (O/S: 10)
+
+Would you like me to escalate to purchasing team?`,
+    after: `*Product Code:* SRTWT5844-GM
+*Incoming:* none
+*BRW:* 24 (O/S: 10)
+
+Would you like me to escalate to purchasing team?`
+  },
+  {
+    title: "2. Nothing at all (reply #72139, 18 Sep)",
+    rules: ["L1", "L3"],
+    before: `Here's what you want:
+• product: SRTWT5844-BL
+
+But no incoming matched these.
+But here are the stock details for the requested products:
+
+- *Product Code:* SRTWT5844-BL
+*Total:* 0 (O/S: 0)
+
+No incoming, stock is 0 at every location and nothing on order for SRTWT5844-BL.
+
+Would you like me to escalate to purchasing team?`,
+    after: `*Product Code:* SRTWT5844-BL
+*Incoming:* none
+*Stock:* 0
+*PO:* none
+
+Would you like me to escalate to purchasing team?`
+  },
+  {
+    title: "3. Two products, one incoming and one not (reply #71023, 17 Sep)",
+    rules: ["L1", "L2", "L3"],
+    before: `I have attached the file(s) below.
+
+1. *Product Code:* SRTWB1543
+*Container:* IAAU1907074
+*ETA:* 2026-09-09
+*Incoming Quantity:* 49
+*Warehouse Allocations:* BRW (35), BRW-BB (4), BRW-SMC (10)
+No incoming for SRTWB1543-BL.
+
+But here are the stock details for the requested products:
+
+- *Product Code:* SRTWB1543-BL
+*Warehouse:* BUKIT RAJA
+*System Location:* BRW
+*Quantity On Hand:* 20
+*Outstanding:* 0
+
+Would you like me to escalate to purchasing team?`,
+    after: `1. *Product Code:* SRTWB1543
+*Container:* IAAU1907074
+*ETA:* 2026-09-09
+*Incoming Quantity:* 49
+*Warehouse Allocations:* BRW (35), BRW-BB (4), BRW-SMC (10)
+
+2. *Product Code:* SRTWB1543-BL
+*Incoming:* none
+*BRW:* 20 (O/S: 0)
+
+Would you like me to escalate to purchasing team?`
+  },
+  {
+    title: "4. Stock for four products, several locations (reply #68348, 12 Sep, shown in today's compact view)",
+    rules: ["L1", "L2", "R5", "R7"],
+    before: `Stock details found for the requested products.
+
+1. *Product Code:* IBWT3001-BL-DIY
+*Total:* 14
+*MOCHA-WH:* 14
+
+2. *Product Code:* IBWT3001-DIY
+*Total:* 207
+*MOCHA-WH:* 207
+
+3. *Product Code:* SRTSWT3001
+*Total:* 136
+*BRW:* 28
+*MWH:* 108
+
+4. *Product Code:* SRTSWT3001-GM
+*Total:* 0
+*BRW:* 0
+
+_Data last updated: 11/09/2026 17:26:05_`,
+    after: `1. *Product Code:* IBWT3001-BL-DIY
+*MOCHA-WH:* 14
+
+2. *Product Code:* IBWT3001-DIY
+*MOCHA-WH:* 207
+
+3. *Product Code:* SRTSWT3001
+*Total:* 136
+*BRW:* 28
+*MWH:* 108
+
+4. *Product Code:* SRTSWT3001-GM
+*BRW:* 0
+
+_Updated 11/09/2026 17:26_`
+  },
+  {
+    title: "5. One product in Sorento and Mocha (reply #70737, 17 Sep)",
+    rules: ["L1", "L2", "R5", "R7"],
+    before: `Stock details found for the requested products.
+
+1. *Company:* Sorento
+*Product Code:* SRT6542-DIY
+*Warehouse:* BUKIT RAJA
+*System Location:* BRW
+*Quantity On Hand:* 0
+*Outstanding:* 233
+
+2. *Company:* Mocha
+*Product Code:* SRT6542-DIY
+*Warehouse:* MERU
+*System Location:* MOCHA-WH
+*Quantity On Hand:* 1
+
+_Data last updated: 15/09/2026 17:15:58_`,
+    after: `1. *Company:* Sorento
+*Product Code:* SRT6542-DIY
+*BRW:* 0 (O/S: 233)
+
+2. *Company:* Mocha
+*Product Code:* SRT6542-DIY
+*MOCHA-WH:* 1
+
+_Updated 15/09/2026 17:15_`
+  },
+  {
+    title: "6. One named order (reply #67322, 10 Sep)",
+    rules: ["L1", "R5", "R6", "R7"],
+    before: `Customer: all customers
+Product: all products
+Order: SMC202609-0055
+Dates: all dates
+
+Here are the orders I found.
+
+1. *Order Number:* SMC202609-0055
+*Customer:* CUSTOMER A (PROJECT-CASH)
+*Order Date:* 08/09/2026
+*Actual Delivery Date:* 09/09/2026
+*Status:* Picked Up / In Transit
+*Pickup Time:* 19:46:00
+*Transporter:* GLORY MOTION
+*Driver:* DRIVER B
+*Lorry Plate:* PLATE-1
+*Warehouse:* BRW
+*Products:* SRTKS7547-NEW (1), TPE-9201 (1), SRTKT71SS (1), TRANSPORT (1)
+
+_Data last updated: 10/09/2026 17:36:17_`,
+    after: `*Order Number:* SMC202609-0055
+*Customer:* CUSTOMER A (PROJECT-CASH)
+*Order Date:* 08/09/2026
+*Actual Delivery Date:* 09/09/2026
+*Status:* Picked Up / In Transit
+*Pickup Time:* 19:46:00
+*Transporter:* GLORY MOTION
+*Driver:* DRIVER B
+*Lorry Plate:* PLATE-1
+*Warehouse:* BRW
+*Products:* SRTKS7547-NEW (1), TPE-9201 (1), SRTKT71SS (1), TRANSPORT (1)
+
+_Updated 10/09/2026 17:36_`
+  }
+];
+function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function wa(s) {
+  return esc(s).replace(/\*([^*\n]+)\*/g, "<b>$1</b>").replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, "$1<i>$2</i>");
+}
+const root = document.getElementById("examples");
+for (const ex of EXAMPLES) {
+  const b = ex.before.length, a = ex.after.length;
+  const pct = Math.round((1 - a / b) * 100);
+  const el = document.createElement("div");
+  el.className = "panel";
+  el.innerHTML = `<h3>${esc(ex.title)}</h3>
+    <div style="margin:4px 0 10px">${ex.rules.map(r => `<span class="tag">${r}</span>`).join("")}
+    <span class="saved">${b} &rarr; ${a} chars (&minus;${pct}%)</span></div>
+    <div class="pair">
+      <div class="chat"><div class="label"><span>Before</span><span>${b} chars</span></div><div class="bubble">${wa(ex.before)}</div></div>
+      <div class="chat after"><div class="label"><span>After</span><span>${a} chars</span></div><div class="bubble">${wa(ex.after)}</div></div>
+    </div>`;
+  root.appendChild(el);
+}
+</script>
+</body>
+</html>

@@ -438,12 +438,12 @@ class TestFoundAnswerNamesTheGap:
         assert f"{SH} has no" not in text, text
 
     def test_the_gap_line_keeps_the_footer_on_its_own_paragraph(self) -> None:
-        """Cloud browser pass 3 Oct: the line landed flush against "_Data last updated"."""
+        """Cloud browser pass 3 Oct: the line landed flush against the "_Updated" footer."""
         env = _attachment_envelope([SH], [(SH, PHOTOS)], [PHOTOS, SPECS])
-        env["lane_text"] += "\n\n_Data last updated: 03/10/2026 16:24:40_"
+        env["lane_text"] += "\n\n_Updated 03/10/2026 16:24_"
         text = _compose_text(env)
 
-        assert f"\n\n{SH} has no {SPECS}.\n\n_Data last updated" in text, repr(text)
+        assert f"\n\n{SH} has no {SPECS}.\n\n_Updated " in text, repr(text)
 
     def test_a_type_without_a_label_names_no_gap_at_all(self) -> None:
         """`turn_runtime.attachment_type_labels` could not read a type: no line, never a

@@ -97,11 +97,10 @@ def test_incoming_rows_under_a_stock_miss_read_in_the_reply_language(
         items=[_INCOMING_ITEM],
         missing=[{"code": "SRTWC286", "_n": "SRTWC286", "uuid": "u1"}],
     )
-    assert "- *Company:* SORENTO" in english.split("\n")  # the shape this test is about
+    assert "*Company:* SORENTO" in english.split("\n")  # the shape this test is about
     out = _loc(lang).reply(english)
     lines = out.split("\n")
-    assert lead in lines
-    assert f"- *{ {'ms': 'Syarikat', 'zh': '公司'}[lang] }:* SORENTO" in lines
+    assert f"*{ {'ms': 'Syarikat', 'zh': '公司'}[lang] }:* SORENTO" in lines
     assert f"*{code_label}:* SRTWC286" in lines
     assert f"*{container}:* SEGU4008631" in lines
     # Q3: ETA stays as printed, and so does its value.
@@ -110,15 +109,15 @@ def test_incoming_rows_under_a_stock_miss_read_in_the_reply_language(
     assert f"*{alloc}:* BRW-BB: 40" in lines
     assert f"⚠️  *({flag_disc})*" in lines
     assert f"\U0001f6a9  *({flag_pending})*" in lines
-    for english_word in ("Product Code", "Container", "Incoming Quantity", "INCOMING stock", "DISCONTINUED"):
+    for english_word in ("Product Code", "Container", "Incoming Quantity", "DISCONTINUED"):
         assert english_word not in out
 
 
 @pytest.mark.parametrize(
     "lang,expected",
     [
-        ("ms", "Tiada stok dan tiada stok masuk untuk SRTWC286, SRTWC287."),
-        ("zh", "SRTWC286, SRTWC287 没有库存，也没有到货。"),
+        ("ms", "*Kod Produk:* SRTWC286\n*Stok:* tiada\n*Barang masuk:* tiada\n\n*Kod Produk:* SRTWC287\n*Stok:* tiada\n*Barang masuk:* tiada"),
+        ("zh", "*产品代码:* SRTWC286\n*库存:* 无\n*到货:* 无\n\n*产品代码:* SRTWC287\n*库存:* 无\n*到货:* 无"),
     ],
 )
 def test_no_stock_and_no_incoming_reads_in_the_reply_language(lang, expected):
@@ -129,7 +128,10 @@ def test_no_stock_and_no_incoming_reads_in_the_reply_language(lang, expected):
             {"code": "SRTWC287", "_n": "SRTWC287", "uuid": "u2"},
         ],
     )
-    assert english == "No stock and no incoming for SRTWC286, SRTWC287."
+    assert english == (
+        "*Product Code:* SRTWC286\n*Stock:* none\n*Incoming:* none\n\n"
+        "*Product Code:* SRTWC287\n*Stock:* none\n*Incoming:* none"
+    )
     assert _loc(lang).reply(english) == expected
 
 
@@ -217,11 +219,11 @@ def test_couldnt_find_then_the_offer_both_translate_on_one_line():
 
 
 def test_a_stock_section_with_a_no_stock_line_then_the_incoming_block():
-    """The block opens with its own "No stock for X." paragraph above the lead."""
+    """Card v4: one block per code, its own `*Stock:* none` line above the incoming facts."""
     english = _block(items=[_INCOMING_ITEM], missing=[{"code": "SRTWC286", "_n": "SRTWC286", "uuid": "u1"}])
-    assert english.startswith("No stock for SRTWC286.\n\nBut there is INCOMING stock (ETA)")
+    assert "*Product Code:* SRTWC286\n*Stock:* none\n*Container:* SEGU4008631" in english
     out = _loc("ms").reply(english)
-    assert out.startswith("Tiada stok untuk SRTWC286.\n\nTetapi ada stok MASUK (ETA)")
+    assert "*Kod Produk:* SRTWC286\n*Stok:* tiada\n*Kontena:* SEGU4008631" in out
     assert "Product Code" not in out
 
 
@@ -264,9 +266,6 @@ def test_every_po_rung_still_nothing_sentence_is_catalogued(lead, trail):
 def test_the_rung_wording_in_the_code_is_the_wording_catalogued():
     """Pins the catalog keys to the f-strings `_group_parts` builds, so a reword there reds here."""
     src = (Path(__file__).resolve().parents[2] / "app/services/chatbot/lanes/business/answer.py").read_text()
-    assert 'f"{lead} and {trail} for {\', \'.join(found)}, {header}:\\n{po_lines}"' in src
-    assert 'f"{lead}, {trail} and nothing on order for {\', \'.join(still_nothing)}."' in src
-    assert '"but stock is on order from the supplier"' in src and '"but PO is placed"' in src
     assert 'lines.append(f"*PO date:* {_fmt_xd_value(po_date)}")' in src
 
 

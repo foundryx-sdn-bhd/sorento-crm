@@ -230,6 +230,7 @@ PO_ROWS = {
     "answers": [
         {
             "fields": [
+                {"key": "po_number", "label": "PO Number", "value": "PO-9"},
                 {"key": "product_code", "label": "Product Code", "value": CODE},
                 {"key": "outstanding_qty", "label": "Outstanding Qty", "value": 1000},
                 {"key": "expected_date", "label": "Expected Date", "value": "2026-06-01"},
@@ -306,7 +307,7 @@ class TestBlocker2TheLadderRespectsCanStateAbsence:
         assert PO_TOOL not in calls, "the ladder probed a turn that cannot state absence"
         assert block["nothing_codes"] == []
         assert block["nothing_missing"] == []
-        assert "but PO is placed" not in (block["block"] or "")
+        assert "*PO:* PO-9" not in (block["block"] or "")
         assert "No stock" not in (block["block"] or "")
 
     def test_a_total_miss_still_reaches_the_rung(self) -> None:
@@ -315,14 +316,14 @@ class TestBlocker2TheLadderRespectsCanStateAbsence:
             validator=TOTAL_MISS, ladder=DEFAULT_LADDER, po_response=PO_ROWS
         )
         assert PO_TOOL in calls
-        assert "but PO is placed" in result["render"]["_xdBlock"]["block"]
+        assert "*PO:* PO-9" in result["render"]["_xdBlock"]["block"]
 
 
 class TestShouldFix89TheRungSentenceAndTeam:
     def test_ac922_says_no_po_not_no_purchase_order(self) -> None:
         result, _ = _run_ladder(validator=TOTAL_MISS, ladder=DEFAULT_LADDER, po_response=NO_ROWS)
         block = result["render"]["_xdBlock"]["block"]
-        assert f"No stock, no incoming and nothing on order for {CODE}." in block
+        assert f"*Product Code:* {CODE}\n*Stock:* none\n*Incoming:* none\n*PO:* none" in block
         assert "no purchase order" not in block
 
     def test_the_rung_never_overrides_the_turns_escalation_team(self) -> None:
@@ -336,7 +337,7 @@ class TestShouldFix89TheRungSentenceAndTeam:
             validator=TOTAL_MISS, ladder=DEFAULT_LADDER, po_response=PO_ROWS, parser=parser
         )
         block = result["render"]["_xdBlock"]
-        assert "but PO is placed" in block["block"]
+        assert "*PO:* PO-9" in block["block"]
         # the offer itself is compose's (8 Sep 2026); the TEAM it will name is the block's
         assert "escalate" not in block["block"].lower()
         assert block["team"] == "warehouse"

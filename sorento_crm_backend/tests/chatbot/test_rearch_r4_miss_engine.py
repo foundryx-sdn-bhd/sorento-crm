@@ -689,7 +689,7 @@ class TestAC1705IncomingMissWithStockLadder:
         render = answer_mod.crossdomain_render(probe_result, zeroset=zeroset, validator={"has_result": False})
         xd_block = render.get("_xdBlock") or {}
         assert xd_block.get("any") is True, "test setup sanity: the ladder block must render something"
-        assert "But here are the stock details for the requested products:" in (xd_block.get("block") or "")
+        assert "*Product Code:* SRTWC900\n*Incoming:* none" in (xd_block.get("block") or "")
 
         sealed = {
             "reply": {
@@ -698,9 +698,9 @@ class TestAC1705IncomingMissWithStockLadder:
             }
         }
         result_carrier = {"result": {"xd": {"block": xd_block}}}
-        merged = tail_compose.crossdomain_compose(sealed, result=result_carrier, answered=False)
+        merged = tail_compose.crossdomain_compose(sealed, result=result_carrier, answered=False, covers=True)
         folded_text = merged["reply"]["session_patch"]["user_response"]
-        assert "But here are the stock details for the requested products:" in folded_text
+        assert "*Product Code:* SRTWC900\n*Incoming:* none" in folded_text
         assert folded_text.count("SRTWC900") >= 1, (
             "no OTHER product code may appear in the reply - the ladder is scoped to "
             f"the one asked product: {folded_text!r}"

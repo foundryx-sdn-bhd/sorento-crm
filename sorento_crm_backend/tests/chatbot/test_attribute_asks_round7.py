@@ -492,7 +492,7 @@ def _v7b() -> dict[str, Any]:
 
 # Reply readers ---------------------------------------------------------------- #
 
-_ROW_START = re.compile(r"^(\d+)\. ")
+_ROW_START = re.compile(r"^(?:\d+\. |(?=\*Product Code:\*))")
 
 
 def _full_rows(text: str) -> list[list[str]]:

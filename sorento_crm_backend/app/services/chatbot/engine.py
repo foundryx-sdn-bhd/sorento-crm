@@ -4040,83 +4040,6 @@ def _fallback_context(
     )
 
 
-def _carried_line(
-    db: Session,
-    *,
-    verdict: dict[str, Any],
-    memory_intake: dict[str, Any],
-    contact_respond_id: str,
-    dry_run: bool,
-    decision: dict[str, Any] | None = None,
-) -> str | None:
-    """AC-MEM083: a business answer whose subject the parser carried from memory (every
-    entity `current_message: false`, none in the live conversation) opens with one line
-    naming what was carried - from a closed conversation ("Carrying on from Tue 23 Sep:
-    outstanding DO for CC001 Chin Chun Trading."), else from the usual products ("Your
-    usual: SRTWB1455, M486-75-BL."). None when nothing came from memory.
-
-    `decision` is `plan.trace.decision`. PHOTO-PICKER (owner, 5 Oct 2026): a turn that
-    ANSWERED this conversation's open question took its subject off our own roster, not
-    from memory. The picked code is one the customer never typed, so the text check below
-    missed it, and the line named an older closed conversation's topic ("incoming stock
-    for SRTWC286-SH") over a photo pick."""
-    from app.models.conversation_frame import ConversationFrame
-    from app.services.chatbot import copy as copy_mod
-
-    if isinstance(decision, dict) and decision.get("kind") == "answer":
-        return None
-    level = memory_intake.get("effective_level") or "off"
-    if level not in ("episodes", "full"):
-        return None
-    entities = [e for e in (verdict.get("entities") or []) if isinstance(e, dict)]
-    if not entities or any(e.get("current_message") is not False for e in entities):
-        return None
-    codes = [str(e.get("canonical_code") or e.get("raw") or "").strip() for e in entities]
-    codes = [c for c in codes if c]
-    if not codes:
-        return None
-    earlier = " ".join(str(m.get("text") or "") for m in memory_intake.get("earlier_messages") or []).upper()
-    if all(c.upper() in earlier for c in codes):
-        return None  # carried from THIS conversation, not from memory
-
-    facts = memory_intake.get("profile_facts") if level == "full" else None
-    language = _fact_value(facts, "language")
-    canned = copy_mod.resolve(db)
-
-    # "The usual" first: a code set the profile names as usual is carried from there
-    # even when an older conversation also named it.
-    usual = [p.upper() for p in _as_list(_fact_value(facts, "usual_products"))]
-    if usual and all(c.upper() in usual for c in codes):
-        return canned.render_in("carried_usual", language, products=", ".join(codes))
-    frames = (
-        db.query(ConversationFrame)
-        .filter(
-            ConversationFrame.contact_respond_id == contact_respond_id,
-            ConversationFrame.is_test.is_(dry_run),
-            ConversationFrame.status == "closed",
-        )
-        .order_by(ConversationFrame.last_activity_at.desc())
-        .limit(3)
-        .all()
-    )
-    for frame in frames:
-        # Matched on the frame's own entity codes (fix round 6: the summary is prose
-        # now, not a clause chain to split), with the summary text as the fallback.
-        named = " ".join(
-            str(v) for values in (frame.entities or {}).values() if isinstance(values, list) for v in values
-        )
-        haystack = f"{named} {frame.summary or ''}".upper()
-        if not all(c.upper() in haystack for c in codes):
-            continue
-        noun = episode_digest_mod.domain_noun(frame.domain)
-        listed = episode_digest_mod.join_words([episode_digest_mod.display_code(c) for c in codes])
-        subject = f"{noun} for {listed}" if noun else listed
-        day = episode_digest_mod.day_label(frame.last_activity_at) if frame.last_activity_at else None
-        return canned.render_in("carried_episode", language, day=day or "earlier", subject=subject)
-
-    return None
-
-
 def _handover_context(
     db: Session,
     *,
@@ -5695,19 +5618,6 @@ def _run_stages_body(  # noqa: PLR0915
                 )
             except Exception:  # noqa: BLE001 - the clarifier still answers, memory-less
                 logger.warning("chatbot: the fallback context did not build", exc_info=True)
-        # AC-MEM083: a business answer carried from memory names what it carried.
-        if branch_kind in ("business_query", "check_promotion"):
-            try:
-                remembered_before["_carried_line"] = _carried_line(
-                    db,
-                    verdict=verdict,
-                    memory_intake=memory_intake,
-                    contact_respond_id=contact_respond_id,
-                    dry_run=dry_run,
-                    decision=plan.trace.decision,
-                )
-            except Exception:  # noqa: BLE001 - the answer stands without the line
-                logger.warning("chatbot: the carried line did not build", exc_info=True)
         # AC-MEM087/088: who a handover names, and what it carries to them.
         if branch_kind == "out_of_scope":
             try:
@@ -6593,6 +6503,7 @@ def _run_stages_body(  # noqa: PLR0915
                         dealer_stock_ask=_dealer_stock_ask(state_out, plan),
                         dealer_incoming_ask=_dealer_incoming_ask(state_out, plan),
                         product_token_missed=miss_on_typed_product,
+                        localizer=localizer,
                     )
                     if answer is not None:
                         bridge_answered = True
@@ -6720,6 +6631,7 @@ def _run_stages_body(  # noqa: PLR0915
                             # #1262 slice 11 (F8): the ladder rung's own audience
                             # gate reads the SAME profile the composer's arm does.
                             profile=state_out.profile,
+                            localizer=localizer,
                         )
                         # BRIDGE (hand pass 11, defect 3): a HIT in one of several
                         # searched companies still offers the SILENT company's own
@@ -7599,11 +7511,6 @@ def _run_answer(
         from app.services.chatbot import escalation_control
 
         answer = escalation_control.strip_offers(answer, state.profile)
-    # AC-MEM083 (S4): an answer whose subject was carried from memory opens with the
-    # one line naming what was carried, built in `_carried_line` before the fetch.
-    carried = remembered_before.get("_carried_line")
-    if carried and (getattr(answer, "text", "") or "").strip():
-        answer = dataclasses_replace(answer, text=f"{carried}\n\n{answer.text}")
     stage[0] = "replied"
     # Review S2: the A/B readout counts the files the turn delivered, before link mode
     # empties the list.

@@ -565,12 +565,6 @@ def readable_summary(summary: str | None, domain: str | None, entities: Any) -> 
     return summary_from_columns(domain, entities, summary)
 
 
-#: Public names for the engine's carried-episode line (`engine._carried_line`).
-join_words = _join
-display_code = _display_code
-day_label = _date_prefix
-
-
 def episode_line(when: Any, domain: str | None, summary: str) -> str:
     """`Mon 28 Sep, Incoming stock: Asked about ...`: date, topic, sentence. The one
     line the recall reply numbers and the parser's memory layer lists."""

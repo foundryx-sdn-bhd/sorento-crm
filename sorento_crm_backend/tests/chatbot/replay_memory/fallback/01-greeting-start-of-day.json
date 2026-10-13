@@ -64,8 +64,6 @@
     "branch_kind": "low_signal",
     "reply_starts_with": "Morning Mr Tan!",
     "reply_contains": [
-      "Last time: ",
-      ", Stock: Asked about stock for SRTWB1455",
       "SRTWB1455 or M486-75-BL"
     ],
     "clarifier_prompt_contains": [

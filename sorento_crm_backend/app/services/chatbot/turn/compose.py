@@ -13,6 +13,7 @@ from typing import Any
 from app.services.chatbot import label_catalog
 from app.services.chatbot.label_catalog import IDENTITY
 from app.services.chatbot.turn.decide import OUTSTANDING_KINDS
+from app.services.chatbot.block_numbering import is_block, renumber
 from app.services.chatbot.turn.fetch import envelope_missed
 from app.services.chatbot.turn.narrow import ledger_family_key, ledger_family_label
 from app.services.ledger_family import customer_group_of, customer_header_words
@@ -500,6 +501,18 @@ def _did_you_mean_per_code(
     return text, None, True
 
 
+def _split_at_footer(block: str, localizer: Any) -> tuple[str, str, str] | None:
+    """`(head, "\\n_<lead>", rest)` at the freshness footer in whichever language printed it;
+    the last one in the block closes the section (`footer_leads` drops a blanked lead, which
+    would match any line). None when the block has no footer."""
+    split = None
+    for lead in label_catalog.footer_leads(localizer):
+        head, found, rest = block.rpartition("\n_" + lead)
+        if found and (split is None or len(head) > len(split[0])):
+            split = (head, found, rest)
+    return split
+
+
 def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: Any) -> Answer:
     localizer = getattr(ctx, "localizer", None) or IDENTITY
     sections: list[Section] = []
@@ -570,7 +583,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # grammar WITH its flags (PRODUCT DISCONTINUED, PENDING ALLOCATION) and its
         # date/bool formatting (`_fmt_value`, which this module's own `_render_row`
         # below never applied - measured as the "2026-09-14T00:00:00" defect), and
-        # the "_Data last updated: ..._" footer, into ONE string - reusing it
+        # the "_Updated ..._" footer, into ONE string - reusing it
         # verbatim is the one change that keeps every domain's copy production-
         # identical without a second, parallel string table here. A fan-out over
         # several domains still says one thing per section (contract 122) because
@@ -674,16 +687,10 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         ):
             absent = _codes_without_rows(product_codes, figures)
             if absent:
-                # Above the lane's "_Data last updated: ..._" footer, which closes the
+                # Above the lane's "_Updated ..._" footer, which closes the
                 # section, rather than under it.
                 line = localizer.sentence(f"No stock found for {_join_words(absent, localizer)}.")
-                # The footer in whichever language printed it; the last one in the block closes
-                # the section (`footer_leads` drops a blanked lead, which would match any line).
-                split = None
-                for lead in label_catalog.footer_leads(localizer):
-                    head, found, rest = block.rpartition("\n_" + lead)
-                    if found and (split is None or len(head) > len(split[0])):
-                        split = (head, found, rest)
+                split = _split_at_footer(block, localizer)
                 if split:
                     block = split[0] + "\n" + line + split[1] + split[2]
                 else:
@@ -704,10 +711,10 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
                     for code, missing in gaps
                 )
                 # Its own paragraph, and the lane's footer keeps the blank line above it.
-                body, sep, footer = block.rpartition("\n_Data last updated")
+                split = _split_at_footer(block, localizer)
                 block = (
-                    body.rstrip("\n") + "\n\n" + lines + "\n" + sep + footer
-                    if sep
+                    split[0].rstrip("\n") + "\n\n" + lines + "\n" + split[1] + split[2]
+                    if split
                     else block.rstrip("\n") + "\n\n" + lines
                 )
         # The window the fetch ran with, stated under the header it belongs to (browser
@@ -772,6 +779,25 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             seen_file_keys.add(key)
             files.append(f)
 
+    # One numbering over the whole reply, whichever section a block sits in.
+    text_parts = ["\n\n".join(g) for g in renumber([part.split("\n\n") for part in text_parts], localizer=localizer)]
+    # The freshness footer closes the whole body, once, whichever section printed it.
+    if len(text_parts) > 1:
+        starts = tuple("_" + lead for lead in label_catalog.footer_leads(localizer))
+        footers: list[str] = []
+        for i, part in enumerate(text_parts):
+            kept: list[str] = []
+            for line in part.split("\n"):
+                (footers if line.startswith(starts) else kept).append(line)
+            # A footer line sat alone or under another line of its paragraph: what was
+            # beside it stays, and the blank lines it leaves behind close up.
+            joined = "\n".join(kept)
+            while "\n\n\n" in joined:
+                joined = joined.replace("\n\n\n", "\n\n")
+            text_parts[i] = joined.strip("\n")
+        text_parts = [part for part in text_parts if part]
+        if footers:
+            text_parts.append(footers[0])
     text = "\n\n".join(text_parts)
 
     # A token nobody could place is named, never dropped in silence (hand pass 2 item 6,
@@ -972,11 +998,21 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         ]
         # R-d: a domain with attachments (incoming, product photos, ...) already
         # opens its OWN `lane_text` with this exact sentence (`sorento_crm_mcp.
-        # presenters`'s universal "has attachments" intro) now that `lane_text` is
-        # reused verbatim above - appending a second copy read as the sentence
-        # twice in one reply.
-        if _ATTACHED_SENTENCE not in text:
-            text += "\n\n" + _ATTACHED_SENTENCE
+        # presenters`'s universal "has attachments" intro), so it is never repeated.
+        # A card reply (blocks) closes with it, after every block and the footer.
+        paras = text.split("\n\n")
+        # The line reads in the turn language, so the English constant and every
+        # catalog translation count as "already said".
+        attached = {
+            _ATTACHED_SENTENCE,
+            localizer.sentence(_ATTACHED_SENTENCE),
+            *label_catalog.LABELS[_ATTACHED_SENTENCE].values(),
+        }
+        said = [p for p in paras if p in attached]
+        if not any(a in text for a in attached):
+            text += "\n\n" + localizer.sentence(_ATTACHED_SENTENCE)
+        elif said and any(is_block(p, localizer) for p in paras):
+            text = "\n\n".join([p for p in paras if p not in attached] + [said[0]])
 
     return Answer(
         sections=sections, question=question, offer=offer, canned=[], files=files, actions=actions, text=text

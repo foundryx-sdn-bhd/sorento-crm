@@ -66,6 +66,7 @@ def crossdomain_compose(
     result: Any = None,
     answered: bool = False,
     include_offer: bool = True,
+    covers: bool = False,
 ) -> dict[str, Any]:
     """`{reply}` in, `{reply}` out. `result` is the `build-result` carrier (nullable).
 
@@ -90,7 +91,7 @@ def crossdomain_compose(
     out = _deep_copy(patch)
     variables = out.get("variables") or {}
     user_response = out.get("user_response")
-    if not isinstance(user_response, str) or user_response.strip() == "":
+    if not isinstance(user_response, str) or (user_response.strip() == "" and not covers):
         return dict(item)
 
     # LOCKED WORDING: this exact prefix is the contract `output_exchange.offer_is_open`
@@ -104,11 +105,8 @@ def crossdomain_compose(
         if not jsc.is_array(last_result_set) or len(last_result_set) == 0:
             return dict(item)
         block_text = jsc.js_string(jsc.get(block, "block"))
-        out["user_response"] = (
-            f"{user_response}\n{block_text}\n\n{phrase}"
-            if include_offer
-            else f"{user_response}\n{block_text}"
-        )
+        body = f"{user_response}\n\n{block_text}" if user_response.strip() else block_text
+        out["user_response"] = f"{body}\n\n{phrase}" if include_offer else body
         # BOTH strings: the visible text so the customer can act, the state so the parser
         # can reconcile the "yes".
         if include_offer:
@@ -133,7 +131,11 @@ def crossdomain_compose(
             if found != -1 and (index == -1 or found < index):
                 index = found
         if index == -1:
-            out["user_response"] = f"{user_response}\n{jsc.js_string(jsc.get(block, 'block'))}"
+            out["user_response"] = (
+                jsc.js_string(jsc.get(block, "block"))
+                if covers
+                else f"{user_response}\n{jsc.js_string(jsc.get(block, 'block'))}"
+            )
         else:
             # Insert at the start of the winning marker's own SENTENCE or LINE, never
             # mid-line: on the multi-token arm the marker sits inside a line, where the
@@ -143,7 +145,7 @@ def crossdomain_compose(
             # two-character needle needs the slice to reach `index + 2` for that.
             dot = user_response.rfind(". ", 0, index + 2)
             at = max(0 if newline == -1 else newline + 1, 0 if dot == -1 else dot + 2)
-            head = user_response[:at].rstrip()
+            head = "" if covers else user_response[:at].rstrip()
             out["user_response"] = (
                 (f"{head}\n" if head else "")
                 + f"{jsc.js_string(jsc.get(block, 'block'))}\n\n"

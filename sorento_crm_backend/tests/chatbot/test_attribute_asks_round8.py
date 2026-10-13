@@ -259,7 +259,7 @@ def _v5(kind: str = "stock") -> dict[str, Any]:
 
 # Reply readers ---------------------------------------------------------------- #
 
-_ROW = re.compile(r"^(\d+)\. ")
+_ROW = re.compile(r"^(?:\d+\. |(?=\*Product Code:\*))")
 
 
 def _intro(text: str) -> str:
@@ -324,7 +324,7 @@ def test_item1_a_stock_set_reads_exactly_like_the_product_code_answer(chat, worl
     text = chat.say(M1B, _ask("stock", "basin", M1B, top_n=2, entities=[]))
     total = int(re.search(r"\((\d+), showing 1 to 2\)", text).group(1))
     assert _intro(text) == f"Here's what you want: wash basins with stock ({total}, showing 1 to 2)", text
-    assert re.search(r"\n\n_Data last updated: 21/09/2026 \d\d:32:45_$", text.rstrip()), text
+    assert re.search(r"\n\n_Updated 21/09/2026 \d\d:32_$", text.rstrip()), text
     blocks = _blocks(text)
     assert len(blocks) == 2, text
     for code, block in blocks.items():

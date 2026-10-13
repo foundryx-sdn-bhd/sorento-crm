@@ -220,6 +220,7 @@ class StockSummaryEntry(BaseModel):
     product_id: str
     product_code: Optional[str] = None
     product_name: Optional[str] = None
+    company_name: Optional[str] = None
     total_on_hand: int
     locations: List[StockSummaryLocation] = []
     flags: Dict[str, Any] = {}

@@ -336,8 +336,7 @@ class TestDealerIsNeverOfferedAndCannotForce:
         # The allowed contact's reply is the same with "Would you like me to escalate to
         # purchasing team?" where the salesman line is (measured 30 Sep 2026).
         assert (result.reply or {}).get("text") == (
-            "Here's what you want:\n\u2022 product: ZZTSC07\n\nBut no incoming matched these.\n"
-            "No incoming and no stock for ZZTSC07.\n\nPlease refer to your salesman."
+            "*Product Code:* ZZTSC07\n*Incoming:* none\n*Stock:* none\n\nPlease refer to your salesman."
         )
         oq = _open_question(session_factory)
         assert oq is None or oq.get("kind") not in {"team_pick", "member_offer", "company_pick"}, oq

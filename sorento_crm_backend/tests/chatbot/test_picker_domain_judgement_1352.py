@@ -198,7 +198,7 @@ def test_b_case_1_check_stock_is_a_stock_ask_and_7_still_picks(session_factory, 
 
     text, calls = _say(c, "check stock", _check_stock())
     assert calls == [(STOCK, ["SRTWC286-SH-NEW"])], calls
-    assert "*Total:* 12" in text, text
+    assert "*BRW:* 12" in text, text
     assert c.stored_question["kind"] == "product_pick" and _answered_positions(c) == [4]
 
     text, calls = _say(c, "7", _bare_pick(7, carried_domain="inventory"))
@@ -215,7 +215,7 @@ def test_b_case_1_with_the_pick_replayed_answers_stock(session_factory, monkeypa
 
     text, calls = _say(c, "check stock", _check_stock(pick=4))
     assert calls == [(STOCK, ["SRTWC286-SH-NEW"])], calls
-    assert "*Total:* 12" in text, text
+    assert "*BRW:* 12" in text, text
     rules = c.last_trace.rules_fired
     assert "pick_in_message_domain" in rules and "domain_locked_by_pick" not in rules, rules
     assert c.stored_question["kind"] == "product_pick" and _answered_positions(c) == [4]
@@ -231,7 +231,7 @@ def test_b_4_stock_answers_stock_for_the_4th(session_factory, monkeypatch, stub_
     assert text.startswith(FAMILY_HEAD), text
     text, calls = _say(c, "4 stock", _stock_for_position(4))
     assert calls == [(STOCK, ["SRTWC286-SH-NEW"])], calls
-    assert "*Total:* 12" in text, text
+    assert "*BRW:* 12" in text, text
     assert "pick_in_message_domain" in c.last_trace.rules_fired
     assert c.stored_question["kind"] == "product_pick" and _answered_positions(c) == [4]
 
@@ -243,7 +243,7 @@ def test_b_case_2_stoick_the_picked_code_answers_stock(session_factory, monkeypa
     _picked_roster(c)
     text, calls = _say(c, "stoick SRTWC286-SH-NEW", _typed_label("SRTWC286-SH-NEW", 4))
     assert calls == [(STOCK, ["SRTWC286-SH-NEW"])], calls
-    assert "*Total:* 12" in text, text
+    assert "*BRW:* 12" in text, text
     assert "pick_in_message_domain" in c.last_trace.rules_fired
     assert c.stored_question["kind"] == "product_pick"
 

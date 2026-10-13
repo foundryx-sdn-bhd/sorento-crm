@@ -141,17 +141,6 @@ CHATBOT_REPLY_FALLBACK_OFFER = {
     "ms": "Apa yang saya boleh semak untuk anda? Stok, barang masuk, pesanan penghantaran, promosi atau butiran produk.",
     "zh": "需要我帮您查什么？库存、到货、送货单、促销或产品资料。",
 }
-#: The memory line naming the newest conversation, then the re-run offer.
-CHATBOT_REPLY_FALLBACK_LAST_TIME = {
-    "en": "Last time: {{summary}}.",
-    "ms": "Kali terakhir: {{summary}}.",
-    "zh": "上次：{{summary}}。",
-}
-CHATBOT_REPLY_FALLBACK_OFFER_RERUN = {
-    "en": "Want me to check any of that again, or something new?",
-    "ms": "Mahu saya semak semula, atau perkara lain?",
-    "zh": "要我再查一次，还是查别的？",
-}
 #: The offer from the contact's usual products (and usual site), Full memory only.
 CHATBOT_REPLY_FALLBACK_OFFER_USUAL = {
     "en": "Want me to check stock for {{products}}, or something new?",
@@ -213,18 +202,6 @@ CHATBOT_REPLY_HISTORY_NOTHING = {
     "en": "I don't have an earlier conversation with you on record yet.",
     "ms": "Saya belum ada rekod perbualan kita sebelum ini.",
     "zh": "我这里还没有我们之前的对话记录。",
-}
-#: A follow-up the parser resolved from memory opens its answer with what it
-#: carried (AC-MEM083): from a closed conversation, or from the usual products.
-CHATBOT_REPLY_CARRIED_EPISODE = {
-    "en": "Carrying on from {{day}}: {{subject}}.",
-    "ms": "Sambungan dari {{day}}: {{subject}}.",
-    "zh": "接着{{day}}的：{{subject}}。",
-}
-CHATBOT_REPLY_CARRIED_USUAL = {
-    "en": "Your usual: {{products}}.",
-    "ms": "Biasa anda: {{products}}.",
-    "zh": "您常查的：{{products}}。",
 }
 #: A commercial ask handed over with the linked salesperson named (AC-MEM087).
 #: Sent in place of the lane's "routed to the respective person-in-charge" line;
@@ -388,8 +365,6 @@ FALLBACK_REPLY_COPY: dict[str, tuple[dict[str, str], tuple[str, ...]]] = {
     "portal_link_sponsorship_form": (CHATBOT_REPLY_PORTAL_LINK_SPONSORSHIP_FORM, ()),
     "fallback_ack": (CHATBOT_REPLY_FALLBACK_ACK, ()),
     "fallback_offer": (CHATBOT_REPLY_FALLBACK_OFFER, ()),
-    "fallback_last_time": (CHATBOT_REPLY_FALLBACK_LAST_TIME, ("summary",)),
-    "fallback_offer_rerun": (CHATBOT_REPLY_FALLBACK_OFFER_RERUN, ()),
     "fallback_offer_usual": (CHATBOT_REPLY_FALLBACK_OFFER_USUAL, ("products",)),
     "fallback_offer_usual_site": (CHATBOT_REPLY_FALLBACK_OFFER_USUAL_SITE, ("site", "products")),
     "fallback_offer_customer": (CHATBOT_REPLY_FALLBACK_OFFER_CUSTOMER, ("customer", "team")),
@@ -400,8 +375,6 @@ FALLBACK_REPLY_COPY: dict[str, tuple[dict[str, str], tuple[str, ...]]] = {
     "history_lead": (CHATBOT_REPLY_HISTORY_LEAD, ()),
     "history_offer": (CHATBOT_REPLY_HISTORY_OFFER, ()),
     "history_nothing": (CHATBOT_REPLY_HISTORY_NOTHING, ()),
-    "carried_episode": (CHATBOT_REPLY_CARRIED_EPISODE, ("day", "subject")),
-    "carried_usual": (CHATBOT_REPLY_CARRIED_USUAL, ("products",)),
     "handover_salesperson": (CHATBOT_REPLY_HANDOVER_SALESPERSON, ("salesperson", "team")),
     "ideation_capture_no_access": (IDEATION_CAPTURE_NO_ACCESS, ()),
     "ideation_capture_unconfigured": (IDEATION_CAPTURE_UNCONFIGURED, ()),

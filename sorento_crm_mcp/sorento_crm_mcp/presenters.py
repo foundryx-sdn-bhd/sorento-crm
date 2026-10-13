@@ -1456,6 +1456,9 @@ def _stock_compact(payload: dict, b: _Builder) -> None:
         # products' blocks become indistinguishable stacks of numbers.
         code_field = entry.get("product_code")
         fields: list[dict[str, Any]] = []
+        # Company leads when the backend named it (a reply spanning several companies).
+        if _filled(entry.get("company_name")):
+            fields.append({"key": "company_name", "label": "Company", "value": entry["company_name"]})
         if _filled(code_field):
             fields.append({"key": "product_code", "label": "Product Code", "value": code_field})
         total = _stock_int(entry.get("total_on_hand"))

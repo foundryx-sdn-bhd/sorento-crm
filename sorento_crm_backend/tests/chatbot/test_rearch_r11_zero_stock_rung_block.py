@@ -171,9 +171,9 @@ class TestRungBlockZeroNoteNamesOnlyTheRenderedCode:
             f"probe_calls={probe_calls!r}"
         )
 
-        # EXACTLY one "No stock for <NEW only>." line - never zero, never repeated, and
-        # never naming the family sibling too.
-        assert reply_text.count("No stock for SRTWC6022-SH-UF-NEW.") == 1, reply_text
+        # Card v4: EXACTLY one block for the code the rung answered about (`*Stock:* 0`
+        # under it) - never zero, never repeated, and never naming the family sibling too.
+        assert reply_text.count("*Product Code:* SRTWC6022-SH-UF-NEW\n*Stock:* 0") == 1, reply_text
         assert "SRTWC6022-SH-UF, SRTWC6022-SH-UF-NEW" not in said, (
             f"the zero note must name ONLY the code the rung's own rendered rows carry "
             f"(SRTWC6022-SH-UF-NEW) - production never names the family sibling "
@@ -351,7 +351,7 @@ class TestControlTwoDifferentZeroCodesEachOwnRow:
         assert reply_text.count("CONT-AAAA") == 1, reply_text
         assert reply_text.count("CONT-BBBB") == 1, reply_text
 
-        assert f"No stock for" in reply_text, reply_text
+        assert "*Stock:* 0" in reply_text, reply_text
         assert self.CODE_X in said and self.CODE_Y in said, (
             f"the zero note must name BOTH distinct codes - neither is a prefix of the "
             f"other, so nothing here should collapse into a shared row or a partial "

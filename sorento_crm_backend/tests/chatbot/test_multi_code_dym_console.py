@@ -42,10 +42,9 @@ def _partial(c: EngineConsole) -> str:
     text = c.say("SRTWC287-S-150 stwc2867 stock", stock(product("SRTWC287-S-150"), product("stwc2867")))
     assert "SRTWC287-S-150" in text, text
     assert 'Couldn\'t find "stwc2867" (product). Did you mean:' in text, text
-    # The stock presenter numbers its found block "1.", so the suggestions run on from 2
-    # (Q1: no number printed twice).
-    assert "1. *Product Code:* SRTWC287-S-150" in text, text
-    assert "Did you mean:\n2. SRTWC286-SH" in text, text
+    # A lone found block carries no number (WA-CONCISE card v4), so the suggestions start at 1.
+    assert "*Product Code:* SRTWC287-S-150" in text and "1. *Product Code:*" not in text, text
+    assert "Did you mean:\n1. SRTWC286-SH" in text, text
     assert "I could not find stwc2867" not in text, text
     question = c.stored_question
     assert question is not None and question["kind"] == "product_pick", question
@@ -57,53 +56,53 @@ def test_partial_miss_lists_the_missing_codes_suggestions_and_one_pick_answers_i
 ):
     c = _console(session_factory, monkeypatch, stub_access, "+60000014651")
     _partial(c)
-    first = next(o for o in c.stored_question["options"] if o["position"] == 2)
+    first = next(o for o in c.stored_question["options"] if o["position"] == 1)
 
     since = len(c.tool_calls)
-    c.say("2", _pick(2))
+    c.say("1", _pick(1))
     assert _codes(c, since) == [(STOCK, [first["code"]])], _codes(c, since)
 
 
 def test_a_reply_picking_two_suggestions_answers_both(session_factory, monkeypatch, stub_access):
-    """Q3 (owner): the parser decides what was picked; "2 and 3" answers both codes."""
+    """Q3 (owner): the parser decides what was picked; "1 and 2" answers both codes."""
     c = _console(session_factory, monkeypatch, stub_access, "+60000014652")
     _partial(c)
     options = {o["position"]: o["code"] for o in c.stored_question["options"]}
     assert len(options) >= 2, options
 
     since = len(c.tool_calls)
-    c.say("2 and 3", _pick(2, 3))
+    c.say("1 and 2", _pick(1, 2))
     calls = _codes(c, since)
     assert calls and calls[0][0] == STOCK, calls
-    assert sorted(calls[0][1]) == sorted([options[2], options[3]]), calls
+    assert sorted(calls[0][1]) == sorted([options[1], options[2]]), calls
 
 
 def test_a_reply_picking_one_and_typing_another_code_answers_both(session_factory, monkeypatch, stub_access):
-    """Q3 (owner): "2 and SRTWC286-SH-150" - a pick plus a code of its own, each answered."""
+    """Q3 (owner): "1 and SRTWC286-SH-150" - a pick plus a code of its own, each answered."""
     c = _console(session_factory, monkeypatch, stub_access, "+60000014653")
     _partial(c)
     options = {o["position"]: o["code"] for o in c.stored_question["options"]}
 
     since = len(c.tool_calls)
-    reading = _pick(2)
+    reading = _pick(1)
     reading["entities"] = [product("SRTWC286-SH-150")]
-    c.say("2 and SRTWC286-SH-150", reading)
+    c.say("1 and SRTWC286-SH-150", reading)
     fetched = [code for _name, codes in _codes(c, since) for code in codes]
-    assert options[2] in fetched and "SRTWC286-SH-150" in fetched, _codes(c, since)
+    assert options[1] in fetched and "SRTWC286-SH-150" in fetched, _codes(c, since)
 
 
 def test_a_typed_code_ending_in_punctuation_is_still_answered(session_factory, monkeypatch, stub_access):
-    """Review S2: "2 and SRTWC286-SH-150?" - the question mark does not drop the code."""
+    """Review S2: "1 and SRTWC286-SH-150?" - the question mark does not drop the code."""
     c = _console(session_factory, monkeypatch, stub_access, "+60000014654")
     _partial(c)
     options = {o["position"]: o["code"] for o in c.stored_question["options"]}
 
     since = len(c.tool_calls)
-    reading = _pick(2)
+    reading = _pick(1)
     reading["entities"] = [product("SRTWC286-SH-150")]
-    c.say("2 and SRTWC286-SH-150?", reading)
+    c.say("1 and SRTWC286-SH-150?", reading)
     fetched = [code for _name, codes in _codes(c, since) for code in codes]
-    assert options[2] in fetched and "SRTWC286-SH-150" in fetched, _codes(c, since)
+    assert options[1] in fetched and "SRTWC286-SH-150" in fetched, _codes(c, since)
 
 
 def test_a_pick_named_by_part_of_its_code_fetches_only_the_pick(session_factory, monkeypatch, stub_access):
@@ -114,7 +113,7 @@ def test_a_pick_named_by_part_of_its_code_fetches_only_the_pick(session_factory,
     options = {o["position"]: o["code"] for o in c.stored_question["options"]}
 
     since = len(c.tool_calls)
-    reading = _pick(2)
+    reading = _pick(1)
     reading["entities"] = [product("srtwc286")]
     c.say("the srtwc286 one", reading)
-    assert _codes(c, since) == [(STOCK, [options[2]])], _codes(c, since)
+    assert _codes(c, since) == [(STOCK, [options[1]])], _codes(c, since)

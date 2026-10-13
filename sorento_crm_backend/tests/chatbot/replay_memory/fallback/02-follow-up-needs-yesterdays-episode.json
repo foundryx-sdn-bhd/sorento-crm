@@ -70,8 +70,7 @@
     }
   },
   "expected": {
-    "reply_starts_with": "Carrying on from ",
-    "reply_contains": [": orders for CC001."],
+    "reply_not_contains": ["Carrying on from"],
     "prompt_contains": [
       "Recent conversations:",
       ", Orders: Asked about outstanding DOs for CC001"

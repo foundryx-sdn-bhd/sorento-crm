@@ -89,13 +89,14 @@ def _po_row(
 
 def _row_block(
     *, code: str = "SRTWC8517", qty: Any, po_date: str | None = "2026-05-01",
-    location: str | None = "KL-WH",
+    location: str | None = "KL-WH", number: str | None = "PO-1001", label: str = "PO",
 ) -> str:
-    """The 11 Sep 2026 ruling's per-row block, bold-labelled per the 12 Sep 2026
+    """The 11 Sep 2026 ruling's per-row lines (card v4: one block per PO, named by its number, owner ruling 4 Oct 2026), bold-labelled per the 12 Sep 2026
     ruling (AC-4/AC-5, finding 3): one field per line, `*PO date:*` and
     `*Location:*` omitted when null. Matches `_po_row`'s own defaults so a test
     only names what it overrides."""
-    lines = [f"*Product Code:* {code}", f"*Ordered:* {qty}", f"*Outstanding:* {qty}"]
+    lines = [f"*{label}:* {number}"] if number else []
+    lines += [f"*Ordered:* {qty}", f"*Outstanding:* {qty}"]
     if po_date not in (None, ""):
         lines.append(f"*PO date:* {po_date}")
     if location not in (None, ""):
@@ -223,11 +224,11 @@ class TestAC921StockMissIncomingMissPOPlaced:
         tool_names = [name for name, _ in calls]
         assert tool_names == [_INCOMING_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]["block"]
-        assert "No stock and no incoming for SRTWC8517" in block
-        assert "but PO is placed" in block
+        assert "*Stock:* none\n*Incoming:* none\n*PO:* PO-1001" in block
+        assert "*PO:* PO-1001" in block
         # Owner ruling, 11 Sep 2026: one field per line, no per-document heading naming
         # PO-1001, no "pcs", no expected date.
-        assert f"but PO is placed:\n{_row_block(qty=50)}" in block
+        assert f"{_row_block(qty=50)}" in block
         # The rung writes NO offer: `crossdomain_compose` is the one writer (turns
         # 0184d84d / 5f73ddb0 / 90a1637a carried the question twice).
         assert "escalate" not in block.lower()
@@ -256,7 +257,7 @@ class TestAC922StockMissIncomingMissPOMiss:
         # Item 5 (8 Sep 2026): the rung reads PO lines AND unshipped SPO allocations, so
         # the three-way miss says "nothing on order" - the customer's question, not a
         # document type (was "no PO for").
-        assert "No stock, no incoming and nothing on order for SRTWC8517." in block
+        assert "*Stock:* none\n*Incoming:* none\n*PO:* none" in block
         assert "no purchase order" not in block and "no PO for" not in block
         assert "escalate" not in block.lower()  # compose is the one offer writer
 
@@ -271,7 +272,7 @@ class TestAC923LadderReadFromSetting:
         assert tool_names == [_INCOMING_TOOL]
         block = result["render"]["_xdBlock"]["block"]
         # The pre-A7 wording, unchanged: no PO rung configured, no PO rung run.
-        assert "No stock and no incoming for SRTWC8517." in block
+        assert "*Stock:* none\n*Incoming:* none" in block
 
     def test_no_ladder_at_all_is_the_pre_a7_single_probe(self) -> None:
         """`crossdomain_ladder=None` (a caller that never read the setting) behaves
@@ -279,7 +280,7 @@ class TestAC923LadderReadFromSetting:
         result, calls = _run(ladder=None, incoming_response={"answers": [], "has_result": False})
         tool_names = [name for name, _ in calls]
         assert tool_names == [_INCOMING_TOOL]
-        assert "No stock and no incoming for SRTWC8517." in result["render"]["_xdBlock"]["block"]
+        assert "*Stock:* none\n*Incoming:* none" in result["render"]["_xdBlock"]["block"]
 
 
 class TestAC924ThirdCodeNeverDeclaredAbsentWithoutBeingAsked:
@@ -415,7 +416,7 @@ class TestOwner8SepTheOfferIsWrittenOnce:
         )
         text = _composed_text(result)
         assert text.count(self._PHRASE) == 1
-        assert "No stock, no incoming and nothing on order for SRTWC8517." in text
+        assert "*Stock:* none\n*Incoming:* none\n*PO:* none" in text
 
     def test_first_probe_nothing(self) -> None:
         result, _ = _run(ladder=_LADDER_NO_PO, incoming_response={"answers": [], "has_result": False})
@@ -448,11 +449,10 @@ class TestD11ThePORungLineIsStructuredFields:
             po_response={"answers": [_po_row(12, "2027-01-01")], "has_result": True},
         )
         block = result["render"]["_xdBlock"]["block"]
-        assert f"but PO is placed:\n{_row_block(qty=12)}" in block
+        assert f"{_row_block(qty=12)}" in block
         assert "expected" not in block and "pcs" not in block
-        assert "PO-1001" not in block
 
-    def test_the_po_number_never_reaches_the_line_even_when_absent(self) -> None:
+    def test_an_absent_po_number_omits_the_heading_line(self) -> None:
         row = _po_row(12, "2026-07-01", po_date=None)
         row["fields"] = [f for f in row["fields"] if f["key"] != "po_number"]
         result, _ = _run(
@@ -460,7 +460,7 @@ class TestD11ThePORungLineIsStructuredFields:
             incoming_response={"answers": [], "has_result": False},
             po_response={"answers": [row], "has_result": True},
         )
-        assert f"but PO is placed:\n{_row_block(qty=12, po_date=None)}" in result["render"]["_xdBlock"]["block"]
+        assert f"{_row_block(qty=12, po_date=None, number=None)}" in result["render"]["_xdBlock"]["block"]
 
     def test_the_po_date_line_is_omitted_when_the_document_has_no_date(self) -> None:
         result, _ = _run(
@@ -469,7 +469,7 @@ class TestD11ThePORungLineIsStructuredFields:
             po_response={"answers": [_po_row(12, "2026-07-01", po_date=None)], "has_result": True},
         )
         block = result["render"]["_xdBlock"]["block"]
-        assert f"but PO is placed:\n{_row_block(qty=12, po_date=None)}" in block
+        assert f"{_row_block(qty=12, po_date=None)}" in block
         assert "PO date" not in block and "placed on" not in block
         assert "2026-07-01" not in block  # the (irrelevant) expected date never renders
 
@@ -480,7 +480,7 @@ class TestD11ThePORungLineIsStructuredFields:
             po_response={"answers": [_po_row(12, "2026-07-01", location=None)], "has_result": True},
         )
         block = result["render"]["_xdBlock"]["block"]
-        assert f"but PO is placed:\n{_row_block(qty=12, location=None)}" in block
+        assert f"{_row_block(qty=12, location=None)}" in block
         assert "Location" not in block
 
 
@@ -533,16 +533,13 @@ class TestItem5UnshippedSPOIsOnOrderFromTheSupplier:
 
     def test_an_spo_row_reads_on_order_from_supplier(self) -> None:
         block = self._block([_po_row(7, "2026-10-05", po_number="SPO-2026/09-0001", po_date="2026-08-20", kind="spo")])
-        assert "but stock is on order from the supplier:" in block
-        # 11 Sep 2026 ruling: the structured field block, no SPO number.
-        assert f"but stock is on order from the supplier:\n{_row_block(qty=7, po_date='2026-08-20')}" in block
-        assert "SPO-2026/09-0001" not in block
-        assert "but PO is placed" not in block
+        # Owner ruling 4 Oct 2026: an SPO allocation opens with its `*SPO:*` number.
+        assert f"{_row_block(qty=7, po_date='2026-08-20', number='SPO-2026/09-0001', label='SPO')}" in block
 
     def test_spo_parts_are_omitted_when_null(self) -> None:
         block = self._block([_po_row(7, None, po_number="SPO-1", po_date=None, location=None, kind="spo")])
-        assert f"but stock is on order from the supplier:\n{_row_block(qty=7, po_date=None, location=None)}" in block
-        assert "dated" not in block and "expected" not in block and "SPO-1" not in block
+        assert f"{_row_block(qty=7, po_date=None, location=None, number='SPO-1', label='SPO')}" in block
+        assert "dated" not in block and "expected" not in block
         assert "PO date" not in block and "Location" not in block
 
     def test_a_mixed_set_keeps_the_po_header_and_lines_follow_one_another(self) -> None:
@@ -551,16 +548,15 @@ class TestItem5UnshippedSPOIsOnOrderFromTheSupplier:
             _po_row(7, "2026-10-05", po_number="SPO-9", po_date="2026-08-20", kind="spo"),
         ])
         expected = (
-            f"but PO is placed:\n{_row_block(qty=50)}\n\n{_row_block(qty=7, po_date='2026-08-20')}"
+            f"{_row_block(qty=50)}\n{_row_block(qty=7, po_date='2026-08-20', number='SPO-9', label='SPO')}"
         )
         assert expected in block
-        assert "SPO-9" not in block and "PO-1001" not in block
 
     def test_a_row_with_no_kind_is_read_as_a_po(self) -> None:
         """An older envelope (no `kind` field at all, top-level or rendered) is today's
         PO row."""
         block = self._block([_po_row(50, "2026-07-01", kind=None)])
-        assert f"but PO is placed:\n{_row_block(qty=50)}" in block
+        assert f"{_row_block(qty=50)}" in block
 
 
 class TestOwner11SepTheRungRendersStructuredFieldsPerRow:
@@ -585,23 +581,21 @@ class TestOwner11SepTheRungRendersStructuredFieldsPerRow:
             _po_row(9, "2026-09-01", po_number="PO-2002", po_date="2026-09-01"),
         ])
         expected_rows = _row_block(qty=30, po_date="2026-08-10")
-        expected_rows_2 = _row_block(qty=9, po_date="2026-09-01")
-        assert f"{expected_rows}\n\n{expected_rows_2}" in block
-        # exactly one blank line between them, not two, not zero
-        assert f"{expected_rows}\n\n\n{expected_rows_2}" not in block
-        assert f"{expected_rows}\n{expected_rows_2}" not in block
+        expected_rows_2 = _row_block(qty=9, po_date="2026-09-01", number="PO-2002")
+        # Card v4: no blank line inside a code's block.
+        assert f"{expected_rows}\n{expected_rows_2}" in block
 
     def test_a_null_po_date_omits_the_po_date_line_only(self) -> None:
         block = self._block([_po_row(30, "2026-08-10", po_date=None)])
-        assert "but PO is placed:\n" + _row_block(qty=30, po_date=None) in block
+        assert "" + _row_block(qty=30, po_date=None) in block
         assert "PO date" not in block
         # the other lines still print
-        assert "*Product Code:*" in block and "*Ordered:* 30" in block and "*Outstanding:* 30" in block
+        assert "*Ordered:* 30" in block and "*Outstanding:* 30" in block
         assert "*Location:*" in block  # location still defaults, only po_date is null here
 
     def test_a_null_location_omits_the_location_line_only(self) -> None:
         block = self._block([_po_row(30, "2026-08-10", location=None)])
-        assert "but PO is placed:\n" + _row_block(qty=30, location=None) in block
+        assert "" + _row_block(qty=30, location=None) in block
         assert "Location" not in block
         assert "*PO date:*" in block  # po_date still defaults, only location is null here
 
@@ -611,9 +605,8 @@ class TestOwner11SepTheRungRendersStructuredFieldsPerRow:
             _po_row(3, "2026-10-06", po_number="SPO-10", po_date="2026-08-21", kind="spo"),
         ]
         block = self._block(rows)
-        assert "but stock is on order from the supplier:" in block
-        assert "but PO is placed" not in block
-        assert "Source" not in block and "SPO-9" not in block and "SPO-10" not in block
+        assert "*SPO:* SPO-9" in block and "*SPO:* SPO-10" in block
+        assert "Source" not in block
 
     def test_a_mixed_po_and_spo_probe_yields_but_po_is_placed(self) -> None:
         rows = [
@@ -621,8 +614,7 @@ class TestOwner11SepTheRungRendersStructuredFieldsPerRow:
             _po_row(7, "2026-10-05", po_number="SPO-9", po_date="2026-08-20", kind="spo"),
         ]
         block = self._block(rows)
-        assert "but PO is placed:" in block
-        assert "but stock is on order from the supplier" not in block
+        assert "*PO:* PO-1001" in block and "*SPO:* SPO-9" in block
 
     def test_ordered_qty_none_omits_the_ordered_line_only(self) -> None:
         """Reviewer fix round (11 Sep 2026): `Ordered:` follows the SAME null rule as
@@ -640,7 +632,7 @@ class TestOwner11SepTheRungRendersStructuredFieldsPerRow:
         }
         block = self._block([item])
         assert (
-            "*Product Code:* SRTWC8517\n*Outstanding:* 30\n*PO date:* 2026-08-10\n*Location:* KL-WH"
+            "*Outstanding:* 30\n*PO date:* 2026-08-10\n*Location:* KL-WH"
         ) in block
         assert "Ordered" not in block
 
@@ -660,8 +652,7 @@ class TestOwner12SepBoldRungLabels:
             "po_date": "2026-08-10", "location": "BRW",
         }
         assert _crossdomain_rung_text([row]) == (
-            "*Product Code:* SRTWC191-G3\n*Ordered:* 30\n*Outstanding:* 30\n"
-            "*PO date:* 2026-08-10\n*Location:* BRW"
+            "*Ordered:* 30\n*Outstanding:* 30\n*PO date:* 2026-08-10\n*Location:* BRW"
         )
 
     def test_omitted_fields_never_print_a_placeholder_line(self) -> None:
@@ -671,19 +662,16 @@ class TestOwner12SepBoldRungLabels:
             "product_code": "X", "ordered_qty": None, "qty": "N",
             "po_date": None, "location": None,
         }
-        assert _crossdomain_rung_text([row]) == "*Product Code:* X\n*Outstanding:* N"
+        assert _crossdomain_rung_text([row]) == "*Outstanding:* N"
 
-    def test_two_rows_are_joined_by_exactly_one_blank_line(self) -> None:
+    def test_two_rows_follow_one_another_with_no_blank_line(self) -> None:
         from app.services.chatbot.lanes.business.answer import _crossdomain_rung_text
 
         row_a = {"product_code": "A", "ordered_qty": 1, "qty": 1, "po_date": None, "location": None}
         row_b = {"product_code": "B", "ordered_qty": 2, "qty": 2, "po_date": None, "location": None}
         text = _crossdomain_rung_text([row_a, row_b])
-        assert text == (
-            "*Product Code:* A\n*Ordered:* 1\n*Outstanding:* 1\n\n"
-            "*Product Code:* B\n*Ordered:* 2\n*Outstanding:* 2"
-        )
-        assert "\n\n\n" not in text
+        assert text == "*Ordered:* 1\n*Outstanding:* 1\n*Ordered:* 2\n*Outstanding:* 2"
+        assert "\n\n" not in text
 
 
 class TestThePORungGrantKey:
@@ -748,14 +736,14 @@ class TestD11LinesFollowOneAnotherInToolOrder:
         # 202607-S0054 share product, location and PO date, so they print as ONE row
         # summed (42 + 12 + 3) at the first line's position; the SPO stays its own row.
         assert block == (
-            "No stock and no incoming for SRTWC8517, but PO is placed:\n"
-            + "\n\n".join([
-                _row_block(qty=57, po_date="2026-07-17"),
-                _row_block(qty=7, po_date="2026-08-20"),
+            "*Product Code:* SRTWC8517\n*Stock:* none\n*Incoming:* none\n"
+            + "\n".join([
+                # Owner ruling 4 Oct 2026: rows on one PO (same number, date, location)
+                # are one block with the quantities summed (42 + 12 + 3).
+                _row_block(qty=57, po_date="2026-07-17", number="202607-S0054"),
+                _row_block(qty=7, po_date="2026-08-20", number="SPO-9", label="SPO"),
             ])
         )
-        assert "202607-S0054" not in block
-        assert "SPO-9" not in block
         assert "pcs" not in block and "expected" not in block
 
 
@@ -775,7 +763,7 @@ class TestD7AnIncomingAskClimbsToThePORung:
         assert [name for name, _ in calls] == [_STOCK_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]["block"]
         assert block.startswith(
-            f"No incoming and no stock for SRTWC8517, but PO is placed:\n{_row_block(qty=42, po_date='2026-07-17')}"
+            f"*Product Code:* SRTWC8517\n*Incoming:* none\n*Stock:* none\n{_row_block(qty=42, po_date='2026-07-17', number='202607-S0054')}"
         )
         assert result["render"]["_xdBlock"]["team"] == "purchasing"
         assert _composed_text(result).count("Would you like me to escalate") == 1
@@ -788,7 +776,10 @@ class TestD7AnIncomingAskClimbsToThePORung:
             parser=_INCOMING_PARSER,
         )
         assert [name for name, _ in calls] == [_STOCK_TOOL, _PO_TOOL]
-        assert "No incoming, no stock and nothing on order for SRTWC8517." in result["render"]["_xdBlock"]["block"]
+        assert (
+            "*Product Code:* SRTWC8517\n*Incoming:* none\n*Stock:* none\n*PO:* none"
+            in result["render"]["_xdBlock"]["block"]
+        )
 
     def test_from_incoming_the_spo_header_variant_holds(self) -> None:
         result, _ = _run(
@@ -797,7 +788,10 @@ class TestD7AnIncomingAskClimbsToThePORung:
             po_response={"answers": [_po_row(7, "2026-10-05", po_number="SPO-9", po_date="2026-08-20", kind="spo")], "has_result": True},
             parser=_INCOMING_PARSER,
         )
-        assert "No incoming and no stock for SRTWC8517, but stock is on order from the supplier:" in result["render"]["_xdBlock"]["block"]
+        assert (
+            "*Product Code:* SRTWC8517\n*Incoming:* none\n*Stock:* none\n"
+            in result["render"]["_xdBlock"]["block"]
+        )
 
     def test_from_incoming_without_the_grant_no_probe_and_the_ladder_off_note(self) -> None:
         result, calls = _run(
@@ -808,7 +802,10 @@ class TestD7AnIncomingAskClimbsToThePORung:
             granted=[],
         )
         assert [name for name, _ in calls] == [_STOCK_TOOL]
-        assert "No incoming and no stock for SRTWC8517." in result["render"]["_xdBlock"]["block"]
+        assert (
+            "*Product Code:* SRTWC8517\n*Incoming:* none\n*Stock:* none"
+            in result["render"]["_xdBlock"]["block"]
+        )
         assert "PO" not in result["render"]["_xdBlock"]["block"]
 
     def test_the_489_ladder_still_stops_at_stock_from_incoming(self) -> None:
@@ -827,7 +824,10 @@ class TestD7AnIncomingAskClimbsToThePORung:
             incoming_response={"answers": [], "has_result": False},
             po_response={"answers": [], "has_result": False},
         )
-        assert "No stock, no incoming and nothing on order for SRTWC8517." in result["render"]["_xdBlock"]["block"]
+        assert (
+            "*Product Code:* SRTWC8517\n*Stock:* none\n*Incoming:* none\n*PO:* none"
+            in result["render"]["_xdBlock"]["block"]
+        )
 
 
 _RESOLVED_PREFIX_FAMILY = {
@@ -936,10 +936,9 @@ class TestOwner12SepTypedPrefixEndToEndClimbsToThePORung:
         )
         assert [name for name, _ in calls] == [_STOCK_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]["block"]
-        assert "No incoming and no stock for SRTWT6236-GY, but PO is placed:" in block
         assert (
-            "but PO is placed:\n"
-            + _row_block(code="SRTWT6236-GY", qty=99, po_date="2026-08-01", location="BRW")
+            "*Product Code:* SRTWT6236-GY\n*Incoming:* none\n*Stock:* none\n"
+            + _row_block(code="SRTWT6236-GY", qty=99, po_date="2026-08-01", location="BRW", number="202607-S0034")
         ) in block
         assert result["render"]["_xdBlock"]["team"] == "purchasing"
 
@@ -1029,11 +1028,9 @@ class TestOwner11SepZeroEverywhereClimbs:
         )
         assert [name for name, _ in calls] == [_STOCK_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]["block"]
-        assert "But here are the stock details for the requested products:" in block
-        assert block.count("*Quantity On Hand:* 0") == 2
         assert (
-            f"No incoming and stock is 0 at every location for SRTWC8517, but PO is placed:\n{_row_block(qty=50)}"
-        ) in block
+            f"*Product Code:* SRTWC8517\n*Incoming:* none\n*Stock:* 0\n{_row_block(qty=50)}"
+        ) == block
         assert result["render"]["_xdBlock"]["zero_codes"] == ["SRTWC8517"]
         assert "SRTWC8517" in result["render"]["_xdBlock"]["nothing_codes"]
         assert result["render"]["_xdBlock"]["rung"] == "purchase_order"
@@ -1050,7 +1047,7 @@ class TestOwner11SepZeroEverywhereClimbs:
         )
         assert [name for name, _ in calls] == [_STOCK_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]["block"]
-        assert "No incoming, stock is 0 at every location and nothing on order for SRTWC8517." in block
+        assert block == "*Product Code:* SRTWC8517\n*Incoming:* none\n*Stock:* 0\n*PO:* none"
 
     def test_incoming_origin_one_nonzero_row_is_not_zero_and_skips_the_rung(self) -> None:
         """A code with at least one non-zero row is genuinely "found" - unchanged from
@@ -1065,9 +1062,9 @@ class TestOwner11SepZeroEverywhereClimbs:
         )
         assert [name for name, _ in calls] == [_STOCK_TOOL]
         block = result["render"]["_xdBlock"]["block"]
-        assert "stock is 0" not in block.lower()
-        assert "but PO is placed" not in block
-        assert "But here are the stock details for the requested products:" in block
+        assert "*Stock:* 0" not in block
+        assert "*PO:*" not in block
+        assert "*Quantity On Hand:* 5" in block
 
     def test_incoming_origin_zero_stock_no_ladder_stays_at_first_probe_note(self) -> None:
         result, calls = _run(
@@ -1079,8 +1076,7 @@ class TestOwner11SepZeroEverywhereClimbs:
         )
         assert [name for name, _ in calls] == [_STOCK_TOOL]
         block = result["render"]["_xdBlock"]["block"]
-        assert "No incoming and stock is 0 at every location for SRTWC8517." in block
-        assert "but PO is placed" not in block
+        assert block == "*Product Code:* SRTWC8517\n*Incoming:* none\n*Stock:* 0"
 
     def test_incoming_origin_zero_stock_grant_missing_stays_at_first_probe_note(self) -> None:
         result, calls = _run(
@@ -1094,8 +1090,7 @@ class TestOwner11SepZeroEverywhereClimbs:
         )
         assert [name for name, _ in calls] == [_STOCK_TOOL]  # the rung is gated off
         block = result["render"]["_xdBlock"]["block"]
-        assert "No incoming and stock is 0 at every location for SRTWC8517." in block
-        assert "but PO is placed" not in block
+        assert block == "*Product Code:* SRTWC8517\n*Incoming:* none\n*Stock:* 0"
 
     def test_incoming_origin_plain_nothing_and_zero_group_order(self) -> None:
         """Two codes: CODE-A has no stock rows at all (plain nothing), CODE-B has two
@@ -1150,10 +1145,11 @@ class TestOwner11SepZeroEverywhereClimbs:
             granted=GRANTED,
         )
         block = result["render"]["_xdBlock"]["block"]
-        plain_part = f"No incoming and no stock for CODE-A, but PO is placed:\n{_row_block(code='CODE-A', qty=10)}"
+        plain_part = (
+            f"*Product Code:* CODE-A\n*Incoming:* none\n*Stock:* none\n{_row_block(qty=10, number='PO-A')}"
+        )
         zero_part = (
-            f"No incoming and stock is 0 at every location for CODE-B, but PO is placed:\n"
-            f"{_row_block(code='CODE-B', qty=20)}"
+            f"*Product Code:* CODE-B\n*Incoming:* none\n*Stock:* 0\n{_row_block(qty=20, number='PO-B')}"
         )
         assert plain_part in block
         assert zero_part in block
@@ -1217,9 +1213,8 @@ class TestOwner11SepZeroEverywhereClimbs:
         assert [name for name, _ in calls] == [_INCOMING_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]["block"]
         assert (
-            f"Stock is 0 at every location and no incoming for SRTWC8517, but PO is placed:\n{_row_block(qty=50)}"
-        ) in block
-        assert "No stock for SRTWC8517." not in block
+            f"*Product Code:* SRTWC8517\n*Stock:* 0\n*Incoming:* none\n{_row_block(qty=50)}"
+        ) == block
         assert result["render"]["_xdBlock"]["zero_codes"] == ["SRTWC8517"]
 
     def test_stock_origin_zero_stock_rung_answers_nothing(self) -> None:
@@ -1236,7 +1231,7 @@ class TestOwner11SepZeroEverywhereClimbs:
         )
         assert [name for name, _ in calls] == [_INCOMING_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]["block"]
-        assert "Stock is 0 at every location, no incoming and nothing on order for SRTWC8517." in block
+        assert block == "*Product Code:* SRTWC8517\n*Stock:* 0\n*Incoming:* none\n*PO:* none"
 
     def test_stock_origin_zero_but_incoming_answers_no_po_probe(self) -> None:
         """The other side has real rows (an ETA) - render them as today, no zero sentence,
@@ -1256,8 +1251,7 @@ class TestOwner11SepZeroEverywhereClimbs:
         )
         assert _PO_TOOL not in [name for name, _ in calls]
         block = result["render"]["_xdBlock"]["block"]
-        assert "But there is INCOMING stock (ETA) for the requested products:" in block
-        assert "2026-09-15" in block
+        assert block == "*Product Code:* SRTWC8517\n*Stock:* 0\n*ETA:* 2026-09-15"
 
 
 class TestOwner11SepFixRoundGrantedValueRendersOverValue:
@@ -1340,7 +1334,7 @@ class TestOwner11SepFixRoundCompactZeroDetection:
         )
         assert [name for name, _ in calls] == [_STOCK_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]["block"]
-        assert "No incoming and stock is 0 at every location for SRTWC8517, but PO is placed:" in block
+        assert "*Product Code:* SRTWC8517\n*Incoming:* none\n*Stock:* 0\n*PO:* PO-1001" in block
 
 
 class TestOwner11SepFixRoundZeroEntryPrefixFamilyLookup:
@@ -1377,9 +1371,8 @@ class TestOwner11SepFixRoundZeroEntryPrefixFamilyLookup:
         assert [name for name, _ in calls] == [_INCOMING_TOOL]
         block = result["render"]["_xdBlock"]["block"]
         assert "2026-09-15" in block
-        assert "stock is 0" not in block.lower()
-        assert "but PO is placed" not in block
-        assert "No stock for SRTWC8517." not in block
+        assert "*PO:*" not in block
+        assert "*Stock:* 0" in block
 
 
 class TestACEQ5To10StockOriginStaysWarehouse:
@@ -1400,7 +1393,7 @@ class TestACEQ5To10StockOriginStaysWarehouse:
         )
         assert [name for name, _ in calls] == [_INCOMING_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]
-        assert "but PO is placed" in block["block"]
+        assert "*PO:* PO-1001" in block["block"]
         assert block["team"] == "warehouse"
         assert "escalate to warehouse team?" in _composed_text(result)
 
@@ -1412,7 +1405,7 @@ class TestACEQ5To10StockOriginStaysWarehouse:
         )
         assert [name for name, _ in calls] == [_INCOMING_TOOL, _PO_TOOL]
         block = result["render"]["_xdBlock"]
-        assert "but PO is placed" in block["block"]
+        assert "*PO:* PO-1001" in block["block"]
         assert block["team"] == "warehouse"
 
     def test_ac_eq_7_no_stock_incoming_found_no_po_stays_warehouse(self) -> None:
@@ -1463,5 +1456,5 @@ class TestACEQ5To10StockOriginStaysWarehouse:
             po_response={"answers": [_po_row(50, "2026-07-01")], "has_result": True},
         )
         block = result["render"]["_xdBlock"]
-        assert f"but PO is placed:\n{_row_block(qty=50)}" in block["block"]
+        assert f"{_row_block(qty=50)}" in block["block"]
         assert block["team"] == "warehouse"

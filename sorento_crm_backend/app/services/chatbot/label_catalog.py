@@ -36,6 +36,12 @@ LABELS: dict[str, dict[str, str]] = {
     "System Location": {"ms": "Lokasi Sistem", "zh": "系统位置"},
     "Quantity On Hand": {"ms": "Kuantiti Ada", "zh": "现有数量"},
     "Outstanding": {"ms": "Tertunggak", "zh": "未交货"},
+    # The card block lines of a zero-stock reply (`*Incoming:* none`, `*Stock:* 0`, `*PO:* <no>`).
+    "Incoming": {"ms": "Barang masuk", "zh": "到货"},
+    "Stock": {"ms": "Stok", "zh": "库存"},
+    "PO": {"ms": "PO", "zh": "PO"},
+    "SPO": {"ms": "SPO", "zh": "SPO"},
+    "none": {"ms": "tiada", "zh": "无"},
     "Total": {"ms": "Jumlah", "zh": "总数"},
     "Stock summary for the requested products.": {
         "ms": "Ringkasan stok untuk produk yang diminta.",
@@ -84,9 +90,9 @@ LABELS: dict[str, dict[str, str]] = {
     # state too; the bare "ETA {eta}." row it replaces is printed by nothing now.
     "No stock, ETA {eta}.": {"ms": "Tiada stok, ETA {eta}.", "zh": "没有库存，ETA {eta}。"},
     "No ETA": {"ms": "Tiada ETA", "zh": "暂无 ETA"},
-    "Data last updated: {ts}": {
-        "ms": "Data dikemas kini: {ts}",
-        "zh": "数据更新时间: {ts}",
+    "Updated {ts}": {
+        "ms": "Dikemas kini {ts}",
+        "zh": "更新时间 {ts}",
     },
     "No stock found for {codes}.": {
         "ms": "Tiada stok ditemui untuk {codes}.",
@@ -504,18 +510,31 @@ FIELD_KEYS: dict[str, str] = {
     "unallocated_quantity": "Unallocated Quantity",
 }
 
-FOOTER = "Data last updated: {ts}"
+FOOTER = "Updated {ts}"
 
 
 
 def footer_leads(localizer: Any = None) -> tuple[str, ...]:
-    """The footer's lead-in ("Data last updated:") in every language, for the text matchers
+    """The footer's lead-in ("Updated") in every language, for the text matchers
     that must recognise it wherever it prints. `localizer` adds its own (staff-edited) wording."""
     texts = [FOOTER, *(LABELS[FOOTER][lang] for lang in LANGUAGES if lang != "en")]
     if localizer is not None and FOOTER in localizer.table:
         texts.append(localizer.table[FOOTER])
     leads = (t.split("{ts}")[0].rstrip() for t in texts)
     return tuple(dict.fromkeys(lead for lead in leads if lead))
+
+
+def label_words(*english: str, localizer: Any = None) -> tuple[str, ...]:
+    """Each English label with its catalog translations, for matchers that must recognise
+    a card label in whichever language printed it. `localizer` adds its own (staff-edited)
+    wording of the same labels."""
+    out: list[str] = []
+    for word in english:
+        out.append(word)
+        out.extend(LABELS.get(word, {}).get(lang, "") for lang in LANGUAGES if lang != "en")
+        if localizer is not None:
+            out.append(localizer.table.get(word, ""))
+    return tuple(dict.fromkeys(w for w in out if w))
 
 
 def refer_sentences(localizer: Any = None) -> tuple[str, ...]:
@@ -728,6 +747,9 @@ DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."}) | _SUB_AS
 #: Report value words `Localizer.lines` translates after a catalogued label. An explicit set, never
 #: "any catalog key", so data that happens to read like a label (a status named "Status") is safe.
 VALUE_WORDS = frozenset({"all", "Amount", "Quantity", "Ordered", "Delivered (transferred to DO)"})
+#: The card block labels after which the standalone value `none` is translated; on any other label
+#: `none` is data and stays.
+NONE_LABELS = frozenset({"Incoming", "Stock", "PO", "SPO"})
 RANGE = "{from} to {to}"
 #: A `{token}` matches at most this many characters of one line, and a line longer than
 #: `_INLINE_LINE_MAX` gets `lines()` only (the inline pass is skipped for it).
@@ -900,8 +922,13 @@ class Localizer:
             if not rest.startswith(left):
                 continue
             head, found, value = rest[len(left) :].partition(sep)
-            if not found or head not in self.table or head in DIRECT_ONLY or _BREAKDOWN_VALUE.match(value):
+            # A card block label (`*Incoming:* none`) translates even where the same word is
+            # DIRECT_ONLY as running text (the per-ask runner fills it by key).
+            direct = head in DIRECT_ONLY and head not in NONE_LABELS
+            if not found or head not in self.table or direct or _BREAKDOWN_VALUE.match(value):
                 continue  # a breakdown row (`5 (O/S: 2)`) whose name collides with a label is data
+            if value == "none" and head in NONE_LABELS and "none" in self.table:
+                value = self.table["none"]
             return prefix + left + self.table[head] + sep + self._value(value)
         return line
 

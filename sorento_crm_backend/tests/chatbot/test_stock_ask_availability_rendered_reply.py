@@ -250,4 +250,4 @@ def test_compact_reply_keeps_its_footer_r10():
 
     out = fetch.output_structurer(envelope, {"semantic_input": {}})
 
-    assert "Data last updated" in out["response"]
+    assert "_Updated 24/08/2026 18:00_" in out["response"]

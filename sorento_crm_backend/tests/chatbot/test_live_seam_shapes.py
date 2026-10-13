@@ -259,7 +259,7 @@ class TestCrossDomainProbeCrossesTheRealSeam:
         )
 
         block = ((out.get("render") or {}).get("_xdBlock") or {}).get("block") or ""
-        assert "No stock and no incoming for MSK11A-QT" in block, (
+        assert "*Product Code:* MSK11A-QT\n*Stock:* none\n*Incoming:* none" in block, (
             "the probe answered as a string and the render degraded to no_envelope, so "
             f"the code with nothing on either side went unmentioned: {block!r}"
         )

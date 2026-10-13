@@ -964,8 +964,7 @@ class TestPickPathZeroStockLadderClimbsAfterADidYouMeanPick:
             f"probe_calls={probe_calls!r}"
         )
 
-        assert "no incoming" in said.lower(), said
-        assert "nothing on order" in said.lower(), said
+        assert "*stock:* 0\n*incoming:* none\n*po:* none" in said.lower(), said
         assert self.OPTION_A_CODE in said, said
         # Owner ruling 22 Sep 2026, R6 (AC-EQ-5): a stock-origin ask stays warehouse
         # even after climbing the full ladder to the PO rung.

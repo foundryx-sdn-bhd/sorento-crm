@@ -14,6 +14,7 @@ regex over customer text.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -594,7 +595,8 @@ def _one_sided_line_fixtures() -> list:
 
 
 class TestCrossdomainRenderBlockIsByteEqualMinusTheOneSidedLine:
-    """AC-820 prefixes the block with the primary domain's own miss ("No stock for
+    """Card v4 (WA-CONCISE) replaced the byte-equality below with a values-survive check;
+    the history that follows explains why the captures are replayed at all. AC-820 prefixes the block with the primary domain's own miss ("No stock for
     MWB7626."), so six captures are registered field-scoped on `_xdBlock.block` - and
     `block` is where everything these captures exist to grade lives (the ETA sort of
     exec-14126915, the multi-company silent note, the discontinued flag). A strip would
@@ -634,58 +636,20 @@ class TestCrossdomainRenderBlockIsByteEqualMinusTheOneSidedLine:
         got = xdblock.get("block") or ""
         want = ((expected[0].get("json") or {}).get("_xdBlock") or {}).get("block") or ""
 
-        head, sep, rest_minus_head = got.partition("\n\n")
-        is_ac820_line = bool(
-            sep
-            and (head.startswith("No stock for ") or head.startswith("No incoming for "))
-            and head.endswith(".")
-        )
-        zero_codes = xdblock.get("zero_codes") or []
-
-        # Nit 14: present iff this capture's code did NOT climb for reading 0 everywhere.
-        if zero_codes:
-            assert not is_ac820_line, (
-                f"a zero-flagged capture must not ALSO carry the AC-820 line; got {head!r}"
-            )
-            rest = got
-        else:
-            assert is_ac820_line, (
-                f"the AC-820 line is the ONLY expected difference; got {head!r}"
-            )
-            rest = rest_minus_head
-
-        # R2: `_xdBlock.zero_codes` names which of this capture's codes climbed for
-        # reading 0 everywhere - the very list `crossdomain_render` derived via
-        # `answer._rows_all_zero`, never re-derived or hard-coded here.
-        for code in zero_codes:
-            zero_sentence = (
-                f"No incoming and stock is 0 at every location for {code}."
-                if xdblock.get("origin") == "incoming"
-                else f"Stock is 0 at every location and no incoming for {code}."
-            )
-            assert rest.endswith(zero_sentence), (
-                "a capture whose probed rows are all 0 must also carry the zero-climb "
-                f"sentence (divergences.CROSSDOMAIN_ZERO_EVERYWHERE_CLIMBS); got {rest!r}"
-            )
-            rest = rest[: -len(zero_sentence)]
-            if rest.endswith("\n\n"):
-                rest = rest[:-2]
-
-        # D2 (12 Sep 2026, finding 2): the CAPTURED n8n block may still end with the
-        # phantom "I have attached the file(s) below." sentence - CRM no longer renders
-        # it at all (`crossdomain_render`'s own `mention` retired), so it is stripped
-        # from `want` here rather than the CRM side. Same mechanism as the two strips
-        # above, just on the other side of the comparison; unconditional on content,
-        # never on the fixture id, so any capture with this trailing sentence is graded
-        # the same way.
-        _RETIRED_ATTACHMENT_SENTENCE = "\n\nI have attached the file(s) below."
-        if want.endswith(_RETIRED_ATTACHMENT_SENTENCE):
-            want = want[: -len(_RETIRED_ATTACHMENT_SENTENCE)]
-
-        assert rest == want, (
-            "with the known sentence(s) removed the block must still be byte-equal to the "
-            f"capture:\n{rest!r}\n{want!r}"
-        )
+        # WA-CONCISE card v4 retires byte equality with the n8n block: a code is now ONE
+        # `*Product Code:*` block (its absence lines inline, rows merged), and the lead
+        # sentences are gone. What the capture exists to grade survives - every product
+        # code, container and ETA it carries still reaches the customer - and none of the
+        # old sentences does.
+        for code in set(re.findall(r"\*Product Code:\* (\S+)", want)):
+            assert code in got, (code, got)
+        for value in re.findall(r"\*(?:Container|ETA):\* (\S+)", want):
+            assert value in got, (value, got)
+        for gone in (
+            "But there is INCOMING stock", "But here are the stock details",
+            "No stock for ", "No incoming for ", "stock is 0 at every location",
+        ):
+            assert gone not in got, (gone, got)
 
     def test_the_eta_only_no_quantity_capture_is_among_them(self) -> None:
         """The property the old single-fixture test pinned: exec-14126915's rows carry

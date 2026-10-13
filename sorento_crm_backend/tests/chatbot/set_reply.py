@@ -13,7 +13,7 @@ import re
 _FILTER_RE = re.compile(r"^\*([^*]+):\* (.+)$")
 _ROW_RE = re.compile(r"^(\d+)\. (?:(.+) \((\S+)\)|(\S+))(?: \*\(Discontinued\)\*)?$")
 #: Round 8 on PR #833: a set row IS the product-code row ("1. *Product Code:* GB3006C").
-_CODE_ROW_RE = re.compile(r"^(\d+)\. \*Product Code:\* (\S+)")
+_CODE_ROW_RE = re.compile(r"^(?:(\d+)\. )?\*Product Code:\* (\S+)")
 
 
 def legacy_lines(text: str) -> list[str]:

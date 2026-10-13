@@ -518,13 +518,11 @@ class TestIncomingMissAfterAPickUsesTheStockFallbackLadder:
             f"no-incoming family member with the bare generic miss followed only by "
             f"the raw stock summary, dropping the breakdown/ladder entirely: {reply2!r}"
         )
-        assert "But no incoming matched these." in reply2, reply2
-        assert f"No incoming for {no_code}." in reply2, reply2
-        assert "But here are the stock details for the requested products:" in reply2, reply2
-        assert "Would you like me to escalate to purchasing team?" in reply2, reply2
-        assert f"• product: {no_code}" in reply2, (
-            f"D4: the breakdown bullet must name the PICKED product: {reply2!r}"
-        )
+        # Card v4: one block for the picked product, then the locked offer.
+        assert reply2 == (
+            f"*Product Code:* {no_code}\n*Incoming:* none\n*Quantity On Hand:* -"
+            "\n\nWould you like me to escalate to purchasing team?"
+        ), reply2
 
     def test_picking_a_has_incoming_family_member_still_works_control(
         self, session_factory, monkeypatch

@@ -754,7 +754,7 @@ class TestMultiDomainPickFetchesEveryNamedDomain:
             f"must keep every domain the original ask named: calls={calls2!r} "
             f"reply={reply2!r} open_question after the pick={domains_asked!r}"
         )
-        assert "Here are the orders I found." in reply2, reply2
+        assert "ZZT-HANLIM-ORD-1" in reply2, reply2
 
 
 # --------------------------------------------------------------------------- #

@@ -174,7 +174,8 @@ def _assert_sent_drawing_of(chat, world, reply: str, code: str) -> None:
     assert last.get("product_ids") == [world["products"][code].id], chat.calls
     assert last.get("attachment_type_ids") == [world["drawing"].id], last
     # The same format as T1: the files, no ask, no extra wording.
-    assert reply.startswith("I have attached the file(s) below."), reply
+    # WA-CONCISE card v4: the attached line closes the block.
+    assert reply.rstrip().endswith("I have attached the file(s) below."), reply
     assert f"{code}-td.pdf" in reply and "attachment type for" not in reply, reply
 
 

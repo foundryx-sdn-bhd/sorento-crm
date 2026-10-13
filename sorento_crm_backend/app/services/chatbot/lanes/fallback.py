@@ -3,13 +3,13 @@
 A reply to a message the bot cannot answer from data is
 
     reply = ack            one human sentence, the clarifier's (the ONLY LLM-written part)
-          + memory_line    optional, deterministic: from conversations, facts, the CRM link
-          + offer          the concrete next thing: a numbered choice, a re-run, a person
+          + lead + offer   deterministic: a history list or a noted fact, then the concrete
+                           next thing: a numbered choice, a person
 
 Everything here is pure: the engine reads the database (`engine._fallback_context`), the
-clarifier answers, and `compose` puts the three halves together from the canned copy.
+clarifier answers, and `compose` puts the parts together from the canned copy.
 
-**The guard (AC-MEM081).** Facts reach the dealer only through `memory_line` and the
+**The guard (AC-MEM081).** Facts reach the dealer only through the lead line and the
 composers, which read data. An ack that names a figure, a product-code-shaped token, a
 price or a date its own input never had is replaced by the canned ack for the language,
 so a model that "helpfully" invents "25 units at RM12.50" never reaches WhatsApp.
@@ -188,8 +188,8 @@ def _noted_lines(fb: FallbackContext, copy: Any, lang: str) -> list[str]:
     return [line for line in out if not (line in seen or seen.add(line))]
 
 
-def memory_line_and_offer(fb: FallbackContext, copy: Any, lang: str) -> tuple[str, str]:
-    """The deterministic halves of the reply. Nothing here reads a figure."""
+def lead_and_offer(fb: FallbackContext, copy: Any, lang: str) -> tuple[str, str]:
+    """The deterministic halves of the reply (lead line, offer). Nothing here reads a figure."""
     if fb.kind == "history":
         if not fb.history:
             return copy.render_in("history_nothing", lang), copy.render_in("fallback_offer", lang)
@@ -203,20 +203,17 @@ def memory_line_and_offer(fb: FallbackContext, copy: Any, lang: str) -> tuple[st
     if fb.kind == "unknown" and fb.customer and fb.team:
         return "", copy.render_in("fallback_offer_customer", lang, customer=fb.customer, team=fb.team)
 
-    memory_line = copy.render_in("fallback_last_time", lang, summary=fb.last_time) if fb.last_time else ""
     if fb.usual_products:
         products = " or ".join(fb.usual_products[:2]) if lang == "en" else ", ".join(fb.usual_products[:2])
         if fb.usual_site:
             offer = copy.render_in("fallback_offer_usual_site", lang, site=fb.usual_site, products=products)
         else:
             offer = copy.render_in("fallback_offer_usual", lang, products=products)
-    elif memory_line:
-        offer = copy.render_in("fallback_offer_rerun", lang)
     else:
         offer = copy.render_in("fallback_offer", lang)
-    return memory_line, offer
+    return "", offer
 
 
 def compose(ack: str, fb: FallbackContext, copy: Any, lang: str) -> str:
-    memory_line, offer = memory_line_and_offer(fb, copy, lang)
-    return _join([ack, memory_line, offer])
+    lead, offer = lead_and_offer(fb, copy, lang)
+    return _join([ack, lead, offer])

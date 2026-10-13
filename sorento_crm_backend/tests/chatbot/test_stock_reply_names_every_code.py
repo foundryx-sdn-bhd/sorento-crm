@@ -52,7 +52,7 @@ def _envelope(
         else "No matching results found."
     )
     if footer:
-        lane_text += "\n\n_Data last updated: 1 Oct 2026 10:05_"
+        lane_text += "\n\n_Updated 01/10/2026 10:05_"
     return {
         "domain": "inventory",
         "denied": False,
@@ -181,7 +181,7 @@ def test_more_codes_than_the_header_shows_adds_no_line():
 
 def test_the_line_sits_above_the_data_footer():
     text = _text(_envelope(["SRTSWT3001", "SRTSWT3001-GM"], {"SRTSWT3001-GM": 12}, footer=True))
-    assert text.index("No stock found for SRTSWT3001.") < text.index("_Data last updated")
+    assert text.index("No stock found for SRTSWT3001.") < text.index("_Updated ")
 
 
 # --------------------------------------------------------------------------- #

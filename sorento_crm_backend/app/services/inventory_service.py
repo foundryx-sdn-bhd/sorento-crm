@@ -1526,12 +1526,27 @@ class StockService:
         payload["empty"] = total_products == 0
 
         if policy.mode == "compact":
+            # A reply spanning more than one company names the company on each block
+            # (stamp_lookup_companies only sets `lookup_companies` in that case).
+            company_names = {
+                str(c["id"]): c["name"] for c in payload.get("lookup_companies") or []
+            }
+            name_company = len(company_names) > 1
 
             def _summary_block(pid: str) -> dict:
                 return {
                     "product_id": pid,
                     "product_code": getattr(products_by_id.get(pid), "product_code", None),
                     "product_name": getattr(products_by_id.get(pid), "product_name", None),
+                    **(
+                        {
+                            "company_name": company_names.get(
+                                str(getattr(products_by_id.get(pid), "company_id", None))
+                            )
+                        }
+                        if name_company
+                        else {}
+                    ),
                     # Summed over EVERY allowed location, including the ones the
                     # flag withholds. A withheld line held none of the product, so
                     # the total it fed is the same number either way - and the

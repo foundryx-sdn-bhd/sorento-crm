@@ -1636,6 +1636,16 @@ def _fmt_ts(iso: Any) -> str | None:
     return f"{date} {hour}:{minute}:{second}"
 
 
+def _footer_line(iso: Any, loc: Localizer | None = None) -> str:
+    """`_Updated dd/mm/yyyy HH:MM_` (WA-CONCISE AC-6): `_fmt_ts` less its seconds, the only
+    reformatting this lane allows, worded by the turn localizer. "" when there is no stamp."""
+    ts = _fmt_ts(iso)
+    if not ts:
+        return ""
+    text = f"Updated {ts[:-3] if len(ts) > 10 else ts}"
+    return f"_{(loc or IDENTITY).text(text)}_"
+
+
 # The JS renders an empty value and an object joiner with an EM DASH, and the access note
 # with one too. Written as escapes, not as the character: the repo forbids an em dash in
 # anything WE write, and these are neither ours nor prose - they are three literals from a
@@ -1803,38 +1813,6 @@ def _date_window_phrase(semantic_input: Any) -> str:
     return ""
 
 
-def _names_a_shipment(ctx: dict[str, Any]) -> bool:
-    """A bare container ask ("incoming TIIU6323920") is a timeline ask, not an ETA-only one.
-
-    Evidence: live turn f07632b6-d56d-4036-944c-8200462caac3 - "incoming TIIU6323920" parses
-    to `requested_attributes: []` with entity `{"raw": "TIIU6323920", "hint":
-    "inbound_shipment", "confident": true}`. A question that names a specific container and
-    asks for no particular attribute is a timeline ask: every recorded checkpoint comes out,
-    chronologically, exactly as the `__all__` sentinel does today.
-
-    Checked against the RESOLVED entity list first - `entity_type` is the field
-    `gate.run_gate` stamps and `entity_ids_transformer`'s `TYPE_TO_PARAM` keys on - and only
-    falls back to the parser's own `hint` when the resolved list carries no type at all (the
-    gate ran empty, so there is nothing else to check).
-    """
-    entities = ctx.get("entities") if isinstance(ctx.get("entities"), list) else []
-    typed = [e for e in entities if jsc.truthy(e) and jsc.truthy(jsc.get(e, "entity_type"))]
-    if typed:
-        return any(
-            jsc.js_string(jsc.get(e, "entity_type")).strip() == "inbound_shipment" for e in typed
-        )
-    semantic_input = ctx.get("semantic_input")
-    if isinstance(semantic_input, str):
-        semantic_input = _safe_json(semantic_input)
-    parsed_entities = (
-        jsc.get(semantic_input, "entities") if isinstance(semantic_input, dict) else None
-    )
-    return any(
-        jsc.truthy(e) and jsc.js_string(jsc.get(e, "hint")).strip() == "inbound_shipment"
-        for e in jsc.array(parsed_entities)
-    )
-
-
 #: D12 (owner ruling, 8 Sep 2026, turn 8f4a8526 "SRTJC802A-1500 product details"): the
 #: BASE fields a product answer ALWAYS carries, whatever `requested_attributes` says -
 #: item 8's `_PRODUCT_IDENTITY_LABELS` (Product Code, Company only) meant an asked word
@@ -1868,12 +1846,16 @@ def _normalize_spec_word(v: Any) -> str:
 #: `base_property_words`' KEYS now, read through `Policy` (AC-1535) - which is a superset
 #: of the old literal (also "discontinued" and "brand", the S0 migration's own seed), a
 #: deliberate widening: a "discontinued" ask no longer needs its own miss line either.
-def _names_a_base_property(norm: str) -> bool:
+def _base_property_column(norm: str) -> str | None:
     words = default_policy().kind("product")
-    for w in (words.base_property_words if words is not None else {}):
+    for w, column in (words.base_property_words if words is not None else {}).items():
         if norm == w or (" " in w and w in norm):
-            return True
-    return False
+            return column
+    return None
+
+
+def _names_a_base_property(norm: str) -> bool:
+    return _base_property_column(norm) is not None
 
 
 def _asks_discontinued(req_attrs: list[Any]) -> bool:
@@ -2080,10 +2062,21 @@ def _project_product_specs(
             if isinstance(f, dict) and f.get("label") == "Product Code":
                 code = f.get("value")
                 break
+        # WA-CONCISE AC-19: List Price / Dimensions print only when the ask names them.
+        on_demand = {
+            label: columns
+            # "cost" is a price ask: the customer sees our list price, never a cost price.
+            for label, columns in (
+                ("List Price", ("list_price", "cost_price")),
+                ("Dimensions", ("dimensions",)),
+            )
+            if not any(_base_property_column(norm) in columns for norm, _w in asked)
+        }
         base = [
             f
             for f in fields
             if not (isinstance(f, dict) and jsc.js_string(f.get("key") or "").startswith(_SPEC_KEY_PREFIX))
+            and not (isinstance(f, dict) and f.get("label") in on_demand)
         ]
         # Hidden keys are dropped HERE, before either branch below runs - the
         # "Specs:" summary and the asked-word matching both read `spec_fields`.
@@ -2852,6 +2845,99 @@ def _dmy(value: Any) -> str:
     return f"{parts[2]}/{parts[1]}/{parts[0]}" if len(parts) == 3 else text
 
 
+# WA-CONCISE card v4: a tool's default opener is dropped whenever at least one row prints, for
+# every result type, and a single row prints unnumbered. The portal link opener (no rows) and
+# zero-row replies keep theirs.
+_DROPPED_OPENERS = (
+    "Stock details found for the requested products.",
+    "Stock summary for the requested products.",
+    "Here are the orders I found.",
+    "Here are the delivered orders I found.",
+    "Here are the matching products.",
+    "Here is the incoming stock I found.",
+    "Here are the results.",
+    "Here is the last SPO line per product.",
+    "Here is the PO placed I found.",
+    "Here is the last purchase cost per product and location.",
+    "Here are the incoming shipments I found.",
+    "Here are the matching promotions.",
+    "Here are the certificates I found.",
+    "Here are the matching promotion products.",
+    "Here are the product files I found.",
+    "Here are the documents I found.",
+    "Here are the forms I found.",
+)
+
+
+def compact_stock_block(it: Any) -> Any:
+    """A compact entry with exactly one location line drops its Total (it repeats the
+    location); none or several keep it."""
+    if not isinstance(it, dict) or not isinstance(it.get("fields"), list):
+        return it
+    locs = [f for f in it["fields"] if jsc.get(f, "label") not in ("Company", "Product Code", "Total")]
+    if len(locs) != 1:
+        return it
+    return {**it, "fields": [f for f in it["fields"] if jsc.get(f, "label") != "Total"]}
+
+
+def merge_stock_rows(items: list[Any]) -> list[Any]:
+    """Detailed stock rows merged to one block per (company, product code), first-seen order:
+    Company (only when the rows span more than one), Product Code, Product Name, then one
+    `System Location: quantity` line per row (Warehouse dropped), with a Total ahead of them
+    when the block has more than one location."""
+
+    def fv(it: Any, key: str) -> Any:
+        for f in it.get("fields") or []:
+            if isinstance(f, dict) and f.get("key") == key:
+                return f.get("value")
+        return None
+
+    def num(v: Any) -> int | None:
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
+    rows = [it for it in items if isinstance(it, dict) and isinstance(it.get("fields"), list)]
+    if len(rows) != len(items) or any(fv(it, "system_location") is None for it in rows):
+        return items
+    multi_company = len({fv(it, "company_name") for it in rows if fv(it, "company_name") is not None}) > 1
+    groups: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
+    for it in rows:
+        groups.setdefault((fv(it, "company_name"), fv(it, "product_code")), []).append(it)
+    merged: list[Any] = []
+    for grp in groups.values():
+        keep = ("product_code", "product_name") + (("company_name",) if multi_company else ())
+        fields = [f for f in grp[0]["fields"] if f.get("key") in keep]
+        lines = []
+        for r in grp:
+            qty, os_qty = fv(r, "quantity_on_hand"), fv(r, "open_so_qty")
+            lines.append(
+                {
+                    # A row with no location keeps today's label for its quantity.
+                    "label": (
+                        "Quantity On Hand"
+                        if fv(r, "system_location") == "-"
+                        else jsc.js_string(fv(r, "system_location"))
+                    ),
+                    "value": f"{_fmt_value(qty)} (O/S: {_fmt_value(os_qty)})"
+                    if os_qty is not None
+                    else _fmt_value(qty),
+                }
+            )
+        if len(grp) > 1:
+            qtys = [num(fv(r, "quantity_on_hand")) for r in grp]
+            total = f"{sum(q or 0 for q in qtys)}"
+            osq = [num(fv(r, "open_so_qty")) for r in grp]
+            if all(q is not None for q in osq):
+                total += f" (O/S: {sum(q or 0 for q in osq)})"
+            fields.append({"label": "Total", "value": total})
+        flags: dict[str, Any] = {}
+        for r in grp:
+            flags.update({k: v for k, v in (r.get("flags") or {}).items() if v})
+        merged.append({**grp[0], "fields": fields + lines, "flags": flags})
+    return merged
+
 _LOCALIZED_TOOLS = frozenset(
     {
         "crm_inventory_stock_balance_list",
@@ -3119,7 +3205,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     # H46: CONTAINS the sentinel, not IS it. `contracts.is_timeline` is the one declaration
     # (S6a put it there for exactly this consumer); re-deriving it here is what let a
     # mutation test "prove" the `not timeline` guard below was redundant.
-    timeline = is_timeline(req_attrs) or (not req_attrs and _names_a_shipment(ctx))
+    timeline = is_timeline(req_attrs) or not req_attrs
     keep_keys = set(ALWAYS_KEPT_KEYS)
     for k in req_attrs:
         kk = jsc.nullish_str(k).strip()
@@ -3370,6 +3456,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         if plain_lines
         else loc.text(jsc.js_string(e.get("intro") or "Here are the results.").strip()) + "\n\n"
     )
+    # WA-CONCISE AC-5: five openers go when at least one block prints (cut at the row loop).
+    opener = msg
     if isinstance(ctx.get("predicate"), dict):
         # Round 3 W1 (owner hand test on PR #833, "the message too long already"): a
         # counted set's header says what the list is; the tool's own intro under it
@@ -3523,11 +3611,22 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         question = jsc.js_string(e.get("intro") or "").strip()
         if question:
             msg += question + "\n\n"
-    printed_status: set[str] = set()
-    for i, it in enumerate(
+    rtype = jsc.js_string(e.get("result_type") or "")
+    flat_items: list[Any] = (
         [] if (qs_render or groups_render or stock_ask_render) else (e.get("items") or [])
-    ):
-        item_text = _item_line(i + 1 + set_row_offset, it, numbered=not plain_lines)
+    )
+    if flat_items:
+        if rtype == "stock":
+            flat_items = merge_stock_rows(flat_items)
+        elif rtype == "stock_compact":
+            flat_items = [compact_stock_block(it) for it in flat_items]
+        if opener.strip() in (*_DROPPED_OPENERS, *(loc.text(o) for o in _DROPPED_OPENERS)) and msg.startswith(opener):
+            msg = msg[len(opener):]
+    # One block is unnumbered, but only on the first page of a counted set.
+    single_block = len(flat_items) == 1 and not set_row_offset
+    printed_status: set[str] = set()
+    for i, it in enumerate(flat_items):
+        item_text = _item_line(i + 1 + set_row_offset, it, numbered=not (plain_lines or single_block))
         if status_only:
             # The same code in two companies that agree is one answer, said once.
             if item_text in printed_status:
@@ -3613,9 +3712,9 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     # quantity question ("How many units do you need?") is an availability reply too,
     # and it printed the timestamp on T1, T3, T8, T13 and T16.
     stock_availability_reply = jsc.js_string(e.get("result_type") or "") == "stock_availability"
-    ts = None if stock_availability_reply else _fmt_ts(e.get("last_updated_at"))
-    if ts:
-        msg += f"_{loc.text(f'Data last updated: {ts}')}_"
+    footer = "" if stock_availability_reply else _footer_line(e.get("last_updated_at"), loc)
+    if footer:
+        msg += footer
 
     # E2 (attribute-first asks, AC-1316): a HAS turn's set-answer header, PREPENDED
     # as its own line ahead of everything above - the block itself (intro, items,
@@ -3710,7 +3809,6 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             msg = header
         else:
             body = msg.strip()
-            footer = f"_{loc.text(f'Data last updated: {ts}')}_" if ts else ""
             if other_brands:
                 if footer and body.endswith(footer):
                     body = f"{body[: -len(footer)].strip()}\n\n{other_brands}\n\n{footer}"

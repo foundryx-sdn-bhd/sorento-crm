@@ -135,8 +135,9 @@ _INCOMING_ROW = {
 
 # Owner's prod copy, verbatim (same constants `test_rearch_r11_zero_stock_ladder.py`
 # pins).
-INCOMING_LEAD = "But there is INCOMING stock (ETA) for the requested products:"
-NO_STOCK_FOR = f"No stock for {CODE_B}"
+#: Card v4: the zero code's block, `*Stock:* 0` under its code, then the rung's lines.
+INCOMING_LEAD = f"*Product Code:* {CODE_B}\n*Stock:* 0"
+NO_STOCK_FOR = INCOMING_LEAD
 WAREHOUSE_OFFER = "escalate to warehouse team"
 
 # The trace's own recorded verdict (`kind: "apply"` event's `verdict`), field for
@@ -251,8 +252,8 @@ class TestLiveTurnZeroStockFamilyClimbsToIncoming:
             f"turn's own state_diff (two products, one typed token): {stock_calls!r}"
         )
 
-        # The stock block itself is KEPT - prod prints the rows first, both on hand 0.
-        assert "*Total:* 0" in said, said
+        # The typed prefix code's own zero row stays; the rung's code gets its own block.
+        assert "*BRW:* 0 (O/S: 5)" in said, said
         assert CODE_A in said and CODE_B in said, said
 
         # Then the ladder, in the owner's prod copy (finding 1's own paste) - THIS is
@@ -324,7 +325,7 @@ class TestLiveTurnCfee5933SingleExactCodeAlsoFailsToClimb:
             f"'srtwc6022-sh-uf-new' onto exactly the ONE seeded product: {stock_calls!r}"
         )
 
-        assert "*Total:* 0" in said, said
+        assert "*Stock:* 0" in said, said
         assert CODE_B in said, said
 
         incoming_calls = [(n, a) for n, a in probe_calls if n == INCOMING_TOOL]

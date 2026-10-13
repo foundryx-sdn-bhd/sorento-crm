@@ -77,7 +77,7 @@
     }
   },
   "expected": {
-    "reply_starts_with": "Your usual: SRTWB1455, M486-75-BL.",
+    "reply_not_contains": ["Your usual:"],
     "prompt_contains": [
       "usual products [\"SRTWB1455\", \"M486-75-BL\"]"
     ]
