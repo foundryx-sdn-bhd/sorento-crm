@@ -21,6 +21,13 @@ crew/state/reports/PV2-HIDDEN-FINAL.md.
 9. Reports: the sales_report grant is checked before the period question.
 Dev split only, max 3 runs; eval stack from a separate worktree (crew's test copy runs from sorento_crm-pv2-fix).
 
+Round 2 commits (red -> fix): caad439d7 -> d29d48524, da77fa4c6 (items 1-5; 2f73ceb67 aligns two older tests);
+537eea844 -> 7ba1dfd67, 84362179f, eb57f400c (items 6-9; a97a01397 aligns the granted sales test); 15bfe6f72 ->
+ac3ae40a7, ec34ab9c6 (product fallback for an empty document kind, not-found names the number); 21cc08470 -> 5cb455d50
+(customer families per crew ruling (b): a partial name always asks, one option per family; an exact family name
+resolves). Open: 7a variant suffix (hidden case only), 7b kind-menu labels (v1 `turn/reconcile.py:127-144 kind_word`;
+`chatbot_entity_kinds.label` holds display names nothing reads).
+
 ## Rounds (red test commit -> fix commits)
 
 1. ef5058ade -> 33a06284d, 1a37dcd44: product candidates via v1 search, `Entity.quantity`, `Entity.doc_number`, doc/form
