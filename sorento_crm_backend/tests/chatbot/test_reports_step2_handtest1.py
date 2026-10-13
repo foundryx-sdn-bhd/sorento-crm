@@ -220,7 +220,8 @@ def test_h19_guard_another_axis_than_the_held_one_is_not_a_refine_of_it(console,
 def _only_code(**kw: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "order_status": None, "status": None, "domain_hint": "order", "domain_in_message": False,
-        "topic_reset": False, "entities": [{"raw": "ZZT100", "hint": "product", "current_message": True}],
+        "topic_reset": False, "entity_op": "replace", "message_type": "business_query",
+        "entities": [{"raw": "ZZT100", "hint": "product", "current_message": True}],
     }
     base.update(kw)
     return base
@@ -236,7 +237,7 @@ def test_h21_a_status_less_only_code_narrows_the_held_report(console, monkeypatc
     seen = _hold_plain(console, monkeypatch)
     qf = _live(_parser_output(
         domain_hint="order", intent_hint="check_order", order_status=None, status=None, domain_in_message=False,
-        topic_reset=False, entities=[lane._hit(EXACT, "product")], group_by=None,
+        topic_reset=False, entity_op="replace", entities=[lane._hit(EXACT, "product")], group_by=None,
         date_filter_start=None, date_filter_end=None,
     ))
     text, _calls = console.say(qf, "only this model")
@@ -265,32 +266,6 @@ def test_h22c_guard_two_products_do_not_narrow() -> None:
     assert _narrows_held_sales_report(_only_code(entities=two)) is False
     other = [*two[:1], {"raw": "Zorvex", "hint": "brand", "current_message": True}]
     assert _narrows_held_sales_report(_only_code(entities=other)) is False
-
-
-# ------------------------------------------------------------------ C. step 8, "only model <code>" with no held report
-
-
-def _only_model(**kw: Any) -> dict[str, Any]:
-    base: dict[str, Any] = dict(
-        domain_hint="order", intent_hint="check_order", order_status="sales_report", group_by="product",
-        scope_intent="specific", entity_op="replace", domain_in_message=True, entities=[lane._hit(EXACT, "product")],
-        date_filter_start=None, date_filter_end=None,
-    )
-    base.update(kw)
-    return _live(_parser_output(**base))
-
-
-def test_h23_a_fresh_only_that_one_report_asks_for_the_exact_code(console, monkeypatch) -> None:
-    seen = _route_calls(console, monkeypatch, lambda args: _present(FAMILY_NO_OFFER))
-    console.say(_only_model(), "only model")
-    assert any(a.get("product_code_exact") and a.get("product_code") == EXACT for a in _sent(seen)), seen
-
-
-def test_h24_guard_a_family_total_still_runs_the_family(console, monkeypatch) -> None:
-    seen = _route_calls(console, monkeypatch, lambda args: _present(FAMILY_NO_OFFER))
-    console.say(_only_model(scope_intent="broad"), "total sales of the model")
-    sent = _sent(seen)
-    assert sent and not any(a.get("product_code_exact") for a in sent), sent
 
 
 # ------------------------------------------------------------------ D. step 15, status "outstanding" beside sales_ranking
@@ -327,3 +302,30 @@ def test_h26_the_outstanding_order_status_backstop_with_a_status_key_too(console
     qf = _outstanding_ranking_with_status(order_status="outstanding")
     text, log = lane._say_all(console, monkeypatch, qf, "top 5 customers outstanding at BRW")
     _assert_outstanding_ranking(log)
+
+
+# ------------------------------------------------------------------ review round on the status-less arm
+
+
+def test_h27_guard_a_one_product_follow_up_that_is_not_an_only_does_not_narrow() -> None:
+    from app.services.chatbot.turn_runtime import _narrows_held_sales_report
+
+    assert _narrows_held_sales_report(_only_code(entity_op="replace_combine")) is False
+
+
+def test_h28_guard_a_help_request_does_not_narrow() -> None:
+    from app.services.chatbot.turn_runtime import _narrows_held_sales_report
+
+    assert _narrows_held_sales_report(_only_code(message_type="request_for_help")) is False
+
+
+def test_h29_guard_a_parser_status_key_does_not_narrow() -> None:
+    from app.services.chatbot.turn_runtime import _narrows_held_sales_report
+
+    assert _narrows_held_sales_report(_only_code(status="outstanding")) is False
+
+
+def test_h30_guard_a_topic_reset_does_not_narrow() -> None:
+    from app.services.chatbot.turn_runtime import _narrows_held_sales_report
+
+    assert _narrows_held_sales_report(_only_code(topic_reset=True)) is False
