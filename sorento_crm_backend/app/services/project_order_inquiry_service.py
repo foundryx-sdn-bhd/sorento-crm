@@ -1340,6 +1340,16 @@ class ProjectOrderInquiryService:
                         and not row.redirected_to_pool
                     ):
                         row.supply_decision_id = decision.id
+                # ORDERBACK-DELTA (owner, 13 Oct 2026: "saved = sent"): a carried line
+                # whose still-raised row already says exactly what this revision needs
+                # is left as it is - re-filed, not cancelled and raised again. The
+                # cancel-and-re-raise below only exists to move the row under the new
+                # revision (13.4), which the re-filing does without the OI noise, and a
+                # carried CANCEL BALANCE was even told to purchasing a second time.
+                if self._carried_rows_stand(
+                    rows, entry, need, order_back, decision, exceptions
+                ):
+                    continue
             # S2 (`PLAN-scm-oi-handover-r2-undo.md`, AC-R2-10/11): a NAMED line (not
             # carried, not a planning-change settle) whose only live row is a plain
             # `raised` ORDER/ORDER_BACK row, no links at all, not redirected, and whose
@@ -1979,6 +1989,71 @@ class ProjectOrderInquiryService:
             "exceptions": exceptions,
             "settled_in_place": settled_in_place,
         }
+
+    def _carried_rows_stand(
+        self,
+        rows: Sequence[OrderInquiryRow],
+        entry: Dict[str, Any],
+        need: Decimal,
+        order_back: bool,
+        decision: Any,
+        exceptions: List[Dict[str, Any]],
+    ) -> bool:
+        """Does a CARRIED line's still-raised row already say what this revision needs?
+
+        The netting below, read without writing: what purchasing holds (actioned, placed
+        and partly linked ORDER rows) against the line's need gives one expected raised
+        row - the outstanding Buy, or the CANCEL BALANCE for an over-cover, or nothing.
+        When the line's raised rows are exactly that one row (same verb, quantity, date,
+        product and location, not refused), each is re-filed under `decision` and True
+        is returned; anything else is False and the ordinary carry path restates it.
+        """
+        held = _ZERO
+        raised: List[OrderInquiryRow] = []
+        for row in rows:
+            if row.redirected_to_pool:
+                continue
+            if row.state == INQUIRY_RAISED:
+                raised.append(row)
+            elif row.verb != IV_CANCEL_BALANCE and row.state in (
+                INQUIRY_ACTIONED, INQUIRY_PLACED, INQUIRY_PARTLY_LINKED
+            ):
+                held += _dec(row.qty)
+        if len(raised) != 1:
+            return False
+        row = raised[0]
+        if _is_refused(row):
+            return False
+        if need > held:
+            verb, qty = (IV_ORDER_BACK if order_back else IV_ORDER), need - held
+        elif held > need:
+            verb, qty = IV_CANCEL_BALANCE, held - need
+        else:
+            return False
+        required_date = entry.get("required_date")
+        if (
+            row.verb != verb
+            or _dec(row.qty) != qty
+            or (required_date is not None and row.delivery_date != required_date)
+            or (row.item_code or None) != (entry.get("item_code") or None)
+            or (row.stock_location or None) != (entry.get("stock_location") or None)
+            or (
+                verb == IV_ORDER_BACK
+                and (row.cited_document or None) != (entry.get("cited_document") or None)
+            )
+        ):
+            return False
+        row.supply_decision_id = decision.id
+        if verb == IV_CANCEL_BALANCE:
+            # The confirmation still answers with the exception it stands on.
+            exceptions.append(
+                {
+                    "line_no": entry.get("line_no"),
+                    "item_code": entry.get("item_code"),
+                    "message": row.note,
+                }
+            )
+        return True
 
     @staticmethod
     def _live_handshake(
