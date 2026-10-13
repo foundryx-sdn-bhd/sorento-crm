@@ -48,8 +48,11 @@ from app.services.chatbot.contracts import (
     TURN_FAILURE_STAGES,
     Envelope,
     named_count,
+    visible_reference_kinds,
 )
 from app.services.chatbot.delegate import enabled_lanes_from
+from app.services.chatbot.turn.reconcile import narrowed_miss_lines
+from app.services.chatbot.turn.state import is_staff_profile
 from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.services.ledger_family import customer_groups
@@ -61,7 +64,7 @@ from app.services.chatbot.lanes import fallback as fallback_mod
 from app.services.chatbot.lanes.escalation import run as run_escalation_lane, routing_line as escalation_routing_line
 from app.services.chatbot.lanes.business import resolve_gate, services as business_services
 from app.services.chatbot.analytics import facts as chat_facts
-from app.services.chatbot.usage import record_parser_usage
+from app.services.chatbot.usage import CLARIFIER_FEATURE, record_parser_usage, record_turn_llm_usage
 # Stages C to G (PLAN-chatbot-turn-rearch.md "Turn order"). `turn/` is the pure core -
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
 # is everything that has to touch a database or a tool on its behalf.
@@ -1964,6 +1967,28 @@ def _top_selling_dealer_scope(
         else:
             slot["dealer_customer_ids"] = ids
     return {**parse_output, "entities": [e for e in entities if not _is_customer(e)]}
+
+
+def _reference_scope(customer_scope: dict[str, Any] | None, profile: Any) -> list[Any] | None:
+    """REF-PROBES: the customer links a reference-number match must belong to, or None when
+    no scope applies. Enforced dealers and any non-staff contact are held to their links (an
+    unlinked dealer has none, so another customer's sales order is never offered)."""
+    scope = customer_scope or {}
+    if scope.get("enforced"):
+        return list(scope.get("linked") or [])
+    return None if is_staff_profile(profile) else list(scope.get("linked") or [])
+
+
+def _reference_kinds(
+    ctx: dict[str, Any], customer_scope: dict[str, Any] | None, profile: Any, *, per_match_scope: bool = True
+) -> list[str]:
+    """The reference kinds this asker may have probed. A lane with no per-match scope drop
+    (`per_match_scope=False`, the casual clarifier) loses the customer-owned kinds (sales order,
+    PO ref) for any contact held to links."""
+    kinds = visible_reference_kinds((ctx.get("access") or {}).get("attributes"), is_staff_profile(profile))
+    if not per_match_scope and _reference_scope(customer_scope, profile) is not None:
+        kinds = [k for k in kinds if k not in ("sales_order", "customer_po_ref")]
+    return kinds
 
 
 def _customer_scope_gate(
@@ -4584,6 +4609,8 @@ def _run_stages_body(  # noqa: PLR0915
     # below is made against the CARRIED agent, not the default. No `session=` (reviewer
     # round 1, SHOULD-4): no writer ever produces a prior-turn agent nest to read.
     verdict = turn_runtime.with_routing_agent_default(verdict, pending=state_in.pending)
+    # REF-PROBES step 10: a bare "order" number the parser's own `document` names a kind of.
+    verdict = turn_runtime.with_document_kind(verdict)
     # #865 round 5 (R1): an escalate word plus a named team, in the parser's own reading
     # of the message, is a help request whatever product words follow.
     verdict = turn_runtime.with_named_team_escalation(verdict)
@@ -4699,7 +4726,7 @@ def _run_stages_body(  # noqa: PLR0915
         # when the parser declared one; a fresh low stock ask keeps only the entities that
         # scope the run. Read before every other seam below.
         from app.services.chatbot import required_fields
-        from app.services.chatbot.lanes.business import low_stock_ask, report_ask
+        from app.services.chatbot.lanes.business import chat_report, low_stock_ask, report_ask
 
         _message_text = jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
         # Security S1: these keys are the ENGINE's own; one the parser emitted (the
@@ -4709,6 +4736,12 @@ def _run_stages_body(  # noqa: PLR0915
         state_in.focus.required_ask = None
         if (open_ask or {}).get("ask") == report_ask.ASK_NAME and report_ask.names_its_own_ask(verdict, open_ask):
             open_ask = None  # a new sales ranking ask, not the answer to the open question
+        if (open_ask or {}).get("ask") == chat_report.ASK_NAME and not verdict.get("order_status"):
+            # The reply to a chat report question is read ONCE by the extractor, with the open ask;
+            # the lane reuses the reading (`chat_report_reading`, empty when it could not read).
+            verdict = {**verdict, "chat_report_reading": chat_report.read_reply(db, open_ask, _message_text) or {}}
+        if (open_ask or {}).get("ask") == chat_report.ASK_NAME and chat_report.names_its_own_ask(verdict, open_ask):
+            open_ask = None  # a new chat report, not the answer to the open question
         verdict, required_rule = required_fields.reply_verdict(verdict, open_ask, _message_text)
         if required_rule:
             turn_trace.add("required_ask", {"verdict_rule": required_rule, "ask": (open_ask or {}).get("ask")})
@@ -4717,6 +4750,8 @@ def _run_stages_body(  # noqa: PLR0915
         # REPORT-ENGINE slice 1b: a fresh sales ranking's brand / sales agent / category
         # words, kept away from the generic resolver for the lane (`report_ask_words`).
         verdict = report_ask.take_words(verdict, _message_text)
+        # CA-3: a fresh chat report's product words are the lane's, not the generic resolver's.
+        verdict = chat_report.take_words(verdict)
         # LOWSTOCK-SEMANTIC: the low stock ask's own words ride the parser's `low_stock`
         # key; only the entities that scope the RUN stay, and the last settled report's
         # frame rides along for a refinement.
@@ -4992,9 +5027,25 @@ def _run_stages_body(  # noqa: PLR0915
         customer_scope = (
             business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
             if verdict.get("self_reference") is True
-            or {*ORDER_OR_SALES_DOMAINS, "purchase_order"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
+            or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
+        # A turn whose only fetch is a GRANTED chat report is scoped by the asker rule (dealer only),
+        # not by customer links, at the gate below; the turn's own `customer_scope` stays strict for
+        # every other use (the lane applies `chat_report.scope_for` to its own fetch).
+        gate_scope = customer_scope
+        if (
+            customer_scope is not None
+            and plan.fetch
+            and all(spec.domain == "chat_analytics" for spec in plan.fetch)
+        ):
+            from app.services.chatbot.lanes.business import chat_report as _chat_report
+
+            gate_scope = _chat_report.scope_for(
+                "chat_analytics", customer_scope,
+                asker=_chat_report.asker_of(db, contact_respond_id, space_id_for_turn),
+                granted=_chat_report.GRANT in set(access.get("attributes") or []),
+            )
 
         # Grant before roster (SF-1, PLAN-chatbot-answer-half-reattach.md slice R2):
         # an ungranted contact's sales-report ask is refused HERE, before the resolver
@@ -5039,6 +5090,7 @@ def _run_stages_body(  # noqa: PLR0915
 
         top_selling_updates: dict[str, Any] = {}
         customer_scope_refused = False
+        gate_input: dict[str, Any] | None = None
         account_question: str | None = None
         resolved_kinds: dict[str, dict[str, int]] = {}
         compatible_entities: list[dict[str, Any]] = []
@@ -5150,7 +5202,7 @@ def _run_stages_body(  # noqa: PLR0915
             # REPORT-ENGINE 1b fix round F1: a dealer's sales ranking never has a location
             # word looked up (the resolver's miss line would probe warehouse codes); the
             # lane refuses the ask off the word itself (`report_ask._dealer_outside`).
-            if (customer_scope or {}).get("enforced"):
+            if (gate_scope or {}).get("enforced"):
                 resolver_parse_output = report_ask.dealer_location_words(resolver_parse_output)
             gate_refusal: str | None = None
             staff_level_refused = False
@@ -5168,8 +5220,9 @@ def _run_stages_body(  # noqa: PLR0915
                 scope_ids, scope_refused, gate_refusal = None, True, None
                 account_question = f"Which customer is Account {unnamed_account} for?"
             else:
+                gate_input = resolver_parse_output  # the strict re-gate after a re-plan reads the words as typed
                 resolver_parse_output, scope_ids, scope_refused, gate_refusal = _customer_scope_gate(
-                    customer_scope, verdict, state_out.focus, resolver_parse_output, plan.domains
+                    gate_scope, verdict, state_out.focus, resolver_parse_output, plan.domains
                 )
             scope_ids = _drill_offer_subject(scope_ids, state_out.focus, plan.trace)
             if (
@@ -5188,6 +5241,8 @@ def _run_stages_body(  # noqa: PLR0915
             resolver_ctx = {
                 **ctx,
                 "parse": {**(ctx.get("parse") or {}), "output": resolver_parse_output},
+                # REF-PROBES: the reference kinds this asker may have probed.
+                "reference_kinds": _reference_kinds(ctx, customer_scope, state_out.profile),
             }
             resolve_outcome = (
                 turn_runtime.resolve_kinds(
@@ -5227,7 +5282,8 @@ def _run_stages_body(  # noqa: PLR0915
                         plan.ask is not None and "purchase_order" in plan.domains
                     ),
                     roster_caps=roster_caps,
-                    enforced_scope=bool((customer_scope or {}).get("enforced")),
+                    enforced_scope=bool((gate_scope or {}).get("enforced")),
+                    scope_linked=_reference_scope(customer_scope, state_out.profile),
                 )
             )
             resolved_kinds = resolve_outcome.resolved_kinds
@@ -5268,9 +5324,18 @@ def _run_stages_body(  # noqa: PLR0915
                 if exact is not None:
                     resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens = exact
                     turn_trace.add("exact_codes_only", {"kept": [e.get("code") for e in compatible_entities]})
+                    if isinstance(resolver_payload, dict):
+                        # The answer bridge reads the GATE's list, not the local one.
+                        resolver_payload = {
+                            **resolver_payload,
+                            "gate": {
+                                **(resolver_payload.get("gate") or {}),
+                                "compatible_entities": compatible_entities,
+                            },
+                        }
             # ACCOUNT-LEDGER Q4: staff asked a level the typed name lacks.
             staff_account_refusal = ((resolver_payload or {}).get("resolved") or {}).get("account_refusal")
-            if staff_account_refusal and not (customer_scope or {}).get("enforced"):
+            if staff_account_refusal and not (gate_scope or {}).get("enforced"):
                 account_question, scope_refused, staff_level_refused = str(staff_account_refusal), True, True
             elif gate_refusal:
                 account_question = gate_refusal
@@ -5278,10 +5343,10 @@ def _run_stages_body(  # noqa: PLR0915
             # reason and the ids it dropped, so a refusal explains itself.
             screened_refused = False
             screened_dropped: list[str] = []
-            if customer_scope and customer_scope.get("enforced"):
+            if gate_scope and gate_scope.get("enforced"):
                 screened_refused, compatible_entities, resolved_candidates, screened_dropped = (
                     _screen_resolver_for_scope(
-                        customer_scope, resolver_payload, compatible_entities, resolved_candidates
+                        gate_scope, resolver_payload, compatible_entities, resolved_candidates
                     )
                 )
                 scope_refused = scope_refused or screened_refused
@@ -5310,7 +5375,7 @@ def _run_stages_body(  # noqa: PLR0915
                 resolver_payload = _pass_scope_gate(resolver_payload, [], force=True)
             elif scope_ids is not None:
                 # D3: the linked customers are this turn's customers.
-                compatible_entities = _scoped_compatible(customer_scope, scope_ids, compatible_entities)
+                compatible_entities = _scoped_compatible(gate_scope, scope_ids, compatible_entities)
                 resolver_payload = _pass_scope_gate(resolver_payload, compatible_entities, force=False)
                 turn_trace.add(
                     "customer_scope",
@@ -5423,6 +5488,35 @@ def _run_stages_body(  # noqa: PLR0915
                     resolved_candidates,
                     frozenset(unplaced_tokens),
                 )
+            if (
+                gate_scope is not customer_scope
+                and gate_input is not None
+                and not customer_scope_refused
+                and not all(spec.domain == "chat_analytics" for spec in plan.fetch)
+            ):
+                # The re-plan turned the chat report into another fetch: the relaxed gate does not
+                # speak for it. The strict gate decides again, and a refusal stands for the turn.
+                _, _strict_ids, _strict_refused, _strict_line = _customer_scope_gate(
+                    customer_scope, verdict, state_out.focus, gate_input, plan.domains
+                )
+                if _strict_refused or _strict_line:
+                    customer_scope_refused = scope_refused = True  # the same clearing path as the first gate
+                    account_question = _strict_line
+                    resolved_kinds, resolved_candidates, unplaced_tokens, predicate = {}, {}, {}, None
+                    turn_trace.add("customer_scope", {"refused": "customer_not_permitted", "reason": "replanned_fetch"})
+            if (
+                plan.fetch
+                and all(spec.domain == "chat_analytics" for spec in plan.fetch)
+                and not (gate_scope or {}).get("enforced")
+                and not customer_scope_refused
+                and isinstance(resolver_payload, dict)
+            ):
+                # A chat report is filtered by the extractor's customer words, not by what the parser
+                # tagged: a tag the resolver could not place is no miss line for this turn (a dealer,
+                # scope enforced, keeps its words for the gate).
+                unplaced_tokens = {}
+                if resolver_payload.get("_exit_kind") == "not_found":
+                    resolver_payload = {**resolver_payload, "_exit_kind": "continue"}
             if (
                 scope_ids is not None
                 and plan.ask is not None
@@ -5722,7 +5816,9 @@ def _run_stages_body(  # noqa: PLR0915
         clarifier_setup_error: str | None = None
         if branch_kind == "low_signal" and completes_here:
             try:
-                resolved_for_prompt = casual.resolve_for_prompt(db, ctx=ctx)
+                resolved_for_prompt = casual.resolve_for_prompt(
+                    db, ctx={**ctx, "reference_kinds": _reference_kinds(ctx, customer_scope, state_out.profile, per_match_scope=False)}
+                )
                 clarifier_prompt = casual.construct_user_prompt(ctx, resolved_for_prompt)
                 clarifier_config = casual.resolve_clarifier_config(
                     db,
@@ -6420,6 +6516,16 @@ def _run_stages_body(  # noqa: PLR0915
                             db=db,
                             ctx=ctx,
                         )
+                        # REF-PROBES: a kind the asker NAMED that the data placed as another
+                        # kind is said first ("No sales order X."), then the true kind's answer.
+                        narrowed_misses = narrowed_miss_lines(
+                            plan.trace.reconciled,
+                            visible=_reference_kinds(ctx, customer_scope, state_out.profile),
+                        )
+                        if narrowed_misses and answer.text:
+                            answer = dataclasses_replace(
+                                answer, text="\n".join(narrowed_misses) + "\n\n" + answer.text
+                            )
             except Exception as fetch_error:  # noqa: BLE001 - a lane failure, not a crash
                 logger.exception("chatbot turn %s: fetch or compose failed", turn_id)
                 lane_error_text = f"{type(fetch_error).__name__}: {fetch_error}"
@@ -8080,6 +8186,9 @@ def _run_casual_lane(
     answer_shape: str | None = None
     ack_replaced = False
     reply_language: str | None = None
+    # CHAT-TURN-COST: what the clarifier call billed, recorded once a session is open again.
+    clarifier_calls: list[dict[str, Any]] = []
+    clarifier_ms = 0
     if failed is not None:
         # SETUP failure (the resolver, the registry, the AI config, the API key). The
         # customer gets a FIXED sentence, never `str(exc)`: these messages carry provider
@@ -8088,7 +8197,12 @@ def _run_casual_lane(
         text = casual.CLARIFIER_UNAVAILABLE_REPLY
     else:
         try:
-            raw = casual.call_clarifier(clarifier_config, user_message)
+            clarifier_started = time.perf_counter()
+            try:
+                with llm_call.capture_usage() as clarifier_calls:
+                    raw = casual.call_clarifier(clarifier_config, user_message)
+            finally:
+                clarifier_ms = int((time.perf_counter() - clarifier_started) * 1000)
             said = fallback_mod.read_clarifier(casual.central_exchange({"text": raw}))
             if said is None:
                 raise casual.ClarifierAnswerEmpty("the clarifier returned nothing to say")
@@ -8114,6 +8228,26 @@ def _run_casual_lane(
             # apology. n8n's `sub-error-logger` interpolation is retired here.
             failed = f"{type(exc).__name__}: {exc}"
             text = GENERIC_ERROR_REPLY
+    if clarifier_calls and not dry_run:
+        # LIVE turns only, like the parser's row (`_record_parser_usage`, D14). Telemetry never
+        # fails the customer's turn: opening the session can raise too, so the whole write is
+        # guarded here, not only inside `record_turn_llm_usage`.
+        try:
+            with _session(session_factory) as db:
+                for call in clarifier_calls:
+                    record_turn_llm_usage(
+                        db,
+                        feature=CLARIFIER_FEATURE,
+                        usage=call,
+                        response_time_ms=clarifier_ms // len(clarifier_calls),
+                        contact_respond_id=contact_respond_id,
+                        # The call answered (capture only sees answered calls); whether the
+                        # turn did is the turn row's own record (usage.py).
+                        answered=True,
+                        chatbot_turn_id=turn_id,
+                    )
+        except Exception:  # noqa: BLE001 - telemetry must never fail a customer's turn
+            logger.warning("chatbot turn %s: clarifier usage log failed", turn_id, exc_info=True)
     if failed is not None and fallback is not None and fallback.kind == "history" and fallback.copy is not None:
         # The history list needs no model: behind the canned ack it still answers.
         reply_language = _fallback_language(ctx, fallback, remembered_before, None)

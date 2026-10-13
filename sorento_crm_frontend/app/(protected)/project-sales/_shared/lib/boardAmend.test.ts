@@ -11,7 +11,8 @@
  * `DraftLine` shape and against the same `lineBalance` / `lineBlockers`, and these are the two
  * conversions either side of it.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
+import { borrowKinds } from './supplyVocabulary';
 import {
   amendDraftFrom,
   amendSummary,
@@ -25,6 +26,7 @@ import {
   suggestionDraftFrom,
 } from './boardAmend';
 import { buildBoard, type BoardDemandLine } from './__testsupport__/boardFixture';
+import { toMinor } from './supplyComposition';
 import type { BoardContribution, BoardDraft } from '../types/fulfilmentPlanning.types';
 
 const TODAY = '2026-08-18';
@@ -774,6 +776,7 @@ describe('amendSummary: what the decided row reads', () => {
   });
 
   it('names a borrow that states its donor order as a borrow from another order', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     expect(
       amendSummary(
         {
@@ -904,14 +907,17 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
     expect(result.buy_qty).toBe('0');
   });
 
-  it('AC-6: skips Use own location short of the whole line', () => {
+  it('OI-CLOSED-LINE: Use own location short of the line still composes the whole line, with a warning', () => {
     const row = decideRow({
       locations: [
         { location: 'BRW-BB', where: 'own', warehouse_id: 'wh-own', qty_free_remaining: '30' },
       ],
     });
 
-    expect(decideComposition(row, 'own').skip).toBe('only 30 free at own location');
+    const result = decideComposition(row, 'own');
+    expect(result.skip).toBeUndefined();
+    expect(result.warning).toBe('only 30 free at own location');
+    expect(result.reserve).toEqual([{ warehouse_id: 'wh-own', location: 'BRW-BB', qty: '100' }]);
   });
 
   it('AC-7: Use BRW fills from site_pool rows only, within the pool-share allowance', () => {
@@ -933,7 +939,7 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
     expect(result.reserve).toEqual([{ warehouse_id: 'wh-pool', location: 'BRW', qty: '80' }]);
   });
 
-  it('AC-7: skips Use BRW short of the whole line', () => {
+  it('OI-CLOSED-LINE: Use BRW short of the line still composes the whole line, with a warning', () => {
     const row = decideRow({
       locations: [
         {
@@ -946,7 +952,14 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
       ],
     });
 
-    expect(decideComposition(row, 'shared').skip).toBe('only 50 free at BRW');
+    const result = decideComposition(row, 'shared');
+    expect(result.skip).toBeUndefined();
+    expect(result.warning).toBe('only 50 free at BRW');
+    expect(result.reserve).toEqual([{ warehouse_id: 'wh-pool', location: 'BRW', qty: '100' }]);
+  });
+
+  it('OI-CLOSED-LINE: Use BRW with no BRW row at all is still skipped (nothing to name)', () => {
+    expect(decideComposition(decideRow(), 'shared').skip).toBe('only 0 free at BRW');
   });
 
   it('AC-8: Borrow from another order takes the whole line off the picked donor order', () => {
@@ -1099,7 +1112,7 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
    * `own`/`shared` tally read at `:793` (site_pool/own-location rows) was unguarded, since
    * killing it left `boardAmend.test.ts` and `BoardDecideControl.test.tsx` fully green.
    */
-  it('AC-10: a running tally makes the second of two rows contesting one BRW pile skip', () => {
+  it('AC-10: a running tally makes the second of two rows contesting one BRW pile short (OI-CLOSED-LINE: warned, not skipped)', () => {
     const pool = {
       location: 'BRW',
       where: 'site_pool' as const,
@@ -1119,7 +1132,8 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
     const firstResult = decideComposition(first, 'shared', undefined, claimed);
     expect(firstResult.skip).toBeUndefined();
     const secondResult = decideComposition(second, 'shared', undefined, claimed);
-    expect(secondResult.skip).toBe('only 50 free at BRW');
+    expect(secondResult.skip).toBeUndefined();
+    expect(secondResult.warning).toBe('only 50 free at BRW');
   });
 
   it('AC-5/AC-6/AC-7: the suggested reserve/BRW item never draws a site_pool row for own location', () => {
@@ -1315,4 +1329,123 @@ describe('decideComposition: the measured null-id payload never double counts a 
       ['core-b', '2'],
     ]);
   });
+});
+
+/**
+ * OI-CLOSED-LINE hand test (owner, 12 Oct 2026, SO416732 CB2807-DIY delivered 2 of 2): the
+ * delivered part of a line never needs free stock (owner Q1 (a), the same credit Confirm
+ * gives), so the Decide dialog must not skip or warn on it.
+ */
+describe('decideComposition: the delivered part needs no free stock (OI-CLOSED-LINE)', () => {
+  const pool = (free: string) => ({
+    location: 'BRW',
+    where: 'site_pool' as const,
+    warehouse_id: 'wh-pool',
+    qty_free_remaining: free,
+    available_for_project: free,
+  });
+
+  it('Use BRW on a fully delivered line with 0 free composes the line, no skip, no warning', () => {
+    const result = decideComposition(
+      decideRow({ qty: '2', qty_delivered: '2', locations: [pool('0')] }),
+      'shared',
+    );
+    expect(result.skip).toBeUndefined();
+    expect(result.warning).toBeUndefined();
+    expect(result.reserve).toEqual([{ warehouse_id: 'wh-pool', location: 'BRW', qty: '2' }]);
+  });
+
+  it('Use BRW on a partly delivered line needs free stock only for the undelivered part', () => {
+    const claimed = new Map<string, number>();
+    const result = decideComposition(
+      decideRow({ qty: '10', qty_delivered: '4', locations: [pool('6')] }),
+      'shared',
+      undefined,
+      claimed,
+    );
+    expect(result.skip).toBeUndefined();
+    expect(result.warning).toBeUndefined();
+    expect(result.reserve).toEqual([{ warehouse_id: 'wh-pool', location: 'BRW', qty: '10' }]);
+    // Only the undelivered 6 claims the pile; the next ticked row sees 0 left, not -4.
+    expect([...claimed.values()]).toEqual([toMinor('6')]);
+  });
+
+  it('Use BRW short on the undelivered part warns with what is free, and still composes', () => {
+    const result = decideComposition(
+      decideRow({ qty: '10', qty_delivered: '4', locations: [pool('2')] }),
+      'shared',
+    );
+    expect(result.skip).toBeUndefined();
+    expect(result.warning).toBe('only 2 free at BRW');
+    expect(result.reserve).toEqual([{ warehouse_id: 'wh-pool', location: 'BRW', qty: '10' }]);
+  });
+
+  it('Use own location on a fully delivered line with 0 free composes the line', () => {
+    const result = decideComposition(
+      decideRow({
+        qty: '5',
+        qty_delivered: '5',
+        locations: [
+          { location: 'BRW-BB', where: 'own', warehouse_id: 'wh-own', qty_free_remaining: '0' },
+        ],
+      }),
+      'own',
+    );
+    expect(result.skip).toBeUndefined();
+    expect(result.warning).toBeUndefined();
+    expect(result.reserve).toEqual([{ warehouse_id: 'wh-own', location: 'BRW-BB', qty: '5' }]);
+  });
+
+  it('Borrow from a location on a fully delivered line with 0 free composes the line', () => {
+    const result = decideComposition(
+      decideRow({
+        qty: '8',
+        qty_delivered: '8',
+        borrow_candidates: [
+          {
+            source: 'other_location',
+            warehouse_code: 'BRW-BB',
+            warehouse_id: 'wh-loc',
+            free_qty: '0',
+            donor_impact: { free_before: '0', free_after_full_borrow: '0', committed_qty: '0' },
+          },
+        ],
+      }),
+      'borrow_other',
+      'BRW-BB',
+    );
+    expect(result.skip).toBeUndefined();
+    expect(result.borrow).toEqual([
+      expect.objectContaining({ warehouse_id: 'wh-loc', qty: '8' }),
+    ]);
+  });
+
+  it('Borrow from another order: the donor needs to cover only the undelivered part', () => {
+    const result = decideComposition(
+      decideRow({
+        qty: '10',
+        qty_delivered: '7',
+        borrow_candidates: [
+          {
+            source: 'other_location',
+            warehouse_code: 'BRW-BB',
+            warehouse_id: 'wh-donor',
+            free_qty: '3',
+            donor_impact: { free_before: '3', free_after_full_borrow: '0', committed_qty: '0' },
+            donor_so_number: 'SO415472',
+          },
+        ],
+      }),
+      'borrow_order',
+      'SO415472',
+    );
+    expect(result.skip).toBeUndefined();
+    expect(result.borrow).toEqual([
+      expect.objectContaining({ warehouse_id: 'wh-donor', qty: '10' }),
+    ]);
+  });
+});
+
+afterEach(() => {
+  borrowKinds.shownApart = false;
 });

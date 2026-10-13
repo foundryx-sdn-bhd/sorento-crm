@@ -9,3 +9,10 @@ bce2ef4c521b380f7339db922bdf7f9aec395d50:sorento_crm_mcp/tests/test_bearer_auth.
 # real or dev key, never copied from any env or DB); replaced by test-secret-not-real-0000 in e5aee456.
 # Confirmation: https://github.com/jayson-odoo/sorento-crm/pull/1561#issuecomment-6093881308
 6a8cf09c7e40eb12406d2db93b08a03635a6ab47:sorento_crm_backend/tests/test_runtime_settings.py:generic-api-key:21
+# RESPOND-MULTI-KEY: made-up base64 Respond.io signing keys in tests (KEY_ONE/KEY_TWO, RESPOND_KEY_ONE/TWO,
+# an unknown-key probe): fixtures shaped like a real key on purpose, never a real secret.
+a9b1b46c2f515c54ec958e12fa0067b5877a8929:sorento_crm_backend/tests/test_runtime_settings.py:generic-api-key:639
+a9b1b46c2f515c54ec958e12fa0067b5877a8929:sorento_crm_backend/tests/test_runtime_settings.py:generic-api-key:640
+9bf3312b9dae5a5666bafcc6d7f81285b0dd58ae:sorento_crm_backend/tests/test_respond_webhook_ingest.py:generic-api-key:197
+9bf3312b9dae5a5666bafcc6d7f81285b0dd58ae:sorento_crm_backend/tests/test_respond_webhook_ingest.py:generic-api-key:198
+9bf3312b9dae5a5666bafcc6d7f81285b0dd58ae:sorento_crm_backend/tests/test_respond_webhook_ingest.py:generic-api-key:227

@@ -4,10 +4,12 @@ against Mocha's catalogue).
 
 ``_resolve_company`` used ``db.query(Company).filter(Company.is_active).first()`` - a
 ``LIMIT 1`` with no ``ORDER BY``, so Postgres's physical row order picked the company.
-With two active companies that is whichever heap tuple comes first. These tests make the
-non-Sorento row come first the way it happens on a live database: an UPDATE writes a new
-tuple, so touching the Sorento row after Mocha was inserted puts Mocha ahead of it on a
-sequential scan.
+With two active companies that is whichever heap tuple comes first. These tests pin that
+order instead of producing it: an unordered, LIMITed ORM read of ``companies`` on the test
+session is given ``ORDER BY id <> mocha``, so it hands back Mocha exactly as the prod heap
+did. Producing the order physically (an UPDATE of the Sorento row so its new tuple lands
+behind Mocha's) flaked under xdist: the dead tuples and free space earlier tests leave in
+the table decide where the new tuples go (release run 38071049191, shard 5).
 
 Resolution rule (crew answer, mirrors ``company_routing_service.py``'s "never an
 arbitrary pick"): the contact's active ``respond_contact_companies``; one company is
@@ -21,7 +23,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import event, select
 
 # MUST be first app import - resolves the circular import in app.modules.runtime.guards
 from app.main import app  # noqa: E402
@@ -69,16 +71,28 @@ def _company(db, *, name: str, is_active: bool = True) -> str:
 
 
 def _mocha_ahead_of_sorento(db) -> str:
-    """A second active company whose row a plain sequential scan returns FIRST."""
+    """A second active company that an unordered "first active company" read returns."""
+    from app.models.company import Company
+
     mocha_id = _company(db, name="ZZT Mocha")
-    # An UPDATE writes a new heap tuple behind Mocha's, so an unordered
-    # `.first()` now hands back Mocha - the prod state.
-    db.execute(
-        text("UPDATE companies SET name = name WHERE id = :id"),
-        {"id": _SORENTO_COMPANY_ID},
+
+    @event.listens_for(db, "do_orm_execute")
+    def _mocha_scans_first(state):
+        stmt = state.statement
+        if (
+            state.is_select
+            and stmt.column_descriptions
+            and stmt.column_descriptions[0].get("entity") is Company
+            and stmt._limit_clause is not None
+            and not stmt._order_by_clauses
+        ):
+            state.statement = stmt.order_by(Company.id != mocha_id)
+
+    first = db.query(Company).filter(Company.is_active).first()
+    assert first is not None and str(first.id) == mocha_id, (
+        "precondition: the non-Sorento row must scan first"
     )
-    db.flush()
-    first = db.execute(text("SELECT id FROM companies WHERE is_active LIMIT 1")).scalar()
+    first = db.execute(select(Company.id).where(Company.is_active).limit(1)).scalar()
     assert str(first) == mocha_id, "precondition: the non-Sorento row must scan first"
     return mocha_id
 

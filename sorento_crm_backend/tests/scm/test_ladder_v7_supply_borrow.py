@@ -36,6 +36,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -303,6 +305,7 @@ def _rung(components, rung):
 # --------------------------------------------------------------------------- AC-S4-1
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_spo_a_later_order_is_waiting_on_is_borrowed_whole_and_names_its_debt():
     """AC-S4-1, first half: the nearest SPO arriving by the asker's date, held by a later
     order, is offered whole - kind `borrow`, rung `supply_borrow`, the document addressed by
@@ -397,6 +400,7 @@ def test_a_po_line_a_later_order_holds_is_never_offered_and_the_unit_buys():
     assert po_number not in components[0]["reason"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_free_document_is_taken_rather_than_borrowed_and_owes_nobody():
     """PLAN 3.2 step 3: a document nobody is waiting on raises no debt, so the sentence says
     "Take" rather than "Borrow" and no order-back travels with it."""
@@ -432,6 +436,7 @@ def test_a_free_document_is_taken_rather_than_borrowed_and_owes_nobody():
 # --------------------------------------------------------------------------- AC-S4-2
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_nearest_arriving_spo_is_taken_first():
     """AC-S4-2, first clause: two eligible SPO documents, and the one landing first wins."""
     with blank_session() as db:
@@ -489,6 +494,7 @@ def test_a_po_that_would_have_covered_the_unit_is_never_reached():
     assert [(c["kind"], c["qty"]) for c in components] == [("buy", "30")]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_spo_of_five_beside_a_po_of_seven_covers_no_unit_of_twelve():
     """AC-S4-2, third clause (R33): never half and half. Neither document covers the unit,
     so the step gives nothing and the walk moves on to the pool and then to Buy."""
@@ -586,6 +592,7 @@ JAY_PO_ISSUE = date(2026, 8, 18)
 JAY_LEAD = 90
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_jay_no_longer_reaches_the_po_and_buys_instead():
     """AC-S4-2b - RETIRED 31 Aug (`PLAN-scm-planning-feedback-31aug.md` S1, R-A). This IS
     the captain's own production row: `202608-S0041` (this test's own stand-in for the real
@@ -641,6 +648,7 @@ def test_jay_no_longer_reaches_the_po_and_buys_instead():
 # --------------------------------------------------------------------------- AC-S4-3
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_confirming_a_supply_borrow_moves_the_placement_to_the_asker():
     """AC-S4-3 (PLAN 3.3, R8): the whole transaction, in one Confirm.
 
@@ -723,6 +731,7 @@ def test_confirming_a_supply_borrow_moves_the_placement_to_the_asker():
     assert donor_row.status == "short" and donor_row.uncovered == 50.0
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_partly_held_document_lends_the_donors_share_and_takes_its_free_share():
     """AC-S4-3's middle clause, and R33 inside one document.
 
@@ -783,6 +792,7 @@ def test_a_partly_held_document_lends_the_donors_share_and_takes_its_free_share(
 # --------------------------------------------------------------------------- AC-S4-4
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_document_that_covers_the_unit_answers_when_the_pool_has_nothing_to_spare():
     """AC-S4-4 (R13), RE-BLESSED BY LADDER V8 (R-A): the pool is asked FIRST now, so the
     order this case pinned is reversed - a pool with 500 free would answer before any
@@ -824,6 +834,7 @@ def test_a_document_that_covers_the_unit_answers_when_the_pool_has_nothing_to_sp
 # ---------------------------------------------------------------- the walk's own ledger
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_two_units_of_one_walk_are_not_both_offered_the_same_document():
     """The ledger every other step of this ladder keeps, kept for step 3 too.
 

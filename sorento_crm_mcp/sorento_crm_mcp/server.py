@@ -141,7 +141,12 @@ TOOL_OBJECT_QUERY_PARAMS: dict[str, tuple[str, ...]] = {
     # Chatbot stock ask v2 (ported from PR #1118): the per-product
     # {product_id: quantity} map, parsed backend-side by `parse_requested_quantities`.
     "crm_inventory_stock_balance_list": ("requested_quantities",),
+    # CHAT-FIND: a JSON LIST of {key, product_ids} filters (see `_OBJECT_UNIONS`).
+    "crm_find": ("filters",),
 }
+
+# Annotation per object param when it is not the default `dict[str, int] | str`.
+_OBJECT_UNIONS: dict[str, str] = {"spec_constraints": "list[dict] | str", "filters": "list[dict] | str"}
 
 
 TOOL_DEFAULT_QUERY_PARAMS: dict[str, dict[str, str]] = {
@@ -330,6 +335,8 @@ def _normalize_query_value(value: Any) -> Any:
     if isinstance(value, (int, float)):
         return str(value)
     if isinstance(value, list):
+        if any(isinstance(v, dict) for v in value):
+            return json.dumps(value, separators=(",", ":"), sort_keys=True)
         return value
     if isinstance(value, str) and value in {"True", "False"}:
         return value.lower()
@@ -1687,7 +1694,9 @@ def _compile_tool(spec: ToolSpec):
     }
 
     def _union_for(q: str) -> str:
-        return _object_union if q in object_query_set else _scalar_union
+        if q in object_query_set:
+            return _OBJECT_UNIONS.get(q, _object_union)
+        return _scalar_union
 
     qp_sig = ", ".join(
         (

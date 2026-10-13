@@ -9,6 +9,7 @@ import type {
   ClassificationEvidence,
   PlanningBoard,
   ConfirmManyBody,
+  SimulateConfirmBody,
   ConfirmManyResult,
   ConfirmResult,
   ConfirmSupplyBody,
@@ -16,6 +17,7 @@ import type {
   FulfilmentPlanningListParams,
   FulfilmentPlanningRow,
   PileQueue,
+  PlanningHistory,
   ReconciliationSummary,
   StockDetail,
   SupplyFailingLine,
@@ -606,6 +608,35 @@ export async function confirmMany(body: ConfirmManyBody): Promise<ConfirmManyRes
  */
 export async function previewConfirmMany(body: ConfirmManyBody): Promise<ConfirmManyResult> {
   return confirmMany({ ...body, preview: true });
+}
+
+/**
+ * Admin dry run of Confirm (board-simulate-confirm-12oct): the SAME body Confirm posts, to its
+ * own route. The server always simulates (it ignores `preview`) and saves nothing.
+ */
+export async function simulateConfirm(body: SimulateConfirmBody): Promise<ConfirmManyResult> {
+  const response = await apiFetch(`${BASE}/fulfilment-planning/simulate-confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Failed to simulate the confirmation'));
+  return response.json();
+}
+
+/**
+ * Admin History of the named orders (PLANNING-WHY): what happened to each plan, newest first.
+ *
+ *   GET /project-sales/fulfilment-planning/history?pso_ids=<id>[,<id>...]  (at most 50)
+ *       -> { events: PlanningHistoryEvent[] }
+ */
+export async function getPlanningHistory(psoIds: string[]): Promise<PlanningHistory> {
+  const search = new URLSearchParams({ pso_ids: psoIds.join(',') });
+  const response = await apiFetch(`${BASE}/fulfilment-planning/history?${search.toString()}`);
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Failed to load the history'));
+  return response.json();
 }
 
 /**

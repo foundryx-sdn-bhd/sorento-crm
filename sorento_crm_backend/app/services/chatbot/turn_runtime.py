@@ -24,7 +24,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -40,7 +40,7 @@ from app.services.chatbot.contracts import (
     named_count,
 )
 from app.services.chatbot.turn.apply import names_its_own_ask
-from app.services.chatbot.turn.decide import picked_positions
+from app.services.chatbot.turn.decide import RESTATED_KINDS_KEY, picked_positions
 from app.services.chatbot.turn.pending import (
     OFFER_KINDS,
     Pending,
@@ -58,10 +58,12 @@ from app.services.chatbot.turn.state import (
     Profile,
     State,
     focus_from_wire,
+    is_staff_profile,
     reads_customer_po_refs,
     token_key,
 )
 from app.services.chatbot import session_state
+from app.services.chatbot.contracts import REFERENCE_NARROW
 # BRAND-PROMO-EXPAND: the resolver's own fan-out table (brand / category -> promotion), read
 # here so `resolve_kinds` can tell a hit that CONFIRMS a hint from one that re-types it. One
 # copy, the resolver's; never a second table of the same pairs in this module.
@@ -1664,6 +1666,35 @@ def with_company_pick(verdict: dict[str, Any], *, pending: Pending | None, messa
     }
 
 
+#: REF-PROBES step 10 (crew trace 751f634d, 12 Oct 2026): the parser's own `document` field
+#: names the kind of a reference number it left as the bare "order" hint. SO only: a DO
+#: mapping would also relabel numbers the parser filed under "DO" by mistake.
+_DOCUMENT_KIND = {"SO": "sales_order"}
+
+
+def with_document_kind(verdict: dict[str, Any]) -> dict[str, Any]:
+    """The verdict with each current-message bare "order" entity named by the parser's own
+    single-valued `document` ("sales order 202610-0107 delivery": hint "order", document
+    ["SO"] -> hint "sales_order"). Read before `so_status.so_list_verdict` rewrites
+    `document`. Structured parser fields only, never the message text."""
+    document = verdict.get("document")
+    if not (isinstance(document, list) and len(document) == 1):
+        return verdict
+    kind = _DOCUMENT_KIND.get(str(document[0]))
+    entities = verdict.get("entities")
+    if kind is None or not isinstance(entities, list):
+        return verdict
+    changed = False
+    out: list[Any] = []
+    for e in entities:
+        if isinstance(e, dict) and e.get("hint") == "order" and e.get("current_message") is not False:
+            out.append({**e, "hint": kind})
+            changed = True
+        else:
+            out.append(e)
+    return {**verdict, "entities": out} if changed else verdict
+
+
 def with_routing_agent_default(
     verdict: dict[str, Any],
     *,
@@ -2334,6 +2365,91 @@ class ResolveOutcome:
     not_checked: dict[str, str] = field(default_factory=dict)
 
 
+_CUSTOMER_OWNED_REF_KINDS = frozenset({"sales_order", "customer_po_ref"})
+
+
+def _all_matches(resolved: Any) -> list[dict[str, Any]]:
+    if not isinstance(resolved, dict):
+        return []
+    out = [m for r in jsc.array(resolved.get("resolutions")) if isinstance(r, dict) for m in jsc.array(r.get("matches"))]
+    out += jsc.array(resolved.get("intersection"))
+    for v in (resolved.get("by_entity_type") or {}).values():
+        out += v if isinstance(v, list) else []
+    return [m for m in out if isinstance(m, dict)]
+
+
+def _without_foreign_sales_orders(
+    db: Session, payload: dict[str, Any], linked: list[Any]
+) -> dict[str, Any]:
+    """REF-PROBES S3: a reference number that also names ANOTHER customer's sales order (or
+    PO ref) must not become a picker option or an answer: those matches are dropped from the
+    resolutions and the gate's compatible entities, as a silent miss. "Another customer's"
+    is `so_status`'s own scope rule (a link, or a linked debtor code in the same company)."""
+    from app.models.order import SalesOrder
+    from app.services.chatbot import so_status
+
+    ref_uuids = {
+        str(m.get("uuid"))
+        for m in _all_matches(payload.get("resolved"))
+        if jsc.nullish_str(m.get("entity_type")).strip().lower() in _CUSTOMER_OWNED_REF_KINDS and m.get("uuid")
+    }
+    dropped: set[str] = set()
+    if ref_uuids:
+        sos = db.query(SalesOrder).filter(SalesOrder.id.in_(ref_uuids)).all()
+        in_scope = so_status._scope_check(db, sos, linked)
+        owned = {str(so.id) for so in sos if in_scope(so)}
+        dropped = ref_uuids - owned
+
+    def _foreign(match: Any) -> bool:
+        return str(jsc.get(match, "uuid")) in dropped
+
+    resolved = payload.get("resolved")
+    if not isinstance(resolved, dict):
+        return payload
+
+    def _kept(matches: Any) -> list[Any]:
+        return [m for m in jsc.array(matches) if not _foreign(m)]
+
+    resolutions = [
+        {**r, "matches": _kept(r.get("matches"))} if isinstance(r, dict) else r
+        for r in jsc.array(resolved.get("resolutions"))
+    ]
+    intersection = _kept(resolved.get("intersection"))
+    by_entity_type = {
+        k: (_kept(v) if isinstance(v, list) else v)
+        for k, v in (resolved.get("by_entity_type") or {}).items()
+    }
+    if not dropped:
+        return payload
+    # A token left with no match is a miss like any other (said as "could not find").
+    emptied = [r.get("token") for r in resolutions if isinstance(r, dict) and not r.get("matches")]
+    tokens = [t for t in jsc.array(resolved.get("tokens")) if isinstance(t, str)]
+    if not resolutions and len(tokens) == 1 and not intersection:
+        emptied = tokens
+    unresolved = [*jsc.array(resolved.get("unresolved_tokens")), *[t for t in emptied if isinstance(t, str)]]
+    out = {
+        **payload,
+        "resolved": {
+            **resolved,
+            "resolutions": resolutions,
+            "intersection": intersection,
+            "by_entity_type": by_entity_type,
+            "unresolved_tokens": list(dict.fromkeys(unresolved)),
+        },
+    }
+    gate = payload.get("gate")
+    if isinstance(gate, dict):
+        out["gate"] = {
+            **gate,
+            "compatible_entities": [
+                e
+                for e in jsc.array(gate.get("compatible_entities"))
+                if not (isinstance(e, dict) and str(e.get("uuid")) in dropped)
+            ],
+        }
+    return out
+
+
 def resolve_kinds(
     db: Session,
     *,
@@ -2347,6 +2463,7 @@ def resolve_kinds(
     stamp_purchase_order: bool = False,
     roster_caps: Mapping[str, int] | None = None,
     enforced_scope: bool = False,
+    scope_linked: list[Any] | None = None,
 ) -> ResolveOutcome:
     """Ask the resolver what each named token actually IS (AC-1527).
 
@@ -2539,6 +2656,8 @@ def resolve_kinds(
         logger.warning("chatbot: the resolver did not answer", exc_info=True)
         return ResolveOutcome({}, [], None, {}, {}, False, None)
 
+    if scope_linked is not None:
+        payload = _without_foreign_sales_orders(db, payload, scope_linked)
     resolved = payload.get("resolved")
     # BRAND-PROMO-EXPAND (owner, 6 Oct 2026: "Sorento is always a brand"): what the
     # resolver's answer MEANS for each token the parser hinted, before the pure core
@@ -3458,12 +3577,37 @@ def make_tool_runner(
         # by the lane from `sales_orders` (`lanes/business/run_fetch`'s `so_numbers` arm),
         # and so are not "could not find" words for compose to name a second time.
         so_numbers = _so_numbers_asked(domain, verdict, unplaced)
+        placed_refs = _placed_reference_words(db, entities)
+        placed_so = placed_refs["so_numbers"]
+        so_numbers = list(dict.fromkeys([*so_numbers, *placed_so]))
         envelope_unplaced = unplaced
         if not reads_customer_po_refs(profile) and lane_out.get("po_refs"):
             # SO-PO-REF: the audience decides what "PO" means. A staff turn never reads the
             # parser's `po_refs` (their PO is the supplier PO path, untouched).
             lane_out = {**lane_out, "po_refs": None}
+        # REF-PROBES: a customer PO ref the resolver PLACED is answered for staff too (their
+        # own "PO" is the supplier PO path, which is `purchase_order`); one the asker NAMED
+        # as a PO ref that nothing placed goes to the same arm, which says it was not found.
+        named_unplaced_refs = [
+            unplaced[_token_key(raw)]
+            for e in jsc.array(jsc.get(verdict, "entities"))
+            if isinstance(e, dict)
+            and e.get("hint") == "customer_po_ref"
+            and e.get("current_message") is not False
+            and _token_key(raw := jsc.nullish_str(e.get("raw")).strip()) in unplaced
+        ]
+        extra_refs = [*placed_refs["po_refs"], *named_unplaced_refs]
+        if extra_refs:
+            lane_out = {
+                **lane_out,
+                "po_refs": list(dict.fromkeys([*(lane_out.get("po_refs") or []), *extra_refs])),
+            }
         po_words = _po_ref_words(lane_out.get("po_refs"), unplaced)
+        for lane_key in ("po_numbers", "pr_numbers"):
+            if placed_refs[lane_key]:
+                lane_out = {**lane_out, lane_key: placed_refs[lane_key]}
+        if is_staff_profile(profile):
+            lane_out = {**lane_out, "ref_staff": True}
         if po_words:
             # SO-PO-REF: the PO number the parser also emitted as an entity is answered by
             # the `po_refs` arm, so it is no miss for compose to name a second time (nor to
@@ -3474,8 +3618,23 @@ def make_tool_runner(
                 focus,
                 [{"entity_type": kind, "raw": w} for w in po_words for kind in ("product", "order")],
             )
+        from app.services.chatbot.lanes.business import find as find_lane
+
+        if find_lane.filter_keys(verdict):
+            # CHAT-FIND: on a find only a product CODE is a subject; a type word the parser
+            # also emitted ("马桶盖", "seat cover") names the relation's target, so it is no
+            # "could not find" word for compose to print (crew live check, 13 Oct 2026). An
+            # unplaced code stays: a mistyped code is still named.
+            product_words = {
+                _token_key(jsc.nullish_str(e.get(field)).strip())
+                for e in jsc.array(jsc.get(verdict, "entities"))
+                if isinstance(e, dict) and e.get("hint") == "product"
+                for field in ("raw", "canonical_code")
+                if jsc.truthy(e.get(field))
+            }
+            envelope_unplaced = {k: v for k, v in envelope_unplaced.items() if k in product_words}
         if so_numbers:
-            lane_out = {**lane_out, "so_numbers": so_numbers}
+            lane_out = {**lane_out, "so_numbers": so_numbers, **({"so_placed": True} if placed_so else {})}
             envelope_unplaced = {k: v for k, v in unplaced.items() if v not in so_numbers}
             # Answered here, so never carried: a word left on `focus.extra["order"]` without a
             # uuid is handed to the resolver again on the next order turn and named as a miss
@@ -4284,9 +4443,18 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     reached the resolver, the fetch dropped both as `missing_or_bad_uuid` and answered with
     every file of every type, and the "has no Certification" line had no types to name.
 
-    Only the document types, only those with no uuid, only when this turn named none of its
-    own, and only when the one domain in play is `product_attachment` - any other domain's
-    gate would read a document type as an incompatible entity.
+    CARRY-ATTACH (prod, 13 Oct 2026; owner ruling: "the parser should be able to
+    understand"): a SETTLED type too, with its uuid. "Srt8313" after "Srt8308 drawing" is the
+    same question about a new product in the parser's own reading (the domain carried,
+    `domain_in_message: false`, so `decide` refines and the type stays on the focus), and the
+    fetch already ran under it; left out here, the gate's required-type check asked "Please
+    provide the attachment type for product Srt8313" over the file it had found. A message
+    that starts a new ask ("attachments for Srt8313") has already dropped the carried type in
+    `apply._focus_rules`, so nothing is handed over and the gate still asks.
+
+    Only the document types, only when this turn named none of its own, and only when the
+    one domain in play is `product_attachment` - any other domain's gate would read a
+    document type as an incompatible entity.
     """
     own = [e for e in parse_output.get("entities") or [] if isinstance(e, dict)]
     if any(str(e.get("hint") or "").strip().lower() == "attachment_type" for e in own):
@@ -4298,20 +4466,21 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     rows = (getattr(focus, "extra", {}) or {}).get("attachment_type") or []
     carried: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or row.get("uuid"):
+        if not isinstance(row, dict):
             continue
         code = row.get("canonical_code") or row.get("raw")
         if not jsc.truthy(code):
             continue
-        carried.append(
-            {
-                "raw": row.get("raw") or code,
-                "hint": "attachment_type",
-                "canonical_code": code,
-                "current_message": False,
-                "confident": True,
-            }
-        )
+        entity: dict[str, Any] = {
+            "raw": row.get("raw") or code,
+            "hint": "attachment_type",
+            "canonical_code": code,
+            "current_message": False,
+            "confident": True,
+        }
+        if row.get("uuid"):
+            entity["uuid"] = row["uuid"]
+        carried.append(entity)
     if not carried:
         return parse_output
     return {**parse_output, "entities": [*own, *carried]}
@@ -4341,6 +4510,9 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     ask that names another axis ("outstanding DO for hanlim" after a stock answer) still
     carries the echoed product through `apply._focus_rules` exactly as today, where the
     echo is what keeps the product on a new ask that starts fresh."""
+    # CARRY-ATTACH (reviewer S1): the key is the engine's own, never the parser's; one the
+    # emission carried is dropped before any exit, so it cannot keep a kind a NEW ASK drops.
+    verdict = {k: v for k, v in verdict.items() if k != RESTATED_KINDS_KEY}
     entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
     typed = [e for e in entities if e.get("current_message") is not False]
     if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in typed):
@@ -4348,7 +4520,16 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     restated = [e for e in entities if _restates_a_settled_row(e, focus)]
     if not restated:
         return verdict
-    return {**verdict, "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)]}
+    # CARRY-ATTACH (prod, 13 Oct 2026): the kinds the echoes restated ride on the verdict,
+    # so a turn the parser also reads as naming its own domain (`domain_in_message: true`,
+    # a NEW ASK) keeps the settled rows instead of evicting the subject it was asked about
+    # ("Drawing" answering "which attachment type for Srt8313?").
+    kinds = sorted({str(e.get("hint") or "").strip().lower() for e in restated})
+    return {
+        **verdict,
+        "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)],
+        RESTATED_KINDS_KEY: kinds,
+    }
 
 
 def _restates_a_settled_row(entity: dict[str, Any], focus: Focus) -> bool:
@@ -4686,6 +4867,32 @@ def _po_ref_words(po_refs: Any, unplaced: dict[str, str]) -> list[str]:
     if not keys:
         return []
     return [w for w in unplaced.values() if po_ref_key(w) in keys]
+
+
+def _placed_reference_words(db: Session, entities: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """REF-PROBES: the reference numbers the RESOLVER placed this turn, as the words each
+    lane arm reads: a sales order by its number, a customer PO ref by the ref its sales
+    orders carry, our PO and a purchase request by their numbers."""
+    out: dict[str, list[str]] = {"so_numbers": [], "po_refs": [], "po_numbers": [], "pr_numbers": []}
+    ref_uuids: list[str] = []
+    for e in entities:
+        kind = e.get("entity_type")
+        code = jsc.nullish_str(e.get("code") or e.get("canonical_code")).strip()
+        if kind == "sales_order" and code:
+            out["so_numbers"].append(code)
+        elif kind == "purchase_order" and code:
+            out["po_numbers"].append(code)
+        elif kind == "purchase_request" and code:
+            out["pr_numbers"].append(code)
+        elif kind == "customer_po_ref" and e.get("uuid"):
+            ref_uuids.append(str(e["uuid"]))
+    if ref_uuids:
+        from app.models.order import SalesOrder
+
+        out["po_refs"] = [
+            r for (r,) in db.query(SalesOrder.po_ref).filter(SalesOrder.id.in_(ref_uuids)).all() if r
+        ]
+    return {k: list(dict.fromkeys(v)) for k, v in out.items()}
 
 
 def _so_numbers_asked(domain: str, verdict: dict[str, Any], unplaced: dict[str, str]) -> list[str]:

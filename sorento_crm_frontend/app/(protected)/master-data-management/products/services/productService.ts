@@ -249,6 +249,48 @@ export async function resetVariantAuto(productId: string): Promise<ProductDetail
 }
 
 /**
+ * Hand-set a product's model family (empty clears it); sticky until reset.
+ */
+export async function setFamilyCode(
+  productId: string,
+  familyCode: string | null,
+): Promise<ProductDetail> {
+  const response = await apiFetch(
+    `/api/v1/master-data/products/${productId}/family-code`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ family_code: familyCode }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await extractApiError(response, 'Failed to set family'));
+  }
+
+  return response.json();
+}
+
+/**
+ * Reset a hand-set family back to the one derived from the product code.
+ */
+export async function resetFamilyCode(productId: string): Promise<ProductDetail> {
+  const response = await apiFetch(
+    `/api/v1/master-data/products/${productId}/family-code-reset`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await extractApiError(response, 'Failed to reset family'));
+  }
+
+  return response.json();
+}
+
+/**
  * The same `/select` rows, keeping the fields a picked product decides for the line it lands on.
  *
  * `getProductsForVariantSelect` below narrows every row to a code and a name, which is all a

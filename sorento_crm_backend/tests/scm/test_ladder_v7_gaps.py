@@ -19,6 +19,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -162,6 +164,7 @@ def test_two_units_of_one_board_share_the_same_other_groups_pile_not_duplicate_i
 # --------------------------------------------------------------------------- gap (c)
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_reissue_without_line_carries_a_survivors_claim_id_onto_the_new_revision():
     """`_reissue_without_line` copies a surviving line's hold row for row, and `claim_id`
     is one of the columns copied (`app/services/project_supply_service.py`, the

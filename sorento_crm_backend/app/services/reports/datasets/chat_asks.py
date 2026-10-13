@@ -41,13 +41,13 @@ blanking the name for a session with no company set.
 from __future__ import annotations
 
 import dataclasses
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, List, Sequence, Tuple
 
 import sqlalchemy as sa
 
-from app.models.chat_facts import ChatAskFact, ChatTopic
+from app.models.chat_facts import HISTORY_ERAS, ChatAskFact, ChatBackfillRun, ChatTopic
 from app.models.order import Customer
 from app.services.reports import registry as reg
 from app.services.reports.engine import month_label
@@ -56,9 +56,10 @@ from app.services.reports.engine import month_label
 ASKS = ChatAskFact.__table__
 _CUSTOMERS = Customer.__table__
 _TOPICS = ChatTopic.__table__
+_RUNS = ChatBackfillRun.__table__
 
-#: The first day the bot's traces exist (the one-time load starts here). The period opens on
-#: it, and the coverage note says so; before it there is nothing to count (CA-4 may add it).
+#: The first day the bot's traces exist (the one-time load starts here). Before it, asks come
+#: from the CA-4 history backfill, and the note prints one coverage line per era.
 TRACES_BEGIN = date(2026, 9, 5)
 
 TRACES_NOTE = "From bot traces, 5 Sep 2026 on."
@@ -78,6 +79,7 @@ OUTCOME_LABELS: Tuple[Tuple[str, str], ...] = (
     ("cannot_do", "Cannot do"),
     ("missed", "Missed"),
     ("technical", "Technical failure"),
+    ("no_reply", "No reply"),
     ("noise", "Noise"),
 )
 
@@ -121,8 +123,9 @@ CONTACT_TYPE_LABELS: Tuple[Tuple[str, str], ...] = (
 DEFAULT_CONTACT_TYPES: Tuple[str, ...] = ("dealer", "not_allowed", "unknown")
 
 
-def topics_note(ctx, *, skip: Tuple[str, ...] = ()) -> str:
-    """`Topics labelled: 71% of asks (taxonomy v2).` plus the coverage line.
+def topics_coverage(ctx, *, skip: Tuple[str, ...] = ()) -> Tuple[int, Any]:
+    """`(percent, taxonomy version)`: the share of the run's asks that carry a topic, and the
+    active taxonomy's version (None before any is published).
 
     The share is over the asks the run counts: the period and the ask-level filters (a
     param named in `skip` filters another table and is left out). No asks reads 0%.
@@ -141,14 +144,106 @@ def topics_note(ctx, *, skip: Tuple[str, ...] = ()) -> str:
     version = ctx.db.execute(
         sa.select(sa.func.max(_TOPICS.c.version)).where(_TOPICS.c.status == "active")
     ).scalar()
+    return percent, version
+
+
+def topics_note(ctx, *, skip: Tuple[str, ...] = ()) -> str:
+    """`Topics labelled: 71% of asks (taxonomy v2).` plus the coverage line."""
+    return coverage_line(*topics_coverage(ctx, skip=skip), ctx=ctx)
+
+
+def coverage_line(percent: int, version: Any, *, ctx: Any = None) -> str:
+    """The labelled share, then (given a run's ctx) the CA-4 history era lines."""
     tail = f" (taxonomy v{version})" if version is not None else ""
-    return f"Topics labelled: {percent}% of asks{tail}. {TRACES_NOTE}"
+    line = f"Topics labelled: {percent}% of asks{tail}. {TRACES_NOTE}"
+    return _with_history(ctx, line) if ctx is not None else line
 
 
-def default_period() -> dict:
-    """The traces' first day to today in Malaysia, resolved when ASKED FOR."""
+def overview_note(ctx) -> str:
+    return _with_history(ctx, COVERAGE_NOTE)
+
+
+def _day_month(day: date) -> str:
+    return f"{day.day} {day:%b}"
+
+
+def _era_label(era: str, first: date, last: date) -> str:
+    """"17 Apr to 21 Jul"; "5 to 22 Sep" inside one month. Era D is only the untraced slice."""
+    dates = (
+        f"{first.day} to {_day_month(last)}"
+        if (first.year, first.month) == (last.year, last.month)
+        else f"{_day_month(first)} to {_day_month(last)}"
+    )
+    return f"{dates}, messages the bot never traced" if era == "D" else dates
+
+
+def _malaysia_midnight(day: date) -> datetime:
+    return datetime.combine(day, time(), tzinfo=reg._MY_TZINFO)
+
+
+def history_lines(ctx) -> list:
+    """One line per backfill era the period touches (CA-4, B10).
+
+    `<dates>: from message text (estimated), <p>% of <n> messages read.` where n is the
+    eligible count the era's LATEST run found and p the share of those messages that have a
+    fact; `<dates>: not loaded yet.` when the era was never run.
+    """
+    lines = []
+    for era, (first, after) in HISTORY_ERAS.items():
+        if not (first < ctx.period.end_exclusive and after > ctx.period.start):
+            continue
+        label = _era_label(era, first, after - timedelta(days=1))
+        eligible = ctx.db.execute(
+            sa.select(_RUNS.c.messages_eligible)
+            .where(_RUNS.c.era == era)
+            .order_by(_RUNS.c.started_at.desc())
+            .limit(1)
+        ).scalar()
+        if eligible is None:
+            lines.append(f"{label}{_NOT_LOADED}")
+            continue
+        read = ctx.db.execute(
+            sa.select(sa.func.count(sa.distinct(ASKS.c.history_id))).where(
+                ASKS.c.source == "history_backfill",
+                ASKS.c.asked_at >= _malaysia_midnight(first),
+                ASKS.c.asked_at < _malaysia_midnight(after),
+            )
+        ).scalar()
+        percent = (
+            int((Decimal(min(read, eligible)) * 100 / Decimal(eligible)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+            if eligible
+            else 0
+        )
+        lines.append(f"{label}: from message text (estimated), {percent}% of {eligible:,} messages read.")
+    return lines
+
+
+#: Printed once after the era lines when a text era shows (crew rulings Q1, Q3).
+TEXT_ERA_CAVEAT = (
+    "Read from message text, a reply is the bot's next message within 24 hours; a reply with no "
+    "sender recorded counts as the bot's, so a staff reply there cannot be told apart."
+)
+
+_NOT_LOADED = ": not loaded yet."
+
+
+def _with_history(ctx, note: str) -> str:
+    """The note, the era lines, and the caveat once when any text era is loaded."""
+    lines = history_lines(ctx)
+    loaded = any(not line.endswith(_NOT_LOADED) for line in lines)
+    return " ".join([note, *lines, *([TEXT_ERA_CAVEAT] if loaded else [])])
+
+
+def default_period(db=None) -> dict:
+    """The earliest fact's day (5 Sep while nothing older is loaded) to today in Malaysia,
+    resolved when ASKED FOR. With no session (registration) it opens on 5 Sep."""
+    first = TRACES_BEGIN
+    if db is not None:
+        earliest = db.execute(sa.select(sa.func.min(ASKS.c.asked_at))).scalar()
+        if earliest is not None:
+            first = min(first, earliest.astimezone(reg._MY_TZINFO).date())
     today = reg.today_malaysia()
-    return {"kind": "custom", "from": TRACES_BEGIN.isoformat(), "to": max(today, TRACES_BEGIN).isoformat()}
+    return {"kind": "custom", "from": first.isoformat(), "to": max(today, first).isoformat()}
 
 
 # ------------------------------------------------------------------------ expressions

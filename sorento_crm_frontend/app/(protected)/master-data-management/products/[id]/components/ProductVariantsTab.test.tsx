@@ -23,22 +23,28 @@ vi.mock('next/link', () => ({
 // Mutation hooks are mocked so the tab test asserts wiring (which hook fires with
 // which ids), not the network layer. Spies are hoisted so the vi.mock factory can
 // close over them.
-const { setParentMutate, unlinkMutate, resetMutate } = vi.hoisted(() => ({
-  setParentMutate: vi.fn(),
-  unlinkMutate: vi.fn(),
-  resetMutate: vi.fn(),
-}));
+const { setParentMutate, unlinkMutate, resetMutate, setFamilyMutate, resetFamilyMutate } =
+  vi.hoisted(() => ({
+    setParentMutate: vi.fn(),
+    unlinkMutate: vi.fn(),
+    resetMutate: vi.fn(),
+    setFamilyMutate: vi.fn(),
+    resetFamilyMutate: vi.fn(),
+  }));
 
 vi.mock('../../hooks/useProducts', () => ({
   useSetVariantParent: () => ({ mutate: setParentMutate, isPending: false }),
   useUnlinkVariant: () => ({ mutate: unlinkMutate, isPending: false }),
   useResetVariantAuto: () => ({ mutate: resetMutate, isPending: false }),
+  useSetFamilyCode: () => ({ mutate: setFamilyMutate, isPending: false }),
+  useResetFamilyCode: () => ({ mutate: resetFamilyMutate, isPending: false }),
 }));
 
 // The picker is a heavy radix combobox with its own dedicated test
 // (ProductVariantPickerDialog.test.tsx). Here we stub it to a minimal dialog that
 // surfaces the props the tab passes (title / excludeIds) and can fire onConfirm.
 vi.mock('./ProductAlternativesSection', () => ({ default: () => null }));
+vi.mock('./ProductCompatibilitySection', () => ({ default: () => null }));
 
 vi.mock('./ProductVariantPickerDialog', () => ({
   default: ({
@@ -86,6 +92,8 @@ beforeEach(() => {
   setParentMutate.mockReset();
   unlinkMutate.mockReset();
   resetMutate.mockReset();
+  setFamilyMutate.mockReset();
+  resetFamilyMutate.mockReset();
   // radix AlertDialog / primitives touch browser APIs jsdom lacks.
   Element.prototype.scrollIntoView = vi.fn();
   (Element.prototype as unknown as { hasPointerCapture: unknown }).hasPointerCapture =
@@ -326,5 +334,134 @@ describe('ProductVariantsTab - destructive actions require an AlertDialog confir
       { productId: PRODUCT_ID },
       expect.anything(),
     );
+  });
+});
+
+// CODE-VARIANTS AC-10: the Family section (mock: documentation/mockups/code-variants/index.html).
+// Scoped through data-testid="family-section" because the tab already has its own
+// "Manual" badge and "Reset to auto" button for the variant link; the Family section must
+// not be confused with them.
+const FAMILY_MEMBERS: ProductVariantRef[] = [
+  { id: 'f-1-uuid', product_code: 'SRTWC8357-RL-P', product_name: 'WC 8357 RL P' },
+  { id: 'f-2-uuid', product_code: 'SRTWC8357-200-RL', product_name: 'WC 8357 200 RL' },
+];
+
+function renderFamily(over: Record<string, unknown> = {}) {
+  return render(
+    <ProductVariantsTab
+      productId={PRODUCT_ID}
+      productCode="SRTWC8357-RL"
+      variantOf={null}
+      variants={[]}
+      variantLinkManual={false}
+      familyCode="SRTWC8357"
+      familyCodeManual={false}
+      familyMembers={FAMILY_MEMBERS}
+      {...over}
+    />,
+  );
+}
+
+const familySection = () => within(screen.getByTestId('family-section'));
+
+describe('ProductVariantsTab - Family section', () => {
+  it('shows the family code, no Manual badge and no Reset when auto', () => {
+    renderFamily();
+    const fam = familySection();
+    expect(fam.getByText('SRTWC8357')).toBeInTheDocument();
+    expect(fam.queryByText('Manual')).not.toBeInTheDocument();
+    expect(fam.queryByRole('button', { name: /reset to auto/i })).not.toBeInTheDocument();
+    expect(fam.getByRole('button', { name: /edit/i })).toBeInTheDocument();
+  });
+
+  it('Manual badge and Reset to auto appear when the family is hand-set', () => {
+    renderFamily({ familyCodeManual: true });
+    const fam = familySection();
+    expect(fam.getByText('Manual')).toBeInTheDocument();
+    expect(fam.getByRole('button', { name: /reset to auto/i })).toBeInTheDocument();
+  });
+
+  it('Edit swaps the value for an input; Save calls the hook with the typed value', () => {
+    renderFamily();
+    const fam = familySection();
+    fireEvent.click(fam.getByRole('button', { name: /edit/i }));
+    const input = fam.getByLabelText(/family code/i) as HTMLInputElement;
+    expect(input.value).toBe('SRTWC8357');
+    fireEvent.change(input, { target: { value: 'WC8357X' } });
+    fireEvent.click(fam.getByRole('button', { name: /^save$/i }));
+    expect(setFamilyMutate).toHaveBeenCalledWith(
+      { productId: PRODUCT_ID, familyCode: 'WC8357X' },
+      expect.anything(),
+    );
+  });
+
+  it('Cancel leaves edit mode without calling the hook', () => {
+    renderFamily();
+    const fam = familySection();
+    fireEvent.click(fam.getByRole('button', { name: /edit/i }));
+    fireEvent.click(fam.getByRole('button', { name: /^cancel$/i }));
+    expect(setFamilyMutate).not.toHaveBeenCalled();
+    expect(fam.queryByLabelText(/family code/i)).not.toBeInTheDocument();
+  });
+
+  it('Reset to auto calls the reset hook with the product id', () => {
+    renderFamily({ familyCodeManual: true });
+    fireEvent.click(familySection().getByRole('button', { name: /reset to auto/i }));
+    expect(resetFamilyMutate).toHaveBeenCalledWith(
+      { productId: PRODUCT_ID },
+      expect.anything(),
+    );
+  });
+
+  it('empty state: no family code shows a heading and hint, still editable', () => {
+    renderFamily({ familyCode: null, familyMembers: [] });
+    const fam = familySection();
+    expect(fam.getByText('No family')).toBeInTheDocument();
+    expect(fam.getByText(/this code has no family part/i)).toBeInTheDocument();
+    expect(fam.getByRole('button', { name: /edit/i })).toBeInTheDocument();
+  });
+
+  it('family members render as links to their detail pages, no UUID text', () => {
+    const { container } = renderFamily();
+    const fam = familySection();
+    const link = fam.getByRole('link', { name: /SRTWC8357-RL-P/ });
+    expect(link).toHaveAttribute('href', '/master-data-management/products/f-1-uuid');
+    expect(fam.getByRole('link', { name: /SRTWC8357-200-RL/ })).toHaveAttribute(
+      'href',
+      '/master-data-management/products/f-2-uuid',
+    );
+    expect(container.textContent).not.toContain('f-1-uuid');
+  });
+});
+
+describe('ProductVariantsTab - Family member second line', () => {
+  it('shows the description under the code', () => {
+    renderFamily({
+      familyMembers: [
+        {
+          id: 'f-9-uuid',
+          product_code: 'SRTWC8357-RL-P',
+          product_name: 'SRTWC8357-RL-P',
+          description: 'SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 200MM)',
+        },
+      ],
+    });
+    const link = familySection().getByRole('link', { name: /SRTWC8357-RL-P/ });
+    expect(link).toHaveTextContent('SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 200MM)');
+  });
+
+  it('falls back to the product name when the description is empty', () => {
+    renderFamily({
+      familyMembers: [
+        {
+          id: 'f-8-uuid',
+          product_code: 'SRTWC8357-300-RL',
+          product_name: 'WC 8357 300 RL name',
+          description: '',
+        },
+      ],
+    });
+    const link = familySection().getByRole('link', { name: /SRTWC8357-300-RL/ });
+    expect(link).toHaveTextContent('WC 8357 300 RL name');
   });
 });

@@ -232,6 +232,15 @@ def _restore_stubbed_module_symbols():
         if getattr(module, attr, None) is not original:
             setattr(module, attr, original)
 
+
+# runtime_settings binds `SessionLocal` by name when it is first imported, and its readers
+# (the connector's `verify_token`, among others) import it lazily. A test that stubs
+# `app.database.SessionLocal` before that first import handed the stub to it: the read failed,
+# secrets failed closed, and the connector answered 503 "not configured" in place of 401 - only
+# on an xdist worker that had not imported it yet (release run 38287204810). The stub also
+# outlived the test's monkeypatch. Importing it here binds the real session once, for every test.
+import app.services.runtime_settings  # noqa: E402,F401
+
 # ---------------------------------------------------------------------------
 # Company-scope test default (multi-company isolation).
 #
@@ -547,3 +556,18 @@ def no_live_llm(monkeypatch, request):
         if module is not None and getattr(module, "get_provider", None) is original:
             monkeypatch.setattr(module, "get_provider", _raise, raising=True)
     yield
+
+
+@pytest.fixture()
+def ladder_steps_on(monkeypatch):
+    """Turn the three planner steps the owner disabled on 12 Oct 2026 back on
+    (`app.services.scm.ladder_steps`, `PLAN-plan-four-options-12oct.md`).
+
+    For the tests that pin those steps' own behaviour: the code is kept behind the flags so
+    it can be switched back on, and these keep it honest. The four-option planner itself is
+    pinned in `test_plan_four_options.py`."""
+    from app.services.scm import ladder_steps
+
+    monkeypatch.setattr(ladder_steps, "USE_INCOMING", True)
+    monkeypatch.setattr(ladder_steps, "SUPPLY_BORROW", True)
+    monkeypatch.setattr(ladder_steps, "ORDER_BORROW_NAMES_DONOR", True)

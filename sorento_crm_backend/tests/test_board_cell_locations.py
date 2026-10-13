@@ -83,6 +83,11 @@ def _sites(db, codes: list[str], group: str) -> tuple[dict, dict]:
     what `pool_warehouse_id` states - the naming coincidence is not the rule.
     """
     pools = {code: _warehouse(db, code) for code in codes}
+    for pool in pools.values():
+        # A site pool is never `segment = project` on the live book: one that is would be a
+        # project reserve (HQ), which Fulfilment Planning never draws.
+        pool.segment = None
+    db.flush()
     bins = {
         code: _warehouse(db, f"{code}-{group}", pool=pools[code]) for code in codes
     }
