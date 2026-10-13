@@ -1346,6 +1346,9 @@ class PromotionProductService:
             joinedload(PromotionProduct.product).joinedload(Product.category),
             joinedload(PromotionProduct.product).joinedload(Product.brand),
             joinedload(PromotionProduct.promotion),
+            # The line's group name is read for every row (`promotion_group_name`): loaded with
+            # the page, not one lazy query per group (reviewer S1).
+            joinedload(PromotionProduct.promotion_group),
         )
 
         if product_ids_filter:

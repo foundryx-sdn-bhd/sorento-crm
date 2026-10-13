@@ -832,7 +832,9 @@ def resolve_entity_body(
         # by reading the QUERY, and a Chinese or Malay message holds no word it knows, so the
         # subject went unplaced even with the parser's English canonical_code as its token.
         # The route filters this ask; the resolver is asked only to place the subject, in the
-        # words grounding settled on (the parser's own, its canonical where it gave one).
+        # words grounding settled on (the parser's own, its canonical where it gave one). The
+        # whole token list goes on purpose: a carried brand or a spec's own words only narrow
+        # what the resolver places, and the route does the filtering.
         if body.get("tokens"):
             body["query"] = " ".join(str(t) for t in body["tokens"] if t)
     # The class word the PARSER named, forwarded as a value (turn re-architecture,

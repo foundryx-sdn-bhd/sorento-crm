@@ -397,5 +397,4 @@ def test_p17_a_class_said_in_chinese_with_its_english_canonical_is_filtered(sess
     assert calls and calls[-1].get("spec_constraints"), (captured, reply)
     assert {"key": "size", "op": "eq", "value": 600} in calls[-1]["spec_constraints"], calls
     assert any(c.get("key") == "class" for c in calls[-1]["spec_constraints"]), calls
-    assert "洗手盆" not in reply.split("\n")[0] or len(_shown(reply, codes)) == 5, reply
     assert len(_shown(reply, codes)) == 5, reply
