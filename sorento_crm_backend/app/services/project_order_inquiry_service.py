@@ -316,6 +316,7 @@ _HANDOVER_VERB_ORDER = (
     "USE_OWN",
     "USE",
     "INCOMING",
+    "LOCAL_BUY",
 )
 _HANDOVER_VERB_LABEL = {
     IV_ORDER: "ORDER",
@@ -343,6 +344,7 @@ _HANDOVER_VERB_LABEL = {
     "USE_OWN": "USE OWN LOCATION",
     "USE": "USE BRW",
     "INCOMING": "INCOMING",
+    "LOCAL_BUY": "LOCAL BUY",
 }
 
 
@@ -465,7 +467,9 @@ def _saved_line_parts(
         rung = component.get("rung")
         location = component.get("source_location") or None
         if kind == "buy":
-            if snapshot.get("order_back"):
+            if snapshot.get("buy_origin") == "local":
+                parts.append(("LOCAL BUY", own, qty, "LOCAL_BUY"))
+            elif snapshot.get("order_back"):
                 cited = (snapshot.get("cited_document") or "").strip()
                 words = f"ORDER BACK {cited}" if cited else "ORDER BACK"
                 parts.append((words, own, qty, IV_ORDER_BACK))
@@ -4166,6 +4170,46 @@ class ProjectOrderInquiryService:
                 continue
             self._queue_saved_line(pso_id, line, now, before, actor_user_id=actor_user_id)
 
+    def record_cancelled_lines(
+        self,
+        *,
+        pso_id: str,
+        cancelled: Sequence[Tuple[ProjectSalesOrderLine, Any]],
+        actor_user_id: Optional[str] = None,
+    ) -> None:
+        """Cancel SO (owner, 13 Oct 2026 22:40: "cancel -> CANCEL"): ONE line per line CS
+        transferred to Cancel SO, replacing whatever that line's rows queued this commit.
+        `cancelled` is `(project line, core sales order line)` pairs."""
+        ids = {str(mirror.id) for mirror, _core in cancelled}
+        queue = self.db.info.get(_HANDOVER_PENDING_KEY)
+        if queue:
+            queue[:] = [
+                item
+                for item in queue
+                if not (item.get("pso_id") == pso_id and item.get("so_line_id") in ids)
+            ]
+        for mirror, core in cancelled:
+            open_qty = max(
+                _dec(getattr(core, "qty_ordered", None)) - _dec(getattr(core, "qty_delivered", None)),
+                _ZERO,
+            )
+            item_code = (
+                self.db.query(Product.product_code)
+                .filter(Product.id == (core.product_id or mirror.product_id))
+                .scalar()
+            )
+            snapshot = {
+                "item_code": item_code,
+                "open_qty": str(open_qty if open_qty > _ZERO else _dec(mirror.qty)),
+                "location": mirror.stock_location,
+                "required_date": mirror.delivery_date.isoformat() if mirror.delivery_date else None,
+                "components": [],
+            }
+            self._queue_saved_line(
+                pso_id, mirror, snapshot, None, actor_user_id=actor_user_id,
+                remark="CANCEL", keys=[IV_CANCEL_BALANCE],
+            )
+
     def _queue_saved_line(
         self,
         pso_id: str,
@@ -4174,9 +4218,15 @@ class ProjectOrderInquiryService:
         before: Optional[Mapping[str, Any]],
         *,
         actor_user_id: Optional[str] = None,
+        remark: Optional[str] = None,
+        keys: Optional[List[str]] = None,
     ) -> None:
-        remark, location = saved_line_remark(now)
-        keys = [key for _w, _l, _q, key in _saved_line_parts(now)]
+        if remark is None:
+            remark, location = saved_line_remark(now)
+            keys = [key for _w, _l, _q, key in _saved_line_parts(now)]
+        else:
+            location = now.get("location") or None
+            keys = list(keys or [])
         was: Dict[str, Any] = {}
         qty_now = _dec(now.get("open_qty"))
         if before is not None:

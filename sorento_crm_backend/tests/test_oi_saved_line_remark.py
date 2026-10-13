@@ -86,3 +86,9 @@ def test_several_parts_name_each_with_its_quantity():
 def test_a_zero_quantity_part_is_not_named():
     snapshot = _snap(_reserve("10", "BRW", rung="pool"), _buy("0"))
     assert saved_line_remark(snapshot) == ("USE BRW", "BRW")
+
+
+def test_a_local_buy_reads_local_buy():
+    """Owner, 13 Oct (Q3): purchasing does not place a local Buy (R9), and the line still
+    appears so the email matches Saved (N)."""
+    assert saved_line_remark(_snap(_buy(), buy_origin="local")) == ("LOCAL BUY", "BRW-IB")

@@ -1329,8 +1329,14 @@ class ProjectSupplyService:
             [core.id for _m, core, _r in picked],
             company_id=str(order.company_id) if order.company_id else None,
         )
-        ProjectOrderInquiryService(self.db).retire_rows_for_cancelled_lines(
+        oi_service = ProjectOrderInquiryService(self.db)
+        oi_service.retire_rows_for_cancelled_lines(
             [(str(core.id), reason) for _m, core, reason in picked],
+            actor_user_id=str(actor_user_id),
+        )
+        oi_service.record_cancelled_lines(
+            pso_id=str(order.id),
+            cancelled=[(mirror, core) for mirror, core, _r in picked],
             actor_user_id=str(actor_user_id),
         )
         flag_rows_for_cancelled_lines(self.db, [str(core.id) for _m, core, _r in picked])
@@ -5511,9 +5517,24 @@ class ProjectSupplyService:
             str(snap.get("project_line_id")): snap
             for snap in ((decision.line_snapshots or []) if decision is not None else [])
         }
+        # A local Buy is not purchasing's to place (R9) and reads LOCAL BUY (owner, 13 Oct,
+        # Q3). Marked on both snapshots alike, so it never reads as a change by itself.
+        origin = buy_origin_by_product(
+            self.db, {str(fact.product_id) for _l, _e, fact in checked if fact.product_id}
+        )
+
+        def _marked(snapshot, fact):
+            if snapshot is None or origin.get(str(fact.product_id)) != "local":
+                return snapshot
+            return {**snapshot, "buy_origin": "local"}
+
         saved = [
-            (line, now_by_line[str(line.id)], before_by_line.get(str(line.id)))
-            for line, _entry, _fact in checked
+            (
+                line,
+                _marked(now_by_line[str(line.id)], fact),
+                _marked(before_by_line.get(str(line.id)), fact),
+            )
+            for line, _entry, fact in checked
             if str(line.id) in now_by_line
         ]
         if saved:
