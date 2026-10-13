@@ -63,7 +63,10 @@ def _state(db, company_id: str) -> dict[str, tuple]:
         .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
         .filter(AutocountCancelLine.company_id == company_id,
                 AutocountCancelDoc.kind.in_((KIND_CANCEL_SO, KIND_CANCEL_PO)))
-        .order_by(AutocountCancelLine.created_at, AutocountCancelLine.id)
+        # Keyed lines first: a group is decided from the keyed matches stored when it is decided,
+        # so they are settled before any key-less batch reads them (review nit).
+        .order_by(AutocountCancelLine.from_dtl_key.is_(None), AutocountCancelLine.created_at,
+                  AutocountCancelLine.id)
         .all()
     )
     return {str(r[0]): (r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows}
@@ -112,6 +115,16 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="Write (the default is a dry run)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # What the API registers at startup and a script does not get for free (review should-fix
+    # 1): audit rows for the line writes, and the OI post-commit dispatch that sends the
+    # handover / changed-with-links notices the OI retire queues.
+    from app.services.audit_service import register_audit_listeners
+    from app.services.project_order_inquiry_service import (
+        register_order_inquiry_post_commit_dispatch,
+    )
+
+    register_audit_listeners()
+    register_order_inquiry_post_commit_dispatch()
     db = SessionLocal()
     try:
         company = db.query(Company).filter(Company.code == args.company).first()
@@ -125,7 +138,8 @@ def main() -> int:
             print(f"  {move}: {count}")
         print(f"lines newly fully cancelled: {summary['newly_cancelled']}  "
               f"planned qty moves: {summary['plan_moves']}")
-        if not args.apply and summary["changed"]:
+        if not args.apply and (summary["changed"] or summary["newly_cancelled"]
+                               or summary["plan_moves"]):
             print("Re-run with --apply to write these changes.")
     finally:
         db.close()

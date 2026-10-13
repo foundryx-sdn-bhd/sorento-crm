@@ -190,3 +190,41 @@ def test_a_run_for_one_company_leaves_the_other_companys_guess_alone(env):
     assert (kept.match_reason, kept.sales_order_line_id) == ("tie_break", b_lines[1])
     line = env.db.get(SalesOrderLine, b_lines[1])
     assert (line.qty_cancelled, line.line_status) == (Decimal("12"), "cancelled")
+
+
+def test_a_group_split_across_batches_is_decided_once(env, monkeypatch):
+    """Review should-fix 2: a two-line group whose cancel lines land in different batches
+    (batch=1). Both lines become fully cancelled exactly once, and the hooks get both."""
+    calls = _record_hooks(monkeypatch)
+    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"), (5002, "p1", 4, 4, "wh1")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=10, from_dtl=0)]),
+                   _xs(doc_key=950002, doc_no="ZZXS-0002",
+                       details=[_detail(952001, qty=4, from_dtl=0)])])
+    for doc_key, dtl in ((950001, 951001), (950002, 952001)):
+        stored = _cancel_lines(env, doc_key)[dtl]
+        stored.match_status, stored.match_reason = "unmatched", "no_fit"
+        stored.candidate_line_ids = None
+        env.db.commit()
+    for line_id in lines.values():
+        row = _so_line(env, line_id)
+        row.qty_cancelled, row.line_status, row.cancelled_by_cancel_doc = 0, "closed", False
+        env.db.commit()
+    summary = _run(env, dry_run=False, batch=1)
+    assert summary["moves"] == {"unmatched:no_fit -> matched:group_whole": 2}
+    assert summary["newly_cancelled"] == 2
+    assert sorted(i for d in calls for i, _ in d.newly_cancelled) == sorted(lines.values())
+    assert all(_so_line(env, i).line_status == "cancelled" for i in lines.values())
+
+
+def test_a_guess_on_the_wrong_line_counts_as_a_change(env):
+    """Review should-fix 2: same status and reason, another line. The old matcher put a
+    single-line group's cancel on a line of another item; only the target moves."""
+    lines = _so(env, lines=((5001, "p1", 10, 4, "wh1"), (5002, "p2", 10, 4, "wh1")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=4, from_dtl=0)])])
+    stored = _cancel_lines(env, 950001)[951001]
+    assert (stored.match_reason, stored.sales_order_line_id) == ("item", lines[5001])
+    stored.sales_order_line_id = lines[5002]
+    env.db.commit()
+    summary = _run(env, dry_run=False)
+    assert (summary["changed"], summary["moves"]) == (1, {"matched:item -> matched:item": 1})
+    assert _cancel_lines(env, 950001)[951001].sales_order_line_id == lines[5001]
