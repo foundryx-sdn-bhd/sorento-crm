@@ -379,10 +379,30 @@ def settle(
     read = _read_fresh(db, parse_output, message_text)
     if read is None:
         return None, COULDNT_READ
+    held_report = _dict(parse_output.get("held_chat_report"))
+    narrows = bool(held_report) and not read["chat_report"].get("group_by") and read.get("top_n") is None and not (
+        read.get("date_filter_start") or read.get("date_filter_end")
+    )
+    if narrows:
+        # A follow-up naming no axis, count or period (only an asker class, a measure) narrows the report that
+        # just ran: its axis, count and period stay, and the filters it settled with.
+        read = {
+            **read,
+            "chat_report": {**read["chat_report"], "group_by": held_report.get("group_by")},
+            "top_n": held_report.get("top_n"),
+            "date_filter_start": held_report.get("date_from"),
+            "date_filter_end": held_report.get("date_to"),
+        }
     parse_output = read
     args, line = _args(db, parse_output, entities, dealer=dealer, own_ids=own_ids, say=say)
     if args is None:
         return None, line
+    if narrows:
+        keep = {
+            k: v for k, v in held_report.items()
+            if k not in ("date_from", "date_to", "top_n", "group_by", "measure", "basis") and v not in (None, [], "")
+        }
+        args = {**keep, **args}
     top_n = parse_output.get("top_n")
     given: dict[str, Any] = _given_top_n(args, top_n)
     period = report_ask.period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end"))

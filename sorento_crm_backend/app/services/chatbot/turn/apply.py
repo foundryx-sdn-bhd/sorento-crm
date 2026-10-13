@@ -1487,7 +1487,9 @@ def _top_selling_rules(
         new_sales_ranking or not _narrows_the_ranking(verdict)
     ):
         focus.status = verdict.get("status") or None
-        focus.top_selling = None
+        if new_sales_ranking or verdict.get("topic_reset") is True:
+            focus.top_selling = None
+        # else: an answer in another domain keeps the slot (owner rule: "back to the ranking" finds it)
         trace.rules_fired.append("new_ask_leaves_top_selling")
         return
     elif hopped and not names_its_ask:
@@ -1495,7 +1497,10 @@ def _top_selling_rules(
         # for which document?") keeps the carried filters and their header line.
         return
     if focus.status != TOP_SELLING_STATUS:
-        focus.top_selling = None
+        # An answer in another domain keeps the top selling slot (owner rule: "back to the ranking, dealers
+        # only" finds it); a topic reset drops it, and a top selling ask replaces it (`asked` above).
+        if verdict.get("topic_reset") is True:
+            focus.top_selling = None
         return
     carried = dict(focus.top_selling or {})
     carried.pop("hop", None)

@@ -2026,7 +2026,26 @@ def lane_parse_output(
         from app.services.chatbot.turn.state import frame_from_report
 
         out["sales_ranking_frame"] = frame_from_report(focus.report)
+    if (
+        focus is not None and isinstance(focus.report, dict) and focus.report.get("kind") == "sales_analysis"
+        and jsc.js_string(verdict.get("order_status") or "").strip() == "sales_analysis"
+    ):
+        out["held_analysis"] = dict(focus.report.get("args") or {})  # a narrowing keeps the company (`analysis_ask`)
+    if focus is not None and isinstance(focus.report, dict) and focus.report.get("kind") == "chat_report":
+        out["held_chat_report"] = dict(focus.report.get("args") or {})  # a narrowing keeps its axis, period and count
     held_plain = focus.report if focus is not None and isinstance(focus.report, dict) and focus.report.get("kind") == "sales_report" else None
+    if (
+        held_plain is not None
+        and (held_plain.get("args") or {}).get("product_code_exact")
+        and _picks_the_open_drill_offer(verdict, pending or open_offer)
+        and not any(
+            isinstance(e, dict) and e.get("current_message") is not False
+            and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
+            for e in jsc.array(out.get("entities"))
+        )
+    ):
+        # A drill pick over a report narrowed to one exact code is that code's drill, not the family's.
+        out["sales_report_narrowed"] = True
     if held_plain is not None and _narrows_held_sales_report(verdict, pending or open_offer):
         # Read off the parser's own verdict: `out["order_status"]` was re-projected from the focus status above.
         # A plain sales report is held (no ranking): "only this one" narrows IT. The same report

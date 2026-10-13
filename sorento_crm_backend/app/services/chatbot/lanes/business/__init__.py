@@ -2112,17 +2112,35 @@ def run_fetch(
         if isinstance(slot, dict) and slot.get("ask") == analysis_ask.ASK_NAME:
             # The reply to the company question (stored when the route asked): the parser's pick or its
             # `sales_company` names the option; the filters the first message carried ride the slot.
+            answer = parse_output.get("required_ask_answer")
+            mode = answer.get("mode") if isinstance(answer, dict) else None
+            if mode == "cancel":
+                return _fixed_reply(analysis_ask.ANALYSIS_COMPANY_ASK.cancelled)
             company = analysis_ask.company_named(parse_output, slot)
             if company is None:
                 misses = int(slot.get("misses") or 0) + 1
                 if misses >= required_fields.MAX_MISSES:
-                    return _fixed_reply("I still can't place that company. Ask again naming one.")
-                return _fixed_reply(slot.get("question") or analysis_ask.QUESTION_FALLBACK, required_ask={**slot, "misses": misses})
+                    word = " ".join(str(parse_output.get("sales_company") or "that").split())
+                    return _fixed_reply(analysis_ask.ANALYSIS_COMPANY_ASK.give_up.format(word=word))
+                question = slot.get("question") or analysis_ask.QUESTION_FALLBACK
+                if mode == "all":
+                    question = f"{analysis_ask.ONE_COMPANY} {question}"  # the analysis runs for one company at a time
+                return _fixed_reply(question, required_ask={**slot, "misses": misses})
             for key, value in ((slot.get("extras") or {}).get("args") or {}).items():
                 if semantic_input.get(key) is None:
                     semantic_input[key] = value
             semantic_input["sales_company"] = company
             parse_output = {**parse_output, "sales_company": company}
+        held = parse_output.get("held_analysis")
+        if isinstance(held, dict) and held:
+            # The company the analysis last ran for stays; its other filters too unless this message names
+            # its own ask (`domain_in_message`).
+            if not semantic_input.get("sales_company"):
+                semantic_input["sales_company"] = held.get("sales_company")
+            if parse_output.get("domain_in_message") is not True:
+                for key, value in held.items():
+                    if key != "sales_company" and semantic_input.get(key) is None:
+                        semantic_input[key] = value
         group_by = jsc.js_string(semantic_input.get("group_by") or parse_output.get("group_by") or "")
         if group_by and group_by not in fetch_mod.SALES_ANALYSIS_GROUP_BY:
             # Review round 2 S1: "sales by customer" is not answered with a by-channel

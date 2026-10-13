@@ -62,6 +62,9 @@ def _is_filler(word: str) -> bool:
 def is_open_order_list(focus: Any) -> bool:
     """Is the conversation on an order list (a DO, SO or outstanding list)?"""
     domains = list(getattr(focus, "domains", None) or [])
+    report = getattr(focus, "report", None)
+    if isinstance(report, dict) and report and not report.get("kind") and not report.get("listed_after"):
+        return False  # a sales ranking is the latest answer (no order list after it): its words are the ranking's
     return "order" in domains and getattr(focus, "status", None) not in _NOT_A_LIST
 
 
@@ -159,10 +162,7 @@ def order_list_verdict(db: Session, verdict: dict[str, Any], state: Any, text: s
         open_pending = None
     else:
         open_pending = pending
-    # The parser read this message as a sales ranking ("mocha only" refining a held ranking): it is not a
-    # continuation of an order list, whatever the words are (the word readings below stay for the list).
-    parser_says_ranking = jsc.js_string(verdict.get("order_status") or "").strip() == "sales_ranking"
-    if is_open_order_list(focus) and not parser_says_ranking:
+    if is_open_order_list(focus):
         if clears_the_brand(text):
             state = replace(state, focus=replace(focus, outstanding_brand_ids=[]), pending=open_pending)
             return _continuation(verdict, entities=[]), state, "order_list_brand_cleared"

@@ -4673,6 +4673,7 @@ def _run_stages_body(  # noqa: PLR0915
 
     verdict = _report_ask.as_ranking_basis_status(verdict)
     verdict = _report_ask.as_ranking_filter_refine(verdict, state_in.focus.report)
+    verdict = _report_ask.as_ranking_basis_status(verdict)  # again: the refine may have made it a ranking
     verdict = _report_ask.as_ranking_refine(verdict, state_in.focus.report, state_in.focus.top_selling)
     verdict = _report_ask.as_outstanding_ranking(verdict)
     verdict = _report_ask.as_top_selling(verdict, state_in.focus.report)
@@ -6763,12 +6764,27 @@ def _run_stages_body(  # noqa: PLR0915
                 )
                 # The frame lives only through sales ranking turns (one that ran replaces it,
                 # one that asked a required field keeps it); any other ask clears it.
-                state_out.focus.report = next(
+                # Owner rule: the held report survives an answer in another domain (a stock ask between a
+                # ranking and "back to the ranking, dealers only"); a new report replaces it, and a topic
+                # reset drops it.
+                from app.services.chatbot import contracts as _contracts
+
+                new_report = next(
                     (e["report"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("report"), dict)),
-                    state_out.focus.report
-                    if jsc.js_string(parsed_output.get("order_status") or "").strip() == "sales_ranking"
-                    else None,
+                    None,
                 )
+                held_report = None if verdict.get("topic_reset") is True else state_out.focus.report
+                if (
+                    new_report is None
+                    and isinstance(held_report, dict)
+                    and not held_report.get("kind")
+                    and jsc.js_string(parsed_output.get("domain_hint") or "").strip() == "order"
+                    and jsc.js_string(parsed_output.get("order_status") or "").strip() not in _contracts.SALES_FIGURE_STATUSES
+                ):
+                    # An order list answered after the ranking: the list is the latest answer, so a brand word
+                    # alone continues it (`order_list.is_open_order_list` reads this).
+                    held_report = {**held_report, "listed_after": True}
+                state_out.focus.report = new_report if new_report is not None else held_report
                 # LOWSTOCK-SEMANTIC (crew root cause, 4 Oct 2026): the filters a low stock
                 # report was built with outlive the turn, so "taiyang only" narrows it.
                 low_stock_frame = next(

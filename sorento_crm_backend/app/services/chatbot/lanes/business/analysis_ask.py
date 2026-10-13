@@ -19,10 +19,11 @@ QUESTION_FALLBACK = "Which company?"
 CARRIED = ("sales_channel", "group_by", "sales_basis", "date_filter_start", "date_filter_end", "top_n")
 
 
-def _resolve_company(_db: Any, word: str, extras: dict[str, Any]) -> rf.Resolved:
-    names = [str(n) for n in extras.get("companies") or []]
-    hit = next((n for n in names if n.casefold() == " ".join(str(word or "").split()).casefold()), None)
-    return rf.Resolved("ok", value=hit, label=hit) if hit else rf.Resolved("unknown")
+#: The PARSER answers this ask (a declared pick, or its own `sales_company`): no reply word is ever matched here.
+_resolve_company = lambda *_: rf.Resolved("unknown")  # noqa: E731
+
+#: Said when the reply asks for every company at once: the analysis runs for one company at a time.
+ONE_COMPANY = "I need one company for this."
 
 
 COMPANY = rf.FieldSpec(name="company", noun="company", question=QUESTION_FALLBACK, resolve=_resolve_company)
@@ -31,8 +32,8 @@ ANALYSIS_COMPANY_ASK = rf.register(rf.AskType(
     name=ASK_NAME,
     fields=(COMPANY,),
     reroute={"message_type": "business_query", "order_status": "sales_analysis", "status": None},
-    cancelled="Cancelled.",
-    give_up="I still can't place '{word}'.",
+    cancelled="Sales analysis cancelled.",
+    give_up="I still can't place '{word}' as a company. Ask again naming one.",
     answered_by_parser=True,
 ))
 
@@ -63,3 +64,24 @@ def company_named(parse_output: dict[str, Any], slot: dict[str, Any]) -> str | N
             return names[position - 1]
     said = " ".join(str(parse_output.get("sales_company") or "").split()).casefold()
     return next((n for n in names if said and n.casefold() == said), None)
+
+
+HELD_KIND = "sales_analysis"
+
+
+def held_analysis(ctx: dict[str, Any]) -> dict[str, Any] | None:
+    """The analysis ask that ran, as a `Focus.report` entry (kind `sales_analysis`), when it ran for a named
+    company: a channel, period or basis narrowing next turn keeps that company and the filters. None without
+    a company (the route then picks the contact's only company itself)."""
+    si = ctx.get("semantic_input")
+    if isinstance(si, str):
+        import json
+
+        try:
+            si = json.loads(si)
+        except ValueError:
+            si = None
+    if not isinstance(si, dict) or not si.get("sales_company"):
+        return None
+    keys = ("sales_company", "sales_channel", "group_by", "sales_basis", "date_filter_start", "date_filter_end")
+    return {"kind": HELD_KIND, "measure": "sales_analysis", "args": {k: si.get(k) for k in keys if si.get(k)}, "shown": None}

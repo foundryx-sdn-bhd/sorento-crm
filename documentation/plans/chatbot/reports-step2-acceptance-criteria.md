@@ -76,8 +76,9 @@ Acceptance:
   entry (no held filters leak); drill behaviour (`ranking_drill` scoped / unsure / global) is unchanged.
 - AC-17 Dealer: a held entry is re-checked on refine exactly as today (report_ask.py:647-657); a dealer refine that
   asks for a staff-only dimension is refused, never served.
-- AC-18 Same lifetime as today's ranking entry (engine.py:6600-6604): a turn that is not a report ask clears
-  `Focus.report`, so a later "top 5" after a stock question is a fresh ask, never a stale refine.
+- AC-18 (revised 13 Oct, owner rule: topic switch and back) The held report survives a turn in another domain: after a
+  stock question, a later "back to the ranking, top 5" refines the held ranking. A topic reset or a new report clears
+  or replaces it, and a fresh ask with its own axis or period is a new ask, never a stale refine.
 
 ## S4: the remaining measures (backend + MCP only; no lane change)
 
@@ -177,3 +178,27 @@ reading drives every decision; code changes are in resolution, tool args, state 
   the code resolves to the one product the customer typed (CB88SS/diy -> CB88SS-DIY), not a family of 20; the
   outstanding half is filtered by the named customer.
 - AC-33 The 7 DEV report cases that pass today still pass (no regression), measured live on the slice.
+
+## S6: the owner hand test and the golden replay set (13 Oct)
+
+Parser fields and held state only; no keyword rules on the user's text. Each line is covered by a case in
+`tests/chatbot/replay_reports/` or by `tests/chatbot/test_reports_step2_handtest1.py`.
+
+- AC-34 A follow-up that only changes filters the held ranking carries (a channel, a brand, a basis that differs from the
+  held one) refines the held ranking: same axis, count, period, measure, brand. It does so whether the parser reads it as a
+  company analysis or a ranking, and whatever it says in `ranking_refine` and `domain_in_message`. A new axis, a new
+  period, a named company, a non-brand subject, or a basis the ranking cannot do ("invoiced") is its own ask.
+- AC-35 The analysis company question ("A or B?") is stored as an open question with its options. The reply is read by the
+  parser (a declared pick, or its own `sales_company`): it re-runs the analysis for that company with the filters the first
+  message carried. An unknown company is asked again once, then given up and cleared; a cancel ends it; "all" says one
+  company is needed and asks again.
+- AC-36 The held report survives an answer in another domain: after a stock ask, "back to the ranking, dealers only" finds the
+  held ranking (or the top selling slot). A new report replaces it, and a topic reset drops it. A fresh ask on another axis
+  or with its own period stays a new ask.
+- AC-37 The reply "all" to "Top N customers of the K sales agents above, or across all customers?" runs the customers
+  ranking across all customers and keeps the held brand, period, measure and basis; only the agent filter goes.
+- AC-38 The company a contact picked for the sales analysis is held across a channel, period or basis narrowing, which
+  keeps it; a narrowing never asks the company question again. The exact product code a report was narrowed to is held
+  through its drill picks (number or typed label): the drill is that code's, not the family's.
+- AC-39 A chat analytics follow-up that names no axis, count or period (an asker class, a measure) narrows the chat report
+  that just ran: its axis, period, count and filters stay, and no period is asked again.

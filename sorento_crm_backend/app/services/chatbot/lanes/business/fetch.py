@@ -2517,10 +2517,15 @@ def _held_sales_report(ctx: dict[str, Any]) -> dict[str, Any]:
     """`Focus.report` entry for a plain sales report: its customers and period, kind `sales_report`."""
     filters = _sales_report_filters_from_ctx(ctx)
     keep = ("customer_ids", "date_filter_start", "date_filter_end", "warehouse_codes", "location_token", "channel")
+    args = {k: filters[k] for k in keep if filters.get(k)}
+    si = ctx.get("semantic_input")
+    si = _safe_json(si) if isinstance(si, str) else si
+    if isinstance(si, dict) and si.get("sales_report_narrowed") is True:
+        args["product_code_exact"] = True  # a drill pick next turn keeps the exact code, not the family
     return {
         "kind": "sales_report",
         "measure": "delivered_sales",
-        "args": {k: filters[k] for k in keep if filters.get(k)},
+        "args": args,
         "shown": None,
     }
 
@@ -2842,6 +2847,8 @@ def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[s
         if isinstance(drill, dict) and drill.get("group_by") == frame.get("group_by") and drill.get("rows"):
             shown = drill
         report = report_from_frame({**frame, "shown": shown})
+        if frame.get("dataset") == "chat":
+            report["kind"] = "chat_report"  # held for a narrowing; never read as a sales ranking
     return {
         "report": report,
         "response": text or _REPORT_ASK_ERROR_TEXT,
@@ -3056,6 +3063,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             output["required_ask"] = analysis_ask.slot_for(
                 [str(o) for o in options], output["response"], si if isinstance(si, dict) else {}
             )
+        else:
+            held = analysis_ask.held_analysis(ctx)
+            if held:
+                output["report"] = held  # the analysis ask held on the focus: a narrowing keeps its company
         return output
     e = _file_rows(_extract_envelope(result), links=bool(ctx.get("files_as_links")))
     if ctx.get("portal_intro") and any(isinstance(a, dict) and a.get("type") == "portal_link" for a in e.get("action_links") or []):

@@ -271,7 +271,13 @@ def as_ranking_filter_refine(verdict: dict[str, Any], held_report: Any) -> dict[
     not delivered") as a company sales analysis or a plain report. With no new subject (no company, no
     entity but a brand), no axis of its own (none, or the held one), no period and no topic reset, it is
     a refine of the held ranking with those filters replaced. A new axis, period or company is its own
-    ask and is left alone. Parser fields and the held args only."""
+    ask and is left alone. Parser fields and the held args only.
+
+    It refines whatever the parser says about `ranking_refine` and `domain_in_message` (the v95 parser
+    varies both on the same words), because it re-checks the facts itself: no axis but the held one, no
+    period, no company, no subject but a brand, and at least one filter that differs from the held one.
+    The held ranking survives other domains' turns now, so a new analysis ask several turns later
+    ("dealer sales this year by month") must stay an analysis: it names an axis, which this seam leaves alone."""
     if jsc.js_string(verdict.get("order_status") or "").strip() not in ("sales_analysis", "sales_report"):
         return verdict
     held_ranking = isinstance(held_report, dict) and bool(held_report) and not held_report.get("kind")
@@ -287,9 +293,14 @@ def as_ranking_filter_refine(verdict: dict[str, Any], held_report: Any) -> dict[
     if any(jsc.js_string(e.get("hint") or "").strip().lower() != "brand" for e in current):
         return verdict
     basis = verdict.get("basis") or verdict.get("sales_basis")
+    if basis is not None and basis not in BASES:
+        return verdict  # a basis the ranking cannot do ("invoiced") is the analysis' own ask, never run on another basis
     held_basis = str(held_report.get("measure") or "").partition("_")[0]
-    basis = basis if basis in BASES and basis != held_basis else None  # the held basis restated changes nothing
-    if not (verdict.get("sales_channel") in ("dealer", "project") or current or basis):
+    basis = basis if basis != held_basis else None  # the held basis restated changes nothing
+    held_channel = _dict(held_report.get("args")).get("channel")
+    channel = verdict.get("sales_channel")
+    channel = channel if channel in ("dealer", "project") and channel != held_channel else None  # nor does the held channel
+    if not (channel or current or basis):
         return verdict  # it changes none of the filters the ranking carries
     out = {**verdict, "order_status": ASK_NAME, "ranking_refine": True}
     if basis:
@@ -806,8 +817,8 @@ def settle(
     frame = parse_output.get("sales_ranking_frame")
     frame = frame if isinstance(frame, dict) else {}
     drill = parse_output.get("ranking_drill")
-    if frame.get("kind") == "sales_report":
-        frame = {}  # a held plain sales report is not a ranking: nothing to refine or drill
+    if frame.get("kind"):
+        frame = {}  # a held plain sales report or analysis is not a ranking: nothing to refine or drill
     raw_group = jsc.js_string(parse_output.get("group_by") or "").strip().lower()
     # A refine never changes the axis: a verdict naming another axis than the held ranking's
     # is not one, whatever its `ranking_refine` says (crew live pass, 8 Oct 2026).
@@ -1063,7 +1074,11 @@ def _drill(
             "question": question,
             "source": source,
             "scoped": scoped,
-            "global": _branch(own, parse_output.get("top_n"), own_period, held=False),
+            # "All": the same ranking over the new axis across every row, so the held filters, period, metric
+            # and basis stay and only the link to the rows printed above is dropped.
+            "global": _branch(
+                {k: v for k, v in args.items() if k != param}, parse_output.get("top_n"), period, held=True
+            ),
         }
         slot = {"ask": ASK_NAME, "values": {}, "asking": "scope", "options": [], "misses": 0,
                 "extras": {"scope": scope}}
