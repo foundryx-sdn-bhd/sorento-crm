@@ -1,0 +1,306 @@
+# PV2 battery: product files (photo, technical drawing / spec) and pointing into an answer (UAC-1).
+# Files on the dev DB (14 Oct): SRTWC286-SH photo + TD; CKS1052-BL photo only; SRTKT72SS photo + TD;
+# SRTWT5611-GM, SRTWT8305-RG, SRTWT8309-RG photo + TD; SRTWB8001 photo + TD; SRTWB8003 photo only;
+# CB1512ASS photo only; IDCFA-1033 none; SRTUB206-BI photo + TD.
+domain: attachments
+conversations:
+
+- id: attachments-r01
+  source: real
+  origin: "crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T1, T6-T7; PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-JD T6-T7 and A-OWNLOO-LOO T6-T7"
+  domain: attachments
+  audience: staff
+  shapes: [typo, number_pick, free_text_reply]
+  turns:
+  - text: "check stock srtwc286"
+    expect:
+      kind: answer
+      about: "stock for the SRTWC286 family"
+      must: ["SRTWC286"]
+  - text: "you got any pics or td drawing for htis?"
+    expect:
+      kind: answer
+      about: "photos and technical drawings of the held SRTWC286 family sent directly for the members that have them (SRTWC286-SH has both); 'htis' is 'this', never a product"
+      attachments: true
+      must: ["SRTWC286-SH"]
+      must_not: ['Couldn''t find: "this"', "SRTWC286-SH has no Product Photos"]
+  - text: "first one"
+    expect:
+      kind: any
+      about: "the files of the first SRTWC286 member if a list was shown; if the files were already sent, a short clarify of 'first one' with real options is fine; never a stale question re-asked with 'didn't catch' and never a false 'has no Product Photos'"
+      must_not: ["SRTWC286-SH has no Product Photos", "Couldn't find", "Sorry, I didn't catch your choice"]
+
+- id: attachments-r02
+  source: real
+  origin: "laneboard/scripts/1653.md steps 12-14 and 1657.md steps 1-2; crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-JD-ST12-14 T1-T3 and B-LOO-A1"
+  domain: attachments
+  audience: staff
+  shapes: [refine, free_text_reply]
+  turns:
+  - text: "SRTWC286-SH stock"
+    expect:
+      kind: answer
+      about: "stock for SRTWC286-SH"
+      must: ["SRTWC286-SH"]
+  - text: "photo and technical drawing"
+    expect:
+      kind: answer
+      about: "BOTH the photo and the technical drawing of SRTWC286-SH are sent, with no gap line for a kind that was sent"
+      attachments: true
+      must: ["SRTWC286-SH"]
+      must_not: ["SRTWC286-SH has no Product Photos", 'Couldn''t find: "photo and technical drawing"']
+  - text: "photo for this product"
+    expect:
+      kind: answer
+      about: "the photo of SRTWC286-SH"
+      attachments: true
+      must: ["SRTWC286-SH"]
+      must_not: ["Couldn't find"]
+
+- id: attachments-r03
+  source: real
+  origin: "crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T8-T9 (T3 added); PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T8-T9"
+  domain: attachments
+  audience: staff
+  shapes: [point_into_answer, typo, refine]
+  turns:
+  - text: "202610-0151 status?"
+    expect:
+      kind: answer
+      about: "order 202610-0151 of J & Y WORLD HARDWARE SDN BHD: its status and its one line CKS1052-BL x2; English reply"
+      must: ["202610-0151", "CKS1052-BL"]
+      lang: en
+  - text: "got techncial drawign for this product/"
+    expect:
+      kind: answer
+      about: "'this product' = CKS1052-BL, the only product of the order just shown; there is no technical drawing on file for it, so the reply says so plainly (offering its photo is fine); never offers the order number as the product"
+      must: ["CKS1052-BL"]
+      must_not: ['Which "this product"', "Couldn't find"]
+      judge: "point_into_answer: document 202610-0151 has exactly 1 product line (CKS1052-BL); no technical drawing is on file for it"
+  - text: "ok send the photo then"
+    expect:
+      kind: answer
+      about: "the photo of CKS1052-BL is sent"
+      attachments: true
+      must: ["CKS1052-BL"]
+      must_not: ["CKS1052-BL has no Product Photos"]
+
+- id: attachments-i01
+  source: improvised
+  domain: attachments
+  audience: staff
+  shapes: [point_into_answer, refine]
+  turns:
+  - text: "Delivery 202610-0147"
+    expect:
+      kind: answer
+      about: "delivery order 202610-0147 of THE BATH STUDIO SDN BHD with its one product SRTKT72SS"
+      must: ["202610-0147", "SRTKT72SS"]
+  - text: "drawing for this product"
+    expect:
+      kind: answer
+      about: "the technical drawing of SRTKT72SS (the only product of that order) is sent, no which-one question"
+      attachments: true
+      must: ["SRTKT72SS"]
+      must_not: ["Which product", "has no Technical"]
+      judge: "point_into_answer: document 202610-0147 has exactly 1 product line (SRTKT72SS)"
+  - text: "and photo"
+    expect:
+      kind: answer
+      about: "the photo of SRTKT72SS is sent"
+      attachments: true
+      must: ["SRTKT72SS"]
+      must_not: ["SRTKT72SS has no Product Photos"]
+
+- id: attachments-i02
+  source: improvised
+  domain: attachments
+  audience: staff
+  shapes: [point_into_answer, number_pick, multi_product]
+  turns:
+  - text: "202609-3750 status?"
+    expect:
+      kind: answer
+      about: "order 202609-3750 of ZHIN HENG HARDWARE & TRADING SDN BHD with its three products SRTWT5611-GM, SRTWT8305-RG, SRTWT8309-RG"
+      must: ["202609-3750", "SRTWT5611-GM", "SRTWT8305-RG", "SRTWT8309-RG"]
+  - text: "drawing for this product"
+    expect:
+      kind: ask
+      about: "the order has three products: asks which one (or all), offering SRTWT5611-GM, SRTWT8305-RG and SRTWT8309-RG; never guesses one and never offers the order number as a product"
+      must: ["SRTWT5611-GM", "SRTWT8305-RG", "SRTWT8309-RG"]
+      attachments: false
+      judge: "point_into_answer: document 202609-3750 has 3 product lines"
+  - text: "the second one"
+    expect:
+      kind: answer
+      about: "the technical drawing of the product the previous reply listed second, whichever product that is"
+      judge: "Order-agnostic: all three products had a drawing on file on 14 Oct."
+      attachments: true
+      must_not: ["Sorry, I didn't catch your choice"]
+  - text: "all three photos pls"
+    expect:
+      kind: answer
+      about: "the photos of all three products of the order (SRTWT5611-GM, SRTWT8305-RG, SRTWT8309-RG) are sent"
+      attachments: true
+      must_not: ["SRTWT5611-GM has no Product Photos", "SRTWT8305-RG has no Product Photos", "SRTWT8309-RG has no Product Photos"]
+
+- id: attachments-i03
+  source: improvised
+  domain: attachments
+  audience: staff
+  shapes: [point_into_answer, multi_product, number_pick]
+  turns:
+  - text: "Delivery 202609-2012"
+    expect:
+      kind: answer
+      about: "delivery order 202609-2012 of DELUXE HOME CENTRE SDN BHD with its products SRTWT7203, SRTWB1096 and SRTW5000"
+      must: ["202609-2012", "SRTWT7203", "SRTWB1096", "SRTW5000"]
+  - text: "photo for these products"
+    expect:
+      kind: answer
+      about: "'these products' (plural) = every product of that order: the photos on file are sent (SRTWB1096 and SRTW5000 have one); a gap line for a product with no photo linked (SRTWT7203 on 14 Oct) is correct"
+      attachments: true
+      must_not: ["SRTWB1096 has no Product Photos", "SRTW5000 has no Product Photos", "Couldn't find"]
+      judge: "point_into_answer: document 202609-2012 has 3 products (SRTWT7203, SRTWB1096, SRTW5000) plus a zero-quantity PP line"
+  - text: "drawing for the first one only"
+    expect:
+      kind: answer
+      about: "the technical drawing of whichever product the order answer listed first, that one product only; if it has no drawing on file the reply says so for that product"
+      judge: "Order-agnostic: the line order of the DO answer decides 'first'. On 14 Oct SRTWT7203 and SRTWB1096 had a drawing on file and SRTW5000 had none."
+
+- id: attachments-r04
+  source: real
+  origin: "crew/state/eval/dev/cand-0258.json (history + message); crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1570 (b)"
+  domain: attachments
+  audience: dealer
+  shapes: [unclear, free_text_reply, refine]
+  turns:
+  - text: "drawing"
+    expect:
+      kind: ask
+      about: "no product held: asks which product the drawing is for; no lookup"
+      attachments: false
+  - text: "CB1512ASS drawing"
+    expect:
+      kind: answer
+      about: "CB1512ASS has no technical drawing on file: says so plainly (offering its photo is fine)"
+      must: ["CB1512ASS"]
+  - text: "size?"
+    expect:
+      kind: any
+      about: "the size of CB1512ASS: the description held for it, or that no dimensions are on record; a short clarify is acceptable once"
+      must: ["CB1512ASS"]
+  - text: "I want the DESCRIPTION SIZE!!!"
+    expect:
+      kind: answer
+      about: "gives the CB1512ASS description held (CABANA stainless steel 2-way wall-mounted sink tap) and says no dimensions are on record if none; never the same clarify a third time"
+      must: ["CB1512ASS"]
+
+- id: attachments-r05
+  source: real
+  origin: "crew/state/eval/dev/cand-0241.json (message; T2-T3 added)"
+  domain: attachments
+  audience: staff
+  shapes: [typo, free_text_reply, refine]
+  turns:
+  - text: "Pls send sensor tap technician drawing"
+    expect:
+      kind: ask
+      about: "which sensor tap: offers the real sensor tap codes that have technical drawings (the SRTSWT3001 / 3002 / 3009 / 3010 / 3011 family); never cisterns and never a code the user must type blind"
+      must_any: [["SRTSWT3001", "SRTSWT3002"]]
+  - text: "3001"
+    expect:
+      kind: answer
+      about: "the technical drawing of SRTSWT3001 (the reply to the question; a 3001 vs 3001-GM which-one is fine)"
+      must: ["SRTSWT3001"]
+  - text: "the GM one also"
+    expect:
+      kind: answer
+      about: "the technical drawing of SRTSWT3001-GM as well"
+      must: ["SRTSWT3001-GM"]
+
+- id: attachments-r07
+  source: real
+  origin: "crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1617 QTY-CARRIED (owner prod 13 Oct)"
+  domain: attachments
+  audience: dealer
+  shapes: [qty_carried, topic_switch]
+  turns:
+  - text: "SRTWT5880-CR picture"
+    expect:
+      kind: answer
+      about: "the photo of SRTWT5880-CR is sent"
+      attachments: true
+      must: ["SRTWT5880-CR"]
+  - text: "HAVE 10??"
+    expect:
+      kind: answer
+      about: "availability of SRTWT5880-CR for 10 units; the photo is NOT re-sent and no file-type question"
+      attachments: false
+      must: ["SRTWT5880-CR"]
+      must_not: ["Which kind of file", "Attachment Type"]
+  - text: "Have 30QTY in KL??"
+    expect:
+      kind: answer
+      about: "availability of SRTWT5880-CR for 30 units, located in KL if that split is held, else overall; no file sent"
+      attachments: false
+      must: ["SRTWT5880-CR"]
+
+- id: attachments-i04
+  source: improvised
+  domain: attachments
+  audience: unlinked
+  shapes: [refine, multi_product]
+  turns:
+  - text: "can share SRTWB8001 drawing?"
+    expect:
+      kind: answer
+      about: "the technical drawing of SRTWB8001 is sent"
+      attachments: true
+      must: ["SRTWB8001"]
+  - text: "and the photo"
+    expect:
+      kind: answer
+      about: "the photo of SRTWB8001 is sent"
+      attachments: true
+      must: ["SRTWB8001"]
+      must_not: ["SRTWB8001 has no Product Photos"]
+  - text: "SRTWB8003 photo and drawing also"
+    expect:
+      kind: answer
+      about: "SRTWB8003: its photo is sent and the reply says it has no technical drawing on file (a gap line for the drawing kind only is correct here)"
+      attachments: true
+      must: ["SRTWB8003"]
+      must_not: ["SRTWB8003 has no Product Photos"]
+      judge: "Only a gap for the kind NOT sent is allowed; a gap for photos while the photo goes out is a false gap."
+
+- id: attachments-i05
+  source: improvised
+  domain: attachments
+  audience: staff
+  shapes: [small_talk, particle, language_mix]
+  turns:
+  - text: "hello good morning"
+    expect:
+      kind: answer
+      about: "a short greeting back; no lookup, no topic menu dump"
+      must_not: ["Couldn't find"]
+      judge: "The staff contact's stored first name is the honorific 'Mr'; addressing the contact as 'Mr' is its own stored name, not a broken placeholder."
+  - text: "SRTUB206-BI stock pls"
+    expect:
+      kind: answer
+      about: "stock for SRTUB206-BI"
+      must: ["SRTUB206-BI"]
+  - text: "有冇 photo?"
+    expect:
+      kind: answer
+      about: "'有冇' = is there or not: the photo of the held SRTUB206-BI is sent; never 'Couldn't find' on the particle"
+      attachments: true
+      must: ["SRTUB206-BI"]
+      must_not: ['Which "有冇"', "SRTUB206-BI has no Product Photos"]
+  - text: "drawing also"
+    expect:
+      kind: answer
+      about: "the technical drawing of SRTUB206-BI is sent"
+      attachments: true
+      must: ["SRTUB206-BI"]
