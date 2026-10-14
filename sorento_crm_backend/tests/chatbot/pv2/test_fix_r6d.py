@@ -107,3 +107,27 @@ def test_a_new_topic_with_a_clarify_flag_replaces_an_open_did_you_mean():
     assert not (isinstance(act, ClarifyAct) and act.reask), "re-asked the open did-you-mean as a miss"
     assert new_state.held.domain == "sales"
     assert new_state.pending is None or new_state.pending.kind != "clarify_did_you_mean"
+
+
+def test_a_dealer_delivered_report_by_sales_agent_gets_the_refusal_line():
+    from app.services.chatbot.lanes.business import report_ask
+    from app.services.chatbot.pv2 import answer as answer_mod
+    from app.services.chatbot.pv2 import turn
+    from app.services.chatbot.pv2.history import MemoryProfile
+    from app.services.chatbot.pv2.state import dump_state
+    from tests.chatbot.pv2.carry_fakes import NOW, FakeResolver, mk_state
+
+    mcp = _StaffMcp()
+    sep = {"preset": None, "n": None, "date_from": "2026-09-01", "date_to": "2026-09-30"}
+    report = {"dataset": "sales", "measures": [], "group_by": ["sales_agent"], "top_n_per_group": None,
+              "filters": [], "period": sep, "compare_to": None, "compare_period": None, "grain": None,
+              "threshold": None, "sort": None, "top_n": None, "basis": "delivered"}
+    parsed = out(_ask(act="new_topic", domain="sales", period=sep, report=report))
+    ctx = turn.TurnV2Context(
+        text="x", now=NOW, raw_state=dump_state(mk_state()), profile=MemoryProfile(audience="dealer"),
+        parse=lambda m, u: parsed, resolver=FakeResolver({}), load_exchanges=lambda s: [],
+        report_answer=answer_mod.default_report_answer(mcp_call=mcp, contact_id="c1", space_id="s1", dealer=True),
+        granted_reveals=frozenset({"sales_orders.sales_report"}))
+    res = turn._run(ctx)
+    assert mcp.calls == [], "a dealer must never reach crm_sales_report by sales agent"
+    assert res.direct_reply is not None and report_ask.DEALER_REFUSAL in res.direct_reply, res.direct_reply
