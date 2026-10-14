@@ -44,6 +44,7 @@ echo "docker $*" >> "$FAKE_LOG"
 case "$1" in
   run) [ -n "${FAKE_DOCKER_RUN_FAIL:-}" ] && exit 1; echo fakecontainerid; exit 0 ;;
   rm) exit 0 ;;
+  ps) [ -n "${FAKE_DOCKER_PS:-}" ] && echo "$FAKE_DOCKER_PS"; exit 0 ;;
   exec)
     shift
     [ "$1" = "-i" ] && { shift; stdin=1; }
@@ -414,3 +415,110 @@ def test_restore_precreates_roles(env):
     log = calls(tmp)
     assert any('CREATE ROLE "crm"' in c for c in log)
     assert any('CREATE ROLE "readonly"' in c for c in log)
+
+
+# ------------------------------------------------------------- review round 1
+
+RUNBOOK = OPS.parents[1] / "documentation" / "runbooks" / "backups.md"
+
+
+def runbook_env_file(tmp, **overrides):
+    """The backup.env heredoc from the runbook, placeholders filled, as the owner would write it."""
+    text = RUNBOOK.read_text()
+    start = text.index("sudo tee /etc/sorento-backup/backup.env >/dev/null <<'EOF'\n") + len(
+        "sudo tee /etc/sorento-backup/backup.env >/dev/null <<'EOF'\n"
+    )
+    body = text[start : text.index("\nEOF\n", start)]
+    fills = {"<DB_CONTAINER>": "proddb", "<DB_USER>": "crm", "<DB_NAME>": "crmdb",
+             "<same as the old script>": "30", "<HC_BACKUP_URL>": HC, "<HC_RESTORE_URL>": HCR}
+    for k, v in fills.items():
+        body = body.replace(k, v)
+    for k, v in overrides.items():
+        body += f"\n{k}={v}"
+    p = tmp / "runbook.env"
+    p.write_text(body + "\n")
+    p.chmod(0o600)
+    return p
+
+
+def bare(e):
+    keep = ("PATH", "HOME", "FAKE_LOG", "FAKE_REMOTE", "FAKE_DUMP_SQL", "BACKUP_DIR", "LOCK_FILE",
+            "RESTORE_WORK_DIR", "RESTORE_LOCK_FILE", "RESTORE_READY_TIMEOUT")
+    return {k: v for k, v in e.items() if k in keep}
+
+
+def test_runbook_env_file_works_for_both_scripts(env):
+    e, tmp = env
+    envf = runbook_env_file(tmp)
+    r = run(BACKUP, bare(e), BACKUP_ENV_FILE=envf)
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert curl_urls(tmp) == [f"{HC}/start", HC]
+    r = run(RESTORE, bare(e), BACKUP_ENV_FILE=envf)
+    assert r.returncode == 0, r.stderr + r.stdout
+    for t in ["users", "customers", "orders", "products", "audit_logs"]:
+        assert f"rows {t}=" in r.stdout
+
+
+def test_env_file_writable_by_others_is_refused(env):
+    e, tmp = env
+    envf = runbook_env_file(tmp)
+    envf.chmod(0o666)
+    r = run(BACKUP, bare(e), BACKUP_ENV_FILE=envf)
+    assert r.returncode == 2
+    assert not any("pg_dump" in c for c in calls(tmp))
+
+
+def test_restore_empty_sanity_latest_skips_max(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e, SANITY_LATEST="")
+    assert r.returncode == 0, r.stderr
+    assert not any("max(" in c for c in calls(tmp))
+
+
+def test_restore_waits_on_tcp_not_socket(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e)
+    assert r.returncode == 0, r.stderr
+    ready = [c for c in calls(tmp) if "pg_isready" in c]
+    assert ready and all("-h 127.0.0.1" in c for c in ready)
+
+
+def test_restore_ignores_longer_prefix_job(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz", "sorento_crm_v2_20261020T030000Z.sql.gz"])
+    r = run(RESTORE, e)
+    assert r.returncode == 0, r.stderr
+    assert any(c.startswith("rclone copyto") and "sorento_crm_20261014T030000Z" in c for c in calls(tmp))
+
+
+def test_backup_prune_pattern_is_anchored_to_stamp(env):
+    e, tmp = env
+    r = run(BACKUP, e)
+    assert r.returncode == 0, r.stderr
+    d = [c for c in calls(tmp) if c.startswith("rclone delete")][0]
+    assert "sorento_crm_[0-9]" in d
+
+
+def test_restore_refuses_symlinked_work_dir(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    target = tmp / "elsewhere"
+    target.mkdir()
+    (tmp / "restore").symlink_to(target)
+    r = run(RESTORE, e)
+    assert r.returncode == 2
+    assert not any(c.startswith("rclone copyto") for c in calls(tmp))
+
+
+def test_restore_removes_leftover_containers_first(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e, FAKE_DOCKER_PS="restore-test-sorento_crm-20261007T043000Z")
+    assert r.returncode == 0, r.stderr
+    log = calls(tmp)
+    assert any(c.startswith("docker ps") and "name=restore-test-sorento_crm-" in c for c in log)
+    first_run = next(i for i, c in enumerate(log) if c.startswith("docker run"))
+    assert any(c.startswith("docker rm") and "restore-test-sorento_crm-20261007T043000Z" in c
+               for c in log[:first_run])
