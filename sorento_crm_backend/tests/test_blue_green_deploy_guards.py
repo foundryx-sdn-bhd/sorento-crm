@@ -17,6 +17,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -138,25 +139,36 @@ def _exe(path: Path, body: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
+def _bash_env(stub_dir: Path) -> str:
+    """Stubs as bash FUNCTIONS, loaded through BASH_ENV before the script runs.
+
+    A function wins over anything on PATH, and nothing here is exec'd from pytest's tmp dir:
+    CI's runner could not exec PATH stubs there (run 38617923894), so the script fell through
+    to no docker at all. The docker stub runs under this test process's own interpreter.
+    """
+    calls = stub_dir / "calls.log"
+    return (
+        f'docker() {{ "{sys.executable}" "{stub_dir / "docker_stub.py"}" "$@"; }}\n'
+        f'sudo() {{ echo "sudo $*" >> "{calls}"; return 0; }}\n'
+        "sleep() { :; }\n"
+        # df -Pm <dir>: free MB from the stub dir (default plenty).
+        f'df() {{ local free; free=$(cat "{stub_dir}/disk_free_mb" 2>/dev/null || echo 500000); '
+        'printf "Filesystem 1048576-blocks Used Available Capacity Mounted on\\n/dev/x 900000 1 %s 1%% /\\n" "$free"; }\n'
+    )
+
+
 @pytest.fixture
 def box(tmp_path):
-    """A fake /opt/sorento-crm2: the script under scripts/, stubs on PATH."""
+    """A fake /opt/sorento-crm2: the script under scripts/, stubs as bash functions."""
     root = tmp_path / "box"
     (root / "scripts").mkdir(parents=True)
     shutil.copy(SCRIPT, root / "scripts" / "blue_green_deploy.sh")
     stub_dir = tmp_path / "stub"
     stub_dir.mkdir()
-    bin_dir = tmp_path / "bin"
+    bin_dir = tmp_path / "bin"   # kept empty: the stubs are functions (see _bash_env)
     bin_dir.mkdir()
-    _exe(bin_dir / "docker", DOCKER_STUB)
-    _exe(bin_dir / "sudo", f'#!/bin/sh\necho "sudo $*" >> "{stub_dir}/calls.log"\nexit 0\n')
-    _exe(bin_dir / "sleep", "#!/bin/sh\nexit 0\n")
-    # df -Pm <dir>: free MB from the stub dir (default plenty).
-    _exe(
-        bin_dir / "df",
-        f'#!/bin/sh\nfree=$(cat "{stub_dir}/disk_free_mb" 2>/dev/null || echo 500000)\n'
-        'printf "Filesystem 1048576-blocks Used Available Capacity Mounted on\\n/dev/x 900000 1 %s 1%% /\\n" "$free"\n',
-    )
+    (stub_dir / "docker_stub.py").write_text(DOCKER_STUB)
+    (stub_dir / "bash_env.sh").write_text(_bash_env(stub_dir))
     meminfo = tmp_path / "meminfo"
     meminfo.write_text("MemTotal:       16000000 kB\nMemAvailable:    8000000 kB\n")
     box = {"root": root, "stub": stub_dir, "bin": bin_dir, "meminfo": meminfo, "lock": root / ".deploy.lock"}
@@ -177,6 +189,7 @@ def _run(box, timeout=120, args=(), **env_extra):
         "MEMINFO_FILE": str(box["meminfo"]),
         "DEPLOY_LOCK_PATH": str(box["lock"]),
         "HOME": str(box["root"]),
+        "BASH_ENV": str(box["stub"] / "bash_env.sh"),
     }
     env.update(env_extra)
     env = {k: v for k, v in env.items() if v != ""}
