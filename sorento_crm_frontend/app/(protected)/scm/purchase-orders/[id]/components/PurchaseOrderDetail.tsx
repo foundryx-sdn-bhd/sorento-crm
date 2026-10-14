@@ -380,7 +380,10 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         ? Number(draftOrRow(lineDrafts, row).qty_ordered)
         : Number(row.qty_ordered);
       if (!Number.isFinite(ordered)) return 0;
-      return Math.max(ordered - Number(row.qty_received), 0);
+      // The received figure on screen is net of an AutoCount Cancel PO; the cancelled qty
+      // is not coming either, so it is added back before the subtraction (AC-CONSIGN-CRM).
+      const settled = Number(row.qty_received) + Number(row.qty_cancelled ?? 0);
+      return Math.max(ordered - settled, 0);
     },
     [isEditing, lineDrafts],
   );
@@ -601,7 +604,10 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         // line with 100 received has to show 300 still coming straight away, or the row
         // states two figures that contradict each other until the page is reloaded.
         accessorFn: (line) =>
-          Math.max(Number(line.qty_ordered) - Number(line.qty_received), 0),
+          Math.max(
+            Number(line.qty_ordered) - Number(line.qty_received) - Number(line.qty_cancelled ?? 0),
+            0,
+          ),
         header: ({ column }) => <DataGridColumnHeader title="Outstanding qty" column={column} />,
         cell: ({ row }) => fmtInt(outstandingOf(row.original)),
         size: 140,

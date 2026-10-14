@@ -277,7 +277,11 @@ def _measure(
         linked_other = linked_all - linked_excluded
         stated = int(allocation.stated_received or 0)
         external_received = max(0, int(allocation.quantity_received or 0) - stated - linked_all)
-        consumed = linked_other + external_received
+        # AC-CONSIGN-CRM part C: an AutoCount Cancel PO sits inside `stated_received`
+        # (TransferedQty), which the mirror rule above leaves as capacity; the cancelled
+        # part never arrives, so it is consumed here and no later GRN can draw it.
+        cancelled = int(allocation.qty_cancelled or 0)
+        consumed = linked_other + external_received + cancelled
         entries.append(
             PoolEntry(
                 allocation_id=str(allocation.id),
