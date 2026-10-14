@@ -124,8 +124,12 @@ R3. `qty_cancelled` = sum of matched lines of live docs (not void, not vanished)
     and order push.
 R4. Delivered shown = TransferedQty - cancelled. Planned = coalesce(required, ordered) - cancelled.
     Outstanding / incoming unchanged (TransferedQty already counts the cancel).
-R5. Fully cancelled (cancelled >= ordered): SO / PO line `cancelled`; SO OI rows retired by the #1530 path
-    ("Transferred to Cancel SO <XS no>") and flagged. Partial: a `qty_down` planning change for CS (Q4 a).
+R5. Fully cancelled (cancelled >= ordered): SO / PO line `cancelled`. **Effects stop at the SO** (owner
+    ruling 14 Oct, lane CANCEL-STOP-AT-SO, reversing the original R5): no OI row is retired, no
+    handover is queued, no purchasing email goes out. Open OI rows / pins on a cancelled line stay as they
+    are and CS handles them in Fulfilment Planning. Superseded original text: "SO OI rows retired by the
+    #1530 path ("Transferred to Cancel SO <XS no>") and flagged". Partial: a `qty_down` planning change for
+    CS (Q4 a).
 R6. Cancel lowers: a line this lane cancelled returns to the status its quantities give; board-cancelled
     lines and cancelled orders stay cancelled. OI rows already retired stay retired.
 R7. Every cancel line ends matched, waiting or unmatched with a reason; each batch logs the counts per
