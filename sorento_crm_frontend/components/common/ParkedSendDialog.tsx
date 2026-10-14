@@ -62,7 +62,8 @@ export function ParkedSendDialog({
   const emails = preview?.emails ?? [];
   const unresolved = preview?.unresolved ?? [];
   const current = emails[Math.min(selected, Math.max(emails.length - 1, 0))];
-  const totalInquiries = emails.reduce((sum, email) => sum + email.inquiry_count, 0);
+  const totalInquiries =
+    preview?.inquiry_total ?? emails.reduce((sum, email) => sum + email.inquiry_count, 0);
   const totalLines = emails.reduce((sum, email) => sum + email.line_count, 0);
   const ready = !isLoading && preview != null;
   const sendLabel = `Send ${emails.length} ${emails.length === 1 ? 'email' : 'emails'}`;

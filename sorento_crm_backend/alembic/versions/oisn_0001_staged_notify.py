@@ -1,7 +1,8 @@
 """Order inquiry: park reserve requests / reserve notices, send all parked
 (`PLAN-oi-staged-notify-14oct.md`, `oi-staged-notify-14oct-acceptance-criteria.md` AC-SN-32).
 
-Additive, nullable, no backfill (NULL = not parked; legacy rows count as sent):
+Additive, nullable (NULL = not parked; legacy rows count as sent). `notified_qty` is backfilled
+once, guarded: only rows with a `qty_reserved`, no `notified_qty` and no parked notice:
 `order_inquiry_reserve_requests.parked_at`, and `order_inquiry_reserve_request_rows`
 `notice_parked_at` / `notice_parked_by` / `notified_qty`, plus two partial indexes.
 

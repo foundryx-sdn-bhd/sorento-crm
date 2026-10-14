@@ -238,6 +238,7 @@ export interface ParkedUnresolved {
 
 export interface ParkedPreview {
   emails: ParkedEmailPreview[];
+  inquiry_total?: number;
   unresolved: ParkedUnresolved[];
 }
 

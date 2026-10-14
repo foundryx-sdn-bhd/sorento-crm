@@ -1592,6 +1592,7 @@ class ParkedUnresolvedOut(BaseModel):
 
 class ParkedPreviewOut(BaseModel):
     emails: List[ParkedEmailOut] = []
+    inquiry_total: int = 0
     unresolved: List[ParkedUnresolvedOut] = []
 
 

@@ -1175,10 +1175,16 @@ class OrderInquiryReserveService:
         # The one-OI shape follows DISTINCT order inquiries: a To person whose items all
         # belong to one OI gets each request as its own email, never "1 order inquiries".
         split = []
+        automation = park_send.first_automation(self.db, trigger_type)
         for group in groups:
             if len(group["items"]) > 1 and len({i["inquiry_id"] for i in group["items"]}) == 1:
+                # Each split item resolves its own recipients from its own context.
                 split.extend(
-                    {"items": [item], "recipients": group["recipients"]} for item in group["items"]
+                    {
+                        "items": [item],
+                        "recipients": park_send.resolve_ordered(self.db, automation, item["context"]),
+                    }
+                    for item in group["items"]
                 )
             else:
                 split.append(group)
@@ -1212,7 +1218,11 @@ class OrderInquiryReserveService:
             email["inquiry_count"] = group["inquiry_count"]
             email["line_count"] = group["line_count"]
             emails.append(email)
-        return {"emails": emails, "unresolved": self._unresolved_out(unresolved)}
+        return {
+            "emails": emails,
+            "inquiry_total": len({i["inquiry_id"] for g in groups for i in g["items"]}),
+            "unresolved": self._unresolved_out(unresolved),
+        }
 
     def parked_requests_preview(self, *, actor_user_id: str) -> Dict[str, Any]:
         items, _empty = self._request_items(actor_user_id)
