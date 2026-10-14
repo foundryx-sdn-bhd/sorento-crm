@@ -180,9 +180,11 @@ export function verdictOf(
   // SO-CANCEL-LINE: CS transferred it to Cancel SO and pressed Confirm. No label of its own:
   // the line wears Confirmed, and the cancel reads in Decided.
   // CANCEL-STOP-AT-SO: an AutoCount Cancel SO left live order inquiry rows for CS to handle,
-  // so nothing about the line is settled yet: it wears Cancelled.
+  // so nothing about the line is settled yet. With the Transfer to Cancel SO the sync (or CS)
+  // saved it reads Saved, waiting for Confirm; dismissed, it wears Cancelled.
   if (contribution.cancelled_at) {
-    return contribution.cancel_open_oi_rows ? 'cancelled' : 'confirmed';
+    if (!contribution.cancel_open_oi_rows) return 'confirmed';
+    return draftSource?.verdict === 'cancelled' ? 'saved' : 'cancelled';
   }
   if (contribution.cancelled) return 'cancelled';
   if (covered) return 'confirmed';

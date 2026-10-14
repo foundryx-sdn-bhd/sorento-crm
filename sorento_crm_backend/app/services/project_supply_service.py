@@ -1282,8 +1282,14 @@ class ProjectSupplyService:
         Refused before anything is written: a blank reason (422), a line that is not on this
         order (422), an already cancelled line (409, audit columns never rewritten) and a line
         an active decision still covers (409, reject it first).
+
+        CANCEL-STOP-AT-SO (owner, 14 Oct 23:20): a line an AutoCount Cancel SO cancelled, that
+        CS has not transferred yet (`awaits_cancel_so`), is the one cancelled line this takes:
+        the sync proposed the transfer and CS confirming it is this same cancel. Its active
+        decision, if any, holds nothing (owed qty 0), so it does not stand in the way.
         """
         from app.services import project_line_draft_service
+        from app.services.project_line_draft_service import awaits_cancel_so
         from app.services.project_order_inquiry_service import (
             ProjectOrderInquiryService,
             flag_rows_for_cancelled_lines,
@@ -1330,6 +1336,8 @@ class ProjectSupplyService:
             for snap in (active.line_snapshots or [] if active is not None else [])
         }
         for mirror, core, _reason in picked:
+            if awaits_cancel_so(core):
+                continue
             if core.line_status == "cancelled":
                 raise AppException(
                     status_code=409,

@@ -843,7 +843,11 @@ class FulfilmentBoardService:
         self._allocate(served, as_of=as_of)
         # AFTER the ladder, never before: `stale` compares what was saved against what this
         # build is proposing, and before `_allocate` there is no proposal to compare with.
-        self._attach_drafts(rows)
+        # CANCEL-STOP-AT-SO: a line an AutoCount Cancel SO cancelled carries the Transfer to
+        # Cancel SO the sync proposed (or CS saved) for CS to confirm or dismiss.
+        self._attach_drafts(
+            [*rows, *(row for row in cancelled_rows if row.cancel_open_oi_rows)]
+        )
 
         cells: List[Dict[str, Any]] = []
         for bucket in buckets:
