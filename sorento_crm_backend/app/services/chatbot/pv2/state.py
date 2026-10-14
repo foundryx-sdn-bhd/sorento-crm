@@ -98,6 +98,9 @@ class PendingQuestion(BaseModel):
     # The full original ask (an `Ask` dump) this question interrupted: a pick completes it with the
     # picked entity. `deferred` is read only for state saved before R2.
     origin: dict | None = None
+    # The entity (an `Entity` dump, no quantity) whose miss raised a which_held question; None when
+    # no entity raised it (a flagged clarify, a switch_back) and for state saved before R-GAPS.
+    raised_by: dict | None = None
 
 
 class RegisterEntry(BaseModel):

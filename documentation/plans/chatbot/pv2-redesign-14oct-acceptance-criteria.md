@@ -77,4 +77,19 @@ RG-7b (R2 review) "5 A1 and 3 mou" -> pick 1 for mou -> the answer covers A1 x 5
      "sorento + moc" -> pick mocha -> both brands. Today (and pre-R2) the pick drops the other same-kind items.
 RG-7c (R2 review) "remove customer Z and this SO" with Z held and no SO held -> which_held pick -> Z is removed.
      Today (and pre-R2) the which_held pick drops the remove and Z stays.
+RG-4b (R-GAPS-a shapes) After a photo answer, a count that names nothing reaches the stock answer for that count in
+     every parse shape: refines_held or new_topic with no domain, with or without refers_to_held, and an
+     answers_bot_question carrying only a count with nothing pending; a count after a stock answer stays a stock ask.
+RG-7d (R-GAPS-a) After "CBDR4003 stock", a refine that opens a sales report starts a new subject (CBDR4003 is not on
+     S1); brands named beside a newly opened report are its filters.
+RG-7f (R-GAPS-a review) A which_held pick never re-misses on a replayed remove: held C1, Z, A1; "remove customer Z and
+     this SO" -> pick C1 -> Lookup with customers [C1]; likewise two removes, a remove raiser, the new_topic raise site.
+RG-7g (R-GAPS-a review) did-you-mean and closest-product questions keep the other items like RG-7b ("3 mou + 2
+     srtwc28" -> both, each with its quantity); a count after an ETA answer is a stock ask with that count, and the held
+     subject keeps no attachment kind the stock domain does not take; "sorento and mocha" on a held brand report keeps
+     both brands.
+RG-7h (R-GAPS-a review) A dealer's "no" to a did-you-mean asked after other items of the same ask landed answers those
+     items (and asks any item still waiting); a did-you-mean alone still takes v1's declined lane. "customer Y and remove
+     customer Z" with Z held is no question: held customers end as [Y].
+RG-7e (R4) "Dealer outstanding only" needs a channel on the outstanding path and a parser field: built in R4.
 RG-8 No LLM calls; v1 turns unchanged.
