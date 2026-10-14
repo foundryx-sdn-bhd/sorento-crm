@@ -1,6 +1,8 @@
 # PLAN: PV2 scenario battery + live runner (PV2-EVAL, 14 Oct 2026)
 
-Status: Build. Track M (crew lane PV2-EVAL, branch `crew/pv2-eval` from crew/pv2 0690ef90a; draft PR into crew/pv2).
+Status: Build, baselines running. Track M (crew lane PV2-EVAL, branch `crew/pv2-eval`, draft PR #1674 into crew/pv2;
+crew/pv2 8ae511217 merged in). Baseline 1 (0690ef90a) posted on the PR; failure list handed to PV2-FIX
+(`crew/state/reports/PV2-EVAL-failures-baseline1-14oct.md`).
 UAC: `pv2-eval-battery-14oct-acceptance-criteria.md` (beside this file).
 Behaviour card: crew ask a74982394, answered 14 Oct (all recommendations taken; v1 pinned to the prod v52 text).
 
@@ -43,6 +45,18 @@ localhost on the copy) with `is_test`.
 5. Baseline: v2 + v1 on the copy (`crew testenv up PV2-EVAL`, API :8105, MCP :8205, DB `sorento_cagent_stack`),
    table to the draft PR as `crew-note:`, failure list to PV2-FIX by crew report.
 6. Reviewer (read-only), then crew-done.
+
+## Rounds after the first build (each red test first, kill proof on the PR)
+
+- Type-aware `false_gap` (files carry `attachmentType` + `filename`).
+- Runner imports this worktree's `sorento_crm_mcp` (the shared venv's editable install points at the primary
+  checkout).
+- Judge facts from the trace's tool events, looked_up raw, crossdomain lookups and access grants, capped with a cut
+  marker; identity keys dropped and phones / wamids masked before the external judge sees them.
+- Embedding key set in-process from the dev DB (bG4A guard, never on disk; crew answer a77754265).
+- Reviewer round 1: console lane switches entered once per run (they flip `system_settings` on the shared dev DB),
+  one lane per audience, every bubble graded, egress hardened, ideation target must be loopback, exact version pin.
+- Ideas marked `env` and out of the pass rate while the ideation service is down (crew answer a80240368).
 
 ## Not in scope
 
