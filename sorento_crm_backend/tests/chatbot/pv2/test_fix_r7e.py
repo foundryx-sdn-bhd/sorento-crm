@@ -109,3 +109,38 @@ def test_an_availability_dealer_is_not_given_every_match_as_exact_codes():
 def test_a_detailed_stock_dealer_keeps_the_list_all_settle():
     res = _wc286(stock_availability_only=False)
     assert len(res.state.held.refs["product"]) == 10
+
+
+# ------------------------------------------------------------------ 4 "all" on PV2's own menu for availability dealers
+
+
+def _own_menu_state(kind):
+    opts = [option(str(i), f"SRTWC286-V{i}", {"kind": "product", "key": f"SRTWC286-V{i}", "label": f"SRTWC286-V{i}"})
+            for i in range(1, 4)]
+    return mk_state(mk_held("inventory"), pending_=pending(kind, opts, asked="Which one?"))
+
+
+def _answer_all(kind, **extra):
+    from tests.chatbot.pv2.carry_fakes import FakeResolver
+
+    parsed = out(_ask(act="answers_bot_question", answer={"option_key": "all", "free_value": None}))
+    ctx = turn.TurnV2Context(
+        text="all", now=NOW, raw_state=dump_state(_own_menu_state(kind)), profile=MemoryProfile(audience="dealer"),
+        parse=lambda m, u: parsed, resolver=FakeResolver({}), load_exchanges=lambda s: [], **extra)
+    return turn._run(ctx)
+
+
+@pytest.mark.parametrize("kind", ["clarify_entity", "clarify_did_you_mean"])
+def test_an_availability_dealer_cannot_pick_all_on_pv2s_own_menu(kind):
+    from app.services.chatbot.turn.apply import STOCK_PICK_NOT_ALL
+
+    res = _answer_all(kind, stock_availability_only=True)
+    assert STOCK_PICK_NOT_ALL in (res.direct_reply or ""), res.direct_reply
+    assert res.state.pending is not None and res.state.pending.kind == kind
+    assert res.state.held.refs.get("product", []) == []
+
+
+@pytest.mark.parametrize("kind", ["clarify_entity"])
+def test_a_staff_or_detailed_contacts_all_still_picks_every_option(kind):
+    res = _answer_all(kind)
+    assert [r.key for r in res.state.held.refs["product"]] == ["SRTWC286-V1", "SRTWC286-V2", "SRTWC286-V3"]
