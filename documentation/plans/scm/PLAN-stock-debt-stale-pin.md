@@ -34,10 +34,13 @@ SO419598 BRW 1 / 0.
 1. `_holds`: allocation pins walk the same rule. Bin in the span with no on-hand event: the
    hold is dropped (line short, no "Covered by"). Bin with an event: `assign()` already caps
    the pin at what the bin has left.
-2. Bins OUTSIDE the span (site pool, unflagged bin, another group under `group=`): the
-   stand-in is capped at that bin's real free stock (`_stand_in_floors`, one read, on hand
-   less reserved), shared by every on-hand hold on the bin (allocation and received-SPO
-   placement alike), nearer line first (allocation rows now ordered by due date, SO, line).
+2. One per-bin ledger in `_holds` caps every on-hand hold at what the bin holds (on hand
+   less reserved): in the span from the on-hand event, OUTSIDE it (site pool, unflagged
+   bin, another group under `group=`) from `_stand_in_floors` (one read). Shared by every
+   on-hand hold on the bin, confirmed decisions first, then received-SPO placements, each
+   nearer line first. Capped in `_holds`, not left to `assign()`, so the book's S/O and
+   the landed goods see what a pin really covers (review round 1: pinned 126 on a bin of
+   50 left the order's own SPO of 76 free beside a short line).
 3. `cell()`: the Supply tab lists every source a line of the column is pinned on (R43 did
    this for PO pins only), stand-ins included, Free 0 outside its home column.
 4. Dialog: the Supply empty state says "What covers these lines is listed in an earlier
@@ -53,6 +56,9 @@ SO419598 BRW 1 / 0.
 - A pin on a partly stocked bin covers only what the bin holds; the rest is short.
 
 ## Not in scope
+
+Netting holds of lines outside the read against a bin's stock (true before this lane too,
+for bins in the span and out of it).
 
 Releasing or editing stale allocation rows (data stays; the read stops trusting it), and
 refusing a confirm at an empty bin (owner rule allows it).

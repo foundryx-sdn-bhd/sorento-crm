@@ -19,3 +19,7 @@ Plan: `PLAN-stock-debt-stale-pin.md`. Tests: `sorento_crm_backend/tests/scm/test
 - AC-9: the Fulfilment Planning board's shared assignment gives the same capped cover.
 - AC-10: the Supply empty state never says "No stock is held" beside a demand row showing
   cover; it says "What covers these lines is listed in an earlier column."
+- AC-11 (review round 1): pinned 126 at a bin holding 50, with an SPO of 76 whose S/O names
+  the line: covered 126 (on hand 50 + SPO 76), short 0. At a bin holding 0: SPO 76, short 50.
+- AC-12: received-SPO placements on one thin bin outside the span share it nearer line
+  first, whatever order they were written in.
