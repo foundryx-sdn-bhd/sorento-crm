@@ -59,7 +59,7 @@ if args[0] == "compose":
         open(os.path.join(d, "child_pid"), "w").write(str(p.pid))
     if cmd == "ps":
         svc = rest[-1]
-        if svc.startswith("backend_") and "-a" not in rest and os.path.exists(os.path.join(d, "active_stopped")):
+        if svc == "backend_blue" and "-a" not in rest and os.path.exists(os.path.join(d, "active_stopped")):
             print("")  # a stopped container is listed by `ps -a` only
         elif svc == "db":
             print(rd("db_cid", "cid-db").strip())

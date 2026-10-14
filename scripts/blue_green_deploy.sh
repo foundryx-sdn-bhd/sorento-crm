@@ -127,12 +127,13 @@ resolve_db_name() {
   if [ -n "$DEPLOY_DB_NAME" ]; then
     name=$DEPLOY_DB_NAME; DB_NAME_SOURCE="DEPLOY_DB_NAME"
   else
-    cid=$(docker compose ps -q "backend_${ACTIVE}" 2>/dev/null || true)
+    # -a: a stopped or crashed active backend still carries its env (recovery deploys).
+    cid=$(docker compose ps -a -q "backend_${ACTIVE}" 2>/dev/null || true)
     if [ -n "$cid" ]; then
       url=$(docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$cid" 2>/dev/null \
         | sed -n 's/^DATABASE_URL=//p' | head -1 || true)
       if [ -n "$url" ]; then
-        name=${url##*/}; name=${name%%\?*}
+        name=${url%%\?*}; name=${name##*/}   # query first: it may hold a '/'
       fi
     fi
     DB_NAME_SOURCE="DATABASE_URL of backend_${ACTIVE}"
@@ -346,10 +347,12 @@ take_snapshot() {
     exit 1
   fi
   # pg_restore -l reads only the header and TOC; `cat` drains the rest so docker never
-  # writes into a closed pipe and reports that as a failure.
+  # writes into a closed pipe and reports that as a failure. The grep reads a here-string,
+  # not a pipe: under pipefail `printf | grep -q` fails once the TOC outgrows the pipe
+  # buffer (a real one is ~240 KB), because grep exits early and printf gets SIGPIPE.
   if ! toc=$(docker compose exec -T "$DB_SERVICE" \
                sh -c 'out=$(pg_restore -l); rc=$?; cat > /dev/null; printf "%s\n" "$out"; exit $rc' < "${file}.partial") \
-     || ! printf '%s\n' "$toc" | grep -Eq '^[0-9]+; [0-9]+ [0-9]+ TABLE DATA public alembic_version( |$)'; then
+     || ! grep -Eq '^[0-9]+; [0-9]+ [0-9]+ TABLE DATA public alembic_version( |$)' <<< "$toc"; then
     rm -f "${file}.partial"
     echo "ERROR: pre-migration snapshot of '${DB_NAME}' does not list TABLE DATA public alembic_version; not starting ${NEW} (${ACTIVE} keeps serving)"
     exit 1

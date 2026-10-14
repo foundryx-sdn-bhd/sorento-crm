@@ -368,6 +368,10 @@ guards above, snapshot included) with `IMAGE_TAG=<RELEASED_SHA>` and `SKIP_MIGRA
 - **Check:** the run is green, and on the box
   `docker inspect --format '{{.Config.Image}}' "$(docker compose ps -q backend_$(cat .active_color))"`
   ends in `<RELEASED_SHA>`.
+- If the run is red only at "Promote the rollback images to the release tag" (a registry blip after
+  the server step succeeded), the box already runs `<RELEASED_SHA>`: use "Re-run failed jobs" so
+  the moving release tag follows. Until then a manual `docker compose up` with no `IMAGE_TAG`
+  would pull the bad release.
 - **Rollback:** dispatch "Rollback production" again with the newer SHA, or dispatch a release
   from main.
 
