@@ -48,7 +48,10 @@ SO action in fulfilment planning and let the CS confirm themselves".
 - **UAC-13 [BE][T]** No live order inquiry row: no pending decision.
 - **UAC-14 [BE][T]** A cancel that lowers or is voided, so the line reopens (R6), withdraws the pending
   decision the sync saved (a decision CS saved stays).
-- **UAC-15 [BE][T]** The board line carries the pending decision (`draft.decision`), like any saved line.
+- **UAC-15 [BE][T]** The board line carries the pending decision (`draft.decision`), like any saved line,
+  also when AutoCount cancelled every line of the order. Known limit (review should-fix 2): a line a
+  pending planning change still names is shown by that change (the existing R3 row) instead; its
+  proposal shows once the change is applied or superseded.
 - **UAC-16 [BE][FE][T]** Confirm posts it in `cancelled_lines` and runs the existing Transfer to Cancel
   SO (`ProjectSupplyService.cancel_lines`, which takes this one cancelled line, active decision or not):
   the OI rows are cancelled in Order Inquiry with the same handover to purchasing CS's own transfer

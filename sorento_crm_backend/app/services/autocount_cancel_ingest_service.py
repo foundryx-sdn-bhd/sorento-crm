@@ -776,10 +776,13 @@ def recompute_cancelled(db: Session, touched: Touched,
             before_flag = bool(row.cancelled_by_cancel_doc)
             total = (as_decimal(row.qty_delivered) if str(row.id) in whole
                      else sums.get(str(row.id), _ZERO))
-            if _apply(row, total, row.qty_delivered, header_status):
-                newly_cancelled.append((str(row.id), _latest_doc_no(db, str(row.id))))
-            elif before_flag and not row.cancelled_by_cancel_doc:
+            newly = _apply(row, total, row.qty_delivered, header_status)
+            if before_flag and not row.cancelled_by_cancel_doc:
+                # Independent of the planned-qty move below (review nit): a reopened line can
+                # need both its proposal withdrawn and a planning change.
                 derived.reopened.append(str(row.id))
+            if newly:
+                newly_cancelled.append((str(row.id), _latest_doc_no(db, str(row.id))))
             elif (row.qty_cancelled != before_c and before_status != CANCELLED
                   and row.line_status != CANCELLED):
                 # The planned basis `plan_qty_of` reads (review should-fix 5).

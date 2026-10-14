@@ -166,6 +166,11 @@ def _resolve_core_line(db: Session, sales_order_id: str, line_no: int, item_code
     if order is None:
         raise _bad_line(f"{sales_order_id}|{line_no}|{item_code}")
 
+    # CANCEL-STOP-AT-SO: a line AutoCount cancelled is keyed by its mirror's own `line_no`
+    # outside the demand set numbered below (an order AutoCount cancelled in full has no
+    # demand line left at all). Looked up first so that case resolves; a demand line that
+    # ALSO answers to the key makes it ambiguous, refused rather than guessed.
+    awaiting = _awaiting_cancel_line(db, sales_order_id, line_no, item_code)
     lines = (
         db.query(SalesOrderLine, Product.product_code)
         .join(Product, Product.id == SalesOrderLine.product_id)
@@ -173,6 +178,8 @@ def _resolve_core_line(db: Session, sales_order_id: str, line_no: int, item_code
         .all()
     )
     if not lines:
+        if awaiting is not None:
+            return awaiting
         raise _bad_line(f"{sales_order_id}|{line_no}|{item_code}")
 
     line_ids = [str(line.id) for line, _code in lines]
@@ -208,8 +215,13 @@ def _resolve_core_line(db: Session, sales_order_id: str, line_no: int, item_code
 
     for line, product_code in lines:
         if derived.get(str(line.id)) == line_no and product_code == item_code:
+            if awaiting is not None:
+                raise AppException(
+                    status_code=409,
+                    message="Two lines of this order answer to that line. Reload the board.",
+                    code="board_contribution_line_ambiguous",
+                )
             return line
-    awaiting = _awaiting_cancel_line(db, sales_order_id, line_no, item_code)
     if awaiting is not None:
         return awaiting
     raise _bad_line(f"{sales_order_id}|{line_no}|{item_code}")
@@ -403,6 +415,9 @@ def save_draft(
     """
     sales_order_id, line_no, item_code, bucket_key = parse_contribution_key(key)
     core_line = _resolve_core_line(db, sales_order_id, line_no, item_code)
+    # Only the sync marks its own proposal (`propose_autocount_cancel`); a saved decision is
+    # the saver's own, so a reopen never withdraws it.
+    decision = {k: v for k, v in decision.items() if k != "source"}
     verdict = decision.get("verdict")
     awaiting = awaits_cancel_so(core_line)
     if awaiting and verdict != "cancelled":

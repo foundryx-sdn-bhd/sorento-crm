@@ -415,3 +415,64 @@ def test_cs_can_save_the_transfer_again_but_nothing_else(api):
                                         "reserve": [], "borrow": [], "buy_qty": "36",
                                         "reason": "x"}})
     assert buy.status_code == 409, buy.text
+
+
+def test_an_order_autocount_cancelled_in_full_can_still_be_dismissed_and_saved(api):
+    """Review B1: every line of the order cancelled in AutoCount leaves no demand line to
+    number, and the pending transfer must still resolve for Undo and a re-save."""
+    client, world, w, _row = _awaiting_world(api)
+    core_a, _mirror_a, product_a = w["a"]
+    _cancelled_by_autocount(world, w["b"][0])
+    _cancelled_by_autocount(world, w["open"][0])
+    row = _contribution(_board(client, w["core_so"]), product_a)
+    assert row["draft"]["decision"]["verdict"] == "cancelled"
+
+    removal = client.delete(f"{BASE}/fulfilment-planning/lines/{row['key']}/draft")
+    assert removal.status_code == 204, removal.text
+    again = client.put(
+        f"{BASE}/fulfilment-planning/lines/{row['key']}/draft",
+        json={"decision": {"verdict": "cancelled", "reason": "CS: whole order"}})
+    assert again.status_code == 200, again.text
+    assert _draft(world.db, core_a.id).decision["reason"] == "CS: whole order"
+
+
+def test_a_saved_decision_never_carries_the_sync_marker(api):
+    """Security nit: only the sync marks its proposal, so a reopen never withdraws CS's own
+    saved transfer."""
+    client, world, w, _row = _awaiting_world(api)
+    core_a, _mirror_a, product_a = w["a"]
+    key = _contribution(_board(client, w["core_so"]), product_a)["key"]
+    saved = client.put(f"{BASE}/fulfilment-planning/lines/{key}/draft",
+                       json={"decision": {"verdict": "cancelled", "reason": "CS",
+                                          "source": "autocount_cancel"}})
+    assert saved.status_code == 200, saved.text
+    assert "source" not in _draft(world.db, core_a.id).decision
+    project_line_draft_service.withdraw_autocount_cancel(world.db, [str(core_a.id)])
+    assert _draft(world.db, core_a.id) is not None
+
+
+def test_a_line_an_active_decision_covers_can_still_be_transferred(api, monkeypatch):
+    """Review should-fix 3: AutoCount cancelled a confirmed line. It holds nothing any more, so
+    the active decision naming it does not stop CS confirming the pending transfer."""
+    from tests.test_fulfilment_line_draft_route import _covered_two_line_world
+
+    calls = _captured_dispatches(monkeypatch)
+    client, world, _core_so, order, core_1, line_1, _c2, _l2 = _covered_two_line_world(api)
+    inquiry = (world.db.query(OrderInquiry)
+               .filter(OrderInquiry.project_sales_order_id == order.id).one_or_none()
+               or _inquiry(world.db, world.company_id, order.id))
+    oi_row = _oi_row(world.db, world.company_id, inquiry.id, line_1.id,
+                     world.product.product_code, "5")
+    _cancelled_by_autocount(world, core_1, doc_no="ZZXS-778")
+    run_cancel_hooks(world.db, SimpleNamespace(
+        derived=Derived(newly_cancelled=[(str(core_1.id), "ZZXS-778")])), actor=None)
+    assert _draft(world.db, core_1.id) is not None
+
+    response = client.post(f"{BASE}/sales-orders/{order.id}/confirm",
+                           json=_cancel_body(line_1, reason="AutoCount Cancel SO ZZXS-778"))
+
+    assert response.status_code == 200, response.text
+    world.db.expire_all()
+    assert world.db.get(OrderInquiryRow, oi_row.id).state == "cancelled"
+    assert world.db.get(type(core_1), core_1.id).cancelled_at is not None
+    assert _handover_calls(calls)
