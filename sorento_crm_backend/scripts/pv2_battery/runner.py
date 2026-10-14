@@ -27,7 +27,7 @@ CALIBRATION_FILE = "calibration-latest.json"
 _write_lock = threading.Lock()
 
 FACTS_LIMIT = 12000
-_TOOL_CAP, _PARSE_CAP, _LOOKED_CAP = 6000, 2000, 3000
+_TOOL_CAP, _PART_CAP = 6000, FACTS_LIMIT // 3
 #: The dev embedding key ends in this; a key that does not is refused (it may be production's).
 DEV_KEY_SUFFIX = "bG4A"
 
@@ -69,11 +69,14 @@ def _dump(value: Any, cap: int) -> str:
 
 
 def facts_digest(trace: Any) -> str:
-    """What the bot looked up this turn, for the judge: tool calls with their result envelopes first,
-    then the parser output and the looked_up stage. Never raises; capped at FACTS_LIMIT."""
+    """What the bot looked up this turn, for the judge, in this order: tool envelopes, the looked_up stage
+    raw, crossdomain events, the parser output, the access attributes. Each part is capped so one huge part
+    cannot starve the rest; the whole is capped at FACTS_LIMIT with a visible marker. Never raises."""
     tools: list[str] = []
-    parser: list[str] = []
     looked: list[str] = []
+    cross: list[str] = []
+    parser: list[str] = []
+    access: list[str] = []
     try:
         for e in trace if isinstance(trace, list) else []:
             if not isinstance(e, dict):
@@ -81,13 +84,20 @@ def facts_digest(trace: Any) -> str:
             if e.get("kind") == "tool":
                 tools.append(_dump({"tool": e.get("name"), "args": e.get("args"),
                                     "result": e.get("envelope")}, _TOOL_CAP))
+            elif e.get("kind") == "crossdomain":
+                cross.append(_dump({k: e.get(k) for k in ("rung", "tool", "rows", "rendered")}, _PART_CAP))
             elif e.get("kind") == "pv2_turn" and e.get("parser_out") is not None:
-                parser.append(_dump({"parser_out": e["parser_out"]}, _PARSE_CAP))
+                parser.append(_dump({"parser_out": e["parser_out"]}, _PART_CAP))
             elif e.get("stage") == "looked_up":
-                looked.append(_dump({"looked_up": e.get("facts")}, _LOOKED_CAP))
+                looked.append(_dump({"looked_up": e.get("facts"), "raw": e.get("raw")}, _PART_CAP))
+            elif e.get("stage") == "access":
+                attrs = (e.get("facts") or {}).get("attributes") or (e.get("raw") or {}).get("attributes")
+                access.append(_dump({"access_attributes": attrs}, _PART_CAP))
     except Exception:  # noqa: BLE001 - a digest fault must not fail a turn
         pass
-    text = "\n".join(tools + parser + looked)
+    parts = [_dump("\n".join(tools), FACTS_LIMIT // 2)] + [_dump("\n".join(p), _PART_CAP)
+                                                       for p in (looked, cross, parser, access)]
+    text = "\n".join(p for p in parts if p)
     return text if len(text) <= FACTS_LIMIT else text[:FACTS_LIMIT] + "\n...(cut)"
 
 
