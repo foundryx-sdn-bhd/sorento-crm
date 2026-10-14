@@ -624,6 +624,9 @@ class TestSalespersonLinked:
 
         assert "SO421777" in reply and FOREIGN in reply and "fully delivered" in reply, reply
         assert not reply.strip().startswith(REFUSAL_PREFIX), reply
+        # The resolver kept the match (`engine._reference_scope` does not drop it), so the
+        # card head names the kind, as it does for staff (REF-PROBES).
+        assert reply.strip() == _card("Sales order SO421777", "Open", "fully delivered", name=FOREIGN), reply
 
     def test_scope_counts_as_staff_but_stays_enforced(self, session_factory) -> None:
         """Crew ruling (a), 14 Oct: the salesperson is document staff (lifted on the in-process
