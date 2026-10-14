@@ -397,3 +397,72 @@ describe('SoLineHistoryBody - no ids on screen (AC-SD28)', () => {
     expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
   });
 });
+
+describe('SoLineHistoryBody - empty block is text only (AC-SD22, AC-SD23)', () => {
+  const blockOf = (text: string) => screen.getByText(text).closest('section') as HTMLElement;
+  const expectTextOnly = (block: HTMLElement) => {
+    expect(within(block).queryByRole('table')).toBeNull();
+    expect(within(block).queryByText('Total')).toBeNull();
+  };
+  const emptyLine = () =>
+    renderBody({ data: data({ lines: [{ line_id: L_WESERP, deliveries: [], cancels: [] }] }) });
+
+  it('empty Delivered block shows the sentence, no table, no Total', () => {
+    emptyLine();
+    expectTextOnly(blockOf('No DO in the CRM for this line.'));
+  });
+
+  it('empty Cancelled block shows the sentence, no table, no Total', () => {
+    emptyLine();
+    expectTextOnly(blockOf('No Cancel SO for this line.'));
+  });
+
+  it('empty group blocks show the product sentences, no table, no Total', () => {
+    renderBody({
+      line: line({ id: L_FH1, sku: 'C-FH14' }),
+      data: data({
+        lines: [{ line_id: L_FH1, deliveries: [], cancels: [] }],
+        groups: [{ sku: 'C-FH14', line_ids: [L_FH1, L_FH2], deliveries: [], cancels: [] }],
+      }),
+    });
+    expectTextOnly(blockOf('No DO in the CRM for this product here.'));
+    expectTextOnly(blockOf('No Cancel SO for this product here.'));
+  });
+
+  it('a block with rows still renders its table and Total', () => {
+    renderBody();
+    const block = screen.getByText('5 DO lines').closest('section') as HTMLElement;
+    expect(within(block).getByRole('table')).toBeInTheDocument();
+    expect(within(block).getByText('Total')).toBeInTheDocument();
+  });
+});
+
+describe('SoLineHistoryBody - column widths (AC-SD27)', () => {
+  const widthOf = (header: string) => {
+    const th = screen.getAllByText(header).map((el) => el.closest('th')).find(Boolean) as HTMLElement;
+    return parseFloat(th.style.width || '0');
+  };
+
+  it('DO no. >= 140, DO date >= 110', () => {
+    renderBody();
+    expect(widthOf('DO no.')).toBeGreaterThanOrEqual(140);
+    expect(widthOf('DO date')).toBeGreaterThanOrEqual(110);
+  });
+
+  it('Cancel SO no. >= 140, Date >= 110', () => {
+    renderBody({
+      line: line({ id: L_CB110, sku: 'CB110' }),
+      data: data({
+        lines: [
+          {
+            line_id: L_CB110,
+            deliveries: [],
+            cancels: [{ doc_no: 'XS-1', doc_date: '2026-10-06', location: 'BRW', match_reason: 'item', qty: 1 }],
+          },
+        ],
+      }),
+    });
+    expect(widthOf('Cancel SO no.')).toBeGreaterThanOrEqual(140);
+    expect(widthOf('Date')).toBeGreaterThanOrEqual(110);
+  });
+});
