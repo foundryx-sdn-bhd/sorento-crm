@@ -3325,7 +3325,7 @@ describe('BoardLineDecisionPanel: Buy can be typed first (BUY-FIRST-PANEL)', () 
     expect(screen.queryByRole('button', { name: 'Rest to Borrow' })).toBeNull();
   });
 
-  it('Buy the whole line: ON buys it all, OFF restores the stock side and Buy follows the remainder again', () => {
+  it('Buy the whole line: ON buys it all, OFF puts back exactly what was there, the typed Buy and its pin included', () => {
     renderPanel();
 
     type('Buy quantity', '10');
@@ -3341,12 +3341,45 @@ describe('BoardLineDecisionPanel: Buy can be typed first (BUY-FIRST-PANEL)', () 
     expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(5);
     expect(buyInput()).toHaveValue(10);
 
-    // Unpinned by the switch: Buy follows the remainder again.
+    // Still pinned after the detour (crew ruling (a), 14 Oct): a derived Buy would read 12.
     type('Reserve at BRW', '3');
-    expect(buyInput()).toHaveValue(12);
+    expect(buyInput()).toHaveValue(10);
+    expect(hint()).toHaveTextContent('Unassigned 2');
   });
 
-  it('a typed Buy of 0 clears Order back and the document cited', () => {
+  it('Buy the whole line ON then OFF never replaces a typed Buy on a line that does not add up (review S2, crew ruling (a))', () => {
+    renderPanel();
+
+    type('Buy quantity', '10');
+    type('Reserve at BRW', '0');
+    expect(hint()).toHaveTextContent('Unassigned 5');
+    const wholeLine = screen.getByRole('switch', { name: 'Buy the whole line' });
+
+    fireEvent.click(wholeLine);
+    fireEvent.click(wholeLine);
+
+    expect(buyInput()).toHaveValue(10);
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(9);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(0);
+    expect(hint()).toHaveTextContent('Unassigned 5');
+  });
+
+  it('Buy the whole line ON then OFF on a Buy nobody typed: Buy still follows the remainder', () => {
+    renderPanel();
+
+    type('Reserve at BRW', '10');
+    expect(buyInput()).toHaveValue(5);
+    const wholeLine = screen.getByRole('switch', { name: 'Buy the whole line' });
+
+    fireEvent.click(wholeLine);
+    fireEvent.click(wholeLine);
+
+    expect(buyInput()).toHaveValue(5);
+    type('Reserve at BRW', '12');
+    expect(buyInput()).toHaveValue(3);
+  });
+
+  it('a Buy left at 0 clears Order back and the document cited', () => {
     renderPoolLine();
 
     fireEvent.click(screen.getByRole('switch', { name: 'Order back' }));
@@ -3355,11 +3388,81 @@ describe('BoardLineDecisionPanel: Buy can be typed first (BUY-FIRST-PANEL)', () 
     });
 
     type('Buy quantity', '0');
+    fireEvent.blur(buyInput());
     expect(screen.queryByRole('switch', { name: 'Order back' })).toBeNull();
 
     type('Buy quantity', '5');
     expect(screen.getByRole('switch', { name: 'Order back' })).not.toBeChecked();
     expect(screen.queryByLabelText('Document cited')).toBeNull();
+  });
+
+  it('retyping the Buy through an empty box keeps Order back and the document cited (review S1)', () => {
+    renderPoolLine();
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Order back' }));
+    fireEvent.change(screen.getByLabelText('Document cited'), {
+      target: { value: 'SPO-2026/08-0061' },
+    });
+
+    // Backspace the 73, then type 80: the empty value in between is not a decision.
+    type('Buy quantity', '');
+    type('Buy quantity', '8');
+    type('Buy quantity', '80');
+
+    expect(screen.getByRole('switch', { name: 'Order back' })).toBeChecked();
+    expect(screen.getByLabelText('Document cited')).toHaveValue('SPO-2026/08-0061');
+  });
+
+  it('Rest to Buy settles a below-zero Buy to exactly what is unassigned (review nit)', () => {
+    renderPanel();
+
+    type('Buy quantity', '-5');
+    type('Reserve at BRW', '0');
+    expect(hint()).toHaveTextContent('Unassigned 20');
+    fireEvent.click(screen.getByRole('button', { name: 'Rest to Buy' }));
+
+    expect(buyInput()).toHaveValue(15);
+    expect(
+      screen.queryByTestId(`line-decision-hint-${KEY}`),
+    ).not.toBeInTheDocument();
+  });
+
+  it('Rest to Reserve settles a below-zero first Reserve row to exactly what is unassigned (review nit)', () => {
+    renderPanel();
+
+    type('Buy quantity', '10');
+    type('Reserve at BRW-AM', '-3');
+    type('Reserve at BRW', '0');
+    expect(hint()).toHaveTextContent('Unassigned 17');
+    fireEvent.click(screen.getByRole('button', { name: 'Rest to Reserve' }));
+
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(14);
+    expect(
+      screen.queryByTestId(`line-decision-hint-${KEY}`),
+    ).not.toBeInTheDocument();
+  });
+
+  it('Rest to Buy pins the Buy on a line that opened short (review: surviving mutant)', () => {
+    renderPanel({}, {
+      verdict: 'amended',
+      reserve: [
+        { warehouse_id: 'wh-BRW-AM', location: 'BRW-AM', qty: '9' },
+        { warehouse_id: 'wh-BRW', location: 'BRW', qty: '5' },
+      ],
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '0',
+      reason: 'Saved short.',
+    });
+
+    expect(hint()).toHaveTextContent('Unassigned 10');
+    fireEvent.click(screen.getByRole('button', { name: 'Rest to Buy' }));
+    expect(buyInput()).toHaveValue(10);
+
+    // Pinned by the click: a derived Buy would follow to 12 here.
+    type('Reserve at BRW', '3');
+    expect(buyInput()).toHaveValue(10);
+    expect(hint()).toHaveTextContent('Unassigned 2');
   });
 
   it('Add location seeds what is left after a pinned Buy too', () => {
