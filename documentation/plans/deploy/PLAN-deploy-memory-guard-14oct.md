@@ -39,3 +39,8 @@ UAC: `deploy-memory-guard-14oct-acceptance-criteria.md`
   `pg_postmaster_start_time()` does not move and no container would restart. So the Postgres
   check reads the db log since the deploy start as well as RestartCount/StartedAt.
 - 2026-10-14: slices 1-7 landed with red-first tests and kill proofs; runbook written.
+- 2026-10-14: reviewer and security-reviewer READY 2108066f. Round 1 applied: DEPLOY_LOCK_PATH
+  (crew, shared with HA-BACKUP-CHECK), .deploy.env before the lock, numeric knobs fail closed,
+  disk check + PGDMP magic for the dump, SSH budget 100m, rollback regex/branch, /health
+  without error text, 10s single-flight probe cache, runbook steps 0 and 6 (allowlist +
+  limit_req).

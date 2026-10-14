@@ -14,12 +14,14 @@ What the code now does on every release (no action needed for these):
 
 | Guard | Where | On failure |
 | --- | --- | --- |
-| Exclusive lock `/opt/sorento-crm2/.deploy.lock` for the whole deploy (the weekly restore test waits on the same file) | `scripts/blue_green_deploy.sh` | waits up to 20 min, then fails; nothing changed |
-| Pre-migration snapshot (`pg_dump -Fc`, checked with `pg_restore --list`) | same | deploy stops before any migration; old colour keeps serving |
-| Memory guard: `MemAvailable` must be at least 4500 MB before the new colour starts | same | deploy stops; old colour keeps serving |
+| Exclusive lock on `DEPLOY_LOCK_PATH` (default `/opt/sorento-crm2/.deploy.lock`) for the whole deploy; HA-BACKUP-CHECK's weekly restore test waits on the same variable and default | `scripts/blue_green_deploy.sh` | waits up to 20 min, then fails; nothing changed |
+| Memory guard: `MemAvailable` must be at least 4500 MB, checked before and after the dump | same | deploy stops; old colour keeps serving |
+| Disk check: free space in the snapshot dir at least twice the newest dump and at least 10240 MB | same | deploy stops before the dump |
+| Pre-migration snapshot (`pg_dump -Fc`; its exit status decides, and the file must start with the custom-format magic `PGDMP`) | same | deploy stops before any migration; old colour keeps serving |
+| Every number in `.deploy.env` must be a whole number | same | deploy stops; nothing changed |
 | Postgres check: db container restarted, replaced, or crash-recovered in place | same, before the nginx swap and at the end | before the swap: new colour stopped, old keeps serving. At the end: the run goes red |
 | `lock_timeout` 5s, `statement_timeout` 180s on every migration | `sorento_crm_backend/alembic/env.py` | migration fails, new colour never goes healthy, old keeps serving |
-| `/health` body names Redis and scheduler state (status code still DB only); `/health/deep` returns 503 when DB, Redis or the scheduler is not OK | backend | `/health/deep` is for monitors only |
+| `/health` body names Redis and scheduler state (status code still DB only; a 503 body is `{"status":"unhealthy","database":"down"}`, no error text); `/health/deep` returns 503 when DB, Redis or the scheduler is not OK; both refresh their probes at most once per 10s per process | backend | `/health/deep` is for monitors only |
 | `Rollback production` workflow | `.github/workflows/rollback.yml` | see step 7 |
 
 ## Placeholders
@@ -40,6 +42,7 @@ All box steps run as the user that GitHub Actions SSHes in as (the deploy user),
 
 | Step | When | Time |
 | --- | --- | --- |
+| 0. Deploy lock path (agree it with the restore test) | before the next release | 3 min |
 | 1. Find out whether swap was ever applied | before the next release | 2 min |
 | 2. Swap 6 GB, swappiness 10 | before the next release | 5 min |
 | 3. Confirm the db service name and the free-memory baseline | before the next release | 3 min |
@@ -48,6 +51,36 @@ All box steps run as the user that GitHub Actions SSHes in as (the deploy user),
 | 6. Point a monitor at `/health/deep` | any time | 10 min |
 | 7. Rollback (when needed) | on a bad release | 10 min |
 | 8. Restore from a pre-migration snapshot (emergency only) | on a bad migration | 30 min |
+
+## 0. Deploy lock path
+
+The deploy and HA-BACKUP-CHECK's weekly restore test take the same exclusive lock, so a restore
+never runs during a deploy (that overlap would repeat the 10 Sep OOM). Both read
+`DEPLOY_LOCK_PATH`, default `/opt/sorento-crm2/.deploy.lock`. The deploy runs as the deploy user,
+so that user must be able to create the file, or open it if the restore test created it first
+(a read-only open is enough for the lock).
+
+```bash
+ls -ld /opt/sorento-crm2 /opt/sorento-crm2/.deploy.lock 2>&1
+```
+
+- **Check:** `/opt/sorento-crm2` is owned by root (or by the deploy user) and not writable by
+  anyone else. If so, keep the default and do nothing.
+- **If `/opt/sorento-crm2` is not root-owned**, use the fallback from HA-BACKUP-CHECK's
+  `backups.md` step 0 (a root-owned directory the deploy user can write to), and set the SAME path
+  for both sides: for the deploy in `/opt/sorento-crm2/.deploy.env` (step 3), for the restore test
+  where its runbook says.
+
+  ```bash
+  sudo install -d -m 0755 -o root -g root /var/lib/sorento-deploy
+  sudo install -m 0664 -o <DEPLOY_USER> -g <DEPLOY_USER> /dev/null /var/lib/sorento-deploy/deploy.lock
+  echo 'DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/deploy.lock' >> /opt/sorento-crm2/.deploy.env
+  ```
+
+  `<DEPLOY_USER>` is the user GitHub Actions SSHes in as.
+- **Check:** `flock -n "$(grep -s DEPLOY_LOCK_PATH /opt/sorento-crm2/.deploy.env | cut -d= -f2 || echo /opt/sorento-crm2/.deploy.lock)" true && echo lock-ok`
+  run as the deploy user prints `lock-ok` while no deploy runs.
+- **Rollback:** delete the `DEPLOY_LOCK_PATH` line from `.deploy.env` (the default applies again).
 
 ## 1. Is swap already on?
 
@@ -109,13 +142,31 @@ docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}'
   # DB_SERVICE=postgres
   # DEPLOY_MIN_AVAILABLE_MB=4500
   # SNAPSHOT_KEEP_MINUTES=2880
+  # SNAPSHOT_MIN_FREE_MB=10240
   # DEPLOY_LOCK_WAIT_SECONDS=1200
+  # DEPLOY_LOCK_PATH=/opt/sorento-crm2/.deploy.lock
   EOF
   chmod 600 /opt/sorento-crm2/.deploy.env
   ```
 
-  Uncomment only what you change.
+  Uncomment only what you change. Numbers must be whole numbers without units (`4500`, not
+  `4500MB`): anything else stops the deploy.
 - **Rollback:** `rm /opt/sorento-crm2/.deploy.env` (the defaults apply again).
+
+Time a dump once, so you know what a release now costs (the SSH step allows 100 min in total:
+the worker's 60 min stop grace, up to 20 min waiting on the deploy lock, and the rest):
+
+```bash
+cd /opt/sorento-crm2
+df -h .
+time docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > /tmp/dump-check.dump
+ls -lh /tmp/dump-check.dump && head -c 5 /tmp/dump-check.dump; echo
+rm /tmp/dump-check.dump
+```
+
+- **Check:** the dump finishes in under 10 minutes, prints `PGDMP`, and `df` shows more than twice
+  its size plus 10 GB free. If the dump takes longer, tell crew before the next release.
+- **Rollback:** nothing to roll back (the file is removed).
 
 If a release fails with `memory guard: N MB available, below DEPLOY_MIN_AVAILABLE_MB`, nothing
 changed on the box. Find what is using memory (`docker stats --no-stream`), and either free it or,
@@ -225,11 +276,30 @@ curl -s http://127.0.0.1:8000/health/deep
 ```
 
 - **Check:** `200` and `"status":"healthy"`. A `503` names the failing part.
-- For an outside monitor, the host nginx needs a route for it on the API host, e.g. in the server
-  block that proxies `/api/v1`: `location = /health/deep { proxy_pass http://sorento_backend; }`,
-  then `sudo nginx -t && sudo nginx -s reload`, and point the monitor at
-  `https://<CRM_DOMAIN>/health/deep`, alerting on anything but 200.
-- **Rollback:** remove the `location` block, `sudo nginx -t && sudo nginx -s reload`.
+- For an outside monitor, expose it to the monitor only, rate-limited. The route has no login,
+  and its body says how many scheduled tasks are late. In the host nginx `http` block (once):
+
+  ```nginx
+  limit_req_zone $binary_remote_addr zone=health_deep:1m rate=6r/m;
+  ```
+
+  and in the server block that proxies `/api/v1` on the API host:
+
+  ```nginx
+  location = /health/deep {
+      allow <MONITOR_IP>;
+      deny all;
+      limit_req zone=health_deep burst=3 nodelay;
+      proxy_pass http://sorento_backend;
+  }
+  ```
+
+  Behind Cloudflare, `allow` only works on the real client address: do this after
+  `prod-edge-lockdown.md` step 5 (nginx real client IP). Then `sudo nginx -t && sudo nginx -s reload`,
+  and point the monitor at `https://<CRM_DOMAIN>/health/deep`, alerting on anything but 200.
+- **Check:** from the monitor's address the URL answers 200; from anywhere else, 403.
+- **Rollback:** remove the `location` block and the `limit_req_zone` line,
+  `sudo nginx -t && sudo nginx -s reload`.
 
 ## 7. Rollback a bad release
 
@@ -282,7 +352,10 @@ the release again.
 
 | Message in the "Deploy to Server" log | Meaning | Do |
 | --- | --- | --- |
-| `.deploy.lock is still held` | another release or the restore test ran for 20 min | wait for it, dispatch again |
+| `... is still held (another deploy or the restore test)` | another release or the restore test ran for 20 min | wait for it, dispatch again |
+| `cannot open the deploy lock` | the deploy user cannot create the lock file | step 0 |
+| `must be a whole number` | a typo in `.deploy.env` | step 3 |
+| `snapshot disk check` | not enough free disk for the dump | free disk (`docker image prune`, old files), or step 3 |
 | `Postgres container 'db' not found` | service name differs | step 3 |
 | `pre-migration snapshot failed` | dump could not be written or checked | step 8, last paragraph |
 | `memory guard: N MB available` | not enough RAM for a second colour | step 3, last paragraph |
