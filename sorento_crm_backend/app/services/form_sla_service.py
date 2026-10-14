@@ -969,10 +969,15 @@ class FormSLAOrchestrator:
         # Pin-point override: a salesman (respond_contact) can be pinned to a
         # specific CS PIC per procurement use_case. A valid pin assigns that user
         # directly; any miss falls back to round-robin. The round-robin cursor is
-        # NOT advanced on an override. Complaint never reads the pin table.
+        # NOT advanced on an override. Only the procurement CS stage reads the pin
+        # table: the PIC need not be a member of any team, so team membership can no
+        # longer keep a pinned CS user off the submit or approval stage
+        # (CS-ROUTING-TARGETS). Complaint and stock inquiry never read it.
         # See docs/plans/PLAN-procurement-cs-handoff-and-pinpoint-routing.md.
         if override_assignee is not None:
             assignee = override_assignee  # default-approver wins over round-robin
+        elif not self._reads_cs_pin(config):
+            assignee = agent_svc.get_next_assignee(str(agent.id), team_id)
         else:
             # Pin lookup keys on the REQUESTOR (who the form is for), not the
             # submitter, so a salesman submitting on someone else's behalf still
@@ -985,7 +990,7 @@ class FormSLAOrchestrator:
                 or contact_id
             )
             assignee = self._resolve_pinned_assignee(
-                config.source_entity_type, routing_contact_id, team_id, source_entity_id
+                config.source_entity_type, routing_contact_id, company_id, source_entity_id
             )
             if not assignee:
                 assignee = agent_svc.get_next_assignee(str(agent.id), team_id)
@@ -1143,11 +1148,27 @@ class FormSLAOrchestrator:
             )
             return None
 
+    @staticmethod
+    def _reads_cs_pin(config: FormSLAConfig) -> bool:
+        """The procurement customer-service stage: the only stage whose assignment
+        honours a salesman's CS routing pin."""
+        from app.services.cs_routing_service import (
+            CS_AGENT_CODE,
+            CS_TEAM_SET_CODE,
+            PINNABLE_USE_CASES,
+        )
+
+        return (
+            getattr(config, "agent_code", None) == CS_AGENT_CODE
+            and getattr(config, "team_set_code", None) == CS_TEAM_SET_CODE
+            and getattr(config, "source_entity_type", None) in PINNABLE_USE_CASES
+        )
+
     def _resolve_pinned_assignee(
         self,
         source_entity_type: Optional[str],
         contact_id: Optional[str],
-        team_id: str,
+        company_id: Optional[str],
         source_entity_id: Optional[str] = None,
     ) -> Optional[dict]:
         """Return the CS PIC pinned for (contact, use_case) whose match-conditions
@@ -1159,15 +1180,17 @@ class FormSLAOrchestrator:
         (``created_at`` tiebreak); an empty condition list is a wildcard. Returns an
         assignee dict shaped like ``get_next_assignee`` so the caller is
         branch-agnostic. Returns None (→ round-robin) when there is no contact, no
-        matching pin, or the chosen user is missing / inactive / not a member of the
-        stage's tier-1 team. Never raises - every failure degrades to round-robin so
-        approval can't 500.
+        matching pin, or the chosen user is not an eligible PIC for ``company_id``
+        (``cs_routing_service.is_eligible_pic``: active, able to process purchase
+        requests, granted the company). Team membership is not required. Never
+        raises - every failure degrades to round-robin so approval can't 500.
         """
         if not contact_id or not source_entity_type:
             return None
         try:
-            from app.models.access import RespondContactCsRouting, TeamMember
-            from app.models.user import User, UserStatus
+            from app.models.access import RespondContactCsRouting
+            from app.models.user import User
+            from app.services import cs_routing_service
             from app.services.cs_routing_match import select_pin_row
 
             pins = (
@@ -1186,30 +1209,18 @@ class FormSLAOrchestrator:
             if not pin:
                 return None
             user_id = pin.cs_pic_user_id
-            member = (
-                self.db.query(TeamMember)
-                .filter(
-                    TeamMember.team_id == team_id,
-                    TeamMember.user_id == user_id,
-                )
-                .first()
-            )
-            if not member:
+            if not cs_routing_service.is_eligible_pic(self.db, user_id, company_id=company_id):
                 logger.warning(
-                    "CS pin: contact %s use_case %s -> user %s not in tier-1 team %s; "
-                    "falling back to round-robin.",
+                    "CS pin: contact %s use_case %s -> user %s is not an eligible PIC "
+                    "for company %s; falling back to round-robin.",
                     contact_id,
                     source_entity_type,
                     user_id,
-                    team_id,
+                    company_id,
                 )
                 return None
             user = self.db.query(User).filter(User.id == user_id).first()
-            if not user or (getattr(user, "status", "") or "").upper() != UserStatus.ACTIVE.value:
-                logger.warning(
-                    "CS pin: user %s missing/inactive; falling back to round-robin.",
-                    user_id,
-                )
+            if not user:
                 return None
             return {
                 "id": user.id,

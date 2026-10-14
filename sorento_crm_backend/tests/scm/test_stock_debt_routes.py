@@ -1779,8 +1779,18 @@ def _assert_pinned_on_the_bin(c, *, marker, warehouse, product, due):
     assert so2["short_qty"] == 50
 
     # The received document is not supply, and no stand-in is built for it: the only
-    # supply row anywhere is the bin, and it is spoken for by SO1.
-    assert cell["supply"] == []
+    # supply row anywhere is the bin, and it is spoken for by SO1. STOCK-DEBT-STALE-PIN:
+    # SO1's own column lists that bin too (Free 0 there), so the tab is never empty next
+    # to a row it covers.
+    assert [
+        (row["kind"], row["warehouse_code"], row["free_qty"], row["assigned_to"])
+        for row in cell["supply"]
+    ] == [
+        (
+            "on_hand", warehouse.warehouse_code, 0,
+            [{"so_number": f"{marker}-SO1", "line_no": None, "qty": 50}],
+        ),
+    ]
     assert [row["kind"] for row in now["supply"]] == ["on_hand"]
     [on_hand] = now["supply"]
     assert on_hand["warehouse_code"] == warehouse.warehouse_code

@@ -1013,8 +1013,9 @@ def _raise_two_rows(api, *, first_qty="10", second_qty="6"):
     """One order, TWO lines, both confirmed wholly as Buy: two raised inquiry rows.
 
     What the single-line fixture cannot express: a confirmation that names ONE line of an
-    order carries the other, and a carried line's row is cancelled and re-raised under the
-    new revision (13.4). That is the seam the handshake has to survive.
+    order carries the other, and a carried line's row moves under the new revision (13.4):
+    kept and re-filed when unchanged (ORDERBACK-DELTA), restated when it moved. That is
+    the seam the handshake has to survive.
     """
     client, world = api
     db = world.db

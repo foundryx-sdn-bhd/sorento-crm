@@ -270,6 +270,9 @@ export function StockDebtCellDialog({
     ? `Demand (${filteredDemandQty.toLocaleString()} of ${demandTotalQty.toLocaleString()})`
     : `Demand (${demandTotalQty.toLocaleString()})`;
   const supplyTabLabel = `Supply (${supplyTotalQty.toLocaleString()})`;
+  // STOCK-DEBT-STALE-PIN: an empty Supply tab beside a demand row that shows cover is a
+  // column covered from stock listed earlier (today's on hand), never "no stock is held".
+  const demandShowsCover = demand.some((line) => line.assigned_qty > 0);
 
   // R24: a Total FOOTER ROW on each grid replaces the standalone "Uncovered N"/"Free N"
   // lines that used to sit under them - summed over the SAME rows the tab itself is
@@ -757,7 +760,11 @@ export function StockDebtCellDialog({
                   listingKey="projects.stock_debt.view::cell-supply"
                   error={cell.error}
                   emptyTitle="Nothing arrives here"
-                  emptyBody="No stock is held or on the way for this column."
+                  emptyBody={
+                    demandShowsCover
+                      ? 'What covers these lines is listed in an earlier column.'
+                      : 'No stock is held or on the way for this column.'
+                  }
                   pageSize={10}
                   // The DialogBody above already owns the scroll viewport (overflow-y-auto).
                   scrollerMaxHeight={false}

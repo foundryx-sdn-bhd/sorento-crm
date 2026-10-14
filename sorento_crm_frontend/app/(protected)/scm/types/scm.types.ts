@@ -918,3 +918,42 @@ export interface PurchaseOrderUpdateData {
     discount?: string | null;
   }[];
 }
+
+/** One DO line placed under a sales-order line (SO-DELIVERIES-VIEW). */
+export interface SoLineDeliveryRow {
+  order_id: string;
+  do_number: string;
+  do_date: string | null;
+  location: string | null;
+  status: string | null;
+  actual_delivery_date: string | null;
+  qty: number;
+}
+
+/** One Cancel SO line placed under a sales-order line; `qty` is null for `group_whole`. */
+export interface SoLineCancelRow {
+  doc_no: string;
+  doc_date: string | null;
+  location: string | null;
+  match_reason: string | null;
+  qty: number | null;
+}
+
+export interface SoLineHistory {
+  line_id: string;
+  deliveries: SoLineDeliveryRow[];
+  cancels: SoLineCancelRow[];
+}
+
+/** A product on two or more lines of the SO: what AutoCount tied to the product, not a line. */
+export interface SoProductGroupHistory {
+  sku: string;
+  line_ids: string[];
+  deliveries: SoLineDeliveryRow[];
+  cancels: SoLineCancelRow[];
+}
+
+export interface SalesOrderDeliveries {
+  lines: SoLineHistory[];
+  groups: SoProductGroupHistory[];
+}

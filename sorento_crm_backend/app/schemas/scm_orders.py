@@ -7,7 +7,7 @@ human codes/names. PO is read-only at M1 (create/confirm/receive land in M4).
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
@@ -842,3 +842,39 @@ class PurchaseOrderListResponse(BaseModel):
     # this model is DROPPED from the response however carefully the service builds it -
     # which is exactly how this one went out silently the first time.
     product_cost: Optional[ProductLastCost] = None
+
+
+class SoLineDeliveryRow(BaseModel):
+    order_id: str
+    do_number: str
+    do_date: Optional[date] = None
+    location: Optional[str] = None
+    status: Optional[str] = None
+    actual_delivery_date: Optional[date] = None
+    qty: float
+
+
+class SoLineCancelRow(BaseModel):
+    doc_no: str
+    doc_date: Optional[date] = None
+    location: Optional[str] = None
+    match_reason: Optional[str] = None
+    qty: Optional[float] = None
+
+
+class SoLineHistory(BaseModel):
+    line_id: str
+    deliveries: List[SoLineDeliveryRow]
+    cancels: List[SoLineCancelRow]
+
+
+class SoProductGroupHistory(BaseModel):
+    sku: str
+    line_ids: List[str]
+    deliveries: List[SoLineDeliveryRow]
+    cancels: List[SoLineCancelRow]
+
+
+class SalesOrderDeliveries(BaseModel):
+    lines: List[SoLineHistory]
+    groups: List[SoProductGroupHistory]
