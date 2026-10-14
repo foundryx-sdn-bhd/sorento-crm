@@ -399,6 +399,17 @@ def _run_cancel_relink_hook(db: Session, service, numbers, *, actor: Optional[st
     _run_cancel_hooks(db, SimpleNamespace(derived=derived), actor=actor)
 
 
+def _run_consignment_order_hooks(db: Session, service, *, actor: Optional[str]) -> None:
+    """AC-CONSIGN-CRM: a consignments batch writes its orders through the SO ingest
+    (`service.consignment_orders`), so the SO push's own reactions follow, the same way and
+    with the same best-effort rule: the plan exception batch and the planning change for CS."""
+    orders = getattr(service, "consignment_orders", None)
+    if orders is None:
+        return
+    _run_plan_exception_hook(db, orders, actor=actor)
+    _run_planning_change_hook(db, orders, actor=actor)
+
+
 def _run_plan_exception_hook(db: Session, service, *, actor: Optional[str]) -> None:
     """AC-V5-1: a before/after plan-exception batch over this push's products.
 
@@ -832,6 +843,7 @@ def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, cur
             _run_grn_receipt_hook(db, service)
         elif entity in AUTOCOUNT_CANCEL_ENTITIES:
             _run_cancel_hooks(db, service, actor=current_user.get("id"))
+            _run_consignment_order_hooks(db, service, actor=current_user.get("id"))
     summary = result.as_dict()["summary"]
     logger.info(
         "deletion.batch entity=%s integration=%s company=%s dry_run=%s "
@@ -1017,6 +1029,7 @@ def ingest_masters(
             ) = _run_document_hooks(db, entity, service, actor=current_user.get("id"))
         elif entity in AUTOCOUNT_CANCEL_ENTITIES:
             _run_cancel_hooks(db, service, actor=current_user.get("id"))
+            _run_consignment_order_hooks(db, service, actor=current_user.get("id"))
         if entity == GOODS_RECEIVE_NOTES_ENTITY:
             _run_grn_receipt_hook(db, service)
         if entity in AUTOCOUNT_DOC_ENTITIES:

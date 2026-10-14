@@ -444,3 +444,17 @@ def test_a_return_naming_a_stored_only_consignment_waits(env):
     env.post(CG_INGEST, [_cg(details=[_cg_line(981001, transferred=4)])])
     assert _return_lines(env, 990001)[991001].match_status == "matched"
     assert _line(env, "db1:CSGN:980001:981001").qty_returned == Decimal("4")
+
+
+def test_a_consignment_batch_runs_the_sales_order_hooks(env, monkeypatch):
+    """The order is written by the SO ingest, so its reactions follow (plan exception batch,
+    planning change for CS), read off the consignments batch's own SO ingest."""
+    import app.api.v1.external.ingest as ingest
+
+    seen = []
+    monkeypatch.setattr(ingest, "_run_plan_exception_hook",
+                        lambda db, service, actor: seen.append(("plan", set(service.so_numbers))))
+    monkeypatch.setattr(ingest, "_run_planning_change_hook",
+                        lambda db, service, actor: seen.append(("change", set(service.so_numbers))))
+    env.post(CG_INGEST, [_cg()])
+    assert ("plan", {"ZZCG-0001"}) in seen and ("change", {"ZZCG-0001"}) in seen

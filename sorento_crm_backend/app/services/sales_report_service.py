@@ -65,7 +65,7 @@ from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
-from app.models.order import Customer, SalesOrder, SalesOrderLine
+from app.models.order import DOC_TYPE_CONSIGNMENT, Customer, SalesOrder, SalesOrderLine
 from app.models.product import Brand, Product, ProductCategory
 from app.models.sales_agent import SalesAgent
 from app.services.error_handler import handle_not_found
@@ -242,6 +242,9 @@ def _common_filters(
     filters = [
         SalesOrder.status != "cancelled",
         SalesOrderLine.line_status != "cancelled",
+        # AC-CONSIGN-CRM Q5 a: a consignment is not a sale; the sale counts where its DO /
+        # invoice already does.
+        SalesOrder.doc_type != DOC_TYPE_CONSIGNMENT,
         # S16: a line bucketed by neither required_date nor order_date is
         # excluded from EVERYTHING, not just months[] - never falls back to
         # created_at.
