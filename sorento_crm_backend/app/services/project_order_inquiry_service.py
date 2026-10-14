@@ -4298,7 +4298,7 @@ class ProjectOrderInquiryService:
             # ONE hole settled from what they held to what they hold, exactly as the same
             # change without the move (reviewer B1, 14 Oct 2026): never an order taken back.
             holes = [i for i in row_lines if i.get("borrow_hole")]
-            if len(holes) < 2 or all(i.get("kind") == "settled" for i in holes):
+            if len(holes) < 2:
                 holes = []
             held = sum((_hole_move(i)[0] for i in holes), _ZERO)
             holds = sum((_hole_move(i)[1] for i in holes), _ZERO)
@@ -4315,9 +4315,12 @@ class ProjectOrderInquiryService:
                     taken_back += was_qty - _dec(entry.get("qty"))
                 else:
                     raised += _dec(item.get("adds_order"))
-            # The netted holes count as the one hole they read as, or as none when it holds
-            # what it held (an unchanged hole tells purchasing nothing).
-            lines_told = len(row_lines) - len(holes) + (1 if held != holds else 0)
+            lines_told = len(row_lines)
+            if any(i.get("kind") != "settled" for i in holes):
+                # A donor move's holes count as the one hole they read as, or as none when
+                # it holds what it held (an unchanged hole tells purchasing nothing). Holes
+                # only resized in place stay the lines they are.
+                lines_told += (1 if held != holds else 0) - len(holes)
             self._queue_saved_line(
                 pso_id, line, now, before, actor_user_id=actor_user_id,
                 taken_back=taken_back,
