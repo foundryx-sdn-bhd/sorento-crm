@@ -57,7 +57,11 @@ from app.models.project_so import (
 from app.models.sales_agent import SalesAgent
 from app.services.company_scope import build_company_predicate
 from app.services.error_handler import AppException
-from app.services.project_supply_service import ProjectSupplyService, held_qty_expr
+from app.services.project_supply_service import (
+    ProjectSupplyService,
+    _hold_product,
+    held_qty_expr,
+)
 from app.services.scm import order_link_service, sales_agent_service, spo_supply
 from app.services.scm.demand import (
     demand_qty,
@@ -675,14 +679,29 @@ class StockDebtService:
             # whatever month its own date files it in, so "Supply (0)" never sits beside
             # "Assigned 1,309". Listed with no Free: its spare quantity (if any) is credited
             # to its own month, and counting it here as well would not foot with the cell.
+            # STOCK-DEBT-STALE-PIN: the same for a pin on STOCK - the bin a line of this
+            # bucket is pinned on is listed beside it, so the tab is never empty next to a
+            # row whose "Covered by" names it.
             pinned_here = {
                 item.event.key
                 for line in result.lines
                 if line.bucket == month
                 for item in line.assigned
-                if item.pinned and item.event.kind == KIND_PO
+                if item.pinned
             }
-            for event in events:
+            # A pin on a bin OUTSIDE the span covers its line off an event stood up from the
+            # pin (AC-S2-1b), which the span's own read (`events`) never holds: listed here
+            # for what the pins take of it - the part of that bin this screen can speak to.
+            # The projection lists a reserve's own events below, so one is never listed twice.
+            listed = {event.key for event in events} | {
+                event.key for event in (pool or {}).get("events", [])
+            }
+            stood: Dict[str, SupplyEvent] = {}
+            for event in result.supply:
+                if event.key in pinned_here and event.key not in listed:
+                    taken = sum(assigned_to.get(event.key, {}).values())
+                    stood[event.key] = dataclass_replace(event, qty=round(taken, 4))
+            for event in [*events, *stood.values()]:
                 # An uncounted document is listed in the CURRENT month: the axis starts
                 # today. R44 (#1359): the view walks no overdue rule, so the only one left
                 # is a document with no date at all.
@@ -1492,6 +1511,16 @@ class StockDebtService:
         out-of-span hold is (AC-S2-1b). Neither given (a caller that only wants the holds
         listed), every converted hold is returned.
 
+        **An allocation hold is a promise about stock too, and walks the same rule**
+        (STOCK-DEBT-STALE-PIN, owner 14 Oct 2026: SO424555's 126 pinned at BRW-IB read
+        "Covered by: On hand BRW-IB", Short 0, with the bin at 0 - the pin was confirmed
+        after the stock had gone, which choosing the own location allows). Its bin in the
+        span with no on-hand event is a bin the read found empty, so the hold is dropped
+        and the line reads short; with an event, `assign()` caps it at what the bin still
+        holds. A bin OUTSIDE the span is still honoured off a stand-in (AC-S2-1b), but for
+        no more than that bin's own free stock (on hand less reserved, `_supply`'s
+        arithmetic), shared by every on-hand hold on it, nearer line first.
+
         `lendable_lines` (STOCK-DEBT-LENDABLE, the view only): the line keys that can wait
         for a re-buy. A converted received-SPO placement on such a line is `lendable` - it
         IS the line's landed goods (SO381065's 88 at BRW-BB reach the assignment this way,
@@ -1514,24 +1543,20 @@ class StockDebtService:
                     SOLineAllocation.warehouse_id,
                     held_qty_expr(),
                     Warehouse.warehouse_code,
+                    _hold_product,
                 ),
             )
             .join(Warehouse, Warehouse.id == SOLineAllocation.warehouse_id)
             .filter(ProjectSalesOrderLine.core_sales_order_line_id.in_(keys))
+            # Nearer line first, so a bin too thin for every pin on it covers them in the
+            # walk's own order rather than in the order the rows happen to come back.
+            .order_by(
+                SalesOrderLine.required_date.asc().nullslast(),
+                SalesOrder.so_number,
+                ProjectSalesOrderLine.core_sales_order_line_id,
+            )
             .all()
         )
-        for core_line_id, warehouse_id, qty, warehouse_code in rows:
-            if _float(qty) <= 0:
-                continue
-            out.append(
-                Hold(
-                    line_key=str(core_line_id),
-                    supply_key=f"on_hand:{warehouse_id}",
-                    qty=_float(qty),
-                    kind=KIND_ON_HAND,
-                    warehouse=warehouse_code,
-                )
-            )
 
         links = (
             self.db.query(
@@ -1598,6 +1623,48 @@ class StockDebtService:
             )
             .all()
         )
+
+        # STOCK-DEBT-STALE-PIN (see the docstring): what each bin an on-hand hold may name
+        # really holds, read once for the bins outside the span.
+        floor_left = self._stand_in_floors(
+            product_ids,
+            {str(row.warehouse_id) for row in rows}
+            | {str(row.spo_warehouse_id) for row in links if row.spo_warehouse_id},
+            span=span,
+        )
+
+        def on_hand_take(product_id: str, bin_id: str, qty: float) -> float:
+            """How much of `qty` an on-hand hold at `bin_id` may pin."""
+            if span is None:
+                return qty
+            if bin_id in span:
+                # The read looked at this bin. No event means it holds nothing of the
+                # product; with one, `assign()` caps the pin at what it has left.
+                floors = {
+                    event.key
+                    for event in (supply_rows or {}).get(product_id, [])
+                    if event.kind == KIND_ON_HAND
+                }
+                return qty if f"on_hand:{bin_id}" in floors else 0.0
+            key = (product_id, bin_id)
+            take = min(qty, floor_left.get(key, 0.0))
+            floor_left[key] = floor_left.get(key, 0.0) - take
+            return take
+
+        for core_line_id, warehouse_id, qty, warehouse_code, product_id in rows:
+            take = on_hand_take(str(product_id), str(warehouse_id), _float(qty))
+            if take <= EPSILON:
+                continue
+            out.append(
+                Hold(
+                    line_key=str(core_line_id),
+                    supply_key=f"on_hand:{warehouse_id}",
+                    qty=take,
+                    kind=KIND_ON_HAND,
+                    warehouse=warehouse_code,
+                )
+            )
+
         for row in links:
             qty = _float(row.qty)
             if qty <= 0:
@@ -1642,21 +1709,15 @@ class StockDebtService:
                 if take <= EPSILON or not row.spo_warehouse_id:
                     continue
                 bin_id = str(row.spo_warehouse_id)
-                floor_key = f"on_hand:{bin_id}"
-                if span is not None and bin_id in span:
-                    floors = {
-                        event.key
-                        for event in (supply_rows or {}).get(str(row.spo_product_id), [])
-                        if event.kind == KIND_ON_HAND
-                    }
-                    if floor_key not in floors:
-                        # The read looked at this bin and it holds nothing of the product:
-                        # the landed goods are gone, so the promise covers nobody (AC-3).
-                        continue
+                # A bin the read found empty: the landed goods are gone, so the promise
+                # covers nobody (AC-3). Outside the span: no more than the bin holds.
+                take = on_hand_take(str(row.spo_product_id), bin_id, take)
+                if take <= EPSILON:
+                    continue
                 out.append(
                     Hold(
                         line_key=str(row[0]),
-                        supply_key=floor_key,
+                        supply_key=f"on_hand:{bin_id}",
                         qty=take,
                         kind=KIND_ON_HAND,
                         warehouse=row.spo_warehouse_code,
@@ -1684,6 +1745,40 @@ class StockDebtService:
                 )
             )
         return out
+
+    def _stand_in_floors(
+        self,
+        product_ids: Sequence[str],
+        bin_ids: Set[str],
+        *,
+        span: Optional[Set[str]],
+    ) -> Dict[Tuple[str, str], float]:
+        """The free stock (on hand less reserved, `_supply`'s arithmetic) at each bin in
+        `bin_ids` that is OUTSIDE `span`, by (product, bin) - one read, and none at all
+        when no hold names such a bin. What `_holds` caps a stand-in pin at."""
+        outside = [bin_id for bin_id in bin_ids if span is not None and bin_id not in span]
+        if not outside:
+            return {}
+        rows = (
+            self.db.query(
+                Stock.product_id,
+                Stock.warehouse_id,
+                func.sum(
+                    func.coalesce(Stock.quantity_on_hand, 0)
+                    - func.coalesce(Stock.quantity_reserved, 0)
+                ).label("qty"),
+            )
+            .filter(
+                Stock.product_id.in_([str(pid) for pid in product_ids]),
+                Stock.warehouse_id.in_(outside),
+            )
+            .group_by(Stock.product_id, Stock.warehouse_id)
+            .all()
+        )
+        return {
+            (str(row.product_id), str(row.warehouse_id)): max(_float(row.qty), 0.0)
+            for row in rows
+        }
 
     # ------------------------------------------------------------------ small helpers
 
