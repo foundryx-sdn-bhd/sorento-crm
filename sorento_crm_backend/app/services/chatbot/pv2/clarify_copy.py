@@ -43,7 +43,7 @@ _COPY: dict[str, dict[str, str]] = {
     "which": {
         "en": "Which one do you mean?",
         "zh": "您指的是哪一个？",
-        "ms": "Yang mana satu yang anda maksudkan?",
+        "ms": "Mana satu yang anda maksudkan?",
     },
     "which_phrase": {
         "en": 'Which "{phrase}" do you mean?',
@@ -181,19 +181,20 @@ _STILL_NEED: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("I still need to know which {kind} you mean for {subject}.",
                "I still need to know which {kind} you mean."),
         "zh": ("关于 {subject}，我仍需要知道您指的是哪个{kind}。", "我仍需要知道您指的是哪个{kind}。"),
-        "ms": ("Saya masih perlu tahu {kind} yang mana satu yang anda maksudkan untuk {subject}.",
-               "Saya masih perlu tahu {kind} yang mana satu yang anda maksudkan."),
+        "ms": ("Saya masih perlu tahu {kind} mana satu yang anda maksudkan untuk {subject}.",
+               "Saya masih perlu tahu {kind} mana satu yang anda maksudkan."),
     },
     "which_one": {
         "en": ("I still need to know which one you mean for {subject}.", "I still need to know which one you mean."),
         "zh": ("关于 {subject}，我仍需要知道您指的是哪一个。", "我仍需要知道您指的是哪一个。"),
-        "ms": ("Saya masih perlu tahu yang mana satu yang anda maksudkan untuk {subject}.",
-               "Saya masih perlu tahu yang mana satu yang anda maksudkan."),
+        "ms": ("Saya masih perlu tahu mana satu yang anda maksudkan untuk {subject}.",
+               "Saya masih perlu tahu mana satu yang anda maksudkan."),
     },
     "measure": {
         "en": ("I still need the figure to rank by for {subject}.", "I still need the figure to rank by."),
         "zh": ("关于 {subject}，我仍需要知道按哪个数据排名。", "我仍需要知道按哪个数据排名。"),
-        "ms": ("Saya masih perlukan ukuran kedudukan untuk {subject}.", "Saya masih perlukan ukuran kedudukan."),
+        "ms": ("Saya masih perlu tahu angka mana untuk menyusun kedudukan bagi {subject}.",
+               "Saya masih perlukan angka untuk menyusun kedudukan."),
     },
     "breakdown": {
         "en": ("I still need which row to break down for {subject}.", "I still need which row to break down."),
@@ -202,7 +203,7 @@ _STILL_NEED: dict[str, dict[str, tuple[str, str]]] = {
                "Saya masih perlu tahu baris mana yang hendak diperincikan."),
     },
     "what": {
-        "en": ("I still need what to check for {subject}.", "I still need what to check."),
+        "en": ("I still need to know what to check for {subject}.", "I still need to know what to check."),
         "zh": ("关于 {subject}，我仍需要知道要查什么。", "我仍需要知道要查什么。"),
         "ms": ("Saya masih perlu tahu apa yang hendak disemak untuk {subject}.",
                "Saya masih perlu tahu apa yang hendak disemak."),

@@ -1304,7 +1304,8 @@ def _did_you_mean(
     asked = f"{head}\n{lines}\nReply with a code to continue"
     picks = [
         Option(key=str(n), label=o.label, payload={
-            "kind": "product", "key": c, "label": o.label, "op": "set", "phrase": ent.phrase, **_qty_payload(ent)})
+            "kind": "product", "key": c, "label": o.label, "op": "add" if ent.op == "add" else "set",
+            "phrase": ent.phrase, **_qty_payload(ent)})
         for n, (o, c) in enumerate(zip(options, codes), start=1)
     ]
     extra: list[Option] = []
