@@ -1,6 +1,6 @@
 # PLAN: mirror / shelf -> cabinet links (Part 1: data + product page + import)
 
-Status: Build. Track: full (migration + prod data import). Lane: MIRROR-LINKS.
+Status: Review (reviewer READY, security CLEAN, browser pass PASS; PR #1690). Track: full (migration + prod data import). Lane: MIRROR-LINKS.
 UAC: `mirror-shelf-links-14oct-acceptance-criteria.md` (alongside).
 Builds on: `documentation/plans/products/PLAN-wc-seat-compat-12oct.md` (PR #1590).
 Part 2 (the chatbot answering "mirror for SRTBF31415") is a separate later lane after #1613
@@ -23,6 +23,10 @@ the flyer, visible and kept by hand on the product page.
   shelf), `wc_product_id` is the host end (WC, cabinet). Renaming would rewrite a live table for
   no behaviour gain. The model documents the mapping.
 - Unique index becomes (accessory, host, kind).
+- Every v1 seat cover lookup reads `kind = 'seat_cover'` links only: `covers_for` / `wcs_for`
+  and, after #1613 merged, `chatbot/lanes/business/find.py::_linked_codes_holding` (a one-line
+  join filter, the lane's only chatbot edit; regression tests `test_product_find.py::test_f1_*`,
+  `tests/chatbot/test_seat_as_product.py::test_r4b/test_r4c`).
 - Service: a small `KINDS` dict (kind -> accessory noun, host noun). `covers_for` / `wcs_for`
   keep their names and now read `seat_cover` links only, so the chatbot's fits filter
   (`product_find._run_fits`) never sees a mirror as a seat cover. Generic `accessories_for` /
@@ -82,8 +86,13 @@ and the same CheckConstraint + unique Index (name `uq_product_compatibility_pair
 
 ```
 KIND_SEAT_COVER = "seat_cover"; KIND_MIRROR = "mirror"; KIND_SHELF = "shelf"
-#: kind -> (accessory noun, host noun)
-KINDS = {"seat_cover": ("seat cover", "WC"), "mirror": ("mirror", "cabinet"), "shelf": ("shelf", "cabinet")}
+#: kind -> Kind(accessory noun, host noun, accessory product_type). product_type is a value of
+#: the spec registry's product_type list (product_spec_registry.py SPEC_REGISTRY_SEED); crew
+#: asked for it (PV2-FIX, 14 Oct) so the PV2 relation kinds need no extra migration. Its reader
+#: is the Part 2 chatbot lane.
+KINDS = {"seat_cover": Kind("seat cover", "WC", "toilet_seat"),
+         "mirror": Kind("mirror", "cabinet", "mirror"),
+         "shelf": Kind("shelf", "cabinet", "towel_shelf")}
 ROLE_ACCESSORY = "accessory"; ROLE_HOST = "host"
 ROLE_SEAT_COVER = "seat_cover"; ROLE_WC = "wc"            # legacy, kind seat_cover only
 
