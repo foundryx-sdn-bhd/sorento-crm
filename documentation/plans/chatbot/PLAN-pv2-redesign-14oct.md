@@ -172,7 +172,7 @@ never words from the user's text.
   only A (from earlier) or all <A>s?", nothing fetched; pick 1 keeps A, pick 2 clears A and keeps the period (v1); a
   subject-less reply while it is open re-asks and merges its period into the origin. Never asked about the contact's
   own (scope-limited) customer (v1 guard). Loop cap: identical clarify questions count as misses for every clarify kind;
-  at the cap a contact who cannot be offered a hand-over gets a closing line (ruling pending). case-072
+  at the cap staff get v1's "I still need X for Y." (no refer line, no offer). case-072
   (converted_replay.jsonl:114-115) corrected with its turn-1 resolver row; test_carry_turn.py:108-116 and
   converted_replay.jsonl:58 flip.
 - RG-2 #1582: the held product ids reach `_place_number` (resolve.py:954-993); members holding the number on any mm axis
@@ -186,6 +186,11 @@ never words from the user's text.
 - RG-6 #1517: an empty subject (no refs, specs, report, low stock, period, form) in inventory or master_products (#1517
   ruling; R3 registry) is a which-product question, no tool call; port #1517's `chat_visible` (product_service, products
   route, fetch.py, MCP catalog; MCP rebuild at deploy); `Product.is_active` on the PV2 family lists (resolve.py:564, 597).
+
+Rulings (crew a76095395, 14 Oct): staff loop cap uses v1's line; keep the own-customer guard (carry question tested on
+staff and on a dealer with a non-own customer); sets expand in inventory only, a base code offers its ACTIVE sets as one
+pick for everyone, inactive sets do not answer; empty ask = question in inventory + master_products only; per-axis miss
+line with "Sizes on file", no closest-product picks.
 
 **Moved to R4:** RG-7 part 1 ("Dealer outstanding only"): no channel exists on the outstanding path (schema, bridge,
 fetch, MCP, route, service); it needs a backend channel param plus a parser field (`Ask.channel`), built with R4.
