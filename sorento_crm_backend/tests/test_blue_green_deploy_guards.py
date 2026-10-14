@@ -11,8 +11,10 @@ schema after a failed migration). Runbook: documentation/runbooks/memory-and-dep
 """
 from __future__ import annotations
 
+import fcntl
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import time
@@ -24,7 +26,7 @@ REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "blue_green_deploy.sh"
 
 DOCKER_STUB = r'''#!/usr/bin/env python3
-import os, sys
+import os, subprocess, sys
 d = os.environ["STUB_DIR"]
 args = sys.argv[1:]
 def rd(name, default=""):
@@ -46,6 +48,15 @@ if args[0] == "compose":
     while rest and rest[0] == "--profile":
         rest = rest[2:]
     cmd = rest[0]
+    if cmd == "pull" and os.environ.get("DEPLOY_LOCK_FILE"):
+        # Is the deploy lock held while the deploy runs? (flock -n fails when it is.)
+        held = subprocess.run(["flock", "-n", os.environ["DEPLOY_LOCK_FILE"], "true"]).returncode != 0
+        open(os.path.join(d, "lock_held_during_deploy"), "a").write("yes\n" if held else "no\n")
+    if cmd == "up" and os.path.exists(os.path.join(d, "spawn_child")):
+        # A child that outlives the script and inherits its fds (as a stray background
+        # process would): the lock must still be released when the script exits.
+        p = subprocess.Popen(["/bin/sleep", "30"], close_fds=False, start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        open(os.path.join(d, "child_pid"), "w").write(str(p.pid))
     if cmd == "ps":
         svc = rest[-1]
         if svc == "db":
@@ -112,7 +123,14 @@ def box(tmp_path):
     _exe(bin_dir / "sleep", "#!/bin/sh\nexit 0\n")
     meminfo = tmp_path / "meminfo"
     meminfo.write_text("MemTotal:       16000000 kB\nMemAvailable:    8000000 kB\n")
-    return {"root": root, "stub": stub_dir, "bin": bin_dir, "meminfo": meminfo}
+    box = {"root": root, "stub": stub_dir, "bin": bin_dir, "meminfo": meminfo, "lock": root / ".deploy.lock"}
+    yield box
+    pid_file = stub_dir / "child_pid"
+    if pid_file.exists():
+        try:
+            os.kill(int(pid_file.read_text()), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 def _run(box, **env_extra):
@@ -121,6 +139,7 @@ def _run(box, **env_extra):
         "STUB_DIR": str(box["stub"]),
         "IMAGE_TAG": "abc123",
         "MEMINFO_FILE": str(box["meminfo"]),
+        "DEPLOY_LOCK_FILE": str(box["lock"]),
         "HOME": str(box["root"]),
     }
     env.update(env_extra)
@@ -302,3 +321,50 @@ def test_db_logs_are_read_from_the_deploy_start_only(box):
     assert r.returncode == 0, r.stdout + r.stderr
     db_log_calls = [l for l in _calls(box) if l.startswith("logs") and l.endswith("cid-db")]
     assert db_log_calls and all("--since" in l for l in db_log_calls), db_log_calls
+
+
+# --- deploy lock (shared with the weekly restore test, HA-BACKUP-CHECK) -----------------
+
+
+def _lock_is_free(path: Path) -> bool:
+    return subprocess.run(["flock", "-n", str(path), "true"]).returncode == 0
+
+
+def test_the_lock_path_on_the_box_is_fixed():
+    """The restore test waits on this exact file; a different path means no mutual exclusion."""
+    assert 'DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/opt/sorento-crm2/.deploy.lock}"' in SCRIPT.read_text()
+
+
+def test_the_lock_is_held_for_the_deploy_and_released_after_success(box):
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (box["stub"] / "lock_held_during_deploy").read_text().split() == ["yes"]
+    assert _lock_is_free(box["lock"])
+
+
+def test_the_lock_is_released_after_a_failed_deploy(box):
+    _set_mem_mb(box, 2000)
+    r = _run(box)
+    assert r.returncode != 0
+    assert (box["stub"] / "lock_held_during_deploy").read_text().split() == ["yes"]
+    assert _lock_is_free(box["lock"])
+
+
+def test_the_lock_is_released_even_when_a_child_keeps_the_fd_open(box):
+    (box["stub"] / "spawn_child").write_text("1")
+    _incident(box, "up", state="1 2026-10-14T09:16:09Z")  # fail after the child started
+    r = _run(box)
+    assert r.returncode != 0
+    pid = int((box["stub"] / "child_pid").read_text())
+    os.kill(pid, 0)  # the child is still alive and still holds the inherited fd
+    assert _lock_is_free(box["lock"])
+
+
+def test_a_held_lock_makes_the_deploy_wait_then_give_up_without_touching_anything(box):
+    box["lock"].touch()
+    with open(box["lock"]) as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        r = _run(box, DEPLOY_LOCK_WAIT_SECONDS="1")
+    assert r.returncode != 0
+    assert "/.deploy.lock" in r.stdout and "held" in r.stdout, r.stdout
+    assert _calls(box) == [], "nothing may run while a restore test or another deploy holds the box"
