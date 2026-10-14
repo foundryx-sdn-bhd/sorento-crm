@@ -342,46 +342,51 @@ class CsRoutingService:
 
         Every rule is validated before anything is deleted (use_case, an eligible PIC,
         the predicate shape, no two rules with the same conditions for one use_case),
-        so a bad rule raises a 400 naming it ("Rule 2: ...", 1-based, the page's own
-        order) and the stored rules stay exactly as they were. Returns the stored
-        rules as ``list_for_contact`` shapes them.
+        so a bad rule raises a 400 naming it by the label the page shows, "Priority
+        N" = ``priority + 1`` (the page skips rules with no PIC yet, so the position
+        in ``rules`` would point at the wrong card), and the stored rules stay exactly
+        as they were. Returns the stored rules as ``list_for_contact`` shapes them.
         """
         from app.services.cs_routing_match import canonical_conditions
 
         self._require_contact(contact_id)
         prepared: list[dict] = []
-        first_rule_for: dict[tuple[str, str], int] = {}
-        for n, rule in enumerate(rules, start=1):
+        first_label_for: dict[tuple[str, str], str] = {}
+        for rule in rules:
+            priority = int(rule.get("priority") or 0)
+            label = f"Priority {priority + 1}"
             use_case = rule.get("use_case")
             if use_case not in PINNABLE_USE_CASES:
                 raise handle_validation_error(
-                    f"Rule {n}: use_case must be one of {PINNABLE_USE_CASES}; got {use_case!r}."
+                    f"{label}: use_case must be one of {PINNABLE_USE_CASES}; got {use_case!r}."
                 )
             pic = rule.get("cs_pic_user_id")
             if not is_eligible_pic(self.db, pic):
+                # Name only, never the email: the id came from the client, so this
+                # must not reveal anything about an arbitrary user beyond a name.
                 user = self.db.query(User).filter(User.id == str(pic)).first() if pic else None
-                who = (user.name or user.email) if user else "The selected user"
+                who = user.name if user is not None and user.name else "The selected user"
                 raise handle_validation_error(
-                    f"Rule {n}: {who} cannot be assigned. Pick someone active who can "
+                    f"{label}: {who} cannot be assigned. Pick someone active who can "
                     "process purchase requests."
                 )
             try:
                 conds = _normalized_conditions(rule.get("match_conditions"))
             except AppException as exc:
-                raise handle_validation_error(f"Rule {n}: {exc.detail['message']}") from exc
+                raise handle_validation_error(f"{label}: {exc.detail['message']}") from exc
             key = (use_case, canonical_conditions(conds))
-            if key in first_rule_for:
+            if key in first_label_for:
                 raise handle_validation_error(
-                    f"Rule {n} has the same conditions as Rule {first_rule_for[key]} for "
+                    f"{label} has the same conditions as {first_label_for[key]} for "
                     f"{_USE_CASE_LABELS[use_case]}. Change or remove one of them."
                 )
-            first_rule_for[key] = n
+            first_label_for[key] = label
             prepared.append(
                 {
                     "use_case": use_case,
                     "cs_pic_user_id": pic,
                     "match_conditions": conds,
-                    "priority": int(rule.get("priority") or 0),
+                    "priority": priority,
                 }
             )
 

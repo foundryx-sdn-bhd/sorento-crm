@@ -700,8 +700,9 @@ class CsRoutingRule(CsRoutingPinRequest):
 
 
 class CsRoutingReplaceRequest(BaseModel):
-    # Every rule of the contact, in the page's order. Replaces what is stored.
-    rules: list[CsRoutingRule]
+    # Every rule of the contact, in the page's order. Replaces what is stored. Capped
+    # so one request cannot carry an unbounded list (each rule costs queries).
+    rules: list[CsRoutingRule] = Field(max_length=100)
 
 
 @router.get("/cs-routing/candidates")

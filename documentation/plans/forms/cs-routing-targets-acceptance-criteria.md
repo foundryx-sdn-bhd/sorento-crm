@@ -5,7 +5,8 @@ Plan: `PLAN-cs-routing-targets.md`. Tests: `sorento_crm_backend/tests/test_cs_ro
 `sorento_crm_frontend/.../routing/csRoutingMock.test.ts`.
 
 - AC-1 Saving the rules page with one rule whose PIC cannot be assigned returns an error naming
-  that rule ("Rule 2: ..."), and every stored rule is unchanged.
+  that rule by its page label ("Priority 3: ..."), and every stored rule is unchanged. The message
+  names the user by name only, never their email.
 - AC-2 Saving sends one request; the stored rules become exactly the rules sent (save = replace),
   with priority = page order. An empty list clears the contact's rules.
 - AC-3 Two rules for one form type with the same conditions are refused, naming both rules.
@@ -19,4 +20,5 @@ Plan: `PLAN-cs-routing-targets.md`. Tests: `sorento_crm_backend/tests/test_cs_ro
 - AC-7 The pin never decides the submit or approval stage, complaints or stock inquiries.
 - AC-8 Escalation from a pinned PIC outside the team reaches the next tier's team.
 - AC-9 Every routing write (bulk PUT, per-use_case PUT, DELETE) requires
-  `user_management.contacts.edit`.
+  `user_management.contacts.edit`; without it the rules page is read-only.
+- AC-10 One save carries at most 100 rules.
