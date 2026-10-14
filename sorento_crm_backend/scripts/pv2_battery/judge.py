@@ -129,7 +129,7 @@ class AnthropicClient:
             resp = httpx.post(
                 API_URL,
                 headers={"x-api-key": self.api_key, "anthropic-version": "2023-06-01"},
-                json={"model": self.model, "max_tokens": 400,
+                json={"model": self.model, "max_tokens": 2000,
                       "messages": [{"role": "user", "content": prompt}]},
                 timeout=self.timeout,
             )
@@ -138,5 +138,10 @@ class AnthropicClient:
                 delay = min(delay * 2, 30)
                 continue
             resp.raise_for_status()
-            return resp.json()["content"][0]["text"]
+            blocks = resp.json().get("content") or []
+            text = "".join(str(b.get("text") or "") for b in blocks
+                           if isinstance(b, dict) and b.get("type") == "text")
+            if not text.strip():
+                raise RuntimeError("judge response held no text block")
+            return text
         raise RuntimeError("unreachable")
