@@ -100,3 +100,13 @@ location on at Inventory Management > Warehouses > edit > "Fulfilment planning"
    (`stock-debt/lib/stockDebtSavedView.ts`) that turns dates into day offsets and back.
 
 UAC: `stock-debt-saved-views-acceptance-criteria.md`.
+
+## ED views (owner, 14 Oct 23:16)
+
+"Project view" (every location except ED) and "ED only view" (ED alone), both saved views.
+`group` already scopes the calculation: `_warehouses` builds the bin span
+(`stock_debt_service.py:859-890`) and `_assignments` reads supply and demand for that span
+only (`:1085`, `:1098-1108`); proven by `test_the_group_filter_recomputes_rather_than_filters`.
+Save both with Book = Project (under Book = All the site pools stay in the span, `:887-890`).
+A saved include-list does not pick up a location added later; no exclude mode unless asked.
+How ED gets in: crew-ask on PR #1683, recommendation is the admin flag (no code).
