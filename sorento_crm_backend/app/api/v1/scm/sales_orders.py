@@ -19,6 +19,7 @@ from app.schemas.scm_orders import (
     CreateDoResponse,
     SalesAgentOption,
     SalesOrder,
+    SalesOrderDeliveries,
     SalesOrderFormData,
     SalesOrderListResponse,
     SalesOrderUpdate,
@@ -176,6 +177,13 @@ def list_sales_order_uoms(
 @router.get("/sales-orders/{so_id}", response_model=SalesOrder)
 def get_sales_order(so_id: str, db: Session = Depends(get_db), _user: dict = Depends(_READ)):
     return SalesOrderService(db).get(so_id)
+
+
+@router.get("/sales-orders/{so_id}/deliveries", response_model=SalesOrderDeliveries)
+def get_sales_order_deliveries(so_id: str, db: Session = Depends(get_db), _user: dict = Depends(_READ)):
+    from app.services.scm.so_line_history import so_line_history
+
+    return so_line_history(db, SalesOrderService(db)._get_or_404(so_id))
 
 
 @router.post("/sales-orders", response_model=SalesOrder, status_code=status.HTTP_201_CREATED)

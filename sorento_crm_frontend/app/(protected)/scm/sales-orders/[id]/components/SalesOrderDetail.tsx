@@ -62,6 +62,7 @@ import {
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useSalesOrder, useUpdateSalesOrder } from '../../../hooks/useSalesOrders';
+import { useSalesOrderDeliveries } from '../../../hooks/useSalesOrderDeliveries';
 import { useWarehouseOptions } from '../../../hooks/useScmOptions';
 import {
   SELECT_PAGE_SIZE,
@@ -75,6 +76,7 @@ import { getSalesOrderUoms, type SalesOrderPlanningChangeBatch } from '../../../
 import { PlanRowDialog } from '../../../components/PlanRowDialog';
 import { PlanNumberButton } from '../../../components/PlanNumberButton';
 import { SoLineLinksBody } from './SoLineLinksBody';
+import { SoLineHistoryBody } from './SoLineHistoryBody';
 import { fmtDate, fmtInt } from '../../../lib/format';
 import { demandClassBadge } from '../../../lib/demandClass';
 import { transferableBadge } from '../../../lib/transferable';
@@ -383,7 +385,13 @@ export function SalesOrderDetail({ id }: { id: string }) {
   const backHref = useBackToListHref('/scm/sales-orders');
   // Same gate the list's own "Plan selected" carries (S2, R3): a door that answers 403
   // is worse than not offering it, so the primary is simply absent without it.
+  // Which LINE's truck button was pressed (SO-DELIVERIES-VIEW). The read is enabled by the
+  // first press and stays enabled, so one fetch serves every line's lightbox.
+  const [deliveriesLineId, setDeliveriesLineId] = useState<string | null>(null);
+  const [deliveriesRequested, setDeliveriesRequested] = useState(false);
   const canPlan = useHasPermission(PLAN_PERMISSION);
+  const canOpenDo = useHasPermission('order_management.orders.view');
+  const deliveries = useSalesOrderDeliveries(id, deliveriesRequested);
   const searchParams = useSearchParams();
 
   const updateMut = useUpdateSalesOrder();
@@ -691,7 +699,32 @@ export function SalesOrderDetail({ id }: { id: string }) {
 
   const columns = useMemo<ColumnDef<SalesOrderLine>[]>(
     () => [
-      // LEFTMOST, so the grid reads left to right in the same order AutoCount does
+      // First, in view and edit: the truck opens the line's Deliveries lightbox. Empty header,
+      // like the trailing Remove line column.
+      {
+        id: 'deliveries',
+        header: () => null,
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }: { row: { original: SalesOrderLine } }) => (
+          <Button
+            type="button"
+            mode="icon"
+            variant="ghost"
+            size="sm"
+            aria-label={`Deliveries for ${row.original.sku}`}
+            title={`Deliveries for ${row.original.sku}`}
+            onClick={() => {
+              setDeliveriesRequested(true);
+              setDeliveriesLineId(row.original.id);
+            }}
+          >
+            <Truck className="size-4" />
+          </Button>
+        ),
+        size: 52,
+      } as ColumnDef<SalesOrderLine>,
+      // LEFTMOST of the data columns, so the grid reads left to right in the same order AutoCount does
       // (PLAN-so-lines-autocount-order.md). A saved column order that predates this column
       // has never seen its id, so `mergeColumnOrderWithLeafColumns` (the shared column-config
       // merge every `DataGrid` runs) has no preceding neighbour to anchor it after and places
@@ -1426,6 +1459,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
   const lineCount = so.line_count ?? lines.length;
   // How far the order has been planned, in the same chip the list carries.
   const plannedBadge = salesOrderPlannedBadge(so.planned_lines, so.plannable_lines);
+  const deliveriesLine = deliveriesLineId ? (lines.find((l) => l.id === deliveriesLineId) ?? null) : null;
   const linksLine = linksLineId ? (lines.find((l) => l.id === linksLineId) ?? null) : null;
 
   const handleSave = async () => {
@@ -2112,6 +2146,27 @@ export function SalesOrderDetail({ id }: { id: string }) {
           }}
         >
           <SoLineLinksBody links={linksLine.linked_to ?? []} />
+        </PlanRowDialog>
+      ) : null}
+
+      {deliveriesLine ? (
+        <PlanRowDialog
+          kind="deliveries"
+          productCode={deliveriesLine.sku}
+          productName={deliveriesLine.product_name}
+          open
+          onOpenChange={(next) => {
+            if (!next) setDeliveriesLineId(null);
+          }}
+        >
+          <SoLineHistoryBody
+            line={deliveriesLine}
+            data={deliveries.data}
+            isLoading={deliveries.isLoading}
+            isError={deliveries.isError}
+            onRetry={() => void deliveries.refetch()}
+            canOpenDo={canOpenDo}
+          />
         </PlanRowDialog>
       ) : null}
     </div>
