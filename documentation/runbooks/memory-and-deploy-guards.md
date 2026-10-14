@@ -78,8 +78,12 @@ ls -ld /opt/sorento-crm2 /opt/sorento-crm2/.deploy.lock 2>&1
   ```
 
   `<DEPLOY_USER>` is the user GitHub Actions SSHes in as.
-- **Check:** `flock -n "$(grep -s DEPLOY_LOCK_PATH /opt/sorento-crm2/.deploy.env | cut -d= -f2 || echo /opt/sorento-crm2/.deploy.lock)" true && echo lock-ok`
-  run as the deploy user prints `lock-ok` while no deploy runs.
+- **Check:** run as the deploy user while no deploy runs; it prints `lock-ok`:
+
+  ```bash
+  P=$(grep -s '^DEPLOY_LOCK_PATH=' /opt/sorento-crm2/.deploy.env | cut -d= -f2)
+  flock -n "${P:-/opt/sorento-crm2/.deploy.lock}" true && echo lock-ok
+  ```
 - **Rollback:** delete the `DEPLOY_LOCK_PATH` line from `.deploy.env` (the default applies again).
 
 ## 1. Is swap already on?
