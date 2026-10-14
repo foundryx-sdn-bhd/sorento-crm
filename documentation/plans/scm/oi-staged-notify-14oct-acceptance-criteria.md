@@ -53,7 +53,8 @@ own equivalent chain (CI DB is empty).
   that row only, figure 150. Amend back to 200 before sending -> nothing parked for that row.
 - AC-SN-24 Two parked commits on one row before sending -> one email row with the latest figure.
 - AC-SN-25 Double send / concurrency / unresolved / colleague rules as AC-SN-07/08/09.
-- AC-SN-27 `GET /order-inquiries/{inquiry_id}/reserve-notices/recipients` (RESERVE) returns
+- AC-SN-27 `GET /order-inquiries/{inquiry_id}/reserve-notices/recipients?row_ids=<ids>` (RESERVE)
+  resolves each staged row like commit does (open request row, else latest answered) and returns
   `{to: {name}, cc: [{name}]}` = what the enabled `order_inquiry_reserved` automation would
   resolve for this OI's request (requester To, OI raiser Cc, the caller moved to Cc); `to` null
   when nobody resolves. Unknown or foreign inquiry 404.
@@ -70,6 +71,11 @@ own equivalent chain (CI DB is empty).
   OI has no request rows) and `parked_by_name` (the requester or notice parker when parked).
 - AC-SN-31 `GET .../reserve-status/summary` returns the OI count per status (everyone's) and the
   caller's own `my_parked_requests` / `my_parked_notices` item counts.
+- AC-SN-33 (review round 1) The bulk or one-OI shape follows DISTINCT order inquiries: a group
+  whose requests all belong to one OI sends each request with today's one-OI email (never
+  "1 order inquiries"); `items_sent` counts distinct OIs. The migration backfills `notified_qty =
+  qty_reserved` on rows answered before it, so "amend back to the sent figure" also holds for them.
+  The plain-text bulk body says "and 1 more order inquiry." in the singular.
 - AC-SN-32 Template update is skipped (left as is) when the stored subject/layout differs from
   the seeded value; applied when equal; downgrade restores the seeded value.
 

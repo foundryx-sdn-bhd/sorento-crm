@@ -3,7 +3,8 @@
 Status: Build (owner approved mock v6, 14 Oct). Standard track, size L (additive migration + in-place template layout update, two
 sides, status filter, send-all with preview). Lane crew/oi-staged-notify. Card answered by crew
 14 Oct (Q1-Q5 all (a)); owner notes on mocks v1 to v5 applied; mock v6 approved by the owner
-14 Oct. Red tests next (tester), then coder.
+14 Oct. Built; review round 1 (reviewer NOT READY: B1 one-OI shape by distinct OIs, S2 recipients
+for staged rows, nits) in progress; security CLEAN (2 Low accepted).
 
 UAC: `oi-staged-notify-14oct-acceptance-criteria.md` (alongside). Card:
 `oi-staged-notify-behaviour-card.md`. Mock: `documentation/mockups/OI-STAGED-NOTIFY/index.html` (v6).
@@ -160,3 +161,9 @@ fixtures), frontend vitest beside each touched component. List in the UAC.
 - A second document adopting the pattern (trigger: the owner names one).
 - "Needs reserve" narrowed per CS person: no assignment field exists; asked with mock v4 (rec: no).
 - Admin-edited reserve templates do not get the bulk branch (documented limit).
+- Review round 1 nits left by design: an amend that releases from two requests then raises back
+  onto the newest leaves the older row parked even when the line total equals what was sent
+  (trigger: a CS report of a no-change notice); no test pins the FOR UPDATE lock (not
+  deterministic; code read by reviewer and security); `ParkedSendDialog` imports
+  `EmailPreviewFrame` from the email-templates folder (trigger: a third consumer, then move it to
+  `components/common`); no cap on items per send (security Low; trigger: a user parks > 200).
