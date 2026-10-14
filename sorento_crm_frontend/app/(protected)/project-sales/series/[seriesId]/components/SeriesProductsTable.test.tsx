@@ -30,6 +30,7 @@ if (!window.matchMedia) {
 const getSeriesProductRows = vi.fn();
 const updateSeriesProductPricing = vi.fn();
 const removeSeriesProduct = vi.fn();
+const importSeriesProducts = vi.fn();
 const getProductsForLineSelect = vi.fn().mockResolvedValue([]);
 
 vi.mock('../../../_shared/services/projectService', async (importOriginal) => {
@@ -41,6 +42,7 @@ vi.mock('../../../_shared/services/projectService', async (importOriginal) => {
     getSeriesProductRows: (...args: unknown[]) => getSeriesProductRows(...args),
     updateSeriesProductPricing: (...args: unknown[]) => updateSeriesProductPricing(...args),
     removeSeriesProduct: (...args: unknown[]) => removeSeriesProduct(...args),
+    importSeriesProducts: (...args: unknown[]) => importSeriesProducts(...args),
   };
 });
 
@@ -215,6 +217,8 @@ describe('SeriesProductsTable', () => {
 
   it('D1: a newly added row keeps the picked product, shows its code, and saves it by id', async () => {
     getSeriesProductRows.mockResolvedValue([]);
+    importSeriesProducts.mockResolvedValue({});
+    updateSeriesProductPricing.mockResolvedValue(row());
     getProductsForLineSelect.mockResolvedValue([
       { id: 'p9', product_code: 'BT900', product_name: 'Nine trap' },
     ]);
@@ -235,6 +239,12 @@ describe('SeriesProductsTable', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /^Save / }));
 
+    await waitFor(() =>
+      expect(importSeriesProducts).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ codes: ['BT900'] }),
+      ),
+    );
     await waitFor(() =>
       expect(updateSeriesProductPricing).toHaveBeenCalledWith(
         's1',
