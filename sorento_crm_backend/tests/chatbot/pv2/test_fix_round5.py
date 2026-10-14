@@ -113,14 +113,18 @@ def _scope(monkeypatch, *, staff, attrs=(SO,), scope=None, scope_raises=False, r
     return scope_for_resolver(object(), "contact-1", "space-1", object())
 
 
-def test_non_staff_never_gets_so_or_po_ref_kinds(monkeypatch):
+def test_non_staff_keeps_so_kinds_but_is_held_to_its_links(monkeypatch):
+    # PV2-FIX r6: crew 15 Oct, v1 parity: the per-match link drop does the scoping
     r = _scope(monkeypatch, staff=False, scope=None)
-    assert not ({"sales_order", "customer_po_ref"} & set(r["reference_kinds"]))
+    assert "sales_order" in r["reference_kinds"]
+    assert r["reference_links"] == []
 
 
-def test_staff_with_an_enforced_scope_loses_so_and_po_ref(monkeypatch):
+def test_staff_with_an_enforced_scope_is_held_to_its_links(monkeypatch):
+    # PV2-FIX r6: crew 15 Oct, v1 parity
     r = _scope(monkeypatch, staff=True, scope={"enforced": True, "ids": ["x"]})
-    assert not ({"sales_order", "customer_po_ref"} & set(r["reference_kinds"]))
+    assert "sales_order" in r["reference_kinds"]
+    assert r["reference_links"] is not None
 
 
 def test_staff_unscoped_with_the_so_grant_sees_sales_orders(monkeypatch):
@@ -129,8 +133,9 @@ def test_staff_unscoped_with_the_so_grant_sees_sales_orders(monkeypatch):
 
 
 def test_a_failing_scope_lookup_fails_closed(monkeypatch):
+    # PV2-FIX r6: crew 15 Oct, closed through the links (none) rather than by dropping the kind
     r = _scope(monkeypatch, staff=True, scope_raises=True)
-    assert "sales_order" not in r["reference_kinds"]
+    assert r["reference_links"] == []
     assert r["customer_scope"]["enforced"] is True
 
 
