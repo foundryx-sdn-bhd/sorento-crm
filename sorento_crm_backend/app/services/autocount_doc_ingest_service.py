@@ -91,6 +91,9 @@ MAX_LINES = 2000
 MAX_RECORD_BYTES = 1_000_000
 # A branchbypage row is one address record; 32 KB is far above any real one.
 MAX_BRANCH_BYTES = 32_000
+# Order numbers a batch hands the cancel relink hook (AC-CANCEL-CRM); the rest are re-decided
+# by their own next sync.
+MAX_ORDER_NUMBERS = 1000
 # Waiting links re-tried per kind at the end of a batch; the rest wait for the next batch.
 MAX_WAITING_LINKS = 500
 
@@ -205,7 +208,12 @@ def _dec(value: Any, exp: Decimal) -> Optional[Decimal]:
         raise ValueError("not a number") from None
     if not out.is_finite():
         raise ValueError("not a number")
-    return out.quantize(exp, rounding=ROUND_HALF_UP)
+    try:
+        return out.quantize(exp, rounding=ROUND_HALF_UP)
+    except ArithmeticError:
+        # A value too large to quantize (about 1e24 and up) is a field error, not a crash that
+        # fails the whole batch (AC-CANCEL-CRM security review).
+        raise ValueError("out of range") from None
 
 
 def _parse_dt(value: Any) -> Optional[datetime]:
@@ -597,6 +605,11 @@ class AutocountDocIngestService(MasterRefResolver):
         self.touched_allocation_ids: set[str] = set()
         self.released_allocation_ids: set[str] = set()
         self.live_records: list[RecordResult] = []
+        # AC-CANCEL-CRM: the SO / PO / SPO numbers this batch's lines came from. A DO or GRN
+        # moves those lines' unexplained transfer, which decides key-less cancel lines, so the
+        # route re-matches the cancel lines naming them after the commit.
+        self.order_numbers: set[str] = set()
+        self.order_numbers_capped = False
 
     #: How often `on_progress` fires mid-batch - the same cadence `MasterIngestService`
     #: uses (B3): a pull snapshot can run to thousands of documents.
@@ -662,6 +675,22 @@ class AutocountDocIngestService(MasterRefResolver):
         except Exception:  # pragma: no cover - defensive by design
             logger.warning("ingest progress callback failed", exc_info=True)
 
+    def _note_order_numbers(self, doc: "_Doc", outcome: IngestOutcome) -> None:
+        """AC-CANCEL-CRM: the order numbers a document that LANDED names, capped (security
+        review: one number per line of a 1000 x 2000 batch must not reach one IN list)."""
+        if outcome == IngestOutcome.UNCHANGED:
+            return
+        for number in [doc.values.get("ref_doc_no"), *(l.from_doc_no for l in doc.lines)]:
+            if not number or number in self.order_numbers:
+                continue
+            if len(self.order_numbers) >= MAX_ORDER_NUMBERS:
+                if not self.order_numbers_capped:
+                    logger.warning("ingest.order_numbers_capped company=%s cap=%d",
+                                   self.company_id, MAX_ORDER_NUMBERS)
+                self.order_numbers_capped = True
+                return
+            self.order_numbers.add(number)
+
     def _ingest_one(self, entity: str, raw: Any) -> RecordResult:
         source_ref = _source_ref(self.book, entity, raw.get("DocKey")) if isinstance(raw, dict) else None
         if not isinstance(raw, dict):
@@ -687,6 +716,7 @@ class AutocountDocIngestService(MasterRefResolver):
                     self._apply_do(doc) if entity == DELIVERY_ORDERS_ENTITY else self._apply_grn(doc)
                 )
             savepoint.commit()
+            self._note_order_numbers(doc, verdict.outcome)
             return RecordResult(
                 source_ref=source_ref,
                 outcome=verdict.outcome,

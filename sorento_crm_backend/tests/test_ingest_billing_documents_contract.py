@@ -70,7 +70,8 @@ LINE_KEYS = {
 def test_version_is_2_6_and_lists_the_entity():
     body = get_contract()
     # Bumped again (#1354 S2): "2.7" adds `delivery_orders`, `goods_receive_notes`, `branches`.
-    assert body["version"] == "2.7"
+    # Bumped again (AC-CANCEL-CRM): "2.8" adds `cancel_sales_orders`, `cancel_purchase_orders`.
+    assert body["version"] == "2.8"
     assert "billing_documents" in body["entities"]
 
 

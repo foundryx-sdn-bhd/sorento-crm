@@ -46,6 +46,7 @@ from app.schemas.canonical_documents import (
     CanonicalBillingDocument,
     CanonicalBillingDocumentLine,
 )
+from app.services.autocount_cancel_ingest_service import CONTRACT_2_8_WARNINGS
 from app.services.autocount_doc_ingest_service import CONTRACT_2_7_WARNINGS
 from app.services.finance.billing_document_ingest_service import (
     WARN_AGENT_UNRESOLVED,
@@ -127,6 +128,27 @@ FIELDS_ADDED: dict[str, list[str]] = {
     "branches": ["book", "AccNo", "BranchCode", "BranchName"],
     "delivery_orders_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
     "goods_receive_notes_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
+    # v2.8 (AC-CANCEL-CRM): AutoCount Cancel SO (XS) / Cancel PO (XP), the 2.7 vendor shape.
+    "cancel_sales_orders": ["book", "DocKey", "DocNo", "DocDate", "LastModified", "Cancelled",
+                            "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
+                            "Details.Location", "Details.Qty", "Details.FromDocType",
+                            "Details.FromDocNo", "Details.FromDocDtlKey"],
+    "cancel_purchase_orders": ["book", "DocKey", "DocNo", "DocDate", "LastModified", "Cancelled",
+                               "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
+                               "Details.Location", "Details.Qty", "Details.FromDocType",
+                               "Details.FromDocNo", "Details.FromDocDtlKey"],
+    "consignments": ["book", "DocKey", "DocNo", "DocDate", "LastModified", "Cancelled",
+                     "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
+                     "Details.Location", "Details.Qty", "Details.FromDocType",
+                     "Details.FromDocNo", "Details.FromDocDtlKey"],
+    "consignment_returns": ["book", "DocKey", "DocNo", "DocDate", "LastModified", "Cancelled",
+                            "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
+                            "Details.Location", "Details.Qty", "Details.FromDocType",
+                            "Details.FromDocNo", "Details.FromDocDtlKey"],
+    "cancel_sales_orders_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
+    "cancel_purchase_orders_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
+    "consignments_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
+    "consignment_returns_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
 }
 
 # D24 (captain 2026-09-06): per-entity notes on a field's meaning that
@@ -201,6 +223,33 @@ FIELD_NOTES: dict[str, str] = {
         "v2.7. branchbypage rows as returned. Key (company, book, AccNo, BranchCode). No read "
         "and no deletions door."
     ),
+    "cancel_sales_orders": (
+        "v2.8. AutoCount Cancel SO (XS) as the vendor API returns it, stored whole. Envelope book "
+        "is required. Key (company, book, DocKey); source_ref is {book}:XS:{DocKey}. Each Details "
+        "row is matched exactly or not at all: FromDocDtlKey names its SO line; without one, "
+        "the row is decided with its group (FromDocNo + ItemCode + Location): the group's one "
+        "line takes it, or, when nothing was delivered and the group's cancels equal every "
+        "line's TransferedQty, each line's cancelled qty is its own transfer. Anything else is "
+        "undetermined: kept, named on no line, never counted as cancelled. An SO line's "
+        "cancelled qty is derived from live docs on every sync. Cancelled T (DocStatus V) "
+        "cancels nothing. A row whose SO is not here yet waits (cancel_line_waiting); an "
+        "undetermined or unplaceable one is unmatched (cancel_line_unmatched). Nothing is "
+        "retryable on a missing master. "
+        "/deletions marks the vanished doc_keys of a DocDate range; they then cancel nothing. "
+        "No read door."
+    ),
+    "cancel_purchase_orders": (
+        "v2.8. As cancel_sales_orders, AutoCount Cancel PO (XP) against PO or SPO lines (the "
+        "number's table decides; FromDocType reads PO on both). source_ref is {book}:XP:{DocKey}."
+    ),
+    "consignments": (
+        "v2.8. AutoCount Consignment in the same shape, accepted and stored only: no line is "
+        "matched and no quantity moves (consignment behaviour is a later contract). source_ref "
+        "is {book}:CSGN:{DocKey}. /deletions marks the vanished doc_keys."
+    ),
+    "consignment_returns": (
+        "v2.8. As consignments, AutoCount Consignment Return. source_ref is {book}:CSGR:{DocKey}."
+    ),
 }
 
 # D15 end state (AC-P0-4): these now FAIL validation (extra=forbid), never
@@ -223,6 +272,10 @@ STATUS_OPTIONAL: dict[str, bool] = {
     # Cancelled is read off the AutoCount record itself.
     "delivery_orders": False,
     "goods_receive_notes": False,
+    "cancel_sales_orders": False,
+    "cancel_purchase_orders": False,
+    "consignments": False,
+    "consignment_returns": False,
 }
 
 # The fixed warning vocabulary, drawn from the constants each producing
@@ -254,6 +307,7 @@ WARNINGS: list[str] = sorted(
         WARN_PRODUCT_UNRESOLVED,
         WARN_STALE_IGNORED,
         *CONTRACT_2_7_WARNINGS,
+        *CONTRACT_2_8_WARNINGS,
         "category_created",
         "uom_created",
         "brand_created",

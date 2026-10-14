@@ -106,13 +106,21 @@ def _in_scope_so_ids(db: Session, so_ids: list[str]) -> set[str] | None:
     }
 
 
+def _net_of_cancel(ordered: Any, delivered: Any, cancelled: Any) -> tuple[Any, Any]:
+    """AC-CANCEL-CRM: an AutoCount Cancel SO is in TransferedQty (`qty_delivered`) but was
+    never delivered, and it is no longer ordered either; both leave it out."""
+    c = cancelled or 0
+    return (max((ordered or 0) - c, 0), max((delivered or 0) - c, 0))
+
+
 def _lines_by_so(db: Session, so_ids: list[Any]) -> dict[str, list[tuple[Any, Any]]]:
     """`(qty_ordered, qty_delivered)` over each SO's live, in-brand-scope lines."""
     out: dict[str, list[tuple[Any, Any]]] = {}
     if not so_ids:
         return out
-    for so_id, ordered, delivered in (
-        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered)
+    for so_id, ordered, delivered, cancelled in (
+        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered,
+                 SalesOrderLine.qty_cancelled)
         .filter(
             SalesOrderLine.sales_order_id.in_(so_ids),
             func.coalesce(SalesOrderLine.line_status, "") != "cancelled",
@@ -120,7 +128,7 @@ def _lines_by_so(db: Session, so_ids: list[Any]) -> dict[str, list[tuple[Any, An
         )
         .all()
     ):
-        out.setdefault(str(so_id), []).append((ordered, delivered))
+        out.setdefault(str(so_id), []).append(_net_of_cancel(ordered, delivered, cancelled))
     return out
 
 
@@ -389,8 +397,9 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any, li
             return f"No sales orders for {header_names} from {_day(start)}."
         return f"No sales orders for {header_names} from {_day(start)} to {_day(end)}."
     lines_by_so: dict[str, list[tuple[Any, Any]]] = {}
-    for so_id, ordered, delivered in (
-        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered)
+    for so_id, ordered, delivered, cancelled in (
+        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered,
+                 SalesOrderLine.qty_cancelled)
         .filter(
             SalesOrderLine.sales_order_id.in_([so.id for so in rows]),
             func.coalesce(SalesOrderLine.line_status, "") != "cancelled",
@@ -398,7 +407,7 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any, li
         )
         .all()
     ):
-        lines_by_so.setdefault(str(so_id), []).append((ordered, delivered))
+        lines_by_so.setdefault(str(so_id), []).append(_net_of_cancel(ordered, delivered, cancelled))
     several_groups = len(group_names(list(names_by_id.values()))) > 1
     if window == "latest":
         window = f"latest {len(rows)}"
