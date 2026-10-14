@@ -12,6 +12,7 @@ OpenAI spend for history nobody searches. A plain push keeps both, as before.
 from __future__ import annotations
 
 import copy
+from decimal import Decimal
 
 from sqlalchemy import func, select
 
@@ -49,7 +50,9 @@ def _spy(monkeypatch):
 
     def relink(db, *, company_id, numbers):
         calls["relink"].append(set(numbers))
-        return Derived(newly_cancelled=[("00000000-0000-0000-0000-00000000dbq1", "ZZXS-DBQ1")])
+        return Derived(newly_cancelled=[("00000000-0000-0000-0000-00000000dbq1", "ZZXS-DBQ1")],
+                       plan_moves=[("00000000-0000-0000-0000-00000000dbq2",
+                                    Decimal("10"), Decimal("6"))])
 
     monkeypatch.setattr(ingest_route, "relink_cancels_for_orders", relink)
     monkeypatch.setattr(ingest_route, "_run_cancel_hooks",
@@ -131,8 +134,9 @@ def test_plain_batch_still_relinks_and_runs_the_cancel_hooks(env, monkeypatch):
     res = _post(env, [_record()])
     assert _records(res)["db1:DO:900001"]["outcome"] == "created"
     assert calls["relink"] == [{SO_NUMBER}]
-    assert [d.newly_cancelled for d in calls["hooks"]] == [
-        [("00000000-0000-0000-0000-00000000dbq1", "ZZXS-DBQ1")]]
+    (derived,) = calls["hooks"]
+    assert derived.newly_cancelled == [("00000000-0000-0000-0000-00000000dbq1", "ZZXS-DBQ1")]
+    assert len(derived.plan_moves) == 1
 
 
 def test_backfill_false_still_relinks(env, monkeypatch):
@@ -149,6 +153,7 @@ def test_plain_batch_still_queues_embeddings(env):
 
 
 def test_backfill_dry_run_relinks_nothing(env, monkeypatch):
+    """Regression check only: a dry run never reaches the post-commit hooks, flag or not."""
     calls = _spy(monkeypatch)
     body = {"companyCode": env.company_code, "book": "db1", "records": [_record()],
             "backfill": True}

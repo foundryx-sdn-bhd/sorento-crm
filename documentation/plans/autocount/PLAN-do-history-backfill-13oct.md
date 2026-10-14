@@ -8,6 +8,7 @@ pre-July open lines in AutoCount from `SQL-pre-july-open-so-lines-14oct.sql`.** 
 (migration column, ingest behaviour change, external ingest surface flag). PR #1633, branch
 `claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
 Owner card: `DO-HISTORY-card.md`.
+Section 0b.3 gate: lane DO-BACKFILL-CRM, PR #1687, small fix track, built.
 
 Paths: `be/` = `sorento_crm_backend/`. CRM citations are on `main` `64dfd86c`. Shared service (SS)
 citations come from crew's read of SS `main` `812dac2b`.
@@ -84,6 +85,11 @@ Q3 (the SO side): answered 14 Oct, section 0b.
    `be/app/api/v1/external/ingest.py:384`): its own follow-up lane, before the SS backfill runs.
    Built by lane DO-BACKFILL-CRM (PR #1687): a backfill batch (`"backfill": true`) skips the
    relink hook entirely, and also queues no embedding work (AC-DH44..46).
+   Scope (review, 14 Oct): the gate covers the backfill batch only. A later plain SO push, an
+   hourly DO push naming the same SO, or a Cancel SO push still relinks that SO and reads the
+   backfilled DO qty, so the Q4 (a) wording above ("pre-cutover SO raises no planning change")
+   holds for the backfill itself, not for those later pushes. Trigger for a wider gate: the
+   first planning change or OI retire on a pre-cutover SO after the backfill.
 
 ## 1. Facts
 
