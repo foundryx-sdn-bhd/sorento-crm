@@ -563,6 +563,18 @@ def _borrow_donors(snapshot: Mapping[str, Any]) -> Tuple[Optional[str], ...]:
     )
 
 
+def _hole_move(item: Mapping[str, Any]) -> Tuple[Decimal, Decimal]:
+    """What one Borrow hole's email line says its donor held before and holds now: a
+    cancelled hole its `was` and nothing, a raised one nothing and its QTY, a resized one
+    its `was` (its QTY when only the date moved) and its QTY."""
+    entry = item.get("line") or {}
+    qty = _dec(entry.get("qty"))
+    was = (entry.get("was") or {}).get("qty")
+    kind = item.get("kind")
+    held = _ZERO if kind == "raised" else (_dec(was) if was is not None else qty)
+    return held, (_ZERO if kind == "cancelled" else qty)
+
+
 def handover_remark(
     kind: str, row: Any, was: Optional[Dict[str, Any]], qty: Optional[Decimal] = None
 ) -> str:
@@ -4191,8 +4203,8 @@ class ProjectOrderInquiryService:
                 #: What this line adds to purchasing's order, as a number rather than read
                 #: back off REMARK's words (`record_saved_lines` folds it).
                 "adds_order": str(_handover_adds_order(kind, row, was, qty)),
-                #: A Borrow's hole raised or cancelled: `record_saved_lines` reads a donor
-                #: move (one hole cancelled, another raised) as the one hole settled.
+                #: A Borrow's hole raised, resized or cancelled: `record_saved_lines` reads
+                #: a donor move or reshuffle as the one hole settled (`_hole_move`).
                 "kind": kind,
                 "borrow_hole": (
                     _is_borrow_order_back(row) if borrow_hole is None else borrow_hole
@@ -4281,25 +4293,18 @@ class ProjectOrderInquiryService:
                 continue
             taken_back = _ZERO
             raised = _ZERO
-            # A Borrow moved to another donor cancels the old donor's hole and raises the
-            # new one's. The email never names a donor, so the pair reads as ONE hole
-            # settled from the old quantity to the new, exactly as the same change without
-            # the move (reviewer B1, 14 Oct 2026): never the old hole as an order taken back.
-            holes_out = [
-                i for i in row_lines if i.get("borrow_hole") and i.get("kind") == "cancelled"
-            ]
-            holes_in = [
-                i for i in row_lines if i.get("borrow_hole") and i.get("kind") == "raised"
-            ]
-            moved = min(len(holes_out), len(holes_in))
-            if moved:
-                held = sum(
-                    (_dec((i["line"].get("was") or {}).get("qty")) for i in holes_out), _ZERO
-                )
-                holds = sum((_dec(i["line"].get("qty")) for i in holes_in), _ZERO)
-                taken_back += max(held - holds, _ZERO)
-                raised += max(holds - held, _ZERO)
-            netted = {id(i) for i in holes_out + holes_in} if moved else set()
+            # A Borrow moved or reshuffled across donors cancels, raises and resizes holes at
+            # the donors. The email never names a donor, so ALL of the line's holes read as
+            # ONE hole settled from what they held to what they hold, exactly as the same
+            # change without the move (reviewer B1, 14 Oct 2026): never an order taken back.
+            holes = [i for i in row_lines if i.get("borrow_hole")]
+            if len(holes) < 2 or all(i.get("kind") == "settled" for i in holes):
+                holes = []
+            held = sum((_hole_move(i)[0] for i in holes), _ZERO)
+            holds = sum((_hole_move(i)[1] for i in holes), _ZERO)
+            taken_back += max(held - holds, _ZERO)
+            raised += max(holds - held, _ZERO)
+            netted = {id(i) for i in holes}
             for item in row_lines:
                 if id(item) in netted:
                     continue
@@ -4310,12 +4315,15 @@ class ProjectOrderInquiryService:
                     taken_back += was_qty - _dec(entry.get("qty"))
                 else:
                     raised += _dec(item.get("adds_order"))
+            # The netted holes count as the one hole they read as, or as none when it holds
+            # what it held (an unchanged hole tells purchasing nothing).
+            lines_told = len(row_lines) - len(holes) + (1 if held != holds else 0)
             self._queue_saved_line(
                 pso_id, line, now, before, actor_user_id=actor_user_id,
                 taken_back=taken_back,
                 # Several row lines for one line of the same kind (a redirect, two rows):
                 # what purchasing must order is what the rows raised, never need - held.
-                raised=raised if same_kind and len(row_lines) - moved > 1 else None,
+                raised=raised if same_kind and lines_told > 1 else None,
             )
 
     def forget_rows_told_for_saved_lines(self, pso_id: str) -> None:
@@ -5007,7 +5015,10 @@ class ProjectOrderInquiryService:
             handover_was["qty"] = previous_qty
         if date_moved:
             handover_was["delivery_date"] = previous_date
-        self._record_handover(row, kind="settled", was=handover_was, actor_user_id=actor_user_id)
+        self._record_handover(
+            row, kind="settled", was=handover_was, actor_user_id=actor_user_id,
+            borrow_hole=True,
+        )
 
     def retire_rows_for_cancelled_lines(
         self,
