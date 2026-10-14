@@ -45,6 +45,13 @@ def _salesperson_user_clauses(contact_id: Any) -> list:
     ]
 
 
+def is_salesperson_user(db: Session, contact_id: str) -> bool:
+    """Whether an ACTIVE, not trashed user holding the role `salesperson` is linked to the
+    contact (INTERNAL `respond_contacts.id`) through `users.respond_contact_id`."""
+    clauses = _salesperson_user_clauses(sa.literal(str(contact_id)))
+    return bool(db.execute(sa.select(sa.exists().where(*clauses))).scalar())
+
+
 def salesperson_user_name(contact_respond_id_column: Any) -> Any:
     """The name of the role-salesperson user behind a fact's contact (NULL when there is none)."""
     from app.models.access import RespondContact
