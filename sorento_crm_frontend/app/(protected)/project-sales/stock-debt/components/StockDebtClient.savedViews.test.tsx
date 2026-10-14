@@ -446,6 +446,12 @@ describe('Location mode: Only / All except (AC-X2..X4)', () => {
   it('clearing the chip clears the pick and returns to Only', async () => {
     renderBoard();
     await pickExcept('ED');
+    // Let the exclude read land first, so the include key is no longer the cached one.
+    await waitFor(() =>
+      expect(getStockDebtList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ groupsMode: 'exclude', groups: ['ED'] }),
+      ),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Clear filter: Location: all except ED' }));
 
     await waitFor(() =>
