@@ -87,6 +87,13 @@ avail="${FAKE_DF_AVAIL:-1000000000000}"
 echo "Filesystem 1-blocks Used Available Capacity Mounted"
 echo "fakefs 2000000000000 0 $avail 0% /"
 """,
+    # id -nG <user>: adds "docker" for $FAKE_DOCKER_MEMBER, otherwise the real answer
+    "id": r"""#!/usr/bin/env bash
+if [ "$1" = "-nG" ] && [ -n "${FAKE_DOCKER_MEMBER:-}" ] && [ "${2:-}" = "$FAKE_DOCKER_MEMBER" ]; then
+  echo "$(/usr/bin/id -nG "$2") docker"; exit 0
+fi
+exec /usr/bin/id "$@"
+""",
     "pg_dump": r"""#!/usr/bin/env bash
 echo "pg_dump $*" >> "$FAKE_LOG"
 [ -n "${FAKE_PG_DUMP_FAIL:-}" ] && exit 1
@@ -808,8 +815,24 @@ def test_restore_accepts_lock_folder_owned_by_release_user(env):
     folder = Path(e["DEPLOY_LOCK_PATH"]).parent
     os.chown(folder, 65534, 0)
     folder.chmod(0o755)
-    r = run(RESTORE, e, DEPLOY_LOCK_WAIT="1")
+    r = run(RESTORE, e, DEPLOY_LOCK_WAIT="1", FAKE_DOCKER_MEMBER="nobody")
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="needs root to chown the folder to another user")
+def test_restore_refuses_lock_folder_owned_by_non_docker_account(env):
+    # security round 4 (S5): the "release user is root-equivalent" argument only holds for root
+    # or a docker-group member; any other owner could swap the file between check and open.
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    folder = Path(e["DEPLOY_LOCK_PATH"]).parent
+    os.chown(folder, 65534, 0)
+    folder.chmod(0o755)
+    r = run(RESTORE, e, HC_RESTORE_URL=HCR, DEPLOY_LOCK_WAIT="1")
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "nobody" in r.stdout and "docker" in r.stdout
+    assert curl_urls(tmp)[-1] == f"{HCR}/fail"
+    assert not any(c.startswith("docker run") for c in calls(tmp))
 
 
 # ------------------------------------------------------------- crew ruling: DEPLOY_LOCK_PATH
