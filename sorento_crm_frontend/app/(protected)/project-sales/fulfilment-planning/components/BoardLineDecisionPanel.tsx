@@ -397,7 +397,7 @@ export function BoardLineDecisionPanel({
 
   /**
    * Everything that stops the Save EXCEPT the balance, which the hint beside the summary
-   * already states in two words. Printing both would say the same refusal twice.
+   * already states in a few words. Printing both would say the same refusal twice.
    */
   const otherBlockers = balance.balanced
     ? blockers
@@ -436,37 +436,33 @@ export function BoardLineDecisionPanel({
       buy_qty: fromMinor(Math.max(stockOnly.openMinor - stockOnly.totalMinor, 0)),
     });
   };
-  /**
-   * The planner's own Buy: pinned from the first keystroke. A Buy typed down to nothing has no
-   * order back to carry, so the switch and the cited document are cleared with it rather than
-   * left to come back ticked when a Buy is typed again.
-   */
+  /** The planner's own Buy: pinned from the first keystroke. */
   const typeBuy = (value: string) => {
     setBuyPinned(true);
-    edit(
-      toMinor(value) > 0
-        ? { ...draft, buy_qty: value }
-        : { ...draft, buy_qty: value, order_back: false, cited_document: '' },
-    );
+    edit({ ...draft, buy_qty: value });
+  };
+  /**
+   * A Buy LEFT at nothing has no order back to carry, so the switch and the cited document are
+   * cleared rather than left to come back ticked when a Buy is typed again. On leaving the box,
+   * not per keystroke (review S1): retyping 5 as 8 passes through an empty box, and that is not
+   * a decision to drop the order back.
+   */
+  const settleBuy = () => {
+    if (toMinor(draft.buy_qty) > 0 || (!draft.order_back && !draft.cited_document)) return;
+    edit({ ...draft, order_back: false, cited_document: '' });
   };
   /** What the parts leave uncovered, in minor units; 0 when they add up or run over. */
   const unassignedMinor = Math.max(-balance.differenceMinor, 0);
   const restToBuy = () => {
     setBuyPinned(true);
-    edit({
-      ...draft,
-      buy_qty: fromMinor(Math.max(toMinor(draft.buy_qty), 0) + unassignedMinor),
-    });
+    edit({ ...draft, buy_qty: fromMinor(toMinor(draft.buy_qty) + unassignedMinor) });
   };
   const restToReserve = () => {
     const [first, ...others] = draft.reserve;
     if (!first) return;
     editComposition({
       ...draft,
-      reserve: [
-        { ...first, qty: fromMinor(Math.max(toMinor(first.qty), 0) + unassignedMinor) },
-        ...others,
-      ],
+      reserve: [{ ...first, qty: fromMinor(toMinor(first.qty) + unassignedMinor) }, ...others],
     });
   };
   const setBorrow = (borrow: DraftBorrow[]) => editComposition({ ...draft, borrow });
@@ -508,22 +504,28 @@ export function BoardLineDecisionPanel({
    * there: the quantities, the donors and their reasons. The rows alone are not enough - a
    * planner who typed a 9, a 15 and two sentences and then tried the Buy switch got a form of
    * zeroes back, which is a composition they never wrote and the worst possible answer to
-   * "what happens if I press this".
+   * "what happens if I press this". A TYPED Buy comes back too, still pinned (crew ruling (a),
+   * BUY-FIRST-PANEL, 14 Oct 2026): the switch is a detour, and a typed number is never
+   * silently changed.
    */
-  const stockBefore = React.useRef<Pick<
-    DraftLine,
-    'reserve' | 'borrow' | 'timely_spo_qty'
-  > | null>(null);
+  const stockBefore = React.useRef<
+    | (Pick<DraftLine, 'reserve' | 'borrow' | 'timely_spo_qty' | 'buy_qty'> & {
+        buyPinned: boolean;
+      })
+    | null
+  >(null);
   const setBuying = (next: boolean) => {
     setBuyingState(next);
-    // ON is a Buy the planner chose (pinned); OFF hands Buy back to the remainder.
-    setBuyPinned(next);
     if (next) {
       stockBefore.current = {
         reserve: draft.reserve,
         borrow: draft.borrow,
         timely_spo_qty: draft.timely_spo_qty,
+        buy_qty: draft.buy_qty,
+        buyPinned,
       };
+      // ON is a Buy the planner chose: the whole line, pinned.
+      setBuyPinned(true);
       edit({
         ...draft,
         timely_spo_qty: '0',
@@ -537,12 +539,19 @@ export function BoardLineDecisionPanel({
     const held = stockBefore.current;
     stockBefore.current = null;
     if (held) {
+      const { buy_qty: heldBuy, buyPinned: heldPinned, ...stock } = held;
+      setBuyPinned(heldPinned);
+      if (heldPinned) {
+        edit({ ...draft, ...stock, buy_qty: heldBuy });
+        return;
+      }
       // D7: the remainder of whatever gets restored, not the flat 0 this used to force - that
       // used to drop the BRW-62/Buy-73 shape's own Buy to nothing the moment the switch was
       // tried and put back, when nothing about the stock side had actually changed.
-      editComposition({ ...draft, ...held }, false);
+      editComposition({ ...draft, ...stock }, false);
       return;
     }
+    setBuyPinned(false);
     // Nothing was captured: the switch was never turned ON in this session, so the line opened
     // already wholly bought and its stock rows are already at zero. Buy explicitly to 0 - not
     // derived, or it would hand the whole line straight back - and let the now-empty rows be
@@ -1046,6 +1055,7 @@ export function BoardLineDecisionPanel({
                     aria-label="Buy quantity"
                     data-testid={`line-buy-qty-${contribution.key}`}
                     onChange={(event) => typeBuy(event.target.value)}
+                    onBlur={settleBuy}
                     className="h-8 w-24 tabular-nums"
                   />
                 )}
