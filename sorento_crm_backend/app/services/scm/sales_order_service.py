@@ -1283,7 +1283,8 @@ class SalesOrderService:
              customer_code: Optional[str] = None, outstanding: bool = False,
              sales_agent_id: Optional[str] = None,
              demand_class: Optional[str] = None,
-             transferable: Optional[str] = None) -> dict:
+             transferable: Optional[str] = None,
+             doc_type: str = "sales_order") -> dict:
         q = self.db.query(SalesOrder).options(
             joinedload(SalesOrder.lines).joinedload(SalesOrderLine.product),
             joinedload(SalesOrder.lines).joinedload(SalesOrderLine.warehouse),
@@ -1292,6 +1293,8 @@ class SalesOrderService:
         # "Show me the orders the Order Inquiry sheet created" is a filter on this list, not a
         # second screen: a separate list of the same entity is how two screens start
         # disagreeing about the same order.
+        # AC-CONSIGN-CRM: a consignment has its own page; this list is one kind at a time.
+        q = q.filter(SalesOrder.doc_type == doc_type)
         if source:
             if source == "manual":
                 # Everything neither feed wrote: keyed in, or from a system we have no name
