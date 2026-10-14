@@ -86,20 +86,20 @@ function DeliveriesTable({
         footer: () => TOTAL_LABEL,
         size: 150,
       },
-      { id: 'do_date', header: 'DO date', cell: ({ row }) => fmtDate(row.original.do_date), size: 110 },
+      { id: 'do_date', header: 'DO date', cell: ({ row }) => fmtDate(row.original.do_date), size: 130 },
       { id: 'location', header: 'Location', cell: ({ row }) => textCell(row.original.location), size: 110 },
       {
         id: 'status',
         header: 'Status',
         cell: ({ row }) =>
           row.original.status ? <Badge status={row.original.status}>{row.original.status}</Badge> : dash,
-        size: 170,
+        size: 210,
       },
       {
         id: 'actual_delivery_date',
         header: 'Actual delivery',
         cell: ({ row }) => (row.original.actual_delivery_date ? fmtDate(row.original.actual_delivery_date) : dash),
-        size: 120,
+        size: 140,
       },
       {
         id: 'qty',
@@ -130,7 +130,7 @@ function CancelsTable({ rows, emptyMessage }: { rows: SoLineCancelRow[]; emptyMe
   const columns = useMemo<ColumnDef<SoLineCancelRow>[]>(
     () => [
       { id: 'doc_no', header: 'Cancel SO no.', cell: ({ row }) => row.original.doc_no, footer: () => TOTAL_LABEL, size: 150 },
-      { id: 'doc_date', header: 'Date', cell: ({ row }) => fmtDate(row.original.doc_date), size: 110 },
+      { id: 'doc_date', header: 'Date', cell: ({ row }) => fmtDate(row.original.doc_date), size: 130 },
       { id: 'location', header: 'Location', cell: ({ row }) => textCell(row.original.location), size: 110 },
       {
         id: 'match_reason',
