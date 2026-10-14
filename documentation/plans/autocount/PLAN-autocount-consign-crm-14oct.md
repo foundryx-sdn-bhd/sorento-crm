@@ -1,6 +1,6 @@
 # PLAN: AutoCount Consignment + Consignment Return on the CRM, Cancel PO screens check (AC-CONSIGN-CRM)
 
-Status: Build (round 2, local takeover 14 Oct; Q6 (a) answered: Qty returned column on consignment SO detail lines). Track: full (migration, new doc behaviour on ingest, contract bump).
+Status: Review clean (reviewer + security READY after 3 fix rounds), owner hand test pending on the crew test copy. Track: full (migration, new doc behaviour on ingest, contract bump). Q6 (a) answered: Qty returned column on consignment SO detail lines.
 Lane: AC-CONSIGN-CRM. PR #1654, branch `claude/autocount-consignment-crm-r7844r`, base main (#1623 merged).
 Sibling: ss#122 (AC-CANCEL-PULL) pulls XS, XP, Consignment (CG-) and ConsignmentReturn; ss#125 (AC-CONSIGN-PULL)
 adds `Details[].TransferedQty` on consignments, sent only when the CRM's `/external/contract` advertises >= 2.9.
