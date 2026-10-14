@@ -62,8 +62,9 @@ All DDL `IF NOT EXISTS`-safe (dev DB converges by create_all, `sorento_crm_backe
 - Shared lookup function (in `app/services/debtor_type.py` or the procurement service) used by:
   - portal `GET /lookups/debtors` (`portal.py:495-508`): source switches from DISTINCT
     `orders.debtor_name` to active `customers` matching name or code, ordered by name, same `limit`.
-    Item `{customer_id, debtor_name, customer_code, debtor_type, sales_type}`. Unscoped across
-    companies, the same as today's order-name list (parity, flagged for security review).
+    Item `{customer_id, debtor_name, customer_code, sales_type}`. Scoped to the token contact's
+    companies by the portal company scope (`Customer` is CompanyScopedMixin,
+    `company_scope_resolver.py:287-341`; a contact with no company gets Sorento).
   - internal `GET /procurement/purchase-requests/lookups/customers` gated by the PR edit permission.
 - `portal_service._editable_fields` PR/SF tuple (:1654) adds `customer_id`; portal row serializers
   (:1928, :2053) return it; a customer_id that does not exist -> 422 (portal save + internal
@@ -119,6 +120,4 @@ All DDL `IF NOT EXISTS`-safe (dev DB converges by create_all, `sorento_crm_backe
 ## Not doing (triggers named)
 
 - No customer_id backfill on existing forms (trigger: owner asks to route already-open forms).
-- No per-company scoping of the customer picker (trigger: a contact sees another company's customer
-  and that is a problem; today's list is already unscoped).
 - No Customers list column / filter for debtor type (trigger: office needs to bulk-check the backfill).
