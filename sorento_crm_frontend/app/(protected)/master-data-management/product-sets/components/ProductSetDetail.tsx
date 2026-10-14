@@ -477,7 +477,9 @@ export default function ProductSetDetail({ id }: { id: string }) {
                             className="truncate text-xs text-muted-foreground"
                             title={member.description ?? distinctName(member.product_code, member.product_name) ?? ''}
                           >
-                            {member.description ?? distinctName(member.product_code, member.product_name) ?? 'No description'}
+                            {member.description ??
+                              distinctName(member.product_code, member.product_name) ??
+                              (member.product_code ? null : 'No description')}
                           </span>
                         </div>
                       </td>

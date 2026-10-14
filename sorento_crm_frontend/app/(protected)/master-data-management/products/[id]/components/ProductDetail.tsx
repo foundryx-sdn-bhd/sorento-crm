@@ -47,7 +47,7 @@ import { productsPagerQuery } from '../../lib/listQuery';
 import AuditTrail from '@/components/audit/AuditTrail';
 import FieldAttachmentTooltip from './FieldAttachmentTooltip';
 import { NO_CURRENCY_NOTE, formatUnitCost } from '../lib/cost';
-import { distinctName } from '@/lib/product-display';
+import { distinctName, sameDisplayText } from '@/lib/product-display';
 
 interface ProductDetailProps {
   productId: string;
@@ -163,7 +163,7 @@ export default function ProductDetail({ productId }: ProductDetailProps) {
               {product.is_active ? 'Active' : 'Inactive'}
             </Badge>
           </div>
-          {distinctName(product.product_code, product.product_name) ? (
+          {!sameDisplayText(product.product_code, product.product_name) ? (
             <p className="text-sm text-muted-foreground break-words">
               Product Code: {product.product_code}
             </p>

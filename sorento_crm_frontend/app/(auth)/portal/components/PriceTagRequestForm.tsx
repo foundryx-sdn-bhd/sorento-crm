@@ -112,7 +112,7 @@ import {
 import type { TagSheetDesignPayload } from '@/lib/dealer-kit/design-payload';
 import { cn } from '@/lib/utils';
 import { promotionOptionName } from '@/lib/dealer-kit/line-pricing-types';
-import { codeWithName, distinctName } from '@/lib/product-display';
+import { codeWithName, distinctName, sameDisplayText } from '@/lib/product-display';
 
 /** Where an AI-extracted product line stands against the catalogue lookup
  *  (D7/AC-S6-2), shown in the extract dialog's own result table. */
@@ -2263,7 +2263,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {line.line_type === 'product' ? 'Product' : 'Set'}
-                                    {line.code && distinctName(line.code, line.name) ? ` - ${line.code}` : ''}
+                                    {line.code && !sameDisplayText(line.code, line.name) ? ` - ${line.code}` : ''}
                                   </div>
                                   {/* AC-S1-10/AC-S1-11: below the app's 992px
                                       mobile breakpoint (useIsMobile), the same
@@ -2319,7 +2319,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
                                             {part.name || part.code}
                                           </span>
                                           <span className="text-xs text-muted-foreground">
-                                            {part.code && distinctName(part.code, part.name) ? ` - ${part.code}` : ''}
+                                            {part.code && !sameDisplayText(part.code, part.name) ? ` - ${part.code}` : ''}
                                             {part.role ? ` (${part.role})` : ''}
                                           </span>
                                         </>
@@ -3134,7 +3134,7 @@ function PartRow({
                 <div className="truncate text-sm" title={part.name || part.code}>
                   {part.name || part.code}
                 </div>
-                {distinctName(part.code, part.name) ? (
+                {!sameDisplayText(part.code, part.name) ? (
                   <div className="text-xs text-muted-foreground">{part.code || '-'}</div>
                 ) : null}
               </div>

@@ -94,7 +94,7 @@ export function ProductComboboxSearchable({
       renderTriggerLabel={(opt) => {
         const p = productFallback && productFallback.id === opt.value ? productFallback : null;
         if (!p) return opt.label;
-        return `${p.product_code}${p.product_name && p.product_name !== p.product_code ? ` - ${p.product_name}` : ''}`;
+        return itemLabel(p);
       }}
     />
   );
