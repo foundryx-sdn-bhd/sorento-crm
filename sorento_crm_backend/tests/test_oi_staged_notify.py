@@ -832,3 +832,111 @@ def test_AC_SN_31_summary_counts(sn, monkeypatch):
         theirs = _ok(cs.get(SUMMARY_URL))
     assert theirs["my_parked_notices"] == 2
     assert theirs["my_parked_requests"] == 0
+
+
+# --------------------------------------------------------------------------------- #
+# Fix round (reviewer): shape follows DISTINCT order inquiries; staged recipients    #
+# --------------------------------------------------------------------------------- #
+#
+# NAMED ASSUMPTION (fix round): for B1(a)/(b) the preview carries one email per REQUEST when
+# the To person's group holds a single distinct OI, so two requests on one OI are two emails;
+# `items_sent` counts distinct OIs.
+
+
+def _two_requests_one_oi(client, world, raiser_id):
+    inquiry = _new_oi(world, raiser_id)
+    row_a, row_b = _oi_row(world, inquiry), _oi_row(world, inquiry)
+    _request(client, world, inquiry, [(row_a, "50")], park=True)
+    _request(client, world, inquiry, [(row_b, "50")], park=True)
+    return inquiry, row_a, row_b
+
+
+def test_fix_B1a_two_parked_requests_one_oi_keep_one_oi_shape(sn, monkeypatch):
+    client, world = sn
+    _automations(world, strict=True)
+    _register()
+    calls = _captured_dispatches(monkeypatch)
+    eling = _user(world.db, f"{MARKER} Eling")
+    inquiry, _a, _b = _two_requests_one_oi(client, world, eling)
+
+    emails = _ok(client.post(REQ_PREVIEW))["emails"]
+    assert len(emails) == 2, [e["subject"] for e in emails]
+    subjects = sorted(e["subject"] for e in emails)
+    assert subjects[0].startswith(f"Reserve request: {inquiry.inquiry_no} #1"), subjects
+    assert subjects[1].startswith(f"Reserve request: {inquiry.inquiry_no} #2"), subjects
+    assert not any("Reserve requests:" in s for s in subjects), subjects
+    sent = _ok(client.post(REQ_SEND))
+    assert sent["emails_sent"] == 2 and sent["items_sent"] == 1, sent
+    assert len(_requested_calls(calls)) == 2
+
+
+def test_fix_B1b_one_commit_two_requests_one_oi_keeps_one_oi_notice(sn, monkeypatch):
+    client, world = sn
+    _automations(world, strict=True)
+    _register()
+    calls = _captured_dispatches(monkeypatch)
+    eling = _user(world.db, f"{MARKER} Eling")
+    inquiry = _new_oi(world, eling)
+    row_a, row_b = _oi_row(world, inquiry), _oi_row(world, inquiry)
+    _request(client, world, inquiry, [(row_a, "50")], park=False)
+    _request(client, world, inquiry, [(row_b, "50")], park=False)
+    _commit(
+        world, inquiry,
+        reserves=[_reserve(world, row_a, "50"), _reserve(world, row_b, "50")],
+        park_notice=True,
+    )
+    calls.clear()
+    with _as(world.db, world.reserver, RESERVER_PERMISSIONS) as cs:
+        emails = _ok(cs.post(NOTE_PREVIEW))["emails"]
+        subjects = sorted(e["subject"] for e in emails)
+        assert len(emails) == 2, subjects
+        assert subjects[0].startswith(f"Reserved: {inquiry.inquiry_no} #1"), subjects
+        assert subjects[1].startswith(f"Reserved: {inquiry.inquiry_no} #2"), subjects
+        assert not any("order inquiries" in s for s in subjects), subjects
+        sent = _ok(cs.post(NOTE_SEND))
+    world.db.commit()
+    assert sent["emails_sent"] == 2
+    assert len(_reserved_calls(calls)) == 2
+
+
+def test_fix_B1c_two_oi_group_with_three_requests_is_bulk_by_oi_count(sn, monkeypatch):
+    client, world = sn
+    _automations(world, strict=True)
+    _register()
+    _captured_dispatches(monkeypatch)
+    eling = _user(world.db, f"{MARKER} Eling")
+    _two_requests_one_oi(client, world, eling)
+    _parked_request(client, world, eling)
+
+    emails = _ok(client.post(REQ_PREVIEW))["emails"]
+    assert len(emails) == 1, [e["subject"] for e in emails]
+    assert emails[0]["subject"] == (
+        f"Reserve requests: 2 order inquiries ({_name(world, world.requester)})"
+    )
+    assert emails[0]["inquiry_count"] == 2
+    assert "2 order inquiries need your reserve" in emails[0]["body_html"]
+
+
+def test_fix_S2_recipients_resolve_staged_rows_on_a_reserved_request(sn, monkeypatch):
+    client, world = sn
+    _automations(world)
+    _register()
+    _captured_dispatches(monkeypatch)
+    eling = _user(world.db, f"{MARKER} Eling")
+    inquiry, row, request_id = _sent_request(client, world, eling)
+    _commit(world, inquiry, reserves=[_reserve(world, row, "50")])
+    assert _req(world, request_id).state == "reserved"
+    other, other_row, _o = _sent_request(client, world, eling)
+
+    with _as(world.db, world.reserver, RESERVER_PERMISSIONS) as cs:
+        body = _ok(cs.get(RECIPIENTS_URL(inquiry.id), params={"row_ids": row.id}))
+        assert body["to"] is not None, "the staged (answered) row must resolve its request"
+        assert body["to"]["name"] == _name(world, world.requester)
+        assert _names(body["cc"]) == [f"{MARKER} Eling"]
+        assert cs.get(RECIPIENTS_URL(inquiry.id), params={"row_ids": _uid()}).status_code == 404
+        assert (
+            cs.get(RECIPIENTS_URL(inquiry.id), params={"row_ids": other_row.id}).status_code == 404
+        ), "a row of another OI is 404"
+        unknown_oi = cs.get(RECIPIENTS_URL(_uid()))
+        foreign = cs.get(RECIPIENTS_URL(inquiry.id), params={"row_ids": other_row.id})
+        assert foreign.json() == unknown_oi.json(), "same text as an unknown OI"

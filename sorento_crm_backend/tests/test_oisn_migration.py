@@ -151,3 +151,99 @@ def test_AC_SN_32_downgrade_restores_seeded_values_and_drops_columns():
         present = _columns(db)
         for table, cols in COLUMNS.items():
             assert not (cols & present[table]), f"{table} still has {cols & present[table]}"
+
+
+def test_fix_backfill_notified_qty_for_answered_rows_then_amend_cycle(monkeypatch):
+    """Nit 3: answered rows get `notified_qty = qty_reserved` at upgrade; NULL stays NULL."""
+    from decimal import Decimal
+
+    from tests.test_oi_staged_notify import (
+        SUMMARY_URL,
+        _automations,
+        _commit,
+        _ok,
+        _oi_row,
+        _new_oi,
+        _request,
+        _reserve,
+        _rr,
+    )
+    from tests.test_order_inquiry_reserve import (
+        RESERVER_PERMISSIONS,
+        _api,
+        _as,
+        _captured_dispatches,
+        _register,
+    )
+    from tests.test_order_inquiry_worklist import _user
+
+    mig = _mig()
+    gen = _api(RESERVER_PERMISSIONS)
+    client, world = next(gen)
+    try:
+        _automations(world)
+        _register()
+        _captured_dispatches(monkeypatch)
+        who = _user(world.db, "zzt-oisn-raiser")
+        inquiry = _new_oi(world, who)
+        answered, open_row = _oi_row(world, inquiry, qty="200"), _oi_row(world, inquiry, qty="30")
+        _request(client, world, inquiry, [(answered, "200"), (open_row, "30")], park=False)
+        _commit(world, inquiry, reserves=[_reserve(world, answered, "200")])
+        world.db.commit()
+
+        # Pre-upgrade state: the column does not exist, so nothing was ever stamped.
+        _run(mig, world.db, "downgrade")
+        _run(mig, world.db)
+        world.db.commit()
+
+        assert _rr(world, answered).notified_qty == Decimal("200")
+        assert _rr(world, open_row).notified_qty is None
+
+        _commit(
+            world, inquiry,
+            amendments=[{"row_id": answered.id, "qty_reserved": "150", "reason": "short"}],
+            park_notice=True,
+        )
+        _commit(
+            world, inquiry,
+            amendments=[{"row_id": answered.id, "qty_reserved": "200"}],
+            park_notice=True,
+        )
+        with _as(world.db, world.reserver, RESERVER_PERMISSIONS) as cs:
+            assert _ok(cs.get(SUMMARY_URL))["my_parked_notices"] == 0
+    finally:
+        gen.close()
+
+
+def test_fix_bulk_plain_text_pluralises_more_count():
+    """Nit 6: body_text says 'inquiry' for 1 more, 'inquiries' for 2."""
+    from app.models.email_template import EmailTemplate
+    from app.services.email_template_service import EmailTemplateService
+
+    mig = _mig()
+    with blank_session() as db:
+        _seeded(db)
+        _run(mig, db)
+        db.expire_all()
+
+        def text(code, more):
+            template = db.query(EmailTemplate).filter(EmailTemplate.code == code).one()
+            ctx = {
+                "reserve": {
+                    "requests": [
+                        {"inquiry_no": "OI-1", "so_number": "SO1", "customer": "C", "line_count": 1}
+                    ],
+                    "oi_count": 1 + more,
+                    "line_count": 1 + more,
+                    "more_count": more,
+                    "link": "https://crm.example.com/x?reserve=needs_reserve",
+                },
+                "requester": {"name": "Joey", "email": "j@x.test"},
+                "actor": {"name": "Eling", "email": "e@x.test"},
+                "today": "14/10/2026",
+            }
+            return EmailTemplateService(db).render(template, ctx)["body_text"]
+
+        for code in RESERVE_CODES:
+            assert "and 1 more order inquiry." in text(code, 1), code
+            assert "and 2 more order inquiries." in text(code, 2), code

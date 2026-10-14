@@ -131,7 +131,7 @@ vi.mock('../../../_shared/services/orderInquiryService', async (importOriginal) 
 const commitSpy = vi.fn<
   (id: string, payload: CommitReservePayload & { park_notice?: boolean }) => Promise<OrderInquiryReserveRequest[]>
 >(async () => [{ ...OPEN_REQUEST, state: 'reserved' }]);
-const recipientsSpy = vi.fn(async (_inquiryId: string) => ({
+const recipientsSpy = vi.fn(async (_inquiryId: string, _rowIds?: string[]) => ({
   to: { name: 'Joey' },
   cc: [{ name: 'Eling' }],
 }));
@@ -143,7 +143,7 @@ vi.mock('../../../_shared/services/orderInquiryReserveService', async (importOri
     ...actual,
     getOrderInquiryReserveRequests: vi.fn(async () => [OPEN_REQUEST]),
     commitOrderInquiryReserve: (id: string, payload: CommitReservePayload) => commitSpy(id, payload),
-    getReserveNoticeRecipients: (id: string) => recipientsSpy(id),
+    getReserveNoticeRecipients: (id: string, rowIds?: string[]) => recipientsSpy(id, rowIds),
   };
 });
 
@@ -159,6 +159,8 @@ vi.mock('../../../_shared/services/fulfilmentPlanningService', () => ({
 }));
 
 import { OrderInquiryDetail } from './OrderInquiryDetail';
+import { getOrderInquiryHeaderLines } from '../../../_shared/services/orderInquiryService';
+import { getOrderInquiryReserveRequests } from '../../../_shared/services/orderInquiryReserveService';
 
 function renderDetail() {
   const client = new QueryClient({
@@ -188,7 +190,7 @@ describe('AC-SN-41 reserve confirmation', () => {
 
     const dialog = await screen.findByRole('dialog', { name: /reserve 1 line on OI-2609-0612/i });
     expect(within(dialog).getByText(/notice to purchasing: to joey, cc eling/i)).toBeInTheDocument();
-    expect(recipientsSpy).toHaveBeenCalledWith('oi-1');
+    expect(recipientsSpy).toHaveBeenCalledWith('oi-1', ['row-requested']);
     expect(commitSpy).not.toHaveBeenCalled();
   });
 
@@ -228,5 +230,49 @@ describe('AC-SN-41 reserve confirmation', () => {
         'Reserved. Notice to Joey parked; send it from Order inquiries > Actions.',
       ),
     );
+  });
+
+  it('S2: an amend-only commit asks for the recipients of the STAGED row ids', async () => {
+    const reservedRow = {
+      ...REQUESTED_ROW,
+      id: 'row-reserved',
+      item_code: 'ZZT-RESERVED',
+      reserve_state: 'reserved',
+      reserved_qty: '30',
+    } as unknown as OrderInquiryWorklistRow;
+    const answered: OrderInquiryReserveRequest = {
+      ...OPEN_REQUEST,
+      id: 'rr-0',
+      ordinal: 1,
+      state: 'reserved',
+      reserved_by_name: 'Eling',
+      rows: [
+        {
+          ...OPEN_REQUEST.rows[0],
+          id: 'reqrow-0',
+          row_id: 'row-reserved',
+          item_code: 'ZZT-RESERVED',
+          qty_requested: '50',
+          qty_reserved: '30',
+        },
+      ],
+    };
+    vi.mocked(getOrderInquiryHeaderLines).mockResolvedValue([reservedRow]);
+    vi.mocked(getOrderInquiryReserveRequests).mockResolvedValue([answered]);
+    renderDetail();
+    await screen.findByText('ZZT-RESERVED');
+    const gridRow = screen.getAllByText('ZZT-RESERVED').map((e) => e.closest('tr')).find(Boolean) as HTMLElement;
+    fireEvent.click(within(gridRow).getByLabelText('Amend reserve'));
+    await screen.findByRole('dialog', { name: /ZZT-RESERVED/i });
+    fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: '20 went back' } });
+    fireEvent.click(screen.getByRole('button', { name: /^stage$/i }));
+    await screen.findByText('Amend to 10');
+    fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
+
+    await waitFor(() => expect(recipientsSpy).toHaveBeenCalledWith('oi-1', ['row-reserved']));
+    const dialog = await screen.findByRole('dialog', { name: /reserve 1 line/i });
+    expect(within(dialog).getByText('Notice to purchasing: To Joey, Cc Eling')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Reserve and send to Joey' })).toBeInTheDocument();
   });
 });

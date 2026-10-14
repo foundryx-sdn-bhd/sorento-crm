@@ -174,6 +174,15 @@ describe('AC-SN-42 Reserve filter, chip and column', () => {
     expect(within(row).getByText('Needs reserve')).toBeInTheDocument();
     expect(within(row).queryByText('Joey')).not.toBeInTheDocument();
   });
+
+  it('the Needs reserve pill uses the info variant (mock v6)', async () => {
+    headers = [header({ reserve_status: 'needs_reserve', parked_by_name: null })];
+    renderList();
+    const row = (await screen.findByText('OI-0001')).closest('tr') as HTMLElement;
+    const pill = within(row).getByText('Needs reserve').closest('[data-slot="badge"]') as HTMLElement;
+    expect(pill).not.toBeNull();
+    expect(pill.className).toMatch(/color-info/);
+  });
 });
 
 describe('AC-SN-43 toolbar Actions menu', () => {
@@ -212,6 +221,22 @@ describe('AC-SN-43 toolbar Actions menu', () => {
     fireEvent.click(trigger);
     const item = await screen.findByRole('menuitem', { name: 'Send all parked requests to CS (0)' });
     expect(item).toHaveAttribute('data-disabled');
+    expect(item).toHaveAttribute('title', 'Nothing of yours is parked');
+  });
+
+  it('the reserve item disabled at 0 carries the same reason', async () => {
+    permissions = new Set(['projects.order_inquiries.reserve']);
+    getSummarySpy.mockResolvedValue({ ...SUMMARY, my_parked_notices: 0 });
+    renderList();
+    await waitFor(() => expect(getSummarySpy).toHaveBeenCalled());
+    const trigger = await screen.findByRole('button', { name: /^actions$/i });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
+    const item = await screen.findByRole('menuitem', {
+      name: 'Send all parked reserves to purchasing (0)',
+    });
+    expect(item).toHaveAttribute('data-disabled');
+    expect(item).toHaveAttribute('title', 'Nothing of yours is parked');
   });
 
   it('choosing the item loads the preview (opens the send dialog)', async () => {
