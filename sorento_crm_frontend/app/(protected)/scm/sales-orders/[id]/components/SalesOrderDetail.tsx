@@ -706,7 +706,8 @@ export function SalesOrderDetail({ id }: { id: string }) {
         header: () => null,
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }: { row: { original: SalesOrderLine } }) => (
+        cell: ({ row }: { row: { original: SalesOrderLine } }) =>
+          isNewLine(row.original) ? null : (
           <Button
             type="button"
             mode="icon"
@@ -724,7 +725,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
         ),
         size: 52,
       } as ColumnDef<SalesOrderLine>,
-      // LEFTMOST of the data columns, so the grid reads left to right in the same order AutoCount does
+      // First of the data columns after the truck button, so the grid reads in the same order AutoCount does
       // (PLAN-so-lines-autocount-order.md). A saved column order that predates this column
       // has never seen its id, so `mergeColumnOrderWithLeafColumns` (the shared column-config
       // merge every `DataGrid` runs) has no preceding neighbour to anchor it after and places

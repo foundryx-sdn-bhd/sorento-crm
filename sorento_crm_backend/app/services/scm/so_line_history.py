@@ -8,10 +8,11 @@ from __future__ import annotations
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from app.models.autocount_cancel import AutocountCancelDoc, AutocountCancelLine
+from app.models.autocount_cancel import KIND_CANCEL_SO, MATCH_MATCHED, AutocountCancelDoc, AutocountCancelLine
 from app.models.inventory import Warehouse
 from app.models.order import Order, OrderLine, OrderStatus
 from app.services.autocount_cancel_ingest_service import _live_doc, _names_any
+from app.services.autocount_cancel_matching import REASON_GROUP_WHOLE, REASON_UNDETERMINED
 
 
 def _qty(value):
@@ -44,12 +45,14 @@ def so_line_history(db: Session, so) -> dict:
             .outerjoin(Warehouse, Warehouse.id == OrderLine.warehouse_id)
             .filter(
                 OrderLine.company_id == so.company_id,
+                Order.company_id == so.company_id,
                 Order.deleted_at.is_(None),
                 Order.is_cancelled.is_(False),
                 or_(
                     and_(OrderLine.from_doc_no == so.so_number,
                          or_(OrderLine.from_doc_type.is_(None), OrderLine.from_doc_type == "SO")),
-                    OrderLine.sales_order_line_id.in_(line_ids),
+                    and_(OrderLine.sales_order_line_id.in_(line_ids),
+                         or_(OrderLine.from_doc_no.is_(None), OrderLine.from_doc_no == so.so_number)),
                 ),
             )
             .order_by(Order.order_date, Order.order_number, OrderLine.line_sequence)
@@ -79,14 +82,14 @@ def so_line_history(db: Session, so) -> dict:
             db.query(AutocountCancelLine, AutocountCancelDoc)
             .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
             .filter(
-                AutocountCancelDoc.kind == "cancel_so",
+                AutocountCancelDoc.kind == KIND_CANCEL_SO,
                 AutocountCancelDoc.company_id == so.company_id,
                 _live_doc(),
                 or_(
-                    and_(AutocountCancelLine.match_status == "matched",
+                    and_(AutocountCancelLine.match_status == MATCH_MATCHED,
                          AutocountCancelLine.sales_order_line_id.in_(line_ids)),
-                    and_(AutocountCancelLine.match_status == "matched", _names_any(line_ids)),
-                    and_(AutocountCancelLine.match_reason == "undetermined",
+                    and_(AutocountCancelLine.match_status == MATCH_MATCHED, _names_any(line_ids)),
+                    and_(AutocountCancelLine.match_reason == REASON_UNDETERMINED,
                          AutocountCancelLine.from_doc_no == so.so_number),
                 ),
             )
@@ -100,11 +103,11 @@ def so_line_history(db: Session, so) -> dict:
 
             if cl.sales_order_line_id and str(cl.sales_order_line_id) in line_id_set:
                 per_line[str(cl.sales_order_line_id)]["cancels"].append(row(_qty(cl.qty)))
-            elif cl.match_reason == "group_whole":
+            elif cl.match_reason == REASON_GROUP_WHOLE:
                 for cid in (str(i) for i in cl.candidate_line_ids or []):
                     if cid in line_id_set:
                         per_line[cid]["cancels"].append(row(None))
-            elif cl.match_reason == "undetermined":
+            elif cl.match_reason == REASON_UNDETERMINED:
                 group = group_by_sku.get(cl.item_code)
                 if group is not None:
                     group["cancels"].append(row(_qty(cl.qty)))

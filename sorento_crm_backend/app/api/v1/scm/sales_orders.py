@@ -181,8 +181,15 @@ def get_sales_order(so_id: str, db: Session = Depends(get_db), _user: dict = Dep
 
 @router.get("/sales-orders/{so_id}/deliveries", response_model=SalesOrderDeliveries)
 def get_sales_order_deliveries(so_id: str, db: Session = Depends(get_db), _user: dict = Depends(_READ)):
+    import uuid
+
+    from app.services.error_handler import AppException
     from app.services.scm.so_line_history import so_line_history
 
+    try:
+        uuid.UUID(str(so_id))
+    except ValueError:
+        raise AppException(404, "Sales order not found", code="SO_NOT_FOUND")
     return so_line_history(db, SalesOrderService(db)._get_or_404(so_id))
 
 

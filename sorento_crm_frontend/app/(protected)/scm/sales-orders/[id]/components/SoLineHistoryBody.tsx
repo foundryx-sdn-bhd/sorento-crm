@@ -7,7 +7,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SectionSkeleton } from '@/components/common/SectionSkeleton';
 import { DrillTable, RIGHT, TOTAL_LABEL } from '../../../components/PlanRowDialog';
 import { EM_DASH, fmtDate, fmtInt } from '../../../lib/format';
 import { MATCH_LABEL } from '../../../lib/autocountCancel';
@@ -31,15 +31,16 @@ function textCell(value: string | null | undefined) {
 }
 
 function plural(n: number, one: string, many: string) {
+  if (n === 0) return null;
   return `${fmtInt(n)} ${n === 1 ? one : many}`;
 }
 
-function Block({ title, count, children }: { title: string; count: string; children: React.ReactNode }) {
+function Block({ title, count, children }: { title: string; count: string | null; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="text-sm font-semibold">{title}</span>
-        <span className="text-xs text-muted-foreground">{count}</span>
+        {count ? <span className="text-xs text-muted-foreground">{count}</span> : null}
       </div>
       {children}
     </section>
@@ -124,6 +125,7 @@ function DeliveriesTable({
 
 function CancelsTable({ rows, emptyMessage }: { rows: SoLineCancelRow[]; emptyMessage: string }) {
   const total = rows.reduce((sum, r) => sum + Number(r.qty ?? 0), 0);
+  const anyKnown = rows.some((r) => r.qty != null);
   const columns = useMemo<ColumnDef<SoLineCancelRow>[]>(
     () => [
       { id: 'doc_no', header: 'Cancel SO no.', cell: ({ row }) => row.original.doc_no, footer: () => TOTAL_LABEL, size: 130 },
@@ -139,12 +141,12 @@ function CancelsTable({ rows, emptyMessage }: { rows: SoLineCancelRow[]; emptyMe
         id: 'qty',
         header: 'Qty',
         cell: ({ row }) => (row.original.qty == null ? dash : fmtInt(row.original.qty)),
-        footer: () => fmtInt(total),
+        footer: () => (anyKnown ? fmtInt(total) : EM_DASH),
         size: 80,
         meta: RIGHT,
       },
     ],
-    [total],
+    [total, anyKnown],
   );
   return (
     <DrillTable
@@ -161,7 +163,6 @@ export function SoLineHistoryBody({
   line,
   data,
   isLoading,
-  isError,
   onRetry,
   canOpenDo,
 }: {
@@ -187,16 +188,12 @@ export function SoLineHistoryBody({
     return (
       <div className="space-y-4">
         {strip}
-        <div className="space-y-2">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-8 w-full" />
-          ))}
-        </div>
+        <SectionSkeleton />
       </div>
     );
   }
 
-  if (isError || !data) {
+  if (!data) {
     return (
       <div className="space-y-4">
         {strip}
@@ -227,7 +224,7 @@ export function SoLineHistoryBody({
         <CancelsTable rows={cancels} emptyMessage="No Cancel SO for this line." />
       </Block>
       {group ? (
-        <section className="space-y-4 border-t pt-4">
+        <section className="space-y-4 rounded-lg border p-4">
           <div className="flex flex-wrap items-baseline gap-2">
             <span className="text-sm font-semibold">{`${group.sku} on this SO, not tied to one line`}</span>
             <span className="text-xs text-muted-foreground">{`· ${group.line_ids.length} lines`}</span>
