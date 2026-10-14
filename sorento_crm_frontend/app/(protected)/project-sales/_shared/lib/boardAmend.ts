@@ -785,6 +785,23 @@ export function drawAcross<T>(
 }
 
 /**
+ * The line's own location offered as a plain Borrow (BORROW-OWN-LOC): always listed, at 0
+ * free, and never capped - what is not free there is confirmed short (owner, 13 and 14 Oct).
+ */
+export function isOwnLocationBorrow(
+  contribution: BoardContribution,
+  candidate: BorrowCandidate,
+): boolean {
+  return (
+    candidate.source === 'other_location' &&
+    !candidate.donor_so_number &&
+    !candidate.donor_core_line_id &&
+    Boolean(contribution.fulfilment_warehouse_id) &&
+    candidate.warehouse_id === contribution.fulfilment_warehouse_id
+  );
+}
+
+/**
  * R9/AC-10: several ticked rows can contest the SAME pile (one location, one donor order, one
  * donor location) - the list's current sort order claims it, top first. `claimed` is that
  * running tally, in minor units, kept by the CALLER (the strip's save loop walks ticked rows in
@@ -941,7 +958,10 @@ export function decideComposition(
       (candidate) => toMinor(candidate.free_qty) - (claimed?.get(claimKeyOf(candidate)) ?? 0),
     );
     const drawn = rows.reduce((sum, row) => sum + row.minor, 0);
-    if (drawn < needMinor) {
+    // The line's own location is never capped (owner, 14 Oct): what is not free there rides
+    // on its plain row and the line is saved short, as "Add a borrow" saves it.
+    const own = candidates.find((candidate) => isOwnLocationBorrow(contribution, candidate));
+    if (drawn < needMinor && !own) {
       return { skip: `only ${fromMinor(drawn)} free at ${donorLabel}` };
     }
     for (const { item, minor } of rows) {
@@ -954,7 +974,14 @@ export function decideComposition(
       if (rows.length > 0) rows[0] = { ...rows[0], minor: rows[0].minor + deliveredMinor };
       else rows.push({ item: candidates[0], minor: deliveredMinor });
     }
+    const shortMinor = needMinor - drawn;
+    if (shortMinor > 0 && own) {
+      const at = rows.findIndex((row) => row.item === own);
+      if (at >= 0) rows[at] = { ...rows[at], minor: rows[at].minor + shortMinor };
+      else rows.push({ item: own, minor: shortMinor });
+    }
     return {
+      ...(shortMinor > 0 ? { warning: `only ${fromMinor(drawn)} free at ${donorLabel}` } : {}),
       reserve: [],
       borrow: rows.map(({ item: candidate, minor }) => ({
         source: candidate.source,

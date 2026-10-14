@@ -472,12 +472,14 @@ def test_a_reconfirm_marks_settled_rows_and_transfers_apart_from_new_ones(api):
     result = preview.json()["results"][0]
     assert result["ok"] is True, result
     rows = {row["line_no"]: row for row in result["inquiry_rows"]}
-    assert set(rows) == {10, 30}, rows
-    assert rows[10]["is_new"] is False, "line 10 was raised by revision 1 and is only settled"
+    # Line 10 was raised by revision 1 and re-approved unchanged: its row is only re-filed,
+    # which writes nothing for purchasing (owner hand test SO424764, 14 Oct 2026).
+    assert set(rows) == {30}, rows
     assert rows[30]["is_new"] is True
     moves = {move["line_no"]: move for move in result["transfers"]}
-    assert set(moves) == {20, 40}, moves
-    assert moves[20]["is_new"] is False, "a kept transfer"
+    # Line 20's Reserve was moved by revision 1 and re-approved unchanged: its transfer is
+    # only re-filed, so Simulate leaves it out (owner rule 14 Oct 2026). Line 40's is new.
+    assert set(moves) == {40}, moves
     assert moves[40]["is_new"] is True
 
     press = _post(client, order, lines, preview=False)
@@ -486,6 +488,40 @@ def test_a_reconfirm_marks_settled_rows_and_transfers_apart_from_new_ones(api):
     assert pressed["inquiry_rows_created"] == sum(
         1 for row in result["inquiry_rows"] if row["is_new"]
     )
+
+
+def test_an_unchanged_reserve_line_is_not_simulated_as_a_transfer_and_the_press_keeps_it(api):
+    client, world = api
+    order, _core_so_row, (a, b) = _two_line_order(world)
+    first = _post(client, order, [_reserve(world, a, 50)])
+    assert first.status_code == 200 and first.json()["results"][0]["ok"] is True, first.text
+    kept = (
+        world.db.query(StockTransfer)
+        .filter(StockTransfer.project_sales_order_id == str(order.id))
+        .all()
+    )
+    assert len(kept) == 1, "revision 1 moved line 10's reserve"
+    kept_id = str(kept[0].id)
+    world.db.expire_all()
+    lines = [_reserve(world, a, 50), _line_payload(b.id, buy_qty="50")]
+
+    preview = _post(client, order, lines, preview=True)
+
+    assert preview.status_code == 200, preview.text
+    result = preview.json()["results"][0]
+    assert result["ok"] is True, result
+    assert result["transfers"] == [], "line 10 is unchanged: nothing to write for it"
+
+    press = _post(client, order, lines, preview=False)
+    assert press.status_code == 200, press.text
+    assert press.json()["results"][0]["ok"] is True, press.text
+    world.db.expire_all()
+    after = (
+        world.db.query(StockTransfer)
+        .filter(StockTransfer.project_sales_order_id == str(order.id))
+        .all()
+    )
+    assert [str(m.id) for m in after] == [kept_id], "the real Confirm keeps the same transfer"
 
 
 # --------------------------------------------------------------------------- withdrawals

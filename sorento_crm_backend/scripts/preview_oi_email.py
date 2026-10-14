@@ -15,7 +15,7 @@ never dispatches, plus the guard that refuses any real commit. Inside it the scr
    `--date`, `--qty` and/or `--item` (a product code that exists);
 2. builds the planning-change batch for that one change, confirms its row, and applies it,
    exactly as Fulfilment Planning's Confirm does (`planning_change_service.apply`);
-3. collects the handover lines the apply queued (`_record_handover` / `record_stock_short`),
+3. collects the handover lines the apply queued (`_record_handover`, `record_saved_lines`, ...),
    builds the context with `_build_handover_context`, and renders it through the template
    the enabled "Order inquiry to purchasing" automation names (else
    `order_inquiry_handover_default`) with `EmailTemplateService.render`, the same call the
@@ -134,21 +134,32 @@ def preview(db, args: argparse.Namespace) -> Dict[str, Any]:
         company_id = order.company_id
 
     captured: List[Dict[str, Any]] = []
-    record = oi.ProjectOrderInquiryService._record_handover
-    record_short = oi.ProjectOrderInquiryService.record_stock_short
+    # Every method that writes to the handover queue, followed: what each ADDS is kept and
+    # what each DROPS (a saved line's row lines replaced by its one line, ORDERBACK-DELTA)
+    # is let go, so the preview prints exactly the lines the real email would.
+    tracked = (
+        "_record_handover",
+        "record_saved_lines",
+        "record_cancelled_lines",
+        "forget_rows_told_for_saved_lines",
+    )
+    originals = {name: getattr(oi.ProjectOrderInquiryService, name) for name in tracked}
 
-    def _keep_last(service) -> None:
-        pending = service.db.info.get(oi._HANDOVER_PENDING_KEY) or []
-        if pending and (not captured or captured[-1] is not pending[-1]):
-            captured.append(pending[-1])
+    def _tracking(name):
+        original = originals[name]
 
-    def _record(self, *a, **kw):
-        record(self, *a, **kw)
-        _keep_last(self)
+        def wrapper(self, *a, **kw):
+            before = list(self.db.info.get(oi._HANDOVER_PENDING_KEY) or [])
+            result = original(self, *a, **kw)
+            after = self.db.info.get(oi._HANDOVER_PENDING_KEY) or []
+            after_ids = {id(item) for item in after}
+            gone = {id(item) for item in before if id(item) not in after_ids}
+            captured[:] = [item for item in captured if id(item) not in gone]
+            known = {id(item) for item in captured} | {id(item) for item in before}
+            captured.extend(item for item in after if id(item) not in known)
+            return result
 
-    def _record_short(self, *a, **kw):
-        record_short(self, *a, **kw)
-        _keep_last(self)
+        return wrapper
 
     old_code = product_codes.get(line.product_id) or ""
     old_qty = Decimal(str(core.qty_ordered))
@@ -164,8 +175,8 @@ def preview(db, args: argparse.Namespace) -> Dict[str, Any]:
     else:
         kind = DATE_MOVED
 
-    oi.ProjectOrderInquiryService._record_handover = _record
-    oi.ProjectOrderInquiryService.record_stock_short = _record_short
+    for name in tracked:
+        setattr(oi.ProjectOrderInquiryService, name, _tracking(name))
     try:
         with simulating(), simulation_session(db) as sim:
             set_company_scope(sim, frozenset({company_id}))
@@ -239,8 +250,8 @@ def preview(db, args: argparse.Namespace) -> Dict[str, Any]:
                 "lines": context["handover"]["lines"],
             }
     finally:
-        oi.ProjectOrderInquiryService._record_handover = record
-        oi.ProjectOrderInquiryService.record_stock_short = record_short
+        for name, original in originals.items():
+            setattr(oi.ProjectOrderInquiryService, name, original)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

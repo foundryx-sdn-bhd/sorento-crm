@@ -1403,14 +1403,12 @@ class TestCarriedLineNeverSettlesOrRedirects:
         assert po.po_number in note
         assert "received" in note
 
-    def test_carried_raised_row_still_cancelled_and_reraised_AC_CL_5(self, api):
-        """AC-CL-5: a carried line whose only live row is still `raised`, no links,
-        keeps today's behaviour - cancelled "Superseded by revision N" and re-raised
-        under the new revision with the handshake INHERITED, never promoted to
-        `changed` (`_handshake_for_raise(carried=True)`'s own `prior` branch). The row
-        is acknowledged FIRST, so `_live_handshake` hands `_handshake_for_raise` a real
-        `prior` to inherit from, rather than the trivial AWAITING-to-AWAITING case a
-        never-acknowledged row would also pass."""
+    def test_carried_raised_row_kept_with_its_handshake_AC_CL_5(self, api):
+        """AC-CL-5, revised by ORDERBACK-DELTA (owner, 13 Oct 2026): a carried line whose
+        only live row is still `raised`, no links, and already says what the revision
+        needs is the SAME row - re-filed under the new revision, not cancelled and
+        raised again - with purchasing's handshake untouched, never promoted to
+        `changed`. Acknowledged FIRST, so a reset to AWAITING would show."""
         _client, world = api
         fixture = _raise_one_row(api, qty="10")
         row = fixture["row"]
@@ -1431,24 +1429,16 @@ class TestCarriedLineNeverSettlesOrRedirects:
         world.db.commit()
         world.db.refresh(row)
 
-        assert row.state == INQUIRY_CANCELLED
-        assert row.note == f"Superseded by revision {decision.revision_no}"
-
         live_rows = _rows_for_line(world, line)
-        assert [r.id for r in live_rows] == [
-            r.id for r in live_rows if str(r.id) != str(row.id)
-        ], "the old row must not still read as live"
-        assert len(live_rows) == 1, "exactly one fresh ORDER row for the line"
-        new_row = live_rows[0]
-        assert new_row.state == INQUIRY_RAISED
-        assert new_row.verb == IV_ORDER
-        assert Decimal(str(new_row.qty)) == Decimal("10")
-        assert new_row.delivery_date == WAS
-        assert new_row.ack_state == ACK_ACKNOWLEDGED, (
-            "the handshake is inherited from the row it carries, not reset"
-        )
-        assert new_row.acknowledged_by == world.buyer
-        assert new_row.changed_at is None, "a silent carry must not promote to changed"
+        assert [str(r.id) for r in live_rows] == [str(row.id)], "one row, the same row"
+        assert row.state == INQUIRY_RAISED
+        assert row.verb == IV_ORDER
+        assert Decimal(str(row.qty)) == Decimal("10")
+        assert row.delivery_date == WAS
+        assert str(row.supply_decision_id) == str(decision.id)
+        assert row.ack_state == ACK_ACKNOWLEDGED, "the handshake stands, not reset"
+        assert row.acknowledged_by == world.buyer
+        assert row.changed_at is None, "a silent carry must not promote to changed"
 
     def test_partly_linked_cascade_draft_kept_whole_AC_CL_3_cascade(self, api):
         """S1 (review round 1, 9fb06ff66): AC-CL-3's own test links through

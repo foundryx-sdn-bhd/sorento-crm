@@ -501,8 +501,8 @@ def test_review_2_5_6_a_split_needs_same_date_a_kept_qty_and_no_reserve_link(api
 
 def test_review_r1_an_unchanged_borrow_hole_restated_prints_no_cancel(api):
     """Review round 2, R1: a reconfirm that restates the SAME borrow hole (same line, item,
-    donor location) cancels the old raised row and raises the new one; only the raise is
-    told - E's cancel line is for a raise that is gone, not one restated."""
+    donor location) prints no cancel - E's cancel line is for a raise that is gone, not one
+    restated. Since ORDERBACK-DELTA (13 Oct) the hole is the same row and prints nothing."""
     from types import SimpleNamespace
 
     from app.models.project_so import INQUIRY_RAISED, IV_ORDER_BACK
@@ -531,7 +531,7 @@ def test_review_r1_an_unchanged_borrow_hole_restated_prints_no_cancel(api):
         covered_line_ids={str(line_592.id)},
     )
     db.flush()
-    assert hole.state == INQUIRY_CANCELLED, "premise: the old hole is superseded"
+    assert hole.state == INQUIRY_RAISED, "the unchanged hole is kept, not superseded"
     assert not _handovers_for(world, hole), [h["line"]["remark"] for h in _handovers_for(world, hole)]
 
 
