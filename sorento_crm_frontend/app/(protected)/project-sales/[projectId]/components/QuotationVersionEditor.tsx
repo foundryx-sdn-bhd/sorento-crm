@@ -281,8 +281,8 @@ export function QuotationVersionEditor({
         list_price: set.list_price != null ? String(set.list_price) : '',
         complete_set: completeSetText(set.parts),
       };
-      // The brand is NOT written here: the server fills a blank brand from the driver part,
-      // and an empty string from this side would overwrite one somebody typed.
+      // The grid applies the brand only to a line whose brand is blank.
+      if (set.brand_name) filled.brand_snapshot = set.brand_name;
       const agreed = seriesPriceBySet.get(setId);
       if (agreed) filled.unit_price = agreed;
       return filled;

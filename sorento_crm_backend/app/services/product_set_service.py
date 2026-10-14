@@ -218,6 +218,26 @@ class ProductSetService:
             self._decorate(row, available=available)
         return rows
 
+    def driver_brand_names(self, set_ids: list[str]) -> dict[str, str]:
+        """`{set_id: brand name of the DRIVER part}`, for sets whose driver has a brand."""
+        from app.models.product import Brand
+
+        drivers = driver_members(self.db, set_ids)
+        brand_ids = {
+            m.product.brand_id for m in drivers.values() if m.product and m.product.brand_id
+        }
+        if not brand_ids:
+            return {}
+        names = {
+            b.id: b.brand_name
+            for b in self.db.query(Brand).filter(Brand.id.in_(brand_ids)).all()
+        }
+        return {
+            sid: names[m.product.brand_id]
+            for sid, m in drivers.items()
+            if m.product and m.product.brand_id in names
+        }
+
     # ----------------------------------------------------------------- writing
 
     def create(self, payload: dict[str, Any], *, created_by: Optional[str]) -> ProductSet:

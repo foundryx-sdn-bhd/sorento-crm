@@ -12,6 +12,7 @@ import {
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { Columns3, MoreHorizontal, Plus, Trash2, Undo2 } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -297,7 +298,7 @@ function SetCompleteChip({ setId }: { setId: string }) {
   const count = set.data?.complete_sets;
   if (count == null) return null;
   return (
-    <span className="text-xs text-muted-foreground tabular-nums">
+    <span className="whitespace-normal text-end text-2xs leading-tight text-muted-foreground tabular-nums">
       {`${count} complete ${count === 1 ? 'set' : 'sets'}`}
     </span>
   );
@@ -1097,10 +1098,15 @@ export function QuotationLinesGrid({
         });
         // The parts, brand, price and Complete set need the set's detail; applied only if the
         // row still names this set when it arrives.
-        void fillFromSet?.(setId).then((filled) => {
-          const now = linesRef.current.find((line) => line.key === key);
-          if (now?.draft.product_set_id === setId) update(key, filled);
-        });
+        void fillFromSet?.(setId)
+          .then((filled) => {
+            const now = linesRef.current.find((line) => line.key === key);
+            if (now?.draft.product_set_id !== setId) return;
+            // A typed brand is never overwritten by the set's.
+            const { brand_snapshot: brand, ...rest } = filled;
+            update(key, (now.draft.brand_snapshot ?? '').trim() ? rest : { ...rest, brand_snapshot: brand ?? '' });
+          })
+          .catch(() => toast.error('Could not load that set'));
         return;
       }
       update(key, {

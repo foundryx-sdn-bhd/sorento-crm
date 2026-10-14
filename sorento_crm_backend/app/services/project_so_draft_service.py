@@ -399,7 +399,7 @@ class ProjectSODraftService:
 
         quotation_version = self._quotation_version(po)
         findings: List[_PendingFinding] = []
-        findings.extend(self._document_findings(source_lines, po_version))
+        findings.extend(self._document_findings(source_lines, po_version, quotation_version))
 
         slices = self._spread_across_phases(
             po=po, schedule_version=schedule_version, source_lines=source_lines, findings=findings
@@ -463,7 +463,9 @@ class ProjectSODraftService:
         source_lines = self._source_lines(po, po_version)
 
         findings: List[_PendingFinding] = []
-        findings.extend(self._document_findings(source_lines, po_version))
+        findings.extend(
+            self._document_findings(source_lines, po_version, self._quotation_version(po))
+        )
         # `_spread_across_phases` also appends order-scoped findings (schedule_short,
         # missing_delivery_date, ...) to this same list as a side effect of walking the
         # cells -- harmless to compute again since only the `batch_level` subset below is
@@ -624,6 +626,14 @@ class ProjectSODraftService:
             for index, row in enumerate(hand_keyed, start=1)
         ]
 
+    def _is_quoted_set(
+        self, line: _SourceLine, quotation_version: Optional[ProjectQuotationVersion]
+    ) -> bool:
+        """A no-product PO line whose code is a quoted SET line: it splits from the parts frozen
+        on the quotation, so it is not an unresolved product."""
+        quoted = self._quoted_line(line, quotation_version)
+        return quoted is not None and bool(quoted.set_parts_snapshot)
+
     def _quotation_version(
         self, po: ProjectPurchaseOrder
     ) -> Optional[ProjectQuotationVersion]:
@@ -638,7 +648,10 @@ class ProjectSODraftService:
     # ------------------------------------------------------- document arithmetic
 
     def _document_findings(
-        self, source_lines: Sequence[_SourceLine], po_version: Optional[ProjectPOVersion]
+        self,
+        source_lines: Sequence[_SourceLine],
+        po_version: Optional[ProjectPOVersion],
+        quotation_version: Optional[ProjectQuotationVersion] = None,
     ) -> List[_PendingFinding]:
         """`line_arithmetic`, `total_mismatch` and `unresolved_product`.
 
@@ -672,7 +685,9 @@ class ProjectSODraftService:
                         source_po_line_no=line.line_no,
                     )
                 )
-            if not line.is_cancelled and not line.product_id:
+            if not line.is_cancelled and not line.product_id and not self._is_quoted_set(
+                line, quotation_version
+            ):
                 out.append(
                     _PendingFinding(
                         severity=SEVERITY_HARD,

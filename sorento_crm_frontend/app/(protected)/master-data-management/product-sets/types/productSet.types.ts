@@ -91,7 +91,10 @@ export interface ProductSetLineRef {
   is_active: boolean;
   member_count: number;
   list_price: string | number | null;
+  /** Null for a caller who may not read stock. */
   complete_sets: number | null;
+  /** The driver part's brand, or null. */
+  brand_name?: string | null;
   parts: { product_code: string; quantity: string | number }[];
 }
 

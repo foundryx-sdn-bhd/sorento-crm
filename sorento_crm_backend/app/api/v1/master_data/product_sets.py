@@ -31,7 +31,8 @@ from app.schemas.product_set import (
     ProductSetResponse,
     ProductSetUpdate,
 )
-from app.services.error_handler import handle_internal_error
+from app.modules.runtime.guards import module_allowed_with_api_key
+from app.services.error_handler import AppException, handle_internal_error
 from app.services.product_set_proposal_service import ProductSetProposalService
 from app.services.product_set_service import ProductSetService
 from app.services.uuid_path_param import validate_uuid_path
@@ -140,9 +141,24 @@ def select_product_sets(
     """
     try:
         wanted = [part.strip() for part in (ids or "").split(",") if part.strip()]
+        if len(wanted) > 100:
+            raise AppException(status_code=422, message="Too many ids (100 at most).")
         for part in wanted:
-            validate_uuid_path(part, resource="Product set")
+            try:
+                validate_uuid_path(part, resource="Product set")
+            except Exception:
+                raise AppException(status_code=422, message="An id is not valid.")
         rows = ProductSetService(db).select(query=query, ids=wanted or None)
+        # Stock is the inventory module's data and the quoting roles' to read: anyone else gets
+        # the set without a count.
+        from app.services.user_service import UserPermissionService
+
+        with_stock = bool(
+            UserPermissionService(db).check_user_has_permission(
+                current_user["id"], "projects.projects.view"
+            )
+        ) and module_allowed_with_api_key(db, current_user, "inventory")
+        brands = ProductSetService(db).driver_brand_names([row.id for row in rows])
         return {
             "data": [
                 {
@@ -152,7 +168,8 @@ def select_product_sets(
                     "is_active": row.is_active,
                     "member_count": row.member_count,
                     "list_price": row.price.resolved,
-                    "complete_sets": row.complete_sets,
+                    "complete_sets": row.complete_sets if with_stock else None,
+                    "brand_name": brands.get(row.id),
                     "parts": [
                         {
                             "product_code": getattr(m.product, "product_code", None),

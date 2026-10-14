@@ -1451,7 +1451,7 @@ class ProjectQuotationLine(Base, CompanyScopedMixin):
     product_set_id = Column(
         UUID(as_uuid=False), ForeignKey("product_sets.id", ondelete="SET NULL"), nullable=True
     )
-    set_parts_snapshot = Column(JSONB, nullable=True)
+    set_parts_snapshot = Column(JSONB(none_as_null=True), nullable=True)
     product_code_snapshot = Column(String(100), nullable=True)
     description_snapshot = Column(Text, nullable=True)
     list_price_snapshot = Column(Numeric(12, 2), nullable=True)
