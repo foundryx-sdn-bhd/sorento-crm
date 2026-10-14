@@ -12,7 +12,6 @@ from typing import Optional
 from app.database import get_db
 from app.dependencies import (
     get_current_user,
-    get_current_user_or_api_key,
     require_permission,
     require_permission_with_api_key,
 )
@@ -466,7 +465,7 @@ async def get_orders(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db)
 ):
     """Get orders with pagination, filtering, and sorting.
@@ -705,7 +704,7 @@ async def list_distinct_debtors(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Distinct customers/debtors aggregated from orders.
@@ -914,7 +913,7 @@ async def get_orders_by_product(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db)
 ):
     """Get distinct orders matched by product search.
@@ -1068,7 +1067,7 @@ async def get_order_analytics(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Aggregate customer sales orders (count / total revenue / average delivery days).
@@ -1108,7 +1107,7 @@ async def get_order_analytics(
 @router.get("/{order_id}/fulfilled-complaints")
 async def get_order_fulfilled_complaints(
     order_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Complaints this Delivery Order fulfils (reverse of the complaint detail
@@ -1128,7 +1127,7 @@ async def get_order_fulfilled_complaints(
 @router.get("/{order_id}", response_model=OrderResponse)
 async def get_order(
     order_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single order by ID."""
@@ -1163,7 +1162,7 @@ async def create_order(
 async def update_order(
     order_id: str,
     order_data: OrderUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("order_management.orders.view")),
     db: Session = Depends(get_db)
 ):
     """Update an order."""
@@ -1185,7 +1184,7 @@ class OrderCancelRequest(BaseModel):
 async def cancel_order(
     order_id: str,
     body: OrderCancelRequest = Body(default_factory=OrderCancelRequest),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Cancel an order (sets is_cancelled=true, optional reason → remarks).
@@ -1247,7 +1246,7 @@ async def delete_order(
 async def create_order_line(
     order_id: str,
     data: OrderLineCreate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Add a line to an order (delivery order detail)."""
@@ -1266,7 +1265,7 @@ async def update_order_line(
     order_id: str,
     line_id: str,
     data: OrderLineUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Update an order line."""
