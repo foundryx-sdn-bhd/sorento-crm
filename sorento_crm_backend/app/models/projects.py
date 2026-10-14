@@ -1422,6 +1422,11 @@ class ProjectQuotationLine(Base, CompanyScopedMixin):
     image_attachment_id = Column(
         UUID(as_uuid=False), ForeignKey("attachments.id", ondelete="SET NULL"), nullable=True
     )
+    # The "Technical Specifications" image printed in TECHNICAL SPEC: picked on the line, or
+    # filled at issue from the product's first drawing. Same freeze rule as the photo above.
+    drawing_attachment_id = Column(
+        UUID(as_uuid=False), ForeignKey("attachments.id", ondelete="SET NULL"), nullable=True
+    )
 
     # The A / B / C letter off the printed document. A water closet, its angle valve and its
     # flexible hose are ONE item to the customer's QS; the letter carries that grouping and the
