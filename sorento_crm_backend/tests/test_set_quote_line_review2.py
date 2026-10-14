@@ -6,9 +6,10 @@ R2-5 SQL NULL snapshot on a product line. Helpers come from `test_set_quote_line
 """
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import select
 
 from app.models.product import Brand
+from app.models.projects import ProjectQuotationLine
 
 from ._pg_fixture import blank_session
 from .test_set_quote_line import (  # noqa: F401  (api is a fixture)
@@ -207,10 +208,9 @@ def test_r2_5_a_product_lines_set_parts_snapshot_is_sql_null_not_json_null():
         db.commit()
 
         is_sql_null = db.execute(
-            text(
-                "SELECT set_parts_snapshot IS NULL FROM projects.quotation_lines WHERE id = :i"
-            ),
-            {"i": line.id},
+            select(ProjectQuotationLine.set_parts_snapshot.is_(None)).where(
+                ProjectQuotationLine.id == line.id
+            )
         ).scalar()
 
         assert is_sql_null is True
