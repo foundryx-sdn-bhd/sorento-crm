@@ -43,3 +43,21 @@ R2-8 Every PV2 answer path that prints rows writes the register (each path named
 R2-9 output_structurer drops order `lines` whenever the Products field is hidden (test).
 R2-10 `printed_rows` stays aligned with the envelope's `figures` when an answer is not a dict.
 R2-11 No LLM calls; v1 turns unchanged.
+
+## R-GAPS Frozen v1 lanes (owner rule 14 Oct; source crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md)
+All from handwritten parses (no LLM). [cust] = a customer named in the earlier turn.
+RG-1 (#1570) Staff: "[cust] 7/10/2026 有送货吗？" -> "SRT391-GM几时会安排送货？": the carried customer plus the new product is a
+     clarify ("Delivery for SRT391-GM: only [cust] (from earlier) or all customers?"), nothing fetched. PV2 table case-072
+     expects this. The 3rd identical clarify to staff refers them to the salesman instead of asking again.
+RG-2 (#1582) "250mm srtwc286 got stock?" answers only the variants with 250 on any axis, with no Length/Width question;
+     "srtwc286 300mm" with no 300 on any axis -> "No 300 mm for SRTWC286. Sizes on file: ..." (localized).
+RG-3 (#1603) A v1 escalate offer answered "yes" -> "Routed to your PIC, they will reply shortly." and the hand-over saves
+     the asked text, never "".
+RG-4 (#1617) "SRTWT5880-CR picture" -> "HAVE 10??" (no open question) -> the stock answer for 10, no photo re-send, no
+     type question.
+RG-5 (#1443) A set code -> its member stock, never "I need at least one filter"; "SRTWC8608 stock" offers its sets.
+RG-6 (#1517) An ask with no product ("product") -> a which-product question and no tool call; a product list never shows
+     an unsearchable or inactive row (e.g. "FOR ACCOUNT DEPARTMENT ONLY").
+RG-7 (#1572) "Srtkt71-ss outstanding" -> "Dealer outstanding only" keeps the product and adds the channel; "CBDR4003
+     stock" -> "Top sales Sorento and Mocha" -> "Sorento and mocha" never carries CBDR4003 or BK007A.
+RG-8 No LLM calls; v1 turns unchanged.

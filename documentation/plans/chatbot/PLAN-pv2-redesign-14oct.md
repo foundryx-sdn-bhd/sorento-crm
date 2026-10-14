@@ -1,6 +1,7 @@
 # PLAN: PV2 redesign - typed refs, answer register, subject stack (14 Oct 2026)
 
-Status: Build, round R2 (R1 merged into crew/pv2 as 941fb867a via #1670; R2 on branch `crew/pv2-redesign-r2`).
+Status: Build, round R2 (R1 merged into crew/pv2 as 941fb867a via #1670; R2 on branch `crew/pv2-redesign-r2`, PR #1673).
+Round order: R1, R2, R-GAPS (crew 14 Oct), R3, R4, R5.
 Earlier: round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
 branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). CODE AND TESTS ONLY until crew relays
 the owner's OK for LLM spend: no parser calls, no evals, no live checks. pytest -n 1.
@@ -28,10 +29,32 @@ derive the move. Still one parser call per turn; replies stay code templates.
   paths and the stock-ask render keep the previous entries, so cover them before R4 reads the register; (b) a test for
   popping order `lines` when the Products field is hidden (fetch.py output_structurer); (c) `printed_rows` indexes
   the unfiltered `answers` while `envelope_of` drops non-dict answers from `figures`: align the two (security nit).
+- **R-GAPS Frozen v1 lanes as PV2 acceptance cases (after R2, before R3/R4).** Owner rule 14 Oct: every real scenario
+  behind a frozen v1 chatbot PR is a PV2 acceptance case; a scenario PV2 does not handle naturally is a PV2 fail.
+  Source: crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md (9 of 10 real; PV2 fully handles none). Code-level tests
+  from handwritten parses only (no LLM), red first, then fix, kill proof, reviewer + security. Cases in UAC RG-1..RG-7;
+  design facts (file:line) are mapped at round start. If the diff passes ~600 lines it splits into R-GAPS-a/b PRs.
+  - #1570 CLARIFY-POLICY: carried + new subject -> clarify (owner 11 Oct); PV2 table case-072
+    (converted_replay.jsonl:115) expects the opposite and is corrected; staff clarify loop cap.
+  - #1582 SPEC-PROMO: no Length/Width axis question (owner 12 Oct); "Sizes on file". test_resolve_specs.py:120 pin
+    changes. The prompt_v2.txt:169-172 example is a prompt edit (live parser behaviour): held for R4/R5, not R-GAPS.
+  - #1603 CHAT-SPARSE: "yes" to a v1 escalate offer routes with the asked text (test_fix_r2f.py:63 pin flips).
+  - #1617 QTY-CARRIED: photo, then a bare count with no open question -> stock for that count.
+  - #1443 COMBO-STOCK: set codes (sets are not in gate.py:85 / resolve.py:570-631 today).
+  - #1517 ROGUE: an empty ask is a question, not a lookup; lists never show unsearchable or inactive rows.
+  - #1572 REPORTS-STEP2: outstanding by channel keeps the product; a stale subject never rides a report chain.
+  - Not in R-GAPS: #1613 seat-cover peer links (-> R3, relation kinds in the registry; the parser field is R4);
+    #1625 idea capture (after #1625 merges); #1624 Gemini (only if the owner picks Gemini).
+  - R5 live list from the coverage file: cand-0230/0220 replays; "HAVE 10??" after a photo; "product" alone;
+    "srtwc286-250"; seat-cover fit EN/MS/ZH; the owner's 13 Oct report conversation; problem message -> idea capture;
+    Gemini probe only if chosen.
 - **R3 Entity-kind registry columns.** Migration on `chatbot_entity_kinds`: parent_kinds, child_kinds, domains,
   default_domain, is_document, localized labels. Move the hard-coded tables (pv2/resolve.py:217-237 kind map,
   clarify_copy.py `_KIND_WORD`, bridge.py `V1_HINT`, apply.py `DOMAIN_BY_FOUND_KIND`, apply.py `DOCUMENT_KINDS`,
   and R1's tool->kind map) to registry reads. Behaviour-preserving (same outputs, proven by the replay set).
+  Plus peer-link relation kinds (crew 14 Oct, frozen #1613 SEAT-AS-PRODUCT): a seat cover linked to a product is a
+  relation, not containment; "8152 seat cover stock" answers the linked cover codes, no link -> "No seat cover is on
+  record for X." The parser's relation field is R4.
 - **R4 Parser v3 schema + code-derived move.** refs[] {kind, points_back_to: held|S<n>|R<n>|R*|previous_subject|new,
   within, phrase, key, doc_number, op, quantity}, unclear[], social, escalation; act kept as shadow. MEMORY renders the
   register (R<n>, children indented) and the stack (S<n>). Code derives the move (design D rules 1-8). One generic
