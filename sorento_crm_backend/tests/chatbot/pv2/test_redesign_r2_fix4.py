@@ -212,7 +212,7 @@ def test_a4_a_pick_keeps_the_new_spec_a_clearing_refine_set():
 # ------------------------------------------------------------------ A5 brand parity (pre-R2: the pick replaces the set)
 
 
-def test_a5_a_brand_added_beside_an_ambiguous_brand_equals_pre_r2_after_the_pick():
+def test_a5_a_brand_added_beside_an_ambiguous_brand_keeps_both_after_the_pick():
     r = FakeResolver({"entities": {"brand|sorento": _exact_ref("brand", "sorento", "Sorento"),
                                    "brand|moc": _amb("brand", ("mocha", "mocca"))}})
     a = ask(act="new_topic", domain="inventory", entities=[entity("brand", key="sorento", phrase="sorento"),
@@ -220,7 +220,8 @@ def test_a5_a_brand_added_beside_an_ambiguous_brand_equals_pre_r2_after_the_pick
     st, acts = apply_turn(new_state(NOW), out(a), resolver=r, now=NOW)
     st, acts = apply_turn(st, _pickp("1"), resolver=r, now=NOW)
     assert isinstance(acts[0], Lookup)
-    assert _refs(st, "brand") == ["mocha"], "pre-R2 (941fb867a) held [mocha]"
+    # RG-7b: the pick keeps the other items
+    assert _refs(st, "brand") == ["sorento", "mocha"]
 
 
 # ------------------------------------------------------------------ A6 report pick MEMORY
