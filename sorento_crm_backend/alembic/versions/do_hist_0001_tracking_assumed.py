@@ -7,14 +7,14 @@ Order Tracking, together with the delivered status; `actual_delivery_date` stays
 Additive and nullable, no default, nothing backfilled.
 
 Revision ID: do_hist_0001_tracking_assumed
-Revises: qlg_0001_drawing_attachment
+Revises: sodv_0001_ol_from_doc_idx
 """
 from __future__ import annotations
 
 from alembic import op
 
 revision = "do_hist_0001_tracking_assumed"
-down_revision = "qlg_0001_drawing_attachment"
+down_revision = "sodv_0001_ol_from_doc_idx"
 branch_labels = None
 depends_on = None
 

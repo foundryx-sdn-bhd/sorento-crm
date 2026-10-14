@@ -129,10 +129,10 @@ def test_a_carried_group_borrow_line_keeps_its_donor_and_regenerates_one_order_b
         .filter(OrderInquiryRow.verb == IV_BORROW_SHORTFALL)
         .all()
     )
-    # The first confirm's row is superseded and kept, never edited in place; the reconfirm
-    # regenerates exactly one fresh one for the same donor line - not zero (the bug) and not
-    # a second live copy stacked beside the first (a duplicate).
-    assert len(rows) == 2, "the first row is cancelled and kept, not edited in place"
+    # The reconfirm restates the same order-back - not zero (the bug) and not a second
+    # live copy stacked beside the first (a duplicate). Unchanged, it is the SAME row
+    # (ORDERBACK-DELTA, owner 13 Oct 2026), not cancelled and raised again.
+    assert len(rows) == 1, [(r.state, r.note) for r in rows]
     still_raised = [row for row in rows if row.state == "raised"]
     assert len(still_raised) == 1, "the order-back must survive the carry-forward reconfirm"
     assert "SO371334" in (still_raised[0].note or "")

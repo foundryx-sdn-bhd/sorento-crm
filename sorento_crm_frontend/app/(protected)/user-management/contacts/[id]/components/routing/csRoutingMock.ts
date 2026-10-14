@@ -5,12 +5,13 @@
  *   GET    .../{contactId}/cs-routing                → { pins: RoutingRule[] }
  *   GET    .../cs-routing/candidates                 → { candidates: CsCandidate[] }
  *   GET    .../cs-routing/fields?use_case=<uc>       → { fields: RoutableField[] }
- *   PUT    .../{contactId}/cs-routing/{use_case}     body { cs_pic_user_id, match_conditions, priority }
- *   DELETE .../{contactId}/cs-routing/{use_case}     (clears all rows for the use_case)
+ *   PUT    .../{contactId}/cs-routing                body { rules: [{ use_case, cs_pic_user_id, match_conditions, priority }] }
+ *                                                    → { pins: RoutingRule[] }
  *
  * Uniqueness: one rule per (contact, use_case, canonical(match_conditions)). Save
- * = replace: clear the affected use_cases, then PUT each rule with priority = list
- * order (lowest priority wins in the resolver).
+ * = replace, in ONE request: the server validates every rule before it replaces
+ * any, so a refused rule leaves the stored rules untouched. Priority = list order
+ * (lowest priority wins in the resolver).
  */
 import { apiFetch } from '@/lib/api';
 import { extractApiError } from '@/lib/api-client';
@@ -61,45 +62,34 @@ export async function getRoutableFields(useCase: string): Promise<RoutableField[
 }
 
 /**
- * Replace this contact's routing config with `rules`. Clears every affected
- * use_case (current + incoming), then PUTs each complete rule with priority = its
- * position in the list. Rules without a selected CS PIC are skipped (incomplete).
- * Returns the freshly-persisted rules (with server-assigned ids).
+ * Replace this contact's routing config with `rules` in one request, priority = each
+ * rule's position in the list. Rules without a selected CS PIC are skipped
+ * (incomplete). A refused rule throws the server's message ("Rule 2: ...") and
+ * nothing is saved. Returns the freshly-persisted rules (with server-assigned ids).
  */
 export async function saveRoutingRules(
   contactId: string,
   rules: RoutingRule[],
 ): Promise<RoutingRule[]> {
-  const current = await getRoutingRules(contactId).catch(() => [] as RoutingRule[]);
-  const useCases = new Set<string>([
-    ...current.map((r) => r.use_case),
-    ...rules.map((r) => r.use_case),
-  ]);
-  for (const uc of useCases) {
-    const del = await apiFetch(`${BASE}/${contactId}/cs-routing/${encodeURIComponent(uc)}`, {
-      method: 'DELETE',
-    });
-    if (!del.ok && del.status !== 404) {
-      throw new Error(await extractApiError(del, 'Failed to clear routing rules'));
-    }
-  }
-  // Re-create in list order → priority = index (lowest wins).
-  for (let i = 0; i < rules.length; i++) {
-    const rule = rules[i];
-    if (!rule.cs_pic_user_id) continue; // incomplete row - skip
-    const put = await apiFetch(
-      `${BASE}/${contactId}/cs-routing/${encodeURIComponent(rule.use_case)}`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cs_pic_user_id: rule.cs_pic_user_id,
-          match_conditions: rule.match_conditions ?? [],
-          priority: i,
-        }),
-      },
-    );
-    if (!put.ok) throw new Error(await extractApiError(put, 'Failed to save routing rule'));
-  }
-  return getRoutingRules(contactId);
+  const payload = rules.flatMap((rule, i) =>
+    rule.cs_pic_user_id
+      ? [
+          {
+            use_case: rule.use_case,
+            cs_pic_user_id: rule.cs_pic_user_id,
+            match_conditions: rule.match_conditions ?? [],
+            priority: i,
+          },
+        ]
+      : [],
+  );
+  const r = await apiFetch(`${BASE}/${contactId}/cs-routing`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rules: payload }),
+  });
+  if (!r.ok) throw new Error(await extractApiError(r, 'Failed to save routing rules'));
+  const data = await r.json();
+  const pins = (data?.pins ?? []) as RoutingRule[];
+  return pins.slice().sort((a, b) => a.priority - b.priority);
 }
