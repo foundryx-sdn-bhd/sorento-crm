@@ -69,7 +69,8 @@ WHERE core.cancelled_by_cancel_doc          -- an AutoCount Cancel SO cancelled 
 DELETE FROM cancel_so_restore c
 WHERE c.cancel_doc <> 'AutoCount'
   AND NOT EXISTS (SELECT 1 FROM public.autocount_cancel_docs d
-                  WHERE d.kind = 'cancel_so' AND d.doc_no = c.cancel_doc);
+                  WHERE d.kind = 'cancel_so' AND d.doc_no = c.cancel_doc
+                    AND d.company_id = c.company_id);
 
 -- 1. Rows this script restores to raised (expected: the step 1 rows marked "restore to raised").
 SELECT so_number, project_line_no, item_code, cancel_doc, retired_at, note_now, note_before, row_id
@@ -91,13 +92,14 @@ WHERE o.id = c.row_id
 
 -- 4. The trail: one audit row per restored row, next to the OI_ROW_CANCELLED it reverses.
 INSERT INTO public.audit_logs (id, entity_type, entity_id, action, event, new_values,
-                               description, company_id, root_entity_type, root_entity_id)
+                               description, company_id, root_entity_type, root_entity_id,
+                               actor_type)
 SELECT gen_random_uuid(), 'project_order_inquiry_rows', c.row_id::text, 'EVENT',
        'OI_ROW_RESTORED',
        jsonb_build_object('cause', 'cancel_so_restore', 'cancel_doc', c.cancel_doc,
                           'state', 'raised'),
        'CANCEL-STOP-AT-SO owner repair: AutoCount Cancel SO retirement reversed',
-       c.company_id, 'project_sales_orders', c.project_sales_order_id::text
+       c.company_id, 'project_sales_orders', c.project_sales_order_id::text, 'system'
 FROM cancel_so_restore c
 JOIN projects.order_inquiry_rows o ON o.id = c.row_id
 WHERE NOT c.manual AND o.state = 'raised';
