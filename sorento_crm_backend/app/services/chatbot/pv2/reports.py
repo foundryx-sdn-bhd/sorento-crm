@@ -372,7 +372,8 @@ def _filter_values(ds: rm.Dataset, dim: rm.Dimension, keys: list[str]) -> tuple[
 
 
 def plan_report(
-    spec: Any, *, refs: Mapping[str, Sequence[Any]], today: date, dealer: bool = False
+    spec: Any, *, refs: Mapping[str, Sequence[Any]], today: date, dealer: bool = False,
+    delivered_total: bool = False,
 ) -> ReportPlan:
     """The held spec as `crm_report_ask` params (status run), or what to send instead: the one
     question for the missing fields (ask), a truthful line (say: a part the engine cannot run
@@ -389,6 +390,15 @@ def plan_report(
     from app.services.chatbot.pv2.schema import Period
     from app.services.sales_report_service import TOP_SELLING_N_CEILING
 
+    if not spec.measures and _delivered_breakdown(spec):
+        # v1's delivery-order report takes this breakdown itself: no measure / top-N question.
+        base = plan_report(
+            spec.model_copy(update={"group_by": [], "top_n": None}, deep=True),
+            refs=refs, today=today, dealer=dealer, delivered_total=True,
+        )
+        if base.status == "run" and _delivered_route_ok(base.route_args):
+            base.spec = base.spec.model_copy(update={"group_by": list(spec.group_by)}, deep=True)
+            return base
     ds = _dataset_for(spec)
     if ds is None:
         return _say(spec.model_copy(update={"dataset": None}, deep=True), _NO_DATASET)
@@ -489,7 +499,7 @@ def plan_report(
         held["compare_period"] = None
     spec = spec.model_copy(update=held, deep=True)
 
-    if group is None and not spec.filters and not dealer and ds.key == "sales":
+    if group is None and not spec.filters and not dealer and not delivered_total and ds.key == "sales":
         # Not a valid ask: no axis and nothing to total (v1 `report_ask.settle`, :623-630).
         return _say(spec, report_ask.CATALOGUE_LINE, notes)
 
@@ -612,6 +622,15 @@ _SALES_REPORT_ARGS = frozenset(
 )
 
 
+def _delivered_route_ok(a: Mapping[str, Any]) -> bool:
+    return (
+        a.get("basis") == "delivered"
+        and a.get("measure") == "amount"
+        and a.get("dataset") in (None, "sales")
+        and set(a) <= _SALES_REPORT_ARGS
+    )
+
+
 def _delivered_sales_report_args(
     plan: Any, fetch: Any, contact_id: Any, space_id: Any, detail_pick: Optional[str] = None
 ) -> Optional[dict[str, Any]]:
@@ -621,9 +640,7 @@ def _delivered_sales_report_args(
     from app.services.chatbot import jsc
 
     a = plan.route_args
-    if a.get("basis") != "delivered" or a.get("measure") != "amount" or a.get("dataset") not in (None, "sales"):
-        return None
-    if not set(a) <= _SALES_REPORT_ARGS:
+    if not _delivered_route_ok(a):
         return None
     semantic: dict[str, Any] = {"date_filter_start": a.get("date_from"), "date_filter_end": a.get("date_to")}
     if a.get("channel"):
@@ -720,7 +737,7 @@ def answer_report(
     if detail_pick:
         # A delivered breakdown v1's report takes runs there, never asking a top N (v1 does not).
         base = spec.model_copy(update={"group_by": [], "top_n": None}, deep=True)
-        plan = plan_report(base, refs=refs, today=today, dealer=dealer)
+        plan = plan_report(base, refs=refs, today=today, dealer=dealer, delivered_total=True)
         if plan.status == "run":
             plan.spec = plan.spec.model_copy(update={"group_by": list(spec.group_by)}, deep=True)
             reply = _delivered_reply(plan, fetch, mcp_call, contact_id, space_id, detail_pick)
