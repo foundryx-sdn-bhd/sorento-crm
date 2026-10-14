@@ -1310,6 +1310,10 @@ class PortalRevisionService:
             return []
         changes: list[dict] = []
         for name in self.editable_fields(adapter.source_entity_type):
+            if name == "customer_id":
+                # An id is never shown (no UUID in the UI); a re-pick reads as the
+                # Customer name change. The snapshot still carries it.
+                continue
             before, after = previous.get(name), current.get(name)
             if before == after:
                 continue

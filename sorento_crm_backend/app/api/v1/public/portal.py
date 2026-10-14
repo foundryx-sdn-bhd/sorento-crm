@@ -492,7 +492,6 @@ class DebtorLookupItem(BaseModel):
     customer_id: str
     debtor_name: str
     customer_code: str
-    debtor_type: Optional[str] = None
     sales_type: Optional[str] = None
 
 

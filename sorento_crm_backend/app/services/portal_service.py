@@ -1483,10 +1483,14 @@ class PortalService:
                             "Pick a registered project from the list - the project field "
                             "does not take free text."
                         )
-                if field == "customer_id" and value not in (None, ""):
-                    from app.services.debtor_type import require_customer
+                if field == "customer_id":
+                    from app.services.debtor_type import link_customer
 
-                    value = require_customer(self.db, value)
+                    value, linked_name = link_customer(
+                        self.db, value, current_id=getattr(row, "customer_id", None)
+                    )
+                    if linked_name:
+                        row.customer_name = linked_name
                 setattr(row, field, value)
         if requestor_field and requestor_field in payload:
             self._apply_requestor_contact(kind, row, payload.get(requestor_field))

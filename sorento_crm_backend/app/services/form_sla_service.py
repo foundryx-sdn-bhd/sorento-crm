@@ -1088,33 +1088,41 @@ class FormSLAOrchestrator:
     ) -> dict:
         """Return the form header row's own fields as a plain dict (for predicate
         evaluation). Empty dict on any miss - never raises."""
-        src = _ENTITY_NUMBER_SOURCE.get(source_entity_type or "")
-        if not src or not source_entity_id:
-            return {}
-        table = src[0]
         try:
-            from sqlalchemy import text as _sql_text
-
-            row = self.db.execute(
-                _sql_text(f"SELECT row_to_json(t) AS j FROM {table} t WHERE t.id = :id"),
-                {"id": str(source_entity_id)},
-            ).first()
-            values = dict(row[0]) if row and row[0] else {}
-            if values and source_entity_type in ("purchase_request", "sponsorship_form"):
-                values.update(self._computed_request_values(str(source_entity_id), values))
-            return values
+            values = self._load_form_field_values_strict(source_entity_type, source_entity_id)
         except Exception:
-            try:
-                self.db.rollback()
-            except Exception:  # noqa: BLE001
-                pass
             logger.warning(
                 "CS pin: failed to load form fields for %s/%s; predicates see no fields.",
                 source_entity_type,
                 source_entity_id,
                 exc_info=True,
             )
+            try:
+                self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
             return {}
+        return values
+
+    def _load_form_field_values_strict(
+        self, source_entity_type: Optional[str], source_entity_id: Optional[str]
+    ) -> dict:
+        """Same as `_load_form_field_values` but a load failure RAISES, so a caller that
+        must tell "failed" from "loaded, empty" (the No CS check) can."""
+        src = _ENTITY_NUMBER_SOURCE.get(source_entity_type or "")
+        if not src or not source_entity_id:
+            return {}
+        table = src[0]
+        from sqlalchemy import text as _sql_text
+
+        row = self.db.execute(
+            _sql_text(f"SELECT row_to_json(t) AS j FROM {table} t WHERE t.id = :id"),
+            {"id": str(source_entity_id)},
+        ).first()
+        values = dict(row[0]) if row and row[0] else {}
+        if values and source_entity_type in ("purchase_request", "sponsorship_form"):
+            values.update(self._computed_request_values(str(source_entity_id), values))
+        return values
 
     def _computed_request_values(self, request_id: str, header_values: dict) -> dict:
         """PR / SF routing values that are not header columns: `product_lines` (has / none,
@@ -1165,7 +1173,10 @@ class FormSLAOrchestrator:
             )
             if not pins:
                 return False
-            form_values = self._load_form_field_values(config.source_entity_type, source_entity_id)
+            # Strict load: a failure raises into the handler below (False), never "empty".
+            form_values = self._load_form_field_values_strict(
+                config.source_entity_type, source_entity_id
+            )
             pin = select_pin_row(pins, form_values)
             return bool(pin) and pin.cs_pic_user_id is None
         except Exception:

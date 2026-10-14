@@ -1276,6 +1276,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           next[name] = value;
         }
       }
+      // A new extracted customer name is free text: it no longer matches the picked customer.
+      if ('customer_name' in aiValues && 'customer_id' in next) next.customer_id = '';
       return next;
     });
     if (payload.alsoAttach && payload.files.length > 0) {

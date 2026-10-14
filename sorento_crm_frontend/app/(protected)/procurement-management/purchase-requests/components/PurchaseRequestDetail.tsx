@@ -808,7 +808,7 @@ export default function PurchaseRequestDetail({
                   )}
                 </>
               )}
-              {canVoid && !isVoided && (
+              {canVoid && !isVoided && !isCompleted && (
                 <DropdownMenuItem
                   variant="destructive"
                   onClick={() => setVoidDialogOpen(true)}

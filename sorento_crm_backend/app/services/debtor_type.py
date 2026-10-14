@@ -55,17 +55,30 @@ def lookup_customers(db, q: str = "", limit: int = 20) -> list[dict]:
     ]
 
 
-def require_customer(db, customer_id) -> str:
-    """The id of an existing customer, else a 422 (a form can only link a real customer)."""
+def link_customer(db, raw, current_id=None):
+    """Resolve a form's customer link: (customer_id, customer_name), or (None, None) to unlink.
+
+    "" / None unlink. The customer must be visible in the caller's company scope, so an
+    unknown id and another company's id get the SAME 422. An inactive customer is refused
+    only when the link is new or changed: re-saving a form already linked to a since
+    deactivated customer stays fine. The returned name is the customer's own, which the
+    caller stores as customer_name so the printed name and the routed customer cannot differ.
+    """
     from uuid import UUID
 
     from app.models.order import Customer
     from app.services.error_handler import AppException
 
+    if raw is None or str(raw).strip() == "":
+        return None, None
+    refuse = AppException(status_code=422, message="Pick a customer from the list.")
     try:
-        cid = str(UUID(str(customer_id).strip()))
+        cid = str(UUID(str(raw).strip()))
     except (TypeError, ValueError):
-        raise AppException(status_code=422, message="Pick a customer from the list.")
-    if db.query(Customer.id).filter(Customer.id == cid).first() is None:
-        raise AppException(status_code=422, message="That customer no longer exists.")
-    return cid
+        raise refuse
+    row = db.query(Customer).filter(Customer.id == cid).first()
+    if row is None:
+        raise refuse
+    if not row.is_active and cid != (str(current_id) if current_id else None):
+        raise refuse
+    return cid, row.customer_name

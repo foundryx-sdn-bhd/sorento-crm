@@ -33,11 +33,11 @@ def backfill_debtor_type(connection) -> int:
         text(
             r"""
             UPDATE customers SET debtor_type = CASE
-                WHEN customer_code LIKE '302-%' THEN 'project_cash'
+                WHEN btrim(customer_code) LIKE '302-%' THEN 'project_cash'
                 ELSE 'project'
             END
             WHERE debtor_type IS NULL
-              AND NOT (customer_code LIKE '301-%' AND customer_name ~* '^\s*CASH\M')
+              AND NOT (btrim(customer_code) LIKE '301-%' AND customer_name ~* '^\s*CASH\M')
             """
         )
     )
