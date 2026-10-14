@@ -692,10 +692,7 @@ class StockDebtService:
             # A pin on a bin OUTSIDE the span covers its line off an event stood up from the
             # pin (AC-S2-1b), which the span's own read (`events`) never holds: listed here
             # for what the pins take of it - the part of that bin this screen can speak to.
-            # The projection lists a reserve's own events below, so one is never listed twice.
-            listed = {event.key for event in events} | {
-                event.key for event in (pool or {}).get("events", [])
-            }
+            listed = {event.key for event in events}
             stood: Dict[str, SupplyEvent] = {}
             for event in result.supply:
                 if event.key in pinned_here and event.key not in listed:
@@ -1516,10 +1513,14 @@ class StockDebtService:
         "Covered by: On hand BRW-IB", Short 0, with the bin at 0 - the pin was confirmed
         after the stock had gone, which choosing the own location allows). Its bin in the
         span with no on-hand event is a bin the read found empty, so the hold is dropped
-        and the line reads short; with an event, `assign()` caps it at what the bin still
-        holds. A bin OUTSIDE the span is still honoured off a stand-in (AC-S2-1b), but for
-        no more than that bin's own free stock (on hand less reserved, `_supply`'s
-        arithmetic), shared by every on-hand hold on it, nearer line first.
+        and the line reads short. A bin OUTSIDE the span is still honoured off a stand-in
+        (AC-S2-1b). Either way a hold pins no more than the bin holds (on hand less
+        reserved, `_supply`'s arithmetic; lines outside this read are not netted, in the
+        span or out of it), shared by every on-hand hold on the bin: confirmed decisions
+        first, then received-SPO placements, each nearer line first. Capped HERE rather than
+        left to `assign()`, because the book's S/O (`_book_so_holds`) and the landed goods
+        (`_landed_holds`) read what a line already holds off these quantities: a pin of 126
+        on a bin of 50 read as 126 there left the order's own SPO free beside a short line.
 
         `lendable_lines` (STOCK-DEBT-LENDABLE, the view only): the line keys that can wait
         for a re-buy. A converted received-SPO placement on such a line is `lendable` - it
@@ -1595,6 +1596,10 @@ class StockDebtService:
                 ProjectSalesOrderLine.id == OrderInquiryRow.so_line_id,
             )
             .outerjoin(
+                SalesOrderLine,
+                SalesOrderLine.id == ProjectSalesOrderLine.core_sales_order_line_id,
+            )
+            .outerjoin(
                 SPOAllocation, SPOAllocation.id == OrderInquiryLink.spo_allocation_id
             )
             .outerjoin(
@@ -1621,11 +1626,18 @@ class StockDebtService:
                 # hold whose SPO side names a retired line.
                 *spo_supply.visible_line_clauses(),
             )
+            # Nearer line first, as the allocation read above.
+            .order_by(
+                SalesOrderLine.required_date.asc().nullslast(),
+                ProjectSalesOrderLine.core_sales_order_line_id,
+                OrderInquiryLink.id,
+            )
             .all()
         )
 
         # STOCK-DEBT-STALE-PIN (see the docstring): what each bin an on-hand hold may name
-        # really holds, read once for the bins outside the span.
+        # still holds, as the holds before it take their share. A bin outside the span is
+        # read once here; one inside it starts from the on-hand event `_supply` read.
         floor_left = self._stand_in_floors(
             product_ids,
             {str(row.warehouse_id) for row in rows}
@@ -1637,18 +1649,20 @@ class StockDebtService:
             """How much of `qty` an on-hand hold at `bin_id` may pin."""
             if span is None:
                 return qty
-            if bin_id in span:
-                # The read looked at this bin. No event means it holds nothing of the
-                # product; with one, `assign()` caps the pin at what it has left.
-                floors = {
-                    event.key
-                    for event in (supply_rows or {}).get(product_id, [])
-                    if event.kind == KIND_ON_HAND
-                }
-                return qty if f"on_hand:{bin_id}" in floors else 0.0
             key = (product_id, bin_id)
-            take = min(qty, floor_left.get(key, 0.0))
-            floor_left[key] = floor_left.get(key, 0.0) - take
+            if key not in floor_left:
+                # No event: the read found the bin empty. No stock row outside the span:
+                # nothing there either.
+                floor_left[key] = next(
+                    (
+                        float(event.qty)
+                        for event in (supply_rows or {}).get(product_id, [])
+                        if event.key == f"on_hand:{bin_id}"
+                    ),
+                    0.0,
+                ) if bin_id in span else 0.0
+            take = min(qty, floor_left[key])
+            floor_left[key] -= take
             return take
 
         for core_line_id, warehouse_id, qty, warehouse_code, product_id in rows:
@@ -1941,7 +1955,7 @@ class StockDebtService:
         at ANY pool may hold a reserve document through a link (a placement pins across
         groups), and walked this way it is netted exactly as under Book=All. That walk
         answers for the reserve stock only: `project` always comes off the page's own `assignments`, which is what its
-        Covered by shows (an out-of-span link is honoured there uncapped).
+        Covered by shows (an out-of-span link is honoured there off a stand-in).
 
         Nothing here is written and nothing is assigned (R45).
         """
