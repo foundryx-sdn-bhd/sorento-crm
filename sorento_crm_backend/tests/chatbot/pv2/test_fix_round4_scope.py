@@ -42,8 +42,10 @@ def _kinds(*args):
     return resolver_reference_kinds(*args)
 
 
-def test_contact_held_to_customer_links_loses_so_and_po_ref_kinds():
-    assert _kinds([SO], False, True) == ["customer_order"]
+def test_contact_held_to_customer_links_keeps_so_and_po_ref_kinds():
+    # PV2-FIX r6: crew 14 Oct, v1 parity: per-match scope (DbResolver._within_links) drops other
+    # customers' matches, so the kinds themselves stay (engine._reference_kinds per_match_scope=True).
+    assert _kinds([SO], False, True) == visible_reference_kinds([SO], False)
 
 
 def test_unrestricted_contact_matches_visible_reference_kinds():

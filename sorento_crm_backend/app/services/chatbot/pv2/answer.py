@@ -233,10 +233,19 @@ def _build_result(state, actions, out, today, pending_in, report_answer, idea_an
                 return TurnV2Result(None, None, str(_attr(idea, "reply_text") or ""), st, actions, "idea", language, trace)
         if report_answer is not None and _is_report(last):
             incoming = last.ask.report if last.ask is not None else None
-            rep = report_answer(last.held.report, _lookup_refs(last), today, last.row, incoming)
+            run_spec = last.held.report
+            picked_group = None
+            if last.pending_kind == "clarify_report_breakdown" and last.picked is not None:
+                picked_group = (last.picked.payload.get("report") or {}).get("group_by")
+            if picked_group:
+                # v1's drill-down pick: run the held report by it, keep the held report as it was.
+                run_spec = run_spec.model_copy(update={"group_by": list(picked_group), "top_n": None}, deep=True)
+            rep = report_answer(run_spec, _lookup_refs(last), today, last.row, incoming)
             st = state.model_copy(deep=True)
             plan = _attr(rep, "plan")
             spec = _attr(plan, "spec") if plan is not None else None
+            if picked_group and _attr(rep, "v1_sales"):
+                spec = last.held.report  # the drill ran v1's report: the total stays held
             if spec is not None:
                 st.held.report = spec
             st.pending = _pending_from(_attr(rep, "pending"), st.turn_no)

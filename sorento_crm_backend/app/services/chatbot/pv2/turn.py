@@ -346,14 +346,12 @@ def _pinned(keys: Any) -> dict[str, Any]:
 
 
 def resolver_reference_kinds(attributes: list[str] | None, is_staff: bool, held_to_links: bool) -> list[str]:
-    """v1's `_reference_kinds(per_match_scope=False)`: PV2 has no per-match customer drop, so a
-    contact held to customer links loses the customer-owned kinds."""
+    """v1's `_reference_kinds(per_match_scope=True)`: the kinds the asker may see. A contact held
+    to customer links keeps them all; `DbResolver._within_links` drops each match whose customer
+    is outside the links, so no other customer's document is ever shown."""
     from app.services.chatbot.contracts import visible_reference_kinds
 
-    kinds = visible_reference_kinds(attributes, is_staff)
-    if held_to_links:
-        kinds = [k for k in kinds if k not in ("sales_order", "customer_po_ref")]
-    return kinds
+    return visible_reference_kinds(attributes, is_staff)
 
 
 def is_staff_contact(db: Any, contact_respond_id: Any, space_id: Any, profile: Any) -> bool:

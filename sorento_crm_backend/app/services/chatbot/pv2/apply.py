@@ -136,7 +136,12 @@ def apply_turn(
         st.pending = None
         return st, [HandOver(ask_index=0, team_key=out.escalation.team_key)]
 
-    if out.clarify.needed or not out.asks:
+    # A clarify flag beside a new_topic ask does not re-ask an OPEN question as a miss: the new
+    # topic replaces it and its own policy asks what it still needs.
+    flagged = out.clarify.needed and not (
+        st.pending is not None and any(a.act == "new_topic" for a in out.asks)
+    )
+    if flagged or not out.asks:
         about = out.clarify.about or "other"
         if st.pending is not None:
             # A garbled answer to the open question re-asks it with its real options and
@@ -204,6 +209,22 @@ def apply_turn(
 # --------------------------------------------------------------------------- #
 
 
+def _answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
+    """An answer that names no option but carries a structured quantity on the held product
+    (under a v1 product pick) or a structured period (under a report question) is a refine of
+    the held subject, not an answer to the open question. Structured fields only."""
+    if pending is None or ask.answer is None or ask.answer.option_key is not None:
+        return False
+    if (
+        pending.kind == "v1_open_question"
+        and pending.v1_kind == "product_pick"
+        and ask.answer.free_value is None
+        and any(e.quantity is not None and e.refers_to_held and not e.key and not e.phrase for e in ask.entities)
+    ):
+        return True
+    return pending.kind in ("clarify_report_measure", "clarify_report_breakdown", "clarify_report_period") and ask.period is not None
+
+
 def _one_ask(
     st: ConversationState,
     i: int,
@@ -227,7 +248,7 @@ def _one_ask(
     if ask.act == "small_talk":
         return SmallTalk(ask_index=i), False
 
-    if ask.act == "answers_bot_question":
+    if ask.act == "answers_bot_question" and not _answer_is_a_refine(ask, pending):
         return _answer(st, i, ask, pending, resolver, policy, language, today, can_offer)
 
     if ask.act == "switch_back":
@@ -411,6 +432,19 @@ def _answer(
 
     held = apply_payload(st.held, picked.payload)
     qs = _Qs(can_offer)
+    if pending.kind == "clarify_report_breakdown" and "report" in picked.payload:
+        # v1's drill-down pick: the held report is unchanged; the reply runs v1's report by it.
+        return (
+            Lookup(
+                ask_index=i,
+                domain=st.held.domain,
+                held=st.held.model_copy(deep=True),
+                ask=ask,
+                picked=picked,
+                pending_kind=pending.kind,
+            ),
+            True,
+        )
     if "report" in picked.payload and held.report is not None:
         _plan_report(st, held, resolver, language, i, qs, today)
     held = _apply_fields(st, held, ask, resolver, policy, language, i, qs, refine=True, today=today)
