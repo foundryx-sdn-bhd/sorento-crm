@@ -398,10 +398,12 @@ def test_delivery_uses_the_reserve_first_so_the_borrow_bin_keeps_what_is_left(
 
 
 def test_a_revision_on_the_ordered_qty_with_a_lower_required_qty_keeps_its_hold(api):
-    """Guard (reviewer round 1): ordered 20, CS required 15, 5 shipped before the revision.
-    A revision of that era planned the 15 still owed off `qty_ordered` (20 - 5), which reads
-    the same as a later revision planning the 15 required. Read the conservative way: the 5
-    are not consumed again, the Reserve 15 still holds 15 (the read before this rule)."""
+    """Guard (reviewer round 1), a known limit of the read: ordered 20, CS required 15,
+    Reserve 15, 5 delivered. The snapshot (`open_qty` 15) cannot tell this revision from one
+    decided before 14 Sep 2026, which planned `qty_ordered` less the 5 already delivered
+    (20 - 5). Read the conservative way, as such an old revision: the 5 are not consumed,
+    the Reserve 15 still holds 15, the read before this rule. Never seen on the dev copy
+    (0 decided lines have `qty_required` below `qty_ordered`)."""
     from app.models.order import SalesOrderLine
 
     client, world, order, line, core_line, _stock_row = _world(
@@ -418,3 +420,24 @@ def test_a_revision_on_the_ordered_qty_with_a_lower_required_qty_keeps_its_hold(
     world.db.commit()
 
     assert _held(world.db, world, line) == Decimal("15")
+
+
+def test_an_autocount_cancel_before_the_confirm_is_not_taken_off_twice(api):
+    """Reviewer round 2: the CB6633-NL shape on a line AutoCount had already cancelled 10
+    of before the confirm. Ordered 472, cancelled 10 (plan 462), Own 336 + Buy 126, then 336
+    delivered (TransferedQty 346, the cancel included): the Own holds 0, not 10."""
+    from app.models.order import SalesOrderLine
+
+    client, world, order, line, core_line, stock = _world(
+        api, ordered="472", delivered="10", on_hand=500
+    )
+    core_line.qty_cancelled = Decimal("10")
+    world.db.commit()
+    _confirm(client, order, _own_336_buy_126(world, line))
+    assert _written_stock_qty(world.db, line) == Decimal("336")
+
+    core_line = world.db.get(SalesOrderLine, core_line.id)
+    core_line.qty_delivered = Decimal("346")
+    world.db.commit()
+
+    assert _held(world.db, world, line) == Decimal("0")
