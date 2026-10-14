@@ -150,6 +150,8 @@ CARRY = FakeResolver({"entities": {
     "product|SRT391-GM": _ex("product", "SRT391-GM"),
     "product|SRT392": _ex("product", "SRT392"),
     "product|mou": _amb("product", ["MOU-1", "MOU-2"]),
+    "customer|cmou": _amb("customer", ["CMOU-1", "CMOU-2"]),
+    "customer|kedai": _ex("customer", "c-kedai", "KEDAI"),
     "sales_order|SO1": _ex("sales_order", "SO1"),
 }})
 WHO = pytest.mark.parametrize("can_offer", [False, True], ids=["staff", "dealer"])
@@ -176,9 +178,10 @@ def _play(*parsed, can_offer=False, state=None):
 
 @WHO
 def test_s1_a_restated_ask_keeps_its_new_details_and_counts_one_miss(can_offer):
-    st, acts = _play(_t(_c("hanlim"), period=SEVENTH), _t(_p("SRT391-GM")), can_offer=can_offer)
+    # # owner rule 15 Oct: a named customer carries; only product then customer asks
+    st, acts = _play(_t(_p("SRT391-GM"), period=SEVENTH), _t(_c("hanlim")), can_offer=can_offer)
     assert _is_carry(acts[0])
-    st, acts = _play(_t(_p("SRT391-GM"), period=OCTOBER), can_offer=can_offer, state=st)
+    st, acts = _play(_t(_c("hanlim"), period=OCTOBER), can_offer=can_offer, state=st)
     assert _is_carry(acts[0]) and st.pending.misses == 1, st.pending.misses
     st, acts = _play(_pick("2"), can_offer=can_offer, state=st)
     assert isinstance(acts[0], Lookup)
@@ -187,26 +190,29 @@ def test_s1_a_restated_ask_keeps_its_new_details_and_counts_one_miss(can_offer):
 
 @WHO
 def test_s2_a_pick_on_the_carry_question_replays_only_the_carried_item_and_the_period_never_other_held_items(can_offer):
-    first = _t(_c("hanlim"), entity("sales_order", phrase="SO1"), period=SEVENTH)
-    for pick, customers in (("1", ["c-hanlim"]), ("2", [])):
-        st, acts = _play(first, _t(_p("SRT391-GM")), can_offer=can_offer)
+    # # owner rule 15 Oct: a named customer carries; only product then customer asks
+    first = _t(_p("SRT391-GM"), entity("sales_order", phrase="SO1"), period=SEVENTH)
+    for pick, products in (("1", ["SRT391-GM"]), ("2", [])):
+        st, acts = _play(first, _t(_c("hanlim")), can_offer=can_offer)
         assert _is_carry(acts[0]), type(acts[0]).__name__
         st, acts = _play(_pick(pick), can_offer=can_offer, state=st)
         assert isinstance(acts[0], Lookup)
-        assert _keys(st, "product") == ["SRT391-GM"] and _keys(st, "customer") == customers
+        assert _keys(st, "customer") == ["c-hanlim"] and _keys(st, "product") == products
         assert _keys(st, "sales_order") == [], "a held SO stays out of the replay"
 
 
 @WHO
 def test_s3_the_carry_question_fires_when_the_new_kind_was_held_before_too(can_offer):
-    st, acts = _play(_t(_c("hanlim"), _p("SRT391-GM"), period=SEVENTH), _t(_p("SRT392")), can_offer=can_offer)
-    assert _is_carry(acts[0]), f"{type(acts[0]).__name__}: HANLIM and the period must not drop silently"
+    # # owner rule 15 Oct: a named customer carries; only product then customer asks
+    st, acts = _play(_t(_c("hanlim"), _p("SRT391-GM"), period=SEVENTH), _t(_c("kedai")), can_offer=can_offer)
+    assert _is_carry(acts[0]), f"{type(acts[0]).__name__}: the product and the period must not drop silently"
 
 
 @pytest.mark.parametrize("act", ["new_topic", "refines_held"])
 @WHO
 def test_s4_a_new_item_that_needs_its_own_question_still_gets_the_carry_question_after_that_pick(can_offer, act):
-    st, acts = _play(_t(_c("hanlim"), period=SEVENTH), _t(_p("mou"), act=act), can_offer=can_offer)
+    # # owner rule 15 Oct: a named customer carries; only product then customer asks
+    st, acts = _play(_t(_p("SRT391-GM"), period=SEVENTH), _t(_c("cmou"), act=act), can_offer=can_offer)
     kinds = []
     for _ in range(3):
         if isinstance(acts[0], Lookup):

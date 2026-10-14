@@ -31,14 +31,16 @@ SEVENTH = Period(preset=None, n=None, date_from=date(2026, 10, 7), date_to=date(
 OCTOBER = Period(preset=None, n=None, date_from=date(2026, 10, 1), date_to=date(2026, 10, 31))
 
 
+# owner rule 15 Oct: a named customer carries; only product then customer asks. The question mechanics below are
+# therefore built product first, customer second (the customer-then-product direction is in test_r4a_fix2.py).
 def _turn1(can_offer):
-    first = out(ask(act="new_topic", domain="order", entities=[entity("customer", phrase="hanlim")], period=SEVENTH))
+    first = out(ask(act="new_topic", domain="order", entities=[entity("product", phrase="SRT391-GM")], period=SEVENTH))
     return apply_turn(new_state(NOW), first, resolver=R, now=NOW, can_offer_handover=can_offer)
 
 
 def _turn2(can_offer, act="new_topic", **kw):
     st, _ = _turn1(can_offer)
-    second = out(ask(act=act, domain="order", entities=[entity("product", phrase="SRT391-GM")], **kw))
+    second = out(ask(act=act, domain="order", entities=[entity("customer", phrase="hanlim")], **kw))
     return apply_turn(st, second, resolver=R, now=NOW, can_offer_handover=can_offer)
 
 
@@ -59,16 +61,16 @@ def _is_carry_question(act):
 
 @WHO
 @pytest.mark.parametrize("act", ["new_topic", "refines_held"])
-def test_rg1_a_new_product_over_a_carried_customer_asks_only_the_customer_or_all_and_fetches_nothing(can_offer, act):
+def test_rg1_a_new_customer_over_a_carried_product_asks_only_the_product_or_all_and_fetches_nothing(can_offer, act):
     st, acts = _turn2(can_offer, act=act)
     assert len(acts) == 1 and _is_carry_question(acts[0]), type(acts[0]).__name__
     assert len(acts[0].pending.options) == 2
     reply = answer.replay_reply(st, acts)
-    assert "SRT391-GM" in reply and "HANLIM" in reply and "customers" in reply.lower(), reply
+    assert "SRT391-GM" in reply and "HANLIM" in reply and "products" in reply.lower(), reply
 
 
 @WHO
-def test_rg1b_pick_1_keeps_the_earlier_customer_and_the_new_product_with_the_earlier_period(can_offer):
+def test_rg1b_pick_1_keeps_the_earlier_product_and_the_new_customer_with_the_earlier_period(can_offer):
     st, acts = _turn2(can_offer)
     st, acts = apply_turn(st, _pick("1"), resolver=R, now=NOW, can_offer_handover=can_offer)
     assert isinstance(acts[0], Lookup), type(acts[0]).__name__
@@ -77,11 +79,11 @@ def test_rg1b_pick_1_keeps_the_earlier_customer_and_the_new_product_with_the_ear
 
 
 @WHO
-def test_rg1b_pick_2_clears_only_the_customer_and_keeps_the_earlier_period(can_offer):
+def test_rg1b_pick_2_clears_only_the_product_and_keeps_the_earlier_period(can_offer):
     st, acts = _turn2(can_offer)
     st, acts = apply_turn(st, _pick("2"), resolver=R, now=NOW, can_offer_handover=can_offer)
     assert isinstance(acts[0], Lookup), type(acts[0]).__name__
-    assert _keys(st, "customer") == [] and _keys(st, "product") == ["SRT391-GM"]
+    assert _keys(st, "product") == [] and _keys(st, "customer") == ["c-hanlim"]
     assert st.held.period is not None and st.held.period.date_from == date(2026, 10, 7)
 
 
@@ -96,16 +98,16 @@ def test_rg1b_a_subject_less_reply_while_the_question_is_open_re_asks_and_its_pe
     st, acts = apply_turn(st, _pick("1"), resolver=R, now=NOW, can_offer_handover=False)
     assert isinstance(acts[0], Lookup)
     assert st.held.period is not None and st.held.period.date_from == date(2026, 10, 1)
-    assert _keys(st, "customer") == ["c-hanlim"]
+    assert _keys(st, "product") == ["SRT391-GM"]
 
 
 # ------------------------------------------------------------------ RG-1b: where the question is not asked (guards: green today)
 
 
 @WHO
-def test_rg1b_guard_this_customer_carries_without_a_question(can_offer):
+def test_rg1b_guard_this_product_carries_without_a_question(can_offer):
     st, _ = _turn1(can_offer)
-    ents = [entity("customer", refers_to_held=True), entity("product", phrase="SRT391-GM")]
+    ents = [entity("product", refers_to_held=True), entity("customer", phrase="hanlim")]
     st, acts = apply_turn(st, out(ask(act="new_topic", domain="order", entities=ents)), resolver=R, now=NOW,
                           can_offer_handover=can_offer)
     assert isinstance(acts[0], Lookup)
@@ -115,7 +117,7 @@ def test_rg1b_guard_this_customer_carries_without_a_question(can_offer):
 @WHO
 def test_rg1b_guard_a_new_ask_that_switches_to_inventory_is_no_carry_question(can_offer):
     st, _ = _turn1(can_offer)
-    inv = out(ask(act="new_topic", domain="inventory", entities=[entity("product", phrase="SRT391-GM")]))
+    inv = out(ask(act="new_topic", domain="inventory", entities=[entity("customer", phrase="hanlim")]))
     st, acts = apply_turn(st, inv, resolver=R, now=NOW, can_offer_handover=can_offer)
     assert isinstance(acts[0], Lookup) and acts[0].domain == "inventory"
 
@@ -128,7 +130,7 @@ def test_rg1b_guard_a_new_ask_that_opens_a_report_is_no_carry_question(can_offer
                      period=None, compare_to=None, compare_period=None, grain=None, threshold=None, sort=None,
                      top_n=5, basis="delivered")
     st, _ = _turn1(can_offer)
-    parsed = out(ask(act="new_topic", domain="sales", report=rep, entities=[entity("product", phrase="SRT391-GM")]))
+    parsed = out(ask(act="new_topic", domain="sales", report=rep, entities=[entity("customer", phrase="hanlim")]))
     st, acts = apply_turn(st, parsed, resolver=R, now=NOW, can_offer_handover=can_offer)
     assert not _is_carry_question(acts[0])
 
@@ -188,11 +190,15 @@ def _db_turns(db, customer_scope, can_offer):
     return apply_turn(st, second, resolver=resolver, now=NOW, can_offer_handover=can_offer)
 
 
-def test_rg1b_guard_a_carried_customer_inside_the_dealers_own_scope_gets_no_carry_question(db):
+# owner rule 15 Oct: a named customer carries; only product then customer asks. The dealer's OWN customer is held
+# like any other and is never dropped (a dropped one widens the reply to the dealer's other accounts).
+def test_rg1b_a_carried_customer_inside_the_dealers_own_scope_stays_held_with_no_question(db):
     st, acts = _db_turns(db, "own", can_offer=True)
     assert isinstance(acts[0], Lookup), f"{type(acts[0]).__name__}: v1 never asks about a contact's own customer"
+    assert _keys(st, "product") == ["SRT391-GM"] and len(_keys(st, "customer")) == 1, st.held.refs
 
 
-def test_rg1b_the_same_carry_over_an_unscoped_resolver_is_asked(db):
+def test_rg1b_the_same_carry_over_an_unscoped_resolver_is_also_no_question_and_keeps_the_customer(db):
     st, acts = _db_turns(db, "unscoped", can_offer=True)
-    assert _is_carry_question(acts[0]), type(acts[0]).__name__
+    assert isinstance(acts[0], Lookup), type(acts[0]).__name__
+    assert _keys(st, "product") == ["SRT391-GM"] and len(_keys(st, "customer")) == 1, st.held.refs

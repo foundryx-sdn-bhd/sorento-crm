@@ -18,7 +18,8 @@ from tests.chatbot.pv2.test_rgaps_b_fix1 import (
 
 
 def _to_all(can_offer):
-    st, acts = _play(_t(_c("hanlim"), period=SEVENTH), _t(_p("mou")), can_offer=can_offer)
+    # # owner rule 15 Oct: a named customer carries; only product then customer asks
+    st, acts = _play(_t(_p("SRT391-GM"), period=SEVENTH), _t(_c("cmou")), can_offer=can_offer)
     assert isinstance(acts[0], ClarifyAct) and acts[0].pending.kind == "clarify_entity", type(acts[0]).__name__
     return _play(_pick("all"), can_offer=can_offer, state=st)
 
@@ -29,14 +30,14 @@ def test_h1_an_all_answer_to_the_entity_question_asks_the_carry_question_and_fet
     assert _is_carry(acts[0]), f"{type(acts[0]).__name__}: straight to a Lookup on HANLIM + MOU-1 + MOU-2"
 
 
-@pytest.mark.parametrize("pick,customers", [("1", ["c-hanlim"]), ("2", [])], ids=["only HANLIM", "all customers"])
+@pytest.mark.parametrize("pick,products", [("1", ["SRT391-GM"]), ("2", [])], ids=["only the product", "all products"])
 @WHO
-def test_h1_the_carry_pick_after_all_keeps_both_items_and_the_customer_only_on_pick_1(can_offer, pick, customers):
+def test_h1_the_carry_pick_after_all_keeps_both_items_and_the_product_only_on_pick_1(can_offer, pick, products):
     st, acts = _to_all(can_offer)
     assert _is_carry(acts[0]), type(acts[0]).__name__
     st, acts = _play(_pick(pick), can_offer=can_offer, state=st)
     assert isinstance(acts[0], Lookup), type(acts[0]).__name__
-    assert _keys(st) == ["MOU-1", "MOU-2"] and _keys(st, "customer") == customers
+    assert _keys(st, "customer") == ["CMOU-1", "CMOU-2"] and _keys(st) == products
 
 
 # ------------------------------------------------------------------ H2: a stored set ref is re-checked active

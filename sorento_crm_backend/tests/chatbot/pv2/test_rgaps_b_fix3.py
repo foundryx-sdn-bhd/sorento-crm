@@ -18,8 +18,9 @@ from tests.chatbot.pv2.test_rgaps_b_fix1 import (
 
 R = FakeResolver({"entities": {
     "customer|hanlim": _ex("customer", "c-hanlim", "HANLIM"),
-    "product|mou": _amb("product", ["MOU-1", "MOU-2"]),
-    "product|ber": _amb("product", ["BER-1", "BER-2"]),
+    "product|SRT391-GM": _ex("product", "SRT391-GM"),
+    "customer|cmou": _amb("customer", ["CMOU-1", "CMOU-2"]),
+    "customer|cber": _amb("customer", ["CBER-1", "CBER-2"]),
 }})
 
 
@@ -36,35 +37,36 @@ def _lookup_keys(acts, kind):
 
 
 def _to_ber_question(can_offer, carry_pick):
-    st, acts = _play(_t(_c("hanlim"), period=SEVENTH), _t(_p("mou"), _p("ber")), _pick("all"), can_offer=can_offer)
-    assert _is_carry(acts[0]), f"{type(acts[0]).__name__}: the carry question comes after the mou answer"
+    # # owner rule 15 Oct: a named customer carries; only product then customer asks
+    st, acts = _play(_t(_p("SRT391-GM"), period=SEVENTH), _t(_c("cmou"), _c("cber")), _pick("all"), can_offer=can_offer)
+    assert _is_carry(acts[0]), f"{type(acts[0]).__name__}: the carry question comes after the cmou answer"
     st, acts = _play(_pick(carry_pick), can_offer=can_offer, state=st)
-    assert isinstance(acts[0], ClarifyAct) and "BER-1" in [o.label for o in acts[0].pending.options], \
+    assert isinstance(acts[0], ClarifyAct) and "CBER-1" in [o.label for o in acts[0].pending.options], \
         f"{type(acts[0]).__name__}: the BER question is next"
     return st
 
 
 @WHO
-def test_s1_carry_pick_1_then_a_ber_pick_keeps_hanlim_and_both_mou_and_the_ber(can_offer):
+def test_s1_carry_pick_1_then_a_ber_pick_keeps_the_product_and_both_cmou_and_the_cber(can_offer):
     st = _to_ber_question(can_offer, "1")
     st, acts = _play(_pick("1"), can_offer=can_offer, state=st)
-    assert _lookup_keys(acts, "product") == ["BER-1", "MOU-1", "MOU-2"], "today only BER-1 is left"
-    assert _lookup_keys(acts, "customer") == ["c-hanlim"]
+    assert _lookup_keys(acts, "customer") == ["CBER-1", "CMOU-1", "CMOU-2"], "today only CBER-1 is left"
+    assert _lookup_keys(acts, "product") == ["SRT391-GM"]
 
 
 @WHO
-def test_s1_carry_pick_2_then_a_ber_pick_keeps_both_mou_and_the_ber_and_no_customer(can_offer):
+def test_s1_carry_pick_2_then_a_ber_pick_keeps_both_cmou_and_the_cber_and_no_product(can_offer):
     st = _to_ber_question(can_offer, "2")
     st, acts = _play(_pick("1"), can_offer=can_offer, state=st)
-    assert _lookup_keys(acts, "product") == ["BER-1", "MOU-1", "MOU-2"], "today only BER-1 is left"
-    assert _lookup_keys(acts, "customer") == []
+    assert _lookup_keys(acts, "customer") == ["CBER-1", "CMOU-1", "CMOU-2"], "today only CBER-1 is left"
+    assert _lookup_keys(acts, "product") == []
 
 
 @WHO
 def test_s1_guard_all_on_the_ber_question_keeps_all_four(can_offer):
     st = _to_ber_question(can_offer, "1")
     st, acts = _play(_pick("all"), can_offer=can_offer, state=st)
-    assert _lookup_keys(acts, "product") == ["BER-1", "BER-2", "MOU-1", "MOU-2"]
+    assert _lookup_keys(acts, "customer") == ["CBER-1", "CBER-2", "CMOU-1", "CMOU-2"]
 
 
 # S2 (a stale held set code) is pinned by test_rgaps_b_fix4.py::test_k3a / test_k3b: it resolves like a fresh ask.

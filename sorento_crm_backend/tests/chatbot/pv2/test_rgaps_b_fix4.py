@@ -97,12 +97,13 @@ def test_k1_which_held_question_at_the_cap_names_what_is_missing_and_the_held_su
 
 
 def test_k1_guard_carry_question_at_the_cap_names_the_customer_and_a_subject():
-    st, acts = _play(_t(_c("hanlim"), period=SEVENTH), _t(_p("SRT391-GM")))
+    # # owner rule 15 Oct: a named customer carries; only product then customer asks
+    st, acts = _play(_t(_p("SRT391-GM"), period=SEVENTH), _t(_c("hanlim")))
     assert _is_carry(acts[0])
     for _ in range(2):
-        st, acts = _play(_t(_p("SRT391-GM")), state=st)
+        st, acts = _play(_t(_c("hanlim")), state=st)
     reply = answer.replay_reply(st, acts)
-    assert "I still need" in reply and "customer" in reply.lower() and "HANLIM" in reply, reply
+    assert "I still need" in reply and "product" in reply.lower() and "SRT391-GM" in reply, reply
     assert "more detail" not in reply.lower(), reply
 
 
@@ -134,18 +135,19 @@ def _keys_of(acts, kind):
 @WHO
 @pytest.mark.parametrize("pick", ["1", "2"])
 def test_k2_a_carry_pick_with_a_missed_item_looks_up_the_found_items_and_reports_the_miss(dbk, can_offer, pick):
-    miss_ask = out(ask(act="new_topic", domain="order", entities=[_p("SRT392"), _p("ZZZ999")]))
+    # # owner rule 15 Oct: a named customer carries; only product then customer asks
+    miss_ask = out(ask(act="new_topic", domain="order", entities=[_c("HANLIM TRADING SDN BHD"), _c("ZZZ999")]))
     _, nocarry = _dturn(dbk, miss_ask, can_offer=can_offer)
     assert isinstance(nocarry[0], Lookup) and [m.phrase for m in nocarry[0].misses] == ["ZZZ999"], "guard: found + miss"
-    first = out(ask(act="new_topic", domain="order", entities=[_c("HANLIM TRADING SDN BHD")], period=SEVENTH))
+    first = out(ask(act="new_topic", domain="order", entities=[_p("SRT392")], period=SEVENTH))
     st, _ = _dturn(dbk, first, can_offer=can_offer)
     st, acts = _dturn(dbk, miss_ask, state=st, can_offer=can_offer)
     assert _is_carry(acts[0]), type(acts[0]).__name__
     st, acts = _dturn(dbk, _pick(pick), state=st, can_offer=can_offer)
     assert isinstance(acts[0], Lookup), type(acts[0]).__name__
-    assert _keys_of(acts, "product") == _keys_of(nocarry, "product")
+    assert _keys_of(acts, "customer") == _keys_of(nocarry, "customer")
     assert [(m.kind, m.phrase) for m in acts[0].misses] == [(m.kind, m.phrase) for m in nocarry[0].misses]
-    assert len(_keys_of(acts, "customer")) == (1 if pick == "1" else 0)
+    assert len(_keys_of(acts, "product")) == (1 if pick == "1" else 0)
 
 
 # ------------------------------------------------------------------ K3: a stale held set code resolves like a fresh ask
@@ -205,6 +207,7 @@ def test_k4_all_replaces_the_held_product_like_a_single_pick_does():
 
 
 def test_k4_guard_all_keeps_a_same_kind_sibling_from_the_same_ask():
+    # # owner rule 15 Oct: a named customer carries; only product then customer asks (customer then products: no carry question; the branch below covers a stale build)
     two = out(ask(act="new_topic", domain="order", entities=[_p("SRT392"), _p("mou")]))
     st, acts = _play(_t(_c("hanlim"), period=SEVENTH), two, _pick("all"))
     if _is_carry(acts[0]):

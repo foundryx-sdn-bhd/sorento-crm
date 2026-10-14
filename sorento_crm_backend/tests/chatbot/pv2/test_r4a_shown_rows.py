@@ -191,13 +191,14 @@ def test_r4a_1b_guard_row_pick_beyond_pv2s_own_rows_is_a_miss():
 
 
 def test_r4a_2_held_shows_the_printed_product_code_beside_its_kind():
-    """RED: a held product whose label is a description prints the description at HEAD, not the code."""
+    """GUARD (green on HEAD; test_r4a_fix2.py::test_open2 is the red one): a held product prints its resolver label, `<code> <name>` (R4a fix 1 B1, lead ruling: the label as before
+    R4a; the code is always in it). Both the code and the name appear."""
     from app.services.chatbot.pv2.state import Held, ResolvedRef
 
-    # R4a fix 1 B1: the resolver marks a code key; HELD prints only marked keys
-    h = Held(domain="inventory", refs={"product": [ResolvedRef(kind="product", key="SRTWC286-SH", label="Black seat cover short", code_key=True)]})
+    h = Held(domain="inventory", refs={"product": [ResolvedRef(kind="product", key="SRTWC286-SH", label="SRTWC286-SH Black seat cover short")]})
     held_block = _memory(mk_state(h)).split("PENDING QUESTION")[0]
     assert re.search(r"product\W{0,3}SRTWC286-SH", held_block), held_block
+    assert "Black seat cover short" in held_block, held_block
 
 
 def test_r4a_2_guard_held_never_prints_a_customer_key_or_uuid():
