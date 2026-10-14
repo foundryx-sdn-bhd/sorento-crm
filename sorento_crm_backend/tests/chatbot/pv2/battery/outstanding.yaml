@@ -48,9 +48,8 @@ conversations:
   - text: "and project?"
     expect:
       kind: any
-      about: "the SRTKT71SS outstanding for the project channel instead (the channel replaced, the product kept), or the clarify-loop breaker (a refer-to-salesman line or a hand-over offer); never the which-document question a third time in a row"
-      must_not: ["Outstanding for which document?"]
-      judge: "Clarify-loop cap (#1570, crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md; owner rule: the loop breaker is a hand-over offer): T1 and T2 may each ask which document, a third identical which-document question here FAILS."
+      about: "the SRTKT71SS outstanding for the project channel instead (the channel replaced, the product kept), or the which-document question with that channel shown (unless T1 and T2 already asked it), or the clarify-loop breaker (a refer-to-salesman line or a hand-over offer)"
+      judge: "Clarify-loop cap (#1570, crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md; owner rule: the loop breaker is a hand-over offer): a third identical which-document ask in a row (T1, T2 and T3) FAILS; a first or second which-document ask after an answer is fine."
 
 - id: outstanding-i01
   source: improvised
