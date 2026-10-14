@@ -1,0 +1,484 @@
+# Runbook: n8n reaches the CRM over the tailnet (HA-N8N-PRIVATE-PATH)
+
+Owner-run. Nothing here is automated, and nothing in the repo touches prod. Plan:
+`documentation/plans/ops/PLAN-n8n-private-path-14oct.md`. Companion runbook:
+`documentation/runbooks/prod-edge-lockdown.md` (its step numbers are written "edge step N" below).
+
+## Why
+
+On 26 Aug the Cloudflare to origin leg stalled. Bot reply p95 went from 10 s to 327 s while the
+origin itself answered in 32 ms. n8n reaches the CRM three ways today, and only one of them is
+private:
+
+| What | Today | After this runbook |
+| --- | --- | --- |
+| CRM API (about 151 workflow files) | `https://<CRM_DOMAIN>/...`, through Cloudflare | same URL, same TLS certificate, but the name resolves to `<CRM_TS_IP>` inside the n8n containers |
+| MCP (`MCP Client` / `MCP Client1` nodes) | `http://<CRM_ORIGIN>:8765/mcp`, plain http over the internet | `http://crm-private.internal:8765/mcp`, inside WireGuard |
+| CRM DB (`sorento-crm-db` credential, BL-049) | `<CRM_ORIGIN>:6432` over the internet | `crm-private.internal:6432`, inside WireGuard |
+
+The trick is Docker's `extra_hosts`: it writes lines into each n8n container's `/etc/hosts`. The
+API keeps its real hostname, so SNI, the certificate check and nginx's `server_name` all still
+match, and none of the 151 workflow files change. Only the MCP nodes and the DB credential
+change, because they name the raw address today.
+
+Everyone else (browsers, Respond.io, AutoCount, Cloudflare) is untouched: public DNS does not
+change.
+
+## Placeholders
+
+Never write the real values into the repo, a PR or a comment.
+
+| Placeholder | Meaning |
+| --- | --- |
+| `<CRM_DOMAIN>` | the CRM's public hostname (proxied by Cloudflare) |
+| `<CRM_ORIGIN>` | public IPv4 of the CRM box |
+| `<N8N_HOST>` | public IPv4 of the n8n box |
+| `<CRM_TS_IP>` | the CRM box's Tailscale address (`tailscale ip -4` on the CRM box) |
+| `<N8N_TS_IP>` | the n8n box's Tailscale address (`tailscale ip -4` on the n8n box) |
+| `<N8N_DIR>` | the directory holding the n8n box's `docker-compose.yml` (step 3 finds it) |
+| `crm-private.internal` | a name that exists only in the n8n containers' `/etc/hosts`. Not a secret, and not a real DNS name: `.internal` is reserved for private use and never resolves publicly. |
+
+## Order and time
+
+| Step | What | Time | Breaks anything if wrong? |
+| --- | --- | --- | --- |
+| 0 | Pre-checks on the CRM box (nginx listen, certificate, pgbouncer binding) | 10 min | no, read-only |
+| 1 | Tailscale on both boxes | 10 min | no |
+| 2 | CRM box: let tailnet traffic in (nginx 8765 allowlist, ufw, pgbouncer) | 10 min | no, adds access only |
+| 3 | n8n box: `extra_hosts` | 10 min | yes, n8n restarts; keep the rollback block open |
+| 4 | n8n UI: MCP nodes and the `sorento-crm-db` credential | 15 min | yes, per node; each has its own rollback |
+| 5 | Checks: timing curl, one test-number chatbot turn | 10 min | no |
+| 6 | After 48 h with no rollback: delete the public 6432 / 8765 rules in Hostinger | 5 min | yes; rollback is re-adding two rules |
+
+Do steps 3 to 5 outside office hours. n8n restarts once in step 3.
+
+## Step 0. Pre-checks on the CRM box (read-only)
+
+The prod nginx config is hand-edited on the box and not in git (only the upstreams file is
+written by `scripts/blue_green_deploy.sh:84-94`, into `/etc/nginx/conf.d/sorento_upstreams.conf`).
+So these facts can only be read on the box.
+
+### 0.1 Does the `<CRM_DOMAIN>` vhost listen on every interface?
+
+```bash
+sudo nginx -T 2>/dev/null | grep -nE '^\s*(server_name|listen|ssl_certificate)\b'
+```
+
+- Check: the server block whose `server_name` is `<CRM_DOMAIN>` has `listen 443 ssl` (or
+  `listen [::]:443 ssl` plus `listen 443 ssl`) with **no address in front of the port**. A bare
+  port binds every interface, `tailscale0` included, so nothing needs changing.
+- If it reads `listen <CRM_ORIGIN>:443 ssl`, change it to `listen 443 ssl` (step 2.1). Do NOT add
+  `listen <CRM_TS_IP>:443`: after a reboot nginx can start before tailscaled has that address, and
+  nginx then refuses to start at all, taking the public site down with it.
+- Check the same for the `listen 8765` block (MCP). It should also have no address in front.
+
+### 0.2 Is the certificate publicly trusted?
+
+n8n will check the certificate itself now, with nobody in between, so it must be one that a
+normal client trusts:
+
+```bash
+sudo nginx -T 2>/dev/null | awk '/server_name .*<CRM_DOMAIN>/,/}/' | grep -m1 ssl_certificate
+# then, with the path it printed:
+sudo openssl x509 -in <that path> -noout -issuer -subject -enddate -ext subjectAltName
+```
+
+- Check: the issuer is Let's Encrypt (`O = Let's Encrypt`), the SAN list contains `<CRM_DOMAIN>`,
+  and `notAfter` is in the future. Then the same certificate serves the tailnet path with no
+  change.
+- If the issuer is **Cloudflare Origin CA**: stop here and tell crew. That certificate is only
+  trusted by Cloudflare, so n8n would reject it. The fix is a Let's Encrypt certificate with a
+  DNS-01 challenge, which edge step 5.2 already offers; do not pick the Origin CA option there
+  while n8n uses this path.
+- Check: `sudo certbot renew --dry-run` passes. The tailnet path uses the same file, so renewal
+  covers it automatically.
+
+### 0.3 How is pgbouncer published?
+
+```bash
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep 6432
+```
+
+- `0.0.0.0:6432->6432/tcp`: it already answers on `tailscale0`. Step 2.3 has nothing to do.
+- `127.0.0.1:6432->6432/tcp` (after edge step 4): step 2.3 forwards it onto the tailnet.
+
+- Rollback: nothing to roll back.
+
+## Step 1. Tailscale on both boxes
+
+On the CRM box, then on the n8n box:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --accept-dns=false --ssh=false
+```
+
+`--accept-dns=false` keeps Tailscale away from `/etc/resolv.conf`, so Docker's own DNS on both
+boxes stays exactly as it is. The command prints a login URL; open it and approve the machine.
+
+Then, in the Tailscale admin console (<https://login.tailscale.com/admin/machines>), for **each**
+of the two machines: click the `...` menu on its row, then **Disable key expiry**. A server whose
+key expires drops off the tailnet silently after 180 days.
+
+- Check, on each box: `tailscale ip -4` prints a `100.x.y.z` address. Write them down as
+  `<CRM_TS_IP>` and `<N8N_TS_IP>` (in your password manager, not in the repo).
+- Check, on the n8n box: `tailscale ping -c 5 <CRM_TS_IP>`. The last line must say
+  `via <CRM_ORIGIN>:41641` (a direct connection), not `via DERP(...)`. A DERP path is relayed
+  through Tailscale's servers: it works, but it puts a third party's network back in the
+  middle, which is the problem this runbook removes. If it says DERP, add one Hostinger rule on
+  the CRM box: hPanel, **VPS**, the CRM server, **Security**, **Firewall**, the active group,
+  **Edit**, **Add rule**: Action **Accept**, Protocol **UDP**, Port **41641**, Source
+  **Custom** `<N8N_HOST>`. Wait two minutes and ping again.
+- Check: `tailscale status` on each box lists the other one.
+- Rollback: `sudo tailscale down` on either box (and remove the UDP rule if you added it).
+
+### Optional: limit what n8n can reach
+
+If your tailnet policy (<https://login.tailscale.com/admin/acls>) is still the default "allow all",
+you can leave it for now; nothing else changes. If you already keep a policy, or want one, ADD a
+rule like this (do not replace your existing rules, or you may cut your own laptop off):
+
+```jsonc
+"grants": [
+  // n8n box -> CRM box: the API, MCP and pgbouncer only
+  { "src": ["<N8N_TS_IP>"], "dst": ["<CRM_TS_IP>"], "ip": ["tcp:443", "tcp:8765", "tcp:6432"] }
+]
+```
+
+- Check: the admin console accepts the policy (it validates on save), and step 5 still passes.
+- Rollback: the admin console keeps the policy history; restore the previous version.
+
+## Step 2. CRM box: let tailnet traffic in
+
+### 2.1 nginx
+
+Save the config first: `sudo nginx -T > ~/nginx-T-before-tailnet.txt 2>&1`.
+
+1. Only if step 0.1 found an address in front of 443: change that line to `listen 443 ssl;`
+   (keep `http2` or any other flag it had).
+2. In the `listen 8765` server block, the edge step 2 allowlist gets one more line, above
+   `deny all;`:
+
+   ```nginx
+   allow <N8N_TS_IP>;      # n8n over the tailnet (n8n-private-path.md)
+   ```
+
+3. `sudo nginx -t && sudo nginx -s reload`
+
+- Check, from the n8n box host (not the container yet):
+  `curl -s -o /dev/null -w '%{http_code}\n' http://<CRM_TS_IP>:8765/mcp` prints `200`, `405` or
+  `406` (the same three the release check accepts, `.github/workflows/deploy.yml:2117-2121`).
+- Check, from the n8n box host:
+  `curl -s -o /dev/null -w '%{http_code} %{time_total}s\n' --resolve <CRM_DOMAIN>:443:<CRM_TS_IP> https://<CRM_DOMAIN>/`
+  prints a `2xx` or `3xx` code with no certificate error.
+- Rollback: delete the `allow <N8N_TS_IP>;` line, restore the `listen` line from
+  `~/nginx-T-before-tailnet.txt` if you changed it, then `sudo nginx -t && sudo nginx -s reload`.
+
+### 2.2 ufw (only if it is active)
+
+```bash
+sudo ufw status | head -1
+```
+
+If it prints `Status: active`, nginx (a host process) is subject to it, so allow the tailnet
+interface. If it prints `inactive`, skip this.
+
+```bash
+sudo ufw allow in on tailscale0 from <N8N_TS_IP> to any port 443,8765,6432 proto tcp
+```
+
+- Check: the two curls in 2.1 pass.
+- Rollback: `sudo ufw delete allow in on tailscale0 from <N8N_TS_IP> to any port 443,8765,6432 proto tcp`.
+
+### 2.3 pgbouncer (only if step 0.3 showed `127.0.0.1:6432`)
+
+Forward the loopback port onto the tailnet. Do not bind pgbouncer to `<CRM_TS_IP>` in the
+compose: docker can start before tailscaled after a reboot, and pgbouncer would then fail to
+start, taking the backend with it (edge step 4 says the same).
+
+```bash
+tailscale serve --help | grep -A2 -- '--tcp'      # confirm the flag on your version first
+sudo tailscale serve --bg --tcp 6432 tcp://127.0.0.1:6432
+```
+
+- Check, from the n8n box host: `nc -z -w 5 <CRM_TS_IP> 6432 && echo ok-6432`.
+- Rollback: `sudo tailscale serve --tcp 6432 off` (or `sudo tailscale serve reset`).
+
+## Step 3. n8n box: `extra_hosts`
+
+Find the compose project that runs n8n, and every n8n service in it (queue mode has a main, one or
+more workers and maybe a webhook service; **every one of them** needs the lines, because any of
+them can run a workflow):
+
+```bash
+docker ps --format '{{.Names}}\t{{.Image}}' | grep -i n8n
+docker inspect <one n8n container> --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'
+```
+
+The second command prints `<N8N_DIR>`. Then:
+
+```bash
+cd <N8N_DIR>
+cp docker-compose.yml docker-compose.yml.bak-$(date +%Y%m%d)
+cp .env .env.bak-$(date +%Y%m%d) 2>/dev/null || true
+echo 'CRM_PRIVATE_IP=<CRM_TS_IP>' >> .env
+```
+
+In `docker-compose.yml`, add this block to **each** n8n service (`n8n`, `n8n-worker`, and so on):
+
+```yaml
+    extra_hosts:
+      - "<CRM_DOMAIN>:${CRM_PRIVATE_IP}"
+      - "crm-private.internal:${CRM_PRIVATE_IP}"
+```
+
+If a service already has `extra_hosts`, add the two lines to it instead of a second block. Then
+recreate (a plain `restart` does not rewrite `/etc/hosts`):
+
+```bash
+docker compose config | grep -A3 extra_hosts       # both lines, with the 100.x address filled in
+docker compose up -d                                # recreates only the services whose config changed
+```
+
+- Check, for each n8n container: `docker exec <container> getent hosts <CRM_DOMAIN>` prints
+  `<CRM_TS_IP>`, and `docker exec <container> getent hosts crm-private.internal` prints the same.
+- Check: the n8n editor opens, and the executions list shows new runs succeeding (the API path is
+  now live for every workflow).
+- Rollback: `cp docker-compose.yml.bak-<date> docker-compose.yml && docker compose up -d`. Every
+  workflow is back on Cloudflare within a minute. The `CRM_PRIVATE_IP` line in `.env` is harmless
+  without the compose lines; leave it or delete it.
+
+## Step 4. n8n UI: MCP nodes and the DB credential
+
+These two name `<CRM_ORIGIN>` today, so `extra_hosts` alone does not move them. Change them to
+`crm-private.internal`, which step 3 maps to the tailnet.
+
+### 4.1 MCP
+
+In each workflow that holds an MCP client node (crew's grep at the end lists them; at least
+`MCP Client` and `MCP Client1`): open the node, set **Endpoint** / **SSE Endpoint** to
+
+```
+http://crm-private.internal:8765/mcp
+```
+
+then **Save** the workflow (and publish, if your n8n version separates the two).
+
+- Check: run one execution that reaches the node (or step 5's chatbot turn); the node is green.
+- Rollback: set the endpoint back to `http://<CRM_ORIGIN>:8765/mcp` and save.
+
+### 4.2 The `sorento-crm-db` credential
+
+n8n, **Credentials** (left sidebar, or **Overview**, **Credentials**), open `sorento-crm-db`.
+Change **Host** from `<CRM_ORIGIN>` to `crm-private.internal`. Leave the port at `6432` and
+everything else as it is. Click **Save**; n8n tests the connection on save.
+
+- Check: the save shows "Connection tested successfully". Then run one `live-respond-*`
+  execution (or wait for the human-intervened sweeper's next tick) and confirm it is green.
+- Rollback: set **Host** back to `<CRM_ORIGIN>` and save.
+
+## Step 5. Checks
+
+### 5.1 The API goes over the tailnet, and how fast
+
+The n8n image may not ship `curl`, so this uses the Node.js that every n8n image has. Run it in
+one n8n container:
+
+```bash
+docker exec -i <n8n container> node - <<'EOF'
+const https = require('https');
+const t0 = Date.now(); let tConn, tTls, peer;
+const req = https.get('https://<CRM_DOMAIN>/api/v1/master-data/products?limit=1', res => {
+  res.resume();
+  res.on('end', () => console.log(
+    `status=${res.statusCode} peer=${peer} cf-ray=${res.headers['cf-ray'] || 'none'}`,
+    `connect=${tConn - t0}ms tls=${tTls - t0}ms total=${Date.now() - t0}ms`));
+});
+req.on('socket', s => {
+  s.on('connect', () => { tConn = Date.now(); peer = s.remoteAddress; });
+  s.on('secureConnect', () => { tTls = Date.now(); });
+});
+req.on('error', e => { console.error('ERROR', e.message); process.exit(1); });
+EOF
+```
+
+- Check: `peer=<CRM_TS_IP>` and `cf-ray=none` (Cloudflare was not in the path).
+- Check: `status=401` (or `403`) is expected with no key, and proves the backend answered. `total` should be
+  in the tens of milliseconds; a few hundred on the first try is the TLS handshake plus a cold
+  connection, so run it three times.
+- Check: an error mentioning a certificate means step 0.2 is not satisfied. Roll back step 3.
+- For comparison, the Cloudflare path from the n8n HOST (no `extra_hosts` there):
+  `curl -s -o /dev/null -w '%{remote_ip} %{time_connect}s %{time_appconnect}s %{time_total}s\n' 'https://<CRM_DOMAIN>/api/v1/master-data/products?limit=1'`.
+- If the same request works from the n8n HOST with `--resolve <CRM_DOMAIN>:443:<CRM_TS_IP>` but
+  hangs at TLS from the container, it is the tailnet's smaller MTU (1280) against Docker's 1500.
+  Clamp it on the n8n box, then retry:
+  `sudo iptables -t mangle -A FORWARD -o tailscale0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu`
+  (rollback: the same command with `-D` instead of `-A`; make it permanent with
+  `iptables-persistent` only once it is proven needed).
+
+MCP and the DB, from the same container:
+
+```bash
+docker exec -i <n8n container> node -e "
+const net=require('net');
+for (const p of [8765, 6432]) { const t0=Date.now();
+  const s=net.connect(p,'crm-private.internal',()=>{console.log(p,'ok',Date.now()-t0+'ms',s.remoteAddress);s.end();});
+  s.on('error',e=>console.log(p,'ERROR',e.message)); }"
+```
+
+- Check: both lines print `ok` with `<CRM_TS_IP>`.
+
+### 5.2 One chatbot turn on the test number
+
+1. On the CRM box, watch for n8n's calls: `sudo tail -f /var/log/nginx/access.log | grep <N8N_TS_IP>`
+   (your access log path may differ; `sudo nginx -T | grep access_log` shows it).
+2. From the WhatsApp test number, ask the bot one product question (for example a stock or price
+   question you have asked it before).
+
+- Check: the bot replies in about the time it did before the change (single-digit seconds), and
+  the reply is a real answer, not the error fallback.
+- Check: the `tail` shows `/api/v1/...` lines from `<N8N_TS_IP>` during the turn.
+- Check: in n8n, the turn's executions are green, including the MCP node.
+- Rollback: step 3's rollback, then step 4's.
+
+## Step 6. Delete the public 6432 and 8765 rules (after 48 hours with no rollback)
+
+Once n8n has run on the tailnet for 48 hours, nothing outside the box needs the public 6432 and
+8765 rules any more.
+
+First confirm nothing still uses them, on the CRM box (same method as edge step 0; run it a few
+times over ten minutes):
+
+```bash
+for p in 6432 8765; do echo "== $p"
+  sudo conntrack -L -p tcp --dport $p 2>/dev/null \
+    | awk '{for(i=1;i<=NF;i++) if($i ~ /^src=/){print $i; break}}' | sort | uniq -c
+done
+```
+
+- Check: no `src=<N8N_HOST>` line. (`100.x` lines are the tailnet; `127.0.0.1` and `172.x` are
+  the box itself.) If `<N8N_HOST>` still shows, a node or credential still names `<CRM_ORIGIN>`;
+  find it with crew's grep below before going on.
+
+Then, in hPanel:
+
+1. **VPS**, pick the CRM server, **Security**, **Firewall**.
+2. On the active group (edge step 1 named it `crm-edge`), open the menu, **Edit**.
+3. Delete the rule **TCP 6432, source `<N8N_HOST>`** (edge rule 4): its row's delete (bin) icon,
+   then confirm.
+4. Delete the rule **TCP 8765, source `<N8N_HOST>`** (edge rule 5) the same way.
+5. Keep edge rule 6 (8765 from `<CRM_ORIGIN>`) unless edge step 0 showed the CRM calls MCP by a
+   container name or `localhost`; it is about the box calling itself, not n8n.
+6. If the page shows the group out of sync, click **Synchronize**. Wait two minutes.
+
+- Check, from the n8n box HOST: `nc -z -w 5 <CRM_ORIGIN> 6432; echo $?` prints `1` (timed out),
+  and `nc -z -w 5 <CRM_TS_IP> 6432 && echo ok` prints `ok`.
+- Check: edge step 7's outside checks still show 6432 and 8765 closed.
+- Check: one more chatbot turn on the test number (step 5.2).
+- Rollback: **Add rule** twice: Accept, TCP, port 6432, source Custom `<N8N_HOST>`; and the same
+  for 8765.
+
+Also, once `family-fetch` (below) no longer names `<CRM_ORIGIN>`, edge step 5.4 does not need its
+"443 from `<N8N_HOST>`" rule either.
+
+## Failover (Tier 1 standby box)
+
+Everything n8n knows about where the CRM lives is ONE line in `<N8N_DIR>/.env`:
+
+```
+CRM_PRIVATE_IP=<CRM_TS_IP>
+```
+
+When a standby CRM box exists, join it to the tailnet (step 1) and give it the same nginx,
+certificate and pgbouncer setup (steps 0 and 2). To fail n8n over:
+
+```bash
+cd <N8N_DIR>
+sed -i 's/^CRM_PRIVATE_IP=.*/CRM_PRIVATE_IP=<STANDBY_TS_IP>/' .env
+docker compose up -d          # recreate so /etc/hosts is rewritten
+```
+
+- Check: step 5.1 shows `peer=<STANDBY_TS_IP>`.
+- Rollback: the same two commands with `<CRM_TS_IP>`.
+
+Both the API name and `crm-private.internal` follow that one value, so MCP and the DB move with
+it. (Public traffic is a separate switch, the Cloudflare DNS record.)
+
+## Alternative: plain WireGuard instead of Tailscale
+
+Use this only if Tailscale is not wanted. It has no relay fallback and no admin console, and you
+own the keys.
+
+On each box: `sudo apt install -y wireguard`, then `wg genkey | tee privatekey | wg pubkey > publickey`.
+
+CRM box `/etc/wireguard/wg0.conf`:
+
+```ini
+[Interface]
+Address = 10.77.0.1/30
+ListenPort = 51820
+PrivateKey = <CRM_WG_PRIVATE_KEY>
+
+[Peer]
+PublicKey = <N8N_WG_PUBLIC_KEY>
+AllowedIPs = 10.77.0.2/32
+```
+
+n8n box `/etc/wireguard/wg0.conf`:
+
+```ini
+[Interface]
+Address = 10.77.0.2/30
+PrivateKey = <N8N_WG_PRIVATE_KEY>
+
+[Peer]
+PublicKey = <CRM_WG_PUBLIC_KEY>
+Endpoint = <CRM_ORIGIN>:51820
+AllowedIPs = 10.77.0.1/32
+PersistentKeepalive = 25
+```
+
+Then `sudo systemctl enable --now wg-quick@wg0` on both, and in Hostinger on the CRM box add
+**Accept, UDP, 51820, source Custom `<N8N_HOST>`**. Everything else is this runbook with
+`<CRM_TS_IP>` = `10.77.0.1`, `<N8N_TS_IP>` = `10.77.0.2` and `tailscale0` = `wg0`. Step 2.3's
+`tailscale serve` has no WireGuard equivalent: either keep pgbouncer on `0.0.0.0:6432` (the
+Hostinger rule removal in step 6 still closes it publicly), or add a small `socat` systemd unit
+from `10.77.0.1:6432` to `127.0.0.1:6432` that starts after `wg-quick@wg0`.
+
+- Check: `sudo wg show` on each box shows a recent `latest handshake`, and `ping -c 3 10.77.0.1`
+  works from the n8n box.
+- Rollback: `sudo systemctl disable --now wg-quick@wg0` on both, and delete the UDP rule.
+
+## Repo side (what this lane checked)
+
+- The CRM's own MCP calls use `settings.ai_assistant_mcp_url`
+  (`sorento_crm_backend/app/config.py:333`): an env-only setting (`AI_ASSISTANT_MCP_URL`) whose
+  default is `http://localhost:8765/mcp`. No raw address in code, and it already takes any
+  hostname, so nothing changes here. `tests/chatbot/test_s6b_fetch_lane.py` already pins that the
+  chatbot lane reads the setting and never a literal host.
+- The release's MCP check (`.github/workflows/deploy.yml:2116`) curls `http://127.0.0.1:8765/mcp`
+  ON the CRM box over SSH. That is loopback, not the origin, and it tests the host nginx this
+  runbook keeps, so it stays as is.
+- `scripts/blue_green_deploy.sh:5` still describes the public MCP path in a comment. It is left
+  alone so this PR stays docs-only; update it when step 6 is done.
+
+## For crew: grep the n8n repo
+
+The n8n workflow repo (`sorento_crm_n8n`) was not readable from the cloud sandbox. Run this at its
+root and attach the output (file and node names only, never the matched values) to the lane:
+
+```bash
+# 1. Anything naming the raw origin or its ports. Each hit is a node step 4 must repoint
+#    (MCP -> http://crm-private.internal:8765/mcp, Postgres -> the credential, HTTPS -> <CRM_DOMAIN>).
+grep -rlnE '<CRM_ORIGIN>|:8765|:6432|:5432' --include='*.json' .
+# 2. Every MCP client node and its endpoint field.
+grep -rnE '"type": *"@n8n/n8n-nodes-langchain\.mcpClient(Tool)?"' --include='*.json' . | cut -d: -f1 | sort -u
+# 3. Every node that uses the Postgres credential, by credential name.
+grep -rln '"sorento-crm-db"' --include='*.json' .
+# 4. Nodes that wave the certificate through. After step 3 they get a real certificate, so the
+#    flag can go; with the raw IP (family-fetch, n8n-changes.md:929-932) they need repointing to
+#    https://<CRM_DOMAIN>/... first.
+grep -rln '"allowUnauthorizedCerts": *true' --include='*.json' .
+# 5. Count of API calls through the hostname (expect about 151 files): these need NO change.
+grep -rl '<CRM_DOMAIN>' --include='*.json' . | wc -l
+```

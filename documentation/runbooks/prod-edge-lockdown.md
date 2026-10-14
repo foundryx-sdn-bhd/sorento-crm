@@ -274,8 +274,8 @@ direct to the origin.
 
 Follow-up, blocker-class and not this lane: MCP needs a credential of its own. Have the server
 check a bearer token on every call, and have n8n send it. Until then the firewall is the only
-control. Also, n8n's traffic to 8765 crosses the internet in clear text. Moving it to
-`http://<CRM_TS_IP>:8765/mcp` over Tailscale closes that.
+control. Also, n8n's traffic to 8765 crosses the internet in clear text. Moving it onto
+Tailscale closes that: `documentation/runbooks/n8n-private-path.md`.
 
 ## Step 3. SSH: key-only, no root password, fail2ban
 
@@ -435,6 +435,10 @@ Use either:
 
 - a Cloudflare Origin CA certificate on nginx (15 years, no renewal); or
 - certbot with a DNS-01 challenge.
+
+Once n8n reaches the origin directly over the tailnet (`documentation/runbooks/n8n-private-path.md`),
+only the second works: n8n checks the certificate itself, and it does not trust Cloudflare's
+Origin CA.
 
 Plain HTTP-01 renewal through Cloudflare usually still works, but test it after the firewall
 change.
