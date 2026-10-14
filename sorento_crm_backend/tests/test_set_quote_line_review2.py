@@ -197,6 +197,38 @@ def test_r2_4_a_po_line_with_an_unknown_code_and_no_product_still_raises_it():
         assert len(_unresolved(db, po, result)) == 1
 
 
+def test_r2_4_a_po_line_keyed_by_a_quoted_product_code_still_raises_it():
+    from app.services.project_so_draft_service import ProjectSODraftService
+
+    with blank_session() as db:
+        env = _env(db)
+        product_set = _set(db, env["company_id"], env["category"], env["uom"])
+        product = _product(db, env["category"], env["uom"], f"ZZT-QP-{_uid()[:6]}")
+        quoted = _save(db, env, {"product_id": product.id, "unit_price": "10.00", "quantity": "5"})
+        code = quoted.product_code_snapshot or product.product_code
+        po, schedule_version = _so_chain(db, env, product_set, po_qty="5", po_code=code)
+
+        result = ProjectSODraftService(db).build(po.id, schedule_version.id)
+
+        assert len(_unresolved(db, po, result)) == 1
+
+
+def test_r2_4_a_quoted_set_line_with_an_empty_parts_snapshot_still_raises_it():
+    from app.services.project_so_draft_service import ProjectSODraftService
+
+    with blank_session() as db:
+        env = _env(db)
+        product_set = _set(db, env["company_id"], env["category"], env["uom"])
+        quoted = _set_line(db, env, unit_price="900.00", quantity="100")
+        quoted.set_parts_snapshot = []
+        db.flush()
+        po, schedule_version = _so_chain(db, env, product_set, po_qty="100")
+
+        result = ProjectSODraftService(db).build(po.id, schedule_version.id)
+
+        assert len(_unresolved(db, po, result)) == 1
+
+
 # ------------------------------------------------------------------ R2-5 SQL NULL storage
 
 
