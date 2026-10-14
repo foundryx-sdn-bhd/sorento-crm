@@ -24,3 +24,22 @@ R1-10 MEMORY is byte-identical to today for the same state (the register is not 
 R1-11 A non-staff contact asking for a product's PO list is not refused for lacking purchase_orders.placed (owner
       ruling 14 Oct); the answer matches v1's for the same contact. Staff behaviour is unchanged.
 R1-12 v1 turns (parser mode v1) are unaffected: no register write, same replies.
+
+## R2 Subject stack + PendingQuestion.origin
+R2-1 Every subject gets a stable `sid` when it starts; S1 = held, S2..S5 = topics newest first (cap 5 as today). A subject
+     keeps its sid when pushed to topics and when switched back to.
+R2-2 Register entries carry the sid of the subject they were printed under; after a new topic pushes that subject,
+     `subject_label(state, entry.subject)` is "S2".
+R2-3 `subject_at(state, "S<n>")` returns that subject; an unknown or out-of-range S id returns None.
+R2-4 MEMORY is byte-identical to today for the same state (no S<n>/R<n> rendering in R2).
+R2-5 Whenever a question interrupts an ask (entity clarify, did-you-mean, flagged clarify, a missed ask's question, the v1
+     picker after a PV2 Lookup), `PendingQuestion.origin` holds the full original ask.
+R2-6 A pick completes the ORIGINAL ask with the picked entity: "any eta mou?" -> pick "1" answers ETA (incoming) for the
+     picked product; an ask with a period ("stock for SRTWC286 last month") keeps its period after the pick; attachment
+     kinds, quantity, specs and status likewise.
+R2-7 State saved before R2 (with `deferred`, no `origin`, no `sid`) loads and a pick on it behaves as today.
+R2-8 Every PV2 answer path that prints rows writes the register (each path named in the test); the stock-ask render
+     records the rows it prints.
+R2-9 output_structurer drops order `lines` whenever the Products field is hidden (test).
+R2-10 `printed_rows` stays aligned with the envelope's `figures` when an answer is not a dict.
+R2-11 No LLM calls; v1 turns unchanged.

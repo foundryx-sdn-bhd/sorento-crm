@@ -1,6 +1,7 @@
 # PLAN: PV2 redesign - typed refs, answer register, subject stack (14 Oct 2026)
 
-Status: Build, round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
+Status: Build, round R2 (R1 merged into crew/pv2 as 941fb867a via #1670; R2 on branch `crew/pv2-redesign-r2`).
+Earlier: round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
 branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). CODE AND TESTS ONLY until crew relays
 the owner's OK for LLM spend: no parser calls, no evals, no live checks. pytest -n 1.
 UAC: `pv2-redesign-14oct-acceptance-criteria.md` (beside this file).
@@ -73,6 +74,28 @@ Build:
    non-staff PO list; v1 parity test first.
 Not in R1: MEMORY rendering of the register, row picks from the register (the stale LAST ANSWER ROWS after a Lookup,
 explorer note 3, is fixed in R4 with the register), the subject stack.
+
+## R2 design (subject stack + PendingQuestion.origin + R1 carry-overs)
+Facts (crew/pv2 941fb867a): `ConversationState.held: Held` + `topics: list[Held]` (newest first, `TOPICS_CAP` 5,
+`push_topic` state.py:235, `topic_key` T<n> :243, rendered as TOPICS in history.py:156); `PendingQuestion.deferred`
+(domain, attachment kinds, quantity) set at apply.py:161-192 and completed by `_complete_deferred` (apply.py:1242) on a
+pick (:538); `RegisterEntry.subject` is the constant "S1" (R1).
+Build:
+1. Stable subject identity: `Held.sid` ("s<n>" from a `ConversationState.next_sid` counter) assigned when a subject
+   starts; kept when the subject is pushed to topics and when it is switched back. Stack view helpers:
+   `subject_label(state, sid) -> "S1".."S5" | None` (S1 = held, S2..S5 = topics newest first) and
+   `subject_at(state, "S<n>") -> Held | None`. Storage stays `held` + `topics` (no rename); MEMORY unchanged (T-keys)
+   until R4 renders S<n>.
+2. The register records the printing subject's sid (`RegisterEntry.subject`), so an entry still names its subject after
+   a new topic pushes it.
+3. `PendingQuestion.origin`: the full original ask (Ask dump) wherever a question interrupts an ask (every place that
+   sets `deferred` today, plus the v1 picker mirror when PV2 had sent a Lookup). A pick completes the ORIGINAL ask
+   with the picked entity: domain, attachment kinds, quantity, period, specs, status and report all come from origin,
+   through the normal apply path (no second copy of the merge logic). `deferred` is read only for state saved before R2.
+4. R1 carry-overs: (a) every PV2 answer path that prints rows writes the register, not only `_run_answer`, and the
+   stock-ask render records what it prints; (b) a test that output_structurer pops order `lines` when Products is
+   hidden; (c) `printed_rows` and `envelope_of`'s figures stay aligned when a non-dict answer is dropped.
+Not in R2: rendering S<n>/R<n> in MEMORY, parser schema changes (R4), registry columns (R3).
 
 ## Work split (R1)
 - Tester: red tests per UAC R1 (pure builder tests from recorded envelopes, engine-hook test, so_status/MCP/report row
