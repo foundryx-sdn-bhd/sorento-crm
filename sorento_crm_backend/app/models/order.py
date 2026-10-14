@@ -121,6 +121,7 @@ class Customer(Base, CompanyScopedMixin):
         "sales_agent_id",
         "account_level",
         "customer_group_id",
+        "debtor_type",
     ]
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -180,6 +181,9 @@ class Customer(Base, CompanyScopedMixin):
     # ledger at level 1). NULL = not a numbered account. A setting the office edits; the
     # name marker is read once, by migration acct_ledger_0001's seed, never again.
     account_level = Column(SmallInteger, nullable=True)
+    # project | project_cash | cash_sales (app/services/debtor_type.py). NULL = not set; the
+    # insert listener below fills it on create, so only a hand-cleared row stays blank.
+    debtor_type = Column(String(20), nullable=True)
     # The group this ledger belongs to (see `CustomerGroup`). NULL = ungrouped.
     customer_group_id = Column(
         UUID(as_uuid=False),
@@ -236,6 +240,10 @@ class Customer(Base, CompanyScopedMixin):
         Index("ix_customers_account_owner_user_id", "account_owner_user_id"),
         Index("ix_customers_customer_group_id", "customer_group_id"),
         CheckConstraint("account_level >= 1", name="ck_customers_account_level"),
+        CheckConstraint(
+            "debtor_type IS NULL OR debtor_type IN ('project', 'project_cash', 'cash_sales')",
+            name="ck_customers_debtor_type",
+        ),
         # Composite uniqueness - see column docstring. Created as a functional
         # UNIQUE INDEX by migration 220 so case + whitespace differences don't
         # produce silent duplicates, then re-created WITH company_id by migration
@@ -268,6 +276,16 @@ def _assign_customer_id(target, args, kwargs):  # noqa: ANN001
     A caller that supplies its own id keeps it.
     """
     kwargs.setdefault("id", str(uuid.uuid4()))
+
+
+@event.listens_for(Customer, "before_insert")
+def _fill_customer_debtor_type(mapper, connection, target):  # noqa: ANN001
+    """Every creation path is ORM, so one listener gives a new customer its default debtor
+    type (DT-3). Insert only: an update never re-derives it."""
+    if target.debtor_type is None:
+        from app.services.debtor_type import default_debtor_type
+
+        target.debtor_type = default_debtor_type(target.customer_code, target.customer_name)
 
 
 class CustomerContact(Base, CompanyScopedMixin):

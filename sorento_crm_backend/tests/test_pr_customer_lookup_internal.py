@@ -1,7 +1,7 @@
 """RED tests - FORM-ROUTING-CONDITIONS PC-4 (internal side).
 
 * GET /api/v1/procurement/purchase-requests/lookups/customers?q= returns the same item shape as
-  the portal lookup, gated like the other PR routes (a user holding no permission gets 403).
+  the portal lookup, gated like the other PR routes (sign-in only; unauthenticated gets 401).
 * Internal PR / SF create + update accept `customer_id`, return it, and refuse an unknown id.
 
 Blank Postgres schema, every row seeded here.
@@ -87,9 +87,12 @@ def test_lookup_returns_the_shared_item_shape(db, monkeypatch):
     assert items[pj.customer_code]["sales_type"] == "project"
 
 
-def test_lookup_without_permission_is_403(db, monkeypatch):
-    res = _client(db, monkeypatch, granted=False).get(f"{BASE}/lookups/customers", params={"q": "ZZT"})
-    assert res.status_code == 403, res.text
+def test_lookup_unauthenticated_is_401(db):
+    """Gate = the PR edit route's: sign-in only (no PR permission slug exists), so no
+    get_current_user override means 401."""
+    app.dependency_overrides[get_db] = lambda: db
+    res = TestClient(app).get(f"{BASE}/lookups/customers", params={"q": "ZZT"})
+    assert res.status_code == 401, res.text
 
 
 def test_lookup_route_is_not_swallowed_by_the_id_route(db, monkeypatch):

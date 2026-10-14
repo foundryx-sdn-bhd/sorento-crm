@@ -26,7 +26,7 @@ import { searchCustomerGroupsSelect } from '../../customer-groups/services/custo
 import { useCreateCustomer, useUpdateCustomer, useCustomer } from '../hooks/useCustomers';
 import { useCustomerSalesAgentOptions } from '../hooks/useCustomerSalesAgentOptions';
 import { CustomerSchema, type CustomerSchemaType } from '../forms/customer-schema';
-import type { CustomerFormData } from '../types/customer.types';
+import { DEBTOR_TYPE_OPTIONS, type CustomerFormData } from '../types/customer.types';
 import ListPager from '@/components/common/ListPager';
 import { customersPagerQuery } from '../hooks/useCustomers';
 
@@ -84,6 +84,7 @@ export default function CustomerForm({ customerId, onSuccess }: CustomerFormProp
       sales_agent_id: null,
       account_level: null,
       customer_group_id: null,
+      debtor_type: null,
     },
     mode: 'onTouched',
   });
@@ -103,6 +104,7 @@ export default function CustomerForm({ customerId, onSuccess }: CustomerFormProp
         sales_agent_id: customer.sales_agent_id || null,
         account_level: customer.account_level ?? null,
         customer_group_id: customer.customer_group_id ?? null,
+        debtor_type: customer.debtor_type ?? null,
       });
       setFormInitialized(true);
     }
@@ -129,6 +131,8 @@ export default function CustomerForm({ customerId, onSuccess }: CustomerFormProp
         account_level: data.account_level ?? null,
         // Explicit null clears the group, same as the level.
         customer_group_id: data.customer_group_id ?? null,
+        // Explicit null clears the type, same as the level.
+        debtor_type: data.debtor_type ?? null,
       };
 
       if (isEditMode && customerId) {
@@ -284,6 +288,27 @@ export default function CustomerForm({ customerId, onSuccess }: CustomerFormProp
                           onChange={(v) => field.onChange(v ? Number(v) : null)}
                           options={ACCOUNT_LEVEL_OPTIONS}
                           placeholder="No account level"
+                          clearable
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="debtor_type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Debtor type</FormLabel>
+                      <FormControl>
+                        <SearchableSelect
+                          aria-label="Debtor type"
+                          value={field.value || ''}
+                          onChange={(v) => field.onChange(v || null)}
+                          options={DEBTOR_TYPE_OPTIONS}
+                          placeholder="No debtor type"
                           clearable
                         />
                       </FormControl>
