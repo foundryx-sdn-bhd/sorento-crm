@@ -66,36 +66,27 @@ def _stored(db, table, col, rid):
 # ------------------------------------------------------------------ 1. NC-8 report
 
 
-def test_nc8_report_counts_completed_by_default_and_offers_it():
+def test_nc5_report_statuses_have_no_completed():
     from app.services.reports.datasets import sponsorship_forms as ds
 
-    assert "completed" in ds.DEFAULT_STATUSES
-    assert ("completed", "Completed") in list(ds.STATUS_LABELS)
-    with blank_session() as db:
-        assert ("completed", "Completed") in list(ds.status_options(db))
+    assert tuple(ds.DEFAULT_STATUSES) == ("approved", "processed_by_cs")
+    assert "completed" not in [v for v, _ in ds.STATUS_LABELS]
+    assert "Completed" not in [label for _, label in ds.STATUS_LABELS]
 
 
-def test_nc8_a_completed_sponsorship_form_matches_the_default_status_filter():
+def test_nc5_an_approved_no_cs_form_matches_the_default_status_filter():
+    """Guard: a No CS form stays approved, and approved is already a default status."""
     from app.services.reports.datasets import sponsorship_forms as ds
 
     with blank_session() as db:
-        ids = {}
-        for status in ("completed", "draft"):
-            pid = str(uuid.uuid4())
-            db.add(PurchaseRequestHeader(id=pid, request_type="sponsorship_form", status=status, source="manual"))
-            ids[status] = pid
+        pid = str(uuid.uuid4())
+        db.add(PurchaseRequestHeader(id=pid, request_type="sponsorship_form", status="approved", source="manual"))
         db.flush()
         cond = ds.status_condition(None, list(ds.DEFAULT_STATUSES))
-        hit = {
-            str(r[0])
-            for r in db.execute(
-                text("SELECT id FROM purchase_requests WHERE id IN (:a, :b) AND " + str(
-                    cond.compile(compile_kwargs={"literal_binds": True})
-                ).replace("purchase_requests.", "purchase_requests."))
-                .bindparams(a=ids["completed"], b=ids["draft"])
-            )
-        }
-        assert hit == {ids["completed"]}
+        sql = "SELECT id FROM purchase_requests WHERE id = :a AND " + str(
+            cond.compile(compile_kwargs={"literal_binds": True})
+        )
+        assert [str(r[0]) for r in db.execute(text(sql).bindparams(a=pid))] == [pid]
 
 
 # ------------------------------------------------------------------ 2. DT-4 gate

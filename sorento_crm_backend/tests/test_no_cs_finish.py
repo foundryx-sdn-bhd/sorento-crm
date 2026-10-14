@@ -1,11 +1,13 @@
-"""RED tests - FORM-ROUTING-CONDITIONS group NC (No CS outcome + the Completed status).
+"""RED tests - FORM-ROUTING-CONDITIONS group NC (No CS outcome; owner ruling 14 Oct 22:02:
+a No CS form STAYS Approved, there is no Completed status).
 
 * NC-3  requestor's winning rule is No CS (cs_pic_user_id NULL): approving creates NO
-        customer_service tracker, status becomes `completed`, approval_status stays `approved`,
-        the approval-stage tracker resolves as today.
+        customer_service tracker, status AND approval_status stay `approved`, the approval-stage
+        tracker resolves as today.
 * NC-4  a PIC rule, or no matching rule: unchanged (tracker created, status stays `approved`).
-* NC-5  `completed` is terminal: Void -> 409, Processed by CS / Close -> validation error,
-        portal revision refuses it with its own "completed" sentence.
+* NC-5  a No CS form behaves like any Approved form: Void allowed, portal revision allowed when
+        the config allows `approved`, Processed by CS not refused by the backend. No `completed`
+        value exists in the void-blocked / revision-terminal / report constants.
 
 The approval is exercised through `FormSLAOrchestrator.emit_event(..., "approved")`, the single
 funnel the approve route uses. Seed chain borrowed from tests/test_cs_routing_targets.py.
@@ -13,6 +15,7 @@ funnel the approve route uses. Seed chain borrowed from tests/test_cs_routing_ta
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 from datetime import datetime, timedelta
 
 import pytest
@@ -138,14 +141,14 @@ def _approve(db, kind, pid, contact_id):
 
 
 @pytest.mark.parametrize("kind", ["purchase_request", "sponsorship_form"])
-def test_no_cs_rule_completes_the_form_at_approval_with_no_cs_tracker(kind):
+def test_no_cs_rule_leaves_the_form_approved_with_no_cs_tracker(kind):
     with blank_session() as db:
         s, pid, approval = _world(db, kind, rule="no_cs")
 
         header = _approve(db, kind, pid, s.contact_id)
 
         assert _cs_trackers(db, pid) == []
-        assert header.status == "completed"
+        assert header.status == "approved"
         assert header.approval_status == "approved"
         db.refresh(approval)
         assert approval.is_resolved is True
@@ -175,7 +178,7 @@ def test_the_winning_rule_decides_not_any_no_cs_rule():
         assert header.status == "approved"
 
 
-def test_no_cs_rule_matching_a_no_lines_form_completes_it():
+def test_no_cs_rule_matching_a_no_lines_form_leaves_it_approved():
     with blank_session() as db:
         s = _seed(db)
         policy = _policy(db)
@@ -190,7 +193,7 @@ def test_no_cs_rule_matching_a_no_lines_form_completes_it():
         header = _approve(db, "sponsorship_form", pid, s.contact_id)
 
         assert _cs_trackers(db, pid) == []
-        assert header.status == "completed"
+        assert header.status == "approved"
 
 
 # ------------------------------------------------------------------ NC-4 (unchanged paths)
@@ -218,65 +221,69 @@ def test_no_matching_rule_still_round_robins_and_status_stays_approved(kind):
         assert header.status == "approved"
 
 
-# ------------------------------------------------------------------ NC-5 terminal
+# ------------------------------------------------------------------ NC-5 behaves like any Approved form
 
 
-def test_void_on_a_completed_form_is_a_conflict():
-    import tests._void_harness as H
-    from app.services.procurement_service import PurchaseRequestService
-
-    db = H.make_session()
-    try:
-        uid = H.new_user(db)
-        H.ACTOR_GRANTS.clear()
-        H.ACTOR_GRANTS[uid] = {"procurement.purchase_requests.void"}
-        mp = pytest.MonkeyPatch()
-        try:
-            H.patch_permissions(mp)
-            H.patch_serializers(mp)
-            mp.setattr(PurchaseRequestService, "_notify_request_voided", lambda self, *a, **k: None)
-            pid = H.new_pr(db, request_type="sponsorship_form", status="completed", approval_status="approved")
-            r = H.make_client(db, {"id": uid}).post(
-                f"/api/v1/procurement/purchase-requests/{pid}/void", json={"void_reason": "too late"}
-            )
-            assert r.status_code == 409, r.text
-        finally:
-            mp.undo()
-            H.ACTOR_GRANTS.clear()
-    finally:
-        db.close()
+def _no_cs_approved(db, kind="sponsorship_form"):
+    s, pid, _ = _world(db, kind, rule="no_cs")
+    header = _approve(db, kind, pid, s.contact_id)
+    assert _cs_trackers(db, pid) == []
+    return s, pid, header
 
 
-@pytest.mark.parametrize("action", ["mark_processed_by_cs", "close_request"])
-def test_process_and_close_refuse_a_completed_form(action):
-    """Guard: `completed` is not in the finalize-from list, so this must keep failing."""
-    from app.services.error_handler import AppException
+def test_void_is_allowed_on_a_no_cs_approved_form():
     from app.services.procurement_service import PurchaseRequestService
 
     with blank_session() as db:
-        s = _seed(db)
-        pid = _approved_form(db, "sponsorship_form", s.contact_id)
-        db.query(PurchaseRequestHeader).filter_by(id=pid).update({"status": "completed"})
-        db.flush()
-
-        with pytest.raises(AppException) as exc:
-            getattr(PurchaseRequestService(db), action)(pid)
-
-        assert exc.value.status_code in (400, 409, 422)
+        s, pid, _ = _no_cs_approved(db)
+        svc = PurchaseRequestService(db)
+        with patch.object(PurchaseRequestService, "_notify_request_voided", lambda self, *a, **k: None):
+            svc.void_request(pid, void_reason="zzt void after no cs")
+        db.expire_all()
+        assert db.query(PurchaseRequestHeader).filter_by(id=pid).one().status == "voided"
 
 
 @pytest.mark.parametrize("kind", ["purchase_request", "sponsorship_form"])
-def test_portal_revision_refuses_a_completed_form_with_its_own_sentence(kind):
+def test_portal_revision_is_allowed_on_a_no_cs_approved_form(kind):
     from app.services.portal_revision_service import PortalRevisionService
-    from tests._revision_harness import seed_config, seed_contact, seed_entity
+    from tests._revision_harness import seed_config
 
     with blank_session() as db:
-        seed_config(db, kind)
-        contact = seed_contact(db)
-        row = seed_entity(db, kind, contact, status="completed")
+        _, pid, header = _no_cs_approved(db, kind)
+        seed_config(db, kind)  # allowed statuses: submitted, approved
 
-        policy = PortalRevisionService(db).resolve_policy(kind, row)
+        policy = PortalRevisionService(db).resolve_policy(kind, header)
 
-        assert policy.allowed is False
-        assert "completed" in policy.blocked_reason
-        assert "can no longer be revised" in policy.blocked_reason
+        assert policy.allowed is True, policy.blocked_reason
+
+
+@pytest.mark.parametrize("action", ["mark_processed_by_cs", "close_request"])
+def test_processed_by_cs_and_close_are_not_refused_on_a_no_cs_approved_form(action):
+    """Guard: the backend treats it as any approved form (the FE hides the buttons)."""
+    from tests.test_purchase_request_status_not_editable import _FakeSend
+    from app.services.procurement_service import PurchaseRequestService
+
+    with blank_session() as db:
+        s, pid, _ = _no_cs_approved(db)
+        send = _FakeSend()
+        with patch("app.services.respond_messaging_service.send_text_or_template", send), patch(
+            "app.services.respond_messaging_service.build_context_vars", return_value={}
+        ), patch("app.services.crm_chat_outbound_webhook.enqueue_crm_chat_outbound_webhook"):
+            getattr(PurchaseRequestService(db), action)(pid)
+        db.expire_all()
+        expected = "processed_by_cs" if action == "mark_processed_by_cs" else "closed"
+        assert db.query(PurchaseRequestHeader).filter_by(id=pid).one().status == expected
+
+
+def test_there_is_no_completed_status_anywhere_in_the_lane_code():
+    from app.services.portal_revision_service import ADAPTERS
+    from app.services.procurement_service import PurchaseRequestService
+    from app.services.reports.datasets import sponsorship_forms as ds
+
+    for cls in PurchaseRequestService.__mro__:
+        assert "completed" not in getattr(cls, "_VOID_BLOCKED_STATUSES", frozenset())
+    for kind in ("purchase_request", "sponsorship_form"):
+        assert "completed" not in ADAPTERS[kind].terminal_statuses
+    assert "completed" not in ds.DEFAULT_STATUSES
+    assert "completed" not in [v for v, _ in ds.STATUS_LABELS]
+    assert "Completed" not in [label for _, label in ds.STATUS_LABELS]

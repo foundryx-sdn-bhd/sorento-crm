@@ -1,9 +1,12 @@
 /**
- * RED tests - FORM-ROUTING-CONDITIONS NC-7 / NC-5 (PurchaseRequestDetail).
+ * RED tests - FORM-ROUTING-CONDITIONS NC-7 (owner ruling 14 Oct 22:02: a No CS form stays
+ * Approved, there is no Completed status).
  *
- * A `completed` form (approved, finished at approval because the requestor's rule was No CS)
- * reads "Completed" in the status pill, and offers no Processed by CS / Close buttons: it is
- * terminal. Harness copied from PurchaseRequestDetail.exportRevisions.test.tsx.
+ * PR/SF detail offers the CS actions (Processed by CS / Close) only on an approved form that
+ * HAS a customer-service stage tracker in its SLA trackers; an approved form with no such
+ * tracker (No CS) shows neither, and nothing renders them while trackers are still loading.
+ * Void stays as for any approved form. Harness copied from
+ * PurchaseRequestDetail.exportRevisions.test.tsx.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -16,11 +19,12 @@ vi.mock('next/navigation', () => ({
   // row click wrote into this URL.
   useSearchParams: () => new URLSearchParams(''),
 }));
+const getTrackers = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/api', () => ({
   apiFetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({ settings: {} }) }),
 }));
 vi.mock('@/app/(protected)/sla-management/_shared/formSLAService', () => ({
-  getFormSLATrackers: vi.fn().mockResolvedValue([]),
+  getFormSLATrackers: (...a: unknown[]) => getTrackers(...a),
   escalateFormTracking: vi.fn(),
 }));
 vi.mock('@/app/(protected)/sla-management/_shared/SlaActiveTrackerControls', () => ({
@@ -173,87 +177,85 @@ function renderPage() {
 }
 
 
+const CS_TRACKER = { id: 't-cs', team_set_code: 'customer_service', is_resolved: false };
+const APPROVAL_TRACKER = { id: 't-ap', team_set_code: 'approval', is_resolved: true };
+
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
+  getTrackers.mockResolvedValue([APPROVAL_TRACKER, CS_TRACKER]);
 });
 
-describe('PurchaseRequestDetail - completed status', () => {
+function approved(requestType: string) {
+  usePurchaseRequestMock.mockReturnValue({
+    data: purchaseRequest({ request_type: requestType, status: 'approved', approval_status: 'approved' }),
+    isLoading: false,
+  });
+}
+
+// Processed by CS is a header button; Close ("Mark as closed") is an item of the actions menu.
+const processedButton = () => screen.queryByRole('button', { name: /processed by cs/i });
+const closeItem = () => screen.queryByText('Mark as closed');
+
+async function openActionsMenu() {
+  const trigger = await screen.findByRole('button', { name: 'Request actions' });
+  fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 });
+  fireEvent.pointerUp(trigger, { button: 0, pointerId: 1 });
+  fireEvent.click(trigger);
+  await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+}
+
+describe('PurchaseRequestDetail - CS actions follow the customer-service tracker', () => {
   it.each(['purchase_request', 'sponsorship_form'])(
-    'shows the status pill as "Completed" for a completed %s',
+    'an approved %s WITH a customer-service tracker shows Processed by CS and Close',
     async (requestType) => {
-      usePurchaseRequestMock.mockReturnValue({
-        data: purchaseRequest({
-          request_type: requestType,
-          status: 'completed',
-          approval_status: 'approved',
-        }),
-        isLoading: false,
-      });
+      approved(requestType);
       renderPage();
 
-      expect(await screen.findAllByText('Completed')).not.toHaveLength(0);
-      expect(screen.queryByText('Approved')).not.toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /processed by cs/i })).toBeInTheDocument();
+      await openActionsMenu();
+      expect(await screen.findByText('Mark as closed')).toBeInTheDocument();
     },
   );
 
-  it('offers no Processed by CS or Close action on a completed form', async () => {
-    usePurchaseRequestMock.mockReturnValue({
-      data: purchaseRequest({ status: 'completed', approval_status: 'approved' }),
-      isLoading: false,
-    });
+  it.each(['purchase_request', 'sponsorship_form'])(
+    'an approved %s with only the approval-stage tracker (No CS) shows neither',
+    async (requestType) => {
+      getTrackers.mockResolvedValue([APPROVAL_TRACKER]);
+      approved(requestType);
+      renderPage();
+      await waitFor(() => expect(getTrackers).toHaveBeenCalled());
+      await screen.findAllByText(/PR-2026-0001/);
+      await new Promise((r) => setTimeout(r, 50));
+      await openActionsMenu();
+      await screen.findByText('Export to Excel');
+
+      expect(processedButton()).toBeNull();
+      expect(closeItem()).toBeNull();
+    },
+  );
+
+  it('shows neither while the trackers are still loading', async () => {
+    getTrackers.mockReturnValue(new Promise(() => {}));
+    approved('purchase_request');
     renderPage();
     await screen.findAllByText(/PR-2026-0001/);
-
-    expect(screen.queryByRole('button', { name: /processed by cs/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^close/i })).toBeNull();
-  });
-
-  it('guard: an approved (not completed) form still offers Processed by CS', async () => {
-    usePurchaseRequestMock.mockReturnValue({
-      data: purchaseRequest({ status: 'approved', approval_status: 'approved' }),
-      isLoading: false,
-    });
-    renderPage();
-
-    expect(await screen.findByRole('button', { name: /processed by cs/i })).toBeInTheDocument();
-  });
-
-  async function openActionsMenu() {
-    const trigger = await screen.findByRole('button', { name: 'Request actions' });
-    fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 });
-    fireEvent.pointerUp(trigger, { button: 0, pointerId: 1 });
-    fireEvent.click(trigger);
-    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
-  }
-
-  it('guard: an approved form offers Void in the actions menu', async () => {
-    usePurchaseRequestMock.mockReturnValue({
-      data: purchaseRequest({ status: 'approved', approval_status: 'approved' }),
-      isLoading: false,
-    });
-    renderPage();
     await openActionsMenu();
+    await screen.findByText('Export to Excel');
 
-    expect(await screen.findByText('Void')).toBeInTheDocument();
+    expect(processedButton()).toBeNull();
+    expect(closeItem()).toBeNull();
   });
 
   it.each(['purchase_request', 'sponsorship_form'])(
-    'offers no Void action on a completed %s (terminal)',
+    'Void is offered on a No CS approved %s',
     async (requestType) => {
-      usePurchaseRequestMock.mockReturnValue({
-        data: purchaseRequest({
-          request_type: requestType,
-          status: 'completed',
-          approval_status: 'approved',
-        }),
-        isLoading: false,
-      });
+      getTrackers.mockResolvedValue([APPROVAL_TRACKER]);
+      approved(requestType);
       renderPage();
       await openActionsMenu();
-      await screen.findByText('Export to Excel'); // the menu is open
 
-      expect(screen.queryByText('Void')).toBeNull();
+      expect(await screen.findByText('Void')).toBeInTheDocument();
     },
   );
 });
