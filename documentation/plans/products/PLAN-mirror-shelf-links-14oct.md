@@ -60,3 +60,94 @@ list rows carry kind. API: POST with kind, invalid kind 422, legacy role still w
 carry kind. Script: dry run writes nothing, apply writes 40 links (42 rows less 2 missing codes)
 per company that holds them, second apply writes 0, missing codes reported. Migration: column,
 check, unique index on head. UI: groups by kind with labels, kind picker posts kind.
+
+## 5. Contract (binding for tester and coder)
+
+### Migration `wc_compat_0002_kind` (down_revision = main's head at build time, `ac_consign_0001_doc_type`)
+
+Idempotent SQL, same style as `wc_compat_0001_table.py`:
+
+- `ALTER TABLE product_compatibility ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'seat_cover'`
+- constraint `ck_product_compatibility_kind CHECK (kind IN ('seat_cover','mirror','shelf'))`
+  (added only if missing, via a `DO $$ ... pg_constraint` guard)
+- `DROP INDEX IF EXISTS uq_product_compatibility_pair`;
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_product_compatibility_pair_kind ON product_compatibility (seat_cover_product_id, wc_product_id, kind)`
+- downgrade: delete rows with kind <> 'seat_cover', drop the new index, recreate the old pair
+  index, drop the constraint and the column.
+
+Model `ProductCompatibility` gets `kind = Column(String(20), nullable=False, default="seat_cover", server_default="seat_cover")`
+and the same CheckConstraint + unique Index (name `uq_product_compatibility_pair_kind`).
+
+### Service `app/services/product_compatibility_service.py`
+
+```
+KIND_SEAT_COVER = "seat_cover"; KIND_MIRROR = "mirror"; KIND_SHELF = "shelf"
+#: kind -> (accessory noun, host noun)
+KINDS = {"seat_cover": ("seat cover", "WC"), "mirror": ("mirror", "cabinet"), "shelf": ("shelf", "cabinet")}
+ROLE_ACCESSORY = "accessory"; ROLE_HOST = "host"
+ROLE_SEAT_COVER = "seat_cover"; ROLE_WC = "wc"            # legacy, kind seat_cover only
+
+covers_for(db, wc_ids)        # unchanged signature; seat_cover links ONLY
+wcs_for(db, cover_ids)        # unchanged signature; seat_cover links ONLY
+accessories_for(db, host_ids, kind) -> {host_id: [Product]}      # ordered by code
+hosts_for(db, accessory_ids, kind) -> {accessory_id: [Product]}  # ordered by code
+list_for_product(db, product_id) -> {"covers": [row], "fits": [row]}
+    covers = links where this product is the host (wc_product_id), every kind
+    fits   = links where this product is the accessory (seat_cover_product_id), every kind
+    row    = {id, product_id, product_code, product_name, source, is_discontinued, kind}
+    ordered by kind (seat_cover, mirror, shelf), then product_code
+add_manual(db, product_id, other_product_id, other_role, user_id, kind="seat_cover") -> row
+    other_role: accessory | host | seat_cover (== accessory, kind must be seat_cover) | wc (== host, kind must be seat_cover)
+    unknown kind or role, or a legacy role with another kind -> 400 (handle_validation_error)
+    self -> 400; other product in another company -> 404
+    -SC guard ("<code> is a seat cover, not a WC.") only when kind == seat_cover
+    same two products already linked under the SAME kind, either orientation -> 409
+      message "<accessory code> is already linked to <host code>."
+    the same pair under a different kind is allowed
+```
+
+### API (`app/api/v1/master_data/product_compatibility.py`, `app/schemas/product_compatibility.py`)
+
+- `ProductCompatibilityCreate`: `other_product_id: str`,
+  `other_role: Literal["accessory","host","seat_cover","wc"]`,
+  `kind: Literal["seat_cover","mirror","shelf"] = "seat_cover"`. Bad kind/role -> 422.
+- `ProductCompatibilityRow` gains `kind: str`.
+- Permissions unchanged (view: session or API key; add: session only, `master_data.products.edit`).
+
+### Loader `scripts/oneoff/link_mirror_shelf_flyer.py`
+
+- `FLYER_ROWS: tuple[tuple[str, str, str], ...]` = (kind, accessory_code, host_code), the 42
+  rows of the lane brief in order.
+- `plan(db) -> {"links": [...], "missing": [...]}`, every company (`company_scope(db, None)`),
+  codes matched with `_norm_sql(Product.product_code) == normalize_code(code)`:
+  - a company "holds" a row when it has either code; for each (row, company that holds a code
+    of the row): both found -> link dict `{kind, accessory_code, host_code, company_id,
+    accessory_id, host_id, already, inactive}`; else a missing dict `{kind, accessory_code,
+    host_code, company_id, not_found: [codes]}`.
+  - a row whose codes no company holds -> one missing dict with `company_id=None` and both codes
+    in `not_found`... (only codes absent everywhere are listed).
+  - `already`: the same accessory, host and kind linked, either orientation.
+- `apply(db, plan) -> (written, already)`: adds `ProductCompatibility(kind=..., source="flyer")`, flushes.
+- `main(argv=None, db=None, out=None) -> int`: prints `LINK  <kind>  <accessory> -> <host>`
+  (+ `  (inactive SKU)` / `  (already linked)`), `MISSING  <kind>  <accessory> -> <host>  not found: <codes>`,
+  then `DRY RUN: N links to write. Run with --apply to write them.` (no flag; writes nothing)
+  or `N links written, M already linked.` (`--apply`, commits). Exit 0. Never raises on a missing code.
+
+### Frontend
+
+- types: `CompatibilityKind = 'seat_cover'|'mirror'|'shelf'`, `CompatibilityRole = 'accessory'|'host'`,
+  row gains `kind: CompatibilityKind`.
+- service `addProductCompatibility(productId, otherProductId, otherRole, kind)` posts
+  `{other_product_id, other_role, kind}`; hook mutate args `{otherProductId, otherRole, kind}`.
+- `ProductCompatibilitySection`:
+  - covers grouped by kind, headings "Seat covers that fit" / "Mirrors that fit" / "Shelves that fit";
+    fits grouped by host noun, headings "Fits these WCs" / "Fits these cabinets".
+  - when the product has no mirror/shelf link, today's layout stays exactly (both seat cover
+    headings, empty states "No seat covers" / "No WCs"). When it has any mirror or shelf link,
+    only the groups that have rows are shown.
+  - add dialog: a "Link type" radio group (Seat cover / WC = seat_cover, Mirror / cabinet =
+    mirror, Shelf / cabinet = shelf), then "The other product is a" radio with the kind's two
+    nouns capitalised (Seat cover/WC, Mirror/Cabinet, Shelf/Cabinet), values accessory/host.
+  - default on open: a product with fits rows -> kind of its first fits row, role host; else
+    covers rows -> kind of its first covers row, role accessory; else seat cover heuristic
+    (`looksLikeSeatCover`) -> seat_cover/host, otherwise seat_cover/accessory.
