@@ -883,63 +883,100 @@ describe('BoardLineDecisionPanel: a reopened covered line with a hand borrow alr
 });
 
 /**
- * BOARD-CONFIRM-LEFT-OUT, fix round 2 (reviewer, S2): "same silent drop one field over" - a
- * wholly-bought approving line shows the Order back switch and the Document cited box, but the
- * approving branch used to take both from `suggestionDraftFrom`'s own draft (always false/''),
- * and the reseed blanked them the same way it used to blank the Buy reason and the borrow
- * reason (measured cause 1).
+ * NO MANUAL ORDER BACK (owner, 14 Oct 2026, hand test of #1675): "remove this manual order back
+ * trigger since we have established borrow = order back". A Borrow already reads ORDER BACK on
+ * the server (`_saved_line_parts`, `_raise_borrow_shortfalls`), so the panel offers no switch
+ * and never writes `order_back` / `cited_document` into a draft, not even one it reopened with
+ * the flag on.
  */
-describe('BoardLineDecisionPanel: an approving save carries Order back and the cited document (S2, fix round 2)', () => {
-  it('keeps Order back and Document cited after Save, and after the reseed', async () => {
+describe('BoardLineDecisionPanel: no manual Order back (borrow = order back)', () => {
+  const BUY_ONLY: Partial<BoardContribution> = {
+    key: KEY,
+    sources: [
+      {
+        kind: 'buy',
+        qty: '24',
+        location: null,
+        warehouse_id: null,
+        reason: 'Nothing on hand covers this line.',
+      },
+    ],
+    qty_proposed_reserve: '0',
+    qty_proposed_buy: '24',
+  };
+
+  it('a line that buys offers no Order back switch and no Document cited box', async () => {
     const onDecide = vi.fn().mockResolvedValue(true);
     render(
       <BoardLineDecisionPanel
-        contribution={contributionOf({
-          key: 'so-a|9|BUY9|2026-09-10',
-          line_no: 9,
-          item_code: 'BUY9',
-          qty: '5',
-          qty_ordered: '5',
-          qty_outstanding: '5',
-          sources: [
-            {
-              kind: 'buy',
-              qty: '5',
-              location: null,
-              warehouse_id: null,
-              reason: 'Nothing on hand covers this line.',
-            },
-          ],
-          qty_proposed_reserve: '0',
-          qty_proposed_incoming: '0',
-          qty_proposed_buy: '5',
-        })}
+        contribution={contributionOf(BUY_ONLY)}
         decision={null}
         locations={LOCATIONS}
         onDecide={onDecide}
       />,
     );
 
-    fireEvent.click(screen.getByRole('switch', { name: 'Order back' }));
-    fireEvent.change(screen.getByLabelText('Document cited'), {
-      target: { value: 'SPO-2026/09-0042' },
+    expect(screen.queryByRole('switch', { name: 'Order back' })).toBeNull();
+    expect(screen.queryByLabelText('Document cited')).toBeNull();
+
+    // Not even once the whole-line switch is off and a Buy is typed.
+    fireEvent.click(screen.getByRole('switch', { name: 'Buy the whole line' }));
+    fireEvent.change(screen.getByLabelText('Buy quantity'), { target: { value: '5' } });
+    expect(screen.queryByRole('switch', { name: 'Order back' })).toBeNull();
+    expect(screen.queryByLabelText('Document cited')).toBeNull();
+  });
+
+  it('a reopened decision that carried an order back saves without it', async () => {
+    const { onDecide } = renderPanel(BUY_ONLY, {
+      verdict: 'amended',
+      reserve: [{ warehouse_id: 'wh-BRW-AM', location: 'BRW-AM', qty: '9' }],
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '15',
+      order_back: true,
+      cited_document: 'SPO-2026/09-0042',
+      reason: 'Saved before the switch went away.',
     });
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
     });
 
-    expect(onDecide).toHaveBeenCalledWith(
-      expect.objectContaining({
-        verdict: 'approved',
-        order_back: true,
-        cited_document: 'SPO-2026/09-0042',
-      }),
-    );
+    const saved = onDecide.mock.calls.at(-1)?.[0] ?? {};
+    expect(saved).toMatchObject({ verdict: 'amended', buy_qty: '15' });
+    expect(saved.order_back).toBeFalsy();
+    expect(saved.cited_document).toBeFalsy();
+  });
 
-    // The reseed: both still on screen, the same guard the reason boxes already have.
-    expect(screen.getByRole('switch', { name: 'Order back' })).toBeChecked();
-    expect(screen.getByLabelText('Document cited')).toHaveValue('SPO-2026/09-0042');
+  it('a borrow is saved as the borrow it is, which the server reads as ORDER BACK', async () => {
+    const { onDecide } = renderPanel({
+      sources: [
+        {
+          kind: 'reserve',
+          qty: '9',
+          location: 'BRW-AM',
+          warehouse_id: 'wh-BRW-AM',
+          reason: 'Free unclaimed stock at BRW-AM covers this much.',
+        },
+        {
+          kind: 'borrow',
+          qty: '15',
+          location: 'MWH-AM',
+          warehouse_id: 'wh-MWH-AM',
+          reason: 'Borrowed from the group.',
+        },
+      ],
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    });
+
+    const saved = onDecide.mock.calls.at(-1)?.[0] ?? {};
+    expect(saved.borrow).toEqual([
+      expect.objectContaining({ warehouse_id: 'wh-MWH-AM', qty: '15' }),
+    ]);
+    expect(saved.order_back).toBeFalsy();
   });
 });
 
@@ -3001,16 +3038,16 @@ describe('BoardLineDecisionPanel: the delivered part is never capped (OI-CLOSED-
     return { onDecide };
   }
 
-  it('Reserve 98 over 77 free on a fully delivered line: no shortfall said, order back offered beside it, saves', () => {
+  it('Reserve 98 over 77 free on a fully delivered line: no shortfall said, the 2 left is a Buy with no Order back, saves', () => {
     const { onDecide } = renderDelivered('100');
 
     fireEvent.change(screen.getByLabelText('Reserve at ZZT-BB'), { target: { value: '98' } });
 
     expect(screen.queryByText(/Only .* available here/)).not.toBeInTheDocument();
     expect(screen.getByLabelText('Buy quantity')).toHaveValue(2);
-    fireEvent.click(screen.getByRole('switch', { name: 'Order back' }));
+    expect(screen.queryByRole('switch', { name: 'Order back' })).toBeNull();
     fireEvent.change(screen.getByLabelText(/^Reason/), {
-      target: { value: '98 used from BB, 2 order back.' },
+      target: { value: '98 used from BB, 2 bought.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
 
@@ -3019,9 +3056,9 @@ describe('BoardLineDecisionPanel: the delivered part is never capped (OI-CLOSED-
         verdict: 'amended',
         reserve: [expect.objectContaining({ warehouse_id: 'wh-ZZT-BB', qty: '98' })],
         buy_qty: '2',
-        order_back: true,
       }),
     );
+    expect(onDecide.mock.calls.at(-1)?.[0].order_back).toBeFalsy();
   });
 
   it('short on the undelivered part: warns with what is free, and Save still saves', () => {
@@ -3377,40 +3414,6 @@ describe('BoardLineDecisionPanel: Buy can be typed first (BUY-FIRST-PANEL)', () 
     expect(buyInput()).toHaveValue(5);
     type('Reserve at BRW', '12');
     expect(buyInput()).toHaveValue(3);
-  });
-
-  it('a Buy left at 0 clears Order back and the document cited', () => {
-    renderPoolLine();
-
-    fireEvent.click(screen.getByRole('switch', { name: 'Order back' }));
-    fireEvent.change(screen.getByLabelText('Document cited'), {
-      target: { value: 'SPO-2026/08-0061' },
-    });
-
-    type('Buy quantity', '0');
-    fireEvent.blur(buyInput());
-    expect(screen.queryByRole('switch', { name: 'Order back' })).toBeNull();
-
-    type('Buy quantity', '5');
-    expect(screen.getByRole('switch', { name: 'Order back' })).not.toBeChecked();
-    expect(screen.queryByLabelText('Document cited')).toBeNull();
-  });
-
-  it('retyping the Buy through an empty box keeps Order back and the document cited (review S1)', () => {
-    renderPoolLine();
-
-    fireEvent.click(screen.getByRole('switch', { name: 'Order back' }));
-    fireEvent.change(screen.getByLabelText('Document cited'), {
-      target: { value: 'SPO-2026/08-0061' },
-    });
-
-    // Backspace the 73, then type 80: the empty value in between is not a decision.
-    type('Buy quantity', '');
-    type('Buy quantity', '8');
-    type('Buy quantity', '80');
-
-    expect(screen.getByRole('switch', { name: 'Order back' })).toBeChecked();
-    expect(screen.getByLabelText('Document cited')).toHaveValue('SPO-2026/08-0061');
   });
 
   it('Rest to Buy settles a below-zero Buy to exactly what is unassigned (review nit)', () => {
