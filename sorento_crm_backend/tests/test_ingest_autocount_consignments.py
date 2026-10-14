@@ -4,8 +4,9 @@ Plan: documentation/plans/autocount/PLAN-autocount-consign-crm-14oct.md.
 
 Owner rulings 13 Oct, crew answers 14 Oct:
 - A consignment is a sales order with `doc_type = consignment`, written by the same SO ingest
-  (customer ladder, demand class, line sync, status). AutoCount is truth: outstanding is
-  Qty - TransferedQty as sent (Q2 a), the 2.8 shape (no TransferedQty) reads 0 delivered.
+  (customer ladder, demand class, line sync, status). CONSIGN-DELIVERED-FIX (owner, 14 Oct):
+  the goods left with the CG, so every line is delivered in full and the order is closed;
+  TransferedQty is the RETURNED qty (tests/test_consignment_delivered_at_issue.py).
 - A consignment return records `qty_returned` on the consignment line, for reporting only: no
   planned, delivered, cancelled or status change. Exact link by FromDocDtlKey, else the
   (CG, item, location) group's one line, else undetermined (named on no line).
@@ -121,12 +122,13 @@ def test_a_consignment_lands_as_a_sales_order_marked_consignment(env):
     assert order is not None
     assert order.doc_type == "consignment"
     assert order.source_ref == "db1:CSGN:980001"
-    assert order.status == "open"
+    assert order.status == "closed"
     lines = _lines(env, order)
     assert set(lines) == {"db1:CSGN:980001:981001", "db1:CSGN:980001:981002"}
     a = lines["db1:CSGN:980001:981001"]
     assert (a.product_id, a.warehouse_id) == (env.p1, env.wh1)
-    assert (a.qty_ordered, a.qty_delivered, a.line_status) == (Decimal("10"), Decimal("0"), "open")
+    assert (a.qty_ordered, a.qty_delivered, a.line_status) == (
+        Decimal("10"), Decimal("10"), "closed")
     assert lines["db1:CSGN:980001:981002"].qty_ordered == Decimal("5")
     # #1623's storage stays: the doc is still kept as sent.
     doc = env.db.execute(select(AutocountCancelDoc).where(
@@ -151,8 +153,8 @@ def test_the_2_9_fields_are_taken_when_sent(env):
     assert line.unit_price == Decimal("12.5")
     assert line.line_total == Decimal("125")
     assert line.uom == "PCS"
-    # Q2 a: Qty - TransferedQty as AutoCount sends it; all transferred reads closed.
-    assert line.qty_delivered == Decimal("10")
+    # CONSIGN-DELIVERED-FIX: delivered in full at issue; TransferedQty is the returned qty.
+    assert (line.qty_delivered, line.qty_returned) == (Decimal("10"), Decimal("10"))
     assert line.line_status == "closed"
 
 
@@ -298,7 +300,7 @@ def test_a_full_return_never_reads_as_cancelled(env):
     line = _line(env, "db1:CSGN:980001:981001")
     assert line.qty_returned == Decimal("10")
     assert line.qty_cancelled == Decimal("0")
-    assert line.line_status == "open"
+    assert line.line_status == "closed"
     assert not line.cancelled_by_cancel_doc
 
 
@@ -403,7 +405,7 @@ def test_the_ss122_wire_shape_end_to_end(env):
     assert (order.doc_type, order.debtor_code, order.customer_id) == (
         "consignment", "300-ZZAC01", env.customer)
     line = _line(env, "db1:CSGN:980050:980051")
-    # AutoCount counts the CVT TO DO return in TransferedQty: nothing is outstanding.
+    # Delivered at issue; AutoCount counts the CVT TO DO return in TransferedQty (returned).
     assert (line.qty_ordered, line.qty_delivered, line.unit_price, line.uom) == (
         Decimal("1"), Decimal("1"), Decimal("108"), "UNIT")
     assert line.line_status == "closed"
@@ -428,7 +430,8 @@ def test_a_2_8_consignment_is_stored_only_until_a_push_states_transfers(env):
     stated = _cg(details=[_cg_line(981001, transferred=4)])
     assert _records(env.post(CG_INGEST, [stated]))["db1:CSGN:980001"]["outcome"] == "updated"
     line = _line(env, "db1:CSGN:980001:981001")
-    assert (line.qty_ordered, line.qty_delivered) == (Decimal("10"), Decimal("4"))
+    assert (line.qty_ordered, line.qty_delivered, line.qty_returned) == (
+        Decimal("10"), Decimal("10"), Decimal("4"))
 
 
 def test_a_line_without_transfers_keeps_the_whole_record_stored_only(env):

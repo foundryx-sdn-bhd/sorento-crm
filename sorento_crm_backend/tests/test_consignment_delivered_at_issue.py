@@ -156,7 +156,8 @@ def _as_ss125_left_it(env, transferred: int = 1):
     env.db.execute(text(
         "UPDATE sales_order_lines SET qty_delivered = :t, qty_returned = 0, "
         "line_status = 'open' WHERE sales_order_id = :id"), {"id": order.id, "t": transferred})
-    env.db.flush()
+    # Committed like the route's own writes, so the dry run's rollback cannot undo it.
+    env.db.commit()
     env.db.expire_all()
     return order
 

@@ -1090,6 +1090,13 @@ class AutocountCancelIngestService:
         record = result.records[0]
         if record.outcome not in (IngestOutcome.FAILED, IngestOutcome.RETRYABLE):
             self.consignment_numbers.add(doc.doc_no)
+            # CONSIGN-DELIVERED-FIX: the CG's TransferedQty is its returned qty.
+            line_ids = [r[0] for r in self.db.query(SalesOrderLine.id)
+                        .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
+                        .filter(SalesOrder.company_id == self.company_id,
+                                SalesOrder.so_number == doc.doc_no,
+                                SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT).all()]
+            recompute_returned(self.db, line_ids, self.company_id)
         return record
 
     def _apply(self, kind: str, doc: _CancelDoc, touched: Touched):
