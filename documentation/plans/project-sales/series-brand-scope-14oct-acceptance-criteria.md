@@ -73,6 +73,9 @@ sit in the same categories are not part of the standard range any more.
   price/discount fills each of them (Q1 a). Re-import updates them all.
 - **D3** Set members get series rows (standard) but NO price or discount is written on them, even
   when the sheet row states one (Q2 c): the price belongs to the set.
+- **D3b** In a family fan-out, a product that is a part of ANY active set (e.g. seat cover
+  `SRTWC8608-SC`, part of set `SRTWC8608-RL`) gets its row but NO price/discount, like D3; the
+  other variants get the sheet price. A part of an inactive set is priced like any variant.
 - **D4** The load report lists, per code that did not match exactly, what it resolved to: "set"
   with its parts, or "family" with every product/set it fanned out to (Q3 a). Codes that resolve
   to nothing stay in the "not in the catalogue" list.
