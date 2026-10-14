@@ -1,6 +1,6 @@
 # PLAN: product name hidden when it equals the code (NAME-EQUALS-CODE)
 
-Status: planned, awaiting card answers. Track: full (M; ~130 frontend sites, diff over 300
+Status: building (owner answered the card and approved mock v1, 14 Oct 2026). Track: full (M; ~130 frontend sites, diff over 300
 lines; no migration, no auth/RBAC change). Plan created: 2026-10-14T00:00:00Z.
 
 UAC: `name-equals-code-acceptance-criteria.md`. Card: `CARD-name-equals-code.md`.
@@ -28,7 +28,7 @@ S0 `test(red):` tester writes the red tests alone (helper both sides, one per co
 S1 helpers + shared renderers (SearchableSelect, SearchableMultiSelect, portal AsyncCombobox,
    AsyncMultiCombobox, MultiPillInput) + existing guards folded onto the helper.
 S2 joined-label builders (group A below).
-S3 cells, dialogs, tooltips (groups C, D, E).
+S3 cells, Name columns, dialogs, tooltips (groups C, D, E, F).
 S4 backend + MCP (group G).
 
 ## Red tests (tester, before any code)
@@ -39,8 +39,9 @@ S4 backend + MCP (group G).
 - `components/common/SearchableMultiSelect.test.tsx` (extend): same.
 - Joined label: `scmOptionsService.searchProductOptions` returns label `1861` for code=name=1861
   and `SRT6641 · X` when differing (mock `api`).
-- Cell: one code-over-name cell (e.g. `ProductDataUpdatedDialog` or a reorder grid cell) renders
-  the code once.
+- Cell: one code-over-name cell (e.g. a reorder grid cell) renders the code once.
+- Name column: `ProductsList` Product Name cell is blank for code=name=1861 and shows a differing
+  name.
 - Dialog: `components/dealer-kit/ProductDataUpdatedDialog.tsx` no `11X11 / 11X11`.
 - Backend: `tests/test_product_display.py` (helper table) + `_set_member_text` in
   `app/services/dealer_kit/tag_data_service.py` + `scm/policy_service._label` for sku scope.
@@ -136,10 +137,32 @@ S4 backend + MCP (group G).
   `AP/order-management/customers/components/CustomerAsksTab.tsx:56-57`;
   `components/stock-asks/AskCard.tsx:69`; portal `CustomerAsksHistory.tsx:134`.
 
-### F. Untouched (Q1 a / Q2 a)
-Master/list grids with separate Code and Name columns; line `description` columns that are stored
-document text; quotation line description default; client CSV with separate columns
-(`LevelChangesPanel.tsx:52-56`); `store-admin/`, `store-client/` demo templates.
+### F. Name columns: blank when equal (Q1, S3)
+- `AP/master-data-management/products/components/ProductsList.tsx:411-430` (Product Name column).
+- `AP/master-data-management/products/[id]/components/ProductDetail.tsx:158-166` (hide "Product
+  Code:" line when equal), `:350-352` Overview Product Name `-` when equal.
+- `AP/master-data-management/certificates/components/CertificateCoveredProducts.tsx:100-104`.
+- `AP/master-data-management/spec-verification/components/SpecVerificationList.tsx:476-486`.
+- `AP/master-data-management/product-attachments/components/ProductAttachmentsList.tsx:54-61`.
+- `AP/master-data-management/product-sets/components/ProductSetsList.tsx:127` (set name vs set code).
+- `AP/inventory-management/stock/components/StockBalanceGrid.tsx:128-135`.
+- `AP/procurement-management/product-suppliers/components/ProductSuppliersGrid.tsx:71-78`.
+- `AP/procurement-management/packing-lists/components/PackingListLinesTab.tsx:414`
+  (`description || product_name`: only the product_name fallback goes through the helper).
+- `AP/marketing-management/promotion-products/components/PromotionProductsGrid.tsx:29-36`,
+  `PromotionProductsList.tsx:70-80`; `AP/marketing-management/promotions/components/PromotionDetail.tsx:436-452`.
+- `AP/dealer-kit/brochure-images/components/BrochureImagePicker.tsx:239-250`;
+  `AP/dealer-kit/flyer-readings/components/MatchReportSections.tsx:360-375`.
+- `AP/scm/loading-plan/components/SupplierCodesTab.tsx:77,281`.
+- Portal: `app/(auth)/portal/components/AIExtractDialog.tsx:620-621`, `POCrossCheckViewer.tsx:171/178`
+  (check each is a product name column before editing).
+- Check `AP/master-data-management/product-specifications/components/SpecPreviewPanel.tsx:79`
+  (only if it is a product name beside a product code).
+
+### F2. Untouched (Q1 iii / Q2 a)
+Line `description` columns that are stored document text; quotation line description default;
+client CSV exports (`LevelChangesPanel.tsx:52-56`); the product edit form's name input;
+`store-admin/`, `store-client/` demo templates.
 
 ### G. Backend (S4, paths under `sorento_crm_backend/`)
 - `app/services/dealer_kit/tag_data_service.py:469-472` `_set_member_text`, `:726-731` `_package_text`.

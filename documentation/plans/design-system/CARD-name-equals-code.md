@@ -4,7 +4,22 @@ Owner 14 Oct 2026, on a product picker listing `11X11 / 11X11`, `1861 / 1861`, `
 "the product name please don't show if same with product code, we should have this principle
 across our system".
 
-Mockup: `documentation/mockups/NAME-EQUALS-CODE/index.html` (v1).
+Mockup: `documentation/mockups/NAME-EQUALS-CODE/index.html` (v1, owner approved in Lavish 14 Oct:
+"yeah"; no v2, the Q1 change is recorded here and in the UAC only).
+
+## Owner answers (14 Oct 2026, verbatim: "Q1 only show when they mismatch, Q2 yEAH KEEP, Q3 yeah,
+Q4 yeah, Q5 yeah")
+
+- Q1: the rule applies to Name COLUMNS too. Master/list grids (Products list, stock balance,
+  promotion products, certificate covered products, spec verification, product attachments,
+  product suppliers, brochure images, product sets list): the Name cell is blank when the name
+  equals the code. Read-only name columns in line tables (series Products "Description", AutoCount
+  change list): `-` when equal. Stored line description text (SO lines, worksheet, allocation,
+  fulfilment sheet, amendment delta, quotation line): untouched.
+- Q2: (a) keep the quotation line Description as is.
+- Q3: (a) the shared picker hides a second line equal to the label, every entity.
+- Q4: (a) backend through one Python helper (printed price tags, API labels).
+- Q5: (a) tooltips too.
 
 ## Rules
 
