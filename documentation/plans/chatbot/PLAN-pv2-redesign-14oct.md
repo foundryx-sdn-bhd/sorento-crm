@@ -115,10 +115,19 @@ Build:
    sets `deferred` today, plus the v1 picker mirror when PV2 had sent a Lookup). A pick completes the ORIGINAL ask
    with the picked entity: domain, attachment kinds, quantity, period, specs, status and report all come from origin,
    through the normal apply path (no second copy of the merge logic). `deferred` is read only for state saved before R2.
+   Re-review ruling (14 Oct, fix round 4): the full origin is replayed only where held did NOT take the ask (unclear
+   act, flagged clarify, a missed ask's question, the v1 picker mirror). A question raised after `_commit` (held already
+   carries the ask's period, status, specs, kinds, ops and report) replays nothing that already landed: its origin keeps
+   only the items still waiting on a question, so a second ambiguous item is asked next instead of dropped. Replaying a
+   committed ask re-ran specs and ops and looped (closest-product pick, remove + ambiguous customer, which_held).
+   When a turn answers a pending question, the grant checks also judge the held subject (domain, report), not only
+   the origin.
 4. R1 carry-overs: (a) every PV2 answer path that prints rows writes the register, not only `_run_answer`, and the
    stock-ask render records what it prints; (b) a test that output_structurer pops order `lines` when Products is
    hidden; (c) `printed_rows` and `envelope_of`'s figures stay aligned when a non-dict answer is dropped.
 Not in R2: rendering S<n>/R<n> in MEMORY, parser schema changes (R4), registry columns (R3).
+Carried to R4: after a re-started subject, held and its topic copy share one sid (pre-R2 MEMORY keeps the copy), so
+`subject_at("S3")` and `subject_label` are not inverse; the S<n> rendering must settle copies before it numbers them.
 
 ## Work split (R1)
 - Tester: red tests per UAC R1 (pure builder tests from recorded envelopes, engine-hook test, so_status/MCP/report row

@@ -37,6 +37,12 @@ R2-5 Whenever a question interrupts an ask (entity clarify, did-you-mean, flagge
 R2-6 A pick completes the ORIGINAL ask with the picked entity: "any eta mou?" -> pick "1" answers ETA (incoming) for the
      picked product; an ask with a period ("stock for SRTWC286 last month") keeps its period after the pick; attachment
      kinds, quantity, specs and status likewise.
+R2-6b A pick never re-runs what the original ask already applied and never loops: a closest-product pick, a pick after
+     a remove op, and a which_held pick each reach their Lookup on the first pick, as pre-R2; with two ambiguous items
+     the second is asked next and both picks reach the Lookup. MEMORY after every pick equals pre-R2's for the same
+     turns (no picked uuid in a report filter, no extra held entity).
+R2-6c A pick on a question raised under a sales report or a PO ask is refused once the contact lacks that grant, however
+     many questions deep the chain is.
 R2-7 State saved before R2 (with `deferred`, no `origin`, no `sid`) loads and a pick on it behaves as today.
 R2-8 Every PV2 answer path that prints rows writes the register (each path named in the test); the stock-ask render
      records the rows it prints.
@@ -48,7 +54,7 @@ R2-11 No LLM calls; v1 turns unchanged.
 All from handwritten parses (no LLM). [cust] = a customer named in the earlier turn.
 RG-1 (#1570) Staff: "[cust] 7/10/2026 有送货吗？" -> "SRT391-GM几时会安排送货？": the carried customer plus the new product is a
      clarify ("Delivery for SRT391-GM: only [cust] (from earlier) or all customers?"), nothing fetched. PV2 table case-072
-     expects this. The 3rd identical clarify to staff refers them to the salesman instead of asking again.
+     (converted_replay.jsonl:115) expects a lookup today and is corrected to expect this clarify. The 3rd identical clarify to staff refers them to the salesman instead of asking again.
 RG-2 (#1582) "250mm srtwc286 got stock?" answers only the variants with 250 on any axis, with no Length/Width question;
      "srtwc286 300mm" with no 300 on any axis -> "No 300 mm for SRTWC286. Sizes on file: ..." (localized).
 RG-3 (#1603) A v1 escalate offer answered "yes" -> "Routed to your PIC, they will reply shortly." and the hand-over saves
