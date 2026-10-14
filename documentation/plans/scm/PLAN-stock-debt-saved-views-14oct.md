@@ -1,6 +1,6 @@
 # PLAN: saved views (preset filters) on Stock Debt
 
-Status: Phase 2 (red tests, then build). Track: small fix (no migration, no RBAC change).
+Status: built and reviewed (READY at 495a6c73, browser pass PASS 1280/375), waiting on the owner hand test (PR #1683). Track: small fix (no migration, no RBAC change).
 
 Owner ask (14 Oct 21:10): save the Stock Debt filters (date range, project, project location)
 as a named view, like the sponsorship form report's saved views, and apply them in one pick.
