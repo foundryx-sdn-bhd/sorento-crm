@@ -767,6 +767,9 @@ class BoardContribution(BaseModel):
     cancelled_at: Optional[datetime] = None
     cancelled_by: Optional[str] = None
     cancel_reason: Optional[str] = None
+    #: CANCEL-STOP-AT-SO: live order inquiry rows on a line an AutoCount Cancel SO cancelled
+    #: (`cancelled_by` "AutoCount"), which CS still has to handle. 0 on every other row.
+    cancel_open_oi_rows: int = 0
 
 
 class BorrowDonorImpact(BaseModel):

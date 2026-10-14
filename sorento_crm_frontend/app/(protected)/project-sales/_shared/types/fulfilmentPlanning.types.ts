@@ -1333,6 +1333,11 @@ export interface BoardContribution {
   cancelled_at?: string | null;
   cancelled_by?: string | null;
   cancel_reason?: string | null;
+  /**
+   * CANCEL-STOP-AT-SO: live order inquiry rows on a line an AutoCount Cancel SO cancelled
+   * (`cancelled_by` "AutoCount"). CS still has to handle them, so the pill reads Cancelled.
+   */
+  cancel_open_oi_rows?: number;
   /** `sales_order_lines.priority`, when anybody stated one. Almost nobody does. */
   priority?: 'high' | 'medium' | 'low' | null;
   /**
