@@ -51,10 +51,15 @@ older than `RETENTION_DAYS`.
   a disk preflight (max of 4x the downloaded dump and 2x its plain SQL free on the work dir and the
   docker root, else exit 4; security + reviewer round 3: 4x the gzip alone underestimates);
   a shared `flock` on `/opt/sorento-crm2/.deploy.lock`, retried for up to 60 min, else exit 7.
-  Lane HA-MEM-DEPLOY-GUARD makes `blue_green_deploy.sh` hold the same lock exclusively. The owner
-  creates the lock file once (644, root); the script never creates it and refuses a lock folder
-  another account can write (a planted symlink or FIFO would make root open any path). Opened
-  read-only so a non-root deploy user can lock it too.
+  Lane HA-MEM-DEPLOY-GUARD makes `blue_green_deploy.sh` hold the same lock exclusively. Contract
+  between the two lanes (crew ruling 14 Oct): env var `DEPLOY_LOCK_PATH`, default
+  `/opt/sorento-crm2/.deploy.lock`. The repo cannot tell who `SSH_USER` is, so runbook step 0b checks
+  the folder: root-only keeps the default (a); otherwise (b) a one-time
+  `/var/lib/sorento-deploy` owned by the release user, mode 755, with `DEPLOY_LOCK_PATH` set in both
+  envs. The owner creates the lock file once (644); the script never creates it and refuses a
+  symlinked or group/other-writable lock folder (a planted symlink or FIFO would make root open any
+  path). The release user may own the folder: it runs docker compose, so it is root-equivalent
+  already. Opened read-only so a non-root deploy user can lock it too.
 - Healthchecks pings never fail the backup: `curl -fsS -m 10 --retry 3 ... || true`.
 
 ## Not in scope

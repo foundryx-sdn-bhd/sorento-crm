@@ -852,3 +852,27 @@ def test_writable_lock_folder_message_says_what_to_do(env):
     assert "install -d -o <release user> -g root -m 755 /var/lib/sorento-deploy" in r.stdout
     assert "DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/.deploy.lock" in r.stdout
     assert "restore-test env and the deploy env" in r.stdout
+
+
+# ------------------------------------------------------------- reviewer round 3 leftovers
+
+
+def test_restore_truncated_dump_exits_3_before_container(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    f = tmp / "remote" / "db-backups" / "sorento_crm_20261014T030000Z.sql.gz"
+    f.write_bytes(f.read_bytes()[:-12])
+    r = run(RESTORE, e, HC_RESTORE_URL=HCR)
+    assert r.returncode == 3, r.stdout + r.stderr
+    assert curl_urls(tmp)[-1] == f"{HCR}/fail"
+    assert not any(c.startswith("docker run") for c in calls(tmp))
+
+
+def test_restore_measuring_pass_is_niced(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e)
+    assert r.returncode == 0, r.stderr
+    log = calls(tmp)
+    first_run = next(i for i, c in enumerate(log) if c.startswith("docker run"))
+    assert any(c.startswith("nice -n 19 ionice -c3 gzip -dc") for c in log[:first_run])

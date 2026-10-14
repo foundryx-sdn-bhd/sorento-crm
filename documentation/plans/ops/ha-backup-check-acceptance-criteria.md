@@ -22,11 +22,11 @@
 - AC-13 The restore container runs with `--memory` = `--memory-swap` = `RESTORE_MEMORY` (default 2g),
   `--oom-score-adj 1000` and `--cpus 1`; the host side of the gzip | psql stream runs under
   `nice -n 19 ionice -c3` (the container's Postgres is bounded by the CPU cap only).
-- AC-14 The restore test holds a shared flock on `/opt/sorento-crm2/.deploy.lock` for its whole run;
+- AC-14 The restore test holds a shared flock on `DEPLOY_LOCK_PATH` (default `/opt/sorento-crm2/.deploy.lock`, same name and default as the deploy script) for its whole run;
   while a deploy holds it exclusively the test retries, and after `DEPLOY_LOCK_WAIT` (default 3600 s)
   exits 7 with `/fail` before downloading anything. No lock folder = no wait (n8n, shared-service).
-  It never creates the lock file and refuses (exit 2, `/fail`) a lock folder that is not owned by
-  the runner or is group/other writable, and a lock file that is missing, a symlink or not a
-  regular file.
+  It never creates the lock file and refuses (exit 2, `/fail`) a lock folder that is a symlink or
+  group/other writable, with a message naming runbook step 0 option (b), and a lock file that is
+  missing, a symlink or not a regular file. A folder owned by the release user is accepted.
 - AC-15 Less than max(4x the downloaded dump, 2x its plain SQL) free on the work dir or on the docker root = exit 4 with
   `/fail`, before any container starts.

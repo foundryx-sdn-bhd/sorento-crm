@@ -38,7 +38,7 @@ only in the env file on the box (mode 600).
 | Code | backup-db.sh | restore-test.sh |
 | --- | --- | --- |
 | 0 | ok | ok |
-| 2 | bad config, or env file not root-only | bad config, env file or work dir not root-only, deploy lock folder not root-only or lock file missing, or encrypted dump without `AGE_IDENTITY` |
+| 2 | bad config, or env file not root-only | bad config, env file or work dir not root-only, deploy lock folder group/other writable or lock file missing (step 0b), or encrypted dump without `AGE_IDENTITY` |
 | 3 | pg_dump failed | no dump on Drive, download or gzip check failed |
 | 4 | `gzip -t` failed | throwaway container did not start or never got ready, or not enough disk free on the work dir or the docker root (the larger of 4x the gzipped dump and 2x its plain SQL) |
 | 5 | `age` failed | restore failed (psql prints the line) |
@@ -60,6 +60,39 @@ Every non-zero code except 75 pings `/fail`.
 
 - Check: each check shows "New" (never pinged).
 - Rollback: delete the checks. Nothing on the boxes depends on them existing.
+
+### Step 0b. Where the deploy lock lives (CRM box, 5 min)
+
+The restore test and the release script (`blue_green_deploy.sh`, lane HA-MEM-DEPLOY-GUARD) share one
+lock file, named by the env var `DEPLOY_LOCK_PATH` in both, default `/opt/sorento-crm2/.deploy.lock`.
+A root process must not open files in a folder another account can write, so first look at who owns
+that folder and who the release job logs in as:
+
+```bash
+ssh root@<CRM_ORIGIN>
+stat -c '%U %G %a' /opt/sorento-crm2
+last -n 50 | awk '{print $1}' | sort | uniq -c   # who logs in; the release job is the GitHub secret SSH_USER
+```
+
+- **(a) It prints `root root 755` (or `root <group> 755`, `750`, `700`): no group or other write bit.**
+  Keep the default. Nothing to set. Use `<LOCK_DIR>` = `/opt/sorento-crm2` below.
+  (The repo cannot tell who `SSH_USER` is: its value is a secret. `last` shows which accounts log in;
+  if one besides `root` owns or can write the folder, that is option (b).)
+- **(b) It prints another owner, or a mode with a group or other write bit (`775`, `777`).**
+  Use a separate folder, once:
+
+  ```bash
+  sudo install -d -o <release user> -g root -m 755 /var/lib/sorento-deploy
+  sudo install -m 644 -o <release user> -g root /dev/null /var/lib/sorento-deploy/.deploy.lock
+  ```
+
+  Then set `DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/.deploy.lock` in BOTH the restore-test env
+  (`/etc/sorento-backup/backup.env`, step 2) and the deploy env (the env HA-MEM-DEPLOY-GUARD's
+  runbook names). Use `<LOCK_DIR>` = `/var/lib/sorento-deploy` below. The release user owning the
+  folder is fine: it runs `docker compose`, which is root-equivalent on the box already.
+
+- Check: `stat -c '%U %G %a' <LOCK_DIR>` ends in `755`, `750` or `700` (no group or other write bit), and `ls -l <LOCK_DIR>/.deploy.lock` shows `-rw-r--r--`.
+- Rollback (b only): `sudo rm -rf /var/lib/sorento-deploy` and remove `DEPLOY_LOCK_PATH` from both envs.
 
 ## Step 1. Read the old script on the CRM box (read-only, 5 min)
 
@@ -91,14 +124,11 @@ Write down, for step 2:
   about 1-2x the plain SQL, and a dump compresses 3-8x). They usually sit on the same disk as live
   Postgres. To see now whether it will pass:
   `df -h /var/lib "$(docker info --format '{{.DockerRootDir}}')"` and
-  `rclone cat "gdrive:db-backups/$(rclone lsf gdrive:db-backups | grep '^sorento_crm_' | sort | tail -n 1)" | gzip -dc | wc -c`
+  `rclone cat "gdrive:db-backups/$(rclone lsf gdrive:db-backups | grep '^sorento_crm_.*\.sql\.gz$' | sort | tail -n 1)" | gzip -dc | wc -c`
   (the plain SQL size in bytes).
   The throwaway container is capped at 2 GB of memory (`RESTORE_MEMORY`), so `free -g` must show
   that much available at 04:30 on a Sunday without squeezing live Postgres.
-- the deploy lock folder: `stat -c '%U %a' /opt/sorento-crm2` must print `root` and a mode with no
-  group or other write bit (`755`, `750`, `700`). If it prints another user or `775`/`777`, stop and
-  tell crew: the restore test refuses that folder (exit 2), because a root process must not open
-  files in a folder another account can write.
+- the deploy lock folder: done in step 0b; note whether you took (a) or (b).
 
 - Check: you have every value above. If `rclone lsf` errors, the Drive token is broken today:
   `rclone config reconnect gdrive:` first (it prints a URL; finish it from your laptop).
@@ -115,8 +145,9 @@ ssh root@<CRM_ORIGIN> 'chmod 750 /opt/sorento-backup/*.sh && command -v flock gz
 ssh root@<CRM_ORIGIN> 'test -e /opt/sorento-crm2/.deploy.lock || install -m 644 -o root -g root /dev/null /opt/sorento-crm2/.deploy.lock; ls -l /opt/sorento-crm2/.deploy.lock'
 ```
 
-The last line creates the deploy lock file the restore test shares with the release script (the
-script never creates it). It must print `-rw-r--r-- 1 root root 0`.
+The last line is for step 0b option (a) only: it creates the deploy lock file the restore test
+shares with the release script (the script never creates it). It must print
+`-rw-r--r-- 1 root root 0`. With option (b) the file already exists in `/var/lib/sorento-deploy`.
 
 On the box, write the env file (fill the values from step 1):
 
@@ -135,6 +166,8 @@ RESTORE_DB_USER=<DB_USER>
 RESTORE_ROLES=""
 SANITY_TABLES="users customers orders products audit_logs"
 SANITY_LATEST=audit_logs.changed_at
+# Step 0b option (b) only, and the same line in the deploy env:
+# DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/.deploy.lock
 EOF
 sudo chmod 600 /etc/sorento-backup/backup.env
 ```
@@ -206,7 +239,7 @@ restore test is built to lose any fight for resources:
   Postgres, which does the heavy disk writes, is held back only by the 1 CPU cap: it does not inherit
   host priorities. If the Sunday window ever slows live traffic, tell crew (a per-device write cap,
   `--device-write-bps`, is the next step);
-- it takes a **shared** lock on `/opt/sorento-crm2/.deploy.lock`. Once lane HA-MEM-DEPLOY-GUARD
+- it takes a **shared** lock on `DEPLOY_LOCK_PATH` (step 0b). Once lane HA-MEM-DEPLOY-GUARD
   makes `blue_green_deploy.sh` take the same lock exclusively, a deploy waits for a running restore
   test, and a restore test waits up to 60 min for a running deploy, then gives up (exit 7, `/fail`).
   Until that lane is merged the lock does not stop a deploy, so the rule above is the only guard.
@@ -228,18 +261,19 @@ The first run pulls `pgvector/pgvector:pg<major>` (about 160 MB).
 
 - Check: `exit=0`; the log shows `rows users=<n>` and the other tables with plausible numbers (compare
   with the CRM screens), `latest audit_logs.changed_at=` within the last day, and
-  `done: ... restores cleanly`. Above those: `deploy lock held (shared)` and two `disk ok` lines. The
+  `done: ... restores cleanly`. Above those: `deploy lock held (shared): <LOCK_DIR>/.deploy.lock` and two `disk ok` lines. The
   `docker ps -a` line prints nothing. `crm-restore-test` is green.
 - If it fails with exit 4 and `only <n> bytes free on <dir>`: free disk on that filesystem. The
   docker root is the one that matters (the restored DB lands there). Never lower
   `RESTORE_DISK_FACTOR` on the CRM box: the restored DB shares the disk with live Postgres.
-- If it fails with exit 2 and `/opt/sorento-crm2 must be owned by root` or `.deploy.lock is missing`:
-  redo step 1's lock-folder check and step 2's last line.
+- If it fails with exit 2 and `... is a symlink or writable by group or others. Follow runbook step 0
+  option (b)`: do what the message says (step 0b option (b)). If it says `.deploy.lock is missing`:
+  redo step 0b and step 2's last line.
 - If it fails with `ERROR: role "<x>" does not exist`: add `<x>` to `RESTORE_ROLES` in the env file
   and run again. To list every role the dump needs at once:
 
   ```bash
-  F=$(rclone lsf gdrive:db-backups | grep '^sorento_crm_' | sort | tail -n 1)
+  F=$(rclone lsf gdrive:db-backups | grep '^sorento_crm_.*\.sql\.gz$' | sort | tail -n 1)
   rclone cat "gdrive:db-backups/$F" | gzip -dc \
     | grep -E '^(ALTER .* OWNER TO|GRANT |REVOKE |ALTER DEFAULT PRIVILEGES )' \
     | sed -E 's/;$//; s/.*FOR ROLE ([^ ]+) .* (TO|FROM) (.*)/\1,\3/; s/.* (TO|FROM) //' \

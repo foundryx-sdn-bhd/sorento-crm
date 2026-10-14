@@ -23,9 +23,10 @@
 #   RESTORE_DISK_FACTOR        free space needed on the work dir and on the docker root, as a
 #                              multiple of the downloaded dump      (default 4; never less than
 #                              2x the plain SQL inside it)
-#   DEPLOY_LOCK_FILE           shared with blue_green_deploy.sh     (default /opt/sorento-crm2/.deploy.lock;
-#                              skipped when its folder does not exist, as on the n8n box; otherwise
-#                              the folder must be root-only and the file must already exist)
+#   DEPLOY_LOCK_PATH           shared with blue_green_deploy.sh, same name and default there
+#                              (default /opt/sorento-crm2/.deploy.lock; skipped when its folder does
+#                              not exist, as on the n8n box; otherwise the folder must not be
+#                              group/other writable and the file must already exist)
 #   DEPLOY_LOCK_WAIT           seconds to wait for a running deploy (default 3600)
 #   DEPLOY_LOCK_RETRY          seconds between lock attempts        (default 30)
 #   AGE_IDENTITY               age identity file, needed only for .age dumps
@@ -70,7 +71,7 @@ RESTORE_LOCK_FILE="${RESTORE_LOCK_FILE:-/var/lib/sorento-backup/restore-test-${B
 RESTORE_READY_TIMEOUT="${RESTORE_READY_TIMEOUT:-120}"
 RESTORE_MEMORY="${RESTORE_MEMORY:-2g}"
 RESTORE_DISK_FACTOR="${RESTORE_DISK_FACTOR:-4}"
-DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/opt/sorento-crm2/.deploy.lock}"
+DEPLOY_LOCK_PATH="${DEPLOY_LOCK_PATH:-/opt/sorento-crm2/.deploy.lock}"
 DEPLOY_LOCK_WAIT="${DEPLOY_LOCK_WAIT:-3600}"
 DEPLOY_LOCK_RETRY="${DEPLOY_LOCK_RETRY:-30}"
 AGE_IDENTITY="${AGE_IDENTITY:-}"
@@ -134,29 +135,30 @@ fi
 
 # Shared lock: restore tests may overlap each other, a deploy (exclusive) may not overlap either.
 # The fd stays open, so the lock is held until this script exits.
-DEPLOY_LOCK_DIR="$(dirname "$DEPLOY_LOCK_FILE")"
+DEPLOY_LOCK_DIR="$(dirname "$DEPLOY_LOCK_PATH")"
 if [ -d "$DEPLOY_LOCK_DIR" ]; then
-  # Never create or follow the lock in a folder another account can write: a planted symlink
-  # or FIFO there would make this root process create or open any path. The owner creates the
-  # file once (runbook step 2); it is opened read-only, so a non-root deploy can lock it too.
-  if [ -L "$DEPLOY_LOCK_DIR" ] || [ ! -O "$DEPLOY_LOCK_DIR" ] \
-    || [ -n "$(find "$DEPLOY_LOCK_DIR" -maxdepth 0 -perm /022)" ]; then
-    die 2 "$DEPLOY_LOCK_DIR must be owned by $(id -un) and not writable by group or others"
+  # Never create the lock, and never open it in a folder that group or others can write: a
+  # planted symlink or FIFO there would make this root process open any path. The folder may be
+  # owned by root or by the release user (runbook step 0, option b); the release user runs
+  # docker compose, so it is root-equivalent on the box already. The file is created once by
+  # hand and opened read-only, so a non-root deploy can lock it too.
+  if [ -L "$DEPLOY_LOCK_DIR" ] || [ -n "$(find "$DEPLOY_LOCK_DIR" -maxdepth 0 -perm /022)" ]; then
+    die 2 "$DEPLOY_LOCK_DIR is a symlink or writable by group or others. Follow runbook step 0 option (b): run once 'install -d -o <release user> -g root -m 755 /var/lib/sorento-deploy' and 'install -m 644 -o <release user> -g root /dev/null /var/lib/sorento-deploy/.deploy.lock', then set DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/.deploy.lock in BOTH the restore-test env and the deploy env"
   fi
-  if [ -L "$DEPLOY_LOCK_FILE" ] || [ ! -f "$DEPLOY_LOCK_FILE" ]; then
-    die 2 "$DEPLOY_LOCK_FILE is missing or not a regular file; create it: install -m 644 /dev/null $DEPLOY_LOCK_FILE"
+  if [ -L "$DEPLOY_LOCK_PATH" ] || [ ! -f "$DEPLOY_LOCK_PATH" ]; then
+    die 2 "$DEPLOY_LOCK_PATH is missing or not a regular file; create it: install -m 644 /dev/null $DEPLOY_LOCK_PATH"
   fi
-  exec 8<"$DEPLOY_LOCK_FILE"
+  exec 8<"$DEPLOY_LOCK_PATH"
   waited=0
   until flock -s -n 8; do
-    [ "$waited" -lt "$DEPLOY_LOCK_WAIT" ] || die 7 "a deploy held $DEPLOY_LOCK_FILE for ${DEPLOY_LOCK_WAIT}s"
+    [ "$waited" -lt "$DEPLOY_LOCK_WAIT" ] || die 7 "a deploy held $DEPLOY_LOCK_PATH for ${DEPLOY_LOCK_WAIT}s"
     [ "$waited" -eq 0 ] && log "deploy in progress, waiting up to ${DEPLOY_LOCK_WAIT}s"
     sleep "$DEPLOY_LOCK_RETRY"
     waited=$((waited + DEPLOY_LOCK_RETRY))
   done
-  log "deploy lock held (shared)"
+  log "deploy lock held (shared): $DEPLOY_LOCK_PATH"
 else
-  log "no deploy lock folder $(dirname "$DEPLOY_LOCK_FILE") on this box, not waiting for deploys"
+  log "no deploy lock folder $(dirname "$DEPLOY_LOCK_PATH") on this box, not waiting for deploys"
 fi
 
 # The work dir holds a plaintext dump: it must be ours, not a symlink, and closed to others.
