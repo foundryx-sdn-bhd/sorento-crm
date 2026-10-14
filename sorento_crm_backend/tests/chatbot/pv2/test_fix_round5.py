@@ -224,4 +224,5 @@ def test_single_did_you_mean_candidate_is_asked_even_under_a_default_policy():
     policy = ClarifyPolicy({("entity", "inventory"): "default"})
     _, actions = _run(mk_state(), {"product|MKS9505-HC-SS": ("ambiguous", [("product", "MKS9505-SS-HC")], True)},
                       policy=policy, domain="inventory", entities=[_e(phrase="MKS9505-HC-SS")])
+    # PV2-FIX r5d: crew 14 Oct, PV2 writes v1's did-you-mean text itself
     assert isinstance(actions[0], ClarifyAct)

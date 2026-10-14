@@ -103,6 +103,10 @@ class _Miss(Exception):
         self.nothing_held = nothing_held
 
 
+#: The acts that can answer (or fail to answer) an open question.
+_ANSWER_ACTS = frozenset({"answers_bot_question", "unclear"})
+
+
 def apply_turn(
     state: ConversationState,
     out: ParserV2Output,
@@ -157,21 +161,30 @@ def apply_turn(
             )
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
-            action = _miss(st, i, pending_in, miss, language, can_offer_handover)
+            # Only an answer (or an unclear reply) re-asks the open question; a new
+            # question that missed asks its own and replaces it.
+            reask = pending_in if ask.act in _ANSWER_ACTS else None
+            action = _miss(st, i, reask, miss, language, can_offer_handover)
+            if reask is None and pending_in is not None and isinstance(action, ClarifyAct):
+                action.reask = False  # its own question, not a retry of the open one
         else:
             answered_pending = answered_pending or answered
             action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover)
             if (
                 isinstance(action, Lookup)
+                and action.picked is None
                 and pending_in is not None
                 and pending_in.kind == "v1_open_question"
                 and pending_in.v1_kind == "product_pick"
-                and ask.act != "answers_bot_question"
-                and ask.entities
-                and all(e.refers_to_held and e.key is None and e.phrase is None and e.quantity is not None
-                        for e in ask.entities)
+                and any(e.quantity is not None for e in ask.entities)
             ):
-                action.requantify = True  # v1's requantify rule reads it, not a new subject
+                products = action.held.refs.get("product", [])
+                if (
+                    products
+                    and [r.key for r in products] == [r.key for r in held_before.refs.get("product", [])]
+                    and all(r.quantity is not None for r in products)
+                ):
+                    action.requantify = True  # v1's requantify rule reads it, not a new subject
         actions.append(action)
         question = getattr(action, "pending", None)
         if question is not None and first_question is None:
@@ -346,10 +359,10 @@ def _answer(
     key = ask.answer.option_key if ask.answer is not None else None
     free = ask.answer.free_value if ask.answer is not None else None
     picked = next((o for o in pending.options if o.key == key), None) if key is not None else None
-    if picked is None and key is not None and pending.kind == "clarify_entity":
+    if picked is None and key is not None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
         # A candidate question is keyed by position; its code (the payload key) still picks.
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
-    if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in ("offer_handover", "offer_doc_handover"):
+    if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in ("offer_handover", "offer_doc_handover", "clarify_did_you_mean"):
         # A bare number (the reply's free value or a row pick) names the printed position.
         n = int(free) if isinstance(free, str) and free.isdecimal() else ask.row_pick
         if isinstance(n, int) and n >= 1:
@@ -358,11 +371,16 @@ def _answer(
                 picked = pending.options[n - 1]
     if picked is None:
         if free is not None and pending.kind in FREE_VALUE_PENDING:
+            held = st.held.model_copy(deep=True)
+            for ent in ask.entities:
+                if ent.key is None and ent.phrase is None:
+                    _set_quantity(held, ent)  # a count restated beside the free value
+            st.held = held
             return (
                 Lookup(
                     ask_index=i,
                     domain=st.held.domain,
-                    held=st.held.model_copy(deep=True),
+                    held=held.model_copy(deep=True),
                     ask=ask,
                     pending_kind=pending.kind,
                     free_value=free,
@@ -375,7 +393,7 @@ def _answer(
     if pending.kind == "offer_handover" or payload_kind == "handover":
         if picked.payload.get("value") is True:
             return HandOver(ask_index=i, team_key=picked.payload.get("team_key")), True
-        return SmallTalk(ask_index=i), True
+        return SmallTalk(ask_index=i, declined_offer=True), True
 
     if pending.kind in PASS_THROUGH_PENDING or payload_kind == "choice":
         return (
@@ -458,6 +476,9 @@ def _apply_fields(
             )
     if ask.period is not None:
         held.period = ask.period
+        if refine and held.report is not None and ask.report is None:
+            held.report = held.report.model_copy(update={"period": ask.period})
+            filtered = True  # the held report is planned again with its new period
     if filtered and ask.report is None and held.report is not None:
         _plan_report(st, held, resolver, language, i, qs, today)
     if ask.report is not None or (held.report is not None and ({"report", "period"} & set(ask.cleared))):
@@ -640,6 +661,12 @@ def _apply_entities(
         if ent.op == "clear":
             held.refs = set_refs(held.refs, ent.kind, [], "clear")
             continue
+        if (
+            not ent.refers_to_held and ent.key is None and ent.phrase is None and ent.doc_number is None
+            and ent.quantity is not None and ent.op == "set" and held.refs.get(ent.kind)
+        ):
+            _set_quantity(held, ent)  # a count with nothing named restates the held kind's
+            continue
         if ent.refers_to_held and ent.key is None and ent.phrase is None:
             _set_quantity(held, ent)  # "this one": the held subject stays; a restated count replaces
             continue
@@ -656,6 +683,20 @@ def _apply_entities(
         e.kind for e, r in zip(to_resolve, results)
         if getattr(r, "status", "none") == "exact" and getattr(r, "refs", None)
     }
+    all_miss: dict[str, list[str]] = {}
+    said: set[str] = set()
+    for kind, n in listed.items():
+        group = [(e, r) for e, r in zip(to_resolve, results) if e.kind == kind]
+        if (
+            n >= 2
+            and kind in DOCUMENT_KINDS
+            and all(
+                getattr(r, "status", "none") == "none" and not getattr(r, "options", None)
+                and (e.doc_number or e.phrase)
+                for e, r in group
+            )
+        ):
+            all_miss[kind] = [str(e.doc_number or e.phrase) for e, _ in group]
     for ent, res in zip(to_resolve, results):
         status = getattr(res, "status", "none")
         refs = list(getattr(res, "refs", None) or [])
@@ -669,6 +710,10 @@ def _apply_entities(
             words = ent.phrase or ent.doc_number
             if words:
                 qs.misses.append(Miss(kind=ent.kind, phrase=words))
+            continue
+        if status == "ambiguous" and getattr(res, "did_you_mean", False) and ent.kind == "product" and ent.phrase and options:
+            # v1's own did-you-mean sentence, written here (no v1 re-lookup), with PV2's pending.
+            qs.append(_did_you_mean(st, i, ent, held, options, qs.can_offer, language))
             continue
         if (
             status == "ambiguous"
@@ -685,6 +730,13 @@ def _apply_entities(
             continue
         if status != "exact" or not refs:
             if not options and ent.kind in DOCUMENT_KINDS and (ent.doc_number or ent.phrase):
+                if ent.kind in all_miss:
+                    # Every item of the list missed: ONE sentence names them all, as v1 does.
+                    if ent.kind not in said:
+                        said.add(ent.kind)
+                        qs.append(_doc_not_found(
+                            st, i, ent, held, language, qs.can_offer, words_list=all_miss[ent.kind]))
+                    continue
                 qs.append(_doc_not_found(st, i, ent, held, language, qs.can_offer))
                 continue
             qs.append(
@@ -729,27 +781,66 @@ def _apply_entities(
 DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_order", "inbound_shipment", "product"})
 
 
+def _offer_team(offer: Any, held: Held) -> str:
+    """The domain's escalation team: the live rows when given, else the seed policy."""
+    if offer.teams is not None:
+        team = offer.teams.get(held.domain or "")
+    else:
+        from app.services.chatbot.turn.policy import default_policy
+
+        row = default_policy().domain(held.domain or "")
+        team = row.escalation_team_code if row is not None else None
+    return team or "customer_service"
+
+
+def _did_you_mean(
+    st: ConversationState, i: int, ent: Entity, held: Held, options: list[Option], offer: Any, language: str
+) -> ClarifyAct:
+    """v1's did-you-mean sentence (lanes/business/answer.py build_suggest_offer): the typed
+    token, the suggested codes, and its escalation clause per the contact's offer mode."""
+    codes = [str(o.payload.get("key") or o.key) for o in options]
+    lines = "\n".join(f"{n}. {c}" for n, c in enumerate(codes, start=1))
+    asked = f'Couldn\'t find "{ent.phrase}" (product). Did you mean:\n{lines}\nReply with a code to continue'
+    picks = [
+        Option(key=str(n), label=o.label, payload={"kind": "product", "key": c, "label": o.label, "op": "set", **_qty_payload(ent)})
+        for n, (o, c) in enumerate(zip(options, codes), start=1)
+    ]
+    extra: list[Option] = []
+    if offer.mode == "offer":
+        team = _offer_team(offer, held)
+        asked += f", or would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        extra = [
+            Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
+            for o in clarify_copy.handover_options(language)
+        ]
+    elif offer.mode == "refer":
+        from app.services.chatbot.turn.task import REFER_TO_SALESMAN
+
+        asked += f". {REFER_TO_SALESMAN}"
+    else:
+        asked += "."
+    pending = PendingQuestion(
+        kind="clarify_did_you_mean", asked=asked, options=[*picks, *extra], asked_turn=st.turn_no, misses=0
+    )
+    return ClarifyAct(ask_index=i, about="entity", phrase=ent.phrase, pending=pending)
+
+
 def _doc_not_found(
-    st: ConversationState, i: int, ent: Entity, held: Held, language: str, offer: Any
+    st: ConversationState, i: int, ent: Entity, held: Held, language: str, offer: Any,
+    *, words_list: list[str] | None = None,
 ) -> ClarifyAct:
     """v1's not-found sentence for a document number (`Couldn't find: "<n>" (<kind>).`),
     with its escalation offer for a non-staff contact (`_esc_offer`, the domain's team)."""
     words = ent.doc_number or ent.phrase
-    asked = f'Couldn\'t find: "{words}" ({ent.kind.replace("_", " ")}).'
+    label = ent.kind.replace("_", " ")
+    asked = "Couldn't find: " + ", ".join(f'"{w}" ({label})' for w in (words_list or [words])) + "."
     options: list[Option] = []
     if offer.mode == "refer":
         from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
         asked += f" {REFER_TO_SALESMAN}"
     elif offer.mode == "offer":
-        if offer.teams is not None:
-            team = offer.teams.get(held.domain or "")
-        else:
-            from app.services.chatbot.turn.policy import default_policy
-
-            row = default_policy().domain(held.domain or "")
-            team = row.escalation_team_code if row is not None else None
-        team = team or "customer_service"
+        team = _offer_team(offer, held)
         asked += f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
         options = [
             Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})

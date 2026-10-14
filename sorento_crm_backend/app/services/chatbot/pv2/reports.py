@@ -612,7 +612,9 @@ _SALES_REPORT_ARGS = frozenset(
 )
 
 
-def _delivered_sales_report_args(plan: Any, fetch: Any, contact_id: Any, space_id: Any) -> Optional[dict[str, Any]]:
+def _delivered_sales_report_args(
+    plan: Any, fetch: Any, contact_id: Any, space_id: Any, detail_pick: Optional[str] = None
+) -> Optional[dict[str, Any]]:
     """`crm_sales_report` args exactly as v1's `entity_ids_transformer` builds them, for a
     delivered amount total (no ranking, no breakdown) over what that tool takes: customer,
     product code, channel and the date window. Anything else stays on `crm_report_ask`."""
@@ -626,6 +628,8 @@ def _delivered_sales_report_args(plan: Any, fetch: Any, contact_id: Any, space_i
     semantic: dict[str, Any] = {"date_filter_start": a.get("date_from"), "date_filter_end": a.get("date_to")}
     if a.get("channel"):
         semantic["sales_channel"] = a["channel"]
+    if detail_pick:
+        semantic["outstanding_detail_pick"] = detail_pick  # v1 sets args["group_by"] from it
     entities = [{"entity_type": "customer", "uuid": str(c)} for c in a.get("customer_ids") or []]
     args = fetch.entity_ids_transformer(
         {"tool": "crm_sales_report", "entities": entities, "semantic_input": semantic},
@@ -637,6 +641,57 @@ def _delivered_sales_report_args(plan: Any, fetch: Any, contact_id: Any, space_i
         args["channel"] = jsc.js_string(a["channel"])
     args["contact_id"] = jsc.nullish_str(contact_id).strip()
     return args
+
+
+_DELIVERED_BREAKDOWNS = ("customer", "product", "delivery_order")
+
+
+def _delivered_breakdown(spec: Any) -> Optional[str]:
+    """The one breakdown of a delivered sales spec that v1's `crm_sales_report` takes."""
+    group = list(getattr(spec, "group_by", None) or [])
+    if (
+        len(group) == 1
+        and group[0] in _DELIVERED_BREAKDOWNS
+        and getattr(spec, "basis", None) == "delivered"
+        and getattr(spec, "dataset", None) in (None, "sales")
+        and getattr(spec, "top_n", None) is None
+    ):
+        return group[0]
+    return None
+
+
+def _delivered_reply(
+    plan: Any, fetch: Any, mcp_call: Any, contact_id: Any, space_id: Any, detail_pick: Optional[str]
+) -> Optional[ReportReply]:
+    """The reply of v1's delivery-order sales report, with its breakdown offer as the pending;
+    None when the plan is not one that report takes."""
+    from app.services.chatbot.lanes.business import _McpSeam
+
+    sales_args = _delivered_sales_report_args(plan, fetch, contact_id, space_id, detail_pick)
+    if sales_args is None:
+        return None
+    envelope = fetch.call_tool("crm_sales_report", sales_args, mcp=_McpSeam(mcp_call))
+    if isinstance(envelope, dict) and isinstance(envelope.get("error"), str):
+        return ReportReply(text=fetch._REPORT_ASK_ERROR_TEXT, plan=plan, error=True)
+    out = fetch._sales_report_output(envelope, {"tool": "crm_sales_report"})
+    text = "\n".join([plan.header, *plan.notes, out["response"]])
+    ask = out.get("outstanding_ask") or {}
+    rows = ask.get("last_result_set") or []
+    pending = None
+    if rows:
+        pending = {
+            "kind": "clarify_report_breakdown",
+            "asked": (ask.get("filters") or {}).get("offer_text") or "",
+            "options": [
+                {
+                    "key": str(row.get("idx")),
+                    "label": str(row.get("label")),
+                    "payload": {"report": {"group_by": [row.get("value")]}},
+                }
+                for row in rows
+            ],
+        }
+    return ReportReply(text=text, plan=plan, pending=pending)
 
 
 def answer_report(
@@ -661,6 +716,16 @@ def answer_report(
     from app.services.chatbot.lanes.business import fetch
     from app.services.chatbot.lanes.business import report_ask
 
+    detail_pick = _delivered_breakdown(spec)
+    if detail_pick:
+        # A delivered breakdown v1's report takes runs there, never asking a top N (v1 does not).
+        base = spec.model_copy(update={"group_by": [], "top_n": None}, deep=True)
+        plan = plan_report(base, refs=refs, today=today, dealer=dealer)
+        if plan.status == "run":
+            plan.spec = plan.spec.model_copy(update={"group_by": list(spec.group_by)}, deep=True)
+            reply = _delivered_reply(plan, fetch, mcp_call, contact_id, space_id, detail_pick)
+            if reply is not None:
+                return reply
     plan = plan_report(spec, refs=refs, today=today, dealer=dealer)
     if plan.status == "ask":
         pending = {
@@ -672,16 +737,9 @@ def answer_report(
     if plan.status != "run":
         return ReportReply(text="\n".join([*plan.notes, plan.reply or ""]) if plan.reply else "", plan=plan)
 
-    sales_args = _delivered_sales_report_args(plan, fetch, contact_id, space_id)
-    if sales_args is not None:
-        # A delivered sales total is v1's delivery-order report (`crm_sales_report`, by DO date),
-        # not the sales-order lines `crm_report_ask` reads: same tool, args and renderer as v1.
-        envelope = fetch.call_tool("crm_sales_report", sales_args, mcp=_McpSeam(mcp_call))
-        if isinstance(envelope, dict) and isinstance(envelope.get("error"), str):
-            return ReportReply(text=fetch._REPORT_ASK_ERROR_TEXT, plan=plan, error=True)
-        out = fetch._sales_report_output(envelope, {"tool": "crm_sales_report"})
-        text = "\n".join([plan.header, *plan.notes, out["response"]])
-        return ReportReply(text=text, plan=plan)
+    reply = _delivered_reply(plan, fetch, mcp_call, contact_id, space_id, None)
+    if reply is not None:
+        return reply
 
     args = {
         "view": "render",

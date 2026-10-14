@@ -42,7 +42,7 @@ ASK = {
  "portal_form": "complaint" | "stock_inquiry" | "purchase_request" | "sponsorship_form" | null
 }
 - status: "outstanding" for outstanding / pending / not yet delivered ("belum hantar", "未送"); "delivered" for delivered / done deliver; else null.
-- portal_form: asking for a complaint, stock inquiry, purchase request or sponsorship form (typos included) is domain portal_link with portal_form that form, never forms.
+- portal_form: asking for a complaint, stock inquiry, purchase request or sponsorship form (typos included) is domain portal_link with portal_form that form, never forms. Only when the person asks to fill in or submit a form; a question about an existing request ("is my purchase request approved?") is a status question, portal_form null.
 
 =====================================================================
 TURN ACT (exactly one per ask)
@@ -65,9 +65,9 @@ ENTITY
 {"kind": ENTITY KINDS key, "key": index key or null, "phrase": the person's words or null, "op": "set|add|remove|clear", "refers_to_held": true|false, "quantity": {"number": n, "unit": "unit/pc/set/..." as said} or null, "doc_number": the document number exactly as written or null}
 - Index kinds (brand, product_class, product_type): put the INDEX key in `key` ("SORENTO", "water_closet", "close_coupled") and the person's words in `phrase`. If no index key fits, key null and the words in phrase.
 - Every other kind (product, customer, order, warehouse, sales_order, delivery_order, purchase_order, inbound_shipment, promotion, form, ...): key null, `phrase` = the code or name EXACTLY as written ("SRTWC286", "srtwc 286", "Hanlim Trading"). Never correct, complete or translate a code or a name; code does the lookup.
-- Quantity goes ON the entity of the code it counts, never as an entity of its own.
+- Quantity goes ON the entity of the code it counts, never as an entity of its own. Under a PENDING pick whose options are codes, a count is a refines_held quantity entity, never free_value.
 - A count of items the person wants ("5unit", "2pc", "10 SETS", "x 2", "5 bijik", "2 个") is that product entity's `quantity`, never a spec. A lone number answering how many, or after a quantity reply, is a refines_held entity with refers_to_held true carrying that quantity.
-- Documents: kind = the document type the words name (delivery_order for "Delivery"/"DO", sales_order, purchase_order, inbound_shipment); `doc_number` = the number EXACTLY as written, letter prefix included ("PS202609-0469" stays "PS202609-0469"); only a separate kind word before it ("Delivery", "DO") is left out, and then `phrase` is null ("Delivery 202609-2012" -> delivery_order, doc_number "202609-2012", no period). A document question names its number: never ask a period for it. A number with no kind word -> kind "order"; never guess a kind from its letters ("PS..." is not a purchase order). A number asked about delivery ("done deliver?", "dah hantar?", "送了吗", "sudah hantar", "dah sampai", "几时到") is a delivery_order, whatever its letters.
+- Documents: kind = the document type the words name (delivery_order for "Delivery"/"DO", sales_order, purchase_order, inbound_shipment); `doc_number` = the number EXACTLY as written, letter prefix included ("PS202609-0469" stays "PS202609-0469"); kind words, filler ("boss", "bro", "tolong") and question words ("bila sampai", "几时到") never go in `phrase`: it is null ("Delivery 202609-2012" -> delivery_order, doc_number "202609-2012", no period). A document question names its number: never ask a period for it. A number with no kind word -> kind "order"; never guess a kind from its letters ("PS..." is not a purchase order). Delivery words about a number ("done deliver?", "sudah hantar", "dah sampai", "送了吗", "几时到") make it a delivery_order (domain order), whatever its letters (PS..., REP...): never purchase_order; only a product code with PO words is.
 - Forms: `phrase` = all the words that name the form, brand words included ("Mocha Application form").
 - A product code is letters+digits like SRTWC286, CB88SS, SRTUB206-SH. A 4-letter + 7-digit token (TIIU6323920) is a container = inbound_shipment.
 - A customer `phrase` is the name only, without words saying what they are ("Dealer Fullshun" -> "Fullshun"). Words that describe a named product code (its printed name, "SRTWB1515 COUNTER TOP & WALL HUNG BASIN") are not specs or classes: only the code is the entity.
@@ -97,7 +97,7 @@ DOMAINS (choose by the MEANING of the request: what the question asks, "还有�
 - inventory: stock, stock balance, availability, "ada stock?", "有货吗", how many in which warehouse. A product code with only a count ("SRTWC286-SH 5unit", "CB301 = 20") asks if that many are in stock: inventory, quantity on the product; a lone number after a stock answer is that quantity (refines_held), never a code.
 - incoming: goods coming IN from a supplier: ETA, arrival, container, shipment, CIDB inspection / approval / clearance of a container, gate pass, forwarder, collection of a container.
 - order: goods going OUT to a CUSTOMER: their orders, delivery orders (DO), delivery status, outstanding / pending / belum hantar orders, what a customer took or bought.
-- purchase_order: outstanding purchase orders to suppliers. purchase_cost: what we last paid a supplier. spo_allocation: SPO / last in.
+- purchase_order: outstanding purchase orders to suppliers; "got po?" / "any PO for X" with X a PRODUCT CODE is this domain, the code kind product. purchase_cost: what we last paid a supplier. spo_allocation: SPO / last in.
 - sales: sales figures and rankings for staff: top customers / products / salesmen, sales amount or quantity by period ("top 10 customers by sales last month", "who sold the most", "卖得最多"). Fill `report`.
 - chat_analytics: statistics about the chatbot's own conversations.
 - forms: a form. portal_link: complaint, stock inquiry, product inquiry, purchase request, sponsorship form.

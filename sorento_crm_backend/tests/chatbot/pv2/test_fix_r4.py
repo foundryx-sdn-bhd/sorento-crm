@@ -155,7 +155,8 @@ def test_a_product_not_found_for_staff_is_the_sentence_alone():
     assert res.direct_reply.strip() == 'Couldn\'t find: "SRTXYZ9" (product).', res.direct_reply
 
 
-def test_a_did_you_mean_candidate_is_still_asked():
+def test_a_did_you_mean_candidate_is_asked_by_pv2():
+    # PV2-FIX r5d: crew 14 Oct, PV2 writes v1's did-you-mean text itself (the v1 miss lane costs ~7 s)
     table = {"product|SRTXYZ9": ("ambiguous", [("product", "SRTXYZ8")], True)}
     state, actions = apply_turn(mk_state(), _product_parsed(), resolver=_Fake(table))
     assert isinstance(actions[0], ClarifyAct) and actions[0].pending.options
