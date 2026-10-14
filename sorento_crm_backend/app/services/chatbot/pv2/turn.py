@@ -296,19 +296,24 @@ def after_v1(
 
 def _question_text(reply: str | None, yes_no: bool) -> str:
     """The question v1 printed, read off its own previous reply (v1's Pending keeps no text):
-    an offer is the reply's last line; a menu is the lines above its numbered options."""
+    an offer is the reply's last line; a menu is the last line above its first numbered option.
+    Never the whole reply (a report table would land in every later turn), and bounded."""
+    from app.services.chatbot.pv2.history import compact_reply
+
     lines = [ln.strip() for ln in str(reply or "").splitlines()]
     lines = [ln for ln in lines if ln]
     if not lines:
         return ""
     if yes_no:
-        return lines[-1]
+        return compact_reply(lines[-1])
     head: list[str] = []
     for ln in lines:
         if ln.partition(". ")[0].isdigit():  # one of v1's numbered options
             break
         head.append(ln)
-    return "\n".join(head)
+    else:
+        head = lines  # no menu printed: the question is the reply's last line
+    return compact_reply(head[-1]) if head else ""
 
 
 def mirror_v1_pending(
