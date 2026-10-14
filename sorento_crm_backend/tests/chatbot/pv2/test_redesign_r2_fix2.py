@@ -166,7 +166,8 @@ def test_s4_the_picked_product_takes_its_own_quantity_not_the_siblings():
     assert isinstance(acts[0], ClarifyAct)
     st, acts = apply_turn(st, _pick(), resolver=r, now=NOW)
     assert isinstance(acts[0], Lookup)
-    assert _qty(st) == {"SRTWC286": 3}, "pre-R2 (941fb867a, phrase-only parse): the pick carried mou's own 3"
+    # RG-7b: the pick keeps the other items
+    assert _qty(st) == {"A1": 5, "SRTWC286": 3}, "the pick carries mou's own 3 and A1 keeps its 5"
 
 
 def test_s4_a_picked_product_with_no_quantity_does_not_inherit_the_siblings():
@@ -175,7 +176,8 @@ def test_s4_a_picked_product_with_no_quantity_does_not_inherit_the_siblings():
     st, acts = apply_turn(new_state(NOW), parsed, resolver=r, now=NOW)
     st, acts = apply_turn(st, _pick(), resolver=r, now=NOW)
     assert isinstance(acts[0], Lookup)
-    assert _qty(st) == {"SRTWC286": None}, "pre-R2 (941fb867a, phrase-only parse) gave the picked product no quantity"
+    # RG-7b: the pick keeps the other items
+    assert _qty(st) == {"A1": 5, "SRTWC286": None}, "the picked product has no quantity of its own; A1 keeps its 5"
 
 
 # ------------------------------------------------------------------ S5 the register names each envelope's own subject

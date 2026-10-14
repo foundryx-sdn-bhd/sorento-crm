@@ -9245,14 +9245,15 @@ def _hand_over_reply_text(text: str | None, actions: list[dict[str, Any]]) -> st
 
 
 def _pv2_hand_over_turn(turn_trace: Any) -> bool:
-    """True when this turn's parser-v2 route was a hand-over (read off its trace event)."""
+    """True when parser v2 ran this escalation turn (its `pv2_turn` event, written only when PV2 handed
+    back a result, says parser_mode v2), whatever its route: a "yes" to a v1 escalate offer is a PV2
+    Lookup (RG-3, #1603). Remove the route-free reading when v1 #1603 merges."""
     try:
         events = turn_trace.persisted()
     except Exception:  # noqa: BLE001 - a trace read must never fail a turn
         return False
     return any(
-        isinstance(e, dict) and e.get("kind") == "pv2_turn"
-        and (e.get("pv2_turn") or {}).get("route") == "hand_over"
+        isinstance(e, dict) and e.get("kind") == "pv2_turn" and e.get("parser_mode") == "v2"
         for e in events
     )
 

@@ -60,15 +60,17 @@ def test_a_pv2_hand_over_turn_replies_with_the_escalation_sentence(
     assert row.response["reply"]["text"] == ROUTED_TO_PIC_REPLY
 
 
-def test_a_non_hand_over_escalation_turn_keeps_v1s_blank_reply_text(
+def test_a_v1_escalate_yes_on_a_v2_contact_replies_with_the_routed_text(
     session_factory, seeded, stub_parser, stub_access, fake_turn, monkeypatch
 ):
+    # RG-3 (#1603): the v1 team_pick offer answered "yes" reaches PV2 as a lookup route; the reply is the routed text.
     fake_turn(_hand_over_result("lookup"))
     stub_parser(error=AssertionError("v1 parser must not run on a v2 turn"))
     stub_access()
     result = _run(session_factory, monkeypatch, "lookup")
-    assert not ((result.reply or {}).get("text") or "").strip()
+    assert (result.reply or {}).get("text") == ROUTED_TO_PIC_REPLY
     assert any(a.get("kind") == "send_message" and a.get("text") == ROUTED_TO_PIC_REPLY for a in result.actions)
+    assert _turn_row(session_factory, result.turn_id).response["reply"]["text"] == ROUTED_TO_PIC_REPLY
 
 
 # ------------------------------------------------------------------ null-dataset sales report grant
