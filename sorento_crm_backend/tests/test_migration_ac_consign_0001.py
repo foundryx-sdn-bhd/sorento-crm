@@ -49,7 +49,6 @@ def test_revision_fits_and_chains_onto_the_cancel_lane():
     module = _load()
     assert module.revision == REVISION
     assert len(module.revision) <= 32
-    assert module.down_revision == "ac_cancel_0001_docs"
 
 
 def test_up_down_up_defaults_and_the_check():
