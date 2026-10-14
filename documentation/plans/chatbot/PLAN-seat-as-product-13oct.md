@@ -1,6 +1,6 @@
 # PLAN: seat cover = product resolution (SEAT-AS-PRODUCT)
 
-Status: Review (lane SEAT-AS-PRODUCT, PR #1613; round 5 READY, CI green on 1bfca061, waiting on the crew v94 re-run and the owner hand test). Track: standard (chatbot turn pipeline; no
+Status: Review (lane SEAT-AS-PRODUCT, PR #1613; v94 check 2 fixed 14 Oct, owner allowed the +522-char find vocabulary text; waiting on CI, crew re-check and the owner hand test). Track: standard (chatbot turn pipeline; no
 migration, no FE change, no auth/RBAC change). Card: `CARD-seat-as-product-13oct.md` (crew
 answered Q2 b, Q3 a, Q4 yes, Q5 yes; Q1 (a), wording `No seat cover is on record for <code>.` approved by the owner 13 Oct).
 
@@ -58,3 +58,17 @@ Cross-turn rules, `focus.relation` ("covers" / "wcs"), the fits `value` as the o
 typed in THIS message, and the code-order sort of the linked codes (CI's en_US collation):
 see the card's "Across turns" section. Tests x1 to x6, y1 to y9, z1 to z4 in
 `tests/chatbot/test_seat_as_product.py`.
+
+## v94 check 2 (14 Oct)
+
+- The fits filter carries the parser's `file_word` (strict schema). With a fit ask and no file
+  word, this message's attachment types are dropped and a file domain is left to the engine's
+  continuation, so the relation's own word is never a file ask (v94 Installation Guide rows).
+- A carried relation that replaces nothing clears `find`; an echoed anchor resolves through the
+  carried relation; a value-less `fits` with no fit answer carried, a value equal to the file word
+  or one the message does not hold is no fit ask (live measurement; reverses review round 4
+  blocker 1); no code with a domain word of its own gets no ask-for-code line.
+- Q3 revisited on the owner's own "8152 seat cover stock": a model code (the first code segment,
+  or its tail) reads as its linked SKUs; a shorter stem or a typo still goes to the resolver.
+- Prompt: +522 chars in the live `{{find_filters}}` text (owner "ok allow", 14 Oct 21:30, this PR
+  only). Hand test and release step: `laneboard/scripts/1613.md`.

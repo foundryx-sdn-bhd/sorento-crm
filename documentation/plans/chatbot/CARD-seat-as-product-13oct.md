@@ -114,3 +114,9 @@ Crew 13 Oct: Q2 (b), Q3 (a), Q4 yes, Q5 yes. Owner 13 Oct: Q1 (a), wording
   ("SRTWC8383-RL-MBL technical drawing" after a seat-cover exchange is that WC's drawing).
 - Limit: a legit reverse ask about a just-answered code ("WC for SRTSCBD333A-UF" right after
   "seat cover for SRTWC8122") answers the cover itself. Trigger: a real turn of that shape.
+
+## Q3 revisited (owner message, 14 Oct)
+
+"8152 seat cover stock" is the trigger Q3 named. A typed code that is no product's but is the
+model segment (or its tail) of SKUs on a seat-cover link reads as those SKUs (at most 8); a shorter
+stem ("SRTWC83") or a typo still goes on to the resolver as typed.
