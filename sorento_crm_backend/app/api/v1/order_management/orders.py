@@ -466,7 +466,7 @@ async def get_orders(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db)
 ):
     """Get orders with pagination, filtering, and sorting.
@@ -705,7 +705,7 @@ async def list_distinct_debtors(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Distinct customers/debtors aggregated from orders.
@@ -913,7 +913,7 @@ async def get_orders_by_product(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db)
 ):
     """Get distinct orders matched by product search.
@@ -1067,7 +1067,7 @@ async def get_order_analytics(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Aggregate customer sales orders (count / total revenue / average delivery days).
@@ -1107,7 +1107,7 @@ async def get_order_analytics(
 @router.get("/{order_id}/fulfilled-complaints")
 async def get_order_fulfilled_complaints(
     order_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Complaints this Delivery Order fulfils (reverse of the complaint detail
@@ -1127,7 +1127,7 @@ async def get_order_fulfilled_complaints(
 @router.get("/{order_id}", response_model=OrderResponse)
 async def get_order(
     order_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single order by ID."""

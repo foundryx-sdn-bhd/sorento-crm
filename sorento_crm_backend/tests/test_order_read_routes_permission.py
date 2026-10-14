@@ -21,21 +21,15 @@ from app.main import app  # noqa: E402
 from app.dependencies import get_current_user, get_current_user_or_api_key, get_db
 from app.models.base import set_company_scope
 from app.models.integration import Integration
-from app.models.user import (
-    User,
-    UserPermission,
-    UserRole,
-    UserRoleAssignment,
-    UserRolePermission,
-)
+from app.models.user import User
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from app.services.company_scope_resolver import apply_company_scope
 from app.services.integration_key_service import IntegrationKeyService
 
 from tests._mc_lookup_seed import customer, order, product
+from tests._orders_view_seed import ORDERS_VIEW as PERMISSION_SLUG, grant_orders_view, user as _user
 from tests._pg_fixture import blank_session, unique_code
 
-PERMISSION_SLUG = "order_management.orders.view"
 BASE = "/api/v1/order-management/orders"
 
 
@@ -44,26 +38,6 @@ def db():
     with blank_session() as s:
         set_company_scope(s, frozenset({DEFAULT_COMPANY_ID}))
         yield s
-
-
-def _user(db, stem: str) -> User:
-    user = User(id=str(uuid.uuid4()), email=f"{unique_code(stem)}@test.com", name=f"ZZT {stem}", status="ACTIVE")
-    db.add(user)
-    db.flush()
-    return user
-
-
-def _grant_view(db, user: User) -> None:
-    permission = db.query(UserPermission).filter(UserPermission.slug == PERMISSION_SLUG).one_or_none()
-    if permission is None:
-        permission = UserPermission(id=str(uuid.uuid4()), slug=PERMISSION_SLUG, name=PERMISSION_SLUG)
-        db.add(permission)
-    role = UserRole(id=str(uuid.uuid4()), slug=unique_code("zzt_do_view").lower(), name="ZZT DO View")
-    db.add(role)
-    db.flush()
-    db.add(UserRoleAssignment(user_id=user.id, role_id=role.id))
-    db.add(UserRolePermission(role_id=role.id, permission_id=permission.id))
-    db.flush()
 
 
 def _key_for(db, user: User) -> str:
@@ -83,7 +57,7 @@ def seeded(db):
     do = order(db, company_id=DEFAULT_COMPANY_ID, customer_id=cust.id)
     no_grant = _user(db, "NG")
     granted = _user(db, "OK")
-    _grant_view(db, granted)
+    grant_orders_view(db, granted)
     no_grant_key = _key_for(db, no_grant)
     granted_key = _key_for(db, granted)
     db.commit()
