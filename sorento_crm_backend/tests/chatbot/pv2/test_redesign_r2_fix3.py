@@ -31,7 +31,7 @@ def test_p1_a_restarted_subject_takes_back_its_topics_sid_at_start():
     s1, s2, s3 = _turns("A1", "B1", "A1")
     first_sid = s1.held.sid
     assert s3.held.sid == first_sid, "the subject that came back is the same subject"
-    assert [t.sid for t in s3.topics] == [s2.held.sid], "it left topics when it became held again"
+    assert [t.sid for t in s3.topics] == [s2.held.sid, first_sid], "pre-R2 kept the copy: topics are B1, then A1 under its first sid"
 
 
 def test_p1_after_the_next_push_the_restarted_subject_is_s2_and_topics_have_no_duplicate():
