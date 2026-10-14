@@ -7,12 +7,13 @@ import os
 import subprocess
 import sys
 import threading
+from contextlib import contextmanager
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from . import checks, guard, judge, report, schema
 
@@ -116,6 +117,18 @@ def fetch_dev_openai_key() -> str:
         db.close()
 
 
+def check_ideation_target() -> None:
+    """Refuse the run unless the ideation service the app would call is local."""
+    from app.database import SessionLocal
+    from app.services.ideation_turn_service import _resolve_ideation_config
+
+    db = SessionLocal()
+    try:
+        guard.check_ideation_url(_resolve_ideation_config(db).base_url)
+    finally:
+        db.close()
+
+
 def git_sha() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=BACKEND_DIR,
@@ -207,11 +220,56 @@ def pv2_event(trace: list[Any]) -> dict[str, Any] | None:
 
 
 def _norm_version(candidates: list[Any], pin: dict[str, Any]) -> str | None:
+    """The pin's id when EVERY recorded candidate is the pin (its id or its number), else the first
+    candidate that is not, so `version_mismatch` fires."""
     cands = [str(c) for c in candidates if c is not None and str(c) != ""]
     if not cands:
         return None
     accepted = {str(pin["id"]), str(pin["number"])}
-    return str(pin["id"]) if any(c in accepted for c in cands) else cands[0]
+    bad = next((c for c in cands if c not in accepted), None)
+    return str(pin["id"]) if bad is None else bad
+
+
+def joined_reply(res: Any) -> str:
+    """Every send_message bubble of the turn, joined; the console's single reply_text when none."""
+    texts = [str(a.get("text")) for a in (res.actions or [])
+             if isinstance(a, dict) and a.get("kind") == "send_message" and str(a.get("text") or "").strip()]
+    return "\n\n".join(texts) if texts else (res.reply_text or "")
+
+
+@contextmanager
+def lanes_once() -> Iterator[None]:
+    """Enter the real console `_lanes_on` once for the whole run; per-turn calls become no-ops. The real one
+    flips system_settings on the shared dev DB and restores what it read, so parallel turns raced."""
+    from app.services.chatbot import console_service
+
+    real = console_service._lanes_on
+
+    @contextmanager
+    def _noop() -> Iterator[None]:
+        yield
+
+    with real():
+        console_service._lanes_on = _noop
+        try:
+            yield
+        finally:
+            console_service._lanes_on = real
+
+
+def schedule(conversations: list[Any], parallel: int) -> list[list[Any]]:
+    """Lanes for the thread pool: one audience (one contact) never spans two lanes, since the v1
+    previous-reply context is scoped by contact. At most `parallel` lanes, balanced by turn count."""
+    by_audience: dict[str, list[Any]] = {}
+    for c in conversations:
+        by_audience.setdefault(c.audience, []).append(c)
+    lanes: list[list[Any]] = [[] for _ in range(max(1, min(parallel, len(by_audience))))]
+    loads = [0] * len(lanes)
+    for group in sorted(by_audience.values(), key=lambda g: -sum(len(c.turns) for c in g)):
+        i = loads.index(min(loads))
+        lanes[i].extend(group)
+        loads[i] += sum(len(c.turns) for c in group)
+    return [lane for lane in lanes if lane]
 
 
 def run_turn(res: Any, text: str, mode: str, pin: dict[str, Any], prev_reply: str | None,
@@ -225,7 +283,7 @@ def run_turn(res: Any, text: str, mode: str, pin: dict[str, Any], prev_reply: st
     if event is not None:
         candidates += [_find(event, "version"), _find(event, "version_id")]
     rec = checks.TurnRecord(
-        text=text, reply=res.reply_text or "", actions=list(res.actions or []), mode=mode,
+        text=text, reply=joined_reply(res), actions=list(res.actions or []), mode=mode,
         pv2_event=event is not None, prompt_version=_norm_version(candidates, pin),
         expected_version=str(pin["id"]), tool_errors=tool_errors)
     parse = _find(event, "parser_out") if event is not None else None
@@ -260,29 +318,34 @@ def run_conversation(conv: Any, mode: str, rep: int, contact_id: str, pins: dict
             row["checks"] = [{"check": "outbound_blocked", "detail": str(exc)}]
             res = None
         except Exception as exc:  # noqa: BLE001 - one broken turn must not stop the run
-            row["checks"] = [{"check": "turn_error", "detail": f"{type(exc).__name__}: {exc}"[:300]}]
+            row["checks"] = [{"check": "runner_error", "detail": f"{type(exc).__name__}: {exc}"[:300]}]
             res = None
         finally:
             db.close()
         blocked = guard.take_blocked()
         if res is not None:
-            if isinstance(res.session_vars, dict):
-                session_vars = res.session_vars
-            rec, extra = run_turn(res, turn.text, mode, pins[mode], prev_reply, turn.expect)
-            fails = checks.run_checks(rec, turn.expect, prev_reply)
-            row["checks"] = [{"check": f.check, "detail": f.detail} for f in fails]
-            files = checks.sent_files(rec.actions)
-            row.update(reply=rec.reply, quick_replies=res.quick_replies or [], parse=extra["parse"],
-                       branch_kind=res.branch_kind, turn_id=res.turn_id, prompt_version=rec.prompt_version,
-                       files={"count": len(files),
-                              "names": [str(f.get("name") or f.get("label") or f.get("url") or "")
-                                        for f in files]})
-            if not fails and judge_client is not None:
-                row["judge"] = judge.judge_turn(
-                    judge_client, history=history, text=turn.text, reply=rec.reply, files=files,
-                    expect=turn.expect, facts=extra["facts"], audience=conv.audience)
-            history.append({"user": turn.text, "bot": rec.reply})
-            prev_reply = rec.reply
+            try:
+                if isinstance(res.session_vars, dict):
+                    session_vars = res.session_vars
+                rec, extra = run_turn(res, turn.text, mode, pins[mode], prev_reply, turn.expect)
+                fails = checks.run_checks(rec, turn.expect, prev_reply)
+                row["checks"] = [{"check": f.check, "detail": f.detail} for f in fails]
+                files = checks.sent_files(rec.actions)
+                row.update(reply=rec.reply, quick_replies=res.quick_replies or [], parse=extra["parse"],
+                           branch_kind=res.branch_kind, turn_id=res.turn_id,
+                           prompt_version=rec.prompt_version,
+                           files={"count": len(files),
+                                  "names": [f"{f.get('filename') or f.get('url') or ''}"
+                                            f" ({f.get('attachmentType') or 'no type'})" for f in files]})
+                if not fails and judge_client is not None:
+                    row["judge"] = judge.judge_turn(
+                        judge_client, history=history, text=turn.text, reply=rec.reply, files=files,
+                        expect=turn.expect, facts=extra["facts"], audience=conv.audience)
+                history.append({"user": turn.text, "bot": rec.reply})
+                prev_reply = rec.reply
+            except Exception as exc:  # noqa: BLE001 - grading a turn must not stop the run
+                row["checks"].append({"check": "runner_error", "detail": f"{type(exc).__name__}: {exc}"[:300]})
+                res = None
         if blocked and not any(c["check"] == "outbound_blocked" for c in row["checks"]):
             row["checks"].append({"check": "outbound_blocked", "detail": ", ".join(blocked)})
         verdict = (row["judge"] or {}).get("verdict")
@@ -317,6 +380,7 @@ def read_calibration_agreement() -> float | None:
 
 def run(args: Any) -> Path:
     bootstrap_env()
+    guard.harden_env(os.environ)
     mcp_path = ensure_worktree_mcp()
     key_state = ensure_embedding_key(os.environ, None if args.no_embedding_key else fetch_dev_openai_key)
     if key_state == "set":
@@ -324,6 +388,7 @@ def run(args: Any) -> Path:
 
         settings.openai_api_key = os.environ["OPENAI_API_KEY"]
     guard.install(os.environ)
+    check_ideation_target()
     battery_dir = Path(args.battery_dir) if args.battery_dir else schema.BATTERY_DIR
     convs = schema.load_battery(battery_dir)
     if args.ids:
@@ -352,14 +417,19 @@ def run(args: Any) -> Path:
                 fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
 
     print(f"run dir: {out_dir}", flush=True)
-    for mode in modes:
-        jobs = [(c, rep) for c in convs for rep in range(1, args.repeat + 1)]
-        with guard.force_parser_mode(mode), ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
-            futures = [pool.submit(run_conversation, c, mode, rep, contacts[c.audience], pins,
-                                   judge_client, sink) for c, rep in jobs]
-            for f in futures:
-                f.result()
-        print(f"mode {mode} done: {sum(1 for r in all_rows if r['mode'] == mode)} turns", flush=True)
+    with lanes_once():
+        for mode in modes:
+            lanes = schedule(convs, args.parallel)
+
+            def run_lane(lane: list[Any], mode: str = mode) -> None:
+                for c in lane:
+                    for rep in range(1, args.repeat + 1):
+                        run_conversation(c, mode, rep, contacts[c.audience], pins, judge_client, sink)
+
+            with guard.force_parser_mode(mode), ThreadPoolExecutor(max_workers=len(lanes)) as pool:
+                for f in [pool.submit(run_lane, lane) for lane in lanes]:
+                    f.result()
+            print(f"mode {mode} done: {sum(1 for r in all_rows if r['mode'] == mode)} turns", flush=True)
 
     meta = {"v2": pins["v2"], "v1": pins["v1"], "git_sha": git_sha(), "mcp_path": str(mcp_path),
             "embedding_key": key_state,

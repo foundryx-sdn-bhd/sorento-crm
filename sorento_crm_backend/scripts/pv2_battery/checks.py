@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
-_URL_RE = re.compile(r"https?://\S+")
+_URL_RE = re.compile(r"https?://\S+|\S+@\S+\.\w+")
 _UPPER_SNAKE = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){2,}\b")
 _LOWER_SNAKE = re.compile(r"\b[a-z]{2,}(?:_[a-z]+)+\b(?!\.[A-Za-z0-9])")
 _BRACES = re.compile(r"\{\{|\{[a-z_]+\}")

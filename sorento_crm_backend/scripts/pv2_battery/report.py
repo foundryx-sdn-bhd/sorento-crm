@@ -29,6 +29,7 @@ def build_results(convs: list[Any], rows: list[dict[str, Any]]) -> list[dict[str
     out: list[dict[str, Any]] = []
     for c in convs:
         res: dict[str, Any] = {"id": c.id, "source": c.source, "domain": c.domain, "audience": c.audience,
+                               "shapes": list(c.shapes), "first_fail_v2": None, "first_fail_v1": None,
                                "v2": None, "v1": None, "first_fail": None, "classes": []}
         for mode in ("v2", "v1"):
             reps = sorted({k[2] for k in by_key if k[0] == c.id and k[1] == mode})
@@ -39,6 +40,8 @@ def build_results(convs: list[Any], rows: list[dict[str, Any]]) -> list[dict[str
                 turns = sorted(by_key[(c.id, mode, rep)], key=lambda r: r["turn"])
                 per_rep.append(conversation_result(turns))
                 bad = next((t for t in turns if not t.get("ok")), None)
+                if bad is not None and (res[f"first_fail_{mode}"] is None or bad["turn"] < res[f"first_fail_{mode}"]):
+                    res[f"first_fail_{mode}"] = bad["turn"]
                 if bad is not None and (res["first_fail"] is None or bad["turn"] < res["first_fail"]):
                     res["first_fail"] = bad["turn"]
                     res["classes"] = _classes(bad)
@@ -89,12 +92,15 @@ def render_table(results: list[dict[str, Any]], meta: dict[str, Any]) -> str:
         lines.append(f"- judge agreement: {shown} (PROVISIONAL, below {PROVISIONAL_BELOW})")
     else:
         lines.append(f"- judge agreement: {agreement:.2f}")
-    lines += ["", "| conversation | source | domain | audience | v2 | v1 | first failing turn | class |",
-              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+    lines += ["", "| conversation | source | domain | audience | shapes | v2 | v1 | v2 first fail | v1 first fail | class |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in results:
-        first = r["first_fail"] if r.get("first_fail") is not None else "-"
-        lines.append(f"| {r['id']} | {r['source']} | {r['domain']} | {r['audience']} | {_cell(r['v2'])} "
-                     f"| {_cell(r['v1'])} | {first} | {', '.join(r.get('classes') or []) or '-'} |")
+        f2 = r.get("first_fail_v2")
+        f1 = r.get("first_fail_v1")
+        lines.append(f"| {r['id']} | {r['source']} | {r['domain']} | {r['audience']} "
+                     f"| {', '.join(r.get('shapes') or []) or '-'} | {_cell(r['v2'])} | {_cell(r['v1'])} "
+                     f"| {f2 if f2 is not None else '-'} | {f1 if f1 is not None else '-'} "
+                     f"| {', '.join(r.get('classes') or []) or '-'} |")
     for key in ("domain", "audience", "source"):
         lines += ["", f"## By {key}", ""] + _totals(results, key)
     return "\n".join(lines) + "\n"

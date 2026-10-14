@@ -31,7 +31,7 @@ the bot looked up. Judge the reply against the expectation and these owner rules
    Greeting the customer by their own WhatsApp contact name is fine and is not invented_data. Saying it does not know or handing over is fine when the facts hold nothing.
 4. No internal detail leaks: no UUID, no internal key or snake_case identifier, no template braces, no bare
    None / null. Product codes, document numbers and company names are normal and are not leaks.
-5. False gap: never say a product has no photos or files when files were sent in this turn (file count above).
+5. False gap: the reply says a product has no files of a type (photos, specs) while a file of THAT type for THAT code was sent this turn (the sent filename and type are listed below); a gap for a type or code that was not sent is true.
 6. Reply in the language the customer used (English, Malay, Chinese, or the mix); a different language is
    wrong_language.
 7. Permission: a customer without the grant gets a polite refusal or hand-over, never the restricted data.

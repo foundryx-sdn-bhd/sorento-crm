@@ -33,12 +33,39 @@ def check_env(env: Mapping[str, str]) -> list[str]:
         problems.append("HTTPS_PROXY is not set; the run needs the dead proxy (http://127.0.0.1:9)")
     elif parsed is None or parsed.hostname not in _LOOPBACK or parsed.port != DEAD_PROXY_PORT:
         problems.append(f"HTTPS_PROXY {proxy!r} is not the dead proxy (http://127.0.0.1:{DEAD_PROXY_PORT})")
+    lower = env.get("https_proxy")
+    if lower and lower != proxy:
+        problems.append("https_proxy differs from HTTPS_PROXY")
+    for key in ("NO_PROXY", "no_proxy"):
+        if "*" in (env.get(key) or ""):
+            problems.append(f"{key} holds '*', which lets every host bypass the dead proxy")
     db = urlparse(env.get("DATABASE_URL") or "")
     if db.hostname not in _LOOPBACK:
         problems.append(f"DATABASE_URL host {db.hostname!r} is not localhost")
     if "prod" in (db.path or "").lower() or "prod" in (db.hostname or "").lower():
         problems.append("DATABASE_URL looks like a production database")
     return problems
+
+
+NO_PROXY_HOSTS = ("localhost,127.0.0.1,.localhost,api.openai.com,api.anthropic.com,"
+                  "generativelanguage.googleapis.com,amazonaws.com,r2.cloudflarestorage.com,r2.dev,"
+                  "cloudfront.net")
+
+
+def harden_env(env: Any) -> Any:
+    """All four proxy vars on the dead proxy, NO_PROXY limited to the model and storage hosts (never '*')."""
+    for key in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
+        env[key] = f"http://127.0.0.1:{DEAD_PROXY_PORT}"
+    for key in ("NO_PROXY", "no_proxy"):
+        env[key] = NO_PROXY_HOSTS
+    return env
+
+
+def check_ideation_url(url: str | None) -> None:
+    if not url:
+        return
+    if urlparse(url).hostname not in _LOOPBACK:
+        raise GuardError(f"ideation service {urlparse(url).hostname!r} is not local; refusing the run")
 
 
 def blocked_events() -> list[str]:
