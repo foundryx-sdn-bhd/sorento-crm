@@ -194,9 +194,14 @@ FILTERS: dict[str, FindFilter] = {
                 "side named beside a code, in any language or order, is this filter (\"seat "
                 "cover SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\", \"WC for SRTSCBD330-UF\", "
                 "\"stock seat cover for SRTWC8122\"): emit fits and keep that word out of the "
-                "entities; its value is that word copied character for character from THIS "
-                "message's text (\"seat cover\", \"马桶盖\", \"WC\"), and null when THIS "
-                "message's text does not contain one, whatever earlier turns said. That word never IMPLIES an attachment type (no photo, drawing, "
+                "entities. The other side is only a seat cover or a WC word, never a file word "
+                "(photo, drawing, files), a fact (stock, price) or the code itself: \"send me "
+                "SRTWC8383-RL-MBL drawing\" names no other side, so it is no find. Its value is the "
+                "other-side word copied character for character from THIS message's text (\"seat "
+                "cover\", \"马桶盖\", \"WC\"), null when THIS message's text has none, whatever "
+                "earlier turns said; its file_word is the word of THIS message asking for a file, as "
+                "typed (\"photo\", \"drawing\", \"files\", \"cert\"), null when it asks for none. "
+                "The other-side word never IMPLIES an attachment type (no photo, drawing, "
                 "installation guide, certificate or spec file): with no file word said, emit "
                 "no attachment_type (\"seat cover for SRTWC8383-RL-MBL\" -> fits, entities "
                 "[SRTWC8383-RL-MBL] only). It stays this filter when the message ALSO asks something about that "
@@ -231,7 +236,8 @@ FIND_RULE = (
     "FIND (key `find`): when the message is about the products that stand in a relation listed "
     "below to a product CODE it names (for example the seat cover of a WC), emit "
     '"find": {"filters": [{"key": <a key from the list>, "value": <the value its line asks for, '
-    'else null>, "unit": <the unit of a number value, else null>}]}. The relation only says WHICH '
+    'else null>, "unit": <the unit of a number value, else null>, "file_word": <the file word '
+    'its line asks for, else null>}]}. The relation only says WHICH '
     "products the message is about: the named code stays an ordinary product entity (hint "
     "product), and every other key, domain_hint and intent_hint included, is exactly what it "
     "would be if the message had named the related product's own code instead: \"stock seat "
@@ -257,7 +263,8 @@ FIND_RULE = (
     "the type word on its own (\"seat cover\", "
     "\"my WC\", \"马桶盖\") is no entity at all, never a category, attachment_type or "
     "specification (\"which seat cover fits my WC?\" -> the filter, entities []); never invent a "
-    "code. Use only the keys listed; otherwise emit \"find\": null."
+    "code. A type word asked about itself in a message that names NO product code (\"seat cover "
+    "got promotion?\") is no find. Use only the keys listed; otherwise emit \"find\": null."
 )
 
 
