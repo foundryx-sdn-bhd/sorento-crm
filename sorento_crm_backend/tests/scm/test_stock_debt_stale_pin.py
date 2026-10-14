@@ -34,9 +34,11 @@ from tests.scm.test_stock_debt_routes import (
     _client,
     _demand,
     _months_ahead,
+    _order_back_link_on_spo,
     _product,
     _project_line_for,
     _row_of,
+    _spo,
     _u,
     _warehouse,
 )
@@ -289,6 +291,85 @@ def test_two_pins_at_one_bin_outside_the_span_share_its_free_stock_nearest_first
     assert (later["assigned_qty"], later["short_qty"]) == (0, 2)
 
 
+@pytest.mark.parametrize(
+    "on_hand,covered,status",
+    [(0, 76, "short"), (50, 126, "pinned")],
+    ids=["bin-0", "bin-50"],
+)
+def test_a_partly_stocked_pin_leaves_the_rest_to_the_orders_own_spo(
+    scm_app, on_hand, covered, status
+):
+    """Reviewer, round 1 (the SRTWCX7604 / SO382618 shape: a pin above the bin's stock on a
+    line that also has its own purchase). Pinned 126 at a bin holding 50, and an SPO of 76
+    whose S/O names the line: the pin holds the 50 the bin has, the SPO the 76 left, and
+    the line owes nothing. The pin's own quantity must not read as covered before the
+    book's S/O is read, or the SPO is left free in its month beside a red cell."""
+    app, db = _client(scm_app)
+    marker = f"ZZTSP{_u()[:6]}".upper()
+    bb = _warehouse(db, f"ZZTDC1{_u()[:4]}-BB")
+    product = _product(db, f"{marker}-WEPLS")
+    _stock(db, product, bb, on_hand=on_hand)
+    due = _months_ahead(2)
+    order, core_line = _demand(
+        db, product, bb, qty=126, required_date=due, so_number=f"{marker}-SO1"
+    )
+    order.source_ref = f"ZZTBOOK:{marker}"
+    core_line.source_ref = f"ZZTBOOK:{marker}:1"
+    _pso, project_line = _project_line_for(db, core_line)
+    _own_pin(db, project_line, bb, 126)
+    allocation = _spo(db, product, bb, qty=76, arrives=_months_ahead(1))
+    allocation.from_so_line_ref = f"ZZTBOOK:{marker}:1"
+    db.flush()
+
+    with TestClient(app) as c:
+        cell = _cell(c, product, month_key(due))
+
+    [line] = cell["demand"]
+    assert line["assigned_qty"] == covered
+    assert line["short_qty"] == 126 - covered
+    assert line["status"] == status
+    assert sorted((entry["kind"], entry["qty"]) for entry in line["assigned_from"]) == sorted(
+        ([("on_hand", on_hand)] if on_hand else []) + [("spo", 76)]
+    )
+
+
+def test_received_spo_placements_share_a_thin_bin_outside_the_span_nearest_first(scm_app):
+    """Reviewer, round 1: placements on a received SPO, at a bin outside the span holding 5,
+    share it nearer line first whatever order they were written in (the links read had no
+    order, so the split could move between refreshes)."""
+    app, db = _client(scm_app)
+    marker = f"ZZTSP{_u()[:6]}".upper()
+    bb = _warehouse(db, f"ZZTBRW{_u()[:4]}-BB")
+    unflagged = _warehouse(db, f"ZZTBRW{_u()[:4]}-HP", planning=False)
+    product = _product(db, f"{marker}-A")
+    _stock(db, product, unflagged, on_hand=5)
+    due = _months_ahead(1)
+    allocation = _spo(
+        db, product, unflagged, qty=20, arrives=TODAY - timedelta(days=20),
+        received=20, receipt_status="fully_received",
+    )
+    # The LATER line's placement is written first.
+    for so_number, required in (
+        (f"{marker}-SO2", due + timedelta(days=3)),
+        (f"{marker}-SO1", due),
+    ):
+        _order, core_line = _demand(
+            db, product, bb, qty=4, required_date=required, so_number=so_number
+        )
+        project_order, project_line = _project_line_for(db, core_line)
+        _order_back_link_on_spo(
+            db, project_order, project_line, allocation=allocation, qty=4
+        )
+
+    with TestClient(app) as c:
+        cell = _cell(c, product, month_key(due))
+
+    by_so = {line["so_number"]: line for line in cell["demand"]}
+    assert by_so[f"{marker}-SO1"]["assigned_qty"] == 4
+    assert by_so[f"{marker}-SO2"]["assigned_qty"] == 1
+    assert by_so[f"{marker}-SO2"]["short_qty"] == 3
+
+
 # ------------------------------------------------------------------ the Supply tab
 
 
@@ -380,3 +461,34 @@ def test_the_board_reads_the_same_capped_pin(scm_app, flagged, on_hand, covered)
     assert round(sum(item.qty for item in line.assigned), 4) == covered
     assert line.status == "short"
     assert line.uncovered == 126 - covered
+
+
+def test_a_pinned_reserve_bin_outside_the_span_reads_free_0_under_the_projection(scm_app):
+    """Reviewer, round 1: under `group=BB` the HQ project reserve is outside the span, so a
+    BB line pinned there is covered off a stand-in. With the projection switch on, its
+    Supply row states what the pin holds and Free 0, never the reserve's whole projected
+    remainder beside a Qty of only the pinned part."""
+    from app.models.inventory import Warehouse
+    from tests.scm.test_stock_debt_projection_routes import _seed
+
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True, reserve=True)
+    marker, product, hq = seed["marker"], seed["product"], seed["hq"]
+    bb = db.query(Warehouse).filter(Warehouse.warehouse_code == f"{marker}BRW-BB").one()
+    _stock(db, product, hq, on_hand=50)
+    _pinned_line(
+        db, product, bb, qty=30, due=TODAY, so_number=f"{marker}-SO-PIN", pin_at=hq
+    )
+
+    with TestClient(app) as c:
+        cell = _cell(
+            c, product, month_key(TODAY), group="BB", book="project", projected="true"
+        )
+
+    pinned = [line for line in cell["demand"] if line["so_number"] == f"{marker}-SO-PIN"]
+    assert pinned and pinned[0]["assigned_qty"] == 30
+    rows = [
+        row for row in cell["supply"]
+        if row["kind"] == "on_hand" and row["warehouse_code"] == hq.warehouse_code
+    ]
+    assert [(row["qty"], row["free_qty"]) for row in rows] == [(30, 0)]
