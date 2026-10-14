@@ -470,6 +470,8 @@ LABELS: dict[str, dict[str, str]] = {
     },
     "Here are the matching products.": {"ms": "Berikut ialah produk yang sepadan.", "zh": "以下是匹配的产品。"},
     "Here are the matching promotion products.": {"ms": "Berikut ialah produk promosi yang sepadan.", "zh": "以下是匹配的促销产品。"},
+    # R4a fix 3 (crew 15 Oct): a promotions miss for a named product says it is for that product.
+    "No current promotion for this product.": {"ms": "Tiada promosi semasa untuk produk ini.", "zh": "这个产品目前没有促销。"},
     "Here are the product files I found.": {"ms": "Berikut ialah fail produk yang saya temui.", "zh": "以下是我找到的产品文件。"},
     # The presenter's `_VALIDITY_LABELS` words and `FILE_LINK_UNAVAILABLE`: values of one label
     # each (`LABEL_VALUES`), so an order status that reads "Expired" stays as printed.

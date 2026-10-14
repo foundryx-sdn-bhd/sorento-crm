@@ -309,7 +309,7 @@ def _answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
     the held subject, not an answer to the open question. Structured fields only."""
     if pending is None or ask.answer is None or ask.answer.option_key is not None:
         return False
-    if pending.kind in ("v1_open_question", "offer_handover", "offer_doc_handover") and _is_a_new_ask(ask):
+    if pending.kind in ("v1_open_question", "offer_handover", "offer_doc_handover", CONFIRM) and _is_a_new_ask(ask):
         return True
     if (
         pending.kind == "v1_open_question"
@@ -721,8 +721,10 @@ def _answer(
     if picked is None and key is not None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
         # A candidate question is keyed by position; its code (the payload key) still picks.
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
-    if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in ("offer_handover", "offer_doc_handover", "clarify_did_you_mean"):
-        # A bare number (the reply's free value or a row pick) names the printed position.
+    if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in (
+        "offer_handover", "offer_doc_handover", "clarify_did_you_mean", CONFIRM
+    ):
+        # A bare number (the reply's free value or a row pick) names the printed position (a confirm prints none).
         n = int(free) if isinstance(free, str) and free.isdecimal() else ask.row_pick
         if isinstance(n, int) and n >= 1:
             picked = next((o for o in pending.options if o.key == str(n)), None)
@@ -1153,7 +1155,12 @@ def _apply_entities(
             asked.append((qs[-1], ent))
             continue
         if status == "ambiguous" and len(options) == 1 and not getattr(res, "did_you_mean", False):
-            # C2 (crew 15 Oct): a pick with exactly one option asks nothing; that option is used.
+            if getattr(res, "guess", False):
+                # C2 (crew 15 Oct (a)): one option the words only suggest is a yes/no confirm naming it.
+                qs.append(_confirm(st, i, ent, _stamped(ent, options)[0], language))
+                asked.append((qs[-1], ent))
+                continue
+            # C2 (crew 15 Oct): a unique single option (the contact's own one customer) asks nothing; it is used.
             held = apply_payload(held, {**options[0].payload, "op": ent.op, **_qty_payload(ent)})
             continue
         pool = list(getattr(res, "pool", None) or (options if not getattr(res, "more", 0) else []))
@@ -1369,6 +1376,19 @@ def _did_you_mean(
         kind="clarify_did_you_mean", asked=asked, options=[*picks, *extra], asked_turn=st.turn_no, misses=0
     )
     return ClarifyAct(ask_index=i, about="entity", phrase=ent.phrase, pending=pending)
+
+
+#: Crew 15 Oct (a): the yes/no confirm of one guessed option; its one option is keyed "yes".
+CONFIRM = "clarify_confirm"
+
+
+def _confirm(st: ConversationState, i: int, ent: Entity, option: Option, language: str) -> ClarifyAct:
+    """The yes/no confirm ("Did you mean <name>?") of the one option a partial word suggests: nothing numbered,
+    no code. "yes" picks it as a pick on an entity question does."""
+    asked = clarify_copy.text("confirm", language, label=clarify_copy.safe_label(option.label, language))
+    pick = option.model_copy(update={"key": "yes"})
+    pending = PendingQuestion(kind=CONFIRM, asked=asked, options=[pick], asked_turn=st.turn_no, misses=0)
+    return ClarifyAct(ask_index=i, about="confirm", phrase=ent.phrase, pending=pending)
 
 
 def _doc_not_found(
@@ -1922,7 +1942,7 @@ STILL_MISSING = {
 #: The questions about one item of a kind: the line names the one kind its options carry (several: none, a
 #: "which one" line), else this one.
 STILL_WHICH = {
-    "clarify_entity": "product", "clarify_which_held": "product", "clarify_did_you_mean": "product",
+    "clarify_entity": "product", "clarify_which_held": "product", "clarify_did_you_mean": "product", CONFIRM: "product",
     "clarify_spec_attribute": "spec",
 }
 

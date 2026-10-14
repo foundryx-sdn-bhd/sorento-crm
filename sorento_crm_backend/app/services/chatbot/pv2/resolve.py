@@ -114,6 +114,9 @@ class Resolution(BaseModel):
     did_you_mean: bool = False      # options are v1's did-you-mean alternatives, no real match
     more: int = 0                   # matches beyond the capped `options`: len(options) + more == total
     pool: list[Option] = Field(default_factory=list)  # every match (bounded), for a domain that answers all
+    # Options the words only suggest (the containing-name search, a key-less index word's candidates): a lone
+    # one is confirmed by name, never used silently (crew 15 Oct).
+    guess: bool = False
 
 
 class SpecResolution(BaseModel):
@@ -345,6 +348,7 @@ class DbResolver:
                 options=options,
                 phrase=phrase,
                 unrecognised=bool(phrase),
+                guess=True,
             )
         if key not in self.pinned.get(kind, set()):
             return Resolution(status="none", phrase=phrase or key, unrecognised=True)
@@ -803,7 +807,9 @@ class DbResolver:
             if len(keys) > 1:
                 payload["keys"] = keys
             options.append(Option(key=keys[0], label=label, payload=payload))
-        return Resolution(status="ambiguous", options=options, phrase=phrase)
+        # Crew 15 Oct: candidates are a guess, unless the contact is held to one customer (only it can be meant).
+        own = self.customer_scope.get("enforced") and len(self.customer_scope.get("ids") or []) == 1
+        return Resolution(status="ambiguous", options=options, phrase=phrase, guess=candidates_only and not own)
 
     # ------------------------------------------------------------------ warehouses
     def _warehouse(self, phrase: str | None) -> Resolution:

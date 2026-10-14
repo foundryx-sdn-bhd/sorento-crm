@@ -42,7 +42,7 @@ ASK = {
  "status": "outstanding" | "delivered" | null,
  "portal_form": "complaint" | "stock_inquiry" | "purchase_request" | "sponsorship_form" | null
 }
-- status: by meaning and tense: "outstanding" for goods not yet delivered, a question about WHEN goods will reach a customer included ("belum hantar", "未送"); "delivered" only for deliveries already made in the past; else null.
+- status: by meaning and tense: "outstanding" for goods not yet delivered, a question about WHEN goods will reach a customer included ("belum hantar", "未送"); "delivered" only for deliveries already made in the past; else null. A named document number keeps status null (that document's own status answers).
 - portal_form: asking for a complaint, stock inquiry, purchase request or sponsorship form (typos included) is domain portal_link with portal_form that form, never forms. Only when the person asks to fill in or submit a form; a question about an existing request ("is my purchase request approved?") is a status question, portal_form null.
 
 =====================================================================

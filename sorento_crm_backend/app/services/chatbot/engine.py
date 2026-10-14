@@ -9812,11 +9812,17 @@ def _turn_language(
 ) -> str:
     """`language.for_turn` on the typed line (the quoted `reply to:` line is not the customer's
     words), against a copy so `remembered_before` stays the state the turn started with. On a
-    PV2 lookup the parser's reading of the message (`parsed`) decides (owner rule 15 Oct)."""
-    if parsed in label_catalog.LANGUAGES:
-        return str(parsed)
+    PV2 lookup the parser's reading of the message (`parsed`, owner rule 15 Oct) decides only a
+    line v1's detector reads no language from (mixed, or neutral like a code) when the
+    conversation carries none: a clearly typed language, then the conversation's, come first."""
     carried = {"reply_language": remembered_before.get("reply_language")}
     first_line = (latest_user_message or "").split("\n")[0]
+    if (
+        parsed in label_catalog.LANGUAGES
+        and carried["reply_language"] not in label_catalog.LANGUAGES
+        and language_mod.detect(first_line, strip=strip) is None
+    ):
+        return str(parsed)
     return language_mod.for_turn(first_line, carried, getattr(profile, "language", None), strip=strip)
 
 

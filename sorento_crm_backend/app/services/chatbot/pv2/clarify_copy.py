@@ -115,6 +115,12 @@ _COPY: dict[str, dict[str, str]] = {
         "zh": "请回复编号。",
         "ms": "Balas dengan nombor.",
     },
+    # Crew 15 Oct (a): the yes/no confirm of the one option a partial word suggests.
+    "confirm": {
+        "en": "Did you mean {label}?",
+        "zh": "您是指 {label} 吗？",
+        "ms": "Adakah anda maksudkan {label}?",
+    },
     "yes": {"en": "Yes", "zh": "是", "ms": "Ya"},
     "no": {"en": "No", "zh": "否", "ms": "Tidak"},
     "unnamed": {"en": "(unnamed)", "zh": "（未命名）", "ms": "(tiada nama)"},
@@ -307,7 +313,7 @@ def render(pending: PendingQuestion, language: str | None, *, reask: bool = Fals
     if reask:
         lines.append(text("reask", language))
     lines.append(pending.asked)
-    if pending.options and pending.kind not in ("offer_doc_handover", "clarify_did_you_mean"):
+    if pending.options and pending.kind not in ("offer_doc_handover", "clarify_did_you_mean", "clarify_confirm"):
         lines.append("")
         lines.extend(f"{i}. {safe_label(o.label, language)}" for i, o in enumerate(pending.options, start=1))
         if pending.more:

@@ -317,7 +317,8 @@ def access_level_choice_message(
         # AC-16: a brand entity that names a live brand (the parser's canonical name, exact) is
         # echoed by that row's real brand_name, bound to ITS entity; any other word stays as typed.
         # A product is never echoed (owner rule 15 Oct: a parser hands over the resolved code as
-        # its raw); the list stays narrowed to it.
+        # its raw); the list stays narrowed to it, so no other scope word (a brand) is echoed
+        # beside it either and a miss says "for this product" (crew 15 Oct).
         from app.services.chatbot.turn_runtime import brand_entity_rows
 
         named = {
@@ -325,13 +326,15 @@ def access_level_choice_message(
             for e, row in brand_entity_rows(q.get("entities"), jsc.array(out.get("live_brands")))
         }
         raws: list[str] = []
+        narrowed = False
         for e in jsc.array(q.get("entities")):
             if jsc.get(e, "hint") == "product":
+                narrowed = True
                 continue
             v = named.get(id(e)) or jsc.js_string(jsc.get(e, "raw") or "").strip()
             if v and not any(x.lower() == v.lower() for x in raws):
                 raws.append(v)
-        scope_label = ", ".join(raws[:3])
+        scope_label = "" if narrowed else ", ".join(raws[:3])
         if len(scope_label) > 60:
             scope_label = ""
         scope_suffix = f" for {scope_label}" if scope_label else ""
@@ -341,6 +344,7 @@ def access_level_choice_message(
             out["escalate_message"] = (
                 "I could not check promotions right now.\nPlease try again in a moment."
                 if probe_failed
+                else "No current promotion for this product." if narrowed
                 else f"No current promotion for {scope_label}." if scope_label else "No current promotion."
             )
             out["is_clarification"] = False
@@ -2191,18 +2195,21 @@ def promo_picker(
         # can resolve to two products, so naming one would say we searched something they did
         # not ask for. Past 60 characters the echo is noise and is dropped rather than
         # truncated, because a half-printed promotion name reads like a different one.
-        # A product is never echoed (owner rule 15 Oct), only the other words of the scope.
+        # A product is never echoed (owner rule 15 Oct); one that matched narrows the list, so no
+        # other scope word (a brand) is echoed beside it either (crew 15 Oct).
         unmet_set = {jsc.js_string(t).strip().lower() for t in unmatched_products}
         raws: list[str] = []
+        narrowed = False
         for entity in (q["entities"] if isinstance(jsc.get(q, "entities"), list) else []):
-            if jsc.get(entity, "hint") == "product":
-                continue
             value = jsc.js_string(jsc.get(entity, "raw") or "").strip()
             if value.lower() in unmet_set:
                 continue
+            if jsc.get(entity, "hint") == "product":
+                narrowed = True
+                continue
             if value and not any(x.lower() == value.lower() for x in raws):
                 raws.append(value)
-        scope_label = ", ".join(raws[:3])
+        scope_label = "" if narrowed else ", ".join(raws[:3])
         if len(scope_label) > 60:
             scope_label = ""
 
