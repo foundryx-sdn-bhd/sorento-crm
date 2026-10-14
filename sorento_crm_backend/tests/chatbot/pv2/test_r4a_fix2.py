@@ -82,44 +82,9 @@ def test_r1_guard_a_named_customer_over_a_held_product_still_asks_only_the_produ
     assert "BX-220" in reply and "products" in reply.lower(), reply
 
 
-# ------------------------------------------------------------------ C2: a one-option pick asks nothing
-
-
-def _one(kind, key, label):
-    return {"status": "ambiguous", "options": [{"key": key, "label": label, "payload": {"kind": kind, "key": key, "label": label}}]}
-
-
-@pytest.mark.parametrize("kind,phrase,key,label", [("customer", "kedai", "c-kedai", "KEDAI MAJU SDN BHD"),
-                                                   ("product", "bx22", "BX-220", "BX-220 Basin Mixer")])
-def test_c2_a_single_candidate_is_used_not_asked(kind, phrase, key, label):
-    """RED: an entity question with exactly one option asks nothing; the Lookup holds that option."""
-    r = FakeResolver({"entities": {f"{kind}|{phrase}": _one(kind, key, label)}})
-    parsed = out(ask(act="new_topic", domain="order", entities=[entity(kind, phrase=phrase)]))
-    st, acts = apply_turn(new_state(NOW), parsed, resolver=r, now=NOW)
-    assert isinstance(acts[0], Lookup), type(acts[0]).__name__
-    assert [x.key for x in acts[0].held.refs[kind]] == [key]
-
-
-@pytest.fixture()
-def db():
-    from tests.chatbot.pv2 import _resolve_seed as S
-
-    with S.resolve_session() as session:
-        yield session
-
-
-def test_c2_a_partial_customer_name_with_one_candidate_is_used_not_asked(db):
-    """RED: HEAD's DbResolver never resolves a partial name on its own ("a partial name always asks"), so one
-    candidate still becomes a one-option question."""
-    from app.services.chatbot.pv2.resolve import DbResolver
-    from tests.chatbot.pv2 import _resolve_seed as S
-
-    S.customer(db, "300-K001", "KEDAI MAJU SDN BHD")
-    resolver = DbResolver(db, pinned={"brand": set(), "product_type": set(), "attachment_type": set(), "spec_attribute": set()})
-    parsed = out(ask(act="new_topic", domain="order", entities=[entity("customer", phrase="kedai maj")]))
-    st, acts = apply_turn(new_state(NOW), parsed, resolver=resolver, now=NOW)
-    assert isinstance(acts[0], Lookup), type(acts[0]).__name__
-    assert [x.label for x in acts[0].held.refs["customer"]] == ["KEDAI MAJU SDN BHD"]
+# ------------------------------------------------------------------ C2: moved to test_r4a_fix3.py
+# crew 15 Oct (a): an EXACT or unique one-option resolution is used; a partial-name guess is a yes/no confirm. The
+# FakeResolver cannot tell a partial guess from an exact single option, so the pins are DB-level in test_r4a_fix3.py.
 
 
 # ------------------------------------------------------------------ Open 1: LAST REPLY beside a mirrored v1 picker
@@ -143,7 +108,7 @@ def test_open1_a_mirrored_v1_picker_reads_asked_not_answered():
 def test_open2_held_prints_the_resolver_label_with_code_and_name():
     """RED: the resolver's exact product label is `<code> <name>` (and it marks the key as the code); HELD prints the
     label whole, as before R4a, so the name is not lost."""
-    h = Held(domain="inventory", refs={"product": [ResolvedRef(kind="product", key="SRTWC286", label="SRTWC286 Black seat cover", code_key=True)]})
+    h = Held(domain="inventory", refs={"product": [ResolvedRef(kind="product", key="SRTWC286", label="SRTWC286 Black seat cover")]})
     held_block = _mem(mk_state(h)).split("PENDING QUESTION")[0]
     assert "  product: SRTWC286 Black seat cover" in held_block.split("\n"), held_block
 

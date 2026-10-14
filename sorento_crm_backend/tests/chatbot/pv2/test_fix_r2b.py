@@ -190,9 +190,13 @@ def test_one_tap_on_the_single_family_option_holds_every_account(db):
     resolver = DbResolver(db, pinned={})
     state, actions = apply_turn(
         mk_state(), out(_ask(domain="sales", entities=[_customer_ent(phrase="Acfirst cer")])), resolver=resolver)
-    assert len(actions[0].pending.options) == 1
+    # crew 15 Oct (a): one-option guess = yes/no confirm. A partial name never resolves alone (nothing held
+    # yet); confirming it holds every account of that family.
+    assert actions[0].type == "clarify" and not state.held.refs.get("customer"), actions[0]
+    assert "ACFIRST CERAMICS SDN BHD" in actions[0].pending.asked or any(
+        o.label == "ACFIRST CERAMICS SDN BHD" for o in actions[0].pending.options)
     state, actions = apply_turn(
-        state, out(_ask(act="answers_bot_question", answer={"option_key": "1", "free_value": None})),
+        state, out(_ask(act="answers_bot_question", answer={"option_key": "yes", "free_value": None})),
         resolver=resolver)
     assert isinstance(actions[0], Lookup)
     assert len(state.held.refs["customer"]) == 3
