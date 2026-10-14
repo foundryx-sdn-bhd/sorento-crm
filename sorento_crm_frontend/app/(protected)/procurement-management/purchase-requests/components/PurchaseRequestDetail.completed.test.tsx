@@ -218,4 +218,42 @@ describe('PurchaseRequestDetail - completed status', () => {
 
     expect(await screen.findByRole('button', { name: /processed by cs/i })).toBeInTheDocument();
   });
+
+  async function openActionsMenu() {
+    const trigger = await screen.findByRole('button', { name: 'Request actions' });
+    fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 });
+    fireEvent.pointerUp(trigger, { button: 0, pointerId: 1 });
+    fireEvent.click(trigger);
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+  }
+
+  it('guard: an approved form offers Void in the actions menu', async () => {
+    usePurchaseRequestMock.mockReturnValue({
+      data: purchaseRequest({ status: 'approved', approval_status: 'approved' }),
+      isLoading: false,
+    });
+    renderPage();
+    await openActionsMenu();
+
+    expect(await screen.findByText('Void')).toBeInTheDocument();
+  });
+
+  it.each(['purchase_request', 'sponsorship_form'])(
+    'offers no Void action on a completed %s (terminal)',
+    async (requestType) => {
+      usePurchaseRequestMock.mockReturnValue({
+        data: purchaseRequest({
+          request_type: requestType,
+          status: 'completed',
+          approval_status: 'approved',
+        }),
+        isLoading: false,
+      });
+      renderPage();
+      await openActionsMenu();
+      await screen.findByText('Export to Excel'); // the menu is open
+
+      expect(screen.queryByText('Void')).toBeNull();
+    },
+  );
 });

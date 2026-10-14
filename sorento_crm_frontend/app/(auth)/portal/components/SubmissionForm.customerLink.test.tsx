@@ -23,6 +23,23 @@ vi.mock('next/navigation', () => ({
 const toasts = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }));
 vi.mock('@/lib/toast', () => ({ toast: toasts }));
 
+vi.mock('./AIExtractDialog', () => ({
+  AIExtractDialog: ({
+    onApply,
+  }: {
+    onApply: (p: { values: Record<string, unknown>; files: File[]; alsoAttach: boolean }) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() =>
+        onApply({ values: { customer_name: 'EXTRACTED NEW NAME' }, files: [], alsoAttach: false })
+      }
+    >
+      zzt-apply-extract
+    </button>
+  ),
+}));
+
 vi.mock('../lib/portal-client', async (importOriginal) => {
   const original = await importOriginal<typeof import('../lib/portal-client')>();
   return {
@@ -197,5 +214,29 @@ describe('SubmissionForm customer picker (PC-5)', () => {
 
     const option = await screen.findByRole('option', { name: /CUSTOMER A SDN BHD/ });
     expect(option).toHaveTextContent('302-ZZT001');
+  });
+
+  it('an AI-extract apply that sets a new customer name clears customer_id (PC-3)', async () => {
+    const { container } = await renderForm('purchase_request');
+    await pick(container, PROJECT.debtor_name);
+    expect((await savedFields()).customer_id).toBe(PROJECT.customer_id); // linked first
+
+    fireEvent.click(screen.getByRole('button', { name: 'zzt-apply-extract' }));
+    const fields = await savedFields();
+
+    expect(fields.customer_name).toBe('EXTRACTED NEW NAME');
+    expect([null, undefined, '']).toContain(fields.customer_id);
+  });
+
+  it('works when the lookup items carry no debtor_type (PC-2 portal item)', async () => {
+    asMock(lookupDebtors).mockResolvedValue([
+      { customer_id: 'cust-9', debtor_name: 'CUSTOMER C SDN BHD', customer_code: '300-ZZT009', sales_type: 'project' },
+    ]);
+    const { container } = await renderForm('purchase_request');
+    await pick(container, 'CUSTOMER C SDN BHD');
+    const fields = await savedFields();
+
+    expect(fields.customer_id).toBe('cust-9');
+    expect(fields.sales_type).toBe('project');
   });
 });
