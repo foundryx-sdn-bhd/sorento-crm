@@ -70,13 +70,24 @@ def test_rg5_a_set_code_in_inventory_holds_the_member_products_and_asks_nothing(
     assert _codes(st) == ["SRTSETC-A", "SRTSETP-A"], _codes(st)
 
 
-def test_rg5_the_asked_quantity_rides_on_every_member_of_the_set(db):
-    pedestal, cistern = _products(db, "SRTSETP-A", "SRTSETC-A")
-    _set(db, "SRTSET1", [(pedestal, 1), (cistern, 1)])
-    st, acts = _turn(db, "inventory", "SRTSET1", quantity=5)
-    assert isinstance(acts[0], Lookup)
-    assert {r.key: (r.quantity.number if r.quantity else None) for r in st.held.refs["product"]} == {
-        "SRTSETP-A": 5, "SRTSETC-A": 5}
+def _member_quantities(st):
+    return {r.key: (r.quantity.number if r.quantity else None) for r in st.held.refs["product"]}
+
+
+def test_rg5_each_members_quantity_is_the_asked_quantity_times_its_set_quantity(db):
+    a, b = _products(db, "SRTSETA-A", "SRTSETB-A")
+    _set(db, "SRTSET2", [(a, 2), (b, 1)])
+    st, acts = _turn(db, "inventory", "SRTSET2", quantity=5)
+    assert isinstance(acts[0], Lookup), type(acts[0]).__name__
+    assert _member_quantities(st) == {"SRTSETA-A": 10, "SRTSETB-A": 5}
+
+
+def test_rg5_with_no_asked_quantity_the_members_carry_no_quantity(db):
+    a, b = _products(db, "SRTSETA-A", "SRTSETB-A")
+    _set(db, "SRTSET2", [(a, 2), (b, 1)])
+    st, acts = _turn(db, "inventory", "SRTSET2")
+    assert isinstance(acts[0], Lookup), type(acts[0]).__name__
+    assert _member_quantities(st) == {"SRTSETA-A": None, "SRTSETB-A": None}
 
 
 # ------------------------------------------------------------------ a base code offers its active sets as one pick

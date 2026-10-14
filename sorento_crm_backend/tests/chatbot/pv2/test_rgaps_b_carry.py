@@ -157,3 +157,42 @@ def test_rg1b_the_third_identical_clarify_to_staff_is_v1s_still_need_line_with_n
     assert acts[0].pending.options == []
     reply = answer.replay_reply(st, acts)
     assert "I still need" in reply, reply
+
+
+# ------------------------------------------------------------------ RG-1b: the contact's own customer (resolver scope)
+
+
+@pytest.fixture()
+def db():
+    from tests.chatbot.pv2 import _resolve_seed as S
+
+    with S.resolve_session() as session:
+        yield session
+
+
+def _db_turns(db, customer_scope, can_offer):
+    """HANLIM + a period, then a new product; the real resolver reads `customer_scope` (what `scope_for_resolver`
+    hands a dealer held to its linked customers)."""
+    from app.services.chatbot.pv2.resolve import DbResolver
+    from tests.chatbot.pv2 import _resolve_seed as S
+
+    own = S.customer(db, "300-H001", "HANLIM TRADING SDN BHD")
+    S.product(db, "SRT391-GM", cat=S.category(db, class_label="Water Closet"))
+    scope = {"enforced": True, "ids": [own.id]} if customer_scope == "own" else {}
+    resolver = DbResolver(db, pinned={"brand": set(), "product_type": set(), "attachment_type": set(), "spec_attribute": set()},
+                          customer_scope=scope)
+    first = out(ask(act="new_topic", domain="order", entities=[entity("customer", phrase="HANLIM TRADING SDN BHD")], period=SEVENTH))
+    st, acts = apply_turn(new_state(NOW), first, resolver=resolver, now=NOW, can_offer_handover=can_offer)
+    assert _keys(st, "customer"), "turn 1 holds the customer"
+    second = out(ask(act="new_topic", domain="order", entities=[entity("product", phrase="SRT391-GM")]))
+    return apply_turn(st, second, resolver=resolver, now=NOW, can_offer_handover=can_offer)
+
+
+def test_rg1b_guard_a_carried_customer_inside_the_dealers_own_scope_gets_no_carry_question(db):
+    st, acts = _db_turns(db, "own", can_offer=True)
+    assert isinstance(acts[0], Lookup), f"{type(acts[0]).__name__}: v1 never asks about a contact's own customer"
+
+
+def test_rg1b_the_same_carry_over_an_unscoped_resolver_is_asked(db):
+    st, acts = _db_turns(db, "unscoped", can_offer=True)
+    assert _is_carry_question(acts[0]), type(acts[0]).__name__
