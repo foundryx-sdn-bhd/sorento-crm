@@ -69,6 +69,10 @@ def _ask_failures(want: dict, got) -> list[str]:
         ok = bool(got.switch_back_to) if want["switch_back_to"] == "*" else got.switch_back_to == want["switch_back_to"]
         if not ok:
             bad.append(f"switch_back_to {got.switch_back_to!r} vs {want['switch_back_to']!r}")
+    if "attachment_kinds" in want:
+        have_kinds = set(_as_list(got.attachment_type)) - {None}
+        if have_kinds != set(want["attachment_kinds"]):
+            bad.append(f"attachment kinds {sorted(have_kinds)} != {sorted(want['attachment_kinds'])}")
     if "attachment_type" in want and got.attachment_type != want["attachment_type"]:
         bad.append(f"attachment_type {got.attachment_type!r} != {want['attachment_type']!r}")
     if "option_key" in want and (got.answer.option_key if got.answer else None) != want["option_key"]:
