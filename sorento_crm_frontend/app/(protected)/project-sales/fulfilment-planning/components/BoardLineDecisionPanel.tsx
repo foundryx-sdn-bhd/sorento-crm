@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -450,16 +449,6 @@ export function BoardLineDecisionPanel({
     setBuyPinned(true);
     edit({ ...draft, buy_qty: value });
   };
-  /**
-   * A Buy LEFT at nothing has no order back to carry, so the switch and the cited document are
-   * cleared rather than left to come back ticked when a Buy is typed again. On leaving the box,
-   * not per keystroke (review S1): retyping 5 as 8 passes through an empty box, and that is not
-   * a decision to drop the order back.
-   */
-  const settleBuy = () => {
-    if (toMinor(draft.buy_qty) > 0 || (!draft.order_back && !draft.cited_document)) return;
-    edit({ ...draft, order_back: false, cited_document: '' });
-  };
   /** What the parts leave uncovered, in minor units; 0 when they add up or run over. */
   const unassignedMinor = Math.max(-balance.differenceMinor, 0);
   const restToBuy = () => {
@@ -676,12 +665,6 @@ export function BoardLineDecisionPanel({
             reason,
             buy_reason: foldedDraft.buy_reason,
             borrow: foldedDraft.borrow,
-            // S2 (fix round 2, reviewer): the Order back switch and Document cited box are on
-            // screen for this exact line - a wholly-bought approving save used to take them
-            // from the SUGGESTION draft (always false/'') and drop whatever the planner had
-            // actually ticked or typed.
-            order_back: draft.order_back,
-            cited_document: draft.cited_document,
           }),
           cs_note: csNote,
           suspected_system_issue: suspected,
@@ -713,14 +696,7 @@ export function BoardLineDecisionPanel({
         // `buy_reason` and every borrow reason now live, `foldReasonIntoDraft` reads it fresh
         // on every render, and clearing it the instant its own save landed would wipe the
         // reason off screen while it is still what was just saved.
-        const suggestion = suggestionDraftFrom(contribution);
-        setDraft({
-          ...suggestion,
-          // S2: the same reseed gap one field over - Order back and Document cited went back to
-          // the suggestion's own false/'' the instant the save that just carried them landed.
-          order_back: draft.order_back,
-          cited_document: draft.cited_document,
-        });
+        setDraft(suggestionDraftFrom(contribution));
       }
       // S4/AC-4.1: the button answers the click itself, within the interaction, before the
       // pill's own "Saved" and the toast even have to be looked at - and it keeps answering
@@ -1064,21 +1040,17 @@ export function BoardLineDecisionPanel({
                     aria-label="Buy quantity"
                     data-testid={`line-buy-qty-${contribution.key}`}
                     onChange={(event) => typeBuy(event.target.value)}
-                    onBlur={settleBuy}
                     className="h-8 w-24 tabular-nums"
                   />
                 </div>
               )}
-              {/* One row under the box, where Reserve and Borrow keep their own secondary
-                  action (owner hand test, 14 Oct 2026: a switch squeezed beside the box and
-                  Order back floating below it read as clutter). The whole-line switch is drawn
-                  as the same outline button as "Add location", pressed while on; it keeps the
-                  switch role, so it still reads as on or off.
-                  An order back is a Buy whose supply is ALREADY on order or already shipped,
-                  so the row purchasing gets carries verb ORDER BACK. Offered whenever the
-                  line buys anything (OI-CLOSED-LINE: "98 from BB, 2 order back"); with no Buy
-                  there is no row to mark. */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {/* Under the box, where Reserve and Borrow keep their own secondary action (owner
+                  hand test, 14 Oct 2026: a switch squeezed beside the box read as clutter). The
+                  whole-line switch is drawn as the same outline button as "Add location",
+                  pressed while on; it keeps the switch role, so it still reads as on or off.
+                  No manual Order back (owner, 14 Oct 2026: "borrow = order back"): a Borrow
+                  already reads ORDER BACK to purchasing, so a Buy is always a plain ORDER. */}
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -1097,49 +1069,7 @@ export function BoardLineDecisionPanel({
                   )}
                   {buying ? `Buy the whole ${draft.open_qty}` : 'Buy the whole line'}
                 </Button>
-                {(buying || toMinor(draft.buy_qty) > 0) && (
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      id={`line-order-back-${contribution.key}`}
-                      aria-label="Order back"
-                      checked={draft.order_back}
-                      disabled={locked}
-                      onCheckedChange={(next) =>
-                        edit({
-                          ...draft,
-                          order_back: next,
-                          cited_document: next ? draft.cited_document : '',
-                        })
-                      }
-                    />
-                    <label
-                      htmlFor={`line-order-back-${contribution.key}`}
-                      className="text-sm text-muted-foreground"
-                    >
-                      Order back
-                    </label>
-                  </div>
-                )}
               </div>
-              {(buying || toMinor(draft.buy_qty) > 0) && draft.order_back && (
-                <div className="space-y-1">
-                  <label
-                    className="block text-2xs uppercase tracking-wide text-muted-foreground"
-                    htmlFor={`line-cited-document-${contribution.key}`}
-                  >
-                    Document cited
-                  </label>
-                  <Input
-                    id={`line-cited-document-${contribution.key}`}
-                    value={draft.cited_document}
-                    disabled={locked}
-                    placeholder="202604-S0083 or SPO-2026/08-0061"
-                    onChange={(event) =>
-                      edit({ ...draft, cited_document: event.target.value })
-                    }
-                  />
-                </div>
-              )}
             </div>
           </Block>
         </div>
@@ -1454,7 +1384,14 @@ function draftFor(
   contribution: BoardContribution,
   decision: BoardDecision | null,
 ): DraftLine {
-  const base = amendDraftFrom(contribution);
+  // No manual Order back on this panel (owner, 14 Oct 2026: borrow = order back): a frozen or
+  // saved decision that carried one opens without it, so the next Save never re-sends a flag
+  // the planner can no longer see.
+  const base = {
+    ...amendDraftFrom(contribution),
+    order_back: false,
+    cited_document: '',
+  };
   // A saved Transfer to Cancel SO carries no composition: open on zeros, not the suggestion.
   if (decision?.verdict === 'cancelled') {
     return {
@@ -1521,8 +1458,6 @@ function draftFor(
     timely_spo_qty: decision.timely_spo_qty ?? base.timely_spo_qty,
     buy_qty: decision.buy_qty ?? '0',
     buy_reason: decision.buy_reason ?? '',
-    order_back: Boolean(decision.order_back),
-    cited_document: decision.cited_document ?? '',
   };
 }
 

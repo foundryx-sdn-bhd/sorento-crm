@@ -12,11 +12,17 @@ keeps following the remainder (D7). Once typed it is pinned: no Reserve or Borro
 and the panel states what is left instead. Crew ruling (a), 14 Oct: the "Buy the whole line" switch
 is a detour, so OFF puts back exactly what was there, a typed Buy and its pin included.
 
+Owner hand test, 14 Oct: the Buy section mirrors the Reserve and Borrow rows (the whole-line
+switch drawn as the "Add location" outline button), and the manual Order back switch is removed:
+"borrow = order back". The server already derives ORDER BACK from a Borrow
+(`project_order_inquiry_service.py` `_saved_line_parts`, `_raise_borrow_shortfalls`); retiring
+the server's manual ORDER_BACK Buy path (`order_back` on the confirm line) is a separate lane.
+
 ## Seam
 
 - `sorento_crm_frontend/app/(protected)/project-sales/fulfilment-planning/components/BoardLineDecisionPanel.tsx`
   only: `buyPinned` state, `editComposition` skips the derivation while pinned, `typeBuy`,
-  `settleBuy` (blur), `restToBuy`, `restToReserve`, `setBuying` holds the Buy and its pin,
+  `restToBuy`, `restToReserve`, `setBuying` holds the Buy and its pin,
   the re-seed effect unpins, the hint and the Add-location remainder.
 - The Save gate is unchanged: `supplyComposition.ts` `lineBlockers` already refuses a line whose
   parts do not add up. The backend already stores `buy_qty` as its own number.
