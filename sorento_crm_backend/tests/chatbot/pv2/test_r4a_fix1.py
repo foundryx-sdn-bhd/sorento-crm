@@ -66,10 +66,12 @@ def _orders_state(**held_refs):
 def test_b1_guard_a_resolver_set_product_prints_its_code_beside_a_description_label():
     """GUARD ("do you have the black short one?"): the resolver set the code; HELD shows it."""
     r = FakeResolver({"entities": {"product|black short": {"status": "exact", "refs": [
-        {"kind": "product", "key": "SRTWC286-SH", "label": "Black seat cover short"}]}}})
+        {"kind": "product", "key": "SRTWC286-SH", "label": "SRTWC286-SH Black seat cover short"}]}}})
     st, _ = apply_turn(new_state(NOW), out(ask(act="new_topic", domain="inventory",
                                               entities=[entity("product", phrase="black short")])), resolver=r, now=NOW)
-    assert "SRTWC286-SH" in _mem(st).split("PENDING QUESTION")[0]
+    # R4a fix 2 (Open 2): HELD prints the resolver label, which already carries the code
+    held_block = _mem(st).split("PENDING QUESTION")[0]
+    assert "SRTWC286-SH" in held_block and "Black seat cover short" in held_block, held_block
 
 
 def test_b1_a_product_ref_from_an_option_payload_never_prints_its_internal_id():

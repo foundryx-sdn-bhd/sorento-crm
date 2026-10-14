@@ -271,14 +271,18 @@ def test_menu_names_the_canonical_brand_not_the_typo(session_factory, monkeypatc
     assert "sroento" not in reply.lower().replace("sorento", ""), reply
 
 
-def test_menu_still_echoes_a_typed_product_code_never_a_guess(session_factory, monkeypatch):
-    """AC-16 / D16 control: a product word that is no brand keeps the typed echo."""
+def test_menu_never_echoes_a_product_code_and_never_a_guess(session_factory, monkeypatch):
+    """AC-16 / D16 control, flipped: owner rule 15 Oct: promo replies never echo the product code. A product word
+    that is no brand is not echoed, and no guessed code or brand appears either."""
     _seed(session_factory)
     reply, _captured, _ = _say(
         session_factory, monkeypatch, _ask_qf("SRTWT0000", "product"),
         "promo for SRTWT0000", "zzt-psf-d16", lambda n, a: HAS,
     )
-    assert reply.startswith("Which access level do you need for SRTWT0000?"), reply
+    # owner rule 15 Oct: promo replies never echo the product code
+    first = reply.split("\n")[0]
+    assert first.startswith("Which access level do you need"), reply
+    assert "SRTWT0000" not in first and "Sorento" not in first, reply
 
 
 # --------------------------------------------------------------------------- #
