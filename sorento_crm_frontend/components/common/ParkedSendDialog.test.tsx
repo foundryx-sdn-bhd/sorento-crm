@@ -59,6 +59,28 @@ describe('AC-SN-44 ParkedSendDialog', () => {
     expect(screen.getByText('17 order inquiries, 2 emails')).toBeInTheDocument();
   });
 
+  it('uses inquiry_total (distinct OIs), not the per-email sum, for subtitle and total row', () => {
+    const split = {
+      emails: [
+        { ...PREVIEW.emails[0], inquiry_count: 1, line_count: 1, subject: 'Reserve request: OI-1 #1' },
+        { ...PREVIEW.emails[1], inquiry_count: 1, line_count: 1, subject: 'Reserve request: OI-1 #2' },
+      ],
+      inquiry_total: 1,
+      unresolved: [] as { inquiry_count: number; line_count: number }[],
+    };
+    renderDialog({ preview: split });
+    expect(screen.getByText('1 order inquiry, 2 emails')).toBeInTheDocument();
+    const total = within(screen.getByRole('table')).getByText('2 emails').closest('tr') as HTMLElement;
+    const cells = within(total).getAllByRole('cell').map((c) => c.textContent);
+    expect(cells).toContain('1');
+    expect(cells).not.toContain('2');
+  });
+
+  it('falls back to the per-email sum when inquiry_total is absent (older server)', () => {
+    renderDialog();
+    expect(screen.getByText('17 order inquiries, 2 emails')).toBeInTheDocument();
+  });
+
   it('shows the recipient table with a total row', () => {
     renderDialog();
     const table = screen.getByRole('table');

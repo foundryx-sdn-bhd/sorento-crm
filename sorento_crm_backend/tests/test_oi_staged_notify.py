@@ -940,3 +940,78 @@ def test_fix_S2_recipients_resolve_staged_rows_on_a_reserved_request(sn, monkeyp
         unknown_oi = cs.get(RECIPIENTS_URL(_uid()))
         foreign = cs.get(RECIPIENTS_URL(inquiry.id), params={"row_ids": other_row.id})
         assert foreign.json() == unknown_oi.json(), "same text as an unknown OI"
+
+
+# --------------------------------------------------------------------------------- #
+# Follow-up: inquiry_total + split items resolve their own recipients                #
+# --------------------------------------------------------------------------------- #
+
+
+def test_fix_S1_preview_inquiry_total_is_distinct_ois(sn, monkeypatch):
+    """Two parked requests on ONE OI split into two emails (each inquiry_count 1); the
+    preview's `inquiry_total` counts DISTINCT OIs across all emails, not the sum."""
+    client, world = sn
+    _automations(world, strict=True)
+    _register()
+    _captured_dispatches(monkeypatch)
+    eling = _user(world.db, f"{MARKER} Eling")
+    niki = _user(world.db, f"{MARKER} Niki")
+    # Dev config: To = the OI's raiser. Eling's group is one OI (split), Niki's is one OI.
+    _two_requests_one_oi(client, world, eling)
+    _parked_request(client, world, niki)
+
+    body = _ok(client.post(REQ_PREVIEW))
+    assert len(body["emails"]) == 3, [e["subject"] for e in body["emails"]]
+    assert body.get("inquiry_total") == 2, body.get("inquiry_total")
+
+    # Notices: one commit answers two requests on one OI, plus a second OI.
+    inquiry = _new_oi(world, eling)
+    row_a, row_b = _oi_row(world, inquiry), _oi_row(world, inquiry)
+    _request(client, world, inquiry, [(row_a, "50")], park=False)
+    _request(client, world, inquiry, [(row_b, "50")], park=False)
+    _commit(
+        world, inquiry,
+        reserves=[_reserve(world, row_a, "50"), _reserve(world, row_b, "50")],
+        park_notice=True,
+    )
+    other, other_row, _rid = _sent_request(client, world, niki)
+    _commit(world, other, reserves=[_reserve(world, other_row, "50")], park_notice=True)
+    with _as(world.db, world.reserver, RESERVER_PERMISSIONS) as cs:
+        notes = _ok(cs.post(NOTE_PREVIEW))
+    assert len(notes["emails"]) == 3, [e["subject"] for e in notes["emails"]]
+    assert notes.get("inquiry_total") == 2, notes.get("inquiry_total")
+
+
+def test_fix_N1_split_items_resolve_their_own_recipients(sn, monkeypatch):
+    """Request side cannot produce two requesters in one group (own items only, and the
+    OI's raiser is the same for both). Notice side can, via the actor-last ordering:
+    the reserved automation carries a FIXED user (Joey) and CS (actor) is himself a
+    requester on the same OI. CS's request: recipients [Joey fixed, CS last] -> To Joey.
+    Joey's request: To Joey. One group, then split. Joey's email must not Cc CS."""
+    client, world = sn
+    _automations(world, strict=True)
+    _register()
+    _captured_dispatches(monkeypatch)
+    eling = _user(world.db, f"{MARKER} Eling")
+    _set_automation(world, "order_inquiry_reserved", config={"user_ids": [world.requester]})
+    inquiry = _new_oi(world, eling)
+    row_joey, row_cs = _oi_row(world, inquiry), _oi_row(world, inquiry)
+    _request(client, world, inquiry, [(row_joey, "50")], park=False)
+    with _as(world.db, world.reserver, RESERVER_PERMISSIONS) as cs:
+        response = cs.post(
+            REQUEST_URL(inquiry.id),
+            json={"rows": [{"row_id": row_cs.id, "qty_requested": "50", "warehouse_id": world.site.id}]},
+        )
+        assert response.status_code == 201, response.text
+    world.db.commit()
+    _commit(
+        world, inquiry,
+        reserves=[_reserve(world, row_joey, "50"), _reserve(world, row_cs, "50")],
+        park_notice=True,
+    )
+    with _as(world.db, world.reserver, RESERVER_PERMISSIONS) as cs:
+        emails = _ok(cs.post(NOTE_PREVIEW))["emails"]
+    cs_name = _name(world, world.reserver)
+    assert len(emails) == 2, [(e["to"], e["cc"]) for e in emails]
+    with_cs = [e for e in emails if cs_name in _names(e["cc"])]
+    assert len(with_cs) == 1, f"only CS's own request may Cc CS: {[_names(e['cc']) for e in emails]}"
