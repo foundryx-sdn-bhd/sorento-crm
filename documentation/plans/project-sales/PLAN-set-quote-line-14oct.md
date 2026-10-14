@@ -57,16 +57,25 @@
    list_price, series_id)`: series_sets row via `series_floor`, else the SYSTEM rule only through
    `_floor_from_rule` against the set list price (Q4 b: no product/category rule). Guardrails branch on
    `product_set_id`. `/line-verdict` accepts `product_set_id`. `recompute_version` covers set lines.
-4. Series sets: `GET /series/{id}/sets`, `PUT /series/{id}/sets/{set_id}` (upsert numbers),
-   `DELETE /series/{id}/sets/{set_id}`; same permission deps as the series products routes.
-   `series_set_pricing_map` for the FE rate fill.
+4. Series sets: `GET /config/series/{id}/sets/rows`, `PATCH /config/series/{id}/sets/{set_id}`
+   (upsert numbers), `DELETE /config/series/{id}/sets/{set_id}`; same permission deps as the series
+   products routes. `series_set_pricing_map` for the FE rate fill.
+4b. Set picker read (review round 1, R3): `GET /api/v1/master-data/product-sets/select?query=|ids=`,
+   session-gated like `/products/select` (`products_select.py:19-31`), because the sales roles that
+   edit quotations do not hold `master_data.product_sets.view` (dev roles, reviewer query). Returns
+   id, set_code, name, is_active, member_count, list_price, complete_sets, parts; company-scoped.
+   Feeds the picker, the set fill and the complete-sets chip.
 5. Import (S4, after #1680 merges): in `apply_series_product_codes`, sets resolved by the set tier get a
    `series_sets` row with the sheet numbers; family tier sets likewise; report entries say so.
 6. SO draft: in `_explosion_for`, after the package tier and before `_quotation_components`: quoted
-   line with `product_set_id` + parts snapshot -> components from the snapshot, driver at the quoted
-   rate, others 0.00, numerator = part qty, denominator 1; `EXPLOSION_SET = "set"`.
+   line with a parts snapshot (the set may since be deleted) -> components from the snapshot, driver
+   at the quoted rate, others 0.00, each part in its OWN UOM (stored in the snapshot), numerator =
+   part qty, denominator 1; `EXPLOSION_SET = "set"`.
 7. Documents: unchanged renderers; they print `complete_set`, which A2b fills. Images: a set line reads
-   the driver part's product files (`line_images`, `assert_line_picks`).
+   the driver part's product files (`line_images`, `assert_line_picks`, and `freeze_version_images`
+   at issue). Brand: a blank brand on a new set pick is filled from the driver part on the server.
+8. Validation: a malformed `product_set_id` is a 422 (schema + query param), never a 500; a foreign
+   set is looked up through the scoped `ProductSet` before any member read.
 
 ### Frontend
 1. Types/services: `QuotationLine.product_set_id`, `set_parts`; `StagedQuotationLine`/`toBody` carry
@@ -89,6 +98,12 @@
 - pytest `tests/test_set_quote_line.py`: A1-A7, B1-B7 (incl. issue blocked + approval), C1-C5, D1-D2, E1-E3.
 - vitest: `quotationLineDraft` set round trip, picker options/`set:` value, LineFlags custom-item rule,
   `SeriesSetsTable`.
+
+## Review round 1 (14 Oct)
+Reviewer NOT READY (blocker: issued set lines lost their photo; high: SO part UOM, set read
+permission for sales roles, test gaps on floor order / save-level rules / driver index, picker part
+count, brand fill) and security FINDINGS (malformed set id 500 with SQL text, foreign-set existence
+oracle via a photo pick). One red round (tester) then one coder round covers all of them.
 
 ## Security
 security-reviewer: new write surface (series sets routes), cross-company set id on a line (IDOR),
