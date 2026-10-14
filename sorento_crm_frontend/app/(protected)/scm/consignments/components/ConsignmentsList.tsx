@@ -25,7 +25,11 @@ import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch
 import { useListingViewPreferences } from '@/lib/listing-column-preferences/useListingViewPreferences';
 import { useSalesOrders } from '../../hooks/useSalesOrders';
 import { fmtDate, fmtInt } from '../../lib/format';
-import { salesOrderStatusLabel, salesOrderStatusVariant } from '../../lib/salesOrderStatus';
+import {
+  consignmentAtCustomer,
+  consignmentStatusLabel,
+  consignmentStatusVariant,
+} from '../../lib/consignmentStatus';
 import type { SalesOrder } from '../../types/scm.types';
 
 const DEFAULT_SORTING: SortingState = [{ id: 'order_date', desc: true }];
@@ -144,10 +148,13 @@ export function ConsignmentsList() {
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataGridColumnHeader title="Status" column={column} />,
+        // Worded from the lines (At customer / Fully returned), not the stored status, so the
+        // server cannot sort it.
+        enableSorting: false,
+        header: () => <span>Status</span>,
         cell: ({ row }) => (
-          <Badge variant={salesOrderStatusVariant(row.original.status)} appearance="light" size="md">
-            {salesOrderStatusLabel(row.original.status)}
+          <Badge variant={consignmentStatusVariant(row.original)} appearance="light" size="md">
+            {consignmentStatusLabel(row.original)}
           </Badge>
         ),
         size: 150,
@@ -168,6 +175,14 @@ export function ConsignmentsList() {
           };
         },
       ),
+      {
+        id: 'at_customer',
+        enableSorting: false,
+        header: () => <span>At customer</span>,
+        cell: ({ row }) => fmtInt(consignmentAtCustomer(row.original)),
+        size: 130,
+        meta: { headerTitle: 'At customer', headerClassName: 'text-right', cellClassName: 'text-right tabular-nums' },
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [detailSearch],
