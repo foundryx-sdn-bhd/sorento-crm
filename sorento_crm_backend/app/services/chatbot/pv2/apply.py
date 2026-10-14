@@ -1330,14 +1330,17 @@ def valid_origin(origin: dict | None) -> Ask | None:
 
 def _without_picked(origin: Ask, payload: dict[str, Any], question: str) -> Ask:
     """The original ask minus the item the pick answered: every entity of the picked kind (the pick
-    replaces that kind, as before R2), on a which_held question every "this one" entity (the pick is the
-    held subject they meant), the spec a spec question asked about (a pick among the closest products
-    answers the spec that found nothing), the attachment kind or domain picked."""
+    replaces that kind, as before R2), on a which_held question every entity that pointed back at held
+    ("this one", a remove: the pick is the held subject they meant, and replaying them misses again),
+    the spec a spec question asked about (a pick among the closest products answers the spec that found
+    nothing), the attachment kind or domain picked."""
     kind = payload.get("kind")
     which_held = question == "clarify_which_held"
-    update: dict[str, Any] = {
-        "entities": [e for e in origin.entities if e.kind != kind and not (which_held and e.refers_to_held)]
-    }
+
+    def answered(e: Entity) -> bool:
+        return e.kind == kind or (which_held and (e.refers_to_held or e.op == "remove"))
+
+    update: dict[str, Any] = {"entities": [e for e in origin.entities if not answered(e)]}
     if question == "clarify_spec_attribute":
         update["specs"] = [s for s in origin.specs if s.attribute not in (None, payload.get("attribute"))]
     if kind == "attachment_type":
