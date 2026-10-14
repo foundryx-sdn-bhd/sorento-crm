@@ -168,8 +168,8 @@ def test_ac_cf_2_carry_keeps_a_confirmed_rows_ack_fields(api):
     assert response.status_code == 200, response.text
     world.db.commit()
 
-    # The carry cancels-and-re-raises under the new revision (13.4) - a FRESH row id,
-    # not the same one - so what this proves is the stamp travelling, not the id.
+    # An unchanged carried row is kept and re-filed under the new revision
+    # (ORDERBACK-DELTA, 13 Oct 2026); what this proves is the stamp standing.
     carried = _order_row(world, fixture["lines"][0])
     assert carried.ack_state == ACK_ACKNOWLEDGED
     assert carried.acknowledged_by == stamped_by
