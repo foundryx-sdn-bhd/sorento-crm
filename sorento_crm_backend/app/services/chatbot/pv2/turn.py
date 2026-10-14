@@ -396,7 +396,7 @@ def mirror_v1_pending(
     labels = [str(o["label"]) for o in opts]
     keys = [str(o.get("position") or o.get("idx") or n) for n, o in enumerate(opts, start=1)]
     payload = getattr(v1_pending, "payload", None) or {}
-    return after_v1(
+    mirrored = after_v1(
         state,
         question_kind=str(kind),
         option_labels=labels,
@@ -406,6 +406,9 @@ def mirror_v1_pending(
         or _offer_sentence(v1_pending, yes_no)
         or _question_text(last_reply, yes_no, labels),
     )
+    if mirrored.pending is not None and mirrored.pending.origin is None:
+        mirrored.pending.origin = state.last_lookup_ask  # the ask the Lookup behind this picker answered
+    return mirrored
 
 
 # --------------------------------------------------------------------------- #

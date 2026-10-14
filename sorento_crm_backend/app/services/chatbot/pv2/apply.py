@@ -42,7 +42,9 @@ from app.services.chatbot.pv2.state import (
     ResolvedRef,
     ResolvedSpec,
     SmallTalk,
+    SCALAR_PAYLOAD_KINDS,
     apply_payload,
+    new_sid,
     push_topic,
     set_refs,
     topic_index,
@@ -163,6 +165,7 @@ def apply_turn(
             phrase = out.clarify.phrase if options or about != "which_held" else None
             act = _clarify(st, 0, about, phrase, language, options=options)
             act.pending.deferred = deferred
+            act.pending.origin = _origin_of(out.asks[0]) if out.asks else None
         st.pending = act.pending
         return st, [act]
 
@@ -190,9 +193,11 @@ def apply_turn(
                 action.reask = False  # its own question, not a retry of the open one
             if isinstance(action, ClarifyAct) and action.pending.deferred is None and reask is None:
                 action.pending.deferred = _deferred_of(ask)
+                action.pending.origin = _origin_of(ask)
         else:
             answered_pending = answered_pending or answered
             action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover)
+            _keep_origin(action, ask, pending_in)
             if (
                 isinstance(action, Lookup)
                 and action.picked is None
@@ -218,6 +223,7 @@ def apply_turn(
         st.pending = first_question
     elif answered_pending or any(isinstance(a, (Lookup, HandOver)) for a in actions):
         st.pending = None
+    st.last_lookup_ask = _last_lookup_ask(actions, pending_in if answered_pending else None)
     return st, actions
 
 
@@ -399,6 +405,10 @@ def _drill(
 def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[ClarifyAct]) -> Action:
     """Held becomes this ask's subject; the first open question (if any) is the action,
     else a Lookup."""
+    if not held.is_empty() and (held.sid is None or any(t.sid == held.sid for t in st.topics)):
+        # A subject starts (or a domain-switch refine left its old self in topics): a fresh id, kept
+        # through topics and back.
+        held.sid = new_sid(st)
     st.held = held
     if qs:
         return qs[0]
@@ -535,8 +545,20 @@ def _answer(
             True,
         )
 
-    held = _complete_deferred(apply_payload(st.held, picked.payload), pending.deferred)
+    held = apply_payload(st.held, picked.payload)
     qs = _Qs(can_offer)
+    if pending.origin is not None and "report" not in picked.payload:
+        # The pick completes the ORIGINAL ask: its fields apply to the picked subject through the same
+        # path as any ask (the picked entity stands in for the phrase that was ambiguous). Its attachment
+        # kinds were vetted when it was asked, so they copy as they are (as `_complete_deferred` did).
+        settled = _without_picked(Ask.model_validate(pending.origin), picked.payload, held)
+        held = _complete_deferred(held, _deferred_of(settled))
+        held = _apply_fields(
+            st, held, settled.model_copy(update={"attachment_type": None}), resolver, policy,
+            language, i, qs, refine=True, today=today,
+        )
+    else:
+        held = _complete_deferred(held, pending.deferred)  # state saved before R2
     if pending.kind == "clarify_report_breakdown" and "report" in picked.payload:
         # v1's drill-down pick: the held report is unchanged; the reply runs v1's report by it.
         return (
@@ -1224,6 +1246,65 @@ def _bare_switch_back_beside_a_new_ask(asks: list[Ask], i: int, topics: list[Hel
         o.act in ("new_topic", "refines_held") and o.domain == target and any(not e.refers_to_held for e in o.entities)
         for j, o in enumerate(asks) if j != i
     )
+
+
+def _origin_of(ask: Ask) -> dict:
+    """The full ask a question interrupts, kept so a pick completes it."""
+    return ask.model_dump(mode="json")
+
+
+def _keep_origin(action: Action, ask: Ask, pending_in: PendingQuestion | None) -> None:
+    """A question an ask raised keeps that ask; one raised while answering the open question keeps
+    the open question's own origin (a re-ask already carries it)."""
+    if not isinstance(action, ClarifyAct) or action.pending.origin is not None:
+        return
+    if ask.act in _ANSWER_ACTS:
+        action.pending.origin = pending_in.origin if pending_in is not None else None
+    else:
+        action.pending.origin = _origin_of(ask)
+
+
+def _last_lookup_ask(actions: list[Action], answered: PendingQuestion | None) -> dict | None:
+    """The ask the turn's first Lookup answered (a pick answers the question's original ask)."""
+    first = next((a for a in actions if isinstance(a, Lookup)), None)
+    if first is None:
+        return None
+    if answered is not None and answered.origin is not None:
+        return answered.origin
+    return _origin_of(first.ask) if first.ask is not None else None
+
+
+def _without_picked(origin: Ask, payload: dict[str, Any], held: Held) -> Ask:
+    """The original ask minus what is already settled: the picked entity's kind (the ambiguous phrase),
+    the attachment kind / domain / spec the pick chose, and every entity or spec `held` already carries
+    (resolved when the question was asked), so none is resolved twice."""
+    kind = payload.get("kind")
+    update: dict[str, Any] = {}
+    if kind == "attachment_type":
+        update["attachment_type"] = None
+    elif kind == "domain":
+        update["domain"] = None
+    drop_attrs = {sp.attribute for sp in held.specs}
+    if kind == "spec":
+        drop_attrs.add(payload.get("attribute"))
+    # An unnamed attribute is the ambiguous one the spec pick answered.
+    update["specs"] = [
+        sp for sp in origin.specs if sp.attribute not in drop_attrs and not (kind == "spec" and sp.attribute is None)
+    ]
+    picked_kind = kind if kind and kind not in SCALAR_PAYLOAD_KINDS else None
+    quantity = None
+    kept: list[Entity] = []
+    for e in origin.entities:
+        have = {str(v) for r in held.refs.get(e.kind, []) for v in (r.key, r.phrase) if v}
+        named = e.key or e.phrase
+        if picked_kind is not None and e.kind == picked_kind and not e.refers_to_held:
+            quantity = quantity or e.quantity  # the pick stands in for this phrase; its count carries over
+        elif not (named is not None and not e.refers_to_held and str(named) in have):
+            kept.append(e)
+    if quantity is not None:
+        kept.append(Entity(kind=picked_kind, key=None, phrase=None, op="set", refers_to_held=True, quantity=quantity))
+    update["entities"] = kept
+    return origin.model_copy(update=update)
 
 
 def _deferred_of(ask: Ask) -> dict | None:

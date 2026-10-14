@@ -4223,7 +4223,9 @@ def _pv2_write_register(media_box: dict[str, Any], envelopes: Any) -> None:
     try:
         from app.services.chatbot.pv2 import register as pv2_register
 
-        fresh = pv2_register.entries_from_envelopes(envelopes, int(getattr(state, "turn_no", 0) or 0))
+        fresh = pv2_register.entries_from_envelopes(
+            envelopes, int(getattr(state, "turn_no", 0) or 0), getattr(state.held, "sid", None)
+        )
         state.register = pv2_register.roll(getattr(state, "register", None) or [], fresh)
     except Exception:  # noqa: BLE001 - the register is a convenience; the reply is already decided
         logger.warning("pv2: could not write the answer register", exc_info=True)
@@ -6165,6 +6167,7 @@ def _run_stages_body(  # noqa: PLR0915
                 # turn (no outcome ran here at all - S3), which still needs this arm's
                 # own lead.
                 media_prefixed=bool(media_box.get("outcome")),
+                media_box=media_box,
             )
 
         # D9: no engine switch. The re-architected turn IS the engine, so a lane the
@@ -8137,6 +8140,7 @@ def _run_entities_only_arm(
     recalled: list[dict[str, Any]],
     from_photo: bool,
     media_prefixed: bool = False,
+    media_box: dict[str, Any] | None = None,
 ) -> TurnResult:
     """S3 (PLAN-chatbot-media-into-turn.md): bare entities, no domain, no carried
     focus (AC-1822 to AC-1832). Resolved directly against the SAME resolver seam
@@ -8273,6 +8277,15 @@ def _run_entities_only_arm(
         localizer=label_catalog.resolve(db, item.get("reply_language") or "en", dry_run=dry_run),
     )
     answer = turn_compose.Answer(text=text)
+    # PV2 redesign R2: the codes this reply placed are what it printed, so they are the register.
+    _pv2_write_register(
+        media_box or {},
+        [{"listed_products": [
+            {"hint": "product", "canonical_code": row.get("canonical_code"), "raw": raw}
+            for raw in placed
+            for row in [next((r for r in state.focus.products if isinstance(r, dict) and r.get("raw") == raw), {})]
+        ]}],
+    )
     # `_run_answer` opens and commits its OWN session for the tail (persist, close);
     # this caller's own `db` (the "access, apply, route" session, still open) must
     # have nothing pending on it first - every OTHER caller of `_run_answer` reaches
