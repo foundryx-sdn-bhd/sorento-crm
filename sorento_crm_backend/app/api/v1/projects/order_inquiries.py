@@ -1408,14 +1408,20 @@ def send_parked_reserve_notices(
 )
 def order_inquiry_reserve_notice_recipients(
     inquiry_id: str,
+    row_ids: Optional[str] = Query(
+        None, max_length=4000, description="Comma-separated staged OI row ids."
+    ),
     current_user: dict = Depends(require_permission(RESERVE)),
     db: Session = Depends(get_db),
 ):
     """Who the reserve confirmation's notice would go to (AC-SN-27)."""
     try:
         validate_uuid_path(inquiry_id, resource="Order inquiry")
+        ids = [part.strip() for part in (row_ids or "").split(",") if part.strip()]
+        for row_id in ids:
+            validate_uuid_path(row_id, resource="Order inquiry")
         return OrderInquiryReserveService(db).notice_recipients(
-            inquiry_id=inquiry_id, actor_user_id=current_user["id"]
+            inquiry_id=inquiry_id, actor_user_id=current_user["id"], row_ids=ids or None
         )
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))

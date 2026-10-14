@@ -139,7 +139,8 @@ _BULK = {
         "{{ reserve.oi_count }} order inquiries ({{ reserve.line_count }} lines).\n\n"
         "OI NO | S/O NO | CUSTOMER | LINES\n"
         "{% for r in reserve.requests %}{{ r.inquiry_no }} | {{ r.so_number }} | {{ r.customer }} | {{ r.line_count }}\n{% endfor %}"
-        "{% if reserve.more_count %}and {{ reserve.more_count }} more order inquiries.\n{% endif %}"
+        "{% if reserve.more_count %}and {{ reserve.more_count }} more order "
+        "inquir{{ 'y' if reserve.more_count == 1 else 'ies' }}.\n{% endif %}"
         "Requested by {{ requester.name if requester else '-' }} on {{ today }}.\n"
         "View order inquiries that need your reserve: {{ reserve.link }}\n",
     },
@@ -157,7 +158,8 @@ _BULK = {
         "Check the balance still to buy.\n\n"
         "OI NO | S/O NO | CUSTOMER | LINES\n"
         "{% for r in reserve.requests %}{{ r.inquiry_no }} | {{ r.so_number }} | {{ r.customer }} | {{ r.line_count }}\n{% endfor %}"
-        "{% if reserve.more_count %}and {{ reserve.more_count }} more order inquiries.\n{% endif %}"
+        "{% if reserve.more_count %}and {{ reserve.more_count }} more order "
+        "inquir{{ 'y' if reserve.more_count == 1 else 'ies' }}.\n{% endif %}"
         "Reserved by {{ actor.name if actor else '-' }} on {{ today }}.\n"
         "View reserved order inquiries: {{ reserve.link }}\n",
     },
@@ -227,6 +229,18 @@ def upgrade() -> None:
             CREATE INDEX IF NOT EXISTS ix_order_inquiry_reserve_request_rows_notice_parked
                 ON "{projects}".order_inquiry_reserve_request_rows (notice_parked_at)
                 WHERE notice_parked_at IS NOT NULL;
+            """
+        )
+    )
+    # Rows CS already answered count as told: without this, the first amend of an old
+    # answer would read as "never told" and park a notice nobody changed. The park guard
+    # keeps a re-run from ever marking a still-parked notice as sent.
+    bind.execute(
+        sa.text(
+            f"""
+            UPDATE "{projects}".order_inquiry_reserve_request_rows
+            SET notified_qty = qty_reserved
+            WHERE qty_reserved IS NOT NULL AND notified_qty IS NULL AND notice_parked_at IS NULL
             """
         )
     )

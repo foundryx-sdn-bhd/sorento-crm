@@ -1172,6 +1172,17 @@ class OrderInquiryReserveService:
         from app.services import park_send
 
         groups, unresolved = park_send.group_by_recipient(self.db, trigger_type, items)
+        # The one-OI shape follows DISTINCT order inquiries: a To person whose items all
+        # belong to one OI gets each request as its own email, never "1 order inquiries".
+        split = []
+        for group in groups:
+            if len(group["items"]) > 1 and len({i["inquiry_id"] for i in group["items"]}) == 1:
+                split.extend(
+                    {"items": [item], "recipients": group["recipients"]} for item in group["items"]
+                )
+            else:
+                split.append(group)
+        groups = split
         for group in groups:
             group["context"] = self._group_context(group, status=status)
             group["inquiry_count"] = len({item["inquiry_id"] for item in group["items"]})
@@ -1302,7 +1313,9 @@ class OrderInquiryReserveService:
         )
         return {key: int(value or 0) for key, value in zip(keys, counts)}
 
-    def notice_recipients(self, *, inquiry_id: str, actor_user_id: str) -> Dict[str, Any]:
+    def notice_recipients(
+        self, *, inquiry_id: str, actor_user_id: str, row_ids: Optional[Sequence[str]] = None
+    ) -> Dict[str, Any]:
         """AC-SN-27: who the reserved automation would mail for this OI's open request(s):
         the requester To, the OI raiser Cc, the caller moved to Cc."""
         from app.services import park_send
@@ -1313,16 +1326,56 @@ class OrderInquiryReserveService:
                 404, "This order inquiry no longer exists.", code="order_inquiry_not_found"
             )
         automation = park_send.first_automation(self.db, "order_inquiry_reserved")
-        requesters = [
-            _person(self.db, user_id)
-            for (user_id,) in self.db.query(OrderInquiryReserveRequest.requested_by)
-            .filter(
-                OrderInquiryReserveRequest.order_inquiry_id == inquiry.id,
-                OrderInquiryReserveRequest.state == RESERVE_REQUESTED,
-            )
-            .order_by(OrderInquiryReserveRequest.ordinal.asc())
-            .all()
-        ]
+        if row_ids:
+            # The staged rows' own requests, resolved the way `commit_request` does: the
+            # row's open request row, else its latest answered one. An unknown row or one
+            # of another inquiry reads exactly like an unknown inquiry.
+            found = {
+                row.id
+                for row in self.db.query(OrderInquiryRow)
+                .filter(
+                    OrderInquiryRow.id.in_(list(row_ids)),
+                    OrderInquiryRow.order_inquiry_id == inquiry.id,
+                )
+                .all()
+            }
+            if any(str(row_id) not in found for row_id in row_ids):
+                raise AppException(
+                    404, "This order inquiry no longer exists.", code="order_inquiry_not_found"
+                )
+            requester_ids: List[Optional[str]] = []
+            for row_id in row_ids:
+                candidates = (
+                    self.db.query(OrderInquiryReserveRequest, OrderInquiryReserveRequestRow)
+                    .join(
+                        OrderInquiryReserveRequestRow,
+                        OrderInquiryReserveRequestRow.request_id == OrderInquiryReserveRequest.id,
+                    )
+                    .filter(OrderInquiryReserveRequestRow.row_id == row_id)
+                    .order_by(OrderInquiryReserveRequest.ordinal.desc())
+                    .all()
+                )
+                open_ones = [
+                    req
+                    for req, rr in candidates
+                    if rr.qty_reserved is None and req.state == RESERVE_REQUESTED
+                ]
+                answered = [req for req, rr in candidates if rr.qty_reserved is not None]
+                chosen = open_ones[0] if open_ones else (answered[0] if answered else None)
+                if chosen is not None and chosen.requested_by not in requester_ids:
+                    requester_ids.append(chosen.requested_by)
+            requesters = [_person(self.db, user_id) for user_id in requester_ids]
+        else:
+            requesters = [
+                _person(self.db, user_id)
+                for (user_id,) in self.db.query(OrderInquiryReserveRequest.requested_by)
+                .filter(
+                    OrderInquiryReserveRequest.order_inquiry_id == inquiry.id,
+                    OrderInquiryReserveRequest.state == RESERVE_REQUESTED,
+                )
+                .order_by(OrderInquiryReserveRequest.ordinal.asc())
+                .all()
+            ]
         requesters = [person for person in requesters if person]
         recipients: List[Dict[str, Any]] = []
         if automation is not None and requesters:
