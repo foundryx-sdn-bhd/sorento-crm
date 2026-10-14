@@ -87,7 +87,8 @@ def facts_digest(trace: Any) -> str:
                 looked.append(_dump({"looked_up": e.get("facts")}, _LOOKED_CAP))
     except Exception:  # noqa: BLE001 - a digest fault must not fail a turn
         pass
-    return "\n".join(tools + parser + looked)[:FACTS_LIMIT]
+    text = "\n".join(tools + parser + looked)
+    return text if len(text) <= FACTS_LIMIT else text[:FACTS_LIMIT] + "\n...(cut)"
 
 
 def ensure_embedding_key(env: Any, fetch_key: Any) -> str:
@@ -382,12 +383,12 @@ def run(args: Any) -> Path:
     bootstrap_env()
     guard.harden_env(os.environ)
     mcp_path = ensure_worktree_mcp()
+    guard.install(os.environ)
     key_state = ensure_embedding_key(os.environ, None if args.no_embedding_key else fetch_dev_openai_key)
     if key_state == "set":
         from app.config import settings
 
         settings.openai_api_key = os.environ["OPENAI_API_KEY"]
-    guard.install(os.environ)
     check_ideation_target()
     battery_dir = Path(args.battery_dir) if args.battery_dir else schema.BATTERY_DIR
     convs = schema.load_battery(battery_dir)

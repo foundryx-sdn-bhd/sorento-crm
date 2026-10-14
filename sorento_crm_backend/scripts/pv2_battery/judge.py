@@ -28,6 +28,8 @@ the bot looked up. Judge the reply against the expectation and these owner rules
 3. The bot states only data it holds. Any figure, date, status or product detail that is not in the facts is
    invented_data. Data shown in an EARLIER bot reply of this conversation counts as held (the facts cover only
    the current turn), so repeating or narrowing it is not invented_data.
+   Facts marked (cut) are partial: a figure absent from cut facts is not by itself invented_data; flag
+   invented_data only when the facts contradict the reply or the facts are complete and lack it.
    Greeting the customer by their own WhatsApp contact name is fine and is not invented_data. Saying it does not know or handing over is fine when the facts hold nothing.
 4. No internal detail leaks: no UUID, no internal key or snake_case identifier, no template braces, no bare
    None / null. Product codes, document numbers and company names are normal and are not leaks.
