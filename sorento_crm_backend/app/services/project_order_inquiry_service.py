@@ -541,7 +541,8 @@ def _decision_words(snapshot: Mapping[str, Any]) -> Tuple[str, ...]:
 
 def _saved_decision_key(snapshot: Mapping[str, Any]) -> Tuple[Any, ...]:
     """What makes two snapshots of one line the SAME decision for purchasing: the line's
-    quantity, date and product, and each part's kind, quantity, location and document."""
+    quantity, date and product, and each part's kind, quantity, location and document. A
+    shortfall of free stock is not in it: the email never tells one (owner, 14 Oct 2026)."""
     return (
         _dec(snapshot.get("open_qty")),
         snapshot.get("required_date"),
@@ -552,9 +553,6 @@ def _saved_decision_key(snapshot: Mapping[str, Any]) -> Tuple[Any, ...]:
             (words, location, qty)
             for words, location, qty, _key in _saved_line_parts(snapshot)
         ),
-        # A Reserve or Borrow that has since run short of free stock is news (owner rule,
-        # 12 Oct): re-approving it unchanged still tells purchasing the shortfall.
-        sum((_dec(entry.get("short")) for entry in snapshot.get("stock_short") or []), _ZERO),
     )
 
 
@@ -4403,14 +4401,6 @@ class ProjectOrderInquiryService:
             if before.get("item_code") and before.get("item_code") != now.get("item_code"):
                 was["item_code"] = before.get("item_code")
                 keys.append("CHANGE_ITEM_CODE")
-        short = sum(
-            (_dec(entry.get("short")) for entry in now.get("stock_short") or []), _ZERO
-        )
-        if short > _ZERO:
-            # A Reserve or Borrow confirmed short of free stock (owner rule 12 Oct) says so
-            # on its own line rather than as a second STOCK SHORT line.
-            remark = f"{remark}, {_qty_str(short)} SHORT" if remark else f"{_qty_str(short)} SHORT"
-            keys.append("STOCK_SHORT")
         facts = self._handover_order_facts(pso_id)
         inquiry_id = (
             self.db.query(OrderInquiry.id)
