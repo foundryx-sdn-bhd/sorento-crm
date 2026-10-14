@@ -90,6 +90,18 @@ def test_trashed_salesperson_user_with_agent_link_is_scoped(session_factory):
     assert scope["enforced"] is True
 
 
+def test_agent_link_without_user_is_scoped(session_factory):
+    """Intended: the salesperson class needs an active role-salesperson user, so an agent
+    link alone no longer relaxes the fetch."""
+    _seed_contact(session_factory, variables={})
+    _sales_agent_link(session_factory)
+
+    asker, scope = _asker_and_scope(session_factory)
+
+    assert asker != "salesperson"
+    assert scope["enforced"] is True
+
+
 def test_active_role_salesperson_is_unchanged(session_factory):
     _seed_contact(session_factory, variables={})
     _salesperson_user(session_factory)

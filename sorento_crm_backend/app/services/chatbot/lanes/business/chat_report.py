@@ -318,8 +318,8 @@ def read_reply(db: Any, open_slot: dict[str, Any], message_text: str) -> dict[st
 def asker_of(db: Any, contact_respond_id: Any, space_id: Any) -> str | None:
     """The asker class (`contact_asker`) of the Respond.io contact, None when it resolves to no one.
     A `salesperson` without an active role-salesperson user (only a `sales_agents` link, or a
-    user since set INACTIVE or trashed) is None too, so deactivating the user revokes the
-    relaxed chat-report scope (V1-CHATREPORT-REVOKE)."""
+    user since set INACTIVE or trashed) is None too, so for a contact with customer links,
+    deactivating the user revokes the relaxed chat-report scope (V1-CHATREPORT-REVOKE)."""
     from app.services import contact_asker
     from app.services.field_access import resolve_contact_with_null_workspace_fallback
 
