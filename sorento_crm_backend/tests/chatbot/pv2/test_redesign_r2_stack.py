@@ -216,6 +216,12 @@ def _origin_ask():
                entities=[entity("product", phrase="mou")])
 
 
+def _waiting_ask():
+    """What a question raised after held took the ask keeps (UAC R2-5): the original minus the attachment kind,
+    which held carries once vetted; the period, domain and the still-ambiguous entity stay."""
+    return _origin_ask().model_copy(update={"attachment_type": None})
+
+
 def _origin_of(pending: PendingQuestion) -> Ask:
     assert pending.origin is not None, "the question interrupted an ask and must keep it"
     return Ask.model_validate(pending.origin)
@@ -225,15 +231,15 @@ def test_r2_5_an_entity_clarify_keeps_the_original_ask():
     a = _origin_ask()
     st, actions = apply_turn(mk_state(), out(a), resolver=_ambiguous_resolver(), now=NOW)
     assert isinstance(actions[0], ClarifyAct) and actions[0].pending.kind == "clarify_entity"
-    assert _origin_of(st.pending) == a
-    assert _origin_of(actions[0].pending) == a
+    assert _origin_of(st.pending) == _waiting_ask() and _origin_of(st.pending).attachment_type is None
+    assert _origin_of(actions[0].pending) == _waiting_ask()
 
 
 def test_r2_5_a_did_you_mean_keeps_the_original_ask():
     a = _origin_ask()
     st, actions = apply_turn(mk_state(), out(a), resolver=_dym_resolver(), now=NOW)
     assert isinstance(actions[0], ClarifyAct) and actions[0].pending.kind == "clarify_did_you_mean"
-    assert _origin_of(st.pending) == a
+    assert _origin_of(st.pending) == _waiting_ask() and _origin_of(st.pending).attachment_type is None
 
 
 def test_r2_5_a_flagged_clarify_keeps_the_original_ask():
@@ -258,7 +264,7 @@ def test_r2_5_a_re_asked_question_keeps_the_origin_it_had():
     garbled = out(ask(act="unclear"))
     again, actions = apply_turn(first, garbled, resolver=FakeResolver({}), now=NOW)
     assert isinstance(actions[0], ClarifyAct) and actions[0].reask
-    assert _origin_of(again.pending) == a
+    assert _origin_of(again.pending) == _waiting_ask() and _origin_of(again.pending).attachment_type is None
 
 
 def test_r2_5_the_v1_picker_mirrored_after_a_pv2_lookup_keeps_the_ask_that_lookup_answered():
