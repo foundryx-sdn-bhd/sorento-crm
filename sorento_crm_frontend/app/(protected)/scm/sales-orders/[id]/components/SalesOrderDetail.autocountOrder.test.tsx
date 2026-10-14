@@ -4,7 +4,7 @@
  * Plan: `documentation/plans/scm/PLAN-so-lines-autocount-order.md`.
  * UAC: `documentation/plans/scm/so-lines-autocount-order-acceptance-criteria.md`, S2.
  *
- *   AC-S2-1  first column is No., showing `line_no`; `-` when null.
+ *   AC-S2-1  first data column is No. (after the truck column), showing `line_no`; `-` when null.
  *   AC-S2-2  clicking No. sorts numerically (1, 2, 3, 10, 11, never lexicographic).
  *   AC-S2-3  default order is the server order - no client default sort.
  *   AC-S2-4  Source column renders AutoCount / Order inquiry / Upload / Absorbed history /
@@ -201,7 +201,7 @@ beforeEach(() => {
   hasPermission = false;
 });
 
-describe('AC-S2-1: No. is the first column', () => {
+describe('AC-S2-1: No. is the first data column', () => {
   it('shows line_no, and a dash when it is null', () => {
     useSalesOrder.mockReturnValue({
       data: so({
@@ -224,14 +224,16 @@ describe('AC-S2-1: No. is the first column', () => {
 
     expect(screen.getByRole('columnheader', { name: 'No.' })).toBeInTheDocument();
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent?.trim());
-    expect(headers[0]).toBe('No.');
+    // AC-SD20: the truck column (empty header) now leads; No. is the first DATA column.
+    expect(headers[0]).toBe('');
+    expect(headers[1]).toBe('No.');
 
     const rowA = screen.getByText('SKU-A').closest('tr') as HTMLElement;
     const rowB = screen.getByText('SKU-B').closest('tr') as HTMLElement;
-    // Scoped to the FIRST cell (No. is the leftmost column) - `required_date: null` also
+    // Scoped to the SECOND cell (No. is the first data column, after the truck cell) - `required_date: null` also
     // prints its own "-" further along the row, so a bare `getByText('-')` on the whole
     // row is ambiguous.
-    const firstCell = (row: HTMLElement) => within(row).getAllByRole('cell')[0];
+    const firstCell = (row: HTMLElement) => within(row).getAllByRole('cell')[1];
     expect(within(firstCell(rowA)).getByText('7')).toBeInTheDocument();
     expect(within(firstCell(rowB)).getByText('-')).toBeInTheDocument();
   });
@@ -421,7 +423,8 @@ describe('AC-S2-8: in the edit session, only Save/Cancel show; No. stays a read-
     // so the row is found by that control's own accessible label instead - the same
     // convention `SalesOrderDetail.test.tsx` uses for an editing row.
     const row = screen.getByLabelText('Product on SKU-A').closest('tr') as HTMLElement;
-    const firstCell = within(row).getAllByRole('cell')[0];
+    // Cell 0 holds the Deliveries truck button; the line number is cell 1.
+    const firstCell = within(row).getAllByRole('cell')[1];
     expect(within(firstCell).getByText('7')).toBeInTheDocument();
     expect(within(firstCell).queryByRole('spinbutton')).not.toBeInTheDocument();
     expect(within(firstCell).queryByRole('textbox')).not.toBeInTheDocument();
