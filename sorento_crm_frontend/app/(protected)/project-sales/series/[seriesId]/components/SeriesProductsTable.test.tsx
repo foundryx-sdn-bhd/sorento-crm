@@ -212,4 +212,35 @@ describe('SeriesProductsTable', () => {
     await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledTimes(1));
     expect(getSeriesProductRows).toHaveBeenCalledWith('s1');
   });
+
+  it('D1: a newly added row keeps the picked product, shows its code, and saves it by id', async () => {
+    getSeriesProductRows.mockResolvedValue([]);
+    getProductsForLineSelect.mockResolvedValue([
+      { id: 'p9', product_code: 'BT900', product_name: 'Nine trap' },
+    ]);
+    renderTable();
+
+    fireEvent.click(await screen.findByRole('button', { name: /add a product/i }));
+    fireEvent.click(await screen.findByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /BT900/ }));
+
+    await waitFor(() => expect(screen.getByText('Nine trap')).toBeInTheDocument());
+    expect(screen.getByRole('combobox', { name: /^Product on / })).toHaveTextContent('BT900');
+    expect(screen.getByRole('combobox', { name: /^Product on / })).not.toHaveTextContent(
+      'Pick a product',
+    );
+
+    fireEvent.change(screen.getByRole('textbox', { name: /^Selling price on / }), {
+      target: { value: '150.00' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Save / }));
+
+    await waitFor(() =>
+      expect(updateSeriesProductPricing).toHaveBeenCalledWith(
+        's1',
+        'p9',
+        expect.objectContaining({ selling_price: '150.00' }),
+      ),
+    );
+  });
 });

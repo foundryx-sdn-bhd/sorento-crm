@@ -36,6 +36,17 @@ vi.mock('../../../_shared/services/projectService', async (importOriginal) => {
   };
 });
 
+const getProductSets = vi.fn();
+vi.mock(
+  '@/app/(protected)/master-data-management/product-sets/services/productSetService',
+  async (importOriginal) => {
+    const actual = await importOriginal<
+      typeof import('@/app/(protected)/master-data-management/product-sets/services/productSetService')
+    >();
+    return { ...actual, getProductSets: (...args: unknown[]) => getProductSets(...args) };
+  },
+);
+
 import { SeriesSetsTable } from './SeriesSetsTable';
 
 function row(overrides: Partial<SeriesSetRow> = {}): SeriesSetRow {
@@ -120,6 +131,39 @@ describe('SeriesSetsTable', () => {
         selling_price: '1200.00',
         max_discount_pct: '10.00',
       }),
+    );
+  });
+
+  it('D1: a newly added row keeps the picked set, shows its code, and saves it by id', async () => {
+    getSeriesSetRows.mockResolvedValue([]);
+    getProductSets.mockResolvedValue({
+      data: [
+        { id: 'set9', set_code: 'CWC9009-RL', name: 'Nine set', is_active: true },
+      ],
+    });
+    renderTable();
+
+    fireEvent.click(await screen.findByRole('button', { name: /add a set/i }));
+    fireEvent.click(await screen.findByRole('combobox', { name: /^Set on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /CWC9009-RL/ }));
+
+    await waitFor(() => expect(screen.getByText('Nine set')).toBeInTheDocument());
+    expect(screen.getByRole('combobox', { name: /^Set on / })).toHaveTextContent('CWC9009-RL');
+    expect(screen.getByRole('combobox', { name: /^Set on / })).not.toHaveTextContent(
+      'Pick a set',
+    );
+
+    fireEvent.change(screen.getByRole('textbox', { name: /^Selling price on / }), {
+      target: { value: '1500.00' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Save / }));
+
+    await waitFor(() =>
+      expect(updateSeriesSetPricing).toHaveBeenCalledWith(
+        's1',
+        'set9',
+        expect.objectContaining({ selling_price: '1500.00' }),
+      ),
     );
   });
 });
