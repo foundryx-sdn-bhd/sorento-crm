@@ -44,6 +44,8 @@ def fire(event):
         open(os.path.join(d, "db_logs"), "a").write(rd("incident_log"))
 with open(os.path.join(d, "calls.log"), "a") as f:
     f.write(" ".join(args) + "\n")
+with open(os.path.join(d, "stub_env"), "w") as f:
+    f.write(os.environ.get("LD_LIBRARY_PATH", ""))
 if args[0] == "compose":
     rest = args[1:]
     while rest and rest[0] == "--profile":
@@ -721,3 +723,22 @@ def test_the_stubs_win_over_any_docker_on_path(box, tmp_path):
     r = _run(box, PATH=f"{decoy}:{box['bin']}:{os.environ.get('PATH', '/usr/bin:/bin')}")
     assert r.returncode == 0, r.stdout + r.stderr
     assert not marker.exists(), marker.read_text()
+
+
+def test_the_stub_interpreter_keeps_the_runners_environment(box, monkeypatch):
+    """CI run 38620458673: setup-python's interpreter needs LD_LIBRARY_PATH (shared libpython).
+    The subprocess env was built from scratch, so the docker stub could not start and the
+    script saw no db container. The parent environment must reach the stub."""
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/sentinel/python/lib")
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (box["stub"] / "stub_env").read_text() == "/sentinel/python/lib"
+
+
+def test_the_runners_own_deploy_knobs_never_reach_the_script(box, monkeypatch):
+    """Inheriting the environment must not let a runner's variables steer the script."""
+    monkeypatch.setenv("DEPLOY_MIN_AVAILABLE_MB", "999999")
+    monkeypatch.setenv("DB_SERVICE", "not-db")
+    monkeypatch.setenv("SNAPSHOT_MIN_FREE_MB", "999999999")
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
