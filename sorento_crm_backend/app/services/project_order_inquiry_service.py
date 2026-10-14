@@ -4064,6 +4064,7 @@ class ProjectOrderInquiryService:
         was: Optional[Dict[str, Any]] = None,
         actor_user_id: Optional[str] = None,
         qty: Optional[Decimal] = None,
+        borrow_hole: Optional[bool] = None,
     ) -> None:
         """Queue one line of the `order_inquiry_handover` parallel-run email
         (`PLAN-scm-oi-handover-email.md` S0-S3), fired post-commit by
@@ -4094,6 +4095,9 @@ class ProjectOrderInquiryService:
         `qty` (EMAIL-HANDOVER-QTY): what the line PRINTS as its quantity instead of
         `row.qty` - the line's new total, for a settled line told off a row whose own
         quantity never moved (see `_handover_settle_diff`). `None` reads the row.
+
+        `borrow_hole`: whether the row is a Borrow's hole at its donor. `None` reads
+        `_is_borrow_order_back`, which a cancel that already overwrote the note cannot.
         """
         # One round trip for both inquiry scalars (AC-H25), not two: `raised_by` is only
         # READ when the seam gave no actor, but `project_sales_order_id` is needed either
@@ -4187,6 +4191,12 @@ class ProjectOrderInquiryService:
                 #: What this line adds to purchasing's order, as a number rather than read
                 #: back off REMARK's words (`record_saved_lines` folds it).
                 "adds_order": str(_handover_adds_order(kind, row, was, qty)),
+                #: A Borrow's hole raised or cancelled: `record_saved_lines` reads a donor
+                #: move (one hole cancelled, another raised) as the one hole settled.
+                "kind": kind,
+                "borrow_hole": (
+                    _is_borrow_order_back(row) if borrow_hole is None else borrow_hole
+                ),
                 "verb_keys": _handover_verb_keys(kind, row, was, qty)
                 or (
                     ["QTY_CHANGE"]
@@ -4271,7 +4281,28 @@ class ProjectOrderInquiryService:
                 continue
             taken_back = _ZERO
             raised = _ZERO
+            # A Borrow moved to another donor cancels the old donor's hole and raises the
+            # new one's. The email never names a donor, so the pair reads as ONE hole
+            # settled from the old quantity to the new, exactly as the same change without
+            # the move (reviewer B1, 14 Oct 2026): never the old hole as an order taken back.
+            holes_out = [
+                i for i in row_lines if i.get("borrow_hole") and i.get("kind") == "cancelled"
+            ]
+            holes_in = [
+                i for i in row_lines if i.get("borrow_hole") and i.get("kind") == "raised"
+            ]
+            moved = min(len(holes_out), len(holes_in))
+            if moved:
+                held = sum(
+                    (_dec((i["line"].get("was") or {}).get("qty")) for i in holes_out), _ZERO
+                )
+                holds = sum((_dec(i["line"].get("qty")) for i in holes_in), _ZERO)
+                taken_back += max(held - holds, _ZERO)
+                raised += max(holds - held, _ZERO)
+            netted = {id(i) for i in holes_out + holes_in} if moved else set()
             for item in row_lines:
+                if id(item) in netted:
+                    continue
                 entry = item.get("line") or {}
                 was_qty = _dec((entry.get("was") or {}).get("qty"))
                 keys_told = item.get("verb_keys") or ()
@@ -4284,7 +4315,7 @@ class ProjectOrderInquiryService:
                 taken_back=taken_back,
                 # Several row lines for one line of the same kind (a redirect, two rows):
                 # what purchasing must order is what the rows raised, never need - held.
-                raised=raised if same_kind and len(row_lines) > 1 else None,
+                raised=raised if same_kind and len(row_lines) - moved > 1 else None,
             )
 
     def forget_rows_told_for_saved_lines(self, pso_id: str) -> None:
@@ -4893,7 +4924,9 @@ class ProjectOrderInquiryService:
             # The session does not autoflush: without this the email queue keys the
             # line on `row_id` "None".
             self.db.flush()
-            self._record_handover(shortfall_row, kind="raised", actor_user_id=actor_user_id)
+            self._record_handover(
+                shortfall_row, kind="raised", actor_user_id=actor_user_id, borrow_hole=True
+            )
             # Every row this method raises is a borrow hole, whatever its note says.
             re_raised.add(_hole_key(shortfall_row)[:3] + (True,))
             created += 1
@@ -4916,7 +4949,8 @@ class ProjectOrderInquiryService:
         for row in cancelled_this_pass:
             if key_before[row.id] not in re_raised:
                 self._record_handover(
-                    row, kind="cancelled", was={"qty": row.qty}, actor_user_id=actor_user_id
+                    row, kind="cancelled", was={"qty": row.qty}, actor_user_id=actor_user_id,
+                    borrow_hole=key_before[row.id][3],
                 )
         return created
 
