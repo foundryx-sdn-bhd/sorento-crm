@@ -362,7 +362,7 @@ def _answer(
     if picked is None and key is not None and pending.kind == "clarify_entity":
         # A candidate question is keyed by position; its code (the payload key) still picks.
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
-    if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in ("offer_handover", "offer_doc_handover"):
+    if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in ("offer_handover", "offer_doc_handover", "clarify_did_you_mean"):
         # A bare number (the reply's free value or a row pick) names the printed position.
         n = int(free) if isinstance(free, str) and free.isdecimal() else ask.row_pick
         if isinstance(n, int) and n >= 1:
@@ -711,11 +711,10 @@ def _apply_entities(
             if words:
                 qs.misses.append(Miss(kind=ent.kind, phrase=words))
             continue
-        if status == "ambiguous" and getattr(res, "did_you_mean", False) and ent.kind == "product" and isinstance(qs, _Qs):
-            # v1's own miss lane words it ("Couldn't find X. Did you mean ...") and its offer.
-            if ent.phrase:
-                qs.misses.append(Miss(kind=ent.kind, phrase=ent.phrase))
-                continue
+        if status == "ambiguous" and getattr(res, "did_you_mean", False) and ent.kind == "product" and ent.phrase and options:
+            # v1's own did-you-mean sentence, written here (no v1 re-lookup), with PV2's pending.
+            qs.append(_did_you_mean(st, i, ent, held, options, qs.can_offer, language))
+            continue
         if (
             status == "ambiguous"
             and len(options) == 1
@@ -782,6 +781,50 @@ def _apply_entities(
 DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_order", "inbound_shipment", "product"})
 
 
+def _offer_team(offer: Any, held: Held) -> str:
+    """The domain's escalation team: the live rows when given, else the seed policy."""
+    if offer.teams is not None:
+        team = offer.teams.get(held.domain or "")
+    else:
+        from app.services.chatbot.turn.policy import default_policy
+
+        row = default_policy().domain(held.domain or "")
+        team = row.escalation_team_code if row is not None else None
+    return team or "customer_service"
+
+
+def _did_you_mean(
+    st: ConversationState, i: int, ent: Entity, held: Held, options: list[Option], offer: Any, language: str
+) -> ClarifyAct:
+    """v1's did-you-mean sentence (lanes/business/answer.py build_suggest_offer): the typed
+    token, the suggested codes, and its escalation clause per the contact's offer mode."""
+    codes = [str(o.payload.get("key") or o.key) for o in options]
+    lines = "\n".join(f"{n}. {c}" for n, c in enumerate(codes, start=1))
+    asked = f'Couldn\'t find "{ent.phrase}" (product). Did you mean:\n{lines}\nReply with a code to continue'
+    picks = [
+        Option(key=str(n), label=o.label, payload={"kind": "product", "key": c, "label": o.label, "op": "set", **_qty_payload(ent)})
+        for n, (o, c) in enumerate(zip(options, codes), start=1)
+    ]
+    extra: list[Option] = []
+    if offer.mode == "offer":
+        team = _offer_team(offer, held)
+        asked += f", or would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        extra = [
+            Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
+            for o in clarify_copy.handover_options(language)
+        ]
+    elif offer.mode == "refer":
+        from app.services.chatbot.turn.task import REFER_TO_SALESMAN
+
+        asked += f". {REFER_TO_SALESMAN}"
+    else:
+        asked += "."
+    pending = PendingQuestion(
+        kind="clarify_did_you_mean", asked=asked, options=[*picks, *extra], asked_turn=st.turn_no, misses=0
+    )
+    return ClarifyAct(ask_index=i, about="entity", phrase=ent.phrase, pending=pending)
+
+
 def _doc_not_found(
     st: ConversationState, i: int, ent: Entity, held: Held, language: str, offer: Any,
     *, words_list: list[str] | None = None,
@@ -797,14 +840,7 @@ def _doc_not_found(
 
         asked += f" {REFER_TO_SALESMAN}"
     elif offer.mode == "offer":
-        if offer.teams is not None:
-            team = offer.teams.get(held.domain or "")
-        else:
-            from app.services.chatbot.turn.policy import default_policy
-
-            row = default_policy().domain(held.domain or "")
-            team = row.escalation_team_code if row is not None else None
-        team = team or "customer_service"
+        team = _offer_team(offer, held)
         asked += f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
         options = [
             Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
