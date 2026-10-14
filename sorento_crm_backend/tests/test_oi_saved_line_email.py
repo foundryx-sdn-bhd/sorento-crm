@@ -564,3 +564,30 @@ def test_one_donor_borrow_split_onto_two_new_donors_reads_two_order_backs(api, e
         _borrow_from(world, y, "6") + _borrow_from(world, z, "4"),
     )
     assert [g[3] for g in got] == ["ORDER BACK 6 & ORDER BACK 4"], got
+
+
+def test_two_donor_borrow_reshuffled_in_place_reads_no_cancel(api, emails):
+    _client, world = api
+    x, y = _donor(world, "RX"), _donor(world, "RY")
+    got = _two_confirms_line(
+        api, emails,
+        _borrow_from(world, x, "3") + _borrow_from(world, y, "2"),
+        _borrow_from(world, x, "2") + _borrow_from(world, y, "3"),
+        qty="5",
+    )
+    assert got == [(world.product.product_code, "5", world.own_wh.warehouse_code,
+                    "ORDER BACK 2 & ORDER BACK 3")], got
+
+
+def test_two_donor_borrow_cut_in_place_reads_the_cut(api, emails):
+    _client, world = api
+    x, y = _donor(world, "UX"), _donor(world, "UY")
+    got = _then_changed_email(
+        api, emails,
+        first={"borrow": _borrow_from(world, x, "6") + _borrow_from(world, y, "4")},
+        second={"borrow": _borrow_from(world, x, "5") + _borrow_from(world, y, "3")},
+        second_donor_moves=False, cut_to="8",
+    )
+    # Guard: the order back purchasing held drops 10 -> 8, so "CANCEL ORDER 2" is the real 2
+    # (reviewer, 14 Oct); netting the two resized holes must not double or drop it.
+    assert got["remark"] == "ORDER BACK 5 & ORDER BACK 3, CANCEL ORDER 2", got
