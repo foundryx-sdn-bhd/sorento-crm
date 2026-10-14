@@ -73,6 +73,18 @@ RG-2 (#1582) "250mm srtwc286 got stock?" answers only the variants with 250 on a
      length 180 mm." (en/zh/ms; axis names stay English until R3), no options, no closest-product picks; a class + size
      with no code lists the class products holding it on any axis (capped); a parser flag about a spec phrase the ask
      already carries asks nothing.
+RG-1c (R-GAPS-b review) The carry question also fires when the new kind was held before (HANLIM + SRT391-GM, then a new
+     topic "SRT392") and when the new item first needs its own question (asked after that pick, never dropped
+     silently); a pick replays only the carried item and the period, never other held items (a held SO stays out); a
+     repeated identical question counts as a miss only for the SAME subject ("SRT391 manual", "SRT392 manual" are two
+     questions) and a restated ask keeps its new details (October replaces 7 Oct); at the cap a barred contact's refer
+     line follows after a blank line (v1).
+RG-2b (R-GAPS-b review) A follow-up size is checked against the held product's whole family, not the last size's hits
+     ("srtwc286" -> "250mm?" -> "how about 600mm?" answers the 600 variant); two sizes in one ask narrow each other; held
+     products with no size rows get no axis question.
+RG-5b (R-GAPS-b review) A base code whose variants are partly in active sets offers those sets AND the variants in no
+     set; set members are chat-visible, active and read company-scoped by set id; a set with no visible members is not a
+     set match; family sets are offered only through chat-visible, active members.
 RG-3 (#1603) A v1 escalate offer answered "yes" -> "Routed to your PIC, they will reply shortly." and the hand-over saves
      the asked text, never "".
 RG-4 (#1617) "SRTWT5880-CR picture" -> "HAVE 10??" (no open question) -> the stock answer for 10, no photo re-send, no
