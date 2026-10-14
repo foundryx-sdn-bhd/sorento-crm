@@ -71,3 +71,17 @@ the shared reason box, Stage 12 lines, then Reserve (12), ticks Park notice firs
 of the selection strip, no menu. It opens the "Reserve N lines" panel prefilled with each line's
 requested qty and location, so a full reserve is just "Stage N lines". Staging clears the ticks.
 Owner confirmed Q2 (a) (bulk covers only lines with an open request; amend stays single-line) and Q3 (a) (per-line Reason plus one shared box for partial lines).
+
+## Owner note on mock v2 (15 Oct, via crew) - FINAL rules, supersede everything above
+
+"oh don't need la, just one reserve button": NO panel, no shared reason box (Q3 dropped).
+
+1. CS ticks lines on the Lines tab. The selection strip shows ONE button "Reserve (N)" at its right
+   end, N = ticked lines with an open request (Q2 (a)); greyed at 0.
+2. Pressing it stages every one of those lines straight away at its requested qty (capped at what
+   is left) and the request's location, exactly like pressing each line's own "Reserve" today,
+   then clears the ticks. An already staged line is replaced.
+3. A partial reserve stays the single-line "Edit reserve" (with its required Reason). Amending an
+   answered line stays the single-line "Amend reserve".
+4. The header "Reserve (N)" + the #1684 confirmation ("Park notice first") commits as today.
+5. Frontend only: the staged map (`StagedReserveEntry`) and the commit route are unchanged.
