@@ -62,31 +62,39 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
   const [isActive, setIsActive] = React.useState(true);
   const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
   const [seeded, setSeeded] = React.useState(false);
+  // The series the last save resolved with. The cached list refetches after the mutation,
+  // so until it lands `row` is stale; this is the baseline "unsaved changes" is measured from.
+  const [saved, setSaved] = React.useState<ProjectSeries | null>(null);
+  const base = saved && saved.id === seriesId ? saved : row;
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
 
   // Seed ONCE from the server row. Re-seeding on every render of a refetched list would
   // overwrite what somebody is halfway through typing - the same trap the line table avoids.
+  const seedFrom = React.useCallback((source: ProjectSeries) => {
+    setName(source.name);
+    setBrandId(source.brand_id ?? '');
+    setDescription(source.description ?? '');
+    setIsActive(source.is_active);
+    setCategoryIds(source.category_ids ?? []);
+  }, []);
+
   React.useEffect(() => {
     if (isNew || seeded || !row) return;
-    setName(row.name);
-    setBrandId(row.brand_id ?? '');
-    setDescription(row.description ?? '');
-    setIsActive(row.is_active);
-    setCategoryIds(row.category_ids ?? []);
+    seedFrom(row);
     setSeeded(true);
-  }, [isNew, row, seeded]);
+  }, [isNew, row, seeded, seedFrom]);
 
   const pending = create.isPending || update.isPending;
   const loading = series.isLoading && !isNew;
   const dirty = isNew
     ? name.trim().length > 0
     : Boolean(
-        row &&
-          (name !== row.name ||
-            brandId !== (row.brand_id ?? '') ||
-            description !== (row.description ?? '') ||
-            isActive !== row.is_active ||
-            categoryIds.join(',') !== (row.category_ids ?? []).join(',')),
+        base &&
+          (name !== base.name ||
+            brandId !== (base.brand_id ?? '') ||
+            description !== (base.description ?? '') ||
+            isActive !== base.is_active ||
+            categoryIds.join(',') !== (base.category_ids ?? []).join(',')),
       );
 
   const save = async () => {
@@ -108,8 +116,9 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
       router.replace(`/project-sales/series/${created.id}`);
       return;
     }
-    await update.mutateAsync({ id: seriesId, body });
-    setSeeded(false);
+    const result = await update.mutateAsync({ id: seriesId, body });
+    setSaved(result);
+    seedFrom(result);
   };
 
   const brandOptions = React.useMemo(
