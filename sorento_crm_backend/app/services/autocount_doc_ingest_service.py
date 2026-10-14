@@ -22,8 +22,9 @@ table itself; there is no `integration_references` row, because the row can pred
 **Links are resolved, never waited for.** A line names the SO / PO / SPO line it came from
 exactly when the vendor sends a real `FromDocDtlKey` (today it sends 0, which names nothing).
 Without one, a DO line that names its SO (`FromDocNo`) links to the one line of its product in
-that SO (PLAN-do-so-line-link-1oct.md), or, when several, to the one of them at its warehouse
-(PLAN-do-history-backfill-13oct.md section 3), and its header links by `RefDocNo` (Q10 a). A GRN line
+that SO (PLAN-do-so-line-link-1oct.md); when several, it links to the SO + product group (its own
+`FromDocNo` + product) and to no line, never one picked by warehouse (owner 14 Oct,
+PLAN-do-history-backfill-13oct.md section 3), and its header links by `RefDocNo` (Q10 a). A GRN line
 links to ONE line of the PO or SPO its `FromDocNo` (else `OurPONo`) names, by product and
 position (PLAN-autocount-grn-pull-crm-02oct.md 1.3: AutoCount writes one GRN line per SPO line
 in the SPO's Seq order). A link once made is never unset by a later push that cannot resolve

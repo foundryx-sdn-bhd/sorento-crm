@@ -109,8 +109,8 @@ def test_two_lines_at_different_locations_link_the_group_not_a_line(env):
     _assert_group_linked(env, r)
 
 
-def test_two_lines_at_the_same_location_stay_unlinked(env):
-    """AC-DH24: narrowing leaves two."""
+def test_two_lines_at_the_same_location_link_the_group(env):
+    """AC-DH24: two candidates at the DO line's warehouse, a third elsewhere: no line."""
     other_wh = _wh(env, "ZZAC-WH2")
     _so(env, [(env.wh1, "SRT_DB:4101:5101"), (env.wh1, "SRT_DB:4101:5102"),
               (other_wh, "SRT_DB:4101:5103")])
@@ -119,8 +119,8 @@ def test_two_lines_at_the_same_location_stay_unlinked(env):
     assert _first_line(env).sales_order_line_id is None
 
 
-def test_a_candidate_without_location_blocks_narrowing(env):
-    """AC-DH24: the line with no warehouse could be the real one."""
+def test_a_candidate_without_location_links_the_group(env):
+    """AC-DH24: one candidate at the DO line's warehouse, one with none: no line."""
     _so(env, [(env.wh1, "SRT_DB:4101:5101"), (None, "SRT_DB:4101:5102")])
     r = _push_first_line(env)
     assert "so_line_unresolved" in r["warnings"]

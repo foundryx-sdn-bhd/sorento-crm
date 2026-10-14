@@ -33,8 +33,9 @@ Crew answer to v2, 13 Oct:
 - (Superseded by the owner's answer, section 4.) Crew first said cutover = 2023-09-01 for
   `do_assume_delivered_before` as well.
 - **"Exact" = one provable SO line.** The key link wins when present. Otherwise, when `FromDocNo`
-  names the SO and that SO has exactly ONE line of the DO's product (after location narrowing, when
-  the location is exact on both), the link is exact by construction and **stays**: that is how all
+  names the SO and that SO has exactly ONE line of the DO's product, the link is exact by
+  construction and **stays** (the location narrowing first proposed here is superseded by the
+  owner, 14 Oct, section 0b): that is how all
   29,040 of today's links were made. Several candidate lines (about 13,259 today) stay
   **unlinked**: no lowest-Seq, no qty-fit guess. API `FromDocDtlKey` is 0 on every DO line (verified
   live 8 Oct, and on 51,418 stored lines).
@@ -77,7 +78,7 @@ Q3 (the SO side): answered 14 Oct, section 0b.
      R2 step 4 carries the amendment. UAC AC-DH27..30a.
 2. **Q3 (a).** No CRM write to the pre-July open SO lines. The owner closes them in AutoCount from
    the read-only list `SQL-pre-july-open-so-lines-14oct.sql` (the owner runs it on prod; dev:
-   10,565 lines, 1,075,160 open qty). No existing screen gives that list: `/scm/sales-orders` is
+   10,630 lines, 1,080,457 open qty, 64 of them from the pre-feed Excel upload). No existing screen gives that list: `/scm/sales-orders` is
    one row per SO and exports only the ticked rows of a page.
 3. **Pre-cutover relink gate** (Q4 (a), #1623's `_run_cancel_relink_hook`,
    `be/app/api/v1/external/ingest.py:384`): its own follow-up lane, before the SS backfill runs.
@@ -174,7 +175,7 @@ Q3 (the SO side): answered 14 Oct, section 0b.
 | S1 | SS (its own lane) | Change the DO start floor in `doc_feed/constants.py:48` from 2023-01-01 to **2023-09-01**. | none |
 | S2 | SS | Make sure db1 (Sorento) and db2 (Mocha) each have a DO feed config row. A missing row fails loudly for that book. | none |
 | S3 | SS | Run the existing DocDate backfill for DO from 2023-09-01 to today (rules below the table). | S1, S2, K, C1-C3 deployed |
-| C1 | CRM (this lane) | Provable links only: key, else a unique product match narrowed by location (section 3). | none |
+| C1 | CRM (this lane) | Provable links only: key, else a unique product match; several candidates link the SO + product group (section 3, owner 14 Oct). | none |
 | C2 | CRM (built) | Assumed delivery when a DO dated before 2026-07-01 is created or adopted (section 4). | owner answered |
 | C3 | CRM | Quiet backfill: no per-DO embedding events or audit rows on backfill pushes (section 5). | contract 2.9 agreed with the SS lane |
 
@@ -304,8 +305,8 @@ SO-DELIVERIES-VIEW); sales achievement unchanged.
 
 1. **Built**: the `tracking_assumed_at` column (migration `do_hist_0001_tracking_assumed`), system-owned,
    cleared by a tracking row.
-2. **Built**: C1 location narrowing for several unique-product candidates; tests (key, unique match,
-   ambiguous unlinked, location-narrowed link, location still ambiguous).
+2. **Built, then superseded** (owner 14 Oct, slice 6): C1 location narrowing for several
+   unique-product candidates. Its tests now pin the group link instead.
 3. **Built**: C2 assumed delivery in the ingest behind the setting, plus the marker-aware
    delivered rule; tests in `tests/test_do_history_assume_delivered.py`.
 4. **Built**: C3, the optional `backfill` envelope flag. Its tests are in `tests/test_do_history_backfill_flag.py`, and
@@ -314,5 +315,10 @@ SO-DELIVERIES-VIEW); sales achievement unchanged.
 5. The #1623 gate (Q4 a): its own follow-up lane, before the SS backfill runs (section 0b).
 6. **Built (follow-up PR)**: group links, no warehouse narrowing (owner 14 Oct); tests in
    `tests/test_do_history_links.py`.
+
+Trigger, not built: the waiting fill (`_fill_waiting_links`) re-tries every unlinked DO line, so
+group-linked lines (permanent by the 14 Oct rule) share its 500-row window with lines still
+waiting for their SO. Build a "group-linked" marker when a DO line waiting for a late SO is ever
+seen staying unlinked after the SO arrived.
 
 Not built: SO history, and a UI badge for assumed rows (trigger: the owner asks to tell them apart).
