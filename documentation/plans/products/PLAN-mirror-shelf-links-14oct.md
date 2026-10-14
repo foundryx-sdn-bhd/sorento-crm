@@ -1,10 +1,10 @@
 # PLAN: mirror / shelf -> cabinet links (Part 1: data + product page + import)
 
-Status: Review (reviewer READY, security CLEAN, browser pass PASS; PR #1690). Track: full (migration + prod data import). Lane: MIRROR-LINKS.
+Status: Merge-ready (owner hand test PASS, reviewer READY, security CLEAN on fe10c3297; PR #1690). Track: full (migration + prod data import). Lane: MIRROR-LINKS.
 UAC: `mirror-shelf-links-14oct-acceptance-criteria.md` (alongside).
 Builds on: `documentation/plans/products/PLAN-wc-seat-compat-12oct.md` (PR #1590).
 Part 2 (the chatbot answering "mirror for SRTBF31415") is a separate later lane after #1613
-merges. No chatbot code changes here.
+merges. The only chatbot edit here is the seat cover kind filter in section 2.
 
 ## 1. Journey
 
