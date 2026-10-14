@@ -1,6 +1,7 @@
 # PLAN: v1 chatbot - unlinked non-staff contacts get no other customers' documents (V1-DOC-SCOPE)
 
-Status: in review (small fix track + security review; no migration, no new reply text). PR #1648.
+Status: in review (small fix track + security review; no migration, no new reply text). PR #1648;
+V1-DOC-SCOPE-SALES fix round (salespeople keep document access) in review.
 
 ## Problem
 
@@ -37,7 +38,31 @@ now mark it staff explicitly (an office access type, so the tier-driven escalati
 unchanged; about 90 marks, per test or in the file's own seeder), assertions unchanged. The
 shared `test_outstanding_lane._seed_contact` stays non-staff: about 90 tests rely on that.
 
+## Salespeople keep document access (V1-DOC-SCOPE-SALES, crew rulings 14 Oct)
+
+The owner's prod check found many of the unlinked non-staff contacts are salespeople. A
+salesperson is `contact_asker.classify(...) == "salesperson"` (owner rule 11 Oct: an ACTIVE CRM
+user holding the role `salesperson`, else a `sales_agents.contact_id` link; a customer link does
+not make it a dealer). For document scope it is staff:
+
+- `services.customer_scope_and_staff` returns staff = office access type OR salesperson, so
+  `doc_staff` includes it. An unlinked salesperson sees DO / SO by number, the DO list, the SO
+  list and the outstanding report, as main does today (the 81-contact fix).
+- A linked salesperson keeps the core `enforced` flag, so the customer-word gate, the lists, top
+  selling, report_ask and the order routes hold it to its links exactly as main does (CA-3 pins,
+  `tests/chatbot/test_chat_report_scope_leak.py`, unchanged). It is lifted only on the
+  in-process by-number arms: the SO number lookup (scope `staff`) and the resolver per-match drop
+  (`engine._reference_scope`). The tier alone still never lifts an enforced scope.
+- `ref_staff` stays the tier alone: the customer PO-ref arm and our PO / PR cards behave as main.
+- Routes unchanged (ruling (a)). Follow-up (b), only if the owner's SQL shows linked salespeople:
+  make the core `contact_customer_scope.enforced` exclude a salesperson so the order routes,
+  report_ask and complaints agree with the chatbot.
+
 ## Open before merge
+
+The owner runs `crew/state/reports/V1-DOC-SCOPE-salesperson-check.sql` (read-only) on production
+and gives every real salesperson shown as BLOCKED an ACTIVE CRM user with the role `salesperson`.
+
 
 The owner runs the read-only SQL in the PR's crew-done comment on production to see which unlinked
 contacts with neither marker asked order questions in the last 60 days (they lose those answers).
