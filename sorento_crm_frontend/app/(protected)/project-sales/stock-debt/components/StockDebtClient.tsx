@@ -778,6 +778,7 @@ export function StockDebtClient() {
                           ...suppliers.map((entry) => ({ value: entry.id, label: entry.name })),
                         ]}
                         placeholder="Every supplier"
+                        clearable
                       />
                     </div>
 
@@ -789,6 +790,7 @@ export function StockDebtClient() {
                         options={groupOptions}
                         placeholder="Every location"
                         disabled={book === 'retail'}
+                        clearable
                       />
                     </div>
 

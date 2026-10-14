@@ -21,7 +21,7 @@ Location filter), Q2 yes (rolling date range).
 
 ## Frontend: Location filter
 
-- AC-F1 The Filters panel has a "Location" `SearchableMultiSelect` under Book; options are
+- AC-F1 The Filters panel has a clearable "Location" `SearchableMultiSelect` after Supplier; options are
   exactly the envelope's `groups` (label = the code, e.g. `ED`). Empty = every location.
 - AC-F2 Picked locations travel to the list (`group` repeated), the cell drill and the export,
   and are part of their query keys.
