@@ -164,6 +164,18 @@ describe('UAC-20: ConsignmentsList', () => {
     expect(c2.slice(at2, at2 + 3)).toEqual(['5', '5', '2']);
   });
 
+  it('the Customer header is not sortable (the backend has no customer_name sort key)', async () => {
+    renderList();
+    await screen.findByText('ZZT-CG-0001');
+    const header = screen.getAllByRole('columnheader').find((h) => /^Customer$/i.test(h.textContent?.trim() ?? ''));
+    expect(header).toBeDefined();
+    const sortButtons = within(header as HTMLElement)
+      .queryAllByRole('button')
+      .filter((b) => !/drag/i.test(b.getAttribute('aria-label') ?? b.textContent ?? ''));
+    expect(sortButtons).toEqual([]);
+    expect((header as HTMLElement).getAttribute('aria-sort')).toBeNull();
+  });
+
   it('has no Add button (consignments come only from AutoCount)', async () => {
     renderList();
     await screen.findByText('ZZT-CG-0001');

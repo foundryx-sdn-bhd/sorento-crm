@@ -76,7 +76,7 @@ vi.mock('@/hooks/usePermissions', () => ({
 
 const useSalesOrder = vi.fn();
 const updateSalesOrderMutateAsync = vi.fn();
-const detailActionsProps: Array<{ pager?: { detailPath?: string; listQueryKey?: unknown } }> = [];
+const detailActionsProps: Array<{ pager?: { detailPath?: string; listQueryKey?: unknown; ariaLabel?: string } }> = [];
 vi.mock('@/components/common/DetailActions', () => ({
   __esModule: true,
   default: (props: { pager?: { detailPath?: string } }) => {
@@ -236,6 +236,22 @@ describe('UAC-21: consignment route back link and pager', () => {
     expect((last?.pager as { listQueryKey: (p: unknown) => unknown }).listQueryKey({})).toEqual([
       'scm-consignments',
     ]);
+  });
+});
+
+describe('N3: pager aria label', () => {
+  it('docType="consignment" labels the pager "consignment"', () => {
+    stub({ doc_type: 'consignment', lines: lines() });
+    renderDetail({ docType: 'consignment' });
+    const last = detailActionsProps[detailActionsProps.length - 1];
+    expect(last?.pager?.ariaLabel).toBe('consignment');
+  });
+
+  it('without docType it stays "sales order"', () => {
+    stub({ doc_type: 'sales_order', lines: lines() });
+    renderDetail();
+    const last = detailActionsProps[detailActionsProps.length - 1];
+    expect(last?.pager?.ariaLabel).toBe('sales order');
   });
 });
 
