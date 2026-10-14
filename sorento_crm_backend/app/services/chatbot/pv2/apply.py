@@ -139,10 +139,11 @@ def apply_turn(
     # A clarify flag beside a new_topic ask does not re-ask an OPEN question as a miss: the new
     # topic replaces it and its own policy asks what it still needs.
     flagged = out.clarify.needed and not (
-        st.pending is not None and any(a.act == "new_topic" for a in out.asks)
+        any(a.act == "new_topic" for a in out.asks) and st.pending is not None
+        or any(a.act == "switch_back" and a.switch_back_to is None for a in out.asks) and len(st.topics) == 1
     )
     if flagged or not out.asks:
-        about = out.clarify.about or "other"
+        about = _entity_about(st, out.clarify.about or "other")
         if st.pending is not None:
             # A garbled answer to the open question re-asks it with its real options and
             # counts a MISS (two -> the hand-over offer), never an option-less new question.
@@ -180,7 +181,6 @@ def apply_turn(
                 and action.picked is None
                 and pending_in is not None
                 and pending_in.kind == "v1_open_question"
-                and pending_in.v1_kind == "product_pick"
                 and any(e.quantity is not None for e in ask.entities)
             ):
                 products = action.held.refs.get("product", [])
@@ -209,6 +209,26 @@ def apply_turn(
 # --------------------------------------------------------------------------- #
 
 
+_FILTER_KINDS = frozenset({"brand", "product_class", "product_type", "attachment_type"})
+
+
+def _new_subject_in_a_new_domain(st: ConversationState, ask: Ask) -> bool:
+    """A refines_held ask that names a NEW subject (an entity with a phrase, key or doc number
+    that is not the held one) AND changes the domain starts a new topic. Structured fields only."""
+    if ask.act != "refines_held" or ask.row_pick is not None or not ask.domain or st.held.is_empty():
+        return False
+    if ask.domain == st.held.domain:
+        return False
+    held_keys = {str(v) for refs in st.held.refs.values() for r in refs for v in (r.key, r.phrase) if v}
+    for e in ask.entities:
+        named = e.key or e.phrase or e.doc_number
+        if e.refers_to_held or e.op == "clear" or not named or e.kind in _FILTER_KINDS:
+            continue  # a brand or class narrows the held subject, it is not a new one
+        if e.kind not in st.held.refs or str(named) not in held_keys:
+            return True
+    return False
+
+
 def _answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
     """An answer that names no option but carries a structured quantity on the held product
     (under a v1 product pick) or a structured period (under a report question) is a refine of
@@ -217,7 +237,6 @@ def _answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
         return False
     if (
         pending.kind == "v1_open_question"
-        and pending.v1_kind == "product_pick"
         and ask.answer.free_value is None
         and any(e.quantity is not None and e.refers_to_held and not e.key and not e.phrase for e in ask.entities)
     ):
@@ -253,6 +272,8 @@ def _one_ask(
 
     if ask.act == "switch_back":
         printed = topic_index(ask.switch_back_to, printed_topics)
+        if printed is None and ask.switch_back_to is None and len(printed_topics) == 1:
+            printed = 0  # no key and exactly one saved topic: that one
         if printed is None:
             raise _Miss("which_held")
         back = printed_topics[printed]
@@ -264,7 +285,7 @@ def _one_ask(
         held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True, today=today)
         return _commit(st, i, held, ask, qs), False
 
-    if ask.act == "new_topic":
+    if ask.act == "new_topic" or _new_subject_in_a_new_domain(st, ask):
         if i > 0 or not st.held.is_empty():
             st.topics = push_topic(st.topics, st.held)
         qs = _Qs(can_offer)
@@ -989,6 +1010,12 @@ def _which_held_options(refs: list[ResolvedRef]) -> list[Option]:
     ]
 
 
+def _entity_about(st: ConversationState, about: str) -> str:
+    """A question about an entity is never emitted with no options to pick: it becomes the
+    general question about what is held."""
+    return "which_held" if about == "entity" and not _options_for(st, about) else about
+
+
 def _options_for(st: ConversationState, about: str) -> list[Option]:
     """Real options for a model-raised clarify: the held subjects for which_held, else
     none (an open question; never a guessed list)."""
@@ -1041,15 +1068,16 @@ def _miss(
     """One MISS: re-ask the pending question with its real options; the second miss on
     the same question offers a hand-over instead."""
     if pending is None:
-        asked = clarify_copy.question_for(miss.about, None, language, nothing_held=miss.nothing_held)
+        about = _entity_about(st, miss.about)
+        asked = clarify_copy.question_for(about, None, language, nothing_held=miss.nothing_held)
         question = PendingQuestion(
-            kind=f"clarify_{miss.about}",
+            kind=f"clarify_{about}",
             asked=asked,
-            options=_options_for(st, miss.about),
+            options=_options_for(st, about),
             asked_turn=st.turn_no,
             misses=1,
         )
-        return ClarifyAct(ask_index=i, about=miss.about, pending=question, reask=True)
+        return ClarifyAct(ask_index=i, about=about, pending=question, reask=True)
     misses = pending.misses + 1
     if can_offer_handover and misses >= MISSES_BEFORE_HANDOVER and pending.kind != "offer_handover":
         offer = PendingQuestion(
