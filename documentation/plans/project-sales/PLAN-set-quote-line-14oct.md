@@ -1,6 +1,6 @@
 # PLAN - A product set is ONE quotation line (SET-QUOTE-LINE)
 
-**Status:** building, track L (additive migration, FE + BE). Owner answers 14 Oct 2026: Q1 (a), Q2 (a), Q3 (a), Q4 (b), Q5 (a); mock v1 approved with: no parts list on the line, parts go in the COMPLETE SET text box.
+**Status:** review round 2, track L (additive migration, FE + BE). Owner answers 14 Oct 2026: Q1 (a), Q2 (a), Q3 (a), Q4 (b), Q5 (a); mockup v2 APPROVED ('ok can'): no parts list on the line, parts in the COMPLETE SET text box; naming ruling: one word Non-standard. Open: set phasing on the SO draft (crew decision), sheet-import slice S4 after #1680.
 **UAC:** `set-quote-line-14oct-acceptance-criteria.md`
 **Mock:** `documentation/mockups/set-quote-line/index.html`
 **Depends on:** lane SERIES-BRAND-SCOPE (PR #1680) scope (d) for the import slice (S4) only.

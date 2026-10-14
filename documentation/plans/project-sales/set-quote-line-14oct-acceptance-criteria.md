@@ -1,6 +1,6 @@
 # UAC - A product set is ONE quotation line (SET-QUOTE-LINE)
 
-**Status:** agreed 14 Oct 2026. Owner answers on card + mockup v1: Q1 (a), Q2 (a), Q3 (a), Q4 (b) company default only, Q5 (a); parts are NOT listed on the line, they go in the COMPLETE SET text box. Mock v1 approved with those changes (no v2).
+**Status:** agreed 14 Oct 2026. Owner answers on card + mockup v1: Q1 (a), Q2 (a), Q3 (a), Q4 (b) company default only, Q5 (a); parts are NOT listed on the line, they go in the COMPLETE SET text box. Mockup v2 (`documentation/mockups/set-quote-line/index.html`, commit 8ab10d987) carries those changes and was APPROVED by the owner on 14 Oct ('ok can'). Naming ruling the same day: one word "Non-standard" for every line flag (section G).
 **Plan:** `PLAN-set-quote-line-14oct.md`
 **Mock:** `documentation/mockups/set-quote-line/index.html`
 
@@ -47,10 +47,19 @@ A salesperson quotes a development. The customer's bill of quantities says "WC C
 - **E1** A customer PO line that matches a set line (by the set code) drafts one SO line per part: the pedestal at the quoted set rate, the other parts at 0.00, quantity = PO quantity x part quantity; each SO line carries the quotation line id and explosion source `set`.
 - **E2** The parts come from the line's frozen copy, not today's set master (a set edited after quoting still drafts what was quoted).
 - **E3** An AutoCount item package for the code still wins over the set line (unchanged order); old quotations quoted as component lines still split by today's fallback.
+- **E4** Each part keeps its OWN unit (the part's base UOM, frozen with the parts), not the PO's "SETS". The split also works after the set is deleted (the frozen parts are enough).
+- **E5** A PO line naming a set code that splits from a quoted set line raises no "has no product" (unresolved_product) stop; a PO line with an unknown code still does. Spreading a set across delivery-schedule phases is NOT in this lane (crew decision filed 14 Oct); set part lines draft without a delivery date.
 
 ## F - Grid (frontend)
 
 - **F1** The product picker offers sets and products together; sets first, with a Set badge and part count; searching by set code or name finds them.
 - **F2** A set line shows the Set badge with the code, in edit and read mode. No parts list under the description (owner, mock v1); the parts show in the Complete set box of the line details.
 - **F3** The quantity cell shows the complete sets available for a set line.
-- **F4** Usable at 375 and 1280.
+- **F4** Usable at 375 and 1280; the complete-sets count under Qty is fully readable.
+- **F5** Picking a set fills brand (the pedestal part's brand) AT PICK when the line's brand is blank; a typed brand is kept.
+- **F6** The picker, the set fill and the complete-sets count read sets through `GET /api/v1/master-data/product-sets/select` (signed-in session, own company only), because the sales roles that edit quotations do not hold `master_data.product_sets.view`. The count is returned only to callers who hold `projects.projects.view` with the inventory module on; others get none.
+
+## G - One word: Non-standard
+
+- **G1** Every quotation line flag reads "Non-standard". A line with neither product nor set: tooltip "Not a catalogue product". A linked product or set outside the series: tooltip "Outside the series this scope is quoted from". Never two pills on one line.
+- **G2** The word "Custom" appears nowhere for a quotation line: the description error reads "A non-standard item needs a description", the Recheck toast "reads as non-standard", the recheck summary fallback "Non-standard item".
