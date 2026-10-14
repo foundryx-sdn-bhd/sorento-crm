@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Parked reserve requests (mockup v5)</title>
+<title>Parked reserve requests (mockup v6)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set the other lane mockups use */
 :root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;--success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--info:#1d4ed8;--info-soft:#eff6ff;--info-line:#bfdbfe;--page:#f7f7f8}
@@ -180,8 +180,8 @@ table.sum tr.sel td{background:var(--primary-soft)}
 </head>
 <body>
 <div class="doc">
-<h1>Park reserve requests, send them in bulk (OI-STAGED-NOTIFY, mockup v5)</h1>
-<p class="intro">v5 applies the owner's notes on v4: (1) CS Reserve and the notice to purchasing are ONE flow: Reserve (N) opens a confirmation with "Reserve and send to Joey" (default) or "Reserve and park notice"; the separate Park notice tickbox is gone; (2) statuses renamed: "Parked request to reserve" and "Parked reserve". Kept: no batches, one Reserve status filter (Parked request to reserve, Needs reserve, Parked reserve, Reserved), the send under the Actions menu, the recipient table plus email preview in the send dialog, the email button opening Needs reserve for everyone. Real dev case: Joey (purchasing) parks requests on the 9 OIs raised by Eling and the 8 raised by Niki (17 in all). Dashed amber outline = new element.</p>
+<h1>Park reserve requests, send them in bulk (OI-STAGED-NOTIFY, mockup v6)</h1>
+<p class="intro">v6 applies the owner's note on v5: one design for parking on both sides. The CS Reserve confirmation uses the SAME tickbox as the request lightbox: "Park notice first" (unticked by default) beside one primary button "Reserve and send to Joey", which reads "Reserve and park notice" when ticked. The request lightbox keeps "Park this first". Kept from v5: CS Reserve and the notice are one flow; statuses "Parked request to reserve", "Needs reserve", "Parked reserve", "Reserved"; no batches; the send under the Actions menu; recipient table plus email preview; the email button opening Needs reserve for everyone. Real dev case: Joey (purchasing) parks requests on the 9 OIs raised by Eling and the 8 raised by Niki (17 in all). Dashed amber outline = new element.</p>
 <nav class="nav">
 <a href="#s1">1 Request lightbox</a><a href="#s2">2 Reserve status filter, Actions</a><a href="#s3">3 Send dialog: recipients + email</a><a href="#s4">4 The email CS gets</a><a href="#s5">5 Button opens Needs reserve</a><a href="#s6">6 CS: Reserve, send or park</a><a href="#s7">7 Toasts, edge states</a><a href="#s8">8 Phone 375</a><a href="#s9">9 Reusable pattern</a><a href="#map">Component map</a>
 </nav>
@@ -376,8 +376,8 @@ table.sum tr.sel td{background:var(--primary-soft)}
 
 <!-- ============================================================ 6 -->
 <section id="s6">
-<h2><span class="nb">6</span>CS side, ONE flow: Reserve (N) asks "send to purchasing now, or park?" (owner v4 note 1)</h2>
-<p class="why">No separate tickbox any more. Eling stages lines on the Lines tab exactly as today and presses Reserve (2). A confirmation shows what she is reserving and who the notice goes to, with two ways to confirm: send the notice now (default, as today) or park it. Scenario on the real OIs: she does this on OI-2609-0612, OI-2609-0614 and OI-2609-0592 (Joey's requests), 2 lines each, choosing park each time; then Actions &gt; Send all parked reserves to purchasing (3).</p>
+<h2><span class="nb">6</span>CS side, ONE flow: Reserve (N) opens a confirmation with the SAME "park first" tickbox as the request lightbox (owner v5)</h2>
+<p class="why">Nothing beside the Reserve button any more. Eling stages lines on the Lines tab exactly as today and presses Reserve (2). A confirmation shows what she is reserving and who the notice goes to. Its footer is the request lightbox's footer: a "Park notice first" tickbox (unticked = send the notice now, as today) and one primary button whose label follows it. Scenario on the real OIs: she does this on OI-2609-0612, OI-2609-0614 and OI-2609-0592 (Joey's requests), 2 lines each, choosing park each time; then Actions &gt; Send all parked reserves to purchasing (3).</p>
 <div class="row"><div class="desk"><div class="screen stage" style="min-height:560px">
 <div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div class="on">Order inquiries</div><div>Sales orders</div><div>Purchase orders</div><div>Stock</div></div>
 <div class="main">
@@ -397,10 +397,10 @@ table.sum tr.sel td{background:var(--primary-soft)}
    </tbody></table></div></div>
   <div class="lsum" style="display:flex;gap:6px 18px;flex-wrap:wrap;font-size:12.5px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#fafafa"><span>Notice to purchasing: <b>To Joey</b>, Cc Eling</span></div>
  </div>
- <div class="df"><span class="btn left">Cancel</span><span class="btn">Reserve and park notice</span><span class="btn pri">Reserve and send to Joey</span></div>
+ <div class="df"><span class="cb left new" data-park3><span class="box"></span>Park notice first</span><span class="btn">Cancel</span><span class="btn pri" data-park3-btn>Reserve and send to Joey</span></div>
 </div></div>
 </div></div></div>
-<p class="note">"Reserve and send to Joey" = today's behaviour (the notice is emailed at once). "Reserve and park notice" saves the reserve; the OI then shows "Parked reserve" until someone sends all parked reserves. Esc or Cancel reserves nothing. Toast after parking: "Reserved. Notice to Joey parked; send it from Order inquiries &gt; Actions."</p>
+<p class="note">Unticked (default): "Reserve and send to Joey" = today's behaviour (the notice is emailed at once). Click the tickbox: the button becomes "Reserve and park notice", which saves the reserve; the OI then shows "Parked reserve" until someone sends all parked reserves. Esc or Cancel reserves nothing. Toast after parking: "Reserved. Notice to Joey parked; send it from Order inquiries &gt; Actions."</p>
 
 <div class="row" style="margin-top:16px"><div class="desk"><div class="screen stage" style="min-height:330px">
 <div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div class="on">Order inquiries</div><div>Sales orders</div><div>Purchase orders</div><div>Stock</div></div>
@@ -517,8 +517,8 @@ table.sum tr.sel td{background:var(--primary-soft)}
    <tr><td><b>CSA150</b></td><td class="r">220</td><td class="r"><b>0</b></td><td class="r">220</td><td>No stock</td></tr>
   </tbody></table></div></div>
   <div style="font-size:12.5px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#fafafa">Notice to purchasing: <b>To Joey</b>, Cc Eling</div></div>
-  <div class="df" style="flex-direction:column;align-items:stretch"><span class="btn pri" style="justify-content:center">Reserve and send to Joey</span><span class="btn" style="justify-content:center">Reserve and park notice</span><span class="btn ghost" style="justify-content:center">Cancel</span></div>
- </div></div></div><div class="cap">375: the two confirm buttons stack, send first</div></div>
+  <div class="df"><span class="cb left new" data-park3><span class="box"></span>Park notice first</span><span class="btn">Cancel</span><span class="btn pri" data-park3-btn>Reserve and send to Joey</span></div>
+ </div></div></div><div class="cap">375: same footer as the request lightbox, tickbox wraps above the buttons</div></div>
 
 </div>
 </section>
@@ -530,7 +530,7 @@ table.sum tr.sel td{background:var(--primary-soft)}
 <table class="map new">
 <thead><tr><th>Piece</th><th>What it is</th><th>Shared or per document</th></tr></thead>
 <tbody>
-<tr><td>1. Park choice</td><td>Where the user commits: send now (default, as today) or park. Request side: "Park this first" tickbox in the lightbox. CS side: the Reserve confirmation's two buttons.</td><td>Per screen; no new component</td></tr>
+<tr><td>1. Park tickbox</td><td>In the footer of the dialog where the user commits, left of the buttons: unticked (default) = send now, as today; ticked = save and park. The primary button's label follows it. Request side: "Park this first"; CS side: "Park notice first".</td><td>Shared: the same Checkbox + Label in the same footer place on every screen that uses the pattern</td></tr>
 <tr><td>2. Status filter</td><td>Plain statuses on the document list; "Parked" is always one of them. No batches, no send dates.</td><td>The filter UI is today's Filters popover; the status list is per document (here: Parked request to reserve, Needs reserve, Parked reserve, Reserved)</td></tr>
 <tr><td>3. Send all parked</td><td>One Actions item "Send all parked ... (N)", N = the presser's own parked items; a dialog with the recipient table and the email preview tabs; one email per To person; the email's button opens the list on the receiver's status. A second press finds nothing left.</td><td>Shared: the dialog component and the server helper that groups items by recipient, renders the preview and queues the emails</td></tr>
 <tr><td>4. What a parked item is</td><td>Which rows count, who parked them, which email automation and template, and the status the receiver lands on.</td><td>Per document (here: reserve requests, and CS reserve notices)</td></tr>
@@ -544,7 +544,7 @@ table.sum tr.sel td{background:var(--primary-soft)}
 <thead><tr><th>Element</th><th>Reuses</th><th>Repo path</th></tr></thead>
 <tbody>
 <tr><td>"Park this first" tickbox, unticked by default <span class="tag">new</span></td><td>Checkbox + Label in the dialog footer</td><td><code>components/ui/checkbox.tsx</code>, <code>app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx</code> (footer, 281-288)</td></tr>
-<tr><td>Reserve confirmation (send now / park) <span class="tag">new</span></td><td>Dialog shell with the staged lines in a DataGrid and two confirm buttons, opened by the header's Reserve (N)</td><td><code>components/ui/dialog.tsx</code>, shell of <code>ReserveRequestDialog.tsx</code>; trigger <code>[id]/components/OrderInquiryDetail.tsx</code> (846-855)</td></tr>
+<tr><td>Reserve confirmation with "Park notice first" <span class="tag">new</span></td><td>Dialog shell with the staged lines in a DataGrid; footer = the request lightbox's footer (Checkbox + Label left, Cancel, one primary button whose label follows the tickbox)</td><td><code>components/ui/dialog.tsx</code>, shell of <code>ReserveRequestDialog.tsx</code>; trigger <code>[id]/components/OrderInquiryDetail.tsx</code> (846-855)</td></tr>
 <tr><td>Documents list, toolbar, Filters popover, chips</td><td>DataGridListToolbar (custom filters, chip, refresh)</td><td><code>order-inquiries/components/OrderInquiryHeadersList.tsx</code> (497-580), <code>components/ui/data-grid-list-toolbar.tsx</code></td></tr>
 <tr><td>"Reserve" status filter + chip + Reserve column <span class="tag">new</span></td><td>SearchableSelect in the Filters popover (clearable, counts in labels), the active-filter chip, Badge light pill in a sized column</td><td><code>components/common/SearchableSelect</code>, <code>components/ui/badge.tsx</code>; <code>OrderInquiryHeadersList.tsx</code> (514-575); counts pattern <code>OrderInquiriesClient.tsx</code> (1258-1272)</td></tr>
 <tr><td>Actions menu with Send all parked requests to CS (N) / Send all parked reserves to purchasing (N) <span class="tag">new</span></td><td>The toolbar's own "Actions" dropdown (<code>secondaryActions</code>, disabled items carry their reason), shown as a menu even with one item</td><td><code>components/ui/data-grid-list-toolbar.tsx</code> (556-600); same menu the Lines view uses (<code>OrderInquiriesClient.tsx</code> 1425-1546)</td></tr>
@@ -564,6 +564,7 @@ document.querySelectorAll('[data-park]').forEach(function(cb){
     if(btn){btn.textContent=cb.classList.contains('on')?'Park request':'Send request';}
   });
 });
+document.querySelectorAll('[data-park3]').forEach(function(cb){cb.addEventListener('click',function(){cb.classList.toggle('on');var b=cb.parentElement.querySelector('[data-park3-btn]');if(b){b.textContent=cb.classList.contains('on')?'Reserve and park notice':'Reserve and send to Joey';}});});
 document.querySelectorAll('[data-park2]').forEach(function(cb){cb.addEventListener('click',function(){cb.classList.toggle('on');});});
 </script>
 </body>
