@@ -69,15 +69,13 @@ def _dump(value: Any, cap: int) -> str:
     return text if len(text) <= cap else text[:cap] + "...(cut)"
 
 
-_DROP_KEYS = {"envelope", "contact", "channel", "meta", "profile"}
+_DROP_KEYS = {"envelope", "contact", "profile"}
 _WAMID = re.compile(r"wamid\.\S+", re.IGNORECASE)
-_PLUS_PHONE = re.compile(r"\+\d[\d\s-]{7,}\d")
-_DIGIT_RUN = re.compile(r"(?<![A-Za-z\d])\d{8,}")
 
 
 def _scrub(node: Any, depth: int = 0) -> Any:
-    """Judge facts go to an external API: drop identity keys at any depth, mask phone-like runs and wamid
-    tokens. Document numbers (6 digits, hyphenated) and product codes stay."""
+    """Judge facts go to an external API: drop envelope/contact/profile at any depth, mask Malaysian
+    phone numbers and wamid tokens. Every other number, document numbers and names stay."""
     if depth > 12:
         return "(deep)"
     if isinstance(node, dict):
@@ -86,7 +84,7 @@ def _scrub(node: Any, depth: int = 0) -> Any:
     if isinstance(node, (list, tuple)):
         return [_scrub(v, depth + 1) for v in node]
     if isinstance(node, str):
-        return _DIGIT_RUN.sub("[num]", _PLUS_PHONE.sub("[phone]", _WAMID.sub("[wamid]", node)))
+        return judge.mask_phones(_WAMID.sub("[wamid]", node))
     return node
 
 

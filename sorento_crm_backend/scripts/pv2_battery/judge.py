@@ -64,7 +64,9 @@ def _files_text(files: Any) -> str:
 
 def build_judge_prompt(*, history: list[dict[str, str]], text: str, reply: str, files: Any,
                        expect: dict[str, Any], facts: Any, audience: str) -> str:
-    convo = "\n".join(f"User: {h.get('user')}\nBot: {h.get('bot')}" for h in history) or "(first message)"
+    convo = "\n".join(mask_phones(f"User: {h.get('user')}\nBot: {h.get('bot')}") for h in history) \
+        or "(first message)"
+    reply = mask_phones(reply)
     facts_text = facts if isinstance(facts, str) else json.dumps(facts, ensure_ascii=False, default=str)
     if len(facts_text) > FACTS_LIMIT:
         facts_text = facts_text[:FACTS_LIMIT] + "...(truncated)"
@@ -78,6 +80,15 @@ def build_judge_prompt(*, history: list[dict[str, str]], text: str, reply: str, 
         f"EXPECTATION: {json.dumps(expect, ensure_ascii=False)}\n\n"
         f"FACTS THE BOT HAD: {facts_text}\n"
     )
+
+
+#: Malaysian phone shapes: +60 12-345 6789, 60123456789, 012-345 6789, 03-5161 2345. A 6-digit
+#: document number, a PO number and an amount do not match (no 0/60 prefix, or too few digits).
+_PHONE = re.compile(r"(?<![\w.])(?:\+?60|0)[\s-]?\d{1,2}[\s-]?\d{3,4}[\s-]?\d{4}(?!\d)")
+
+
+def mask_phones(text: str) -> str:
+    return _PHONE.sub("[phone]", text or "")
 
 
 def _error(reason: str) -> dict[str, Any]:

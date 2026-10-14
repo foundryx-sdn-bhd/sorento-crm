@@ -111,14 +111,8 @@ def render_table(results: list[dict[str, Any]], meta: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_failures(rows: list[dict[str, Any]], meta: dict[str, Any] | None = None) -> str:
-    blocked = (meta or {}).get("env_blocked") or {}
-    rows = [r for r in rows if r.get("domain") not in blocked]
-    lines = ["# Failing turns", ""]
-    if blocked:
-        lines += ["Env blocked, left out: " + "; ".join(f"{d} ({why})" for d, why in blocked.items()), ""]
-    if not rows:
-        lines.append("None.")
+def _failure_lines(rows: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
     for r in rows:
         reply = (r.get("reply") or "").replace("\n", " ")
         if len(reply) > EXCERPT:
@@ -126,4 +120,19 @@ def render_failures(rows: list[dict[str, Any]], meta: dict[str, Any] | None = No
         lines += [f"## {r['conversation']} turn {r['turn']}" + (f" ({r['mode']})" if r.get("mode") else ""),
                   f"- text: {r.get('text')}", f"- reply: {reply}",
                   "- reasons: " + "; ".join(r.get("reasons") or []), f"- turn_id: {r.get('turn_id')}", ""]
+    return lines
+
+
+def render_failures(rows: list[dict[str, Any]], meta: dict[str, Any] | None = None) -> str:
+    blocked = (meta or {}).get("env_blocked") or {}
+    kept = [r for r in rows if r.get("domain") not in blocked]
+    det = [r for r in rows if r.get("domain") in blocked and r.get("checks")]
+    lines = ["# Failing turns", ""]
+    if blocked:
+        lines += ["Env blocked, left out: " + "; ".join(f"{d} ({why})" for d, why in blocked.items()), ""]
+    if not kept:
+        lines.append("None.")
+    lines += _failure_lines(kept)
+    if det:
+        lines += ["# Env-blocked domain, deterministic fails", ""] + _failure_lines(det)
     return "\n".join(lines) + "\n"
