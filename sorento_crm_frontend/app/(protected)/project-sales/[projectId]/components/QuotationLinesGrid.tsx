@@ -73,6 +73,8 @@ import {
   type LineFileShown,
 } from './QuotationLineFileCell';
 import { QuotationStockChip } from './QuotationStockChip';
+import { useProductSet } from '@/app/(protected)/master-data-management/product-sets/hooks/useProductSets';
+import { SET_OPTION_PREFIX, isSetOption } from '@/app/(protected)/scm/components/productOrSetPicker';
 import { LineFlags } from './QuotationLineFlags';
 
 /** One line of the grid: the staged (or stored) line, and its true position in the scope. */
@@ -150,7 +152,10 @@ export function describeLine(
 function resolvedLine(row: GridRow): QuotationLine | null {
   const { line, draft } = row.staged;
   if (!line) return null;
-  return (line.product_id ?? '') === (draft.product_id ?? '') ? line : null;
+  return (line.product_id ?? '') === (draft.product_id ?? '') &&
+    (line.product_set_id ?? '') === (draft.product_set_id ?? '')
+    ? line
+    : null;
 }
 
 const PICK_FIELD: Record<
@@ -261,6 +266,41 @@ function CellSelect({
   );
 }
 
+function SetBadge() {
+  return (
+    <Badge variant="secondary" appearance="light" size="sm" className="shrink-0">
+      Set
+    </Badge>
+  );
+}
+
+/** A picker option: a set wears the Set badge, a product keeps its name beside the code. */
+function renderLineOption(option: SearchableSelectOption): React.ReactNode {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="min-w-0 break-words">{option.label}</span>
+      {isSetOption(option.value) ? <SetBadge /> : null}
+      {option.description ? (
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
+          {option.description}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** What a set line reads where a product line reads its stock: the complete sets on hand. */
+function SetCompleteChip({ setId }: { setId: string }) {
+  const set = useProductSet(setId);
+  const count = set.data?.complete_sets;
+  if (count == null) return null;
+  return (
+    <span className="text-xs text-muted-foreground tabular-nums">
+      {`${count} complete ${count === 1 ? 'set' : 'sets'}`}
+    </span>
+  );
+}
+
 function ProductCell({ row: tableRow }: CellContext<GridRow, unknown>) {
   const grid = useGrid();
   const row = tableRow.original;
@@ -274,23 +314,34 @@ function ProductCell({ row: tableRow }: CellContext<GridRow, unknown>) {
         <CellSelect
           label={`Product on ${label}`}
           clearable
-          value={staged.draft.product_id ?? ''}
+          value={
+            staged.draft.product_set_id
+              ? `${SET_OPTION_PREFIX}${staged.draft.product_set_id}`
+              : (staged.draft.product_id ?? '')
+          }
           // The pick and its fill are one write, made in `onOptionChange`.
           onChange={() => undefined}
           onOptionChange={(option) => grid.selectProduct(row.key, option)}
           fetchOptions={grid.fetchProducts}
           selectedOption={grid.resolveProduct(staged.line, staged.draft)}
+          renderOption={renderLineOption}
           placeholder="Pick a product"
           emptyMessage="No matches"
         />
       ) : (
-        <span
-          className="block truncate text-sm font-medium"
-          title={staged.line?.product_code ?? undefined}
-        >
-          {staged.draft.product_id ? (staged.line?.product_code ?? '-') : ''}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span
+            className="block truncate text-sm font-medium"
+            title={staged.line?.product_code ?? undefined}
+          >
+            {staged.draft.product_id || staged.draft.product_set_id
+              ? (staged.line?.product_code ?? '-')
+              : ''}
+          </span>
+          {staged.draft.product_set_id ? <SetBadge /> : null}
         </span>
       )}
+      {editable && staged.draft.product_set_id ? <SetBadge /> : null}
       <LineFlags
         quotationId={grid.quotationId}
         line={staged.line}
@@ -386,7 +437,10 @@ function QtyCell({ row: tableRow }: CellContext<GridRow, unknown>) {
   const quantity = staged.draft.quantity ?? '';
   const uom = staged.draft.uom ?? '';
   const productId = staged.draft.product_id ?? '';
-  const chip = productId ? (
+  const setId = staged.draft.product_set_id ?? '';
+  const chip = setId ? (
+    <SetCompleteChip setId={setId} />
+  ) : productId ? (
     <QuotationStockChip
       productId={productId}
       group={grid.stockGroup}
@@ -927,6 +981,8 @@ export interface QuotationLinesGridProps {
   productCodeOf: (productId: string) => string | null;
   /** What picking a product decides for the rest of its line (null for a cleared pick). */
   fillFromProduct: (option: SearchableSelectOption) => LineDraft;
+  /** The rest of a line's fields once a SET is picked (loads the set's parts). */
+  fillFromSet?: (setId: string) => Promise<LineDraft>;
   uomOptions: SearchableSelectOption[];
   uomError: unknown;
   onUomRetry: () => void;
@@ -958,6 +1014,7 @@ export function QuotationLinesGrid({
   resolveProduct,
   productCodeOf,
   fillFromProduct,
+  fillFromSet,
   uomOptions,
   uomError,
   onUomRetry,
@@ -1015,22 +1072,44 @@ export function QuotationLinesGrid({
     (key: string, option: SearchableSelectOption | null) => {
       const held = linesRef.current.find((line) => line.key === key);
       if (!held) return;
-      // A different product's photo or drawing cannot be this one's, so a change clears both.
+      // A different product's (or set's) photo or drawing cannot be this one's, so a change
+      // clears both.
+      const heldValue = held.draft.product_set_id
+        ? `${SET_OPTION_PREFIX}${held.draft.product_set_id}`
+        : (held.draft.product_id ?? '');
       const clearPicks: LineDraft =
-        (option?.value ?? '') !== (held.draft.product_id ?? '')
+        (option?.value ?? '') !== heldValue
           ? { image_attachment_id: '', drawing_attachment_id: '' }
           : {};
       if (!option) {
-        update(key, { product_id: '', ...clearPicks });
+        update(key, { product_id: '', product_set_id: '', ...clearPicks });
+        return;
+      }
+      if (isSetOption(option.value)) {
+        const setId = option.value.slice(SET_OPTION_PREFIX.length);
+        update(key, {
+          product_id: '',
+          product_set_id: setId,
+          description: option.description ?? '',
+          uom: 'SET',
+          ...clearPicks,
+        });
+        // The parts, brand, price and Complete set need the set's detail; applied only if the
+        // row still names this set when it arrives.
+        void fillFromSet?.(setId).then((filled) => {
+          const now = linesRef.current.find((line) => line.key === key);
+          if (now?.draft.product_set_id === setId) update(key, filled);
+        });
         return;
       }
       update(key, {
         product_id: option.value,
+        product_set_id: '',
         ...fillFromProduct(option),
         ...clearPicks,
       });
     },
-    [fillFromProduct, update],
+    [fillFromProduct, fillFromSet, update],
   );
 
   const focusSoon = React.useCallback((selector: string) => {
@@ -1199,7 +1278,10 @@ export function QuotationLinesGrid({
 
   const labelOf = React.useCallback(
     (row: GridRow) => {
-      const productId = row.staged.draft.product_id ?? '';
+      const setId = row.staged.draft.product_set_id ?? '';
+      const productId = setId
+        ? `${SET_OPTION_PREFIX}${setId}`
+        : (row.staged.draft.product_id ?? '');
       return describeLine(
         row.staged.line,
         row.index,

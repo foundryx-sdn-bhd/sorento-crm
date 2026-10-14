@@ -11,12 +11,21 @@ import { useUOMSelectQuery } from '@/app/(protected)/master-data-management/shar
 import { useBrandSelectQuery } from '@/app/(protected)/master-data-management/shared/hooks/use-brand-select-query';
 // The shared products `/select` mapper, keeping the fields a picked product decides.
 import { getProductsForLineSelect } from '@/app/(protected)/master-data-management/products/services/productService';
+import {
+  getProductSet,
+  getProductSets,
+} from '@/app/(protected)/master-data-management/product-sets/services/productSetService';
+import {
+  SET_OPTION_PREFIX,
+  isSetOption,
+} from '@/app/(protected)/scm/components/productOrSetPicker';
 import type { ProductLineRef } from '@/app/(protected)/master-data-management/products/types/product.types';
 import {
   useQuotationLines,
   useQuotationRecomputeMutation,
   useQuotationVersions,
   useSeriesProductRows,
+  useSeriesSetRows,
 } from '../../_shared/hooks/useProjects';
 import type {
   Project,
@@ -30,6 +39,7 @@ import { ReviseQuotationDialog } from './ReviseQuotationDialog';
 import { QuotationLinesGrid } from './QuotationLinesGrid';
 import { StockAtSelect, useQuotationStockGroup } from './QuotationStockChip';
 import {
+  completeSetText,
   lineErrors,
   serverToDraft,
   toBody,
@@ -178,14 +188,44 @@ export function QuotationVersionEditor({
    */
   const productsById = React.useRef(new Map<string, ProductLineRef>());
 
+  /** The sets the picker has shown, by id: a never-saved set line is named after one. */
+  const setsById = React.useRef(new Map<string, { set_code: string; name: string }>());
+
   const fetchProducts = React.useCallback(async (query: string) => {
     const products = await getProductsForLineSelect(query || undefined);
     products.forEach((product) => productsById.current.set(product.id, product));
-    return products.map((product) => ({
-      value: product.id,
-      label: product.product_code,
-      description: product.product_name,
-    }));
+    // Sets and products in ONE list, sets first (a set code is almost never also a product
+    // code). Best-effort: a reader without the product-set permission still gets the products.
+    let setOptions: SearchableSelectOption[] = [];
+    try {
+      const sets = await getProductSets({
+        pageIndex: 0,
+        pageSize: 20,
+        sorting: [],
+        searchQuery: query,
+      });
+      setOptions = (sets.data ?? [])
+        .filter((set) => set.is_active)
+        .map((set) => {
+          setsById.current.set(set.id, { set_code: set.set_code, name: set.name });
+          return {
+            value: `${SET_OPTION_PREFIX}${set.id}`,
+            label: set.set_code,
+            description: set.name,
+            searchText: `${set.set_code} ${set.name}`,
+          };
+        });
+    } catch {
+      setOptions = [];
+    }
+    return [
+      ...setOptions,
+      ...products.map((product) => ({
+        value: product.id,
+        label: product.product_code,
+        description: product.product_name,
+      })),
+    ];
   }, []);
 
   /**
@@ -224,6 +264,50 @@ export function QuotationVersionEditor({
     return map;
   }, [seriesRows.data]);
 
+  const setRows = useSeriesSetRows(
+    (seriesId !== undefined ? seriesId : quotation?.series_id) ?? undefined,
+  );
+  const seriesPriceBySet = React.useMemo(() => {
+    const map = new Map<string, string>();
+    (setRows.data ?? []).forEach((row) => {
+      if (row.selling_price) map.set(row.product_set_id, row.selling_price);
+    });
+    return map;
+  }, [setRows.data]);
+
+  /**
+   * What picking a SET decides for the rest of its line: the set name as the description, UOM
+   * SET, the set's resolved list price, the driver (else first) part's brand, the parts as the
+   * Complete set text, and the series' price for the set where it names one. The parts
+   * themselves are not shown on the line; the server freezes them when the line is saved.
+   */
+  const fillFromSet = React.useCallback(
+    async (setId: string): Promise<LineDraft> => {
+      const detail = await getProductSet(setId);
+      const members = [...(detail.members ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+      const filled: LineDraft = {
+        description: detail.name,
+        uom: 'SET',
+        list_price: detail.price?.resolved != null ? String(detail.price.resolved) : '',
+        complete_set: completeSetText(
+          members.map((member) => ({
+            product_code: member.product_code,
+            quantity: member.quantity,
+          })),
+        ),
+      };
+      // The brand is the part the set is named after: the first one, which the server also
+      // treats as the driver in the ordinary case.
+      const lead = members[0] ? productsById.current.get(members[0].product_id) : undefined;
+      const brand = lead ? (brands.data ?? []).find((row) => row.id === lead.brand_id) : undefined;
+      filled.brand_snapshot = brand?.brand_name ?? '';
+      const agreed = seriesPriceBySet.get(setId);
+      if (agreed) filled.unit_price = agreed;
+      return filled;
+    },
+    [brands.data, seriesPriceBySet],
+  );
+
   const fillFromProduct = React.useCallback(
     (option: { value: string }): LineDraft => {
       const product = productsById.current.get(option.value);
@@ -257,6 +341,17 @@ export function QuotationVersionEditor({
    */
   const resolveProduct = React.useCallback(
     (stored: QuotationLine | null, draft: LineDraft): SearchableSelectOption | undefined => {
+      const setId = draft.product_set_id;
+      if (setId && !draft.product_id) {
+        const picked = setsById.current.get(setId);
+        const storedSet = stored?.product_set_id === setId;
+        return {
+          value: `${SET_OPTION_PREFIX}${setId}`,
+          label: picked?.set_code ?? (storedSet ? (stored?.product_code ?? 'Selected set') : 'Selected set'),
+          description:
+            picked?.name ?? (storedSet ? (stored?.description ?? undefined) : undefined),
+        };
+      }
       const productId = draft.product_id;
       if (!productId) return undefined;
       const picked = productsById.current.get(productId);
@@ -282,7 +377,10 @@ export function QuotationVersionEditor({
 
   /** A product picked in this session, by id: what a never-saved line is named after. */
   const productCodeOf = React.useCallback(
-    (productId: string) => productsById.current.get(productId)?.product_code ?? null,
+    (productId: string) =>
+      (isSetOption(productId)
+        ? setsById.current.get(productId.slice(SET_OPTION_PREFIX.length))?.set_code
+        : productsById.current.get(productId)?.product_code) ?? null,
     [],
   );
 
@@ -513,6 +611,7 @@ export function QuotationVersionEditor({
             ) : null
           }
           fillFromProduct={fillFromProduct}
+          fillFromSet={fillFromSet}
           uomOptions={uomOptions}
           uomError={uoms.error}
           onUomRetry={() => void uoms.refetch()}
@@ -612,7 +711,7 @@ function RecomputeSummary({
             {`${result.unresolved_products} ${
               result.unresolved_products === 1 ? 'line names a product' : 'lines name products'
             } this company's catalogue does not carry, so ${
-              result.unresolved_products === 1 ? 'it reads as a custom item' : 'they read as custom items'
+              result.unresolved_products === 1 ? 'it reads as non-standard' : 'they read as non-standard'
             }. Re-pick the product to clear it.`}
           </p>
         )}

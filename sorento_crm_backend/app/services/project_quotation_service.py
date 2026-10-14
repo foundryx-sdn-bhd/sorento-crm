@@ -901,7 +901,7 @@ def _write_line(
     elif product_set is None and not line.description_snapshot:
         raise AppException(
             status_code=422,
-            message="A custom item needs a description.",
+            message="A non-standard item needs a description.",
             code="quotation_line_description_required",
         )
 

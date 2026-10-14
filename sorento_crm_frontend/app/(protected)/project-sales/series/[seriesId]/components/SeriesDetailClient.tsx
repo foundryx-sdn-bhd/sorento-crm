@@ -22,6 +22,7 @@ import { useProductCategorySelectQuery } from '@/app/(protected)/master-data-man
 import { useProjectSeries, useSeriesMutations } from '../../../_shared/hooks/useProjects';
 import type { ProjectSeries } from '../../../_shared/types/project.types';
 import { SeriesProductsTable } from './SeriesProductsTable';
+import { SeriesSetsTable } from './SeriesSetsTable';
 import { SeriesSheetLoader } from './SeriesSheetLoader';
 import BackToList, { useBackToListHref } from '@/components/common/BackToList';
 import DetailActions from '@/components/common/DetailActions';
@@ -286,6 +287,17 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
             </CardHeader>
             <CardContent>
               <SeriesProductsTable seriesId={seriesId} />
+            </CardContent>
+          </Card>
+        )}
+
+        {!isNew && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Sets</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <SeriesSetsTable seriesId={seriesId} />
             </CardContent>
           </Card>
         )}
