@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, require_permission
+from app.dependencies import require_permission
 from app.services.user_service import TeamService
 from app.schemas.user import TeamCreate, TeamUpdate, TeamResponse, TeamMemberResponse, BrandCodesUpdate
 from app.schemas.market_segment import MarketSegmentCodesUpdate
@@ -45,7 +45,7 @@ async def get_team(
 @router.post("/", response_model=TeamResponse, status_code=201)
 async def create_team(
     data: TeamCreate,
-      current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.teams.add")),
     db=Depends(get_db),
 ):
     """Create a team."""
@@ -60,7 +60,7 @@ async def create_team(
 async def update_team(
     team_id: str,
     data: TeamUpdate,
-      current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.teams.edit")),
     db=Depends(get_db),
 ):
     """Update a team."""
@@ -77,7 +77,7 @@ async def update_team(
 @router.delete("/{team_id}", status_code=200)
 async def delete_team(
     team_id: str,
-      current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.teams.delete")),
     db=Depends(get_db),
 ):
     """Delete a team."""
@@ -113,7 +113,7 @@ async def list_team_members(
 async def add_team_member(
     team_id: str,
     body: dict,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.teams.edit")),
     db=Depends(get_db),
 ):
     """Add a user to a team. Body: { "user_id": "<id>", "sort_order": optional int,
@@ -142,7 +142,7 @@ async def update_team_member(
     team_id: str,
     user_id: str,
     body: dict,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.teams.edit")),
     db=Depends(get_db),
 ):
     """Update a team member. Body: { "include_in_round_robin": optional bool,
@@ -166,7 +166,7 @@ async def update_team_member(
 async def remove_team_member(
     team_id: str,
     user_id: str,
-      current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.teams.edit")),
     db=Depends(get_db),
 ):
     """Remove a user from a team."""
