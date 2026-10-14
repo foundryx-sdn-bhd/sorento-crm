@@ -50,3 +50,24 @@ Location filter), Q2 yes (rolling date range).
   everyone need `list_query.saved_views.publish`, personal default (pin), delete countdown,
   default view auto-applies on open (with its dates recomputed).
 - AC-V6 Usable at 375px and 1280px.
+
+## Round 2 (crew audit, 14 Oct, on 498f7dbd)
+
+### Exclude mode ("all except ED")
+- AC-X1 Backend: `exclude_group` (repeatable) on list and cell, `exclude_group` (list, bare
+  string accepted) in the export body. The span is the flagged bins whose group is NOT listed;
+  a location flagged later is in it with no change. Case-insensitive. HQ project reserves stay
+  in the span under exclude mode (they are no group's stock, and "all except X" removes only
+  X); `group` (include) still drops them, as today. `book=retail` ignores both.
+- AC-X2 Frontend: beside the Location select, a mode switch `Only` / `All except` (default
+  `Only`). In `All except` the picked locations go out as `exclude_group` on the list, the cell
+  drill and the export, and are part of their query keys.
+- AC-X3 Chip in `All except`: one picked reads `Location: all except ED`, two or more
+  `Locations: all except BB, ED`. Clearing the chip clears the pick and returns to `Only`.
+- AC-X4 Saved views store `groups_mode` (`include` | `exclude`) beside `groups`; a view saved
+  before this round (no key) applies as `include`. "No segment" resets to `include`.
+
+### BRW columns
+- AC-L1 The three BRW columns are a fixed site-pool (retail) reference, not scoped by Location
+  or Book: their headers read `BRW Retail On Hand Qty`, `BRW Retail PO Qty`,
+  `BRW Retail Incoming Qty`, on screen and in the workbook. `Dealer O/standing Qty` unchanged.
