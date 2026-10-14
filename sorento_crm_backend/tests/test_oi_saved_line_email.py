@@ -429,3 +429,77 @@ def test_a_rejected_borrow_reads_the_lines_own_location_in_the_email(api, emails
         .one()
     )
     assert row.stock_location == donor.warehouse_code, "the row keeps its donor location"
+
+
+# ------------------------------------- a donor move is not news (reviewer B1, 14 Oct 2026)
+
+
+def _one_line_order(world, qty):
+    db = world.db
+    core_so = _core_so(db, world.company_id)
+    core_line = _core_line(db, core_so, world.product, world.own_wh, qty_ordered=qty,
+                           required_date=D_A)
+    order = _project_so(db, world.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    line = _project_line(db, order, line_no=10, product=world.product, core_line=core_line)
+    db.commit()
+    return order, line, core_line
+
+
+def _then_changed_email(api, emails, *, first, second, second_donor_moves, cut_to=None,
+                        qty="10"):
+    """Confirm `first`, optionally cut the SO line, re-Confirm `second`; the one email line."""
+    _client, world = api
+    order, line, core_line = _one_line_order(world, qty)
+    _post(api, order, [_line_payload(line.id, **first)])
+    emails.clear()
+    if cut_to is not None:
+        core_line.qty_ordered = Decimal(cut_to)
+        line.qty = Decimal(cut_to)
+        world.db.commit()
+    _post(api, order, [_line_payload(line.id, **{"amend_reason": "Changed.", **second})])
+    assert len(emails) == 1, emails
+    assert len(emails[0]["lines"]) == 1, emails[0]["lines"]
+    return emails[0]["lines"][0]
+
+
+def _same(moved, still, own):
+    assert moved["location"] == own and still["location"] == own, (moved, still)
+    for key in ("item_code", "qty", "was", "remark"):
+        assert moved.get(key) == still.get(key), (key, moved, still)
+    assert "CANCEL ORDER" not in moved["remark"] or "CANCEL ORDER" in still["remark"], moved
+
+
+def test_a_borrow_moved_and_cut_reads_as_the_same_cut_without_the_move(api, emails):
+    _client, world = api
+    x, y = _donor(world, "CX"), _donor(world, "CY")
+    own = world.own_wh.warehouse_code
+    kept = _then_changed_email(
+        api, emails, first={"borrow": _borrow_from(world, x, "10")},
+        second={"borrow": _borrow_from(world, x, "8")}, second_donor_moves=False, cut_to="8",
+    )
+    moved = _then_changed_email(
+        api, emails, first={"borrow": _borrow_from(world, x, "10")},
+        second={"borrow": _borrow_from(world, y, "8")}, second_donor_moves=True, cut_to="8",
+    )
+    _same(moved, kept, own)
+
+
+def test_a_borrow_moved_with_a_new_buy_split_reads_as_the_same_split_without_the_move(
+    api, emails,
+):
+    _client, world = api
+    x, y = _donor(world, "SX"), _donor(world, "SY")
+    own = world.own_wh.warehouse_code
+    kept = _then_changed_email(
+        api, emails,
+        first={"borrow": _borrow_from(world, x, "6"), "buy_qty": "4", "amend_reason": "Part from stock."},
+        second={"borrow": _borrow_from(world, x, "4"), "buy_qty": "6", "amend_reason": "Part from stock."},
+        second_donor_moves=False,
+    )
+    moved = _then_changed_email(
+        api, emails,
+        first={"borrow": _borrow_from(world, x, "6"), "buy_qty": "4", "amend_reason": "Part from stock."},
+        second={"borrow": _borrow_from(world, y, "4"), "buy_qty": "6", "amend_reason": "Part from stock."},
+        second_donor_moves=True,
+    )
+    _same(moved, kept, own)
