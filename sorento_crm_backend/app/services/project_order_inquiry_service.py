@@ -313,7 +313,6 @@ _HANDOVER_VERB_ORDER = (
     IV_CHANGE_SO,
     IV_CANCEL_BALANCE,
     "CHANGE_ITEM_CODE",
-    "STOCK_SHORT",
     "QTY_CHANGE",
     "USE_OWN",
     "USE",
@@ -334,9 +333,6 @@ _HANDOVER_VERB_LABEL = {
     # the email's headline would otherwise print blank. Worded as REMARK words it
     # (OI-EMAIL-PRINT, owner 9 Oct).
     "CHANGE_ITEM_CODE": "NEW ITEM CODE",
-    # OI-CLOSED-LINE (owner rule, 12 Oct 2026): a Reserve or Borrow confirmed while short of
-    # free stock, told to purchasing as its own line. No row is raised for it.
-    "STOCK_SHORT": "STOCK SHORT",
     # EMAIL-SO-CHANGES (crew decision, 12 Oct): the headline is never empty. A line whose
     # quantity or date moved but that asks purchasing for nothing (landed stock meets a
     # rise; a date set where none was) reads QTY CHANGE.
@@ -4142,8 +4138,7 @@ class ProjectOrderInquiryService:
         }
         self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(
             {
-                #: Which row this line tells (a STOCK SHORT line has none and names
-                #: its line and location instead).
+                #: Which row this line tells.
                 "row_id": str(row.id),
                 #: The project line this row is on, so a Confirm can replace a SAVED line's
                 #: row lines with its one decision line (`record_saved_line`).
@@ -4200,7 +4195,7 @@ class ProjectOrderInquiryService:
         Confirm named; carried lines are never passed.
 
         Whatever the rows of a saved line queued this commit (ORDER, ORDER BACK, settled,
-        cancelled, STOCK SHORT) is replaced by that one line: purchasing reads the decision,
+        cancelled) is replaced by that one line: purchasing reads the decision,
         not the bookkeeping behind it. A line re-approved with nothing changed queues
         nothing (Q3), so a Confirm that changed nothing sends no email at all.
         """

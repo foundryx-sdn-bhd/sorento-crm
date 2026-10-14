@@ -588,10 +588,21 @@ class SupplyLinesRefused(AppException):
 
 def _preview_row_facts(row: Any) -> Tuple[Any, ...]:
     """What purchasing reads of one inquiry row: a simulated press that leaves all of it as
-    it was only re-filed the row, and writes nothing for purchasing."""
+    it was only re-filed the row, and writes nothing for purchasing. The note is read too,
+    so a press that rewrites only a row's note is still listed (none does today: a CS note
+    is written on a newly raised row only)."""
     return (
         row.verb, row.state, row.item_code, row.qty, row.delivery_date, row.stock_location,
-        row.so_line_id,
+        row.so_line_id, row.note,
+    )
+
+
+def _preview_move_facts(move: Any) -> Tuple[Any, ...]:
+    """What a planner reads of one stock transfer: a press that leaves all of it as it was
+    only re-filed the transfer under the new revision, and moves nothing new."""
+    return (
+        move.kind, move.qty, move.from_warehouse_id, move.to_warehouse_id, move.so_line_id,
+        move.state,
     )
 
 
@@ -5528,8 +5539,9 @@ class ProjectSupplyService:
         actor_user_id: Optional[str] = None,
     ) -> None:
         """ONE purchasing email line per line this Confirm SAVED whose decision is new or
-        changed (ORDERBACK-DELTA extension, owner 13 Oct 2026 22:40); its STOCK SHORT, if
-        any, rides on that line. Carried lines are not in `checked` and never appear."""
+        changed (ORDERBACK-DELTA extension, owner 13 Oct 2026 22:40). A shortfall is never
+        told in the email (owner 14 Oct 2026). Carried lines are not in `checked` and never
+        appear."""
         from app.services.project_order_inquiry_service import ProjectOrderInquiryService
 
         decision = self.active_decision(str(order.id))
@@ -11400,7 +11412,7 @@ class ProjectSupplyService:
                     )
                 before_decision_id = None
                 before_rows: Dict[str, Tuple[Any, ...]] = {}
-                before_moves: Set[str] = set()
+                before_moves: Dict[str, Tuple[Any, ...]] = {}
                 if observe:
                     active = self.active_decision(str(order.id))
                     before_decision_id = str(active.id) if active is not None else None
@@ -11481,10 +11493,10 @@ class ProjectSupplyService:
 
     def _preview_baseline(
         self, order: ProjectSalesOrder
-    ) -> Tuple[Dict[str, Tuple[Any, ...]], Set[str]]:
-        """The order's inquiry rows (id -> what purchasing reads of them) and transfer ids
-        BEFORE a press writes, so the preview can tell a row this press raised from one it
-        settles, and leave out one it only re-filed."""
+    ) -> Tuple[Dict[str, Tuple[Any, ...]], Dict[str, Tuple[Any, ...]]]:
+        """The order's inquiry rows and stock transfers (id -> what purchasing or a planner
+        reads of them) BEFORE a press writes, so the preview can tell one this press raised
+        from one it settles, and leave out one it only re-filed."""
         from app.models.stock_transfer import StockTransfer
 
         line_ids = [str(line.id) for line in self.lines_of(str(order.id))]
@@ -11499,8 +11511,8 @@ class ProjectSupplyService:
             else {}
         )
         moves = {
-            str(move_id)
-            for (move_id,) in self.db.query(StockTransfer.id).filter(
+            str(move.id): _preview_move_facts(move)
+            for move in self.db.query(StockTransfer).filter(
                 StockTransfer.project_sales_order_id == str(order.id)
             )
         }
@@ -11510,7 +11522,7 @@ class ProjectSupplyService:
         self,
         order: ProjectSalesOrder,
         before_rows: Mapping[str, Tuple[Any, ...]],
-        before_moves: Set[str],
+        before_moves: Mapping[str, Tuple[Any, ...]],
     ) -> Dict[str, Any]:
         """The order inquiry rows and stock transfers the press just wrote, read INSIDE its
         transaction (before the caller rolls it back). The new revision is the active one
@@ -11519,7 +11531,7 @@ class ProjectSupplyService:
 
         A row that existed and still reads exactly as it did (a carried line's row the press
         only re-filed under the new revision) is left out: nothing is written for purchasing
-        (owner hand test SO424764 line 416, 14 Oct 2026)."""
+        (owner hand test SO424764 line 416, 14 Oct 2026). A transfer is held to the same rule."""
         from app.models.stock_transfer import StockTransfer
 
         decision = self.active_decision(str(order.id))
@@ -11578,6 +11590,7 @@ class ProjectSupplyService:
                 "to_location": codes.get(str(move.to_warehouse_id or "")),
             }
             for move in moves
+            if before_moves.get(str(move.id)) != _preview_move_facts(move)
         ]
         transfers.sort(key=lambda entry: (entry["line_no"] is None, entry["line_no"] or 0))
         return {"inquiry_rows": inquiry_rows, "transfers": transfers}
