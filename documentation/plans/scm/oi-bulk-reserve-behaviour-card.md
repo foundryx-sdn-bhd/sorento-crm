@@ -88,3 +88,29 @@ Owner confirmed Q2 (a) (bulk covers only lines with an open request; amend stays
    answered line stays the single-line "Amend reserve".
 4. The header "Reserve (N)" stays for single-line stages and opens the same confirmation, as today.
 5. Frontend only: the staged map (`StagedReserveEntry`) and the commit route are unchanged.
+
+## Owner note on mock v2, round 2 (15 Oct, via crew) - FINAL rules v3, replace (b) above
+
+Owner: "in the line level we got tick to reserve all, x to reject i think? and maybe pen to amend?
+so we need to be able to reject also ma, will it need the Decide button like fulfilment planning?"
+
+Line icons today (no change): a requested line has the tick "Reserve" (full requested qty at the
+request's location, `orderInquiryHeaderLinesColumns.tsx:255-266`) and the pen "Edit reserve" (qty,
+location, reason, `:267-278`; reason required below the requested qty, `ReserveLineForm.tsx:125-126`).
+A reserved or declined line has the pen "Amend reserve" (`:283-300`). There is NO x on the line
+today: CS turns a request down by reserving 0 with a reason through the pen (state "declined").
+Purchasing's "Reject selected" (`OrderInquiryDetail.tsx:789-800`) is a different action (purchasing
+rejects the OI row itself) and is not part of this.
+
+1. Selection strip: ONE "Decide (N)" button at its right end (the FP `BoardDecideControl` pattern),
+   N = ticked lines with an open request; greyed at 0.
+2. Menu: "Reserve as requested" = the tick for every counted line (stages at once, no dialog,
+   clears the ticks); "Reject..." = a small lightbox "Reject N lines" with one required Reason,
+   "Stage N lines" stages Reserve 0 + that reason on every counted line.
+3. Amend stays per line (pen). Partial reserves stay per line (pen, Edit reserve).
+4. Staged results show as today's chips ("Reserve 88 @ BRW", "Reserve 0", Undo); the header
+   "Reserve (N)" + the #1684 confirmation commits as today (no auto-open; the strip button is named
+   Decide, so no two same-named buttons).
+5. Notify: a reject is a Reserve 0, so purchasing hears it exactly as a single-line Reserve 0
+   today: the reserved notice lists RESERVED 0, the full BALANCE and the REASON
+   (`order_inquiry_reserve_service.py:877-891`), sent at once or parked per "Park notice first".

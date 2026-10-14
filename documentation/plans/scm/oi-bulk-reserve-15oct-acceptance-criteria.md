@@ -1,21 +1,22 @@
-# UAC: one-button bulk reserve on the OI Lines tab (OI-BULK-RESERVE)
+# UAC: one-button bulk Decide on the OI Lines tab (OI-BULK-RESERVE)
 
-Plan: `PLAN-oi-bulk-reserve-15oct.md`. Card: `oi-bulk-reserve-behaviour-card.md` (final rules).
+Plan: `PLAN-oi-bulk-reserve-15oct.md`. Card: `oi-bulk-reserve-behaviour-card.md` (final rules v3).
 
 - AC-BR-01 With the reserve grant and lines ticked, the Lines tab selection strip shows one button
-  "Reserve (N)" at its right end; N counts only ticked lines that have an open (unanswered) request
-  row. With none of those ticked it is disabled. Without the reserve grant it is not shown.
-- AC-BR-02 Pressing it stages each counted line at min(qty requested, remaining) and the request
-  row's location, the same entry the line's own "Reserve" button writes (chip "Staged <qty> @
-  <location>"); a line already staged is replaced, not doubled.
-- AC-BR-03 The same press clears the ticks and opens the reserve confirmation listing EVERY staged
-  line: the lines just staged plus any staged singly before (e.g. 3 ticked + 1 staged by Edit
-  reserve = "Reserve 4 lines on <OI>").
-- AC-BR-04 Cancel on that confirmation commits nothing and keeps all staged chips; the header
-  "Reserve (N)" shows the staged count.
-- AC-BR-05 Confirming commits all staged lines in one call with `park_notice` per the tickbox
-  (unchanged #1684 behaviour and toasts).
-- AC-BR-06 Ticked lines without an open request (answered or never requested) are neither counted
-  nor staged; their single-line "Amend reserve" / "Edit reserve" still work.
-- AC-BR-07 Header "Reserve (N)" for single-line stages works as before.
-- AC-BR-08 Usable at 375 and 1280 (strip wraps, button stays reachable).
+  "Decide (N)" at its right end; N counts only ticked lines with an open (unanswered) request row;
+  disabled at 0; not shown without the reserve grant.
+- AC-BR-02 Its menu has exactly "Reserve as requested" and "Reject...".
+- AC-BR-03 "Reserve as requested" stages each counted line exactly as the line's tick does
+  (min(qty requested, remaining) at the request row's location; chip "Reserve <qty> @ <loc>"),
+  replaces an existing staged entry, clears the ticks, opens no dialog.
+- AC-BR-04 "Reject..." opens "Reject N lines" with one Reason; "Stage N lines" is disabled until a
+  reason is typed; staging writes Reserve 0 + that reason on each counted line (chip "Reserve 0")
+  and clears the ticks. Cancel stages nothing.
+- AC-BR-05 Ticked lines without an open request (answered or never requested) are neither counted
+  nor staged; their per-line pen (Edit / Amend reserve) still works.
+- AC-BR-06 The header "Reserve (N)" shows the staged count and opens the #1684 confirmation listing
+  every staged line (rejected lines with Reserve 0 and their reason); confirming commits all in one
+  call with `park_notice` per the tickbox; a rejected line ends "declined" and purchasing gets the
+  same Reserve 0 notice as a single-line Reserve 0 (sent or parked).
+- AC-BR-07 Single-line tick / pen / Undo behave as before.
+- AC-BR-08 Usable at 375 and 1280 (strip wraps, Decide button stays reachable at the right).
