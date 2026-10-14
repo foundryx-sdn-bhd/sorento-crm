@@ -47,9 +47,25 @@ def test_an_unknown_entity_under_a_clarify_flag_gives_the_not_found_line():
     assert "97503" in act.pending.asked
 
 
-def test_the_clarify_flag_never_yields_an_option_less_entity_question():
-    for table in ({}, {"order|97503": ("ambiguous", [("product", "A"), ("product", "B")], False)}):
-        _, actions = _run(table)
-        for act in actions:
-            assert not (isinstance(act, ClarifyAct) and act.about == "entity" and not act.not_found
-                        and not act.pending.options), act
+def _rendered(table):
+    from app.services.chatbot.pv2 import turn
+    from app.services.chatbot.pv2.history import MemoryProfile
+    from app.services.chatbot.pv2.state import dump_state
+    from tests.chatbot.pv2.carry_fakes import NOW
+
+    parsed = _parsed()
+    ctx = turn.TurnV2Context(
+        text="97503 eta", now=NOW, raw_state=dump_state(mk_state()), profile=MemoryProfile(audience="staff"),
+        parse=lambda m, u: parsed, resolver=_Fake(table), load_exchanges=lambda s: [], offer_mode="none")
+    return turn._run(ctx).direct_reply or ""
+
+
+@pytest.mark.parametrize("table", [
+    {},
+    {"order|97503": ("ambiguous", [("product", "A"), ("product", "B")], False)},
+], ids=["unknown", "ambiguous"])
+def test_the_rendered_reply_never_asks_which_phrase_without_numbered_options(table):
+    reply = _rendered(table)
+    asks_which = 'Which "97503"' in reply
+    numbered = any(line.strip().startswith("1.") for line in reply.splitlines())
+    assert not (asks_which and not numbered), reply
