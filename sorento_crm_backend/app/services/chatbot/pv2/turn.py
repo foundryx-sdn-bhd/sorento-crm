@@ -85,6 +85,8 @@ class TurnV2Context:
     dym_tags: Callable[[str, list[str]], dict[str, bool]] | None = None
     # The console run this turn belongs to; state and history never cross runs.
     test_run_id: str | None = None
+    # An availability-only stock dealer: v1 asks which one for a partial, never lists them.
+    stock_availability_only: bool = False
 
 
 def local_today(now: datetime) -> date:
@@ -132,6 +134,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         domain_teams=ctx.domain_teams,
         offer_mode=ctx.offer_mode,
         roster_for=ctx.roster_for,
+        stock_availability_only=ctx.stock_availability_only,
         now=ctx.now,
         **extra,
     )
@@ -494,6 +497,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             roster_for=staff_roster_for(factory, contact) if staff else None,
             dym_tags=dym_tags_for(factory, contact, space_id),
             test_run_id=run_id,
+            stock_availability_only=bool(getattr(profile, "stock_availability_only", False)),
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),
                 contact_id=contact,
@@ -548,10 +552,25 @@ def staff_roster_for(factory: Any, contact: str) -> Callable[[str, str], dict[st
     return build
 
 
-def dym_tags_for(factory: Any, contact: str, space_id: Any) -> Callable[[str, list[str]], dict[str, bool]]:
+def dym_tags_for(factory: Any, contact: str, space_id: Any) -> Callable[[str, list[str]], dict[str, bool]] | None:
     """(domain, codes) -> {code: has stock}: v1's own did-you-mean tag probe (`miss_suggest`'s
     `DOMAIN_PROBE` entry and `dym_annotate`), for the domains it tags. {} = untagged (v1 fails
-    open the same way)."""
+    open the same way). None when v1 would stock-deny this contact: the tags are a stock
+    answer, so the did-you-mean stays untagged."""
+    from app.services.chatbot import engine as engine_mod
+    from app.services.chatbot import turn_runtime
+
+    db = factory()
+    try:
+        denied = bool(engine_mod._stock_denial_enabled(db)) and (
+            turn_runtime.load_profile(db, contact)[0].stock_allowed is not True
+        )
+    except Exception:  # noqa: BLE001 - unknown: the closed side, untagged
+        denied = True
+    finally:
+        db.close()
+    if denied:
+        return None
 
     def tags(domain: str, codes: list[str]) -> dict[str, bool]:
         from app.models.product import Product

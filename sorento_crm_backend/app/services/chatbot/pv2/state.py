@@ -134,6 +134,7 @@ class Lookup(BaseModel):
     requantify: bool = False
     # Option keys of a v1 pick the reply chose in full ("all"): every position is passed to v1.
     pick_all: list[str] = Field(default_factory=list)
+    pending_v1_kind: str | None = None  # the v1 question kind a pick answered
 
 
 class ClarifyAct(BaseModel):

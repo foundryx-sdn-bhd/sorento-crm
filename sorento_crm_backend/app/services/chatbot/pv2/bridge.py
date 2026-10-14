@@ -163,8 +163,10 @@ def _open_question_answer(action: Lookup) -> dict[str, Any] | None:
     through as `open_question_answer`). Option keys are the v1 positions ("1", "2") or
     "yes" / "no" / "all" (`turn.v1_pending_options`)."""
     if action.pending_kind == "v1_open_question" and action.pick_all:
-        return {"mode": "pick", "picked": [int(k) for k in action.pick_all if k.isdigit()], "items": [],
-                "qty_for_all": None}
+        # v1's own stock pick refuses "all" for availability-only dealers; other picks take every position.
+        mode = "all" if (action.pending_v1_kind or _v1_kind(None, action)) == "product_pick" else "pick"
+        return {"mode": mode, "picked": [] if mode == "all" else [int(k) for k in action.pick_all if k.isdigit()],
+                "items": [], "qty_for_all": None}
     if action.pending_kind != "v1_open_question" or action.picked is None:
         return None
     key = action.picked.key

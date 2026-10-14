@@ -119,6 +119,7 @@ def apply_turn(
     offer_mode: Literal["offer", "refer", "none"] = "offer",
     roster_for: Any = None,
     dym_tags: Any = None,
+    stock_availability_only: bool = False,
 ) -> tuple[ConversationState, list[Action]]:
     """Apply one parser output to the state; one Action per ask (section 3).
 
@@ -130,6 +131,7 @@ def apply_turn(
     # What a not-found document says after its sentence: the offer, v1's refer line, or nothing.
     mode = offer_mode if offer_mode != "offer" else ("offer" if can_offer_handover else "none")
     doc_offer = _DocOffer(mode, domain_teams, roster_for, dym_tags)
+    doc_offer.availability_only = stock_availability_only
     language = out.language
     today = local_date(now) if now is not None else None
     actions: list[Action] = []
@@ -400,6 +402,7 @@ class _DocOffer:
         self.mode = mode
         self.teams = teams
         self.roster_for = roster_for
+        self.availability_only = False
 
 
 class _Qs(list):
@@ -445,6 +448,7 @@ def _answer(
                 Lookup(
                     ask_index=i, domain=st.held.domain, held=st.held.model_copy(deep=True), ask=ask,
                     picked=first, pending_kind=pending.kind, pick_all=[o.key for o in every],
+                    pending_v1_kind=pending.v1_kind,
                 ),
                 True,
             )
@@ -845,6 +849,7 @@ def _apply_entities(
         if (
             status == "ambiguous" and ent.kind == "product" and pool and not getattr(res, "did_you_mean", False)
             and _lists_all(held.domain)
+            and not getattr(qs.can_offer, "availability_only", False)
         ):
             # v1's narrowing for this domain answers every match directly (`list_all`).
             every = [
@@ -853,6 +858,15 @@ def _apply_entities(
                 for o in pool
             ]
             held.refs = set_refs(held.refs, "product", every, ent.op if ent.op != "set" else "set")
+            continue
+        if (
+            status == "ambiguous" and ent.kind == "product" and pool and ent.phrase
+            and not getattr(res, "did_you_mean", False) and _lists_all(held.domain)
+        ):
+            # An availability-only dealer is never handed the list: the typed partial goes to
+            # v1 as one reference and v1's AVAIL-MODE rule asks which one.
+            ref = ResolvedRef(kind="product", key=ent.phrase, label=ent.phrase, phrase=ent.phrase, quantity=ent.quantity)
+            held.refs = set_refs(held.refs, "product", [ref], ent.op if ent.op != "set" else "set")
             continue
         if status == "ambiguous" or (status == "exact" and not refs and options):
             if ent.quantity is not None:
