@@ -1,6 +1,6 @@
 # PLAN: CS routing conditions (product lines, debtor type) + No CS finish
 
-**Status:** Built; reviewer + security-reviewer READY at 63c2f440f; owner hand test next · Track: normal (migration) · Lane FORM-ROUTING-CONDITIONS · branch
+**Status:** Rework for owner ruling 22:02 (No CS stays Approved, Completed removed); earlier reviews READY at 63c2f440f · Track: normal (migration) · Lane FORM-ROUTING-CONDITIONS · branch
 `crew/form-routing-conditions`, base origin/main 760ed152b
 **Domain:** forms / procurement / customers
 **UAC:** `documentation/plans/forms/form-routing-conditions-acceptance-criteria.md` (the contract)
@@ -85,34 +85,32 @@ All DDL `IF NOT EXISTS`-safe (dev DB converges by create_all, `sorento_crm_backe
   `none`) and `customer_debtor_type` (joined customer's current value, else None). One extra query,
   only at CS-stage start.
 
-### No CS outcome + Completed (NC)
+### No CS outcome (NC) - owner ruling 14 Oct 22:02: the form stays Approved
 
 - `cs_routing_service`: `replace_all` / `upsert` accept `cs_pic_user_id` None = No CS (skip
   `is_eligible_pic`); `list_for_contact` tolerates None ids. Duplicate-conditions check unchanged.
 - `form_sla_service._start_for_config`: for `_reads_cs_pin(config)` configs, resolve the winning rule
-  FIRST (same requestor contact + `select_pin_row`). If it is No CS: call
-  `ProcurementService.complete_without_cs(form_id)` (new: `approved` -> `completed`, commit, no
-  message) and return None (no tracker, no team lookup). Otherwise the existing path, untouched.
-- `completed` added to: `_VOID_BLOCKED_STATUSES` (`procurement_service.py:7846`), portal revision
-  `terminal_statuses` (`portal_revision_service.py:283`, :312), `form_action_notify.py:161` label,
-  `record_context_service.py:89` if it maps PR statuses. CS finalize already requires `approved`.
-- FE: `ContactCsRoutingRules.tsx` PIC select (:208) gains the No CS choice (internal sentinel, saved as
-  null; "no choice yet" stays distinct and is still skipped on save); `lib/status-pill.ts`,
-  `PurchaseRequestsList.tsx:67`, `PurchaseRequestDetail.tsx`, `portal-client.ts:957`,
-  `portal-revision-options.ts` (PR + SF) learn `completed` -> "Completed".
+  FIRST (`_winning_rule_is_no_cs`, strict form-values load: a load failure is "not No CS"). If No CS:
+  return None before any team/tier lookup. No status change: the form stays `approved`.
+- No `completed` status anywhere (removed from the report, void-blocked set, revision terminal set,
+  labels, revision options and the FE).
+- FE `PurchaseRequestDetail.tsx`: CS actions (Processed by CS / Close) only when the approved form has a
+  `customer_service` tracker in its already-loaded SLA trackers; hidden while loading.
+- FE `ContactCsRoutingRules.tsx` PIC select gains the No CS choice (internal sentinel, saved as null;
+  "no choice yet" stays distinct and is still skipped on save).
 
 ## Slices (one lane, one PR)
 
 - **S1 DT** migration parts 1-2, model + listener, schemas, Customers FE.
 - **S2 PC** migration part 3, lookups, form save, both pickers + sales type auto-fill.
-- **S3 RC + NC** migration part 4, routable fields, computed values, No CS, Completed everywhere.
+- **S3 RC + NC** migration part 4, routable fields, computed values, No CS outcome (stays Approved).
 
 ## Testing seams
 
 - Pure: `default_debtor_type`, `SALES_TYPE_FOR_DEBTOR_TYPE`, `routable_fields` options.
 - Service on Postgres (`tests/_pg_fixture.py`, seed own chain, no LIMIT 1): `_load_form_field_values`
-  computed keys, `_start_for_config` No CS vs PIC vs no match, `replace_all` null PIC, void blocked on
-  completed, customer insert listener, lookup item shape, portal save customer_id.
+  computed keys, `_start_for_config` No CS vs PIC vs no match, `replace_all` null PIC, No CS form stays
+  approved, customer insert listener, lookup item shape, portal save customer_id.
 - Migration: upgrade on a scratch schema with the DT-2 rows, assert values; downgrade clean.
 - FE vitest: PredicateBuilder enum options render, ContactCsRoutingRules No CS save payload,
   SubmissionForm picker sets customer_id + sales_type, CustomerForm debtor type select.

@@ -1,4 +1,4 @@
-# UAC - CS routing conditions (product lines, debtor type) + No CS finish
+# UAC - CS routing conditions (product lines, debtor type) + No CS outcome
 
 **Status:** Contract (owner answered the card 14 Oct 2026) · **Domain:** forms / procurement / customers
 **Plan:** `documentation/plans/forms/PLAN-form-routing-conditions.md`
@@ -12,8 +12,8 @@ Tags: `[BE]` backend · `[FE]` frontend · `[T]` unit/service test · `[MIG]` mi
    add a rule at the top: condition **Product lines** equals **No lines**, CS PIC **No CS (finish at
    approval)**. They save.
 2. The salesman submits a Sponsorship Form with no product (PSSF26-0404 "Others: Rehda Annual dinner").
-   The manager approves it. The customer gets the usual "approved" WhatsApp. The form shows
-   **Completed**: no CS task, no CS email, no Processed / Close buttons, no portal revision, no Void.
+   The manager approves it. The customer gets the usual "approved" WhatsApp. The form stays
+   **Approved** (owner ruling 22:02): no CS task, no CS email, no Processed by CS / Close buttons.
 3. A form with product lines matches the next rule and goes to its CS PIC exactly as today.
 4. On the PR/SF form the salesman picks the customer from the customer list (code shown). The form
    remembers which customer. For a PR, Sales type fills in from the customer's debtor type
@@ -87,25 +87,30 @@ Tags: `[BE]` backend · `[FE]` frontend · `[T]` unit/service test · `[MIG]` mi
 - **RC-3 `[BE][T]`** A rule `customer_debtor_type equals project_cash -> CS PIC Z` wins for a PR whose
   customer is 302-; `not_equals project_cash` matches a free-text PR (NULL rule).
 
-## Group NC - No CS outcome + Completed
+## Group NC - No CS outcome (owner ruling 14 Oct 2026 22:02: "yeah just stay at approved")
+
+There is NO Completed status. A No CS form stays Approved; only the CS stage does not start.
 
 - **NC-1 `[MIG][T]`** `respond_contact_cs_routing.cs_pic_user_id` becomes nullable. NULL = **No CS**.
 - **NC-2 `[BE][T]`** Rules PUT (`replace_all`) and `upsert` accept `cs_pic_user_id: null` as No CS (no
   eligibility check); list returns `cs_pic_user_id: null, cs_pic_name: null`. Two rules with the same
   conditions are still rejected whatever their outcome.
-- **NC-3 `[BE][T]`** GIVEN an SF whose requestor's winning rule is No CS, WHEN it is approved, THEN no CS
-  tracker is created, `status = 'completed'`, `approval_status = 'approved'`, the approval-stage tracker
-  resolves as today, and the approved automation runs with no CS PIC recipient (nothing sent to a CS PIC).
-  The customer gets only the existing approved message (no second message).
+- **NC-3 `[BE][T]`** GIVEN a PR/SF whose requestor's winning rule is No CS, WHEN it is approved, THEN no
+  customer-service tracker is created, `status` and `approval_status` both stay `approved`, the
+  approval-stage tracker resolves as today, and the approved automation runs with no CS PIC recipient.
+  The customer gets only the existing approved message. A failure loading the form values means
+  "not No CS" (RC-2).
 - **NC-4 `[BE][T]`** GIVEN the winning rule is a PIC rule or nothing matches, THEN behaviour is unchanged
   (pinned PIC / round-robin, status stays `approved`).
-- **NC-5 `[BE][T]`** A `completed` form: Processed by CS / Close -> 4xx (needs approved); Void -> conflict
-  (terminal, like processed_by_cs); portal revision refused as terminal ("is completed and can no
-  longer be revised"), whatever the allowed-statuses config says (same as processed_by_cs).
+- **NC-5 `[BE][T]`** A No CS form behaves like any Approved form: Void allowed; portal revision allowed
+  when the revision config allows `approved`; it counts in the Sponsorships report's default view
+  (approved is already a default status). No `completed` value exists anywhere in the lane's code
+  (report statuses, void-blocked statuses, revision terminal statuses, labels, revision options).
 - **NC-6 `[FE][T]`** Rule editor CS PIC dropdown offers **No CS (finish at approval)**; picking it saves
   `cs_pic_user_id: null`; a reloaded rule shows it selected; a rule with no choice at all is still
   skipped on save as today.
-- **NC-7 `[FE][T]`** `completed` shows as **Completed** (status pill, PR list, PR detail, portal label,
-  portal-revision status options for PR + SF). PR/SF detail offers no Void on a Completed form.
-- **NC-8 `[BE][T]`** The Sponsorships report counts Completed forms by default (`DEFAULT_STATUSES`) and
-  offers Completed in its Status filter (`STATUS_LABELS`).
+- **NC-7 `[FE][T]`** PR/SF detail shows the CS actions (Processed by CS / Close) only on an approved form
+  that HAS a customer-service stage tracker (`team_set_code = customer_service` in the form's SLA
+  trackers, active or resolved); an approved form with no such tracker (No CS) shows neither, and
+  nothing renders them while the trackers are still loading. Void stays as for any approved form.
+  (Dev 14 Oct: every approved / processed / closed PR and SF has a customer-service tracker.)

@@ -3,6 +3,7 @@
 Base: origin/main 760ed152b. Dev data: `sorento_cagent_stack`, read-only. Person names replaced by placeholders.
 
 **Answered 14 Oct 2026:** Q1 (a), Q2 (a), Q3 (a), Q4 (a), Q5 (b) Cash Sales for a Project cash debtor.
+**Q2 superseded 14 Oct 22:02 (owner: "yeah just stay at approved"):** a No CS form stays Approved; no Completed status.
 
 ## Today (code)
 
