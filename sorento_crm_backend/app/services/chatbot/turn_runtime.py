@@ -2409,8 +2409,11 @@ class ResolveOutcome:
     not_checked: dict[str, str] = field(default_factory=dict)
 
 
-_CUSTOMER_OWNED_REF_KINDS = frozenset({"sales_order", "customer_po_ref"})
+_CUSTOMER_OWNED_SO_KINDS = frozenset({"sales_order"})
+_CUSTOMER_PO_REF_KINDS = frozenset({"customer_po_ref"})
 _CUSTOMER_OWNED_DO_KINDS = frozenset({"customer_order"})
+#: `_without_foreign_sales_orders`' default: a customer PO ref is held to `linked` too.
+_SAME_AS_LINKED: Any = object()
 
 
 def _all_matches(resolved: Any) -> list[dict[str, Any]]:
@@ -2430,14 +2433,17 @@ def _all_matches(resolved: Any) -> list[dict[str, Any]]:
 
 
 def _without_foreign_sales_orders(
-    db: Session, payload: dict[str, Any], linked: list[Any]
+    db: Session, payload: dict[str, Any], linked: list[Any] | None, *, po_ref_linked: Any = _SAME_AS_LINKED
 ) -> dict[str, Any]:
     """REF-PROBES S3: a reference number that also names ANOTHER customer's sales order (or
     PO ref) must not become a picker option or an answer: those matches are dropped from the
     resolutions and the gate's compatible entities, as a silent miss. "Another customer's"
     is `so_status`'s own scope rule (a link, or a linked debtor code in the same company).
     V1-DOC-SCOPE: a delivery order (`customer_order`, an `orders` row) is held to the same
-    rule, so an unlinked non-staff contact (`linked == []`) is offered no DO at all."""
+    rule, so an unlinked non-staff contact (`linked == []`) is offered no DO at all.
+    V1-DOC-SCOPE-SALES: a customer PO ref match is held to `po_ref_linked` (the tier rule,
+    `ref_staff`; `linked` unless given), so a salesperson, document staff for SO / DO
+    numbers, never learns which SO another customer's PO ref is. None is no scope."""
     from app.models.order import Order, SalesOrder
     from app.services.chatbot import so_status
 
@@ -2449,14 +2455,15 @@ def _without_foreign_sales_orders(
         }
 
     dropped: set[str] = set()
-    for model, uuids in (
-        (SalesOrder, _uuids(_CUSTOMER_OWNED_REF_KINDS)),
-        (Order, _uuids(_CUSTOMER_OWNED_DO_KINDS)),
+    for model, uuids, scope in (
+        (SalesOrder, _uuids(_CUSTOMER_OWNED_SO_KINDS), linked),
+        (SalesOrder, _uuids(_CUSTOMER_PO_REF_KINDS), linked if po_ref_linked is _SAME_AS_LINKED else po_ref_linked),
+        (Order, _uuids(_CUSTOMER_OWNED_DO_KINDS), linked),
     ):
-        if not uuids:
+        if scope is None or not uuids:
             continue
         rows = db.query(model).filter(model.id.in_(uuids)).all()
-        in_scope = so_status._scope_check(db, rows, linked)
+        in_scope = so_status._scope_check(db, rows, scope)
         dropped |= uuids - {str(row.id) for row in rows if in_scope(row)}
 
     def _foreign(match: Any) -> bool:
@@ -2526,6 +2533,7 @@ def resolve_kinds(
     roster_caps: Mapping[str, int] | None = None,
     enforced_scope: bool = False,
     scope_linked: list[Any] | None = None,
+    po_ref_scope_linked: Any = _SAME_AS_LINKED,
 ) -> ResolveOutcome:
     """Ask the resolver what each named token actually IS (AC-1527).
 
@@ -2718,8 +2726,11 @@ def resolve_kinds(
         logger.warning("chatbot: the resolver did not answer", exc_info=True)
         return ResolveOutcome({}, [], None, {}, {}, False, None)
 
-    if scope_linked is not None:
-        payload = _without_foreign_sales_orders(db, payload, scope_linked)
+    # V1-DOC-SCOPE-SALES: a customer PO ref has its own scope (the tier rule), which can
+    # hold a contact whose SO / DO numbers are unscoped (a salesperson).
+    po_ref_linked = scope_linked if po_ref_scope_linked is _SAME_AS_LINKED else po_ref_scope_linked
+    if scope_linked is not None or po_ref_linked is not None:
+        payload = _without_foreign_sales_orders(db, payload, scope_linked, po_ref_linked=po_ref_linked)
     resolved = payload.get("resolved")
     # BRAND-PROMO-EXPAND (owner, 6 Oct 2026: "Sorento is always a brand"): what the
     # resolver's answer MEANS for each token the parser hinted, before the pure core
@@ -3582,7 +3593,7 @@ def make_tool_runner(
     customer_scope: dict[str, Any] | None = None,
     localizer: Any = None,
     unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
-    office_access: bool = False,
+    doc_staff: bool = False,
     not_checked: list[str] | None = None,
     asked_promo_filter: dict[str, list[str]] | None = None,
     profile: Any = None,
@@ -3790,7 +3801,7 @@ def make_tool_runner(
         # `doc_staff`: may see any customer's DO / SO (the tier, an office access type or a
         # salesperson, V1-DOC-SCOPE-SALES). `ref_staff` stays the tier alone (crew ruling 14 Oct).
         ref_staff = is_staff_profile(profile)
-        lane_out = {**lane_out, "ref_staff": ref_staff, "doc_staff": bool(ref_staff or office_access)}
+        lane_out = {**lane_out, "ref_staff": ref_staff, "doc_staff": bool(ref_staff or doc_staff)}
         if po_words:
             # SO-PO-REF: the PO number the parser also emitted as an entity is answered by
             # the `po_refs` arm, so it is no miss for compose to name a second time (nor to

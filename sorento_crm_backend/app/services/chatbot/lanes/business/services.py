@@ -609,8 +609,9 @@ def customer_scope_and_staff(
     """`customer_scope`, plus whether the contact is staff for document scope, from the same
     one read: the staff bit is wanted for an unlinked contact too, whose scope is None
     (V1-DOC-SCOPE). Staff here is an ACTIVE office access type OR a salesperson
-    (`contact_asker.classify`, V1-DOC-SCOPE-SALES crew ruling 14 Oct 2026): a salesperson
-    sees any customer's documents by number, and a linked one is not held to its links on
+    (`contact_asker.is_salesperson_user`: an ACTIVE, not trashed CRM user holding the role
+    `salesperson`; a sales agent link grants nothing. V1-DOC-SCOPE-SALES crew rulings
+    14 Oct 2026): a salesperson sees any customer's documents by number, and a linked one is not held to its links on
     the in-process number lookups (owner rule 11 Oct: a customer link does not make a
     salesperson a dealer). `enforced` stays the core flag, so the customer-word gate, the
     lists and the order routes keep a linked salesperson on its links as main does
@@ -629,7 +630,7 @@ def customer_scope_and_staff(
     if not contact_id:
         return None, False
     scope = scope_mod.contact_customer_scope(db, contact_id)
-    staff = scope.staff or contact_asker.classify(db, str(contact_id)) == "salesperson"
+    staff = scope.staff or contact_asker.is_salesperson_user(db, str(contact_id))
     if not scope.linked:
         return None, staff
     return {

@@ -94,6 +94,15 @@ def _word_for(contact_id: Any) -> Any:
     )
 
 
+def is_salesperson_user(db: Session, contact_id: str) -> bool:
+    """True when an ACTIVE, not trashed CRM user linked to the contact (INTERNAL
+    `respond_contacts.id`) holds the not trashed role `salesperson`: the role arm alone.
+    This, not `classify`, decides chatbot document access (V1-DOC-SCOPE-SALES, crew ruling
+    14 Oct 2026): deactivating or trashing the user revokes it, and a `sales_agents.contact_id`
+    link (master data) grants nothing."""
+    return bool(db.execute(sa.select(sa.exists().where(*_salesperson_user_clauses(str(contact_id))))).scalar())
+
+
 def classify(db: Session, contact_id: str) -> str:
     """The asker word of one contact (INTERNAL `respond_contacts.id`)."""
     return db.execute(sa.select(_word_for(sa.literal(str(contact_id))))).scalar_one()
