@@ -2571,12 +2571,26 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         "requested_attributes": [],
         "keys_served": False,
         "outstanding_ask": outstanding_ask,
+        # The drill's printed rows as data ({kind, key, label}), unrendered: the answer register.
+        "rows": _sales_report_register_rows(envelope) if has_result else [],
         # AC-1659: this report carries its OWN Customer / Product / Channel /
         # Location / Delivery date header, so `tail/compile_state.py` must skip the
         # generic search-scope header (the same marker `crm_outstanding_report`
         # already reuses this for, S4 point 9).
         "outstanding_report": True,
     }
+
+
+def _sales_report_register_rows(envelope: dict[str, Any]) -> list[dict[str, Any]]:
+    """The delivered breakdown's rows, kind = what it is grouped by (`group_by`, the presenter's key)."""
+    group_by = envelope.get("group_by")
+    if not (isinstance(group_by, str) and group_by):
+        return []
+    return [
+        {"kind": group_by, "key": str(r["name"]), "label": str(r["name"])}
+        for r in jsc.array(envelope.get("rows"))
+        if isinstance(r, dict) and r.get("name")
+    ]
 
 
 #: The heading the presenter prints above the drill-down options (`_sales_report`).
@@ -3061,6 +3075,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             for row in rows or []:
                 if jsc.truthy(row) and isinstance(jsc.get(row, "fields"), list):
                     row["fields"] = [f for f in row["fields"] if _keep_field(f)]
+                    # The unprinted order `lines` are the Products field as data: a contact who may
+                    # not see the field gets no lines either (the answer register records them).
+                    if "lines" in row and not any(jsc.get(f, "key") == "products" for f in row["fields"]):
+                        row.pop("lines", None)
 
         _filter_rows(e.get("items"))
         _filter_rows(e.get("summary_items"))
@@ -3477,6 +3495,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     groups_render = bool(
         isinstance(e.get("groups"), list) and len(e["groups"]) and not qs_render
     )
+    # Indices into `answers` of the rows the reply text actually printed, in printed order.
+    printed_idx: list[int] = []
     if groups_render:
         position = 0
         for grp in e["groups"]:
@@ -3487,6 +3507,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 msg += f"*{label}*\n"
             for it in grp["items"]:
                 position += 1
+                printed_idx.append(position - 1)
                 msg += _item_line(position, it) + "\n\n"
 
     # Ported from PR #1118 (not merged), review round 3 (Observation B): while ANY
@@ -3519,6 +3540,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         for i, it in enumerate(e.get("items") or []):
             title = jsc.nullish_str(jsc.get(it, "title")).strip()
             if title:
+                printed_idx.append(i)
                 msg += f"{i + 1 + set_row_offset}. {title}\n\n"
         question = jsc.js_string(e.get("intro") or "").strip()
         if question:
@@ -3533,6 +3555,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             if item_text in printed_status:
                 continue
             printed_status.add(item_text)
+        printed_idx.append(i)
         msg += item_text + "\n\n"
     if dealer_incoming and jsc.truthy(e.get("closing")):
         # The presenter's dealer closing is the refer line (`presenters.py`, `closing`);
@@ -3742,6 +3765,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # unchanged, so nothing else moves.
         "answers": [] if set_withheld else (_rendered_answers(e) if groups_render else e.get("items")),
     }
+    # Additive: which `answers` the text printed (a hidden or withheld row is not one of them).
+    out["printed_rows"] = [] if set_withheld else printed_idx
     # Spread-in, not defaulted: a reply with no summary keeps EXACTLY the keys it has today.
     if qs_render:
         out["summary_items"] = e["summary_items"]

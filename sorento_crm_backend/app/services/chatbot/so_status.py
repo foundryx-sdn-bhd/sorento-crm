@@ -46,6 +46,10 @@ def is_so_number(word: Any) -> bool:
     return isinstance(word, str) and bool(SO_NUMBER_RE.match(so_key(word)))
 
 
+def _row(so: SalesOrder, debtor: str | None) -> dict[str, Any]:
+    return {"id": str(so.id), "number": so.so_number, "debtor": debtor}
+
+
 @dataclass
 class SoLookup:
     """`cards` in the order the numbers were typed; `refused` when any SO exists outside the
@@ -54,6 +58,8 @@ class SoLookup:
     cards: list[str] = field(default_factory=list)
     refused: bool = False
     missing: list[str] = field(default_factory=list)
+    # One {id, number, debtor} per card, in card order (the answer register reads these, never the text).
+    rows: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _status_words(status: str | None) -> str:
@@ -200,6 +206,7 @@ def lookup(
             continue
         for so, master_name in visible:
             out.cards.append(_card(so, so.debtor_name or master_name, lines_by_so.get(str(so.id), [])))
+            out.rows.append(_row(so, so.debtor_name or master_name))
     return out
 
 
@@ -213,6 +220,8 @@ class PoRefLookup:
     groups: dict[str, list[str]] = field(default_factory=dict)
     missing: list[str] = field(default_factory=list)
     refused: bool = False
+    rows: list[dict[str, Any]] = field(default_factory=list)  # {id, number, debtor} per card, card order
+    _group_rows: dict[str, list[dict[str, Any]]] = field(default_factory=dict, repr=False)
 
 
 def lookup_po_refs(
@@ -247,6 +256,7 @@ def lookup_po_refs(
         out.groups.setdefault(so.po_ref_key, []).append(
             _card(so, so.debtor_name or master_name, lines_by_so.get(str(so.id), []))
         )
+        out._group_rows.setdefault(so.po_ref_key, []).append(_row(so, so.debtor_name or master_name))
     seen: set[str] = set()
     for ref in typed:
         key = po_ref_key(ref)
@@ -256,6 +266,7 @@ def lookup_po_refs(
         cards = out.groups.get(key) or []
         if cards:
             out.cards.extend(cards)
+            out.rows.extend(out._group_rows.get(key) or [])
         else:
             out.missing.append(ref)
     return out

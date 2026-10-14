@@ -426,6 +426,22 @@ def _alloc_state(row: Any) -> tuple[bool, bool, Any]:
     return False, gap > 0, (gap if gap > 0 else None)
 
 
+def _order_lines(lines: list[dict]) -> list[dict[str, Any]]:
+    """[{product_code, qty}] for the lines that name a product code; qty a number when it reads as one."""
+    out: list[dict[str, Any]] = []
+    for l in lines:
+        code = (l.get("product") or {}).get("product_code") or l.get("product_code")
+        if not _filled(code):
+            continue
+        qty = _qty(l.get("quantity"))
+        try:
+            qty = float(qty) if "." in str(qty) else int(qty)
+        except (TypeError, ValueError):
+            pass
+        out.append({"product_code": str(code), "qty": qty})
+    return out
+
+
 def _orders_list(rows: list[dict], b: _Builder) -> None:
     for o in rows:
         lines = o.get("lines") or []
@@ -455,6 +471,10 @@ def _orders_list(rows: list[dict], b: _Builder) -> None:
                 ("products", "Products", prods),
             ],
         )
+        # The order's product lines as data, UNPRINTED (the answer register reads them instead of
+        # parsing the "Products" text). Gated by `delivery_orders.products` in `output_structurer`.
+        if b._current is not None:
+            b._current["lines"] = _order_lines(lines)
     # DO-ASK-SIMPLIFY rule 2 (owner, 2 Oct 2026; every printed field since the 3 Oct hand
     # test): each DO field is a per-contact reveal, hidden from a contact without the grant.
     # The MCP stays unfiltered; the chatbot's `output_structurer` is the gate. The Company
@@ -2911,12 +2931,19 @@ def _sales_report_envelope(report: dict) -> dict:
             "options": [],
         }
     has_result = _sales_report_has_result(report)
-    return {
+    envelope: dict[str, Any] = {
         "result_type": "sales_report",
         "response": _sales_report(report),
         "has_result": has_result,
         "options": _sales_report_options(report) if has_result else [],
     }
+    if has_result and _filled(report.get("group_by")) and _sales_report_rows(report):
+        # The drill's rows as data, UNPRINTED here (the text already prints them): the answer register.
+        envelope["group_by"] = str(report.get("group_by"))
+        envelope["rows"] = [
+            {"name": str(r.get("name"))} for r in _sales_report_rows(report) if _filled(r.get("name"))
+        ]
+    return envelope
 
 
 # --------------------------------------------------------------------------

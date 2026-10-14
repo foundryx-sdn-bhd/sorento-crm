@@ -241,7 +241,9 @@ def _grant_refusal(
     granted = ctx.granted_reveals or frozenset()
     lookups = [a for a in actions if isinstance(a, Lookup)]
     last = lookups[-1] if lookups else None
-    if PO_GRANT not in granted:
+    # v1 has no PO refusal for a non-staff contact (its PO list is limited by what the contact may see),
+    # so only staff are held to the placed grant here.
+    if PO_GRANT not in granted and getattr(ctx.profile, "audience", None) == "staff":
         # Any part of the turn in a PO domain refuses the whole turn (closed side).
         domains = [a.domain for a in lookups] + [getattr(a, "domain", None) for a in getattr(out, "asks", None) or []]
         hit = next((d for d in domains if d in PO_DOMAIN_SUBJECT), None)
