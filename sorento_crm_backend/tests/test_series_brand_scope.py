@@ -412,3 +412,8 @@ def test_c8_replace_import_then_unlisted_in_scope_products_reappear_blank(world)
     rows = _rows(world, s["id"])
     assert "ZZT-A-2" in rows  # in scope, not in the sheet: preloaded again
     assert rows["ZZT-A-2"]["selling_price"] is None and rows["ZZT-A-2"]["in_scope"] is True
+
+
+def test_r4_a_malformed_brand_id_is_a_422_not_a_500(world):
+    response = world.client.get(SELECT, params={"brand_id": "not-a-uuid"})
+    assert response.status_code == 422, response.text

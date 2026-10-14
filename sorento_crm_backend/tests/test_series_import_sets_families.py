@@ -308,3 +308,49 @@ def test_d4_paste_route_returns_resolved(api):
     assert body["resolved"] == [
         {"code": "ZZTSF-FAM", "via": "family", "members": ["ZZTSF-FAM-A", "ZZTSF-FAM-B"]}
     ]
+
+
+# ------------------------------------------------------- review fix round
+
+
+def test_r2_exact_row_beats_a_family_row_in_both_orders():
+    for order in ("exact_first", "family_first"):
+        with _world() as w:
+            exact = _product(w, "ZRV1-SH")
+            other = _product(w, "ZRV1-SC2")
+            rows = [_row("ZRV1-SH", "100", "5"), _row("ZRV1", "200", "5")]
+            _apply(w, rows if order == "exact_first" else list(reversed(rows)))
+            assert _price(w, exact) == (Decimal("100"), Decimal("5")), order
+            assert _price(w, other) == (Decimal("200"), Decimal("5")), order
+
+
+def test_r3_set_with_only_inactive_members_resolves_to_nothing():
+    with _world() as w:
+        dead = _product(w, "ZRV3-DEAD", active=False)
+        _set(w, "ZRV3SET", [dead])
+        report = _apply(w, ["ZRV3SET"])
+        assert report["unmatched_codes"] == ["ZRV3SET"]
+        assert report["resolved"] == []
+        assert report["matched_codes"] == 0
+        assert _on_series(w) == set()
+
+
+def test_r3_family_whose_only_hit_is_an_all_inactive_set_resolves_to_nothing():
+    with _world() as w:
+        dead = _product(w, "ZRV4-DEAD", active=False)
+        _set(w, "ZRV4-RL", [dead])
+        report = _apply(w, ["ZRV4"])
+        assert report["unmatched_codes"] == ["ZRV4"]
+        assert report["resolved"] == []
+        assert report["matched_codes"] == 0
+
+
+def test_r5_family_product_in_a_set_outside_the_family_gets_no_price():
+    with _world() as w:
+        part = _product(w, "ZRV6-SC")
+        plain = _product(w, "ZRV6-SH")
+        _set(w, "QQQ9-RL", [part])
+        _apply(w, [_row("ZRV6", "500", "5")])
+        assert {"ZRV6-SC", "ZRV6-SH"} <= _on_series(w)
+        assert _price(w, plain) == (Decimal("500"), Decimal("5"))
+        assert _price(w, part) == (None, None)
