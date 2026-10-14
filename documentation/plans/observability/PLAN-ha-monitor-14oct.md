@@ -1,6 +1,6 @@
 # PLAN: HA-MONITOR (outside uptime checks, heartbeats, Cloudflare switch)
 
-**Status:** IN PROGRESS (small fix track: no migration, no auth/RBAC change, no new ingest surface).
+**Status:** BUILT, in review (small fix track: no migration, no auth/RBAC change, no new ingest surface).
 Lane `HA-MONITOR`, part of the crew HA plan (Tier 0, owner approved 15 Oct).
 
 ## Journey

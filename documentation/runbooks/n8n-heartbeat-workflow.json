@@ -1,0 +1,115 @@
+{
+  "name": "System - Healthchecks heartbeat (HA-MONITOR)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "6b1f7c1e-0001-4a51-9e1f-hamonitor0001",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT now() AS db_now, (SELECT count(*) FROM (SELECT 1 FROM products LIMIT 1) AS one_product) AS product_rows;",
+        "options": {}
+      },
+      "id": "6b1f7c1e-0002-4a51-9e1f-hamonitor0002",
+      "name": "DB read",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SORENTO_CRM_DB_CREDENTIAL_ID",
+          "name": "sorento-crm-db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_THE_MCP_URL_THE_BOT_USES",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json, text/event-stream"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"crm_master_products_list\",\"arguments\":{\"limit\":1}}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "mcp_raw"
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "6b1f7c1e-0003-4a51-9e1f-hamonitor0003",
+      "name": "MCP call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Throw (= no ping, Healthchecks alerts) unless BOTH real paths worked.\n// The MCP server answers isError:false even when the CRM backend is down and puts\n// {\"error\": ...} inside the text, so the text itself is checked too.\nconst db = $('DB read').first().json;\nif (!db || Number(db.product_rows) < 1) {\n  throw new Error('DB read returned no product row');\n}\nconst raw = String($input.first().json.mcp_raw || '');\nconst dataLine = raw.split('\\n').find((l) => l.startsWith('data:'));\nconst msg = JSON.parse(dataLine ? dataLine.slice(5) : raw);\nif (msg.error || !msg.result || msg.result.isError) {\n  throw new Error('MCP call failed: ' + JSON.stringify(msg.error || msg.result).slice(0, 300));\n}\nconst text = (msg.result.content || []).map((c) => c.text || '').join('');\nlet body;\ntry { body = JSON.parse(text); } catch (e) { throw new Error('MCP answer is not JSON'); }\nif (body.error) {\n  throw new Error('MCP tool error: ' + String(body.error_type || body.error));\n}\nreturn [{ json: { ok: true, db_now: db.db_now } }];"
+      },
+      "id": "6b1f7c1e-0004-4a51-9e1f-hamonitor0004",
+      "name": "Both paths OK?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.HC_N8N_URL }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "6b1f7c1e-0005-4a51-9e1f-hamonitor0005",
+      "name": "Ping Healthchecks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0]
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [[{ "node": "DB read", "type": "main", "index": 0 }]]
+    },
+    "DB read": {
+      "main": [[{ "node": "MCP call", "type": "main", "index": 0 }]]
+    },
+    "MCP call": {
+      "main": [[{ "node": "Both paths OK?", "type": "main", "index": 0 }]]
+    },
+    "Both paths OK?": {
+      "main": [[{ "node": "Ping Healthchecks", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "active": false
+}
