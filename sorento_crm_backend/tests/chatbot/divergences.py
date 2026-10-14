@@ -195,9 +195,11 @@ DIVERGENCES: list[Divergence] = [
             "output_structurer now also returns `set_header`, a HAS turn's counted-set "
             "header as its own key so a composer with no `response` string to reuse can "
             "still prepend it. No n8n capture emits this key. `set_described` (integration "
-            "round 11 on PR #833) rides beside it: whether that header names a described set."
+            "round 11 on PR #833) rides beside it: whether that header names a described set. "
+            "`printed_rows` (PV2 redesign R1) is one more additive key: the indices into `answers` "
+            "the reply printed, read by nothing in v1; the reply text is byte-identical."
         ),
-        strip_paths=(("set_header",), ("set_described",)),
+        strip_paths=(("set_header",), ("set_described",), ("printed_rows",)),
     ),
     Divergence(
         node="crossdomain-render",

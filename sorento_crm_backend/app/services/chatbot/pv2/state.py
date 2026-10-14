@@ -94,6 +94,19 @@ class PendingQuestion(BaseModel):
     deferred: dict | None = None
 
 
+class RegisterEntry(BaseModel):
+    """One thing a reply printed (redesign R1): `key` is the code / uuid / number to act on and is
+    never rendered; `label` is the printed identifier."""
+
+    id: str  # "R<n>"
+    kind: str
+    key: str
+    label: str
+    parent: str | None = None  # the "R<n>" of the entry this one is a child of
+    subject: str = "S1"
+    turn: int = 0
+
+
 class ConversationState(BaseModel):
     v: Literal[1] = 1
     session_started_at: datetime
@@ -105,6 +118,8 @@ class ConversationState(BaseModel):
     last_rows: list[Option] = Field(default_factory=list)
     # The console run (`envelope.test_run_id`) this state belongs to; a new run starts empty.
     run_id: str | None = None
+    # What the last two replies printed, newest reply first (`pv2/register.py`); empty for old state.
+    register: list[RegisterEntry] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -212,6 +227,7 @@ def roll_session(state: ConversationState, now: datetime) -> ConversationState:
     rolled.held = Held()
     rolled.pending = None
     rolled.last_rows = []
+    rolled.register = []
     rolled.session_started_at = now
     return rolled
 

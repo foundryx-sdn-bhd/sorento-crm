@@ -5508,6 +5508,11 @@ def envelope_of(
             and _UUID_TEXT.match(jsc.js_string(e.get("uuid")))
         ],
         "figures": figures,
+        # Indices into `figures` the reply text printed, and the normalized {kind, key, label} rows of a
+        # reply that prints cards or a breakdown with no figures (SO / PO cards, report rows): both are
+        # unprinted facts for the answer register, never rendered.
+        "printed_rows": [i for i in (fetched.get("printed_rows") or []) if isinstance(i, int)],
+        "rows": [r for r in (fetched.get("rows") or []) if isinstance(r, dict)],
         "files": [f for f in files if isinstance(f, dict)] if isinstance(files, list) else [],
         "miss": [] if has_result else codes,
         "has_result": has_result,

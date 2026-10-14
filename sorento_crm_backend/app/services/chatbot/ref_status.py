@@ -36,6 +36,8 @@ _FOLD = re.compile(r"[\s-]+")
 class RefLookup:
     cards: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
+    # One {id, number, debtor} per card, in card order; debtor is always None (a PO / PR has none).
+    rows: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _fold(word: str) -> str:
@@ -104,6 +106,7 @@ def lookup_purchase_orders(db: Session, words: Iterable[str]) -> RefLookup:
             status = _words(po.status).capitalize() or "Unknown"
             second = f"Issued {_day(po.issue_date)} - {status}" if po.issue_date else status
             out.cards.append("\n".join([head, second, *_lines_text(lines)]))
+            out.rows.append({"id": str(po.id), "number": po.po_number, "debtor": None})
     return out
 
 
@@ -145,4 +148,5 @@ def lookup_purchase_requests(db: Session, words: Iterable[str]) -> RefLookup:
                 status += f" - {_words(pr.approval_status)}"
             second = f"Requested {_day(pr.request_date)} - {status}" if pr.request_date else status
             out.cards.append("\n".join([head, second, *_lines_text(lines)]))
+            out.rows.append({"id": str(pr.id), "number": pr.request_number, "debtor": None})
     return out

@@ -642,6 +642,12 @@ def _fixed_reply(
     }
 
 
+def _register_rows(kind: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """{kind, key, label} per looked-up card (key the record id, label the printed number), for the
+    answer register; the cards themselves are text."""
+    return [{"kind": kind, "key": str(r["id"]), "label": str(r["number"])} for r in rows if r.get("number")]
+
+
 def _so_list_reply(text: str) -> dict[str, Any]:
     """`_fixed_reply`, marked as the SO list's answer (`fetch.so_list`): the engine closes an
     open outstanding offer on it, so the period the customer types next answers the list
@@ -1481,6 +1487,7 @@ def run_fetch(
             # exit (nothing placed the SO words) is not a second miss to compose
             # (`answer_bridge._miss_triggers`).
             fragment["fetch"]["so_status"] = True
+            fragment["fetch"]["rows"] = _register_rows("sales_order", looked.rows)
             return fragment
     # SO-PO-REF: the parser's `po_refs` is a dealer/customer's own PO number, answered from
     # `sales_orders.po_ref_key` inside their links (`so_status.lookup_po_refs`). Staff turns
@@ -1520,6 +1527,7 @@ def run_fetch(
             if texts:
                 fragment = _fixed_reply("\n\n".join(texts))
                 fragment["fetch"]["so_status"] = True
+                fragment["fetch"]["rows"] = _register_rows("sales_order", looked.rows)
                 return fragment
     # REF-PROBES: our own PO number and a purchase request number the resolver placed, answered
     # in process (`chatbot/ref_status.py`) for staff holding `purchase_orders.placed` only. The
@@ -1534,15 +1542,21 @@ def run_fetch(
             from app.services.chatbot import ref_status
 
             cards: list[str] = []
+            ref_rows: list[dict[str, Any]] = []
             if po_numbers:
-                cards += ref_status.lookup_purchase_orders(db, po_numbers).cards
+                looked_po = ref_status.lookup_purchase_orders(db, po_numbers)
+                cards += looked_po.cards
+                ref_rows += _register_rows("purchase_order", looked_po.rows)
             if pr_numbers:
-                cards += ref_status.lookup_purchase_requests(db, pr_numbers).cards
+                looked_pr = ref_status.lookup_purchase_requests(db, pr_numbers)
+                cards += looked_pr.cards
+                ref_rows += _register_rows("purchase_request", looked_pr.rows)
             if trace is not None:
                 trace.add("ref_status", {"po": po_numbers, "pr": pr_numbers, "cards": len(cards)})
             if cards:
                 fragment = _fixed_reply("\n\n".join(cards))
                 fragment["fetch"]["so_status"] = True
+                fragment["fetch"]["rows"] = ref_rows
                 return fragment
     # SO-NUMBER-ASK, the SO list ("all my sales orders"): the customers in scope (the
     # links on a scoped or "my" turn, a resolved customer otherwise), behind the same SO

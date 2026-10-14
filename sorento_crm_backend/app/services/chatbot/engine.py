@@ -4213,6 +4213,22 @@ def _run_stages(envelope: Envelope, *, session_factory: SessionFactory, **kwargs
     return result
 
 
+def _pv2_write_register(media_box: dict[str, Any], envelopes: Any) -> None:
+    """PV2 redesign R1: on a parser-v2 turn (its state is in the media box) the lanes' printed rows become
+    the saved state's answer register. A v1 turn has no `pv2_state`, so nothing is written; a PV2 direct
+    reply never reaches the lanes and keeps the previous entries. Never fails the turn."""
+    state = media_box.get("pv2_state")
+    if state is None or not isinstance(envelopes, list):
+        return
+    try:
+        from app.services.chatbot.pv2 import register as pv2_register
+
+        fresh = pv2_register.entries_from_envelopes(envelopes, int(getattr(state, "turn_no", 0) or 0))
+        state.register = pv2_register.roll(getattr(state, "register", None) or [], fresh)
+    except Exception:  # noqa: BLE001 - the register is a convenience; the reply is already decided
+        logger.warning("pv2: could not write the answer register", exc_info=True)
+
+
 def _pv2_keep_state(
     result: TurnResult, envelope: Envelope, *, session_factory: SessionFactory, **kwargs: Any
 ) -> None:
@@ -7344,6 +7360,7 @@ def _run_stages_body(  # noqa: PLR0915
                 answer = _dealer_names_the_miss(answer, envelopes)
         elif in_ranking_conversation:
             answer = _without_escalation_offer(answer)
+        _pv2_write_register(media_box, envelopes)
         return _run_answer(
             turn_id=turn_id,
             ctx=ctx,
