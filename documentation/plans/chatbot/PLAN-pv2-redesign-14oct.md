@@ -1,6 +1,7 @@
 # PLAN: PV2 redesign - typed refs, answer register, subject stack (14 Oct 2026)
 
-Status: Build, round R2 (R1 merged into crew/pv2 as 941fb867a via #1670; R2 on branch `crew/pv2-redesign-r2`, PR #1673).
+Status: Build, round R2 merge-ready (R1 merged into crew/pv2 as 941fb867a via #1670; R2 = PR #1673, branch
+`crew/pv2-redesign-r2`); next R-GAPS after crew merges R2.
 Round order: R1, R2, R-GAPS (crew 14 Oct), R3, R4, R5.
 Earlier: round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
 branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). Owner 14 Oct 18:35: NO CAP on LLM spend for
@@ -46,6 +47,8 @@ derive the move. Still one parser call per turn; replies stay code templates.
   - #1572 REPORTS-STEP2: outstanding by channel keeps the product; a stale subject never rides a report chain.
   - Found in R2 review (pre-R2 behaviour, kept for parity in R2): a pick on one of several same-kind items drops the
     others ("5 A1 and 3 mou", pick 1 -> only SRTWC286; brand "sorento + moc", pick 1 -> only mocha).
+  - Found in R2 review (pre-R2 behaviour, kept): a which_held pick drops a remove of a HELD item asked beside a "this
+    one" (RG-7c).
   - Not in R-GAPS: #1613 seat-cover peer links (-> R3, relation kinds in the registry; the parser field is R4);
     #1625 idea capture (after #1625 merges); #1624 Gemini (only if the owner picks Gemini).
   - R5 live list from the coverage file: cand-0230/0220 replays; "HAVE 10??" after a photo; "product" alone;

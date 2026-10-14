@@ -43,9 +43,11 @@ R2-6b A pick never re-runs what the original ask already applied and never loops
      a remove op, and a which_held pick each reach their Lookup on the first pick, as pre-R2; with two ambiguous items
      the second is asked next and both picks reach the Lookup; a second item that was not found is reported after the
      pick exactly as the same ask typed with the picked product gives it (pre-R2 silently dropped both). A pick on a
-     which_held question (a miss or a flagged clarify) answers it: it never raises the same miss again. Otherwise MEMORY
-     after every pick equals pre-R2's for the same turns (no picked uuid in a report filter, no extra held entity, no
-     attachment kind the pick did not vet).
+     which_held question (a miss or a flagged clarify) answers it: it never raises the same miss again. Otherwise, on a
+     question raised after held took the ask, MEMORY after every pick equals pre-R2's for the same turns (no picked uuid
+     in a report filter, no extra held entity, no attachment kind the pick did not vet). Where held did NOT take the ask
+     (flagged clarify, a missed ask, a switch_back miss), R2-6 wins: the pick completes the original ask (its clears and
+     its other entities apply), which can differ from pre-R2's MEMORY.
 R2-6c A pick on a question raised under a sales report or a PO ask is refused once the contact lacks that grant, however
      many questions deep the chain is.
 R2-7 State saved before R2 (with `deferred`, no `origin`, no `sid`) loads and a pick on it behaves as today.
@@ -73,4 +75,6 @@ RG-7 (#1572) "Srtkt71-ss outstanding" -> "Dealer outstanding only" keeps the pro
      stock" -> "Top sales Sorento and Mocha" -> "Sorento and mocha" never carries CBDR4003 or BK007A.
 RG-7b (R2 review) "5 A1 and 3 mou" -> pick 1 for mou -> the answer covers A1 x 5 and the picked product x 3; brand
      "sorento + moc" -> pick mocha -> both brands. Today (and pre-R2) the pick drops the other same-kind items.
+RG-7c (R2 review) "remove customer Z and this SO" with Z held and no SO held -> which_held pick -> Z is removed.
+     Today (and pre-R2) the which_held pick drops the remove and Z stays.
 RG-8 No LLM calls; v1 turns unchanged.
