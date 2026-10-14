@@ -6,7 +6,7 @@ order_lines. Same build shape as mig_idx_chunks_document_id: CONCURRENTLY, bound
 an INVALID leftover dropped and rebuilt.
 
 Revision ID: sodv_0001_ol_from_doc_idx
-Revises: qlg_0001_drawing_attachment
+Revises: oihr_0008_so_table_on_top
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "sodv_0001_ol_from_doc_idx"
-down_revision = "qlg_0001_drawing_attachment"
+down_revision = "oihr_0008_so_table_on_top"
 branch_labels = None
 depends_on = None
 
