@@ -1562,24 +1562,16 @@ class OrderInquiryReserveService:
         own commit (`register_order_inquiry_reserve_post_commit_dispatch`'s
         `after_commit` listener runs before this)."""
         try:
-            from app.models.automation import Automation
-            from app.services.automation_recipients import resolve_recipients
-            from app.services.automation_service import AutomationService
+            from app.services import park_send
 
-            automation = (
-                self.db.query(Automation)
-                .filter(Automation.trigger_type == trigger_type, Automation.enabled.is_(True))
-                .order_by(Automation.created_at.asc())
-                .first()
-            )
+            automation = park_send.first_automation(self.db, trigger_type)
             if automation is None:
                 return None
-            config = AutomationService._normalize_recipient_config(automation.recipient_config)
             context = {
                 "actor": _person(self.db, actor_user_id),
                 "raiser": _person(self.db, raiser_user_id),
             }
-            recipients = resolve_recipients(self.db, config, context)
+            recipients = park_send.resolve_ordered(self.db, automation, context)
             if not recipients:
                 return None
             return recipients[0].get("name")

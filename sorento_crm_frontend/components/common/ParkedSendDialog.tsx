@@ -161,14 +161,11 @@ export function ParkedSendDialog({
                     </div>
                   </Tabs>
                   <div className="min-w-0 space-y-1 text-sm">
-                    <p className="truncate font-medium" title={current.subject}>
-                      {current.subject}
-                    </p>
                     <p className="truncate text-muted-foreground">
                       {`To ${current.to.name}${current.cc.length ? `, Cc ${current.cc.map((person) => person.name).join(', ')}` : ''}`}
                     </p>
                   </div>
-                  <EmailPreviewFrame html={current.body_html} />
+                  <EmailPreviewFrame html={current.body_html} subject={current.subject} />
                 </div>
               ) : null}
             </>

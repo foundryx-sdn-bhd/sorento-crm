@@ -241,7 +241,7 @@ export function useCommitOrderInquiryReserve(inquiryId: string | undefined) {
           ? 'Nothing to change'
           : variables.payload.park_notice
             ? `Reserved. Notice to ${variables.noticeName ?? 'purchasing'} parked; send it from Order inquiries > Actions.`
-            : `Reserved, ${variables.requesterName ?? 'the requester'} notified`,
+            : `Reserved, ${variables.noticeName ?? variables.requesterName ?? 'the requester'} notified`,
       );
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADER_LINES_KEY, inquiryId] });
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY, inquiryId] });
