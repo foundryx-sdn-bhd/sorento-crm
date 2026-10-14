@@ -1,6 +1,6 @@
 # UAC: park reserve requests and reserve notices, send all parked (OI-STAGED-NOTIFY)
 
-Plan: `PLAN-oi-staged-notify-14oct.md`. Card: `oi-staged-notify-behaviour-card.md`. Mock v4.
+Plan: `PLAN-oi-staged-notify-14oct.md`. Card: `oi-staged-notify-behaviour-card.md`. Mock v5.
 Examples use dev OIs (9 raised by Eling, e.g. OI-2609-0001/0002/0004/0590/0592/0612/0614/0730/
 0731; 8 raised by Niki, e.g. OI-2609-0022/0641/0717/0718/0719/0727/0728/0733); tests seed their
 own equivalent chain (CI DB is empty).
@@ -60,9 +60,9 @@ own equivalent chain (CI DB is empty).
 ## Status (Documents view)
 
 - AC-SN-30 `GET /order-inquiry-headers?reserve=<status>` returns OIs with at least one request row
-  in that status: `parked` (unanswered, request parked), `needs_reserve` (unanswered, request
-  sent, state requested), `notice_parked` (answered, notice parked), `reserved` (answered, nothing
-  parked). Each row carries `reserve_status` = its earliest status in that order (null when the
+  in that status: `parked` "Parked request to reserve" (unanswered, request parked),
+  `needs_reserve` "Needs reserve" (unanswered, request sent, state requested), `notice_parked`
+  "Parked reserve" (answered, notice parked), `reserved` "Reserved" (answered, nothing parked). Each row carries `reserve_status` = its earliest status in that order (null when the
   OI has no request rows) and `parked_by_name` (the requester or notice parker when parked).
 - AC-SN-31 `GET .../reserve-status/summary` returns the OI count per status (everyone's) and the
   caller's own `my_parked_requests` / `my_parked_notices` item counts.
@@ -74,15 +74,19 @@ own equivalent chain (CI DB is empty).
 - AC-SN-40 Request lightbox shows "Park this first" UNTICKED on every open; unticked -> "Send
   request", `park: false`, today's toast; ticked -> "Park request", `park: true`, toast "Request #n
   parked. Send it from Order inquiries > Actions."
-- AC-SN-41 OI detail shows "Park notice" (unticked on load) beside Reserve (N) for RESERVE
-  holders; Reserve sends `park_notice` matching the tickbox.
-- AC-SN-42 Documents list: Filters has "Reserve" (Parked / Needs reserve / Reserved, purchasing
-  not told yet / Reserved, counts from the summary, clearable) synced to `?reserve=`, with a chip
+- AC-SN-41 OI detail: Reserve (N) opens a confirmation "Reserve N lines on <OI no>" listing the
+  staged lines (Product, Requested, Reserve, Balance to buy, Location, Reason) and "Notice to
+  purchasing: To <name>, Cc <names>"; "Reserve and send to <name>" commits with `park_notice:
+  false` (today's toast); "Reserve and park notice" commits with `park_notice: true` and toasts
+  "Reserved. Notice to <name> parked; send it from Order inquiries > Actions."; Cancel or Esc
+  commits nothing and keeps the staged lines.
+- AC-SN-42 Documents list: Filters has "Reserve" (Parked request to reserve / Needs reserve /
+  Parked reserve / Reserved, counts from the summary, clearable) synced to `?reserve=`, with a chip
   "Reserve: <status>"; picking a value sets the state toggle to All; opening `?reserve=
   needs_reserve` from the email lands with it set. A Reserve column shows the status pill, plus
-  the parker's name for Parked.
+  the parker's name for Parked request to reserve.
 - AC-SN-43 Toolbar Actions menu (never a top-bar button, even with one item): "Send all parked
-  requests to CS (N)" (ACKNOWLEDGE) / "Send all parked notices to purchasing (N)" (RESERVE), N =
+  requests to CS (N)" (ACKNOWLEDGE) / "Send all parked reserves to purchasing (N)" (RESERVE), N =
   `my_parked_requests` / `my_parked_notices`; disabled with reason when N = 0.
 - AC-SN-44 `ParkedSendDialog` (shared, `components/common`): recipient table (To, Cc, Order
   inquiries, Lines; total row), a "No recipient, stays parked" line per unresolved group, one line

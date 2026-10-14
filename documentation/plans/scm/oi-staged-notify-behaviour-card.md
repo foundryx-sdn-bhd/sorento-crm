@@ -109,3 +109,10 @@ Schema (additive, no backfill): `order_inquiry_reserve_requests.parked_at`;
 No batches. Generic pattern: park, view what is parked, send all parked; afterwards everyone
 filters by plain status (Parked / Needs reserve / Reserved, purchasing not told yet / Reserved).
 The email button opens the receiver's status. Built as a reusable pattern (mock v4 section 9).
+
+## Owner notes on mock v4 (14 Oct, via crew)
+
+1. CS Reserve and the notice are one flow: Reserve (N) asks to send the notice to purchasing now,
+   or park it (no separate tickbox).
+2. Statuses renamed: "Parked request to reserve", "Parked reserve".
+3. Email button: Needs reserve for everyone (owner did not object to (a)).

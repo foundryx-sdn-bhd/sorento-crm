@@ -2,11 +2,11 @@
 
 Status: Plan. Standard track, size L (additive migration + in-place template layout update, two
 sides, status filter, send-all with preview). Lane crew/oi-staged-notify. Card answered by crew
-14 Oct (Q1-Q5 all (a)); owner notes on mocks v1, v2, v3 applied; mock v4 (status only, no
-batches, reusable pattern) awaiting owner.
+14 Oct (Q1-Q5 all (a)); owner notes on mocks v1 to v4 applied; mock v5 (CS Reserve confirm
+sends or parks the notice, statuses renamed) awaiting owner.
 
 UAC: `oi-staged-notify-14oct-acceptance-criteria.md` (alongside). Card:
-`oi-staged-notify-behaviour-card.md`. Mock: `documentation/mockups/OI-STAGED-NOTIFY/index.html` (v4).
+`oi-staged-notify-behaviour-card.md`. Mock: `documentation/mockups/OI-STAGED-NOTIFY/index.html` (v5).
 
 ## Journey
 
@@ -20,18 +20,21 @@ then when user view, they just view what is in the status." Built as a reusable 
 
 1. Request lightbox: tickbox "Park this first", UNTICKED on every open (default send). Unticked =
    sent now as today ("Send request"). Ticked = request saved, no email ("Park request").
-2. CS header: tickbox "Park notice" beside "Reserve (N)", unticked on every page load. Ticked =
-   reserve saved, notice to purchasing parked. Unticked = emailed now as today.
+2. CS side is ONE flow (owner v4): "Reserve (N)" opens a confirmation "Reserve N lines on
+   <OI no>" (Product, Requested, Reserve, Balance to buy, Location, Reason; "Notice to
+   purchasing: To <name>, Cc <names>") with "Reserve and send to <To name>" (primary, today's
+   behaviour) or "Reserve and park notice"; Cancel/Esc reserves nothing. No tickbox.
 3. Documents list (Q4) gets ONE "Reserve" status filter (no batches, no send dates):
-   - `parked`: a request row CS has not answered whose request is parked (not sent to CS);
-   - `needs_reserve`: a request row CS has not answered whose request was sent;
-   - `notice_parked`: an answered row whose notice to purchasing is parked;
-   - `reserved`: an answered row with nothing parked.
+   - `parked` "Parked request to reserve": a request row CS has not answered whose request is
+     parked (not sent to CS);
+   - `needs_reserve` "Needs reserve": a request row CS has not answered whose request was sent;
+   - `notice_parked` "Parked reserve": an answered row whose notice to purchasing is parked;
+   - `reserved` "Reserved": an answered row with nothing parked.
    An OI matches a status when any of its request rows is in it. A "Reserve" column shows the
-   OI's earliest status in that order (Parked names who parked it). Counts per status in the
+   OI's earliest status in that order ("Parked request to reserve" names who parked it). Counts per status in the
    filter labels (everyone's).
 4. Actions menu (never a top-bar button): "Send all parked requests to CS (N)" (ACKNOWLEDGE) and
-   "Send all parked notices to purchasing (N)" (RESERVE); N = the presser's OWN parked items (Q1);
+   "Send all parked reserves to purchasing (N)" (RESERVE); N = the presser's OWN parked items (Q1);
    greyed with reason at 0.
 5. Send dialog: recipient table (To | Cc | Order inquiries | Lines, total row, "No recipient,
    stays parked" line when unresolved) and under it the rendered email, one line tab per email;
@@ -58,7 +61,8 @@ table: a component and a helper with plain arguments.
 - FE `components/common/ParkedSendDialog.tsx`: props `title`, `preview` (query result
   `{emails, unresolved}`), `onSend`, `isSending`; renders the recipient table, the line tabs with
   `EmailPreviewFrame`, the footer.
-- FE park tickbox: the existing `Checkbox` + `Label`; no wrapper component.
+- FE park choice: per screen, no new component (request lightbox: `Checkbox` + `Label`; CS: the
+  Reserve confirmation's two buttons).
 - FE status filter: today's Filters popover + `SearchableSelect`; the status list is per document.
 - BE `app/services/park_send.py`: `group_by_recipient(db, trigger_type, items, actor)` (resolve
   each item's recipients with the first enabled automation of the trigger, the same pick as
@@ -117,6 +121,9 @@ passes those keys).
 Routes (`app/api/v1/projects/order_inquiries.py`):
 
 - `CreateReserveRequestIn.park: bool = False`, `CommitReserveRequestIn.park_notice: bool = False`.
+- `GET /order-inquiries/{inquiry_id}/reserve-notices/recipients` -> `{to: {name}, cc: [{name}]}`
+  for the confirmation (RESERVE): what today's reserved automation would resolve for this OI's
+  open request(s), presser moved to Cc.
 - `GET /order-inquiries/reserve-status/summary` -> `{parked, needs_reserve, notice_parked,
   reserved, my_parked_requests, my_parked_notices}` (VIEW/ACKNOWLEDGE/RESERVE).
 - `POST /order-inquiries/reserve-requests/parked/preview` and `.../parked/send` (ACKNOWLEDGE);
@@ -130,8 +137,10 @@ Routes (`app/api/v1/projects/order_inquiries.py`):
 
 - `ReserveRequestDialog.tsx`: Checkbox "Park this first" in the footer, unticked on open; payload
   `park`; button label follows it; toast "Request #n parked. Send it from Order inquiries > Actions."
-- `OrderInquiryDetail.tsx`: Checkbox "Park notice" beside Reserve (N), unticked on mount;
-  `commitStaged` sends `park_notice`.
+- `OrderInquiryDetail.tsx`: Reserve (N) opens new `ReserveConfirmDialog.tsx` (staged lines,
+  recipient line from a small `GET .../reserve-notices/recipients?inquiry_id=` read, two confirm
+  buttons); `commitStaged(parkNotice)` sends `park_notice`. Toast on park: "Reserved. Notice to
+  <name> parked; send it from Order inquiries > Actions."
 - `OrderInquiryHeadersList.tsx`: Reserve filter (SearchableSelect, clearable, counts) synced to
   `?reserve=`, chip, Reserve column (Badge pill + parked-by), toolbar `secondaryActions` rendered
   as the Actions menu even with one item (small `DataGridListToolbar` prop), the two send items
