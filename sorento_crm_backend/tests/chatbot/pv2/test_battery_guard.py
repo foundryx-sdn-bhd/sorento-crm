@@ -10,11 +10,18 @@ GOOD_ENV = {"HTTPS_PROXY": "http://127.0.0.1:9", "DATABASE_URL": "postgresql://u
 
 @pytest.fixture()
 def installed():
+    # Bound-name patching only means something if the importer is loaded before install.
+    import app.services.stock_ask_service  # noqa: F401
+    from app.services import queue_service, stock_ask_service
+
+    original = queue_service.enqueue_job
     guard.install(dict(GOOD_ENV))
     try:
         yield
     finally:
         guard.uninstall()
+        assert stock_ask_service.enqueue_job is original
+        assert queue_service.enqueue_job is original
 
 
 @pytest.fixture(autouse=True)
