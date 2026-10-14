@@ -1,6 +1,6 @@
 # PLAN: a Confirm sends only what it decided (ORDERBACK-DELTA)
 
-Status: Hand test (standard track since the 13 Oct 22:40 extension: template migrations `oihr_0007_excel_remark` + `oihr_0008_so_table_on_top`; no auth/RBAC change). PR #1631. Owner fix round 14 Oct: reviewer READY @ 8bb165772, hand test next.
+Status: Hand test (standard track since the 13 Oct 22:40 extension: template migrations `oihr_0007_excel_remark` + `oihr_0008_so_table_on_top`; no auth/RBAC change). PR #1631. Owner fix round 14 Oct: reviewer READY @ e0e6166ba, hand test next.
 
 UAC: `orderback-delta-13oct-acceptance-criteria.md` (alongside).
 
@@ -159,6 +159,11 @@ Continued locally by lane ORDERBACK-DELTA-L (the cloud session stopped after bfa
    mirroring the script on SO380096: `evidence/orderback-delta/script-pass-r3/` (at d3ae516d5) and
    `script-pass-r4/` (changed and rejected Borrow, at f5100e707) and `script-pass-r5/` (a Borrow
    split across two donors, at 8bb165772: one row, ORDER BACK 3 & ORDER BACK 2, no CANCEL).
+8. Smoke r6 at 0cee81c1e (main merged) found a two-donor Borrow reshuffled IN PLACE (both holes
+   resized) still printed a false CANCEL ORDER 1. Netting now runs for any two or more holes
+   (e0e6166ba); holes only resized keep their own line count, so a two-donor cut keeps its real
+   CANCEL ORDER 2. Re-smoke r7 at e0e6166ba: one row, ORDER BACK 3 & ORDER BACK 2.
+   Evidence `script-pass-r6/`, `script-pass-r7/`. Reviewer READY @ e0e6166ba (23 probe shapes).
 
 Follow-up (not this PR): an own-location ORDER BACK row that the raise-time cascade auto-placed
 onto an already-received SPO within seconds (SO380096 CWCY605 at BRW-BB, SPO-2026/05-0058,
@@ -171,3 +176,6 @@ line quantity (X 10 to X 5 + Y 3 with a cut to 8), the email line loses its QTY 
 columns, because `_decision_words` reads one ORDER BACK part and two as different decisions, so
 `held_before` is false in `_queue_saved_line`. The numbers are right; the single-donor twin
 shows "was 10".
+
+Wording nit (review, not changed): a two-donor Borrow raised in place (X 6 + Y 4 to X 7 + Y 5,
+line 10 to 12) reads ORDER 2, while the one-donor twin reads ORDER BACK; both show QTY 10 to 12.
