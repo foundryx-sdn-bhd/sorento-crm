@@ -184,3 +184,43 @@ def test_a_keyless_cancel_so_naming_a_consignment_number_never_matches_it(env):
     assert stored.match_status != "matched", stored.match_status
     assert stored.sales_order_line_id is None
     assert _line(env, "db1:CSGN:980001:981001").qty_cancelled == Decimal("0")
+
+
+# ---------------------------------------------------------------------------- F1
+def test_pool_subtracts_a_cancel_on_a_non_autocount_row(world):
+    product, wh = world.product(), world.warehouse()
+    a = world.allocation(product_id=product, warehouse_id=wh, quantity=100, received=30,
+                         stated=None, source_system=None, company_id=DEFAULT_COMPANY_ID,
+                         cancelled=20)
+    world.db.commit()
+    assert _offered(world, product, a) == 50
+
+
+# ---------------------------------------------------------------------------- F2
+def _return_in_book(env, book):
+    rec = _cr(990001, "ZZCR-0001", [_cr_line(991001, 4, from_no=None, from_dtl=981001)])
+    return env.post(CR_INGEST, [rec], book=book)
+
+
+def _stored_return_line(env):
+    from app.models.autocount_cancel import AutocountCancelDoc
+    env.db.expire_all()
+    return env.db.execute(select(AutocountCancelLine).join(
+        AutocountCancelDoc, AutocountCancelLine.cancel_doc_id == AutocountCancelDoc.id).where(
+        AutocountCancelDoc.kind == "consignment_return")).scalars().one()
+
+
+def test_a_keyed_return_in_book_db_1_never_matches_a_line_in_book_dbA1(env):
+    assert env.post(CG_INGEST, [_cg()], book="dbA1").status_code == 200
+    assert _return_in_book(env, "db_1").status_code == 200
+    stored = _stored_return_line(env)
+    assert stored.match_status != "matched", stored.match_status
+    assert stored.sales_order_line_id is None
+    assert _line(env, "dbA1:CSGN:980001:981001").qty_returned == Decimal("0")
+
+
+def test_a_keyed_return_in_the_same_book_dbA1_matches(env):  # guard
+    assert env.post(CG_INGEST, [_cg()], book="dbA1").status_code == 200
+    assert _return_in_book(env, "dbA1").status_code == 200
+    assert _stored_return_line(env).match_status == "matched"
+    assert _line(env, "dbA1:CSGN:980001:981001").qty_returned == Decimal("4")
