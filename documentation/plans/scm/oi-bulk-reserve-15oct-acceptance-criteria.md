@@ -19,4 +19,7 @@ Plan: `PLAN-oi-bulk-reserve-15oct.md`. Card: `oi-bulk-reserve-behaviour-card.md`
   call with `park_notice` per the tickbox; a rejected line ends "declined" and purchasing gets the
   same Reserve 0 notice as a single-line Reserve 0 (sent or parked).
 - AC-BR-07 Single-line tick / pen / Undo behave as before.
+- AC-BR-09 A requested line shows an x "Reject" button between the tick and the pen (reserve grant
+  only); it opens "Reject 1 line" with a required Reason; Stage stages Reserve 0 + reason on that line
+  (chip "Reserve 0"); Cancel stages nothing. Answered lines show no x (pen = Amend only).
 - AC-BR-08 Usable at 375 and 1280 (strip wraps, Decide button stays reachable at the right).

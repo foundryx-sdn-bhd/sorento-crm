@@ -114,3 +114,9 @@ rejects the OI row itself) and is not part of this.
 5. Notify: a reject is a Reserve 0, so purchasing hears it exactly as a single-line Reserve 0
    today: the reserved notice lists RESERVED 0, the full BALANCE and the REASON
    (`order_inquiry_reserve_service.py:877-891`), sent at once or parked per "Park notice first".
+
+## Owner OK on mock v3 (15 Oct, "ok can") + crew decision on the line x
+
+6. Add a line-level x "Reject" beside the tick and the pen on a requested line (crew decision (a)):
+   it opens the same one-reason prompt ("Reject 1 line", Reason required) and stages Reserve 0 +
+   reason, exactly what bulk "Reject..." does per line. Line and bulk mirror: tick / x / pen.

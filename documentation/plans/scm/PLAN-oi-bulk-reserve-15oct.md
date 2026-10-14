@@ -1,6 +1,6 @@
 # PLAN: one-button bulk reserve on the OI Lines tab (OI-BULK-RESERVE)
 
-Status: Plan (card final rules v3 15 Oct, mock v3 filed; build after #1684 merges and the owner OKs v3, on this branch with main merged in).
+Status: Plan (owner OK on mock v3 15 Oct; crew added the line-level x; build after #1684 merges, on this branch with main merged in).
 Size M per crew, frontend only (expected diff small, no migration, no auth/RBAC change, no new
 endpoint). Lead pattern: tester red tests, coder, reviewer, browser pass on the changed screen.
 
@@ -22,7 +22,9 @@ Reserve button, confirm.
    remaining) at the request row's location), replace any staged entry, clear the ticks.
 3. Menu "Reject...": lightbox "Reject N lines", one required Reason, "Stage N lines" stages
    Reserve 0 + reason on each counted line, clears the ticks.
-4. Amend and partial reserve stay per line (pen). Header "Reserve (N)" + #1684 confirmation commit
+4. A requested line gets an x "Reject" beside tick and pen: same one-reason prompt, stages Reserve 0 +
+   reason (crew decision, mirrors bulk Reject).
+5. Amend and partial reserve stay per line (pen). Header "Reserve (N)" + #1684 confirmation commit
    as today. Purchasing hears a reject as today's Reserve 0 notice (sent or parked).
 
 ## Code
@@ -31,7 +33,11 @@ Reserve button, confirm.
   toolbar's selection strip gets the right-aligned "Decide (N)" button + DropdownMenu (via
   `DataGridListToolbar`'s `bulkActionsSlot`, pattern `BoardDecideControl.tsx`), reserve grant only;
   it calls new props `onBulkReserveAsRequested(lineIds)` / `onBulkReject(lineIds, reason)`.
-- New `[id]/components/BulkRejectReserveDialog.tsx`: "Reject N lines", one required Reason.
+- New `[id]/components/BulkRejectReserveDialog.tsx`: "Reject N lines" (N = 1 from the line x), one
+  required Reason; used by both the strip menu and the line x.
+- `[id]/components/orderInquiryHeaderLinesColumns.tsx` `ReserveActionsCell` (~253-281): add the x
+  "Reject" button (`onRejectReserve(row)`) between the tick and the pen for `reserve_state ===
+  'requested'`.
 - `[id]/components/OrderInquiryDetail.tsx`: `bulkStage(lineIds, mode)` builds the staged entries
   from the same source the per-line tick uses (`onTickReserve` path: open request row, qty capped at
   remaining, location) or Reserve 0 + reason, merges into `stagedByRowId`, clears `rowSelection`.
@@ -47,4 +53,3 @@ reusing the harness of `OrderInquiryDetail.reserveConfirm.test.tsx`. List in the
 ## Out of scope
 
 - Bulk partial reserve or bulk amend (owner: single-line pen).
-- A line-level x icon (asked with mock v3; add only if the owner says yes).
