@@ -142,8 +142,12 @@ def apply_turn(
 
     # A clarify flag beside a new_topic ask does not re-ask an OPEN question as a miss: the new
     # topic replaces it and its own policy asks what it still needs.
+    carried = out.clarify.about == "entity" and bool(out.clarify.phrase) and any(
+        out.clarify.phrase in (e.phrase, e.doc_number, e.key) for a in out.asks for e in a.entities
+    )  # the flag is about an entity an ask carries: the ask's own resolution answers it
     flagged = out.clarify.needed and not (
-        any(a.act == "new_topic" for a in out.asks) and st.pending is not None
+        carried
+        or any(a.act == "new_topic" for a in out.asks) and st.pending is not None
         or any(a.act == "switch_back" and a.switch_back_to is None for a in out.asks) and len(st.topics) == 1
     )
     if flagged or not out.asks:
@@ -153,7 +157,10 @@ def apply_turn(
             # counts a MISS (two -> the hand-over offer), never an option-less new question.
             act = _miss(st, 0, st.pending, _Miss(about), language, can_offer_handover)
         else:
-            act = _clarify(st, 0, about, out.clarify.phrase, language, options=_options_for(st, about))
+            options = _options_for(st, about)
+            # An entity question without options never quotes a phrase (no list to pick from).
+            phrase = out.clarify.phrase if options or about != "which_held" else None
+            act = _clarify(st, 0, about, phrase, language, options=options)
         st.pending = act.pending
         return st, [act]
 
