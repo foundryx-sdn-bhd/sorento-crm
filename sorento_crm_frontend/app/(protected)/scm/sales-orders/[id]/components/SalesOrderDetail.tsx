@@ -80,6 +80,7 @@ import { SoLineHistoryBody } from './SoLineHistoryBody';
 import { fmtDate, fmtInt } from '../../../lib/format';
 import { demandClassBadge } from '../../../lib/demandClass';
 import { ConsignmentBadge } from '../../../lib/docType';
+import { consignmentStatusLabel, consignmentStatusVariant } from '../../../lib/consignmentStatus';
 import { transferableBadge } from '../../../lib/transferable';
 import { salesOrderPlannedBadge } from '../../../lib/salesOrderPlanned';
 import {
@@ -1596,8 +1597,19 @@ export function SalesOrderDetail({
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex min-w-0 flex-wrap items-center gap-3">
                 <CardTitle className="text-lg">{so.so_number}</CardTitle>
-                <Badge variant={salesOrderStatusVariant(so.status)} appearance="light" size="md">
-                  {salesOrderStatusLabel(so.status)}
+                {/* CONSIGN-DELIVERED-FIX: a consignment reads where its goods are. */}
+                <Badge
+                  variant={
+                    so.doc_type === 'consignment'
+                      ? consignmentStatusVariant(so)
+                      : salesOrderStatusVariant(so.status)
+                  }
+                  appearance="light"
+                  size="md"
+                >
+                  {so.doc_type === 'consignment'
+                    ? consignmentStatusLabel(so)
+                    : salesOrderStatusLabel(so.status)}
                 </Badge>
                 <ConsignmentBadge docType={so.doc_type} size="md" />
                 {/* How far the order has been PLANNED, beside the status it keeps being

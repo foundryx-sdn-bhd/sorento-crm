@@ -207,6 +207,21 @@ describe('UAC-06: Consignment label in the SO detail header', () => {
   });
 });
 
+describe('CONSIGN-DELIVERED-FIX: a consignment header reads where the goods are', () => {
+  it('reads At customer while units are out, never Completed / Outstanding', () => {
+    stub({ doc_type: 'consignment', status: 'closed', lines: lines(3) });
+    renderDetail();
+    expect(screen.getByText('At customer')).toBeInTheDocument();
+    expect(screen.queryByText('Completed')).toBeNull();
+  });
+
+  it('reads Fully returned when every unit came back', () => {
+    stub({ doc_type: 'consignment', status: 'closed', lines: lines(10) });
+    renderDetail();
+    expect(screen.getByText('Fully returned')).toBeInTheDocument();
+  });
+});
+
 describe('UAC-12: Qty returned column on the Lines grid', () => {
   it('a consignment order has a Qty returned column showing the line qty_returned', () => {
     stub({ doc_type: 'consignment', lines: lines(3) });
