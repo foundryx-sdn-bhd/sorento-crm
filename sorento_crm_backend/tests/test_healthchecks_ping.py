@@ -14,7 +14,8 @@ import threading
 import time
 from contextlib import contextmanager
 
-import httpx
+import urllib.error
+
 import pytest
 
 from app.scheduler import task_scheduler
@@ -23,11 +24,25 @@ from app.services import healthchecks_ping
 URL = "https://hc-ping.example.test/abc-123"
 
 
+class _Resp:
+    def __init__(self, status):
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
 class _Recorder:
-    def __init__(self, exc=None, block: threading.Event | None = None):
+    """Stands in for urllib.request.urlopen."""
+
+    def __init__(self, exc=None, block: threading.Event | None = None, status=200):
         self.calls: list[tuple[str, float]] = []
         self.exc = exc
         self.block = block
+        self.status = status
 
     def __call__(self, url, *args, timeout=None, **kwargs):
         self.calls.append((url, timeout))
@@ -35,7 +50,11 @@ class _Recorder:
             self.block.wait(5)
         if self.exc is not None:
             raise self.exc
-        return httpx.Response(200, text="OK")
+        return _Resp(self.status)
+
+
+def _patch_urlopen(monkeypatch, rec):
+    monkeypatch.setattr(healthchecks_ping.urllib.request, "urlopen", rec)
 
 
 def _ping_and_wait(url, **kwargs):
@@ -51,14 +70,14 @@ def _ping_and_wait(url, **kwargs):
 @pytest.mark.parametrize("url", [None, "", "   "])
 def test_unset_url_does_nothing(monkeypatch, url):
     rec = _Recorder()
-    monkeypatch.setattr(healthchecks_ping.httpx, "get", rec)
+    _patch_urlopen(monkeypatch, rec)
     assert healthchecks_ping.ping(url) is None
     assert rec.calls == []
 
 
 def test_ping_hits_the_url_with_a_short_timeout(monkeypatch):
     rec = _Recorder()
-    monkeypatch.setattr(healthchecks_ping.httpx, "get", rec)
+    _patch_urlopen(monkeypatch, rec)
     _ping_and_wait(URL)
     assert len(rec.calls) == 1
     called_url, timeout = rec.calls[0]
@@ -68,7 +87,7 @@ def test_ping_hits_the_url_with_a_short_timeout(monkeypatch):
 
 def test_fail_ping_hits_the_fail_endpoint(monkeypatch):
     rec = _Recorder()
-    monkeypatch.setattr(healthchecks_ping.httpx, "get", rec)
+    _patch_urlopen(monkeypatch, rec)
     _ping_and_wait(URL + "/", fail=True)
     assert rec.calls[0][0] == URL + "/fail"
 
@@ -76,23 +95,24 @@ def test_fail_ping_hits_the_fail_endpoint(monkeypatch):
 @pytest.mark.parametrize(
     "exc",
     [
-        httpx.ConnectError("down"),
-        httpx.ReadTimeout("slow"),
+        urllib.error.URLError("down"),
+        TimeoutError("slow"),
+        urllib.error.HTTPError(URL, 500, "boom", {}, None),
         RuntimeError("anything else"),
     ],
 )
 def test_send_never_raises_and_never_logs_the_url(monkeypatch, caplog, exc):
     """The ping URL is a credential of sorts (anyone with it can fake a heartbeat)."""
-    monkeypatch.setattr(healthchecks_ping.httpx, "get", _Recorder(exc=exc))
+    _patch_urlopen(monkeypatch, _Recorder(exc=exc))
     with caplog.at_level(logging.DEBUG):
         assert healthchecks_ping._send(URL) is False
     assert "abc-123" not in caplog.text
 
 
 def test_send_reports_a_non_2xx_answer_as_failed(monkeypatch):
-    monkeypatch.setattr(
-        healthchecks_ping.httpx, "get", lambda url, **kw: httpx.Response(404, text="not found")
-    )
+    _patch_urlopen(monkeypatch, _Recorder(status=204))
+    assert healthchecks_ping._send(URL) is True
+    _patch_urlopen(monkeypatch, _Recorder(status=302))
     assert healthchecks_ping._send(URL) is False
 
 
@@ -100,7 +120,7 @@ def test_ping_is_fire_and_forget(monkeypatch):
     """A hanging Healthchecks must not hold the scheduler's job thread."""
     gate = threading.Event()
     rec = _Recorder(block=gate)
-    monkeypatch.setattr(healthchecks_ping.httpx, "get", rec)
+    _patch_urlopen(monkeypatch, rec)
     started = time.monotonic()
     thread = healthchecks_ping.ping(URL)
     elapsed = time.monotonic() - started
@@ -119,6 +139,41 @@ def test_ping_survives_a_thread_that_cannot_start(monkeypatch):
 
     monkeypatch.setattr(healthchecks_ping.threading, "Thread", _Boom)
     assert healthchecks_ping.ping(URL) is None
+
+
+def test_a_real_ping_never_logs_the_url(caplog):
+    """No mock transport: a real request to a local server, every logger at DEBUG.
+
+    The first version used httpx, whose own INFO log line carries the full URL, and the
+    worker logs INFO, so the secret ping URL landed in the worker log every 5 minutes.
+    """
+    import http.server
+
+    hits = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    serving = threading.Thread(target=server.serve_forever, daemon=True)
+    serving.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/ping/secret-uuid-123"
+        with caplog.at_level(logging.DEBUG):
+            thread = healthchecks_ping.ping(url)
+            thread.join(5)
+            assert healthchecks_ping._send(url) is True
+    finally:
+        server.shutdown()
+    assert hits == ["/ping/secret-uuid-123", "/ping/secret-uuid-123"]
+    assert "secret-uuid-123" not in caplog.text
 
 
 # --- the scheduled tick ----------------------------------------------------------------

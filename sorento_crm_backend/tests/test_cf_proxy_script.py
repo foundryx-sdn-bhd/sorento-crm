@@ -204,7 +204,6 @@ def test_a_record_from_the_api_outside_the_allowlist_is_never_patched(cf, token_
 def test_a_record_from_another_zone_is_never_patched(cf, token_file, capsys):
     recs = _zone_records(proxied=True)
     recs[0]["zone_id"] = "zone-of-someone-else"
-    api = FakeCloudflare(records=recs)
 
     class Wrong(FakeCloudflare):
         def __call__(self, method, path, body=None):
@@ -290,7 +289,7 @@ def test_real_http_client_sends_bearer_token_and_never_prints_it(cf, token_file,
         seen["timeout"] = timeout
         return _Resp({"success": True, "result": [{"id": ZONE_ID, "name": "foundryx.my"}]})
 
-    monkeypatch.setattr(cf.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cf._OPENER, "open", fake_urlopen)
     api = cf.make_api(TOKEN)
     result = api("GET", "/zones?name=foundryx.my")
     assert result == [{"id": ZONE_ID, "name": "foundryx.my"}]
@@ -308,9 +307,146 @@ def test_real_http_client_raises_cloudflare_errors_without_the_token(cf, monkeyp
         body = json.dumps({"success": False, "errors": [{"code": 10000, "message": "Authentication error"}]})
         raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, io.BytesIO(body.encode()))
 
-    monkeypatch.setattr(cf.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cf._OPENER, "open", fake_urlopen)
     api = cf.make_api(TOKEN)
     with pytest.raises(cf.CloudflareError) as exc:
         api("GET", "/zones?name=foundryx.my")
     assert "10000" in str(exc.value)
     assert TOKEN not in str(exc.value)
+
+
+# --- review round 1 (security + reviewer findings) -------------------------------------
+
+
+class LeakyCloudflare(FakeCloudflare):
+    """Returns a foreign host's record in the answer for an allowlisted name."""
+
+    def __call__(self, method, path, body=None):
+        result = super().__call__(method, path, body)
+        if method == "GET" and "/dns_records?" in path and "fe-sorento" in path:
+            result = result + [r for r in self.records if r["id"] == "other1"]
+        return result
+
+
+@pytest.mark.parametrize("argv", [["status"], ["off"]])
+def test_the_list_filter_alone_refuses_a_foreign_record(cf, token_file, capsys, argv):
+    """Pins the first allowlist check (the one that builds the record list)."""
+    api = LeakyCloudflare()
+    code, out = _run(cf, argv, api, capsys)
+    assert code == 1
+    assert "REFUSED" in out
+    assert api.patches() == []
+
+
+def test_the_write_guard_alone_refuses_a_foreign_record(cf, token_file, capsys, monkeypatch):
+    """Pins the second allowlist check (just before each PATCH)."""
+    foreign = _rec("other1", "shop.foundryx.my", content=OTHER_IP, proxied=True)
+    by_host = {h: [] for h in SORENTO}
+    by_host["fe-sorento.foundryx.my"] = [foreign]
+    monkeypatch.setattr(cf, "_records", lambda api, zone_id: (by_host, []))
+    api = FakeCloudflare()
+    code, out = _run(cf, ["off", "--yes"], api, capsys)
+    assert api.patches() == []
+    assert code != 0
+    _assert_no_secrets(out)
+
+
+def test_a_record_id_that_is_not_a_plain_id_is_never_patched(cf, token_file, capsys):
+    recs = _zone_records(proxied=True)
+    recs[0]["id"] = "../dns_records/other1"
+    api = FakeCloudflare(records=recs)
+    code, out = _run(cf, ["off", "--yes"], api, capsys)
+    assert [m for m, p, b in api.calls if m == "PATCH" and ".." in p] == []
+    assert code != 0
+
+
+def test_two_zones_with_the_same_name_refuses(cf, token_file, capsys):
+    zones = [{"id": ZONE_ID, "name": "foundryx.my"}, {"id": "zone-2", "name": "foundryx.my"}]
+    api = FakeCloudflare(zones=zones)
+    code, out = _run(cf, ["status"], api, capsys)
+    assert code == 2
+    assert "found 2" in out
+    assert [c for c in api.calls if "/dns_records" in c[1]] == []
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        TOKEN + "\n# my cloudflare token\n",
+        "label: " + TOKEN,
+        TOKEN + " trailing",
+    ],
+)
+def test_a_token_file_that_is_not_one_plain_token_refuses_without_echoing_it(
+    cf, monkeypatch, tmp_path, capsys, content
+):
+    """A second line in the file once reached the Authorization header, and http.client's
+    ValueError printed the whole header (token included)."""
+    p = tmp_path / "cf.token"
+    p.write_text(content)
+    monkeypatch.setenv("CF_TOKEN_FILE", str(p))
+    api = FakeCloudflare()
+    code, out = _run(cf, ["status"], api, capsys)
+    assert code == 2
+    assert api.calls == []
+    assert TOKEN not in out
+    assert "label" not in out
+
+
+def test_an_unexpected_exception_prints_only_its_type(cf, token_file, capsys):
+    def api(method, path, body=None):
+        raise ValueError(f"Invalid header value b'Bearer {TOKEN}'")
+
+    code, out = _run(cf, ["status"], api, capsys)
+    assert code == 2
+    assert "ValueError" in out
+    assert TOKEN not in out
+
+
+def test_a_patch_exception_prints_only_its_type(cf, token_file, capsys):
+    class Boom(FakeCloudflare):
+        def __call__(self, method, path, body=None):
+            if method == "PATCH":
+                raise ValueError(f"leaky {TOKEN} {ORIGIN_IP}")
+            return super().__call__(method, path, body)
+
+    code, out = _run(cf, ["off", "--yes"], Boom(), capsys)
+    assert code != 0
+    _assert_no_secrets(out)
+
+
+def test_real_http_client_does_not_follow_a_redirect_with_the_token(cf, monkeypatch):
+    """urllib would copy the Authorization header to wherever a redirect points."""
+    import http.server
+    import threading
+
+    hits = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append((self.path, self.headers.get("Authorization")))
+            if self.path.startswith("/client/v4/zones"):
+                self.send_response(302)
+                self.send_header("Location", "/stolen")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"success": true, "result": []}')
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setattr(cf, "API_BASE", f"http://127.0.0.1:{server.server_port}/client/v4")
+        api = cf.make_api(TOKEN)
+        with pytest.raises(cf.CloudflareError) as exc:
+            api("GET", "/zones?name=foundryx.my")
+        assert TOKEN not in str(exc.value)
+    finally:
+        server.shutdown()
+    assert [p for p, _ in hits if p == "/stolen"] == []
