@@ -219,8 +219,9 @@ conversations:
   - text: "I want complete set"
     expect:
       kind: any
-      about: "the complete set: stock of each member of the SRTWC8608 set, or a which-set question listing the sets; never a request for a filter"
+      about: "the complete set: stock of each member of the SRTWC8608 set, or a which-set question listing the sets (unless T1 and T2 already asked that same question); never a request for a filter"
       must_not: ["I need at least one filter"]
+      judge: "Clarify-loop cap (#1570, crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md; owner rule: the loop breaker is a hand-over offer): if T1 and T2 both asked the same which-product / which-set question, a third identical ask here FAILS; an answer or the loop breaker (refer-to-salesman line or hand-over offer) passes."
 
 - id: stock-i01
   source: improvised
