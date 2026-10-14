@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# Restore test for the nightly Drive backup (HA-BACKUP-CHECK).
+#
+# Runs ON the box that makes the backup. Downloads the newest ${BACKUP_NAME}_* dump from
+# $RCLONE_DEST, restores it into a throwaway container (no network, no published port), counts
+# rows in $SANITY_TABLES, prints the latest $SANITY_LATEST timestamp, pings $HC_RESTORE_URL, and
+# removes the container and the downloaded file on every exit path.
+# It never connects to the live database: it does not read DB_CONTAINER or DATABASE_URL.
+# Owner runbook: documentation/runbooks/backups.md
+#
+# Config (env, or $BACKUP_ENV_FILE, the same file backup-db.sh reads):
+#   BACKUP_NAME, RCLONE_DEST   which dumps to look at (same meaning as backup-db.sh)
+#   PG_MAJOR                   Postgres major for the throwaway image; default = read from the dump
+#   RESTORE_IMAGE              image template, %s = major          (default pgvector/pgvector:pg%s)
+#   RESTORE_DB_USER            superuser inside the throwaway      (default postgres)
+#   RESTORE_ROLES              roles to pre-create so OWNER TO / GRANT lines restore (space separated)
+#   SANITY_TABLES              tables that must hold rows          (default users customers orders products audit_logs)
+#   SANITY_LATEST              table.column whose max() is printed (default audit_logs.changed_at)
+#   RESTORE_WORK_DIR           download dir                        (default /var/tmp/sorento-restore-test)
+#   RESTORE_LOCK_FILE          overlap lock                        (default /var/lock/restore-test-<name>.lock)
+#   RESTORE_READY_TIMEOUT      seconds to wait for Postgres        (default 120)
+#   AGE_IDENTITY               age identity file, needed only for .age dumps
+#   HC_RESTORE_URL             Healthchecks.io check URL; unset = no pings
+#
+# Exit codes: 0 ok, 2 config, 3 no dump / download, 4 container, 5 restore, 6 sanity, 75 already running.
+
+set -euo pipefail
+umask 077
+
+BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/sorento-backup/backup.env}"
+if [ -f "$BACKUP_ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$BACKUP_ENV_FILE"
+  set +a
+fi
+
+BACKUP_NAME="${BACKUP_NAME:-sorento_crm}"
+RCLONE_DEST="${RCLONE_DEST:-gdrive:db-backups}"
+PG_MAJOR="${PG_MAJOR:-}"
+RESTORE_IMAGE="${RESTORE_IMAGE:-pgvector/pgvector:pg%s}"
+RESTORE_DB_USER="${RESTORE_DB_USER:-postgres}"
+RESTORE_ROLES="${RESTORE_ROLES:-}"
+SANITY_TABLES="${SANITY_TABLES:-users customers orders products audit_logs}"
+SANITY_LATEST="${SANITY_LATEST:-audit_logs.changed_at}"
+RESTORE_WORK_DIR="${RESTORE_WORK_DIR:-/var/tmp/sorento-restore-test}"
+RESTORE_LOCK_FILE="${RESTORE_LOCK_FILE:-/var/lock/restore-test-${BACKUP_NAME}.lock}"
+RESTORE_READY_TIMEOUT="${RESTORE_READY_TIMEOUT:-120}"
+AGE_IDENTITY="${AGE_IDENTITY:-}"
+HC_RESTORE_URL="${HC_RESTORE_URL:-}"
+
+RESTORE_DB="restore_test"
+CONTAINER="restore-test-${BACKUP_NAME}-$(date -u +%Y%m%dT%H%M%SZ)"
+
+log() { printf '%s restore-test[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BACKUP_NAME" "$*"; }
+
+hc_ping() {
+  [ -n "$HC_RESTORE_URL" ] || return 0
+  curl -fsS -m 10 --retry 3 -o /dev/null "${HC_RESTORE_URL}$1" || log "warn: healthchecks ping ${1:-success} failed"
+}
+
+STARTED=0
+CONTAINER_STARTED=0
+WORK=""
+cleanup() {
+  local rc=$?
+  if [ "$CONTAINER_STARTED" -eq 1 ]; then
+    docker rm -f -v "$CONTAINER" >/dev/null 2>&1 || log "warn: could not remove $CONTAINER, run: docker rm -f -v $CONTAINER"
+  fi
+  [ -n "$WORK" ] && rm -rf -- "$WORK"
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 75 ] && [ "$STARTED" -eq 1 ]; then
+    log "FAILED exit=$rc"
+    hc_ping /fail
+  fi
+  exit "$rc"
+}
+trap cleanup EXIT
+
+die() { local code="$1"; shift; log "error: $*"; exit "$code"; }
+
+IDENT_RE='^[a-z_][a-z0-9_]*$'
+QUAL_RE='^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$'
+
+mkdir -p "$(dirname "$RESTORE_LOCK_FILE")"
+exec 9>"$RESTORE_LOCK_FILE"
+if ! flock -n 9; then
+  log "another restore test holds $RESTORE_LOCK_FILE, skipping"
+  exit 75
+fi
+
+STARTED=1
+hc_ping /start
+log "start source=$RCLONE_DEST"
+
+[[ "$BACKUP_NAME" =~ ^[A-Za-z0-9_-]+$ ]] || die 2 "BACKUP_NAME must be letters, digits, _ or -"
+[[ "$RESTORE_DB_USER" =~ $IDENT_RE ]] || die 2 "RESTORE_DB_USER is not a plain identifier"
+for t in $SANITY_TABLES; do [[ "$t" =~ $QUAL_RE ]] || die 2 "SANITY_TABLES entry is not a plain table name: $t"; done
+for r in $RESTORE_ROLES; do [[ "$r" =~ $IDENT_RE ]] || die 2 "RESTORE_ROLES entry is not a plain identifier: $r"; done
+if [ -n "$SANITY_LATEST" ]; then
+  [[ "$SANITY_LATEST" =~ ^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?\.[a-z_][a-z0-9_]*$ ]] \
+    || die 2 "SANITY_LATEST must be table.column"
+fi
+[[ "$RESTORE_READY_TIMEOUT" =~ ^[0-9]+$ ]] || die 2 "RESTORE_READY_TIMEOUT must be seconds"
+
+# Newest dump: names carry a sortable UTC stamp, so the last one in name order is the newest.
+NEWEST="$(rclone lsf --files-only --max-depth 1 --include "${BACKUP_NAME}_*.sql.gz" --include "${BACKUP_NAME}_*.sql.gz.age" "$RCLONE_DEST" | sort | tail -n 1)" \
+  || die 3 "rclone lsf $RCLONE_DEST failed"
+[ -n "$NEWEST" ] || die 3 "no ${BACKUP_NAME}_*.sql.gz dump found in $RCLONE_DEST"
+case "$NEWEST" in
+  *.age) [ -n "$AGE_IDENTITY" ] && [ -f "$AGE_IDENTITY" ] || die 2 "$NEWEST is encrypted; set AGE_IDENTITY to the age identity file" ;;
+esac
+log "newest dump: $NEWEST"
+
+mkdir -p "$RESTORE_WORK_DIR"
+WORK="$(mktemp -d "$RESTORE_WORK_DIR/run.XXXXXX")"
+rclone copyto "$RCLONE_DEST/$NEWEST" "$WORK/$NEWEST" || die 3 "download of $NEWEST failed"
+
+DUMP="$WORK/$NEWEST"
+if [[ "$NEWEST" == *.age ]]; then
+  age -d -i "$AGE_IDENTITY" -o "${DUMP%.age}" "$DUMP" || die 3 "age decrypt failed"
+  rm -f -- "$DUMP"
+  DUMP="${DUMP%.age}"
+fi
+gzip -t "$DUMP" || die 3 "gzip -t failed on $NEWEST"
+
+if [ -z "$PG_MAJOR" ]; then
+  PG_MAJOR="$({ gzip -dc "$DUMP" || true; } | head -n 30 | sed -n 's/^-- Dumped from database version \([0-9][0-9]*\).*/\1/p' | head -n 1)"
+  [ -n "$PG_MAJOR" ] || die 2 "could not read the Postgres version from the dump header; set PG_MAJOR"
+fi
+[[ "$PG_MAJOR" =~ ^[0-9]+$ ]] || die 2 "PG_MAJOR must be a number"
+# shellcheck disable=SC2059
+IMAGE="$(printf "$RESTORE_IMAGE" "$PG_MAJOR")"
+log "throwaway container $CONTAINER from $IMAGE"
+
+# The password never leaves this process: there is no network and no published port.
+PW="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+CONTAINER_STARTED=1
+docker run -d --name "$CONTAINER" --network none \
+  -e POSTGRES_USER="$RESTORE_DB_USER" -e POSTGRES_PASSWORD="$PW" -e POSTGRES_DB="$RESTORE_DB" \
+  "$IMAGE" >/dev/null || die 4 "docker run $IMAGE failed"
+
+psql_c() { docker exec "$CONTAINER" psql -X -A -t -q -v ON_ERROR_STOP=1 -U "$RESTORE_DB_USER" -d "$RESTORE_DB" -c "$1"; }
+
+# TCP, not the socket: the image's init-time server listens on the socket only, then restarts.
+waited=0
+until docker exec "$CONTAINER" pg_isready -q -h 127.0.0.1 -U "$RESTORE_DB_USER" -d "$RESTORE_DB" >/dev/null 2>&1; do
+  [ "$waited" -lt "$RESTORE_READY_TIMEOUT" ] || die 4 "Postgres in $CONTAINER not ready after ${RESTORE_READY_TIMEOUT}s"
+  sleep 1
+  waited=$((waited + 1))
+done
+
+for r in $RESTORE_ROLES; do
+  psql_c "CREATE ROLE \"$r\"" >/dev/null || die 5 "could not create role $r"
+done
+
+log "restoring"
+gzip -dc "$DUMP" | docker exec -i "$CONTAINER" psql -X -q -v ON_ERROR_STOP=1 -U "$RESTORE_DB_USER" -d "$RESTORE_DB" >/dev/null \
+  || die 5 "restore of $NEWEST failed (see the psql error above)"
+log "restore ok"
+
+failed=0
+for t in $SANITY_TABLES; do
+  n="$(psql_c "SELECT count(*) FROM $t")" || die 6 "count on $t failed"
+  log "rows $t=$n"
+  if ! [[ "$n" =~ ^[0-9]+$ ]] || [ "$n" -eq 0 ]; then
+    log "error: $t has no rows"
+    failed=1
+  fi
+done
+if [ -n "$SANITY_LATEST" ]; then
+  col="${SANITY_LATEST##*.}"
+  tbl="${SANITY_LATEST%.*}"
+  latest="$(psql_c "SELECT max($col) FROM $tbl")" || die 6 "max($col) on $tbl failed"
+  log "latest $SANITY_LATEST=$latest"
+fi
+[ "$failed" -eq 0 ] || die 6 "sanity counts failed"
+
+hc_ping ""
+log "done: $NEWEST restores cleanly"

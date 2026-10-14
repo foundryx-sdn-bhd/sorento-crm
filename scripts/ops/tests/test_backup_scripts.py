@@ -75,13 +75,27 @@ cat "$FAKE_DUMP_SQL"
 echo "rclone $*" >> "$FAKE_LOG"
 map() { case "$1" in *:*) echo "$FAKE_REMOTE/${1#*:}" ;; *) echo "$1" ;; esac; }
 cmd="$1"; shift
-args=(); for a in "$@"; do case "$a" in -*) ;; *) args+=("$a") ;; esac; done
+args=(); inc=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --include) inc+=("$2"); shift 2 ;;
+    --max-depth|--min-age) shift 2 ;;
+    -*) shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
 case "$cmd" in
   copy)
     [ -n "${FAKE_RCLONE_COPY_FAIL:-}" ] && exit 1
     dst="$(map "${args[1]}")"; mkdir -p "$dst"; cp "$(map "${args[0]}")" "$dst/" ;;
   copyto) cp "$(map "${args[0]}")" "$(map "${args[1]}")" ;;
-  lsf) d="$(map "${args[0]}")"; [ -d "$d" ] && ls -1 "$d" | grep -v '/$' || true ;;
+  lsf)
+    d="$(map "${args[0]}")"; [ -d "$d" ] || exit 0
+    for f in "$d"/*; do
+      [ -f "$f" ] || continue; b="${f##*/}"
+      if [ ${#inc[@]} -eq 0 ]; then echo "$b"; continue; fi
+      for g in "${inc[@]}"; do case "$b" in $g) echo "$b"; break ;; esac; done
+    done ;;
   delete) [ -n "${FAKE_RCLONE_DELETE_FAIL:-}" ] && exit 1; exit 0 ;;
 esac
 """,
@@ -311,7 +325,7 @@ def docker_calls(tmp):
 def test_restore_newest_dump_into_throwaway_container(env):
     e, tmp = env
     seed_remote(tmp, ["sorento_crm_20261012T030000Z.sql.gz", "sorento_crm_20261014T030000Z.sql.gz",
-                      "sorento_crm_20261013T030000Z.sql.gz", "n8n_20261015T030000Z.sql.gz"])
+                      "sorento_crm_20261013T030000Z.sql.gz", "zz_other_20261015T030000Z.sql.gz"])
     r = run(RESTORE, e, HC_RESTORE_URL=HCR)
     assert r.returncode == 0, r.stderr + r.stdout
     assert curl_urls(tmp) == [f"{HCR}/start", HCR]
