@@ -68,6 +68,7 @@ class ReportReply:
     rows: list[ReportOption] = field(default_factory=list)  # LAST ANSWER ROWS candidates
     pending: Optional[dict[str, Any]] = None  # ask: {kind, asked, options} for a PendingQuestion
     error: bool = False  # the call failed (not a refusal): the caller traces it as a fetch error
+    v1_sales: bool = False  # answered by v1's delivery-order report (`crm_sales_report`)
 
 
 _CHANNEL_NAMES = {"dealer": "Dealer", "project": "Project team"}
@@ -660,7 +661,7 @@ def _delivered_sales_report_args(
     return args
 
 
-_DELIVERED_BREAKDOWNS = ("customer", "product", "delivery_order")
+_DELIVERED_BREAKDOWNS = ("customer", "product", "delivery_order", "sales_agent")
 
 
 def _delivered_breakdown(spec: Any) -> Optional[str]:
@@ -708,7 +709,7 @@ def _delivered_reply(
                 for row in rows
             ],
         }
-    return ReportReply(text=text, plan=plan, pending=pending)
+    return ReportReply(text=text, plan=plan, pending=pending, v1_sales=True)
 
 
 def answer_report(

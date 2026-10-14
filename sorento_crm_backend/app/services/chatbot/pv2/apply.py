@@ -136,7 +136,12 @@ def apply_turn(
         st.pending = None
         return st, [HandOver(ask_index=0, team_key=out.escalation.team_key)]
 
-    if out.clarify.needed or not out.asks:
+    # A clarify flag beside a new_topic ask does not re-ask an OPEN question as a miss: the new
+    # topic replaces it and its own policy asks what it still needs.
+    flagged = out.clarify.needed and not (
+        st.pending is not None and any(a.act == "new_topic" for a in out.asks)
+    )
+    if flagged or not out.asks:
         about = out.clarify.about or "other"
         if st.pending is not None:
             # A garbled answer to the open question re-asks it with its real options and

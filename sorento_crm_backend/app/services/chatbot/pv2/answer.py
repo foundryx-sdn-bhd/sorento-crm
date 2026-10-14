@@ -244,8 +244,8 @@ def _build_result(state, actions, out, today, pending_in, report_answer, idea_an
             st = state.model_copy(deep=True)
             plan = _attr(rep, "plan")
             spec = _attr(plan, "spec") if plan is not None else None
-            if picked_group:
-                spec = last.held.report
+            if picked_group and _attr(rep, "v1_sales"):
+                spec = last.held.report  # the drill ran v1's report: the total stays held
             if spec is not None:
                 st.held.report = spec
             st.pending = _pending_from(_attr(rep, "pending"), st.turn_no)
