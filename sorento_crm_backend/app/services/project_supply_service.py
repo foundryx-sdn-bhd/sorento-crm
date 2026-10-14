@@ -575,6 +575,15 @@ class SupplyLinesRefused(AppException):
         return list(self.detail.get("failing_lines") or [])
 
 
+def _preview_row_facts(row: Any) -> Tuple[Any, ...]:
+    """What purchasing reads of one inquiry row: a simulated press that leaves all of it as
+    it was only re-filed the row, and writes nothing for purchasing."""
+    return (
+        row.verb, row.state, row.item_code, row.qty, row.delivery_date, row.stock_location,
+        row.so_line_id,
+    )
+
+
 def _error_detail(exc: Exception) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
     """What went wrong, and which lines it named, off any exception `confirm` can raise.
 
@@ -11379,7 +11388,7 @@ class ProjectSupplyService:
                         }
                     )
                 before_decision_id = None
-                before_rows: Set[str] = set()
+                before_rows: Dict[str, Tuple[Any, ...]] = {}
                 before_moves: Set[str] = set()
                 if observe:
                     active = self.active_decision(str(order.id))
@@ -11459,21 +11468,24 @@ class ProjectSupplyService:
                     self.db.info.pop("confirm_preview", None)
         return results
 
-    def _preview_baseline(self, order: ProjectSalesOrder) -> Tuple[Set[str], Set[str]]:
-        """The ids of the order's inquiry rows and transfers BEFORE a press writes, so the
-        preview can tell a row this press raised from one it only settles."""
+    def _preview_baseline(
+        self, order: ProjectSalesOrder
+    ) -> Tuple[Dict[str, Tuple[Any, ...]], Set[str]]:
+        """The order's inquiry rows (id -> what purchasing reads of them) and transfer ids
+        BEFORE a press writes, so the preview can tell a row this press raised from one it
+        settles, and leave out one it only re-filed."""
         from app.models.stock_transfer import StockTransfer
 
         line_ids = [str(line.id) for line in self.lines_of(str(order.id))]
         rows = (
             {
-                str(row_id)
-                for (row_id,) in self.db.query(OrderInquiryRow.id).filter(
+                str(row.id): _preview_row_facts(row)
+                for row in self.db.query(OrderInquiryRow).filter(
                     OrderInquiryRow.so_line_id.in_(line_ids)
                 )
             }
             if line_ids
-            else set()
+            else {}
         )
         moves = {
             str(move_id)
@@ -11486,13 +11498,17 @@ class ProjectSupplyService:
     def _preview_of(
         self,
         order: ProjectSalesOrder,
-        before_rows: Set[str],
+        before_rows: Mapping[str, Tuple[Any, ...]],
         before_moves: Set[str],
     ) -> Dict[str, Any]:
         """The order inquiry rows and stock transfers the press just wrote, read INSIDE its
         transaction (before the caller rolls it back). The new revision is the active one
         until that rollback, so its id names exactly what this press raised; `is_new` is
-        false for a row or transfer that already existed before the write."""
+        false for a row or transfer that already existed before the write.
+
+        A row that existed and still reads exactly as it did (a carried line's row the press
+        only re-filed under the new revision) is left out: nothing is written for purchasing
+        (owner hand test SO424764 line 416, 14 Oct 2026)."""
         from app.models.stock_transfer import StockTransfer
 
         decision = self.active_decision(str(order.id))
@@ -11519,6 +11535,7 @@ class ProjectSupplyService:
             for row in self.db.query(OrderInquiryRow)
             .filter(OrderInquiryRow.supply_decision_id == str(decision.id))
             .all()
+            if before_rows.get(str(row.id)) != _preview_row_facts(row)
         ]
         inquiry_rows.sort(key=lambda entry: (entry["line_no"] is None, entry["line_no"] or 0))
         moves = (

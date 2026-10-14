@@ -472,8 +472,9 @@ def test_a_reconfirm_marks_settled_rows_and_transfers_apart_from_new_ones(api):
     result = preview.json()["results"][0]
     assert result["ok"] is True, result
     rows = {row["line_no"]: row for row in result["inquiry_rows"]}
-    assert set(rows) == {10, 30}, rows
-    assert rows[10]["is_new"] is False, "line 10 was raised by revision 1 and is only settled"
+    # Line 10 was raised by revision 1 and re-approved unchanged: its row is only re-filed,
+    # which writes nothing for purchasing (owner hand test SO424764, 14 Oct 2026).
+    assert set(rows) == {30}, rows
     assert rows[30]["is_new"] is True
     moves = {move["line_no"]: move for move in result["transfers"]}
     assert set(moves) == {20, 40}, moves
