@@ -71,8 +71,18 @@ export function ConsignmentsList() {
     pageSize: pagination.pageSize,
     sorting,
     searchQuery,
+    // The full shape `consignmentsPagerQuery.listQueryKey` rebuilds from the URL, so the
+    // detail pager reads the page this list fetched.
     status: null,
     priority: null,
+    source: null,
+    dateFrom: null,
+    dateTo: null,
+    customerCode: null,
+    outstanding: false,
+    salesAgentId: null,
+    demandClass: null,
+    transferable: null,
     docType: 'consignment',
     enabled: !isViewPrefsLoading,
   });
@@ -120,7 +130,10 @@ export function ConsignmentsList() {
       },
       {
         accessorKey: 'customer_name',
-        header: ({ column }) => <DataGridColumnHeader title="Customer" column={column} />,
+        // A plain title: the backend has no customer_name sort key, and
+        // `DataGridColumnHeader` draws a sort button whatever `enableSorting` says.
+        header: () => <span>Customer</span>,
+        enableSorting: false,
         cell: ({ row }) => (
           <span className="block truncate" title={row.original.customer_name}>
             {row.original.customer_name}

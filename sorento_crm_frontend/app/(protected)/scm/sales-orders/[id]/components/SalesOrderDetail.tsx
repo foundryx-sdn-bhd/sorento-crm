@@ -1645,7 +1645,7 @@ export function SalesOrderDetail({
                   ...(isConsignmentRoute ? consignmentsPagerQuery : salesOrdersPagerQuery),
                   detailPath: listPath,
                   currentId: id,
-                  ariaLabel: 'sales order',
+                  ariaLabel: isConsignmentRoute ? 'consignment' : 'sales order',
                 }}
                 actions={actions}
                 pendingAction={deletionPending}
