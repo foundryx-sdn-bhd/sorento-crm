@@ -948,6 +948,39 @@ describe('BoardLineDecisionPanel: no manual Order back (borrow = order back)', (
     expect(saved.cited_document).toBeFalsy();
   });
 
+  it('a confirmed line whose frozen decision carried an order back amends without it', async () => {
+    const { onDecide } = renderPanel({
+      ...BUY_ONLY,
+      covered: true,
+      decision: {
+        revision_no: 1,
+        confirmed_at: '2026-10-01T02:00:00',
+        timely_spo_qty: '0',
+        reserve: [],
+        borrow: [],
+        buy_qty: '24',
+        order_back: true,
+        cited_document: 'SPO-2026/09-0042',
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Amend' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Buy the whole line' }));
+    fireEvent.change(screen.getByLabelText('Buy quantity'), { target: { value: '20' } });
+    fireEvent.change(screen.getByLabelText('Reserve at BRW-AM'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: '4 found at BRW-AM, the rest bought.' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    });
+
+    const saved = onDecide.mock.calls.at(-1)?.[0] ?? {};
+    expect(saved).toMatchObject({ verdict: 'amended', buy_qty: '20' });
+    expect(saved.order_back).toBeFalsy();
+    expect(saved.cited_document).toBeFalsy();
+  });
+
   it('a borrow is saved as the borrow it is, which the server reads as ORDER BACK', async () => {
     const { onDecide } = renderPanel({
       sources: [
