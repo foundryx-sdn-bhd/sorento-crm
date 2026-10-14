@@ -193,3 +193,14 @@ def test_the_migration_adds_the_column_and_sets_the_v2_labels_to_low():
                                     "WHERE label = 'staging' AND name IN (:a, :b)"), {"a": V2, "b": "semantic_parser"}).all())
         assert rows[V2] == "low"
         assert rows["semantic_parser"] is None
+
+
+def test_a_set_model_call_without_reasoning_effort_keeps_the_stored_value(api):
+    client, allow = api
+    allow.update({"system.ai_assistant_settings.view", "system.ai_assistant_settings.edit"})
+    client.post(URL, json={"label": "production", "provider": "openai", "model": "gpt-5.4-mini",
+                           "reasoning_effort": "low"})
+    res = client.post(URL, json={"label": "production", "provider": "openai", "model": "gpt-5.4"})
+    assert res.status_code == 200, res.text
+    assert _row(client)["reasoning_effort"] == "low"
+    assert _row(client)["model"] == "gpt-5.4"
