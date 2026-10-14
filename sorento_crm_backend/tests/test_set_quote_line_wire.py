@@ -154,6 +154,9 @@ def test_e1_a_po_line_for_a_set_code_drafts_one_so_line_per_part():
         by_product = {line.product_id: line for line in lines}
         parts = quoted.set_parts_snapshot
         driver = next(p for p in parts if p["is_driver"])
+        # the priced part is the PEDESTAL (the driver), which is not the first part
+        assert driver["product_code"].endswith("-RL")
+        assert parts[0]["is_driver"] is False
         for part in parts:
             line = by_product[part["product_id"]]
             assert line.qty == Decimal("100") * Decimal(part["quantity"])

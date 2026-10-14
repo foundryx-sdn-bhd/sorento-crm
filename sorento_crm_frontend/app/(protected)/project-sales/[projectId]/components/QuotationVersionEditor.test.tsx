@@ -52,6 +52,8 @@ const judgeQuotationLine = vi.fn();
 // Fix round 2: the service the coder must add to _shared/services/projectService.ts, read through
 // the hook `useQuotationLineImages(productId)` in _shared/hooks/useProjects.ts.
 const getQuotationLineImages = vi.fn();
+// SET-QUOTE-LINE review round: the series' set prices read through this service.
+const getSeriesSetRows = vi.fn(async (..._args: unknown[]) => []);
 
 vi.mock('../../_shared/services/projectService', async (importOriginal) => {
   const actual = await importOriginal<
@@ -69,6 +71,7 @@ vi.mock('../../_shared/services/projectService', async (importOriginal) => {
     recomputeQuotationVersion: (...args: unknown[]) => recomputeQuotationVersion(...args),
     judgeQuotationLine: (...args: unknown[]) => judgeQuotationLine(...args),
     getQuotationLineImages: (...args: unknown[]) => getQuotationLineImages(...args),
+    getSeriesSetRows: (...args: unknown[]) => getSeriesSetRows(...args),
   };
 });
 
@@ -92,6 +95,24 @@ vi.mock('@/app/(protected)/master-data-management/products/services/productServi
   getProductsForLineSelect: () => getProductsForLineSelect(),
   getProductsForVariantSelect: vi.fn(async () => []),
 }));
+
+// SET-QUOTE-LINE: the picker's set options come from the NEW `getProductSetsForLineSelect`
+// ({ query?, ids? }), and a pick reads the set's detail through `getProductSet`.
+const getProductSetsForLineSelect = vi.fn(async (..._args: unknown[]): Promise<unknown[]> => []);
+const getProductSet = vi.fn();
+vi.mock(
+  '@/app/(protected)/master-data-management/product-sets/services/productSetService',
+  async (importOriginal) => {
+    const actual = await importOriginal<
+      typeof import('@/app/(protected)/master-data-management/product-sets/services/productSetService')
+    >();
+    return {
+      ...actual,
+      getProductSetsForLineSelect: (...args: unknown[]) => getProductSetsForLineSelect(...args),
+      getProductSet: (...args: unknown[]) => getProductSet(...args),
+    };
+  },
+);
 
 // Master data behind the fill: the line snapshots a brand NAME and a unit CODE, so both ids
 // have to resolve before anything lands on a row. Both hooks are cached-forever queries in
@@ -2200,5 +2221,151 @@ describe('QuotationVersionEditor owner hand-test round (QUOTATION-UX)', () => {
       const header = screen.getByRole('columnheader', { name: 'Row actions' });
       expect(header.querySelector('.sr-only')?.textContent).toBe('Row actions');
     });
+  });
+});
+
+
+// SET-QUOTE-LINE review round: the picker, the Set badge, complete sets, the series set price.
+const SET_REF = {
+  id: 's9',
+  set_code: 'CWC1009-RL',
+  name: 'Water closet set',
+  is_active: true,
+  member_count: 3,
+  list_price: '900.00',
+  complete_sets: 12,
+  parts: [
+    { product_code: 'CWCX1009-RL', quantity: '1' },
+    { product_code: 'CWCY1009', quantity: '1' },
+    { product_code: 'CWC1009-SC', quantity: '2' },
+  ],
+};
+
+const SET_DETAIL = {
+  id: 's9',
+  set_code: 'CWC1009-RL',
+  name: 'Water closet set',
+  price: { resolved: '900.00' },
+  members: [
+    { product_id: 'pa', product_code: 'CWCX1009-RL', quantity: '1', sort_order: 0 },
+    { product_id: 'pb', product_code: 'CWCY1009', quantity: '1', sort_order: 1 },
+    { product_code: 'CWC1009-SC', product_id: 'pc', quantity: '2', sort_order: 2 },
+  ],
+};
+
+function setLine(overrides: Partial<QuotationLine> = {}): QuotationLine {
+  return line({
+    product_id: null,
+    product_set_id: 's9',
+    product_code: 'CWC1009-RL',
+    description: 'Water closet set',
+    uom: 'SET',
+    set_parts: [],
+    ...overrides,
+  } as Partial<QuotationLine>);
+}
+
+describe('QuotationVersionEditor sets (SET-QUOTE-LINE)', () => {
+  beforeEach(() => {
+    getProductSetsForLineSelect.mockResolvedValue([SET_REF]);
+    getProductSet.mockResolvedValue(SET_DETAIL);
+    getSeriesSetRows.mockResolvedValue([]);
+    (QUOTATION as { series_id?: string | null }).series_id = null;
+  });
+
+  async function openPicker() {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    return screen.findAllByRole('option');
+  }
+
+  it('F1: the picker lists the set first, with its code and "3 parts", from getProductSetsForLineSelect', async () => {
+    const options = await openPicker();
+
+    expect(getProductSetsForLineSelect).toHaveBeenCalled();
+    expect(options[0]).toHaveTextContent('CWC1009-RL');
+    expect(options[0]).toHaveTextContent('3 parts');
+    // the product follows the set
+    expect(options.some((option) => /SRT-BASIN-02/.test(option.textContent ?? ''))).toBe(true);
+    expect(options.findIndex((o) => /SRT-BASIN-02/.test(o.textContent ?? ''))).toBeGreaterThan(0);
+  });
+
+  it('F1: picking the set stages product_set_id and no product_id', async () => {
+    await openPicker();
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() =>
+      expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9', product_id: null }),
+    );
+  });
+
+  it('F2: a saved set line shows the Set badge and its code in read mode', async () => {
+    listQuotationLines.mockResolvedValue([setLine()]);
+    renderEditor();
+
+    expect(await screen.findByText('CWC1009-RL')).toBeInTheDocument();
+    expect(screen.getByText('Set')).toBeInTheDocument();
+  });
+
+  it('F2: and in edit mode', async () => {
+    listQuotationLines.mockResolvedValue([setLine()]);
+    await renderEditing();
+
+    expect(screen.getByText('Set')).toBeInTheDocument();
+    expect(screen.getAllByText('CWC1009-RL').length).toBeGreaterThan(0);
+  });
+
+  it('F3: the quantity cell of a set line says how many complete sets are available', async () => {
+    listQuotationLines.mockResolvedValue([setLine()]);
+    renderEditor();
+
+    expect(await screen.findByText(/12 complete sets/)).toBeInTheDocument();
+    expect(getProductSetsForLineSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ ids: ['s9'] }),
+    );
+  });
+
+  it('B1: picking a set fills the rate from the series SET price when the series names one', async () => {
+    (QUOTATION as { series_id?: string | null }).series_id = 's1';
+    getSeriesSetRows.mockResolvedValue([
+      {
+        product_set_id: 's9',
+        set_code: 'CWC1009-RL',
+        set_name: 'Water closet set',
+        part_codes: [],
+        selling_price: '1050.00',
+        max_discount_pct: '10.00',
+        derived_floor: '945.00',
+      },
+    ]);
+    await openPicker();
+    await waitFor(() => expect(getSeriesSetRows).toHaveBeenCalledWith('s1'));
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ unit_price: '1050.00' }));
+  });
+
+  it('B1: picking a set leaves the typed rate alone when the series names no price for it', async () => {
+    (QUOTATION as { series_id?: string | null }).series_id = 's1';
+    getSeriesSetRows.mockResolvedValue([]);
+    await renderEditing();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Unit price on SRT-WC-01' }), {
+      target: { value: '777.00' },
+    });
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9' }));
+    expect(stagedBody()[0]).toMatchObject({ unit_price: '777.00' });
+  });
+
+  it('Brand: picking a set never writes an empty brand over a typed one', async () => {
+    listQuotationLines.mockResolvedValue([line({ brand: 'SORENTO' })]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9' }));
+    expect(stagedBody()[0]).toMatchObject({ brand_snapshot: 'SORENTO' });
   });
 });

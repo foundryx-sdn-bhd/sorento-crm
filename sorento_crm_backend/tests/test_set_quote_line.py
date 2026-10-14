@@ -105,10 +105,10 @@ def _set(
     override: str | None = None,
     active: bool = True,
 ) -> ProductSet:
-    """A set of three: pedestal (ticked, qty 1), cistern (qty 1), seat cover (qty 2).
+    """A set of three: shared cistern FIRST (sort_order 0), pedestal (ticked), seat cover (qty 2).
 
-    Each part sits in ONLY this set, so the pedestal (sort_order 0) is the driver on both of
-    the rules `driver_member` applies (fewest sets, then sort order).
+    The cistern also sits in a second, decoy set, so it belongs to two sets and the pedestal
+    (one set) is the driver by `driver_member`'s rule even though it is NOT member index 0.
     """
     token = _uid()[:6].upper()
     code = code or f"ZZTSET{token}"
@@ -126,7 +126,26 @@ def _set(
         pedestal = _product(db, category, uom, f"{code}-RL", "200.00")
         cistern = _product(db, category, uom, f"{code}-CY", "120.00")
         seat = _product(db, category, uom, f"{code}-SC", "40.00")
-        parts = [(pedestal, "1", True), (cistern, "1", False), (seat, "2", False)]
+        decoy = ProductSet(
+            id=_uid(),
+            company_id=company_id,
+            set_code=f"ZZTDECOY{token}",
+            name=f"{MARKER} decoy {token}",
+            is_active=True,
+        )
+        db.add(decoy)
+        db.flush()
+        db.add(
+            ProductSetMember(
+                id=_uid(),
+                product_set_id=decoy.id,
+                product_id=cistern.id,
+                quantity=Decimal("1"),
+                contributes_to_price=False,
+                sort_order=0,
+            )
+        )
+        parts = [(cistern, "1", False), (pedestal, "1", True), (seat, "2", False)]
     for order, (product, qty, ticked) in enumerate(parts):
         db.add(
             ProductSetMember(
@@ -250,7 +269,13 @@ def _set_line(db, env, product_set=None, **extra):
     set_id = extra.pop("product_set_id", None) or (product_set.id if product_set else None)
     if set_id is None:
         set_id = (
-            db.query(ProductSet).filter(ProductSet.company_id == env["company_id"]).one().id
+            db.query(ProductSet)
+            .filter(
+                ProductSet.company_id == env["company_id"],
+                ~ProductSet.set_code.like("ZZTDECOY%"),
+            )
+            .one()
+            .id
         )
     body = {"product_set_id": set_id, "unit_price": "900.00", "quantity": "10"}
     body.update(extra)
@@ -340,7 +365,7 @@ def test_a2_saving_a_set_line_freezes_code_name_price_and_parts():
             Decimal(p["quantity"]) for p in parts
         ] == [Decimal("1"), Decimal("1"), Decimal("2")]
         assert all(isinstance(p["quantity"], str) for p in parts)
-        assert [p["is_driver"] for p in parts] == [True, False, False]
+        assert [p["is_driver"] for p in parts] == [False, True, False]
         member_products = {m.product.product_code: m.product_id for m in product_set.members}
         for part in parts:
             assert part["product_id"] == member_products[part["product_code"]]
@@ -405,12 +430,12 @@ def test_a2b_saving_a_set_line_with_no_complete_set_fills_the_part_codes():
     with blank_session() as db:
         env = _env(db)
         product_set = _set(db, env["company_id"], env["category"], env["uom"])
-        pedestal, cistern, seat = _codes(product_set)
+        cistern, pedestal, seat = _codes(product_set)
 
         line = _set_line(db, env)
 
         # the seat cover is two per set, so it reads "2 x CODE"
-        assert line.complete_set == f"{pedestal} + {cistern} + 2 x {seat}"
+        assert line.complete_set == f"{cistern} + {pedestal} + 2 x {seat}"
 
 
 def test_a2b_a_complete_set_the_user_typed_is_left_alone():
@@ -1010,8 +1035,8 @@ def test_d2_the_photo_candidates_of_a_set_line_are_the_driver_parts_product_file
     with blank_session() as db:
         env = _env(db)
         product_set = _set(db, env["company_id"], env["category"], env["uom"])
-        driver_product = product_set.members[0].product
-        other_product = product_set.members[1].product
+        driver_product = product_set.members[1].product  # the pedestal, not index 0
+        other_product = product_set.members[0].product
         driver_file = Attachment(
             id=_uid(),
             company_id=env["company_id"],
