@@ -229,13 +229,32 @@ COLUMNS changes none of them. Alembic head on crew/pv2: pv2_0003_label_reasoning
   localized axis names (product_spec_registry, a reply change); grant gating constants (security stays in code).
 - Proof: test_core_replay, test_carry_converted, test_livecheck_replay unchanged; parity test (retired constants ==
   seed == migrated rows), deletions guard, stale-schema fallback, one data-driven test (a row edit moves routing).
-**R3b (#1613 seat covers, new behaviour), migration `pv2_0005_kind_relations`:** `relations` jsonb on the product kind
+**R3a amendment (owner 15 Oct 00:15, 00:17):** no per-language label columns. Kind words are English in the
+registry (`word`, `word_plural`; domains `ask_word`) with a `role` column (entity | relation | host | word) and
+`host_kind` on relation rows; kinds without a row today get one (relation, host and word rows); v1 prompt vars, the
+prompt hash and the PV2 index read role 'entity' only. ms/zh come from translation_memory (models/translation_memory.py
+:45; unique source_text + source_lang + target_lang; en-source rows are chatbot rows today, read per turn by
+label_catalog.resolve with no cache, edited on System Management > Translations), seeded by migration and
+bootstrap_env, fill-only (label_catalog DIRECT_ONLY), English on a miss. The labels / plural_labels / ask_labels jsonb
+columns above are replaced by this.
+**R3b (relation kinds; redesigned 15 Oct on #1690's generic product_compatibility.kind, see the R3b note below), migration `pv2_0005_kind_relations`:** `relations` jsonb on the product kind
 row (one relation, no table): seat_cover, direction covers, source `product_compatibility` (company scoped; code
 whitelist of sources, never a table name from data), marker {product_type: toilet_seat}. Trigger: held product refs
 plus the marker ref; linked covers replace the anchor; no link -> product_find's existing none line (en/ms/zh), no
 fetch; an anchor that is itself a seat cover answers as typed; a spec in the ask is no trigger. Built on handwritten
 parses (no recorded PV2 fit parse exists); verified live in R5; if the parser does not emit the marker, the trigger
 moves to R4's relation field. R4: reverse direction (WC for a cover), cross-turn relation carry, MEMORY.
+
+**R3b redesign (crew 15 Oct):** relation kinds are generic, on lane MIRROR-LINKS' `product_compatibility.kind`
+(#1690: seat_cover / mirror / shelf, `product_compatibility_service.KINDS`, `accessories_for` / `hosts_for`), not
+seat-cover only. MIRROR-LINKS adds a product_type marker per KINDS entry, so R3b needs no migration: PV2 reads KINDS
+directly. Trigger without a parser field: a held product code ref plus a product_type ref whose key is a kind's marker
+-> `accessories_for(anchor_ids, kind)` replaces the anchor; an anchor whose own type is the marker answers as typed; a
+spec in the ask is no trigger. None lines: one full sentence per kind per language beside FITS_NONE_LINE in
+product_find (mirror / shelf ms + zh with the owner). Order: #1690 on main -> the lane merges main into crew/pv2 as a PR
+(turn/compose.py conflict #1657 vs #1668, alembic merge revision for pv2_* vs main's head) -> R3b. R4: parser relation
+field {kind, anchor}, reverse direction (hosts_for), cross-turn carry, MEMORY.
+Owner OK 15 Oct on the none lines: 'Tiada cermin/rak direkodkan untuk {code}.' / '没有 {code} 的镜子/置物架记录。'.
 
 ## Work split (R1)
 - Tester: red tests per UAC R1 (pure builder tests from recorded envelopes, engine-hook test, so_status/MCP/report row

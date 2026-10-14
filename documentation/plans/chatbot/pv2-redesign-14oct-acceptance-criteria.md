@@ -140,3 +140,18 @@ R3a-8 The CI DB built by scripts/bootstrap_env.py carries the seeded values; PV2
       (TurnV2Context.registry), pure callers the seed.
 R3a-9 No LLM calls in tests; v1 turns unchanged.
 
+### R3a amendment (owner 15 Oct 00:15 + 00:17): kind words editable on the existing Translations screen
+R3a-12 Every user-facing kind word lives in data: chatbot_entity_kinds holds the English reply word (`word`,
+      `word_plural`) for every kind PV2 names in a reply, with `role` 'entity' (the 18 parser kinds) | 'relation'
+      (seat_cover, mirror, shelf; `host_kind` wc / cabinet) | 'host' (wc, cabinet) | 'word' (every other kind word PV2
+      prints today, e.g. supplier, product_class, product_type, customer_order, order_number); chatbot_domains holds
+      the English carry word (`ask_word`). No label columns per language.
+R3a-13 The ms and zh text of those words comes from translation_memory (source_lang 'en', target 'ms' / 'zh'), the
+      table the System Management > Translations screen edits: a migration seeds one row per word and language
+      (inbound shipment zh 到货批次, seat cover, mirror 镜子, shelf 置物架, WC, cabinet, ...), replayed by
+      scripts/bootstrap_env.py; an edit on the screen changes the next PV2 reply; a word with no row gets an editable
+      placeholder row and the reply uses the English word. No kind-word copy stays in code (sentence patterns stay).
+R3a-14 v1's {{entity_kinds}} prompt vars, the prompt blocks hash and the PV2 index read role 'entity' rows only, so
+      adding relation / host / word rows changes none of them (R3a-7 holds).
+R3a-15 Kind words are fill-only in the localizer: a printed data line that happens to equal a kind word ("shelf") is
+      never rewritten.
