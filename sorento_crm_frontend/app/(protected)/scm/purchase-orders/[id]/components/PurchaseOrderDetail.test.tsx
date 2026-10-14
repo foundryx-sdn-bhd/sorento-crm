@@ -884,3 +884,46 @@ describe('PurchaseOrderDetail - the Plan card (R1, AC-H7)', () => {
     expect(screen.getByText('No sales order covered.')).toBeInTheDocument();
   });
 });
+
+// AC-CANCEL-CRM (owner hand test, 13 Oct): AutoCount Cancel PO is in TransferedQty, so the PO
+// line shows its own Qty cancelled, which document cancelled it and how it was matched.
+describe('PurchaseOrderDetail - AutoCount Cancel PO on the lines', () => {
+  function cancelledPo() {
+    return po({
+      lines: [
+        {
+          id: 'l-1', sku: 'CW-BASIN-450', product_name: 'Ceramic Wash Basin 450mm',
+          qty_ordered: 320, qty_received: 300, qty_cancelled: 20, uom: 'PCS',
+          warehouse_code: 'WH-KL', line_status: 'closed', expected_date: '2026-07-30',
+          unit_price: '100.00', discount: '15.00', line_total: '31985.00', currency: 'MYR',
+          cancels: [{ doc_no: 'XP-000077', qty: 20, match_reason: 'item' }],
+        },
+      ],
+    });
+  }
+
+  it('states Qty cancelled right after Qty received, with the document and match on it', () => {
+    usePurchaseOrder.mockReturnValue({ data: cancelledPo(), isLoading: false, isError: false });
+    renderDetail();
+    openTab('Lines');
+
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent ?? '');
+    const received = headers.findIndex((h) => h.includes('Qty received'));
+    expect(headers[received + 1]).toContain('Qty cancelled');
+    const cell = screen.getByTestId('qty-cancelled-l-1');
+    expect(cell).toHaveTextContent('20');
+    expect(cell).toHaveAttribute('title', 'XP-000077: 20 (item)');
+    // Owner, 13 Oct: the line is done (closed), so it reads Completed, not Partly cancelled.
+    expect(screen.queryByText('Partly cancelled')).not.toBeInTheDocument();
+  });
+
+  it('reads Partly cancelled while a partly cancelled line is still open', () => {
+    const order = cancelledPo();
+    order.lines[0] = { ...order.lines[0], qty_received: 100, line_status: 'open' };
+    usePurchaseOrder.mockReturnValue({ data: order, isLoading: false, isError: false });
+    renderDetail();
+    openTab('Lines');
+
+    expect(screen.getByText('Partly cancelled')).toBeInTheDocument();
+  });
+});

@@ -1301,6 +1301,31 @@ def test_the_cell_states_ordered_delivered_and_outstanding(scm_app):
     assert line["open_qty"] == 70
 
 
+def test_the_cell_leaves_an_autocount_cancel_out_of_ordered_and_delivered(scm_app):
+    """AC-CANCEL-CRM: 100 ordered, TransferedQty 30 of which 20 is AutoCount Cancel SO. The
+    drill reads Ordered 80 and Delivered 10; Outstanding stays 70 (cancel is not owed)."""
+    app, db = _client(scm_app)
+    marker = f"ZZTSD{_u()[:6]}".upper()
+    warehouse = _warehouse(db, f"ZZTBRW{_u()[:4]}-BB")
+    product = _product(db, f"{marker}-A")
+    due = _months_ahead(1)
+    _demand(
+        db, product, warehouse, qty=100, qty_delivered=30, required_date=due,
+        so_number=f"{marker}-SO1",
+    )
+    db.flush()
+    db.execute(text(
+        "UPDATE sales_order_lines SET qty_cancelled = 20 WHERE sales_order_id IN "
+        "(SELECT id FROM sales_orders WHERE so_number = :n)"), {"n": f"{marker}-SO1"})
+    db.flush()
+
+    with TestClient(app) as c:
+        got = c.get(f"{BASE}/{product.id}/cell", params={"month": month_key(due)})
+    assert got.status_code == 200, got.text
+    line = got.json()["demand"][0]
+    assert (line["qty_ordered"], line["qty_delivered"], line["open_qty"]) == (80, 10, 70)
+
+
 def test_the_cell_states_ordered_as_the_cs_required_quantity_when_set(scm_app):
     """R22: `qty_required` (the Order Inquiry sheet's own CS statement) wins over
     `qty_ordered` for the drill's Ordered column - the same coalesce `demand_qty()` and

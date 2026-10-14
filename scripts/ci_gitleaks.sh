@@ -12,7 +12,12 @@
 set -euo pipefail
 GITLEAKS_VERSION="${GITLEAKS_VERSION:-8.30.1}"
 dir="${RUNNER_TEMP:-$(mktemp -d)}"
-tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+# linux_x64 on GitHub-hosted, linux_arm64 on the Mac mini runners (sorento-mac).
+case "$(uname -m)" in
+  aarch64|arm64) arch=linux_arm64 ;;
+  *) arch=linux_x64 ;;
+esac
+tarball="gitleaks_${GITLEAKS_VERSION}_${arch}.tar.gz"
 base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
 (
   cd "$dir"
