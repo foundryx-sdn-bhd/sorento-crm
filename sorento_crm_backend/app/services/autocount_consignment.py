@@ -204,7 +204,7 @@ def return_line_answer(db: Session, company_id: str, line: AutocountCancelLine
         book = (db.query(AutocountCancelDoc.source_book)
                 .filter(AutocountCancelDoc.id == line.cancel_doc_id).scalar())
         if book:
-            query = query.filter(SalesOrderLine.source_ref.like(f"{book}:{CG_PREFIX}:%"))
+            query = query.filter(SalesOrderLine.source_ref.startswith(f"{book}:{CG_PREFIX}:", autoescape=True))
         if line.from_doc_no:
             query = query.filter(SalesOrder.so_number == line.from_doc_no)
         hits = [str(r[0]) for r in query.limit(2).all()]
