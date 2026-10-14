@@ -522,38 +522,57 @@ const UserList = () => {
           const avatarUrl = user.avatar || null;
           const initials = getInitials(user.name || user.email);
 
+          // One value per cell, one line per row (owner 14 Oct 2026): the email is
+          // its own column, not a second line under the name.
           return (
-            <div className="flex items-center gap-3">
-              <Avatar className="size-8">
+            <div className="flex items-center gap-3 min-w-0">
+              <Avatar className="size-8 shrink-0">
                 {avatarUrl && (
                   <AvatarImage src={avatarUrl} alt={user.name || ''} />
                 )}
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
-              <div className="space-y-px">
-                <div className="font-medium text-sm">{user.name}</div>
-                <div className="text-muted-foreground text-xs">
-                  {user.email}
-                </div>
-              </div>
+              <span className="font-medium text-sm truncate" title={user.name}>
+                {user.name}
+              </span>
             </div>
           );
         },
-        size: 300,
+        size: 220,
         meta: {
           headerTitle: 'Name',
           skeleton: (
             <div className="flex items-center gap-3">
               <Skeleton className="size-8 rounded-full" />
-              <div className="space-y-1">
-                <Skeleton className="h-4 w-40" />
-                <Skeleton className="h-4 w-24" />
-              </div>
+              <Skeleton className="h-4 w-32" />
             </div>
           ),
         },
         enableSorting: true,
         enableHiding: false,
+      },
+      {
+        accessorKey: 'email',
+        id: 'email',
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Email"
+            visibility={true}
+            column={column}
+          />
+        ),
+        cell: ({ row }) => (
+          <span className="block truncate" title={row.original.email}>
+            {row.original.email}
+          </span>
+        ),
+        size: 220,
+        meta: {
+          headerTitle: 'Email',
+          skeleton: <Skeleton className="h-4 w-40" />,
+        },
+        enableSorting: false,
+        enableHiding: true,
       },
       {
         accessorKey: 'role_name',
