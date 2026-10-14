@@ -49,7 +49,6 @@ import { formatMyrExact } from '@/app/(protected)/project-sales/_shared/lib/mone
 import { buildPlanActions, PLAN_PERMISSION } from '../lib/planActions';
 import { formatStatusLabel } from '@/lib/status-badge';
 import { demandClassBadge } from '../../lib/demandClass';
-import { ConsignmentBadge } from '../../lib/docType';
 import { TRANSFERABLE_FILTER_OPTIONS, transferableBadge } from '../../lib/transferable';
 import { salesOrderPlannedBadge } from '../../lib/salesOrderPlanned';
 import {
@@ -480,7 +479,6 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
             >
               {row.original.so_number}
             </Link>
-            <ConsignmentBadge docType={row.original.doc_type} size="xs" />
             {/* The document date is a COLUMN of its own now (the captain, 27 Aug): as a grey
                 sub-line here it could not be sorted on, could not be compared down the page
                 against the Delivery date column beside it, and read as an attribute of the
