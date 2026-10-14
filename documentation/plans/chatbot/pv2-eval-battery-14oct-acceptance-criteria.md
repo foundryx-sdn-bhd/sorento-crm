@@ -73,8 +73,13 @@ Checks (name: fails when):
   Product codes (e.g. `SRTWC286-SH`, `CKS1052-BL`) and anything inside a URL are not internal keys.
 - `silent`: no `send_message` action with non-blank text.
 - `false_gap`: the turn sends at least one file (`send_attachments`) and the reply holds a gap sentence
-  (`<CODE> has no ...`, `<CODE> tiada ...`, `<CODE> 没有...`) for a CODE that occurs (case-insensitive) in any sent
-  file's url/name/label.
+  (`<CODE> has no <types>.`, `<CODE> tiada <types>.`, `<CODE> 没有<types>。`, built at `turn/compose.py:711`)
+  for a CODE and a type that a sent file has: the file's `filename` or `url` holds CODE (case-insensitive) AND the
+  file's `attachmentType` (e.g. `Product Photos`, `Technical Specifications`; item keys measured on dev
+  chatbot.turns: url, filename, mimeType, attachmentType, uploadedAt, fileHash) is one of the named types. A gap line for a type that was not sent
+  ("photo sent, no Technical Drawing on file") is correct and passes. When the sent files carry no type, the
+  deterministic check does not fire and the judge (rubric rule 5) decides. (Amended 14 Oct after the battery author
+  found two correct replies the code-only rule failed: attachments-i04 T3, attachments-r03 T2.)
 - `stuck`: the reply equals the previous turn's reply (after whitespace trim) and `allow_repeat` is not true.
 - `must`, `must_any`, `must_not`: as UAC-1.
 - `attachments`: `true` and no file sent, or `false` and a file sent.
@@ -85,7 +90,7 @@ Checks (name: fails when):
 ## UAC-5 Judge (`scripts/pv2_battery/judge.py`)
 
 - Model `claude-opus-5-5`. Rubric lives in the file (a module constant) and names the owner rules.
-- Input per turn: the conversation so far (user + bot), the user text, the reply (+ file count), the expectation,
+- Input per turn: the conversation so far (user + bot), the user text, the reply (+ the sent files' filename and attachmentType), the expectation,
   the turn's facts (resolved entities and tool results digest from the trace), the audience.
 - Output JSON `{verdict: pass|fail, classes: [...], reason}`; classes from: `wrong_subject, lost_ask,
   should_clarify, needless_clarify, invented_data, wrong_language, leak, false_gap, permission, handover_wrong,
