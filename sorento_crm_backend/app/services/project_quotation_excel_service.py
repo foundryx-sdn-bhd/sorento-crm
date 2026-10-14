@@ -220,7 +220,12 @@ def _picture_bytes(
     cell is left empty rather than the export failing. The reader is waiting for a price, not a
     photograph.
     """
-    ids = {str(line.image_attachment_id) for line in lines if line.image_attachment_id}
+    ids = {
+        str(value)
+        for line in lines
+        for value in (line.image_attachment_id, line.drawing_attachment_id)
+        if value
+    }
     pictures: Dict[str, bytes] = {}
     for attachment_id in sorted(ids):
         rendered = product_images.render(db, attachment_id)
@@ -367,7 +372,8 @@ def _write_scope(
     show_image = any(line.image_attachment_id for line in lines)
     columns = [c for c in pdf._COLUMNS if c != pdf._IMAGE_COLUMN or show_image]
     money_column = len(columns)
-    pictures = _picture_bytes(db, lines) if show_image else {}
+    # Fetched for the drawings too: TECHNICAL SPEC carries the line's drawing (AC-QLG11).
+    pictures = _picture_bytes(db, lines)
     positions = {name: index for index, name in enumerate(columns, start=1)}
 
     # The label verbatim, not upper-cased: it is the customer's own wording and it is also the tab
@@ -415,30 +421,35 @@ def _write_scope(
             pdf.item_number(line, position),
             alignment=_CENTER,
         )
+        # The cell VALUE stays empty under a picture, as in the client's own workbook: text under
+        # the picture shows through around its edges, and re-appears the moment the sheet is
+        # sorted. The photo goes in PRODUCT IMAGE, the drawing in TECHNICAL SPEC.
+        placed = []
         if show_image:
-            # The cell VALUE stays empty, as in the client's own workbook: text under the picture
-            # shows through around its edges, and re-appears the moment the sheet is sorted.
-            data = pictures.get(str(line.image_attachment_id or ""))
-            if data is not None:
-                height = _anchor(sheet, row, positions[pdf._IMAGE_COLUMN], data)
-                if height:
-                    # The row has to make room for what is sitting on it, or the picture lies over
-                    # the two lines below and the sheet becomes unreadable. Points, not pixels.
-                    needed = height * 0.75 + 4
-                    current = sheet.row_dimensions[row].height or 0
-                    sheet.row_dimensions[row].height = max(current, needed)
-        _put(
-            sheet,
-            row,
-            positions["TECHNICAL SPEC"],
-            _text(line.technical_spec),
-            alignment=_WRAP_LEFT,
+            placed.append((pdf._IMAGE_COLUMN, line.image_attachment_id))
+        placed.append(("TECHNICAL SPEC", line.drawing_attachment_id))
+        for column_name, attachment_id in placed:
+            data = pictures.get(str(attachment_id or ""))
+            if data is None:
+                continue
+            height = _anchor(sheet, row, positions[column_name], data)
+            if height:
+                # The row has to make room for what is sitting on it, or the picture lies over
+                # the two lines below and the sheet becomes unreadable. Points, not pixels.
+                needed = height * 0.75 + 4
+                current = sheet.row_dimensions[row].height or 0
+                sheet.row_dimensions[row].height = max(current, needed)
+        # Typed tech-spec text from before drawings printed is kept, under the description.
+        description = "\n".join(
+            part
+            for part in (_text(line.description_snapshot), _text(line.technical_spec))
+            if part
         )
         _put(
             sheet,
             row,
             positions["DESCRIPTION"],
-            _text(line.description_snapshot),
+            description or None,
             alignment=_WRAP_LEFT,
         )
         _put(sheet, row, positions["BRAND"], _text(line.brand_snapshot), alignment=_WRAP_LEFT)

@@ -92,6 +92,7 @@ import {
   listCollaborators,
   listParties,
   listProjectTemplates,
+  getQuotationLineImages,
   listProjectTypes,
   listProjects,
   listStakeholders,
@@ -1364,6 +1365,20 @@ export function useLineVerdict(
     // The same draft judged twice in 30s gets the cached answer - typing a price, deleting
     // it, and retyping it should not be three requests.
     staleTime: 30_000,
+  });
+}
+
+/**
+ * A product's photo and drawing cells for a line that has no stored answer for it yet (a new line,
+ * or one whose product was just changed). Null asks nothing.
+ */
+export function useQuotationLineImages(productId: string | null) {
+  return useQuery({
+    queryKey: ['quotation-line-images', productId ?? ''],
+    queryFn: () => getQuotationLineImages(productId as string),
+    enabled: Boolean(productId),
+    // The signed URLs are reused server-side for 45 minutes; a few minutes here is well inside.
+    staleTime: 5 * 60_000,
   });
 }
 
