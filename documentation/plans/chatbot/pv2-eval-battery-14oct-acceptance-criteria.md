@@ -101,6 +101,9 @@ Checks (name: fails when):
   envelope / contact / profile keys and masks `wamid.` tokens; phone-shaped numbers (every Malaysian format) are
   masked in the facts, the reply and the history. Names inside business rows (customers, salesmen, drivers) go out as
   they are: the bot prints them and the app already sends the same data to its own LLM provider.
+  Measured on 233 real v2 traces (7449da672): no contact phone or profile name reaches the digest; the only contact
+  name left is the casual lane's own `first_name:` prompt line on greeting turns, the same name the casual reply
+  greets with.
 - Calibration: `--calibrate` runs the judge over `calibration.yaml` and prints agreement; a baseline table states
   the agreement and is marked PROVISIONAL below 0.9.
 
