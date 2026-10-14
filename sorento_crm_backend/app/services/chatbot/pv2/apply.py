@@ -1289,7 +1289,8 @@ def _waiting(ask: Ask, held: Held) -> dict:
     """The ask a question raised after `_commit` keeps: held already carries its clears, its ops and
     every entity or spec that resolved, so a pick replays none of them; what is left waits on a question.
     The domain and report are the ones held took (the kind found corrects a domain, a plan drops a filter
-    it cannot run), so replaying them only asks the report's open question again."""
+    it cannot run), so replaying them only asks the report's open question again; held carries the
+    attachment kinds that were vetted, so none is copied."""
     have = {str(v) for refs in held.refs.values() for r in refs for v in (r.key, r.phrase) if v}
     attributes = {s.attribute for s in held.specs}
 
@@ -1300,7 +1301,10 @@ def _waiting(ask: Ask, held: Held) -> dict:
     entities = [e for e in ask.entities if waits(e)]
     specs = [s for s in ask.specs if s.op in ("set", "add") and s.attribute not in attributes]
     report = held.report if ask.report is not None else None
-    update = {"domain": held.domain, "report": report, "entities": entities, "specs": specs, "cleared": []}
+    update = {
+        "domain": held.domain, "report": report, "entities": entities, "specs": specs, "attachment_type": None,
+        "cleared": [],
+    }
     return _origin_of(ask.model_copy(update=update))
 
 
@@ -1326,10 +1330,14 @@ def valid_origin(origin: dict | None) -> Ask | None:
 
 def _without_picked(origin: Ask, payload: dict[str, Any], question: str) -> Ask:
     """The original ask minus the item the pick answered: every entity of the picked kind (the pick
-    replaces that kind, as before R2), the spec a spec question asked about (a pick among the closest
-    products answers the spec that found nothing), the attachment kind or domain picked."""
+    replaces that kind, as before R2), on a which_held question every "this one" entity (the pick is the
+    held subject they meant), the spec a spec question asked about (a pick among the closest products
+    answers the spec that found nothing), the attachment kind or domain picked."""
     kind = payload.get("kind")
-    update: dict[str, Any] = {"entities": [e for e in origin.entities if e.kind != kind]}
+    which_held = question == "clarify_which_held"
+    update: dict[str, Any] = {
+        "entities": [e for e in origin.entities if e.kind != kind and not (which_held and e.refers_to_held)]
+    }
     if question == "clarify_spec_attribute":
         update["specs"] = [s for s in origin.specs if s.attribute not in (None, payload.get("attribute"))]
     if kind == "attachment_type":
