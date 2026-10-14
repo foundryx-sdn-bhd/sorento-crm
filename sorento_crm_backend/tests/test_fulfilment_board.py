@@ -7590,8 +7590,10 @@ def test_partial_delivered_undecided_line_asks_full_qty_and_holds_only_owed():
     """3 ordered, 1 delivered: the board plans the WHOLE 3 - one still to ship, one to put
     back - while the hold a confirmation writes is capped at the 2 still owed.
 
-    So a Reserve of 1 on this line takes 1 out of free stock for everybody else, not 0 and
-    not 3.
+    Owner rule 14 Oct 2026 (restated AC-S2-4): the delivered unit consumes the Reserve
+    first, then the Buy. So Reserve 1 + Buy 2 holds nothing (the delivered 1 used the
+    Reserve up) and the Buy 2 covers the 2 still owed: free stock for everybody else is
+    untouched.
     """
     with blank_session() as db:
         actor = _user(db, f"{MARKER} Eling")
@@ -7626,8 +7628,8 @@ def test_partial_delivered_undecided_line_asks_full_qty_and_holds_only_owed():
         )
         db.commit()
 
-        assert _free_at(db, product, pool) == Decimal("9"), (
-            "min(reserve 1, owed 2) = 1 comes out of free stock, and nothing more"
+        assert _free_at(db, product, pool) == Decimal("10"), (
+            "the delivered 1 consumed the Reserve 1, so nothing comes out of free stock"
         )
 
 
