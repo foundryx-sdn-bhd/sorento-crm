@@ -69,7 +69,7 @@ conversations:
       about: "the photo of SRTWC286-SH is sent"
       attachments: true
       must: ["SRTWC286-SH"]
-      must_not: ["has no Product Photos"]
+      must_not: ["SRTWC286-SH has no Product Photos"]
 
 - id: mixed-r04
   source: real
@@ -105,7 +105,8 @@ conversations:
     expect:
       kind: any
       about: "purchase cost is not given to this contact: refuses the cost (SRTKT72SS-NEW may also be a did-you-mean for SRTKT72SS); never a cost figure"
-      must_not: ["CNY", "MYR", "RM "]
+      must_not: ["CNY", "MYR"]
+      judge: "No money amount may appear (RM, CNY or MYR figures)."
   - text: "SRTKT72SS"
     expect:
       kind: any

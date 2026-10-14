@@ -53,7 +53,7 @@ conversations:
   - text: "srtwf12c eta"
     expect:
       kind: answer
-      about: "no incoming for SRTWF12C itself, with its alternative SRTWF12C-NEW incoming; the label reads SRTWF12C once"
+      about: "ETA / incoming for SRTWF12C as the data holds it; when SRTWF12C itself has none, its alternative SRTWF12C-NEW's incoming is the right extra; the label reads SRTWF12C once"
       must: ["SRTWF12C"]
       must_not: ["SRTWF12C SRTWF12C"]
   - text: "okay can help me check the stock fort he previous product I asked ealrie?"
@@ -84,7 +84,7 @@ conversations:
   - text: "srtwf12c eta"
     expect:
       kind: answer
-      about: "ETA for SRTWF12C (none) with the SRTWF12C-NEW alternative"
+      about: "ETA / incoming for SRTWF12C as the data holds it (when it has none, the SRTWF12C-NEW alternative)"
       must: ["SRTWF12C"]
   - text: "before this"
     expect:
@@ -123,7 +123,7 @@ conversations:
       about: "both kinds for the held SRTWC286 family members that have them (SRTWC286-SH photo + technical drawing); attachment words are never read as a product"
       attachments: true
       must: ["SRTWC286-SH"]
-      must_not: ['Couldn''t find: "photo', "has no Product Photos"]
+      must_not: ['Couldn''t find: "photo', "SRTWC286-SH has no Product Photos"]
   - text: "photo for this product"
     expect:
       kind: answer

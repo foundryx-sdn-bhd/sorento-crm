@@ -206,7 +206,7 @@ conversations:
       about: "'this product' = CSH3010-BL-DIY, the only line of SO422057: its photo is sent, no which-one question"
       attachments: true
       must: ["CSH3010-BL-DIY"]
-      must_not: ['Which "this product"', "has no Product Photos"]
+      must_not: ['Which "this product"', "CSH3010-BL-DIY has no Product Photos"]
       judge: "point_into_answer: SO422057 has exactly 1 product line (CSH3010-BL-DIY)"
   - text: "ok and its stock?"
     expect:

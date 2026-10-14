@@ -115,7 +115,7 @@ conversations:
   - text: "jualan terbaik bulan lepas untuk kitchen sink"
     expect:
       kind: any
-      about: "top-selling kitchen sinks for September 2026 (last month), or the metric / basis question in Malay"
+      about: "top-selling kitchen sinks for last month (the calendar month before the run date), or the metric / basis question in Malay"
   - text: "ikut kuantiti"
     expect:
       kind: answer

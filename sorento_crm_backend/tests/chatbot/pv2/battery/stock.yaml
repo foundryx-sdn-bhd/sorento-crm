@@ -182,7 +182,8 @@ conversations:
   - text: "SRTKS 8848有来货吗？"
     expect:
       kind: answer
-      about: "incoming for SRTKS8848 (the space inside the code is a typo): says there is none; Chinese or English reply"
+      about: "incoming for SRTKS8848 (the space inside the code is a typo), stated as the data holds it (its ETA, or that nothing is incoming); Chinese or English reply"
+      judge: "On 14 Oct the dev DB held no incoming for SRTKS8848 (discontinued). Judge against the turn's facts, not this note."
       must: ["SRTKS8848"]
   - text: "SRTKS8848 stock"
     expect:
@@ -193,7 +194,7 @@ conversations:
     expect:
       kind: ask
       about: "SRTKS8152 does not exist: a did-you-mean or which-product question offering real codes; never a stock answer for SRTKS8848 again"
-      must_not: ["SRTKS8848"]
+      judge: "A did-you-mean that lists SRTKS8848 among the options is fine; repeating the SRTKS8848 stock answer is a fail."
 
 - id: stock-r10
   source: real

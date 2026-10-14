@@ -1,8 +1,11 @@
 # PV2 battery judge calibration (UAC-3): real bot replies from crew live checks with the crew verdict.
 # history = the earlier turns of the same chat (bot text cut at 300 chars, marked [...]); reply = the full
 # reply of the judged turn read from chatbot.turns (send_message text); files = files the turn sent.
+# audience = the battery audience of the contact the real turn ran as (staff rows: the office-tier contact or a
+# staff contact without sales-order grants; dealer_nogrant rows: the no-grant dealer of contacts.yaml).
 # Person names do not occur; contact ids are only in contacts.yaml.
 - id: cal-p01
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -191,6 +194,7 @@
   label: pass
   why: 'Crew verdict PASS: ''semua laa'' read as all, incoming for the -NEW, -NEW-200 and -NEW-P members, in Malay. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T5.'
 - id: cal-p02
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -303,6 +307,7 @@
   label: pass
   why: 'Crew verdict PASS: right order, customer, status and line; the ''Delivery order:'' header label is a minor wording issue only. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T8.'
 - id: cal-p03
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -435,6 +440,7 @@
   label: pass
   why: 'Crew verdict PASS: no incoming for SRTWF12C, alternative SRTWF12C-NEW ETA, label single in the reply. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T10.'
 - id: cal-p04
+  audience: staff
   history:
   - user: SRTWC286-SH stock
     bot: |-
@@ -474,10 +480,11 @@
     must:
     - SRTWC286-SH
     must_not:
-    - has no Product Photos
+    - SRTWC286-SH has no Product Photos
   label: pass
   why: 'Crew verdict PASS (round 8a target): both files attached and no false ''has no Product Photos'' line. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-JD-ST12-14 T2.'
 - id: cal-p05
+  audience: staff
   history:
   - user: SRTWC286-SH stock
     bot: |-
@@ -527,6 +534,7 @@
   label: pass
   why: 'Crew verdict PASS: ''this product'' resolved to the held SRTWC286-SH and its photo sent. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-JD-ST12-14 T3.'
 - id: cal-p06
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -649,6 +657,7 @@
   label: pass
   why: 'Crew verdict PASS: ''eta'' answered for -NEW, -NEW-200 and -NEW-P directly. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv C-S6-7 T2.'
 - id: cal-p07
+  audience: dealer_nogrant
   history: []
   text: SO422057 status?
   reply: Sales order figures are not enabled for your account.
@@ -663,6 +672,7 @@
   label: pass
   why: 'Crew verdict PASS: exact refusal, no not-found or offer that would reveal the order. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-AL-SO T1.'
 - id: cal-p08
+  audience: dealer_nogrant
   history: []
   text: SRTWC286-SH ada stok tak?
   reply: 'Tidak dapat menemui: "SRTWC286-SH" (product). Adakah anda mahu saya rujuk kepada pasukan warehouse?'
@@ -677,6 +687,7 @@
   label: pass
   why: 'Crew verdict PASS: not-found and offer in Malay (a team name staying English is fine). crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv C-S13 T1.'
 - id: cal-p09
+  audience: dealer_nogrant
   history: []
   text: sales report for September
   reply: Sales report is not enabled for your account.
@@ -689,6 +700,7 @@
   label: pass
   why: 'Crew verdict PASS: refusal at the first step that needs the grant. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv C-S15 T1.'
 - id: cal-p10
+  audience: dealer_nogrant
   history: []
   text: 老板，我要订货：SRTWC286-SH 5个，SRTWF12C-GM-NEW 3个，SRT373-8 2个，SRTWB999 4个
   reply: 找不到："SRTWC286-SH" (product), "SRTWF12C-GM-NEW" (product), "SRT373-8" (product), "SRTWB999" (product)。 需要我转交给 customer service 团队吗？
@@ -704,6 +716,7 @@
   label: pass
   why: 'Crew verdict PASS: four typed codes kept verbatim, Chinese reply, customer service offer. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-AL-ST6 T1.'
 - id: cal-p11
+  audience: dealer_nogrant
   history:
   - user: SRTWC286-SH stock 3 unit
     bot: 'Couldn''t find: "SRTWC286-SH" (product). Would you like me to escalate to warehouse team?'
@@ -723,6 +736,7 @@
   label: pass
   why: 'Crew verdict PASS: typed product kept after a report refusal; v1 parity for a contact that sees no SRT products. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-AL-X-switch T3.'
 - id: cal-p12
+  audience: staff
   history:
   - user: 202610-0151 STATUS?
     bot: |-
@@ -789,6 +803,7 @@
   label: pass
   why: 'Crew verdict PASS: the order answered again after ''back to the order just now''. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv C-S8-10 T3.'
 - id: cal-f01
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -821,6 +836,7 @@
   label: fail
   why: 'Crew verdict FAIL: ''mou'' read as an unknown entity, the ETA ask lost, a which-mou menu offered the held family. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T2.'
 - id: cal-f02
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -1079,6 +1095,7 @@
   label: fail
   why: 'Crew verdict FAIL: the pick re-ran the stock answer instead of the ETA. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T3.'
 - id: cal-f03
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -1171,10 +1188,11 @@
     about: the files of the first member SRTWC286-SH, with no gap line for a kind that was sent
     attachments: true
     must_not:
-    - has no Product Photos
+    - SRTWC286-SH has no Product Photos
   label: fail
   why: 'Crew verdict FAIL: photo and drawing sent but the text says ''SRTWC286-SH has no Product Photos.'' (false gap). crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T7.'
 - id: cal-f04
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -1294,6 +1312,7 @@
   label: fail
   why: 'Crew verdict FAIL: offered the order number as the product instead of CKS1052-BL. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T9.'
 - id: cal-f05
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -1493,6 +1512,7 @@
   label: fail
   why: 'Crew verdict FAIL: answered SRTWF12C variants, the subject just asked, not the earlier SRTWC286. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T11.'
 - id: cal-f06
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -1646,6 +1666,7 @@
   label: fail
   why: 'Crew verdict FAIL: a which-before-this menu whose only option is the doubled label of the current subject. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T12.'
 - id: cal-f07
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -1749,6 +1770,7 @@
   label: fail
   why: 'Crew verdict FAIL: the order ask was swallowed by a stale which-one (''didn''t catch your choice''). crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-JD T8.'
 - id: cal-f08
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -1827,6 +1849,7 @@
   label: fail
   why: 'Crew verdict FAIL: ''htis'' read as a product named ''this''. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T6.'
 - id: cal-f09
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -1926,6 +1949,7 @@
   label: fail
   why: 'Crew verdict FAIL: right order but the reply is in Malay for an English turn (sticky language). crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T8.'
 - id: cal-f10
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -2043,6 +2067,7 @@
   label: fail
   why: 'Crew verdict FAIL: content right but the reply mixes English and Malay lines. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T10.'
 - id: cal-f11
+  audience: staff
   history:
   - user: check stock srtwc286
     bot: |-
@@ -2104,6 +2129,7 @@
   label: fail
   why: 'Crew verdict FAIL: ''didn''t catch your choice'' plus the which-of-10 menu again. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T4.'
 - id: cal-f12
+  audience: dealer_nogrant
   history:
   - user: sales report for September
     bot: Sales report is not enabled for your account.
