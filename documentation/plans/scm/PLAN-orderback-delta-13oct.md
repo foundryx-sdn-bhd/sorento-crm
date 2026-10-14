@@ -127,3 +127,19 @@ reactions on unsaved lines and amendment emails keep their own row lines.
   mapping; the hand-test script is `laneboard/scripts/1631.md`.
 - Open for the owner (not changed here): a Reject of a Borrow line tells purchasing CANCEL ALL at
   the donor row's location (subject `OI: <donor> @ SO`), not at the SO line's own location.
+
+## Owner hand test fix round (14 Oct), red-first
+
+1. Bulk "Decide N lines: Borrow" listed no location. The line's own location is now always in
+   its Location list (`isOwnLocationBorrow`, `boardAmend.ts`) and never capped: what is not free
+   there is saved short, as the per-line "Add a borrow" saves it. Other locations keep their
+   skip rules.
+2. Email "just like before" (`oihr_0008_so_table_on_top`): the S/O facts once in a top table,
+   item rows below (LOCATION | ITEM CODE | QTY | [NEW QTY] | DELIVERY | [NEW DATE] | REMARK), one
+   plain heading ORDER INQUIRY. The details live only in REMARK.
+3. No shortfall wording: ", n SHORT" and the STOCK SHORT headline are gone, and a shortfall is no
+   longer a change to tell.
+4. Simulation (owner case SO424764 line 416, simulated on main): a row the press only re-filed
+   (every fact unchanged) is no longer listed under "Would write" (`_preview_row_facts`). The
+   email side was already right on this branch: the carried row is kept, not cancelled and
+   re-raised, and not sent.
