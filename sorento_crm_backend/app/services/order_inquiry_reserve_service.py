@@ -1267,7 +1267,7 @@ class OrderInquiryReserveService:
         }
 
     def reserve_status_summary(self, *, actor_user_id: str) -> Dict[str, int]:
-        """OI count per status (everyone's) and the caller's own parked item counts."""
+        """OI count per status (everyone's) and the OI count of the caller's own parked requests / notices."""
         pred = reserve_status_predicates()
         rr, req = OrderInquiryReserveRequestRow, OrderInquiryReserveRequest
         counts = (
@@ -1276,8 +1276,10 @@ class OrderInquiryReserveService:
                     func.count(func.distinct(req.order_inquiry_id)).filter(pred[key])
                     for key in ("parked", "needs_reserve", "notice_parked", "reserved")
                 ],
-                func.count(rr.id).filter(and_(pred["parked"], req.requested_by == actor_user_id)),
-                func.count(rr.id).filter(
+                func.count(func.distinct(req.order_inquiry_id)).filter(
+                    and_(pred["parked"], req.requested_by == actor_user_id)
+                ),
+                func.count(func.distinct(req.order_inquiry_id)).filter(
                     and_(
                         rr.notice_parked_by == actor_user_id,
                         rr.notice_parked_at.isnot(None),
