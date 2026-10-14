@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render as rtlRender, screen, fireEvent, within } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import TeamTree from './team-tree';
@@ -83,6 +83,31 @@ describe('TeamTree write gates (TEAMS-PERM)', () => {
     expect(await screen.findByRole('menuitem', { name: 'Delete team' })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Edit team' })).not.toBeInTheDocument();
     expect(screen.getByText('Solo').closest('[draggable]')).toBeNull();
+  });
+});
+
+describe('TeamTree drag gate (TEAMS-PERM review)', () => {
+  // The Members link is natively draggable, and its dragstart bubbles to the row.
+  function dragSoloMembersOntoGrandparent() {
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn() };
+    const soloMembers = screen.getAllByRole('link', { name: 'Members' })[3];
+    const target = screen.getByText('Grandparent').closest('.group') as HTMLElement;
+    fireEvent.dragStart(soloMembers, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+  }
+
+  it('teams.edit: dragging a row onto another team re-parents it (control)', async () => {
+    render(<TeamTree teams={teams} query="" canEdit canDelete onEdit={vi.fn()} onDelete={vi.fn()} />);
+    dragSoloMembersOntoGrandparent();
+    await waitFor(() => expect(updateTeam).toHaveBeenCalledWith('root2', { parent_team_id: 'gp' }));
+  });
+
+  it('a view-only caller dragging the Members link onto another team re-parents nothing', async () => {
+    render(<TeamTree teams={teams} query="" canEdit={false} canDelete={false} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    dragSoloMembersOntoGrandparent();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(updateTeam).not.toHaveBeenCalled();
   });
 });
 
