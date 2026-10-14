@@ -48,8 +48,9 @@ SO419598 BRW 1 / 0.
    `assign()` never serves (product 0fb2507c, BRW 79: next line short 47 with the stock
    left free), so round 3 moved it.
    What a line already holds, for the landed goods (`_landed_holds`) and the book's S/O
-   (`book_so_pins`), is its holds' REAL takes: `_assignments` walks the decisions and
-   placements once (only products with a hold) and hands those takes over (`held`), so a
+   (`book_so_pins`), is its holds' REAL takes plus what it lent (STOCK-DEBT-LENDABLE):
+   `_assignments` walks the holds (only products with a hold; once before the landed
+   goods, and in the view again before the S/O) and hands those takes over (`held`), so a
    pin of 126 on a bin of 50 counts as 50 and the order's own SPO of 76 covers the rest.
 3. `cell()`: the Supply tab lists every source a line of the column is pinned on (R43 did
    this for PO pins only), stand-ins included, Free 0 outside its home column.

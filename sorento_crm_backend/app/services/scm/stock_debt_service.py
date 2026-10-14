@@ -1206,16 +1206,19 @@ class StockDebtService:
 
         def held_by_line(all_holds: Sequence[Hold]) -> Dict[str, float]:
             """STOCK-DEBT-STALE-PIN: what each line's holds REALLY cover - their takes in a
-            walk of these holds - rather than the holds' own quantities, which a pin on a
-            bin holding less than it states overstates. Walked only for the products that
-            have a hold at all."""
+            walk of these holds, plus what the line lent of them (STOCK-DEBT-LENDABLE: lent
+            is still the line's own, so the book's S/O must not refill it) - rather than
+            the holds' own quantities, which a pin on a bin holding less than it states
+            overstates. Walked only for the products that have a hold at all."""
             keyed = {hold.line_key for hold in all_holds}
             held: Dict[str, float] = {}
             for product_id, lines in demand_rows.items():
                 if not any(line.key in keyed for line in lines):
                     continue
                 for row in walk(product_id, all_holds).lines:
-                    taken = sum(float(item.qty) for item in row.assigned if item.pinned)
+                    taken = sum(
+                        float(item.qty) for item in row.assigned if item.pinned
+                    ) + float(row.lent_qty)
                     if taken > EPSILON:
                         held[row.line.key] = taken
             return held
