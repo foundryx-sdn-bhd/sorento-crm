@@ -5025,7 +5025,9 @@ def _run_stages_body(  # noqa: PLR0915
                 if isinstance(p, dict) and (c := p.get("canonical_code") or p.get("code"))
             ],
             carried_relation=state_in.focus.relation,
-            message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None,
+            # The customer's whole typed text, never the `reply to:` quote and never only its
+            # first line (a WhatsApp ask is often several lines; reviewer round 6).
+            message=_message_text or None,
         )
         # The relation this turn leaves on the focus, written onto the turn's OWN focus after
         # every APPLY below (a topic reset rebuilds it): the side just linked; none once a

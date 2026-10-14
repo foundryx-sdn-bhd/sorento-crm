@@ -1105,3 +1105,15 @@ def test_a3_the_relation_word_double_booked_as_a_file_type_is_dropped_beside_a_r
     assert "Installation Guide" not in a_reply and "installation guide" not in a_reply.lower(), a_reply
     assert a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)
+
+
+def test_y14_a_fit_ask_over_several_lines_is_checked_against_all_of_it(session_factory, monkeypatch) -> None:
+    """Reviewer round 6: the value check read only the first line, and a WhatsApp message is often
+    several lines ("SRTWC8122\\nseat cover\\nstock?")."""
+    (c_reply, c_calls), (a_reply, a_calls) = _parity(
+        session_factory, monkeypatch, domain="inventory", intent="check_stock",
+        typed=COVERS_TWO, asked=[WC_TWO],
+        text_typed=f"stock {' '.join(COVERS_TWO)}", text_asked=f"{WC_TWO}\nseat cover\nstock?",
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)

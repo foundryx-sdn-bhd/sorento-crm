@@ -120,3 +120,10 @@ Crew 13 Oct: Q2 (b), Q3 (a), Q4 yes, Q5 yes. Owner 13 Oct: Q1 (a), wording
 "8152 seat cover stock" is the trigger Q3 named. A typed code that is no product's but is the
 model segment (or its tail) of SKUs on a seat-cover link reads as those SKUs (at most 8); a shorter
 stem ("SRTWC83") or a typo still goes on to the resolver as typed.
+
+## Known dependency (reviewer round 6)
+
+A first fit ask now needs the parser to copy the other-side word into `value`, and the message to
+hold it (live: every real fit ask did; a value-less `fits` appeared only on non-fit messages). A
+parser that normalises the word ("seat cover" from "seat-cover") loses that fit ask. The check
+reads the customer's whole typed text, every line, never the reply quote.
