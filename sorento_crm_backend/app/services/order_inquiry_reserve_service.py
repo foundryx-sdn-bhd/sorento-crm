@@ -1212,7 +1212,7 @@ class OrderInquiryReserveService:
         return self._preview("order_inquiry_reserved", items, status="reserved")
 
     def send_parked_requests(self, *, actor_user_id: str) -> Dict[str, Any]:
-        """Stamps and queues under a row lock: a second press blocks here, then finds
+        """`items_sent` counts distinct order inquiries sent. Stamps and queues under a row lock: a second press blocks here, then finds
         nothing parked. The queued dispatches fire only when the caller's transaction
         commits (the existing after_commit drain) and are dropped if it rolls back."""
         items, empty = self._request_items(actor_user_id, lock=True)
@@ -1221,11 +1221,11 @@ class OrderInquiryReserveService:
         )
         for request in empty:
             request.parked_at = None
-        sent = 0
+        sent_inquiries: set = set()
         for group in groups:
             for item in group["items"]:
                 item["request"].parked_at = None
-                sent += 1
+                sent_inquiries.add(item["inquiry_id"])
             self.db.info.setdefault(_REQUESTED_PENDING_KEY, []).append(
                 {
                     "context": group["context"],
@@ -1235,7 +1235,7 @@ class OrderInquiryReserveService:
         self.db.flush()
         return {
             "emails_sent": len(groups),
-            "items_sent": sent,
+            "items_sent": len(sent_inquiries),
             "unresolved": self._unresolved_out(unresolved),
         }
 
@@ -1245,14 +1245,14 @@ class OrderInquiryReserveService:
         for rr in stale:
             rr.notice_parked_at = None
             rr.notice_parked_by = None
-        sent = 0
+        sent_inquiries: set = set()
         for group in groups:
             for item in group["items"]:
+                sent_inquiries.add(item["inquiry_id"])
                 for rr in item["rows"]:
                     rr.notified_qty = rr.qty_reserved
                     rr.notice_parked_at = None
                     rr.notice_parked_by = None
-                sent += 1
             self.db.info.setdefault(_RESERVED_PENDING_KEY, []).append(
                 {
                     "context": group["context"],
@@ -1262,7 +1262,7 @@ class OrderInquiryReserveService:
         self.db.flush()
         return {
             "emails_sent": len(groups),
-            "items_sent": sent,
+            "items_sent": len(sent_inquiries),
             "unresolved": self._unresolved_out(unresolved),
         }
 
