@@ -35,11 +35,39 @@ def test_parse_v2_sends_the_configured_reasoning_effort(monkeypatch):
     assert stub.calls[0].get("reasoning_effort") == "low"
 
 
-def test_a_config_override_wins(monkeypatch):
-    stub = _Stub(minimal_output())
-    monkeypatch.setattr(llm_call, "chat", stub)
-    pv2_call.parse_v2(_config(reasoning_effort="medium"), history=[], memory_block="<memory>\n</memory>", text="x")
-    assert stub.calls[0].get("reasoning_effort") == "medium"
+def test_the_module_default_is_low():
+    assert pv2_call.PV2_REASONING_EFFORT == "low"
+
+
+def _resolve(monkeypatch, env):
+    """`resolve_v2_config` with the DB reads stubbed; only the reasoning setting is under test."""
+    import app.services.ai_assistant_service as aas
+    import app.services.ai_prompt_registry as apr
+    import app.services.llm_provider as lp
+
+    monkeypatch.setattr(pv2_call, "_pinned_text", lambda db, override, label: (TEMPLATE, 7, "vid"))
+    monkeypatch.setattr(apr, "agent_model", lambda db, key, label: (None, None))
+    monkeypatch.setattr(lp, "resolve_api_key", lambda config, provider: "k")
+    monkeypatch.setattr(aas, "AIAssistantConfigService",
+                        lambda db: SimpleNamespace(get=lambda: SimpleNamespace(provider="openai", model="gpt-x")))
+    if env is None:
+        monkeypatch.delenv("PV2_REASONING_EFFORT", raising=False)
+    else:
+        monkeypatch.setenv("PV2_REASONING_EFFORT", env)
+    return pv2_call.resolve_v2_config(object())
+
+
+def test_resolve_v2_config_defaults_to_low(monkeypatch):
+    assert _resolve(monkeypatch, None).reasoning_effort == "low"
+
+
+def test_the_env_var_overrides_the_default(monkeypatch):
+    assert _resolve(monkeypatch, "medium").reasoning_effort == "medium"
+
+
+@pytest.mark.parametrize("value", ["none", ""])
+def test_none_or_empty_env_means_no_reasoning_effort(monkeypatch, value):
+    assert _resolve(monkeypatch, value).reasoning_effort is None
 
 
 def test_none_means_reasoning_effort_is_not_sent(monkeypatch):
@@ -81,3 +109,32 @@ def test_the_v1_parser_call_sends_no_reasoning_effort(monkeypatch):
     except Exception:  # noqa: BLE001 - the stub's empty emission fails validation; only the call is under test
         pass
     assert stub.calls and "reasoning_effort" not in stub.calls[0]
+
+
+def test_the_reasoning_tokens_are_read_from_the_provider_result(monkeypatch):
+    class _Reasoning(_Stub):
+        def __call__(self, provider, api_key, model, messages, **kwargs):
+            result = super().__call__(provider, api_key, model, messages, **kwargs)
+            result.reasoning_tokens = 7
+            return result
+
+    monkeypatch.setattr(llm_call, "chat", _Reasoning(minimal_output()))
+    res = pv2_call.parse_v2(_config(), history=[], memory_block="<memory>\n</memory>", text="stock?")
+    assert res.usage["reasoning_tokens"] == 7
+
+
+@pytest.mark.parametrize("value", ["none", ""])
+def test_env_none_means_no_reasoning_effort_in_the_outbound_request(monkeypatch, value):
+    config = _resolve(monkeypatch, value)
+    stub = _Stub(minimal_output())
+    monkeypatch.setattr(llm_call, "chat", stub)
+    pv2_call.parse_v2(config, history=[], memory_block="<memory>\n</memory>", text="x")
+    assert "reasoning_effort" not in stub.calls[0]
+
+
+def test_env_medium_reaches_the_outbound_request(monkeypatch):
+    config = _resolve(monkeypatch, "medium")
+    stub = _Stub(minimal_output())
+    monkeypatch.setattr(llm_call, "chat", stub)
+    pv2_call.parse_v2(config, history=[], memory_block="<memory>\n</memory>", text="x")
+    assert stub.calls[0]["reasoning_effort"] == "medium"
