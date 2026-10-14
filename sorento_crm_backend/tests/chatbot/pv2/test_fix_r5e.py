@@ -39,3 +39,41 @@ def test_a_real_pick_with_a_quantity_beside_it_is_a_pick_not_a_requantify():
     v = bridge.to_v1_verdict(state, action, today=TODAY)
     assert v.get("demand_qty") in (None, 0)
     assert v["open_question_answer"]["mode"] == "pick" and v["open_question_answer"]["picked"] == [1]
+
+
+# ------------------------------------------------------------------ r5f: did-you-mean reply shape
+
+from tests.chatbot.pv2.test_fix_r5d import _ctx, _single  # noqa: E402
+
+
+def test_the_did_you_mean_reply_lists_each_code_once_with_no_yes_no_lines():
+    from app.services.chatbot.pv2 import turn
+
+    res = turn._run(_ctx(_single(), domain_teams={"inventory": "warehouse"}, offer_mode="offer"))
+    assert res.direct_reply.count("SRTWB999") == 1, res.direct_reply
+    for line in res.direct_reply.splitlines():
+        low = line.strip().lower()
+        assert not (low in ("yes", "no") or low.startswith(("2. yes", "3. yes", "2. no", "3. no"))), line
+
+
+def test_a_barred_contact_did_you_mean_ends_with_the_refer_line():
+    from app.services.chatbot.pv2 import turn
+    from app.services.chatbot.turn.task import REFER_TO_SALESMAN
+
+    res = turn._run(_ctx(_single(), offer_mode="refer"))
+    want = ('Couldn\'t find "SRTXYZ999" (product). Did you mean:\n1. SRTWB999\n'
+            f"Reply with a code to continue. {REFER_TO_SALESMAN}")
+    assert want in res.direct_reply, res.direct_reply
+    assert "escalate" not in res.direct_reply.lower()
+
+
+def test_typing_the_suggested_code_picks_it():
+    from app.services.chatbot.pv2 import turn
+    from tests.chatbot.pv2.test_fix_r5d import _ask as _a
+
+    first = turn._run(_ctx(_single(), domain_teams={"inventory": "warehouse"}, offer_mode="offer"))
+    pick = out(_a(act="answers_bot_question", answer={"option_key": "SRTWB999", "free_value": None}))
+    second = turn._run(_ctx(pick, state=first.state, domain_teams={"inventory": "warehouse"}, offer_mode="offer"))
+    assert isinstance(second.actions[0], Lookup)
+    assert [r.key for r in second.state.held.refs["product"]] == ["SRTWB999"]
+    assert second.state.held.domain == "inventory"
