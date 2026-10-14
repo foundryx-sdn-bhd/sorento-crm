@@ -35,9 +35,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/common/SearchableSelect";
 import { searchProjectsForLink } from "../services/purchaseRequestService";
-import { lookupCustomersForRequest } from "../services/customerLookupService";
-import { AsyncCombobox } from "@/app/(auth)/portal/components/AsyncCombobox";
-import type { CustomerLookupItem } from "../types/purchaseRequest.types";
+import { RequestCustomerField } from "./RequestCustomerField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useReactTable, getCoreRowModel } from "@tanstack/react-table";
@@ -629,39 +627,7 @@ export default function PurchaseRequestForm({
                     )}
                   />
                 )}
-                <FormField
-                  control={form.control}
-                  name="customer_name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Customer Name</FormLabel>
-                      <FormControl>
-                        <AsyncCombobox<CustomerLookupItem>
-                          value={field.value ?? ""}
-                          onChange={(v, item) => {
-                            field.onChange(v);
-                            // A pick links the customer (and fills Sales type from the
-                            // server's mapping); typed text unlinks it.
-                            form.setValue("customer_id", item?.customer_id ?? null, {
-                              shouldDirty: true,
-                            });
-                            if (!isSponsorship && item?.sales_type) {
-                              form.setValue("sales_type", item.sales_type, {
-                                shouldDirty: true,
-                              });
-                            }
-                          }}
-                          fetchOptions={lookupCustomersForRequest}
-                          optionValue={(o) => o.debtor_name}
-                          optionLabel={(o) => o.debtor_name}
-                          optionMeta={(o) => o.customer_code}
-                          placeholder="Customer name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <RequestCustomerField form={form} isSponsorship={isSponsorship} label="Customer Name" />
                 <FormField
                   control={form.control}
                   name="pic"
