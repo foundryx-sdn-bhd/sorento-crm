@@ -243,7 +243,7 @@ export default function StockDetailPage({ params }: StockDetailPageProps) {
                     </h2>
                     {distinctName(stock.product?.product_code, stock.product?.product_name) && (
                       <Badge variant="secondary">
-                        {stock.product.product_name}
+                        {stock.product?.product_name}
                       </Badge>
                     )}
                   </div>

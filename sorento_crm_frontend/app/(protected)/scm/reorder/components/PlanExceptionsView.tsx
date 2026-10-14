@@ -127,7 +127,7 @@ export function PlanExceptionsView({ runId = null, onBack }: PlanExceptionsViewP
             {distinctName(row.original.product_code, row.original.product_name) ? (
               <div
                 className="truncate text-2xs text-muted-foreground"
-                title={row.original.product_name}
+                title={row.original.product_name ?? undefined}
               >
                 {row.original.product_name}
               </div>
