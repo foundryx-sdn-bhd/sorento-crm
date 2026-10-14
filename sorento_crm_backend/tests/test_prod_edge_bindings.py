@@ -30,14 +30,10 @@ LOOPBACK_HOSTS = {"127.0.0.1", "::1", "[::1]"}
 
 
 def _compose_files() -> list[Path]:
-    found = []
-    for pattern in ("**/docker-compose*.yml", "**/docker-compose*.yaml", "**/compose*.yml"):
-        for path in REPO.glob(pattern):
-            rel = path.relative_to(REPO).as_posix()
-            if "node_modules" in rel or rel.startswith(".git/"):
-                continue
-            found.append(path)
-    return sorted(set(found))
+    """Every compose file git tracks (a tree walk would also crawl node_modules)."""
+    out = subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True)
+    names = re.compile(r"(^|/)(docker-)?compose[^/]*\.ya?ml$")
+    return sorted(REPO / rel for rel in out.stdout.splitlines() if names.search(rel))
 
 
 def _host_ip(entry) -> str | None:

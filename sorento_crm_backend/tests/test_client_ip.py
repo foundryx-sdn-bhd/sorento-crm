@@ -371,36 +371,41 @@ def test_prod_paths_fall_back_to_the_peer_with_trusted_proxies_unset(monkeypatch
 
 # --- behind Cloudflare (HA-SEC-EDGE, 14 Oct) -----------------------------------------------
 #
-# Cloudflare appends the address it saw to any typed header, and the host nginx appends the
-# Cloudflare edge it saw, so the backend gets peer = gateway, XFF = "<typed>, <client>, <edge>".
-# TRUSTED_PROXIES is then the private ranges PLUS Cloudflare's published ranges
-# (documentation/runbooks/prod-edge-lockdown.md builds the value from cloudflare.com/ips).
-# Two sample ranges stand in for the full list here.
-CF_RANGES = "173.245.48.0/20,2606:4700::/32"
+# Cloudflare's ranges are NEVER trusted here: every Cloudflare customer sends from them, so a
+# Worker or another zone pointed at the origin arrives from a Cloudflare address with an
+# X-Forwarded-For it wrote itself. The host nginx instead takes the client from
+# `CF-Connecting-IP` (`set_real_ip_from <each Cloudflare range>; real_ip_header CF-Connecting-IP;`,
+# documentation/runbooks/prod-edge-lockdown.md step 5), which Cloudflare sets and a Worker cannot,
+# and appends THAT address. TRUSTED_PROXIES stays the private ranges.
 CF_EDGE = "173.245.48.10"
 CF_EDGE_V6 = "2606:4700::6810:1"
 
 
-def _behind_cloudflare(monkeypatch):
+def test_the_recommended_trust_list_holds_no_public_range():
+    import ipaddress
+
     from app.services.client_ip import RECOMMENDED_TRUSTED_PROXIES
 
-    monkeypatch.setattr(settings, "trusted_proxies", f"{RECOMMENDED_TRUSTED_PROXIES},{CF_RANGES}")
+    for entry in RECOMMENDED_TRUSTED_PROXIES.split(","):
+        net = ipaddress.ip_network(entry, strict=False)
+        assert not net.is_global, f"{entry} is public; a CDN's ranges must never be trusted here"
+
+
+def test_cloudflare_path_with_nginx_real_ip_resolves_to_the_client():
+    # nginx rewrote $remote_addr from CF-Connecting-IP, so it appends the client, not the edge.
+    assert client_ip(_req(GATEWAY, f"6.6.6.6, {CLIENT}, {CLIENT}")) == CLIENT
 
 
 @pytest.mark.parametrize("edge", [CF_EDGE, CF_EDGE_V6])
-def test_cloudflare_path_resolves_to_the_client(monkeypatch, edge):
-    _behind_cloudflare(monkeypatch)
-    assert client_ip(_req(GATEWAY, f"6.6.6.6, {CLIENT}, {edge}")) == CLIENT
+def test_a_cloudflare_hop_is_never_trusted(edge):
+    # Without nginx real_ip (or for a Worker, whose CF-Connecting-IP is itself a Cloudflare
+    # address) the walk stops at the edge: one bucket per edge, and nothing typed to its left
+    # (a Worker can write any X-Forwarded-For) is believed.
+    assert client_ip(_req(GATEWAY, f"{CLIENT}, {edge}")) == edge
 
 
-def test_cloudflare_path_without_its_ranges_trusted_stops_at_the_edge(monkeypatch):
-    # The state before the owner adds the ranges: one bucket per Cloudflare edge, not forgeable.
-    assert client_ip(_req(GATEWAY, f"6.6.6.6, {CLIENT}, {CF_EDGE}")) == CF_EDGE
-
-
-def test_a_direct_hit_on_the_origin_cannot_borrow_a_cloudflare_address(monkeypatch):
-    # Someone going round Cloudflare straight to the origin types a Cloudflare edge into the
-    # header; nginx appends their real address, which is not trusted, so that is the answer.
-    _behind_cloudflare(monkeypatch)
+def test_a_direct_hit_on_the_origin_cannot_borrow_a_cloudflare_address():
+    # Someone going round Cloudflare straight to the origin types a client and a Cloudflare edge;
+    # nginx appends their real address, which is not trusted, so that is the answer.
     attacker = "198.51.100.66"
     assert client_ip(_req(GATEWAY, f"{CLIENT}, {CF_EDGE}, {attacker}")) == attacker
