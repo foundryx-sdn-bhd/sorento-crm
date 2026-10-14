@@ -61,3 +61,22 @@ def test_a_bogus_bearer_token_does_not_change_the_answer():
     response = TestClient(app).get("/api/v1/health", headers={"Authorization": "Bearer not-a-session"})
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
+
+
+def test_root_health_db_down_is_503_with_no_exception_text(monkeypatch):
+    """The root /health (blue/green gate) must not hand the DB error to a caller either:
+    Postgres connection errors name the internal host and port."""
+
+    class _BrokenSession:
+        def execute(self, *a, **kw):
+            raise RuntimeError('connection to server at "db-secret-host", port 6432 failed')
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(database, "SessionLocal", lambda: _BrokenSession())
+    response = TestClient(app).get("/health")
+    assert response.status_code == 503
+    assert response.json() == {"status": "unhealthy"}
+    assert "db-secret-host" not in response.text
+    assert "6432" not in response.text
