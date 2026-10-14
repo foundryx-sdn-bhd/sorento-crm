@@ -54,7 +54,9 @@ jobs:
           SHA: ${{ inputs.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+          # [[ =~ ]] matches the whole value; grep would pass a multi-line value one line of
+          # which is a SHA.
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::sha must be a full 40-character lowercase commit SHA"
             exit 1
           fi
@@ -64,7 +66,7 @@ jobs:
           fi
           # build-images pushes `<svc>-<sha>` before the gates finish, so an image can exist
           # for a release that failed. Only a commit whose release succeeded qualifies.
-          released=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?head_sha=$SHA&event=workflow_dispatch&status=success&per_page=1" \
+          released=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?head_sha=$SHA&branch=main&event=workflow_dispatch&status=success&per_page=1" \
             --jq '.total_count')
           if [ "${released:-0}" -lt 1 ]; then
             echo "::error::$SHA has no successful release run of deploy.yml"
@@ -125,8 +127,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           timeout: 2m
-          # Same budget as the release step (the worker's 3600s stop grace).
-          command_timeout: 70m
+          # Same budget as the release step (worker stop grace, deploy lock wait, dump).
+          command_timeout: 100m
           script: |
             set -e
             cd /opt/sorento-crm2

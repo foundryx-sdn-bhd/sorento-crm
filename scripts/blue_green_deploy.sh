@@ -23,8 +23,9 @@
 #   - postgres: fail the deploy when the db container restarted, or Postgres crash-recovered
 #     (a killed backend makes the postmaster reinitialize WITHOUT a container restart), at
 #     any point during the deploy.
-#   - lock: an exclusive flock on /opt/sorento-crm2/.deploy.lock for the whole deploy. The
-#     weekly restore test (HA-BACKUP-CHECK) waits on the same file, so the two never overlap.
+#   - lock: an exclusive flock on DEPLOY_LOCK_PATH (default /opt/sorento-crm2/.deploy.lock)
+#     for the whole deploy. The weekly restore test (HA-BACKUP-CHECK) waits on the same file,
+#     so the two never overlap.
 # Tunables may be set on the box in .deploy.env next to docker-compose.yml (sourced below).
 
 set -euo pipefail
@@ -33,24 +34,41 @@ cd "$(dirname "$0")/.."   # repo root containing docker-compose.yml
 : "${IMAGE_TAG:?must be set to the git SHA pushed by CI}"
 export IMAGE_TAG
 
-# Held from here to exit, before anything is read or changed. The path is fixed: the restore
-# test locks the same file (the override exists for the test suite only). Released by the
-# trap as well as by exit, because a child that inherited fd 9 would otherwise keep it held.
-DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/opt/sorento-crm2/.deploy.lock}"
-DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1200}"   # a restore test runs ~minutes
-exec 9>>"$DEPLOY_LOCK_FILE"
-echo "==> Waiting up to ${DEPLOY_LOCK_WAIT_SECONDS}s for ${DEPLOY_LOCK_FILE}"
-if ! flock -w "$DEPLOY_LOCK_WAIT_SECONDS" 9; then
-  echo "ERROR: ${DEPLOY_LOCK_FILE} is still held (another deploy or the restore test); nothing was changed"
-  exit 1
-fi
-trap 'flock -u 9' EXIT
-
-# Owner-tunable knobs live on the box, never in the workflow: see the runbook.
+# Owner-tunable knobs live on the box, never in the workflow: see the runbook. Read before
+# the lock so DEPLOY_LOCK_PATH / DEPLOY_LOCK_WAIT_SECONDS can be set there too.
 if [ -f .deploy.env ]; then
   # shellcheck disable=SC1091
   . ./.deploy.env
 fi
+
+# A non-number would make `[ "$x" -lt "$y" ]` an error, which an `if` reads as false: the
+# guard would silently pass. Fail closed instead.
+require_number() {
+  case "${!1}" in
+    ''|*[!0-9]*) echo "ERROR: $1='${!1}' must be a whole number (check .deploy.env)"; exit 1;;
+  esac
+}
+
+# Held from here to exit, before anything is changed. DEPLOY_LOCK_PATH and its default are
+# shared with HA-BACKUP-CHECK's restore test, which waits on the same file; the runbook gives
+# the /var/lib/sorento-deploy fallback for a box where /opt/sorento-crm2 is not root-owned.
+# Released by the trap as well as by exit, because a child that inherited fd 9 would
+# otherwise keep it held.
+DEPLOY_LOCK_PATH="${DEPLOY_LOCK_PATH:-/opt/sorento-crm2/.deploy.lock}"
+DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1200}"   # a restore test runs ~minutes
+require_number DEPLOY_LOCK_WAIT_SECONDS
+if [ -e "$DEPLOY_LOCK_PATH" ] && [ ! -w "$DEPLOY_LOCK_PATH" ]; then
+  exec 9<"$DEPLOY_LOCK_PATH"    # created by another user: flock works on a read-only fd
+elif ! exec 9>>"$DEPLOY_LOCK_PATH"; then
+  echo "ERROR: cannot open the deploy lock ${DEPLOY_LOCK_PATH}; see the runbook, step 0"
+  exit 1
+fi
+echo "==> Waiting up to ${DEPLOY_LOCK_WAIT_SECONDS}s for ${DEPLOY_LOCK_PATH}"
+if ! flock -w "$DEPLOY_LOCK_WAIT_SECONDS" 9; then
+  echo "ERROR: ${DEPLOY_LOCK_PATH} is still held (another deploy or the restore test); nothing was changed"
+  exit 1
+fi
+trap 'flock -u 9' EXIT
 
 UPSTREAMS_FILE="/etc/nginx/conf.d/sorento_upstreams.conf"
 DRAIN_SECONDS="${DRAIN_SECONDS:-30}"
@@ -63,6 +81,11 @@ MEMINFO_FILE="${MEMINFO_FILE:-/proc/meminfo}"
 DB_SERVICE="${DB_SERVICE:-db}"
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-backups/pre-migrate}"
 SNAPSHOT_KEEP_MINUTES="${SNAPSHOT_KEEP_MINUTES:-2880}"   # 48 h
+# Free space the dump may not eat into: Postgres PANICs when its own disk fills (lesson 95).
+SNAPSHOT_MIN_FREE_MB="${SNAPSHOT_MIN_FREE_MB:-10240}"
+require_number DEPLOY_MIN_AVAILABLE_MB
+require_number SNAPSHOT_KEEP_MINUTES
+require_number SNAPSHOT_MIN_FREE_MB
 DEPLOY_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # --- guards -------------------------------------------------------------------
@@ -125,24 +148,39 @@ postgres_survived() {
   return 0
 }
 
-# Custom-format pg_dump of the whole database, taken inside the db container, written
-# atomically and checked with pg_restore --list. Owner-only files (customer data).
+# Custom-format pg_dump of the whole database, taken inside the db container and written
+# atomically. Completeness rests on pg_dump's exit status; the PGDMP magic catches output
+# that is not a custom-format dump at all. Owner-only files (customer data).
 take_snapshot() {
-  local ts file
+  local ts file newest newest_mb need_mb free_mb
   ts=$(date -u +%Y%m%dT%H%M%SZ)
   file="${SNAPSHOT_DIR}/pre-migrate-${ts}-${IMAGE_TAG}.dump"
   mkdir -p "$SNAPSHOT_DIR"
   chmod 700 "$SNAPSHOT_DIR"
+  find "$SNAPSHOT_DIR" -maxdepth 1 \( -name 'pre-migrate-*.dump' -o -name 'pre-migrate-*.dump.partial' \) \
+    -mmin "+${SNAPSHOT_KEEP_MINUTES}" -delete || true
+
+  # Room for this dump: twice the newest one, and never below SNAPSHOT_MIN_FREE_MB.
+  need_mb=$SNAPSHOT_MIN_FREE_MB
+  newest=$(ls -t "$SNAPSHOT_DIR"/pre-migrate-*.dump 2>/dev/null | head -1 || true)
+  if [ -n "$newest" ]; then
+    newest_mb=$(( ($(stat -c %s "$newest") + 1048575) / 1048576 ))
+    if [ $((newest_mb * 2)) -gt "$need_mb" ]; then need_mb=$((newest_mb * 2)); fi
+  fi
+  free_mb=$(df -Pm "$SNAPSHOT_DIR" | awk 'NR==2 { print $4 }')
+  if ! [ "${free_mb:-0}" -ge "$need_mb" ] 2>/dev/null; then
+    echo "ERROR: snapshot disk check: ${free_mb:-?} MB free in ${SNAPSHOT_DIR}, need ${need_mb} MB; not starting ${NEW} (${ACTIVE} keeps serving)"
+    exit 1
+  fi
+
   if ! ( umask 077; docker compose exec -T "$DB_SERVICE" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "${file}.partial" ) \
-     || [ ! -s "${file}.partial" ] \
-     || ! docker compose exec -T "$DB_SERVICE" pg_restore --list < "${file}.partial" > /dev/null; then
+     || [ "$(head -c 5 "${file}.partial")" != "PGDMP" ]; then
     rm -f "${file}.partial"
     echo "ERROR: pre-migration snapshot failed; not starting ${NEW} (no migration has run, ${ACTIVE} keeps serving)"
     exit 1
   fi
   mv "${file}.partial" "$file"
   echo "    snapshot: ${file} ($(du -h "$file" | cut -f1))"
-  find "$SNAPSHOT_DIR" -maxdepth 1 -name 'pre-migrate-*.dump' -mmin "+${SNAPSHOT_KEEP_MINUTES}" -delete || true
 }
 
 ACTIVE=$(cat .active_color 2>/dev/null || echo blue)
@@ -164,12 +202,16 @@ echo "==> Pulling images"
 docker compose --profile "${NEW}" pull "backend_${NEW}" "frontend_${NEW}" "mcp_${NEW}"
 docker compose pull worker worker_fast
 
-# 1b. Snapshot before anything can migrate (start.sh runs `alembic upgrade head`).
+# 1b. Memory guard first (cheap), so a box that cannot take the overlap is not also put
+#     through a full dump.
+echo "==> Memory guard"
+check_memory
+
+# 1c. Snapshot before anything can migrate (start.sh runs `alembic upgrade head`).
 echo "==> Pre-migration snapshot"
 take_snapshot
 
-# 1c. Memory guard, as late as possible before the overlap starts.
-echo "==> Memory guard"
+# 1d. Memory again, right before the overlap starts: the dump took time.
 check_memory
 
 # 2. Bring up new color. start.sh runs `alembic upgrade head` before gunicorn

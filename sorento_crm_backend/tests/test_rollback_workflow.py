@@ -76,9 +76,9 @@ def test_the_sha_is_validated_as_a_main_commit(job):
     steps = _steps(job)
     validate = next(s for n, s in steps.items() if "alidate" in n)
     assert "inputs.sha" in str(validate.get("env")), "the input arrives via env, not interpolation"
-    assert re.search(r"\[0-9a-f\]\{40\}|\{40\}", validate["run"]), "40-hex check"
+    assert '[[ "$SHA" =~ ^[0-9a-f]{40}$ ]]' in validate["run"], "whole-value 40-hex check"
     assert "merge-base --is-ancestor" in validate["run"]
-    assert "deploy.yml/runs?head_sha=$SHA&event=workflow_dispatch&status=success" in validate["run"], (
+    assert "deploy.yml/runs?head_sha=$SHA&branch=main&event=workflow_dispatch&status=success" in validate["run"], (
         "only a commit whose release succeeded qualifies"
     )
     checkout = next(s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/checkout"))
@@ -109,3 +109,10 @@ def test_endpoint_check_is_the_release_jobs_own(job):
     want = _steps(deploy_job)["Verify public endpoints"]["with"]["script"]
     got = _steps(job)["Verify public endpoints"]["with"]["script"]
     assert got == want, "keep the two checks identical; edit both together"
+
+
+def test_the_ssh_budget_matches_the_release_step(job):
+    deploy_job = _load(DEPLOY)["jobs"]["build-and-deploy"]
+    want = _steps(deploy_job)["Deploy to Server (blue/green)"]["with"]["command_timeout"]
+    got = _steps(job)["Roll back on the server (blue/green)"]["with"]["command_timeout"]
+    assert got == want == "100m", "worker grace 60m + lock wait 20m + dump and the rest"
