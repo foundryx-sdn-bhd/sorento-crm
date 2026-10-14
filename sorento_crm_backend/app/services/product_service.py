@@ -326,9 +326,16 @@ class ProductService:
         variant_filter: Optional[str] = None,
         discontinued_from: Optional[date] = None,
         discontinued_to: Optional[date] = None,
+        chat_visible: bool = False,
     ):
         """Build the filtered + sorted products query shared by ``list_products``
         and ``neighbours`` so the two can never drift.
+
+        ``chat_visible`` (#1517, owner ruling 6 Oct 2026) is the chatbot's own read: the
+        predicate every other chat-facing product read applies
+        (`chat_searchable_products()`: the product's and its category's `is_searchable`)
+        AND, on an unscoped list (no `product_ids`), `is_active`. It only ever narrows; off
+        by default, so the admin list is unchanged.
 
         Returns the SQLAlchemy ``Query`` (already filtered + ordered), or
         :data:`_EMPTY_RESULT` when a filter resolves to a definitively empty set
@@ -369,6 +376,15 @@ class ProductService:
 
         if status and status != "all":
             filters.append(Product.is_active == (status == "active"))
+
+        if chat_visible:
+            from app.models.product import chat_searchable_products
+
+            filters.append(chat_searchable_products())
+            if not product_ids:
+                # A code the customer named still resolves when inactive (the answer says so);
+                # only the arbitrary list drops inactive rows.
+                filters.append(Product.is_active.is_(True))
 
         # Base / Variant / All variant-graph filter.
         if variant_filter == "base":
@@ -524,6 +540,7 @@ class ProductService:
         variant_filter: Optional[str] = None,
         discontinued_from: Optional[date] = None,
         discontinued_to: Optional[date] = None,
+        chat_visible: bool = False,
     ):
         """List products with filtering and pagination.
 
@@ -582,6 +599,7 @@ class ProductService:
             variant_filter=variant_filter,
             discontinued_from=discontinued_from,
             discontinued_to=discontinued_to,
+            chat_visible=chat_visible,
         )
         if q is self._EMPTY_RESULT:
             payload = {

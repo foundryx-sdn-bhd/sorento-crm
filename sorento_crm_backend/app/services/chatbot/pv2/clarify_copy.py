@@ -105,6 +105,68 @@ _COPY: dict[str, dict[str, str]] = {
     "yes": {"en": "Yes", "zh": "是", "ms": "Ya"},
     "no": {"en": "No", "zh": "否", "ms": "Tidak"},
     "unnamed": {"en": "(unnamed)", "zh": "（未命名）", "ms": "(tiada nama)"},
+    # RG-6 (#1517): an ask with no product in a domain that needs one.
+    "which_product": {
+        "en": "Which product do you mean?",
+        "zh": "您指的是哪个产品？",
+        "ms": "Produk yang mana satu?",
+    },
+    # RG-1 (#1570): v1's carried-subject question and its two picks (label_catalog wording).
+    "carry_scope": {
+        "en": "{label} for {named}: only {subject} (from earlier) or all {plural}?",
+        "zh": "{named} 的{label}：只看 {subject}（之前提到的）还是全部{plural}？",
+        "ms": "{label} untuk {named}: hanya {subject} (yang disebut tadi) atau semua {plural}?",
+    },
+    "carry_only": {"en": "Only {subject}", "zh": "只看 {subject}", "ms": "Hanya {subject}"},
+    "carry_all": {"en": "All {plural}", "zh": "全部{plural}", "ms": "Semua {plural}"},
+    # RG-2 (#1582): a size none of the held products holds; axis names stay English until R3.
+    "size_miss": {
+        "en": "No {size} for {subject}. Sizes on file: {sizes}.",
+        "zh": "{subject} 没有 {size}。现有尺寸：{sizes}。",
+        "ms": "Tiada {size} untuk {subject}. Saiz yang ada: {sizes}.",
+    },
+}
+
+#: RG-1 (#1570): the carried-subject question's ask word per domain and its kinds' plurals (v1's catalog).
+_CARRY_LABEL: dict[str, dict[str, str]] = {
+    "order": {"en": "Delivery", "zh": "送货", "ms": "Penghantaran"},
+    "sales": {"en": "Sales", "zh": "销售", "ms": "Jualan"},
+}
+_KIND_PLURAL: dict[str, dict[str, str]] = {
+    "product": {"en": "products", "zh": "产品", "ms": "produk"},
+    "customer": {"en": "customers", "zh": "客户", "ms": "pelanggan"},
+}
+
+#: RG-1b (#1570): v1's loop-breaker line (`clarify_policy.missing_line`) per thing still missing,
+#: (with the subject, without one).
+_STILL_NEED: dict[str, dict[str, tuple[str, str]]] = {
+    "period": {
+        "en": ("I still need the period for {subject}.", "I still need the period."),
+        "zh": ("我仍需要 {subject} 的时间段。", "我仍需要时间段。"),
+        "ms": ("Saya masih perlukan tempoh untuk {subject}.", "Saya masih perlukan tempoh."),
+    },
+    "attachment_type": {
+        "en": ("I still need the attachment type for {subject}.", "I still need the attachment type."),
+        "zh": ("我仍需要 {subject} 的附件类型。", "我仍需要附件类型。"),
+        "ms": ("Saya masih perlukan jenis lampiran untuk {subject}.", "Saya masih perlukan jenis lampiran."),
+    },
+    "product": {
+        "en": ("I still need which products to include for {subject}.", "I still need which products to include."),
+        "zh": ("我仍需要知道 {subject} 要包括哪些产品。", "我仍需要知道要包括哪些产品。"),
+        "ms": ("Saya masih perlu tahu produk mana yang disertakan untuk {subject}.",
+               "Saya masih perlu tahu produk mana yang disertakan."),
+    },
+    "customer": {
+        "en": ("I still need which customers to include for {subject}.", "I still need which customers to include."),
+        "zh": ("我仍需要知道 {subject} 要包括哪些客户。", "我仍需要知道要包括哪些客户。"),
+        "ms": ("Saya masih perlu tahu pelanggan mana yang disertakan untuk {subject}.",
+               "Saya masih perlu tahu pelanggan mana yang disertakan."),
+    },
+    "more": {
+        "en": ("I still need more detail for {subject}.", "I still need more detail."),
+        "zh": ("我仍需要 {subject} 的更多详情。", "我仍需要更多详情。"),
+        "ms": ("Saya masih perlukan butiran lanjut untuk {subject}.", "Saya masih perlukan butiran lanjut."),
+    },
 }
 
 
@@ -148,6 +210,27 @@ def question_for(
     if about in ("attachment_type", "report_measure", "report_period"):
         return text(about, language)
     return text("other", language)
+
+
+def carry_scope(domain: str, kind: str, named: str, subject: str, language: str | None) -> tuple[str, list[Option]]:
+    """RG-1 (#1570): "Delivery for <named>: only <subject> (from earlier) or all <kind>s?" and its two picks:
+    keep the carried `kind`, or clear it."""
+    code = lang(language)
+    plural = _KIND_PLURAL[kind][code]
+    asked = text("carry_scope", language, label=_CARRY_LABEL[domain][code], named=named, subject=subject, plural=plural)
+    options = [
+        Option(key="1", label=text("carry_only", language, subject=subject), payload={"kind": "carry_scope"}),
+        Option(
+            key="2", label=text("carry_all", language, plural=plural), payload={"kind": "carry_scope", "clear": kind}
+        ),
+    ]
+    return asked, options
+
+
+def still_need(missing: str, subject: str | None, language: str | None) -> str:
+    """RG-1b: v1's "I still need X for Y." (`missing` a `_STILL_NEED` key, else "more")."""
+    with_subject, bare = _STILL_NEED.get(missing, _STILL_NEED["more"])[lang(language)]
+    return with_subject.format(subject=subject) if subject else bare
 
 
 def handover_options(language: str | None) -> list[Option]:

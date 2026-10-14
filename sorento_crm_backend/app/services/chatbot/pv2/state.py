@@ -22,7 +22,7 @@ SESSION_GAP = timedelta(hours=4)
 MISSES_BEFORE_HANDOVER = 2
 
 #: The payload kinds that set a held scalar rather than a ref list.
-SCALAR_PAYLOAD_KINDS = frozenset({"attachment_type", "domain", "spec", "handover", "choice", "row"})
+SCALAR_PAYLOAD_KINDS = frozenset({"attachment_type", "domain", "spec", "handover", "choice", "row", "carry_scope"})
 
 
 class Option(BaseModel):
@@ -45,6 +45,7 @@ class ResolvedRef(BaseModel):
     phrase: str | None = None
     quantity: Quantity | None = None
     family: bool = False  # a family key (matched by family_code), not an exact product code
+    set: bool = False  # a product set code (`product_sets`), answered by its members in the set domains
 
 
 class ResolvedSpec(BaseModel):
@@ -181,6 +182,8 @@ class ClarifyAct(BaseModel):
     not_found: bool = False
     reask: bool = False
     note: str | None = None
+    # The loop cap's closing line (RG-1b): said once, no options, and the open question is cleared.
+    closes: bool = False
 
 
 class SmallTalk(BaseModel):
@@ -326,6 +329,9 @@ def apply_payload(held: Held, payload: dict[str, Any]) -> Held:
             unit=payload.get("unit"),
         )
         out.specs = [s for s in out.specs if s.attribute != spec.attribute] + [spec]
+    elif kind == "carry_scope":
+        if payload.get("clear"):
+            out.refs = set_refs(out.refs, payload["clear"], [], "clear")  # "all <kind>s": that kind no longer narrows
     elif kind in SCALAR_PAYLOAD_KINDS:
         pass
     else:
@@ -338,6 +344,7 @@ def apply_payload(held: Held, payload: dict[str, Any]) -> Held:
                 label=str(payload.get("label") or key),
                 phrase=payload.get("phrase"),
                 quantity=Quantity(**payload["quantity"]) if payload.get("quantity") else None,
+                set=bool(payload.get("set")),
             )
             for key in keys
         ]

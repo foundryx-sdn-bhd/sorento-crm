@@ -15,7 +15,8 @@ Per ask, in order (section 3):
   switch_back -> a printed T-key swaps with held
 Then the new items go to the resolver: ambiguity -> ClarifyAct, nothing -> truthful
 ClarifyAct(not_found), else Lookup. The short-reply safety checks each count one MISS on
-the pending question; two misses on the same question offer a hand-over.
+the pending question; two misses on the same question offer a hand-over (to a contact who
+cannot be offered one: v1's "I still need X for Y.", and the question closes).
 """
 from __future__ import annotations
 
@@ -100,11 +101,15 @@ DEFAULT_POLICY = ClarifyPolicy()
 class _Miss(Exception):
     """A short-reply safety check failed: re-ask (one MISS)."""
 
-    def __init__(self, about: str = "other", *, nothing_held: bool = False, entity: Entity | None = None):
+    def __init__(
+        self, about: str = "other", *, nothing_held: bool = False, entity: Entity | None = None,
+        origin: dict | None = None,
+    ):
         super().__init__(about)
         self.about = about
         self.nothing_held = nothing_held
         self.entity = entity  # the entity whose miss raised it (RG-7c)
+        self.origin = origin  # the open question re-asked with this origin, whatever the act (RG-1b)
 
 
 #: The acts that can answer (or fail to answer) an open question.
@@ -147,9 +152,12 @@ def apply_turn(
 
     # A clarify flag beside a new_topic ask does not re-ask an OPEN question as a miss: the new
     # topic replaces it and its own policy asks what it still needs.
-    carried = out.clarify.about == "entity" and bool(out.clarify.phrase) and any(
-        out.clarify.phrase in (e.phrase, e.doc_number, e.key) for a in out.asks for e in a.entities
-    )  # the flag is about an entity an ask carries: the ask's own resolution answers it
+    phrase = out.clarify.phrase
+    carried = bool(phrase) and (
+        out.clarify.about == "entity"
+        and any(phrase in (e.phrase, e.doc_number, e.key) for a in out.asks for e in a.entities)
+        or out.clarify.about == "spec_attribute" and any(phrase == s.phrase for a in out.asks for s in a.specs)
+    )  # the flag is about an entity or spec an ask carries: the ask's own resolution answers it (RG-2)
     flagged = out.clarify.needed and not (
         carried
         or any(a.act == "new_topic" for a in out.asks) and st.pending is not None
@@ -160,14 +168,14 @@ def apply_turn(
         if st.pending is not None:
             # A garbled answer to the open question re-asks it with its real options and
             # counts a MISS (two -> the hand-over offer), never an option-less new question.
-            act = _miss(st, 0, st.pending, _Miss(about), language, can_offer_handover)
+            act = _miss(st, 0, st.pending, _Miss(about), language, can_offer_handover, mode)
         else:
             options = _options_for(st, about)
             # An entity question without options never quotes a phrase (no list to pick from).
             phrase = out.clarify.phrase if options or about != "which_held" else None
             act = _clarify(st, 0, about, phrase, language, options=options)
             act.pending.origin = _origin_of(out.asks[0]) if out.asks else None
-        st.pending = act.pending
+        st.pending = None if getattr(act, "closes", False) else act.pending
         st.last_lookup_ask = None
         return st, [act]
 
@@ -189,17 +197,19 @@ def apply_turn(
             st.held, st.topics = held_before, topics_before
             # Only an answer (or an unclear reply) re-asks the open question; a new
             # question that missed asks its own and replaces it.
-            reask = pending_in if ask.act in _ANSWER_ACTS else None
-            action = _miss(st, i, reask, miss, language, can_offer_handover)
+            reask = pending_in if ask.act in _ANSWER_ACTS or miss.origin is not None else None
+            action = _miss(st, i, reask, miss, language, can_offer_handover, mode)
             if reask is None and pending_in is not None and isinstance(action, ClarifyAct):
                 action.reask = False  # its own question, not a retry of the open one
             if isinstance(action, ClarifyAct) and reask is None:
                 action.pending.origin = _origin_of(ask)
                 if miss.entity is not None:
                     action.pending.raised_by = _entity_id(miss.entity)
+            if isinstance(action, ClarifyAct) and miss.origin is not None:
+                action.pending.origin = miss.origin
         else:
             answered_pending = answered_pending or answered
-            action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover)
+            action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover, mode)
             _keep_origin(action, ask, st.held, pending_in, answered)
             if (
                 isinstance(action, Lookup)
@@ -217,14 +227,15 @@ def apply_turn(
                     action.requantify = True  # v1's requantify rule reads it, not a new subject
         actions.append(action)
         question = getattr(action, "pending", None)
-        if question is not None and first_question is None:
+        if question is not None and first_question is None and not getattr(action, "closes", False):
             first_question = question
         if isinstance(action, HandOver):
             break
 
+    closed = any(getattr(a, "closes", False) for a in actions)
     if first_question is not None:
         st.pending = first_question
-    elif answered_pending or any(isinstance(a, (Lookup, HandOver)) for a in actions):
+    elif answered_pending or closed or any(isinstance(a, (Lookup, HandOver)) for a in actions):
         st.pending = None
     st.last_lookup_ask = _last_lookup_ask(actions, pending_in if answered_pending else None)
     if not st.held.is_empty() and st.held.sid is None:
@@ -313,6 +324,76 @@ def _held_count(st: ConversationState, ask: Ask, pending: PendingQuestion | None
     return ask.model_copy(update=update)
 
 
+#: RG-1 (#1570): the kinds that narrow each domain's answer, in the order a carried one is asked about (v1
+#: policy rows; R3 registry). One held but left unnamed beside a newly named other is asked, not carried.
+CARRY_SCOPE_KINDS: dict[str, tuple[str, ...]] = {"order": ("product", "customer"), "sales": ("product", "customer")}
+CARRY_SCOPE = "clarify_carry_scope"
+
+
+def _carry_scope(
+    st: ConversationState, i: int, ask: Ask, before: Held, held: Held, resolver: Any, language: str
+) -> ClarifyAct | None:
+    """RG-1 (#1570): a message's ask that resolves a narrowing kind B not held before while a held kind A goes
+    unnamed (no `refers_to_held`, no report) asks "Delivery for B: only A (from earlier) or all <A>s?" and
+    fetches nothing. Never about the contact's own customer (inside its enforced resolver scope)."""
+    if i > 0 or ask.report is not None or held.report is not None or any(e.refers_to_held for e in ask.entities):
+        return None
+    kinds = CARRY_SCOPE_KINDS.get(held.domain or "", ())
+    named = {e.kind for e in ask.entities}
+    scope = getattr(resolver, "customer_scope", None) or {}
+    own = {str(x) for x in scope.get("ids") or []} if scope.get("enforced") else set()
+    for kind in kinds:
+        carried = [r for r in before.refs.get(kind, []) if not (kind == "customer" and r.key in own)]
+        new = [r for k in kinds if k != kind and k in named and not before.refs.get(k) for r in held.refs.get(k, [])]
+        if kind in named or not carried or not new:
+            continue
+        asked, options = clarify_copy.carry_scope(
+            held.domain, kind, _labels(new, language), _labels(carried, language), language
+        )
+        act = _clarify(st, i, "carry_scope", None, language, options=options, asked=asked)
+        act.pending.origin = _origin_of(ask)  # a pick replays the whole ask over what is kept
+        return act
+    return None
+
+
+def _labels(refs: list[ResolvedRef], language: str) -> str:
+    return ", ".join(dict.fromkeys(clarify_copy.safe_label(r.label, language) for r in refs))
+
+
+def _carry_reply(ask: Ask, pending: PendingQuestion | None) -> dict | None:
+    """RG-1b: while the carry question is open, a reply carrying no more than a period or a status (no entity,
+    pick, spec, report, attachment, form or other domain) is no answer to it. Returns the question's ask with
+    what the reply adds, for the pick; None for any other reply."""
+    origin = valid_origin(pending.origin) if pending is not None and pending.kind == CARRY_SCOPE else None
+    picks = ask.row_pick is not None or ask.answer is not None and (ask.answer.option_key or ask.answer.free_value)
+    if (
+        origin is None or ask.act not in ("answers_bot_question", "refines_held", "new_topic") or picks
+        or ask.entities or ask.specs or ask.report or ask.low_stock or ask.attachment_type or ask.portal_form
+        or ask.ideation or ask.cleared or ask.domain not in (None, origin.domain)
+    ):
+        return None
+    return _origin_of(
+        origin.model_copy(update={"period": ask.period or origin.period, "status": ask.status or origin.status})
+    )
+
+
+#: RG-6 (#1517 ruling): the domains whose answer needs a subject. An ask naming none is a which-product question,
+#: never a tool call. R3 registry.
+SUBJECT_REQUIRED_DOMAINS: frozenset[str] = frozenset({"inventory", "master_products"})
+
+
+def _no_subject(held: Held, ask: Ask) -> bool:
+    """RG-6: no refs, specs, report, low stock ask, period or form, in a domain that needs a subject."""
+    return held.domain in SUBJECT_REQUIRED_DOMAINS and not (
+        any(held.refs.values()) or held.specs or held.report or ask.low_stock or held.period or held.portal_form
+    )
+
+
+def _which_product(st: ConversationState, i: int, language: str) -> ClarifyAct:
+    asked = clarify_copy.text("which_product", language)
+    return _clarify(st, i, "entity", None, language, options=[], kind="product", asked=asked)
+
+
 def _one_ask(
     st: ConversationState,
     i: int,
@@ -338,6 +419,10 @@ def _one_ask(
     if ask.act == "small_talk":
         return SmallTalk(ask_index=i), False
 
+    reply = _carry_reply(ask, pending)
+    if reply is not None:
+        raise _Miss("carry_scope", origin=reply)  # RG-1b: no answer to the carry question: it is asked again
+
     counted = _held_count(st, ask, pending)
     if counted is not None:
         ask = counted  # a bare count: a refine (or a new topic) on the held subject
@@ -360,6 +445,7 @@ def _one_ask(
         return _commit(st, i, held, ask, qs), False
 
     if ask.act == "new_topic" or _new_subject_in_a_new_domain(st, ask):
+        topics = list(st.topics)
         if i > 0 or not st.held.is_empty():
             st.topics = push_topic(st.topics, st.held)
         qs = _Qs(can_offer)
@@ -372,11 +458,18 @@ def _one_ask(
             and any(e.kind in DOCUMENT_KINDS and not e.refers_to_held for e in ask.entities)
         ):
             held.refs = set_refs(held.refs, "product", before.refs["product"], "set")  # the held product stays
+        carry = None if qs else _carry_scope(st, i, ask, before, held, resolver, language)
+        if carry is not None:
+            st.topics = topics  # nothing moves until it is answered
+            return carry, False
+        if not qs and _no_subject(held, ask):
+            qs.append(_which_product(st, i, language))
         return _commit(st, i, held, ask, qs), False
 
     # refines_held
     if st.held.is_empty() and not ask.domain and ask.row_pick is None:
         raise _Miss("which_held", nothing_held=True)
+    topics = list(st.topics)
     if i > 0 or (ask.domain and ask.domain != st.held.domain and not ask.cleared):
         # A later ask, or a domain switch on the same subject, saves what was held so a
         # switch back can return to it (the refine keeps the held subject). A refine that clears
@@ -412,6 +505,12 @@ def _one_ask(
         held = apply_payload(held, row.payload)
     if drilled and ask.report is None and not qs:
         _plan_report(st, held, resolver, language, i, qs, today)
+    carry = None if qs else _carry_scope(st, i, ask, st.held, held, resolver, language)
+    if carry is not None:
+        st.topics = topics  # nothing moves until it is answered
+        return carry, False
+    if not qs and _no_subject(held, ask):
+        qs.append(_which_product(st, i, language))
     action = _commit(st, i, held, ask, qs)
     if isinstance(action, Lookup):
         action.row = row
@@ -520,6 +619,8 @@ def _answer(
     key = ask.answer.option_key if ask.answer is not None else None
     free = ask.answer.free_value if ask.answer is not None else None
     picked = next((o for o in pending.options if o.key == key), None) if key is not None else None
+    if key == "all" and pending.kind == CARRY_SCOPE:
+        picked = pending.options[-1]  # "all <kind>s": the parser's "all" drops the carried kind (v1 carry_scope_keeps)
     if key == "all" and picked is None:
         # Every option of the question (the contract token for "all of them").
         every = [o for o in pending.options if o.payload.get("kind") != "handover"]
@@ -722,7 +823,7 @@ def _apply_fields(
         held.report = reports.edit_report(held.report if refine else None, ask.report, cleared=ask.cleared)
         if held.report is not None:
             _plan_report(st, held, resolver, language, i, qs, today)
-    held = _expand_family(held, resolver, qs)
+    held = _expand_family(_expand_sets(held, resolver), resolver, qs)
     return held
 
 
@@ -1026,6 +1127,14 @@ def _apply_entities(
                 raise _Miss("which_held", entity=ent)
             held.refs = set_refs(held.refs, ent.kind, refs, "remove")
             continue
+        sets_of = getattr(resolver, "family_sets", None)
+        family = len(refs) == 1 and refs[0].family and held.domain in SET_DOMAINS and sets_of is not None
+        sets = sets_of(refs[0].key) if family else []
+        if sets:
+            # RG-5 (#1443): a base code whose products belong to ACTIVE sets is one pick of those sets.
+            qs.append(_clarify(st, i, "entity", ent.phrase, language, options=_stamped(ent, sets), kind=ent.kind))
+            asked.append((qs[-1], ent))
+            continue
         carried = base.refs.get(ent.kind, []) if refine else []
         if (
             refine
@@ -1249,6 +1358,15 @@ def _apply_specs(
         status = getattr(res, "status", "none")
         resolved: list[ResolvedSpec] = list(getattr(res, "specs", None) or [])
         options = list(getattr(res, "options", None) or [])
+        products = list(getattr(res, "products", None) or [])
+        if products:
+            # RG-2 (#1582): the products holding the size on any axis are the subject; no axis question.
+            held.refs = set_refs(held.refs, "product", _narrowed(held, products), "set")
+            continue
+        sizes = list(getattr(res, "sizes_on_file", None) or [])
+        if sizes:
+            qs.append(_size_miss(st, i, spec, held, sizes, language))
+            continue
         if status == "ambiguous" and len(options) == 1 and policy.decide("spec_attribute", held.domain) == "default":
             held = apply_payload(held, options[0].payload)
             continue
@@ -1263,13 +1381,6 @@ def _apply_specs(
             # (section 4). Without an option there is nothing truthful to print: taken.
             qs.append(_clarify(st, i, "spec_attribute", spec.phrase, language, options=options))
             continue
-        if status == "none" and not options:
-            closest = list(getattr(res, "closest", None) or [])
-            if closest:
-                qs.append(
-                    _clarify(st, i, "spec_attribute", spec.phrase, language, options=closest, kind="spec", not_found=True)
-                )
-                continue
         if status != "exact" or not resolved:
             qs.append(
                 _clarify(
@@ -1286,6 +1397,31 @@ def _apply_specs(
             else:
                 held.specs = [h for h in held.specs if h.attribute != r.attribute] + [r]
     return held
+
+
+def _narrowed(held: Held, products: list[ResolvedRef]) -> list[ResolvedRef]:
+    """The products a size found, each keeping the quantity and phrase of the held product it narrows."""
+    current = held.refs.get("product", [])
+    by_key = {r.key: r for r in current}
+    only = current[0] if len(current) == 1 else None
+    out = []
+    for p in products:
+        src = by_key.get(p.key) or only
+        out.append(p.model_copy(update={"quantity": src.quantity, "phrase": src.phrase}) if src is not None else p)
+    return out
+
+
+def _size_miss(
+    st: ConversationState, i: int, spec: Spec, held: Held, sizes: list[str], language: str
+) -> ClarifyAct:
+    """RG-2 (#1582): "No 300 mm for SRTWC286. Sizes on file: Length 250, 600 mm; ...", no options and no
+    closest-product picks."""
+    size = " ".join(x for x in (f"{spec.number:g}", spec.unit) if x)
+    subject = ", ".join(dict.fromkeys(r.key for r in held.refs.get("product", [])))
+    asked = clarify_copy.text("size_miss", language, size=size, subject=subject, sizes="; ".join(sizes))
+    return _clarify(
+        st, i, "spec_attribute", spec.phrase, language, options=[], kind="spec", not_found=True, asked=asked
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -1330,6 +1466,31 @@ def _expand_family(held: Held, resolver: ResolverLike, qs: Any) -> Held:
         [m.model_copy(update={"quantity": refs[0].quantity, "phrase": refs[0].phrase}) for m in members], "set",
     )
     return out
+
+
+#: Domains where a set code answers for its members (v1 `gate.SET_EXPANDING_DOMAINS`, #1443 crew ruling). R3 registry.
+SET_DOMAINS = frozenset({"inventory"})
+
+
+def _expand_sets(held: Held, resolver: ResolverLike) -> Held:
+    """RG-5 (#1443): in the set domains a held set code becomes its member products, each counted as the asked
+    quantity times its quantity in the set (none asked: none). A set with no members stays as it is."""
+    members_of = getattr(resolver, "set_members", None)
+    refs = held.refs.get("product") or []
+    if held.domain not in SET_DOMAINS or members_of is None or not any(r.set for r in refs):
+        return held
+    out: list[ResolvedRef] = []
+    for ref in refs:
+        members = members_of(ref.key) if ref.set else []
+        if not members:
+            out.append(ref)
+            continue
+        for member, per_set in members:
+            qty = ref.quantity.model_copy(update={"number": ref.quantity.number * per_set}) if ref.quantity else None
+            out.append(member.model_copy(update={"phrase": ref.phrase, "quantity": qty}))
+    held = held.model_copy(deep=True)
+    held.refs = set_refs(held.refs, "product", out, "set")
+    return held
 
 
 def _bare_switch_back_beside_a_new_ask(asks: list[Ask], i: int, topics: list[Held]) -> bool:
@@ -1520,8 +1681,9 @@ def _clarify(
     not_found: bool = False,
     asked: str | None = None,
 ) -> ClarifyAct:
+    given = asked
     asked = asked or clarify_copy.question_for(about, phrase, language, kind=kind, not_found=not_found)
-    if not_found and not phrase and kind != "attachment_type":
+    if not_found and not phrase and kind != "attachment_type" and given is None:
         # Nothing the user typed to name: ask openly rather than print an internal key.
         asked = clarify_copy.question_for(about, None, language, kind=kind)
     if about == "entity":
@@ -1548,9 +1710,11 @@ def _miss(
     miss: _Miss,
     language: str,
     can_offer_handover: bool = True,
+    mode: str = "none",
 ) -> Action:
     """One MISS: re-ask the pending question with its real options; the second miss on
-    the same question offers a hand-over instead."""
+    the same question offers a hand-over instead, or, to a contact who cannot be offered
+    one, says v1's "I still need X for Y." and closes the question (RG-1b)."""
     if pending is None:
         about = _entity_about(st, miss.about)
         asked = clarify_copy.question_for(about, None, language, nothing_held=miss.nothing_held)
@@ -1563,6 +1727,8 @@ def _miss(
         )
         return ClarifyAct(ask_index=i, about=about, pending=question, reask=True)
     misses = pending.misses + 1
+    if not can_offer_handover and misses >= MISSES_BEFORE_HANDOVER and pending.kind != "offer_handover":
+        return _still_need(st, i, pending, language, mode)
     if can_offer_handover and misses >= MISSES_BEFORE_HANDOVER and pending.kind != "offer_handover":
         offer = PendingQuestion(
             kind="offer_handover",
@@ -1588,22 +1754,44 @@ def _repeat_is_a_miss(
     pending_in: PendingQuestion | None,
     language: str,
     can_offer_handover: bool,
+    mode: str = "none",
 ) -> Action:
-    """The same question asked again (same kind, same option keys) counts as a MISS on
-    it, so a repeated which_held (the 11 Oct single-subject rule) reaches the hand-over
-    offer like every other short-reply check (section 3)."""
-    if not isinstance(action, ClarifyAct) or pending_in is None or action.reask:
+    """The same question asked again (same kind, wording and options) counts as a MISS on
+    it, so a repeated question reaches the hand-over offer (or the staff cap) like every
+    other short-reply check (section 3). RG-1b: every clarify kind, not only which_held; a
+    not-found line or a did-you-mean is not one."""
+    if not isinstance(action, ClarifyAct) or pending_in is None or action.reask or action.not_found:
         return action
     q = action.pending
     if (
-        q.kind != "clarify_which_held"
+        q.kind == "clarify_did_you_mean"
+        or q.asked_turn == pending_in.asked_turn  # the open question kept open (a refused "all"), not asked again
         or pending_in.kind != q.kind
-        or not q.options
         or q.asked != pending_in.asked
-        or [o.key for o in q.options] != [o.key for o in pending_in.options]
+        or [(o.key, o.label) for o in q.options] != [(o.key, o.label) for o in pending_in.options]
     ):
         return action
-    return _miss(st, action.ask_index, pending_in, _Miss(action.about), language, can_offer_handover)
+    return _miss(st, action.ask_index, pending_in, _Miss(action.about), language, can_offer_handover, mode)
+
+
+#: RG-1b: what the cap's line says is missing, per question kind (v1 `clarify_policy._MISSING_WORDS`).
+STILL_MISSING = {"clarify_report_period": "period", "clarify_attachment_type": "attachment_type"}
+
+
+def _still_need(st: ConversationState, i: int, pending: PendingQuestion, language: str, mode: str) -> ClarifyAct:
+    """RG-1b (#1570): v1's loop-breaker line naming what is still missing for the held subject (products first,
+    then customers; the carried kind for the carry question), no options, and the question closes. A contact
+    whose escalation is barred also gets v1's refer line; staff get the line alone."""
+    carried = next((o.payload["clear"] for o in pending.options if o.payload.get("clear")), None)  # carry pick 2
+    refs = st.held.refs.get(carried) if carried else st.held.refs.get("product") or st.held.refs.get("customer")
+    missing = carried or STILL_MISSING.get(pending.kind, "more")
+    line = clarify_copy.still_need(missing, _labels(refs or [], language) or None, language)
+    if mode == "refer":
+        from app.services.chatbot.turn.task import REFER_TO_SALESMAN
+
+        line += f" {REFER_TO_SALESMAN}"
+    closed = PendingQuestion(kind=pending.kind, asked=line, asked_turn=st.turn_no)
+    return ClarifyAct(ask_index=i, about=pending.kind.removeprefix("clarify_"), pending=closed, closes=True)
 
 
 def record_rows(state: ConversationState, rows: list[Option]) -> ConversationState:
