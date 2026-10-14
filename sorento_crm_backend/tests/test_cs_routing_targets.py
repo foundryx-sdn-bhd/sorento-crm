@@ -19,8 +19,9 @@ customer_service stage (crew answer Q3): the submit and approval stages never re
 it, so a pinned CS user can never take a stage that is not theirs.
 
 Saving is one ``PUT /contacts/{id}/cs-routing`` carrying every rule. Every rule is
-validated before anything is deleted, so one bad rule returns an error naming it
-and the stored rules stay exactly as they were. The old per-use_case PUT/DELETE and
+validated before anything is deleted, so one bad rule returns an error naming it by
+the "Priority N" label the page shows (``priority + 1``, reviewer round 1) and the
+stored rules stay exactly as they were. The old per-use_case PUT/DELETE and
 the new bulk PUT all require ``user_management.contacts.edit`` (crew answer Q4).
 
 All tests run on the blank Postgres schema (tests/_pg_fixture.py), which holds only
@@ -309,19 +310,21 @@ def test_save_with_one_ineligible_rule_keeps_every_stored_rule(monkeypatch):
         _pin(db, s.contact_id, s.in_team, use_case="sponsorship_form", priority=2)
         before = _stored(db, s.contact_id)
 
+        # Priority 2 on the page is an incomplete rule (no PIC yet) the page does not
+        # send, so the refused rule is the second one sent but the page's Priority 3.
         r = _client(db, monkeypatch).put(
             f"{BASE}/{s.contact_id}/cs-routing",
             json={
                 "rules": [
                     {"use_case": "purchase_request", "cs_pic_user_id": s.in_team, "match_conditions": PROJECT, "priority": 0},
-                    {"use_case": "purchase_request", "cs_pic_user_id": s.admin_only, "match_conditions": CASH, "priority": 1},
-                    {"use_case": "sponsorship_form", "cs_pic_user_id": s.outside, "match_conditions": [], "priority": 2},
+                    {"use_case": "purchase_request", "cs_pic_user_id": s.admin_only, "match_conditions": CASH, "priority": 2},
+                    {"use_case": "sponsorship_form", "cs_pic_user_id": s.outside, "match_conditions": [], "priority": 3},
                 ]
             },
         )
 
         assert r.status_code == 400, r.text
-        assert "Rule 2" in r.json()["message"]
+        assert r.json()["message"].startswith("Priority 3: ZZT Aaron AdminOnly cannot be assigned")
         assert _stored(db, s.contact_id) == before
 
 
@@ -368,16 +371,49 @@ def test_save_with_two_rules_on_the_same_conditions_is_refused(monkeypatch):
             f"{BASE}/{s.contact_id}/cs-routing",
             json={
                 "rules": [
-                    {"use_case": "purchase_request", "cs_pic_user_id": s.in_team, "match_conditions": CASH, "priority": 0},
-                    {"use_case": "purchase_request", "cs_pic_user_id": s.outside, "match_conditions": list(reversed(CASH)), "priority": 1},
+                    {"use_case": "purchase_request", "cs_pic_user_id": s.in_team, "match_conditions": CASH, "priority": 1},
+                    {"use_case": "purchase_request", "cs_pic_user_id": s.outside, "match_conditions": list(reversed(CASH)), "priority": 2},
                 ]
             },
         )
 
         assert r.status_code == 400, r.text
-        message = r.json()["message"]
-        assert "Rule 1" in message and "Rule 2" in message
+        assert r.json()["message"].startswith(
+            "Priority 3 has the same conditions as Priority 2 for Purchase Request"
+        )
         assert _stored(db, s.contact_id) == before
+
+
+def test_refused_rule_never_shows_an_email(monkeypatch):
+    """A user with no name is "The selected user", never their email (security
+    review N1: the message must not reveal any user's address)."""
+    with blank_session() as db:
+        s = _seed(db)
+        nameless = _user(db, None, roles=[])
+        email = db.query(User).filter(User.id == nameless).one().email
+
+        r = _client(db, monkeypatch).put(
+            f"{BASE}/{s.contact_id}/cs-routing",
+            json={"rules": [{"use_case": "purchase_request", "cs_pic_user_id": nameless, "priority": 0}]},
+        )
+
+        assert r.status_code == 400, r.text
+        message = r.json()["message"]
+        assert message.startswith("Priority 1: The selected user cannot be assigned")
+        assert email not in message
+
+
+def test_save_caps_the_number_of_rules(monkeypatch):
+    """Security review N2: one request cannot carry an unbounded list."""
+    with blank_session() as db:
+        s = _seed(db)
+        rule = {"use_case": "purchase_request", "cs_pic_user_id": s.in_team, "priority": 0}
+
+        r = _client(db, monkeypatch).put(
+            f"{BASE}/{s.contact_id}/cs-routing", json={"rules": [rule] * 101}
+        )
+
+        assert r.status_code == 422, r.text
 
 
 def test_save_with_no_rules_clears_the_contact(monkeypatch):
