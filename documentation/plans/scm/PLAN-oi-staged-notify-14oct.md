@@ -1,10 +1,11 @@
 # PLAN: park reserve requests and reserve notices, send all parked (OI-STAGED-NOTIFY)
 
-Status: Build (owner approved mock v6, 14 Oct). Standard track, size L (additive migration + in-place template layout update, two
-sides, status filter, send-all with preview). Lane crew/oi-staged-notify. Card answered by crew
-14 Oct (Q1-Q5 all (a)); owner notes on mocks v1 to v5 applied; mock v6 approved by the owner
-14 Oct. Built; review round 1 (reviewer NOT READY: B1 one-OI shape by distinct OIs, S2 recipients
-for staged rows, nits) in progress; security CLEAN (2 Low accepted).
+Status: Hand test (owner approved mock v6, 14 Oct). Standard track, size L (additive migration +
+in-place template layout update, two sides, status filter, send-all with preview). Lane
+crew/oi-staged-notify, PR #1684. Review round 1 NOT READY (B1 one-OI shape, S2 staged-row
+recipients) fixed; re-check READY with S1 (dialog OI total) fixed; crew browser audit D4 (preview
+subject) and D5 (toasts name the To person) fixed; final reviewer B1 (TS type on
+ParkedPreviewData) fixed; security CLEAN at 698c2b510 (2 Low accepted).
 
 UAC: `oi-staged-notify-14oct-acceptance-criteria.md` (alongside). Card:
 `oi-staged-notify-behaviour-card.md`. Mock: `documentation/mockups/OI-STAGED-NOTIFY/index.html` (v6).
