@@ -95,7 +95,7 @@ export interface ProductSetLineRef {
   complete_sets: number | null;
   /** The driver part's brand, or null. */
   brand_name?: string | null;
-  parts: { product_code: string; quantity: string | number }[];
+  parts: { product_id?: string; product_code: string; quantity: string | number }[];
 }
 
 /** A set this product belongs to, for the Sets section on product detail (S4). */

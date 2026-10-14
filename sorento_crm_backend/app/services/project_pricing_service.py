@@ -1226,6 +1226,7 @@ def resolve_series_codes(
             "via": "set",
             "products": list(products.values()),
             "priced": set(),
+            "sets": list(found),
         }
 
     prefixes = {
@@ -1268,6 +1269,7 @@ def resolve_series_codes(
                 "via": "family",
                 "products": list(products.values()),
                 "priced": {p.id for p in direct if p.id not in set_parts},
+                "sets": list(via_sets),
             }
 
     unmatched = [raw for norm, raw in spelling.items() if norm not in indirect]
@@ -1354,6 +1356,34 @@ def apply_series_product_codes(
         db, series=series, product_ids=wanted, pricing=pricing
     )
 
+    # The SETS the sheet resolved get a series row of their own (a set is quoted as one line).
+    # Numbers come from the sheet row that named them, the last row winning; a code-only row
+    # creates the row empty if absent and never blanks numbers already there.
+    set_by_id: Dict[str, ProductSet] = {}
+    set_pricing: Dict[str, tuple[Any, Any]] = {}
+    for hit in indirect.values():
+        for ps in hit.get("sets", ()):
+            set_by_id[ps.id] = ps
+    for row in stated:
+        for ps in indirect.get(normalize_code(row.code), {}).get("sets", ()):
+            set_pricing[ps.id] = (row.selling_price, row.max_discount_pct)
+    existing_sets = {
+        link.product_set_id: link
+        for link in db.query(ProjectSeriesSet).filter(ProjectSeriesSet.series_id == series.id).all()
+    }
+    for set_id in set_by_id:
+        link = existing_sets.get(set_id)
+        if link is None:
+            link = ProjectSeriesSet(series_id=series.id, product_set_id=set_id)
+            db.add(link)
+        if set_id in set_pricing:
+            link.selling_price, link.max_discount_pct = set_pricing[set_id]
+    if mode == "replace":
+        for set_id, link in existing_sets.items():
+            if set_id not in set_by_id:
+                db.delete(link)
+    db.flush()
+
     return {
         "series_id": series.id,
         "series_name": series.name,
@@ -1373,6 +1403,8 @@ def apply_series_product_codes(
                 "code": hit["code"],
                 "via": hit["via"],
                 "members": sorted(p.product_code for p in hit["products"]),
+                # Only when the sheet code reached sets, so an all-product family reads as before.
+                **({"sets": sorted(ps.set_code for ps in hit["sets"])} if hit.get("sets") else {}),
             }
             for hit in indirect.values()
         ],

@@ -202,7 +202,6 @@ export function QuotationVersionEditor({
         return {
           value: `${SET_OPTION_PREFIX}${set.id}`,
           label: set.set_code,
-          description: `${set.member_count} ${set.member_count === 1 ? 'part' : 'parts'} - ${set.name}`,
           searchText: `${set.set_code} ${set.name}`,
         };
       });

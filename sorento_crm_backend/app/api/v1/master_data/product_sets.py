@@ -172,6 +172,7 @@ def select_product_sets(
                     "brand_name": brands.get(row.id),
                     "parts": [
                         {
+                            "product_id": m.product_id,
                             "product_code": getattr(m.product, "product_code", None),
                             "quantity": m.quantity,
                         }

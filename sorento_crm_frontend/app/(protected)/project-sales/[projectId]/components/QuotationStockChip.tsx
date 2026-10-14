@@ -268,3 +268,140 @@ function StockPopoverBody({
     </>
   );
 }
+
+export interface SetStockPart {
+  product_id: string;
+  product_code: string;
+  quantity: string | number;
+}
+
+/** Reads one part's stock for the group and reports it up; draws nothing. */
+function PartProbe({
+  part,
+  group,
+  onRead,
+}: {
+  part: SetStockPart;
+  group: string;
+  onRead: (productId: string, available: number | null, failed: boolean) => void;
+}) {
+  const detail = useStockDetail(part.product_id, null, null, group);
+  const data = detail.data;
+  const failed = detail.isError;
+  React.useEffect(() => {
+    onRead(part.product_id, data ? Number(data.available_qty) : null, failed);
+  }, [part.product_id, data, failed, onRead]);
+  return null;
+}
+
+function PartStockSection({ part, group }: { part: SetStockPart; group: string }) {
+  const detail = useStockDetail(part.product_id, null, null, group);
+  return (
+    <div className="space-y-1">
+      <p className="text-sm font-semibold">
+        {`${part.product_code}${Number(part.quantity) !== 1 ? ` x ${trimQty(String(part.quantity))}` : ''}`}
+      </p>
+      {detail.isLoading ? (
+        <Skeleton className="h-10 w-full" />
+      ) : detail.data ? (
+        <CellStockTable locations={detail.data.locations ?? []} showGroupSubtotal stockOnly />
+      ) : (
+        <p className="text-xs text-muted-foreground">Stock could not be loaded</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The stock pill of a SET line: how many complete sets the group can make, that is the smallest
+ * of floor(part available / part quantity). Every part is read through `useStockDetail`, one
+ * child per part (never a hook in a loop), and the popover lists each part with its stock table.
+ */
+export function SetStockChip({
+  parts,
+  group,
+  quantity,
+  label,
+}: {
+  parts: SetStockPart[];
+  group: string | null;
+  quantity: string;
+  label: string;
+}) {
+  const [reads, setReads] = React.useState<Record<string, { available: number | null; failed: boolean }>>({});
+  const onRead = React.useCallback(
+    (productId: string, available: number | null, failed: boolean) =>
+      setReads((previous) =>
+        previous[productId]?.available === available && previous[productId]?.failed === failed
+          ? previous
+          : { ...previous, [productId]: { available, failed } },
+      ),
+    [],
+  );
+
+  if (!group || parts.length === 0) return null;
+  const probes = parts.map((part) => (
+    <PartProbe key={part.product_id} part={part} group={group} onRead={onRead} />
+  ));
+  const read = parts.map((part) => reads[part.product_id]);
+  if (read.some((entry) => entry?.failed)) {
+    return (
+      <>
+        {probes}
+        <span className="text-2xs text-muted-foreground" title="Stock could not be loaded">
+          Stock -
+        </span>
+      </>
+    );
+  }
+  if (read.some((entry) => !entry || entry.available === null)) {
+    return (
+      <>
+        {probes}
+        <Skeleton className="h-5 w-16 rounded-full" />
+      </>
+    );
+  }
+  const sets = Math.min(
+    ...parts.map((part, index) => {
+      const per = Number(part.quantity) > 0 ? Number(part.quantity) : 1;
+      return Math.floor((read[index]?.available ?? 0) / per);
+    }),
+  );
+  const available = Math.max(sets, 0);
+  const tone = toneOf(available, Number(quantity));
+  return (
+    <>
+      {probes}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Badge asChild variant={TONE_VARIANT[tone]} appearance="light" size="sm">
+            <button
+              type="button"
+              aria-label={`Stock on ${label}`}
+              data-tone={tone}
+              className="cursor-pointer whitespace-nowrap tabular-nums"
+            >
+              {`${available} avail`}
+            </button>
+          </Badge>
+        </PopoverTrigger>
+        <PopoverPortal>
+          <PopoverContent
+            align="end"
+            collisionPadding={8}
+            className="max-h-[var(--radix-popover-content-available-height)] w-[min(36rem,calc(100vw-2rem))] space-y-3 overflow-y-auto p-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">{`${label} stock`}</p>
+              <p className="text-xs text-muted-foreground">{`Quoted ${trimQty(quantity)} sets`}</p>
+            </div>
+            {parts.map((part) => (
+              <PartStockSection key={part.product_id} part={part} group={group} />
+            ))}
+          </PopoverContent>
+        </PopoverPortal>
+      </Popover>
+    </>
+  );
+}
