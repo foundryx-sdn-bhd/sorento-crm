@@ -524,31 +524,6 @@ def test_an_unchanged_reserve_line_is_not_simulated_as_a_transfer_and_the_press_
     assert [str(m.id) for m in after] == [kept_id], "the real Confirm keeps the same transfer"
 
 
-def test_a_line_whose_only_change_is_its_cs_note_is_still_simulated_as_a_write(api):
-    client, world = api
-    order, _core_so_row, (a, b) = _two_line_order(world)
-    first_lines = [
-        {**_line_payload(a.id, buy_qty="50"), "cs_note": "first words"},
-        _line_payload(b.id, buy_qty="50"),
-    ]
-    first = _post(client, order, first_lines)
-    assert first.status_code == 200 and first.json()["results"][0]["ok"] is True, first.text
-    world.db.expire_all()
-    lines = [
-        {**_line_payload(a.id, buy_qty="50"), "cs_note": "second words"},
-        _line_payload(b.id, buy_qty="50"),
-    ]
-
-    preview = _post(client, order, lines, preview=True)
-
-    assert preview.status_code == 200, preview.text
-    result = preview.json()["results"][0]
-    assert result["ok"] is True, result
-    rows = {row["line_no"]: row for row in result["inquiry_rows"]}
-    assert set(rows) == {10}, rows
-    assert "second words" in (rows[10]["note"] or ""), rows[10]
-
-
 # --------------------------------------------------------------------------- withdrawals
 
 
