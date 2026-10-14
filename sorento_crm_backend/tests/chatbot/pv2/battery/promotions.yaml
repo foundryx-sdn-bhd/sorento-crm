@@ -5,6 +5,9 @@
 # EXPIRED dealer flyers (UPDATED SORENTO A3 FLYER 2026 (DEALER)_21072026, SORENTO A3 FLYER_DEALER USE_11062026,
 # JULY SORENTO WATER CLOSET PROMO_06072026 DEALER). Owner rulings 9 Oct (promo-subject-filter-acceptance-criteria.md
 # Round 3, AC-33): expired promos are served only when that exact ask at that level has no live row, marked EXPIRED.
+# OPEN OWNER QUESTION: the code serves expired rows PER PROMOTION TYPE (app/api/v1/marketing/promotions.py
+# serving_policy: a type with no live row contributes its latest expired row); whether the ruling means per type or
+# any live flyer for the ask is not ruled. promotions-r01 T1 and promotions-i01 T3 keep the strict reading.
 # Promotion replies list the flyer files with dates and never echo the product code, so no `must` on codes.
 domain: promotions
 conversations:
@@ -20,7 +23,7 @@ conversations:
     expect:
       kind: any
       about: "active promotion for SRTKS7061: asks which copy (office / dealer / end user) or sends it; an expired flyer only when that exact ask at that level has no live row, marked EXPIRED (owner rulings 9 Oct, promo-subject-filter AC-33)"
-      judge: "Promotion replies list the flyer files with dates, not the product code."
+      judge: "Promotion replies list the flyer files with dates, not the product code. Open owner question: whether the 9 Oct ruling (1) 'the same ask (brand + subject + kind + level)' means per promotion type (the code serves an expired row for a type with no live row, app/api/v1/marketing/promotions.py serving_policy) or any live flyer for the ask; an EXPIRED flyer beside a live one is judged against the strict reading until the owner rules."
   - text: "dealer"
     expect:
       kind: answer
@@ -103,6 +106,7 @@ conversations:
       about: "the dealer promotion flyer(s) covering SRTKS6042-BL are sent; an expired flyer only when that exact ask at the dealer level has no live row, marked EXPIRED (owner rulings 9 Oct, AC-33)"
       attachments: true
       must_not: ["OFFICE.pdf", "(OFFICE"]
+      judge: "Open owner question: whether the 9 Oct ruling (1) 'the same ask (brand + subject + kind + level)' means per promotion type (the code serves an expired row for a type with no live row, app/api/v1/marketing/promotions.py serving_policy) or any live flyer for the ask; an EXPIRED flyer beside a live one is judged against the strict reading until the owner rules."
 
 - id: promotions-i02
   source: improvised

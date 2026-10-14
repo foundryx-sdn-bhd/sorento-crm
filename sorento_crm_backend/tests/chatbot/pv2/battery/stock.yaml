@@ -184,7 +184,7 @@ conversations:
     expect:
       kind: answer
       about: "incoming for SRTKS8848 (the space inside the code is a typo), stated as the data holds it (its ETA, or that nothing is incoming); Chinese or English reply"
-      judge: "On 14 Oct the dev DB held no incoming for SRTKS8848 (discontinued). Judge against the turn's facts, not this note."
+      judge: "On 14 Oct the dev DB held no incoming for SRTKS8848 (discontinued); SRTKS8848-BL is a real active family member, so the 'Related products' list is the family picker, not invented. Judge against the turn's facts, not this note."
       must: ["SRTKS8848"]
   - text: "SRTKS8848 stock"
     expect:

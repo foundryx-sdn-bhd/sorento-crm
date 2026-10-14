@@ -172,6 +172,7 @@ conversations:
       kind: answer
       about: "ETA for the 6th option (SRTWF12C-GM-NEW): says there is no incoming when none is held"
       must: ["SRTWF12C-GM-NEW"]
+      judge: "'Here's what you want: product X / But no incoming matched these.' and the stock fallback are the shared not-found template; judge the content, not that template."
   - text: "no 1 & no 8 also"
     expect:
       kind: any

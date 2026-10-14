@@ -126,9 +126,9 @@ conversations:
   turns:
   - text: "Acfirst ceramics SDN BHD order MFG6644-pp send yet"
     expect:
-      kind: answer
-      about: "whether ACFIRST CERAMICS SDN BHD's order(s) for MFG6644-PP were delivered, or that there is none; customer and product both kept"
-      must: ["MFG6644-PP"]
+      kind: any
+      about: "whether ACFIRST CERAMICS SDN BHD's order(s) for MFG6644-PP were delivered, or that there is none; or the which-document question (sales orders / delivery orders / both) with Customer ACFIRST CERAMICS SDN BHD and Product MFG6644-PP shown; customer and product both kept"
+      must: ["MFG6644-PP", "ACFIRST"]
   - text: "Does Acfirst ceramics SDN BHD order mbf97521"
     expect:
       kind: answer

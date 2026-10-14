@@ -20,16 +20,19 @@ conversations:
       kind: answer
       about: "delivered sales 1 to 30 September 2026 for the dealer's own accounts with the total and a drill-down offer"
       must_not: ["Which figure should I rank by?", "Sorry, I didn't catch your choice"]
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
   - text: "1"
     expect:
       kind: answer
       about: "the first drill-down offered (by customer) for the same September delivered report; never a top-N / measure question"
       must_not: ["How many? For example top 5", "Sorry, I didn't catch your choice"]
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
   - text: "only August"
     expect:
       kind: answer
       about: "the same delivered report for 1 to 31 August 2026 (period replaced, everything else kept)"
       must_not: ["Sorry, I didn't catch your choice"]
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
 
 - id: reports-r02
   source: real
@@ -96,12 +99,14 @@ conversations:
   - text: "i want to see dealer sales only"
     expect:
       kind: any
-      about: "the same ranking narrowed to the dealer channel, or one short question (for example which brand); the earlier choices kept"
+      about: "the same ranking narrowed to the dealer channel, or one short question (for example which brand); the earlier choices kept; while turn 1's delivered / ordered / outstanding question is still unanswered, that question again is right (basis is never defaulted, owner 4 Oct)"
+      allow_repeat: true
   - text: "sorento"
     expect:
-      kind: answer
-      about: "the dealer-channel top 5 for Sorento this month"
+      kind: any
+      about: "the dealer-channel top 5 for Sorento this month once the basis is known; if the basis was never given, the delivered / ordered / outstanding question with Sorento and the dealer channel kept, or the clarify-loop breaker"
       must_not: ["Sorry, I didn't catch your choice"]
+      judge: "Clarify-loop cap (#1570, crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md): a third identical basis question in a row (T1, T2 and T3) FAILS; a re-ask that shows the kept choices (Sorento, dealer channel) or the loop breaker passes. Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures absent from the facts."
   - text: "Hello Mr"
     expect:
       kind: answer
@@ -122,10 +127,12 @@ conversations:
     expect:
       kind: answer
       about: "the kitchen sink ranking for last month by quantity"
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
   - text: "top 10 pula"
     expect:
       kind: answer
       about: "the same ranking widened to the top 10 (category, month and metric kept)"
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
 
 - id: reports-i02
   source: improvised

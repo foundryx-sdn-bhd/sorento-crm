@@ -18,6 +18,7 @@ conversations:
     expect:
       kind: any
       about: "a topic switch: the dealer's own delivered sales for September 2026, or one question about it"
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
   - text: "ok back to the SRTWC286-SH, got 10 unit?"
     expect:
       kind: answer
