@@ -580,10 +580,13 @@ def _answer(
         raise _Miss("other")
 
     payload_kind = picked.payload.get("kind")
+    answered = picked.payload  # the item of the original ask this reply answers
     if pending.kind == "offer_handover" or payload_kind == "handover":
         if picked.payload.get("value") is True:
             return HandOver(ask_index=i, team_key=picked.payload.get("team_key"), agent_key=picked.payload.get("agent_key")), True
-        return SmallTalk(ask_index=i, declined_offer=True), True
+        answered = _declined_item(pending)
+        if answered is None:
+            return SmallTalk(ask_index=i, declined_offer=True), True
 
     if pending.kind in PASS_THROUGH_PENDING or payload_kind == "choice":
         return (
@@ -609,11 +612,12 @@ def _answer(
         # The pick completes the ORIGINAL ask: what is left of it applies to the picked subject through
         # the same path as any ask. Its attachment kinds were vetted when it was asked, so they copy as
         # they are.
-        rest = _without_picked(origin, picked.payload, pending.kind, pending.raised_by)
+        rest = _without_picked(origin, answered, pending.kind, pending.raised_by)
         held = _complete_deferred(held, _deferred_of(rest))
+        joined = answered.get("kind")
         held = _apply_fields(
             st, held, rest.model_copy(update={"attachment_type": None}), resolver, policy,
-            language, i, qs, refine=True, today=today, joins=frozenset({payload_kind} if payload_kind else ()),
+            language, i, qs, refine=True, today=today, joins=frozenset({joined} if joined else ()),
         )
     else:
         held = _complete_deferred(held, pending.deferred)  # no usable origin: state saved before R2, or a report pick
@@ -1017,8 +1021,8 @@ def _apply_entities(
         if ent.op == "remove":
             current = {r.key for r in held.refs.get(ent.kind, [])}
             if not current.intersection(r.key for r in refs):
-                if joins and {r.key for r in st.held.refs.get(ent.kind, [])}.intersection(r.key for r in refs):
-                    continue  # a pick replay: the pick already replaced the held target (RG-7f)
+                if {r.key for r in st.held.refs.get(ent.kind, [])}.intersection(r.key for r in refs):
+                    continue  # held before this ask (or the pick), already replaced by it: done (RG-7f/7g)
                 raise _Miss("which_held", entity=ent)
             held.refs = set_refs(held.refs, ent.kind, refs, "remove")
             continue
@@ -1449,6 +1453,18 @@ def _without_picked(
     elif kind == "domain":
         update["domain"] = None
     return origin.model_copy(update=update)
+
+
+def _declined_item(pending: PendingQuestion) -> dict | None:
+    """A did-you-mean declined after part of its ask landed (its picks join those items, op add): the item it
+    asked about, so the rest of the ask is answered without it (RG-7g). None otherwise: v1's declined lane."""
+    if pending.kind != "clarify_did_you_mean" or pending.origin is None:
+        return None
+    return next(
+        ({"kind": o.payload["kind"], "phrase": o.payload["phrase"]} for o in pending.options
+         if o.payload.get("op") == "add" and o.payload.get("phrase")),
+        None,
+    )
 
 
 def _deferred_of(ask: Ask) -> dict | None:
