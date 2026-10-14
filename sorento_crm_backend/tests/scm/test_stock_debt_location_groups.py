@@ -78,10 +78,10 @@ def test_repeated_group_spans_both_groups_and_leaves_the_third_out(scm_app):
 
     spanned = _balances(both.json(), product)
     assert spanned[now] == 100, "IB stock in span, IR 7 out of it"
-    assert spanned[due] == -40
+    assert spanned.get(due) == -40
     narrowed = _balances(single.json(), product)
     assert narrowed[now] == 0
-    assert narrowed[due] == -40
+    assert narrowed.get(due) == -40
 
 
 def test_group_matching_is_case_insensitive(scm_app):
@@ -130,7 +130,7 @@ def test_cell_with_repeated_group_foots_with_the_board(scm_app):
     assert cell.status_code == 200, cell.text
     body = cell.json()
 
-    assert _balances(board, product)[due] == -40
+    assert _balances(board, product).get(due) == -40
     assert len(body["demand"]) == 1
     assert body["demand"][0]["status"] == "short"
     assert body["demand"][0]["short_qty"] == 40
