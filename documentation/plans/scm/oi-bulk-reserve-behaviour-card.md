@@ -80,8 +80,11 @@ Owner confirmed Q2 (a) (bulk covers only lines with an open request; amend stays
    end, N = ticked lines with an open request (Q2 (a)); greyed at 0.
 2. Pressing it stages every one of those lines straight away at its requested qty (capped at what
    is left) and the request's location, exactly like pressing each line's own "Reserve" today,
-   then clears the ticks. An already staged line is replaced.
+   clears the ticks, AND opens the #1684 confirmation at once, covering everything staged (these
+   lines plus any staged singly before). Crew decision (b), 15 Oct: one click from ticks to the
+   "Park notice first" confirmation; no screen shows two same-named buttons doing different things.
+   An already staged line is replaced. Cancel on the confirmation keeps the staged chips.
 3. A partial reserve stays the single-line "Edit reserve" (with its required Reason). Amending an
    answered line stays the single-line "Amend reserve".
-4. The header "Reserve (N)" + the #1684 confirmation ("Park notice first") commits as today.
+4. The header "Reserve (N)" stays for single-line stages and opens the same confirmation, as today.
 5. Frontend only: the staged map (`StagedReserveEntry`) and the commit route are unchanged.
