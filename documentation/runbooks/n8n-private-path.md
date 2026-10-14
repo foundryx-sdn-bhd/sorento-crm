@@ -553,6 +553,17 @@ AllowedIPs = 100.77.0.1/32
 PersistentKeepalive = 25
 ```
 
+On the CRM box only, make `wg0` start after Docker. The `PostUp` lines below insert into Docker's
+`DOCKER-USER` chain, which does not exist until Docker has started; without this, a reboot can
+leave the tunnel down. (Rollback: delete the file and `sudo systemctl daemon-reload`.)
+
+```bash
+sudo mkdir -p /etc/systemd/system/wg-quick@wg0.service.d
+printf '[Unit]\nAfter=docker.service\nWants=docker.service\n' \
+  | sudo tee /etc/systemd/system/wg-quick@wg0.service.d/after-docker.conf
+sudo systemctl daemon-reload
+```
+
 Then `sudo systemctl enable --now wg-quick@wg0` on both, and in Hostinger on the CRM box add
 **Accept, UDP, 51820, source Custom `<N8N_HOST>`**. Everything else is this runbook with
 `<CRM_TS_IP>` = `100.77.0.1`, `<N8N_TS_IP>` = `100.77.0.2` and `tailscale0` = `wg0`. Step 2.3's
