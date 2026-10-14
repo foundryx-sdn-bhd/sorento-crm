@@ -578,9 +578,10 @@ def test_owner_example_delivered_line_reserve_98_and_order_back_2_over_77_free(a
     assert _holds_by_warehouse(world.db, line).get(world.pool_wh.id) in (None, Decimal("0"))
 
 
-def test_a_short_reserve_is_listed_in_the_purchasing_email(api, monkeypatch):
-    """Owner rule 12 Oct 2026: the shortfall is listed in the purchasing email that the
-    Confirm already sends, as its own line (no purchasing row is raised for it)."""
+def test_a_short_reserve_reads_just_its_decision_in_the_purchasing_email(api, monkeypatch):
+    """Owner hand test 14 Oct 2026 (overrides the 12 Oct rule): REMARK never says "N SHORT";
+    a Reserve confirmed short of free stock reads just its decision, and no STOCK SHORT
+    heading or row comes of it."""
     client, world = api
     _register(world)
     calls = _captured_dispatches(monkeypatch)
@@ -595,12 +596,9 @@ def test_a_short_reserve_is_listed_in_the_purchasing_email(api, monkeypatch):
     handover = _handover_calls(calls)
     assert len(handover) == 1, [c["trigger_type"] for c in calls]
     context = handover[0]["context"]["handover"]
-    assert "STOCK SHORT" in context["verbs"], context["verbs"]
-    short_lines = [e for e in context["lines"] if "short" in (e.get("remark") or "").lower()]
-    assert len(short_lines) == 1, context["lines"]
-    # ORDERBACK-DELTA (owner, 13 Oct 2026): the shortfall rides on the line's own one line.
-    assert short_lines[0]["qty"] == "10", short_lines[0]
-    assert short_lines[0]["remark"].endswith(", 5 SHORT"), short_lines[0]
+    assert "STOCK SHORT" not in context["verbs"], context["verbs"]
+    (told,) = context["lines"]
+    assert (told["qty"], told["remark"]) == ("10", f"USE {world.pool_wh.warehouse_code}"), told
     world.db.expire_all()
     assert (
         world.db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == line.id).count()

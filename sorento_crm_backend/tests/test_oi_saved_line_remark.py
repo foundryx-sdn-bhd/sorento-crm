@@ -148,13 +148,14 @@ def test_several_row_lines_fold_by_their_numbers_not_their_words():
         assert told["line"]["remark"] == "ORDER 53, CANCEL ORDER 5", told["line"]
 
 
-def test_a_newly_short_reserve_is_a_change_to_tell():
-    """Review S3: re-approved unchanged but now short of free stock - still news."""
+def test_a_newly_short_reserve_is_not_a_change_to_tell():
+    """Owner hand test 14 Oct 2026: the email never tells a shortfall, so a line re-approved
+    unchanged but now short of free stock has nothing new for purchasing."""
     from app.services.project_order_inquiry_service import _saved_decision_key
 
     before = _snap(_reserve("10", "BRW", rung="pool"))
     now = _snap(_reserve("10", "BRW", rung="pool"), stock_short=[{"short": "3"}])
-    assert _saved_decision_key(before) != _saved_decision_key(now)
+    assert _saved_decision_key(before) == _saved_decision_key(now)
 
 
 def test_a_first_borrow_reads_its_decision_not_its_donor_hole_row():
