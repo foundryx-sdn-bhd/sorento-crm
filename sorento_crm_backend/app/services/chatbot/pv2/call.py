@@ -41,6 +41,17 @@ logger = logging.getLogger(__name__)
 
 PV2_HISTORY_EXCHANGES = 3
 PV2_MAX_TOKENS = 1200
+#: The parser call's reasoning effort (owner approved, 14 Oct 2026). `PV2_REASONING_EFFORT` in the
+#: environment overrides it; "none" or an empty value sends no `reasoning_effort` at all.
+PV2_REASONING_EFFORT = "low"
+
+
+def reasoning_effort_from_env() -> str | None:
+    raw = os.environ.get("PV2_REASONING_EFFORT")
+    if raw is None:
+        return PV2_REASONING_EFFORT
+    raw = raw.strip()
+    return None if raw in ("", "none") else raw
 RECORD_ENV = "PV2_RECORD_DIR"
 
 
@@ -64,6 +75,7 @@ class V2Config:
     provider: str
     model: str
     api_key: str
+    reasoning_effort: str | None = PV2_REASONING_EFFORT
 
     @property
     def cache_key(self) -> str:
@@ -145,6 +157,7 @@ def resolve_v2_config(
         provider=provider,
         model=model,
         api_key=api_key,
+        reasoning_effort=reasoning_effort_from_env(),
     )
 
 
@@ -199,6 +212,7 @@ def parse_v2(
             json_schema=PV2_JSON_SCHEMA,
             json_schema_name=PV2_SCHEMA_NAME,
             prompt_cache_key=config.cache_key,
+            **({"reasoning_effort": config.reasoning_effort} if config.reasoning_effort and config.provider == "openai" else {}),
         )
     except llm_call.RateLimited as exc:
         raise ParserV2Error(f"parser v2 provider call failed: {exc}", rate_limited=True) from exc
@@ -212,6 +226,7 @@ def parse_v2(
         "completion_tokens": int(getattr(result, "completion_tokens", 0) or 0),
         "total_tokens": int(getattr(result, "total_tokens", 0) or 0),
         "cached_tokens": int(getattr(result, "cached_tokens", 0) or 0),
+        "reasoning_tokens": int(getattr(result, "reasoning_tokens", 0) or 0),
     }
     content = (getattr(result, "content", None) or "").strip()
     try:
