@@ -21,6 +21,7 @@ from tests.chatbot.pv2 import _register_envelopes as E  # noqa: F401 - loads the
 
 from app.services.chatbot.pv2.apply import apply_turn
 from app.services.chatbot.pv2.history import MemoryProfile, render_memory
+from tests.chatbot.pv2._r4a_memory import without_last_reply
 from app.services.chatbot.pv2.schema import Clarify, Period, ReportSpec
 from tests.chatbot.pv2.carry_fakes import NOW, FakeResolver, ask, entity, held as mk_held, mk_state, out
 
@@ -80,7 +81,7 @@ def _play6(scenario, can_offer):
     for parsed in parses + [out(ask(act="answers_bot_question", answer={"option_key": "1", "free_value": None}))]:
         st, acts = apply_turn(st, parsed, resolver=r, now=NOW, can_offer_handover=can_offer)
         mem = render_memory(st, MemoryProfile(audience="staff"), NOW)
-        trail.append((type(acts[0]).__name__, getattr(getattr(acts[0], "pending", None), "kind", None), mem[mem.index("HELD"):mem.index("LAST ANSWER")]))
+        trail.append((type(acts[0]).__name__, getattr(getattr(acts[0], "pending", None), "kind", None), without_last_reply(mem[mem.index("HELD"):mem.index("LAST ANSWER")])))  # R4a: LAST ANSWER ROWS / HELD codes / LAST REPLY
     return trail
 # END SCENARIOS6
 

@@ -90,16 +90,21 @@ def test_the_register_round_trips_through_dump_and_load():
     assert load_state(dump_state(state), NOW).register == state.register
 
 
-def test_r1_10_memory_is_byte_identical_with_and_without_a_register():
+def test_r1_10_memory_differs_with_a_register_only_by_the_last_answer_rows_line():
+    # R4a: LAST ANSWER ROWS / HELD codes / LAST REPLY. Before R4a MEMORY was byte-identical with and without a
+    # register; now the latest reply's register rows are the one difference.
     from app.services.chatbot.pv2.history import MemoryProfile, render_memory
     from app.services.chatbot.pv2.state import RegisterEntry
 
     plain = mk_state(mk_held("inventory", {"product": ["SRTWC286"]}))
     with_register = plain.model_copy(deep=True)
-    with_register.register = [RegisterEntry(id="R1", kind="delivery_order", key="X", label="X", parent=None,
-                                            subject="S1", turn=2)]
+    with_register.register = [RegisterEntry(id="R1", kind="delivery_order", key="KEY-NOT-SHOWN", label="X", parent=None,
+                                            subject="S1", turn=with_register.turn_no)]
     profile = MemoryProfile(audience="staff")
-    assert render_memory(with_register, profile, NOW) == render_memory(plain, profile, NOW)
+    shown = render_memory(with_register, profile, NOW)
+    assert "KEY-NOT-SHOWN" not in shown
+    assert shown == render_memory(plain, profile, NOW).replace(
+        "LAST ANSWER ROWS: none", "LAST ANSWER ROWS: 1=delivery_order X")
 
 
 # ------------------------------------------------------------------ R1-1 / R1-2 orders and their lines

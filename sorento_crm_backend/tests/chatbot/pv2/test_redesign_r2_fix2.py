@@ -16,6 +16,7 @@ import pytest
 
 from app.services.chatbot.pv2.apply import apply_turn
 from app.services.chatbot.pv2.history import MemoryProfile, render_memory
+from tests.chatbot.pv2._r4a_memory import without_last_reply
 from app.services.chatbot.pv2.schema import Ask, Quantity
 from app.services.chatbot.pv2.state import (
     ClarifyAct,
@@ -94,7 +95,7 @@ def test_m1_an_ambiguous_product_and_an_ambiguous_spec_reach_their_lookup_with_b
 
 def _topics_block(state) -> str:
     mem = render_memory(state, MemoryProfile(audience="staff"), NOW)
-    return mem[mem.index("TOPICS"):mem.index("LAST ANSWER")]
+    return without_last_reply(mem[mem.index("TOPICS"):mem.index("LAST ANSWER")])  # R4a: LAST ANSWER ROWS / HELD codes / LAST REPLY
 
 
 def test_m2_the_same_subject_pushed_twice_is_one_topic_and_memory_equals_pre_r2():

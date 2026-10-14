@@ -68,6 +68,10 @@ def test_contract_example_line_by_line():
         "</memory>",
     ]
     got = render_memory(_contract_state(), PROFILE, NOW).split("\n")
+    # R4a: LAST ANSWER ROWS / HELD codes / LAST REPLY. The one new line (the open question's kind, no text) is
+    # asserted here and the rest of the contract example is compared as it was.
+    assert [g for g in got if g.startswith("LAST REPLY:")] == ["LAST REPLY: asked clarify_spec_attribute"]
+    got = [g for g in got if not g.startswith("LAST REPLY:")]
     bad = [(i, e, g) for i, (e, g) in enumerate(zip(expected, got)) if e != g]
     assert not bad and len(got) == len(expected), bad or got
 

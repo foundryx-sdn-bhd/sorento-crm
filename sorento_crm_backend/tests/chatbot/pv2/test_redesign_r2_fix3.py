@@ -74,6 +74,7 @@ def test_p3_a_stored_entry_with_the_r1_era_subject_s1_still_loads():
 
 from app.services.chatbot.pv2.history import MemoryProfile, render_memory  # noqa: E402
 from tests.chatbot.pv2.carry_fakes import spec  # noqa: E402
+from tests.chatbot.pv2._r4a_memory import without_last_reply  # noqa: E402
 
 _T = "PENDING QUESTION: none\nTOPICS (switch_back keys, newest first)"
 PRE_R2_A = [  # A1, B1, A1, C1
@@ -97,7 +98,7 @@ def _memory_after_each(parses):
     for p in parses:
         st, _ = apply_turn(st, p, resolver=R3, now=NOW)
         mem = render_memory(st, MemoryProfile(audience="staff"), NOW)
-        seen.append(mem[mem.index("HELD"):mem.index("LAST ANSWER")])
+        seen.append(without_last_reply(mem[mem.index("HELD"):mem.index("LAST ANSWER")]))  # R4a: LAST ANSWER ROWS / HELD codes / LAST REPLY
         states.append(st)
     return seen, states
 

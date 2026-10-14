@@ -22,6 +22,7 @@ from tests.chatbot.pv2 import _register_envelopes as E  # noqa: F401 - loads the
 
 from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 from app.services.chatbot.pv2 import turn
+from tests.chatbot.pv2._r4a_memory import without_last_reply
 from app.services.chatbot.pv2.apply import apply_turn
 from app.services.chatbot.pv2.history import MemoryProfile, render_memory
 from app.services.chatbot.pv2.schema import Filter, Period, ReportSpec
@@ -117,7 +118,7 @@ def _play(resolver, steps):
         st, actions = apply_turn(st, parsed, resolver=resolver, now=NOW)
         trail.append((type(actions[0]).__name__, st))
         mem = render_memory(st, MemoryProfile(audience="staff"), NOW)
-        mems.append(mem[mem.index("HELD"):mem.index("LAST ANSWER")])
+        mems.append(without_last_reply(mem[mem.index("HELD"):mem.index("LAST ANSWER")]))  # R4a: LAST ANSWER ROWS / HELD codes / LAST REPLY
     return trail, mems
 # END SCENARIOS
 
