@@ -218,6 +218,8 @@ describe('SeriesProductsTable', () => {
 
     await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledWith('s1'));
     await waitFor(() => expect(screen.queryAllByText('1861')).toHaveLength(1));
+    const dash = screen.getAllByText('-').find((el) => el.getAttribute('title') === '');
+    expect(dash?.textContent).toBe('-');
   });
 
   it('shows the Description when the name differs from the code', async () => {
