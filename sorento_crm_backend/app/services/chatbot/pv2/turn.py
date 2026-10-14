@@ -81,6 +81,10 @@ class TurnV2Context:
     offer_mode: Literal["offer", "refer", "none"] = "offer"
     # Staff only: (team, v1 offer sentence) -> v1's member picker (`staff_roster_for`).
     roster_for: Callable[[str, str], dict[str, Any] | None] | None = None
+    # (domain, codes) -> {code: has the thing}, from v1's did-you-mean probe; None = untagged.
+    dym_tags: Callable[[str, list[str]], dict[str, bool]] | None = None
+    # The console run this turn belongs to; state and history never cross runs.
+    test_run_id: str | None = None
 
 
 def local_today(now: datetime) -> date:
@@ -97,7 +101,10 @@ def run_turn_v2(ctx: Any) -> answer_mod.TurnV2Result:
 
 
 def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Result:
-    state_in = roll_session(load_state(ctx.raw_state, ctx.now), ctx.now)
+    raw_state = ctx.raw_state
+    if ctx.test_run_id and not (isinstance(raw_state, dict) and raw_state.get("run_id") == ctx.test_run_id):
+        raw_state = None  # a new console run starts empty
+    state_in = roll_session(load_state(raw_state, ctx.now), ctx.now)
     if state_in.pending is None and v1_pending is not None:
         state_in = mirror_v1_pending(state_in, v1_pending)
     # Capped here, so CORE's `call.build_messages` and the injected `parse` both send the
@@ -115,6 +122,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
     else:
         out = ctx.parse(messages, user_message)
 
+    extra: dict[str, Any] = {"dym_tags": ctx.dym_tags} if ctx.dym_tags is not None else {}
     state_out, actions = apply_turn(
         state_in,
         out,
@@ -125,8 +133,10 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         offer_mode=ctx.offer_mode,
         roster_for=ctx.roster_for,
         now=ctx.now,
+        **extra,
     )
     state_out.last_turn_at = ctx.now
+    state_out.run_id = ctx.test_run_id
     refusal = _grant_refusal(ctx, actions, out, state_in.held.report)
     if refusal is not None:
         language = clarify_copy.lang(out.language)
@@ -443,6 +453,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     # so a console turn reads console history in its own world.
     ingress = getattr(envelope, "ingress", None)
     is_test = bool(getattr(envelope, "is_test", False) or getattr(hctx, "dry_run", False))
+    run_id = (getattr(envelope, "test_run_id", None) or None) if getattr(envelope, "is_test", False) else None
     session_block = hctx.session_block if isinstance(hctx.session_block, dict) else {}
     session_vars = session_block.get("session_vars") if isinstance(session_block.get("session_vars"), dict) else session_block
     raw_state = session_vars.get("pv2")
@@ -455,7 +466,9 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
 
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
-            return load_exchanges(edb, contact_respond_id=contact, ingress=ingress, is_test=is_test, since=since)
+            return load_exchanges(
+                edb, contact_respond_id=contact, ingress=ingress, is_test=is_test, since=since, test_run_id=run_id
+            )
 
     def parse_parts(history: list[tuple[str, str]], memory_block: str, text: str) -> Any:
         return pv2_call.parse_v2(config, history=history, memory_block=memory_block, text=text)
@@ -479,6 +492,8 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             domain_teams=domain_teams,
             offer_mode="none" if staff else ("offer" if offers_escalation(profile) else "refer"),
             roster_for=staff_roster_for(factory, contact) if staff else None,
+            dym_tags=dym_tags_for(factory, contact, space_id),
+            test_run_id=run_id,
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),
                 contact_id=contact,
@@ -513,24 +528,64 @@ def staff_roster_for(factory: Any, contact: str) -> Callable[[str, str], dict[st
     def build(team: str, sentence: str) -> dict[str, Any] | None:
         from app.services.chatbot.tail import member_offer as member_mod
 
-        plan = member_mod.cs_roster_plan({})
-        ctx = {"parse": {"output": {"routing": {"suggested_team": team}}}, "contact": {"id": contact}}
         try:
+            plan = member_mod.cs_roster_plan({})
+            ctx = {"parse": {"output": {"routing": {"suggested_team": team}}}, "contact": {"id": contact}}
             with _session(factory) as db:
                 rosters = member_mod.fetch_rosters(db, plan, ctx)
-        except Exception:  # noqa: BLE001 - a roster failure leaves the sentence alone
+            offer = member_mod.build_cs_member_offer({"response": sentence}, plan, rosters)
+            if not offer.get("member_offer"):
+                return None
+            members = [
+                {"user_id": str(r.get("uuid")), "name": str(r.get("label"))}
+                for r in offer.get("cs_last_result_set") or []
+            ]
+            return {"text": offer["response"], "members": members}
+        except Exception:  # noqa: BLE001 - a roster failure leaves the plain not-found line
             logger.warning("pv2: staff roster unavailable", exc_info=True)
             return None
-        offer = member_mod.build_cs_member_offer({"response": sentence}, plan, rosters)
-        if not offer.get("member_offer"):
-            return None
-        members = [
-            {"user_id": str(r.get("uuid")), "name": str(r.get("label"))}
-            for r in offer.get("cs_last_result_set") or []
-        ]
-        return {"text": offer["response"], "members": members}
 
     return build
+
+
+def dym_tags_for(factory: Any, contact: str, space_id: Any) -> Callable[[str, list[str]], dict[str, bool]]:
+    """(domain, codes) -> {code: has stock}: v1's own did-you-mean tag probe (`miss_suggest`'s
+    `DOMAIN_PROBE` entry and `dym_annotate`), for the domains it tags. {} = untagged (v1 fails
+    open the same way)."""
+
+    def tags(domain: str, codes: list[str]) -> dict[str, bool]:
+        from app.models.product import Product
+        from app.services.chatbot.lanes.business import miss_suggest as ms
+        from app.services.chatbot.lanes.business.services import _mcp_probe
+
+        row = ms.DOMAIN_PROBE.get(domain)
+        if row is None or row.get("predicate") != "qty_gt_zero":
+            return {}
+        codes = list(codes)[: int(row.get("probe_cap") or 3)]
+        try:
+            with _session(factory) as db:
+                ids = dict(db.query(Product.product_code, Product.id).filter(Product.product_code.in_(codes)).all())
+            cands = [{"uuid": str(ids[c]), "entity_type": "product", "code": c} for c in codes if c in ids]
+            if not cands:
+                return {}
+            probe = _mcp_probe(None)(
+                row["tool"], ms._probe_args(cands, parser={"domain_hint": domain}, contact_id=contact, space_id=space_id)
+            )
+            ann = ms.dym_annotate(
+                probe, payload={}, transform={
+                    "probe_predicate": row["predicate"], "probe_tool": row["tool"], "probe_noun": row.get("noun"),
+                    "dym_candidate_codes": [c["code"] for c in cands],
+                },
+            )
+        except Exception:  # noqa: BLE001 - an untagged offer is today's bare did-you-mean
+            logger.warning("pv2: did-you-mean tags unavailable", exc_info=True)
+            return {}
+        if not (ann.get("dym_probe_meta") or {}).get("ok"):
+            return {}
+        has = {ms._norm(c) for c in ann.get("dym_available_codes") or []}
+        return {c["code"]: ms._norm(c["code"]) in has for c in cands}
+
+    return tags
 
 
 def _first_name(envelope: Any) -> str | None:
