@@ -33,7 +33,9 @@ R2-2 Register entries carry the sid of the subject they were printed under; afte
 R2-3 `subject_at(state, "S<n>")` returns that subject; an unknown or out-of-range S id returns None.
 R2-4 MEMORY is byte-identical to today for the same state (no S<n>/R<n> rendering in R2).
 R2-5 Whenever a question interrupts an ask (entity clarify, did-you-mean, flagged clarify, a missed ask's question, the v1
-     picker after a PV2 Lookup), `PendingQuestion.origin` holds the full original ask.
+     picker after a PV2 Lookup), `PendingQuestion.origin` holds the original ask: the full ask where held did not take
+     it (unclear act, flagged clarify, a missed ask's question, the v1 picker); on a question raised after held took the
+     ask, only the items still waiting on a question, with no attachment kind (held carries the vetted kinds).
 R2-6 A pick completes the ORIGINAL ask with the picked entity: "any eta mou?" -> pick "1" answers ETA (incoming) for the
      picked product; an ask with a period ("stock for SRTWC286 last month") keeps its period after the pick; attachment
      kinds, quantity, specs and status likewise.
