@@ -142,7 +142,11 @@ sudo python3 - <<'EOF'
 import collections, ipaddress, urllib.request
 cf = [ipaddress.ip_network(l) for u in ("https://www.cloudflare.com/ips-v4", "https://www.cloudflare.com/ips-v6")
       for l in urllib.request.urlopen(u).read().decode().split()]
-seen = collections.Counter(l.split()[0] for l in open("/var/log/nginx/access.log", errors="replace"))
+import glob, gzip
+seen = collections.Counter()
+for path in glob.glob("/var/log/nginx/access.log*"):          # rotated and .gz too: weekly callers
+    with (gzip.open if path.endswith(".gz") else open)(path, "rt", errors="replace") as fh:
+        seen.update(l.split()[0] for l in fh if l.strip())
 for ip, n in seen.most_common():
     try: a = ipaddress.ip_address(ip)
     except ValueError: continue
@@ -194,10 +198,10 @@ direct to the origin.
    80/443 with any Host header, so the `server_name _` default must not lead to MCP.
 
    ```bash
-   sudo nginx -T 2>/dev/null | grep -nE 'listen|server_name|sorento_mcp'
+   sudo nginx -T 2>/dev/null | grep -nE 'listen|server_name|sorento_mcp|:876[67]|:8776'
    ```
 
-   `sorento_mcp` may appear only under a `listen 8765` block. If it appears under 80 or 443,
+   `sorento_mcp` (or a direct `127.0.0.1:8766` / `8776`) may appear only under a `listen 8765` block. If it appears under 80 or 443,
    delete that `location`.
 
 3. Run `sudo nginx -t && sudo nginx -s reload`.
