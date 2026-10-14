@@ -102,4 +102,23 @@ describe('AgentModelCard reasoning effort', () => {
     expect(screen.queryByText(/reasoning effort/i)).toBeNull();
     expect(effortSelect()).toBeUndefined();
   });
+
+  it('reads and saves the label the runtime reads (runtime_label), not a hard-coded production', () => {
+    keyRows = [{ ...ROW, runtime_label: 'staging', reasoning_effort: 'high' }];
+    render(<AgentModelCard name="chatbot_semantic_parser_v2" canEdit />);
+    expect(effortSelect()!.value).toBe('high');
+    fireEvent.change(effortSelect()!, { target: { value: 'medium' } });
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ label: 'staging', reasoning_effort: 'medium' }),
+    );
+  });
+
+  it('a key whose runtime label is production saves on production', () => {
+    keyRows = [{ ...ROW, runtime_label: 'production' }];
+    render(<AgentModelCard name="chatbot_semantic_parser_v2" canEdit />);
+    fireEvent.change(effortSelect()!, { target: { value: 'high' } });
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ label: 'production' }));
+  });
 });
