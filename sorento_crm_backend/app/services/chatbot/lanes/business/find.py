@@ -78,6 +78,38 @@ def _bare_continuation(verdict: dict[str, Any], entities: list[Any]) -> bool:
     return verdict.get("domain_in_message") is False and bool(own) and all(entity_code(e) for e in own)
 
 
+#: The most linked SKUs a partial code may stand for (one model's finishes and variants).
+MAX_FAMILY = 8
+
+
+def _linked_codes_holding(db: Any, token: str) -> list[Any]:
+    """The products on a seat-cover link whose normalised code holds `token`; [] when none, or
+    when more than `MAX_FAMILY` do (too short a token names no one model)."""
+    from sqlalchemy import or_
+
+    from app.models.product import Product
+    from app.models.product_compatibility import ProductCompatibility
+    from app.services.product_alternative_service import _norm_sql, normalize_code
+
+    if len(token) < 3:
+        return []
+    escaped = token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    rows = (
+        db.query(Product)
+        .join(
+            ProductCompatibility,
+            or_(ProductCompatibility.wc_product_id == Product.id, ProductCompatibility.seat_cover_product_id == Product.id),
+        )
+        .filter(_norm_sql(Product.product_code).like(f"%{escaped}%", escape="\\"))
+        .distinct()
+        .all()
+    )
+    # The token names the model: the code's first segment is it, or ends in it ("8152" ->
+    # SRTWC8152-BL), never a shorter stem of another model ("SRTWC83" is not SRTWC8383).
+    rows = [r for r in rows if normalize_code(r.product_code).split("-")[0].endswith(token)]
+    return [] if len(rows) > MAX_FAMILY else rows
+
+
 def as_linked_products(
     db: Any,
     verdict: dict[str, Any],
@@ -172,6 +204,15 @@ def as_linked_products(
     by_code: dict[str, list[Any]] = {}
     for row in rows:
         by_code.setdefault(normalize_code(row.product_code), []).append(row)
+    if said:
+        # Owner, 13 Oct ("8152 seat cover stock"): a typed code that is no product's is read as
+        # the linked SKUs whose code holds it, codes against codes and links only (the
+        # containment fallback #1601's find lane used). More than a model's SKUs is no reading.
+        for token in wanted - set(by_code):
+            family = _linked_codes_holding(db, token)
+            if family:
+                by_code[token] = family
+    rows = [r for group in by_code.values() for r in group]
     ids = [str(r.id) for r in rows]
     covers = covers_for(db, ids) if said or carried_relation != "wcs" else {}
     wcs = wcs_for(db, ids) if said or carried_relation != "covers" else {}

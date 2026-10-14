@@ -311,14 +311,17 @@ def test_r3_no_find_is_untouched(session_factory) -> None:
     assert out is verdict and lines == []
 
 
-def test_r4_q3_a_code_that_is_no_exact_product_goes_on_as_typed(session_factory) -> None:
+def test_r4_a_model_code_reads_as_its_linked_skus_and_a_stem_goes_on_as_typed(session_factory) -> None:
+    """Owner 13 Oct ("8152 seat cover stock") revisits Q3 (a) for a model code only: the model's
+    linked SKUs answer; a shorter stem ("ZZTWC83") or a typo is still the resolver's."""
     from app.services.chatbot.lanes.business import find as find_lane
 
     _seed(session_factory)
-    verdict = _verdict("ZZTWC8383")  # a family prefix, no product of its own
-    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict)
-    assert _codes(out) == ["ZZTWC8383"] and lines == []
-
+    out, _lines = find_lane.as_linked_products(_scoped(session_factory), _verdict("ZZTWC8383"))
+    assert _codes(out) == [COVER_ONE]
+    for stem in ("ZZTWC83", "ZZTWC838"):
+        out, lines = find_lane.as_linked_products(_scoped(session_factory), _verdict(stem))
+        assert _codes(out) == [stem] and lines == [], stem
 
 def test_r5_the_code_matches_by_the_normalised_code_not_by_spelling(session_factory) -> None:
     from app.services.chatbot.lanes.business import find as find_lane
@@ -962,6 +965,63 @@ def test_y13_the_engine_checks_the_value_against_the_message(session_factory, mo
         session_factory, monkeypatch, text=f"send me {WC_ONE} drawing", msg_id="ZZT-seat-y13-asked",
         domain_hint="product_attachment", intent_hint="check_product_attachment",
         entities=[_product(WC_ONE), drawing], domain_in_message=True, find=noise,
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+
+
+# --------------------------------------------------------------------------- owner 13 Oct: "8152 seat cover stock"
+
+
+def _seed_family(session_factory) -> None:
+    """SRTWC8152 / SRTWC8152-BL on the flyer: two WC SKUs of one model, each with its own cover."""
+    from app.models.product_compatibility import ProductCompatibility
+    from tests._mc_lookup_seed import product as seed_product
+
+    db = session_factory()
+    rows = {c: seed_product(db, company_id=DEFAULT_COMPANY_ID, code=c)
+            for c in ("ZZTWC9152", "ZZTWC9152-BL", "ZZTSCBD920", "ZZTSCBD924-BL")}
+    for cover, wc in (("ZZTSCBD920", "ZZTWC9152"), ("ZZTSCBD924-BL", "ZZTWC9152-BL")):
+        db.add(ProductCompatibility(company_id=DEFAULT_COMPANY_ID, seat_cover_product_id=rows[cover].id,
+                                    wc_product_id=rows[wc].id, source="manual"))
+    db.commit()
+
+
+def test_g1_a_partial_model_code_resolves_through_the_linked_codes_it_is_part_of(session_factory) -> None:
+    """The owner typed "8152 seat cover stock": no product is 8152, but the WC SKUs on a seat-cover
+    link whose code holds it are the model he means. Codes against codes, links only."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed_family(session_factory)
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), _verdict("9152"), message="9152 seat cover stock")
+    assert _codes(out) == ["ZZTSCBD920", "ZZTSCBD924-BL"] and lines == []
+
+
+def test_g2_a_token_held_by_no_linked_code_goes_on_as_typed(session_factory) -> None:
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    _seed_family(session_factory)
+    verdict = _verdict("ZZTNOPE7")
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict, message="ZZTNOPE7 seat cover")
+    assert _codes(out) == ["ZZTNOPE7"] and lines == []
+
+
+def test_g3_the_partial_code_through_the_engine_answers_the_covers_stock(session_factory, monkeypatch) -> None:
+    from tests.chatbot.test_outstanding_lane import _run_turn  # noqa: F401
+
+    _seed_family(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_g3")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text="stock ZZTSCBD920 ZZTSCBD924-BL", msg_id="ZZT-seat-g3-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product("ZZTSCBD920"), _product("ZZTSCBD924-BL")],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_g3")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text="9152 seat cover stock", msg_id="ZZT-seat-g3-asked",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product("9152")], find=FITS,
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)
