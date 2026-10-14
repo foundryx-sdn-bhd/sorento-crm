@@ -1,6 +1,6 @@
 # PLAN - A product set is ONE quotation line (SET-QUOTE-LINE)
 
-**Status:** draft, track L (additive migration, FE + BE). Pending owner answers on card Q1-Q5 + mockup v1 (crew ask 14 Oct 2026). Build starts only after the mock is approved.
+**Status:** building, track L (additive migration, FE + BE). Owner answers 14 Oct 2026: Q1 (a), Q2 (a), Q3 (a), Q4 (b), Q5 (a); mock v1 approved with: no parts list on the line, parts go in the COMPLETE SET text box.
 **UAC:** `set-quote-line-14oct-acceptance-criteria.md`
 **Mock:** `documentation/mockups/set-quote-line/index.html`
 **Depends on:** lane SERIES-BRAND-SCOPE (PR #1680) scope (d) for the import slice (S4) only.
@@ -50,10 +50,12 @@
 2. `_write_line`: both ids -> 422 `quotation_line_one_target`. Set loaded through the scoped session
    (foreign company = 404). New pick of an inactive set = 422. `_snapshot_set` mirrors
    `_snapshot_product`: code, description (kept if set), list price via `resolve_set_price(...).resolved`,
-   uom `SET` when null, parts snapshot refreshed only when `product_set_id` changes.
+   uom `SET` when null, parts snapshot refreshed only when `product_set_id` changes; on that change a
+   blank `complete_set` is filled with the part codes joined by " + " (A2b). Set -> product clears the
+   parts snapshot.
 3. Pricing: `is_set_in_series(db, series_id, set_id)`; `resolve_set_floor(db, company_id, product_set,
-   list_price, series_id)`: series_sets row via `series_floor`, else category ancestry of the driver
-   part + system rule through `_floor_from_rule` (no product-level rule). Guardrails branch on
+   list_price, series_id)`: series_sets row via `series_floor`, else the SYSTEM rule only through
+   `_floor_from_rule` against the set list price (Q4 b: no product/category rule). Guardrails branch on
    `product_set_id`. `/line-verdict` accepts `product_set_id`. `recompute_version` covers set lines.
 4. Series sets: `GET /series/{id}/sets`, `PUT /series/{id}/sets/{set_id}` (upsert numbers),
    `DELETE /series/{id}/sets/{set_id}`; same permission deps as the series products routes.
@@ -63,17 +65,17 @@
 6. SO draft: in `_explosion_for`, after the package tier and before `_quotation_components`: quoted
    line with `product_set_id` + parts snapshot -> components from the snapshot, driver at the quoted
    rate, others 0.00, numerator = part qty, denominator 1; `EXPLOSION_SET = "set"`.
-7. Documents: PDF/Excel/sign rows print `complete_set` or, for a set line with it empty, the part codes
-   joined by " + ". Images: a set line reads the driver part's product files (`line_images`,
-   `assert_line_picks`).
+7. Documents: unchanged renderers; they print `complete_set`, which A2b fills. Images: a set line reads
+   the driver part's product files (`line_images`, `assert_line_picks`).
 
 ### Frontend
 1. Types/services: `QuotationLine.product_set_id`, `set_parts`; `StagedQuotationLine`/`toBody` carry
    `product_set_id`; series sets service + hooks.
 2. Picker: `fetchProducts` -> product-or-set options (reuse `fetchProductOrSetOptions`, value `set:<id>`);
    `selectProduct` branches to `fillFromSet` (set detail via `getProductSet`).
-3. ProductCell Set badge; DescriptionCell parts list; QtyCell complete sets from the set detail;
-   LineFlags "Custom item" only when neither id; verdict passes `product_set_id`.
+3. ProductCell Set badge (edit + read); `fillFromSet` fills `complete_set` with the part codes (A2b);
+   no parts list in DescriptionCell; QtyCell complete sets from the set detail; LineFlags "Custom item"
+   only when neither id; verdict passes `product_set_id`.
 4. Series page: Sets card (`SeriesSetsTable` over `InlineLineTable`) with an add-set picker.
 
 ## Slices (one coder, continued)
