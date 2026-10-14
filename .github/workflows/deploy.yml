@@ -95,6 +95,12 @@ on:
         required: false
         default: false
         type: boolean
+      runner:
+        description: "Where this run's test and fast-gate jobs run: vars = follow the RUNNER_TESTS / RUNNER_FAST repo variables; auto = the test jobs go to the Mac mini runner when it is online and idle, else GitHub-hosted (fast-gate jobs follow RUNNER_FAST); mac = the Mac mini runner (sorento-mac); github = GitHub-hosted. Images and the deploy always run GitHub-hosted (amd64)."
+        required: false
+        default: vars
+        type: choice
+        options: [vars, auto, mac, github]
 
 # Cancels a PR's own superseded `ci` runs without touching anything else,
 # which is why the group key and cancel-in-progress both differ by event and
@@ -137,6 +143,28 @@ env:
   IMAGE_REPO: jayson1004/sorento-crm
   RELEASE_TAG: 1.0.1
 
+# Where the jobs run (owner, 14 Oct 2026: Actions minutes nearly spent).
+# Self-hosted Linux arm64 runners on the Mac mini carry the label
+# `sorento-mac`; crew flips between them and GitHub-hosted with
+# `gh variable set`, no code change:
+#   - RUNNER_TESTS (PR gate, backend + SCM shards, vitest, type-check):
+#     github (or unset) | mac | auto. `auto` is decided by the first step of
+#     `Changed areas` (no extra billed job): the Mac when a sorento-mac runner
+#     is online and idle, else GitHub-hosted. It reads the runners API with
+#     the RUNNERS_READ_TOKEN secret (fine-grained PAT, this repo only,
+#     Administration: read-only); no secret or a failed call = GitHub-hosted.
+#   - RUNNER_FAST (alembic heads, PII guard, Changed areas, ci-full refusal,
+#     CI gate): github (or unset) | mac. Keep it github unless the Mac is
+#     reliably up: a job routed to an offline self-hosted runner waits in
+#     the queue (up to 24 h) instead of failing over.
+#   - workflow_dispatch input `runner` overrides both for that run.
+#   - Every job that can land on the Mac declares its token: contents read,
+#     plus the label removal the PR gate and the ci-full refusal need. The
+#     repo default is write-all, and the Mac runner keeps state between jobs.
+#   - build-images, build-and-deploy, validate-backend and validate-mcp stay
+#     GitHub-hosted: prod images are amd64, the Mac runners are arm64.
+# Any value other than the ones above lands on GitHub-hosted. Pinned by
+# sorento_crm_backend/tests/test_ci_runner_routing.py.
 jobs:
   # Fast pre-check: fail in under a minute when the alembic migration graph
   # has more than one head, instead of consuming a 21-35 minute full-CI cycle
@@ -149,7 +177,9 @@ jobs:
   # revision/down_revision graph, and fails unless exactly one head remains.
   check-migration-heads:
     name: Single alembic head (fast gate)
-    runs-on: ubuntu-latest
+    runs-on: ${{ (inputs.runner == 'mac' || (inputs.runner != 'github' && vars.RUNNER_FAST == 'mac')) && 'sorento-mac' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 20
     # Root job (no `needs`): gates the whole `pull_request` run on the `ci`
     # label. `github.event_name != 'pull_request'` keeps push/merge_group/
@@ -187,7 +217,9 @@ jobs:
   # only commits that passed it there.
   pii-guard:
     name: PII guard (fast gate)
-    runs-on: ubuntu-latest
+    runs-on: ${{ (inputs.runner == 'mac' || (inputs.runner != 'github' && vars.RUNNER_FAST == 'mac')) && 'sorento-mac' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 20
     if: github.event_name == 'merge_group'
     steps:
@@ -316,7 +348,7 @@ jobs:
   # the signal to extend NOT_DOCS_RE below.
   changes:
     name: Changed areas
-    runs-on: ubuntu-latest
+    runs-on: ${{ (inputs.runner == 'mac' || (inputs.runner != 'github' && vars.RUNNER_FAST == 'mac')) && 'sorento-mac' || 'ubuntu-latest' }}
     timeout-minutes: 20
     # Same gate as check-migration-heads above, and for the same reason: this
     # is the other root job (no `needs`), so skipping it here skips every job
@@ -363,7 +395,41 @@ jobs:
       base_sha: ${{ steps.filter.outputs.base_sha }}
       # A PR whose merge tree already passed a PR gate (CI-COST round 2).
       validated: ${{ steps.filter.outputs.validated }}
+      # Where the test jobs run (see the routing note above `jobs:`).
+      tests_runner: ${{ steps.runner.outputs.runner }}
     steps:
+      # First, so every early exit of the area filter below still routes the
+      # test jobs. Only ever emits sorento-mac or ubuntu-latest.
+      - name: Pick the test runner
+        id: runner
+        env:
+          OVERRIDE: ${{ inputs.runner }}
+          SETTING: ${{ vars.RUNNER_TESTS }}
+          # This step only: lists the repo's self-hosted runners for `auto`.
+          GH_TOKEN: ${{ secrets.RUNNERS_READ_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          mac=sorento-mac
+          mode="$OVERRIDE"
+          if [ -z "$mode" ] || [ "$mode" = "vars" ]; then mode="$SETTING"; fi
+          runner=ubuntu-latest
+          case "$mode" in
+            mac|sorento-mac) runner=$mac; why="set to mac" ;;
+            ""|github|ubuntu-latest) why="set to github (or unset)" ;;
+            auto)
+              if [ -z "${GH_TOKEN:-}" ]; then
+                why="auto: no RUNNERS_READ_TOKEN secret"
+              elif idle=$(gh api "repos/$REPO/actions/runners?per_page=100" \
+                  --jq "[.runners[] | select(.status == \"online\" and (.busy | not) and any(.labels[]; .name == \"$mac\"))] | length"); then
+                if [ "${idle:-0}" -ge 1 ]; then runner=$mac; why="auto: $idle idle Mac runner(s)"; else why="auto: no idle Mac runner online"; fi
+              else
+                why="auto: runners API call failed"
+              fi ;;
+            *) why="unknown value '$mode'" ;;
+          esac
+          echo "::notice title=Test runner::$runner ($why)"
+          echo "runner=$runner" >> "$GITHUB_OUTPUT"
+
       - name: Detect changed areas
         id: filter
         env:
@@ -841,7 +907,9 @@ jobs:
     name: Backend test suite - SCM (Postgres, xdist)
     needs: [changes]
     if: needs.changes.outputs.scm == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.tests_runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -1077,7 +1145,9 @@ jobs:
       needs.changes.outputs.backend == 'true'
       && github.event_name != 'pull_request'
       && needs.changes.outputs.lean != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.tests_runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 90
     # The suite is CPU-bound (~3 s of CPU per test across 9k tests) and a
     # standard runner has 4 vCPUs, so one job takes ~29 min no matter how the
@@ -1339,7 +1409,7 @@ jobs:
       always()
       && ((github.event_name == 'pull_request' && github.event.label.name == 'ci')
       || (github.event_name == 'workflow_dispatch' && needs.changes.outputs.lean == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.tests_runner || 'ubuntu-latest' }}
     timeout-minutes: 90
     permissions:
       contents: read
@@ -1633,7 +1703,9 @@ jobs:
     name: Validate frontend (vitest)
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.tests_runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     # A shard measured about 8.5 min over 29 Sep-5 Oct, then grew to 17.7-18.9
     # min by 13 Oct on ONE vitest worker (shard 2 hit this cap in releases
     # 38406697551 and 38415596343 with its suite already green). vitest.config.ts
@@ -1692,7 +1764,9 @@ jobs:
     name: Type-check frontend
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.tests_runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -2094,7 +2168,7 @@ jobs:
   # run on the same PR. The full suite runs on a release only.
   refuse-ci-full:
     name: ci-full refused (release-only)
-    runs-on: ubuntu-latest
+    runs-on: ${{ (inputs.runner == 'mac' || (inputs.runner != 'github' && vars.RUNNER_FAST == 'mac')) && 'sorento-mac' || 'ubuntu-latest' }}
     timeout-minutes: 20
     if: github.event_name == 'pull_request' && github.event.label.name == 'ci-full'
     permissions:
@@ -2139,7 +2213,9 @@ jobs:
   # sorento_crm_backend/tests/test_ci_docs_only_filter.py.
   ci-gate:
     name: ${{ (github.event_name == 'pull_request' && github.event.label.name == 'ci' && 'CI gate') || 'CI gate (full)' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (inputs.runner == 'mac' || (inputs.runner != 'github' && vars.RUNNER_FAST == 'mac')) && 'sorento-mac' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     timeout-minutes: 20
     needs:
       [
