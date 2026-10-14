@@ -560,7 +560,7 @@ class CancelLineMatcher:
         if kind == KIND_CONSIGNMENT_RETURN:
             out: set = set()
             for old in (line.sales_order_line_id, *(line.candidate_line_ids or [])[:1]):
-                group = group_of_line(self.db, str(old)) if old else None
+                group = group_of_line(self.db, str(old), self.company_id) if old else None
                 if group:
                     out.add(group)
             if line.from_dtl_key is None and line.from_doc_no and line.item_code:
@@ -607,7 +607,7 @@ class CancelLineMatcher:
                 # Exact or undetermined (ruling 3). The group the line was last decided in is
                 # decided again, as for a cancel (a void, an edit or a sweep moves its sum).
                 for old in (line.sales_order_line_id, *(line.candidate_line_ids or [])[:1]):
-                    group = group_of_line(self.db, str(old)) if old else None
+                    group = group_of_line(self.db, str(old), self.company_id) if old else None
                     if group:
                         return_groups.add(group)
                 if not live.get(str(line.cancel_doc_id), True):
@@ -740,7 +740,8 @@ class Derived:
         self.plan_moves.extend(other.plan_moves)
 
 
-def recompute_cancelled(db: Session, touched: Touched) -> Derived:
+def recompute_cancelled(db: Session, touched: Touched,
+                        company_id: Optional[str] = None) -> Derived:
     """R3/R5/R6: write `qty_cancelled` (capped at ordered) on every touched line and move the
     status of SO / PO lines that became, or stopped being, fully cancelled. In the caller's
     transaction."""
@@ -789,7 +790,7 @@ def recompute_cancelled(db: Session, touched: Touched) -> Derived:
             if row.qty_cancelled != value:
                 row.qty_cancelled = value
     # AC-CONSIGN-CRM: a return touches the consignment line it was (or is) matched to.
-    recompute_returned(db, touched.so_line_ids)
+    recompute_returned(db, touched.so_line_ids, company_id)
     db.flush()
     return derived
 
@@ -938,7 +939,7 @@ class AutocountCancelIngestService:
                 counts: dict[str, int] = {}
                 rematch_lines(self.db, self.company_id, lines, kinds, touched, counts,
                               self._removed_groups)
-                derived = recompute_cancelled(self.db, touched)
+                derived = recompute_cancelled(self.db, touched, self.company_id)
                 if self.consignment_numbers:
                     # A consignment that just landed (or moved) is what a waiting return names.
                     derived.extend(relink_for_orders(self.db, company_id=self.company_id,
@@ -1180,7 +1181,7 @@ class AutocountCancelIngestService:
                     result.records.append(
                         self._delete_one(entity, value, date_from, date_to, touched))
                 self.db.flush()
-                self.derived = recompute_cancelled(self.db, touched)
+                self.derived = recompute_cancelled(self.db, touched, self.company_id)
         finally:
             if dry_run:
                 self.db.rollback()
@@ -1265,7 +1266,7 @@ def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> Der
             .filter(AutocountCancelDoc.id.in_({str(l.cancel_doc_id) for l in lines})).all()
         }
         rematch_lines(db, str(company_id), lines, kinds, touched)
-        return recompute_cancelled(db, touched)
+        return recompute_cancelled(db, touched, str(company_id))
 
 
 def cancel_sources(db: Session, column, line_ids: Iterable[str]) -> dict[str, list[dict]]:

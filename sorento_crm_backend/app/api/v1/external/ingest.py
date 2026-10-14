@@ -136,6 +136,7 @@ INGEST_PERMISSIONS = {
     # migration to the role that already pushes the orders.
     "cancel_sales_orders": "scm.cancel_sales_orders.edit",
     "cancel_purchase_orders": "scm.cancel_purchase_orders.edit",
+    # AC-CONSIGN-CRM (2.9): a consignments push writes a sales order marked Consignment.
     "consignments": "scm.consignments.edit",
     "consignment_returns": "scm.consignment_returns.edit",
 }

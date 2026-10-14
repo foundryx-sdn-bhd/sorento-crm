@@ -27,6 +27,7 @@ from sqlalchemy import String, func, or_
 from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.orm import Session
 
+from app.services.autocount_doc_ingest_service import _int
 from app.models.autocount_cancel import (
     KIND_CONSIGNMENT_RETURN,
     MATCH_MATCHED,
@@ -105,7 +106,8 @@ def consignment_payload(book: str, doc: AutocountCancelDoc) -> dict[str, Any]:
         if not isinstance(detail, dict):
             continue
         item = _text(detail.get("ItemCode"))
-        dtl_key = detail.get("DtlKey")
+        # The integer key, so "012", 12.0 and 12 are one line (AC-CONSIGN-CRM).
+        dtl_key = _int(detail.get("DtlKey"))
         if not item or dtl_key is None:
             continue
         line: dict[str, Any] = {
@@ -198,6 +200,11 @@ def return_line_answer(db: Session, company_id: str, line: AutocountCancelLine
                  .filter(SalesOrderLine.company_id == company_id,
                          SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT,
                          _ref_matches(SalesOrderLine.source_ref, line.from_dtl_key)))
+        # A keyed line names a line of its OWN book only (the key is per book).
+        book = (db.query(AutocountCancelDoc.source_book)
+                .filter(AutocountCancelDoc.id == line.cancel_doc_id).scalar())
+        if book:
+            query = query.filter(SalesOrderLine.source_ref.like(f"{book}:{CG_PREFIX}:%"))
         if line.from_doc_no:
             query = query.filter(SalesOrder.so_number == line.from_doc_no)
         hits = [str(r[0]) for r in query.limit(2).all()]
@@ -218,15 +225,19 @@ def return_line_answer(db: Session, company_id: str, line: AutocountCancelLine
     return None, ReturnGroup(header, line.from_doc_no, line.item_code, _loc(line.location_code))
 
 
-def group_of_line(db: Session, so_line_id: str) -> Optional[ReturnGroup]:
+def group_of_line(db: Session, so_line_id: str, company_id: Optional[str] = None
+                  ) -> Optional[ReturnGroup]:
     """The group a consignment line sits in (to re-decide the group a return line LEFT)."""
-    row = (db.query(SalesOrder.id, SalesOrder.so_number, Product.product_code,
-                    Warehouse.warehouse_code)
-           .join(SalesOrderLine, SalesOrderLine.sales_order_id == SalesOrder.id)
-           .join(Product, Product.id == SalesOrderLine.product_id)
-           .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
-           .filter(SalesOrderLine.id == so_line_id,
-                   SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT).first())
+    query = (db.query(SalesOrder.id, SalesOrder.so_number, Product.product_code,
+                      Warehouse.warehouse_code)
+             .join(SalesOrderLine, SalesOrderLine.sales_order_id == SalesOrder.id)
+             .join(Product, Product.id == SalesOrderLine.product_id)
+             .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
+             .filter(SalesOrderLine.id == so_line_id,
+                     SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT))
+    if company_id:
+        query = query.filter(SalesOrderLine.company_id == company_id)
+    row = query.first()
     if row is None:
         return None
     return ReturnGroup(str(row[0]), row[1], row[2], _loc(row[3]))
@@ -249,6 +260,7 @@ def resolve_return_group(db: Session, company_id: str, group: ReturnGroup
             .join(Product, Product.id == SalesOrderLine.product_id)
             .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
             .filter(SalesOrderLine.sales_order_id == group.header_id,
+                    SalesOrderLine.company_id == company_id,
                     Product.product_code == group.item_code).all())
     rows = [r for r in rows if _loc(r[1]) == group.location]
     ids = sorted(str(r[0]) for r in rows)
@@ -269,7 +281,7 @@ def resolve_return_group(db: Session, company_id: str, group: ReturnGroup
     if len(ids) == 1:
         return [(l, MATCH_MATCHED, REASON_ITEM, ids[0], None) for l in members]
     returned = sum((Decimal(l.qty or 0) for l in members), _ZERO)
-    keyed = _matched_returns(db, ids, keyed_only=True)
+    keyed = _matched_returns(db, ids, keyed_only=True, company_id=company_id)
     remaining = sum((max(Decimal(r[2] or 0) - keyed.get(str(r[0]), _ZERO), _ZERO) for r in rows),
                     _ZERO)
     if returned > 0 and returned == remaining:
@@ -277,11 +289,14 @@ def resolve_return_group(db: Session, company_id: str, group: ReturnGroup
     return [(l, MATCH_UNMATCHED, REASON_UNDETERMINED, None, None) for l in members]
 
 
-def _matched_returns(db: Session, ids: list[str], *, keyed_only: bool) -> dict[str, Decimal]:
+def _matched_returns(db: Session, ids: list[str], *, keyed_only: bool,
+                     company_id: Optional[str] = None) -> dict[str, Decimal]:
     """Per consignment line, the qty of live return lines matched to it (by key only, or all)."""
     if not ids:
         return {}
     extra = (AutocountCancelLine.from_dtl_key.isnot(None),) if keyed_only else ()
+    if company_id:
+        extra += (AutocountCancelLine.company_id == company_id,)
     return {
         str(k): Decimal(v) for k, v in (
             db.query(AutocountCancelLine.sales_order_line_id,
@@ -293,24 +308,29 @@ def _matched_returns(db: Session, ids: list[str], *, keyed_only: bool) -> dict[s
     }
 
 
-def recompute_returned(db: Session, so_line_ids: Iterable[str]) -> None:
+def recompute_returned(db: Session, so_line_ids: Iterable[str],
+                       company_id: Optional[str] = None) -> None:
     """`qty_returned` on these lines: the matched lines of live return docs, capped at ordered.
     Only this column is written. In the caller's transaction."""
     ids = sorted({str(i) for i in so_line_ids if i})
     if not ids:
         return
-    sums = _matched_returns(db, ids, keyed_only=False)
+    sums = _matched_returns(db, ids, keyed_only=False, company_id=company_id)
     whole = {
         str(i) for (members,) in (
             db.query(AutocountCancelLine.candidate_line_ids)
             .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
             .filter(AutocountCancelLine.match_status == MATCH_MATCHED,
                     AutocountCancelLine.match_reason == REASON_GROUP_WHOLE, *_live_return(),
+                    *((AutocountCancelLine.company_id == company_id,) if company_id else ()),
                     AutocountCancelLine.candidate_line_ids.op("?|")(array(ids, type_=String)))
             .all())
         for i in (members or [])
     }
-    for row in db.query(SalesOrderLine).filter(SalesOrderLine.id.in_(ids)):
+    rows_q = db.query(SalesOrderLine).filter(SalesOrderLine.id.in_(ids))
+    if company_id:
+        rows_q = rows_q.filter(SalesOrderLine.company_id == company_id)
+    for row in rows_q:
         ordered = Decimal(row.qty_ordered or 0)
         # A whole-group return: every unit still out on the group came back, so the line's
         # returned qty is all of it (its keyed returns plus its own remainder).

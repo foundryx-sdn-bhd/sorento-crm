@@ -1238,31 +1238,47 @@ class InboundShipmentService:
             .group_by(SPOAllocation.product_id)
             .all()
         )
-        cancelled_rows = (
+        # Each allocation's cancel term is bounded by what is not already accounted for by
+        # picks on that same line (AC-CONSIGN-CRM security fix): a cancel can never stand for
+        # goods a sibling line holds, so it is capped per allocation, then summed per product.
+        own_picks = dict(
             self.db.query(
+                PickingLine.spo_allocation_id,
+                func.coalesce(func.sum(PickingLine.quantity_picked), 0),
+            )
+            .join(PickingHeader, PickingLine.picking_header_id == PickingHeader.id)
+            .join(SPOAllocation, SPOAllocation.id == PickingLine.spo_allocation_id)
+            .filter(
+                SPOAllocation.inbound_shipment_id == shipment_id,
+                PickingHeader.picking_type == "goods_received",
+                PickingHeader.picking_status == "approved",
+            )
+            .group_by(PickingLine.spo_allocation_id)
+            .all()
+        )
+        cancelled_by_product: dict[str, int] = {}
+        for alloc_id, product_id, allocated, cancelled in (
+            self.db.query(
+                SPOAllocation.id,
                 SPOAllocation.product_id,
-                func.coalesce(
-                    func.sum(
-                        func.least(
-                            SPOAllocation.qty_cancelled,
-                            func.coalesce(SPOAllocation.allocated_quantity, 0),
-                        )
-                    ),
-                    0,
-                ),
+                SPOAllocation.allocated_quantity,
+                SPOAllocation.qty_cancelled,
             )
             .filter(
                 SPOAllocation.inbound_shipment_id == shipment_id,
                 SPOAllocation.retired_at.is_(None),
             )
-            .group_by(SPOAllocation.product_id)
             .all()
-        )
+        ):
+            allocated = int(allocated or 0)
+            term = min(int(cancelled or 0), allocated)
+            term = max(min(term, allocated - int(own_picks.get(alloc_id, 0) or 0)), 0)
+            if term:
+                key = str(product_id)
+                cancelled_by_product[key] = cancelled_by_product.get(key, 0) + term
         with_cancels = dict(received_totals)
-        for product_id, cancelled in cancelled_rows:
-            key = str(product_id)
-            if cancelled:
-                with_cancels[key] = with_cancels.get(key, 0) + int(cancelled)
+        for key, cancelled in cancelled_by_product.items():
+            with_cancels[key] = with_cancels.get(key, 0) + cancelled
         for product_id, stated in stated_rows:
             key = str(product_id)
             with_cancels[key] = max(with_cancels.get(key, 0), int(stated or 0))
