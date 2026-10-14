@@ -24,6 +24,7 @@ import uuid
 from typing import Any
 
 import pytest
+from sqlalchemy import text
 
 from tests.chatbot.test_customer_scope_lane import ORDERS, _calls, _link_customers, _other_customer
 from tests.chatbot.test_engine import _parser_output
@@ -539,39 +540,55 @@ class TestSecurityReviewRound2:
 # V1-DOC-SCOPE-SALES: salespeople keep document access
 # --------------------------------------------------------------------------- #
 #
-# Crew ruling (14 Oct 2026) on the owner's prod check: many unlinked non-staff contacts are
-# salespeople. A salesperson is `contact_asker.classify(...) == "salesperson"` (owner rule
-# 11 Oct: an ACTIVE CRM user holding the role `salesperson`, else a `sales_agents.contact_id`
-# link; a customer link does not make such a contact a dealer). For document scope a
-# salesperson is staff: unlinked, it sees any customer's DO / SO as main does today; linked,
-# it is not held to its links. Anyone else unlinked and not staff stays blocked.
+# Crew rulings (14 Oct 2026) on the owner's prod check: many unlinked non-staff contacts are
+# salespeople. For document scope a salesperson is staff, and a salesperson is ONLY an ACTIVE,
+# not trashed CRM user linked to the contact (`users.respond_contact_id`) holding the not
+# trashed role `salesperson` (owner rule 11 Oct; security review: deactivating the user must
+# revoke it, and a `sales_agents.contact_id` link, editable under master data, grants
+# nothing). Unlinked, a salesperson sees any customer's DO / SO as main does today; linked, it
+# is lifted only on the in-process number lookups. Anyone else unlinked and not staff stays
+# blocked. A customer PO ref keeps the tier rule (`ref_staff`) everywhere.
+
+
+def _contact(db):
+    from app.models.access import RespondContact
+
+    return db.query(RespondContact).filter(RespondContact.respond_io_id == str(CONTACT_ID)).one()
 
 
 def _make_salesperson(
-    session_factory, *, via: str = "role", status: str = "ACTIVE", role_trashed: bool = False
+    session_factory,
+    *,
+    status: str = "ACTIVE",
+    trashed: bool = False,
+    role: str = "salesperson",
+    role_trashed: bool = False,
 ) -> None:
-    """Make the seeded contact (`CONTACT_ID`) a salesperson the way `contact_asker` reads one:
-    `via="role"` links an ACTIVE CRM user holding the role `salesperson`; `via="agent"` links
-    a sales agent (`sales_agents.contact_id`) and no user."""
-    from app.models.access import RespondContact
-    from tests._chat_asker_seed import give_role, link_agent, link_user
+    """Link a CRM user holding `role` to the seeded contact (`CONTACT_ID`). The defaults make
+    the one salesperson that has document access: ACTIVE, not trashed, role `salesperson`."""
+    from tests._chat_asker_seed import give_role, link_user
 
     db = session_factory()
-    contact = db.query(RespondContact).filter(RespondContact.respond_io_id == str(CONTACT_ID)).one()
-    if via == "role":
-        give_role(db, link_user(db, contact, status=status, name="ZZT Sales User"), "salesperson", role_trashed=role_trashed)
-    else:
-        link_agent(db, contact, f"ZZT AGENT {uuid.uuid4().hex[:6].upper()}")
+    user = link_user(db, _contact(db), status=status, trashed=trashed, name="ZZT Sales User")
+    give_role(db, user, role, role_trashed=role_trashed)
+    db.commit()
+
+
+def _link_agent(session_factory) -> None:
+    """A sales agent linked to the seeded contact (`sales_agents.contact_id`)."""
+    from tests._chat_asker_seed import link_agent
+
+    db = session_factory()
+    link_agent(db, _contact(db), f"ZZT AGENT {uuid.uuid4().hex[:6].upper()}")
     db.commit()
 
 
 class TestSalespersonUnlinked:
     """An unlinked salesperson sees what main shows it today."""
 
-    @pytest.mark.parametrize("via", ["role", "agent"])
-    def test_sees_any_so_by_number(self, session_factory, monkeypatch, via) -> None:
+    def test_sees_any_so_by_number(self, session_factory, monkeypatch) -> None:
         _seed_contact(session_factory, variables={})
-        _make_salesperson(session_factory, via=via)
+        _make_salesperson(session_factory)
         cust = _other_customer(session_factory, "ZZT ANY SDN BHD")
         _seed_so(session_factory, SO_NO, customer_id=cust, debtor_name="ZZT ANY SDN BHD", lines=[(10, 10)])
 
@@ -589,10 +606,9 @@ class TestSalespersonUnlinked:
 
         assert _calls(captured, ORDERS), "a salesperson still gets any customer's DO through the orders list"
 
-    @pytest.mark.parametrize("via", ["role", "agent"])
-    def test_lists_dos_unscoped(self, session_factory, monkeypatch, via) -> None:
+    def test_lists_dos_unscoped(self, session_factory, monkeypatch) -> None:
         _seed_contact(session_factory, variables={})
-        _make_salesperson(session_factory, via=via)
+        _make_salesperson(session_factory)
 
         reply, captured = _turn(session_factory, monkeypatch, _list_ask(), "deliveries this month")
 
@@ -657,34 +673,169 @@ class TestSalespersonLinked:
         assert staff is False
         assert scope is not None and scope["enforced"] is True, scope
 
+    def test_a_sales_agent_link_does_not_lift_a_dealer(self, session_factory) -> None:
+        """Security review (14 Oct): `master_data.sales_agents.edit` can point an agent code at
+        any contact; that must not make a dealer document staff."""
+        from app.services.chatbot.lanes.business import services
+
+        _seed_contact(session_factory, variables={})
+        _link_customers(session_factory, OWN)
+        _link_agent(session_factory)
+
+        scope, staff = services.customer_scope_and_staff(session_factory(), CONTACT_ID, None)
+
+        assert staff is False
+        assert scope is not None and scope["staff"] is False and scope["enforced"] is True, scope
+
+
+#: Each way a contact can look like a salesperson without being one for document access.
+_NOT_A_SALESPERSON = {
+    "agent_link_only": lambda sf: _link_agent(sf),
+    "inactive_user_and_agent_link": lambda sf: (_make_salesperson(sf, status="INACTIVE"), _link_agent(sf)),
+    "trashed_user_and_agent_link": lambda sf: (_make_salesperson(sf, trashed=True), _link_agent(sf)),
+    "other_role_user_and_agent_link": lambda sf: (_make_salesperson(sf, role="warehouse_manager"), _link_agent(sf)),
+    "inactive_user": lambda sf: _make_salesperson(sf, status="INACTIVE"),
+    "trashed_role": lambda sf: _make_salesperson(sf, role_trashed=True),
+}
+
 
 class TestNotASalespersonStaysBlocked:
-    """Only the `salesperson` class lifts the block: an inactive user, or a user whose only
-    salesperson role is trashed, is no salesperson (`contact_asker`)."""
+    """Only an ACTIVE, not trashed user holding the not trashed role `salesperson` lifts the
+    block (crew ruling (a), 14 Oct): deactivating or trashing the user revokes it, and a
+    sales agent link grants nothing."""
 
-    @pytest.mark.parametrize(
-        "make",
-        [
-            {"status": "INACTIVE"},
-            {"role_trashed": True},
-        ],
-        ids=["inactive_user", "trashed_role"],
-    )
+    @pytest.mark.parametrize("make", list(_NOT_A_SALESPERSON), ids=list(_NOT_A_SALESPERSON))
     def test_unlinked_lists_nothing(self, session_factory, monkeypatch, make) -> None:
         _seed_contact(session_factory, variables={})
-        _make_salesperson(session_factory, **make)
+        _NOT_A_SALESPERSON[make](session_factory)
 
         reply, captured = _turn(session_factory, monkeypatch, _list_ask(), "deliveries this month")
 
         assert _calls(captured, ORDERS) == [], captured
         assert reply.strip() == NO_LINK_REFUSAL, reply
 
-    def test_unlinked_gets_no_foreign_so(self, session_factory, monkeypatch) -> None:
+    @pytest.mark.parametrize("make", ["agent_link_only", "inactive_user_and_agent_link"])
+    def test_unlinked_gets_no_foreign_so(self, session_factory, monkeypatch, make) -> None:
         _seed_contact(session_factory, variables={})
-        _make_salesperson(session_factory, status="INACTIVE")
+        _NOT_A_SALESPERSON[make](session_factory)
         foreign = _other_customer(session_factory, FOREIGN)
         _seed_so(session_factory, SO_NO, customer_id=foreign, debtor_name=FOREIGN, lines=[(10, 10)])
 
         reply, _ = _turn(session_factory, monkeypatch, _number_ask(SO_NO, "order_number"), f"status of {SO_NO}")
 
         assert FOREIGN not in reply and reply.strip() == NO_LINK_REFUSAL, reply
+
+    def test_deactivating_the_user_revokes_the_staff_bit(self, session_factory) -> None:
+        from app.services.chatbot.lanes.business import services
+
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory, status="INACTIVE")
+        _link_agent(session_factory)
+
+        _scope, staff = services.customer_scope_and_staff(session_factory(), CONTACT_ID, None)
+
+        assert staff is False
+
+
+# --------------------------------------------------------------------------- #
+# V1-DOC-SCOPE-SALES security review nit 3: a customer PO ref keeps the tier rule
+# --------------------------------------------------------------------------- #
+
+PO_REF = "4500999"
+PO_REF_SO = "SOZZT200001"
+
+
+class TestPoRefKeepsTheTierRule:
+    """`ref_staff` (the tier alone) decides who may see another customer's PO ref, in the lane
+    (as main) AND in the resolver / clarifier per-match drop: a salesperson is document staff
+    for SO / DO numbers, not for PO refs, so it never learns which SO another customer's PO
+    ref is."""
+
+    def test_the_drop_holds_po_refs_to_their_own_scope(self, session_factory) -> None:
+        """A PO ref match is held to `po_ref_linked` while an SO match of the same payload,
+        under no scope, is kept."""
+        from app.services.chatbot import turn_runtime
+
+        _seed_contact(session_factory, variables={})
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_so(session_factory, SO_NO, customer_id=foreign, debtor_name=FOREIGN, lines=[(1, 1)])
+        _seed_so(session_factory, PO_REF_SO, customer_id=foreign, debtor_name=FOREIGN, lines=[(1, 1)])
+        so_id, po_id = (
+            str(session_factory().execute(text("SELECT id FROM sales_orders WHERE so_number = :n"), {"n": n}).scalar_one())
+            for n in (SO_NO, PO_REF_SO)
+        )
+        so_match = {"uuid": so_id, "entity_type": "sales_order", "canonical_code": SO_NO}
+        po_match = {"uuid": po_id, "entity_type": "customer_po_ref", "canonical_code": PO_REF_SO}
+        payload = {
+            "resolved": {
+                "tokens": [SO_NO, PO_REF],
+                "resolutions": [
+                    {"token": SO_NO, "matches": [so_match]},
+                    {"token": PO_REF, "matches": [po_match]},
+                ],
+                "intersection": [],
+                "by_entity_type": {"sales_order": [so_match], "customer_po_ref": [po_match]},
+            },
+            "gate": {"compatible_entities": [so_match, po_match]},
+        }
+
+        out = turn_runtime._without_foreign_sales_orders(
+            TestPerMatchDropOnDeliveryOrders._db(session_factory), payload, None, po_ref_linked=[]
+        )
+
+        so_res, po_res = out["resolved"]["resolutions"]
+        assert so_res["matches"] == [so_match], out
+        assert po_res["matches"] == [], out
+        assert out["gate"]["compatible_entities"] == [so_match], out
+
+    def test_unlinked_salesperson_clarifier_prompt_has_no_foreign_po_ref(
+        self, session_factory, monkeypatch, _stub_casual_llm
+    ) -> None:
+        from tests.chatbot.test_po_ref_ask import _seed_po_so
+
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory)
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_po_so(session_factory, PO_REF_SO, customer_id=foreign, po_ref=PO_REF, po_ref_key=PO_REF, debtor_name=FOREIGN)
+        qf = _parser_output(
+            message_type="casual",
+            domain_hint=None,
+            intent_hint=None,
+            user_goal=f"status of {PO_REF}",
+            entities=[{"raw": PO_REF, "hint": "customer_po_ref", "canonical_code": None, "current_message": True, "confident": True}],
+        )
+        _run_turn(
+            session_factory, monkeypatch, qf=qf, text_body=f"status of {PO_REF}",
+            msg_id=f"ZZT-docscope-casual-po-{uuid.uuid4().hex[:10]}",
+            attributes=[OUTSTANDING_KEY], real_resolver=True,
+            extra_completed_lanes=["low_signal"],
+        )
+        assert _stub_casual_llm, "the low_signal clarifier was never called"
+        prompt = str(_stub_casual_llm[-1]["user_prompt"])
+        assert PO_REF_SO not in prompt and "customer_po_ref" not in prompt, prompt
+
+    def test_unlinked_salesperson_resolver_holds_po_refs_to_no_links(self, session_factory, monkeypatch) -> None:
+        """The main resolver path passes the tier rule's links for PO refs (`[]` for an
+        unlinked contact that is not office tier) beside the document staff's `None`."""
+        from tests.chatbot.test_po_ref_ask import _seed_po_so
+        from app.services.chatbot import turn_runtime
+
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory)
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_po_so(session_factory, PO_REF_SO, customer_id=foreign, po_ref=PO_REF, po_ref_key=PO_REF, debtor_name=FOREIGN)
+        seen: list[dict[str, Any]] = []
+        real = turn_runtime._without_foreign_sales_orders
+
+        def spy(db, payload, linked, **kwargs):
+            seen.append({"linked": linked, **kwargs})
+            return real(db, payload, linked, **kwargs)
+
+        monkeypatch.setattr(turn_runtime, "_without_foreign_sales_orders", spy)
+
+        reply, _captured = _turn(
+            session_factory, monkeypatch, _number_ask(PO_REF, "customer_po_ref"), f"status of {PO_REF}"
+        )
+
+        assert seen and seen[0] == {"linked": None, "po_ref_linked": []}, seen
+        assert FOREIGN not in reply and PO_REF_SO not in reply, reply
