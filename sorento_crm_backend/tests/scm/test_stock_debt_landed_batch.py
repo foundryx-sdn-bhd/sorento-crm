@@ -123,7 +123,8 @@ def test_the_landed_read_does_not_grow_with_the_product_count(api):
 
 def test_landed_holds_match_the_single_key_read_for_every_product(api):
     """Parity. P1: a line landed across two SPOs (30 + 15) less 5 its own decision holds,
-    and a line landed 25 of an open 10. P2: a line whose `source_ref` text is ALSO P1's
+    with a P2 SPO row naming the same PO line that must not count, and a line landed 25
+    of an open 10. P2: a line whose `source_ref` text is ALSO P1's
     first line's, landed 7 on P2's own purchase - P1 must not see the 7, P2 must not see
     P1's 45. P3: nothing on its PO, 20 landed through an order-inquiry placement (link 25,
     SPO received 20). P4: a line with nothing landed pins nothing."""
@@ -143,6 +144,16 @@ def test_landed_holds_match_the_single_key_read_for_every_product(api):
             id=_uid(), spo_number="ZZT-SPO-2026/10-0002", spo_line_number=9001,
             product_id=p1.id, warehouse_id=wh.id, location_code=wh.warehouse_code,
             allocated_quantity=15, quantity_received=15, receipt_status="fully_received",
+            line_status="closed", from_po_line_ref=p1_po_line.source_ref,
+            from_po_number=po.po_number, company_id=p1_po_line.company_id,
+        )
+    )
+    # R7 AC-6: an SPO row of ANOTHER product naming P1's PO line lands nothing for P1.
+    db.add(
+        SPOAllocation(
+            id=_uid(), spo_number="ZZT-SPO-2026/10-0006", spo_line_number=9003,
+            product_id=p2.id, warehouse_id=wh.id, location_code=wh.warehouse_code,
+            allocated_quantity=11, quantity_received=11, receipt_status="fully_received",
             line_status="closed", from_po_line_ref=p1_po_line.source_ref,
             from_po_number=po.po_number, company_id=p1_po_line.company_id,
         )
