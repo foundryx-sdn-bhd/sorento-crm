@@ -364,7 +364,13 @@ def test_post_bad_kind_is_422(db, monkeypatch):
     cabinet, mirror = _p(db, f"{stem}B"), _p(db, f"{stem}M")
     response = _client(db, {VIEW, EDIT}, monkeypatch).post(
         _page(cabinet),
-        json={"other_product_id": mirror.id, "other_role": "accessory", "kind": "lamp"},
+        json={"other_product_id": mirror.id, "other_role": "seat_cover", "kind": "lamp"},
+    )
+    assert response.status_code == 422
+    # A valid role does not rescue a bad kind, and a valid kind does not rescue a bad role.
+    response = _client(db, {VIEW, EDIT}, monkeypatch).post(
+        _page(cabinet),
+        json={"other_product_id": mirror.id, "other_role": "lid", "kind": "mirror"},
     )
     assert response.status_code == 422
 
