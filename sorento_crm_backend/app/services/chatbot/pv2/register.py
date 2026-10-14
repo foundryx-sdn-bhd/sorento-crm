@@ -93,7 +93,7 @@ def _rows(env: dict[str, Any]) -> Iterable[tuple[str, str, str, int | None]]:
         # The stock-ask render's lines: only an answered entry (a branch and the dealer's quantity) was printed.
         code = _clean(item.get("product_code"))
         if code:
-            yield ("product", code, _clean(item.get("product_name")) or code, None)
+            yield ("product", code, code, None)
     for item in env.get("files") or []:
         code = _clean(item.get("product_code")) if isinstance(item, dict) else None
         if code:

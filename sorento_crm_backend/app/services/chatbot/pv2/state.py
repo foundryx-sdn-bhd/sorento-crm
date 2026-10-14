@@ -238,6 +238,7 @@ def roll_session(state: ConversationState, now: datetime) -> ConversationState:
     rolled.pending = None
     rolled.last_rows = []
     rolled.register = []
+    rolled.last_lookup_ask = None
     rolled.session_started_at = now
     return rolled
 

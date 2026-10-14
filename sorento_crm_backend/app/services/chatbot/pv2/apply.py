@@ -24,6 +24,8 @@ from datetime import date, datetime
 from typing import Any, Literal, Protocol
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
+
 from app.services.chatbot.pv2 import clarify_copy
 from app.services.chatbot.pv2.schema import Ask, Entity, Filter, ParserV2Output, Spec
 from app.services.chatbot.pv2.state import (
@@ -140,6 +142,7 @@ def apply_turn(
 
     if out.escalation is not None and out.escalation.requested:
         st.pending = None
+        st.last_lookup_ask = None
         return st, [HandOver(ask_index=0, team_key=out.escalation.team_key)]
 
     # A clarify flag beside a new_topic ask does not re-ask an OPEN question as a miss: the new
@@ -167,6 +170,7 @@ def apply_turn(
             act.pending.deferred = deferred
             act.pending.origin = _origin_of(out.asks[0]) if out.asks else None
         st.pending = act.pending
+        st.last_lookup_ask = None
         return st, [act]
 
     first_question: PendingQuestion | None = None
@@ -197,7 +201,7 @@ def apply_turn(
         else:
             answered_pending = answered_pending or answered
             action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover)
-            _keep_origin(action, ask, pending_in)
+            _keep_origin(action, ask, pending_in, answered)
             if (
                 isinstance(action, Lookup)
                 and action.picked is None
@@ -545,13 +549,15 @@ def _answer(
             True,
         )
 
-    held = apply_payload(st.held, picked.payload)
+    held = _pick_into_report_filter(apply_payload(st.held, picked.payload), picked.payload)
     qs = _Qs(can_offer)
-    if pending.origin is not None and "report" not in picked.payload:
+    settled = None
+    origin = valid_origin(pending.origin) if "report" not in picked.payload else None
+    if origin is not None:
         # The pick completes the ORIGINAL ask: its fields apply to the picked subject through the same
         # path as any ask (the picked entity stands in for the phrase that was ambiguous). Its attachment
         # kinds were vetted when it was asked, so they copy as they are (as `_complete_deferred` did).
-        settled = _without_picked(Ask.model_validate(pending.origin), picked.payload, held)
+        settled = _without_picked(origin, picked.payload, held)
         held = _complete_deferred(held, _deferred_of(settled))
         held = _apply_fields(
             st, held, settled.model_copy(update={"attachment_type": None}), resolver, policy,
@@ -576,6 +582,8 @@ def _answer(
         _plan_report(st, held, resolver, language, i, qs, today)
     held = _apply_fields(st, held, ask, resolver, policy, language, i, qs, refine=True, today=today)
     action = _commit(st, i, held, ask, qs)
+    if isinstance(action, ClarifyAct) and settled is not None:
+        action.pending.origin = _origin_of(settled)  # what is still to ask, so chained picks end
     if isinstance(action, Lookup):
         action.picked = picked
         action.pending_kind = pending.kind
@@ -1253,12 +1261,12 @@ def _origin_of(ask: Ask) -> dict:
     return ask.model_dump(mode="json")
 
 
-def _keep_origin(action: Action, ask: Ask, pending_in: PendingQuestion | None) -> None:
+def _keep_origin(action: Action, ask: Ask, pending_in: PendingQuestion | None, answered: bool) -> None:
     """A question an ask raised keeps that ask; one raised while answering the open question keeps
     the open question's own origin (a re-ask already carries it)."""
     if not isinstance(action, ClarifyAct) or action.pending.origin is not None:
         return
-    if ask.act in _ANSWER_ACTS:
+    if answered:
         action.pending.origin = pending_in.origin if pending_in is not None else None
     else:
         action.pending.origin = _origin_of(ask)
@@ -1274,12 +1282,42 @@ def _last_lookup_ask(actions: list[Action], answered: PendingQuestion | None) ->
     return _origin_of(first.ask) if first.ask is not None else None
 
 
+def valid_origin(origin: dict | None) -> Ask | None:
+    """The saved original ask, or None when absent or drifted from the schema (the `deferred` path runs)."""
+    if origin is None:
+        return None
+    try:
+        return Ask.model_validate(origin)
+    except ValidationError:
+        return None
+
+
+def _pick_into_report_filter(held: Held, payload: dict[str, Any]) -> Held:
+    """A picked entity of a dimension the held report filters by replaces that filter's phrase: the report
+    already carries the origin's filters, and the picked keys are what it runs for."""
+    kind = payload.get("kind")
+    if held.report is None or not kind or kind in SCALAR_PAYLOAD_KINDS:
+        return held
+    dimension = payload.get("dimension") or REPORT_DIMENSION_OF_KIND.get(kind, kind)
+    if not any(f.dimension == dimension for f in held.report.filters):
+        return held
+    keys = [str(k) for k in payload.get("keys") or []] or [str(payload.get("key"))]
+    filters = [
+        f.model_copy(update={"keys": keys}) if f.dimension == dimension else f for f in held.report.filters
+    ]
+    out = held.model_copy(deep=True)
+    out.report = held.report.model_copy(update={"filters": filters})
+    return out
+
+
 def _without_picked(origin: Ask, payload: dict[str, Any], held: Held) -> Ask:
     """The original ask minus what is already settled: the picked entity's kind (the ambiguous phrase),
     the attachment kind / domain / spec the pick chose, and every entity or spec `held` already carries
     (resolved when the question was asked), so none is resolved twice."""
     kind = payload.get("kind")
     update: dict[str, Any] = {}
+    if held.report is not None:
+        update["report"] = None  # the held report already carries the origin's edits (and the pick)
     if kind == "attachment_type":
         update["attachment_type"] = None
     elif kind == "domain":

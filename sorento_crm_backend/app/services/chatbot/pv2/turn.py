@@ -25,7 +25,7 @@ import logging
 
 from app.services.chatbot.pv2 import answer as answer_mod
 from app.services.chatbot.pv2 import clarify_copy
-from app.services.chatbot.pv2.apply import DEFAULT_POLICY, ClarifyPolicy, ResolverLike, apply_turn
+from app.services.chatbot.pv2.apply import DEFAULT_POLICY, ClarifyPolicy, ResolverLike, apply_turn, valid_origin
 from app.services.chatbot.pv2.history import (
     TIMEZONE,
     MemoryProfile,
@@ -156,7 +156,8 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
     if refusal is not None:
         language = clarify_copy.lang(out.language)
         trace = {"acts": [a.act for a in out.asks], "actions": [a.type for a in actions], "grant_refused": True}
-        return answer_mod.TurnV2Result(None, None, refusal[0], state_out, actions, refusal[1], language, trace)
+        # A refused ask leaves no pending, origin or held behind: the turn changes no state.
+        return answer_mod.TurnV2Result(None, None, refusal[0], state_in, actions, refusal[1], language, trace)
     result = answer_mod.build_result(
         state_out,
         actions,
@@ -209,12 +210,22 @@ def _is_sales_dataset(spec: Any) -> bool:
 REPORT_QUESTION_KINDS = frozenset({"clarify_report_measure", "clarify_report_period"})
 
 
+def _judged_asks(out: Any, pending_in: Any) -> list[Any]:
+    """The asks a grant check judges: this turn's, and the original ask of the open question when the turn
+    answers it (a replay of that ask runs the same domain, so a grant removed since it was asked still binds)."""
+    asks = list(getattr(out, "asks", None) or [])
+    origin = valid_origin(getattr(pending_in, "origin", None))
+    if origin is not None and any(getattr(a, "act", None) == "answers_bot_question" for a in asks):
+        asks.insert(0, origin)
+    return asks
+
+
 def _pre_grant_refusal(ctx: TurnV2Context, out: Any, pending_in: Any) -> tuple[str, str] | None:
     """The permission checks that read only the parse and the open question, run BEFORE any
     lookup so a refusal never reveals whether a record exists: a sales order without the SO
     grant, a sales ask (or the answer to a report question) without the sales report grant."""
     granted = ctx.granted_reveals or frozenset()
-    asks = getattr(out, "asks", None) or []
+    asks = _judged_asks(out, pending_in)
     # Audience-split as v1: a dealer is refused; staff keep probing the kinds they may see (not-found + roster offer).
     staff = getattr(ctx.profile, "audience", None) == "staff"
     if not staff and SO_GRANT not in granted and any(
@@ -245,7 +256,7 @@ def _grant_refusal(
     # so only staff are held to the placed grant here.
     if PO_GRANT not in granted and getattr(ctx.profile, "audience", None) == "staff":
         # Any part of the turn in a PO domain refuses the whole turn (closed side).
-        domains = [a.domain for a in lookups] + [getattr(a, "domain", None) for a in getattr(out, "asks", None) or []]
+        domains = [a.domain for a in lookups] + [getattr(a, "domain", None) for a in _judged_asks(out, pending_in)]
         hit = next((d for d in domains if d in PO_DOMAIN_SUBJECT), None)
         if hit is not None:
             from app.services.chatbot import copy as copy_mod
@@ -258,7 +269,7 @@ def _grant_refusal(
     from app.services.chatbot.pv2 import reports
 
     running = held_report
-    for ask in getattr(out, "asks", None) or []:
+    for ask in _judged_asks(out, pending_in):
         report = getattr(ask, "report", None)
         # Mirror apply: only a refine merges onto the held report, a new topic starts bare.
         base = running if getattr(ask, "act", None) in ("refines_held", "switch_back") else None
@@ -407,7 +418,8 @@ def mirror_v1_pending(
         or _question_text(last_reply, yes_no, labels),
     )
     if mirrored.pending is not None and mirrored.pending.origin is None:
-        mirrored.pending.origin = state.last_lookup_ask  # the ask the Lookup behind this picker answered
+        # The ask the Lookup behind this picker answered (an unreadable one is not adopted).
+        mirrored.pending.origin = state.last_lookup_ask if valid_origin(state.last_lookup_ask) else None
     return mirrored
 
 

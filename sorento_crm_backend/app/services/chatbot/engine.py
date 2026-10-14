@@ -8280,8 +8280,8 @@ def _run_entities_only_arm(
     # PV2 redesign R2: the codes this reply placed are what it printed, so they are the register.
     _pv2_write_register(
         media_box or {},
-        [{"listed_products": [
-            {"hint": "product", "canonical_code": row.get("canonical_code"), "raw": raw}
+        [{"rows": [
+            {"kind": "product", "key": row.get("canonical_code") or raw, "label": raw}  # labelled as typed
             for raw in placed
             for row in [next((r for r in state.focus.products if isinstance(r, dict) and r.get("raw") == raw), {})]
         ]}],
