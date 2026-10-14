@@ -113,7 +113,6 @@ fi
 
 rclone copy "$UPLOAD" "$RCLONE_DEST" || die 6 "rclone copy to $RCLONE_DEST failed"
 log "uploaded $(basename "$UPLOAD")"
-rm -f -- "$UPLOAD"
 
 # Prune only this box's dumps (prefix filter, top level only), and only after a good upload.
 rclone delete "$RCLONE_DEST" --max-depth 1 --min-age "${RETENTION_DAYS}d" --include "${BACKUP_NAME}_*" \
