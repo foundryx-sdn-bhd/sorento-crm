@@ -12,7 +12,7 @@ A salesperson quotes a development. The customer's bill of quantities says "WC C
 
 - **A1** A quotation line carries a product OR a set, never both. Sending both is refused (422) and the database refuses it too.
 - **A2** Saving a line that names a set stores: set code as the printed code, set name as the description (unless the user typed one), set list price (override, else ticked members; may be empty), and a frozen copy of the parts (code, description, quantity per set, which part is the pedestal). The parts copy is not shown on the screen; it is what the SO draft splits (E2).
-- **A2b** Complete set: picking a set fills the line's Complete set text with the part codes joined by " + " (e.g. `CWCX1009-RL + CWCY1009 + CWC1009-SC`); the text stays editable. A part whose quantity per set is not 1 reads `2 x CODE`; the text is cut at 100 characters (the column's limit; longest on dev is 69). The save does the same when the set changes and the text is blank, so a line saved without the screen reads the same.
+- **A2b** Complete set (owner hand test 14 Oct, item 3 (a)): the line UI no longer shows a Complete set or Priced per input; the columns stay and keep printing (PDF, Excel, sign page). A set line's Complete set is ALWAYS its part codes joined by " + " ("2 x CODE" when the quantity is not 1, cut to 100 chars), set on every set change; moving a line from a set to a product (or to nothing) clears it. A product line's Complete set is left as stored (new product lines print it empty).
 - **A3** UOM defaults to `SET` when the line has none.
 - **A4** A set belonging to another company is refused (as not found). An inactive set is refused on a NEW pick; a line already holding a set that later went inactive still saves.
 - **A5** Changing the line from one set to another (or to a product) refreshes the parts copy and clears the picked photo/drawing; any other edit keeps the parts copy as quoted (Q5 a). Moving from a set to a product clears the parts copy.
@@ -31,10 +31,11 @@ A salesperson quotes a development. The customer's bill of quantities says "WC C
 
 ## C - Series: the set's own price row
 
+
 - **C1** A series has a Sets list: set, name, parts, selling price, max discount %, floor. Add a set, type the numbers, remove a set. Same permissions as the series Products table.
-- **C2** Sheet import: a code that is a set writes ONE set row with the sheet price/discount; the parts get rows with no price (lane SERIES-BRAND-SCOPE D3, unchanged).
-- **C3** Sheet import: a family code (e.g. `SRTWC8608`) writes a priced row for every active set in the family.
-- **C4** The load report names, per set code, that the price went on the set.
+- **C2** Sheet import: a code that is a set writes ONE series_sets row for that set with the sheet price/discount (a code-only row writes the set row with no numbers, so the set is standard, and never blanks numbers already there); the parts get rows with no price (#1680 D3, unchanged).
+- **C3** Sheet import: a family code (e.g. `SRTWC8608`) writes a series_sets row for EVERY active set in the family, each with the sheet price/discount. Replace mode removes series_sets rows whose set is not on the sheet; append keeps them.
+- **C4** The load report's resolved entry for a set or family code names the sets it priced (their codes).
 - **C5** Company scope: another company's sets never appear or resolve.
 
 ## D - Documents
@@ -52,12 +53,14 @@ A salesperson quotes a development. The customer's bill of quantities says "WC C
 
 ## F - Grid (frontend)
 
-- **F1** The product picker offers sets and products together; sets first, with a Set badge and part count; searching by set code or name finds them.
+- **F1** The product picker offers sets and products together, sets first; searching by set code or name finds them. A set option shows ONLY its code, on one line (owner hand test item 1); the Set badge stays on the picked value in the cell.
 - **F2** A set line shows the Set badge with the code, in edit and read mode. No parts list under the description (owner, mock v1); the parts show in the Complete set box of the line details.
-- **F3** The quantity cell shows the complete sets available for a set line.
+- **F3** A set line's quantity cell shows the SAME stock pill as a product line (owner item 2): "N avail" where N is the complete sets available in the chosen Stock at group (the smallest of each part's available quantity divided by its quantity per set), red when 0; clicking it opens the same stock popover, listing each part with its own stock table.
 - **F4** Usable at 375 and 1280; the complete-sets count under Qty is fully readable.
 - **F5** Picking a set fills brand (the pedestal part's brand) AT PICK when the line's brand is blank; a typed brand is kept.
 - **F6** The picker, the set fill and the complete-sets count read sets through `GET /api/v1/master-data/product-sets/select` (signed-in session, own company only), because the sales roles that edit quotations do not hold `master_data.product_sets.view`. The count is returned only to callers who hold `projects.projects.view` with the inventory module on; others get none.
+
+- **F7** Lines do not expand (owner item 4). Each row has a Notes icon; it opens a small popover with the Notes box only; the icon shows as filled when the line has a note.
 
 ## G - One word: Non-standard
 
