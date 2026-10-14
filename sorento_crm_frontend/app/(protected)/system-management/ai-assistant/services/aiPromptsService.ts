@@ -84,6 +84,10 @@ export interface PromptKeySummary {
   /** The LLM this agent runs on. null = the global assistant model. */
   provider: string | null;
   model: string | null;
+  /** none | low | medium | high; null = the provider default. */
+  reasoning_effort?: string | null;
+  /** Whether this agent's key honours a reasoning effort at all. */
+  supports_reasoning_effort?: boolean;
 }
 
 export interface PromptVersionRow {
@@ -265,13 +269,14 @@ export interface SetAgentModelPayload {
   label?: string;
   provider: string | null;
   model: string | null;
+  reasoning_effort?: string | null;
 }
 
 /** Point one agent at one LLM. Empty strings clear the override. */
 export async function setAgentModel(
   name: string,
   payload: SetAgentModelPayload,
-): Promise<{ provider: string | null; model: string | null }> {
+): Promise<{ provider: string | null; model: string | null; reasoning_effort?: string | null }> {
   const r = await apiFetch(`${BASE}/${encodeURIComponent(name)}/model`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
