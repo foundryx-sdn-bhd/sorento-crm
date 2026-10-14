@@ -587,6 +587,7 @@ class OrderLine(Base, CompanyScopedMixin):
         ),
         UniqueConstraint("order_id", "line_sequence", name="uq_order_lines_order_id_line_sequence"),
         Index("ix_order_lines_sales_order_line_id", "sales_order_line_id"),
+        Index("ix_order_lines_company_from_doc_no", "company_id", "from_doc_no"),
         Index(
             "uq_order_lines_order_dtl_key",
             "order_id", "dtl_key",

@@ -39,7 +39,7 @@
 import { apiFetch } from '@/lib/api';
 import { buildDataGridParams, extractApiError } from '@/lib/api-client';
 import type { DataGridApiResponse } from '@/components/ui/data-grid';
-import type { SalesOrder, SalesOrderFormData } from '../types/scm.types';
+import type { SalesOrder, SalesOrderDeliveries, SalesOrderFormData } from '../types/scm.types';
 
 const BASE = '/api/v1/scm/sales-orders';
 
@@ -152,6 +152,13 @@ export async function getSalesOrders(
 export async function getSalesOrder(id: string): Promise<SalesOrder> {
   const res = await apiFetch(`${BASE}/${id}`);
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to load the sales order'));
+  return res.json();
+}
+
+/** The DOs and Cancel SO documents under each line of one sales order. */
+export async function getSalesOrderDeliveries(id: string): Promise<SalesOrderDeliveries> {
+  const res = await apiFetch(`${BASE}/${id}/deliveries`);
+  if (!res.ok) throw new Error(await extractApiError(res, 'Failed to load the deliveries'));
   return res.json();
 }
 
