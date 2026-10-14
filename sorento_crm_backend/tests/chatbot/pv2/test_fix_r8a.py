@@ -52,7 +52,7 @@ def _deferred(pending):
 def test_a_flagged_clarify_keeps_the_original_domain_on_the_pending():
     result = _run("r8-2-eta-mou-question")
     assert isinstance(result.actions[0], ClarifyAct)
-    assert _deferred(result.state_out.pending)["domain"] == "incoming"
+    assert result.state_out.pending.origin["domain"] == "incoming"  # R2: the original ask is the origin
 
 
 def test_the_pick_completes_the_deferred_ask():

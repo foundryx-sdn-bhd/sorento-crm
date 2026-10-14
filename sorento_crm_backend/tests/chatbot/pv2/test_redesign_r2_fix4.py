@@ -363,7 +363,7 @@ def test_a10_a_flagged_clarify_carries_origin_and_no_deferred():
 
 
 def test_a10_a_missed_asks_question_carries_origin_and_no_deferred():
-    p = _first_turn_pending(out(ask(act="refines_held", domain="incoming", period=LM)), FakeResolver({}))
+    p = _first_turn_pending(out(ask(act="refines_held", domain="incoming", entities=[entity("product", phrase="x", op="remove")])), FakeResolver({}))
     assert p.origin is not None and p.deferred is None
 
 
