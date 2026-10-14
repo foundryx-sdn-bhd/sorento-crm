@@ -84,6 +84,7 @@ def as_linked_products(
     carried_codes: list[str] | tuple[str, ...] = (),
     *,
     carried_relation: str | None = None,
+    message: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """`verdict` with every named code that sits on a `fits` link replaced by its linked codes
     (each marked `linked_from` and `linked_as`, the side listed), and the lines that are the whole reply when nothing was
@@ -101,24 +102,46 @@ def as_linked_products(
       <WC>" is that cover, never its WCs);
     * a code of that answer is never re-anchored ("only the 333A one" narrows it);
     * a relation nothing in THIS message names (`value` null) never reaches a message with
-      its own domain word. With no fit answer carried, `fits` is a fit ask whatever its value
-      (reviewer round 4: "stock seat cover for X" with a null value is owner case 2).
+      its own domain word, and with no fit answer carried it is no fit ask at all (live: the
+      model emits a value-less `fits` on non-fit messages; every real fit ask fills `value`).
     """
     items = filter_items(verdict)
     entities = list(jsc.array(verdict.get("entities")))
+    own_codes = [e for e in entities if entity_code(e) and e.get("current_message") is not False]
+    echoes = [e for e in entities if entity_code(e) and e.get("current_message") is False]
+    # The reply to a question about the fit answer ("photo" after "which kind of file?") names no
+    # code; the parser echoes the code the conversation asked about, which may be the earlier
+    # fit ask's anchor (crew v94 check 2, row 13). Through the carried relation it is that answer.
+    echo_turn = bool(carried_relation and echoes and not own_codes)
     if "fits" in items:
-        said = bool(jsc.js_string(items["fits"].get("value") or "").strip())
-    elif carried_relation and _bare_continuation(verdict, entities):
+        value = jsc.js_string(items["fits"].get("value") or "").strip()
+        # The parser's own two fields contradict a fit ask when the "other side" it names is the
+        # file word it names (live: "send me SRTWC8383-RL-MBL drawing" -> value "drawing").
+        if value and value.casefold() == jsc.js_string(items["fits"].get("file_word") or "").strip().casefold():
+            value = ""
+        # The rule has the parser copy the word from THIS message; a copy the message does not
+        # hold is none (live: "send me <WC> drawing" -> value "seat cover"), as grounding reads a
+        # parser's words against the message (`head/grounding._as_typed`). Unknown message: kept.
+        if value and message and value.casefold() not in message.casefold():
+            value = ""
+        said = bool(value)
+    elif carried_relation and (_bare_continuation(verdict, entities) or echo_turn):
         said = False
     else:
         return verdict, []
     from app.services.product_alternative_service import normalize_code
 
+    if not said and not carried_relation:
+        # Live, v52 text + this block (13 Oct, 6 runs of the golden set): every real fit ask names
+        # the other side in `value`; a `fits` with no value and no fit answer before it is the
+        # model filling the schema on a non-fit message ("send me SRTWC8383-RL-MBL drawing", 3 of
+        # 3), so it is no fit ask. Reverses reviewer round 4 blocker 1 on that measurement.
+        return {**verdict, "find": None}, []
     anchors = _anchors(entities)
     if anchors and carried_relation:
         # A relation rejected here leaves a plain turn: `find` is cleared, so nothing
         # downstream (the resolver's typed-code flag, the type-word miss filter) reads it.
-        if not said and verdict.get("domain_in_message") is True:
+        if not said and not echo_turn and verdict.get("domain_in_message") is True:
             return {**verdict, "find": None}, []
         answered = {normalize_code(c) for c in carried_codes}
         anchors = [i for i in anchors if normalize_code(entity_code(entities[i])) not in answered]
@@ -126,6 +149,10 @@ def as_linked_products(
             return {**verdict, "find": None}, []
     if not anchors:
         if not carried_codes:
+            if verdict.get("domain_in_message") is True:
+                # No code and a domain word of its own ("seat cover got promotion?"): no fit
+                # question, so the plain turn answers it (live: `fits` 1 of 3 here).
+                return {**verdict, "find": None}, []
             return verdict, [ASK_PRODUCT_LINE]
         entities += [
             {"raw": c, "hint": "product", "canonical_code": c, "current_message": False, "confident": True}
@@ -171,6 +198,9 @@ def as_linked_products(
         else:
             unknown.append(entity_code(entities[i]))
     if not replaced:
+        if carried_relation and not said:
+            # A carried relation that replaced nothing ("only the 333A one") leaves a plain turn.
+            return {**verdict, "find": None}, []
         if not said or not unlinked or unknown:
             # A carried, unsaid relation that links nothing in its direction is no fit ask:
             # the code answers as typed (the Q1 line is for a message that asked one).
@@ -196,4 +226,18 @@ def as_linked_products(
              "linked_from": entity_code(entity), "linked_as": side}
             for code in codes
         ]
-    return {**verdict, "entities": out}, []
+    linked = {**verdict, "entities": out}
+    fits_item = items.get("fits") or {}
+    if "file_word" in fits_item and not jsc.js_string(fits_item.get("file_word") or "").strip():
+        # The parser says THIS message asks for no file (crew v94 check 2: v94 read "seat cover" as
+        # an Installation Guide / "which kind of file?" ask). The relation's word is no file type,
+        # so the turn is the bare linked codes: no attachment type of this message, and a file
+        # domain is left to the engine's own continuation (null), as a bare code's is.
+        linked["entities"] = [
+            e for e in out
+            if not (isinstance(e, dict) and e.get("hint") == "attachment_type" and e.get("current_message") is not False)
+        ]
+        if linked.get("domain_hint") == "product_attachment":
+            linked["domain_hint"] = None
+            linked["intent_hint"] = None
+    return linked, []

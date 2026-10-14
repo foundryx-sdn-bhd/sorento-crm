@@ -30,11 +30,11 @@ COVERS_TWO = ["ZZTSCBD333-UF", "ZZTSCBD333A-UF"]
 WC_NONE = "ZZTWC8999"
 OTHER = "ZZTWT5608"
 #: The parse of a fit ask: `value` is the word of THIS message naming the other side.
-FITS = {"filters": [{"key": "fits", "value": "seat cover", "unit": None}]}
+FITS = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": None}]}
 #: A fit ask whose message also asks for a file ("<WC> seat cover photo").
 FITS_PHOTO = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "photo"}]}
 #: The same filter with no other-side word in the message (a carried fit ask, or a leak).
-FITS_UNSAID = {"filters": [{"key": "fits", "value": None, "unit": None}]}
+FITS_UNSAID = {"filters": [{"key": "fits", "value": None, "unit": None, "file_word": None}]}
 
 #: One envelope for every tool: what differs between two turns is then only what the lane
 #: sent and how the existing structurer printed the same rows.
@@ -183,6 +183,7 @@ def test_the_reverse_wc_for_a_seat_cover_resolves_its_wc(session_factory, monkey
         session_factory, monkeypatch, domain="inventory", intent="check_stock",
         typed=[WC_ONE], asked=[COVER_ONE],
         text_typed=f"stock {WC_ONE}", text_asked=f"stock WC for {COVER_ONE}",
+        find={"filters": [{"key": "fits", "value": "WC", "unit": None, "file_word": None}]},
     )
     assert a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)
@@ -399,7 +400,8 @@ def test_e6_the_type_word_beside_the_wc_is_no_miss_and_no_narrowing(session_fact
     conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_word")
     reply, calls = _turn(
         session_factory, monkeypatch, text=f"{WC_ONE} 配什么马桶盖", msg_id="ZZT-seat-word-asked",
-        domain_hint="master_products", intent_hint="check_product", entities=[_product(WC_ONE), word], find=FITS,
+        domain_hint="master_products", intent_hint="check_product", entities=[_product(WC_ONE), word],
+        find={"filters": [{"key": "fits", "value": "马桶盖", "unit": None, "file_word": None}]},
     )
     assert "找不到" not in reply and "could not find" not in reply.lower(), reply
     assert calls == control[1], (calls, control[1])
@@ -622,17 +624,16 @@ def test_y4_an_answered_cover_is_never_re_anchored_even_with_a_said_value(sessio
     assert out == {**verdict, "find": None}
 
 
-def test_y5_a_first_fit_ask_holds_whatever_its_value(session_factory) -> None:
-    """Reviewer round 4 blocker 1: with no fit answer carried, `fits` is a fit ask even when the
-    parser left `value` null ("stock seat cover for X" is owner case 2)."""
+def test_y5_a_value_less_fits_with_no_fit_answer_before_is_no_fit_ask(session_factory) -> None:
+    """Live (13 Oct): "send me SRTWC8383-RL-MBL drawing" came back with `fits`, value null, 3 of 3;
+    every real fit ask filled `value`. With no fit answer carried, such a parse is a plain turn."""
     from app.services.chatbot.lanes.business import find as find_lane
 
     _seed(session_factory)
     for flag in (True, False, None):
         verdict = _verdict(WC_TWO, find=FITS_UNSAID, domain_in_message=flag)
-        out, _lines = find_lane.as_linked_products(_scoped(session_factory), verdict, [OTHER])
-        assert _codes(out) == COVERS_TWO, flag
-
+        out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict, [OTHER])
+        assert out == {**verdict, "find": None} and lines == [], flag
 
 def test_y6_the_relation_rides_the_focus_and_its_wire(session_factory, monkeypatch) -> None:
     from tests.chatbot.test_outstanding_lane import _session_of
@@ -700,16 +701,28 @@ def test_y9_a_bare_cover_code_after_a_seat_cover_answer_is_that_cover(session_fa
     assert _codes(out) == [COVER_ONE] and lines == []
 
 
-def test_case2_unsaid_value_on_a_fresh_contact_still_answers_the_covers(session_factory, monkeypatch) -> None:
-    (c_reply, c_calls), (a_reply, a_calls) = _parity(
-        session_factory, monkeypatch, domain="inventory", intent="check_stock",
-        typed=COVERS_TWO, asked=[WC_TWO],
-        text_typed=f"check stock {' '.join(COVERS_TWO)}", text_asked=f"check stock seat cover for {WC_TWO}",
-        find=FITS_UNSAID,
+def test_a_value_less_fits_on_a_wc_file_ask_answers_the_wc_itself(session_factory, monkeypatch) -> None:
+    """The live shape end to end: the WC's own drawing ask with a noise `fits` is the plain turn."""
+    drawing = {"raw": "drawing", "hint": "attachment_type", "canonical_code": "technical drawing",
+               "current_message": True, "confident": True}
+    noise = {"filters": [{"key": "fits", "value": None, "unit": None, "file_word": "drawing"}]}
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_noise")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=f"send me {WC_ONE} drawing", msg_id="ZZT-seat-noise-control",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE), drawing], domain_in_message=True,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_noise")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=f"send me {WC_ONE} drawing", msg_id="ZZT-seat-noise-asked",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE), drawing], domain_in_message=True, find=noise,
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)
-
 
 def _relation(session_factory):
     from tests.chatbot.test_outstanding_lane import _session_of
@@ -886,6 +899,69 @@ def test_f6_photo_answering_the_file_question_stays_on_the_cover(session_factory
         session_factory, monkeypatch, text="photo", msg_id="ZZT-seat-f6-2",
         domain_hint="product_attachment", intent_hint="check_product_attachment",
         entities=[{**_product(WC_ONE), "current_message": False}, photo], domain_in_message=True,
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+
+
+def test_y10_a_value_that_is_the_file_word_is_no_fit_ask(session_factory) -> None:
+    """Live: "send me SRTWC8383-RL-MBL drawing" once parsed with value "drawing" = file_word."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    noise = {"filters": [{"key": "fits", "value": "drawing", "unit": None, "file_word": "Drawing"}]}
+    verdict = _verdict(WC_ONE, find=noise, domain_in_message=True)
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict)
+    assert out == {**verdict, "find": None} and lines == []
+
+
+def test_y11_a_value_the_message_does_not_hold_is_not_said(session_factory) -> None:
+    """Live: "send me SRTWC8383-RL-MBL drawing" came back with value "seat cover" 2 of 3, a word
+    the message does not hold. The rule tells the parser to copy the word from THIS message; a
+    copy the message does not hold is no copy (the `grounding._as_typed` precedent)."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    verdict = _verdict(WC_ONE, domain_in_message=True)
+    out, lines = find_lane.as_linked_products(
+        _scoped(session_factory), verdict, message=f"send me {WC_ONE} drawing"
+    )
+    assert out == {**verdict, "find": None} and lines == []
+    out, _lines = find_lane.as_linked_products(
+        _scoped(session_factory), verdict, message=f"stock Seat Cover for {WC_ONE}"
+    )
+    assert _codes(out) == [COVER_ONE]
+
+
+def test_y12_no_code_with_a_domain_word_of_its_own_is_no_fit_question(session_factory) -> None:
+    """Live: "seat cover got promotion?" got `fits` 1 of 3; with no code, the ask-for-code line is
+    for a fit question only, and the parser marks this one as having its own domain word."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    verdict = _verdict(domain_hint="promotion", domain_in_message=True)
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict)
+    assert out == {**verdict, "find": None} and lines == []
+
+
+def test_y13_the_engine_checks_the_value_against_the_message(session_factory, monkeypatch) -> None:
+    drawing = {"raw": "drawing", "hint": "attachment_type", "canonical_code": "technical drawing",
+               "current_message": True, "confident": True}
+    noise = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "drawing"}]}
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_y13")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=f"send me {WC_ONE} drawing", msg_id="ZZT-seat-y13-control",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE), drawing], domain_in_message=True,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_y13")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=f"send me {WC_ONE} drawing", msg_id="ZZT-seat-y13-asked",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE), drawing], domain_in_message=True, find=noise,
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)

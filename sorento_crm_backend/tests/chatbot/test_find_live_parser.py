@@ -81,6 +81,7 @@ def _parse(system_text: str, message: str, previous: str = "(none)") -> dict[str
                 "domain_hint": out.get("domain_hint"),
                 "intent_hint": out.get("intent_hint"),
                 "requested_attributes": out.get("requested_attributes"),
+                "domain_in_message": out.get("domain_in_message"),
                 "entities": [
                     {k: e.get(k) for k in ("raw", "hint", "canonical_code", "current_message")}
                     for e in (out.get("entities") or [])
@@ -106,7 +107,24 @@ def db(session_factory):
 
 def _keys(out: dict[str, Any]) -> list[str]:
     find = out.get("find") if isinstance(out.get("find"), dict) else {}
-    return [f.get("key") for f in find.get("filters") or [] if isinstance(f, dict)]
+    # Read as the engine reads it (`find.filter_items`: the first filter per key); the model
+    # sometimes repeats a filter.
+    return list(dict.fromkeys(f.get("key") for f in find.get("filters") or [] if isinstance(f, dict)))
+
+
+def _effective_fit(out: dict[str, Any], message: str) -> bool:
+    """A fit ask the engine acts on with no fit answer carried (`find.as_linked_products`): a
+    `fits` whose value names the other side, is not the file word and is held by the message."""
+    find = out.get("find") if isinstance(out.get("find"), dict) else {}
+    for f in find.get("filters") or []:
+        if isinstance(f, dict) and f.get("key") == "fits":
+            value = str(f.get("value") or "").strip().casefold()
+            return (
+                bool(value)
+                and value != str(f.get("file_word") or "").strip().casefold()
+                and value in message.casefold()
+            )
+    return False
 
 
 def _product_codes(out: dict[str, Any]) -> set[str]:
@@ -140,6 +158,7 @@ GOLDEN = [
 ]
 
 
+FILE_ASKS = {"SRTWC8088 seat cover photo"}
 NOTHING_ASKED = {
     "seat cover for SRTWC8383-RL-MBL",
     "seat cover SRTWC8122",
@@ -160,7 +179,18 @@ def test_a_fit_ask_keeps_the_domain_its_cover_codes_would_get(db, message: str, 
     # intent_hint is a free snake_case phrase, so only the domain is held equal; both print.
     # With nothing asked the parser may also read the message as "which product is it"
     # (master_products, the existing product reply), never as a file or spec ask.
-    allowed = {typed.get("domain_hint")} | ({"master_products"} if message in NOTHING_ASKED else set())
+    # With nothing asked the parser reads a bare code (null, as its control) or "which product is
+    # it" (master_products, the existing product reply); the controls themselves vary between the two.
+    allowed = {typed.get("domain_hint")} | ({"master_products", None} if message in NOTHING_ASKED else set())
+    file_word = (out["find"]["filters"][0] or {}).get("file_word")
+    # Crew v94 check 2: the parser states THIS message's file word; the engine drops a file ask
+    # the relation's own word produced when it is null. Set only for the real file asks.
+    if message in FILE_ASKS:
+        assert file_word, out
+    else:
+        assert not file_word, out
+        if out.get("domain_hint") == "product_attachment":
+            allowed.add("product_attachment")  # nulled by the engine (find.as_linked_products)
     assert out.get("domain_hint") in allowed, (out, typed)
 
 
@@ -174,7 +204,11 @@ def test_after_a_file_answer_a_fit_ask_continues_like_its_bare_cover_code(db) ->
     out = _parse(system, "seat cover for SRTWC8383-RL-MBL", AFTER_DRAWING)
     typed = _parse(system, "SRTSCBD823-MBL", AFTER_DRAWING)
     assert _keys(out) == ["fits"], out
-    assert out.get("domain_hint") == typed.get("domain_hint"), (out, typed)
+    # A file domain with no file word is left to the engine's continuation (null), so either the
+    # control's domain or that continuation is the reading acted on.
+    file_word = (out["find"]["filters"][0] or {}).get("file_word")
+    effective = None if (out.get("domain_hint") == "product_attachment" and not file_word) else out.get("domain_hint")
+    assert effective in {typed.get("domain_hint"), None}, (out, typed)
     hints = [e.get("hint") for e in out.get("entities") or [] if isinstance(e, dict)]
     assert "attachment_type" not in hints or "attachment_type" in [
         e.get("hint") for e in typed.get("entities") or [] if isinstance(e, dict)
@@ -199,4 +233,6 @@ def test_a_fit_question_with_no_code_emits_fits_and_invents_none(db) -> None:
 )
 def test_a_fact_question_emits_no_find(db, message: str) -> None:
     out = _parse(_system(db), message)
-    assert _keys(out) == [], out
+    # The model sometimes fills a value-less `fits` here; the engine rejects it, so what is held
+    # is that no fit ask the engine would act on comes out.
+    assert not _effective_fit(out, message), out

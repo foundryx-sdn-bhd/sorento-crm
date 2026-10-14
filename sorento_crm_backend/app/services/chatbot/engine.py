@@ -4929,6 +4929,7 @@ def _run_stages_body(  # noqa: PLR0915
                 if isinstance(p, dict) and (c := p.get("canonical_code") or p.get("code"))
             ],
             carried_relation=state_in.focus.relation,
+            message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None,
         )
         # The relation this turn leaves on the focus, written onto the turn's OWN focus after
         # every APPLY below (a topic reset rebuilds it): the side just linked; none once a

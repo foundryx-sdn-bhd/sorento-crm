@@ -46,7 +46,9 @@ def test_p1_schema_declares_find_as_a_strict_required_object_or_null() -> None:
     item = filters["items"]
     assert item["additionalProperties"] is False
     # Round 3: a typed value (code, number + unit, enum) rides `value` + `unit`.
-    assert set(item["required"]) == {"key", "value", "unit"}
+    # SEAT-AS-PRODUCT: the parser states the file word of THIS message (null when none).
+    assert set(item["required"]) == {"key", "value", "unit", "file_word"}
+    assert set(item["properties"]["file_word"]["type"]) == {"string", "null"}
     assert set(item["properties"]["unit"]["type"]) == {"string", "null"}
     assert item["properties"]["key"]["type"] == "string"
     assert set(item["properties"]["value"]["type"]) == {"string", "number", "null"}
