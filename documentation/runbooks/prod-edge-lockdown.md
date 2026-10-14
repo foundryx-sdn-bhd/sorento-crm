@@ -16,6 +16,12 @@ request (`sorento_crm_mcp/sorento_crm_mcp/record_actions.py:115-177`). So anyone
 can read the CRM and run those actions as the integration user. The firewall is the only control
 there today. That is why 8765 is closed tonight together with 6432.
 
+Status on 14 Oct: an outside connect test already found 8765 closed; 6432 was the one answering.
+Step 1 still writes the 8765 rule down explicitly, so it stays closed whatever else changes in the
+firewall. Inbound auth on the MCP server itself is PR #1548.
+
+Prod runs on a **Hostinger VPS**, so "provider firewall" below means the hPanel VPS firewall.
+
 ## Placeholders
 
 Never write the real values into the repo, a PR or a comment.
@@ -36,7 +42,7 @@ Never write the real values into the repo, a PR or a comment.
 | Step | When | Time |
 | --- | --- | --- |
 | 0. See who connects today | tonight, first | 5 min |
-| 1. Provider firewall: 6432 and 8765 from n8n only | **tonight** | **5 min** |
+| 1. Hostinger firewall: 6432 and 8765 from n8n only (22/80/443 stay open) | **tonight** | **5 min** |
 | 2. nginx allowlist on 8765, and no MCP on 80/443 | tonight | 5 min |
 | 3. SSH key-only, root password login off, fail2ban | tonight or next release | 10 min |
 | 4. Compose binding on the box (the real fix: docker bypasses ufw) | next release | 15 min |
@@ -44,16 +50,21 @@ Never write the real values into the repo, a PR or a comment.
 | 6. Same review on the n8n box and the shared-service box | next release | 20 min each |
 | 7. Verify from outside | after each step above | 2 min |
 
-Before step 1, open the provider's firewall page and read how it treats rules:
+How the Hostinger VPS firewall behaves (Hostinger's own help article, linked in step 1):
 
-- **Default-deny once the first rule exists** (common on VPS panels). Add every allow rule in the
-  same change: 22 from anywhere (see step 3), 80 and 443 from anywhere (until step 5), and the
-  6432 / 8765 rules below. Otherwise you lock yourself and the users out.
-- **Default-allow.** There may be no "from anywhere" rule to remove. Add an explicit deny for
-  `0.0.0.0/0` and `::/0` on the port, below the allow for `<N8N_HOST>`.
+- **It is default-drop once active.** An active firewall group drops all incoming traffic that no
+  rule accepts. So the SAME change that adds the 6432 / 8765 rules must also accept 22, 80 and 443
+  from anywhere. Without them, SSH, the GitHub release job (it SSHes in on 22) and every user on
+  80/443 are cut off.
+- **Accept rules only, so order does not matter.** Every rule here is an accept; anything not
+  accepted is dropped. Do not add drop or reject rules.
+- **Changes reach the box within about two minutes, and apply to new connections only.** An
+  existing SSH session survives a bad rule, which is why you keep one open and test with a second.
+- **IPv4 and IPv6 are both filtered.** If the rule form asks for one family at a time, add each
+  rule for both.
 
-IPv4 and IPv6 rules are usually separate. Every step names both. Keep an SSH session open the
-whole time. If you lose both sessions, the provider's web console still gets you in.
+Keep an SSH session open the whole time. If both sessions are lost, the hPanel browser terminal
+(VPS, Overview, **Browser terminal**) still gets you in, because it does not go through port 22.
 
 ## Who uses these ports from outside the box (repo evidence, 14 Oct)
 
@@ -157,26 +168,72 @@ EOF
 
 - Check: the list is empty, or only `<N8N_HOST>`. Each other line is a direct-origin caller that
   step 5 would cut off. Find out who it is first.
+
+Where does the CRM itself call MCP? `AI_ASSISTANT_MCP_URL` (`sorento_crm_backend/app/config.py:333`,
+env only, default `http://localhost:8765/mcp`) is what the AI assistant and the chatbot lane call:
+
+```bash
+cd /opt/sorento-crm2
+for s in backend_blue backend_green worker worker_fast; do
+  printf '%s: ' "$s"; docker compose exec -T "$s" printenv AI_ASSISTANT_MCP_URL 2>/dev/null || echo '(unset or not running)'
+done
+```
+
+- Check: the value names a container (`mcp_<colour>`), `localhost`, or `<CRM_DOMAIN>` /
+  `<CRM_ORIGIN>` on port 8765.
+  - A container name or `localhost`: the traffic never leaves the box, so no firewall rule is
+    involved. (`localhost` inside a container is the container itself, so that default only works
+    if the value was overridden; say so to crew if it was not.)
+  - `<CRM_ORIGIN>` or `<CRM_DOMAIN>` on 8765: the call hairpins to the box's own public address.
+    Traffic to the box's own address normally stays on the box, but step 1 still allows
+    `<CRM_ORIGIN>/32` on 8765 and step 2 allows it in nginx, so that call keeps working either way.
 - Rollback: nothing to roll back.
 
-## Step 1. Provider firewall: 6432 and 8765 from n8n only (TONIGHT, 5 minutes)
+## Step 1. Hostinger firewall: 6432 and 8765 from n8n only (TONIGHT, 5 minutes)
 
-The provider firewall sits in front of the box, so docker's iptables rules cannot bypass it. In
-the VPS provider's firewall for the CRM box, do all of this in one change:
+The Hostinger firewall sits in front of the box, so docker's own iptables rules cannot bypass it.
+Hostinger's article: <https://support.hostinger.com/en/articles/8172641-how-to-use-vps-firewall>.
 
-1. TCP 6432: allow from `<N8N_HOST>/32`. Remove every "allow from anywhere" rule for 6432, IPv4
-   and IPv6, or add an explicit deny for `0.0.0.0/0` and `::/0` below the allow.
-2. TCP 8765: the same, allowing `<N8N_HOST>/32` only.
-3. If step 0 showed 5432 or 6379 published, treat them the same way. 5432 allows `<N8N_HOST>/32`
-   only if step 0 saw n8n on it. 6379 allows no source at all.
-4. Any other caller step 0 found gets its own `/32` allow rule on that port.
+First look at what is there: hPanel, **VPS**, pick the CRM server, **Security**, **Firewall**.
 
-- Check: run step 7. From a machine that is not on the allowlist, 6432 and 8765 time out, on IPv4
-  and IPv6. From the n8n box they connect.
+- **A group is already active:** edit that group instead of creating a new one. Delete any rule
+  that accepts 6432 (or 5432 / 6379) from **Any**, then add the rules below that it lacks.
+- **No group, or none active:** the box is unfiltered today. Create one as below.
+
+Create or edit the group:
+
+1. Click **Add firewall**, name it `crm-edge`, and create it. (Skip this when editing an
+   active group.)
+2. On the group's row, open the menu and click **Edit**. Then add each of these with
+   **Add rule**: Action **Accept**, Protocol **TCP** (or the named preset), the port, and the
+   source.
+
+   | # | Port | Source | Why |
+   | --- | --- | --- | --- |
+   | 1 | 22 (preset SSH) | Any | you, and the GitHub release job (owner ruling: open, key-only) |
+   | 2 | 80 (preset HTTP) | Any | users, until step 5 narrows it to Cloudflare |
+   | 3 | 443 (preset HTTPS) | Any | users, until step 5 |
+   | 4 | 6432 | Custom: `<N8N_HOST>` | n8n's `live-respond-*` SQL (BL-049) |
+   | 5 | 8765 | Custom: `<N8N_HOST>` | n8n's MCP nodes |
+   | 6 | 8765 | Custom: `<CRM_ORIGIN>` | the box calling its own public address (step 0 check) |
+   | 7 | any port step 0 found another caller on | Custom: that caller | do not leave a port open for it |
+
+   No rule for 5432 or 6379: with the group active they are dropped. If step 0 saw n8n on 5432,
+   add it like rule 4.
+3. Back on the Firewall page, switch the group to **Active** for this VPS. If the page shows it as
+   out of sync, click **Synchronize**.
+4. Wait two minutes. Then, from your laptop, open a **second** SSH session. It must log in.
+   If it does not, go back to the group, check rule 1, and use the session you kept open (or the
+   hPanel browser terminal) meanwhile.
+
+- Check: run step 7. From a machine that is not on the allowlist, 6432 and 8765 time out on IPv4
+  and IPv6, and 22, 80 and 443 still answer. From the n8n box, 6432 and 8765 connect.
 - Check: in n8n, run one `live-respond-*` execution (or wait for the sweeper's next tick) and
   confirm it is green.
 - Check: ask the chatbot one product question on the test number and confirm it answers.
-- Rollback: re-add TCP 6432 and 8765 from `0.0.0.0/0` and `::/0`.
+- Check: the next release's SSH steps pass (rule 1).
+- Rollback: on the Firewall page, switch the group to inactive (everything reopens within about
+  two minutes), or delete rules 4 to 6 and add 6432 / 8765 from **Any**.
 
 ## Step 2. nginx: allowlist on 8765, and MCP never on 80/443 (tonight)
 
@@ -188,8 +245,9 @@ direct to the origin.
 1. Inside the `listen 8765` server block:
 
    ```nginx
-   allow 127.0.0.1;        # the release's own check
+   allow 127.0.0.1;        # the release's own check (deploy.yml:2116 curls 127.0.0.1:8765)
    allow 172.16.0.0/12;    # containers on this box (the CRM's AI assistant, if it uses this port)
+   allow <CRM_ORIGIN>;     # the box calling its own public address (step 0 check)
    allow <N8N_HOST>;
    deny  all;
    ```
@@ -211,7 +269,7 @@ direct to the origin.
   `406`. MCP wants an SSE Accept header, so any of those means it was reached; the release check
   accepts the same three (`deploy.yml:2117-2121`).
 - Check: step 7's `/mcp` lines do not reach MCP.
-- Rollback: delete the four lines (and restore any removed `location` from
+- Rollback: delete the five lines (and restore any removed `location` from
   `~/nginx-T-before.txt`), then reload nginx.
 
 Follow-up, blocker-class and not this lane: MCP needs a credential of its own. Have the server
@@ -436,14 +494,15 @@ It should be the backend container, not `<CRM_DOMAIN>`.
 
 ### 5.4 Firewall: 80/443 from Cloudflare only
 
-In the provider panel:
+In the Hostinger firewall group from step 1 (accept rules only; the group drops the rest):
 
-- TCP 443 and 80: allow from each Cloudflare range, IPv4 and IPv6 (the same two lists).
-- TCP 443: also allow `<N8N_HOST>/32` while n8n's `family-fetch` still calls the origin directly,
-  plus any other direct caller from step 0's log check.
-- Remove the "from anywhere" rules for 80 and 443, IPv4 and IPv6.
+- Add TCP 443 and 80 accept rules from each Cloudflare range, IPv4 and IPv6 (the same two lists).
+- Add TCP 443 from `<N8N_HOST>` while n8n's `family-fetch` still calls the origin directly, plus
+  any other direct caller from step 0's log check.
+- Only then delete rules 2 and 3 (80 and 443 from **Any**). Keep rule 1 (22 from Any).
 
-If the panel cannot hold the roughly 22 ranges, use ufw on the box instead. The host nginx is not
+If the group cannot hold the roughly 22 ranges (about 44 rules for two ports), keep rules 2 and 3
+in Hostinger and use ufw on the box instead. The host nginx is not
 a container, so ufw does apply to 80/443. First check that ufw is actually on:
 
 ```bash
@@ -465,7 +524,7 @@ sudo ufw delete allow 80/tcp; sudo ufw delete allow 443/tcp; sudo ufw delete all
 - Check: step 7's "origin bypass" lines time out on IPv4 and IPv6.
 - Check: `https://<CRM_DOMAIN>/` still loads, and n8n's product-family fallback still answers.
 - Check: `sudo certbot renew --dry-run` passes.
-- Rollback: re-add TCP 80/443 from `0.0.0.0/0` and `::/0`.
+- Rollback: re-add rules 2 and 3 (80 and 443 from **Any**) in the Hostinger group.
 
 ### Later
 
