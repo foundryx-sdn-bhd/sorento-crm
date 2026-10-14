@@ -215,7 +215,9 @@ def _pre_grant_refusal(ctx: TurnV2Context, out: Any, pending_in: Any) -> tuple[s
     grant, a sales ask (or the answer to a report question) without the sales report grant."""
     granted = ctx.granted_reveals or frozenset()
     asks = getattr(out, "asks", None) or []
-    if SO_GRANT not in granted and any(
+    # Audience-split as v1: a dealer is refused; staff keep probing the kinds they may see (not-found + roster offer).
+    staff = getattr(ctx.profile, "audience", None) == "staff"
+    if not staff and SO_GRANT not in granted and any(
         getattr(e, "kind", None) in SALES_ORDER_KINDS for ask in asks for e in getattr(ask, "entities", None) or []
     ):
         from app.services.chatbot.lanes.business.fetch import SO_NOT_ENABLED_MESSAGE
