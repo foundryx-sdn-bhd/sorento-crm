@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -68,6 +69,27 @@ def _dump(value: Any, cap: int) -> str:
     return text if len(text) <= cap else text[:cap] + "...(cut)"
 
 
+_DROP_KEYS = {"envelope", "contact", "channel", "meta", "profile"}
+_WAMID = re.compile(r"wamid\.\S+", re.IGNORECASE)
+_PLUS_PHONE = re.compile(r"\+\d[\d\s-]{7,}\d")
+_DIGIT_RUN = re.compile(r"(?<![A-Za-z\d])\d{8,}")
+
+
+def _scrub(node: Any, depth: int = 0) -> Any:
+    """Judge facts go to an external API: drop identity keys at any depth, mask phone-like runs and wamid
+    tokens. Document numbers (6 digits, hyphenated) and product codes stay."""
+    if depth > 12:
+        return "(deep)"
+    if isinstance(node, dict):
+        return {k: _scrub(v, depth + 1) for k, v in node.items()
+                if not (isinstance(k, str) and k.lower() in _DROP_KEYS)}
+    if isinstance(node, (list, tuple)):
+        return [_scrub(v, depth + 1) for v in node]
+    if isinstance(node, str):
+        return _DIGIT_RUN.sub("[num]", _PLUS_PHONE.sub("[phone]", _WAMID.sub("[wamid]", node)))
+    return node
+
+
 def facts_digest(trace: Any) -> str:
     """What the bot looked up this turn, for the judge, in this order: tool envelopes, the looked_up stage
     raw, crossdomain events, the parser output, the access attributes. Each part is capped so one huge part
@@ -81,6 +103,8 @@ def facts_digest(trace: Any) -> str:
         for e in trace if isinstance(trace, list) else []:
             if not isinstance(e, dict):
                 continue
+            # top-level keys stay (a tool event's own "envelope" is its result); their values are scrubbed
+            e = {k: _scrub(v) for k, v in e.items()}
             if e.get("kind") == "tool":
                 tools.append(_dump({"tool": e.get("name"), "args": e.get("args"),
                                     "result": e.get("envelope")}, _TOOL_CAP))
