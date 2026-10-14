@@ -21,9 +21,11 @@
 #   RESTORE_READY_TIMEOUT      seconds to wait for Postgres        (default 120)
 #   RESTORE_MEMORY             memory cap (and swap cap) of the throwaway container (default 2g)
 #   RESTORE_DISK_FACTOR        free space needed on the work dir and on the docker root, as a
-#                              multiple of the downloaded dump      (default 4)
+#                              multiple of the downloaded dump      (default 4; never less than
+#                              2x the plain SQL inside it)
 #   DEPLOY_LOCK_FILE           shared with blue_green_deploy.sh     (default /opt/sorento-crm2/.deploy.lock;
-#                              skipped when its folder does not exist, as on the n8n box)
+#                              skipped when its folder does not exist, as on the n8n box; otherwise
+#                              the folder must be root-only and the file must already exist)
 #   DEPLOY_LOCK_WAIT           seconds to wait for a running deploy (default 3600)
 #   DEPLOY_LOCK_RETRY          seconds between lock attempts        (default 30)
 #   AGE_IDENTITY               age identity file, needed only for .age dumps
@@ -132,9 +134,18 @@ fi
 
 # Shared lock: restore tests may overlap each other, a deploy (exclusive) may not overlap either.
 # The fd stays open, so the lock is held until this script exits.
-if [ -d "$(dirname "$DEPLOY_LOCK_FILE")" ]; then
-  # 644 and opened read-only, so a non-root deploy user can lock the same file.
-  ( umask 022; : >> "$DEPLOY_LOCK_FILE" ) || die 2 "cannot create $DEPLOY_LOCK_FILE"
+DEPLOY_LOCK_DIR="$(dirname "$DEPLOY_LOCK_FILE")"
+if [ -d "$DEPLOY_LOCK_DIR" ]; then
+  # Never create or follow the lock in a folder another account can write: a planted symlink
+  # or FIFO there would make this root process create or open any path. The owner creates the
+  # file once (runbook step 2); it is opened read-only, so a non-root deploy can lock it too.
+  if [ -L "$DEPLOY_LOCK_DIR" ] || [ ! -O "$DEPLOY_LOCK_DIR" ] \
+    || [ -n "$(find "$DEPLOY_LOCK_DIR" -maxdepth 0 -perm /022)" ]; then
+    die 2 "$DEPLOY_LOCK_DIR must be owned by $(id -un) and not writable by group or others"
+  fi
+  if [ -L "$DEPLOY_LOCK_FILE" ] || [ ! -f "$DEPLOY_LOCK_FILE" ]; then
+    die 2 "$DEPLOY_LOCK_FILE is missing or not a regular file; create it: install -m 644 /dev/null $DEPLOY_LOCK_FILE"
+  fi
   exec 8<"$DEPLOY_LOCK_FILE"
   waited=0
   until flock -s -n 8; do
@@ -185,17 +196,21 @@ if [[ "$NEWEST" == *.age ]]; then
   rm -f -- "$DUMP"
   DUMP="${DUMP%.age}"
 fi
-gzip -t "$DUMP" || die 3 "gzip -t failed on $NEWEST"
+# Full decompress pass: checks the gzip and measures the plain SQL in one go.
+PLAIN_BYTES="$(nice -n 19 ionice -c3 gzip -dc "$DUMP" | wc -c)" || die 3 "gzip check failed on $NEWEST"
 
 # Disk preflight: the restored DB lands on the docker root, which shares the disk with live Postgres.
+# Need the larger of RESTORE_DISK_FACTOR x the gzipped dump and 2x the plain SQL (tables + indexes);
+# the gzipped size alone underestimates a dump that compresses well.
 free_bytes() { df -PB1 "$1" | awk 'NR==2 {print $4}'; }
 DUMP_BYTES="$(wc -c < "$DUMP")"
 NEED=$((DUMP_BYTES * RESTORE_DISK_FACTOR))
+[ $((PLAIN_BYTES * 2)) -le "$NEED" ] || NEED=$((PLAIN_BYTES * 2))
 DOCKER_ROOT="$(docker info --format '{{.DockerRootDir}}')" || die 4 "docker info failed"
 for d in "$RESTORE_WORK_DIR" "$DOCKER_ROOT"; do
   have="$(free_bytes "$d")" || die 4 "df $d failed"
   [[ "$have" =~ ^[0-9]+$ ]] || die 4 "could not read free space on $d"
-  [ "$have" -ge "$NEED" ] || die 4 "only $have bytes free on $d, need $NEED (${RESTORE_DISK_FACTOR}x the dump)"
+  [ "$have" -ge "$NEED" ] || die 4 "only $have bytes free on $d, need $NEED (max of ${RESTORE_DISK_FACTOR}x the dump, 2x its plain SQL)"
   log "disk ok: $have bytes free on $d, need $NEED"
 done
 

@@ -38,9 +38,9 @@ only in the env file on the box (mode 600).
 | Code | backup-db.sh | restore-test.sh |
 | --- | --- | --- |
 | 0 | ok | ok |
-| 2 | bad config, or env file not root-only | bad config, env file or work dir not root-only, or encrypted dump without `AGE_IDENTITY` |
+| 2 | bad config, or env file not root-only | bad config, env file or work dir not root-only, deploy lock folder not root-only or lock file missing, or encrypted dump without `AGE_IDENTITY` |
 | 3 | pg_dump failed | no dump on Drive, download or gzip check failed |
-| 4 | `gzip -t` failed | throwaway container did not start or never got ready, or less than 4x the dump free on the work dir or the docker root |
+| 4 | `gzip -t` failed | throwaway container did not start or never got ready, or not enough disk free on the work dir or the docker root (the larger of 4x the gzipped dump and 2x its plain SQL) |
 | 5 | `age` failed | restore failed (psql prints the line) |
 | 6 | rclone upload failed | a sanity table is empty, or a count failed |
 | 7 | prune failed (today's upload is on Drive) | a deploy held the deploy lock for 60 min; nothing was restored |
@@ -86,11 +86,19 @@ Write down, for step 2:
 - the Postgres image tag (`postgres:17...` or `pgvector/pgvector:pg17`). The restore test reads the
   major version from the dump itself, so this is only a cross-check.
 - free disk and memory: the restore test refuses to start (exit 4) unless both the work dir
-  (`/var/lib`) and the docker root (`docker info --format '{{.DockerRootDir}}'`) have at least 4x the
-  gzipped dump free; they usually sit on the same disk as live Postgres. `df -h /var/lib "$(docker info
-  --format '{{.DockerRootDir}}')"` and `ls -l` of the newest dump tell you now whether it will pass.
+  (`/var/lib`) and the docker root (`docker info --format '{{.DockerRootDir}}'`) have free at least
+  the larger of 4x the gzipped dump and 2x the plain SQL inside it (a restored DB with its indexes is
+  about 1-2x the plain SQL, and a dump compresses 3-8x). They usually sit on the same disk as live
+  Postgres. To see now whether it will pass:
+  `df -h /var/lib "$(docker info --format '{{.DockerRootDir}}')"` and
+  `rclone cat "gdrive:db-backups/$(rclone lsf gdrive:db-backups | grep '^sorento_crm_' | sort | tail -n 1)" | gzip -dc | wc -c`
+  (the plain SQL size in bytes).
   The throwaway container is capped at 2 GB of memory (`RESTORE_MEMORY`), so `free -g` must show
   that much available at 04:30 on a Sunday without squeezing live Postgres.
+- the deploy lock folder: `stat -c '%U %a' /opt/sorento-crm2` must print `root` and a mode with no
+  group or other write bit (`755`, `750`, `700`). If it prints another user or `775`/`777`, stop and
+  tell crew: the restore test refuses that folder (exit 2), because a root process must not open
+  files in a folder another account can write.
 
 - Check: you have every value above. If `rclone lsf` errors, the Drive token is broken today:
   `rclone config reconnect gdrive:` first (it prints a URL; finish it from your laptop).
@@ -104,7 +112,11 @@ From your laptop, in the repo checkout on `main` after this PR merges:
 ssh root@<CRM_ORIGIN> 'mkdir -p /opt/sorento-backup /etc/sorento-backup && chmod 700 /etc/sorento-backup'
 scp scripts/ops/backup-db.sh scripts/ops/restore-test.sh root@<CRM_ORIGIN>:/opt/sorento-backup/
 ssh root@<CRM_ORIGIN> 'chmod 750 /opt/sorento-backup/*.sh && command -v flock gzip curl rclone docker'
+ssh root@<CRM_ORIGIN> 'test -e /opt/sorento-crm2/.deploy.lock || install -m 644 -o root -g root /dev/null /opt/sorento-crm2/.deploy.lock; ls -l /opt/sorento-crm2/.deploy.lock'
 ```
+
+The last line creates the deploy lock file the restore test shares with the release script (the
+script never creates it). It must print `-rw-r--r-- 1 root root 0`.
 
 On the box, write the env file (fill the values from step 1):
 
@@ -190,7 +202,10 @@ restore test is built to lose any fight for resources:
 
 - the throwaway container is capped at 2 GB memory and 2 GB memory+swap (`RESTORE_MEMORY`), 1 CPU,
   and has `--oom-score-adj 1000`, so under memory pressure the kernel kills it before anything else;
-- the dump is streamed into it at `nice 19` and idle IO priority;
+- decompressing the dump on the host runs at `nice 19` and idle IO priority. The container's own
+  Postgres, which does the heavy disk writes, is held back only by the 1 CPU cap: it does not inherit
+  host priorities. If the Sunday window ever slows live traffic, tell crew (a per-device write cap,
+  `--device-write-bps`, is the next step);
 - it takes a **shared** lock on `/opt/sorento-crm2/.deploy.lock`. Once lane HA-MEM-DEPLOY-GUARD
   makes `blue_green_deploy.sh` take the same lock exclusively, a deploy waits for a running restore
   test, and a restore test waits up to 60 min for a running deploy, then gives up (exit 7, `/fail`).
@@ -215,9 +230,11 @@ The first run pulls `pgvector/pgvector:pg<major>` (about 160 MB).
   with the CRM screens), `latest audit_logs.changed_at=` within the last day, and
   `done: ... restores cleanly`. Above those: `deploy lock held (shared)` and two `disk ok` lines. The
   `docker ps -a` line prints nothing. `crm-restore-test` is green.
-- If it fails with exit 4 and `only <n> bytes free on <dir>`: free disk on that filesystem, or move
-  `RESTORE_WORK_DIR` to a bigger one. Never lower `RESTORE_DISK_FACTOR` on the CRM box: the restored
-  DB shares the disk with live Postgres.
+- If it fails with exit 4 and `only <n> bytes free on <dir>`: free disk on that filesystem. The
+  docker root is the one that matters (the restored DB lands there). Never lower
+  `RESTORE_DISK_FACTOR` on the CRM box: the restored DB shares the disk with live Postgres.
+- If it fails with exit 2 and `/opt/sorento-crm2 must be owned by root` or `.deploy.lock is missing`:
+  redo step 1's lock-folder check and step 2's last line.
 - If it fails with `ERROR: role "<x>" does not exist`: add `<x>` to `RESTORE_ROLES` in the env file
   and run again. To list every role the dump needs at once:
 

@@ -46,11 +46,15 @@ older than `RETENTION_DAYS`.
   any of them, with `PG_MAJOR` as an override.
 - **The restore test must lose every resource fight** (crew audit, 14 Oct; the 16 GB CRM box
   OOM-killed live Postgres on 10 Sep): container `--memory`/`--memory-swap` `RESTORE_MEMORY`
-  (default 2g), `--oom-score-adj 1000`, `--cpus 1`; the restore stream under `nice -n 19 ionice -c3`;
-  a disk preflight (4x the downloaded dump free on the work dir and the docker root, else exit 4);
+  (default 2g), `--oom-score-adj 1000`, `--cpus 1`; the host side of the restore stream under
+  `nice -n 19 ionice -c3` (the container's Postgres does not inherit it; the CPU cap bounds it);
+  a disk preflight (max of 4x the downloaded dump and 2x its plain SQL free on the work dir and the
+  docker root, else exit 4; security + reviewer round 3: 4x the gzip alone underestimates);
   a shared `flock` on `/opt/sorento-crm2/.deploy.lock`, retried for up to 60 min, else exit 7.
-  Lane HA-MEM-DEPLOY-GUARD makes `blue_green_deploy.sh` hold the same lock exclusively. The lock
-  file is created 644 and opened read-only so a non-root deploy user can lock it too.
+  Lane HA-MEM-DEPLOY-GUARD makes `blue_green_deploy.sh` hold the same lock exclusively. The owner
+  creates the lock file once (644, root); the script never creates it and refuses a lock folder
+  another account can write (a planted symlink or FIFO would make root open any path). Opened
+  read-only so a non-root deploy user can lock it too.
 - Healthchecks pings never fail the backup: `curl -fsS -m 10 --retry 3 ... || true`.
 
 ## Not in scope

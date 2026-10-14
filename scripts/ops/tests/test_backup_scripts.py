@@ -770,3 +770,40 @@ def test_restore_disk_need_covers_uncompressed_size(env):
     assert r.returncode == 4, r.stdout
     r = run(RESTORE, e, FAKE_DF_AVAIL=2 * plain)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_restore_refuses_lock_symlink_to_existing_file(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    lock = Path(e["DEPLOY_LOCK_FILE"])
+    target = tmp / "existing"
+    target.write_text("keep")
+    lock.unlink()
+    lock.symlink_to(target)
+    r = run(RESTORE, e, DEPLOY_LOCK_WAIT="1")
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert not any(c.startswith("docker run") for c in calls(tmp))
+
+
+def test_restore_refuses_symlinked_lock_folder(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    real = tmp / "realdeploy"
+    real.mkdir(mode=0o755)
+    (real / ".deploy.lock").touch(mode=0o644)
+    link = tmp / "linkdeploy"
+    link.symlink_to(real)
+    r = run(RESTORE, e, DEPLOY_LOCK_FILE=link / ".deploy.lock", DEPLOY_LOCK_WAIT="1")
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert not any(c.startswith("docker run") for c in calls(tmp))
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="needs root to chown the folder to another user")
+def test_restore_refuses_lock_folder_owned_by_someone_else(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    folder = Path(e["DEPLOY_LOCK_FILE"]).parent
+    os.chown(folder, 65534, 65534)
+    r = run(RESTORE, e, DEPLOY_LOCK_WAIT="1")
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert not any(c.startswith("docker run") for c in calls(tmp))
