@@ -55,6 +55,14 @@ def list_stock_debt(
             "Ignored under `book=retail` - a site pool is nobody's ownership group."
         ),
     ),
+    exclude_group: List[str] = Query(
+        [],
+        description=(
+            "Ownership group suffixes to leave OUT, repeatable (\"all except ED\"): the "
+            "flagged bins of every other group, HQ project reserves kept. Applied after "
+            "`group`; ignored under `book=retail`."
+        ),
+    ),
     only_debt: bool = Query(
         True, description="Drop products that owe nothing in any month."
     ),
@@ -115,6 +123,7 @@ def list_stock_debt(
         return StockDebtService(db).list(
             query=query,
             group=group,
+            exclude_group=exclude_group,
             only_debt=only_debt,
             date_from=date_from,
             date_to=date_to,
@@ -143,6 +152,14 @@ def stock_debt_cell(
             "The ownership group(s) the BOARD was narrowed to (repeatable). Same meaning as on the list: it "
             "narrows the span the balance is recomputed from, so the drill foots with the "
             "cell that opened it."
+        ),
+    ),
+    exclude_group: List[str] = Query(
+        [],
+        description=(
+            "Ownership group suffixes to leave OUT, repeatable (\"all except ED\"): the "
+            "flagged bins of every other group, HQ project reserves kept. Applied after "
+            "`group`; ignored under `book=retail`."
         ),
     ),
     date_from: Optional[date] = Query(
@@ -180,7 +197,7 @@ def stock_debt_cell(
         validate_uuid_path(product_id, resource="Product")
         return StockDebtService(db).cell(
             product_id, month, group, date_from=date_from, date_to=date_to, book=book,
-            projected=projected,
+            projected=projected, exclude_group=exclude_group,
         )
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
@@ -233,6 +250,7 @@ def export_stock_debt(
         guard = StockDebtService(db).list(
             query=payload.query,
             group=payload.group,
+            exclude_group=payload.exclude_group,
             only_debt=payload.only_debt,
             date_from=payload.date_from,
             date_to=payload.date_to,

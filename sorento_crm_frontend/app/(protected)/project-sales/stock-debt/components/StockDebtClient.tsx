@@ -35,6 +35,7 @@ import {
 } from '../lib/stockDebtSavedView';
 import { useCellSelection } from '../hooks/useCellSelection';
 import { useStockDebtQuery } from '../hooks/useStockDebtQuery';
+import type { StockDebtGroupsMode } from '../services/stockDebtService';
 import type { StockDebtBook, StockDebtRow, StockDebtTone } from '../types/stockDebt.types';
 import { StockDebtCellDialog } from './StockDebtCellDialog';
 import { StockDebtExportPopover } from './StockDebtExportPopover';
@@ -130,9 +131,9 @@ const SHOW_AUX_KEY = 'stock-debt.show-aux';
 
 /** The four read-only columns between Product and the months. */
 const AUX_COLUMNS = [
-  { key: 'pool_on_hand', header: 'BRW On Hand Qty' },
-  { key: 'pool_po_qty', header: 'BRW PO Qty' },
-  { key: 'pool_incoming_qty', header: 'BRW Incoming Qty' },
+  { key: 'pool_on_hand', header: 'BRW Retail On Hand Qty' },
+  { key: 'pool_po_qty', header: 'BRW Retail PO Qty' },
+  { key: 'pool_incoming_qty', header: 'BRW Retail Incoming Qty' },
   { key: 'dealer_outstanding', header: 'Dealer O/standing Qty' },
 ] as const;
 
@@ -206,6 +207,8 @@ export function StockDebtClient() {
   const [book, setBook] = React.useState<StockDebtBook>('all');
   // Location: a MULTI select of ownership group suffixes; empty = every location.
   const [groups, setGroups] = React.useState<string[]>([]);
+  // `Only` keeps the picked locations; `All except` keeps every other one.
+  const [groupsMode, setGroupsMode] = React.useState<StockDebtGroupsMode>('include');
   // R15: a MULTI select - a product matches when its last supplier is ANY of these.
   const [supplierIds, setSupplierIds] = React.useState<string[]>([]);
   // R14: the single Cutoff date became a Due date RANGE. '' is "no bound", matching the
@@ -248,7 +251,7 @@ export function StockDebtClient() {
   // (AC-24).
   React.useEffect(() => {
     setPagination((previous) => ({ ...previous, pageIndex: 0 }));
-  }, [debounced, onlyDebt, book, supplierIds, groups, dateFrom, dateTo, projected]);
+  }, [debounced, onlyDebt, book, supplierIds, groups, groupsMode, dateFrom, dateTo, projected]);
 
   const list = useStockDebtQuery({
     pageIndex: pagination.pageIndex,
@@ -258,6 +261,7 @@ export function StockDebtClient() {
     book,
     supplierIds,
     groups,
+    groupsMode,
     dateFrom,
     dateTo,
     projected,
@@ -277,12 +281,13 @@ export function StockDebtClient() {
   // Saved views: the filters as one object, so a view applies them at once. The search box
   // is reset (no debounce) so the board does not flash the unfiltered list first.
   const currentFilters: StockDebtFilters = {
-    query: search.trim(), book, supplierIds, groups, dateFrom, dateTo, onlyDebt, projected,
+    query: search.trim(), book, supplierIds, groups, groupsMode, dateFrom, dateTo, onlyDebt,
+    projected,
   };
   const savedViewConfig = React.useMemo(
     () => toSavedViewConfig(currentFilters, new Date()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [search, book, supplierIds, groups, dateFrom, dateTo, onlyDebt, projected],
+    [search, book, supplierIds, groups, groupsMode, dateFrom, dateTo, onlyDebt, projected],
   );
   const applyView = (view: SavedView | null) => {
     const next = fromSavedView(view, new Date());
@@ -290,6 +295,7 @@ export function StockDebtClient() {
     setBook(next.book);
     setSupplierIds(next.supplierIds);
     setGroups(next.groups);
+    setGroupsMode(next.groupsMode);
     setDateFrom(next.dateFrom);
     setDateTo(next.dateTo);
     setOnlyDebt(next.onlyDebt);
@@ -300,7 +306,9 @@ export function StockDebtClient() {
   // Under Retail the backend ignores Location, so the chip and the count leave with it.
   const groupsActive = book !== 'retail' && groups.length > 0;
   const groupChipLabel = groupsActive
-    ? `${groups.length > 1 ? 'Locations' : 'Location'}: ${groups.join(', ')}`
+    ? `${groups.length > 1 ? 'Locations' : 'Location'}: ${
+        groupsMode === 'exclude' ? 'all except ' : ''
+      }${groups.join(', ')}`
     : null;
 
   // R15: two or more picked suppliers render as ONE chip "Suppliers: N" (AC-19c); one
@@ -655,7 +663,13 @@ export function StockDebtClient() {
     supplierChipLabel
       ? { label: supplierChipLabel, onClear: () => setSupplierIds([]) }
       : null,
-    groupChipLabel ? { label: groupChipLabel, onClear: () => setGroups([]) } : null,
+    groupChipLabel ? {
+          label: groupChipLabel,
+          onClear: () => {
+            setGroups([]);
+            setGroupsMode('include');
+          },
+        } : null,
     deliveryChipLabel
       ? {
           label: deliveryChipLabel,
@@ -792,6 +806,27 @@ export function StockDebtClient() {
                         disabled={book === 'retail'}
                         clearable
                       />
+                      <RadioGroup
+                        className="flex flex-wrap gap-3"
+                        value={groupsMode}
+                        onValueChange={(value) => setGroupsMode(value as StockDebtGroupsMode)}
+                      >
+                        {(
+                          [
+                            ['include', 'Only'],
+                            ['exclude', 'All except'],
+                          ] as [StockDebtGroupsMode, string][]
+                        ).map(([value, label]) => (
+                          <label key={value} className="flex items-center gap-1.5 text-sm">
+                            <RadioGroupItem
+                              value={value}
+                              id={`groups-mode-${value}`}
+                              disabled={book === 'retail'}
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </RadioGroup>
                     </div>
 
                     <div className="space-y-1.5">
@@ -852,7 +887,7 @@ export function StockDebtClient() {
                 <StockDebtExportPopover
                   envelope={list.data}
                   filters={{
-                    query: debounced, onlyDebt, book, supplierIds, groups, dateFrom, dateTo, showAux,
+                    query: debounced, onlyDebt, book, supplierIds, groups, groupsMode, dateFrom, dateTo, showAux,
                     projected,
                   }}
                 />
@@ -944,6 +979,7 @@ export function StockDebtClient() {
           book={book}
           projected={projected}
           groups={groups}
+          groupsMode={groupsMode}
           onClose={() => setOpenCell(null)}
         />
       )}

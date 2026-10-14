@@ -339,6 +339,7 @@ class StockDebtExportIn(BaseModel):
 
     query: Optional[str] = None
     group: List[str] = []
+    exclude_group: List[str] = []
     only_debt: bool = True
     date_from: Optional[DateType] = None
     date_to: Optional[DateType] = None
@@ -349,7 +350,7 @@ class StockDebtExportIn(BaseModel):
     #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
     projected: bool = False
 
-    @field_validator("group", mode="before")
+    @field_validator("group", "exclude_group", mode="before")
     @classmethod
     def _group_as_list(cls, value):
         """A bare string wraps and None is empty (Location multi-select, owner 14 Oct 2026)."""

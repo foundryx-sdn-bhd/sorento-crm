@@ -332,7 +332,8 @@ def book_so_pins(
 
 AUX_KEYS = ("pool_on_hand", "pool_po_qty", "pool_incoming_qty", "dealer_outstanding")
 AUX_EXPORT_HEADERS = [
-    "BRW On Hand Qty", "BRW PO Qty", "BRW Incoming Qty", "Dealer O/standing Qty",
+    "BRW Retail On Hand Qty", "BRW Retail PO Qty", "BRW Retail Incoming Qty",
+    "Dealer O/standing Qty",
 ]
 
 
@@ -359,6 +360,7 @@ class StockDebtService:
         *,
         query: Optional[str] = None,
         group: Optional[Sequence[str]] = None,
+        exclude_group: Optional[Sequence[str]] = None,
         only_debt: bool = True,
         page: int = 1,
         limit: int = 50,
@@ -383,7 +385,7 @@ class StockDebtService:
         filtered set rather than the page, for the same reason the axis already does:
         derived per page, they would change under the reader as they page (AC-6/AC-7/AC-7b).
         """
-        warehouses = self._warehouses(group, book)
+        warehouses = self._warehouses(group, book, exclude_group)
         products = self._products(warehouses, query)
         product_ids = [product_id for product_id, _code, _name, _cat in products]
         assignments = self._assignments(
@@ -557,6 +559,7 @@ class StockDebtService:
         date_to: Optional[date] = None,
         book: str = "all",
         projected: bool = False,
+        exclude_group: Optional[Sequence[str]] = None,
     ) -> Dict[str, Any]:
         """The demand and the supply behind one cell (AC-S2-7, R28; extended AC-11).
 
@@ -577,7 +580,7 @@ class StockDebtService:
                 message="month must be YYYY-MM, 'tba', 'undated' or 'unlocated'.",
                 code="stock_debt_bad_month",
             )
-        warehouses = self._warehouses(group, book)
+        warehouses = self._warehouses(group, book, exclude_group)
         product = (
             self.db.query(Product.id, Product.product_code, Product.product_name)
             .filter(Product.id == product_id)
@@ -865,7 +868,10 @@ class StockDebtService:
     # ------------------------------------------------------------------ the reads
 
     def _warehouses(
-        self, group: Optional[Sequence[str]], book: str = "all"
+        self,
+        group: Optional[Sequence[str]],
+        book: str = "all",
+        exclude_group: Optional[Sequence[str]] = None,
     ) -> Dict[str, Warehouse]:
         """The bins this read spans, narrowed to one or more ownership groups and/or one `book`
         (R1/A4, AC-8).
@@ -877,13 +883,13 @@ class StockDebtService:
 
         `book`:
         * `project` - flagged bins only (the pre-24-Sep span), narrowed by `group`.
-        * `retail` - site pools only; `group` is meaningless here and is ignored.
+        * `retail` - site pools only; `group` and `exclude_group` are ignored.
         * `all` (default) - both, in ONE span. `assign()` already seals a pool's own
           group (`POOL_GROUP`) off from every project group in both directions (A4), so
           adding the pools to this dict is the whole change - the ladder's
           `assignments_for` already relies on the same fact for its own pool step.
         """
-        project_bins = self._project_bins(group)
+        project_bins = self._project_bins(group, exclude_group)
         # A PROJECT RESERVE (HQ) is project supply: in the project book, out of the retail
         # one, where it could cover nothing (`supply_assignment.RESERVE_GROUP`). Not under a
         # `group` filter: HQ is no group's own stock, and the filtered balance is the
@@ -898,9 +904,14 @@ class StockDebtService:
             return pool_bins
         return {**project_bins, **pool_bins, **reserves}
 
-    def _project_bins(self, group: Optional[Sequence[str]]) -> Dict[str, Warehouse]:
-        """The flagged bins alone, narrowed by `group` - `_warehouses`'s own project half,
-        and the whole of `_groups`'s span (a site pool admits no ownership group)."""
+    def _project_bins(
+        self,
+        group: Optional[Sequence[str]],
+        exclude_group: Optional[Sequence[str]] = None,
+    ) -> Dict[str, Warehouse]:
+        """The flagged bins alone, narrowed by `group` and then minus `exclude_group` -
+        `_warehouses`'s own project half, and the whole of `_groups`'s span (a site pool
+        admits no ownership group)."""
         rows = self.db.query(Warehouse).filter(fulfilment_planning_predicate()).all()
         wanted = _group_set(group)
         if wanted:
@@ -909,6 +920,14 @@ class StockDebtService:
                 for row in rows
                 if sales_agent_service.group_of_warehouse_code(row.warehouse_code)
                 in wanted
+            ]
+        dropped = _group_set(exclude_group)
+        if dropped:
+            rows = [
+                row
+                for row in rows
+                if sales_agent_service.group_of_warehouse_code(row.warehouse_code)
+                not in dropped
             ]
         return {str(row.id): row for row in rows}
 
@@ -2595,6 +2614,7 @@ class StockDebtService:
         *,
         query: Optional[str] = None,
         group: Optional[Sequence[str]] = None,
+        exclude_group: Optional[Sequence[str]] = None,
         only_debt: bool = True,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -2616,7 +2636,8 @@ class StockDebtService:
         that does not is refused before `data` is ever trusted to be complete.
         """
         listing = self.list(
-            query=query, group=group, only_debt=only_debt, date_from=date_from,
+            query=query, group=group, exclude_group=exclude_group, only_debt=only_debt,
+            date_from=date_from,
             date_to=date_to, supplier_ids=supplier_ids, book=book, page=1,
             limit=MAX_LOW_STOCK_ROWS + 1, projected=projected,
         )

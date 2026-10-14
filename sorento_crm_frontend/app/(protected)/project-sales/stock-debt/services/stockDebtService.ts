@@ -44,6 +44,7 @@
  *                               PLUS the site pools, in one span; `project` is
  *                               today's view; `retail` is pools only (R1, AC-8)
  *
+ *      &exclude_group=<ED>  REPEATABLE: "all except" mode, sent instead of `group` (14 Oct, round 2).
  *      &group=<BB>          REPEATABLE: Location came back as a multi-select (owner, 14 Oct
  *                               2026, superseding R16); any of the values, spanning the
  *                               flagged bins of every group named. Omitted when none picked.
@@ -187,6 +188,9 @@ export const USE_STOCK_DEBT_FILTER_MOCKS = false;
  * filter left the screen in R16 and came back as the multi-select `groups` (Location,
  * owner, 14 Oct 2026).
  */
+/** How `groups` narrows the board: only these locations, or every location except them. */
+export type StockDebtGroupsMode = 'include' | 'exclude';
+
 export interface StockDebtListParams {
   pageIndex: number;
   pageSize: number;
@@ -199,6 +203,8 @@ export interface StockDebtListParams {
   supplierIds: string[];
   /** Location: repeatable ownership group suffixes; empty = every location. */
   groups?: string[];
+  /** `exclude` sends `exclude_group` instead of `group` ("all except ED"). Default include. */
+  groupsMode?: StockDebtGroupsMode;
   /** `YYYY-MM-DD`, or '' for no lower bound (R14, AC-1b). */
   dateFrom: string;
   /** `YYYY-MM-DD`, or '' for no upper bound (R14, AC-1). */
@@ -214,6 +220,7 @@ export interface StockDebtExportParams {
   book: StockDebtBook;
   supplierIds: string[];
   groups?: string[];
+  groupsMode?: StockDebtGroupsMode;
   dateFrom: string;
   dateTo: string;
   /** Whether the workbook carries the four stock and PO columns (default off on the wire). */
@@ -247,7 +254,7 @@ export async function getStockDebtList(
     if (id) search.append('supplier_ids', id);
   }
   for (const code of params.groups ?? []) {
-    if (code) search.append('group', code);
+    if (code) search.append(params.groupsMode === 'exclude' ? 'exclude_group' : 'group', code);
   }
   const res = await apiFetch(`/api/v1/project-sales/stock-debt?${search}`);
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to load stock debt'));
@@ -268,6 +275,7 @@ export async function getStockDebtCell(
   book?: StockDebtBook,
   projected?: boolean,
   groups?: string[],
+  groupsMode?: StockDebtGroupsMode,
 ): Promise<StockDebtCell> {
   const search = new URLSearchParams({ month });
   if (dateFrom) search.set('date_from', dateFrom);
@@ -275,7 +283,7 @@ export async function getStockDebtCell(
   if (book && book !== 'all') search.set('book', book);
   if (projected) search.set('projected', 'true');
   for (const code of groups ?? []) {
-    if (code) search.append('group', code);
+    if (code) search.append(groupsMode === 'exclude' ? 'exclude_group' : 'group', code);
   }
   const res = await apiFetch(
     `/api/v1/project-sales/stock-debt/${encodeURIComponent(productId)}/cell?${search}`,
@@ -299,7 +307,9 @@ export async function exportStockDebt(params: StockDebtExportParams): Promise<My
       only_debt: params.onlyDebt,
       book: params.book,
       supplier_ids: params.supplierIds ?? [],
-      ...(params.groups?.length ? { group: params.groups } : {}),
+      ...(params.groups?.length
+        ? { [params.groupsMode === 'exclude' ? 'exclude_group' : 'group']: params.groups }
+        : {}),
       date_from: params.dateFrom || undefined,
       date_to: params.dateTo || undefined,
       split: params.split,

@@ -5,6 +5,7 @@
  */
 import { parseIsoDate, toIsoDate } from '@/components/ui/date-range-picker';
 import type { SavedView, SavedViewConfig } from '@/services/savedViewsService';
+import type { StockDebtGroupsMode } from '../services/stockDebtService';
 import type { StockDebtBook } from '../types/stockDebt.types';
 
 export const STOCK_DEBT_LISTING_KEY = 'projects.stock_debt.view::stock-debt';
@@ -14,6 +15,7 @@ export interface StockDebtFilters {
   book: StockDebtBook;
   supplierIds: string[];
   groups: string[];
+  groupsMode: StockDebtGroupsMode;
   /** `YYYY-MM-DD`, '' = open. */
   dateFrom: string;
   dateTo: string;
@@ -26,6 +28,7 @@ export const DEFAULT_STOCK_DEBT_FILTERS: StockDebtFilters = {
   book: 'all',
   supplierIds: [],
   groups: [],
+  groupsMode: 'include',
   dateFrom: '',
   dateTo: '',
   onlyDebt: true,
@@ -66,6 +69,7 @@ export function toSavedViewConfig(filters: StockDebtFilters, today: Date): Saved
       book: filters.book,
       suppliers: filters.supplierIds.join(','),
       groups: filters.groups.join(','),
+      groups_mode: filters.groupsMode,
       date_from_days: daysFromToday(filters.dateFrom, today),
       date_to_days: daysFromToday(filters.dateTo, today),
       only_debt: String(filters.onlyDebt),
@@ -83,6 +87,7 @@ export function fromSavedView(view: SavedView | null, today: Date): StockDebtFil
     book: BOOKS.includes(q.book as StockDebtBook) ? (q.book as StockDebtBook) : d.book,
     supplierIds: list(q.suppliers),
     groups: list(q.groups),
+    groupsMode: q.groups_mode === 'exclude' ? 'exclude' : 'include',
     dateFrom: dateFromDays(q.date_from_days, today),
     dateTo: dateFromDays(q.date_to_days, today),
     onlyDebt: q.only_debt === undefined ? d.onlyDebt : q.only_debt === 'true',

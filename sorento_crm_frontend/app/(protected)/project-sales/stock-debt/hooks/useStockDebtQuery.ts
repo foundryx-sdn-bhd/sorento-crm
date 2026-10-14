@@ -8,7 +8,11 @@ import {
   getStockDebtCell,
   getStockDebtList,
 } from '../services/stockDebtService';
-import type { StockDebtExportParams, StockDebtListParams } from '../services/stockDebtService';
+import type {
+  StockDebtExportParams,
+  StockDebtGroupsMode,
+  StockDebtListParams,
+} from '../services/stockDebtService';
 import type { StockDebtBook } from '../types/stockDebt.types';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 
@@ -33,6 +37,7 @@ export function useStockDebtQuery(params: StockDebtListParams) {
       params.book,
       params.supplierIds,
       params.groups ?? [],
+      params.groupsMode ?? 'include',
       params.dateFrom,
       params.dateTo,
       Boolean(params.projected),
@@ -83,11 +88,13 @@ export function useStockDebtCellQuery(
   book?: StockDebtBook,
   projected?: boolean,
   groups?: string[],
+  groupsMode?: StockDebtGroupsMode,
 ) {
   return useQuery({
     queryKey: [
       'project-sales', 'stock-debt', 'cell', productId, month, dateFrom ?? '', dateTo ?? '',
       book ?? 'all', Boolean(projected), groups ?? [],
+      groupsMode ?? 'include',
     ],
     // The projection rides only when the switch is on, so the month view's request is
     // exactly what it was before the switch existed.
@@ -95,7 +102,10 @@ export function useStockDebtCellQuery(
       const id = productId as string;
       const key = month as string;
       if (groups?.length) {
-        return getStockDebtCell(id, key, dateFrom, dateTo, book, projected, groups);
+        return getStockDebtCell(
+          id, key, dateFrom, dateTo, book, projected, groups,
+          groupsMode === 'exclude' ? 'exclude' : undefined,
+        );
       }
       return projected
         ? getStockDebtCell(id, key, dateFrom, dateTo, book, true)
