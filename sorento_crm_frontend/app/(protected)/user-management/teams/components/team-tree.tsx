@@ -49,11 +49,17 @@ function toastAlert(message: string, ok: boolean) {
 export default function TeamTree({
   teams,
   query,
+  canEdit,
+  canDelete,
   onEdit,
   onDelete,
 }: {
   teams: Team[];
   query: string;
+  /** user_management.teams.edit: Edit team, and drag a row to re-parent it. */
+  canEdit: boolean;
+  /** user_management.teams.delete: Delete team. */
+  canDelete: boolean;
   onEdit: (team: Team) => void;
   onDelete: (team: Team) => void;
 }) {
@@ -144,10 +150,12 @@ export default function TeamTree({
     onError: (e: Error) => toastAlert(e.message, false),
   });
 
-  // a drop is valid if target isn't the dragged node, its current parent, or a descendant
+  // a drop is valid if target isn't the dragged node, its current parent, or a descendant.
+  // Without teams.edit nothing drops: the Members link is natively draggable and its
+  // dragstart bubbles to the row even though the row itself is not draggable.
   const canDrop = useCallback(
     (targetId: string | null): boolean => {
-      if (!draggingId) return false;
+      if (!canEdit || !draggingId) return false;
       const dragged = teams.find((t) => t.id === draggingId);
       if (!dragged) return false;
       const currentParent = dragged.parent_team_id ?? null;
@@ -157,7 +165,7 @@ export default function TeamTree({
       if (descendantsOf(draggingId).has(targetId)) return false; // would create a cycle
       return true;
     },
-    [draggingId, teams, descendantsOf],
+    [canEdit, draggingId, teams, descendantsOf],
   );
 
   const handleDrop = (targetId: string | null) => {
@@ -177,24 +185,26 @@ export default function TeamTree({
   return (
     <div className="flex flex-col">
       {/* Root drop zone - drag here to detach a team to the top level */}
-      <div
-        onDragOver={(e) => {
-          if (canDrop(null)) {
-            e.preventDefault();
-            setDropTargetId('');
-          }
-        }}
-        onDragLeave={() => setDropTargetId((p) => (p === '' ? null : p))}
-        onDrop={() => handleDrop(null)}
-        className={cn(
-          'flex items-center gap-2 border-b border-dashed px-4 py-1.5 text-xs transition-colors',
-          draggingId ? 'text-muted-foreground' : 'text-transparent',
-          dropTargetId === '' && 'bg-primary/10 text-primary',
-        )}
-      >
-        <CornerDownRight className="size-3.5" />
-        Drop here to move to top level
-      </div>
+      {canEdit && (
+        <div
+          onDragOver={(e) => {
+            if (canDrop(null)) {
+              e.preventDefault();
+              setDropTargetId('');
+            }
+          }}
+          onDragLeave={() => setDropTargetId((p) => (p === '' ? null : p))}
+          onDrop={() => handleDrop(null)}
+          className={cn(
+            'flex items-center gap-2 border-b border-dashed px-4 py-1.5 text-xs transition-colors',
+            draggingId ? 'text-muted-foreground' : 'text-transparent',
+            dropTargetId === '' && 'bg-primary/10 text-primary',
+          )}
+        >
+          <CornerDownRight className="size-3.5" />
+          Drop here to move to top level
+        </div>
+      )}
 
       {rows.map(({ team, depth }) => {
         const kids = childrenMap.get(team.id) ?? [];
@@ -207,8 +217,9 @@ export default function TeamTree({
         return (
           <div
             key={team.id}
-            draggable
+            draggable={canEdit || undefined}
             onDragStart={(e) => {
+              if (!canEdit) return;
               setDraggingId(team.id);
               e.dataTransfer.effectAllowed = 'move';
             }}
@@ -231,7 +242,9 @@ export default function TeamTree({
               isDropTarget && 'bg-primary/10 ring-1 ring-inset ring-primary/40',
             )}
           >
-            <GripVertical className="text-muted-foreground/40 size-4 shrink-0 cursor-grab group-hover:text-muted-foreground" />
+            {canEdit && (
+              <GripVertical className="text-muted-foreground/40 size-4 shrink-0 cursor-grab group-hover:text-muted-foreground" />
+            )}
 
             <div style={{ width: depth * INDENT }} className="shrink-0" aria-hidden />
 
@@ -267,20 +280,26 @@ export default function TeamTree({
                   Members
                 </Link>
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button className="size-8" mode="icon" variant="ghost" size="icon" aria-label="More actions">
-                    <Ellipsis />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onEdit(team)}>Edit team</DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onClick={() => onDelete(team)}>
-                    Delete team
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {(canEdit || canDelete) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button className="size-8" mode="icon" variant="ghost" size="icon" aria-label="More actions">
+                      <Ellipsis />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canEdit && (
+                      <DropdownMenuItem onClick={() => onEdit(team)}>Edit team</DropdownMenuItem>
+                    )}
+                    {canEdit && canDelete && <DropdownMenuSeparator />}
+                    {canDelete && (
+                      <DropdownMenuItem variant="destructive" onClick={() => onDelete(team)}>
+                        Delete team
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
         );
