@@ -38,7 +38,7 @@ only in the env file on the box (mode 600).
 | Code | backup-db.sh | restore-test.sh |
 | --- | --- | --- |
 | 0 | ok | ok |
-| 2 | bad config | bad config, or encrypted dump without `AGE_IDENTITY` |
+| 2 | bad config, or env file not root-only | bad config, env file or work dir not root-only, or encrypted dump without `AGE_IDENTITY` |
 | 3 | pg_dump failed | no dump on Drive, download or gzip check failed |
 | 4 | `gzip -t` failed | throwaway container did not start or never got ready |
 | 5 | `age` failed | restore failed (psql prints the line) |
@@ -81,11 +81,11 @@ Write down, for step 2:
 - `RETENTION_DAYS` and the rclone remote and folder (expected `gdrive:db-backups`).
 - the file name pattern of the newest dumps on Drive. New dumps are named
   `sorento_crm_<YYYYMMDD>T<HHMMSS>Z.sql.gz`, and both prune and restore test only look at
-  `<BACKUP_NAME>_*`. Old files with another name are never pruned by the new script; delete them by
+  `<BACKUP_NAME>_<digits>...Z.sql.gz`. Old files with another name are never pruned by the new script; delete them by
   hand once `RETENTION_DAYS` of new dumps exist (step 8).
 - the Postgres image tag (`postgres:17...` or `pgvector/pgvector:pg17`). The restore test reads the
   major version from the dump itself, so this is only a cross-check.
-- free disk: the restore test needs about 3x the gzipped dump size free on `/var/tmp` and
+- free disk: the restore test needs about 3x the gzipped dump size free on `/var/lib` and
   `/var/lib/docker` while it runs.
 
 - Check: you have every value above. If `rclone lsf` errors, the Drive token is broken today:
@@ -116,18 +116,21 @@ HC_BACKUP_URL=<HC_BACKUP_URL>
 HC_RESTORE_URL=<HC_RESTORE_URL>
 # restore test: role the dump objects belong to, plus any role named in GRANT lines (step 4)
 RESTORE_DB_USER=<DB_USER>
-RESTORE_ROLES=
-SANITY_TABLES=users customers orders products audit_logs
+RESTORE_ROLES=""
+SANITY_TABLES="users customers orders products audit_logs"
 SANITY_LATEST=audit_logs.changed_at
 EOF
 sudo chmod 600 /etc/sorento-backup/backup.env
 ```
 
+The file is read as shell code: a value with spaces needs double quotes, as above. Both scripts
+refuse to read it (exit 2) unless it is owned by root and not writable by group or others.
+
 `rclone` reads its config from root's home (`/root/.config/rclone/rclone.conf`), so run both
 scripts as root, as the old cron does.
 
 - Check: `sudo ls -l /etc/sorento-backup/backup.env` shows `-rw-------  root root`.
-- Rollback: `sudo rm -rf /opt/sorento-backup /etc/sorento-backup`.
+- Rollback: `sudo rm -rf /opt/sorento-backup /etc/sorento-backup /var/lib/sorento-backup /var/lib/sorento-restore-test`.
 
 ## Step 3. First backup by hand, then switch cron (10 min)
 
@@ -150,18 +153,21 @@ Comment out the old line and add the new pair:
 
 ```
 # 0 3 * * * /opt/sorento-crm2/backup-db.sh ...   <- old line, keep it commented
-0 3 * * * /opt/sorento-backup/backup-db.sh >> /var/log/sorento-backup.log 2>&1
-30 4 * * 0 /opt/sorento-backup/restore-test.sh >> /var/log/sorento-restore-test.log 2>&1
+0 3 * * * umask 077; /opt/sorento-backup/backup-db.sh >> /var/log/sorento-backup.log 2>&1
+30 4 * * 0 umask 077; /opt/sorento-backup/restore-test.sh >> /var/log/sorento-restore-test.log 2>&1
 ```
 
-Add log rotation:
+Add log rotation. The logs are root-only: a failed restore can print a row of customer data.
 
 ```bash
+sudo touch /var/log/sorento-backup.log /var/log/sorento-restore-test.log
+sudo chmod 600 /var/log/sorento-backup.log /var/log/sorento-restore-test.log
 sudo tee /etc/logrotate.d/sorento-backup >/dev/null <<'EOF'
 /var/log/sorento-backup.log /var/log/sorento-restore-test.log {
   monthly
   rotate 6
   compress
+  create 0600 root root
   missingok
   notifempty
 }
@@ -191,7 +197,8 @@ The first run pulls `pgvector/pgvector:pg<major>` (about 160 MB).
   F=$(rclone lsf gdrive:db-backups | grep '^sorento_crm_' | sort | tail -n 1)
   rclone cat "gdrive:db-backups/$F" | gzip -dc \
     | grep -E '^(ALTER .* OWNER TO|GRANT |REVOKE |ALTER DEFAULT PRIVILEGES )' \
-    | sed -E 's/.* (TO|FROM) //; s/;$//' | tr ',' '\n' | tr -d ' "' | sort -u
+    | sed -E 's/;$//; s/.*FOR ROLE ([^ ]+) .* (TO|FROM) (.*)/\1,\3/; s/.* (TO|FROM) //' \
+    | tr ',' '\n' | tr -d ' "' | sort -u
   ```
 
   Leave out `<DB_USER>` and `PUBLIC`; the rest go in `RESTORE_ROLES` (space separated). A role
@@ -226,7 +233,8 @@ The weekly restore test then fails with exit 2 ("is encrypted; set AGE_IDENTITY"
 the private key. Pick one:
 
 - (a) keep the key off the box and run the restore test only in the monthly drill, with the key
-  copied in for that run (`AGE_IDENTITY=/root/drill.agekey`, then `shred -u /root/drill.agekey`), and
+  copied to memory for that run only (`scp` it to `/dev/shm/drill.agekey`, run with
+  `AGE_IDENTITY=/dev/shm/drill.agekey`, then `rm /dev/shm/drill.agekey`; `/dev/shm` never hits disk), and
   remove the weekly restore-test cron line and its Healthchecks check; or
 - (b) put the key on the box (`/etc/sorento-backup/restore.agekey`, mode 600) and set
   `AGE_IDENTITY` in the env file. Weaker: the box can then read old dumps, but Drive alone cannot.
@@ -247,7 +255,7 @@ rclone listremotes; sudo crontab -l
 
 - `DB_TYPE=postgresdb`: same pattern. Env file `/etc/sorento-backup/backup.env` with
   `BACKUP_NAME=n8n`, `RCLONE_DEST=gdrive:db-backups/n8n`, the n8n Postgres container, user and DB,
-  and for the restore test `SANITY_TABLES=workflow_entity credentials_entity` and `SANITY_LATEST=`
+  and for the restore test `SANITY_TABLES="workflow_entity credentials_entity"` and `SANITY_LATEST=`
   (empty: n8n's timestamp columns are camelCase, which the script does not accept). If
   `DB_TABLE_PREFIX` is set, put the prefix in front of both table names.
 - No `DB_TYPE`, or `sqlite`: n8n keeps everything in `database.sqlite` in its data volume. These
@@ -271,7 +279,8 @@ docker exec <pg container> psql -U <user> -Atc "select datname from pg_database 
 ```
 
 - One Postgres DB: same pattern, `BACKUP_NAME=shared`, `RCLONE_DEST=gdrive:db-backups/shared`,
-  `SANITY_TABLES=` the two or three busiest tables of that service (`\dt+` sorted by size).
+  `SANITY_TABLES="<two or three busiest tables>"` of that service (`\dt+` sorted by size), and
+  `SANITY_LATEST=<table>.<created_at column>` or empty.
 - Several DBs in one Postgres: one env file per DB (`/etc/sorento-backup/<db>.env`, each with its own
   `BACKUP_NAME`, folder and Healthchecks URLs) and one cron line per DB:
   `20 3 * * * BACKUP_ENV_FILE=/etc/sorento-backup/<db>.env /opt/sorento-backup/backup-db.sh >> /var/log/sorento-backup.log 2>&1`.
@@ -284,7 +293,7 @@ Once Drive holds `RETENTION_DAYS` days of `sorento_crm_<stamp>Z.sql.gz` files an
 test has been green twice, delete the old-style files the new prune never matches:
 
 ```bash
-rclone lsf gdrive:db-backups --max-depth 1 | grep -v '^sorento_crm_[0-9]\{8\}T[0-9]\{6\}Z' | grep -v /$
+rclone lsf gdrive:db-backups --max-depth 1 --files-only | grep -v '^sorento_crm_[0-9]\{8\}T[0-9]\{6\}Z' 
 # review that list, then for each:  rclone deletefile "gdrive:db-backups/<name>"
 ```
 
@@ -298,7 +307,7 @@ The weekly cron proves a dump restores. The drill proves a human can do it under
 
 - [ ] Healthchecks.io: every backup check pinged in the last 26 h, every restore-test check in the last 8 days. Nothing red in the last month that nobody looked at.
 - [ ] `rclone lsf gdrive:db-backups | sort | tail -n 3` on the CRM box: newest is from this morning.
-- [ ] `rclone size gdrive:db-backups`: total roughly `RETENTION_DAYS` x one dump (prune works, Drive is not filling up).
+- [ ] `rclone size --max-depth 1 gdrive:db-backups`: total roughly `RETENTION_DAYS` x one dump (prune works). Pruned dumps sit in the Drive trash for 30 days and still count against the Google quota; check the quota at drive.google.com if it is near full.
 - [ ] Run `sudo /opt/sorento-backup/restore-test.sh` by hand on each box. Exit 0.
 - [ ] Compare `rows orders=` and `rows customers=` with last month's drill. They only grow.
 - [ ] `latest audit_logs.changed_at=` is from the last day.

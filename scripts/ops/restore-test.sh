@@ -15,9 +15,9 @@
 #   RESTORE_DB_USER            superuser inside the throwaway      (default postgres)
 #   RESTORE_ROLES              roles to pre-create so OWNER TO / GRANT lines restore (space separated)
 #   SANITY_TABLES              tables that must hold rows          (default users customers orders products audit_logs)
-#   SANITY_LATEST              table.column whose max() is printed (default audit_logs.changed_at)
-#   RESTORE_WORK_DIR           download dir                        (default /var/tmp/sorento-restore-test)
-#   RESTORE_LOCK_FILE          overlap lock                        (default /var/lock/restore-test-<name>.lock)
+#   SANITY_LATEST              table.column whose max() is printed (default audit_logs.changed_at; empty = skip)
+#   RESTORE_WORK_DIR           download dir, must be a real dir owned by the running user (default /var/lib/sorento-restore-test)
+#   RESTORE_LOCK_FILE          overlap lock                        (default /var/lib/sorento-backup/restore-test-<name>.lock)
 #   RESTORE_READY_TIMEOUT      seconds to wait for Postgres        (default 120)
 #   AGE_IDENTITY               age identity file, needed only for .age dumps
 #   HC_RESTORE_URL             Healthchecks.io check URL; unset = no pings
@@ -28,7 +28,13 @@ set -euo pipefail
 umask 077
 
 BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/sorento-backup/backup.env}"
-if [ -f "$BACKUP_ENV_FILE" ]; then
+if [ -e "$BACKUP_ENV_FILE" ]; then
+  # Sourced as shell code, so only a file nobody else can write.
+  if [ ! -f "$BACKUP_ENV_FILE" ] || [ ! -O "$BACKUP_ENV_FILE" ] \
+    || [ -n "$(find "$BACKUP_ENV_FILE" -maxdepth 0 -perm /022)" ]; then
+    echo "error: $BACKUP_ENV_FILE must be a regular file owned by $(id -un), not writable by group or others" >&2
+    exit 2
+  fi
   set -a
   # shellcheck disable=SC1090
   . "$BACKUP_ENV_FILE"
@@ -36,15 +42,17 @@ if [ -f "$BACKUP_ENV_FILE" ]; then
 fi
 
 BACKUP_NAME="${BACKUP_NAME:-sorento_crm}"
+[[ "$BACKUP_NAME" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "error: BACKUP_NAME must be letters, digits, _ or -" >&2; exit 2; }
 RCLONE_DEST="${RCLONE_DEST:-gdrive:db-backups}"
 PG_MAJOR="${PG_MAJOR:-}"
 RESTORE_IMAGE="${RESTORE_IMAGE:-pgvector/pgvector:pg%s}"
 RESTORE_DB_USER="${RESTORE_DB_USER:-postgres}"
 RESTORE_ROLES="${RESTORE_ROLES:-}"
 SANITY_TABLES="${SANITY_TABLES:-users customers orders products audit_logs}"
-SANITY_LATEST="${SANITY_LATEST:-audit_logs.changed_at}"
-RESTORE_WORK_DIR="${RESTORE_WORK_DIR:-/var/tmp/sorento-restore-test}"
-RESTORE_LOCK_FILE="${RESTORE_LOCK_FILE:-/var/lock/restore-test-${BACKUP_NAME}.lock}"
+# No colon: an explicitly empty SANITY_LATEST means "skip", not "use the default".
+SANITY_LATEST="${SANITY_LATEST-audit_logs.changed_at}"
+RESTORE_WORK_DIR="${RESTORE_WORK_DIR:-/var/lib/sorento-restore-test}"
+RESTORE_LOCK_FILE="${RESTORE_LOCK_FILE:-/var/lib/sorento-backup/restore-test-${BACKUP_NAME}.lock}"
 RESTORE_READY_TIMEOUT="${RESTORE_READY_TIMEOUT:-120}"
 AGE_IDENTITY="${AGE_IDENTITY:-}"
 HC_RESTORE_URL="${HC_RESTORE_URL:-}"
@@ -92,7 +100,6 @@ STARTED=1
 hc_ping /start
 log "start source=$RCLONE_DEST"
 
-[[ "$BACKUP_NAME" =~ ^[A-Za-z0-9_-]+$ ]] || die 2 "BACKUP_NAME must be letters, digits, _ or -"
 [[ "$RESTORE_DB_USER" =~ $IDENT_RE ]] || die 2 "RESTORE_DB_USER is not a plain identifier"
 for t in $SANITY_TABLES; do [[ "$t" =~ $QUAL_RE ]] || die 2 "SANITY_TABLES entry is not a plain table name: $t"; done
 for r in $RESTORE_ROLES; do [[ "$r" =~ $IDENT_RE ]] || die 2 "RESTORE_ROLES entry is not a plain identifier: $r"; done
@@ -102,8 +109,26 @@ if [ -n "$SANITY_LATEST" ]; then
 fi
 [[ "$RESTORE_READY_TIMEOUT" =~ ^[0-9]+$ ]] || die 2 "RESTORE_READY_TIMEOUT must be seconds"
 
+# The work dir holds a plaintext dump: it must be ours, not a symlink, and closed to others.
+mkdir -p "$RESTORE_WORK_DIR"
+if [ ! -d "$RESTORE_WORK_DIR" ] || [ -L "$RESTORE_WORK_DIR" ] || [ ! -O "$RESTORE_WORK_DIR" ]; then
+  die 2 "RESTORE_WORK_DIR $RESTORE_WORK_DIR must be a real directory owned by $(id -un)"
+fi
+chmod 700 "$RESTORE_WORK_DIR"
+
+# A killed run (SIGKILL, OOM, reboot) skips the EXIT trap: clear what it left behind.
+rm -rf -- "$RESTORE_WORK_DIR"/run.*
+docker ps -a --filter "name=restore-test-${BACKUP_NAME}-" --format '{{.Names}}' | while read -r old; do
+  case "$old" in
+    "restore-test-${BACKUP_NAME}-"[0-9]*)
+      log "removing leftover container $old"
+      docker rm -f -v "$old" >/dev/null || log "warn: could not remove $old"
+      ;;
+  esac
+done
+
 # Newest dump: names carry a sortable UTC stamp, so the last one in name order is the newest.
-NEWEST="$(rclone lsf --files-only --max-depth 1 --include "${BACKUP_NAME}_*.sql.gz" --include "${BACKUP_NAME}_*.sql.gz.age" "$RCLONE_DEST" | sort | tail -n 1)" \
+NEWEST="$(rclone lsf --files-only --max-depth 1 --include "${BACKUP_NAME}_[0-9]*Z.sql.gz" --include "${BACKUP_NAME}_[0-9]*Z.sql.gz.age" "$RCLONE_DEST" | LC_ALL=C sort | tail -n 1)" \
   || die 3 "rclone lsf $RCLONE_DEST failed"
 [ -n "$NEWEST" ] || die 3 "no ${BACKUP_NAME}_*.sql.gz dump found in $RCLONE_DEST"
 case "$NEWEST" in
@@ -111,7 +136,6 @@ case "$NEWEST" in
 esac
 log "newest dump: $NEWEST"
 
-mkdir -p "$RESTORE_WORK_DIR"
 WORK="$(mktemp -d "$RESTORE_WORK_DIR/run.XXXXXX")"
 rclone copyto "$RCLONE_DEST/$NEWEST" "$WORK/$NEWEST" || die 3 "download of $NEWEST failed"
 

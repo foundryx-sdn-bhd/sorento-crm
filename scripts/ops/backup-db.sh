@@ -13,10 +13,12 @@
 #   RCLONE_DEST      rclone remote:path                         (default gdrive:db-backups)
 #   RETENTION_DAYS   prune dumps older than this on Drive       (default 30)
 #   BACKUP_DIR       local scratch dir                          (default /var/backups/sorento-db)
-#   LOCK_FILE        overlap lock                               (default /var/lock/backup-db-<name>.lock)
+#   LOCK_FILE        overlap lock                               (default /var/lib/sorento-backup/backup-db-<name>.lock)
 #   HC_BACKUP_URL    Healthchecks.io check URL; unset = no pings
 #   BACKUP_ENCRYPT   empty (default, off) or "age"
 #   AGE_RECIPIENT    age public key (age1...), required when BACKUP_ENCRYPT=age
+#
+# The env file must be owned by the running user and not group/other writable.
 #
 # Exit codes: 0 ok, 2 config, 3 dump, 4 gzip verify, 5 encrypt, 6 upload, 7 prune, 75 already running.
 
@@ -24,7 +26,13 @@ set -euo pipefail
 umask 077
 
 BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/sorento-backup/backup.env}"
-if [ -f "$BACKUP_ENV_FILE" ]; then
+if [ -e "$BACKUP_ENV_FILE" ]; then
+  # Sourced as shell code, so only a file nobody else can write.
+  if [ ! -f "$BACKUP_ENV_FILE" ] || [ ! -O "$BACKUP_ENV_FILE" ] \
+    || [ -n "$(find "$BACKUP_ENV_FILE" -maxdepth 0 -perm /022)" ]; then
+    echo "error: $BACKUP_ENV_FILE must be a regular file owned by $(id -un), not writable by group or others" >&2
+    exit 2
+  fi
   set -a
   # shellcheck disable=SC1090
   . "$BACKUP_ENV_FILE"
@@ -32,13 +40,14 @@ if [ -f "$BACKUP_ENV_FILE" ]; then
 fi
 
 BACKUP_NAME="${BACKUP_NAME:-sorento_crm}"
+[[ "$BACKUP_NAME" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "error: BACKUP_NAME must be letters, digits, _ or -" >&2; exit 2; }
 DB_CONTAINER="${DB_CONTAINER:-}"
 DB_USER="${DB_USER:-postgres}"
 DB_NAME="${DB_NAME:-postgres}"
 RCLONE_DEST="${RCLONE_DEST:-gdrive:db-backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/sorento-db}"
-LOCK_FILE="${LOCK_FILE:-/var/lock/backup-db-${BACKUP_NAME}.lock}"
+LOCK_FILE="${LOCK_FILE:-/var/lib/sorento-backup/backup-db-${BACKUP_NAME}.lock}"
 HC_BACKUP_URL="${HC_BACKUP_URL:-}"
 BACKUP_ENCRYPT="${BACKUP_ENCRYPT:-}"
 AGE_RECIPIENT="${AGE_RECIPIENT:-}"
@@ -76,7 +85,6 @@ STARTED=1
 hc_ping /start
 log "start dest=$RCLONE_DEST retention=${RETENTION_DAYS}d encrypt=${BACKUP_ENCRYPT:-off}"
 
-[[ "$BACKUP_NAME" =~ ^[A-Za-z0-9_-]+$ ]] || die 2 "BACKUP_NAME must be letters, digits, _ or -"
 [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] && [ "$RETENTION_DAYS" -ge 1 ] || die 2 "RETENTION_DAYS must be a whole number >= 1"
 case "$BACKUP_ENCRYPT" in
   "") ;;
@@ -114,8 +122,9 @@ fi
 rclone copy "$UPLOAD" "$RCLONE_DEST" || die 6 "rclone copy to $RCLONE_DEST failed"
 log "uploaded $(basename "$UPLOAD")"
 
-# Prune only this box's dumps (prefix filter, top level only), and only after a good upload.
-rclone delete "$RCLONE_DEST" --max-depth 1 --min-age "${RETENTION_DAYS}d" --include "${BACKUP_NAME}_*" \
+# Prune only this job's dumps (name + stamp, top level only), and only after a good upload.
+# On Google Drive, rclone moves them to the Drive trash; Google empties it after 30 days.
+rclone delete "$RCLONE_DEST" --max-depth 1 --min-age "${RETENTION_DAYS}d" --include "${BACKUP_NAME}_[0-9]*Z.sql.gz*" \
   || die 7 "rclone prune failed (today's upload is on Drive)"
 log "pruned older than ${RETENTION_DAYS}d"
 
