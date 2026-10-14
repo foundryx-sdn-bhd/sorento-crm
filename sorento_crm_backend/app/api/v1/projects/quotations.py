@@ -48,6 +48,7 @@ from app.schemas.projects import (
     QuotationRecomputeResponse,
     SeriesProductPricingUpdate,
     SeriesProductRowResponse,
+    SeriesSetRowResponse,
 )
 from app.services import project_pricing_service as pricing
 from app.services.error_handler import AppException
@@ -274,6 +275,7 @@ def _quotation_for_edit(db: Session, quotation_id: str, current_user: dict):
 async def judge_draft_line(
     quotation_id: str,
     product_id: Optional[str] = Query(None),
+    product_set_id: Optional[str] = Query(None),
     unit_price: Optional[str] = Query(None),
     _user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),
@@ -309,6 +311,46 @@ async def judge_draft_line(
                 status_code=404, message="Quotation not found.", code="quotation_not_found"
             )
 
+        price: Optional[Decimal] = None
+        if unit_price:
+            try:
+                price = Decimal(unit_price)
+            except InvalidOperation:
+                price = None
+
+        if product_set_id:
+            # A set draft: the same two rules the save runs, on the set's own series row and
+            # the company default. A set the company scope cannot see judges as not in series.
+            from app.models.product_set import ProductSet
+            from app.services import product_set_service
+
+            product_set = (
+                db.query(ProductSet).filter(ProductSet.id == product_set_id).first()
+            )
+            in_series = product_set is not None and pricing.is_set_in_series(
+                db, quotation.series_id, product_set.id
+            )
+            if product_set is None and not quotation.series_id:
+                in_series = True
+            floor = (
+                pricing.resolve_set_floor(
+                    db,
+                    company_id=acting_company_id(db),
+                    product_set=product_set,
+                    list_price=product_set_service.resolve_set_price(product_set).resolved,
+                    series_id=quotation.series_id,
+                )
+                if product_set is not None
+                else None
+            )
+            below = bool(floor and price is not None and price < floor.value)
+            return {
+                "is_non_standard": not in_series,
+                "is_below_floor": below,
+                "floor_value": floor.value if floor else None,
+                "floor_level": floor.level if floor else None,
+            }
+
         product = (
             db.query(Product).filter(Product.id == product_id).first()
             if product_id
@@ -319,13 +361,6 @@ async def judge_draft_line(
         in_series = pricing.is_in_series(
             db, series_id=quotation.series_id, product=product
         )
-
-        price: Optional[Decimal] = None
-        if unit_price:
-            try:
-                price = Decimal(unit_price)
-            except InvalidOperation:
-                price = None
 
         floor = pricing.resolve_floor(
             db,
@@ -899,6 +934,82 @@ async def remove_series_product(
                 status_code=404,
                 message="That product is not in this series.",
                 code="series_product_not_found",
+            )
+        db.commit()
+        return Response(status_code=204)
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.get(
+    "/config/series/{series_id}/sets/rows",
+    response_model=ListResponse[SeriesSetRowResponse],
+)
+async def list_series_set_rows(
+    series_id: str,
+    _user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    """The series' product sets with their price, percentage and derived floor."""
+    try:
+        validate_uuid_path(series_id, resource="Series")
+        _series_or_404(db, series_id)
+        return _envelope(pricing.series_set_rows(db, series_id))
+    except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.patch(
+    "/config/series/{series_id}/sets/{product_set_id}",
+    response_model=SeriesSetRowResponse,
+)
+async def update_series_set_pricing(
+    series_id: str,
+    product_set_id: str,
+    payload: SeriesProductPricingUpdate,
+    _user: dict = Depends(require_permission(CONFIG_EDIT)),
+    db: Session = Depends(get_db),
+):
+    """Add a set to the series or set its price and percentage (an upsert)."""
+    try:
+        validate_uuid_path(series_id, resource="Series")
+        validate_uuid_path(product_set_id, resource="Product set")
+        series = _series_or_404(db, series_id)
+        row = pricing.set_series_set_pricing(
+            db,
+            series=series,
+            product_set_id=product_set_id,
+            selling_price=payload.selling_price,
+            max_discount_pct=payload.max_discount_pct,
+        )
+        db.commit()
+        return row
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.delete(
+    "/config/series/{series_id}/sets/{product_set_id}",
+    status_code=204,
+)
+async def remove_series_set(
+    series_id: str,
+    product_set_id: str,
+    _user: dict = Depends(require_permission(CONFIG_EDIT)),
+    db: Session = Depends(get_db),
+):
+    """Take one set off the series."""
+    try:
+        validate_uuid_path(series_id, resource="Series")
+        validate_uuid_path(product_set_id, resource="Product set")
+        series = _series_or_404(db, series_id)
+        if not pricing.remove_series_set(db, series=series, product_set_id=product_set_id):
+            raise AppException(
+                status_code=404,
+                message="That set is not in this series.",
+                code="series_set_not_found",
             )
         db.commit()
         return Response(status_code=204)

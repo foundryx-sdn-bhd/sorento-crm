@@ -92,6 +92,20 @@ def _cell(state: str, row: Optional[Any], candidates: List[Dict[str, Any]]) -> D
     }
 
 
+def line_product_id(line: Any) -> Optional[str]:
+    """The product whose files a line shows: its own, or for a SET line the driver part's.
+
+    The driver is read from the parts frozen on the line, so the picture of a quoted set does
+    not move when the set master is edited.
+    """
+    if line.product_id:
+        return str(line.product_id)
+    for part in getattr(line, "set_parts_snapshot", None) or []:
+        if part.get("is_driver"):
+            return str(part["product_id"])
+    return None
+
+
 def line_images(
     db: Session,
     lines: Sequence[Any],
@@ -115,7 +129,7 @@ def line_images(
     if not lines:
         return {}
 
-    product_ids = [line.product_id for line in lines if line.product_id]
+    product_ids = [pid for pid in (line_product_id(line) for line in lines) if pid]
     files = images.files_for(db, product_ids)
     photos = images.images_for(db, product_ids, files=files)
 
@@ -142,8 +156,9 @@ def line_images(
     cells: Dict[str, Dict[str, Any]] = {}
     for line in lines:
         key = str(line.id)
-        product_files = files.get(str(line.product_id), []) if line.product_id else []
-        photo = photos.get(str(line.product_id)) if line.product_id else None
+        pid = line_product_id(line)
+        product_files = files.get(str(pid), []) if pid else []
+        photo = photos.get(str(pid)) if pid else None
         visible = photo is not None and photo.state != images.OFF_CATALOG
         pickable = visible and str(line.version_id) not in frozen
         photo_candidates = [_candidate(f) for f in photo.candidates] if pickable else []
@@ -155,11 +170,11 @@ def line_images(
         if stamped:
             photo_cell = _cell(images.CHOSEN, on_file.get(stamped), photo_candidates)
             photo_cell["attachment_id"] = stamped
-        elif not line.product_id or photo is None:
+        elif not pid or photo is None:
             photo_cell = images.serialize(
                 images.OFF_CATALOG_IMAGE
-                if not line.product_id
-                else images.ProductImage(product_id=str(line.product_id), state=images.NO_PHOTOS)
+                if not pid
+                else images.ProductImage(product_id=str(pid), state=images.NO_PHOTOS)
             )
             photo_cell["candidates"] = []
         elif photo.state == images.CHOSEN and photo.attachment_id:

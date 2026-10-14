@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.models.lookup import LookupOption, LookupSet
 from app.models.product import Product
+from app.models.product_set import ProductSet
 from app.models.projects import (
     OUTCOME_LOST,
     OUTCOME_OPEN,
@@ -64,6 +65,7 @@ _BREACH_ATTR = "_breach_events"
 
 LINE_FIELDS = (
     "product_id",
+    "product_set_id",
     "product_code_snapshot",
     "description_snapshot",
     "image_attachment_id",
@@ -372,6 +374,8 @@ def revise(
                 company_id=quotation.company_id,
                 version_id=nxt.id,
                 product_id=line.product_id,
+                product_set_id=line.product_set_id,
+                set_parts_snapshot=line.set_parts_snapshot,
                 product_code_snapshot=line.product_code_snapshot,
                 description_snapshot=line.description_snapshot,
                 list_price_snapshot=line.list_price_snapshot,
@@ -511,6 +515,47 @@ def _snapshot_product(db: Session, line: ProjectQuotationLine, product: Product)
     # See project_quotation_image_service.freeze_version_images.
 
 
+def _snapshot_set(
+    db: Session, line: ProjectQuotationLine, product_set: ProductSet, *, new_pick: bool
+) -> None:
+    """Freeze what the set looked like when it was quoted, as ONE line (SET-QUOTE-LINE).
+
+    Code, name and list price follow `_snapshot_product`. The PARTS are written only when the
+    set is newly picked: a later edit of the set master never rewrites what was quoted (Q5 a),
+    and the SO draft splits the line from this frozen copy. They are not shown on the line;
+    they fill a blank `complete_set` so the printed documents carry them.
+    """
+    from app.services import product_set_service
+
+    line.product_code_snapshot = product_set.set_code
+    line.description_snapshot = line.description_snapshot or product_set.name
+    line.list_price_snapshot = product_set_service.resolve_set_price(product_set).resolved
+    if line.uom is None:
+        line.uom = "SET"
+    if not new_pick:
+        return
+
+    driver = product_set_service.driver_member(db, product_set.id)
+    members = sorted(product_set.members, key=lambda m: m.sort_order or 0)
+    line.set_parts_snapshot = [
+        {
+            "product_id": m.product_id,
+            "product_code": m.product.product_code,
+            "description": m.product.description or m.product.product_name,
+            "quantity": format(Decimal(m.quantity).normalize(), "f"),
+            "is_driver": driver is not None and m.id == driver.id,
+        }
+        for m in members
+    ]
+    if not line.complete_set:
+        line.complete_set = " + ".join(
+            m.product.product_code
+            if Decimal(m.quantity) == 1
+            else f"{Decimal(m.quantity).normalize():f} x {m.product.product_code}"
+            for m in members
+        )[:100]
+
+
 def _uom_code(db: Session, uom_id: Optional[str]) -> Optional[str]:
     if not uom_id:
         return None
@@ -544,6 +589,7 @@ def _apply_guardrails(
     line: ProjectQuotationLine,
     quotation: ProjectQuotation,
     product: Optional[Product],
+    product_set: Optional[ProductSet] = None,
     membership: Optional["pricing.SeriesMembership"] = None,
     series_pricing: Optional[Dict[str, tuple]] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -563,21 +609,42 @@ def _apply_guardrails(
     # Off-catalog is ALWAYS non-standard (AC-E5), series or no series: "we quoted
     # something that is not in our catalogue" is the case the alert exists for, and a
     # project that never nominated a series must not silently excuse it.
-    line.is_non_standard = product is None or not pricing.is_in_series(
-        db,
-        series_id=quotation.series_id,
-        product=product,
-        membership=membership,
-    )
-
-    floor = pricing.resolve_floor(
-        db,
-        company_id=quotation.company_id,
-        product=product,
-        list_price=line.list_price_snapshot,
-        series_id=quotation.series_id,
-        series_pricing=series_pricing,
-    )
+    if line.product_set_id:
+        # A set is standard only by its own `series_sets` row; its floor is the series row, else
+        # the company default alone (Q4 b).
+        line.is_non_standard = not pricing.is_set_in_series(
+            db, quotation.series_id, line.product_set_id
+        )
+        if product_set is None:
+            product_set = (
+                db.query(ProductSet).filter(ProductSet.id == line.product_set_id).first()
+            )
+        floor = (
+            pricing.resolve_set_floor(
+                db,
+                company_id=quotation.company_id,
+                product_set=product_set,
+                list_price=line.list_price_snapshot,
+                series_id=quotation.series_id,
+            )
+            if product_set is not None
+            else None
+        )
+    else:
+        line.is_non_standard = product is None or not pricing.is_in_series(
+            db,
+            series_id=quotation.series_id,
+            product=product,
+            membership=membership,
+        )
+        floor = pricing.resolve_floor(
+            db,
+            company_id=quotation.company_id,
+            product=product,
+            list_price=line.list_price_snapshot,
+            series_id=quotation.series_id,
+            series_pricing=series_pricing,
+        )
     if floor is None:
         line.floor_value_applied = None
         line.floor_level_applied = None
@@ -658,6 +725,21 @@ def assert_line_picks(
         line.product_id if line is not None else None
     )
     product_unchanged = line is not None and str(product_id or "") == str(line.product_id or "")
+    set_id = payload["product_set_id"] if "product_set_id" in payload else (
+        line.product_set_id if line is not None else None
+    )
+    if set_id and not product_id:
+        # A set line's files are its DRIVER part's product's. A set that is being picked now
+        # (not yet frozen on the line) reads the driver live.
+        from app.services import product_set_service, project_quotation_image_service
+
+        stored = line is not None and str(line.product_set_id or "") == str(set_id)
+        if stored:
+            product_id = project_quotation_image_service.line_product_id(line)
+        else:
+            driver = product_set_service.driver_member(db, str(set_id))
+            product_id = driver.product_id if driver else None
+        product_unchanged = stored
     for field, is_drawing, code, word in _PICKS:
         if field not in payload or not payload[field]:
             continue
@@ -708,10 +790,41 @@ def _write_line(
     """
     # A different product's photo or drawing cannot be this one's: a product change that does
     # not send picks of its own clears the stored ones, in every path that writes a line.
-    if (
-        line is not None
-        and "product_id" in payload
-        and str(payload["product_id"] or "") != str(line.product_id or "")
+    if payload.get("product_id") and payload.get("product_set_id"):
+        raise AppException(
+            status_code=422,
+            message="A line is a product or a product set, not both.",
+            code="quotation_line_one_target",
+        )
+    # Naming one target moves the line off the other, so a product pick on a set line (or the
+    # reverse) cannot trip the one-target CHECK.
+    if payload.get("product_id") and "product_set_id" not in payload:
+        payload = {**payload, "product_set_id": None}
+    elif payload.get("product_set_id") and "product_id" not in payload:
+        payload = {**payload, "product_id": None}
+    prior_set_id = line.product_set_id if line is not None else None
+    # Checked BEFORE the line is added to the session, so a bad id never reaches the FK.
+    # Through the company-scoped session, so another company's set is as absent as none.
+    named_set = (
+        db.query(ProductSet).filter(ProductSet.id == str(payload["product_set_id"])).first()
+        if payload.get("product_set_id")
+        else None
+    )
+    if payload.get("product_set_id") and named_set is None:
+        raise AppException(
+            status_code=404,
+            message="That product set was not found.",
+            code="product_set_not_found",
+        )
+    if line is not None and (
+        (
+            "product_id" in payload
+            and str(payload["product_id"] or "") != str(line.product_id or "")
+        )
+        or (
+            "product_set_id" in payload
+            and str(payload["product_set_id"] or "") != str(line.product_set_id or "")
+        )
     ):
         payload = {
             **{field: None for field, *_rest in _PICKS},
@@ -762,9 +875,30 @@ def _write_line(
         if line.product_id
         else None
     )
+    product_set = None
+    if line.product_set_id:
+        new_pick = str(line.product_set_id) != str(prior_set_id or "")
+        product_set = named_set or (
+            db.query(ProductSet).filter(ProductSet.id == line.product_set_id).first()
+        )
+        if product_set is None:
+            raise AppException(
+                status_code=404,
+                message="That product set was not found.",
+                code="product_set_not_found",
+            )
+        if new_pick and not product_set.is_active:
+            raise AppException(
+                status_code=422,
+                message="That product set is inactive.",
+                code="quotation_line_set_inactive",
+            )
+        _snapshot_set(db, line, product_set, new_pick=new_pick)
+    else:
+        line.set_parts_snapshot = None
     if product is not None:
         _snapshot_product(db, line, product)
-    elif not line.description_snapshot:
+    elif product_set is None and not line.description_snapshot:
         raise AppException(
             status_code=422,
             message="A custom item needs a description.",
@@ -776,7 +910,9 @@ def _write_line(
     ).quantize(_CENTS)
 
     db.flush()
-    event = _apply_guardrails(db, line=line, quotation=quotation, product=product)
+    event = _apply_guardrails(
+        db, line=line, quotation=quotation, product=product, product_set=product_set
+    )
     setattr(line, _BREACH_ATTR, [event] if event else [])
 
     db.flush()
@@ -1324,6 +1460,8 @@ def serialize_lines(
             "id": line.id,
             "version_id": line.version_id,
             "product_id": line.product_id,
+            "product_set_id": line.product_set_id,
+            "set_parts": list(line.set_parts_snapshot or []),
             "product_code": line.product_code_snapshot,
             "description": line.description_snapshot,
             "list_price": line.list_price_snapshot,

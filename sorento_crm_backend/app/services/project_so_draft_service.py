@@ -144,6 +144,7 @@ SPLIT_BY_MODES = (SPLIT_BY_AREA, SPLIT_BY_DELIVERY_DATE, SPLIT_BY_DELIVERY_MONTH
 _DATE_GROUPING_ORIGINS = frozenset({GROUPING_DELIVERY_DATE, GROUPING_DELIVERY_MONTH})
 
 EXPLOSION_PACKAGE = "package"
+EXPLOSION_SET = "set"
 EXPLOSION_QUOTATION = "quotation"
 EXPLOSION_NONE = "none"
 
@@ -1175,6 +1176,26 @@ class ProjectSODraftService:
         )
         if package is not None:
             return package
+
+        # A quoted SET line carries its parts frozen at quote time: the driver at the quoted
+        # rate, the others at zero, so the set's price is counted once.
+        if quoted is not None and quoted.product_set_id and quoted.set_parts_snapshot:
+            return _Explosion(
+                components=[
+                    _Component(
+                        product_id=part["product_id"],
+                        code=part["product_code"],
+                        description=part.get("description"),
+                        uom=None,
+                        unit_price=parent_price if part.get("is_driver") else _ZERO,
+                        numerator=_dec(part["quantity"], Decimal("1")),
+                        denominator=Decimal("1"),
+                        quotation_line_id=quoted.id,
+                    )
+                    for part in quoted.set_parts_snapshot
+                ],
+                source=EXPLOSION_SET,
+            )
 
         fallback = self._quotation_components(source, quotation_version)
         if fallback is not None and fallback.components:
