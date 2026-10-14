@@ -73,7 +73,7 @@ itself runs in the shared service. These are the CRM-side criteria.
 - **AC-DH44** A non-dry push with `"backfill": true` runs no cancel relink
   (`_run_cancel_relink_hook`), so no Cancel SO group is re-decided and no cancel reaction starts.
   Without the flag (or with `false`) the relink runs on the numbers the DOs name, as before.
-- **AC-DH45** A backfill push adds no `email_outbox` row through the cancel reactions (OI
-  retirement, handover, purchasing email); a plain push still reaches them.
+- **AC-DH45** A backfill push saves no Transfer to Cancel SO proposal for CS (the #1679 cancel
+  reaction) and adds no `email_outbox` row; a plain push still saves the proposal.
 - **AC-DH46** A backfill push queues no embedding work at all for its DOs or lines (no listener
   event, no bulk insert). A plain push still queues them through the listener.

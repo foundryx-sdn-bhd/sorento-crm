@@ -5,8 +5,8 @@ UAC:  documentation/plans/autocount/do-history-backfill-13oct-acceptance-criteri
 
 The shared service replays AutoCount DOs from 2023-09-01 with `"backfill": true` on the envelope.
 Old DO quantities must not re-decide key-less Cancel SO groups, so a backfill batch runs no
-cancel relink and none of its reactions (OI retirement, the handover / purchasing email, the
-planning change on the CS board). It also queues no embedding work: about 1.2M events of
+cancel relink and none of its reactions (since #1679: the pending Transfer to Cancel SO
+proposal and the planning change on the CS board; before it, OI retirement and the email). It also queues no embedding work: about 1.2M events of
 OpenAI spend for history nobody searches. A plain push keeps both, as before.
 """
 from __future__ import annotations
@@ -85,38 +85,38 @@ def test_backfill_batch_runs_no_cancel_relink(env, monkeypatch):
     assert calls == {"relink": [], "hooks": []}
 
 
-def _email_on_retire(monkeypatch):
-    """The real cancel hooks run; the OI retirement they start (the #1530 board path, which
-    queues the handover and the purchasing email) is doubled by one email_outbox row."""
-    from app.services import project_order_inquiry_service as poi
+def _proposals(monkeypatch) -> list:
+    """The real cancel hooks run. Since #1679 (CANCEL-STOP-AT-SO) a line the relink finds fully
+    cancelled gets Transfer to Cancel SO saved as a pending decision for CS on the board
+    (`propose_autocount_cancel`); that is the reaction recorded here."""
+    from app.services import project_line_draft_service as drafts
 
     def relink(db, *, company_id, numbers):
         return Derived(newly_cancelled=[("00000000-0000-0000-0000-00000000dbq1", "ZZXS-DBQ1")])
 
-    def retire(self, cancelled, actor_user_id=None):
-        self.db.add(EmailOutbox(event_key="ZZDBQ.handover", recipient_email="zzdbq@test.com",
-                                subject="ZZDBQ handover"))
-        return len(cancelled)
-
+    saved = []
     monkeypatch.setattr(ingest_route, "relink_cancels_for_orders", relink)
-    monkeypatch.setattr(poi.ProjectOrderInquiryService, "retire_rows_for_cancelled_lines", retire)
-    monkeypatch.setattr(poi, "flag_rows_for_cancelled_lines", lambda db, ids: None)
+    monkeypatch.setattr(drafts, "propose_autocount_cancel",
+                        lambda db, line_id, doc_no, *, actor_user_id: saved.append(
+                            (line_id, doc_no)) or True)
+    monkeypatch.setattr(drafts, "withdraw_autocount_cancel", lambda db, ids: 0)
+    return saved
 
 
-def test_backfill_batch_adds_no_email_outbox_row(env, monkeypatch):
-    """AC-DH45: nothing reaches purchasing or the handover queue."""
-    _email_on_retire(monkeypatch)
+def test_backfill_batch_saves_no_cancel_proposal_and_no_email(env, monkeypatch):
+    """AC-DH45: no Transfer to Cancel SO lands on the CS board, nothing reaches email_outbox."""
+    saved = _proposals(monkeypatch)
     before = _outbox_rows(env)
     _records(_post(env, [_record()], backfill=True))
+    assert saved == []
     assert _outbox_rows(env) == before
 
 
-def test_plain_batch_still_reaches_the_handover_email(env, monkeypatch):
-    """AC-DH45 baseline: the same double writes its row on a plain push."""
-    _email_on_retire(monkeypatch)
-    before = _outbox_rows(env)
+def test_plain_batch_still_reaches_the_cancel_proposal(env, monkeypatch):
+    """AC-DH45 baseline: the same relink result saves the proposal on a plain push."""
+    saved = _proposals(monkeypatch)
     _records(_post(env, [_record()]))
-    assert _outbox_rows(env) == before + 1
+    assert saved == [("00000000-0000-0000-0000-00000000dbq1", "ZZXS-DBQ1")]
 
 
 def test_backfill_batch_queues_no_embedding_work(env):
