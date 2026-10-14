@@ -40,10 +40,10 @@ only in the env file on the box (mode 600).
 | 0 | ok | ok |
 | 2 | bad config, or env file not root-only | bad config, env file or work dir not root-only, or encrypted dump without `AGE_IDENTITY` |
 | 3 | pg_dump failed | no dump on Drive, download or gzip check failed |
-| 4 | `gzip -t` failed | throwaway container did not start or never got ready |
+| 4 | `gzip -t` failed | throwaway container did not start or never got ready, or less than 4x the dump free on the work dir or the docker root |
 | 5 | `age` failed | restore failed (psql prints the line) |
 | 6 | rclone upload failed | a sanity table is empty, or a count failed |
-| 7 | prune failed (today's upload is on Drive) | |
+| 7 | prune failed (today's upload is on Drive) | a deploy held the deploy lock for 60 min; nothing was restored |
 | 75 | another run holds the lock; skipped, no ping | same |
 
 Every non-zero code except 75 pings `/fail`.
@@ -85,8 +85,12 @@ Write down, for step 2:
   hand once `RETENTION_DAYS` of new dumps exist (step 8).
 - the Postgres image tag (`postgres:17...` or `pgvector/pgvector:pg17`). The restore test reads the
   major version from the dump itself, so this is only a cross-check.
-- free disk: the restore test needs about 3x the gzipped dump size free on `/var/lib` and
-  `/var/lib/docker` while it runs.
+- free disk and memory: the restore test refuses to start (exit 4) unless both the work dir
+  (`/var/lib`) and the docker root (`docker info --format '{{.DockerRootDir}}'`) have at least 4x the
+  gzipped dump free; they usually sit on the same disk as live Postgres. `df -h /var/lib "$(docker info
+  --format '{{.DockerRootDir}}')"` and `ls -l` of the newest dump tell you now whether it will pass.
+  The throwaway container is capped at 2 GB of memory (`RESTORE_MEMORY`), so `free -g` must show
+  that much available at 04:30 on a Sunday without squeezing live Postgres.
 
 - Check: you have every value above. If `rclone lsf` errors, the Drive token is broken today:
   `rclone config reconnect gdrive:` first (it prints a URL; finish it from your laptop).
@@ -178,6 +182,26 @@ EOF
   Healthchecks.io shows the 03:00 ping.
 - Rollback: `sudo crontab /root/crontab.bak.<date>` (puts the old script back exactly).
 
+### The Sunday restore window
+
+**No deploys between 04:30 and 06:00 on Sundays** (the restore-test window; later if step 7 adds
+more restore lines). The box has 16 GB and on 10 Sep the kernel OOM-killed live Postgres, so the
+restore test is built to lose any fight for resources:
+
+- the throwaway container is capped at 2 GB memory and 2 GB memory+swap (`RESTORE_MEMORY`), 1 CPU,
+  and has `--oom-score-adj 1000`, so under memory pressure the kernel kills it before anything else;
+- the dump is streamed into it at `nice 19` and idle IO priority;
+- it takes a **shared** lock on `/opt/sorento-crm2/.deploy.lock`. Once lane HA-MEM-DEPLOY-GUARD
+  makes `blue_green_deploy.sh` take the same lock exclusively, a deploy waits for a running restore
+  test, and a restore test waits up to 60 min for a running deploy, then gives up (exit 7, `/fail`).
+  Until that lane is merged the lock does not stop a deploy, so the rule above is the only guard.
+
+- Check: during a run, `docker inspect $(docker ps -q --filter name=restore-test-) --format
+  '{{.HostConfig.Memory}} {{.HostConfig.OomScoreAdj}} {{.HostConfig.NanoCpus}}'` prints
+  `2147483648 1000 1000000000`.
+- Rollback: none needed. To pause restore tests (for example a long maintenance), comment out the
+  `restore-test.sh` cron line and pause the Healthchecks check.
+
 ## Step 4. First restore test by hand (20 min)
 
 ```bash
@@ -189,7 +213,11 @@ The first run pulls `pgvector/pgvector:pg<major>` (about 160 MB).
 
 - Check: `exit=0`; the log shows `rows users=<n>` and the other tables with plausible numbers (compare
   with the CRM screens), `latest audit_logs.changed_at=` within the last day, and
-  `done: ... restores cleanly`. The `docker ps -a` line prints nothing. `crm-restore-test` is green.
+  `done: ... restores cleanly`. Above those: `deploy lock held (shared)` and two `disk ok` lines. The
+  `docker ps -a` line prints nothing. `crm-restore-test` is green.
+- If it fails with exit 4 and `only <n> bytes free on <dir>`: free disk on that filesystem, or move
+  `RESTORE_WORK_DIR` to a bigger one. Never lower `RESTORE_DISK_FACTOR` on the CRM box: the restored
+  DB shares the disk with live Postgres.
 - If it fails with `ERROR: role "<x>" does not exist`: add `<x>` to `RESTORE_ROLES` in the env file
   and run again. To list every role the dump needs at once:
 
@@ -269,7 +297,18 @@ rclone listremotes; sudo crontab -l
   from the CRM's dumps.
 - Healthchecks: `n8n-backup` and `n8n-restore-test` checks, as in step 0.
 - Then steps 2, 3 and 4 with these values. Use `03:20` for the cron so the boxes do not upload at
-  the same minute.
+  the same minute. The box has no `/opt/sorento-crm2`, so the restore test logs `no deploy lock
+  folder ... not waiting for deploys`: expected. Check `free -g` first; if less than 4 GB is
+  available, set `RESTORE_MEMORY=1g` in the env file.
+
+- Check: `sudo /opt/sorento-backup/backup-db.sh` ends with `done` and a new
+  `n8n_<stamp>Z.sql.gz` is in `gdrive:db-backups/n8n`; `sudo /opt/sorento-backup/restore-test.sh`
+  ends with `restores cleanly` and `rows workflow_entity=` matches the workflow count in the n8n
+  editor; both n8n checks on Healthchecks.io are green; `N8N_ENCRYPTION_KEY` is in the password
+  manager.
+- Rollback: `sudo crontab /root/crontab.bak.<date>` (or delete the two new cron lines), then
+  `sudo rm -rf /opt/sorento-backup /etc/sorento-backup /var/lib/sorento-backup /var/lib/sorento-restore-test`.
+  The n8n dumps already on Drive stay; delete `gdrive:db-backups/n8n` by hand if you want them gone.
 
 ## Step 7. Shared-service box (check first, then same pattern)
 
@@ -290,6 +329,16 @@ docker exec <pg container> psql -U <user> -Atc "select datname from pg_database 
   (then `30 5`, `30 6` for the next DBs). Running two at once is safe, only slower.
 - A non-Postgres store (MySQL, Mongo, a SQLite file): not covered here; tell crew which.
 - Healthchecks: one backup and one restore-test check per DB.
+- No `/opt/sorento-crm2` here either: `no deploy lock folder` in the restore log is expected. If this
+  box has its own deploy, add no deploys during the restore lines' times to that box's routine.
+
+- Check: for every DB, a hand run of both scripts (with `BACKUP_ENV_FILE=/etc/sorento-backup/<db>.env`
+  when there are several) ends with `done` and `restores cleanly`, the counts look like that service's
+  real data, a new `<BACKUP_NAME>_<stamp>Z.sql.gz` is in its own Drive folder, and its two
+  Healthchecks checks are green.
+- Rollback: `sudo crontab /root/crontab.bak.<date>` (or delete the new cron lines), then
+  `sudo rm -rf /opt/sorento-backup /etc/sorento-backup /var/lib/sorento-backup /var/lib/sorento-restore-test`.
+  Dumps already on Drive stay until you delete their folders by hand.
 
 ## Step 8. Clean up old-style dumps (after RETENTION_DAYS)
 
@@ -320,6 +369,7 @@ The weekly cron proves a dump restores. The drill proves a human can do it under
       `rclone copy gdrive:db-backups/<newest> . && age -d -i sorento-backup.agekey <newest> | gzip -t`.
 - [ ] n8n: `N8N_ENCRYPTION_KEY` is still in the password manager and matches the box.
 - [ ] `docker ps -a --filter name=restore-test-` prints nothing on every box.
+- [ ] No restore test in the last month failed with exit 7 (a deploy in the Sunday window); if one did, find out who deployed.
 - [ ] Note the date and result in the ops log.
 
 ## Restoring for real (the drill's reason to exist)

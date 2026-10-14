@@ -19,3 +19,10 @@
 - AC-10 `SANITY_LATEST=` (empty) skips the max() check.
 - AC-11 Prune and restore only match `<BACKUP_NAME>_<stamp>Z.sql.gz[.age]`, so a longer name sharing the prefix is never touched.
 - AC-12 Restore refuses a symlinked or foreign work dir, and removes containers and work dirs left by a killed run before starting.
+- AC-13 The restore container runs with `--memory` = `--memory-swap` = `RESTORE_MEMORY` (default 2g),
+  `--oom-score-adj 1000` and `--cpus 1`; the gzip | psql stream runs under `nice -n 19 ionice -c3`.
+- AC-14 The restore test holds a shared flock on `/opt/sorento-crm2/.deploy.lock` for its whole run;
+  while a deploy holds it exclusively the test retries, and after `DEPLOY_LOCK_WAIT` (default 3600 s)
+  exits 7 with `/fail` before downloading anything. No lock folder = no wait (n8n, shared-service).
+- AC-15 Less than 4x the downloaded dump free on the work dir or on the docker root = exit 4 with
+  `/fail`, before any container starts.

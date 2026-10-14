@@ -44,6 +44,13 @@ older than `RETENTION_DAYS`.
   compose says `postgres:15-alpine`, CI uses pg16, a plan note says prod is pg17. So the restore
   test reads the major from the dump's `-- Dumped from database version` line instead of trusting
   any of them, with `PG_MAJOR` as an override.
+- **The restore test must lose every resource fight** (crew audit, 14 Oct; the 16 GB CRM box
+  OOM-killed live Postgres on 10 Sep): container `--memory`/`--memory-swap` `RESTORE_MEMORY`
+  (default 2g), `--oom-score-adj 1000`, `--cpus 1`; the restore stream under `nice -n 19 ionice -c3`;
+  a disk preflight (4x the downloaded dump free on the work dir and the docker root, else exit 4);
+  a shared `flock` on `/opt/sorento-crm2/.deploy.lock`, retried for up to 60 min, else exit 7.
+  Lane HA-MEM-DEPLOY-GUARD makes `blue_green_deploy.sh` hold the same lock exclusively. The lock
+  file is created 644 and opened read-only so a non-root deploy user can lock it too.
 - Healthchecks pings never fail the backup: `curl -fsS -m 10 --retry 3 ... || true`.
 
 ## Not in scope

@@ -19,10 +19,22 @@
 #   RESTORE_WORK_DIR           download dir, must be a real dir owned by the running user (default /var/lib/sorento-restore-test)
 #   RESTORE_LOCK_FILE          overlap lock                        (default /var/lib/sorento-backup/restore-test-<name>.lock)
 #   RESTORE_READY_TIMEOUT      seconds to wait for Postgres        (default 120)
+#   RESTORE_MEMORY             memory cap (and swap cap) of the throwaway container (default 2g)
+#   RESTORE_DISK_FACTOR        free space needed on the work dir and on the docker root, as a
+#                              multiple of the downloaded dump      (default 4)
+#   DEPLOY_LOCK_FILE           shared with blue_green_deploy.sh     (default /opt/sorento-crm2/.deploy.lock;
+#                              skipped when its folder does not exist, as on the n8n box)
+#   DEPLOY_LOCK_WAIT           seconds to wait for a running deploy (default 3600)
+#   DEPLOY_LOCK_RETRY          seconds between lock attempts        (default 30)
 #   AGE_IDENTITY               age identity file, needed only for .age dumps
 #   HC_RESTORE_URL             Healthchecks.io check URL; unset = no pings
 #
-# Exit codes: 0 ok, 2 config, 3 no dump / download, 4 container, 5 restore, 6 sanity, 75 already running.
+# The box is shared with live Postgres (16 GB; live Postgres was OOM-killed on 10 Sep), so the
+# throwaway container is memory, swap and CPU capped and is the kernel's first OOM victim, the
+# restore stream runs at nice 19 / idle IO, and the run waits out any deploy.
+#
+# Exit codes: 0 ok, 2 config, 3 no dump / download, 4 container or not enough disk, 5 restore,
+# 6 sanity, 7 a deploy held the lock for DEPLOY_LOCK_WAIT, 75 already running.
 
 set -euo pipefail
 umask 077
@@ -54,6 +66,11 @@ SANITY_LATEST="${SANITY_LATEST-audit_logs.changed_at}"
 RESTORE_WORK_DIR="${RESTORE_WORK_DIR:-/var/lib/sorento-restore-test}"
 RESTORE_LOCK_FILE="${RESTORE_LOCK_FILE:-/var/lib/sorento-backup/restore-test-${BACKUP_NAME}.lock}"
 RESTORE_READY_TIMEOUT="${RESTORE_READY_TIMEOUT:-120}"
+RESTORE_MEMORY="${RESTORE_MEMORY:-2g}"
+RESTORE_DISK_FACTOR="${RESTORE_DISK_FACTOR:-4}"
+DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/opt/sorento-crm2/.deploy.lock}"
+DEPLOY_LOCK_WAIT="${DEPLOY_LOCK_WAIT:-3600}"
+DEPLOY_LOCK_RETRY="${DEPLOY_LOCK_RETRY:-30}"
 AGE_IDENTITY="${AGE_IDENTITY:-}"
 HC_RESTORE_URL="${HC_RESTORE_URL:-}"
 
@@ -108,6 +125,28 @@ if [ -n "$SANITY_LATEST" ]; then
     || die 2 "SANITY_LATEST must be table.column"
 fi
 [[ "$RESTORE_READY_TIMEOUT" =~ ^[0-9]+$ ]] || die 2 "RESTORE_READY_TIMEOUT must be seconds"
+[[ "$RESTORE_MEMORY" =~ ^[1-9][0-9]*[kmg]?$ ]] || die 2 "RESTORE_MEMORY must look like 2g or 1536m"
+[[ "$RESTORE_DISK_FACTOR" =~ ^[1-9][0-9]*$ ]] || die 2 "RESTORE_DISK_FACTOR must be a whole number >= 1"
+[[ "$DEPLOY_LOCK_WAIT" =~ ^[0-9]+$ ]] && [[ "$DEPLOY_LOCK_RETRY" =~ ^[1-9][0-9]*$ ]] \
+  || die 2 "DEPLOY_LOCK_WAIT and DEPLOY_LOCK_RETRY must be seconds"
+
+# Shared lock: restore tests may overlap each other, a deploy (exclusive) may not overlap either.
+# The fd stays open, so the lock is held until this script exits.
+if [ -d "$(dirname "$DEPLOY_LOCK_FILE")" ]; then
+  # 644 and opened read-only, so a non-root deploy user can lock the same file.
+  ( umask 022; : >> "$DEPLOY_LOCK_FILE" ) || die 2 "cannot create $DEPLOY_LOCK_FILE"
+  exec 8<"$DEPLOY_LOCK_FILE"
+  waited=0
+  until flock -s -n 8; do
+    [ "$waited" -lt "$DEPLOY_LOCK_WAIT" ] || die 7 "a deploy held $DEPLOY_LOCK_FILE for ${DEPLOY_LOCK_WAIT}s"
+    [ "$waited" -eq 0 ] && log "deploy in progress, waiting up to ${DEPLOY_LOCK_WAIT}s"
+    sleep "$DEPLOY_LOCK_RETRY"
+    waited=$((waited + DEPLOY_LOCK_RETRY))
+  done
+  log "deploy lock held (shared)"
+else
+  log "no deploy lock folder $(dirname "$DEPLOY_LOCK_FILE") on this box, not waiting for deploys"
+fi
 
 # The work dir holds a plaintext dump: it must be ours, not a symlink, and closed to others.
 mkdir -p "$RESTORE_WORK_DIR"
@@ -148,6 +187,18 @@ if [[ "$NEWEST" == *.age ]]; then
 fi
 gzip -t "$DUMP" || die 3 "gzip -t failed on $NEWEST"
 
+# Disk preflight: the restored DB lands on the docker root, which shares the disk with live Postgres.
+free_bytes() { df -PB1 "$1" | awk 'NR==2 {print $4}'; }
+DUMP_BYTES="$(wc -c < "$DUMP")"
+NEED=$((DUMP_BYTES * RESTORE_DISK_FACTOR))
+DOCKER_ROOT="$(docker info --format '{{.DockerRootDir}}')" || die 4 "docker info failed"
+for d in "$RESTORE_WORK_DIR" "$DOCKER_ROOT"; do
+  have="$(free_bytes "$d")" || die 4 "df $d failed"
+  [[ "$have" =~ ^[0-9]+$ ]] || die 4 "could not read free space on $d"
+  [ "$have" -ge "$NEED" ] || die 4 "only $have bytes free on $d, need $NEED (${RESTORE_DISK_FACTOR}x the dump)"
+  log "disk ok: $have bytes free on $d, need $NEED"
+done
+
 if [ -z "$PG_MAJOR" ]; then
   PG_MAJOR="$({ gzip -dc "$DUMP" || true; } | head -n 30 | sed -n 's/^-- Dumped from database version \([0-9][0-9]*\).*/\1/p' | head -n 1)"
   [ -n "$PG_MAJOR" ] || die 2 "could not read the Postgres version from the dump header; set PG_MAJOR"
@@ -161,6 +212,7 @@ log "throwaway container $CONTAINER from $IMAGE"
 PW="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 CONTAINER_STARTED=1
 docker run -d --name "$CONTAINER" --network none \
+  --memory "$RESTORE_MEMORY" --memory-swap "$RESTORE_MEMORY" --oom-score-adj 1000 --cpus 1 \
   -e POSTGRES_USER="$RESTORE_DB_USER" -e POSTGRES_PASSWORD="$PW" -e POSTGRES_DB="$RESTORE_DB" \
   "$IMAGE" >/dev/null || die 4 "docker run $IMAGE failed"
 
@@ -179,7 +231,8 @@ for r in $RESTORE_ROLES; do
 done
 
 log "restoring"
-gzip -dc "$DUMP" | docker exec -i "$CONTAINER" psql -X -q -v ON_ERROR_STOP=1 -U "$RESTORE_DB_USER" -d "$RESTORE_DB" >/dev/null \
+nice -n 19 ionice -c3 gzip -dc "$DUMP" \
+  | nice -n 19 ionice -c3 docker exec -i "$CONTAINER" psql -X -q -v ON_ERROR_STOP=1 -U "$RESTORE_DB_USER" -d "$RESTORE_DB" >/dev/null \
   || die 5 "restore of $NEWEST failed (see the psql error above)"
 log "restore ok"
 

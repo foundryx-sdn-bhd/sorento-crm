@@ -82,7 +82,7 @@ exec "$@"
     "df": r"""#!/usr/bin/env bash
 echo "df $*" >> "$FAKE_LOG"
 path="${@: -1}"
-avail=1000000000000
+avail="${FAKE_DF_AVAIL:-1000000000000}"
 [ -n "${FAKE_DF_LOW_PATH:-}" ] && [ "$path" = "$FAKE_DF_LOW_PATH" ] && avail=10
 echo "Filesystem 1-blocks Used Available Capacity Mounted"
 echo "fakefs 2000000000000 0 $avail 0% /"
@@ -717,3 +717,13 @@ def test_restore_disk_preflight_checks_both_paths(env):
     dfs = [c for c in calls(tmp) if c.startswith("df ")]
     assert any(c.endswith(e["RESTORE_WORK_DIR"]) for c in dfs)
     assert any(c.endswith(e["FAKE_DOCKER_ROOT"]) for c in dfs)
+
+
+def test_restore_disk_preflight_needs_exactly_four_times_the_dump(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    size = (tmp / "remote" / "db-backups" / "sorento_crm_20261014T030000Z.sql.gz").stat().st_size
+    r = run(RESTORE, e, FAKE_DF_AVAIL=4 * size - 1)
+    assert r.returncode == 4, r.stdout
+    r = run(RESTORE, e, FAKE_DF_AVAIL=4 * size)
+    assert r.returncode == 0, r.stdout + r.stderr
