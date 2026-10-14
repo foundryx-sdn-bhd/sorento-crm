@@ -2,7 +2,8 @@
 
 Status: Merge-ready pending crew (built, reviewer READY, reference run posted). Track M (crew lane PV2-EVAL, branch
 `crew/pv2-eval`, draft PR #1674 into crew/pv2; crew/pv2 8ae511217 merged in). Reference run REF-8ae511217 (v2 19/74
-conversations, v1 16/74; ideas env-blocked) on the PR; failure lists for PV2-FIX in `crew/state/reports/PV2-EVAL-failures-*`.
+conversations, v1 16/74; ideas env-blocked; 4 conversations hit Postgres 'out of shared memory' and were re-run:
+v2 2/4, v1 1/4) on the PR; failure lists for PV2-FIX in `crew/state/reports/PV2-EVAL-failures-*`.
 UAC: `pv2-eval-battery-14oct-acceptance-criteria.md` (beside this file).
 Behaviour card: crew ask a74982394, answered 14 Oct (all recommendations taken; v1 pinned to the prod v52 text).
 
