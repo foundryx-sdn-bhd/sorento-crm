@@ -14,6 +14,16 @@
 #
 # Required env: IMAGE_TAG (git SHA, set by CI).
 # Tracks active color in .active_color (default blue on first run).
+#
+# Guards (HA-MEM-DEPLOY-GUARD, documentation/runbooks/memory-and-deploy-guards.md):
+#   - memory: refuse to start the new colour when MemAvailable is below
+#     DEPLOY_MIN_AVAILABLE_MB (default 4500), so the overlap cannot OOM the box (10 Sep).
+#   - snapshot: pg_dump of the database before the new colour runs `alembic upgrade`;
+#     no snapshot, no migration. Kept SNAPSHOT_KEEP_MINUTES (default 48 h).
+#   - postgres: fail the deploy when the db container restarted, or Postgres crash-recovered
+#     (a killed backend makes the postmaster reinitialize WITHOUT a container restart), at
+#     any point during the deploy.
+# Tunables may be set on the box in .deploy.env next to docker-compose.yml (sourced below).
 
 set -euo pipefail
 
@@ -21,10 +31,104 @@ cd "$(dirname "$0")/.."   # repo root containing docker-compose.yml
 : "${IMAGE_TAG:?must be set to the git SHA pushed by CI}"
 export IMAGE_TAG
 
+# Owner-tunable knobs live on the box, never in the workflow: see the runbook.
+if [ -f .deploy.env ]; then
+  # shellcheck disable=SC1091
+  . ./.deploy.env
+fi
+
 UPSTREAMS_FILE="/etc/nginx/conf.d/sorento_upstreams.conf"
 DRAIN_SECONDS="${DRAIN_SECONDS:-30}"
 HEALTH_WAIT_TICKS="${HEALTH_WAIT_TICKS:-120}"   # 120 * 2s = 4 min max
 TICK_SECONDS=2
+# A new colour (backend + frontend + mcp) measured ~3.8 GB with gunicorn preload; the
+# default leaves ~0.7 GB headroom on top (PLAN-deploy-memory-and-ci-speed.md).
+DEPLOY_MIN_AVAILABLE_MB="${DEPLOY_MIN_AVAILABLE_MB:-4500}"
+MEMINFO_FILE="${MEMINFO_FILE:-/proc/meminfo}"
+DB_SERVICE="${DB_SERVICE:-db}"
+SNAPSHOT_DIR="${SNAPSHOT_DIR:-backups/pre-migrate}"
+SNAPSHOT_KEEP_MINUTES="${SNAPSHOT_KEEP_MINUTES:-2880}"   # 48 h
+DEPLOY_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# --- guards -------------------------------------------------------------------
+
+# MemAvailable in MB (the kernel's own estimate of what can be allocated without swapping).
+mem_available_mb() {
+  awk '/^MemAvailable:/ { printf "%d", $2 / 1024; found=1 } END { if (!found) exit 1 }' "$MEMINFO_FILE"
+}
+
+check_memory() {
+  local avail
+  if ! avail=$(mem_available_mb); then
+    echo "ERROR: memory guard could not read MemAvailable from ${MEMINFO_FILE}"; exit 1
+  fi
+  if [ "$avail" -lt "$DEPLOY_MIN_AVAILABLE_MB" ]; then
+    echo "ERROR: memory guard: ${avail} MB available, below DEPLOY_MIN_AVAILABLE_MB=${DEPLOY_MIN_AVAILABLE_MB}."
+    echo "       Refusing to start the ${NEW} colour: the blue/green overlap would push the box into the OOM killer."
+    echo "       Nothing was changed; ${ACTIVE} keeps serving. See documentation/runbooks/memory-and-deploy-guards.md."
+    exit 1
+  fi
+  echo "    memory guard: ${avail} MB available (minimum ${DEPLOY_MIN_AVAILABLE_MB} MB)"
+}
+
+DB_CID=""
+DB_BASELINE=""
+db_state() {
+  docker inspect --format='{{.RestartCount}} {{.State.StartedAt}}' "$1" 2>/dev/null || echo "gone"
+}
+
+record_postgres_baseline() {
+  DB_CID=$(docker compose ps -q "$DB_SERVICE" 2>/dev/null || true)
+  if [ -z "$DB_CID" ]; then
+    echo "ERROR: Postgres container '${DB_SERVICE}' not found; set DB_SERVICE in .deploy.env"; exit 1
+  fi
+  DB_BASELINE=$(db_state "$DB_CID")
+  echo "    postgres baseline: ${DB_SERVICE} restarts/started=${DB_BASELINE}"
+}
+
+# Fails (returns 1) when Postgres went down at any point since the deploy started.
+postgres_survived() {
+  local cid now crash
+  cid=$(docker compose ps -q "$DB_SERVICE" 2>/dev/null || true)
+  if [ "$cid" != "$DB_CID" ]; then
+    echo "ERROR: Postgres container ${DB_SERVICE} was replaced during the deploy"; return 1
+  fi
+  now=$(db_state "$cid")
+  if [ "$now" != "$DB_BASELINE" ]; then
+    echo "ERROR: Postgres container ${DB_SERVICE} restarted during the deploy (before: ${DB_BASELINE}, now: ${now})"
+    return 1
+  fi
+  # A killed backend (the 10 Sep OOM) makes the postmaster terminate every session and
+  # crash-recover in place: no container restart, same start time. Only the log shows it.
+  crash=$(docker logs --since "$DEPLOY_STARTED_AT" "$cid" 2>&1 \
+    | grep -E "all server processes terminated; reinitializing|was terminated by signal|database system was interrupted" || true)
+  if [ -n "$crash" ]; then
+    echo "ERROR: Postgres crash-recovered during the deploy:"
+    echo "$crash" | tail -5
+    return 1
+  fi
+  return 0
+}
+
+# Custom-format pg_dump of the whole database, taken inside the db container, written
+# atomically and checked with pg_restore --list. Owner-only files (customer data).
+take_snapshot() {
+  local ts file
+  ts=$(date -u +%Y%m%dT%H%M%SZ)
+  file="${SNAPSHOT_DIR}/pre-migrate-${ts}-${IMAGE_TAG}.dump"
+  mkdir -p "$SNAPSHOT_DIR"
+  chmod 700 "$SNAPSHOT_DIR"
+  if ! ( umask 077; docker compose exec -T "$DB_SERVICE" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "${file}.partial" ) \
+     || [ ! -s "${file}.partial" ] \
+     || ! docker compose exec -T "$DB_SERVICE" pg_restore --list < "${file}.partial" > /dev/null; then
+    rm -f "${file}.partial"
+    echo "ERROR: pre-migration snapshot failed; not starting ${NEW} (no migration has run, ${ACTIVE} keeps serving)"
+    exit 1
+  fi
+  mv "${file}.partial" "$file"
+  echo "    snapshot: ${file} ($(du -h "$file" | cut -f1))"
+  find "$SNAPSHOT_DIR" -maxdepth 1 -name 'pre-migrate-*.dump' -mmin "+${SNAPSHOT_KEEP_MINUTES}" -delete || true
+}
 
 ACTIVE=$(cat .active_color 2>/dev/null || echo blue)
 if [ "$ACTIVE" = "blue" ]; then
@@ -37,10 +141,21 @@ fi
 
 echo "==> Active=${ACTIVE} New=${NEW} IMAGE_TAG=${IMAGE_TAG}"
 
+echo "==> Recording Postgres state"
+record_postgres_baseline
+
 # 1. Pull new images (SHA-tagged) + worker + worker_fast (both use backend image)
 echo "==> Pulling images"
 docker compose --profile "${NEW}" pull "backend_${NEW}" "frontend_${NEW}" "mcp_${NEW}"
 docker compose pull worker worker_fast
+
+# 1b. Snapshot before anything can migrate (start.sh runs `alembic upgrade head`).
+echo "==> Pre-migration snapshot"
+take_snapshot
+
+# 1c. Memory guard, as late as possible before the overlap starts.
+echo "==> Memory guard"
+check_memory
 
 # 2. Bring up new color. start.sh runs `alembic upgrade head` before gunicorn
 #    so the new container only goes healthy after schema is at HEAD. If alembic
@@ -79,6 +194,13 @@ for svc in backend frontend mcp; do
     exit 1
   fi
 done
+
+# 3b. Never swap traffic onto a colour that came up while Postgres went down.
+if ! postgres_survived; then
+  echo "==> Stopping ${NEW} color: Postgres went down during startup; ${OLD} keeps serving"
+  docker compose stop "backend_${NEW}" "frontend_${NEW}" "mcp_${NEW}" || true
+  exit 1
+fi
 
 # 4. Atomic upstream swap + graceful nginx reload
 echo "==> Swapping nginx upstreams to ${NEW}"
@@ -187,5 +309,13 @@ docker compose rm -f "backend_${OLD}" "frontend_${OLD}" "mcp_${OLD}" || true
 # are always kept regardless of age.
 echo "${NEW}" > .active_color
 docker image prune -af --filter "until=48h" >/dev/null || true
+
+# 9. A deploy during which Postgres went down is a failed deploy, even though traffic
+#    is on the new colour: the 10 Sep OOM reported success.
+echo "==> Checking Postgres stayed up"
+if ! postgres_survived; then
+  echo "ERROR: deploy FAILED: Postgres went down during the deploy. ${NEW} is serving; check the app and the db logs."
+  exit 1
+fi
 
 echo "==> Deploy complete. Active=${NEW}"
