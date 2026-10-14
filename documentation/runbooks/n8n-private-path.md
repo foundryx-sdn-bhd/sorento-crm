@@ -36,6 +36,7 @@ Never write the real values into the repo, a PR or a comment.
 | `<CRM_TS_IP>` | the CRM box's Tailscale address (`tailscale ip -4` on the CRM box) |
 | `<N8N_TS_IP>` | the n8n box's Tailscale address (`tailscale ip -4` on the n8n box) |
 | `<OWNER_TS_IP>` | your laptop's Tailscale address |
+| `<N8N_MAIN>` | the main n8n container's name on the n8n box (step 0.4) |
 | `<N8N_DIR>` | the directory holding the n8n box's `docker-compose.yml` (step 3 finds it) |
 | `crm-private.internal` | a name that exists only in the n8n containers' `/etc/hosts`. Not a secret, and not a real DNS name: `.internal` is reserved for private use and never resolves publicly. |
 
@@ -43,7 +44,7 @@ Never write the real values into the repo, a PR or a comment.
 
 | Step | What | Time | Breaks anything if wrong? |
 | --- | --- | --- | --- |
-| 0 | Pre-checks on the CRM box (nginx listen, certificate, pgbouncer binding) | 10 min | no, read-only |
+| 0 | Pre-checks on the CRM box (nginx listen, certificate, pgbouncer binding), and an export of the live n8n workflows | 20 min | no, read-only |
 | 1 | Tailscale policy, then both boxes join | 15 min | no, if the policy keeps `autogroup:member` as written |
 | 2 | CRM box: let tailnet traffic in (nginx 8765 allowlist, ufw, pgbouncer) | 10 min | no, adds access only |
 | 3 | n8n box: `extra_hosts` | 10 min | yes, n8n restarts; keep the rollback block open |
@@ -131,6 +132,69 @@ docker ps --format '{{.Names}}\t{{.Ports}}' | grep 6432
 - `127.0.0.1:6432->6432/tcp` (after edge step 4): step 2.3 forwards it onto the tailnet.
 
 - Rollback: nothing to roll back.
+
+### 0.4 Export the live n8n workflows and re-check what names the origin
+
+Step 4's list of nodes comes from crew's grep of the `sorento_crm_n8n` repo on 15 Oct, and that
+repo is a cache at least five weeks old. Live n8n is the authority, so export it now, before
+anything is edited, and re-run the grep on the export. The export is also the rollback copy for
+step 4.
+
+On the n8n box (`<N8N_MAIN>` is the main n8n container, not a worker; list them with
+`docker ps --format '{{.Names}}\t{{.Image}}' | grep -i n8n`):
+
+```bash
+docker exec -u node <N8N_MAIN> sh -c 'rm -rf /tmp/wf && mkdir -p /tmp/wf && n8n export:workflow --all --separate --output=/tmp/wf/'
+docker cp <N8N_MAIN>:/tmp/wf ~/n8n-export-$(date +%Y%m%d)
+docker exec -u node <N8N_MAIN> rm -rf /tmp/wf
+cd ~/n8n-export-$(date +%Y%m%d) && ls | wc -l       # one file per workflow
+```
+
+The workflow export holds credential names and ids, never their secrets. Do not run
+`export:credentials`. Keep this folder on the n8n box or in your password manager's file store,
+not in any git repo: it contains `<CRM_ORIGIN>`.
+
+Re-check (each line prints the workflow file, its `active` flag and the node name):
+
+```bash
+python3 - <<'PY'
+import glob, json
+ORIGIN = "<CRM_ORIGIN>"
+for f in sorted(glob.glob("*.json")):
+    wf = json.load(open(f))
+    for n in wf.get("nodes", []):
+        body = json.dumps(n)
+        hits = []
+        if ORIGIN in body: hits.append("names-origin")
+        if "mcpClient" in n.get("type", ""): hits.append("mcp-client")
+        if '"sorento-crm-db"' in body: hits.append("sorento-crm-db")
+        if '"allowUnauthorizedCerts": true' in body: hits.append("ignore-ssl")
+        if ":6432" in body or ":5432" in body: hits.append("db-port")
+        if hits:
+            print(f"{wf.get('name')!r:45} active={wf.get('active')!s:5} node={n.get('name')!r:25} {','.join(hits)}")
+PY
+```
+
+- Check: the output matches the list in step 4. Crew's 15 Oct cache grep found:
+
+  | Workflow | Node | Finding |
+  | --- | --- | --- |
+  | `sub-get-results` (live) | `MCP Client` (`mcpClientTool`) | `http://<CRM_ORIGIN>:8765/mcp` |
+  | `sub-get-results` (live) | `MCP Client1` (`mcpClient`) | `http://<CRM_ORIGIN>:8765/mcp` |
+  | the TEST and CS-BUILD forks of `sub-get-results` | the same two nodes | same raw address |
+  | `live-respond-close-convo`, `live-respond-send-user`, `sub-get-rag-live`, `sub-sendmsg` | their Postgres nodes | credential `sorento-crm-db` |
+  | `sub-miss-suggest-live` | `family-fetch` | `https://<CRM_ORIGIN>/api/v1/master-data/products`, Ignore SSL Issues ON |
+  | `live-spine-sorento-consume-main` (old spine, replaced by `spine-rs-1a` on 1 Sep) | `family-fetch` | same, probably inactive |
+  | `live-poller` | `post-inject` | URL is an expression; see step 4.4 |
+
+  No workflow names port 6432 or 5432 directly (the DB is reached only through the credential),
+  and about 29 workflows call `<CRM_DOMAIN>`, which step 3 moves with no edit.
+- Any extra `names-origin`, `mcp-client`, `ignore-ssl` or `sorento-crm-db` line that the table
+  does not have: add it to your step 4 list (same edit as its row), and tell crew on the PR.
+  Test copies on credential `n8n_test-db` are not part of this runbook.
+- Rollback: nothing to roll back. To undo a step 4 edit from this copy:
+  `docker cp <file> <N8N_MAIN>:/tmp/ && docker exec -u node <N8N_MAIN> n8n import:workflow --input=/tmp/<file>`
+  (then re-activate the workflow in the UI if it was active).
 
 ## Step 1. Tailscale on both boxes, behind a policy
 
@@ -334,44 +398,84 @@ docker compose up -d                                # recreates only the service
   without `extra_hosts`, `crm-private.internal` stops resolving and the MCP nodes and the DB
   credential fail.
 
-## Step 4. n8n UI: MCP nodes and the DB credential
+## Step 4. n8n UI: the nodes and the credential that name the origin
 
-These two name `<CRM_ORIGIN>` today, so `extra_hosts` alone does not move them. Change them to
-`crm-private.internal`, which step 3 maps to the tailnet.
+These name `<CRM_ORIGIN>`, so `extra_hosts` alone does not move them. The list is crew's 15 Oct
+grep, confirmed (or extended) by your step 0.4 export. Edit in the live n8n editor; save, and
+publish if your n8n version separates the two.
 
-### 4.1 MCP
+Do not press **Execute workflow** on any of these to test them: several send real WhatsApp
+messages. Check with step 5's test-number turn and the **Executions** list instead.
 
-In each workflow that holds an MCP client node (crew's grep at the end lists them; at least
-`MCP Client` and `MCP Client1`): open the node, set **Endpoint** / **SSE Endpoint** to
+### 4.1 MCP: `MCP Client` and `MCP Client1` in `sub-get-results`
+
+Open workflow `sub-get-results`. In node `MCP Client` (MCP Client Tool) and in node
+`MCP Client1` (MCP Client), set the endpoint field (**Endpoint**, or **SSE Endpoint** on older
+versions) from `http://<CRM_ORIGIN>:8765/mcp` to
 
 ```
 http://crm-private.internal:8765/mcp
 ```
 
-then **Save** the workflow (and publish, if your n8n version separates the two).
+Make the same edit in the TEST and CS-BUILD forks of `sub-get-results`. They are not on the live
+path, but after step 6 a fork still on the raw address stops working.
 
-- Check: run one execution that reaches the node (or step 5's chatbot turn); the node is green.
-- Rollback: set the endpoint back to `http://<CRM_ORIGIN>:8765/mcp` and save.
+- Check: step 5.2's chatbot turn; in **Executions**, that turn's `sub-get-results` run is green
+  and `MCP Client1` shows output.
+- Rollback: set both endpoints back to `http://<CRM_ORIGIN>:8765/mcp` and save (or re-import the
+  step 0.4 copy).
 
 ### 4.2 The `sorento-crm-db` credential
+
+One edit moves all four live workflows that use it: `live-respond-close-convo`,
+`live-respond-send-user`, `sub-get-rag-live` and `sub-sendmsg`.
 
 n8n, **Credentials** (left sidebar, or **Overview**, **Credentials**), open `sorento-crm-db`.
 Change **Host** from `<CRM_ORIGIN>` to `crm-private.internal`. Leave the port at `6432` and
 everything else as it is. Click **Save**; n8n tests the connection on save.
 
-- Check: the save shows "Connection tested successfully". Then run one `live-respond-*`
-  execution (or wait for the human-intervened sweeper's next tick) and confirm it is green.
+- Check: the save shows "Connection tested successfully".
+- Check: in **Executions**, the next natural run of each of the four workflows is green (a
+  test-number turn reaches `sub-sendmsg` and `live-respond-send-user`; the human-intervened
+  sweeper's next tick reaches `live-respond-close-convo`).
 - Rollback: set **Host** back to `<CRM_ORIGIN>` and save.
 
-### 4.3 Nodes that call the raw origin over HTTPS
+### 4.3 `family-fetch`: the hostname, with TLS verification ON
 
-`family-fetch` (and anything crew's grep item 4 finds) calls `https://<CRM_ORIGIN>/...` with
-`allowUnauthorizedCerts: true`. Change its URL to `https://<CRM_DOMAIN>/...` (same path), and turn
-**Ignore SSL Issues** OFF. Step 3 gives it the real certificate over the tailnet, so the flag has
-no job left, and leaving it on would accept anything on that path.
+Workflow `sub-miss-suggest-live`, node `family-fetch` (HTTP Request). The origin certificate is a
+browser-trusted Let's Encrypt one (step 0.2), so this node no longer needs to skip the check:
 
-- Check: run one execution through the node; it is green with the flag off.
+1. **URL**: change `https://<CRM_ORIGIN>/api/v1/master-data/products` to
+   `https://<CRM_DOMAIN>/api/v1/master-data/products` (keep the query parameters as they are).
+2. **Options**, **Ignore SSL Issues**: OFF (or remove the option).
+3. Leave the header credential as it is. Save.
+
+After step 3 the hostname resolves to the tailnet inside the container, so this call no longer
+goes through Cloudflare either.
+
+`live-spine-sorento-consume-main` has a second `family-fetch`. That spine was replaced by
+`spine-rs-1a` on 1 Sep. If step 0.4 shows it `active=False`, leave it and note it; if it is
+`active=True`, make the same edit there.
+
+- Check: ask the test number for a product the bot does not stock under that exact name (so the
+  miss-suggest lane runs). In **Executions**, `sub-miss-suggest-live` is green and `family-fetch`
+  shows output. A certificate error here means step 3's `extra_hosts` line is missing for that
+  container.
 - Rollback: put the old URL back and turn **Ignore SSL Issues** on again.
+
+### 4.4 `post-inject` in `live-poller`
+
+Its URL is an expression, so the grep cannot tell where it points. Open `live-poller`, open the
+latest green execution, click `post-inject` and read the resolved URL on its input side.
+
+- `https://<CRM_DOMAIN>/...`: nothing to do; step 3 already moved it.
+- `<CRM_ORIGIN>` anywhere in it: change the part of the expression that supplies the host to
+  `<CRM_DOMAIN>` (HTTPS) and turn **Ignore SSL Issues** OFF if it is on, as in 4.3. Tell crew on
+  the PR.
+- Anything else (another service): out of scope; leave it.
+
+- Check: the next `live-poller` execution is green.
+- Rollback: restore the old expression (or re-import the step 0.4 copy).
 
 ## Step 5. Checks
 
@@ -437,7 +541,7 @@ for (const p of [8765, 6432]) { const t0=Date.now();
   the reply is a real answer, not the error fallback.
 - Check: the `tail` shows `/api/v1/...` lines from `<N8N_TS_IP>` during the turn.
 - Check: in n8n, the turn's executions are green, including the MCP node.
-- Rollback: step 4's rollback (4.3, 4.2, 4.1), then step 3's.
+- Rollback: step 4's rollback (4.4, 4.3, 4.2, 4.1), then step 3's.
 
 ## Step 6. Delete the public 6432 and 8765 rules (after 48 hours with no rollback)
 
@@ -611,6 +715,9 @@ from `100.77.0.1:6432` to `127.0.0.1:6432` that starts after `wg-quick@wg0`.
   alone so this PR stays docs-only; update it when step 6 is done.
 
 ## For crew: grep the n8n repo
+
+Done by crew on 15 Oct against the local cache; the results are the table in step 0.4, and
+step 0.4 re-runs the check on a fresh live export. Kept for reference:
 
 The n8n workflow repo (`sorento_crm_n8n`) was not readable from the cloud sandbox. Run this at its
 root and attach the output (file and node names only, never the matched values) to the lane:
