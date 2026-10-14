@@ -153,3 +153,98 @@ def test_relink_path_stops_at_the_so_line(env, monkeypatch):
     assert _cancel_audits(env, row_id) == 0
     assert dispatched == []
 
+
+
+# ======================================================================= Fulfilment Planning
+from datetime import date as _date  # noqa: E402
+
+from app.models.autocount_cancel import (  # noqa: E402
+    KIND_CANCEL_SO,
+    MATCH_MATCHED,
+    AutocountCancelDoc,
+    AutocountCancelLine,
+)
+
+from tests.test_oi_cancelled_line_used_confirm import _inquiry, _oi_row  # noqa: E402
+from tests.test_so_cancel_line import _board, _cb_world  # noqa: E402
+from tests.test_so_supply_confirmation import api  # noqa: E402,F401 - fixture
+
+
+def _cancelled_by_autocount(world, core, *, doc_no=None):
+    """What the cancel ingest leaves on a fully cancelled line (`_apply`), plus the matched
+    Cancel SO line when `doc_no` is given."""
+    db = world.db
+    core.qty_cancelled = core.qty_ordered
+    core.line_status = "cancelled"
+    core.cancelled_by_cancel_doc = True
+    if doc_no:
+        doc = AutocountCancelDoc(company_id=world.company_id, kind=KIND_CANCEL_SO,
+                                 source_book="db1", doc_key=abs(hash(doc_no)) % 10**9,
+                                 doc_no=doc_no, doc_date=_date(2026, 10, 14))
+        db.add(doc)
+        db.flush()
+        db.add(AutocountCancelLine(company_id=world.company_id, cancel_doc_id=doc.id,
+                                   dtl_key=1, qty=core.qty_ordered, from_doc_type="SO",
+                                   match_status=MATCH_MATCHED, match_reason="key",
+                                   sales_order_line_id=str(core.id)))
+    db.commit()
+
+
+def _contribution(board, product):
+    found = [c for c in board["contributions"] if c["item_code"] == product.product_code]
+    return found[0] if found else None
+
+
+def test_board_shows_a_cancel_doc_line_with_a_live_oi_row_for_cs(api):
+    """AC-5: read-only, cancelled, committed (never retired by Confirm), naming AutoCount, the
+    Cancel SO number and the live OI rows CS has to handle."""
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, product_a = w["a"]
+    inquiry = _inquiry(world.db, world.company_id, w["order"].id)
+    _oi_row(world.db, world.company_id, inquiry.id, mirror_a.id, product_a.product_code, "36")
+    _cancelled_by_autocount(world, core_a, doc_no="ZZXS-777")
+
+    row = _contribution(_board(client, w["core_so"]), product_a)
+
+    assert row is not None
+    assert row["cancelled"] is True
+    assert row["cancelled_at"]
+    assert row["cancelled_by"] == "AutoCount"
+    assert row["cancel_reason"] == "AutoCount ZZXS-777 · 1 open order inquiry row"
+    assert row["cancel_open_oi_rows"] == 1
+    assert float(row["qty"]) == 0
+
+
+def test_board_leaves_out_a_cancel_doc_line_with_no_live_oi_row(api):
+    """AC-6: nothing for CS to handle (no row, or only cancelled rows): not on the board."""
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, product_a = w["a"]
+    core_b, _mirror_b, product_b = w["b"]
+    inquiry = _inquiry(world.db, world.company_id, w["order"].id)
+    _oi_row(world.db, world.company_id, inquiry.id, mirror_a.id, product_a.product_code, "36",
+            state="cancelled")
+    _cancelled_by_autocount(world, core_a)
+    _cancelled_by_autocount(world, core_b)
+
+    board = _board(client, w["core_so"])
+
+    assert _contribution(board, product_a) is None
+    assert _contribution(board, product_b) is None
+
+
+def test_board_cs_cancelled_line_reads_as_before(api):
+    """Guard: a line CS transferred on the board keeps its own who / why, 0 open rows."""
+    from tests.test_so_cancel_line import REASON, _cancel_body, _confirm_all
+
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, product_a = w["a"]
+    _confirm_all(client, w["order"], **_cancel_body(mirror_a))
+
+    row = _contribution(_board(client, w["core_so"]), product_a)
+
+    assert row["cancel_reason"] == REASON
+    assert row["cancelled_by"] != "AutoCount"
+    assert row["cancel_open_oi_rows"] == 0

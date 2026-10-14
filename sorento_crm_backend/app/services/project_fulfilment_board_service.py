@@ -58,7 +58,7 @@ from typing import (
     Tuple,
 )
 
-from sqlalchemy import case, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, aliased
 
 from app.models.inventory import Warehouse
@@ -421,6 +421,9 @@ class _Row:
         #: SO-CANCEL-LINE: CS transferred the line to Cancel SO. `cancelled_by_name` is a
         #: display name, never the user id.
         "cancelled_at", "cancelled_by_name", "cancel_reason",
+        #: CANCEL-STOP-AT-SO: live order inquiry rows on a line an AutoCount Cancel SO
+        #: cancelled, which CS still has to handle. 0 on every other row.
+        "cancel_open_oi_rows",
         #: R7 (query-count): the core line's own `source_ref` / `company_id`, off the SAME
         #: `SalesOrderLine` this row's own demand read already fetched - threaded onto
         #: `_LineFacts` (`ProjectSupplyService.demand_facts`) so the own-arrival credit's
@@ -1813,9 +1816,22 @@ class FulfilmentBoardService:
     ) -> List[_Row]:
         """SO-CANCEL-LINE: the lines CS transferred to Cancel SO (`cancelled_at` set). The
         board's own predicate drops a `cancelled` line, so without this the line CS just
-        cancelled would vanish from the board it was cancelled on. Read-only at zero."""
+        cancelled would vanish from the board it was cancelled on. Read-only at zero.
+
+        CANCEL-STOP-AT-SO (owner, 14 Oct): a line an AutoCount Cancel SO cancelled
+        (`cancelled_by_cancel_doc`) is here too while it still has a live order inquiry row,
+        because the cancel no longer retires those rows: CS handles them. It reads as
+        transferred by AutoCount, `cancel_open_oi_rows` > 0."""
         if not so_numbers:
             return []
+        live_oi = (
+            self.db.query(OrderInquiryRow.id)
+            .filter(
+                OrderInquiryRow.so_line_id == ProjectSalesOrderLine.id,
+                OrderInquiryRow.state != INQUIRY_CANCELLED,
+            )
+            .exists()
+        )
         records = (
             self.db.query(SalesOrderLine, SalesOrder, ProjectSalesOrderLine, Product, User)
             .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
@@ -1830,19 +1846,27 @@ class FulfilmentBoardService:
                 SalesOrder.status.in_(["open", "closed"]),
                 SalesOrder.demand_class == "project",
                 SalesOrderLine.line_status == "cancelled",
-                SalesOrderLine.cancelled_at.isnot(None),
+                or_(
+                    SalesOrderLine.cancelled_at.isnot(None),
+                    and_(SalesOrderLine.cancelled_by_cancel_doc.is_(True), live_oi),
+                ),
             )
             .all()
         )
         records = [r for r in records if str(r[0].id) not in shown]
         if not records:
             return []
+        by_cancel_doc = self._autocount_cancel_facts(
+            [(str(core.id), str(pl.id)) for core, _o, pl, *_r in records
+             if core.cancelled_at is None]
+        )
         customers = self._customers(
             {str(order.customer_id) for _cl, order, *_r in records if order.customer_id}
         )
         rows: List[_Row] = []
         for core_line, order, project_line, product, user in records:
             customer_id = str(order.customer_id) if order.customer_id else None
+            autocount = by_cancel_doc.get(str(core_line.id))
             rows.append(
                 _Row(
                     line_id=str(core_line.id),
@@ -1863,18 +1887,78 @@ class FulfilmentBoardService:
                     warehouse_id=str(core_line.warehouse_id) if core_line.warehouse_id else None,
                     bucket_key=NO_DATE_BUCKET,
                     cancelled=True,
-                    cancelled_at=core_line.cancelled_at,
-                    cancelled_by_name=(
-                        (getattr(user, "name", None) or "Unknown user")
-                        if user is not None
-                        else None
+                    # Always set: the screen reads a set `cancelled_at` as committed, never
+                    # as a line Confirm retires.
+                    cancelled_at=(
+                        (autocount["at"] or core_line.updated_at) if autocount is not None
+                        else core_line.cancelled_at
                     ),
-                    cancel_reason=core_line.cancel_reason,
+                    cancelled_by_name=(
+                        "AutoCount" if autocount is not None
+                        else None if user is None
+                        else getattr(user, "name", None) or "Unknown user"
+                    ),
+                    cancel_reason=(
+                        autocount["reason"] if autocount is not None
+                        else core_line.cancel_reason
+                    ),
+                    cancel_open_oi_rows=autocount["open"] if autocount is not None else 0,
                     source_ref=core_line.source_ref,
                     company_id=str(core_line.company_id) if core_line.company_id else None,
                 )
             )
         return rows
+
+    def _autocount_cancel_facts(
+        self, lines: Sequence[Tuple[str, str]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """CANCEL-STOP-AT-SO: per `(core line id, project line id)` an AutoCount Cancel SO
+        cancelled, the live order inquiry rows still on it, the Cancel SO numbers and when
+        the CRM received the latest. Two statements for the whole board, none when empty."""
+        if not lines:
+            return {}
+        from app.models.autocount_cancel import (
+            KIND_CANCEL_SO,
+            AutocountCancelDoc,
+            AutocountCancelLine,
+        )
+        from app.services.autocount_cancel_ingest_service import cancel_sources
+
+        project_of = dict(lines)
+        open_by_project = dict(
+            self.db.query(OrderInquiryRow.so_line_id, func.count(OrderInquiryRow.id))
+            .filter(
+                OrderInquiryRow.so_line_id.in_(list(project_of.values())),
+                OrderInquiryRow.state != INQUIRY_CANCELLED,
+            )
+            .group_by(OrderInquiryRow.so_line_id)
+            .all()
+        )
+        sources = cancel_sources(self.db, AutocountCancelLine.sales_order_line_id,
+                                 project_of.keys())
+        numbers = {s["doc_no"] for docs in sources.values() for s in docs}
+        received = dict(
+            self.db.query(AutocountCancelDoc.doc_no, func.max(AutocountCancelDoc.created_at))
+            .filter(AutocountCancelDoc.kind == KIND_CANCEL_SO,
+                    AutocountCancelDoc.doc_no.in_(sorted(numbers)))
+            .group_by(AutocountCancelDoc.doc_no)
+            .all()
+        ) if numbers else {}
+        out: Dict[str, Dict[str, Any]] = {}
+        for core_id, project_id in project_of.items():
+            docs = list(dict.fromkeys(s["doc_no"] for s in sources.get(core_id, [])))
+            count = int(open_by_project.get(project_id, 0))
+            times = [received[d] for d in docs if received.get(d) is not None]
+            rows_word = "row" if count == 1 else "rows"
+            out[core_id] = {
+                "at": max(times) if times else None,
+                "open": count,
+                "reason": " · ".join(
+                    [*(["AutoCount " + ", ".join(docs)] if docs else []),
+                     f"{count} open order inquiry {rows_word}"]
+                ),
+            }
+        return out
 
     def _lent_from(self, core_line_ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
         """What another sales order borrowed OFF each of these lines (AC-L6).
@@ -5375,6 +5459,7 @@ class FulfilmentBoardService:
             "cancelled_at": row.cancelled_at,
             "cancelled_by": row.cancelled_by_name,
             "cancel_reason": row.cancel_reason,
+            "cancel_open_oi_rows": row.cancel_open_oi_rows or 0,
         }
 
     def _buckets(
