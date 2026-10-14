@@ -10,7 +10,11 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
   under that line, with or without a stored `sales_order_line_id`. The DO's warehouse plays no
   part: a DO line from another warehouse is still under the one line.
 - **AC-SD2 Exact by stored link.** A DO line whose `sales_order_line_id` is one of this SO's
-  lines is returned under that line, even when the product sits on several lines.
+  lines is returned under that line, even when the product sits on several lines. The link counts
+  only when the line's `from_doc_no` is empty or is this SO's number (review round 1). Otherwise
+  the link is stale: the ingest keeps an old link when re-resolving finds none
+  (`autocount_doc_ingest_service.py:825-832`). Such a line shows only on the SO its `from_doc_no`
+  names, never also under this SO's line.
 - **AC-SD3 Group.** A DO line naming this SO and a product on SEVERAL lines of the SO, with no
   stored link, is returned once in that product's group (`sku`, `line_ids` = every line of the
   product on the SO). It is never placed under one of the lines, whatever its warehouse, qty or
@@ -22,7 +26,7 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
   - The DO is voided (`is_cancelled`).
   - The DO is deleted (`deleted_at`).
   - The product is not on the SO (owner Q5 a).
-  - The line belongs to another company, even with the same SO number.
+  - The line or its DO header belongs to another company, even with the same SO number.
   - It names another SO.
 - **AC-SD6 Cancel SO exact.** A live Cancel SO line (kind `cancel_so`, document not void and not
   vanished) that is `matched` to one of this SO's lines (`line_key` / `item`) is returned under
@@ -51,7 +55,8 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
     rows and build the DO link.
 - **AC-SD11 Access.**
   - The route is gated like the SO read (`scm.dashboard.view`).
-  - An unknown SO id, or an SO outside the caller's company scope, answers 404 `SO_NOT_FOUND`.
+  - An unknown SO id, a malformed (non-UUID) id, or an SO outside the caller's company scope
+    answers 404 `SO_NOT_FOUND`, never a 500.
 - **AC-SD12 Index.** Migration adds `ix_order_lines_company_from_doc_no` on
   `order_lines (company_id, from_doc_no)`, built CONCURRENTLY with a bounded lock wait and safe
   to re-run (precedent `alembic/versions/mig_idx_chunks_document_id.py`). One alembic head.
@@ -62,6 +67,8 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
   - Every line row has an icon-only button with a truck icon as the first column, in view and in
     edit alike.
   - The column has an empty header and cannot be hidden.
+  - A line added in the current edit session and not yet saved shows no truck button: it has no
+    deliveries, and its SKU may still be empty (review round 1).
   - The button's aria-label and title read "Deliveries for <SKU>".
   - Clicking it opens a lightbox titled "Deliveries · <SKU>"; the close X, Escape and the overlay
     close it.
@@ -71,20 +78,24 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
 - **AC-SD21 One fetch.**
   - The deliveries read is fetched once, the first time any line's lightbox opens.
   - Opening another line's lightbox, or the same one again, does not fetch again.
-- **AC-SD22 Delivered block.** Heading "Delivered" with "<n> DO line(s)", then a table:
+- **AC-SD22 Delivered block.** Heading "Delivered", plus "<n> DO line(s)" only when there are
+  rows (an empty block shows the heading alone, as in the mock), then a table:
   - columns DO no., DO date, Location, Status, Actual delivery, Qty;
   - a Total row summing Qty.
   - Status is the DO's own status pill, the same `Badge status=` as the DO list.
   - Dates read dd/mm/yyyy; an empty actual delivery reads "-".
   - With no rows the block reads "No DO in the CRM for this line." (owner Q3 a).
-- **AC-SD23 Cancelled block.** Heading "Cancelled" with "<n> Cancel SO line(s)", then a table:
+- **AC-SD23 Cancelled block.** Heading "Cancelled", plus "<n> Cancel SO line(s)" only when there
+  are rows, then a table:
   - columns Cancel SO no., Date, Location, Matched by, Qty;
-  - a Total row summing the known quantities.
+  - a Total row summing the known quantities; when no row has a known qty (every row
+    `group_whole`), the Total reads "-", never 0.
   - Matched by reads: line key / item / every line of the item / not tied to one line.
   - A `group_whole` qty reads "-".
   - With no rows: "No Cancel SO for this line."
 - **AC-SD24 Group block.** When the line's product sits on several lines of the SO:
-  - below the two blocks sits a bordered block headed "<SKU> on this SO, not tied to one line"
+  - below the two blocks sits a bordered panel (a full border, as the mock's block) headed
+    "<SKU> on this SO, not tied to one line"
     with "· <n> lines";
   - it holds the same two tables with the group's rows, or "No DO in the CRM for this product
     here." / "No Cancel SO for this product here.";
@@ -94,8 +105,11 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
   - With `order_management.orders.view` the DO number links to `/order-management/orders/{id}`.
   - Without it the number is plain text and the row still shows (owner Q4 a).
 - **AC-SD26 Clear states.**
-  - While loading, the lightbox shows skeleton rows.
-  - On error it shows "Could not load deliveries." with a Try again button that refetches.
+  - While loading, the lightbox shows the shared `SectionSkeleton` (`role="status"`,
+    `components/common/SectionSkeleton.tsx`).
+  - On error with nothing loaded yet, it shows "Could not load deliveries." with a Try again
+    button that refetches.
+  - A failed background refetch keeps the rows already loaded on screen.
   - No state leaves a spinner running.
 - **AC-SD27 Layout.**
   - The lightbox is at most 85% of the viewport height, and its body scrolls.
