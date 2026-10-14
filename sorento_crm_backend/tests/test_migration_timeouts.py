@@ -12,6 +12,7 @@ probe migrations in a temporary versions directory that record what they saw.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -65,32 +66,31 @@ PROBE_TABLE = "zz_migration_timeout_probe"
 
 
 def _probe(rev: str, down: str | None, body: str) -> str:
-    return textwrap.dedent(
-        f'''
-        from alembic import op
-        import sqlalchemy as sa
-
-        revision = "{rev}"
-        down_revision = {down!r}
-        branch_labels = None
-        depends_on = None
-
-
-        def _record(tag):
-            op.execute(
-                "INSERT INTO {PROBE_TABLE} (tag, lock_t, stmt_t) VALUES ("
-                f"'{{tag}}', current_setting('lock_timeout'), current_setting('statement_timeout'))"
-            )
-
-
-        def upgrade():
-        {textwrap.indent(textwrap.dedent(body), "    ")}
-
-
-        def downgrade():
-            pass
-        '''
-    )
+    lines = [
+        "from alembic import op",
+        "",
+        f"revision = {rev!r}",
+        f"down_revision = {down!r}",
+        "branch_labels = None",
+        "depends_on = None",
+        "",
+        "",
+        "def _record(tag):",
+        "    op.execute(",
+        f"        \"INSERT INTO {PROBE_TABLE} (tag, lock_t, stmt_t) VALUES (\"",
+        "        f\"'{tag}', current_setting('lock_timeout'), current_setting('statement_timeout'))\"",
+        "    )",
+        "",
+        "",
+        "def upgrade():",
+        textwrap.indent(textwrap.dedent(body).strip("\n"), "    "),
+        "",
+        "",
+        "def downgrade():",
+        "    pass",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 @pytest.fixture
@@ -124,11 +124,14 @@ def probes(tmp_path):
     real = (BACKEND / "alembic.ini").read_text()
     real = real.replace("script_location = alembic", f"script_location = {BACKEND / 'alembic'}", 1)
     real = real.replace("[alembic]", f"[alembic]\nversion_locations = {versions}", 1)
+    # alembic.ini carries an inline comment on this line, which alembic only parses (and
+    # chokes on) once version_locations is set.
+    real = re.sub(r"(?m)^version_path_separator = .*$", "version_path_separator = os", real)
     ini.write_text(real)
     return versions, ini
 
 
-def _alembic(ini: Path, url, *args, extra_env=None):
+def _alembic(ini: Path, url, *args, extra_env=None, timeout=120):
     env = dict(os.environ)
     env.pop("SORENTO_ENV_FILE", None)
     rendered = url.render_as_string(hide_password=False)
@@ -142,7 +145,7 @@ def _alembic(ini: Path, url, *args, extra_env=None):
         env=env,
         capture_output=True,
         text=True,
-        timeout=180,
+        timeout=timeout,
     )
 
 
@@ -216,7 +219,7 @@ def test_a_migration_blocked_on_a_lock_fails_instead_of_queueing(scratch_db, pro
         holder.execute(text("CREATE TABLE zz_busy (id int)"))
         holder.commit()
         holder.execute(text("SELECT * FROM zz_busy"))  # ACCESS SHARE, held: transaction open
-        r = _alembic(ini, scratch_db, "upgrade", "p1_probe", extra_env={"MIGRATION_LOCK_TIMEOUT": "1s"})
+        r = _alembic(ini, scratch_db, "upgrade", "p1_probe", extra_env={"MIGRATION_LOCK_TIMEOUT": "1s"}, timeout=60)
     finally:
         holder.rollback()
         holder.close()
