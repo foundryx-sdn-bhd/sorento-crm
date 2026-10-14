@@ -12,6 +12,8 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
+from app.models.product_set import ProductSetMember
+
 from ._pg_fixture import blank_session
 from .test_set_quote_line import (  # noqa: F401  (api is a fixture)
     BASE,
@@ -293,9 +295,7 @@ def test_c1_route_deleting_a_set_row_is_204_and_a_second_delete_is_404(api):
 
     assert first.status_code == 204, first.text
     assert second.status_code == 404, second.text
-    assert second.json()["detail"]["code"] == "series_set_not_found" or (
-        second.json().get("code") == "series_set_not_found"
-    )
+    assert second.json()["code"] == "series_set_not_found"
 
 
 def test_c1_route_a_malformed_price_is_a_422(api):
@@ -379,7 +379,7 @@ def test_a2_route_a_set_line_comes_back_with_product_set_id_and_set_parts(api):
     assert response.status_code in (200, 201), response.text
     body = response.json()
     assert body["product_set_id"] == product_set.id
-    assert body["product_code_snapshot"] == product_set.set_code
+    assert body["product_code"] == product_set.set_code
     assert [p["product_code"] for p in body["set_parts"]] == _codes(product_set)
     assert body["uom"] == "SET"
 
