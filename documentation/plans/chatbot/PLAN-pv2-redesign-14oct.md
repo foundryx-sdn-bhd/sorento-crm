@@ -239,17 +239,22 @@ moves to R4's relation field. R4: reverse direction (WC for a cover), cross-turn
 ## R4a (owner GO 15 Oct 00:30; R3 postponed): the parser sees what the bot printed
 1. Why: crew root-cause C10 (a short follow-up on the held subject read as unclear, 11 conversations) and C1 (pointing
    into the printed answer; R1 records the rows but nothing reads them, 7 conversations).
-2. MEMORY (pv2/history.py render_memory), code only: `SHOWN ROWS` replaces `LAST ANSWER ROWS`. The latest reply's
-   register entries numbered R1..Rn as `R<n> <kind> <printed label>`, children indented under their parent (an
-   order's product lines), doc numbers as printed, keys and uuids never rendered; PV2's own pick/report rows when the
-   reply printed no register rows. HELD lines show the held refs' printed codes. One `LAST REPLY:` line says what the
-   bot did (answered <domain> / asked <question kind> / refused <what> / not found <phrase>), from state, no user text.
+2. What the parser sees (code): `LAST ANSWER ROWS` keeps its name (the published prompt's lines 16, 53, 124 and its
+   row_pick read it) but is filled from the register: the latest reply's printed rows numbered 1..n as `n=<kind>
+   <printed label>`, a child marked with its parent number (`(in 1)`), keys and uuids never rendered; PV2's own
+   pick/report rows when the reply printed none. `st.last_rows` is set from the same rows (engine hook where the
+   register is written), so a row_pick indexes exactly what was shown; a picked register row resolves its printed
+   label through the scoped resolver as that kind (never the stored key: R1 security rule). HELD lines show the held
+   refs' printed codes. One `LAST REPLY:` line says what the bot did (answered <domain> / asked <question kind> /
+   refused <what> / not found <phrase>), from state, no user text.
 3. Parser output: no schema change. A reference to shown rows copies their printed code / doc number into entity
    phrases (the resolver resolves it exactly); "both", "no 1 & no 8", "all" give one entity per row.
-4. Prompt: one generic rule: a message that points at HELD or SHOWN ROWS (this, that one, a number, both, all, a
+4. Prompt: one generic rule: a message that points at HELD or LAST ANSWER ROWS (this, that one, a number, both, all, a
    description matching rows) names those rows; a short message naming nothing new continues HELD; never unclear or a
    which-question when the reference picks rows. No word lists, no particle lines.
-5. Not in R4a: apply/engine changes (incl. the flag branch that drops a structured ask), schema refs[] (R4b), R3.
+5. Not in R4a: other apply/engine changes (incl. the flag branch that drops a structured ask), schema refs[] (R4b),
+   R3. The prompt rule is published on the dev DB as a new unlabelled v2 version after reviewer READY (crew 15 Oct);
+   crew pins its id in the runs.
 6. Tests (no LLM, fresh paraphrases): MEMORY render pins (numbering, children, codes, no uuid, cap, fallback);
    handwritten parses that copy shown codes reach the Lookup through apply; replay sets stay green; the MEMORY
    byte-identity pins (R1-10, R2-4 and later) flip on purpose. Live effect needs the prompt rule published as a new

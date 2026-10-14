@@ -121,9 +121,10 @@ RG-8 No LLM calls; v1 turns unchanged.
 
 
 ## R4a The parser sees the printed rows and the held subject (owner GO 15 Oct 00:30)
-R4a-1 MEMORY renders SHOWN ROWS from the register: the latest reply's entries as R1..Rn with kind and the printed
+R4a-1 MEMORY's LAST ANSWER ROWS (name kept for the published prompt) renders from the register: the latest reply's entries as R1..Rn with kind and the printed
       label (code or doc number), children indented under their parent, never a key or uuid, capped as the register
-      is; when the reply printed no register rows, PV2's own pick/report rows are shown instead.
+      is; when the reply printed no register rows, PV2's own pick/report rows are shown instead. A row_pick indexes
+      exactly the shown rows and resolves the picked row's printed label through the scoped resolver (never a stored key).
 R4a-2 HELD shows the held refs' printed codes; a LAST REPLY line states what the bot did last turn without user text.
 R4a-3 A parse that copies shown codes (one row, two rows, "both", numbers, "all") reaches a Lookup holding exactly
       those rows through the normal apply path, with fresh paraphrases in the tests.
