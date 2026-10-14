@@ -927,7 +927,7 @@ The three arms are the same three S6a named, and they converge on one node in n8
 | `access-level-choice-message` | `answer.access_level_choice_message` |
 
 **One credential and one raw host stop being n8n's problem.** `family-fetch` is an
-`httpRequest` node pointed at `https://72.62.195.20/api/v1/master-data/products` with
+`httpRequest` node pointed at `https://<prod-host>/api/v1/master-data/products` with
 `allowUnauthorizedCerts: true` and a header credential; in process it is
 `ProductService.list_products(query=..., variant_filter="all", limit=5000)`, so there is no
 IP to go stale, no certificate to wave through and no credential in the workflow. That is

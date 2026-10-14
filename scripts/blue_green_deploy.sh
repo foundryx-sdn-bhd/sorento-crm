@@ -2,7 +2,7 @@
 # Blue/green orchestration. Run from the server checkout containing docker-compose.yml.
 #
 # Public endpoints stay stable across deploys:
-#   n8n  -> http://72.62.195.20:8765/mcp                (host nginx -> sorento_mcp upstream)
+#   n8n  -> http://<prod-host>:8765/mcp                 (host nginx -> sorento_mcp upstream)
 #   API  -> https://fe-sorento.foundryx.my/api/v1/*     (host nginx -> sorento_backend upstream)
 #   UI   -> https://fe-sorento.foundryx.my/             (host nginx -> sorento_frontend upstream)
 #

@@ -33,7 +33,7 @@ Next.js server, so every user shared one bucket: a lockout DoS.
   `FORWARDED_ALLOW_IPS` (default 127.0.0.1); the docker peer is not 127.0.0.1, so the app sees
   the raw proxy peer.
 
-Crew facts (10 Oct): `fe-sorento.foundryx.my` resolves straight to 72.62.195.20 and answers with
+Crew facts (10 Oct): `fe-sorento.foundryx.my` resolves straight to the prod server address (`<prod-host>`) and answers with
 `server: nginx/1.24.0 (Ubuntu)`, no `cf-ray` / `via`: NO CDN, the host nginx is the edge.
 Confirmed from the owner's `nginx -T` (10 Oct): every location for `fe-sorento.foundryx.my` to
 `sorento_frontend` and to `sorento_backend` (and the default `server_name _` block to `sorento_mcp`)
@@ -53,9 +53,9 @@ Resolved IP per prod path (pinned in `tests/test_client_ip.py`, `PROD_PATHS`):
 UNVERIFIED, one residual: what `FASTAPI_INTERNAL_URL` the prod frontend container carries. Unset
 means `http://backend:8000` over the docker network (path B above). If it points at the public
 domain instead, the Next hop goes back out through the host nginx, which appends the server's own
-address (72.62.195.20) and that becomes the resolved IP for sign-in: one shared bucket again,
+address (`<prod-host>`) and that becomes the resolved IP for sign-in: one shared bucket again,
 safe but not per client. Fix in that case: point it at the backend container, or add
-`72.62.195.20/32` to `TRUSTED_PROXIES`.
+`<prod-host>/32` to `TRUSTED_PROXIES`.
 
 ### Trust is opt-in (safe default)
 
