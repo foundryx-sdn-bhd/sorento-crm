@@ -3,6 +3,10 @@
 Status: in review. Track: small fix (no migration, no auth/RBAC, no new ingest). UAC:
 `stock-debt-stale-pin-acceptance-criteria.md`.
 
+Owner ruling, 14 Oct 2026: Stock Debt is FULLY DECOUPLED from Fulfilment Planning pins (lane
+STOCK-DEBT-DECOUPLE, base main). This lane stays for the Fulfilment Planning board, which reads
+the same `_holds`; its Stock Debt changes are interim until that lane lands.
+
 ## Journey
 
 Owner, 14 Oct 2026, prod: Stock Debt > CB6633-NL > Oct 26. SO424555 line 16 (BRW-IB,
@@ -32,15 +36,17 @@ SO419598 BRW 1 / 0.
 ## Fix
 
 1. `_holds`: allocation pins walk the same rule. Bin in the span with no on-hand event: the
-   hold is dropped (line short, no "Covered by"). Bin with an event: capped at what the bin
-   holds (item 2).
-2. One per-bin ledger in `_holds` caps every on-hand hold at what the bin holds (on hand
-   less reserved): in the span from the on-hand event, OUTSIDE it (site pool, unflagged
-   bin, another group under `group=`) from `_stand_in_floors` (one read). Shared by every
-   on-hand hold on the bin, confirmed decisions first, then received-SPO placements, each
-   nearer line first. Capped in `_holds`, not left to `assign()`, so the book's S/O and
-   the landed goods see what a pin really covers (review round 1: pinned 126 on a bin of
-   50 left the order's own SPO of 76 free beside a short line).
+   hold is dropped (line short, no "Covered by"). Bin with an event: `assign()` caps the pin
+   at what the bin has left, as before.
+2. Bins OUTSIDE the span (site pool, unflagged bin, another group under `group=`): `assign()`
+   caps the stand-in at that bin's free stock (new `stand_in_floors` argument, filled from
+   `_stand_in_floors`, one read, on hand less reserved), shared by the pins on it in hold
+   order. Pins and placements are read in the order made (`confirmed_at`, `linked_at`), so a
+   thin bin keeps the promise made first, as the board already did in practice.
+   The cap lives in `assign()`, the one place that knows whether a line still needs a pin.
+   Round 1 capped in `_holds` instead (so the book's S/O and landed goods would see real
+   cover); a dev probe showed it spending a bin on a pin `assign()` never serves (product
+   0fb2507c, BRW 79: next line short 47 with the stock left free), so round 3 moved it.
 3. `cell()`: the Supply tab lists every source a line of the column is pinned on (R43 did
    this for PO pins only), stand-ins included, Free 0 outside its home column.
 4. Dialog: the Supply empty state says "What covers these lines is listed in an earlier
@@ -56,6 +62,11 @@ SO419598 BRW 1 / 0.
 - A pin on a partly stocked bin covers only what the bin holds; the rest is short.
 
 ## Not in scope
+
+The view gap round 1 tried to close (a pin above a partly stocked bin read as covered before
+the book's S/O, leaving the order's own SPO free) is open again until STOCK-DEBT-DECOUPLE
+lands, which stops Stock Debt reading pins at all. Same for the board's `_landed_holds`
+reading a pin's full quantity as already held.
 
 Netting holds of lines outside the read against a bin's stock (true before this lane too,
 for bins in the span and out of it).
