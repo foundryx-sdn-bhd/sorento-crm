@@ -666,10 +666,10 @@ async def health_check():
             "prompt_version": prompt_version,
         }
     except Exception as e:
-        return JSONResponse(
-            status_code=503,
-            content={"status": "unhealthy", "error": str(e)[:200]},
-        )
+        # The error stays server-side: a Postgres connection error names the internal host
+        # and port.
+        logging.getLogger(__name__).error("/health: database check failed: %s", str(e)[:200])
+        return JSONResponse(status_code=503, content={"status": "unhealthy"})
 
 
 @app.get("/api/v1/health")
