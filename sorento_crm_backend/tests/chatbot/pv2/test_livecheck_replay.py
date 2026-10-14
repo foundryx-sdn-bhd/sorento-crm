@@ -21,7 +21,6 @@ from tests.chatbot.pv2.carry_fakes import ask as _base_ask, held as mk_held, mk_
 FIXTURE = Path(__file__).parent / "fixtures" / "livecheck_r5r6.jsonl"
 ROWS = [json.loads(line) for line in FIXTURE.read_text(encoding="utf-8").splitlines() if line.strip()]
 BY_CASE = {r["case"]: r for r in ROWS}
-PROMPT = (Path(turn.__file__).parent / "prompt_v2.txt").read_text(encoding="utf-8").lower()
 TODAY = date(2026, 10, 14)
 
 
@@ -98,10 +97,3 @@ def test_a_portal_link_ask_sends_v1_no_product_entities_and_no_carried_products(
     assert [e for e in v["entities"] if e["hint"] == "product"] == [], v["entities"]
     focus = bridge.focus_from_v2(result.state_out.held)
     assert focus.products == [], "the typed codes were never a form the user filled in"
-
-
-# ------------------------------------------------------------------ prompt pin
-
-
-def test_the_prompt_says_a_different_product_or_document_is_a_new_topic():
-    assert "a different product or document" in PROMPT

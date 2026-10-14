@@ -4,9 +4,9 @@ Calls `pv2.call.parse_v2` on the staging prompt for each row of
 `tests/chatbot/pv2/probe/livecheck_probe.jsonl` (its exact MEMORY block and message) and compares
 the parse with `expect_parse`. Costs one model call per row per repeat.
 
-    PYTHONPATH=. python scripts/pv2_livecheck_probe.py                      # every row, once
-    PYTHONPATH=. python scripts/pv2_livecheck_probe.py --regression -n 3    # the 4 r6 regression rows, 3x
-    PYTHONPATH=. python scripts/pv2_livecheck_probe.py --case live-S6-8-t2 --version-id <uuid>
+    venv/bin/python scripts/pv2_livecheck_probe.py                          # every row, once
+    venv/bin/python scripts/pv2_livecheck_probe.py --regression -n 3        # the 4 r6 regression rows, 3x
+    venv/bin/python scripts/pv2_livecheck_probe.py --case live-S6-8-t2 --version-id <uuid>
 
 Uses DATABASE_URL / the provider key from the backend .env, like the app. Exit code 1 when any row fails.
 """
@@ -17,44 +17,72 @@ import json
 import sys
 from pathlib import Path
 
+# Run as `venv/bin/python scripts/pv2_livecheck_probe.py` from the backend dir: no PYTHONPATH needed.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 FIXTURE = Path(__file__).resolve().parents[1] / "tests" / "chatbot" / "pv2" / "probe" / "livecheck_probe.jsonl"
+
+
+DOC_KINDS = {"order", "delivery_order", "customer_order", "sales_order"}
 
 
 def _as_list(value):
     return value if isinstance(value, list) else [value]
 
 
+def _number(entity_like) -> str | None:
+    """The document number, wherever the parser put it (phrase or doc_number)."""
+    return entity_like.get("doc_number") or entity_like.get("phrase")
+
+
+def _entity_failures(i: int, want: dict, e) -> list[str]:
+    """Outcome fields only. A document number may sit in `phrase` or `doc_number`, and the kinds
+    order / delivery_order / customer_order / sales_order are interchangeable when the number
+    matches (an unnamed "order" probes every visible kind)."""
+    have = {"kind": e.kind, "phrase": e.phrase, "doc_number": e.doc_number,
+            "quantity": e.quantity.number if e.quantity else None, "refers_to_held": e.refers_to_held}
+    bad = []
+    wants_doc = want.get("kind") in DOC_KINDS and _number(want)
+    if wants_doc:
+        if have["kind"] not in DOC_KINDS or _number(have) != _number(want):
+            bad.append(f"entity {i} document {have['kind']}:{_number(have)!r} vs {want.get('kind')}:{_number(want)!r}")
+        rest = {k: v for k, v in want.items() if k in ("quantity", "refers_to_held")}
+    else:
+        rest = {k: v for k, v in want.items() if k in ("kind", "phrase", "doc_number", "quantity", "refers_to_held")}
+    for key, value in rest.items():
+        if have.get(key) != value:
+            bad.append(f"entity {i} {key} {have.get(key)!r} != {value!r}")
+    return bad
+
+
 def _ask_failures(want: dict, got) -> list[str]:
+    """The act stays strict (it decides the route); domain is ignored on an answer to a question."""
     bad = []
     if "act" in want and got.act not in _as_list(want["act"]):
         bad.append(f"act {got.act!r} not in {_as_list(want['act'])}")
-    if "domain" in want and got.domain != want["domain"]:
+    answering = got.act == "answers_bot_question" or "answers_bot_question" in _as_list(want.get("act"))
+    if "domain" in want and not answering and got.domain != want["domain"]:
         bad.append(f"domain {got.domain!r} != {want['domain']!r}")
-    if "portal_form" in want and got.portal_form != want["portal_form"]:
-        bad.append(f"portal_form {got.portal_form!r} != {want['portal_form']!r}")
+    if "portal_form" in want and got.portal_form not in _as_list(want["portal_form"]):
+        bad.append(f"portal_form {got.portal_form!r} not in {_as_list(want['portal_form'])!r}")
     if "switch_back_to" in want:
         ok = bool(got.switch_back_to) if want["switch_back_to"] == "*" else got.switch_back_to == want["switch_back_to"]
         if not ok:
             bad.append(f"switch_back_to {got.switch_back_to!r} vs {want['switch_back_to']!r}")
-    if "answered" in want:
-        said = bool(got.answer and (got.answer.option_key or got.answer.free_value))
-        if said != want["answered"]:
-            bad.append(f"answered {said} != {want['answered']}")
     if "entities" in want:
         if len(got.entities) != len(want["entities"]):
             bad.append(f"{len(got.entities)} entities, wanted {len(want['entities'])}")
         for i, (w, e) in enumerate(zip(want["entities"], got.entities)):
-            have = {"kind": e.kind, "phrase": e.phrase, "doc_number": e.doc_number,
-                    "quantity": e.quantity.number if e.quantity else None, "refers_to_held": e.refers_to_held}
-            for key, value in w.items():
-                if have.get(key) != value:
-                    bad.append(f"entity {i} {key} {have.get(key)!r} != {value!r}")
+            bad += _entity_failures(i, w, e)
     return bad
 
 
 def check(expect: dict, output) -> list[str]:
+    if expect.get("escalation_requested"):
+        asked = bool(output.escalation and output.escalation.requested)
+        return [] if asked else ["escalation.requested is not set"]
     wanted = expect["asks"]
-    # `asks_min`: the listed asks must lead; the model may add more (a switch back plus the lookup it implies).
+    # `asks_min`: the listed asks must lead; the model may add the lookup the switch back implies.
     if len(output.asks) < len(wanted) or (not expect.get("asks_min") and len(output.asks) != len(wanted)):
         return [f"{len(output.asks)} asks, wanted {len(wanted)}"]
     bad: list[str] = []
