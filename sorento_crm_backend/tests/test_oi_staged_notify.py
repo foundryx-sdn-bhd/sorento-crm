@@ -490,7 +490,7 @@ def test_AC_SN_11_multi_oi_email_is_short_with_five_listed(sn, monkeypatch):
     assert "and 2 more order inquiries." in html
     assert "View order inquiries that need your reserve" in html
     assert "/project-sales/order-inquiries?reserve=needs_reserve" in html
-    assert len(re.findall(r"em-btn-link", html)) == 1, "ONE button"
+    assert len(re.findall(r'class="em-btn-link"', html)) == 1, "ONE button"
 
 
 # --------------------------------------------------------------------------------- #
