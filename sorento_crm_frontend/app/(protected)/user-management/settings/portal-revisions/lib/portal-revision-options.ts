@@ -32,6 +32,7 @@ export const PORTAL_REVISION_STATUS_OPTIONS: Record<
     { value: 'rejected', label: 'Rejected' },
     { value: 'processed_by_cs', label: 'Processed by CS' },
     { value: 'closed', label: 'Closed' },
+    { value: 'completed', label: 'Completed' },
   ],
   sponsorship_form: [
     { value: 'draft', label: 'Draft' },
@@ -40,6 +41,7 @@ export const PORTAL_REVISION_STATUS_OPTIONS: Record<
     { value: 'rejected', label: 'Rejected' },
     { value: 'processed_by_cs', label: 'Processed by CS' },
     { value: 'closed', label: 'Closed' },
+    { value: 'completed', label: 'Completed' },
   ],
   complaint: [
     { value: 'new', label: 'New' },

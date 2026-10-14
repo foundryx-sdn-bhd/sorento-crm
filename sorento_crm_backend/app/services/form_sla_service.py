@@ -898,6 +898,16 @@ class FormSLAOrchestrator:
         if existing:
             return existing
 
+        # No CS outcome: the requestor's winning rule says this form needs no customer
+        # service, so it finishes at approval (no tracker, no team lookup).
+        if self._reads_cs_pin(config) and self._winning_rule_is_no_cs(
+            config, source_entity_id, contact_id
+        ):
+            from app.services.procurement_service import PurchaseRequestService
+
+            PurchaseRequestService(self.db).complete_without_cs(str(source_entity_id))
+            return None
+
         agent = (
             self.db.query(AccessAgent)
             .filter(AccessAgent.code == config.agent_code)
@@ -1089,8 +1099,15 @@ class FormSLAOrchestrator:
                 _sql_text(f"SELECT row_to_json(t) AS j FROM {table} t WHERE t.id = :id"),
                 {"id": str(source_entity_id)},
             ).first()
-            return dict(row[0]) if row and row[0] else {}
+            values = dict(row[0]) if row and row[0] else {}
+            if values and source_entity_type in ("purchase_request", "sponsorship_form"):
+                values.update(self._computed_request_values(str(source_entity_id), values))
+            return values
         except Exception:
+            try:
+                self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
             logger.warning(
                 "CS pin: failed to load form fields for %s/%s; predicates see no fields.",
                 source_entity_type,
@@ -1098,6 +1115,66 @@ class FormSLAOrchestrator:
                 exc_info=True,
             )
             return {}
+
+    def _computed_request_values(self, request_id: str, header_values: dict) -> dict:
+        """PR / SF routing values that are not header columns: `product_lines` (has / none,
+        a line counts only with a non-blank item_code) and `customer_debtor_type` (the
+        linked customer's CURRENT type, None when unlinked or blank)."""
+        from sqlalchemy import text as _sql_text
+
+        has_line = self.db.execute(
+            _sql_text(
+                "SELECT 1 FROM purchase_request_lines WHERE purchase_request_id = :id "
+                "AND btrim(coalesce(item_code, '')) <> '' LIMIT 1"
+            ),
+            {"id": request_id},
+        ).first()
+        debtor_type = None
+        customer_id = header_values.get("customer_id")
+        if customer_id:
+            row = self.db.execute(
+                _sql_text("SELECT debtor_type FROM customers WHERE id = :cid"),
+                {"cid": str(customer_id)},
+            ).first()
+            debtor_type = row[0] if row and row[0] else None
+        return {"product_lines": "has" if has_line else "none", "customer_debtor_type": debtor_type}
+
+    def _winning_rule_is_no_cs(
+        self, config: FormSLAConfig, source_entity_id: str, contact_id: Optional[str]
+    ) -> bool:
+        """True when the requestor's winning CS routing rule for this form is "No CS"
+        (cs_pic_user_id NULL). Same contact, same form values, same selection as
+        `_resolve_pinned_assignee`. Never raises: any failure means "not No CS"."""
+        try:
+            from app.models.access import RespondContactCsRouting
+            from app.services.cs_routing_match import select_pin_row
+
+            routing_contact_id = (
+                self._routing_contact_id(config.source_entity_type, source_entity_id) or contact_id
+            )
+            if not routing_contact_id:
+                return False
+            pins = (
+                self.db.query(RespondContactCsRouting)
+                .filter(
+                    RespondContactCsRouting.respond_contact_id == routing_contact_id,
+                    RespondContactCsRouting.use_case == config.source_entity_type,
+                    RespondContactCsRouting.is_active.is_(True),
+                )
+                .all()
+            )
+            if not pins:
+                return False
+            form_values = self._load_form_field_values(config.source_entity_type, source_entity_id)
+            pin = select_pin_row(pins, form_values)
+            return bool(pin) and pin.cs_pic_user_id is None
+        except Exception:
+            logger.warning("No CS check failed for %s; routing as usual.", source_entity_id, exc_info=True)
+            try:
+                self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return False
 
     def _routing_contact_id(
         self,

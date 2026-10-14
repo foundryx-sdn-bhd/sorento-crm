@@ -66,6 +66,7 @@ function getDisplayStatus(row: PurchaseRequest): string {
   const s = (row.status ?? '').trim().toLowerCase();
   if (s === 'processed_by_cs') return 'Processed by CS';
   if (s === 'closed') return 'Closed';
+  if (s === 'completed') return 'Completed';
   const a = row.approval_status;
   if (a === 'pending') return 'Pending approval';
   if (a === 'approved') return 'Approved';
