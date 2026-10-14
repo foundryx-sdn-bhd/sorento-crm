@@ -49,6 +49,9 @@ class ResolvedRef(BaseModel):
     family_code: str | None = None
     # A product set (`product_sets.id`; the key is its code): answered by its members in the set domains.
     set_id: str | None = None
+    # R4a: the resolver matched this key as the product code (MEMORY's HELD prints it); a key an option payload
+    # or a report row carried may be an internal id and is never printed.
+    code_key: bool = False
 
 
 class ResolvedSpec(BaseModel):
@@ -140,6 +143,9 @@ class ConversationState(BaseModel):
     next_sid: int = 1
     # The ask the last PV2 Lookup answered (an `Ask` dump); a v1 picker that Lookup raised keeps it as origin.
     last_lookup_ask: dict | None = None
+    # R4a: what the last reply did (MEMORY's LAST REPLY): "answered <domain>", "asked <question kind>",
+    # "refused <what>" or "not found <words>"; None for small talk, a hand-over and state saved before it.
+    last_reply: str | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -251,6 +257,7 @@ def roll_session(state: ConversationState, now: datetime) -> ConversationState:
     rolled.last_rows = []
     rolled.register = []
     rolled.last_lookup_ask = None
+    rolled.last_reply = None
     rolled.session_started_at = now
     return rolled
 

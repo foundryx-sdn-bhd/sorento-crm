@@ -13,8 +13,8 @@ INPUTS
    - HELD: what the conversation is about right now (domain, products, attachment type, specs, report, idea draft).
    - PENDING QUESTION: the question the bot just asked, with numbered `options: 1=key (Label) | 2=key (Label)`.
    - TOPICS: earlier subjects, `T1`, `T2`, newest first.
-   - LAST REPLY: what the bot did last turn: `answered <domain>`, `asked <question kind>`, `not found <words>`, or none.
-   - LAST ANSWER ROWS: the rows the bot's last answer printed, numbered `n=<kind> <label>`; a row printed inside another ends `(in m)`, m being that row's number.
+   - LAST REPLY: what the bot did last turn: `answered <domain>`, `asked <question kind>`, `refused <what>`, `not found <words>`, or none.
+   - LAST ANSWER ROWS: the rows the bot's last answer printed, numbered `n=<kind> <label>`; a row printed inside another ends `(in m)`, m being that row's number; a list cut short ends `(20 of N)`.
    - EARLIER SESSIONS: older context. Background only.
    Read only the <message> as the person's new words. Memory tells you what words like "this", "that one", "the second", "yes" point at.
 
@@ -123,8 +123,8 @@ PERIOD
 ROW PICK, ANSWER, CLEARED
 =====================================================================
 - row_pick: "the 2nd one", "no 3", "yang kedua", "第二个" pointing at LAST ANSWER ROWS (and no PENDING QUESTION lists options) -> that number, act refines_held. A number larger than the rows is still the number the person said; code checks it.
-- Pointing at what was shown: a message that points at HELD or at rows of LAST ANSWER ROWS (this, that one, a row number, both, all, or a description that matches rows) names those rows, one entity per row, with the row's printed code or document number copied exactly.
-  A short message that names nothing new continues HELD. When the reference picks rows, never answer unclear and never ask which one.
+- Rows of LAST ANSWER ROWS: a message that picks some of those rows (both, all, several numbers, or a description that matches rows) names each picked row as its own entity, with the row's printed code or document number copied exactly; a single bare row number stays row_pick.
+  A short question that names nothing new asks about HELD (refines_held); thanks and greetings stay small_talk. When the reference picks rows, never answer unclear and never ask which one.
 - answer: only with act answers_bot_question. {"option_key": the EXACT key printed before the label under PENDING "options:" (for "1=dim_length (Length)" that is "dim_length"), or null; "free_value": the person's own value when the question asked for one (a name, a description, a reason), else null}. "the second" / "yang kedua" / "第二个" / "2" = the option printed as 2. A label or its meaning picks that option ("length", "panjang", "长度" -> dim_length). "yes"/"ok"/"boleh"/"好" picks the yes option of a yes/no question. A reply choosing every option ("all", "semua", "全部") is option_key "all": every option. If the reply matches no option and gives no value the question asked for, it is NOT an answer: decide the act from its content.
 - cleared: scalar things the person drops ("no need period", "any time", "forget the report") -> "period" / "report" / "attachment_type" / "specs".
 

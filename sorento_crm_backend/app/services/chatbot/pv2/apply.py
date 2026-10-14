@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 
 from app.services.chatbot.pv2 import clarify_copy
+from app.services.chatbot.pv2.register import shown
 from app.services.chatbot.pv2.schema import Ask, Entity, Filter, ParserV2Output, Spec
 from app.services.chatbot.pv2.state import (
     MISSES_BEFORE_HANDOVER,
@@ -147,7 +148,7 @@ def apply_turn(
 
     if out.escalation is not None and out.escalation.requested:
         st.pending = None
-        st.last_lookup_ask = None
+        st.last_lookup_ask = st.last_reply = None
         return st, [HandOver(ask_index=0, team_key=out.escalation.team_key)]
 
     # A clarify flag beside a new_topic ask does not re-ask an OPEN question as a miss: the new
@@ -177,6 +178,7 @@ def apply_turn(
             act.pending.origin = _origin_of(out.asks[0]) if out.asks else None
         st.pending = None if getattr(act, "closes", False) else act.pending
         st.last_lookup_ask = None
+        st.last_reply = _outcome([act])
         return st, [act]
 
     first_question: PendingQuestion | None = None
@@ -241,7 +243,27 @@ def apply_turn(
     st.last_lookup_ask = _last_lookup_ask(actions, pending_in if answered_pending else None)
     if not st.held.is_empty() and st.held.sid is None:
         st.held.sid = new_sid(st)  # a pick answered without `_commit` (a pre-R2 held, a v1 or "all" pick)
+    st.last_reply = _outcome(actions)
     return st, actions
+
+
+#: R4a: a not-found phrase in LAST REPLY is the contact's words: one line, capped.
+PHRASE_CAP = 40
+
+
+def _outcome(actions: list[Action]) -> str | None:
+    """R4a: what this turn's reply does (MEMORY's LAST REPLY): its first question (`not found <words>` when the
+    question says nothing was found, the words being the contact's own, collapsed to one line and capped; else
+    `asked <kind>`), else the domain its last lookup answered, else None (small talk, a hand-over)."""
+    question = next((a for a in actions if isinstance(a, (ClarifyAct, OfferHandover))), None)
+    if question is not None:
+        missed = question.phrase if isinstance(question, ClarifyAct) and question.not_found else None
+        words = " ".join((missed or "").split())[:PHRASE_CAP]
+        return f"not found {words}" if words else f"asked {question.pending.kind}"
+    lookups = [a for a in actions if isinstance(a, Lookup)]
+    if not lookups:
+        return None
+    return f"answered {lookups[-1].domain}" if lookups[-1].domain else "answered"
 
 
 # --------------------------------------------------------------------------- #
@@ -462,6 +484,15 @@ def _one_ask(
     if ask.act == "small_talk":
         return SmallTalk(ask_index=i), False
 
+    picked = shown_row(shown(st), ask) if ask.act == "refines_held" else None
+    if picked is not None:
+        # R4a: a pick of a printed row is that row named by its printed code, before the act is decided, so it
+        # routes as a copied code does. A row the resolver cannot look up by label (a report breakdown's month,
+        # brand, category) is no record to look up: the pick misses, as before.
+        if picked.kind not in LABEL_KINDS:
+            raise _Miss("other")
+        ask = ask.model_copy(update={"entities": [picked, *ask.entities], "row_pick": None})
+
     reply = _carry_reply(ask, pending)
     if reply is not None:
         raise _Miss("carry_scope", origin=reply)  # RG-1b: no answer to the carry question: it is asked again
@@ -515,14 +546,10 @@ def _one_ask(
         st.topics = push_topic(st.topics, st.held)
     row = None
     if ask.row_pick is not None:
-        if not (1 <= ask.row_pick <= len(st.last_rows)):
+        rows = shown(st)
+        if not (1 <= ask.row_pick <= len(rows)):
             raise _Miss("other")
-        row = st.last_rows[ask.row_pick - 1]
-        if row.payload.get("row_kind"):
-            # R4a: a row the reply printed (the register) is its printed label looked up again as its kind, through
-            # the scoped resolver like any named entity; its stored key is never acted on.
-            picked = Entity(kind=row.payload["row_kind"], key=None, phrase=row.label, op="set", refers_to_held=False)
-            ask, row = ask.model_copy(update={"entities": [picked, *ask.entities]}), None
+        row = rows[ask.row_pick - 1]
     qs = _Qs(can_offer)
     base = st.held
     drilled = False
@@ -1218,6 +1245,8 @@ def _apply_entities(
             held.domain = DOMAIN_BY_FOUND_KIND[refs[0].kind]
         if ent.quantity is not None:
             refs = [r.model_copy(update={"quantity": ent.quantity}) for r in refs]
+        if refs[0].kind == "product":
+            refs = [r.model_copy(update={"code_key": True}) for r in refs]  # R4a: the resolver matched the code
         # Several entities of one kind in one ask are one list: the first "set" replaces
         # what was held, the later ones join it.
         kind = refs[0].kind  # filed under the kind FOUND
@@ -1255,6 +1284,19 @@ def _list_op(ent: Entity, set_kinds: set[str]) -> str:
 
 #: Entity kinds whose miss says v1's own not-found sentence: the documents and a product.
 DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_order", "inbound_shipment", "product"})
+
+#: R4a: the kinds the resolver looks up by a printed label (a row pick re-resolves only these).
+LABEL_KINDS = DOCUMENT_KINDS | {"customer", "warehouse"}
+
+
+def shown_row(rows: list[Option], ask: Ask) -> Entity | None:
+    """R4a: the printed register row an ask's row_pick names, as the entity a copied code would be (its printed
+    label as its kind; the stored key is never acted on). None when the pick names no register row."""
+    if ask.row_pick is None or not (1 <= ask.row_pick <= len(rows)):
+        return None
+    row = rows[ask.row_pick - 1]
+    kind = row.payload.get("row_kind")
+    return Entity(kind=kind, key=None, phrase=row.label, op="set", refers_to_held=False) if kind else None
 
 
 def _lists_all(domain: str | None) -> bool:

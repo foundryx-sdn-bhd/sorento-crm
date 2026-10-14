@@ -5,7 +5,9 @@ by the new message verbatim.
 
 MEMORY is for the model, not the user: it prints index keys (domains, attachment type,
 spec attributes) and option keys the model must echo back exactly, but never a ref's
-live id: refs print their label (a product whose label is a description, its code).
+live id: refs print their label (a product whose code the resolver matched, that code).
+Every element is one line: a newline inside a value (a contact's words quoted in a
+question) never starts a MEMORY line of its own.
 """
 from __future__ import annotations
 
@@ -14,9 +16,8 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.services.chatbot.pv2.apply import FREE_VALUE_PENDING
-from app.services.chatbot.pv2.register import _clean, latest
-from app.services.chatbot.pv2.state import ConversationState, Held, PendingQuestion, topic_key
+from app.services.chatbot.pv2.register import shown
+from app.services.chatbot.pv2.state import ConversationState, Held, Option, topic_key
 
 PV2_HISTORY_EXCHANGES = 3
 TIMEZONE = "Asia/Kuala_Lumpur"
@@ -91,10 +92,9 @@ def _report(report: Any) -> str:
 
 
 def _held_label(r) -> str:
-    """R4a: a held product whose label is a description (it does not lead with the code) prints its code, the
-    identifier the parser copies; a uuid key is never printed."""
-    code = _clean(r.key) if r.kind == "product" else None
-    return code if code and not r.label.startswith(code) else r.label
+    """R4a: a product whose code the resolver matched prints that code, the identifier the parser copies; a
+    family prints its label (its code and variant count) and any other ref its label, never a stored key."""
+    return r.key if r.code_key and not r.family else r.label
 
 
 def _ref_text(r) -> str:
@@ -138,28 +138,22 @@ def _topic_line(held: Held) -> str:
     return " | ".join(parts)
 
 
-def _missed(q: PendingQuestion) -> str | None:
-    """The parsed words a question with no options was raised for: the entity that raised it, else the first
-    named entity of the ask it interrupted."""
-    for e in [q.raised_by, *((q.origin or {}).get("entities") or [])]:
-        words = isinstance(e, dict) and (e.get("phrase") or e.get("doc_number"))
-        if words:
-            return str(words)
-    return None
-
-
 def _last_reply(state: ConversationState) -> str:
-    """R4a: what the bot did last turn, from state alone (never the user's text): the open question's kind, the
-    words a question with no options found nothing for (an open question asking for a value is asked), the
-    domain a lookup answered, else none."""
-    q = state.pending
-    if q is not None:
-        missed = None if q.options or q.kind in FREE_VALUE_PENDING else _missed(q)
-        return f"not found {missed}" if missed else f"asked {q.kind}"
-    if state.last_lookup_ask is not None:
-        domain = state.held.domain or state.last_lookup_ask.get("domain")
-        return f"answered {domain}" if domain else "answered"
-    return NONE
+    """R4a: what the last reply did, as the turn stored it (`ConversationState.last_reply`); state saved without
+    it reads its open question's kind."""
+    if state.last_reply:
+        return state.last_reply
+    return f"asked {state.pending.kind}" if state.pending is not None else NONE
+
+
+def _row(n: int, o: Option) -> str:
+    """One shown row: a printed register row as `n=<kind> <label>`, a child `(in <parent number>)`; PV2's own
+    report row as `n=<label>`."""
+    kind = o.payload.get("row_kind")
+    if not kind:
+        return f"{n}={o.label}"
+    parent = o.payload.get("in")
+    return f"{n}={kind} {o.label}" + (f" (in {parent})" if parent else "")
 
 
 def render_memory(state: ConversationState, profile: MemoryProfile, now: datetime) -> str:
@@ -191,16 +185,11 @@ def render_memory(state: ConversationState, profile: MemoryProfile, now: datetim
     else:
         lines.append(f"TOPICS (switch_back keys, newest first): {NONE}")
     lines.append(f"LAST REPLY: {_last_reply(state)}")
-    shown = latest(state.register)
-    if shown:
-        # R4a: the rows the latest reply printed (the register), a child marked with its parent's number.
-        number = {e.id: n for n, e in enumerate(shown, start=1)}
-        lines.append("LAST ANSWER ROWS: " + " | ".join(
-            f"{n}={e.kind} {e.label}" + (f" (in {number[e.parent]})" if e.parent in number else "")
-            for n, e in enumerate(shown, start=1)
-        ))
-    elif state.last_rows:
-        lines.append("LAST ANSWER ROWS: " + " | ".join(f"{n}={o.label}" for n, o in enumerate(state.last_rows, 1)))
+    rows = shown(state)
+    if rows:
+        of = rows[0].payload.get("of") or 0  # a list cut to the cap says how long it was
+        lines.append("LAST ANSWER ROWS: " + " | ".join(_row(n, o) for n, o in enumerate(rows, 1))
+                     + (f" ({len(rows)} of {of})" if of > len(rows) else ""))
     else:
         lines.append(f"LAST ANSWER ROWS: {NONE}")
     if p.earlier_sessions:
@@ -209,7 +198,7 @@ def render_memory(state: ConversationState, profile: MemoryProfile, now: datetim
     else:
         lines.append(f"EARLIER SESSIONS: {NONE}")
     lines.append("</memory>")
-    return "\n".join(lines)
+    return "\n".join(" ".join(line.splitlines()) for line in lines)
 
 
 def render_user_message(state: ConversationState, profile: MemoryProfile, now: datetime, text: str) -> str:

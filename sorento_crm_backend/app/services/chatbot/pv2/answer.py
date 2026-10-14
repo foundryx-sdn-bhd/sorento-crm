@@ -228,6 +228,8 @@ def _build_result(state, actions, out, today, pending_in, report_answer, idea_an
             if idea is not None:
                 st = state.model_copy(deep=True)
                 st.pending = _pending_from(_attr(idea, "pending"), st.turn_no)
+                if st.pending is not None:
+                    st.last_reply = f"asked {st.pending.kind}"  # R4a: the lane asked, not answered
                 draft = _attr(idea, "idea_draft_id")
                 if draft:
                     st.held.idea_draft_id = str(draft)
@@ -253,11 +255,15 @@ def _build_result(state, actions, out, today, pending_in, report_answer, idea_an
             if spec is not None:
                 st.held.report = spec
             st.pending = _pending_from(_attr(rep, "pending"), st.turn_no)
+            if st.pending is not None:
+                st.last_reply = f"asked {st.pending.kind}"  # R4a: the lane asked, not answered
             rows = _rows_from(_attr(rep, "rows"))
             if rows:
                 st.last_rows = rows[:20]
                 fresh = register.entries_from_report_rows(st.last_rows, st.turn_no, st.held.sid)
                 st.register = register.roll(st.register, fresh)
+            elif st.pending is None:
+                st.last_rows = []  # R4a: an answer that printed no rows leaves none to pick
             trace["route_detail"] = _attr(plan, "status") if plan is not None else None
             return TurnV2Result(None, None, str(_attr(rep, "text") or ""), st, actions, "report", language, trace)
         verdict = bridge.to_v1_verdict(state, last, today=today)

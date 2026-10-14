@@ -24,8 +24,15 @@ from zoneinfo import ZoneInfo
 import logging
 
 from app.services.chatbot.pv2 import answer as answer_mod
-from app.services.chatbot.pv2 import clarify_copy
-from app.services.chatbot.pv2.apply import DEFAULT_POLICY, ClarifyPolicy, ResolverLike, apply_turn, valid_origin
+from app.services.chatbot.pv2 import clarify_copy, register
+from app.services.chatbot.pv2.apply import (
+    DEFAULT_POLICY,
+    ClarifyPolicy,
+    ResolverLike,
+    apply_turn,
+    shown_row,
+    valid_origin,
+)
 from app.services.chatbot.pv2.history import (
     TIMEZONE,
     MemoryProfile,
@@ -130,12 +137,13 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
     else:
         out = ctx.parse(messages, user_message)
 
-    early = _pre_grant_refusal(ctx, out, state_in.pending, state_in.held)
+    early = _pre_grant_refusal(ctx, out, state_in.pending, state_in.held, register.shown(state_in))
     if early is not None:
-        # Nothing was looked up and nothing is kept: the turn changes no state.
+        # Nothing was looked up and nothing is kept: the turn changes no state but the last reply (R4a).
         language = clarify_copy.lang(out.language)
         trace = {"acts": [a.act for a in out.asks], "actions": [], "grant_refused": True}
-        return answer_mod.TurnV2Result(None, None, early[0], state_in, [], early[1], language, trace)
+        refused = state_in.model_copy(update={"last_reply": f"refused {early[2]}"})
+        return answer_mod.TurnV2Result(None, None, early[0], refused, [], early[1], language, trace)
     extra: dict[str, Any] = {"dym_tags": ctx.dym_tags} if ctx.dym_tags is not None else {}
     state_out, actions = apply_turn(
         state_in,
@@ -158,7 +166,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         trace = {"acts": [a.act for a in out.asks], "actions": [a.type for a in actions], "grant_refused": True}
         # A refused ask leaves no pending, origin or held behind; only the session clock moves, so repeated
         # refusals never roll the session.
-        kept = state_in.model_copy(update={"last_turn_at": ctx.now})
+        kept = state_in.model_copy(update={"last_turn_at": ctx.now, "last_reply": f"refused {refusal[2]}"})
         return answer_mod.TurnV2Result(None, None, refusal[0], kept, actions, refusal[1], language, trace)
     result = answer_mod.build_result(
         state_out,
@@ -212,11 +220,16 @@ def _is_sales_dataset(spec: Any) -> bool:
 REPORT_QUESTION_KINDS = frozenset({"clarify_report_measure", "clarify_report_period"})
 
 
-def _judged_asks(out: Any, pending_in: Any, held: Any = None) -> list[Any]:
+def _judged_asks(out: Any, pending_in: Any, held: Any = None, rows: list[Any] | None = None) -> list[Any]:
     """The asks a grant check judges: this turn's and, when the turn answers the open question, the held
     subject (its domain and report) and the question's original ask: a pick continues both, so a grant
-    removed since either was asked still binds, however many questions deep."""
-    asks = list(getattr(out, "asks", None) or [])
+    removed since either was asked still binds, however many questions deep. A pick of a printed row (`rows`,
+    the shown rows) is judged as the entity apply makes of it (R4a), so a grant removed since it was printed
+    binds too."""
+    asks = []
+    for ask in getattr(out, "asks", None) or []:
+        picked = shown_row(rows or [], ask)
+        asks.append(ask if picked is None else ask.model_copy(update={"entities": [picked, *ask.entities]}))
     if pending_in is None or not any(getattr(a, "act", None) == "answers_bot_question" for a in asks):
         return asks
     origin = valid_origin(getattr(pending_in, "origin", None))
@@ -224,13 +237,13 @@ def _judged_asks(out: Any, pending_in: Any, held: Any = None) -> list[Any]:
 
 
 def _pre_grant_refusal(
-    ctx: TurnV2Context, out: Any, pending_in: Any, held: Any = None
-) -> tuple[str, str] | None:
+    ctx: TurnV2Context, out: Any, pending_in: Any, held: Any = None, rows: list[Any] | None = None
+) -> tuple[str, str, str] | None:
     """The permission checks that read only the parse and the open question, run BEFORE any
     lookup so a refusal never reveals whether a record exists: a sales order without the SO
     grant, a sales ask (or the answer to a report question) without the sales report grant."""
     granted = ctx.granted_reveals or frozenset()
-    asks = _judged_asks(out, pending_in, held)
+    asks = _judged_asks(out, pending_in, held, rows)
     # Audience-split as v1: a dealer is refused; staff keep probing the kinds they may see (not-found + roster offer).
     staff = getattr(ctx.profile, "audience", None) == "staff"
     if not staff and SO_GRANT not in granted and any(
@@ -238,21 +251,21 @@ def _pre_grant_refusal(
     ):
         from app.services.chatbot.lanes.business.fetch import SO_NOT_ENABLED_MESSAGE
 
-        return SO_NOT_ENABLED_MESSAGE, "clarify"
+        return SO_NOT_ENABLED_MESSAGE, "clarify", "sales_order"
     if SALES_REPORT_GRANT not in granted and (
         any(getattr(ask, "domain", None) == "sales" for ask in asks)
         or (pending_in is not None and getattr(pending_in, "kind", None) in REPORT_QUESTION_KINDS)
     ):
         from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 
-        return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
+        return SALES_REPORT_NOT_ENABLED_MESSAGE, "report", "sales"
     return None
 
 
 def _grant_refusal(
     ctx: TurnV2Context, actions: list[Any], out: Any, held: Any = None, pending_in: Any = None
-) -> tuple[str, str] | None:
-    """(reply, route) when this turn asks for a domain the contact holds no grant for, else
+) -> tuple[str, str, str] | None:
+    """(reply, route, what was refused) when this turn asks for a domain the contact holds no grant for, else
     None. Refused before any lookup or report question, so nothing of the data is read."""
     granted = ctx.granted_reveals or frozenset()
     lookups = [a for a in actions if isinstance(a, Lookup)]
@@ -269,7 +282,7 @@ def _grant_refusal(
             from app.services.chatbot.lanes import canned as canned_lanes
 
             text = canned_lanes.field_grant_denied_text(copy_mod.fallback_copy(), PO_DOMAIN_SUBJECT[hit])
-            return text, "clarify"
+            return text, "clarify", hit
     if SALES_REPORT_GRANT in granted:
         return None
     from app.services.chatbot.pv2 import reports
@@ -288,11 +301,11 @@ def _grant_refusal(
         if ask.domain in answer_mod.REPORT_DOMAINS and merged is not None and _is_sales_dataset(merged):
             from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 
-            return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
+            return SALES_REPORT_NOT_ENABLED_MESSAGE, "report", "sales"
     if last is not None and answer_mod._is_report(last) and _is_sales_dataset(last.held.report):
         from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 
-        return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
+        return SALES_REPORT_NOT_ENABLED_MESSAGE, "report", "sales"
     return None
 
 

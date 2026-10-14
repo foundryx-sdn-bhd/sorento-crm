@@ -4233,11 +4233,18 @@ def _pv2_write_register(media_box: dict[str, Any], envelopes: Any) -> None:
 
         fresh = pv2_register.entries_from_envelopes(envelopes, int(getattr(state, "turn_no", 0) or 0), printing_subject)
         state.register = pv2_register.roll(getattr(state, "register", None) or [], fresh)
-        if fresh:
-            # R4a: the next row_pick indexes exactly the rows MEMORY shows from this register.
-            state.last_rows = pv2_register.shown_rows(state.register)
+        # R4a: the rows of this answer are what MEMORY shows and a row_pick indexes; an answer that printed none
+        # clears them.
+        state.last_rows = pv2_register.shown_rows(state.register, state.turn_no, len(fresh)) if fresh else []
     except Exception:  # noqa: BLE001 - the register is a convenience; the reply is already decided
         logger.warning("pv2: could not write the answer register", exc_info=True)
+
+
+def _pv2_refused(media_box: dict[str, Any], what: str) -> None:
+    """R4a: a refusal the v1 stages composed is the PV2 turn's last reply (MEMORY's LAST REPLY)."""
+    state = media_box.get("pv2_state")
+    if state is not None:
+        state.last_reply = f"refused {what}"
 
 
 def _pv2_keep_state(
@@ -7339,6 +7346,7 @@ def _run_stages_body(  # noqa: PLR0915
             answer = turn_compose.Answer(
                 text=canned_lanes.stock_denied_text(copy_mod.resolve(db))
             )
+            _pv2_refused(media_box, "inventory")
 
         # -- the REFUSAL: SF-1's grant-before-roster, same idiom as stock_denied ---- #
         # No new branch kind: the resolver never ran (gated above), so `plan` is
@@ -7351,6 +7359,7 @@ def _run_stages_body(  # noqa: PLR0915
 
             stage[0] = "replied"
             answer = turn_compose.Answer(text=SALES_REPORT_NOT_ENABLED_MESSAGE)
+            _pv2_refused(media_box, "sales")
 
         # -- the REFUSAL: a customer word outside a scoped contact's links -------- #
         # Once for the whole turn, however many domains the plan fans out to; no picker,
@@ -7360,6 +7369,7 @@ def _run_stages_body(  # noqa: PLR0915
             answer = turn_compose.Answer(
                 text=account_question or str((customer_scope or {}).get("refusal") or "")
             )
+            _pv2_refused(media_box, "customer")
 
     if answer is not None and lane_error_text is None:
         if _dealer_stock_ask(state_out, plan) or _dealer_incoming_ask(state_out, plan):
