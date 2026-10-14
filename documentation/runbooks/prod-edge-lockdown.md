@@ -144,7 +144,7 @@ cf = [ipaddress.ip_network(l) for u in ("https://www.cloudflare.com/ips-v4", "ht
       for l in urllib.request.urlopen(u).read().decode().split()]
 import glob, gzip
 seen = collections.Counter()
-for path in glob.glob("/var/log/nginx/access.log*"):          # rotated and .gz too: weekly callers
+for path in glob.glob("/var/log/nginx/*access*.log*"):          # rotated and .gz too: weekly callers
     with (gzip.open if path.endswith(".gz") else open)(path, "rt", errors="replace") as fh:
         seen.update(l.split()[0] for l in fh if l.strip())
 for ip, n in seen.most_common():
@@ -448,14 +448,17 @@ a container, so ufw does apply to 80/443. First check that ufw is actually on:
 
 ```bash
 sudo ufw status verbose     # expect "Status: active" and "Default: deny (incoming)"
-# Only if it is inactive, in this order, so 22 and 8765 stay reachable:
-#   sudo ufw allow OpenSSH
-#   sudo ufw allow proto tcp from <N8N_HOST> to any port 8765,6432
-#   sudo ufw default deny incoming && sudo ufw enable
+# ufw takes rules while it is off, so every allow goes in BEFORE it is enabled (no outage).
 for r in $(curl -fsS https://www.cloudflare.com/ips-v4) $(curl -fsS https://www.cloudflare.com/ips-v6); do
   sudo ufw allow proto tcp from "$r" to any port 80,443
 done
 sudo ufw allow proto tcp from <N8N_HOST> to any port 443
+# Only if it was inactive, still before enabling:
+#   sudo ufw allow OpenSSH
+#   sudo ufw allow proto tcp from <N8N_HOST> to any port 8765,6432
+#   sudo ufw allow in on tailscale0        # the tailnet (follow-up, tailscale serve)
+#   sudo ufw allow in on docker0           # containers reaching host nginx on 8765
+#   sudo ufw default deny incoming && sudo ufw enable
 sudo ufw delete allow 80/tcp; sudo ufw delete allow 443/tcp; sudo ufw delete allow 'Nginx Full'
 ```
 
