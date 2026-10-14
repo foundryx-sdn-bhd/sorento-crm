@@ -5477,6 +5477,7 @@ def envelope_of(
     codes = [name for name in (_answer_subject(e) for e in entities) if name]
     rows = fetched.get("answers")
     figures = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+    kept = {i: n for n, i in enumerate(i for i, r in enumerate(rows) if isinstance(r, dict))} if isinstance(rows, list) else {}
     files = fetched.get("attachments")
     has_result = bool(fetched.get("has_result")) and bool(figures)
     envelope: dict[str, Any] = {
@@ -5511,7 +5512,8 @@ def envelope_of(
         # Indices into `figures` the reply text printed, and the normalized {kind, key, label} rows of a
         # reply that prints cards or a breakdown with no figures (SO / PO cards, report rows): both are
         # unprinted facts for the answer register, never rendered.
-        "printed_rows": [i for i in (fetched.get("printed_rows") or []) if isinstance(i, int)],
+        # The structurer indexes `answers`; `figures` keeps only its dict rows, so re-point each index.
+        "printed_rows": [kept[i] for i in (fetched.get("printed_rows") or []) if isinstance(i, int) and i in kept],
         "rows": [r for r in (fetched.get("rows") or []) if isinstance(r, dict)],
         "files": [f for f in files if isinstance(f, dict)] if isinstance(files, list) else [],
         "miss": [] if has_result else codes,

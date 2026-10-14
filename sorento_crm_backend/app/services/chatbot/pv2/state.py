@@ -67,6 +67,9 @@ class Held(BaseModel):
     idea_draft_id: str | None = None
     status: str | None = None
     portal_form: str | None = None
+    # Stable subject id ("s<n>", from `ConversationState.next_sid`): kept when the subject moves to
+    # topics and back. None only on state saved before R2.
+    sid: str | None = None
 
     def is_empty(self) -> bool:
         return not (
@@ -92,6 +95,9 @@ class PendingQuestion(BaseModel):
     # The original ask this question interrupted (domain, attachment kinds, quantity): the answer
     # completes it instead of re-running the held subject's own domain.
     deferred: dict | None = None
+    # The full original ask (an `Ask` dump) this question interrupted: a pick completes it with the
+    # picked entity. `deferred` is read only for state saved before R2.
+    origin: dict | None = None
 
 
 class RegisterEntry(BaseModel):
@@ -103,7 +109,7 @@ class RegisterEntry(BaseModel):
     key: str
     label: str
     parent: str | None = None  # the "R<n>" of the entry this one is a child of
-    subject: str = "S1"
+    subject: str | None = None  # the printing subject's sid ("s<n>"); `subject_label` gives its current S<n>
     turn: int = 0
 
 
@@ -120,6 +126,10 @@ class ConversationState(BaseModel):
     run_id: str | None = None
     # What the last two replies printed, newest reply first (`pv2/register.py`); empty for old state.
     register: list[RegisterEntry] = Field(default_factory=list)
+    # Next subject id to hand out ("s<next_sid>").
+    next_sid: int = 1
+    # The ask the last PV2 Lookup answered (an `Ask` dump); a v1 picker that Lookup raised keeps it as origin.
+    last_lookup_ask: dict | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -228,16 +238,48 @@ def roll_session(state: ConversationState, now: datetime) -> ConversationState:
     rolled.pending = None
     rolled.last_rows = []
     rolled.register = []
+    rolled.last_lookup_ask = None
     rolled.session_started_at = now
     return rolled
 
 
 def push_topic(topics: list[Held], held: Held) -> list[Held]:
-    """`held` onto the front of `topics`, an identical earlier entry dropped, cap 5."""
+    """`held` onto the front of `topics`, an earlier entry for the same subject dropped, cap 5. The same
+    subject is compared without its sid; the earlier topic's sid stays, so register entries still name it."""
     if held.is_empty():
         return list(topics)
-    kept = [t for t in topics if t != held]
-    return [held.model_copy(deep=True), *kept][:TOPICS_CAP]
+    bare = held.model_copy(update={"sid": None})
+    same = next((t for t in topics if t.model_copy(update={"sid": None}) == bare), None)
+    kept = [t for t in topics if t is not same]
+    pushed = held.model_copy(update={"sid": same.sid}, deep=True) if same is not None else held.model_copy(deep=True)
+    return [pushed, *kept][:TOPICS_CAP]
+
+
+def subject_label(state: ConversationState, sid: str | None) -> str | None:
+    """The stack position of a subject: S1 = held, S2..S5 = topics newest first; None when it left."""
+    if not sid:
+        return None
+    if state.held.sid == sid:
+        return "S1"
+    for i, t in enumerate(state.topics):
+        if t.sid == sid:
+            return f"S{i + 2}"
+    return None
+
+
+def subject_at(state: ConversationState, label: str | None) -> Held | None:
+    """The subject an "S<n>" label names, or None (exact compare, never a parse of the user's words)."""
+    for n, subject in enumerate([state.held, *state.topics], start=1):
+        if label == f"S{n}":
+            return subject
+    return None
+
+
+def new_sid(state: ConversationState) -> str:
+    """The next subject id; the counter moves on."""
+    sid = f"s{state.next_sid}"
+    state.next_sid += 1
+    return sid
 
 
 def topic_key(index: int) -> str:

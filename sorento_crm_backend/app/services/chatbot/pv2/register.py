@@ -9,7 +9,7 @@ pointing and never rendered; no label is a uuid.
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from app.services.chatbot.pv2.state import RegisterEntry
 
@@ -87,6 +87,13 @@ def _rows(env: dict[str, Any]) -> Iterable[tuple[str, str, str, int | None]]:
             label = _clean(item.get("canonical_code")) or _clean(item.get("raw"))
             if label:
                 yield (str(item.get("hint") or "product"), str(item.get("canonical_code") or label), label, None)
+    from app.services import stock_ask_service
+
+    for item in stock_ask_service.answered_entries(env.get("stock_availability") or []):
+        # The stock-ask render's lines: only an answered entry (a branch and the dealer's quantity) was printed.
+        code = _clean(item.get("product_code"))
+        if code:
+            yield ("product", code, code, None)
     for item in env.get("files") or []:
         code = _clean(item.get("product_code")) if isinstance(item, dict) else None
         if code:
@@ -106,13 +113,17 @@ def _rows(env: dict[str, Any]) -> Iterable[tuple[str, str, str, int | None]]:
             yield (str(kind), str(keys[0] if keys else label), label, None)
 
 
-def entries_from_envelopes(envelopes: Sequence[dict[str, Any]], turn: int) -> list[RegisterEntry]:
-    """The reply's register entries: ids R1..Rn depth-first (an entry, then its children)."""
+def entries_from_envelopes(
+    envelopes: Sequence[dict[str, Any]], turn: int, subject: str | Callable[[dict[str, Any]], str | None] | None = None
+) -> list[RegisterEntry]:
+    """The reply's register entries: ids R1..Rn depth-first (an entry, then its children). `subject` is the
+    printing subject's sid, or a function giving each envelope's own."""
     out: list[RegisterEntry] = []
     for env in envelopes or []:
         if not isinstance(env, dict):
             continue
         base = len(out)
+        sid = subject(env) if callable(subject) else subject
         rows = list(_rows(env))
         ids: dict[int, str] = {}
         for i, (kind, key, label, parent) in enumerate(rows):
@@ -127,7 +138,26 @@ def entries_from_envelopes(envelopes: Sequence[dict[str, Any]], turn: int) -> li
                     head -= 1
                 parent_id = ids.get(head)
             out.append(RegisterEntry(id=entry_id, kind=kind, key=key, label=label, parent=parent_id,
-                                     subject="S1", turn=turn))
+                                     subject=sid, turn=turn))
+    return out
+
+
+def entries_from_report_rows(rows: Sequence[Any], turn: int, subject: str | None = None) -> list[RegisterEntry]:
+    """The ranked rows a report direct reply printed (`reports.ROW_PAYLOAD` on each option): one entry per row,
+    its kind the row's dimension, its key the first key the row stands for."""
+    from app.services.chatbot.pv2.reports import ROW_PAYLOAD
+
+    out: list[RegisterEntry] = []
+    for row in rows or []:
+        picked = (getattr(row, "payload", None) or {}).get(ROW_PAYLOAD)
+        if not isinstance(picked, dict) or not picked.get("dimension"):
+            continue
+        label = _clean(picked.get("label")) or _clean(getattr(row, "label", None))
+        if not label:
+            continue
+        keys = picked.get("keys") or []
+        out.append(RegisterEntry(id=f"R{len(out) + 1}", kind=str(picked["dimension"]), key=str(keys[0] if keys else label),
+                                 label=label, parent=None, subject=subject, turn=turn))
     return out
 
 

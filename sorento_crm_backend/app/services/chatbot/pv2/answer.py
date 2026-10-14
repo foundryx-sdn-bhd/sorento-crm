@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Callable
 
-from app.services.chatbot.pv2 import bridge, clarify_copy
+from app.services.chatbot.pv2 import bridge, clarify_copy, register
 from app.services.chatbot.pv2.schema import ParserV2Output
 from app.services.chatbot.pv2.state import (
     Action,
@@ -256,6 +256,8 @@ def _build_result(state, actions, out, today, pending_in, report_answer, idea_an
             rows = _rows_from(_attr(rep, "rows"))
             if rows:
                 st.last_rows = rows[:20]
+                fresh = register.entries_from_report_rows(st.last_rows, st.turn_no, st.held.sid)
+                st.register = register.roll(st.register, fresh)
             trace["route_detail"] = _attr(plan, "status") if plan is not None else None
             return TurnV2Result(None, None, str(_attr(rep, "text") or ""), st, actions, "report", language, trace)
         verdict = bridge.to_v1_verdict(state, last, today=today)

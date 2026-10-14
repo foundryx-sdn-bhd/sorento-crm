@@ -24,3 +24,57 @@ R1-10 MEMORY is byte-identical to today for the same state (the register is not 
 R1-11 A non-staff contact asking for a product's PO list is not refused for lacking purchase_orders.placed (owner
       ruling 14 Oct); the answer matches v1's for the same contact. Staff behaviour is unchanged.
 R1-12 v1 turns (parser mode v1) are unaffected: no register write, same replies.
+
+## R2 Subject stack + PendingQuestion.origin
+R2-1 Every subject gets a stable `sid` when it starts; S1 = held, S2..S5 = topics newest first (cap 5 as today). A subject
+     keeps its sid when pushed to topics and when switched back to.
+R2-2 Register entries carry the sid of the subject they were printed under; after a new topic pushes that subject,
+     `subject_label(state, entry.subject)` is "S2".
+R2-3 `subject_at(state, "S<n>")` returns that subject; an unknown or out-of-range S id returns None.
+R2-4 MEMORY is byte-identical to today for the same state (no S<n>/R<n> rendering in R2).
+R2-5 Whenever a question interrupts an ask (entity clarify, did-you-mean, flagged clarify, a missed ask's question, the v1
+     picker after a PV2 Lookup), `PendingQuestion.origin` holds the original ask: the full ask where held did not take
+     it (unclear act, flagged clarify, a missed ask's question, the v1 picker); on a question raised after held took the
+     ask, only the items still waiting on a question, with no attachment kind (held carries the vetted kinds).
+R2-6 A pick completes the ORIGINAL ask with the picked entity: "any eta mou?" -> pick "1" answers ETA (incoming) for the
+     picked product; an ask with a period ("stock for SRTWC286 last month") keeps its period after the pick; attachment
+     kinds, quantity, specs and status likewise.
+R2-6b A pick never re-runs what the original ask already applied and never loops: a closest-product pick, a pick after
+     a remove op, and a which_held pick each reach their Lookup on the first pick, as pre-R2; with two ambiguous items
+     the second is asked next and both picks reach the Lookup; a second item that was not found is reported after the
+     pick exactly as the same ask typed with the picked product gives it (pre-R2 silently dropped both). A pick on a
+     which_held question (a miss or a flagged clarify) answers it: it never raises the same miss again. Otherwise, on a
+     question raised after held took the ask, MEMORY after every pick equals pre-R2's for the same turns (no picked uuid
+     in a report filter, no extra held entity, no attachment kind the pick did not vet). Where held did NOT take the ask
+     (flagged clarify, a missed ask, a switch_back miss), R2-6 wins: the pick completes the original ask (its clears and
+     its other entities apply), which can differ from pre-R2's MEMORY.
+R2-6c A pick on a question raised under a sales report or a PO ask is refused once the contact lacks that grant, however
+     many questions deep the chain is.
+R2-7 State saved before R2 (with `deferred`, no `origin`, no `sid`) loads and a pick on it behaves as today.
+R2-8 Every PV2 answer path that prints rows writes the register (each path named in the test); the stock-ask render
+     records the rows it prints.
+R2-9 output_structurer drops order `lines` whenever the Products field is hidden (test).
+R2-10 `printed_rows` stays aligned with the envelope's `figures` when an answer is not a dict.
+R2-11 No LLM calls; v1 turns unchanged.
+
+## R-GAPS Frozen v1 lanes (owner rule 14 Oct; source crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md)
+All from handwritten parses (no LLM). [cust] = a customer named in the earlier turn.
+RG-1 (#1570) Staff: "[cust] 7/10/2026 有送货吗？" -> "SRT391-GM几时会安排送货？": the carried customer plus the new product is a
+     clarify ("Delivery for SRT391-GM: only [cust] (from earlier) or all customers?"), nothing fetched. PV2 table case-072
+     (converted_replay.jsonl:115) expects a lookup today and is corrected to expect this clarify. The 3rd identical clarify to staff refers them to the salesman instead of asking again.
+RG-2 (#1582) "250mm srtwc286 got stock?" answers only the variants with 250 on any axis, with no Length/Width question;
+     "srtwc286 300mm" with no 300 on any axis -> "No 300 mm for SRTWC286. Sizes on file: ..." (localized).
+RG-3 (#1603) A v1 escalate offer answered "yes" -> "Routed to your PIC, they will reply shortly." and the hand-over saves
+     the asked text, never "".
+RG-4 (#1617) "SRTWT5880-CR picture" -> "HAVE 10??" (no open question) -> the stock answer for 10, no photo re-send, no
+     type question.
+RG-5 (#1443) A set code -> its member stock, never "I need at least one filter"; "SRTWC8608 stock" offers its sets.
+RG-6 (#1517) An ask with no product ("product") -> a which-product question and no tool call; a product list never shows
+     an unsearchable or inactive row (e.g. "FOR ACCOUNT DEPARTMENT ONLY").
+RG-7 (#1572) "Srtkt71-ss outstanding" -> "Dealer outstanding only" keeps the product and adds the channel; "CBDR4003
+     stock" -> "Top sales Sorento and Mocha" -> "Sorento and mocha" never carries CBDR4003 or BK007A.
+RG-7b (R2 review) "5 A1 and 3 mou" -> pick 1 for mou -> the answer covers A1 x 5 and the picked product x 3; brand
+     "sorento + moc" -> pick mocha -> both brands. Today (and pre-R2) the pick drops the other same-kind items.
+RG-7c (R2 review) "remove customer Z and this SO" with Z held and no SO held -> which_held pick -> Z is removed.
+     Today (and pre-R2) the which_held pick drops the remove and Z stays.
+RG-8 No LLM calls; v1 turns unchanged.
