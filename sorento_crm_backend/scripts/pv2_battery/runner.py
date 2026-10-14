@@ -73,16 +73,41 @@ _DROP_KEYS = {"envelope", "contact", "profile"}
 _WAMID = re.compile(r"wamid\.\S+", re.IGNORECASE)
 
 
-def _scrub(node: Any, depth: int = 0) -> Any:
-    """Judge facts go to an external API: drop envelope/contact/profile at any depth, mask Malaysian
-    phone numbers and wamid tokens. Every other number, document numbers and names stay."""
+def _is_json_object(value: Any) -> bool:
+    if isinstance(value, dict):
+        return True
+    if not isinstance(value, str):
+        return False
+    try:
+        return isinstance(json.loads(value), dict)
+    except ValueError:
+        return False
+
+
+def _dropped_key(key: Any, value: Any, inbound: bool, depth: int) -> bool:
+    if not isinstance(key, str):
+        return False
+    low = key.lower()
+    if low in _DROP_KEYS or low.replace("_", "") == "contactid":
+        return True
+    # the inbound channel object and its JSON-string meta carry the contact's WhatsApp profile
+    if not inbound or not _is_json_object(value):
+        return False
+    # a dict `meta` below the top of raw is a business row field (report filters), only its JSON string
+    # form or a top-level one is the inbound profile
+    return low == "channel" or (low == "meta" and (isinstance(value, str) or depth == 0))
+
+
+def _scrub(node: Any, depth: int = 0, inbound: bool = False) -> Any:
+    """Judge facts go to an external API: drop envelope/contact/profile and contact ids at any depth, the
+    inbound channel/meta objects inside looked_up, and mask Malaysian phone numbers and wamid tokens.
+    Every other number, document numbers and names stay."""
     if depth > 12:
         return "(deep)"
     if isinstance(node, dict):
-        return {k: _scrub(v, depth + 1) for k, v in node.items()
-                if not (isinstance(k, str) and k.lower() in _DROP_KEYS)}
+        return {k: _scrub(v, depth + 1, inbound) for k, v in node.items() if not _dropped_key(k, v, inbound, depth)}
     if isinstance(node, (list, tuple)):
-        return [_scrub(v, depth + 1) for v in node]
+        return [_scrub(v, depth + 1, inbound) for v in node]
     if isinstance(node, str):
         return judge.mask_phones(_WAMID.sub("[wamid]", node))
     return node
@@ -102,7 +127,7 @@ def facts_digest(trace: Any) -> str:
             if not isinstance(e, dict):
                 continue
             # top-level keys stay (a tool event's own "envelope" is its result); their values are scrubbed
-            e = {k: _scrub(v) for k, v in e.items()}
+            e = {k: _scrub(v, inbound=e.get("stage") == "looked_up") for k, v in e.items()}
             if e.get("kind") == "tool":
                 tools.append(_dump({"tool": e.get("name"), "args": e.get("args"),
                                     "result": e.get("envelope")}, _TOOL_CAP))
