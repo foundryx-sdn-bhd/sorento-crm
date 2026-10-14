@@ -503,3 +503,64 @@ def test_a_borrow_moved_with_a_new_buy_split_reads_as_the_same_split_without_the
         second_donor_moves=True,
     )
     _same(moved, kept, own)
+
+
+# ------------------------------- a resized hole among several donors is not a cancelled order
+
+
+def _two_confirms_line(api, emails, first, second, qty="10"):
+    """Confirm a one-line order with the `first` Borrow list, re-Confirm `second`; the one
+    email line as (item, qty, location, remark)."""
+    _client, world = api
+    order, line, _core = _one_line_order(world, qty)
+    _post(api, order, [_line_payload(line.id, borrow=first)])
+    emails.clear()
+    _post(api, order, [_line_payload(line.id, borrow=second, amend_reason="Re-split.")])
+    assert len(emails) == 1, emails
+    return _lines(emails[0])
+
+
+def test_two_donor_borrow_merged_into_one_reads_no_cancel(api, emails):
+    _client, world = api
+    x, y = _donor(world, "MX"), _donor(world, "MY")
+    got = _two_confirms_line(
+        api, emails,
+        _borrow_from(world, x, "6") + _borrow_from(world, y, "4"),
+        _borrow_from(world, x, "10"),
+    )
+    assert got == [(world.product.product_code, "10", world.own_wh.warehouse_code,
+                    "ORDER BACK")], got
+
+
+def test_one_donor_borrow_split_across_two_reads_no_cancel(api, emails):
+    _client, world = api
+    x, y = _donor(world, "PX"), _donor(world, "PY")
+    got = _two_confirms_line(
+        api, emails,
+        _borrow_from(world, x, "10"),
+        _borrow_from(world, x, "6") + _borrow_from(world, y, "4"),
+    )
+    assert got == [(world.product.product_code, "10", world.own_wh.warehouse_code,
+                    "ORDER BACK 6 & ORDER BACK 4")], got
+
+
+def test_two_donor_borrow_moved_wholly_reads_order_back_only(api, emails):
+    _client, world = api
+    x, y, z = _donor(world, "GX"), _donor(world, "GY"), _donor(world, "GZ")
+    got = _two_confirms_line(
+        api, emails,
+        _borrow_from(world, x, "6") + _borrow_from(world, y, "4"),
+        _borrow_from(world, z, "10"),
+    )
+    assert [g[3] for g in got] == ["ORDER BACK"], got
+
+
+def test_one_donor_borrow_split_onto_two_new_donors_reads_two_order_backs(api, emails):
+    _client, world = api
+    x, y, z = _donor(world, "HX"), _donor(world, "HY"), _donor(world, "HZ")
+    got = _two_confirms_line(
+        api, emails,
+        _borrow_from(world, x, "10"),
+        _borrow_from(world, y, "6") + _borrow_from(world, z, "4"),
+    )
+    assert [g[3] for g in got] == ["ORDER BACK 6 & ORDER BACK 4"], got
