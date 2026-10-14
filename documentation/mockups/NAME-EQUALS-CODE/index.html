@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Name equals code (mockup v1)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set as the other lane mockups */
+:root{--background:#fff;--foreground:#09090b;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--accent:#f4f4f5;--page:#f7f7f8;--strike:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+.doc{max-width:1280px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 4px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 16px;max-width:980px}
+section{margin:0 0 30px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 10px;max-width:980px}
+.pair{display:flex;flex-wrap:wrap;gap:16px}
+.col{flex:1 1 340px;min-width:0}
+.tag{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-fg);margin:0 0 6px}
+.tag.after{color:var(--primary)}
+.card{background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+/* SearchableSelect popover (components/common/SearchableSelect.tsx:509-519) */
+.trigger{display:flex;align-items:center;justify-content:space-between;height:34px;padding:0 10px;border:1px solid var(--input);border-radius:6px;margin:10px;font-size:13px;background:#fff}
+.trigger .ph{color:var(--muted-fg)}
+.pop{border-top:1px solid var(--border)}
+.search{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--muted-fg);font-size:13px}
+.opt{display:flex;gap:8px;align-items:flex-start;padding:6px 12px;font-size:13px}
+.opt.hl{background:var(--accent)}
+.opt .chk{width:16px;flex:none;color:var(--foreground)}
+.opt .lines{display:flex;flex-direction:column;min-width:0}
+.opt .sub{font-size:12px;color:var(--muted-fg)}
+/* DataGrid */
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;font-weight:500;color:var(--muted-fg);font-size:12px;padding:8px 12px;border-bottom:1px solid var(--border);background:#fafafa}
+td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+td .code{font-weight:500}
+td .sub{display:block;font-size:12px;color:var(--muted-fg)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+/* Dialog */
+.dlg{padding:16px}
+.dlg .t{font-size:16px;font-weight:600;margin:0 0 4px}
+.dlg .d{font-size:13px;color:var(--muted-fg)}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--input);border-radius:999px;padding:2px 8px;font-size:12px;margin:10px 4px 10px 10px}
+.pdf{font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre;padding:12px;background:#fff}
+.mapping{font-size:12.5px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 16px}
+.mapping li{margin:0 0 4px}
+.mapping code{font-size:12px}
+@media (max-width:420px){.doc{padding:16px}}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Product name hidden when it equals the code</h1>
+<p class="intro">v1, NAME-EQUALS-CODE. Real dev data (sorento_cagent_stack, read-only): all 15,339 products have product_name exactly equal to product_code, so in practice every second line below disappears. A name that differs (trim, ignore case, collapse spaces) still shows. Nothing on screen is added; only the repeated text goes.</p>
+
+<section>
+<h2>1. Product picker (owner's screenshot)</h2>
+<p class="why">Every product dropdown built on SearchableSelect / SearchableMultiSelect / portal AsyncCombobox: quotation line, series Products table, SO / PO lines, price floors, dealer kit, stock transfers, cost price uploads.</p>
+<div class="pair">
+<div class="col"><div class="tag">Before</div>
+<div class="card"><div class="trigger"><span class="ph">Select product</span><span>&#9662;</span></div>
+<div class="pop"><div class="search">Search products...</div>
+<div class="opt hl"><span class="chk"></span><span class="lines"><span>11X11</span><span class="sub">11X11</span></span></div>
+<div class="opt"><span class="chk"></span><span class="lines"><span>1861</span><span class="sub">1861</span></span></div>
+<div class="opt"><span class="chk"></span><span class="lines"><span>2102AW</span><span class="sub">2102AW</span></span></div>
+</div></div></div>
+<div class="col"><div class="tag after">After</div>
+<div class="card"><div class="trigger"><span class="ph">Select product</span><span>&#9662;</span></div>
+<div class="pop"><div class="search">Search products...</div>
+<div class="opt hl"><span class="chk"></span><span class="lines"><span>11X11</span></span></div>
+<div class="opt"><span class="chk"></span><span class="lines"><span>1861</span></span></div>
+<div class="opt"><span class="chk"></span><span class="lines"><span>2102AW</span></span></div>
+</div></div></div>
+</div>
+</section>
+
+<section>
+<h2>2. Picker whose label joins code and name</h2>
+<p class="why">SCM SO / PO line pickers, planning run scope, product-or-set picker, product spec "try it", variants, combos, companion rules, certificates, product sets, packing list and SPO allocation comboboxes, sales opportunity and sales target products, promotions.</p>
+<div class="pair">
+<div class="col"><div class="tag">Before</div>
+<div class="card"><div class="trigger"><span>1861 · 1861</span><span>&#9662;</span></div>
+<div class="pop"><div class="opt hl"><span class="chk">&#10003;</span><span class="lines"><span>1861 · 1861</span></span></div>
+<div class="opt"><span class="chk"></span><span class="lines"><span>2102AW - 2102AW</span></span></div></div>
+<span class="chip">11X11 - 11X11 &times;</span></div></div>
+<div class="col"><div class="tag after">After</div>
+<div class="card"><div class="trigger"><span>1861</span><span>&#9662;</span></div>
+<div class="pop"><div class="opt hl"><span class="chk">&#10003;</span><span class="lines"><span>1861</span></span></div>
+<div class="opt"><span class="chk"></span><span class="lines"><span>2102AW</span></span></div></div>
+<span class="chip">11X11 &times;</span></div></div>
+</div>
+</section>
+
+<section>
+<h2>3. Table cell with code over name</h2>
+<p class="why">Reorder results / worklist / exceptions / level changes, product perspective, product alternatives / compatibility / combos / variants, stock ledger, stock transfer lines, stock debt, order lines card, sales opportunity lines.</p>
+<div class="pair">
+<div class="col"><div class="tag">Before</div>
+<div class="card"><table><thead><tr><th>Product</th><th>Warehouse</th></tr></thead><tbody>
+<tr><td><span class="code">CWCX1009-RL</span><span class="sub">CWCX1009-RL</span></td><td>BRW-RSV</td></tr>
+<tr><td><span class="code">CWCY1009</span><span class="sub">CWCY1009</span></td><td>BRW-RSV</td></tr>
+</tbody></table></div></div>
+<div class="col"><div class="tag after">After</div>
+<div class="card"><table><thead><tr><th>Product</th><th>Warehouse</th></tr></thead><tbody>
+<tr><td><span class="code">CWCX1009-RL</span></td><td>BRW-RSV</td></tr>
+<tr><td><span class="code">CWCY1009</span></td><td>BRW-RSV</td></tr>
+</tbody></table></div></div>
+</div>
+</section>
+
+<section>
+<h2>4. Dialogs and inline text</h2>
+<p class="why">Reject recommendation, reorder explanation, plan exception sheet, product data updated / review dialogs (dealer kit), order line delete, tag binding "Bound to".</p>
+<div class="pair">
+<div class="col"><div class="tag">Before</div>
+<div class="card dlg"><div class="t">Product data updated</div><div class="d">11X11 / 11X11 changed since this tag was designed.</div></div></div>
+<div class="col"><div class="tag after">After</div>
+<div class="card dlg"><div class="t">Product data updated</div><div class="d">11X11 changed since this tag was designed.</div></div></div>
+</div>
+</section>
+
+<section>
+<h2>5. Printed price tag, set members (backend)</h2>
+<p class="why">dealer_kit/tag_data_service.py set member and package part lines. Set CWC1009-RL in dev.</p>
+<div class="pair">
+<div class="col"><div class="tag">Before</div><div class="card pdf">- CWCX1009-RL (CWCX1009-RL)
+- CWCY1009 (CWCY1009)
+- CWC1009-SC (CWC1009-SC)</div></div>
+<div class="col"><div class="tag after">After</div><div class="card pdf">- CWCX1009-RL
+- CWCY1009
+- CWC1009-SC</div></div>
+</div>
+</section>
+
+<section>
+<h2>6. Unchanged: text that differs from the code</h2>
+<p class="why">A description under a code stays when it says something else. Quotation line SRT6641 in dev.</p>
+<div class="card"><table><thead><tr><th>Product</th><th>Description</th><th class="num">Unit price</th></tr></thead><tbody>
+<tr><td><span class="code">SRT6641</span></td><td>SORENTO ANTI-ODOR FLOOR TRAP (150x150MM) SRT6641</td><td class="num">2,092.00</td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<h2>Element to existing component</h2>
+<ul class="mapping">
+<li>Picker option body: <code>sorento_crm_frontend/components/common/SearchableSelect.tsx:509-519</code>, <code>SearchableMultiSelect.tsx:505-520</code>, portal <code>app/(auth)/portal/components/AsyncCombobox.tsx:350</code></li>
+<li>Joined labels: <code>app/(protected)/scm/services/scmOptionsService.ts:173</code>, <code>scm/components/productOrSetPicker.tsx:81</code>, <code>sales/opportunities/services/salesOpportunityService.ts:122</code></li>
+<li>Code-over-name cells: <code>scm/reorder/components/ReorderResultsGrid.tsx:320</code> (same shape across the grids listed in section 3)</li>
+<li>Dialog line: <code>components/dealer-kit/ProductDataUpdatedDialog.tsx:78-80</code></li>
+<li>Price tag lines: <code>sorento_crm_backend/app/services/dealer_kit/tag_data_service.py:469</code></li>
+<li>Rule: one helper, <code>sorento_crm_frontend/lib/product-display.ts</code> (new; folds the existing <code>lib/dealer-kit/product-block.ts:57</code> nameOrBlankIfCode and <code>scm/components/ContainerRequestSection.tsx:150</code> productNameDiffersFromCode), with a backend twin.</li>
+</ul>
+</section>
+</div>
+</body>
+</html>
