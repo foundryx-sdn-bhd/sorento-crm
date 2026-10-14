@@ -144,9 +144,9 @@ def _exe(path: Path, body: str) -> None:
 def _bash_env(stub_dir: Path) -> str:
     """Stubs as bash FUNCTIONS, loaded through BASH_ENV before the script runs.
 
-    A function wins over anything on PATH, and nothing here is exec'd from pytest's tmp dir:
-    CI's runner could not exec PATH stubs there (run 38617923894), so the script fell through
-    to no docker at all. The docker stub runs under this test process's own interpreter.
+    A function wins over anything on PATH (a real docker on a runner included), and nothing
+    in pytest's tmp dir has to be executable. The docker stub runs under this test process's
+    own interpreter, which needs the caller's LD_LIBRARY_PATH on CI (see _run).
     """
     calls = stub_dir / "calls.log"
     return (
@@ -192,6 +192,10 @@ def _run(box, timeout=120, args=(), **env_extra):
         "DEPLOY_LOCK_PATH": str(box["lock"]),
         "HOME": str(box["root"]),
         "BASH_ENV": str(box["stub"] / "bash_env.sh"),
+        # setup-python's interpreter on CI's runner links a shared libpython and needs this
+        # to start; without it the docker stub died and the script saw no db (runs
+        # 38617923894 and 38620458673). Dropped below when unset.
+        "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
     }
     env.update(env_extra)
     env = {k: v for k, v in env.items() if v != ""}
@@ -712,9 +716,9 @@ def test_a_slash_in_the_query_string_does_not_change_the_db_name(box):
 
 
 def test_the_stubs_win_over_any_docker_on_path(box, tmp_path):
-    """CI's runner could not exec the PATH stubs under pytest's tmp dir, so the script reached
-    no `docker` and failed with "Postgres container 'db' not found". A decoy first on PATH
-    stands in for a real docker (or an unusable stub): the run must never reach it."""
+    """A decoy first on PATH stands in for a real docker on a runner: the run must never reach
+    it. (Hardening only: the CI red of runs 38617923894 / 38620458673 was the stub's
+    interpreter missing LD_LIBRARY_PATH, pinned by the test below.)"""
     decoy = tmp_path / "decoy"
     decoy.mkdir()
     marker = tmp_path / "decoy_called"
@@ -725,10 +729,10 @@ def test_the_stubs_win_over_any_docker_on_path(box, tmp_path):
     assert not marker.exists(), marker.read_text()
 
 
-def test_the_stub_interpreter_keeps_the_runners_environment(box, monkeypatch):
-    """CI run 38620458673: setup-python's interpreter needs LD_LIBRARY_PATH (shared libpython).
-    The subprocess env was built from scratch, so the docker stub could not start and the
-    script saw no db container. The parent environment must reach the stub."""
+def test_the_stub_interpreter_keeps_ld_library_path(box, monkeypatch):
+    """CI runs 38617923894 / 38620458673: setup-python's interpreter needs LD_LIBRARY_PATH
+    (shared libpython). _run built the env without it, so the docker stub died with "error
+    while loading shared libraries", the script swallowed that and reported no db container."""
     monkeypatch.setenv("LD_LIBRARY_PATH", "/sentinel/python/lib")
     r = _run(box)
     assert r.returncode == 0, r.stdout + r.stderr
@@ -736,7 +740,7 @@ def test_the_stub_interpreter_keeps_the_runners_environment(box, monkeypatch):
 
 
 def test_the_runners_own_deploy_knobs_never_reach_the_script(box, monkeypatch):
-    """Inheriting the environment must not let a runner's variables steer the script."""
+    """Only LD_LIBRARY_PATH is passed through: a runner's variables never steer the script."""
     monkeypatch.setenv("DEPLOY_MIN_AVAILABLE_MB", "999999")
     monkeypatch.setenv("DB_SERVICE", "not-db")
     monkeypatch.setenv("SNAPSHOT_MIN_FREE_MB", "999999999")
