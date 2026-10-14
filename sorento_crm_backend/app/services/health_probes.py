@@ -7,6 +7,8 @@ bodies carry states, never error text (no hostnames or URLs on an unauthenticate
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -18,6 +20,12 @@ from app.config import settings
 
 # Per probe, end to end. Well inside the image HEALTHCHECK's 10s timeout.
 PROBE_TIMEOUT_SECONDS = 2.0
+# One refresh per window per process, however often the routes are called: the routes are
+# unauthenticated, and a flood must not turn into Redis connections and DB sessions.
+CACHE_SECONDS = 10.0
+
+_cache: dict = {"at": 0.0, "value": None}
+_lock: Optional[asyncio.Lock] = None
 
 
 def redis_state() -> str:
@@ -63,6 +71,7 @@ def database_state() -> str:
             db.close()
         return "ok"
     except Exception:  # noqa: BLE001
+        logging.warning("health: database probe failed", exc_info=True)
         return "down"
 
 
@@ -104,3 +113,23 @@ async def collect() -> dict:
         ),
     )
     return {"redis": redis_result, "scheduler": scheduler_result}
+
+
+async def snapshot() -> dict:
+    """{"database", "redis", "scheduler"}, refreshed at most once per CACHE_SECONDS. The lock
+    makes concurrent callers wait for the one refresh (at most ~PROBE_TIMEOUT_SECONDS)."""
+    global _lock
+    if _lock is None:
+        _lock = asyncio.Lock()
+    async with _lock:
+        if _cache["value"] is not None and time.monotonic() - _cache["at"] < CACHE_SECONDS:
+            return _cache["value"]
+        database, probes = await asyncio.gather(bounded_database_state(), collect())
+        _cache.update(at=time.monotonic(), value={"database": database, **probes})
+        return _cache["value"]
+
+
+def reset_cache() -> None:
+    global _lock
+    _cache.update(at=0.0, value=None)
+    _lock = None

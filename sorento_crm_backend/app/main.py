@@ -660,19 +660,23 @@ async def health_check():
             prompt_version = _production_prompt_version(db)
         finally:
             db.close()
-    except Exception as e:
+    except Exception:
+        # States only on this unauthenticated route: the driver's message names the host.
+        logging.warning("health: database check failed", exc_info=True)
         return JSONResponse(
             status_code=503,
-            content={"status": "unhealthy", "error": str(e)[:200]},
+            content={"status": "unhealthy", "database": "down"},
         )
     # Reported, never gating: Redis or the scheduler being down must not hold a deploy.
     from app.services import health_probes
 
+    probes = await health_probes.snapshot()
     return {
         "status": "healthy",
         "git_sha": GIT_SHA,
         "prompt_version": prompt_version,
-        **(await health_probes.collect()),
+        "redis": probes["redis"],
+        "scheduler": probes["scheduler"],
     }
 
 
@@ -682,10 +686,9 @@ async def health_deep():
     all OK. States only, no error text (unauthenticated route)."""
     from app.services import health_probes
 
-    database = await health_probes.bounded_database_state()
-    probes = await health_probes.collect()
-    ok = database == "ok" and probes["redis"] == "ok" and probes["scheduler"]["status"] == "ok"
+    probes = await health_probes.snapshot()
+    ok = probes["database"] == "ok" and probes["redis"] == "ok" and probes["scheduler"]["status"] == "ok"
     return JSONResponse(
         status_code=200 if ok else 503,
-        content={"status": "healthy" if ok else "unhealthy", "database": database, **probes},
+        content={"status": "healthy" if ok else "unhealthy", **probes},
     )

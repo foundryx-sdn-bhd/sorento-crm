@@ -26,7 +26,7 @@ _DURATION = re.compile(r"^\d+(ms|s|min|h)?$")
 
 def _read(name: str, default: str) -> str:
     value = (os.environ.get(name) or default).strip()
-    if not _DURATION.match(value):
+    if not _DURATION.fullmatch(value):
         raise ValueError(f"{name}={value!r} is not a Postgres duration like 5s, 2500ms, 30min or 0")
     return value
 
