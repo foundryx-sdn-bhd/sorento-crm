@@ -472,19 +472,6 @@ export function QuotationVersionEditor({
           totals still sum the whole version, and an unsaved draft on a hidden line survives
           the search that hid it. Ctrl-F cannot do this job: it only finds what is scrolled
           into the DOM, so on a 59-line version it answers 0/0 for lines that plainly exist. */}
-      {gridLines.length > 0 && (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <ListSearchInput
-            value={lineSearchInput}
-            onChange={setLineSearchInput}
-            placeholder="Search lines"
-            aria-label="Search lines by product or description"
-            className="w-full sm:max-w-xs"
-          />
-          <StockAtSelect groups={stock.groups} value={stock.group} onChange={stock.choose} />
-        </div>
-      )}
-
       {lines.isLoading && !isUnsaved ? (
         <Skeleton className="h-24 w-full" />
       ) : (
@@ -507,6 +494,24 @@ export function QuotationVersionEditor({
           fetchProducts={fetchProducts}
           resolveProduct={resolveProduct}
           productCodeOf={productCodeOf}
+          toolbar={
+            gridLines.length > 0 ? (
+              <>
+                <ListSearchInput
+                  value={lineSearchInput}
+                  onChange={setLineSearchInput}
+                  placeholder="Search lines"
+                  aria-label="Search lines by product or description"
+                  className="w-full sm:max-w-xs"
+                />
+                <StockAtSelect
+                  groups={stock.groups}
+                  value={stock.group}
+                  onChange={stock.choose}
+                />
+              </>
+            ) : null
+          }
           fillFromProduct={fillFromProduct}
           uomOptions={uomOptions}
           uomError={uoms.error}

@@ -119,13 +119,14 @@ export function QuotationLineFileCell({
     <button
       type="button"
       onClick={() => onPreview(shown)}
-      className="block rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="block w-full rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       title={shown.filename ?? undefined}
     >
       <img
         src={shown.url}
         alt={code ? `${code} ${ALT[kind]}` : ALT[kind]}
-        className="size-10 rounded border border-border bg-white object-contain"
+        // Fills the column, so widening the column enlarges the picture (owner hand test).
+        className="aspect-square max-h-48 w-full rounded border border-border bg-white object-contain"
         loading="lazy"
       />
     </button>
@@ -139,7 +140,7 @@ export function QuotationLineFileCell({
     if (thumbnail) {
       // No count where nothing can be picked: a number on a read-only thumbnail is a control
       // that does nothing.
-      return <span className="relative inline-block">{thumbnail}</span>;
+      return <span className="relative block w-full">{thumbnail}</span>;
     }
     const state = line.technical_drawing?.state;
     return (
@@ -153,7 +154,7 @@ export function QuotationLineFileCell({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       {shown ? (
-        <span className="relative inline-block">
+        <span className="relative block w-full">
           {thumbnail}
           <PopoverTrigger asChild>
             <button
@@ -170,7 +171,7 @@ export function QuotationLineFileCell({
           <button
             type="button"
             aria-label={`${action} ${NOUN[kind]} on ${label}`}
-            className="flex size-10 flex-col items-center justify-center rounded border border-dashed border-primary bg-primary/5 text-center text-2xs leading-tight text-primary"
+            className="flex aspect-square max-h-48 w-full flex-col items-center justify-center rounded border border-dashed border-primary bg-primary/5 text-center text-2xs leading-tight text-primary"
           >
             <span>Choose</span>
             <span className="tabular-nums">{candidates.length}</span>

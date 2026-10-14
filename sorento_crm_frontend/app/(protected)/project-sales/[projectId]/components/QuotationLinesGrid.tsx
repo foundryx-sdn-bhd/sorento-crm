@@ -5,17 +5,25 @@ import {
   type CellContext,
   type ColumnDef,
   type ExpandedState,
+  type VisibilityState,
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
-import { MoreHorizontal, Plus, Trash2, Undo2 } from 'lucide-react';
+import { Columns3, MoreHorizontal, Plus, Trash2, Undo2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridScroller } from '@/components/ui/data-grid-table';
+import { DataGridColumnVisibility } from '@/components/ui/data-grid-column-visibility';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import {
   DataGridTableDndRowHandle,
   DataGridTableDndRows,
@@ -75,7 +83,7 @@ interface GridRow {
   staged: StagedQuotationLine;
 }
 
-type MenuAction = 'details' | 'up' | 'down' | 'below' | 'section' | 'remove';
+type MenuAction = 'details' | 'below' | 'section' | 'remove';
 
 /**
  * Everything a cell needs beyond its own row, handed down by context rather than closed over.
@@ -102,8 +110,6 @@ interface GridContextValue {
   selectProduct: (key: string, option: SearchableSelectOption | null) => void;
   toggleRemoved: (key: string) => void;
   act: (key: string, action: MenuAction) => void;
-  isFirst: (key: string) => boolean;
-  isLast: (key: string) => boolean;
   bandOpen: Set<string>;
   closeEmptyBand: (key: string) => void;
   openPreview: (kind: LineFileKind, shown: LineFileShown) => void;
@@ -394,7 +400,7 @@ function QtyCell({ row: tableRow }: CellContext<GridRow, unknown>) {
     return (
       <div className="flex flex-col items-end gap-1">
         <span className="text-sm tabular-nums">
-          {`${quantity ? trimAmount(quantity) : '-'}${uom ? ` ${uom}` : ''}`}
+          {quantity ? trimAmount(quantity) : '-'}
         </span>
         {chip}
       </div>
@@ -411,29 +417,45 @@ function QtyCell({ row: tableRow }: CellContext<GridRow, unknown>) {
         aria-label={`Qty on ${label}`}
         aria-invalid={invalid || undefined}
         title={invalid ? 'Must be a number' : undefined}
-        className="w-full text-end tabular-nums"
+        className="w-full px-1.5 text-end tabular-nums"
         onChange={(event) =>
           grid.update(row.key, { quantity: event.target.value })
         }
       />
-      <div className="w-full">
-        <CellSelect
-          label={`UOM on ${label}`}
-          clearable
-          value={uom}
-          onChange={(next) => grid.update(row.key, { uom: next })}
-          options={grid.uomOptions}
-          loadError={grid.uomError}
-          onRetry={grid.onUomRetry}
-          selectedOption={grid.uomOptions.find(
-            (option) => option.value === uom,
-          )}
-          placeholder="UOM"
-          emptyMessage="No matches"
-        />
-      </div>
       {chip}
     </div>
+  );
+}
+
+/** The unit, in a column of its own beside Qty (owner hand test, point 5). */
+function UomCell({ row: tableRow }: CellContext<GridRow, unknown>) {
+  const grid = useGrid();
+  const row = tableRow.original;
+  const { staged } = row;
+  const uom = staged.draft.uom ?? '';
+
+  if (!grid.editing || staged.removed) {
+    return (
+      <span className="block truncate text-sm" title={uom || undefined}>
+        {uom || '-'}
+      </span>
+    );
+  }
+
+  return (
+    <CellSelect
+      label={`UOM on ${grid.labelOf(row)}`}
+      clearable
+      value={uom}
+      onChange={(next) => grid.update(row.key, { uom: next })}
+      options={grid.uomOptions}
+      loadError={grid.uomError}
+      onRetry={grid.onUomRetry}
+      selectedOption={grid.uomOptions.find((option) => option.value === uom)}
+      placeholder="UOM"
+      triggerClassName="px-1.5"
+      emptyMessage="No matches"
+    />
   );
 }
 
@@ -497,7 +519,7 @@ function TotalCell({ row: tableRow }: CellContext<GridRow, unknown>) {
           rate only
         </Badge>
       ) : (
-        <span className="text-sm font-medium tabular-nums">
+        <span className="text-xs font-medium tabular-nums">
           {formatMyrExact(
             multiplyMoney(staged.draft.quantity, staged.draft.unit_price) ??
               '0',
@@ -527,7 +549,8 @@ function TotalCell({ row: tableRow }: CellContext<GridRow, unknown>) {
 function TotalFooter() {
   const grid = useGrid();
   return (
-    <span className="block text-end tabular-nums">
+    // 12px so a seven-figure scope total fits the column without clipping.
+    <span className="block text-end text-xs tabular-nums">
       {grid.total === null ? '-' : formatMyrExact(grid.total)}
     </span>
   );
@@ -588,21 +611,6 @@ function ActionsCell({ row: tableRow }: CellContext<GridRow, unknown>) {
             keepFocus.current = false;
           }}
         >
-          <DropdownMenuItem onSelect={() => run('details')}>
-            Line details
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={grid.isFirst(row.key)}
-            onSelect={() => run('up')}
-          >
-            Move up
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={grid.isLast(row.key)}
-            onSelect={() => run('down')}
-          >
-            Move down
-          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => run('below')}>
             Insert a line below
           </DropdownMenuItem>
@@ -703,20 +711,23 @@ function SectionBar({ row }: { row: GridRow }) {
     );
   }
   return (
-    <Input
-      variant="sm"
-      value={value}
-      data-band-key={row.key}
-      aria-label={`Section heading on ${grid.labelOf(row)}`}
-      title={value}
-      placeholder="e.g. BILL NO 3 PAGE 15/4, OPTIONAL ITEMS"
-      maxLength={150}
-      className="max-w-md font-semibold"
-      onChange={(event) =>
-        grid.update(row.key, { band_label: event.target.value })
-      }
-      onBlur={() => grid.closeEmptyBand(row.key)}
-    />
+    // The whole bar answers a right-click (Rename, Remove section), not only its input.
+    <div data-section-key={row.key} className="w-full">
+      <Input
+        variant="sm"
+        value={value}
+        data-band-key={row.key}
+        aria-label={`Section heading on ${grid.labelOf(row)}`}
+        title={value}
+        placeholder="e.g. BILL NO 3 PAGE 15/4, OPTIONAL ITEMS"
+        maxLength={150}
+        className="max-w-md font-semibold"
+        onChange={(event) =>
+          grid.update(row.key, { band_label: event.target.value })
+        }
+        onBlur={() => grid.closeEmptyBand(row.key)}
+      />
+    </div>
   );
 }
 
@@ -728,16 +739,18 @@ function HandleCell({ row }: CellContext<GridRow, unknown>) {
   return <DataGridTableDndRowHandle rowId={row.original.key} />;
 }
 
+/** No header text: the column holds each row's own named menu and Remove buttons. */
 function ActionsHeader() {
-  return <span className="sr-only">Row actions</span>;
+  return null;
 }
 
 const NARROW = 'px-1.5';
 const TIGHT = 'px-1';
+const FLUSH = 'px-0';
 
 /**
- * The columns, per the approved mock (section 1): every width fits a 910px card at 1280 with the
- * sidebar open. The handle and the row menu only exist while editing (column visibility), so the
+ * The columns, per the approved mock (section 1) and the owner's hand test (UOM beside Qty):
+ * the defaults sum to 876px, so the grid fits the 878px scroller at 1280 with the sidebar open. The handle and the row menu only exist while editing (column visibility), so the
  * column order a user saves holds in both views.
  */
 const COLUMNS: ColumnDef<GridRow>[] = [
@@ -745,66 +758,73 @@ const COLUMNS: ColumnDef<GridRow>[] = [
     id: 'drag_handle',
     header: ReorderHeader,
     cell: HandleCell,
-    size: 36,
-    minSize: 36,
+    size: 28,
+    minSize: 28,
     enableResizing: false,
     enableHiding: false,
     meta: {
       headerTitle: 'Reorder',
       draggable: false,
-      headerClassName: TIGHT,
-      cellClassName: TIGHT,
+      headerClassName: FLUSH,
+      cellClassName: FLUSH,
     },
   },
   {
     id: 'item_no',
     header: '#',
     cell: ItemCell,
-    size: 32,
-    minSize: 28,
+    size: 24,
+    minSize: 24,
+    enableHiding: false,
     meta: {
       headerTitle: '#',
-      headerClassName: NARROW,
-      cellClassName: `${NARROW} align-top`,
+      headerClassName: TIGHT,
+      cellClassName: `${TIGHT} align-top`,
     },
   },
+  // The reader's columns carry an accessor so the Columns menu lists them (it offers only
+  // columns with one); the cells read the row themselves.
   {
     id: 'photo',
+    accessorFn: (row) => row.staged.draft.image_attachment_id,
     header: 'Photo',
     cell: PhotoCell,
-    size: 56,
-    minSize: 52,
+    size: 44,
+    minSize: 40,
     meta: {
       headerTitle: 'Photo',
-      headerClassName: NARROW,
-      cellClassName: `${NARROW} align-top`,
+      headerClassName: TIGHT,
+      cellClassName: `${TIGHT} align-top`,
     },
   },
   {
     id: 'drawing',
+    accessorFn: (row) => row.staged.draft.drawing_attachment_id,
     header: 'Drawing',
     cell: DrawingCell,
-    size: 60,
+    size: 56,
     minSize: 56,
     meta: {
       headerTitle: 'Drawing',
-      headerClassName: NARROW,
-      cellClassName: `${NARROW} align-top`,
+      headerClassName: TIGHT,
+      cellClassName: `${TIGHT} align-top`,
     },
   },
   {
     id: 'product',
+    accessorFn: (row) => row.staged.draft.product_id,
     header: 'Product',
     cell: ProductCell,
-    size: 124,
-    minSize: 100,
+    size: 104,
+    minSize: 88,
     meta: { headerTitle: 'Product', cellClassName: 'align-top' },
   },
   {
     id: 'description',
+    accessorFn: (row) => row.staged.draft.description,
     header: 'Description',
     cell: DescriptionCell,
-    size: 188,
+    size: 184,
     minSize: 140,
     meta: {
       headerTitle: 'Description',
@@ -813,62 +833,79 @@ const COLUMNS: ColumnDef<GridRow>[] = [
   },
   {
     id: 'brand',
+    accessorFn: (row) => row.staged.draft.brand_snapshot,
     header: 'Brand',
     cell: BrandCell,
-    size: 96,
-    minSize: 80,
+    size: 84,
+    minSize: 64,
     meta: { headerTitle: 'Brand', cellClassName: 'align-top' },
   },
   {
     id: 'qty',
+    accessorFn: (row) => row.staged.draft.quantity,
     header: 'Qty',
     cell: QtyCell,
-    size: 88,
-    minSize: 80,
+    size: 60,
+    minSize: 52,
     meta: {
       headerTitle: 'Qty',
-      headerClassName: 'text-end',
-      cellClassName: 'align-top',
+      headerClassName: `${NARROW} text-end`,
+      cellClassName: `${NARROW} align-top`,
+    },
+  },
+  {
+    id: 'uom',
+    accessorFn: (row) => row.staged.draft.uom,
+    header: 'UOM',
+    cell: UomCell,
+    size: 72,
+    minSize: 60,
+    meta: {
+      headerTitle: 'UOM',
+      headerClassName: NARROW,
+      cellClassName: `${NARROW} align-top`,
     },
   },
   {
     id: 'rate',
+    accessorFn: (row) => row.staged.draft.unit_price,
     header: 'Rate (RM)',
     cell: RateCell,
-    size: 92,
-    minSize: 84,
+    size: 80,
+    minSize: 76,
     meta: {
       headerTitle: 'Rate (RM)',
       headerClassName: 'text-end',
-      cellClassName: 'align-top',
+      cellClassName: `${NARROW} align-top`,
     },
   },
   {
     id: 'total',
+    accessorFn: (row) => row.staged.draft.is_rate_only,
     header: 'Total (RM)',
     cell: TotalCell,
     footer: TotalFooter,
-    size: 92,
-    minSize: 84,
+    size: 112,
+    minSize: 96,
     meta: {
       headerTitle: 'Total (RM)',
       headerClassName: 'text-end',
-      cellClassName: 'align-top text-end',
+      cellClassName: `${NARROW} align-top text-end`,
     },
   },
   {
     id: 'row_actions',
     header: ActionsHeader,
     cell: ActionsCell,
-    size: 36,
-    minSize: 36,
+    size: 28,
+    minSize: 28,
     enableResizing: false,
     enableHiding: false,
     meta: {
       headerTitle: 'Row actions',
       draggable: false,
-      headerClassName: TIGHT,
-      cellClassName: `${TIGHT} align-top`,
+      headerClassName: FLUSH,
+      cellClassName: `${FLUSH} align-top`,
       expandedContent: (row: GridRow) => <LineDetails row={row} />,
     },
   },
@@ -896,6 +933,8 @@ export interface QuotationLinesGridProps {
   onUomRetry: () => void;
   brandOptions: SearchableSelectOption[];
   stockGroup: string | null;
+  /** The search and "Stock at" controls, drawn in the grid's own toolbar beside Columns. */
+  toolbar?: React.ReactNode;
   /** Every edit, addition and reorder, as the whole staged set. Edit mode only. */
   onStage?: (lines: StagedQuotationLine[]) => void;
   onToggleRemoved?: (key: string) => void;
@@ -927,6 +966,7 @@ export function QuotationLinesGrid({
   stockGroup,
   onStage,
   onToggleRemoved,
+  toolbar,
 }: QuotationLinesGridProps) {
   const [expanded, setExpanded] = React.useState<ExpandedState>({});
   const [bandOpen, setBandOpen] = React.useState<Set<string>>(() => new Set());
@@ -1052,13 +1092,6 @@ export function QuotationLinesGrid({
             return { ...map, [key]: !map[key] };
           });
           return;
-        case 'up':
-          if (index > 0) commit(arrayMove(current, index, index - 1));
-          return;
-        case 'down':
-          if (index < current.length - 1)
-            commit(arrayMove(current, index, index + 1));
-          return;
         case 'below': {
           const added = newLine();
           commit([
@@ -1109,9 +1142,6 @@ export function QuotationLinesGrid({
       ),
     [lines],
   );
-
-  const firstKey = lines[0]?.key;
-  const lastKey = lines[lines.length - 1]?.key;
 
   /** Each viewer's gallery: every line that HAS that picture, in table order. */
   const galleries = React.useMemo(() => {
@@ -1196,8 +1226,6 @@ export function QuotationLinesGrid({
       selectProduct,
       toggleRemoved: (key) => onToggleRemoved?.(key),
       act,
-      isFirst: (key) => key === firstKey,
-      isLast: (key) => key === lastKey,
       bandOpen,
       closeEmptyBand,
       openPreview,
@@ -1212,9 +1240,7 @@ export function QuotationLinesGrid({
       closeEmptyBand,
       editing,
       fetchProducts,
-      firstKey,
       labelOf,
-      lastKey,
       markVisited,
       onToggleRemoved,
       onUomRetry,
@@ -1231,6 +1257,10 @@ export function QuotationLinesGrid({
     ],
   );
 
+  /** The reader's own column choices (Columns menu, saved per user by the grid). */
+  const [columnVisibility, setColumnVisibility] =
+    React.useState<VisibilityState>({});
+
   const table = useReactTable({
     columns: COLUMNS,
     data: visibleRows,
@@ -1239,14 +1269,44 @@ export function QuotationLinesGrid({
     getRowCanExpand: () => true,
     state: {
       // The handle and the menu are edit-only; hidden rather than removed, so a saved column
-      // order holds in both views.
-      columnVisibility: { drag_handle: editing, row_actions: editing },
+      // order holds in both views. They cannot be hidden by the reader either.
+      columnVisibility: {
+        ...columnVisibility,
+        drag_handle: editing,
+        row_actions: editing,
+      },
       expanded: editing ? expanded : {},
     },
+    onColumnVisibilityChange: setColumnVisibility,
     onExpandedChange: setExpanded,
     enableSorting: false,
     columnResizeMode: 'onChange',
   });
+
+  /**
+   * What a right-click is on: a section bar, or a line row. Read off the DOM the event came from,
+   * so one menu serves every row (owner hand test, points 2 and 3).
+   */
+  const [menuTarget, setMenuTarget] = React.useState<{
+    kind: 'line' | 'section';
+    key: string;
+  } | null>(null);
+  /** Off for a right-click outside the rows, so the browser's own menu shows there. */
+  const [menuOff, setMenuOff] = React.useState(false);
+  const targetOf = (element: Element | null) => {
+    const bar = element?.closest<HTMLElement>('[data-section-key]');
+    if (bar?.dataset.sectionKey)
+      return { kind: 'section' as const, key: bar.dataset.sectionKey };
+    const tr = element?.closest<HTMLElement>('tr[data-line-key]');
+    if (tr?.dataset.lineKey)
+      return { kind: 'line' as const, key: tr.dataset.lineKey };
+    return null;
+  };
+  /** Set by an action that puts the caret somewhere itself, so the menu does not take it back. */
+  const keepFocusAfterMenu = React.useRef(false);
+  const menuLine = menuTarget
+    ? (lines.find((line) => line.key === menuTarget.key) ?? null)
+    : null;
 
   const renderSection = React.useCallback(
     (row: GridRow) => {
@@ -1259,6 +1319,22 @@ export function QuotationLinesGrid({
   );
 
   const galleryItems = preview?.items ?? [];
+
+  const renameSection = (key: string) => {
+    keepFocusAfterMenu.current = true;
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(`[data-band-key="${key}"]`)?.focus();
+    }, 0);
+  };
+  const removeSection = (key: string) => {
+    update(key, { band_label: '' });
+    setBandOpen((previous) => {
+      if (!previous.has(key)) return previous;
+      const next = new Set(previous);
+      next.delete(key);
+      return next;
+    });
+  };
 
   return (
     <GridContext.Provider value={context}>
@@ -1280,40 +1356,128 @@ export function QuotationLinesGrid({
               ? 'text-muted-foreground line-through opacity-70'
               : undefined
           }
+          rowAttributes={(row: GridRow) => ({ 'data-line-key': row.key })}
+          // A click on the row, away from its inputs and buttons, opens or closes Line details
+          // (the grid leaves every control's own click alone). Reorder is the handle only.
+          onRowClick={
+            editing ? (row: GridRow) => act(row.key, 'details') : undefined
+          }
         >
-          <div className="min-w-0 overflow-hidden rounded-lg border border-border">
-            <DataGridScroller>
-              <DataGridTableDndRows
-                handleDragEnd={handleRowDragEnd}
-                dataIds={visibleRows.map((row) => row.key)}
-                columnsDraggable
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {toolbar}
+            <div className="sm:ms-auto">
+              <DataGridColumnVisibility
+                table={table}
+                trigger={
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <Columns3 className="size-4" />
+                    Columns
+                  </Button>
+                }
               />
-            </DataGridScroller>
-            {editing && (
-              <div className="flex flex-wrap items-center gap-1 border-t border-border px-2 py-1.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-primary hover:text-primary"
-                  onClick={() => addLine(false)}
-                >
-                  <Plus className="size-4" aria-hidden />
-                  Add a line
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-primary hover:text-primary"
-                  onClick={() => addLine(true)}
-                >
-                  <Plus className="size-4" aria-hidden />
-                  Add a section
-                </Button>
-              </div>
-            )}
+            </div>
           </div>
+          <ContextMenu modal={false}>
+            <ContextMenuTrigger asChild disabled={!editing || menuOff}>
+              <div
+                className="min-w-0 overflow-hidden rounded-lg border border-border"
+                onPointerDownCapture={(event) => {
+                  if (event.button === 2)
+                    setMenuOff(!targetOf(event.target as Element));
+                }}
+                onContextMenu={(event) => {
+                  const target = targetOf(event.target as Element);
+                  if (!target) {
+                    event.preventDefault();
+                    return;
+                  }
+                  setMenuTarget(target);
+                }}
+              >
+                <DataGridScroller>
+                  <DataGridTableDndRows
+                    handleDragEnd={handleRowDragEnd}
+                    dataIds={visibleRows.map((row) => row.key)}
+                    columnsDraggable
+                  />
+                </DataGridScroller>
+                {editing && (
+                  <div className="flex flex-wrap items-center gap-1 border-t border-border px-2 py-1.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-primary hover:text-primary"
+                      onClick={() => addLine(false)}
+                    >
+                      <Plus className="size-4" aria-hidden />
+                      Add a line
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-primary hover:text-primary"
+                      onClick={() => addLine(true)}
+                    >
+                      <Plus className="size-4" aria-hidden />
+                      Add a section
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent
+              className="w-52"
+              onCloseAutoFocus={(event) => {
+                if (keepFocusAfterMenu.current) event.preventDefault();
+                keepFocusAfterMenu.current = false;
+              }}
+            >
+              {menuTarget?.kind === 'section' ? (
+                <>
+                  <ContextMenuItem
+                    onSelect={() => renameSection(menuTarget.key)}
+                  >
+                    Rename
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    variant="destructive"
+                    onSelect={() => removeSection(menuTarget.key)}
+                  >
+                    Remove section
+                  </ContextMenuItem>
+                </>
+              ) : menuTarget ? (
+                <>
+                  <ContextMenuItem
+                    disabled={Boolean(menuLine?.removed)}
+                    onSelect={() => {
+                      keepFocusAfterMenu.current = true;
+                      act(menuTarget.key, 'below');
+                    }}
+                  >
+                    Insert a line below
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={Boolean(menuLine?.removed)}
+                    onSelect={() => {
+                      keepFocusAfterMenu.current = true;
+                      act(menuTarget.key, 'section');
+                    }}
+                  >
+                    Insert a section above
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    variant={menuLine?.removed ? 'default' : 'destructive'}
+                    onSelect={() => act(menuTarget.key, 'remove')}
+                  >
+                    {menuLine?.removed ? 'Restore line' : 'Remove line'}
+                  </ContextMenuItem>
+                </>
+              ) : null}
+            </ContextMenuContent>
+          </ContextMenu>
         </DataGrid>
 
         {/* The same viewer Resource Management uses. Mounted only while open. */}

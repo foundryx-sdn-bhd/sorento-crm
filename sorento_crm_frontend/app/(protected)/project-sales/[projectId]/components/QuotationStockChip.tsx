@@ -182,7 +182,10 @@ export function QuotationStockChip({
       <PopoverPortal>
         <PopoverContent
           align="end"
-          className="w-[min(36rem,calc(100vw-2rem))] space-y-2 p-3"
+          // Radix keeps it on screen (avoidCollisions is on by default); the padding keeps it off
+          // the very edge, and the cap lets a long table scroll inside the room it has.
+          collisionPadding={8}
+          className="max-h-[var(--radix-popover-content-available-height)] w-[min(36rem,calc(100vw-2rem))] space-y-2 overflow-y-auto p-3"
         >
           <StockPopoverBody
             productId={productId}
