@@ -858,6 +858,7 @@ def _apply_entities(
             if ent.quantity is not None:
                 options = [o.model_copy(update={"payload": {**o.payload, **_qty_payload(ent)}}) for o in options]
             qs.append(_clarify(st, i, "entity", ent.phrase, language, options=options, kind=ent.kind))
+            qs[-1].pending.more = int(getattr(res, "more", 0) or 0)
             continue
         if status != "exact" or not refs:
             if not options and ent.kind in DOCUMENT_KINDS and (ent.doc_number or ent.phrase):

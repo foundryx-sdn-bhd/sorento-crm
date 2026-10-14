@@ -87,6 +87,7 @@ class PendingQuestion(BaseModel):
     asked_turn: int = 0
     misses: int = 0
     v1_kind: str | None = None
+    more: int = 0  # matches beyond the printed options (a capped menu)
 
 
 class ConversationState(BaseModel):
