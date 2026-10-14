@@ -95,18 +95,6 @@ jobs:
             fi
           done
 
-      # Same as the release: the moving tag names what is running, so a manual
-      # `docker compose up` on the box with no IMAGE_TAG pulls the rolled-back images.
-      - name: Promote the rollback images to the release tag
-        env:
-          SHA: ${{ steps.target.outputs.sha }}
-        run: |
-          for svc in frontend backend mcp; do
-            docker buildx imagetools create \
-              -t "$IMAGE_REPO:${svc}-${RELEASE_TAG}" \
-              "$IMAGE_REPO:${svc}-${SHA}"
-          done
-
       # main's script, not the old commit's: the rollback keeps today's guards.
       - name: Sync deploy script to server
         uses: appleboy/scp-action@v0.1.7
@@ -134,6 +122,19 @@ jobs:
             cd /opt/sorento-crm2
             chmod +x ./scripts/blue_green_deploy.sh
             SKIP_MIGRATIONS=1 IMAGE_TAG="${{ steps.target.outputs.sha }}" ./scripts/blue_green_deploy.sh
+
+      # Only after the server step succeeded (default `success()`): the moving tag names
+      # what is running, so a manual `docker compose up` on the box with no IMAGE_TAG pulls
+      # the rolled-back images, and a failed rollback leaves it on what still runs.
+      - name: Promote the rollback images to the release tag
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          for svc in frontend backend mcp; do
+            docker buildx imagetools create \
+              -t "$IMAGE_REPO:${svc}-${RELEASE_TAG}" \
+              "$IMAGE_REPO:${svc}-${SHA}"
+          done
 
       - name: Verify public endpoints
         uses: appleboy/ssh-action@v1.2.0
