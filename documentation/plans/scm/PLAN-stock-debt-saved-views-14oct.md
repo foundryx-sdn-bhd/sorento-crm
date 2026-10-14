@@ -1,7 +1,6 @@
 # PLAN: saved views (preset filters) on Stock Debt
 
-Status: Phase 1 discovery done, behaviour card posted to the owner (PR #1683). Track: small fix
-(no migration, no RBAC change, FE-only diff expected). Phase 2 waits on the owner's answers.
+Status: Phase 2 (red tests, then build). Track: small fix (no migration, no RBAC change).
 
 Owner ask (14 Oct 21:10): save the Stock Debt filters (date range, project, project location)
 as a named view, like the sponsorship form report's saved views, and apply them in one pick.
@@ -79,6 +78,25 @@ matching `-(BB|IB|IR|NTC|AM)$` (`alembic/versions/443_fulfilment_planning_flag_t
 Unless an ED bin has been switched on since, ED stock and demand are outside Stock Debt
 entirely, not merely missing from a filter. Keeping ED separate is another lane.
 
-## Behaviour card
+## Behaviour card and answers
 
-Posted as `crew-ask` on PR #1683. Answers recorded here once they arrive.
+Posted as `crew-ask` on PR #1683. Owner, 14 Oct 23:10:
+- Q1 YES: bring back a Location filter, GENERIC (every group present in the data, never a
+  hard-coded list), multi-select; the view stores whichever locations are picked.
+- Q2 YES: rolling date range, recomputed when the view is applied; the chip shows real dates.
+
+Location listing check (owner asked): a location is listed only when its bins are active and
+flagged `fulfilment_planning` (`stock_debt_service.py:906-920`, `planning_predicate.py`).
+The suffix parse is already generic (`sales_agent_service.py:346-360`). An admin switches a
+location on at Inventory Management > Warehouses > edit > "Fulfilment planning"
+(`WarehouseForm.tsx:251-263`); that also puts the bin into fulfilment planning everywhere.
+
+## Build
+
+1. Backend: `group` repeatable on list, cell and export (`stock_debt.py`, `StockDebtExportIn`,
+   `StockDebtService._warehouses/_project_bins`). One value behaves as today.
+2. Frontend: Location multi-select in the Filters panel, threaded to list, cell and export.
+3. Frontend: `SavedViewsMenu` in the toolbar, config via a pure helper
+   (`stock-debt/lib/stockDebtSavedView.ts`) that turns dates into day offsets and back.
+
+UAC: `stock-debt-saved-views-acceptance-criteria.md`.
