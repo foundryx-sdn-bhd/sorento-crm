@@ -1,7 +1,7 @@
 """RED tests - FORM-ROUTING-CONDITIONS PC-2 / PC-3 (portal side).
 
 * PC-2: GET /public/portal/lookups/debtors?q= reads the customer master and returns
-  {customer_id, debtor_name, customer_code, debtor_type, sales_type}, active customers only.
+  {customer_id, debtor_name, customer_code, sales_type}, active customers only.
 * PC-3: portal PR / SF draft save + submit accept `customer_id`; an unknown id is a 422;
   `customer_id` without `customer_name` is allowed.
 
@@ -92,11 +92,9 @@ def test_debtor_lookup_returns_customers_with_the_full_item_shape():
             "customer_id": str(pc.id),
             "debtor_name": pc.customer_name,
             "customer_code": pc.customer_code,
-            "debtor_type": "project_cash",
             "sales_type": "cash_sales",
         }
         assert items[pj.customer_code]["sales_type"] == "project"
-        assert items[walkin.customer_code]["debtor_type"] is None
         assert items[walkin.customer_code]["sales_type"] is None
 
 
