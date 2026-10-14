@@ -65,7 +65,9 @@ def test_option_key_all_picks_every_option_of_the_v1_picker():
     assert isinstance(action, Lookup)
     v = bridge.to_v1_verdict(result.state_out, action, today=TODAY)
     answer = v["open_question_answer"]
-    assert answer["mode"] == "pick" and answer["picked"] == list(range(1, 11)), answer
+    # PV2-FIX r7e: v1's own all signal (security ruling, crew 14 Oct): v1 can then refuse availability dealers
+    assert answer["mode"] == "all", answer
+    assert v["broaden_axis"] == "all", v["broaden_axis"]
     assert v["message_type"] == "business_query"
 
 
