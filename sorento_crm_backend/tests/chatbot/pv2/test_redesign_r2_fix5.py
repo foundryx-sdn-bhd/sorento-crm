@@ -79,7 +79,8 @@ def test_b2_the_waiting_ask_does_not_re_add_an_attachment_kind_the_held_product_
     st, acts = apply_turn(st, PICK, resolver=r, now=NOW)
     assert isinstance(acts[0], Lookup)
     assert st.held.attachment_type == "datasheet" and st.held.attachment_types == [], "pre-R2: datasheet only"
-    assert _memory(st) == ("HELD: domain=resource\n  product: SRTWC286\n  attachment_type: datasheet\n"
+    # R-GAPS-b L2: an explicit add keeps the held product
+    assert _memory(st) == ("HELD: domain=resource\n  product: A1, SRTWC286\n  attachment_type: datasheet\n"
                            "PENDING QUESTION: none\nTOPICS (switch_back keys, newest first): none\n")
 
 
