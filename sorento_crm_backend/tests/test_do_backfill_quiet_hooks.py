@@ -82,12 +82,38 @@ def test_backfill_batch_runs_no_cancel_relink(env, monkeypatch):
     assert calls == {"relink": [], "hooks": []}
 
 
+def _email_on_retire(monkeypatch):
+    """The real cancel hooks run; the OI retirement they start (the #1530 board path, which
+    queues the handover and the purchasing email) is doubled by one email_outbox row."""
+    from app.services import project_order_inquiry_service as poi
+
+    def relink(db, *, company_id, numbers):
+        return Derived(newly_cancelled=[("00000000-0000-0000-0000-00000000dbq1", "ZZXS-DBQ1")])
+
+    def retire(self, cancelled, actor_user_id=None):
+        self.db.add(EmailOutbox(event_key="ZZDBQ.handover", recipient_email="zzdbq@test.com",
+                                subject="ZZDBQ handover"))
+        return len(cancelled)
+
+    monkeypatch.setattr(ingest_route, "relink_cancels_for_orders", relink)
+    monkeypatch.setattr(poi.ProjectOrderInquiryService, "retire_rows_for_cancelled_lines", retire)
+    monkeypatch.setattr(poi, "flag_rows_for_cancelled_lines", lambda db, ids: None)
+
+
 def test_backfill_batch_adds_no_email_outbox_row(env, monkeypatch):
     """AC-DH45: nothing reaches purchasing or the handover queue."""
-    _spy(monkeypatch)
+    _email_on_retire(monkeypatch)
     before = _outbox_rows(env)
     _records(_post(env, [_record()], backfill=True))
     assert _outbox_rows(env) == before
+
+
+def test_plain_batch_still_reaches_the_handover_email(env, monkeypatch):
+    """AC-DH45 baseline: the same double writes its row on a plain push."""
+    _email_on_retire(monkeypatch)
+    before = _outbox_rows(env)
+    _records(_post(env, [_record()]))
+    assert _outbox_rows(env) == before + 1
 
 
 def test_backfill_batch_queues_no_embedding_work(env):

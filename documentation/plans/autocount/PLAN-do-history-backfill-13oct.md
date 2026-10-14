@@ -82,6 +82,8 @@ Q3 (the SO side): answered 14 Oct, section 0b.
    one row per SO and exports only the ticked rows of a page.
 3. **Pre-cutover relink gate** (Q4 (a), #1623's `_run_cancel_relink_hook`,
    `be/app/api/v1/external/ingest.py:384`): its own follow-up lane, before the SS backfill runs.
+   Built by lane DO-BACKFILL-CRM (PR #1687): a backfill batch (`"backfill": true`) skips the
+   relink hook entirely, and also queues no embedding work (AC-DH44..46).
 
 ## 1. Facts
 

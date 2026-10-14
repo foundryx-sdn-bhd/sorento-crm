@@ -59,10 +59,21 @@ itself runs in the shared service. These are the CRM-side criteria.
 ## C3 quiet backfill
 
 - **AC-DH40** A push with `"backfill": true` writes no per-DO audit row and no listener embedding
-  event for any DO or line; the batch queues one embedding event per written DO in one insert.
+  event for any DO or line. (Its first wording, one bulk embedding event per written DO, is
+  superseded by AC-DH46.)
 - **AC-DH43** The batch's one `IMPORT` audit row carries the company, book, DocDate range,
   verdict counts and every created or updated DO (source ref, order id, outcome), and is written
   in the batch's transaction.
 - **AC-DH41** A push without the flag behaves exactly as today.
 - **AC-DH42** The DO push writes no SO line or SO header field, and raises no OI row, planning
   change, email or WhatsApp, with or without the flag.
+
+## DO-BACKFILL-CRM (plan section 0b.3, Q4 (a); `tests/test_do_backfill_quiet_hooks.py`)
+
+- **AC-DH44** A non-dry push with `"backfill": true` runs no cancel relink
+  (`_run_cancel_relink_hook`), so no Cancel SO group is re-decided and no cancel reaction starts.
+  Without the flag (or with `false`) the relink runs on the numbers the DOs name, as before.
+- **AC-DH45** A backfill push adds no `email_outbox` row through the cancel reactions (OI
+  retirement, handover, purchasing email); a plain push still reaches them.
+- **AC-DH46** A backfill push queues no embedding work at all for its DOs or lines (no listener
+  event, no bulk insert). A plain push still queues them through the listener.
