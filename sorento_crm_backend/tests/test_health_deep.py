@@ -27,6 +27,13 @@ def client():
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def fresh_probe_cache():
+    health_probes.reset_cache()
+    yield
+    health_probes.reset_cache()
+
+
 @pytest.fixture
 def scheduler_ok(monkeypatch):
     monkeypatch.setattr(
@@ -161,3 +168,43 @@ def test_scheduler_state_is_overdue_when_the_heartbeat_stopped():
     assert state["status"] == "overdue"
     assert state["overdue_count"] == 1
     assert state["last_task_run_at"] == "2026-10-14T11:59:50"
+
+
+# --- review round 1 -------------------------------------------------------------------
+
+
+def test_health_failure_names_no_host(client, monkeypatch):
+    """The image HEALTHCHECK only needs the code; the old body echoed the driver's error,
+    which names the database host and port, on an unauthenticated route."""
+    import app.database as database
+
+    def broken():
+        raise RuntimeError('connection to server at "db.internal" (10.0.0.9), port 5432 failed')
+
+    monkeypatch.setattr(database, "SessionLocal", broken)
+    r = client.get("/health")
+    assert r.status_code == 503
+    assert r.json() == {"status": "unhealthy", "database": "down"}
+
+
+def test_a_flood_of_deep_checks_costs_one_probe_per_window(client, monkeypatch, scheduler_ok):
+    calls = []
+
+    def counting():
+        calls.append(1)
+        return "ok"
+
+    monkeypatch.setattr(health_probes, "redis_state", counting)
+    for _ in range(5):
+        assert client.get("/health/deep").status_code == 200
+        client.get("/health")
+    assert len(calls) == 1, f"{len(calls)} Redis probes for 10 requests inside one cache window"
+
+
+def test_the_cache_expires(client, monkeypatch, scheduler_ok):
+    calls = []
+    monkeypatch.setattr(health_probes, "redis_state", lambda: calls.append(1) or "ok")
+    monkeypatch.setattr(health_probes, "CACHE_SECONDS", 0.0)
+    client.get("/health/deep")
+    client.get("/health/deep")
+    assert len(calls) == 2
