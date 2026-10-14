@@ -305,17 +305,20 @@ def test_two_pins_at_one_bin_outside_the_span_share_its_free_stock_first_confirm
     assert (confirmed_later["assigned_qty"], confirmed_later["short_qty"]) == (3, 5)
 
 
-@pytest.mark.parametrize("on_hand,covered,status", [(0, 76, "short")], ids=["bin-0"])
+@pytest.mark.parametrize(
+    "on_hand,covered,status",
+    [(0, 76, "short"), (50, 126, "pinned")],
+    ids=["bin-0", "bin-50"],
+)
 def test_a_partly_stocked_pin_leaves_the_rest_to_the_orders_own_spo(
     scm_app, on_hand, covered, status
 ):
-    """Reviewer, round 1: a stale pin (bin 0) on a line with an SPO of 76 whose S/O names
-    it: the pin covers nothing, so it no longer reads as cover and the SPO takes 76.
-
-    The partly stocked shape (bin 50) is not pinned here: the owner ruled on 14 Oct 2026
-    that Stock Debt stops reading Fulfilment Planning pins at all (STOCK-DEBT-DECOUPLE),
-    which settles it there, and capping it in `_holds` ahead of `assign()` spent bins on
-    pins `assign()` never serves (see the shared-bin test below)."""
+    """Reviewer, round 1 (the SRTWCX7604 / SO382618 shape: a pin above the bin's stock on a
+    line that also has its own purchase). Pinned 126 at a bin holding 50, and an SPO of 76
+    whose S/O names the line: the pin holds the 50 the bin has, the SPO the 76 left, and
+    the line owes nothing. The book's S/O reads what the pin REALLY holds (what `assign()`
+    gives it), never the pin's own quantity, or the SPO is left free beside a red cell.
+    At a bin holding 0 the pin covers nothing and the SPO takes 76."""
     app, db = _client(scm_app)
     marker = f"ZZTSP{_u()[:6]}".upper()
     bb = _warehouse(db, f"ZZTDC1{_u()[:4]}-BB")
