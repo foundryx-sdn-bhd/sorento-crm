@@ -1003,7 +1003,8 @@ def _did_you_mean(
     codes = [str(o.payload.get("key") or o.key) for o in options]
     tags = _dym_tags(offer, held, codes)
     lines = "\n".join(f"{n}. {c}{tags.get(c, '')}" for n, c in enumerate(codes, start=1))
-    asked = f'Couldn\'t find "{ent.phrase}" (product). Did you mean:\n{lines}\nReply with a code to continue'
+    head = clarify_copy.did_you_mean_head(f'"{ent.phrase}" (product)', language)
+    asked = f"{head}\n{lines}\nReply with a code to continue"
     picks = [
         Option(key=str(n), label=o.label, payload={"kind": "product", "key": c, "label": o.label, "op": "set", **_qty_payload(ent)})
         for n, (o, c) in enumerate(zip(options, codes), start=1)
@@ -1011,7 +1012,11 @@ def _did_you_mean(
     extra: list[Option] = []
     if offer.mode == "offer":
         team = _offer_team(offer, held)
-        asked += f", or would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        offer_line = clarify_copy.escalate_offer(team.replace("_", " ").strip(), language)
+        asked += (
+            f", or would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+            if clarify_copy.lang(language) == "en" else f" {offer_line}"
+        )
         extra = [
             Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
             for o in clarify_copy.handover_options(language)
@@ -1036,13 +1041,13 @@ def _doc_not_found(
     with its escalation offer for a non-staff contact (`_esc_offer`, the domain's team)."""
     words = ent.doc_number or ent.phrase
     label = ent.kind.replace("_", " ")
-    asked = "Couldn't find: " + ", ".join(f'"{w}" ({label})' for w in (words_list or [words])) + "."
+    asked = clarify_copy.not_found_line(", ".join(f'"{w}" ({label})' for w in (words_list or [words])), language)
     options: list[Option] = []
     roster = None
     if offer.roster_for is not None and ent.kind != "product":
         # Staff: v1's own member picker (sentence, header, numbered members, close).
         team = _offer_team(offer, held)
-        sentence = asked + f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        sentence = asked + " " + clarify_copy.escalate_offer(team.replace("_", " ").strip(), language)
         roster = offer.roster_for(team, sentence)
     if roster:
         asked = roster["text"]
@@ -1061,7 +1066,7 @@ def _doc_not_found(
         asked += f" {REFER_TO_SALESMAN}"
     elif offer.mode == "offer":
         team = _offer_team(offer, held)
-        asked += f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        asked += " " + clarify_copy.escalate_offer(team.replace("_", " ").strip(), language)
         options = [
             Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
             for o in clarify_copy.handover_options(language)
