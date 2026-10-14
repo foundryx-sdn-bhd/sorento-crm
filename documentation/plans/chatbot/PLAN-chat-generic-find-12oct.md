@@ -2,6 +2,9 @@
 
 Status: Review (lane CHAT-FIND, PR #1601; round 3 from the crew audit + eval gate of 13 Oct built red-first,
 see section 2.7; reviewer READY on rounds 1-2, security READY). Open: crew re-gate; filters 2 and 3 wait on #1582.
+Superseded in part by SEAT-AS-PRODUCT (PR #1613, `PLAN-seat-as-product-13oct.md`): the chatbot no
+longer answers through `crm_find`; a `fits` parse is a product resolution step. The route, MCP tool
+and registry stay.
 Track: standard (new MCP tool surface, so security review runs; no migration, no FE change).
 
 Architecture: option D of `documentation/plans/chatbot/ARCH-scalable-chat-11oct.html` (PR #1566),
