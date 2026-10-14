@@ -128,14 +128,13 @@ def test_null_attribute_two_ranges_hold_number_is_ambiguous_with_registry_labels
         S.assert_clean_label(o.label)
 
 
-def test_null_attribute_no_range_holds_number_is_none_with_closest_real_rows(db):
+def test_null_attribute_no_range_holds_number_is_none_with_no_closest_picks(db):
     _water_closets(db, length=(500, 700), height=(700, 800))
     res = run(db, spec(None, number=5000, unit="mm"), attrs={"dim_length", "dim_height"}, held=held_class())
     assert res.status == "none"
     assert res.specs == []  # never an invented spec
-    assert len(res.closest) > 0
-    for o in res.closest:
-        S.assert_clean_label(o.label)
+    # RG-2: a miss offers no closest-product picks (the sizes on file are said instead).
+    assert res.closest == []
 
 
 # --- 11: pinning -------------------------------------------------------------

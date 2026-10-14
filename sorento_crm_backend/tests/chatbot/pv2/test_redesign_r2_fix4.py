@@ -154,7 +154,8 @@ def _refs(st, kind="product"):
     return [r.key for r in st.held.refs.get(kind, [])]
 
 
-@pytest.mark.parametrize("name", ["a1", "a2", "a3", "a4"])
+# RG-2: a1 no longer offers closest products (the sizes on file are said instead), so its pre-R2 MEMORY no longer applies.
+@pytest.mark.parametrize("name", ["a2", "a3", "a4"])
 def test_a8_memory_after_every_turn_equals_pre_r2(name):
     resolver, steps = globals()["_scenario_" + name]()
     _, mems = _play(resolver, steps)
@@ -164,13 +165,13 @@ def test_a8_memory_after_every_turn_equals_pre_r2(name):
 # ------------------------------------------------------------------ A1 closest products
 
 
-def test_a1_a_pick_among_the_closest_products_reaches_a_lookup_on_the_first_pick():
+def test_a1_a_size_no_variant_holds_offers_no_closest_products():
+    # RG-2: "srtwc286 300mm" with the family held and no 300 on any axis says what sizes are on file; no closest picks.
     resolver, steps = _scenario_a1()
-    trail, _ = _play(resolver, steps)
-    assert trail[0][0] == "ClarifyAct" and trail[0][1].pending.kind == "clarify_spec_attribute"
-    act, st = trail[1]
-    assert act == "Lookup", "pre-R2 answered on the first pick; replaying the committed 300mm ask asks again"
-    assert _refs(st) == ["SRTWC286-250"] and st.pending is None
+    trail, _ = _play(resolver, steps[:1])
+    kind, st = trail[0]
+    assert kind == "ClarifyAct" and st.pending is not None
+    assert st.pending.options == [], "no axis picks and no closest-product picks"
 
 
 # ------------------------------------------------------------------ A2 remove + an ambiguous customer

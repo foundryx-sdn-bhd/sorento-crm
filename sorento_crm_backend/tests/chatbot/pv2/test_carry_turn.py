@@ -110,7 +110,9 @@ def test_staff_second_miss_reasks_instead_of_offering_a_handover():
     spy = Spy(out(ask(act="answers_bot_question", answer=Answer(option_key="nope", free_value=None))))
     r = turn.run_turn_v2(_ctx(spy, dump_state(mk_state(held("product_attachment", {"product": ["A"]}), pending_=p)),
                               can_offer_handover=False))
-    assert r.actions[0].type == "clarify"
+    # RG-1b: the staff cap closes with v1's "I still need" line, no options, no offer, no refer line.
+    assert r.actions[0].type == "clarify" and r.actions[0].pending.options == []
+    assert "I still need" in r.direct_reply
     spy2 = Spy(out(ask(act="answers_bot_question", answer=Answer(option_key="nope", free_value=None))))
     r2 = turn.run_turn_v2(_ctx(spy2, dump_state(mk_state(held("product_attachment", {"product": ["A"]}), pending_=p))))
     assert r2.actions[0].type == "offer_handover"
