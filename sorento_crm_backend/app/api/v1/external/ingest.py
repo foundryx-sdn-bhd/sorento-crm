@@ -308,7 +308,11 @@ SUPPORTED_ENTITIES = (
 # vanished docs, which then cancel nothing. No read door. `cancel_line_waiting` and
 # `cancel_line_unmatched` join `warnings`. `consignments` / `consignment_returns` join in the
 # same shape, accepted and stored only (source_ref {book}:CSGN / CSGR:{DocKey}). Additive.
-CONTRACT_VERSION = "2.8"
+# "2.9" (AC-CONSIGN-CRM): a consignment becomes a sales order marked consignment once every
+# item line states TransferedQty (a 2.8 record without it stays stored only); a
+# consignment_return derives qty_returned on the consignment line and is reporting only.
+# Additive.
+CONTRACT_VERSION = "2.9"
 
 
 def _principal_may_delete(db: Session, current_user: dict, entity: str) -> bool:

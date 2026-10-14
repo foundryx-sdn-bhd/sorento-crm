@@ -274,6 +274,7 @@ def _fill_so(
             SalesOrder.id.label("so_id"),
             SalesOrder.so_number,
             SalesOrder.order_date,
+            SalesOrder.doc_type,
             Customer.customer_name,
             Warehouse.warehouse_code,
             Product.product_code,
@@ -354,6 +355,8 @@ def _fill_so(
             r.so_id,
             {
                 "so_number": r.so_number, "customer_name": r.customer_name, "order_date": r.order_date,
+                # AC-CONSIGN-CRM: the row names a consignment so the screen can label it.
+                "doc_type": r.doc_type,
                 "ordered_qty": Decimal(0), "transferred_qty": Decimal(0), "outstanding_qty": Decimal(0),
                 "_locations": set(), "_products": set(),
             },
@@ -423,6 +426,7 @@ def _fill_so(
             "transferred_qty": _qty(v["transferred_qty"]),
             "outstanding_qty": _qty(v["outstanding_qty"]),
             "order_date": v["order_date"],
+            "doc_type": v["doc_type"],
         }
         for v in per_so.values()
     ]

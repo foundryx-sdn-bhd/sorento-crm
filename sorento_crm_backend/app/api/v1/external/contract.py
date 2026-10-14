@@ -138,9 +138,11 @@ FIELDS_ADDED: dict[str, list[str]] = {
                                "Details.Location", "Details.Qty", "Details.FromDocType",
                                "Details.FromDocNo", "Details.FromDocDtlKey"],
     "consignments": ["book", "DocKey", "DocNo", "DocDate", "LastModified", "Cancelled",
+                     "DebtorCode", "DebtorName", "SalesAgent",
                      "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
                      "Details.Location", "Details.Qty", "Details.FromDocType",
-                     "Details.FromDocNo", "Details.FromDocDtlKey"],
+                     "Details.FromDocNo", "Details.FromDocDtlKey", "Details.UOM",
+                     "Details.UnitPrice", "Details.SubTotal", "Details.TransferedQty"],
     "consignment_returns": ["book", "DocKey", "DocNo", "DocDate", "LastModified", "Cancelled",
                             "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
                             "Details.Location", "Details.Qty", "Details.FromDocType",
@@ -243,12 +245,15 @@ FIELD_NOTES: dict[str, str] = {
         "number's table decides; FromDocType reads PO on both). source_ref is {book}:XP:{DocKey}."
     ),
     "consignments": (
-        "v2.8. AutoCount Consignment in the same shape, accepted and stored only: no line is "
-        "matched and no quantity moves (consignment behaviour is a later contract). source_ref "
-        "is {book}:CSGN:{DocKey}. /deletions marks the vanished doc_keys."
+        "v2.9. AutoCount Consignment. Once every item line carries TransferedQty the document "
+        "becomes a sales order marked Consignment (delivered = TransferedQty); a void or "
+        "vanished doc is cancelled. A record without it is kept but moves no quantity. source_ref is "
+        "{book}:CSGN:{DocKey}. /deletions marks the vanished doc_keys."
     ),
     "consignment_returns": (
-        "v2.8. As consignments, AutoCount Consignment Return. source_ref is {book}:CSGR:{DocKey}."
+        "v2.9. AutoCount Consignment Return, matched to the consignment line exactly "
+        "(FromDocDtlKey, else the group's one line) and recorded as returned qty only. "
+        "source_ref is {book}:CSGR:{DocKey}."
     ),
 }
 

@@ -600,6 +600,8 @@ class BoardContribution(BaseModel):
     #: a null is the honest answer rather than an absent key the screen has to interpret.
     project_line_id: Optional[str] = None
     so_number: str
+    #: AC-CONSIGN-CRM: the core sales order's doc_type ('consignment' / 'sales_order').
+    so_doc_type: Optional[str] = None
     customer_name: Optional[str] = None
     #: Addressing only, and what a pivot BY CUSTOMER groups on: two different customers can
     #: carry the same name, and grouping by the label would merge them.

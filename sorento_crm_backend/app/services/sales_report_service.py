@@ -237,14 +237,15 @@ def _figure_sum_labels(exprs: dict) -> list:
 
 def _common_filters(
     *, product_ids, customer_query, customer_ids, channel, warehouse_ids, date_from, date_to,
-    bucket_expr,
+    bucket_expr, include_consignments=False,
 ) -> list:
     filters = [
         SalesOrder.status != "cancelled",
         SalesOrderLine.line_status != "cancelled",
         # AC-CONSIGN-CRM Q5 a: a consignment is not a sale; the sale counts where its DO /
         # invoice already does.
-        SalesOrder.doc_type != DOC_TYPE_CONSIGNMENT,
+        # The outstanding basis opts back in: a consignment is open demand there.
+        *([] if include_consignments else [SalesOrder.doc_type != DOC_TYPE_CONSIGNMENT]),
         # S16: a line bucketed by neither required_date nor order_date is
         # excluded from EVERYTHING, not just months[] - never falls back to
         # created_at.

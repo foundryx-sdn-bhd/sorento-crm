@@ -261,6 +261,7 @@ class OrderInquiryHeaderService:
             .add_columns(
                 User.name.label("raised_by_name"),
                 SalesOrder.id.label("sales_order_id"),
+                SalesOrder.doc_type.label("so_doc_type"),
                 _SO_NUMBER.label("so_number"),
                 _SO_DATE.label("so_date"),
                 Customer.customer_name.label("customer_name"),
@@ -336,6 +337,7 @@ class OrderInquiryHeaderService:
             raised_at=inquiry.raised_at,
             raised_by_name=row.raised_by_name,
             sales_order_id=row.sales_order_id,
+            so_doc_type=row.so_doc_type,
             project_sales_order_id=inquiry.project_sales_order_id,
             so_number=row.so_number,
             so_date=row.so_date,

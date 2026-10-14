@@ -438,6 +438,9 @@ class OrderInquiryWorklistRow(BaseModel):
     project_id: Optional[str] = None
     project_sales_order_id: Optional[str] = None
     core_sales_order_id: Optional[str] = None
+    #: AC-CONSIGN-CRM: the core sales order's doc_type ('consignment' / 'sales_order'); null
+    #: when the row has no core SO.
+    so_doc_type: Optional[str] = None
     # AC-B6-7 (`PLAN-board-oi-mechanical-22sep.md`, S6): the core LINE's own id, which the
     # "SO line" cell puts on
     # `/scm/sales-orders/<core_sales_order_id>?tab=lines&line=<core_line_id>` beside
@@ -1333,6 +1336,8 @@ class OrderInquiryHeaderOut(BaseModel):
     raised_by_name: Optional[str] = None
     #: The CORE `sales_orders.id`, null when this order never reached AutoCount.
     sales_order_id: Optional[str] = None
+    #: AC-CONSIGN-CRM: that core order's doc_type; null when there is no core order.
+    so_doc_type: Optional[str] = None
     project_sales_order_id: str
     so_number: Optional[str] = None
     so_date: Optional[date] = None

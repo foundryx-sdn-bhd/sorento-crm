@@ -770,6 +770,7 @@ _COLUMNS = (
     ProjectSalesOrder.id.label("project_sales_order_id"),
     ProjectSalesOrder.is_pre_order.label("is_pre_order"),
     SalesOrder.id.label("core_sales_order_id"),
+    SalesOrder.doc_type.label("so_doc_type"),
     # AC-B6-7 (`PLAN-board-oi-mechanical-22sep.md`, S6): the "SO line" cell resolves
     # `/scm/sales-orders/<core_sales_order_id>?tab=lines&line=<core_line_id>`, so the only
     # NEW column the deep link needs is the core LINE's own id - the sales-order half is
@@ -2360,6 +2361,7 @@ class OrderInquiryWorklistService:
             "project_id": row.project_id,
             "project_sales_order_id": row.project_sales_order_id,
             "core_sales_order_id": row.core_sales_order_id,
+            "so_doc_type": row.so_doc_type,
             # AC-B6-7 (`PLAN-board-oi-mechanical-22sep.md`, S6): the core LINE's own id,
             # which the "SO line" cell puts on
             # `/scm/sales-orders/<core_sales_order_id>?tab=lines&line=<core_line_id>`

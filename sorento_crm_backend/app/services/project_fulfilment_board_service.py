@@ -398,6 +398,7 @@ class _Row:
         "qty",
         "qty_outstanding",
         "required_date", "warehouse_id", "location", "priority", "demand_class",
+        "so_doc_type",
         "payment_terms_days", "bucket_key", "is_past", "rank_score", "rank_factors",
         "sources", "trail", "options", "contested", "qty_ordered", "qty_delivered",
         "proposed",
@@ -1627,6 +1628,7 @@ class FulfilmentBoardService:
                 outside_planning=outside_fulfilment_planning(warehouse),
                 priority=line.priority,
                 demand_class=order.demand_class,
+                so_doc_type=order.doc_type,
                 # R7 (query-count): off the SAME `line` row this read already fetched -
                 # see `_Row.__slots__`'s own docstring.
                 source_ref=line.source_ref,
@@ -5182,6 +5184,7 @@ class FulfilmentBoardService:
             #: null is the honest answer: there is no planning record to confirm against.
             "project_line_id": row.project_line_id,
             "so_number": row.so_number,
+            "so_doc_type": row.so_doc_type,
             "customer_name": row.customer_name,
             #: Addressing only, and the key a pivot BY CUSTOMER groups on: two different
             #: customers can carry the same name, and grouping by the label would merge them.
