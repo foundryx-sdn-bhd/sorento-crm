@@ -117,6 +117,7 @@ def apply_turn(
     now: datetime | None = None,
     domain_teams: dict[str, str] | None = None,
     offer_mode: Literal["offer", "refer", "none"] = "offer",
+    roster_for: Any = None,
 ) -> tuple[ConversationState, list[Action]]:
     """Apply one parser output to the state; one Action per ask (section 3).
 
@@ -127,7 +128,7 @@ def apply_turn(
     st.turn_no = state.turn_no + 1
     # What a not-found document says after its sentence: the offer, v1's refer line, or nothing.
     mode = offer_mode if offer_mode != "offer" else ("offer" if can_offer_handover else "none")
-    doc_offer = _DocOffer(mode, domain_teams)
+    doc_offer = _DocOffer(mode, domain_teams, roster_for)
     language = out.language
     today = local_date(now) if now is not None else None
     actions: list[Action] = []
@@ -362,9 +363,10 @@ def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[Clarif
 class _DocOffer:
     """How a not-found document ends its sentence (see `apply_turn`)."""
 
-    def __init__(self, mode: str = "offer", teams: dict[str, str] | None = None) -> None:
+    def __init__(self, mode: str = "offer", teams: dict[str, str] | None = None, roster_for: Any = None) -> None:
         self.mode = mode
         self.teams = teams
+        self.roster_for = roster_for
 
 
 class _Qs(list):
@@ -434,7 +436,7 @@ def _answer(
     payload_kind = picked.payload.get("kind")
     if pending.kind == "offer_handover" or payload_kind == "handover":
         if picked.payload.get("value") is True:
-            return HandOver(ask_index=i, team_key=picked.payload.get("team_key")), True
+            return HandOver(ask_index=i, team_key=picked.payload.get("team_key"), agent_key=picked.payload.get("agent_key")), True
         return SmallTalk(ask_index=i, declined_offer=True), True
 
     if pending.kind in PASS_THROUGH_PENDING or payload_kind == "choice":
@@ -890,7 +892,24 @@ def _doc_not_found(
     label = ent.kind.replace("_", " ")
     asked = "Couldn't find: " + ", ".join(f'"{w}" ({label})' for w in (words_list or [words])) + "."
     options: list[Option] = []
-    if offer.mode == "refer":
+    roster = None
+    if offer.roster_for is not None and ent.kind != "product":
+        # Staff: v1's own member picker (sentence, header, numbered members, close).
+        team = _offer_team(offer, held)
+        sentence = asked + f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        roster = offer.roster_for(team, sentence)
+    if roster:
+        asked = roster["text"]
+        options = [
+            Option(key=str(n), label=m["name"], payload={
+                "kind": "handover", "value": True, "team_key": team, "agent_key": m["user_id"]})
+            for n, m in enumerate(roster["members"], start=1)
+        ]
+        options += [
+            Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
+            for o in clarify_copy.handover_options(language)
+        ]
+    elif offer.mode == "refer":
         from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
         asked += f" {REFER_TO_SALESMAN}"

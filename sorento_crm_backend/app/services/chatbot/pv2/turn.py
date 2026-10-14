@@ -79,6 +79,8 @@ class TurnV2Context:
     # Live policy: domain -> escalation team code; and how a miss may end (offer / refer / none).
     domain_teams: dict[str, str] | None = None
     offer_mode: Literal["offer", "refer", "none"] = "offer"
+    # Staff only: (team, v1 offer sentence) -> v1's member picker (`staff_roster_for`).
+    roster_for: Callable[[str, str], dict[str, Any] | None] | None = None
 
 
 def local_today(now: datetime) -> date:
@@ -121,6 +123,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         can_offer_handover=ctx.can_offer_handover,
         domain_teams=ctx.domain_teams,
         offer_mode=ctx.offer_mode,
+        roster_for=ctx.roster_for,
         now=ctx.now,
     )
     state_out.last_turn_at = ctx.now
@@ -475,6 +478,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             granted_reveals=granted,
             domain_teams=domain_teams,
             offer_mode="none" if staff else ("offer" if offers_escalation(profile) else "refer"),
+            roster_for=staff_roster_for(factory, contact) if staff else None,
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),
                 contact_id=contact,
@@ -499,6 +503,34 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
         state_in = getattr(hctx, "state_in", None)
         ctx.base_focus = getattr(state_in, "focus", None)
         return _run(ctx, v1_pending=getattr(state_in, "pending", None))
+
+
+def staff_roster_for(factory: Any, contact: str) -> Callable[[str, str], dict[str, Any] | None]:
+    """team code, v1 offer sentence -> v1's own member offer (`tail/member_offer`): its text
+    (the sentence, the picker header, the numbered members, the close) and the members
+    (`user_id`, `name`) in printed order; None when the team has no roster."""
+
+    def build(team: str, sentence: str) -> dict[str, Any] | None:
+        from app.services.chatbot.tail import member_offer as member_mod
+
+        plan = member_mod.cs_roster_plan({})
+        ctx = {"parse": {"output": {"routing": {"suggested_team": team}}}, "contact": {"id": contact}}
+        try:
+            with _session(factory) as db:
+                rosters = member_mod.fetch_rosters(db, plan, ctx)
+        except Exception:  # noqa: BLE001 - a roster failure leaves the sentence alone
+            logger.warning("pv2: staff roster unavailable", exc_info=True)
+            return None
+        offer = member_mod.build_cs_member_offer({"response": sentence}, plan, rosters)
+        if not offer.get("member_offer"):
+            return None
+        members = [
+            {"user_id": str(r.get("uuid")), "name": str(r.get("label"))}
+            for r in offer.get("cs_last_result_set") or []
+        ]
+        return {"text": offer["response"], "members": members}
+
+    return build
 
 
 def _first_name(envelope: Any) -> str | None:

@@ -204,10 +204,14 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
             **_v1_entity(ResolvedRef(kind=miss.kind, key=str(miss.phrase), label=str(miss.phrase))),
             "canonical_code": None, "confident": False, "hint_confident": False,
         })
-    verdict["entities"] = entities
     ask = action.ask
     verdict["status"] = held.status or (ask.status if ask is not None else None)
     verdict["portal_form"] = held.portal_form or (ask.portal_form if ask is not None else None)
+    if verdict["portal_form"]:
+        # The form is the subject: a product, customer or brand beside it would turn v1's
+        # found portal link into a "could not find" miss.
+        entities = [e for e in entities if e["hint"] not in {V1_HINT.get(k, k) for k in ("product", "customer", "brand")}]
+    verdict["entities"] = entities
     date_from, date_to = period_dates(held.period, today)
     verdict["date_filter_start"] = date_from.isoformat() if date_from else None
     verdict["date_filter_end"] = date_to.isoformat() if date_to else None
@@ -283,6 +287,8 @@ def focus_from_v2(held: Held, base: Focus | None = None) -> Focus:
     focus.products, focus.customers, focus.warehouse, focus.brands = [], [], [], []
     focus.extra = {}
     for kind, refs in held.refs.items():
+        if held.portal_form and kind in ("product", "customer", "brand"):
+            continue  # the form is the subject; the typed codes were never a form the user filled in
         if kind == "brand":
             focus.brands = [r.key for r in refs]
             continue

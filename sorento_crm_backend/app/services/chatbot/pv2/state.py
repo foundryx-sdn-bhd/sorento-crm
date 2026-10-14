@@ -152,6 +152,7 @@ class HandOver(BaseModel):
     type: Literal["hand_over"] = "hand_over"
     ask_index: int
     team_key: str | None = None
+    agent_key: str | None = None  # the member (users.id) a staff roster pick named
 
 
 class OfferHandover(BaseModel):
