@@ -214,3 +214,60 @@ def test_a2b_a_plain_product_lines_complete_set_is_left_as_stored():
         line = _save(db, env, {"quantity": "2"}, line=line)
 
         assert line.complete_set == "KEEP ME"
+
+
+def test_a2b_a_set_change_overrides_a_complete_set_carried_in_the_same_write():
+    with blank_session() as db:
+        env = _env(db)
+        first, second = _two_sets(db, env)
+        line = _save(db, env, {"product_set_id": first.id, "unit_price": "900.00", "quantity": "1"})
+
+        line = _save(
+            db,
+            env,
+            {"product_set_id": second.id, "complete_set": _parts_text(first)},
+            line=line,
+        )
+
+        assert line.complete_set == _parts_text(second)
+
+
+def test_a2b_a_set_change_with_a_null_complete_set_in_the_body_still_stores_the_new_parts():
+    with blank_session() as db:
+        env = _env(db)
+        first, second = _two_sets(db, env)
+        line = _save(db, env, {"product_set_id": first.id, "unit_price": "900.00", "quantity": "1"})
+
+        line = _save(db, env, {"product_set_id": second.id, "complete_set": None}, line=line)
+
+        assert line.complete_set == _parts_text(second)
+
+
+def _family_world(w):
+    rl, _a, _b = _two_part_set(w, "ZOWNA-RL")
+    sh, _c, _d = _two_part_set(w, "ZOWNA-SH")
+    return rl, sh
+
+
+def test_s4_the_set_code_row_beats_a_family_row_reaching_the_same_set_set_row_first():
+    with _world() as w:
+        rl, sh = _family_world(w)
+
+        _apply(w, [_row("ZOWNA-RL", "1050", "6"), _row("ZOWNA", "900", "5")])
+
+        assert _set_rows(w) == {
+            rl.id: (Decimal("1050"), Decimal("6")),
+            sh.id: (Decimal("900"), Decimal("5")),
+        }
+
+
+def test_s4_the_set_code_row_beats_a_family_row_reaching_the_same_set_family_row_first():
+    with _world() as w:
+        rl, sh = _family_world(w)
+
+        _apply(w, [_row("ZOWNA", "900", "5"), _row("ZOWNA-RL", "1050", "6")])
+
+        assert _set_rows(w) == {
+            rl.id: (Decimal("1050"), Decimal("6")),
+            sh.id: (Decimal("900"), Decimal("5")),
+        }
