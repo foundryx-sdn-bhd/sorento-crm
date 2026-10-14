@@ -1,6 +1,6 @@
 # PLAN: CS routing conditions (product lines, debtor type) + No CS finish
 
-**Status:** Rework for owner ruling 22:02 (No CS stays Approved, Completed removed); earlier reviews READY at 63c2f440f · Track: normal (migration) · Lane FORM-ROUTING-CONDITIONS · branch
+**Status:** Owner ruling 22:02 built (No CS stays Approved); reviewer READY at b8fb0fbdf; browser pass + owner hand test next · Track: normal (migration) · Lane FORM-ROUTING-CONDITIONS · branch
 `crew/form-routing-conditions`, base origin/main 760ed152b
 **Domain:** forms / procurement / customers
 **UAC:** `documentation/plans/forms/form-routing-conditions-acceptance-criteria.md` (the contract)
