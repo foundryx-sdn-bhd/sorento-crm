@@ -127,8 +127,7 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
 
       {candidates.length === 0 ? (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          No customer-service team configured yet. Add members to the customer-service
-          team before creating routing rules.
+          No one can process purchase requests yet.
         </div>
       ) : rules.length === 0 ? (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
