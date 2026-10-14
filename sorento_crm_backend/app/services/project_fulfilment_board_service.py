@@ -85,6 +85,7 @@ from app.services.project_supply_service import (
     _dec,
     _leading_factor,
     _open_of,
+    delivered_qty_of,
     plan_qty_of,
 )
 from app.services.scm import ladder_steps
@@ -1066,6 +1067,7 @@ class FulfilmentBoardService:
                     SalesOrderLine.warehouse_id.label("warehouse_id"),
                     owed.label("owed"),
                     SalesOrderLine.qty_delivered,
+                    SalesOrderLine.qty_cancelled,
                     Warehouse.warehouse_code.label("line_location"),
                     SalesAgent.sales_agent.label("agent_code"),
                 )
@@ -1084,7 +1086,10 @@ class FulfilmentBoardService:
             for row in done:
                 entry = _so_row(row)
                 entry["location"] = entry["location"] or row.line_location
-                entry["fulfilled_qty"] = qty_text(_dec(row.qty_delivered))
+                # AC-CANCEL-CRM: a Cancel SO is in TransferedQty but never went out.
+                entry["fulfilled_qty"] = qty_text(
+                    max(_dec(row.qty_delivered) - _dec(row.qty_cancelled), _ZERO)
+                )
                 sales_orders.append(entry)
         by_location = self.supply.incoming_by_location([product_id], target_ids)
         incoming_rows = [
@@ -1610,7 +1615,7 @@ class FulfilmentBoardService:
                 # because it and the planned quantity have stopped being the same number.
                 qty_outstanding=_open_of(line),
                 qty_ordered=_dec(line.qty_ordered),
-                qty_delivered=_dec(line.qty_delivered),
+                qty_delivered=delivered_qty_of(line),
                 required_date=line.required_date,
                 warehouse_id=str(line.warehouse_id) if line.warehouse_id else None,
                 location=warehouse.warehouse_code if warehouse else None,
@@ -1786,7 +1791,7 @@ class FulfilmentBoardService:
                     project_line_id=str(project_line.id),
                     qty=_ZERO,
                     qty_ordered=core_line.qty_ordered,
-                    qty_delivered=core_line.qty_delivered,
+                    qty_delivered=delivered_qty_of(core_line),
                     required_date=core_line.required_date,
                     warehouse_id=str(core_line.warehouse_id) if core_line.warehouse_id else None,
                     location=warehouse.warehouse_code if warehouse else None,
@@ -1851,7 +1856,7 @@ class FulfilmentBoardService:
                     project_line_id=str(project_line.id),
                     qty=_ZERO,
                     qty_ordered=core_line.qty_ordered,
-                    qty_delivered=core_line.qty_delivered,
+                    qty_delivered=delivered_qty_of(core_line),
                     required_date=core_line.required_date,
                     warehouse_id=str(core_line.warehouse_id) if core_line.warehouse_id else None,
                     bucket_key=NO_DATE_BUCKET,

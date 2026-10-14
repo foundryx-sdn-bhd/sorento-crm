@@ -107,6 +107,7 @@ import { PLAN_PERMISSION } from '../../lib/planActions';
 // LINE column reads the list's map instead, so the two sit side by side rather than one
 // shadowing the other.
 import { SOURCE_LABELS as LINE_SOURCE_LABELS } from '../../lib/sourceLabels';
+import { cancelSourcesTitle, isPartlyCancelled, PARTLY_CANCELLED } from '@/app/(protected)/scm/lib/autocountCancel';
 import { useHasPermission } from '@/hooks/usePermissions';
 
 /**
@@ -839,6 +840,33 @@ export function SalesOrderDetail({ id }: { id: string }) {
         },
       },
       {
+        // AC-CANCEL-CRM (owner hand test, 13 Oct): AutoCount Cancel SO is part of
+        // TransferedQty, so without its own figure a cancelled line reads ordered 36,
+        // delivered 0, outstanding 0 with nothing saying why. The tooltip names each cancel
+        // document and how it was matched to this line.
+        id: 'qty_cancelled',
+        accessorFn: (line) => Number(line.qty_cancelled ?? 0),
+        header: ({ column }) => <DataGridColumnHeader title="Qty cancelled" column={column} />,
+        cell: ({ row }) => {
+          const qty = Number(row.original.qty_cancelled ?? 0);
+          return (
+            <span
+              data-testid={`qty-cancelled-${row.original.id}`}
+              title={cancelSourcesTitle(row.original.cancels)}
+              className="truncate"
+            >
+              {fmtInt(qty)}
+            </span>
+          );
+        },
+        size: 130,
+        meta: {
+          headerTitle: 'Qty cancelled',
+          headerClassName: 'text-right',
+          cellClassName: 'text-right tabular-nums',
+        },
+      },
+      {
         id: 'outstanding',
         // Computed here rather than sent, so it cannot disagree with the two columns beside
         // it. A negative delivery (over-shipped) reads as 0 rather than as a negative
@@ -1093,15 +1121,22 @@ export function SalesOrderDetail({ id }: { id: string }) {
         header: ({ column }) => <DataGridColumnHeader title="Status" column={column} />,
         // The same light chip as every other pill on this page, worded the way AutoCount
         // words it - the same helper the header pill and the list column use.
-        cell: ({ row }) => (
-          <Badge
-            variant={salesOrderStatusVariant(row.original.line_status ?? 'open')}
-            appearance="light"
-            size="md"
-          >
-            {salesOrderStatusLabel(row.original.line_status ?? 'open')}
-          </Badge>
-        ),
+        // A line AutoCount Cancel SO cancelled only part of reads "Partly cancelled"
+        // (AC-CANCEL-CRM); a whole cancel is the line's own `cancelled`.
+        cell: ({ row }) =>
+          isPartlyCancelled(row.original) ? (
+            <Badge variant={PARTLY_CANCELLED.variant} appearance="light" size="md">
+              {PARTLY_CANCELLED.label}
+            </Badge>
+          ) : (
+            <Badge
+              variant={salesOrderStatusVariant(row.original.line_status ?? 'open')}
+              appearance="light"
+              size="md"
+            >
+              {salesOrderStatusLabel(row.original.line_status ?? 'open')}
+            </Badge>
+          ),
         size: 130,
         meta: { headerTitle: 'Status' },
       },
@@ -1959,7 +1994,9 @@ export function SalesOrderDetail({ id }: { id: string }) {
             // who had already used this screen kept the OLD 13th-of-16 slot regardless of the
             // code change (AC-K1 failed on a live account for exactly this reason). A fresh
             // key means everyone reads R4's own order once, same as a first-time visitor.
-            listingKey="scm.dashboard.view::sales-order-lines-v2"
+            // -v3 (AC-CANCEL-CRM, owner 13 Oct): Qty cancelled and Status must show by
+            // default; a saved -v2 preference could keep either hidden.
+            listingKey="scm.dashboard.view::sales-order-lines-v3"
             rowAttributes={lineDeepLink.rowAttributes}
             rowClassName={lineDeepLink.rowClassName}
           >

@@ -48,6 +48,7 @@ import type {
   QuotationRecomputeResult,
   QuotationVersion,
   ImportJobStatus,
+  QuotationLineImages,
   QuotationLineVerdict,
   SeriesProductImportBody,
   SeriesProductImportJob,
@@ -1001,6 +1002,20 @@ export async function judgeQuotationLine(
   );
   if (!response.ok)
     throw new Error(await extractApiError(response, 'Could not check the line'));
+  return response.json();
+}
+
+/**
+ * The photo and drawing cells a line with this product would show, before the line is saved.
+ *
+ * Contract: `GET /quotation-line-images?product_id=` answers `{product_image, technical_drawing}`
+ * in the shapes of a saved editable line with no picks, candidates included.
+ */
+export async function getQuotationLineImages(productId: string): Promise<QuotationLineImages> {
+  const search = new URLSearchParams({ product_id: productId });
+  const response = await apiFetch(`${BASE}/quotation-line-images?${search.toString()}`);
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Could not load the product pictures'));
   return response.json();
 }
 

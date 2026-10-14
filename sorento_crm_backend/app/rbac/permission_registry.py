@@ -900,6 +900,24 @@ PERMISSION_REGISTRY.extend([
     },
 ])
 
+# AC-CANCEL-CRM (contract 2.8): the AutoCount Cancel SO / Cancel PO (and the stored-only
+# Consignment / Consignment Return) ingest doors. Their own
+# slugs (one per entity per door, `test_external_permission_coverage`), granted by migration
+# `ac_cancel_0001_docs` to admin / superadmin and to the role that already pushes the orders.
+PERMISSION_REGISTRY.extend([
+    {"slug": f"scm.{entity}.{action}", "name": f"{verb} {label}", "description": description}
+    for entity, label in (("cancel_sales_orders", "AutoCount Cancel SO"),
+                          ("cancel_purchase_orders", "AutoCount Cancel PO"),
+                          ("consignments", "AutoCount Consignment"),
+                          ("consignment_returns", "AutoCount Consignment Return"))
+    for action, verb, description in (
+        ("view", "View", f"Permission to read {label} documents pushed by the AutoCount ingest."),
+        ("edit", "Ingest", f"Permission to push {label} documents through the AutoCount ingest."),
+        ("delete", "Sweep", f"Permission to mark vanished {label} documents through the "
+                            "AutoCount ingest."),
+    )
+])
+
 
 def sync_permissions(db: Session, created_by_user_id: Optional[str] = None) -> int:
     """
