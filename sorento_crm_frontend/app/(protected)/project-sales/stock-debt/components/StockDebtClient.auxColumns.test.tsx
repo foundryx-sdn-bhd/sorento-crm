@@ -53,7 +53,7 @@ vi.mock('../services/stockDebtService', () => ({
 
 import { StockDebtClient } from './StockDebtClient';
 
-const AUX_HEADERS = ['BRW On Hand Qty', 'BRW PO Qty', 'BRW Incoming Qty', 'Dealer O/standing Qty'];
+const AUX_HEADERS = ['BRW Retail On Hand Qty', 'BRW Retail PO Qty', 'BRW Retail Incoming Qty', 'Dealer O/standing Qty'];
 const KEY = 'stock-debt.show-aux';
 
 function envelope(): StockDebtListResponse {

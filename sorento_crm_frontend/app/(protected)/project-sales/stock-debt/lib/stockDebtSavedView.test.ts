@@ -53,6 +53,7 @@ describe('constants', () => {
       book: 'all',
       supplierIds: [],
       groups: [],
+      groupsMode: 'include',
       dateFrom: '',
       dateTo: '',
       onlyDebt: true,
@@ -219,5 +220,25 @@ describe('local dates, not UTC dates', () => {
     );
     expect(config.quick_filters?.date_from_days).toBe('0');
     expect(config.quick_filters?.date_to_days).toBe('30');
+  });
+});
+
+describe('groups_mode (AC-X4)', () => {
+  it('saves the mode beside groups', () => {
+    const config = toSavedViewConfig(filters({ groups: ['ED'], groupsMode: 'exclude' }), OCT_14);
+    expect(config.quick_filters).toMatchObject({ groups: 'ED', groups_mode: 'exclude' });
+    expect(toSavedViewConfig(filters(), OCT_14).quick_filters?.groups_mode).toBe('include');
+  });
+
+  it('round-trips exclude', () => {
+    const original = filters({ groups: ['BB', 'ED'], groupsMode: 'exclude' });
+    const back = fromSavedView(view(toSavedViewConfig(original, OCT_14).quick_filters), OCT_14);
+    expect(back.groupsMode).toBe('exclude');
+    expect(back.groups).toEqual(['BB', 'ED']);
+  });
+
+  it('a view saved before this round (no key) applies as include', () => {
+    expect(fromSavedView(view({ groups: 'ED' }), OCT_14).groupsMode).toBe('include');
+    expect(fromSavedView(null, OCT_14).groupsMode).toBe('include');
   });
 });

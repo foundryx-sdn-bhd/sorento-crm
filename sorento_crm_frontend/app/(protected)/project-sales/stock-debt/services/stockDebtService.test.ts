@@ -177,3 +177,56 @@ describe('Location (repeatable group) on the wire (STOCK-DEBT-SAVED-VIEWS AC-F2)
     expect(body.group === undefined || body.group.length === 0).toBe(true);
   });
 });
+
+describe('Location exclude mode on the wire (AC-X2)', () => {
+  const listBase = {
+    pageIndex: 0, pageSize: 25, query: '', onlyDebt: true, book: 'all' as const,
+    supplierIds: [], dateFrom: '', dateTo: '',
+  };
+
+  it('getStockDebtList sends exclude_group per value and no group', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
+    const { getStockDebtList } = await import('./stockDebtService');
+
+    await getStockDebtList({ ...listBase, groups: ['BB', 'ED'], groupsMode: 'exclude' });
+
+    const url = calledUrl();
+    expect(url.searchParams.getAll('exclude_group')).toEqual(['BB', 'ED']);
+    expect(url.searchParams.has('group')).toBe(false);
+  });
+
+  it('getStockDebtList include mode is unchanged', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
+    const { getStockDebtList } = await import('./stockDebtService');
+
+    await getStockDebtList({ ...listBase, groups: ['ED'], groupsMode: 'include' });
+
+    const url = calledUrl();
+    expect(url.searchParams.getAll('group')).toEqual(['ED']);
+    expect(url.searchParams.has('exclude_group')).toBe(false);
+  });
+
+  it('getStockDebtCell takes a trailing groupsMode', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ demand: [], supply: [] }));
+
+    await getStockDebtCell('p1', '2026-10', '', '', 'all', false, ['ED'], 'exclude');
+
+    const url = calledUrl();
+    expect(url.searchParams.getAll('exclude_group')).toEqual(['ED']);
+    expect(url.searchParams.has('group')).toBe(false);
+  });
+
+  it('exportStockDebt sends exclude_group instead of group in exclude mode', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ id: 'd1' }));
+    const { exportStockDebt } = await import('./stockDebtService');
+
+    await exportStockDebt({
+      query: '', onlyDebt: true, book: 'all', supplierIds: [], dateFrom: '', dateTo: '',
+      split: 'none', showAux: false, groups: ['ED'], groupsMode: 'exclude',
+    } as Parameters<typeof exportStockDebt>[0]);
+
+    const body = JSON.parse((mockedFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.exclude_group).toEqual(['ED']);
+    expect(body.group === undefined || body.group.length === 0).toBe(true);
+  });
+});

@@ -314,9 +314,9 @@ describe('StockDebtClient', () => {
       screen.getAllByRole('columnheader').map((cell) => cell.textContent?.trim()),
     ).toEqual([
       'Product',
-      'BRW On Hand Qty',
-      'BRW PO Qty',
-      'BRW Incoming Qty',
+      'BRW Retail On Hand Qty',
+      'BRW Retail PO Qty',
+      'BRW Retail Incoming Qty',
       'Dealer O/standing Qty',
       'Aug 26',
       'Sep 26',

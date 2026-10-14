@@ -408,3 +408,108 @@ describe('Location and saved views reach every consumer (kill-test survivors)', 
     );
   });
 });
+
+describe('Location mode: Only / All except (AC-X2..X4)', () => {
+  async function pickExcept(...codes: string[]) {
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    fireEvent.click(screen.getByRole('radio', { name: 'All except' }));
+    pick(...codes);
+  }
+
+  it('defaults to Only', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    expect(screen.getByRole('radio', { name: 'Only' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'All except' })).not.toBeChecked();
+  });
+
+  it('All except ED sends mode exclude and reads "Location: all except ED"', async () => {
+    renderBoard();
+    await pickExcept('ED');
+
+    await waitFor(() =>
+      expect(getStockDebtList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ groupsMode: 'exclude', groups: ['ED'] }),
+      ),
+    );
+    expect(screen.getByText('Location: all except ED')).toBeInTheDocument();
+  });
+
+  it('two picks read "Locations: all except BB, ED"', async () => {
+    renderBoard();
+    await pickExcept('BB', 'ED');
+    expect(screen.getByText('Locations: all except BB, ED')).toBeInTheDocument();
+  });
+
+  it('clearing the chip clears the pick and returns to Only', async () => {
+    renderBoard();
+    await pickExcept('ED');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filter: Location: all except ED' }));
+
+    await waitFor(() =>
+      expect(getStockDebtList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ groupsMode: 'include', groups: [] }),
+      ),
+    );
+    expect(screen.queryByText(/all except/)).not.toBeInTheDocument();
+  });
+
+  it('the cell drill carries the mode', async () => {
+    renderBoard();
+    await pickExcept('ED');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'SRTWB242, Oct 26, balance -5' }),
+    );
+    await waitFor(() => expect(getStockDebtCell).toHaveBeenCalled());
+    const call = getStockDebtCell.mock.calls.at(-1)!;
+    expect(call[6]).toEqual(['ED']);
+    expect(call[7]).toBe('exclude');
+  });
+
+  it('the export carries the mode', async () => {
+    renderBoard();
+    await pickExcept('ED');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    const buttons = await screen.findAllByRole('button', { name: 'Export' });
+    fireEvent.click(buttons[buttons.length - 1]);
+    await waitFor(() => expect(exportStockDebt).toHaveBeenCalled());
+    expect(exportStockDebt.mock.calls[0][0]).toMatchObject({
+      groups: ['ED'], groupsMode: 'exclude',
+    });
+  });
+
+  it('applying a view with groups_mode exclude restores it', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    applyView({ ...FULL_VIEW, book: 'all', groups: 'ED', groups_mode: 'exclude',
+      date_from_days: '', date_to_days: '' });
+    expect(await screen.findByText('Location: all except ED')).toBeInTheDocument();
+  });
+
+  it('"No view" resets the mode to Only', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    applyView({ ...FULL_VIEW, groups: 'ED', groups_mode: 'exclude' });
+    await screen.findByText('Location: all except ED');
+    act(() => menuProps!.onApply(null));
+    await waitFor(() =>
+      expect(getStockDebtList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ groupsMode: 'include', groups: [] }),
+      ),
+    );
+  });
+
+  it('currentConfig reflects the mode', async () => {
+    renderBoard();
+    await pickExcept('ED');
+    await waitFor(() =>
+      expect(menuProps?.currentConfig.quick_filters).toMatchObject({
+        groups: 'ED', groups_mode: 'exclude',
+      }),
+    );
+  });
+});

@@ -252,3 +252,164 @@ def test_retail_book_ignores_any_number_of_groups(scm_app):
     assert many.status_code == 200, many.text
     assert many.json()["data"] == none.json()["data"]
     assert many.json()["pagination"] == none.json()["pagination"]
+
+
+# =========================================================================== #
+# Round 2: exclude mode (AC-X1)
+# =========================================================================== #
+
+
+def _exclude(marker, *values, **extra):
+    return [("query", marker), ("only_debt", "false"), *[("exclude_group", v) for v in values],
+            *extra.items()]
+
+
+def test_exclude_group_drops_only_that_group_from_the_span(scm_app):
+    """AC-X1: `exclude_group=IB` spans every flagged bin except IB's: the IR 7 counts, the IB
+    100 does not (whole book would read 107), the BB line still owes its 40."""
+    app, db = _client(scm_app)
+    marker, product, *_ = _seed_three_groups(db)
+    with TestClient(app) as c:
+        got = c.get(BASE, params=_exclude(marker, "IB"))
+    assert got.status_code == 200, got.text
+    balances = _balances(got.json(), product)
+    assert balances[month_key(TODAY)] == 7
+    assert balances.get(month_key(_months_ahead(1))) == -40
+
+
+def test_a_bin_flagged_later_is_in_the_exclude_span_with_no_other_change(scm_app):
+    """AC-X1: a new flagged `-FG` bin is read under `exclude_group=IB` automatically."""
+    from tests.scm.test_stock_debt_routes import _stock, _warehouse
+
+    app, db = _client(scm_app)
+    marker, product, *_ = _seed_three_groups(db)
+    fg = _warehouse(db, f"ZZTBRW{_u()[:4]}-FG")
+    _stock(db, product, fg, 50)
+    db.flush()
+    with TestClient(app) as c:
+        got = c.get(BASE, params=_exclude(marker, "IB"))
+    assert _balances(got.json(), product)[month_key(TODAY)] == 57
+
+
+def test_exclude_group_keeps_the_hq_reserve_while_include_drops_it(scm_app):
+    """AC-X1: HQ is no group's stock. `group=BB` drops the reserve (BB line short 40);
+    `exclude_group=IB` keeps it (HQ's 500 covers the BB line)."""
+    from tests.scm.test_hq_project_reserve import _page_balance, _reserve_world
+    from tests.scm.test_stock_debt_routes import _months_ahead as months
+
+    app, marker, product, _db, _hq, bb = _reserve_world(scm_app)
+    due = months(1)
+    assert _page_balance(app, marker, product, due, book="project", group="BB") == -40
+    assert _page_balance(app, marker, product, due, book="project", exclude_group="IB") >= 0
+
+
+def test_cell_with_exclude_group_foots_with_the_board(scm_app):
+    """AC-X1: the drill under `exclude_group=IB` reads the same span as the board."""
+    app, db = _client(scm_app)
+    marker, product, *_ = _seed_three_groups(db)
+    due = month_key(_months_ahead(1))
+    with TestClient(app) as c:
+        cell = c.get(
+            f"{BASE}/{product.id}/cell", params=[("month", month_key(TODAY)),
+                                                 ("exclude_group", "IB")],
+        )
+    assert cell.status_code == 200, cell.text
+    on_hand = [row for row in cell.json()["supply"] if row["kind"] != "po"]
+    assert sum(row["qty"] for row in on_hand) == 7
+    with TestClient(app) as c:
+        demand = c.get(
+            f"{BASE}/{product.id}/cell", params=[("month", due), ("exclude_group", "IB")]
+        ).json()["demand"]
+    assert demand[0]["status"] == "short" and demand[0]["short_qty"] == 40
+
+
+def _capture_enqueue(monkeypatch):
+    from app.services import queue_service
+
+    calls = []
+
+    def fake(func, *args, **kwargs):
+        calls.append(args)
+        return type("J", (), {"id": "fake-job-id"})()
+
+    monkeypatch.setattr(queue_service, "enqueue_job", fake)
+    return calls
+
+
+def test_export_body_carries_exclude_group_as_a_list(scm_app, monkeypatch):
+    calls = _capture_enqueue(monkeypatch)
+    app, db = _client(scm_app)
+    with TestClient(app) as c:
+        resp = c.post(f"{BASE}/export", json={"exclude_group": ["IB"], "split": "none"})
+    assert resp.status_code == 201, resp.text
+    assert calls[0][2]["exclude_group"] == ["IB"]
+
+
+def test_export_body_accepts_a_bare_exclude_group_string(scm_app, monkeypatch):
+    calls = _capture_enqueue(monkeypatch)
+    app, db = _client(scm_app)
+    with TestClient(app) as c:
+        resp = c.post(f"{BASE}/export", json={"exclude_group": "IB", "split": "none"})
+    assert resp.status_code == 201, resp.text
+    assert calls[0][2]["exclude_group"] == ["IB"]
+
+
+def test_service_export_and_list_agree_under_exclude_group(scm_app):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    from app.services.scm.stock_debt_service import StockDebtService
+
+    app, db = _client(scm_app)
+    marker, product, *_ = _seed_three_groups(db)
+    svc = StockDebtService(db)
+    listing = svc.list(query=marker, only_debt=False, exclude_group=["IB"], limit=50)
+    assert _balances(listing, product)[month_key(TODAY)] == 7
+    blob, _ct, _fn, counts = svc.export(
+        query=marker, only_debt=False, exclude_group=["IB"], split="none",
+    )
+    assert counts["rows"] == 1
+    ws = load_workbook(BytesIO(blob))["Stock debt"]
+    header = [c.value for c in ws[1]]
+    assert ws[2][header.index("Total")].value == _row_of(listing, product.product_code)["total"]
+
+
+def test_exclude_group_is_case_insensitive(scm_app):
+    app, db = _client(scm_app)
+    marker, product, *_ = _seed_three_groups(db)
+    with TestClient(app) as c:
+        lower = c.get(BASE, params=_exclude(marker, "ib")).json()
+    assert _balances(lower, product)[month_key(TODAY)] == 7
+
+
+def test_retail_book_ignores_exclude_group(scm_app):
+    app, db = _client(scm_app)
+    marker, *_ = _seed_three_groups(db)
+    base = [("query", marker), ("only_debt", "false"), ("book", "retail")]
+    with TestClient(app) as c:
+        none = c.get(BASE, params=base).json()
+        many = c.get(BASE, params=[*base, ("exclude_group", "BB"), ("exclude_group", "IB")]).json()
+    assert many["data"] == none["data"]
+    assert many["pagination"] == none["pagination"]
+
+
+# --------------------------------------------------------------------------- AC-L1
+
+
+def test_the_workbook_header_names_the_retail_reference_columns(scm_app):
+    """AC-L1: the three BRW columns read `BRW Retail ...` in the workbook header."""
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    from app.services.scm.stock_debt_service import StockDebtService
+
+    app, db = _client(scm_app)
+    marker, *_ = _seed_three_groups(db)
+    blob, *_ = StockDebtService(db).export(
+        query=marker, only_debt=False, split="none", show_aux=True,
+    )
+    header = [c.value for c in load_workbook(BytesIO(blob))["Stock debt"][1]]
+    for label in ("BRW Retail On Hand Qty", "BRW Retail PO Qty", "BRW Retail Incoming Qty"):
+        assert label in header, header
