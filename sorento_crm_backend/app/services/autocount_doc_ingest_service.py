@@ -914,32 +914,27 @@ class AutocountDocIngestService(MasterRefResolver):
         return str(rows[0][0]) if len(rows) == 1 else None
 
     def _do_so_line(self, dtl_key: Optional[int], doc_no: Optional[str],
-                    product_id: Optional[str],
-                    warehouse_id: Optional[str] = None) -> Optional[str]:
+                    product_id: Optional[str]) -> Optional[str]:
         """The SO line a DO line came from, only when it is provable (DO-HISTORY, owner
-        13 Oct: no guessing): by its exact DtlKey when AutoCount sends one; else the one line
-        of this product inside the SO numbered `FromDocNo`; else, when the product sits on
-        several lines, the one of them at the DO line's warehouse, and only when every
-        candidate states a warehouse (one without could be the real line). Anything else
-        resolves to none: no position, Seq or quantity tie-break."""
+        13 + 14 Oct: never a guessed line): by its exact DtlKey when AutoCount sends one; else
+        the one line of this product inside the SO numbered `FromDocNo`. When the product sits
+        on several lines the DO line links to the SO + product group, which is its own
+        `from_doc_no` + `product_id`, and to no line: no warehouse, position, Seq or quantity
+        pick (a DO line's warehouse can differ from its SO line's)."""
         if dtl_key is not None:
             return self._so_line(dtl_key, doc_no)
         if not doc_no or not product_id:
             return None
         rows = (
-            self.db.query(SalesOrderLine.id, SalesOrderLine.warehouse_id)
+            self.db.query(SalesOrderLine.id)
             .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
             .filter(SalesOrderLine.company_id == self.company_id,
                     SalesOrder.so_number == doc_no,
                     SalesOrderLine.product_id == product_id)
+            .limit(2)
             .all()
         )
-        if len(rows) == 1:
-            return str(rows[0][0])
-        if len(rows) < 2 or warehouse_id is None or any(r[1] is None for r in rows):
-            return None
-        here = [r for r in rows if str(r[1]) == str(warehouse_id)]
-        return str(here[0][0]) if len(here) == 1 else None
+        return str(rows[0][0]) if len(rows) == 1 else None
 
     def _po_or_spo_line(self, dtl_key: int, doc_no: Optional[str]) -> tuple[Optional[str], Optional[str]]:
         """(po_line_id, spo_allocation_id): exactly one match across both tables, else both
@@ -1164,7 +1159,7 @@ class AutocountDocIngestService(MasterRefResolver):
             if ((line.from_dtl_key is not None or line.from_doc_no)
                     and line.from_doc_type in (None, "SO")):
                 values["sales_order_line_id"] = self._do_so_line(
-                    line.from_dtl_key, line.from_doc_no, product_id, warehouse_id)
+                    line.from_dtl_key, line.from_doc_no, product_id)
                 if values["sales_order_line_id"] is None:
                     warnings.append(WARN_SO_LINE_UNRESOLVED)
             lines.append(values)
@@ -1488,7 +1483,7 @@ class AutocountDocIngestService(MasterRefResolver):
             for row in waiting_lines:
                 # `or None`: a 0 stored before `_link_key` existed names no line either.
                 target = self._do_so_line(row.from_dtl_key or None, row.from_doc_no,
-                                          row.product_id, row.warehouse_id)
+                                          row.product_id)
                 if target is not None:
                     row.sales_order_line_id = target
             waiting_headers = (
