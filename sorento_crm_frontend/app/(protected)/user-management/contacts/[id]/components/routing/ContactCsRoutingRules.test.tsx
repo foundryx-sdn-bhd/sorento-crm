@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-const hasPermission = vi.fn(() => true);
+const hasPermission = vi.fn<(slug: string) => boolean>(() => true);
 vi.mock('@/hooks/usePermissions', () => ({
   useHasPermission: (slug: string) => hasPermission(slug),
 }));
