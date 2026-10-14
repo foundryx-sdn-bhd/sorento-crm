@@ -68,11 +68,13 @@ def _ping_and_wait(url, **kwargs):
 
 
 @pytest.mark.parametrize("url", [None, "", "   "])
-def test_unset_url_does_nothing(monkeypatch, url):
+def test_unset_url_does_nothing(monkeypatch, caplog, url):
     rec = _Recorder()
     _patch_urlopen(monkeypatch, rec)
-    assert healthchecks_ping.ping(url) is None
+    with caplog.at_level(logging.DEBUG, logger=healthchecks_ping.__name__):
+        assert healthchecks_ping.ping(url) is None
     assert rec.calls == []
+    assert caplog.text == ""  # unset is the normal state, not a warning
 
 
 @pytest.mark.parametrize(

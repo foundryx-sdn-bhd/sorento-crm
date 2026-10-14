@@ -62,7 +62,7 @@ class FakeCloudflare:
             return [r for r in self.records if r["zone_id"] == zone and r["name"] == name]
         if method == "PATCH" and "/dns_records/" in path:
             if self.fail_patch:
-                raise RuntimeError("Cloudflare API error 10000: Authentication error")
+                raise self.fail_patch if isinstance(self.fail_patch, Exception) else RuntimeError("boom")
             rid = path.rsplit("/", 1)[1]
             rec = next(r for r in self.records if r["id"] == rid)
             rec.update(body)
@@ -225,11 +225,29 @@ def test_a_record_from_another_zone_is_never_patched(cf, token_file, capsys):
     assert code != 0
 
 
-def test_a_failed_patch_exits_nonzero_without_leaking(cf, token_file, capsys):
-    api = FakeCloudflare(fail_patch=True)
+@pytest.mark.parametrize("kind", ["cloudflare", "other"])
+def test_a_failed_patch_exits_nonzero_without_leaking(cf, token_file, capsys, kind):
+    """The real client turns every HTTP error, network error and success:false into a
+    CloudflareError, so that is the path a real failure takes; the owner trusts the exit code."""
+    exc = cf.CloudflareError("HTTP 403: 10000 Authentication error") if kind == "cloudflare" else RuntimeError("boom")
+    api = FakeCloudflare(fail_patch=exc)
     code, out = _run(cf, ["off", "--yes"], api, capsys)
-    assert code != 0
+    assert code == 1
+    assert "0 changed, 3 failed" in out
     _assert_no_secrets(out)
+
+
+def test_an_unreachable_api_prints_only_the_error_type(cf, monkeypatch):
+    import urllib.error
+
+    def fake_open(req, timeout=None):
+        raise urllib.error.URLError(OSError(f"connect to {ORIGIN_IP} via proxy with {TOKEN}"))
+
+    monkeypatch.setattr(cf._OPENER, "open", fake_open)
+    with pytest.raises(cf.CloudflareError) as exc:
+        cf.make_api(TOKEN)("GET", "/zones?name=foundryx.my")
+    assert "OSError" in str(exc.value)
+    assert TOKEN not in str(exc.value) and ORIGIN_IP not in str(exc.value)
 
 
 def test_wrong_zone_lookup_refuses(cf, token_file, capsys):
