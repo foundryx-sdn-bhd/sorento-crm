@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Set as one quotation line (mockup v1)</title>
+<title>Set as one quotation line (mockup v2)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme) */
 :root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--radius:8px;--page:#f7f7f8}
@@ -82,8 +82,9 @@ tr.new td{background:#fbfdff}
 </head>
 <body>
 <div class="doc">
-<h1>A product set is ONE quotation line (mockup v1)</h1>
+<h1>A product set is ONE quotation line (mockup v2)</h1>
 <p class="intro">Lane SET-QUOTE-LINE. Real dev case: project <b>Setia Alam</b> (PRJ-000001), quotation <b>PRJQ-2026-0004</b>, scope <b>House Units</b> (its five real lines are shown as they are on dev). Lines 6 and 7 are the new set lines: real sets off the dev set master (<code>product_sets</code>). Prices on lines 6 and 7, and the series numbers, are EXAMPLE figures: dev has no series and no price floor rules yet, so they cannot be read off dev. Numbered dots match the element map at the bottom.</p>
+<p class="intro"><b>v2 (owner, 14 Oct):</b> the "not priced" part rows are gone from the line; the parts show only in the line's <b>Complete set</b> text box (filled when the set is picked, still editable). Floor when the series names no floor for the set = <b>company default only</b>, against the set list price (new line 8 shows it). Q1 to Q5 answered in section 7.</p>
 <div class="nav">
 <a href="#grid">1 Lines grid (1280)</a><a href="#picker">2 Picker offers sets</a><a href="#phone">3 Phone (375)</a><a href="#series">4 Series page: Sets table</a><a href="#pdf">5 PDF line</a><a href="#so">6 SO draft from the PO</a><a href="#rules">7 Rules + questions</a><a href="#map">8 Element map</a>
 </div>
@@ -104,29 +105,26 @@ tr.new td{background:#fbfdff}
 <tr><td>5</td><td></td><td></td><td><span class="inp sel" style="color:var(--muted-fg)">Pick a product</span><div style="margin-top:4px"><span class="badge outline">Custom item</span></div></td><td><span class="inp">INSTALLATION OF GRAB BARS (LABOUR ONLY)</span></td><td></td><td class="num"><span class="inp num">11</span></td><td><span class="inp">EA</span></td><td class="num"><span class="inp num">150.00</span></td><td class="num">RM 1,650.00</td></tr>
 <tr class="new"><td>6</td><td><span class="small">pedestal photo</span></td><td></td>
 <td><span class="inp sel"><span class="badge set">Set</span> CWC1009-RL</span><div style="margin-top:4px"><span class="badge sec">&#9888; Non-standard</span></div></td>
-<td><span class="inp">CABANA CLOSE COUPLED PEDESTAL PAN (RIMLESS, S-TRAP 250MM)</span>
-<div class="parts"><div class="lbl">3 parts, not priced</div>
-<div class="p"><b>CWCX1009-RL</b> x1 <span>CABANA CLOSE COUPLED PEDESTAL PAN (RIMLESS, S-TRAP 250MM)</span></div>
-<div class="p"><b>CWCY1009</b> x1 <span>CABANA WATER CLOSET CISTERN ONLY</span></div>
-<div class="p"><b>CWC1009-SC</b> x1 <span>CABANA SEAT COVER</span></div></div></td>
+<td><span class="inp">CABANA CLOSE COUPLED PEDESTAL PAN (RIMLESS, S-TRAP 250MM)</span></td>
 <td>CABANA</td><td class="num"><span class="inp num">1046</span><div style="margin-top:4px"><span class="chip">0 complete sets</span></div></td><td><span class="inp">SET</span></td><td class="num"><span class="inp num">880.00</span><span class="list">no list price</span></td><td class="num">RM 920,480.00</td></tr>
+<tr class="new"><td colspan="10" style="padding:0"><div class="panel" style="border-top:1px solid var(--border);background:rgba(244,244,245,.3);padding:12px 20px;display:grid;grid-template-columns:minmax(0,22rem) minmax(0,16rem) minmax(0,1fr);gap:16px"><div><p class="small" style="margin:0 0 4px;color:var(--foreground);font-weight:500">Complete set</p><span class="inp" style="border-color:var(--primary)">CWCX1009-RL + CWCY1009 + CWC1009-SC</span><span class="small">filled from the set when picked; editable</span></div><div><p class="small" style="margin:0 0 4px;color:var(--foreground);font-weight:500">Priced per</p><span class="inp sel" style="color:var(--muted-fg)">Not set</span></div><div><p class="small" style="margin:0 0 4px;color:var(--foreground);font-weight:500">Notes</p><span class="inp" style="color:var(--muted-fg);height:44px">Why this price, what was agreed, what it replaces</span></div></div></td></tr>
 <tr class="new"><td>7</td><td><span class="small">pedestal photo</span></td><td></td>
 <td><span class="inp sel"><span class="badge set">Set</span> SRTWC8608-RL</span><div style="margin-top:4px"><span class="badge dest">&#9888; Below floor</span></div><div class="dest-t" style="margin-top:2px">Floor is RM 987.00, set on series.</div></td>
-<td><span class="inp">SORENTO CLOSE COUPLED PEDESTAL (S-TRAP 250MM)</span>
-<div class="parts"><div class="lbl">3 parts, not priced</div>
-<div class="p"><b>SRTWCX8608-RL</b> x1 <span>SORENTO CLOSE COUPLED PEDESTAL (S-TRAP 250MM)</span></div>
-<div class="p"><b>SRTWCY8608</b> x1 <span>SORENTO CLOSE-COUPLED CISTERN ONLY (S-TRAP)</span></div>
-<div class="p"><b>SRTWC8608-SC</b> x1 <span>SORENTO SRTWC8608-SC SEAT COVER ONLY</span></div></div></td>
+<td><span class="inp">SORENTO CLOSE COUPLED PEDESTAL (S-TRAP 250MM)</span></td>
 <td>SORENTO</td><td class="num"><span class="inp num">20</span></td><td><span class="inp">SET</span></td><td class="num"><span class="inp num">980.00</span><span class="list">List RM 1,180.00</span></td><td class="num">RM 19,600.00</td></tr>
+<tr class="new"><td>8</td><td><span class="small">pedestal photo</span></td><td></td>
+<td><span class="inp sel"><span class="badge set">Set</span> SRTWC8608-P-RL</span><div style="margin-top:4px"><span class="badge dest">&#9888; Below floor</span></div><div class="dest-t" style="margin-top:2px">Floor is RM 944.00, set on the company default.</div></td>
+<td><span class="inp">SORENTO CLOSE COUPLED PEDESTAL (P-TRAP 180MM)</span></td>
+<td>SORENTO</td><td class="num"><span class="inp num">20</span></td><td><span class="inp">SET</span></td><td class="num"><span class="inp num">900.00</span><span class="list">List RM 1,180.00</span></td><td class="num">RM 18,000.00</td></tr>
 </tbody></table>
-<p class="small" style="margin-top:8px">Line 6: CWC1009-RL has no ticked member on dev, so the set has no list price; the series names no price for it, so it is Non-standard and the rate is typed. Line 7: SRTWC8608-RL list RM 1,180.00 comes from its ticked member SRTWCX8608-RL (set master rule); the series row for the SET says RM 1,050.00 max 6% (example), floor RM 987.00, so RM 980.00 is below floor and needs approval before issue, exactly like a product line.</p>
-</div></div><div class="cap">Desktop 1280. Existing grid: QuotationLinesGrid.tsx; new pieces: Set badge in the picker value, parts sub-list, "complete sets" stock chip.</div></div>
+<p class="small" style="margin-top:8px">Floor, in this order and nothing else: (1) the series row for the SET, when it states both a selling price and a max discount; (2) otherwise the <b>company default</b> floor rule, applied to the set list price. No product or category rule is read for a set.<br>Line 6: CWC1009-RL has no ticked member on dev, so no set list price; the series has no row for it, so it is Non-standard; a percent company default has nothing to apply to, so no floor. Its Complete set box (opened from the row menu, shown under the line) reads the three part codes.<br>Line 7: SRTWC8608-RL list RM 1,180.00 (from its ticked pedestal); the series row for the SET says RM 1,050.00, max 6%: floor RM 987.00, so RM 980.00 is below floor.<br>Line 8: SRTWC8608-P-RL; the series row names RM 1,050.00 but no max discount, so the series is silent on the floor and the company default applies: example default 80% of list = 80% x RM 1,180.00 = RM 944.00, so RM 900.00 is below floor. Below floor blocks Issue until approved, exactly like a product line. (Series and default figures are examples: dev has none.)</p>
+</div></div><div class="cap">Desktop 1280. Existing grid: QuotationLinesGrid.tsx; new pieces: Set badge in the picker value, Complete set text filled on pick (existing Line details box), "complete sets" stock chip.</div></div>
 </section>
 
 <!-- 2 PICKER -->
 <section id="picker">
 <h2><span class="nb">2</span>Product picker offers sets alongside products</h2>
-<p class="why">Same cell picker. Typing a code searches sets (by set code or name) and products together; sets are listed first with a Set badge and their part count, as the SCM product-or-set picker already does. Picking a set fills code, set name, brand (from the pedestal), UOM SET, list price (set master) and the series price for the SET when the series names one.</p>
+<p class="why">Same cell picker. Typing a code searches sets (by set code or name) and products together; sets are listed first with a Set badge and their part count, as the SCM product-or-set picker already does. Picking a set fills code, set name, brand (from the pedestal), UOM SET, list price (set master), the series price for the SET when the series names one, and the line's Complete set text with the part codes.</p>
 <div class="desk" style="width:760px"><div class="screen" style="height:430px"><div class="main">
 <table><thead><tr><th style="width:24px">#</th><th style="width:220px">Product</th><th>Description</th></tr></thead>
 <tbody><tr class="new"><td>7</td><td><span class="inp sel" style="border-color:var(--primary)">8608</span></td><td><span class="inp" style="color:var(--muted-fg)">&nbsp;</span></td></tr></tbody></table>
@@ -148,13 +146,14 @@ tr.new td{background:#fbfdff}
 <!-- 3 PHONE -->
 <section id="phone">
 <h2><span class="nb">3</span>Phone, 375</h2>
-<p class="why">The grid keeps its own horizontal scroll at 375 (as today); the set line's parts list wraps inside the description cell.</p>
+<p class="why">The grid keeps its own horizontal scroll at 375 (as today); the Complete set box stacks under the line in Line details.</p>
 <div class="row">
 <div class="phone"><div class="screen"><div class="main">
 <div class="pagehead"><div><div class="t">PRJQ-2026-0004</div><div class="sub">Setia Alam · House Units</div></div></div>
 <div style="overflow-x:auto"><table style="min-width:520px"><thead><tr><th>#</th><th style="width:150px">Product</th><th style="width:220px">Description</th><th class="num">Qty</th></tr></thead>
 <tbody><tr class="new"><td>6</td><td><span class="inp sel"><span class="badge set">Set</span> CWC1009-RL</span><div style="margin-top:4px"><span class="badge sec">&#9888; Non-standard</span></div></td>
-<td><span class="inp">CABANA CLOSE COUPLED PEDESTAL...</span><div class="parts"><div class="lbl">3 parts, not priced</div><div class="p"><b>CWCX1009-RL</b> x1</div><div class="p"><b>CWCY1009</b> x1</div><div class="p"><b>CWC1009-SC</b> x1</div></div></td><td class="num"><span class="inp num">1046</span></td></tr></tbody></table></div>
+<td><span class="inp">CABANA CLOSE COUPLED PEDESTAL...</span></td><td class="num"><span class="inp num">1046</span></td></tr></tbody></table></div>
+<div style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:8px;background:rgba(244,244,245,.3)"><p class="small" style="margin:0 0 4px;color:var(--foreground);font-weight:500">Complete set</p><span class="inp" style="white-space:normal;height:auto">CWCX1009-RL + CWCY1009 + CWC1009-SC</span><p class="small" style="margin:8px 0 4px;color:var(--foreground);font-weight:500">Priced per</p><span class="inp sel" style="color:var(--muted-fg)">Not set</span></div>
 </div></div><div class="cap">Phone 375</div></div>
 </div>
 </section>
@@ -170,7 +169,7 @@ tr.new td{background:#fbfdff}
 <table><thead><tr><th style="width:190px">Set</th><th>Name</th><th>Parts</th><th class="num" style="width:130px">Selling price</th><th class="num" style="width:120px">Max discount %</th><th class="num" style="width:110px">Floor</th><th style="width:40px"></th></tr></thead>
 <tbody>
 <tr><td><span class="badge set">Set</span> SRTWC8608-RL</td><td>SORENTO CLOSE COUPLED PEDESTAL (S-TRAP 250MM)</td><td class="small">SRTWCX8608-RL + SRTWCY8608 + SRTWC8608-SC</td><td class="num"><span class="inp num">1050.00</span></td><td class="num"><span class="inp num">6</span></td><td class="num">RM 987.00</td><td class="small">&#8942;</td></tr>
-<tr><td><span class="badge set">Set</span> SRTWC8608-P-RL</td><td>SORENTO CLOSE COUPLED PEDESTAL (P-TRAP 180MM)</td><td class="small">SRTWCX8608-P-RL + SRTWCY8608 + SRTWC8608-SC</td><td class="num"><span class="inp num">1050.00</span></td><td class="num"><span class="inp num">6</span></td><td class="num">RM 987.00</td><td class="small">&#8942;</td></tr>
+<tr><td><span class="badge set">Set</span> SRTWC8608-P-RL</td><td>SORENTO CLOSE COUPLED PEDESTAL (P-TRAP 180MM)</td><td class="small">SRTWCX8608-P-RL + SRTWCY8608 + SRTWC8608-SC</td><td class="num"><span class="inp num">1050.00</span></td><td class="num"><span class="inp num" style="color:var(--muted-fg)">&nbsp;</span></td><td class="num small">- (company default)</td><td class="small">&#8942;</td></tr>
 <tr><td><span class="badge set">Set</span> SRTWC8608-RL-200</td><td>SORENTO CLOSE COUPLED PEDESTAL (S-TRAP 200MM)</td><td class="small">SRTWCX8608-RL-200 + SRTWCY8608 + SRTWC8608-SC</td><td class="num"><span class="inp num">1050.00</span></td><td class="num"><span class="inp num">6</span></td><td class="num">RM 987.00</td><td class="small">&#8942;</td></tr>
 <tr><td><span class="badge set">Set</span> CWC1009-RL</td><td>CABANA CLOSE COUPLED PEDESTAL PAN (RIMLESS, S-TRAP 250MM)</td><td class="small">CWCX1009-RL + CWCY1009 + CWC1009-SC</td><td class="num"><span class="inp num" style="color:var(--muted-fg)">&nbsp;</span></td><td class="num"><span class="inp num" style="color:var(--muted-fg)">&nbsp;</span></td><td class="num small">-</td><td class="small">&#8942;</td></tr>
 </tbody></table>
@@ -182,7 +181,7 @@ tr.new td{background:#fbfdff}
 <!-- 5 PDF -->
 <section id="pdf">
 <h2><span class="nb">5</span>PDF line (and Excel, and the customer sign page)</h2>
-<p class="why">Same columns as today. PRODUCT CODE prints the set code, DESCRIPTION the set name, COMPLETE SET the parts (unless sales typed their own complete-set text on the line, which wins). One rate, one total.</p>
+<p class="why">Same columns as today. PRODUCT CODE prints the set code, DESCRIPTION the set name, COMPLETE SET the line's Complete set text (the parts, as filled at pick; sales may edit it). One rate, one total.</p>
 <div class="pdf" style="max-width:1100px">
 <table>
 <thead><tr><th>ITEM</th><th>PRODUCT IMAGE</th><th>TECHNICAL SPEC</th><th>DESCRIPTION</th><th>BRAND</th><th>PRODUCT CODE</th><th>QTY</th><th>UNIT RATE (RM)</th><th>COMPLETE SET</th><th>GRAND TOTAL</th></tr></thead>
@@ -191,6 +190,7 @@ tr.new td{background:#fbfdff}
 <tr><td>2</td><td></td><td></td><td>SORENTO ANTI-ODOR FLOOR TRAP (150x150MM)</td><td>SORENTO</td><td>SRT6641</td><td style="text-align:right">2,092 EA</td><td style="text-align:right">100.00</td><td>c/w grating</td><td style="text-align:right">209,200.00</td></tr>
 <tr class="hl"><td>6</td><td>[pedestal photo]</td><td></td><td>CABANA CLOSE COUPLED PEDESTAL PAN (RIMLESS, S-TRAP 250MM)</td><td>CABANA</td><td>CWC1009-RL</td><td style="text-align:right">1,046 SET</td><td style="text-align:right">880.00</td><td>CWCX1009-RL + CWCY1009 + CWC1009-SC</td><td style="text-align:right">920,480.00</td></tr>
 <tr class="hl"><td>7</td><td>[pedestal photo]</td><td></td><td>SORENTO CLOSE COUPLED PEDESTAL (S-TRAP 250MM)</td><td>SORENTO</td><td>SRTWC8608-RL</td><td style="text-align:right">20 SET</td><td style="text-align:right">980.00</td><td>SRTWCX8608-RL + SRTWCY8608 + SRTWC8608-SC</td><td style="text-align:right">19,600.00</td></tr>
+<tr class="hl"><td>8</td><td>[pedestal photo]</td><td></td><td>SORENTO CLOSE COUPLED PEDESTAL (P-TRAP 180MM)</td><td>SORENTO</td><td>SRTWC8608-P-RL</td><td style="text-align:right">20 SET</td><td style="text-align:right">900.00</td><td>SRTWCX8608-P-RL + SRTWCY8608 + SRTWC8608-SC</td><td style="text-align:right">18,000.00</td></tr>
 </tbody></table>
 </div>
 <p class="small">Renderer: project_quotation_pdf_service.py (row builder :376-428); Excel twin project_quotation_excel_service.py :360-480; sign page QuotationSignScopes.tsx :93-102.</p>
@@ -214,25 +214,27 @@ tr.new td{background:#fbfdff}
 
 <!-- 7 RULES -->
 <section id="rules">
-<h2><span class="nb">7</span>Rules and open questions</h2>
+<h2><span class="nb">7</span>Rules and owner answers</h2>
 <div class="rules">
 <ol>
-<li>A quotation line names EITHER a product OR a set, never both. A set line stores the set and a frozen copy of its parts (code, description, qty) at save, like every other snapshot on the line (models/projects.py:1394).</li>
+<li>A quotation line names EITHER a product OR a set, never both. A set line stores the set and a frozen copy of its parts at save (not shown on the screen; it is what the SO draft splits), like every other snapshot on the line (models/projects.py:1394).</li>
+<li>Picking a set fills the line's Complete set text with the part codes ("CWCX1009-RL + CWCY1009 + CWC1009-SC"); the parts are not listed anywhere else on the line.</li>
 <li>Picker: active sets of the company are offered with products; picking one fills set code, set name, brand of the pedestal, UOM SET, set list price, and the series price for the SET when the series names one.</li>
 <li>Standard: a set line is standard when the quotation's series has a row for that set (a family code on the sheet writes a row per set in the family). No series on the scope = standard, as for products today.</li>
-<li>Floor: the set's series row (selling price x (1 - max discount)) when both numbers are set; else the floor rules as for a product, read through the pedestal's category, against the set list price. Below floor flags the line and blocks Issue until approved, exactly as a product line.</li>
+<li>Floor: the set's series row (selling price x (1 - max discount)) when both numbers are set; else the company default rule only, against the set list price. No product or category rule. Below floor flags the line and blocks Issue until approved, exactly as a product line.</li>
 <li>Parts are never priced on the quotation. The set's own price is the line rate.</li>
-<li>PDF / Excel / sign page: one row; code = set code, description = set name, COMPLETE SET = parts unless typed.</li>
+<li>PDF / Excel / sign page: one row; code = set code, description = set name, COMPLETE SET = the line's Complete set text.</li>
 <li>SO draft: a PO line matching a set line drafts the parts, set rate on the pedestal, others 0.00.</li>
 <li>Old quotations quoted as component lines keep working unchanged.</li>
 </ol>
-<p style="margin:10px 0 4px;font-weight:600">Questions (recommendation first)</p>
+<p style="margin:10px 0 4px;font-weight:600">Owner answers (14 Oct)</p>
 <ol class="q-list">
-<li><b>Q1 Where the set's series price lives.</b> (a) new link table "series sets" (series, set, selling price, max discount), shown as a Sets card on the series page and filled by the sheet import; (b) put sets into the existing series products table. <b>Rec (a)</b>: the products table is keyed by product; a set is not a product.</li>
-<li><b>Q2 SO.</b> (a) SO draft explodes the set into parts, set rate on the pedestal, others 0.00 (how AutoCount SOs are written today); (b) SO keeps one set line. <b>Rec (a)</b>: AutoCount has no item for a set code.</li>
-<li><b>Q3 PDF.</b> (a) set code + set name, parts in COMPLETE SET; (b) parts as extra unpriced rows under the set. <b>Rec (a)</b>.</li>
-<li><b>Q4 Floor when the series names no price for the set.</b> (a) floor rules via the pedestal's category (then company default), against the set list price; (b) company default only. <b>Rec (a)</b>: a WC set floors like a WC.</li>
-<li><b>Q5 Set edited after quoting.</b> (a) the line keeps the parts it was quoted with; re-picking the set takes the new parts; (b) parts always read live. <b>Rec (a)</b>: what the customer was quoted must not change.</li>
+<li><b>Q1 Where the set's series price lives:</b> (a) new "series sets" table, Sets card on the series page, filled by the sheet import.</li>
+<li><b>Q2 SO:</b> (a) the SO draft splits the set into parts, set rate on the pedestal, others 0.00.</li>
+<li><b>Q3 PDF:</b> (a) set code + set name, parts in COMPLETE SET.</li>
+<li><b>Q4 Floor when the series names no floor for the set:</b> (b) company default only, against the set list price ("keep the logic simple").</li>
+<li><b>Q5 Set edited after quoting:</b> (a) the line keeps the parts it was quoted with; re-picking the set takes the new parts.</li>
+<li><b>Line:</b> no "not priced" part rows; parts only in the Complete set text box.</li>
 </ol>
 </div>
 </section>
@@ -245,7 +247,7 @@ tr.new td{background:#fbfdff}
 <tbody>
 <tr><td>Lines grid, cells, Save</td><td><code>sorento_crm_frontend/app/(protected)/project-sales/[projectId]/components/QuotationLinesGrid.tsx</code> (ProductCell :264, DescriptionCell :308, RateCell :462) and <code>QuotationVersionEditor.tsx</code> (fetchProducts :181, fillFromProduct :227)</td></tr>
 <tr><td>Product-or-set picker, Set badge</td><td><code>sorento_crm_frontend/app/(protected)/scm/components/productOrSetPicker.tsx</code> (fetchProductOrSetOptions :52, renderProductOrSetOption :115) inside <code>components/common/SearchableSelect.tsx</code></td></tr>
-<tr><td>Parts sub-list (read-only)</td><td>member rows of <code>master-data-management/product-sets/[id]/components/ProductSetDetail.tsx</code> :435-560 (code, Discontinued badge, description, qty)</td></tr>
+<tr><td>Complete set text box</td><td>existing Line details panel <code>project-sales/[projectId]/components/QuotationLinesGrid.tsx</code> LineDetails :645 (Complete set input :656-661), filled on pick</td></tr>
 <tr><td>Below floor / Non-standard / Custom item badges</td><td><code>project-sales/[projectId]/components/QuotationLineFlags.tsx</code> :29 (LineFlags), live check <code>useLineVerdict</code> in <code>_shared/hooks/useProjects.ts</code> :1329</td></tr>
 <tr><td>"0 complete sets" chip</td><td><code>QuotationStockChip.tsx</code> :128, figure from <code>product_set_service.py</code> _decorate :386 (complete_sets)</td></tr>
 <tr><td>Series Sets card</td><td><code>project-sales/series/[seriesId]/components/SeriesDetailClient.tsx</code> Card :283 + <code>project-sales/_shared/components/InlineLineTable.tsx</code> :324 (as SeriesProductsTable.tsx)</td></tr>
