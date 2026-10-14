@@ -3231,6 +3231,12 @@ describe('BoardLineDecisionPanel: Buy can be typed first (BUY-FIRST-PANEL)', () 
     });
     expect(save).toBeDisabled();
 
+    // Unpinned, Buy would follow to 12 here; pinned it stays 10 and the gap is stated.
+    type('Reserve at BRW', '3');
+    expect(buyInput()).toHaveValue(10);
+    expect(hint()).toHaveTextContent('Unassigned 2');
+    expect(save).toBeDisabled();
+
     type('Reserve at BRW', '5');
     expect(buyInput()).toHaveValue(10);
     expect(
