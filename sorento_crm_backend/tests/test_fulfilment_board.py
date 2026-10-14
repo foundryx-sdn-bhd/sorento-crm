@@ -7586,9 +7586,9 @@ def test_delivered_undecided_line_with_stock_uses_own_location_and_holds_nothing
 # --------------------------------------------------------------------------- AC-S2-4
 
 
-def test_partial_delivered_undecided_line_asks_full_qty_and_holds_only_owed():
+def test_partial_delivered_undecided_line_asks_full_qty_and_the_delivered_unit_uses_the_reserve():
     """3 ordered, 1 delivered: the board plans the WHOLE 3 - one still to ship, one to put
-    back - while the hold a confirmation writes is capped at the 2 still owed.
+    back - and the hold a confirmation writes never passes the 2 still owed.
 
     Owner rule 14 Oct 2026 (restated AC-S2-4): the delivered unit consumes the Reserve
     first, then the Buy. So Reserve 1 + Buy 2 holds nothing (the delivered 1 used the
