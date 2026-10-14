@@ -194,7 +194,8 @@ def test_r4a_2_held_shows_the_printed_product_code_beside_its_kind():
     """RED: a held product whose label is a description prints the description at HEAD, not the code."""
     from app.services.chatbot.pv2.state import Held, ResolvedRef
 
-    h = Held(domain="inventory", refs={"product": [ResolvedRef(kind="product", key="SRTWC286-SH", label="Black seat cover short")]})
+    # R4a fix 1 B1: the resolver marks a code key; HELD prints only marked keys
+    h = Held(domain="inventory", refs={"product": [ResolvedRef(kind="product", key="SRTWC286-SH", label="Black seat cover short", code_key=True)]})
     held_block = _memory(mk_state(h)).split("PENDING QUESTION")[0]
     assert re.search(r"product\W{0,3}SRTWC286-SH", held_block), held_block
 
