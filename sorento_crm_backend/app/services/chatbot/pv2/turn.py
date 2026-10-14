@@ -85,6 +85,8 @@ class TurnV2Context:
     dym_tags: Callable[[str, list[str]], dict[str, bool]] | None = None
     # The console run this turn belongs to; state and history never cross runs.
     test_run_id: str | None = None
+    # The previous reply's text (session_vars.user_response): v1's pending keeps no question text.
+    last_reply: str | None = None
     # An availability-only stock dealer: v1 asks which one for a partial, never lists them.
     stock_availability_only: bool = False
 
@@ -108,7 +110,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         raw_state = None  # a new console run starts empty
     state_in = roll_session(load_state(raw_state, ctx.now), ctx.now)
     if state_in.pending is None and v1_pending is not None:
-        state_in = mirror_v1_pending(state_in, v1_pending)
+        state_in = mirror_v1_pending(state_in, v1_pending, last_reply=ctx.last_reply)
     # Capped here, so CORE's `call.build_messages` and the injected `parse` both send the
     # compact form (a report table in a past reply is what blew the prompt budget).
     exchanges = compact_exchanges(ctx.load_exchanges(state_in.session_started_at))
@@ -292,7 +294,26 @@ def after_v1(
 # --------------------------------------------------------------------------- #
 
 
-def mirror_v1_pending(state: ConversationState, v1_pending: Any) -> ConversationState:
+def _question_text(reply: str | None, yes_no: bool) -> str:
+    """The question v1 printed, read off its own previous reply (v1's Pending keeps no text):
+    an offer is the reply's last line; a menu is the lines above its numbered options."""
+    lines = [ln.strip() for ln in str(reply or "").splitlines()]
+    lines = [ln for ln in lines if ln]
+    if not lines:
+        return ""
+    if yes_no:
+        return lines[-1]
+    head: list[str] = []
+    for ln in lines:
+        if ln.partition(". ")[0].isdigit():  # one of v1's numbered options
+            break
+        head.append(ln)
+    return "\n".join(head)
+
+
+def mirror_v1_pending(
+    state: ConversationState, v1_pending: Any, last_reply: str | None = None
+) -> ConversationState:
     """The v1 lane's open question (the v1 `Pending` the engine loaded: `kind`, `options`
     dicts with `label`) as the PV2 `v1_open_question`, so MEMORY shows it and the model
     answers it by exact key (`after_v1`'s keys). The v1 engine still holds its own pending
@@ -302,6 +323,8 @@ def mirror_v1_pending(state: ConversationState, v1_pending: Any) -> Conversation
     kind = getattr(v1_pending, "kind", None)
     if not kind:
         return state
+    if (getattr(v1_pending, "payload", None) or {}).get("answered_positions"):
+        return state  # a picker a pick already answered is not asked again
     # Keyed by v1's own `position` (what v1 `_answer_pending` accepts), legacy `idx` else.
     opts = [o for o in (getattr(v1_pending, "options", None) or []) if isinstance(o, dict) and o.get("label")]
     yes_no = getattr(v1_pending, "expects", None) == "yes_no"
@@ -316,7 +339,8 @@ def mirror_v1_pending(state: ConversationState, v1_pending: Any) -> Conversation
         option_labels=labels,
         option_keys=keys,
         offer=kind in OFFER_KINDS or yes_no or payload.get("escalate_offered") is True,
-        asked=str(getattr(v1_pending, "question", None) or getattr(v1_pending, "asked", None) or ""),
+        asked=str(getattr(v1_pending, "question", None) or getattr(v1_pending, "asked", None) or "")
+        or _question_text(last_reply, yes_no),
     )
 
 
@@ -497,6 +521,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             roster_for=staff_roster_for(factory, contact) if staff else None,
             dym_tags=dym_tags_for(factory, contact, space_id),
             test_run_id=run_id,
+            last_reply=session_vars.get("user_response") if isinstance(session_vars.get("user_response"), str) else None,
             stock_availability_only=bool(getattr(profile, "stock_availability_only", False)),
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),

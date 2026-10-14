@@ -166,7 +166,7 @@ def _open_question_answer(action: Lookup) -> dict[str, Any] | None:
         # v1's own stock pick refuses "all" for availability-only dealers; other picks take every position.
         mode = "all" if (action.pending_v1_kind or _v1_kind(None, action)) == "product_pick" else "pick"
         return {"mode": mode, "picked": [] if mode == "all" else [int(k) for k in action.pick_all if k.isdigit()],
-                "items": [], "qty_for_all": None}
+                "items": [], "qty_for_all": None}  # `broaden_axis: "all"` rides on the verdict (below)
     if action.pending_kind != "v1_open_question" or action.picked is None:
         return None
     key = action.picked.key
@@ -251,6 +251,10 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
             e["current_message"] = False
             if e["hint"] == "product":
                 e["quantity"] = None
+    if answer is not None and answer["mode"] == "all" and action.pick_all:
+        # v1 reads "all" over a numbered menu off `broaden_axis` (decide.broadens_the_roster):
+        # staff get every position, an availability-only dealer is refused by `_stock_pick_refuses_all`.
+        verdict["broaden_axis"] = "all"
     if answer is not None:
         # A pick stays a business query: v1 routes "clarification" to its own clarify menu.
         verdict["open_question_answer"] = answer

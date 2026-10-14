@@ -453,6 +453,14 @@ def _answer(
                 True,
             )
         if pending.kind in ("clarify_entity", "clarify_did_you_mean") and every:
+            if getattr(can_offer, "availability_only", False):
+                # An availability-only contact is never handed every match: v1's own refusal,
+                # the same question kept open.
+                from app.services.chatbot.turn.apply import STOCK_PICK_NOT_ALL
+
+                return ClarifyAct(
+                    ask_index=i, about="entity", pending=pending.model_copy(deep=True), note=STOCK_PICK_NOT_ALL
+                ), True
             held = st.held.model_copy(deep=True)
             for o in every:
                 held = apply_payload(held, {**o.payload, "op": "add"})

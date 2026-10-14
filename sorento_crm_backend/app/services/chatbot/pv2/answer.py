@@ -83,7 +83,8 @@ IdeaAnswer = Callable[..., Any]
 def reply_for(action: Action, language: str | None) -> str | None:
     """The text PV2 itself writes for a question action, else None."""
     if isinstance(action, ClarifyAct):
-        return clarify_copy.render(action.pending, language, reask=action.reask)
+        shown = clarify_copy.render(action.pending, language, reask=action.reask)
+        return f"{action.note}\n\n{shown}" if action.note else shown
     if isinstance(action, OfferHandover):
         return clarify_copy.render(action.pending, language)
     return None
