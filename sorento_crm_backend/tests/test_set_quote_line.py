@@ -438,14 +438,20 @@ def test_a2b_saving_a_set_line_with_no_complete_set_fills_the_part_codes():
         assert line.complete_set == f"{cistern} + {pedestal} + 2 x {seat}"
 
 
-def test_a2b_a_complete_set_the_user_typed_is_left_alone():
+def test_a2b_a_complete_set_sent_with_a_set_pick_is_replaced_by_the_parts():
     with blank_session() as db:
         env = _env(db)
-        _set(db, env["company_id"], env["category"], env["uom"])
+        product_set = _set(db, env["company_id"], env["category"], env["uom"])
 
         line = _set_line(db, env, complete_set="c/w soft close seat")
 
-        assert line.complete_set == "c/w soft close seat"
+        expected = " + ".join(
+            m.product.product_code
+            if Decimal(m.quantity) == 1
+            else f"{Decimal(m.quantity).normalize():f} x {m.product.product_code}"
+            for m in sorted(product_set.members, key=lambda m: m.sort_order or 0)
+        )[:100]
+        assert line.complete_set == expected
 
 
 def test_a2b_the_text_is_cut_at_the_columns_100_characters():
