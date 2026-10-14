@@ -1,6 +1,6 @@
 # PLAN: Quotation lines grid (13 Oct)
 
-Status: BUILDING, owner hand-test round 1 (7 points, 14 Oct) (size L: one additive migration; security-reviewer joins
+Status: REVIEW-CLEAN after owner hand-test round 1, owner re-test pending (size L: one additive migration; security-reviewer joins
 because the line write accepts attachment ids). Owner answers 14 Oct recorded in the UAC. PR #1643.
 
 Lane: QUOTATION-UX, branch `crew/quotation-ux`. Source: owner notes 13 Oct on Project Sales >
