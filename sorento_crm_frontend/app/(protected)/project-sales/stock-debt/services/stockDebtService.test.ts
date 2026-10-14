@@ -118,3 +118,62 @@ describe('exportStockDebt show_aux (STOCKDEBT-AUX-COLS AC-12)', () => {
     expect((await sentBody({ showAux: false })).show_aux).toBe(false);
   });
 });
+
+describe('Location (repeatable group) on the wire (STOCK-DEBT-SAVED-VIEWS AC-F2)', () => {
+  const listBase = {
+    pageIndex: 0, pageSize: 25, query: '', onlyDebt: true, book: 'all' as const,
+    supplierIds: [], dateFrom: '', dateTo: '',
+  };
+
+  it('getStockDebtList appends one group per picked location', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
+    const { getStockDebtList } = await import('./stockDebtService');
+
+    await getStockDebtList({ ...listBase, groups: ['BB', 'ED'] });
+
+    expect(calledUrl().searchParams.getAll('group')).toEqual(['BB', 'ED']);
+  });
+
+  it('getStockDebtList sends no group when none is picked', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
+    const { getStockDebtList } = await import('./stockDebtService');
+
+    await getStockDebtList({ ...listBase, groups: [] });
+
+    expect(calledUrl().searchParams.has('group')).toBe(false);
+  });
+
+  it('getStockDebtCell takes groups as a trailing param and repeats group', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ demand: [], supply: [] }));
+
+    await getStockDebtCell('p1', '2026-10', '', '', 'all', false, ['BB', 'ED']);
+
+    expect(calledUrl().searchParams.getAll('group')).toEqual(['BB', 'ED']);
+  });
+
+  it('exportStockDebt sends group as a list in the JSON body', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ id: 'd1' }));
+    const { exportStockDebt } = await import('./stockDebtService');
+
+    await exportStockDebt({
+      query: '', onlyDebt: true, book: 'all', supplierIds: [], dateFrom: '', dateTo: '',
+      split: 'none', showAux: false, groups: ['BB', 'ED'],
+    } as Parameters<typeof exportStockDebt>[0]);
+
+    const body = JSON.parse((mockedFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.group).toEqual(['BB', 'ED']);
+  });
+
+  it('exportStockDebt omits group when none is picked', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ id: 'd1' }));
+    const { exportStockDebt } = await import('./stockDebtService');
+
+    await exportStockDebt({
+      query: '', onlyDebt: true, book: 'all', supplierIds: [], dateFrom: '', dateTo: '',
+      split: 'none', showAux: false, groups: [],
+    } as Parameters<typeof exportStockDebt>[0]);
+
+    const body = JSON.parse((mockedFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.group === undefined || body.group.length === 0).toBe(true);
+  });
+});
