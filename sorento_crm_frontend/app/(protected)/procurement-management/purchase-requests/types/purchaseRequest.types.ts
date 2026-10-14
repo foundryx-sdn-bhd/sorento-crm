@@ -32,6 +32,8 @@ export interface PurchaseRequest {
   request_number?: string | null;
   request_date?: string | null;
   customer_name?: string | null;
+  // The customer picked from the customer list; null = free text.
+  customer_id?: string | null;
   /** Site contact, free text ("name and contact number"). Optional. */
   pic?: string | null;
   project_title?: string | null;
@@ -122,6 +124,8 @@ export interface PurchaseRequestFormData {
   request_number?: string | null;
   request_date?: string;
   customer_name?: string;
+  // `null` unlinks the customer; `undefined` leaves it alone (PUT reads `exclude_unset`).
+  customer_id?: string | null;
   pic?: string | null;
   project_title?: string;
   project_id?: string | null;
@@ -144,3 +148,12 @@ export interface PurchaseRequestFormData {
 }
 
 export interface PurchaseRequestDetail extends PurchaseRequest {}
+
+/** One row of the customer picker; `sales_type` is the server's mapping of the debtor type. */
+export interface CustomerLookupItem {
+  customer_id: string;
+  debtor_name: string;
+  customer_code: string;
+  debtor_type: string | null;
+  sales_type: string | null;
+}

@@ -1229,6 +1229,8 @@ class PurchaseRequestHeaderBase(BaseModel):
     request_number: Optional[str] = None  # User-assignable form number (e.g. PR-2026-001)
     request_date: Optional[date] = None
     customer_name: Optional[str] = None
+    # The customer picked from the customer list; None = free text.
+    customer_id: Optional[str] = None
     # Site contact, free text ("name and contact number"). Optional.
     pic: Optional[str] = None
     project_title: Optional[str] = None
@@ -1301,6 +1303,7 @@ class PurchaseRequestHeaderUpdate(BaseModel):
     request_number: Optional[str] = None
     request_date: Optional[date] = None
     customer_name: Optional[str] = None
+    customer_id: Optional[str] = None
     # Site contact, free text ("name and contact number"). Optional.
     pic: Optional[str] = None
     project_title: Optional[str] = None

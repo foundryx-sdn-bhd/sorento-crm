@@ -988,7 +988,12 @@ export interface ProductLookupItem {
 }
 
 export interface DebtorLookupItem {
+  customer_id: string;
   debtor_name: string;
+  customer_code: string;
+  debtor_type: string | null;
+  // The server's mapping of debtor_type to the PR Sales type; null = leave Sales type alone.
+  sales_type: string | null;
 }
 
 export interface DOProductLine {

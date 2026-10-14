@@ -9334,6 +9334,10 @@ class PurchaseRequestService:
         if respond_inbox_url is not None:
             dump["respond_inbox_url"] = respond_inbox_url
         requestor_value = dump.pop("requested_by_contact_id", None)
+        if dump.get("customer_id"):
+            from app.services.debtor_type import require_customer
+
+            dump["customer_id"] = require_customer(self.db, dump["customer_id"])
         header = PurchaseRequestHeader(**{k: v for k, v in dump.items() if hasattr(PurchaseRequestHeader, k)})
         if requestor_value:
             # Validated + label-derived, never a bare setattr: the document, the
@@ -9406,6 +9410,10 @@ class PurchaseRequestService:
             payload["respond_inbox_url"] = None
         self._apply_sponsor_subject_to_payload(payload, header)
         requestor_value = payload.pop("requested_by_contact_id", _UNSET_REQUESTOR)
+        if payload.get("customer_id"):
+            from app.services.debtor_type import require_customer
+
+            payload["customer_id"] = require_customer(self.db, payload["customer_id"])
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)

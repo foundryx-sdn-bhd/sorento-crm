@@ -143,7 +143,9 @@ type WidgetKind =
   | 'pill-product'
   | 'pill-text'
   | 'product-quantities'
-  | 'contact-select';
+  | 'contact-select'
+  /** Carries a value in the saved payload (the picked customer's id) but draws no control. */
+  | 'hidden';
 
 interface FieldDef {
   name: string;
@@ -280,6 +282,7 @@ const FIELDS: Record<PortalSubmissionKind, FieldDef[]> = {
   ],
   purchase_request: [
     { name: 'customer_name', label: 'Customer name', widget: 'debtor-async' },
+    { name: 'customer_id', label: 'Customer', widget: 'hidden' },
     { name: 'pic', label: 'PIC', placeholder: 'Name and contact number' },
     { name: 'project_title', label: 'Project title' },
     { name: 'purpose', label: 'Purpose', widget: 'textarea' },
@@ -310,6 +313,7 @@ const FIELDS: Record<PortalSubmissionKind, FieldDef[]> = {
   // Sponsor Subject → Date of Delivery → Request date → Requested by.
   sponsorship_form: [
     { name: 'customer_name', label: 'Customer name', widget: 'debtor-async' },
+    { name: 'customer_id', label: 'Customer', widget: 'hidden' },
     { name: 'pic', label: 'PIC', placeholder: 'Name and contact number' },
     { name: 'delivery_address', label: 'Delivery address', widget: 'textarea' },
     { name: 'project_title', label: 'Project title' },
@@ -839,6 +843,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
       } else {
         const value = (typeof raw === 'string' ? raw : '').trim();
         if (value) out[f.name] = value;
+        // Typing over a picked customer unlinks it; an omitted key would keep the old link.
+        else if (f.name === 'customer_id') out[f.name] = null;
       }
     }
     // Sponsorship: the "Others" detail only applies when the subject is 'others'.
@@ -1433,6 +1439,19 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // section prop is kept for signature compatibility with the other sections.
   const handleProductItemSelected = () => {};
 
+  // A picked customer links the form and (PR only) fills Sales type from the lookup item;
+  // free text unlinks it. The mapping itself lives on the server (item.sales_type).
+  const handleDebtorChange = (item?: DebtorLookupItem) => {
+    setFields((prev) => {
+      const next: Record<string, string | string[]> = {
+        ...prev,
+        customer_id: item?.customer_id ?? '',
+      };
+      if (kind === 'purchase_request' && item?.sales_type) next.sales_type = item.sales_type;
+      return next;
+    });
+  };
+
   // For complaint kind: when DO multi-select changes, auto-populate customer
   // name / product code / product type from the chosen DOs. Multiple distinct
   // values join with ", ". Product type is derived per code via category code.
@@ -1757,6 +1776,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           frozenFields={frozenFields}
           statusBadge={statusBadge}
           onProductItemSelected={handleProductItemSelected}
+          onDebtorChange={handleDebtorChange}
           contact={contact}
           resolveContactOption={resolveContactOption}
         />
@@ -2310,7 +2330,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         open={aiExtractOpen}
         onOpenChange={setAiExtractOpen}
         kind={kind}
-        fieldDefs={fieldDefs}
+        fieldDefs={fieldDefs.filter((f) => f.widget !== 'hidden')}
         onApply={handleAIExtractApply}
       />
 
@@ -2406,6 +2426,8 @@ interface SectionProps {
     variant: 'warning' | 'destructive' | 'success' | 'secondary';
   } | null;
   onProductItemSelected: (fieldName: string, item: ProductLookupItem) => void;
+  /** `debtor-async` only: the picked customer, or undefined when the text was typed. */
+  onDebtorChange?: (item?: DebtorLookupItem) => void;
   onDOItemsChanged?: (items: DOLookupItem[]) => void;
   onDOProductsConfirmed?: (payload: {
     items: DOLookupItem[];
@@ -2763,6 +2785,7 @@ function PurchaseRequestFormSection({
   frozenFields,
   statusBadge,
   onProductItemSelected,
+  onDebtorChange,
   contact,
   resolveContactOption,
 }: SectionProps & { kind: PortalSubmissionKind }) {
@@ -2787,6 +2810,7 @@ function PurchaseRequestFormSection({
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-5">
             {fieldDefs
+              .filter((f) => f.widget !== 'hidden')
               .filter((f) => (f.showWhen ? f.showWhen(fields) : true))
               .map((f) => (
                 <div
@@ -2798,6 +2822,7 @@ function PurchaseRequestFormSection({
                     value={fields[f.name] ?? ''}
                     onChange={(v) => setFieldValue(f.name, v)}
                     onItemSelect={(item) => onProductItemSelected(f.name, item)}
+                    onDebtorChange={onDebtorChange}
                     disabled={!isEditable || frozenFields?.has(f.name)}
                     contact={contact}
                     contactOption={resolveContactOption?.(f)}
@@ -2823,6 +2848,7 @@ function FieldInput({
   value,
   onChange,
   onItemSelect,
+  onDebtorChange,
   onDOItemsChange,
   onDOProductsConfirmed,
   invalid,
@@ -2835,6 +2861,7 @@ function FieldInput({
   value: string | string[];
   onChange: (v: string | string[]) => void;
   onItemSelect?: (item: ProductLookupItem) => void;
+  onDebtorChange?: (item?: DebtorLookupItem) => void;
   onDOItemsChange?: (items: DOLookupItem[]) => void;
   onDOProductsConfirmed?: (payload: {
     items: DOLookupItem[];
@@ -2870,6 +2897,7 @@ function FieldInput({
           value={value}
           onChange={onChange}
           onItemSelect={onItemSelect}
+          onDebtorChange={onDebtorChange}
           onDOItemsChange={onDOItemsChange}
           onDOProductsConfirmed={onDOProductsConfirmed}
           disabled={disabled}
@@ -2889,6 +2917,7 @@ function FieldControl({
   value,
   onChange,
   onItemSelect,
+  onDebtorChange,
   onDOItemsChange,
   onDOProductsConfirmed,
   disabled,
@@ -2899,6 +2928,7 @@ function FieldControl({
   value: string | string[];
   onChange: (v: string | string[]) => void;
   onItemSelect?: (item: ProductLookupItem) => void;
+  onDebtorChange?: (item?: DebtorLookupItem) => void;
   onDOItemsChange?: (items: DOLookupItem[]) => void;
   onDOProductsConfirmed?: (payload: {
     items: DOLookupItem[];
@@ -2982,10 +3012,14 @@ function FieldControl({
         <AsyncCombobox<DebtorLookupItem>
           id={field.name}
           value={stringValue}
-          onChange={(v) => onChange(v)}
+          onChange={(v, item) => {
+            onChange(v);
+            onDebtorChange?.(item);
+          }}
           fetchOptions={(q) => lookupDebtors(q)}
           optionValue={(o) => o.debtor_name}
           optionLabel={(o) => o.debtor_name}
+          optionMeta={(o) => o.customer_code}
           placeholder={field.placeholder ?? 'Search debtors...'}
           disabled={disabled}
         />

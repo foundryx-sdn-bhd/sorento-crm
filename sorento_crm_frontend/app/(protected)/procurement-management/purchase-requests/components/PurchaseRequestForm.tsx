@@ -35,6 +35,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/common/SearchableSelect";
 import { searchProjectsForLink } from "../services/purchaseRequestService";
+import { lookupCustomersForRequest } from "../services/customerLookupService";
+import { AsyncCombobox } from "@/app/(auth)/portal/components/AsyncCombobox";
+import type { CustomerLookupItem } from "../types/purchaseRequest.types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useReactTable, getCoreRowModel } from "@tanstack/react-table";
@@ -124,6 +127,7 @@ export default function PurchaseRequestForm({
       request_number: null,
       request_date: null,
       customer_name: null,
+      customer_id: null,
       pic: null,
       project_title: null,
       project_id: null,
@@ -422,6 +426,7 @@ export default function PurchaseRequestForm({
           ? new Date(request.request_date).toISOString().split("T")[0]
           : null,
         customer_name: request.customer_name ?? null,
+        customer_id: request.customer_id ?? null,
         pic: request.pic ?? null,
         project_title: request.project_title ?? null,
         project_id: request.project_id ?? null,
@@ -464,6 +469,7 @@ export default function PurchaseRequestForm({
         request_number: data.request_number ?? undefined,
         request_date: data.request_date || undefined,
         customer_name: data.customer_name || undefined,
+        customer_id: data.customer_id || null,
         // Empty string must become undefined, not "" - "not given" is one value.
         pic: data.pic || undefined,
         project_title: data.project_title || undefined,
@@ -625,10 +631,26 @@ export default function PurchaseRequestForm({
                     <FormItem>
                       <FormLabel>Customer Name</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="Customer name"
-                          {...field}
+                        <AsyncCombobox<CustomerLookupItem>
                           value={field.value ?? ""}
+                          onChange={(v, item) => {
+                            field.onChange(v);
+                            // A pick links the customer (and fills Sales type from the
+                            // server's mapping); typed text unlinks it.
+                            form.setValue("customer_id", item?.customer_id ?? null, {
+                              shouldDirty: true,
+                            });
+                            if (!isSponsorship && item?.sales_type) {
+                              form.setValue("sales_type", item.sales_type, {
+                                shouldDirty: true,
+                              });
+                            }
+                          }}
+                          fetchOptions={lookupCustomersForRequest}
+                          optionValue={(o) => o.debtor_name}
+                          optionLabel={(o) => o.debtor_name}
+                          optionMeta={(o) => o.customer_code}
+                          placeholder="Customer name"
                         />
                       </FormControl>
                       <FormMessage />
