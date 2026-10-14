@@ -15,5 +15,10 @@ Multi-turn conversations the owner-style hand test expects PV2 to handle smoothl
   MODERNMED SDN BHD). A UI unlink removed them on 14 Oct 2026; crew restores them from the audit log with the
   insert-only, idempotent lane SQL `crew/state/migrations/PV2-EVAL.sql` (`crew migrate PV2-EVAL`). Without the links
   the dealer conversations exercise the unlinked path instead and their results do not count.
+- Business lane switches: every console turn turns `system_settings.chatbot_business_lane_enabled` and
+  `chatbot_completed_lanes` on and restores what it read (`app/services/chatbot/console_service.py:243-273`). The
+  runner enters that once per run and makes the per-turn calls a no-op, so parallel conversations cannot race the
+  restore. The dev value since 14 Oct is the console "on" state (enabled, every `BRANCH_KINDS` lane); crew left it
+  as is (answer a77919755).
 - Expectations name subjects and behaviour, not dev figures, so stock and order numbers may drift. Documents named
   in the battery (for example DO 202610-0151 with one line, DO 202609-3750 with three or more) must still exist.
