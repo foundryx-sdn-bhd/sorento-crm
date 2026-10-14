@@ -236,6 +236,10 @@ const SCROLLER_MAX_HEIGHT_FALSE_SITES = new Map<string, number>([
     1, // DrillTable, same as PoLinePlacementsBody
   ],
   [
+    'app/(protected)/scm/sales-orders/[id]/components/SoLineHistoryBody.tsx',
+    2, // the delivered-DOs DrillTable and the Cancel SO DrillTable, same as SoLineLinksBody
+  ],
+  [
     'app/(protected)/scm/loading-plan/components/ContainerRequestSection.tsx',
     1, // BlocksTable's DrillTable, only rendered inside PlanRowDialog's DialogBody
   ],
