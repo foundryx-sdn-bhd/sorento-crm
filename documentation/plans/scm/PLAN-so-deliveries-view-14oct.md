@@ -1,7 +1,10 @@
 # PLAN: deliveries and cancellations under each SO line (SO-DELIVERIES-VIEW)
 
-Status: Plan. Card answered by the owner on 14 Oct (Q1-Q5 all (a)). Mock v1 (41ae5a23a) is
-awaiting owner approval. Track: M+ (new section on an existing screen, plus one index-only
+Status: Build.
+- Card answered by the owner on 14 Oct: Q1-Q5 all (a).
+- Mock v1 note from the owner: put the history in a lightbox opened by an icon.
+- Mock v2 (3c8b05149) approved by the owner on 14 Oct.
+ Track: M+ (new section on an existing screen, plus one index-only
 migration). Because of the migration it gets the dev-copy check and the security-reviewer (for
 the permission-gated link).
 
@@ -11,7 +14,7 @@ the permission-gated link).
 
 ## Journey
 
-On a sales order the owner opens a line (chevron) and sees the DOs delivered against it and the
+On a sales order the owner clicks the truck icon on a line and a lightbox shows the DOs delivered against it and the
 Cancel SO documents that cancelled it. When AutoCount ties a DO or a cancel to the SO and the
 product but not to one line, it shows in the product's block "<SKU> on this SO, not tied to one
 line", never under a guessed line.
@@ -93,23 +96,29 @@ on #1633 records the read contract.
    `lib/api-client` with `extractApiError`. Find the module beside the existing
    `getSalesOrder`, and add the matching types.
 2. **Hook.** `useSalesOrderDeliveries(id, enabled)` (react-query). `enabled` flips true the first
-   time any row expands and stays true, so the read happens once (AC-SD21). Refetch is the Try
+   time any line's lightbox opens and stays true, so the read happens once (AC-SD21). Refetch is the Try
    again button.
-3. **Column.** A chevron column, first in the Lines grid columns of `SalesOrderDetail.tsx`.
-   - Copy the expand column of
-     `app/(protected)/project-sales/order-inquiries/[id]/components/orderInquiryHeaderLinesColumns.tsx:415-462`:
-     size 44, not sortable, resizable, hideable or draggable, `aria-expanded`, and aria-label
-     "Show deliveries for <SKU>" / "Hide deliveries for <SKU>".
-   - `meta.expandedContent` renders `<SoLineHistoryPanel line=... data=... />`.
-   - The table needs `getExpandedRowModel` and expanded state; see `OrderInquiryLinesTab.tsx:166-250`.
+3. **Column.** A truck icon column, first in the Lines grid columns of `SalesOrderDetail.tsx`.
+   - Copy the icon-only cell button already on this grid, the Remove line column
+     (`SalesOrderDetail.tsx:1317-1337`): ghost `Button mode="icon" size="sm"`, an empty header,
+     `aria-label` + `title` "Deliveries for <SKU>", and the `Truck` icon (already imported,
+     `:24`).
+   - Size 52, `enableSorting`/`enableHiding` false; present in view AND edit.
+   - Click sets `deliveriesLineId`, the same pattern as `linksLineId`
+     (`SalesOrderDetail.tsx:434`, `:1429`).
    - Saved column preferences put a new first column at index 0 and keep it visible
      (`mergeColumnOrder.ts:15-24`, `useListingColumnPreferences.ts:220-233`), so there is no
      listing-key bump.
-4. **Panel.** New file `app/(protected)/scm/sales-orders/[id]/components/SoLineHistoryPanel.tsx`.
-   - Two blocks (Delivered, Cancelled), plus the group block when the product has a `groups`
-     entry.
-   - Each table is a nested `DataGrid` with a fixed layout, explicit sizes, `listingKey` null and
-     a Total footer, as in `PlanRowDialog.tsx`'s drill tables.
+4. **Lightbox.** `PlanRowDialog` (`app/(protected)/scm/components/PlanRowDialog.tsx:2104-2138`)
+   with a new kind `deliveries`, titled "Deliveries" in `PLAN_ROW_DIALOG_TITLES` (`:105-118`).
+   - It renders once at the bottom of the screen, beside the "Linked to" one
+     (`SalesOrderDetail.tsx:2105-2115`), with `productCode` = sku and `productName`.
+   - Its body is a new `app/(protected)/scm/sales-orders/[id]/components/SoLineHistoryBody.tsx`.
+5. **Body.** `SoLineHistoryBody`:
+   - The line figures strip (AC-SD20), then the Delivered and Cancelled blocks, plus the group
+     block when the product has a `groups` entry.
+   - Each table is a `DataGrid` with a fixed layout, explicit sizes, `listingKey` null and a
+     Total footer, as in `PlanRowDialog.tsx`'s drill tables (`:446-506`).
    - DO status: `<Badge status={status}>` (`OrdersList.tsx:285-291`). Dates: `fmtDate`. Qty:
      `fmtInt`.
    - Matched-by words: export the map in `app/(protected)/scm/lib/autocountCancel.ts` and add
@@ -141,15 +150,16 @@ your own chain, since CI's DB is empty.
 9. Migration (SD12): after upgrade the index exists and is valid; re-running the upgrade body
    is a no-op. Follow the existing `test_migration_*` pattern.
 
-**Frontend (vitest):** `SoLineHistoryPanel.test.tsx` plus a `SalesOrderDetail` case.
+**Frontend (vitest):** `SoLineHistoryBody.test.tsx` plus a `SalesOrderDetail` case.
 
-1. The chevron toggles the panel; `aria-expanded` and the aria-label change (SD20).
-2. Opening two lines calls the service once (SD21).
+1. The truck button ("Deliveries for <SKU>") opens the lightbox "Deliveries · <SKU>" with the
+   line figures strip; closing works (SD20).
+2. Opening two lines' lightboxes calls the service once (SD21).
 3. The Delivered table rows, the Total, the status pill text, the dd/mm/yyyy date and "-" for no
    actual delivery (SD22).
 4. Cancelled: "item", "every line of the item" with qty "-", and "not tied to one line" (SD23).
-5. The group block heading "<SKU> on this SO, not tied to one line · 3 lines" under each line of
-   the product; none for a one-line product (SD24).
+5. The group block heading "<SKU> on this SO, not tied to one line · 3 lines" in the lightbox of
+   each line of the product; none for a one-line product (SD24).
 6. A DO number is a link with the permission and plain text without it (SD25).
 7. Loading skeleton; the error text plus Try again calls refetch (SD26).
 8. No id string in the rendered text (SD28).
