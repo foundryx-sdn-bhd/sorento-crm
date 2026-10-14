@@ -3,7 +3,8 @@
 Status: Plan. Standard track, size L (additive migration + in-place template layout update, two
 sides, new filter/column/bulk send/preview). Lane crew/oi-staged-notify. Card answered by crew
 14 Oct (Q1-Q5 all (a)); owner notes on mock v1 applied in mock v2 (default send, one summary
-preview, short email with one button); v2 awaiting owner.
+preview, short email with one button) and on v2 in mock v3 (send under the Actions menu, email
+preview in the dialog, "Sent in email" filter in Filters); v3 awaiting owner.
 
 UAC: `oi-staged-notify-14oct-acceptance-criteria.md` (alongside). Card:
 `oi-staged-notify-behaviour-card.md`. Mock: `documentation/mockups/OI-STAGED-NOTIFY/index.html`.
@@ -21,11 +22,15 @@ purchasing (`:966`), so ~100 emails each way. Park first, review, send one email
 2. CS header: tickbox "Park notice" beside "Reserve (N)", unticked on every page load. Ticked =
    reserve saved, notice to purchasing parked. Unticked = emailed now as today.
 3. Documents list only (Q4): "Parked" filter (Requests to CS (n) / Notices to purchasing (n),
-   everyone's), "Parked" column (kind + who parked), toolbar buttons "Send parked requests to
-   CS (N)" (ACKNOWLEDGE) and "Notify purchasing (N)" (RESERVE); N = the presser's OWN parked
-   items (Q1). Picking a Parked filter switches the state toggle to All.
-4. ONE summary preview (owner): a table To | Cc | Order inquiries | Lines, one line per email,
-   then "Send N emails". Unresolvable recipients show as a "No recipient" line and stay parked.
+   everyone's), "Parked" column (kind + who parked), and the toolbar's Actions menu (owner v2:
+   not a top-bar button) with "Send parked requests to CS (N)" (ACKNOWLEDGE) and "Notify
+   purchasing (N)" (RESERVE); N = the presser's OWN parked items (Q1). Picking a Parked filter
+   switches the state toggle to All. A "Sent in email" filter (owner v2) lists the most recent
+   100 send batches, newest first, searchable, labelled "Joey to Eling, reserve requests,
+   14/10/2026 10:42 (9)"; the email button opens the list with it set.
+4. Preview: a table To | Cc | Order inquiries | Lines, one line per email, and under it the
+   rendered email itself, one line tab per email (owner v2), then "Send N emails".
+   Unresolvable recipients show as a "No recipient" line and stay parked.
 5. One email per To person, Cc merged (Q2). To/Cc are exactly what today's automation would
    resolve per item (`automation_recipients.py`, `automation_service.py:641-660`); items are
    grouped by that first non-actor address.
@@ -53,8 +58,10 @@ Additive, nullable, no backfill (NULL = not parked = legacy rows count as sent):
 - New table `projects.order_inquiry_reserve_send_batches` (id, company_id, kind
   `requests`|`notices`, sent_by, sent_at): one row per email a bulk send produces. Requests get
   `sent_batch_id`, request rows get `notice_batch_id` (UUID NULL, FK SET NULL, indexed). The
-  email button opens `/project-sales/order-inquiries?reserve_batch=<id>` or `?notice_batch=<id>`
-  (same idea as the expiry reminder's `?expiry_notify_batch_id=`, `automation_service.py:608-611`).
+  email button opens `/project-sales/order-inquiries?send_batch=<id>` (one param; the batch's
+  `kind` says which side; same idea as the expiry reminder's `?expiry_notify_batch_id=`,
+  `automation_service.py:608-611`). The batch row also stores `recipient_name` (the To person) and
+  `inquiry_count` for the filter label.
 
 Template data: `order_inquiry_reserve_requested_default` and `order_inquiry_reserved_default`
 get a bulk branch in `subject` and in each `layout_json` block (`{% if reserve.requests %}` the
@@ -107,13 +114,15 @@ Routes (`app/api/v1/projects/order_inquiries.py`):
   my_requests, my_notices}` (VIEW/ACKNOWLEDGE/RESERVE).
 - `POST /order-inquiries/reserve-requests/parked/preview` and `.../parked/send` (ACKNOWLEDGE).
 - `POST /order-inquiries/reserve-notices/parked/preview` and `.../parked/send` (RESERVE).
-  Preview returns `{emails: [{to: {name}, cc: [{name}], inquiry_count, line_count}],
-  unresolved: [{inquiry_count, line_count}]}` (no bodies, owner); send returns `{emails_sent,
-  items_sent, unresolved}`.
-- `GET /order-inquiries/reserve-send-batches/{id}` -> `{kind, sent_by_name, sent_at,
-  inquiry_count}` for the chip (VIEW/ACKNOWLEDGE/RESERVE; company-scoped, 404 otherwise).
+  Preview returns `{emails: [{to: {name}, cc: [{name}], inquiry_count, line_count, subject,
+  body_html}], unresolved: [{inquiry_count, line_count}]}`, `body_html` rendered through the
+  automation's own template exactly as the send will (`EmailTemplateService.render`); send
+  returns `{emails_sent, items_sent, unresolved}`.
+- `GET /order-inquiries/reserve-send-batches?limit=100` (newest first) and `.../{id}` ->
+  `{id, kind, sent_by_name, recipient_name, sent_at, inquiry_count}` for the filter options and
+  the chip (VIEW/ACKNOWLEDGE/RESERVE; company-scoped, unknown or foreign id 404).
 - `GET /order-inquiry-headers`: `parked: Literal["requests", "notices"] | None`,
-  `reserve_batch: UUID | None`, `notice_batch: UUID | None` filters; each row gains
+  `send_batch: UUID | None` filters; each row gains
   `parked_request_by_name` and `parked_notice_by_name` (null when nothing parked).
 
 ## Frontend
@@ -123,12 +132,14 @@ Routes (`app/api/v1/projects/order_inquiries.py`):
 - `OrderInquiryDetail.tsx`: Checkbox "Park notice" beside Reserve (N), unticked on mount;
   `commitStaged` sends `park_notice`.
 - `OrderInquiryHeadersList.tsx`: Parked filter (SearchableSelect, clearable, counts), Parked
-  column, toolbar `secondaryActions` for the two buttons with `disabledReason`, chip; reads
-  `?reserve_batch=` / `?notice_batch=` into a "From email: <name>'s reserve requests|notices,
-  <date> (n)" chip (state toggle All), cleared by its X.
-- New `ParkedSendDialog.tsx` (one component, two modes): one summary table (To, Cc, Order
-  inquiries, Lines, a "No recipient" line when unresolved), "Send N emails", toasts, invalidate
-  headers + summary.
+  column, toolbar `secondaryActions` for the two items rendered as the Actions menu even with
+  one item (small `DataGridListToolbar` prop), "Sent in email" SearchableSelect (clearable,
+  options from the batches list) synced to `?send_batch=`, chip "Sent in email: <label>"
+  (state toggle All), cleared by its X.
+- New `ParkedSendDialog.tsx` (one component, two modes): summary table (To, Cc, Order
+  inquiries, Lines, a "No recipient" line when unresolved), line tabs one per email with
+  `EmailPreviewFrame` showing `body_html` (clicking a table line selects its tab), "Send N
+  emails", toasts, invalidate headers + summary + batches.
 - Service/hook layering: `orderInquiryReserveService.ts` + `useOrderInquiry.ts` hooks.
 
 ## Tests (tester writes first, red)

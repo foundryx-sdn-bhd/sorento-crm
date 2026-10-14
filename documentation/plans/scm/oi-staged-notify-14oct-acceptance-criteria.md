@@ -13,8 +13,9 @@ tests seed their own equivalent chain (CI DB is empty).
 - AC-SN-04 `GET /order-inquiries/reserve-parked/summary`: `requests_total` counts every parked
   request still `requested` with at least one unanswered row; `my_requests` only the caller's.
 - AC-SN-05 Preview (`.../reserve-requests/parked/preview`) covers only the caller's parked
-  requests, grouped one email per first non-actor recipient, and returns per email only
-  `to`, `cc`, `inquiry_count`, `line_count` (no bodies). Dev config (no fixed CS user): Joey's
+  requests, grouped one email per first non-actor recipient, and returns per email `to`, `cc`,
+  `inquiry_count`, `line_count`, `subject` and `body_html` (rendered by the same template the
+  send uses). Dev config (no fixed CS user): Joey's
   17 parked (9 raised by Eling, 8 by Niki) -> 2 lines, To Eling Cc Joey 9, To Niki Cc Joey 8.
   With a fixed CS user configured: 1 line To that user, Cc Joey + Niki (deduped, Eling once).
 - AC-SN-06 Preview rows are only rows CS has not answered (`qty_reserved IS NULL`), with
@@ -35,11 +36,12 @@ tests seed their own equivalent chain (CI DB is empty).
   your reserve", the OI and line counts, the first 5 OIs by OI no (OI NO, S/O NO, CUSTOMER,
   LINES = requested lines), "and M more order inquiries." when M > 0, and ONE button "View the N
   order inquiries waiting for your reserve" linking to `/project-sales/order-inquiries?
-  reserve_batch=<send batch id>`. It never lists more than 5 OIs.
+  send_batch=<send batch id>`. It never lists more than 5 OIs.
 - AC-SN-13 Each email a send produces gets one `order_inquiry_reserve_send_batches` row; its
-  requests carry that `sent_batch_id`. `GET /order-inquiry-headers?reserve_batch=<id>` returns
-  exactly those OIs whatever their state; `GET .../reserve-send-batches/{id}` returns kind,
-  sender name, sent_at, inquiry count; a batch of another company or an unknown id is 404.
+  requests carry that `sent_batch_id`. `GET /order-inquiry-headers?send_batch=<id>` returns
+  exactly those OIs whatever their state; `GET .../reserve-send-batches` lists the newest 100
+  (kind, sender, recipient, sent_at, inquiry count) and `.../{id}` one; a batch of another
+  company or an unknown id is 404.
 
 ## Notice side (CS -> purchasing)
 
@@ -58,7 +60,7 @@ tests seed their own equivalent chain (CI DB is empty).
 - AC-SN-25 Double send / concurrency / unresolved / colleague rules as AC-SN-08/09/10.
 - AC-SN-26 Multi-OI notice email: subject "Reserved: N order inquiries (Eling)", the same short
   shape as AC-SN-12 (LINES = lines in the notice), button "View the N order inquiries CS
-  reserved" -> `?notice_batch=<id>`; rows carry `notice_batch_id`; one-OI keeps today's email.
+  reserved" -> `?send_batch=<id>`; rows carry `notice_batch_id`; one-OI keeps today's email.
 
 ## List (Documents view)
 
@@ -76,12 +78,16 @@ tests seed their own equivalent chain (CI DB is empty).
   holders; Reserve sends `park_notice` matching the tickbox.
 - AC-SN-42 Documents list: Parked filter with counts from the summary, Parked column, chip;
   picking a Parked value sets the state toggle to All.
-- AC-SN-43 Toolbar: "Send parked requests to CS (N)" (ACKNOWLEDGE) / "Notify purchasing (N)"
-  (RESERVE), N = `my_requests` / `my_notices`; disabled with reason when N = 0.
-- AC-SN-44 Preview dialog: ONE summary table (To, Cc, Order inquiries, Lines; total row), a
-  "No recipient, stays parked" line per unresolved group, footer "Send N emails"; success toast
+- AC-SN-43 Toolbar Actions menu (never a top-bar button, even with one item): "Send parked
+  requests to CS (N)" (ACKNOWLEDGE) / "Notify purchasing (N)" (RESERVE), N = `my_requests` /
+  `my_notices`; disabled with reason when N = 0.
+- AC-SN-44 Preview dialog: summary table (To, Cc, Order inquiries, Lines; total row), a
+  "No recipient, stays parked" line per unresolved group, under it one line tab per email
+  showing that email's subject, To/Cc and rendered body (clicking a table line selects its
+  tab), footer "Send N emails"; success toast
   "N emails sent (M order inquiries)"; `emails_sent = 0` -> "Nothing left to send".
-- AC-SN-46 Opening `?reserve_batch=<id>` (or `?notice_batch=`) shows the Documents list with
-  the state toggle on All and a chip "From email: Joey's reserve requests, 14/10/2026 (9)"
-  ("... reserve notices ..." for notices); its X clears the param and returns to the normal list.
+- AC-SN-46 Filters has "Sent in email" (newest 100 batches, searchable, label "Joey to Eling,
+  reserve requests, 14/10/2026 10:42 (9)"). Choosing one, or opening `?send_batch=<id>` from
+  the email button, shows exactly that batch's OIs with the state toggle on All and a chip
+  "Sent in email: <label>"; its X clears the filter and the param.
 - AC-SN-45 Usable at 375 and 1280 (lightbox grid and email frame scroll inside, toolbar wraps).

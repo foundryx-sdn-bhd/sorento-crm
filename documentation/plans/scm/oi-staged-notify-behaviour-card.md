@@ -97,3 +97,9 @@ Schema (additive, no backfill): `order_inquiry_reserve_requests.parked_at`;
    CUSTOMER, LINES), "and N more", ONE button that opens the Documents list filtered to exactly
    that email's OIs (send id in the URL, chip "From email: ..."). An email with one OI keeps
    today's detailed email (my call B, filed with mock v2).
+
+## Owner notes on mock v2 (14 Oct, via crew)
+
+1. The send sits under the Documents list's Actions menu, not a top-bar button.
+2. The preview shows the email itself (one tab per email) under the recipient table.
+3. "Sent in email" is a normal filter in Filters (recent emails), not only reachable from the email button.
