@@ -739,9 +739,8 @@ function HandleCell({ row }: CellContext<GridRow, unknown>) {
   return <DataGridTableDndRowHandle rowId={row.original.key} />;
 }
 
-/** No header text: the column holds each row's own named menu and Remove buttons. */
 function ActionsHeader() {
-  return null;
+  return <span className="sr-only">Row actions</span>;
 }
 
 const NARROW = 'px-1.5';
@@ -1291,9 +1290,17 @@ export function QuotationLinesGrid({
     kind: 'line' | 'section';
     key: string;
   } | null>(null);
-  /** Off for a right-click outside the rows, so the browser's own menu shows there. */
-  const [menuOff, setMenuOff] = React.useState(false);
+  /**
+   * Null outside the rows and bars, and over an editable control inside one (the heading, the
+   * description, Qty): there the browser's own menu shows, for copy, paste and spelling.
+   */
   const targetOf = (element: Element | null) => {
+    if (
+      element?.closest(
+        'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+      )
+    )
+      return null;
     const bar = element?.closest<HTMLElement>('[data-section-key]');
     if (bar?.dataset.sectionKey)
       return { kind: 'section' as const, key: bar.dataset.sectionKey };
@@ -1378,17 +1385,16 @@ export function QuotationLinesGrid({
             </div>
           </div>
           <ContextMenu modal={false}>
-            <ContextMenuTrigger asChild disabled={!editing || menuOff}>
+            <ContextMenuTrigger asChild disabled={!editing}>
               <div
                 className="min-w-0 overflow-hidden rounded-lg border border-border"
-                onPointerDownCapture={(event) => {
-                  if (event.button === 2)
-                    setMenuOff(!targetOf(event.target as Element));
-                }}
-                onContextMenu={(event) => {
+                // Capture phase, ahead of the menu's own handler on this same element: a
+                // right-click with nothing of ours under it stops here, unprevented, so the
+                // menu never opens and the browser shows its own.
+                onContextMenuCapture={(event) => {
                   const target = targetOf(event.target as Element);
                   if (!target) {
-                    event.preventDefault();
+                    event.stopPropagation();
                     return;
                   }
                   setMenuTarget(target);
