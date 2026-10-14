@@ -620,6 +620,12 @@ class CancelLineMatcher:
                 else:
                     status, reason, target = final
                     answers[str(line.id)] = (line, _Match(status, reason, so_line_id=target), "")
+                    # A keyed match changes what its group's key-less members add up to, so
+                    # they are decided again whichever order the two arrived in.
+                    if target:
+                        keyed_group = group_of_line(self.db, str(target), self.company_id)
+                        if keyed_group:
+                            return_groups.add(keyed_group)
                 continue
             # The group the line USED to count in is decided again too (review B1): leaving it,
             # by a void, a sweep or an edit, changes what the rest of that group adds up to.
