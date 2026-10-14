@@ -66,3 +66,65 @@ def test_p3_a_stored_entry_with_the_r1_era_subject_s1_still_loads():
     st.register = [RegisterEntry(id="R1", kind="product", key="A1", label="A1", parent=None, subject="S1", turn=2)]
     back = load_state(dump_state(st), NOW)
     assert back.register[0].subject == "S1"
+
+
+# ------------------------------------------------------------------ fix 3b: MEMORY equals pre-R2 after EVERY turn
+# The expected strings were rendered once by crew/pv2 941fb867a (git archive into a scratch dir, never a checkout),
+# from the same parses: HELD through TOPICS, with the pre-R2 behaviour that a re-started subject stays in topics.
+
+from app.services.chatbot.pv2.history import MemoryProfile, render_memory  # noqa: E402
+from tests.chatbot.pv2.carry_fakes import spec  # noqa: E402
+
+_T = "PENDING QUESTION: none\nTOPICS (switch_back keys, newest first)"
+PRE_R2_A = [  # A1, B1, A1, C1
+    f"HELD: domain=inventory\n  product: A1\n{_T}: none\n",
+    f"HELD: domain=inventory\n  product: B1\n{_T}:\n  T1: inventory | product: A1\n",
+    f"HELD: domain=inventory\n  product: A1\n{_T}:\n  T1: inventory | product: B1\n  T2: inventory | product: A1\n",
+    f"HELD: domain=inventory\n  product: C1\n{_T}:\n  T1: inventory | product: A1\n  T2: inventory | product: B1\n",
+]
+PRE_R2_B = [  # A1, B1, A1, refine A1 with colour black, C1
+    PRE_R2_A[0], PRE_R2_A[1], PRE_R2_A[2],
+    f"HELD: domain=inventory\n  product: A1\n  spec: colour=black\n{_T}:\n  T1: inventory | product: B1\n  T2: inventory | product: A1\n",
+    f"HELD: domain=inventory\n  product: C1\n{_T}:\n  T1: inventory | product: A1\n  T2: inventory | product: B1\n  T3: inventory | product: A1\n",
+]
+R3 = FakeResolver({"entities": R.config["entities"], "specs": {"colour|black": {
+    "status": "exact", "specs": [{"attribute": "colour", "comparator": "eq", "value": "black"}]}}})
+REFINE = out(ask(act="refines_held", domain="inventory", specs=[spec(attribute="colour", value_key="black")]))
+
+
+def _memory_after_each(parses):
+    st, seen, states = new_state(NOW), [], []
+    for p in parses:
+        st, _ = apply_turn(st, p, resolver=R3, now=NOW)
+        mem = render_memory(st, MemoryProfile(audience="staff"), NOW)
+        seen.append(mem[mem.index("HELD"):mem.index("LAST ANSWER")])
+        states.append(st)
+    return seen, states
+
+
+def test_p4a_memory_after_every_turn_of_a_restarted_subject_equals_pre_r2():
+    seen, _ = _memory_after_each([_stock("A1"), _stock("B1"), _stock("A1"), _stock("C1")])
+    assert seen == PRE_R2_A, [i for i, (a, b) in enumerate(zip(seen, PRE_R2_A)) if a != b]
+
+
+def test_p4b_memory_after_every_turn_with_a_same_domain_refine_of_the_restarted_subject_equals_pre_r2():
+    seen, _ = _memory_after_each([_stock("A1"), _stock("B1"), _stock("A1"), REFINE, _stock("C1")])
+    assert seen == PRE_R2_B, [i for i, (a, b) in enumerate(zip(seen, PRE_R2_B)) if a != b]
+
+
+def test_p4c_the_restarted_subject_and_its_topic_copy_share_the_original_sid():
+    s1, _, s3 = _turns("A1", "B1", "A1")
+    copies = [t for t in s3.topics if [r.key for r in t.refs["product"]] == ["A1"]]
+    assert len(copies) == 1, "pre-R2 kept the copy (A1 is both held and T2)"
+    assert s3.held.sid == s1.held.sid == copies[0].sid
+
+
+def test_p4c_entries_printed_under_the_restarted_subject_keep_a_label_after_a_same_domain_refine():
+    """Pinned: a non-None label only. A same-domain refine is the same subject, so keeping the sid (label S1) and
+    taking a fresh one (the old sid stays on the topic copy, label S2/S3) both satisfy parity; the test allows either."""
+    _, _, s3 = _turns("A1", "B1", "A1")
+    engine_mod._pv2_write_register({"pv2_state": s3}, [E.envelope(E.STOCK_TOOL, E.STOCK_RAW, domain="inventory")])
+    assert s3.register
+    s4, _ = apply_turn(s3, REFINE, resolver=R3, now=NOW)
+    for e in s3.register:
+        assert subject_label(s4, e.subject) is not None, (e.subject, s4.held.sid, [t.sid for t in s4.topics])

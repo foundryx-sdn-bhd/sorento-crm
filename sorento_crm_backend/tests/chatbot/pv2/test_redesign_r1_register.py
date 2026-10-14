@@ -110,7 +110,7 @@ def test_r1_1_an_order_list_writes_one_entry_per_printed_order_in_printed_order(
     orders = [e for e in entries if e.kind == "delivery_order"]
     assert [e.label for e in orders] == ["202609-2012", "202609-2013"]
     assert [e.key for e in orders] == ["202609-2012", "202609-2013"]
-    assert all(e.parent is None and e.subject == "S1" and e.turn == 3 for e in orders)
+    assert all(e.parent is None and e.subject is None and e.turn == 3 for e in orders)
 
 
 def test_r1_1_ids_run_R1_to_Rn_depth_first():
