@@ -792,10 +792,14 @@ export function useReserveStatusSummary(enabled = true) {
 }
 
 /** Who the reserve confirmation's notice goes to (AC-SN-27); read while it is open. */
-export function useReserveNoticeRecipients(inquiryId: string | undefined, enabled: boolean) {
+export function useReserveNoticeRecipients(
+  inquiryId: string | undefined,
+  enabled: boolean,
+  rowIds?: string[],
+) {
   return useQuery({
-    queryKey: [ORDER_INQUIRY_NOTICE_RECIPIENTS_KEY, inquiryId],
-    queryFn: () => getReserveNoticeRecipients(inquiryId as string),
+    queryKey: [ORDER_INQUIRY_NOTICE_RECIPIENTS_KEY, inquiryId, rowIds ?? []],
+    queryFn: () => getReserveNoticeRecipients(inquiryId as string, rowIds),
     enabled: enabled && Boolean(inquiryId),
     staleTime: 0,
   });

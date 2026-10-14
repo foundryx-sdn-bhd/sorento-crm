@@ -237,7 +237,7 @@ export function OrderInquiryHeadersList() {
               key: 'send-parked-requests',
               label: `Send all parked requests to CS (${myParkedRequests})`,
               disabled: myParkedRequests === 0,
-              disabledReason: 'You have no parked requests',
+              disabledReason: 'Nothing of yours is parked',
               onClick: () => setParkedKind('requests'),
             },
           ]
@@ -248,7 +248,7 @@ export function OrderInquiryHeadersList() {
               key: 'send-parked-notices',
               label: `Send all parked reserves to purchasing (${myParkedNotices})`,
               disabled: myParkedNotices === 0,
-              disabledReason: 'You have no parked reserves',
+              disabledReason: 'Nothing of yours is parked',
               onClick: () => setParkedKind('notices'),
             },
           ]

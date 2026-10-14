@@ -49,9 +49,9 @@ export function orderInquiryReserveStatusVariant(
     case 'parked':
       return 'secondary';
     case 'needs_reserve':
-      return 'warning';
-    case 'notice_parked':
       return 'info';
+    case 'notice_parked':
+      return 'warning';
     default:
       return 'success';
   }

@@ -284,9 +284,11 @@ export function sendParkedReserveNotices(): Promise<ParkedSendResult> {
 /** Who the reserve confirmation's notice would go to (AC-SN-27). */
 export async function getReserveNoticeRecipients(
   inquiryId: string,
+  rowIds?: string[],
 ): Promise<ReserveNoticeRecipients> {
+  const search = rowIds && rowIds.length > 0 ? `?${new URLSearchParams({ row_ids: rowIds.join(',') })}` : '';
   const response = await apiFetch(
-    `${BASE}/order-inquiries/${inquiryId}/reserve-notices/recipients`,
+    `${BASE}/order-inquiries/${inquiryId}/reserve-notices/recipients${search}`,
   );
   if (!response.ok)
     throw new Error(await extractApiError(response, 'Failed to load the notice recipients'));

@@ -518,7 +518,11 @@ export function OrderInquiryDetail({ id }: { id: string }) {
   // staged line, whichever request it belongs to. The server resolves each row to its
   // open (reserve) or latest answered (amend) request row; the client names rows only.
   const stagedCount = Object.keys(stagedByRowId).length;
-  const noticeRecipientsQuery = useReserveNoticeRecipients(id, reserveConfirmOpen);
+  const noticeRecipientsQuery = useReserveNoticeRecipients(
+    id,
+    reserveConfirmOpen,
+    Object.keys(stagedByRowId),
+  );
 
   /** The staged lines as the confirmation prints them (AC-SN-41). */
   const confirmLines: ReserveConfirmLine[] = Object.entries(stagedByRowId).map(([rowId, entry]) => {
