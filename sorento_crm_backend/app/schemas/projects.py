@@ -933,6 +933,8 @@ class ProjectSeriesProductImportResponse(BaseModel):
     removed: int
     product_count: int
     unmatched_codes: List[str] = Field(default_factory=list)
+    #: Codes that were a set or a family, not a product: ``{code, via, members}``.
+    resolved: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class QuotationLineVerdictResponse(BaseModel):
@@ -987,6 +989,8 @@ class SeriesProductRowResponse(BaseModel):
     #: A PERCENT: 6 means 6%.
     max_discount_pct: Optional[Decimal] = None
     derived_floor: Optional[Decimal] = None
+    #: True when the product is of the series' brand and under one of its categories.
+    in_scope: bool = False
 
 
 class SeriesProductPricingUpdate(BaseModel):

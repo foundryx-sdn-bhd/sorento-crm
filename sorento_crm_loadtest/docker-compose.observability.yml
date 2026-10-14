@@ -2,7 +2,7 @@ services:
   influxdb:
     image: influxdb:1.8
     ports:
-      - "8086:8086"
+      - "127.0.0.1:8086:8086"
     environment:
       INFLUXDB_DB: k6
       INFLUXDB_HTTP_AUTH_ENABLED: "false"
@@ -12,7 +12,7 @@ services:
   grafana:
     image: grafana/grafana:10.4.2
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
