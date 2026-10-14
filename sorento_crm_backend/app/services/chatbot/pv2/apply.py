@@ -359,7 +359,7 @@ def _answer(
     key = ask.answer.option_key if ask.answer is not None else None
     free = ask.answer.free_value if ask.answer is not None else None
     picked = next((o for o in pending.options if o.key == key), None) if key is not None else None
-    if picked is None and key is not None and pending.kind == "clarify_entity":
+    if picked is None and key is not None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
         # A candidate question is keyed by position; its code (the payload key) still picks.
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
     if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in ("offer_handover", "offer_doc_handover", "clarify_did_you_mean"):
