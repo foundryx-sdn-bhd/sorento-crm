@@ -247,8 +247,9 @@ FIELD_NOTES: dict[str, str] = {
     ),
     "consignments": (
         "v2.9. AutoCount Consignment. Once every item line carries TransferedQty the document "
-        "becomes a sales order marked Consignment (delivered = TransferedQty); a void or "
-        "vanished doc is cancelled. A record without it is kept but moves no quantity. source_ref is "
+        "becomes a sales order marked Consignment, delivered in full and closed (the goods "
+        "left with the CG); TransferedQty is the returned qty. A void or vanished doc is "
+        "cancelled. A record without it is kept but moves no quantity. source_ref is "
         "{book}:CSGN:{DocKey}. /deletions marks the vanished doc_keys."
     ),
     "consignment_returns": (
