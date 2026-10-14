@@ -77,6 +77,13 @@ def _ask_failures(want: dict, got) -> list[str]:
         bad.append(f"attachment_type {got.attachment_type!r} != {want['attachment_type']!r}")
     if "option_key" in want and (got.answer.option_key if got.answer else None) != want["option_key"]:
         bad.append(f"option_key {(got.answer.option_key if got.answer else None)!r} != {want['option_key']!r}")
+    if "held_product_only" in want:
+        # no product entity, or one naming the HELD product (refers_to_held, or its code as the phrase)
+        held = want["held_product_only"].lower()
+        stray = [e for e in got.entities
+                 if not (e.refers_to_held and not e.phrase) and (e.phrase or "").lower() != held]
+        if stray:
+            bad.append(f"entity not the held product: {[(e.kind, e.phrase) for e in stray]}")
     if want.get("no_typed_entities"):
         typed = [e for e in got.entities if e.phrase or e.key or e.doc_number]
         if typed:
