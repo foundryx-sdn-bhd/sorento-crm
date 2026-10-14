@@ -1615,14 +1615,18 @@ export function SalesOrderDetail({
                 {/* How far the order has been PLANNED, beside the status it keeps being
                     confused with. The SAME chip the list carries, in the header rather than a
                     tab body because it is read-only metadata about the whole record - so view
-                    and edit show it identically, with nothing to change about it here. */}
-                <Badge
-                  variant={plannedBadge.variant}
-                  appearance="light"
-                  size="md"
-                >
-                  {plannedBadge.label}
-                </Badge>
+                    and edit show it identically, with nothing to change about it here. A
+                    consignment is never planned (its goods are already at the customer,
+                    CONSIGN-DELIVERED-FIX), so it carries no such chip. */}
+                {so.doc_type === 'consignment' ? null : (
+                  <Badge
+                    variant={plannedBadge.variant}
+                    appearance="light"
+                    size="md"
+                  >
+                    {plannedBadge.label}
+                  </Badge>
+                )}
               </div>
               {/* Read-only metadata belongs in the header, not a tab body - the project the
                   order carries, resolved from whichever source ranked highest. Nothing when
@@ -1670,9 +1674,10 @@ export function SalesOrderDetail({
                 // the permission the board's own page requires: a door that answers 403 is
                 // worse than no door. Also absent off a non-project demand class (AC-S2-6b):
                 // the fulfilment board only accepts project demand, so a retail order's Plan
-                // would open onto an empty board.
+                // would open onto an empty board. Absent on a consignment too: its goods are
+                // already at the customer, so there is nothing to plan.
                 primary={
-                  canPlan && so.demand_class === 'project' ? (
+                  canPlan && so.demand_class === 'project' && so.doc_type !== 'consignment' ? (
                     <Button asChild variant="primary" size="sm" className="gap-1.5">
                       <Link
                         href={`/project-sales/fulfilment-planning?orders=${encodeURIComponent(
