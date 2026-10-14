@@ -4,6 +4,7 @@
  * list no longer carries it, or has not arrived yet.
  */
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -56,14 +57,21 @@ vi.mock('@/app/(protected)/master-data-management/shared/hooks/use-brand-select-
     refetch: vi.fn(),
   }),
 }));
+const seriesState: { rows: Record<string, unknown>[]; saved: Record<string, unknown> | null } = {
+  rows: [],
+  saved: null,
+};
+const updateMutate = vi.fn(async () => seriesState.saved);
 vi.mock('../../../_shared/hooks/useProjects', () => ({
-  useProjectSeries: () => ({ data: [], isLoading: false }),
+  useProjectSeries: () => ({ data: seriesState.rows, isLoading: false }),
   useSeriesMutations: () => ({
     create: { isPending: false, mutateAsync: vi.fn() },
-    update: { isPending: false, mutateAsync: vi.fn() },
+    update: { isPending: false, mutateAsync: updateMutate },
     remove: { isPending: false, mutateAsync: vi.fn() },
   }),
 }));
+vi.mock('./SeriesProductsTable', () => ({ SeriesProductsTable: () => null }));
+vi.mock('./SeriesSheetLoader', () => ({ SeriesSheetLoader: () => null }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   usePathname: () => '/project-sales/series/new',
@@ -134,6 +142,8 @@ function noElementTextEquals(id: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   state.loadingForBrand = false;
+  seriesState.rows = [];
+  seriesState.saved = null;
 });
 
 describe('SeriesDetailClient category chips across a brand change (A5)', () => {
@@ -166,5 +176,60 @@ describe('SeriesDetailClient category chips across a brand change (A5)', () => {
     expect(chipsText()).toContain('Cisterns');
     noElementTextEquals(ID_A);
     noElementTextEquals(ID_C);
+  });
+});
+
+describe('SeriesDetailClient save on an existing series', () => {
+  const base = {
+    id: 'ser-1',
+    name: 'Template',
+    is_active: true,
+    brand_id: null,
+    description: null,
+    product_count: 0,
+    product_codes: [],
+    quotation_count: 0,
+  };
+  const stale = {
+    ...base,
+    category_ids: [ID_A, ID_C],
+    category_names: ['Basins', 'Cisterns'],
+    covered_category_count: 2,
+  };
+  const fresh = {
+    ...base,
+    category_ids: [ID_C],
+    category_names: ['Cisterns'],
+    covered_category_count: 1,
+  };
+
+  it('does not resurrect a removed category from the stale cached row', async () => {
+    seriesState.rows = [stale];
+    seriesState.saved = fresh; // what updateSeries resolves with
+    const qc = new QueryClient();
+    const ui = (
+      <QueryClientProvider client={qc}>
+        <SeriesDetailClient seriesId="ser-1" />
+      </QueryClientProvider>
+    );
+    const view = render(ui);
+    await waitFor(() => expect(chipsText()).toContain('Basins'));
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Remove Basins' }));
+    await waitFor(() => expect(chipsText()).not.toContain('Basins'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+
+    // The list query has NOT refetched yet: it still returns the old row.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled());
+    expect(chipsText()).not.toContain('Basins');
+    expect(chipsText()).toContain('Cisterns');
+
+    // Later the refetch lands with the saved row; still no resurrection.
+    seriesState.rows = [fresh];
+    view.rerender(ui);
+    await waitFor(() => expect(chipsText()).toContain('Cisterns'));
+    expect(chipsText()).not.toContain('Basins');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
   });
 });
