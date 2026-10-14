@@ -596,17 +596,26 @@ def customer_scope(db: Session, contact_respond_id: Any, space_id: str | None) -
     (PLAN-chatbot-customer-scope-29sep.md D1/D3): None when nobody linked the contact to a
     customer, else `{"ids", "names", "linked": [[id, name, code]], "staff", "enforced"}`.
     `enforced` is the top selling rule (linked and no active office access type); a
-    linked staff contact keeps `linked` for a "my" ask only. Read through the ONE core
-    function `contact_customer_scope` (as a module attribute: the tests spy on it)."""
+    linked staff contact keeps `linked` for a "my" ask only. `staff` is the document
+    staff bit of `customer_scope_and_staff` (a linked salesperson is enforced AND staff).
+    Read through the ONE core function `contact_customer_scope` (as a module attribute:
+    the tests spy on it)."""
     return customer_scope_and_staff(db, contact_respond_id, space_id)[0]
 
 
 def customer_scope_and_staff(
     db: Session, contact_respond_id: Any, space_id: str | None
 ) -> tuple[dict[str, Any] | None, bool]:
-    """`customer_scope`, plus whether the contact holds an ACTIVE office access type, from
-    the same one read: the staff bit is wanted for an unlinked contact too, whose scope is
-    None (V1-DOC-SCOPE)."""
+    """`customer_scope`, plus whether the contact is staff for document scope, from the same
+    one read: the staff bit is wanted for an unlinked contact too, whose scope is None
+    (V1-DOC-SCOPE). Staff here is an ACTIVE office access type OR a salesperson
+    (`contact_asker.classify`, V1-DOC-SCOPE-SALES crew ruling 14 Oct 2026): a salesperson
+    sees any customer's documents by number, and a linked one is not held to its links on
+    the in-process number lookups (owner rule 11 Oct: a customer link does not make a
+    salesperson a dealer). `enforced` stays the core flag, so the customer-word gate, the
+    lists and the order routes keep a linked salesperson on its links as main does
+    (crew ruling (a); tests/chatbot/test_chat_report_scope_leak.py)."""
+    from app.services import contact_asker
     from app.services import contact_customer_scope as scope_mod
     from app.services.field_access import resolve_contact_with_null_workspace_fallback
 
@@ -620,17 +629,18 @@ def customer_scope_and_staff(
     if not contact_id:
         return None, False
     scope = scope_mod.contact_customer_scope(db, contact_id)
+    staff = scope.staff or contact_asker.classify(db, str(contact_id)) == "salesperson"
     if not scope.linked:
-        return None, scope.staff
+        return None, staff
     return {
         "ids": scope.customer_ids,
         "names": {cid: name for cid, name, _code in scope.linked},
         "linked": [list(row) for row in scope.linked],
-        "staff": scope.staff,
+        "staff": staff,
         "enforced": scope.enforced,
         "levels": dict(scope.levels),
         "refusal": scope_mod.refusal_line(scope),
-    }, scope.staff
+    }, staff
 
 
 def top_selling_dealer_customer_ids(

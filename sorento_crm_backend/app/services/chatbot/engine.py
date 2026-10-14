@@ -2061,10 +2061,12 @@ def _reference_scope(
     """REF-PROBES: the customer links a reference-number match must belong to, or None when
     no scope applies. Enforced dealers and any non-staff contact are held to their links (an
     unlinked dealer has none, so another customer's sales order is never offered).
-    V1-DOC-SCOPE: staff is the tier OR an active office access type (`office_access`, read
-    with the scope by `services.customer_scope_and_staff`)."""
+    V1-DOC-SCOPE: staff is the tier OR an active office access type OR a salesperson
+    (`office_access`, read with the scope by `services.customer_scope_and_staff`). A linked
+    salesperson is enforced yet `office_access`, and is not held to its links here; the tier
+    alone never lifts an enforced scope."""
     scope = customer_scope or {}
-    if scope.get("enforced"):
+    if scope.get("enforced") and not office_access:
         return list(scope.get("linked") or [])
     return None if (office_access or is_staff_profile(profile)) else list(scope.get("linked") or [])
 
@@ -5133,7 +5135,8 @@ def _run_stages_body(  # noqa: PLR0915
         # who may see ANY customer's documents is decided here), but still only APPLIED as
         # `customer_scope` on a domain a customer scope matters to (the order domain owns
         # every customer-scoped tool; purchase_order is screened for customer words) or on
-        # one saying "my". Staff is the operator-set tier OR an active office access type;
+        # one saying "my". Staff is the operator-set tier OR an active office access type OR
+        # a salesperson (V1-DOC-SCOPE-SALES, `office_access`);
         # everyone else is held to its links, and a contact with none sees no customer
         # document (owner rule: unlinked != customer).
         doc_scope, office_access = business_services.customer_scope_and_staff(

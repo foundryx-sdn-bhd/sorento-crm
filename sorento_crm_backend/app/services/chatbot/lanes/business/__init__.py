@@ -1474,9 +1474,11 @@ def run_fetch(
 
             # V1-DOC-SCOPE: an enforced contact is held to its links first (as the resolver's
             # `engine._reference_scope` holds it, whatever its tier); otherwise only staff
-            # (`doc_staff`: the tier or an office access type) are unscoped, and an unlinked
+            # (`doc_staff`: the tier, an office access type or a salesperson) are unscoped, and an unlinked
             # non-staff contact is held to its (empty) links, so every SO is refused.
-            if customer_scope.get("enforced"):
+            # V1-DOC-SCOPE-SALES: a linked salesperson is enforced yet document staff (the
+            # scope's `staff`), so it is not held to its links here.
+            if customer_scope.get("enforced") and customer_scope.get("staff") is not True:
                 linked = list(customer_scope.get("linked") or [])
             else:
                 linked = None if parse_output.get("doc_staff") is True else list(customer_scope.get("linked") or [])

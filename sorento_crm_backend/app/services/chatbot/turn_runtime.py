@@ -3787,7 +3787,8 @@ def make_tool_runner(
                 lane_out = {**lane_out, lane_key: placed_refs[lane_key]}
         # Both ALWAYS written, never only when true: `lane_out` starts as the parser's own
         # verdict, so a key the model emitted must not survive as a grant (V1-DOC-SCOPE).
-        # `doc_staff`: may see any customer's DO / SO (the tier, or an office access type).
+        # `doc_staff`: may see any customer's DO / SO (the tier, an office access type or a
+        # salesperson, V1-DOC-SCOPE-SALES). `ref_staff` stays the tier alone (crew ruling 14 Oct).
         ref_staff = is_staff_profile(profile)
         lane_out = {**lane_out, "ref_staff": ref_staff, "doc_staff": bool(ref_staff or office_access)}
         if po_words:
