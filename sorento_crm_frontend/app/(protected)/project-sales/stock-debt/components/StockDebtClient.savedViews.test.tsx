@@ -519,3 +519,30 @@ describe('Location mode: Only / All except (AC-X2..X4)', () => {
     );
   });
 });
+
+describe('AC-F5 for the mode', () => {
+  it('switching Only to All except on page 2 returns to page 1', async () => {
+    getStockDebtList.mockResolvedValue(envelope(60));
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    pick('ED');
+
+    // The panel stays open (it hides the grid from the accessibility tree), so reach the
+    // pager with hidden: true.
+    fireEvent.click(screen.getByRole('button', { name: 'Go to next page', hidden: true }));
+    await waitFor(() =>
+      expect(getStockDebtList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ groups: ['ED'], pageIndex: 1 }),
+      ),
+    );
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'All except' }));
+
+    await waitFor(() =>
+      expect(getStockDebtList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ groupsMode: 'exclude', groups: ['ED'], pageIndex: 0 }),
+      ),
+    );
+  });
+});
