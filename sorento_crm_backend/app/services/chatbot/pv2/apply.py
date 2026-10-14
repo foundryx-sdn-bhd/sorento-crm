@@ -393,6 +393,11 @@ def _one_ask(
     if row is not None and base.report is not None and _is_report_row(row):
         base, drilled = _drill(st, base, row, ask, language, i, qs)
     held = _apply_fields(st, base, ask, resolver, policy, language, i, qs, refine=True, today=today)
+    if counted is not None:
+        from app.services.chatbot.pv2.bridge import takes_attachment_kinds
+
+        if not takes_attachment_kinds(held.domain):
+            held.attachment_type, held.attachment_types = None, []  # the stock ask, not the photo again
     if (
         ask.attachment_type
         and not held.refs.get("product")
@@ -952,6 +957,7 @@ def _apply_entities(
         if status == "ambiguous" and getattr(res, "did_you_mean", False) and ent.kind == "product" and ent.phrase and options:
             # v1's own did-you-mean sentence, written here (no v1 re-lookup), with PV2's pending.
             qs.append(_did_you_mean(st, i, ent, held, options, qs.can_offer, language))
+            asked.append((qs[-1], ent))
             continue
         if (
             status == "ambiguous"
@@ -985,10 +991,7 @@ def _apply_entities(
             held.refs = set_refs(held.refs, "product", [ref], _list_op(ent, set_kinds))
             continue
         if status == "ambiguous" or (status == "exact" and not refs and options):
-            # The phrase names which item of the ask a pick answers (RG-7b).
-            stamp = {**_qty_payload(ent), **({"phrase": ent.phrase} if ent.phrase else {})}
-            options = [o.model_copy(update={"payload": {**o.payload, **stamp}}) for o in options]
-            qs.append(_clarify(st, i, "entity", ent.phrase, language, options=options, kind=ent.kind))
+            qs.append(_clarify(st, i, "entity", ent.phrase, language, options=_stamped(ent, options), kind=ent.kind))
             qs[-1].pending.more = int(getattr(res, "more", 0) or 0)
             asked.append((qs[-1], ent))
             continue
@@ -1006,13 +1009,16 @@ def _apply_entities(
             qs.append(
                 _clarify(
                     st, i, "entity", ent.phrase or ent.doc_number, language,
-                    options=options, kind=ent.kind, not_found=not options,
+                    options=_stamped(ent, options), kind=ent.kind, not_found=not options,
                 )
             )
+            asked.append((qs[-1], ent))
             continue
         if ent.op == "remove":
             current = {r.key for r in held.refs.get(ent.kind, [])}
             if not current.intersection(r.key for r in refs):
+                if joins and {r.key for r in st.held.refs.get(ent.kind, [])}.intersection(r.key for r in refs):
+                    continue  # a pick replay: the pick already replaced the held target (RG-7f)
                 raise _Miss("which_held", entity=ent)
             held.refs = set_refs(held.refs, ent.kind, refs, "remove")
             continue
@@ -1041,8 +1047,18 @@ def _apply_entities(
     for q, ent in asked:
         if ent.op != "remove" and ent.kind in set_kinds:
             # A pick joins the same-kind items that landed beside it instead of replacing them (RG-7b).
-            q.pending.options = [o.model_copy(update={"payload": {**o.payload, "op": "add"}}) for o in q.pending.options]
+            q.pending.options = [
+                o.model_copy(update={"payload": {**o.payload, "op": "add"}}) if o.payload.get("kind") == ent.kind else o
+                for o in q.pending.options
+            ]
     return held
+
+
+def _stamped(ent: Entity, options: list[Option]) -> list[Option]:
+    """An entity question's options with the entity's quantity and phrase: the phrase names which item of
+    the ask a pick answers (RG-7b)."""
+    stamp = {**_qty_payload(ent), **({"phrase": ent.phrase} if ent.phrase else {})}
+    return [o.model_copy(update={"payload": {**o.payload, **stamp}}) for o in options]
 
 
 def _list_op(ent: Entity, set_kinds: set[str]) -> str:
@@ -1109,7 +1125,8 @@ def _did_you_mean(
     head = clarify_copy.did_you_mean_head(f'"{ent.phrase}" (product)', language)
     asked = f"{head}\n{lines}\nReply with a code to continue"
     picks = [
-        Option(key=str(n), label=o.label, payload={"kind": "product", "key": c, "label": o.label, "op": "set", **_qty_payload(ent)})
+        Option(key=str(n), label=o.label, payload={
+            "kind": "product", "key": c, "label": o.label, "op": "set", "phrase": ent.phrase, **_qty_payload(ent)})
         for n, (o, c) in enumerate(zip(options, codes), start=1)
     ]
     extra: list[Option] = []
@@ -1334,10 +1351,17 @@ def _origin_of(ask: Ask) -> dict:
     return ask.model_dump(mode="json")
 
 
+#: The fields that name an entity: `PendingQuestion.raised_by` records and is matched on these alone (not
+#: the quantity a count beside it may have been folded into, nor a field a later schema adds or drops).
+ENTITY_ID_FIELDS = ("kind", "key", "phrase", "doc_number", "op", "refers_to_held")
+
+
 def _entity_id(e: Entity) -> dict:
-    """An entity as `PendingQuestion.raised_by` records it: without its quantity, which a count beside
-    it may have been folded into."""
-    return e.model_dump(mode="json", exclude={"quantity"})
+    return {f: getattr(e, f) for f in ENTITY_ID_FIELDS}
+
+
+def _is_raiser(e: Entity, raised_by: dict) -> bool:
+    return all(raised_by.get(f) == getattr(e, f) for f in ENTITY_ID_FIELDS)
 
 
 def _keep_origin(
@@ -1415,7 +1439,7 @@ def _without_picked(
             return e.kind == kind and (phrase is None or e.phrase == phrase)
         if raised_by is None:
             return e.kind == kind or e.refers_to_held or e.op == "remove"
-        return _entity_id(e) == raised_by or e.refers_to_held or (e.kind == kind and e.op != "remove")
+        return _is_raiser(e, raised_by) or e.refers_to_held or (e.kind == kind and e.op != "remove")
 
     update: dict[str, Any] = {"entities": [e for e in origin.entities if not answered(e)]}
     if question == "clarify_spec_attribute":
