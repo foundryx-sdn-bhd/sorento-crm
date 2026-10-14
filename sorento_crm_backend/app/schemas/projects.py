@@ -933,6 +933,8 @@ class ProjectSeriesProductImportResponse(BaseModel):
     removed: int
     product_count: int
     unmatched_codes: List[str] = Field(default_factory=list)
+    #: Codes that were a set or a family, not a product: ``{code, via, members}``.
+    resolved: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class QuotationLineVerdictResponse(BaseModel):

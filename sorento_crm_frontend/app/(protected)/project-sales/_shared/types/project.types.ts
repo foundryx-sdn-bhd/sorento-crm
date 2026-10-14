@@ -862,6 +862,8 @@ export interface SeriesProductImportResult {
   removed: number;
   product_count: number;
   unmatched_codes: string[];
+  /** Codes that were a set or a family rather than a product, with the products they stand for. */
+  resolved?: { code: string; via: 'set' | 'family'; members: string[] }[];
 }
 
 /**

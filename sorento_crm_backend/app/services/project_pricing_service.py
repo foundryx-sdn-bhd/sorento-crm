@@ -11,14 +11,16 @@ stored, so there is one source of truth for it.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 
-from sqlalchemy import text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app.models.product import Product, ProductCategory
+from app.models.product_set import ProductSet, ProductSetMember
 from app.models.projects import (
     FLOOR_MODE_ABSOLUTE,
     FLOOR_MODE_PERCENT,
@@ -1000,6 +1002,123 @@ def resolve_product_codes(
     return matched, unmatched
 
 
+def _compact_upper(raw: str) -> str:
+    """Whitespace removed, upper-cased: the spelling a family prefix is compared in."""
+    return re.sub(r"\s+", "", raw or "").upper()
+
+
+def _starts_with_any(column: Any, prefixes: Sequence[str]) -> Any:
+    """SQL: the column, whitespace removed and upper-cased, starts with one of ``prefixes``.
+
+    ``left() =`` rather than ``LIKE`` so a sheet code holding ``%`` or ``_`` is just text.
+    """
+    squashed = func.upper(func.regexp_replace(column, r"\s", "", "g"))
+    return or_(*[func.left(squashed, len(prefix)) == prefix for prefix in prefixes])
+
+
+def resolve_series_codes(
+    db: Session, codes: Sequence[str]
+) -> tuple[Dict[str, List[Product]], Dict[str, Dict[str, Any]], List[str]]:
+    """Sheet codes resolved as ``(exact, indirect, unmatched)``; first hit wins, never fuzzy.
+
+    1. exact product (``resolve_product_codes``);
+    2. an ACTIVE product set carrying the code, resolved to its members;
+    3. a family: ACTIVE products, and ACTIVE sets, whose code starts with the sheet code
+       plus a dash (`CWC1009` finds `CWC1009-SC`, never `CWC10091`), sets expanded to members.
+
+    ``indirect`` maps the normalised code to ``code`` (sheet spelling), ``via``, ``products``
+    and ``priced`` (ids the sheet price applies to: family products that are not parts of
+    any active set; set members are listed but never priced). Tiers 2 and 3 only see the
+    codes the tier before missed, in a handful of queries for the whole sheet.
+    """
+    exact, missed = resolve_product_codes(db, codes)
+    if not missed:
+        return exact, {}, []
+
+    spelling = {normalize_code(raw): raw for raw in missed}
+    indirect: Dict[str, Dict[str, Any]] = {}
+
+    def members_of(set_ids: Sequence[str]) -> Dict[str, List[Product]]:
+        out: Dict[str, List[Product]] = {}
+        if not set_ids:
+            return out
+        for set_id, product in (
+            db.query(ProductSetMember.product_set_id, Product)
+            .join(Product, Product.id == ProductSetMember.product_id)
+            .filter(
+                ProductSetMember.product_set_id.in_(list(set_ids)),
+                Product.is_active == True,  # noqa: E712
+            )
+            .all()
+        ):
+            out.setdefault(set_id, []).append(product)
+        return out
+
+    set_norm = func.lower(func.regexp_replace(ProductSet.set_code, r"[-\s]", "", "g"))
+    sets = (
+        db.query(ProductSet)
+        .filter(ProductSet.is_active == True, set_norm.in_(list(spelling)))  # noqa: E712
+        .all()
+    )
+    by_norm: Dict[str, List[ProductSet]] = {}
+    for ps in sets:
+        by_norm.setdefault(normalize_code(ps.set_code), []).append(ps)
+    set_members = members_of([ps.id for ps in sets])
+    for norm, found in by_norm.items():
+        products = {p.id: p for ps in found for p in set_members.get(ps.id, [])}
+        indirect[norm] = {
+            "code": spelling[norm],
+            "via": "set",
+            "products": list(products.values()),
+            "priced": set(),
+        }
+
+    prefixes = {
+        norm: _compact_upper(raw) + "-" for norm, raw in spelling.items() if norm not in indirect
+    }
+    if prefixes:
+        wanted = list(prefixes.values())
+        fam_products = (
+            db.query(Product)
+            .filter(Product.is_active == True, _starts_with_any(Product.product_code, wanted))  # noqa: E712
+            .all()
+        )
+        fam_sets = (
+            db.query(ProductSet)
+            .filter(ProductSet.is_active == True, _starts_with_any(ProductSet.set_code, wanted))  # noqa: E712
+            .all()
+        )
+        fam_set_members = members_of([ps.id for ps in fam_sets])
+        set_parts = {
+            row[0]
+            for row in db.query(ProductSetMember.product_id)
+            .join(ProductSet, ProductSet.id == ProductSetMember.product_set_id)
+            .filter(
+                ProductSet.is_active == True,  # noqa: E712
+                ProductSetMember.product_id.in_([p.id for p in fam_products]),
+            )
+            .all()
+        } if fam_products else set()
+        for norm, prefix in prefixes.items():
+            direct = [p for p in fam_products if _compact_upper(p.product_code).startswith(prefix)]
+            via_sets = [ps for ps in fam_sets if _compact_upper(ps.set_code).startswith(prefix)]
+            if not direct and not via_sets:
+                continue
+            products = {p.id: p for p in direct}
+            for ps in via_sets:
+                for p in fam_set_members.get(ps.id, []):
+                    products.setdefault(p.id, p)
+            indirect[norm] = {
+                "code": spelling[norm],
+                "via": "family",
+                "products": list(products.values()),
+                "priced": {p.id for p in direct if p.id not in set_parts},
+            }
+
+    unmatched = [raw for norm, raw in spelling.items() if norm not in indirect]
+    return exact, indirect, unmatched
+
+
 def apply_series_product_codes(
     db: Session,
     *,
@@ -1042,8 +1161,8 @@ def apply_series_product_codes(
         entry if hasattr(entry, "code") else _SeriesRow(code=str(entry)) for entry in codes
     ]
     submitted = len(sheet_rows)
-    matched, unmatched = resolve_product_codes(db, [row.code for row in sheet_rows])
-    if not matched and not unmatched:
+    matched, indirect, unmatched = resolve_series_codes(db, [row.code for row in sheet_rows])
+    if not matched and not indirect and not unmatched:
         raise AppException(
             status_code=422,
             message=(
@@ -1054,6 +1173,8 @@ def apply_series_product_codes(
         )
 
     resolved_ids = {product.id for rows in matched.values() for product in rows}
+    for hit in indirect.values():
+        resolved_ids |= {product.id for product in hit["products"]}
     before = series_product_ids(db, series.id)
     wanted = resolved_ids if mode == "replace" else before | resolved_ids
 
@@ -1065,6 +1186,9 @@ def apply_series_product_codes(
             continue
         for product in matched.get(normalize_code(row.code), []):
             pricing[product.id] = (row.selling_price, row.max_discount_pct)
+        # Family variants take the sheet's numbers; set members never do (D3, D3b).
+        for product_id in indirect.get(normalize_code(row.code), {}).get("priced", ()):
+            pricing[product_id] = (row.selling_price, row.max_discount_pct)
 
     outcome = set_series_products(
         db, series=series, product_ids=wanted, pricing=pricing
@@ -1075,8 +1199,8 @@ def apply_series_product_codes(
         "series_name": series.name,
         "mode": mode,
         "submitted": submitted,
-        "unique_codes": len(matched) + len(unmatched),
-        "matched_codes": len(matched),
+        "unique_codes": len(matched) + len(indirect) + len(unmatched),
+        "matched_codes": len(matched) + len(indirect),
         "added": outcome["added"],
         # Counted against what was ALREADY on the series, so "you have imported this
         # sheet before" is distinguishable from "it added nothing because nothing matched".
@@ -1084,4 +1208,12 @@ def apply_series_product_codes(
         "removed": outcome["removed"],
         "product_count": len(wanted),
         "unmatched_codes": unmatched,
+        "resolved": [
+            {
+                "code": hit["code"],
+                "via": hit["via"],
+                "members": sorted(p.product_code for p in hit["products"]),
+            }
+            for hit in indirect.values()
+        ],
     }
