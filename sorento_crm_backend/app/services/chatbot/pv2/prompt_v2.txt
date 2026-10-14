@@ -42,7 +42,7 @@ ASK = {
  "portal_form": "complaint" | "stock_inquiry" | "purchase_request" | "sponsorship_form" | null
 }
 - status: "outstanding" for outstanding / pending / not yet delivered ("belum hantar", "未送"); "delivered" for delivered / done deliver; else null.
-- portal_form: asking for a complaint, stock inquiry, purchase request or sponsorship form (typos included) is domain portal_link with portal_form that form, never forms. Only when the person asks to fill in or submit a form; a question about an existing request ("got this code in purchase request?") is a status question, portal_form null.
+- portal_form: asking for a complaint, stock inquiry, purchase request or sponsorship form (typos included) is domain portal_link with portal_form that form, never forms. Only when the person asks to fill in or submit a form; a question about an existing request ("is my purchase request approved?") is a status question, portal_form null.
 
 =====================================================================
 TURN ACT (exactly one per ask)
