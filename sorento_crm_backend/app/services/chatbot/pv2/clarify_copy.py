@@ -121,6 +121,12 @@ _COPY: dict[str, dict[str, str]] = {
         "zh": "您是指 {label} 吗？",
         "ms": "Adakah anda maksudkan {label}?",
     },
+    # N1 (fix 4): a no to that confirm asks openly.
+    "type_full_name": {
+        "en": "Which {kind} do you mean? Please type the full name.",
+        "zh": "您指的是哪个{kind}？请输入完整名称。",
+        "ms": "Sila taip nama penuh {kind} yang anda maksudkan.",
+    },
     "yes": {"en": "Yes", "zh": "是", "ms": "Ya"},
     "no": {"en": "No", "zh": "否", "ms": "Tidak"},
     "unnamed": {"en": "(unnamed)", "zh": "（未命名）", "ms": "(tiada nama)"},

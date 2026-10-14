@@ -752,6 +752,12 @@ def _answer(
             )
         raise _Miss("other")
 
+    if pending.kind == CONFIRM and picked.key == "no":
+        # N1 (fix 4): a no drops the guess and asks openly for the full name; nothing is held or fetched.
+        kind = pending.options[0].payload.get("kind")
+        asked = clarify_copy.text("type_full_name", language, kind=clarify_copy.kind_word(kind, language))
+        return _clarify(st, i, "entity", None, language, options=[], kind=kind, asked=asked), True
+
     payload_kind = picked.payload.get("kind")
     answered = picked.payload  # the item of the original ask this reply answers
     if pending.kind == "offer_handover" or payload_kind == "handover":
@@ -1378,16 +1384,17 @@ def _did_you_mean(
     return ClarifyAct(ask_index=i, about="entity", phrase=ent.phrase, pending=pending)
 
 
-#: Crew 15 Oct (a): the yes/no confirm of one guessed option; its one option is keyed "yes".
+#: Crew 15 Oct (a): the yes/no confirm of one guessed option, keyed "yes" (that option) and "no".
 CONFIRM = "clarify_confirm"
 
 
 def _confirm(st: ConversationState, i: int, ent: Entity, option: Option, language: str) -> ClarifyAct:
     """The yes/no confirm ("Did you mean <name>?") of the one option a partial word suggests: nothing numbered,
-    no code. "yes" picks it as a pick on an entity question does."""
+    no code. "yes" picks it as a pick on an entity question does; "no" asks openly (`_answer`)."""
     asked = clarify_copy.text("confirm", language, label=clarify_copy.safe_label(option.label, language))
     pick = option.model_copy(update={"key": "yes"})
-    pending = PendingQuestion(kind=CONFIRM, asked=asked, options=[pick], asked_turn=st.turn_no, misses=0)
+    no = Option(key="no", label=clarify_copy.text("no", language), payload={"value": False})
+    pending = PendingQuestion(kind=CONFIRM, asked=asked, options=[pick, no], asked_turn=st.turn_no, misses=0)
     return ClarifyAct(ask_index=i, about="confirm", phrase=ent.phrase, pending=pending)
 
 
