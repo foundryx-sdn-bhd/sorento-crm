@@ -88,6 +88,9 @@ class PendingQuestion(BaseModel):
     misses: int = 0
     v1_kind: str | None = None
     more: int = 0  # matches beyond the printed options (a capped menu)
+    # The original ask this question interrupted (domain, attachment kinds, quantity): the answer
+    # completes it instead of re-running the held subject's own domain.
+    deferred: dict | None = None
 
 
 class ConversationState(BaseModel):
