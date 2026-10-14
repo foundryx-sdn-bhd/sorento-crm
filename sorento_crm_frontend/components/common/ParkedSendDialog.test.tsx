@@ -62,8 +62,8 @@ describe('AC-SN-44 ParkedSendDialog', () => {
   it('uses inquiry_total (distinct OIs), not the per-email sum, for subtitle and total row', () => {
     const split = {
       emails: [
-        { ...PREVIEW.emails[0], inquiry_count: 1, line_count: 1, subject: 'Reserve request: OI-1 #1' },
-        { ...PREVIEW.emails[1], inquiry_count: 1, line_count: 1, subject: 'Reserve request: OI-1 #2' },
+        { ...PREVIEW.emails[0], inquiry_count: 1, line_count: 3, subject: 'Reserve request: OI-1 #1' },
+        { ...PREVIEW.emails[1], inquiry_count: 1, line_count: 4, subject: 'Reserve request: OI-1 #2' },
       ],
       inquiry_total: 1,
       unresolved: [] as { inquiry_count: number; line_count: number }[],

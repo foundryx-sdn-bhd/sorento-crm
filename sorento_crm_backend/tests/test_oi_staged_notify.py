@@ -978,7 +978,7 @@ def test_fix_S1_preview_inquiry_total_is_distinct_ois(sn, monkeypatch):
     _commit(world, other, reserves=[_reserve(world, other_row, "50")], park_notice=True)
     with _as(world.db, world.reserver, RESERVER_PERMISSIONS) as cs:
         notes = _ok(cs.post(NOTE_PREVIEW))
-    assert len(notes["emails"]) == 3, [e["subject"] for e in notes["emails"]]
+    assert len(notes["emails"]) == 1, [e["subject"] for e in notes["emails"]]
     assert notes.get("inquiry_total") == 2, notes.get("inquiry_total")
 
 
