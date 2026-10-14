@@ -23,6 +23,10 @@ derive the move. Still one parser call per turn; replies stay code templates.
   and no eval is needed to merge. Plus the PO-gate ruling.
 - **R2 Subject stack + PendingQuestion.origin.** Held -> S1, topics -> S2-S5 (same rendering as today's T-keys until R4);
   `origin` keeps the full original ask (replaces r8a `deferred`). Backward-compatible load of stored state.
+- **R1 review carry-overs into R2:** (a) only the main business `_run_answer` path writes the register; other answer
+  paths and the stock-ask render keep the previous entries, so cover them before R4 reads the register; (b) a test for
+  popping order `lines` when the Products field is hidden (fetch.py output_structurer); (c) `printed_rows` indexes
+  the unfiltered `answers` while `envelope_of` drops non-dict answers from `figures`: align the two (security nit).
 - **R3 Entity-kind registry columns.** Migration on `chatbot_entity_kinds`: parent_kinds, child_kinds, domains,
   default_domain, is_document, localized labels. Move the hard-coded tables (pv2/resolve.py:217-237 kind map,
   clarify_copy.py `_KIND_WORD`, bridge.py `V1_HINT`, apply.py `DOMAIN_BY_FOUND_KIND`, apply.py `DOCUMENT_KINDS`,
