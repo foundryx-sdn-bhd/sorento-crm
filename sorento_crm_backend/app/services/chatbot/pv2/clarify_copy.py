@@ -162,6 +162,30 @@ _STILL_NEED: dict[str, dict[str, tuple[str, str]]] = {
         "ms": ("Saya masih perlu tahu pelanggan mana yang disertakan untuk {subject}.",
                "Saya masih perlu tahu pelanggan mana yang disertakan."),
     },
+    # A question about one item of a kind (an entity, which-held or did-you-mean pick, a spec): that kind's word.
+    "which": {
+        "en": ("I still need which {kind} you mean for {subject}.", "I still need which {kind} you mean."),
+        "zh": ("我仍需要知道 {subject} 您指的是哪个{kind}。", "我仍需要知道您指的是哪个{kind}。"),
+        "ms": ("Saya masih perlu tahu {kind} yang mana satu untuk {subject}.",
+               "Saya masih perlu tahu {kind} yang mana satu."),
+    },
+    "measure": {
+        "en": ("I still need the figure to rank by for {subject}.", "I still need the figure to rank by."),
+        "zh": ("我仍需要 {subject} 的排名数据。", "我仍需要排名数据。"),
+        "ms": ("Saya masih perlukan angka untuk disusun bagi {subject}.", "Saya masih perlukan angka untuk disusun."),
+    },
+    "breakdown": {
+        "en": ("I still need which row to break down for {subject}.", "I still need which row to break down."),
+        "zh": ("我仍需要知道 {subject} 要细分哪一行。", "我仍需要知道要细分哪一行。"),
+        "ms": ("Saya masih perlu tahu baris mana yang hendak diperincikan untuk {subject}.",
+               "Saya masih perlu tahu baris mana yang hendak diperincikan."),
+    },
+    "what": {
+        "en": ("I still need what to check for {subject}.", "I still need what to check."),
+        "zh": ("我仍需要知道 {subject} 要查什么。", "我仍需要知道要查什么。"),
+        "ms": ("Saya masih perlu tahu apa yang hendak disemak untuk {subject}.",
+               "Saya masih perlu tahu apa yang hendak disemak."),
+    },
     "more": {
         "en": ("I still need more detail for {subject}.", "I still need more detail."),
         "zh": ("我仍需要 {subject} 的更多详情。", "我仍需要更多详情。"),
@@ -227,10 +251,12 @@ def carry_scope(domain: str, kind: str, named: str, subject: str, language: str 
     return asked, options
 
 
-def still_need(missing: str, subject: str | None, language: str | None) -> str:
-    """RG-1b: v1's "I still need X for Y." (`missing` a `_STILL_NEED` key, else "more")."""
+def still_need(missing: str, subject: str | None, language: str | None, kind: str | None = None) -> str:
+    """RG-1b: v1's "I still need X for Y." (`missing` a `_STILL_NEED` key, else "more"; `kind` names the item
+    a "which" line is about)."""
     with_subject, bare = _STILL_NEED.get(missing, _STILL_NEED["more"])[lang(language)]
-    return with_subject.format(subject=subject) if subject else bare
+    word = kind_word(kind, language)
+    return with_subject.format(subject=subject, kind=word) if subject else bare.format(kind=word)
 
 
 def handover_options(language: str | None) -> list[Option]:

@@ -501,7 +501,7 @@ def _one_ask(
         ):
             held.refs = set_refs(held.refs, "product", before.refs["product"], "set")  # the held product stays
         held = _carry(st, i, ask, before, held, resolver, language, qs)
-        if not qs and not qs.misses and _no_subject(held, ask):  # a code that missed named one: v1 says so
+        if not qs and _no_subject(held, ask):
             qs.append(_which_product(st, i, language))
         return _commit(st, i, held, ask, qs), False
 
@@ -544,7 +544,7 @@ def _one_ask(
     if drilled and ask.report is None and not qs:
         _plan_report(st, held, resolver, language, i, qs, today)
     held = _carry(st, i, ask, st.held, held, resolver, language, qs)
-    if not qs and not qs.misses and _no_subject(held, ask):
+    if not qs and _no_subject(held, ask):
         qs.append(_which_product(st, i, language))
     action = _commit(st, i, held, ask, qs)
     if isinstance(action, Lookup):
@@ -679,8 +679,10 @@ def _answer(
                     ask_index=i, about="entity", pending=pending.model_copy(deep=True), note=STOCK_PICK_NOT_ALL
                 ), True
             held = st.held.model_copy(deep=True)
-            for o in every:
-                held = apply_payload(held, {**o.payload, "op": "add"})
+            for n, o in enumerate(every):
+                # The first lands as a single pick would (it replaces unless its ask landed a same-kind item);
+                # the rest join it.
+                held = apply_payload(held, {**o.payload, "op": "add"} if n else o.payload)
             owed = _carry_question(st, i, held, pending.carry, resolver, language) if pending.carry else None
             if owed is not None:
                 # RG-1c: every match landed: the carry question their ask still owes, before any fetch.
@@ -757,12 +759,14 @@ def _answer(
         held = _complete_deferred(held, _deferred_of(rest))
         joined = answered.get("kind")
         joins = frozenset({joined} if joined else ())
+        found_before: frozenset[str] = frozenset()
         if pending.kind == CARRY_SCOPE:
-            # RG-1c: a carry pick lands no item; what its ask still waits on joins the items it landed.
-            joins = frozenset(k for k, refs in held.refs.items() if refs)
+            # RG-1c: a carry pick lands no item; what its ask still waits on joins the items it landed, and one
+            # that finds nothing beside them is a miss of that list, as it was in the ask.
+            joins = found_before = frozenset(k for k, refs in held.refs.items() if refs)
         held = _apply_fields(
             st, held, rest.model_copy(update={"attachment_type": None}), resolver, policy,
-            language, i, qs, refine=True, today=today, joins=joins,
+            language, i, qs, refine=True, today=today, joins=joins, found_before=found_before,
         )
     else:
         held = _complete_deferred(held, pending.deferred)  # no usable origin: state saved before R2, or a report pick
@@ -816,11 +820,14 @@ def _apply_fields(
     refine: bool,
     today: date | None = None,
     joins: frozenset[str] = frozenset(),
+    found_before: frozenset[str] = frozenset(),
 ) -> Held:
     """`base` with this ask's fields applied. An item that needs the user appends its
     question to `qs` and is left out; every other item still applies (section 3: held =
     this ask, then the unresolved items go to the resolver and are asked). `joins`: the kinds
-    already landed for this ask (a pick on one of its items), which its other items join."""
+    already landed for this ask (a pick on one of its items), which its other items join.
+    `found_before`: the kinds its ask found when it was asked, so an item of one that finds
+    nothing is a miss of that list, as it was then (a carry pick)."""
     held = base.model_copy(deep=True)
     if ask.domain:
         held.domain = ask.domain
@@ -837,7 +844,9 @@ def _apply_fields(
                 held.attachment_types = []
 
     ask, filtered = _report_entity_filters(held, ask, resolver, refine=refine)
-    held = _apply_entities(st, held, base, ask, resolver, policy, language, i, qs, refine=refine, joins=joins)
+    held = _apply_entities(
+        st, held, base, ask, resolver, policy, language, i, qs, refine=refine, joins=joins, found_before=found_before
+    )
     held = _apply_specs(st, held, ask.specs, resolver, policy, language, i, qs)
 
     if ask.attachment_type:
@@ -874,7 +883,7 @@ def _apply_fields(
         held.report = reports.edit_report(held.report if refine else None, ask.report, cleared=ask.cleared)
         if held.report is not None:
             _plan_report(st, held, resolver, language, i, qs, today)
-    held = _expand_family(_expand_sets(held, resolver, qs), resolver, qs)
+    held = _expand_family(_expand_sets(st, held, ask, resolver, policy, language, i, qs), resolver, qs)
     return held
 
 
@@ -1038,6 +1047,7 @@ def _apply_entities(
     *,
     refine: bool,
     joins: frozenset[str] = frozenset(),
+    found_before: frozenset[str] = frozenset(),
 ) -> Held:
     to_resolve: list[Entity] = []
     for ent in _fold_quantity_only(ask.entities):
@@ -1101,8 +1111,7 @@ def _apply_entities(
         refs = list(getattr(res, "refs", None) or [])
         options = list(getattr(res, "options", None) or [])
         if (
-            listed[ent.kind] >= 2
-            and ent.kind in found
+            (listed[ent.kind] >= 2 and ent.kind in found or ent.kind in found_before)
             and (status == "none" or (status == "ambiguous" and getattr(res, "did_you_mean", False)))
             and isinstance(qs, _Qs)
         ):
@@ -1532,29 +1541,39 @@ def _expand_family(held: Held, resolver: ResolverLike, qs: Any) -> Held:
 SET_DOMAINS = frozenset({"inventory"})
 
 
-def _expand_sets(held: Held, resolver: ResolverLike, qs: Any) -> Held:
+def _expand_sets(
+    st: ConversationState, held: Held, ask: Ask, resolver: ResolverLike, policy: ClarifyPolicy, language: str,
+    i: int, qs: list[ClarifyAct],
+) -> Held:
     """RG-5 (#1443): in the set domains a held set code becomes its member products, each counted as the asked
     quantity times its quantity in the set (none asked: none). A set with no visible members (deactivated since
-    it was resolved) is no set match (RG-5b): its code is a miss, sent unresolved as a fresh ask of it is."""
+    it was resolved) is no set match (RG-5b): its code is resolved again as a fresh ask of it is, beside the
+    other held products."""
     members_of = getattr(resolver, "set_members", None)
     refs = held.refs.get("product") or []
     if held.domain not in SET_DOMAINS or members_of is None or not any(r.set_id for r in refs):
         return held
     out: list[ResolvedRef] = []
+    stale: list[Entity] = []
     for ref in refs:
-        if not ref.set_id:
-            out.append(ref)
+        members = members_of(ref.set_id) if ref.set_id else []
+        if ref.set_id and not members:
+            stale.append(Entity(kind="product", key=None, phrase=ref.phrase or ref.key, op="add",
+                                refers_to_held=False, quantity=ref.quantity))
             continue
-        members = members_of(ref.set_id)
         if not members:
-            if isinstance(qs, _Qs):
-                qs.misses.append(Miss(kind="product", phrase=ref.phrase or ref.key))
+            out.append(ref)
             continue
         for member, per_set in members:
             qty = ref.quantity.model_copy(update={"number": ref.quantity.number * per_set}) if ref.quantity else None
             out.append(member.model_copy(update={"phrase": ref.phrase, "quantity": qty}))
     held = held.model_copy(deep=True)
     held.refs = set_refs(held.refs, "product", out, "set")
+    if stale:
+        held = _apply_entities(
+            st, held, held, ask.model_copy(update={"entities": stale}), resolver, policy, language, i, qs,
+            refine=False, found_before=frozenset({"product"} if out else ()),
+        )
     return held
 
 
@@ -1851,7 +1870,16 @@ def _subject(held: Held) -> list[tuple[str, str]]:
 
 
 #: RG-1b: what the cap's line says is missing, per question kind (v1 `clarify_policy._MISSING_WORDS`).
-STILL_MISSING = {"clarify_report_period": "period", "clarify_attachment_type": "attachment_type"}
+STILL_MISSING = {
+    "clarify_report_period": "period", "clarify_attachment_type": "attachment_type",
+    "clarify_report_measure": "measure", "clarify_report_breakdown": "breakdown",
+    "clarify_other": "what", "clarify_domain": "what",
+}
+#: The questions about one item of a kind: the line names the kind its options carry, else this one.
+STILL_WHICH = {
+    "clarify_entity": "product", "clarify_which_held": "product", "clarify_did_you_mean": "product",
+    "clarify_spec_attribute": "spec",
+}
 
 
 def _still_need(st: ConversationState, i: int, pending: PendingQuestion, language: str, mode: str) -> ClarifyAct:
@@ -1861,7 +1889,14 @@ def _still_need(st: ConversationState, i: int, pending: PendingQuestion, languag
     carried = next((o.payload["clear"] for o in pending.options if o.payload.get("clear")), None)  # carry pick 2
     refs = st.held.refs.get(carried) if carried else st.held.refs.get("product") or st.held.refs.get("customer")
     missing = carried or STILL_MISSING.get(pending.kind, "more")
-    line = clarify_copy.still_need(missing, _labels(refs or [], language) or None, language)
+    kind = None
+    if not carried and pending.kind in STILL_WHICH:
+        missing = "which"
+        kind = next(
+            (o.payload["kind"] for o in pending.options if o.payload.get("kind") not in (None, "handover")),
+            STILL_WHICH[pending.kind],
+        )
+    line = clarify_copy.still_need(missing, _labels(refs or [], language) or None, language, kind=kind)
     if mode == "refer":
         from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
