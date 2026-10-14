@@ -1,6 +1,6 @@
 # PLAN: HA-MONITOR (outside uptime checks, heartbeats, Cloudflare switch)
 
-**Status:** BUILT, in review (small fix track: no migration, no auth/RBAC change, no new ingest surface).
+**Status:** IN REVIEW (small fix track: no migration, no auth/RBAC change, no new ingest surface).
 Lane `HA-MONITOR`, part of the crew HA plan (Tier 0, owner approved 15 Oct).
 
 ## Journey
@@ -11,6 +11,8 @@ dead for 18 h, so liveness alone is not enough: the real paths (scheduler tick, 
 call) must prove themselves by heartbeat. When Cloudflare itself is the outage (18 Nov 2025, the
 dashboard login was down too), the owner needs an API-only switch that unproxies the Sorento hosts
 and nothing else in the shared zone.
+
+UAC: `ha-monitor-14oct-acceptance-criteria.md`.
 
 ## Deliverables
 

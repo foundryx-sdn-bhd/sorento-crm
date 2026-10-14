@@ -23,7 +23,7 @@ SCRIPT = ROOT / "scripts" / "ops" / "cf-proxy.py"
 pytestmark = pytest.mark.skipif(not SCRIPT.parent.parent.is_dir(), reason="scripts/ not present (backend-only checkout)")
 
 TOKEN = "tok-SECRET-do-not-print"
-ZONE_ID = "zone-1"
+ZONE_ID = "023e105f4ecef8ad9ca31a8372d0c353"
 ORIGIN_IP = "203.0.113.77"
 OTHER_IP = "198.51.100.9"
 

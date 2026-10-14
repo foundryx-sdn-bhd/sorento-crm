@@ -80,7 +80,7 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.HC_N8N_URL }}",
+        "url": "REPLACE_WITH_HC_N8N_URL",
         "options": {
           "timeout": 10000
         }

@@ -923,7 +923,9 @@ def start_scheduler():
     logger.info(
         "Scheduler started: scheduled tasks heartbeat (every 10s), email outbox drainer "
         "(every %ds), AI trace sweep (daily), chatbot delegated sweep (every minute), "
-        "SPO container relink sweep (daily), AutoCount pull advance (every 30s)",
+        "SPO container relink sweep (daily), AutoCount pull advance (every 30s), "
+        "Healthchecks heartbeat (every %dm, only when HC_SCHEDULER_URL is set)",
         max(1, drain_seconds),
+        HC_SCHEDULER_PING_MINUTES,
     )
     return scheduler

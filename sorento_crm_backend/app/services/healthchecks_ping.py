@@ -4,7 +4,8 @@ An outside service that alerts when a ping stops arriving. The ping must never b
 able to hurt the caller: no URL means nothing happens, the HTTP call has a short
 timeout, it runs on its own daemon thread (the caller never waits on it), and every
 error is swallowed into a log line. The ping URL itself is never logged, because
-anyone holding it can fake a heartbeat.
+anyone holding it can fake a heartbeat. That is why this uses urllib and not httpx:
+httpx logs every request's full URL at INFO, and the worker logs INFO.
 
 Runbook: documentation/runbooks/monitoring.md.
 """
@@ -12,8 +13,7 @@ from __future__ import annotations
 
 import logging
 import threading
-
-import httpx
+import urllib.request
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +23,14 @@ PING_TIMEOUT_SECONDS = 5.0
 def _send(url: str) -> bool:
     """One GET to the ping URL. True on a 2xx answer; never raises."""
     try:
-        response = httpx.get(url, timeout=PING_TIMEOUT_SECONDS)
+        with urllib.request.urlopen(url, timeout=PING_TIMEOUT_SECONDS) as response:
+            status = response.status
     except Exception as exc:
+        # Only the type: an HTTPError's text carries the URL.
         logger.warning("Healthchecks ping failed: %s", type(exc).__name__)
         return False
-    if not 200 <= response.status_code < 300:
-        logger.warning("Healthchecks ping answered HTTP %s", response.status_code)
+    if not 200 <= status < 300:
+        logger.warning("Healthchecks ping answered HTTP %s", status)
         return False
     return True
 

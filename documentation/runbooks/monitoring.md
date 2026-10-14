@@ -23,8 +23,9 @@ Never write the real values into the repo, a PR or a comment.
 | `<CRM_ORIGIN>` | public IPv4 of the CRM box |
 | `<N8N_HOST>` | public IPv4 of the n8n box |
 | `<SS_HOST>` | public IPv4 of the shared-service box |
+| `<CHAT_HOST>` | public IPv4 (or the CNAME target) behind `chat.foundryx.my` |
+| `<OFFICE_IP>` | the office's public IPv4 (only if it is static) |
 | `<PROD_COMPOSE>` | the CRM box's compose: `/opt/sorento-crm2/docker-compose.yml` |
-| `<N8N_COMPOSE>` | the n8n box's compose file |
 | `<HC_SCHEDULER_URL>` | ping URL of the Healthchecks check `sorento-scheduler` |
 | `<HC_N8N_URL>` | ping URL of the Healthchecks check `sorento-n8n-bot-path` |
 | `<HC_KUMA_URL>` | ping URL of the Healthchecks check `kuma-mac-mini` |
@@ -198,32 +199,30 @@ Its check node also reads the MCP answer's text: when the CRM backend is down th
 answers `isError: false` with `{"error": ...}` inside the text (seen locally on 14 Oct), so a
 plain HTTP 200 check would pass while the bot is broken.
 
-1. On the n8n box, give n8n the ping URL (n8n reads `$env` only with env access allowed):
+1. Nothing to change on the n8n box. The ping URL goes into the workflow itself (step 5 below).
 
-   ```bash
-   sudo cp <N8N_COMPOSE> <N8N_COMPOSE>.bak-hc
-   sudo nano <N8N_COMPOSE>     # under the n8n service's environment: add
-   #   - HC_N8N_URL=<HC_N8N_URL>
-   #   - N8N_BLOCK_ENV_ACCESS_IN_NODE=false     (only if it is not already set)
-   sudo docker compose up -d n8n
-   ```
-
-   If you would rather not allow env access, skip this and in step 4 paste `<HC_N8N_URL>` into
-   the "Ping Healthchecks" node's URL field instead of `{{ $env.HC_N8N_URL }}`.
+   Do **not** turn on `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` for this: it lets every expression
+   and Code node in every workflow (the bot workflows that read WhatsApp text included) read the
+   n8n container's whole environment, which holds `N8N_ENCRYPTION_KEY` (it decrypts every stored
+   credential) and the database passwords.
 2. n8n > Workflows > Add workflow > the "..." menu > **Import from File** > pick
    `n8n-heartbeat-workflow.json` (download it from the repo).
 3. Node **DB read**: in Credential, pick the existing `sorento-crm-db`.
 4. Node **MCP call**: set URL to `<MCP_URL>` (open the bot workflow's MCP node and copy its
-   endpoint exactly). If the bot's MCP node sends a header (for example an API key), add the
-   same header here.
-5. Press **Test workflow**. Check: all five nodes go green, and `sorento-n8n-bot-path` in
+   endpoint exactly). If the bot's MCP node authenticates (for example an API-key header), set
+   Authentication > Generic Credential Type > **Header Auth** and pick the same credential the
+   bot uses. Do not paste a key as a plain header: plain headers are saved in the workflow and
+   show up in every export.
+5. Node **Ping Healthchecks**: replace `REPLACE_WITH_HC_N8N_URL` in its URL field with
+   `<HC_N8N_URL>`.
+6. Press **Test workflow**. Check: all five nodes go green, and `sorento-n8n-bot-path` in
    Healthchecks shows a ping.
-6. Toggle **Active** on, and save.
+7. Toggle **Active** on, and save.
 
 - Check: the next day, the n8n executions list shows no failed runs of this workflow (the
   workflow keeps only failed executions, so the list stays small).
 - Test once: deactivate it; the Healthchecks alert arrives within about 15 minutes; activate it.
-- Rollback: deactivate the workflow; restore `<N8N_COMPOSE>.bak-hc` and `up -d n8n`.
+- Rollback: deactivate the workflow (or delete it).
 
 ## 5. Backup and restore-test pings
 
@@ -290,25 +289,38 @@ Exit code 0 = done, 1 = something failed or was refused (read the output), 2 = c
 
 ### Now, before any emergency (10 minutes)
 
+**What this token can do.** Cloudflare cannot limit a token to some records of a zone. "DNS
+Edit" on `foundryx.my` can rewrite **every** record in it, other clients' hosts included. The
+script's allowlist protects against the script's own mistakes, not against someone who copies
+the token. So keep as few copies as possible and give it an end date.
+
 1. Cloudflare dashboard > My Profile > API Tokens > Create Token > "Create Custom Token".
-   Name `sorento-cf-proxy`. Permissions: **Zone / DNS / Edit** and **Zone / Zone / Read**.
-   Zone Resources: **Include / Specific zone / foundryx.my**. Create, and copy the token.
-2. On the Mac mini **and** your laptop (no Cloudflare dashboard needed later):
+   - Name `sorento-cf-proxy`.
+   - Permissions: **Zone / DNS / Edit** and **Zone / Zone / Read**.
+   - Zone Resources: **Include / Specific zone / foundryx.my**.
+   - Client IP Address Filtering: if the office has a static IP, **Is in** `<OFFICE_IP>`
+     (then the token only works from the office; skip this if the IP changes).
+   - TTL: an **End Date** about 6 months out; the quarterly check below renews it.
+   - Create, and copy the token.
+2. On the **Mac mini only** (it is in the office and always on). If you want it on the laptop
+   too, keep it in your password manager and write the file only during an emergency.
 
    ```bash
    mkdir -p ~/.config/sorento && chmod 700 ~/.config/sorento
-   pbpaste > ~/.config/sorento/cf.token && chmod 600 ~/.config/sorento/cf.token   # token on the clipboard
+   pbpaste | tr -d '[:space:]' > ~/.config/sorento/cf.token && chmod 600 ~/.config/sorento/cf.token
+   pbcopy < /dev/null      # clear the clipboard
    export CF_TOKEN_FILE=~/.config/sorento/cf.token
    python3 scripts/ops/cf-proxy.py status
    ```
 
+   The file must hold the token alone (no label, no comment); the script refuses anything else.
    Check: four hosts listed, each `proxied ttl=auto`; exit code 0 (`echo $?`).
 3. Dry run, to see the plan: `python3 scripts/ops/cf-proxy.py off`. Check: it says
    `Dry run: ... Nothing was written`, and `status` still shows `proxied`.
 - Rollback: delete the token in Cloudflare (My Profile > API Tokens).
 
-Do this check every 3 months too (calendar reminder): `status` still works, and the token has
-not expired.
+Every 3 months (calendar reminder): run `status`, and roll the token's end date forward in
+Cloudflare (My Profile > API Tokens > the token > Roll, or edit its TTL).
 
 ### When to use it
 
@@ -334,7 +346,11 @@ echo | openssl s_client -connect <CRM_ORIGIN>:443 -servername fe-sorento.foundry
 ```
 
 - Check: the first prints `"status":"healthy"`; the second shows a Let's Encrypt issuer and an
-  end date in the future. Repeat with `<N8N_HOST>` / `automate-sorento` and `<SS_HOST>` / `ss`.
+  end date in the future. Repeat the `openssl` line for all four hosts:
+  `<N8N_HOST>` / `automate-sorento.foundryx.my`, `<SS_HOST>` / `ss.foundryx.my`, and
+  `<CHAT_HOST>` / `chat.foundryx.my`. If `chat` is a CNAME to a third-party service (or a
+  Cloudflare Tunnel), it will not work unproxied: tell crew so it can be dropped from the
+  script's allowlist before an emergency, not during one.
 
 What makes it work today (crew checked 15 Oct): the origin certificates are **Let's Encrypt**,
 so browsers trust them, and the Hostinger firewall allows **443 from all**. If either changes,
