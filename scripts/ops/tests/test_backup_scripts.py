@@ -44,6 +44,7 @@ echo "docker $*" >> "$FAKE_LOG"
 case "$1" in
   run) [ -n "${FAKE_DOCKER_RUN_FAIL:-}" ] && exit 1; echo fakecontainerid; exit 0 ;;
   rm) exit 0 ;;
+  info) echo "${FAKE_DOCKER_ROOT:-/var/lib/docker}"; exit 0 ;;
   ps) [ -n "${FAKE_DOCKER_PS_FAIL:-}" ] && exit 1; for c in ${FAKE_DOCKER_PS:-}; do echo "$c"; done; exit 0 ;;
   exec)
     shift
@@ -66,6 +67,25 @@ case "$1" in
     esac ;;
 esac
 exit 0
+""",
+    "nice": r"""#!/usr/bin/env bash
+echo "nice $*" >> "$FAKE_LOG"
+[ "$1" = "-n" ] && shift 2
+exec "$@"
+""",
+    "ionice": r"""#!/usr/bin/env bash
+echo "ionice $*" >> "$FAKE_LOG"
+while [ $# -gt 0 ]; do case "$1" in -c*) [ "$1" = "-c" ] && shift; shift ;; *) break ;; esac; done
+exec "$@"
+""",
+    # df -PB1 <path>: 1 TB free, or 10 bytes for $FAKE_DF_LOW_PATH
+    "df": r"""#!/usr/bin/env bash
+echo "df $*" >> "$FAKE_LOG"
+path="${@: -1}"
+avail=1000000000000
+[ -n "${FAKE_DF_LOW_PATH:-}" ] && [ "$path" = "$FAKE_DF_LOW_PATH" ] && avail=10
+echo "Filesystem 1-blocks Used Available Capacity Mounted"
+echo "fakefs 2000000000000 0 $avail 0% /"
 """,
     "pg_dump": r"""#!/usr/bin/env bash
 echo "pg_dump $*" >> "$FAKE_LOG"
@@ -148,7 +168,11 @@ def env(tmp_path):
         "RESTORE_READY_TIMEOUT": "5",
         "SANITY_TABLES": "users customers orders products audit_logs",
         "SANITY_LATEST": "audit_logs.changed_at",
+        "DEPLOY_LOCK_FILE": str(tmp_path / "deploy" / ".deploy.lock"),
+        "DEPLOY_LOCK_RETRY": "1",
+        "FAKE_DOCKER_ROOT": str(tmp_path / "dockerroot"),
     }
+    (tmp_path / "deploy").mkdir()
     return e, tmp_path
 
 
@@ -443,7 +467,8 @@ def runbook_env_file(tmp, **overrides):
 
 def bare(e):
     keep = ("PATH", "HOME", "FAKE_LOG", "FAKE_REMOTE", "FAKE_DUMP_SQL", "BACKUP_DIR", "LOCK_FILE",
-            "RESTORE_WORK_DIR", "RESTORE_LOCK_FILE", "RESTORE_READY_TIMEOUT")
+            "RESTORE_WORK_DIR", "RESTORE_LOCK_FILE", "RESTORE_READY_TIMEOUT", "DEPLOY_LOCK_FILE",
+            "DEPLOY_LOCK_RETRY", "FAKE_DOCKER_ROOT")
     return {k: v for k, v in e.items() if k in keep}
 
 
@@ -575,3 +600,120 @@ def test_restore_docker_down_exits_4(env):
     r = run(RESTORE, e, HC_RESTORE_URL=HCR, FAKE_DOCKER_PS_FAIL="1")
     assert r.returncode == 4
     assert curl_urls(tmp)[-1] == f"{HCR}/fail"
+
+
+# ------------------------------------------------------------- crew audit round (16 GB box, 10 Sep OOM)
+
+
+def docker_run_argv(tmp):
+    runs = [c for c in calls(tmp) if c.startswith("docker run")]
+    assert len(runs) == 1
+    return shlex.split(runs[0])
+
+
+def flag(argv, name):
+    return argv[argv.index(name) + 1]
+
+
+def test_restore_container_is_capped_and_oom_first(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e)
+    assert r.returncode == 0, r.stderr
+    argv = docker_run_argv(tmp)
+    assert flag(argv, "--memory") == "2g"
+    assert flag(argv, "--memory-swap") == "2g"
+    assert flag(argv, "--oom-score-adj") == "1000"
+    assert flag(argv, "--cpus") == "1"
+
+
+def test_restore_memory_override_and_validation(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e, RESTORE_MEMORY="3g")
+    assert r.returncode == 0, r.stderr
+    argv = docker_run_argv(tmp)
+    assert flag(argv, "--memory") == "3g" and flag(argv, "--memory-swap") == "3g"
+    r = run(RESTORE, e, RESTORE_MEMORY="3g; rm -rf /")
+    assert r.returncode == 2
+
+
+def test_restore_stream_runs_niced_and_idle_io(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e)
+    assert r.returncode == 0, r.stderr
+    log = calls(tmp)
+    nice = [c for c in log if c.startswith("nice -n 19 ionice -c3 gzip -dc")]
+    assert nice, log
+    nice_psql = [c for c in log if c.startswith("nice -n 19 ionice -c3 docker exec -i")]
+    assert nice_psql, log
+
+
+def test_restore_waits_for_deploy_then_fails(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    with open(e["DEPLOY_LOCK_FILE"], "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r = run(RESTORE, e, HC_RESTORE_URL=HCR, DEPLOY_LOCK_WAIT="2")
+    assert r.returncode == 7, r.stdout + r.stderr
+    assert curl_urls(tmp) == [f"{HCR}/start", f"{HCR}/fail"]
+    assert not any(c.startswith("rclone copyto") or c.startswith("docker run") for c in calls(tmp))
+
+
+def test_restore_lock_is_shared_not_exclusive(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    with open(e["DEPLOY_LOCK_FILE"], "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        r = run(RESTORE, e, DEPLOY_LOCK_WAIT="2")
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_restore_holds_deploy_lock_while_running(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    probe = tmp / "probe.log"
+    # the fake psql restore tries an exclusive lock, as a deploy would; it must fail while we run
+    fake = tmp / "bin" / "docker"
+    fake.write_text(fake.read_text().replace(
+        'if [ -n "${stdin:-}" ]; then cat > /dev/null;',
+        'if [ -n "${stdin:-}" ]; then cat > /dev/null; '
+        '( flock -x -n 7 && echo got >> "$PROBE" || echo blocked >> "$PROBE" ) 7>>"$DEPLOY_LOCK_FILE";'))
+    r = run(RESTORE, e, PROBE=probe)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert probe.read_text().split() == ["blocked"]
+
+
+def test_restore_skips_deploy_lock_where_no_deploy_dir(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e, DEPLOY_LOCK_FILE=tmp / "nope" / ".deploy.lock")
+    assert r.returncode == 0, r.stderr
+    assert "no deploy lock" in r.stdout
+
+
+def test_deploy_lock_default_path_is_the_shared_one():
+    assert 'DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/opt/sorento-crm2/.deploy.lock}"' in RESTORE.read_text()
+
+
+@pytest.mark.parametrize("low", ["work", "docker"])
+def test_restore_disk_preflight(env, low):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    path = e["RESTORE_WORK_DIR"] if low == "work" else e["FAKE_DOCKER_ROOT"]
+    r = run(RESTORE, e, HC_RESTORE_URL=HCR, FAKE_DF_LOW_PATH=path)
+    assert r.returncode == 4, r.stdout + r.stderr
+    assert "free" in r.stdout
+    assert curl_urls(tmp)[-1] == f"{HCR}/fail"
+    assert not any(c.startswith("docker run") for c in calls(tmp))
+
+
+def test_restore_disk_preflight_checks_both_paths(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e)
+    assert r.returncode == 0, r.stderr
+    dfs = [c for c in calls(tmp) if c.startswith("df ")]
+    assert any(c.endswith(e["RESTORE_WORK_DIR"]) for c in dfs)
+    assert any(c.endswith(e["FAKE_DOCKER_ROOT"]) for c in dfs)
