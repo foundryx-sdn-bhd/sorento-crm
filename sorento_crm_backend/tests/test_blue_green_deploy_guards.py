@@ -59,7 +59,9 @@ if args[0] == "compose":
         open(os.path.join(d, "child_pid"), "w").write(str(p.pid))
     if cmd == "ps":
         svc = rest[-1]
-        if svc == "db":
+        if svc.startswith("backend_") and "-a" not in rest and os.path.exists(os.path.join(d, "active_stopped")):
+            print("")  # a stopped container is listed by `ps -a` only
+        elif svc == "db":
             print(rd("db_cid", "cid-db").strip())
         else:
             print("cid-" + svc)
@@ -82,7 +84,11 @@ if args[0] == "compose":
             sys.stdout.write("610; 1259 25725 TABLE public alembic_version sorento\n")
             if not os.path.exists(os.path.join(d, "snapshot_no_alembic")):
                 sys.stdout.write("9531; 0 25725 TABLE DATA public alembic_version sorento\n")
-            sys.stdout.write("9532; 0 25800 TABLE DATA public users sorento\n")
+            # A real TOC is ~240 KB (3103 lines for the CI schema); alembic_version sits ~40 KB
+            # in. Pad well past the 64 KB pipe buffer so an early-exit reader under pipefail
+            # (printf | grep -q) is caught.
+            for n in range(5000):
+                sys.stdout.write(f"{10000 + n}; 0 {30000 + n} TABLE DATA public padding_table_{n:05d} sorento\n")
         elif "pg_restore" in joined:
             data = sys.stdin.read()
             if not data.startswith("PGDMP"):
@@ -547,7 +553,7 @@ def test_deploy_db_name_in_deploy_env_wins(box):
 
 @pytest.mark.parametrize(
     "backend_env",
-    ["PATH=/usr/bin\n", "DATABASE_URL=postgresql://u:p@db:5432\n", "DATABASE_URL=postgresql://u:p@db/x;rm -rf /\n"],
+    ["PATH=/usr/bin\n", "DATABASE_URL=postgresql://u:p@db:5432\n", "DATABASE_URL=postgresql://u:p@db/x;rm\n"],
     ids=["no-url", "no-db-in-url", "unsafe-name"],
 )
 def test_an_unresolvable_db_name_fails_loudly_before_anything_changes(box, backend_env):
@@ -657,3 +663,31 @@ def test_an_unknown_argument_is_refused(box):
     r = _run(box, args=("--prefligth",))
     assert r.returncode == 2
     assert _calls(box) == []
+
+
+# --- reviewer round 2 -----------------------------------------------------------------
+
+
+def test_the_stub_toc_is_bigger_than_a_pipe_buffer(box):
+    """Guards the guard: the alembic check must be exercised at real TOC size."""
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    dumps = list((box["root"] / "backups" / "pre-migrate").glob("*.dump"))
+    assert dumps and dumps[0].stat().st_size > 128 * 1024
+
+
+def test_the_db_name_resolves_from_a_stopped_active_backend(box):
+    """A recovery deploy or rollback while the active backend is down still knows the DB."""
+    (box["stub"] / "active_stopped").write_text("1")
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "DUMP_DB=sorento_app" in _dump_call(box)
+
+
+def test_a_slash_in_the_query_string_does_not_change_the_db_name(box):
+    (box["stub"] / "backend_env").write_text(
+        "DATABASE_URL=postgresql+psycopg2://app:p@db:5432/sorento_app?host=/var/run/postgresql&sslmode=disable\n"
+    )
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "DUMP_DB=sorento_app" in _dump_call(box)

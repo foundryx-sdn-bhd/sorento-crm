@@ -115,7 +115,7 @@ def test_the_ssh_budget_matches_the_release_step(job):
     deploy_job = _load(DEPLOY)["jobs"]["build-and-deploy"]
     want = _steps(deploy_job)["Deploy to Server (blue/green)"]["with"]["command_timeout"]
     got = _steps(job)["Roll back on the server (blue/green)"]["with"]["command_timeout"]
-    assert got == want == "100m", "worker grace 60m + lock wait 20m + dump and the rest"
+    assert got == want == "100m", "worker grace 60m + lock wait 10m + dump and the rest"
 
 
 def test_the_release_tag_moves_only_after_the_server_step_succeeded(job):
