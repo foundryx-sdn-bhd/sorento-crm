@@ -660,13 +660,32 @@ async def health_check():
             prompt_version = _production_prompt_version(db)
         finally:
             db.close()
-        return {
-            "status": "healthy",
-            "git_sha": GIT_SHA,
-            "prompt_version": prompt_version,
-        }
     except Exception as e:
         return JSONResponse(
             status_code=503,
             content={"status": "unhealthy", "error": str(e)[:200]},
         )
+    # Reported, never gating: Redis or the scheduler being down must not hold a deploy.
+    from app.services import health_probes
+
+    return {
+        "status": "healthy",
+        "git_sha": GIT_SHA,
+        "prompt_version": prompt_version,
+        **(await health_probes.collect()),
+    }
+
+
+@app.get("/health/deep")
+async def health_deep():
+    """For monitors, not for blue/green: 503 unless the database, Redis and the scheduler are
+    all OK. States only, no error text (unauthenticated route)."""
+    from app.services import health_probes
+
+    database = await health_probes.bounded_database_state()
+    probes = await health_probes.collect()
+    ok = database == "ok" and probes["redis"] == "ok" and probes["scheduler"]["status"] == "ok"
+    return JSONResponse(
+        status_code=200 if ok else 503,
+        content={"status": "healthy" if ok else "unhealthy", "database": database, **probes},
+    )
