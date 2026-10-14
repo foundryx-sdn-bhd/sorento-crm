@@ -49,7 +49,6 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
   const seriesIndex = (series.data ?? []).findIndex((item) => item.id === seriesId);
   const { create, update, remove } = useSeriesMutations();
   const brands = useBrandSelectQuery();
-  const categories = useProductCategorySelectQuery();
 
   const row: ProjectSeries | null = React.useMemo(
     () => (series.data ?? []).find((item) => item.id === seriesId) ?? null,
@@ -58,6 +57,7 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
 
   const [name, setName] = React.useState('');
   const [brandId, setBrandId] = React.useState('');
+  const categories = useProductCategorySelectQuery(brandId || undefined);
   const [description, setDescription] = React.useState('');
   const [isActive, setIsActive] = React.useState(true);
   const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
@@ -124,17 +124,22 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
     [brandId, brands.data],
   );
 
-  const categoryOptions = React.useMemo(
-    () =>
-      (categories.data ?? [])
-        .filter((category) => category.is_active || categoryIds.includes(category.id))
-        .map((category) => ({
-          value: category.id,
-          label: category.category_name,
-          description: category.category_code,
-        })),
-    [categories.data, categoryIds],
-  );
+  const categoryOptions = React.useMemo(() => {
+    const fetched = (categories.data ?? [])
+      .filter((category) => category.is_active || categoryIds.includes(category.id))
+      .map((category) => ({
+        value: category.id,
+        label: category.category_name,
+        description: category.category_code,
+      }));
+    // A brand change can drop an already-picked category from the fetched list; keep it
+    // labelled by name so it never shows as a bare id.
+    const known = new Set(fetched.map((option) => option.value));
+    const kept = (row?.category_ids ?? [])
+      .map((id, index) => ({ value: id, label: row?.category_names?.[index] ?? '' }))
+      .filter((option) => categoryIds.includes(option.value) && !known.has(option.value) && option.label);
+    return [...fetched, ...kept];
+  }, [categories.data, categoryIds, row]);
 
   return (
     <Container>

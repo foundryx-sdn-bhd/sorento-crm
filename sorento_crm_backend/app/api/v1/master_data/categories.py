@@ -19,6 +19,7 @@ from app.schemas.product import (
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.services.error_handler import handle_internal_error
 from app.services.uuid_list_param import parse_uuid_list
+from app.services.uuid_path_param import validate_uuid_path
 from app.services.stock_ask_limits import guard_chatbot_limits_edit, NULL_LIMITS
 
 router = APIRouter()
@@ -122,6 +123,10 @@ async def get_categories(
 @router.get("/select", response_model=List[ProductCategorySelectItem])
 async def get_categories_select(
     query: Optional[str] = Query(None),
+    brand_id: Optional[str] = Query(
+        None,
+        description="Only categories holding an active product of this brand, plus their ancestors.",
+    ),
     # Any signed-in user (owner ruling 1 Oct 2026, never-stuck L10); an API key still
     # needs the slug. The list, detail and write routes keep their slugs.
     current_user: dict = Depends(require_session_or_api_key_permission("master_data.product_categories.view")),
@@ -130,9 +135,32 @@ async def get_categories_select(
     """Get product categories for select dropdowns."""
     try:
         from sqlalchemy import or_
-        from app.models.product import ProductCategory
+        from app.models.product import Product, ProductCategory
         q = db.query(ProductCategory).filter(ProductCategory.is_active == True)
-        
+
+        if brand_id:
+            validate_uuid_path(brand_id, resource="Brand")
+            holding = {
+                row[0]
+                for row in db.query(Product.category_id)
+                .filter(Product.brand_id == brand_id, Product.is_active == True)
+                .filter(Product.category_id.isnot(None))
+                .distinct()
+                .all()
+            }
+            parent_of = {
+                row[0]: row[1]
+                for row in db.query(ProductCategory.id, ProductCategory.parent_category_id)
+                .filter(ProductCategory.is_active == True)
+                .all()
+            }
+            keep = set()
+            for cid in holding:
+                while cid and cid in parent_of and cid not in keep:
+                    keep.add(cid)
+                    cid = parent_of[cid]
+            q = q.filter(ProductCategory.id.in_(keep))
+
         if query:
             q = q.filter(
                 or_(
@@ -141,7 +169,7 @@ async def get_categories_select(
                 )
             )
         q = q.order_by(ProductCategory.display_order.asc(), ProductCategory.category_name.asc())
-        categories = q.limit(100).all()
+        categories = q.all()
         return categories
     except Exception as e:
         raise handle_internal_error(str(e))

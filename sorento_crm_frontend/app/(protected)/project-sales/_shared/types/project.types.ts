@@ -832,6 +832,8 @@ export interface SeriesProductRow {
    * second implementation in the browser could disagree with the one that blocks a save.
    */
   derived_floor?: string | null;
+  /** Of the series' brand and under one of its categories. Out-of-scope rows can only be removed. */
+  in_scope: boolean;
 }
 
 /** A list of product codes to load onto a series (S18). */

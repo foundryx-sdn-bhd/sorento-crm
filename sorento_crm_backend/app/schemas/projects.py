@@ -987,6 +987,8 @@ class SeriesProductRowResponse(BaseModel):
     #: A PERCENT: 6 means 6%.
     max_discount_pct: Optional[Decimal] = None
     derived_floor: Optional[Decimal] = None
+    #: True when the product is of the series' brand and under one of its categories.
+    in_scope: bool = False
 
 
 class SeriesProductPricingUpdate(BaseModel):
