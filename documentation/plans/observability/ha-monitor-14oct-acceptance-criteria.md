@@ -29,8 +29,12 @@ Plan: `PLAN-ha-monitor-14oct.md`. Tests: `sorento_crm_backend/tests/test_healthc
 ## Runbook (RB)
 
 - **RB-1** `documentation/runbooks/monitoring.md` lists the Kuma monitors (name, URL, interval,
-  keyword or status, threshold) for fe-sorento `/health`, n8n `/healthz`, shared service
-  `/health`, the frontend `/`, and TLS expiry for each host.
+  keyword or status, threshold) for the CRM backend (`/api/v1/health`, since prod's public
+  `/health` is nginx's own answer), n8n `/healthz`, the shared service (`chat.foundryx.my/be/health`),
+  the frontend `/`, and a TLS-expiry monitor for each host, plus a monthly origin cert re-check.
+- **RB-7** `GET /api/v1/health` answers without credentials: 200 `{"status":"healthy","checks":{"database":"ok"}}`,
+  503 `{"status":"unhealthy","checks":{"database":"error"}}` when the DB fails, and no error text,
+  git sha or prompt version. (`tests/test_api_v1_health.py`)
 - **RB-2** Kuma pushes to a Healthchecks check every minute (watch the watcher).
 - **RB-3** Healthchecks checks: scheduler, n8n heartbeat, nightly backup, restore test, with
   schedules and grace periods.
@@ -43,8 +47,8 @@ Plan: `PLAN-ha-monitor-14oct.md`. Tests: `sorento_crm_backend/tests/test_healthc
 
 - **CF-1** `status|off|on [--yes]`; only `--yes` writes, the default prints the plan.
   (`test_off_without_yes_is_a_dry_run`, `test_status_lists_each_host_without_ips_and_writes_nothing`)
-- **CF-2** Only the A/AAAA/CNAME records of fe-sorento, automate-sorento, chat and ss in
-  `foundryx.my` are read or written; a foreign record from the API (name, zone, id) stops every
+- **CF-2** Only the A/AAAA/CNAME records of fe-sorento, automate-sorento and chat in
+  `foundryx.my` are read or written (never ss, a CNAME to an R2 bucket: `test_ss_is_never_read_or_written`); a foreign record from the API (name, zone, id) stops every
   write. (`test_off_with_yes_unproxies_only_the_sorento_address_records`,
   `test_the_list_filter_alone_refuses_a_foreign_record`,
   `test_the_write_guard_alone_refuses_a_foreign_record`, `test_a_record_from_another_zone_is_never_patched`,

@@ -31,8 +31,9 @@ ALLOWED_HOSTS = (
     "fe-sorento.foundryx.my",
     "automate-sorento.foundryx.my",
     "chat.foundryx.my",
-    "ss.foundryx.my",
 )
+# Not ss.foundryx.my: it is a CNAME to an R2 bucket (crew audit 15 Oct), and taking it off
+# the proxy would break it. The shared service is chat.foundryx.my.
 SWITCHABLE_TYPES = ("A", "AAAA", "CNAME")
 TARGETS = {
     "off": {"proxied": False, "ttl": 60},

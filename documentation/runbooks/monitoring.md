@@ -22,8 +22,7 @@ Never write the real values into the repo, a PR or a comment.
 | --- | --- |
 | `<CRM_ORIGIN>` | public IPv4 of the CRM box |
 | `<N8N_HOST>` | public IPv4 of the n8n box |
-| `<SS_HOST>` | public IPv4 of the shared-service box |
-| `<CHAT_HOST>` | public IPv4 (or the CNAME target) behind `chat.foundryx.my` |
+| `<SS_HOST>` | public IPv4 of the shared-service box (behind `chat.foundryx.my`) |
 | `<OFFICE_IP>` | the office's public IPv4 (only if it is static) |
 | `<PROD_COMPOSE>` | the CRM box's compose: `/opt/sorento-crm2/docker-compose.yml` |
 | `<HC_SCHEDULER_URL>` | ping URL of the Healthchecks check `sorento-scheduler` |
@@ -104,42 +103,52 @@ Add your alert channel under Settings > Notifications, tick "Default enabled", a
 
 Create each with "Add New Monitor". "Retries" is the alert threshold: Kuma alerts after that many
 consecutive failures, so `Retries 2` at a 60 s interval alerts after about 3 minutes.
-For every HTTP monitor also tick **"Certificate Expiry Notification"** (Settings > TLS expiry
-days: `21, 14, 7`), which is the TLS-expiry monitor for that host.
+Tick **"Certificate Expiry Notification"** on every HTTP monitor below.
 
 | Name | Type | URL | Interval | Keyword / expected | Retries (threshold) |
 | --- | --- | --- | --- | --- | --- |
-| `CRM API health` | HTTP(s) - Keyword | `https://fe-sorento.foundryx.my/health` | 60 s | keyword `"status":"healthy"` (HTTP 200) | 2 |
+| `CRM API health` | HTTP(s) - Keyword | `https://fe-sorento.foundryx.my/api/v1/health` | 60 s | keyword `"status":"healthy"` (HTTP 200) | 2 |
 | `CRM frontend` | HTTP(s) - Keyword | `https://fe-sorento.foundryx.my/` | 60 s | HTTP 200-299, keyword `<title` | 2 |
 | `n8n healthz` | HTTP(s) - Keyword | `https://automate-sorento.foundryx.my/healthz` | 60 s | keyword `"status":"ok"` | 2 |
-| `Shared service health` | HTTP(s) | `https://ss.foundryx.my/health` | 60 s | HTTP 200-299 | 2 |
-| `Chat host` | HTTP(s) | `https://chat.foundryx.my/` | 120 s | HTTP 200-399 | 2 |
-| `TLS fe-sorento` | (the "Certificate Expiry Notification" box on `CRM API health`) | | | alert at 21 / 14 / 7 days | |
-| `TLS automate-sorento` | (the box on `n8n healthz`) | | | 21 / 14 / 7 days | |
-| `TLS ss` | (the box on `Shared service health`) | | | 21 / 14 / 7 days | |
-| `TLS chat` | (the box on `Chat host`) | | | 21 / 14 / 7 days | |
+| `Shared service health` | HTTP(s) - Keyword | `https://chat.foundryx.my/be/health` | 60 s | keyword `"status":"ok"` | 2 |
+| `TLS fe-sorento` | HTTP(s) | `https://fe-sorento.foundryx.my/` | 24 h | "Certificate Expiry Notification" ticked: alert at 21 / 14 / 7 days | 0 |
+| `TLS automate-sorento` | HTTP(s) | `https://automate-sorento.foundryx.my/healthz` | 24 h | same | 0 |
+| `TLS chat` | HTTP(s) | `https://chat.foundryx.my/be/health` | 24 h | same | 0 |
 
-Why a keyword on `/health`: the CRM's `/health` answers `{"status":"unhealthy",...}` with 503
-when the DB is unreachable. The keyword includes `"status":` so `unhealthy` does not match.
+The three `TLS` monitors exist only for the certificate check (Settings > Notifications >
+"TLS Certificate Expiry" days: `21, 14, 7`); the daily interval keeps them quiet otherwise.
+
+Why these URLs:
+
+- **CRM**: on prod, `https://fe-sorento.foundryx.my/health` is answered by **nginx itself**
+  (200 `text/plain` "healthy", crew probe 15 Oct), so it stays green with the backend dead.
+  nginx sends `/api/v1/*` to the backend, so the probe is `GET /api/v1/health`
+  (`sorento_crm_backend/app/main.py`, `public_health_check`): no login, one `SELECT 1`, 200
+  `{"status":"healthy","checks":{"database":"ok"}}`, or 503 `{"status":"unhealthy",...}` when
+  the DB is unreachable. The keyword includes `"status":` so `unhealthy` does not match. It
+  needs the release that contains this change; before that it answers 404.
+- **Shared service**: Caddy on the shared-service box sends `/be/*` to its backend. Its
+  `/health` does **not** check the DB or Redis, so this monitor proves only that the process is
+  up. `chat.foundryx.my/health` and `/api/health` are the Next.js app's 404s.
+- `ss.foundryx.my` is not the shared service: it is a CNAME to an R2 bucket.
 
 Before saving each one, run the same request from the Mac mini and compare:
 
 ```bash
-curl -s https://fe-sorento.foundryx.my/health ; echo
+curl -s https://fe-sorento.foundryx.my/api/v1/health ; echo
 curl -s https://automate-sorento.foundryx.my/healthz ; echo
-curl -s -o /dev/null -w '%{http_code}\n' https://ss.foundryx.my/health
-curl -s -o /dev/null -w '%{http_code}\n' https://chat.foundryx.my/
+curl -s https://chat.foundryx.my/be/health ; echo
+curl -s -o /dev/null -w '%{http_code}\n' https://fe-sorento.foundryx.my/
 ```
 
-- Check: each answer matches the "Keyword / expected" column. If the shared service's `/health`
-  prints a body with a status word, add it as a keyword. If `fe-sorento /health` does not print
-  `"status":"healthy"`, stop and tell crew (the nginx route on the box may differ).
+- Check: each answer matches the "Keyword / expected" column. If `fe-sorento .../api/v1/health`
+  answers 404, the release with this change is not out yet: create the monitor after it.
 - Check: every monitor is green within 2 minutes.
 - Rollback: pause or delete the monitor.
 
-What the TLS boxes see: through Cloudflare, Kuma sees the **edge** certificate (Cloudflare renews
-it). The origin's Let's Encrypt certificate is behind the proxy and is checked with the switch
-pre-flight in step 7 instead.
+What the TLS monitors see: through Cloudflare, Kuma sees the **edge** certificate (Cloudflare
+renews it). The origins' Let's Encrypt certificates are behind the proxy; they matter for the
+Cloudflare switch and are re-checked monthly (step 7, "Monthly origin certificate check").
 
 ### Watch the watcher
 
@@ -271,8 +280,9 @@ For when **Cloudflare itself** is the outage and the sites are down only because
 2025: Cloudflare's proxy failed and its dashboard login was down too). The script talks to the
 Cloudflare API only, so it works while the dashboard does not.
 
-It changes only the address records (A / AAAA / CNAME) of four hosts in zone `foundryx.my`:
-`fe-sorento`, `automate-sorento`, `chat`, `ss`. The zone holds other clients' hosts; the script
+It changes only the address records (A / AAAA / CNAME) of three hosts in zone `foundryx.my`:
+`fe-sorento`, `automate-sorento`, `chat`. Not `ss`: it is a CNAME to an R2 bucket and would
+break unproxied. The zone holds other clients' hosts; the script
 never reads or writes them, re-checks every record against that list before writing, and writes
 nothing at all if the API ever returns a record outside it. It never prints the token or a
 record's content (the origin IPs).
@@ -314,13 +324,33 @@ the token. So keep as few copies as possible and give it an end date.
    ```
 
    The file must hold the token alone (no label, no comment); the script refuses anything else.
-   Check: four hosts listed, each `proxied ttl=auto`; exit code 0 (`echo $?`).
+   Check: three hosts listed, each `proxied ttl=auto`; exit code 0 (`echo $?`).
 3. Dry run, to see the plan: `python3 scripts/ops/cf-proxy.py off`. Check: it says
    `Dry run: ... Nothing was written`, and `status` still shows `proxied`.
 - Rollback: delete the token in Cloudflare (My Profile > API Tokens).
 
 Every 3 months (calendar reminder): run `status`, and roll the token's end date forward in
 Cloudflare (My Profile > API Tokens > the token > Roll, or edit its TTL).
+
+### Monthly origin certificate check (5 minutes)
+
+Kuma only sees Cloudflare's edge certificate, so an origin certificate that stopped renewing is
+invisible until the day the switch is needed (or Cloudflare's Full (strict) mode starts failing).
+Calendar reminder, first Monday of each month, from the Mac mini:
+
+```bash
+for pair in "<CRM_ORIGIN> fe-sorento.foundryx.my" "<N8N_HOST> automate-sorento.foundryx.my" "<SS_HOST> chat.foundryx.my"; do
+  set -- $pair
+  printf '%s  ' "$2"
+  echo | openssl s_client -connect "$1:443" -servername "$2" 2>/dev/null | openssl x509 -noout -issuer -enddate | tr '\n' ' '
+  echo
+done
+```
+
+- Check: each line shows a Let's Encrypt issuer and a `notAfter` more than 30 days away
+  (certbot renews at 30 days left, so a date closer than that means renewal is failing on that
+  box: `sudo certbot renew --dry-run` there shows why).
+- Rollback: none needed (read-only).
 
 ### When to use it
 
@@ -340,20 +370,19 @@ switch removes the protection exactly when it is needed).
 The switch only works if browsers can talk to the origins directly. From the Mac mini:
 
 ```bash
-curl -s --resolve fe-sorento.foundryx.my:443:<CRM_ORIGIN> https://fe-sorento.foundryx.my/health ; echo
+curl -s --resolve fe-sorento.foundryx.my:443:<CRM_ORIGIN> https://fe-sorento.foundryx.my/api/v1/health ; echo
 echo | openssl s_client -connect <CRM_ORIGIN>:443 -servername fe-sorento.foundryx.my 2>/dev/null \
   | openssl x509 -noout -issuer -enddate
 ```
 
 - Check: the first prints `"status":"healthy"`; the second shows a Let's Encrypt issuer and an
-  end date in the future. Repeat the `openssl` line for all four hosts:
-  `<N8N_HOST>` / `automate-sorento.foundryx.my`, `<SS_HOST>` / `ss.foundryx.my`, and
-  `<CHAT_HOST>` / `chat.foundryx.my`. If `chat` is a CNAME to a third-party service (or a
-  Cloudflare Tunnel), it will not work unproxied: tell crew so it can be dropped from the
-  script's allowlist before an emergency, not during one.
+  end date in the future. Repeat the `openssl` line for the other two hosts:
+  `<N8N_HOST>` / `automate-sorento.foundryx.my` and `<SS_HOST>` / `chat.foundryx.my`.
 
-What makes it work today (crew checked 15 Oct): the origin certificates are **Let's Encrypt**,
-so browsers trust them, and the Hostinger firewall allows **443 from all**. If either changes,
+What makes it work today: the origin certificates are **Let's Encrypt**, so browsers trust them
+(crew check 15 Oct: a direct TLS handshake to each origin, IP from Cloudflare DNS, SNI = the
+hostname; fe-sorento expires 14 Dec, automate-sorento 5 Dec, chat 24 Nov), and the Hostinger
+firewall allows **443 from all**. If either changes,
 the switch breaks:
 
 - `prod-edge-lockdown.md` step 5.2 offers a Cloudflare **Origin CA** certificate. Browsers do not
