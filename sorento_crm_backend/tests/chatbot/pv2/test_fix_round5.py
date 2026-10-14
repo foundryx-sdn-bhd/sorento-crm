@@ -114,14 +114,14 @@ def _scope(monkeypatch, *, staff, attrs=(SO,), scope=None, scope_raises=False, r
 
 
 def test_non_staff_keeps_so_kinds_but_is_held_to_its_links(monkeypatch):
-    # PV2-FIX r6: crew 15 Oct, v1 parity: the per-match link drop does the scoping
+    # PV2-FIX r6: crew 14 Oct, v1 parity: the per-match link drop does the scoping
     r = _scope(monkeypatch, staff=False, scope=None)
     assert "sales_order" in r["reference_kinds"]
     assert r["reference_links"] == []
 
 
 def test_staff_with_an_enforced_scope_is_held_to_its_links(monkeypatch):
-    # PV2-FIX r6: crew 15 Oct, v1 parity
+    # PV2-FIX r6: crew 14 Oct, v1 parity
     r = _scope(monkeypatch, staff=True, scope={"enforced": True, "ids": ["x"]})
     assert "sales_order" in r["reference_kinds"]
     assert r["reference_links"] is not None
@@ -133,7 +133,7 @@ def test_staff_unscoped_with_the_so_grant_sees_sales_orders(monkeypatch):
 
 
 def test_a_failing_scope_lookup_fails_closed(monkeypatch):
-    # PV2-FIX r6: crew 15 Oct, closed through the links (none) rather than by dropping the kind
+    # PV2-FIX r6: crew 14 Oct, closed through the links (none) rather than by dropping the kind
     r = _scope(monkeypatch, staff=True, scope_raises=True)
     assert r["reference_links"] == []
     assert r["customer_scope"]["enforced"] is True

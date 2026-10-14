@@ -188,3 +188,27 @@ def test_only_august_reruns_the_held_delivered_report_for_august_without_a_quest
 
 def test_the_prompt_says_a_period_named_under_a_pending_question_is_a_refine():
     assert "names a period" in PROMPT
+
+
+def _measure_state():
+    """The 0387fd04 trace state: delivered, group_by customer, measures none, measure question pending."""
+    h = mk_held("sales")
+    h.period = SEP
+    spec = _delivered_total()
+    h.report = spec.model_copy(update={"group_by": ["customer"]})
+    opts = [option("1", "Amount", {"report": {"measures": ["amount"]}}),
+            option("2", "Quantity", {"report": {"measures": ["qty"]}})]
+    return mk_state(h, pending_=pending("clarify_report_measure", opts, asked="How many? For example top 5."))
+
+
+@pytest.mark.parametrize("make_state", [_measure_state, _breakdown_state], ids=["measure_pending", "breakdown_pending"])
+@pytest.mark.parametrize("free", [None, "August"])
+def test_an_answer_that_carries_a_period_under_a_report_question_moves_the_period(make_state, free):
+    mcp = _Mcp()
+    aug = {"preset": None, "n": None, "date_from": "2026-08-01", "date_to": "2026-08-31"}
+    parsed = out(_ask(act="answers_bot_question", answer={"option_key": None, "free_value": free}, period=aug))
+    res = _run(parsed, make_state(), mcp)
+    assert [c[0] for c in mcp.calls] == ["crm_sales_report"], res.direct_reply
+    args = mcp.calls[0][1]
+    assert args.get("date_from") == "2026-08-01" and args.get("date_to") == "2026-08-31"
+    assert "Sorry, I didn't catch" not in (res.direct_reply or "") and "How many" not in (res.direct_reply or "")
