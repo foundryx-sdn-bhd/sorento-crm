@@ -116,3 +116,14 @@ def test_the_ssh_budget_matches_the_release_step(job):
     want = _steps(deploy_job)["Deploy to Server (blue/green)"]["with"]["command_timeout"]
     got = _steps(job)["Roll back on the server (blue/green)"]["with"]["command_timeout"]
     assert got == want == "100m", "worker grace 60m + lock wait 20m + dump and the rest"
+
+
+def test_the_release_tag_moves_only_after_the_server_step_succeeded(job):
+    """A failed rollback must leave the moving `<svc>-<RELEASE_TAG>` tag on what is still
+    running, or a manual `docker compose up` would pull the images that failed."""
+    names = [s.get("name", "") for s in job["steps"]]
+    server = names.index("Roll back on the server (blue/green)")
+    promote = next(i for i, n in enumerate(names) if n.startswith("Promote"))
+    assert promote > server, names
+    cond = str(job["steps"][promote].get("if", "success()"))
+    assert "always()" not in cond and "failure()" not in cond, cond

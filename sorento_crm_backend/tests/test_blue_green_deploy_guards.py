@@ -77,14 +77,28 @@ if args[0] == "compose":
             if os.path.exists(os.path.join(d, "snapshot_garbage")):
                 sys.stdout.write("pg_dump: warning: something odd\n")
                 sys.exit(0)
+            # A fake archive: the magic, then the TOC lines the fake pg_restore -l prints.
             sys.stdout.write("PGDMP fake custom-format dump\n")
+            sys.stdout.write("610; 1259 25725 TABLE public alembic_version sorento\n")
+            if not os.path.exists(os.path.join(d, "snapshot_no_alembic")):
+                sys.stdout.write("9531; 0 25725 TABLE DATA public alembic_version sorento\n")
+            sys.stdout.write("9532; 0 25800 TABLE DATA public users sorento\n")
         elif "pg_restore" in joined:
             data = sys.stdin.read()
-            sys.exit(0 if data.startswith("PGDMP") else 1)
+            if not data.startswith("PGDMP"):
+                sys.exit(1)
+            sys.stdout.write("".join(data.splitlines(keepends=True)[1:]))
+        elif "psql" in joined:
+            if os.path.exists(os.path.join(d, "psql_fail")):
+                sys.stderr.write('psql: error: database "x" does not exist\n')
+                sys.exit(2)
+            print(rd("alembic_rows", "1").strip())
     sys.exit(0)
 if args[0] == "inspect":
     fmt = args[1]
-    if "Health.Status" in fmt:
+    if ".Config.Env" in fmt:
+        sys.stdout.write(rd("backend_env", "PATH=/usr/bin\nDATABASE_URL=postgresql://app:s3cret@pgbouncer:6432/sorento_app?sslmode=disable\nOTHER=1\n"))
+    elif "Health.Status" in fmt:
         print("healthy")
     elif "StartedAt" in fmt:
         print(rd("db_state", "0 2026-10-01T00:00:00Z").strip())
@@ -149,7 +163,7 @@ def box(tmp_path):
             pass
 
 
-def _run(box, timeout=120, **env_extra):
+def _run(box, timeout=120, args=(), **env_extra):
     env = {
         "PATH": f"{box['bin']}:{os.environ.get('PATH', '/usr/bin:/bin')}",
         "STUB_DIR": str(box["stub"]),
@@ -161,7 +175,7 @@ def _run(box, timeout=120, **env_extra):
     env.update(env_extra)
     env = {k: v for k, v in env.items() if v != ""}
     return subprocess.run(
-        ["bash", str(box["root"] / "scripts" / "blue_green_deploy.sh")],
+        ["bash", str(box["root"] / "scripts" / "blue_green_deploy.sh"), *args],
         env=env,
         capture_output=True,
         text=True,
@@ -504,3 +518,142 @@ def test_a_crash_before_the_deploy_started_is_not_this_deploys(box):
     )
     r = _run(box)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# --- crew audit round (a)-(e) -----------------------------------------------------------
+
+
+def _dump_call(box) -> str:
+    return next(l for l in _calls(box) if "pg_dump" in l)
+
+
+# (b) the database the APP uses
+
+
+def test_the_dump_targets_the_apps_database_from_database_url(box):
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "DUMP_DB=sorento_app" in _dump_call(box), "name parsed from the backend's DATABASE_URL"
+    assert '"$POSTGRES_DB"' not in _dump_call(box), "never the db container's own POSTGRES_DB"
+    assert "s3cret" not in r.stdout + r.stderr, "the URL (with its password) is never printed"
+
+
+def test_deploy_db_name_in_deploy_env_wins(box):
+    (box["root"] / ".deploy.env").write_text("DEPLOY_DB_NAME=sorento_crm\n")
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "DUMP_DB=sorento_crm" in _dump_call(box)
+
+
+@pytest.mark.parametrize(
+    "backend_env",
+    ["PATH=/usr/bin\n", "DATABASE_URL=postgresql://u:p@db:5432\n", "DATABASE_URL=postgresql://u:p@db/x;rm -rf /\n"],
+    ids=["no-url", "no-db-in-url", "unsafe-name"],
+)
+def test_an_unresolvable_db_name_fails_loudly_before_anything_changes(box, backend_env):
+    (box["stub"] / "backend_env").write_text(backend_env)
+    r = _run(box)
+    assert r.returncode != 0
+    assert "DEPLOY_DB_NAME" in r.stdout, r.stdout
+    calls = _calls(box)
+    assert _index(calls, "pg_dump") == -1
+    assert not any(" pull " in l for l in calls)
+    assert not _started_new_colour(calls)
+
+
+# (a) the dump must hold alembic_version's data
+
+
+def test_a_dump_without_alembic_version_data_stops_the_deploy(box):
+    (box["stub"] / "snapshot_no_alembic").write_text("1")
+    r = _run(box)
+    assert r.returncode != 0
+    assert "alembic_version" in r.stdout, r.stdout
+    assert not _started_new_colour(_calls(box))
+    assert not list((box["root"] / "backups" / "pre-migrate").glob("*")), "no half-checked dump is kept"
+
+
+def test_the_toc_is_read_inside_the_db_container_with_stdin_drained(box):
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    toc = next(l for l in _calls(box) if "pg_restore -l" in l)
+    assert "cat > /dev/null" in toc, "drain stdin so docker never writes into a closed pipe"
+
+
+# (d) lock wait default
+
+
+def test_the_lock_wait_defaults_to_600s(box):
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Waiting up to 600s" in r.stdout, r.stdout
+
+
+# (c) --preflight
+
+
+def _snapshot_files(box):
+    snap = box["root"] / "backups"
+    return sorted(p.relative_to(box["root"]).as_posix() for p in snap.rglob("*")) if snap.exists() else []
+
+
+def _mutating(calls):
+    words = (" pull ", " up ", " stop ", " rm ", "pg_dump", "prune", "sudo", "--force-recreate")
+    return [l for l in calls if any(w in f" {l} " for w in words)]
+
+
+def test_preflight_passes_on_a_healthy_box_and_changes_nothing(box):
+    r = _run(box, args=("--preflight",), IMAGE_TAG="")
+    assert r.returncode == 0, r.stdout + r.stderr
+    for item in ("lock", "db service", "db name", "alembic_version", "memory", "disk", "snapshot dir"):
+        assert item in r.stdout, (item, r.stdout)
+    assert "FAIL" not in r.stdout
+    assert _mutating(_calls(box)) == [], _calls(box)
+    assert not box["lock"].exists(), "preflight creates no lock file"
+    assert _snapshot_files(box) == [], "preflight creates no snapshot dir"
+    assert not (box["root"] / ".active_color").exists()
+
+
+@pytest.mark.parametrize(
+    "setup,item",
+    [
+        (lambda b: _set_mem_mb(b, 2000), "memory"),
+        (lambda b: (b["stub"] / "disk_free_mb").write_text("5000"), "disk"),
+        (lambda b: (b["stub"] / "db_cid").write_text(""), "db service"),
+        (lambda b: (b["stub"] / "backend_env").write_text("PATH=/x\n"), "db name"),
+        (lambda b: (b["stub"] / "psql_fail").write_text("1"), "alembic_version"),
+        (lambda b: (b["root"] / ".deploy.env").write_text("SNAPSHOT_MIN_FREE_MB=10G\n"), "SNAPSHOT_MIN_FREE_MB"),
+    ],
+    ids=["memory", "disk", "db-service", "db-name", "alembic", "knob"],
+)
+def test_preflight_fails_and_names_the_failing_item(box, setup, item):
+    setup(box)
+    r = _run(box, args=("--preflight",), IMAGE_TAG="")
+    assert r.returncode == 1, r.stdout + r.stderr
+    fail_lines = [l for l in r.stdout.splitlines() if l.startswith("FAIL")]
+    assert any(item in l for l in fail_lines), r.stdout
+    assert _mutating(_calls(box)) == []
+
+
+def test_preflight_flags_a_snapshot_dir_others_can_read(box):
+    snap = box["root"] / "backups" / "pre-migrate"
+    snap.mkdir(parents=True)
+    snap.chmod(0o755)
+    r = _run(box, args=("--preflight",), IMAGE_TAG="")
+    assert r.returncode == 1
+    assert any("snapshot dir" in l for l in r.stdout.splitlines() if l.startswith("FAIL")), r.stdout
+    assert stat.S_IMODE(snap.stat().st_mode) == 0o755, "preflight reports, it does not chmod"
+
+
+def test_preflight_reports_a_held_lock_without_taking_it(box):
+    box["lock"].touch()
+    with open(box["lock"]) as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        r = _run(box, args=("--preflight",), IMAGE_TAG="", timeout=30)
+    assert "lock" in r.stdout and "held" in r.stdout, r.stdout
+
+
+def test_an_unknown_argument_is_refused(box):
+    r = _run(box, args=("--prefligth",))
+    assert r.returncode == 2
+    assert _calls(box) == []
