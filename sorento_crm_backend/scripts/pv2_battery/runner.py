@@ -35,6 +35,28 @@ def bootstrap_env() -> None:
     load_dotenv(BACKEND_DIR / ".env", override=True)
 
 
+def ensure_worktree_mcp() -> Path:
+    """Import THIS worktree's sorento_crm_mcp: the shared venv's editable install points at the primary
+    checkout. Returns the resolved presenters file; GuardError if it still lands elsewhere."""
+    import importlib
+
+    root = Path(__file__).resolve().parents[3] / "sorento_crm_mcp"
+    if sys.path[:1] != [str(root)]:
+        if str(root) in sys.path:
+            sys.path.remove(str(root))
+        sys.path.insert(0, str(root))
+    for name in [n for n in sys.modules if n == "sorento_crm_mcp" or n.startswith("sorento_crm_mcp.")]:
+        file = getattr(sys.modules[name], "__file__", None)
+        if not file or root not in Path(file).resolve().parents:
+            del sys.modules[name]
+    importlib.invalidate_caches()
+    mod = importlib.import_module("sorento_crm_mcp.presenters")
+    path = Path(mod.__file__).resolve()
+    if root not in path.parents:
+        raise guard.GuardError(f"sorento_crm_mcp resolves to {path}, outside the worktree {root}")
+    return path
+
+
 def git_sha() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=BACKEND_DIR,
@@ -238,6 +260,7 @@ def read_calibration_agreement() -> float | None:
 
 def run(args: Any) -> Path:
     bootstrap_env()
+    mcp_path = ensure_worktree_mcp()
     guard.install(os.environ)
     battery_dir = Path(args.battery_dir) if args.battery_dir else schema.BATTERY_DIR
     convs = schema.load_battery(battery_dir)
@@ -276,7 +299,7 @@ def run(args: Any) -> Path:
                 f.result()
         print(f"mode {mode} done: {sum(1 for r in all_rows if r['mode'] == mode)} turns", flush=True)
 
-    meta = {"v2": pins["v2"], "v1": pins["v1"], "git_sha": git_sha(),
+    meta = {"v2": pins["v2"], "v1": pins["v1"], "git_sha": git_sha(), "mcp_path": str(mcp_path),
             "judge_agreement": read_calibration_agreement() if judge_client else None}
     results = report.build_results(convs, all_rows)
     (out_dir / "table.md").write_text(report.render_table(results, meta), encoding="utf-8")

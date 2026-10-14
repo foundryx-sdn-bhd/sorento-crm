@@ -80,6 +80,8 @@ def render_table(results: list[dict[str, Any]], meta: dict[str, Any]) -> str:
         m = meta.get(mode) or {}
         lines.append(f"- {mode} prompt: id `{m.get('id')}`, version {m.get('number')}, md5 `{m.get('md5')}`")
     lines.append(f"- git: `{meta.get('git_sha')}`")
+    if meta.get("mcp_path"):
+        lines.append(f"- MCP package: {meta['mcp_path']}")
     if agreement is None or agreement < PROVISIONAL_BELOW:
         shown = "not calibrated" if agreement is None else f"{agreement:.2f}"
         lines.append(f"- judge agreement: {shown} (PROVISIONAL, below {PROVISIONAL_BELOW})")
