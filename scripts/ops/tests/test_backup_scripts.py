@@ -168,7 +168,7 @@ def env(tmp_path):
         "RESTORE_READY_TIMEOUT": "5",
         "SANITY_TABLES": "users customers orders products audit_logs",
         "SANITY_LATEST": "audit_logs.changed_at",
-        "DEPLOY_LOCK_FILE": str(tmp_path / "deploy" / ".deploy.lock"),
+        "DEPLOY_LOCK_PATH": str(tmp_path / "deploy" / ".deploy.lock"),
         "DEPLOY_LOCK_RETRY": "1",
         "FAKE_DOCKER_ROOT": str(tmp_path / "dockerroot"),
     }
@@ -468,7 +468,7 @@ def runbook_env_file(tmp, **overrides):
 
 def bare(e):
     keep = ("PATH", "HOME", "FAKE_LOG", "FAKE_REMOTE", "FAKE_DUMP_SQL", "BACKUP_DIR", "LOCK_FILE",
-            "RESTORE_WORK_DIR", "RESTORE_LOCK_FILE", "RESTORE_READY_TIMEOUT", "DEPLOY_LOCK_FILE",
+            "RESTORE_WORK_DIR", "RESTORE_LOCK_FILE", "RESTORE_READY_TIMEOUT", "DEPLOY_LOCK_PATH",
             "DEPLOY_LOCK_RETRY", "FAKE_DOCKER_ROOT")
     return {k: v for k, v in e.items() if k in keep}
 
@@ -654,7 +654,7 @@ def test_restore_stream_runs_niced_and_idle_io(env):
 def test_restore_waits_for_deploy_then_fails(env):
     e, tmp = env
     seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
-    with open(e["DEPLOY_LOCK_FILE"], "w") as fh:
+    with open(e["DEPLOY_LOCK_PATH"], "w") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         r = run(RESTORE, e, HC_RESTORE_URL=HCR, DEPLOY_LOCK_WAIT="2")
     assert r.returncode == 7, r.stdout + r.stderr
@@ -665,7 +665,7 @@ def test_restore_waits_for_deploy_then_fails(env):
 def test_restore_lock_is_shared_not_exclusive(env):
     e, tmp = env
     seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
-    with open(e["DEPLOY_LOCK_FILE"], "w") as fh:
+    with open(e["DEPLOY_LOCK_PATH"], "w") as fh:
         fcntl.flock(fh, fcntl.LOCK_SH | fcntl.LOCK_NB)
         r = run(RESTORE, e, DEPLOY_LOCK_WAIT="2")
     assert r.returncode == 0, r.stdout + r.stderr
@@ -680,7 +680,7 @@ def test_restore_holds_deploy_lock_while_running(env):
     fake.write_text(fake.read_text().replace(
         'if [ -n "${stdin:-}" ]; then cat > /dev/null;',
         'if [ -n "${stdin:-}" ]; then cat > /dev/null; '
-        '( flock -x -n 7 && echo got >> "$PROBE" || echo blocked >> "$PROBE" ) 7>>"$DEPLOY_LOCK_FILE";'))
+        '( flock -x -n 7 && echo got >> "$PROBE" || echo blocked >> "$PROBE" ) 7>>"$DEPLOY_LOCK_PATH";'))
     r = run(RESTORE, e, PROBE=probe)
     assert r.returncode == 0, r.stdout + r.stderr
     assert probe.read_text().split() == ["blocked"]
@@ -689,13 +689,13 @@ def test_restore_holds_deploy_lock_while_running(env):
 def test_restore_skips_deploy_lock_where_no_deploy_dir(env):
     e, tmp = env
     seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
-    r = run(RESTORE, e, DEPLOY_LOCK_FILE=tmp / "nope" / ".deploy.lock")
+    r = run(RESTORE, e, DEPLOY_LOCK_PATH=tmp / "nope" / ".deploy.lock")
     assert r.returncode == 0, r.stderr
     assert "no deploy lock" in r.stdout
 
 
 def test_deploy_lock_default_path_is_the_shared_one():
-    assert 'DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/opt/sorento-crm2/.deploy.lock}"' in RESTORE.read_text()
+    assert 'DEPLOY_LOCK_PATH="${DEPLOY_LOCK_PATH:-/opt/sorento-crm2/.deploy.lock}"' in RESTORE.read_text()
 
 
 @pytest.mark.parametrize("low", ["work", "docker"])
@@ -737,7 +737,7 @@ def test_restore_disk_preflight_needs_exactly_four_times_the_dump(env):
 def test_restore_refuses_unsafe_deploy_lock(env, case):
     e, tmp = env
     seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
-    lock = Path(e["DEPLOY_LOCK_FILE"])
+    lock = Path(e["DEPLOY_LOCK_PATH"])
     target = tmp / "victim"
     lock.unlink()
     if case == "symlink":
@@ -775,7 +775,7 @@ def test_restore_disk_need_covers_uncompressed_size(env):
 def test_restore_refuses_lock_symlink_to_existing_file(env):
     e, tmp = env
     seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
-    lock = Path(e["DEPLOY_LOCK_FILE"])
+    lock = Path(e["DEPLOY_LOCK_PATH"])
     target = tmp / "existing"
     target.write_text("keep")
     lock.unlink()
@@ -793,17 +793,62 @@ def test_restore_refuses_symlinked_lock_folder(env):
     (real / ".deploy.lock").touch(mode=0o644)
     link = tmp / "linkdeploy"
     link.symlink_to(real)
-    r = run(RESTORE, e, DEPLOY_LOCK_FILE=link / ".deploy.lock", DEPLOY_LOCK_WAIT="1")
+    r = run(RESTORE, e, DEPLOY_LOCK_PATH=link / ".deploy.lock", DEPLOY_LOCK_WAIT="1")
     assert r.returncode == 2, r.stdout + r.stderr
     assert not any(c.startswith("docker run") for c in calls(tmp))
 
 
 @pytest.mark.skipif(os.geteuid() != 0, reason="needs root to chown the folder to another user")
-def test_restore_refuses_lock_folder_owned_by_someone_else(env):
+def test_restore_accepts_lock_folder_owned_by_release_user(env):
+    # crew ruling 14 Oct, option (b): /var/lib/sorento-deploy is owned by the release user, mode 755.
+    # The release user runs docker compose, so it is root-equivalent already; only group/other
+    # write is refused.
     e, tmp = env
     seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
-    folder = Path(e["DEPLOY_LOCK_FILE"]).parent
-    os.chown(folder, 65534, 65534)
+    folder = Path(e["DEPLOY_LOCK_PATH"]).parent
+    os.chown(folder, 65534, 0)
+    folder.chmod(0o755)
     r = run(RESTORE, e, DEPLOY_LOCK_WAIT="1")
-    assert r.returncode == 2, r.stdout + r.stderr
-    assert not any(c.startswith("docker run") for c in calls(tmp))
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ------------------------------------------------------------- crew ruling: DEPLOY_LOCK_PATH
+
+
+def test_deploy_lock_path_env_override(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    alt = tmp / "sorento-deploy"
+    alt.mkdir(mode=0o755)
+    alt_lock = alt / ".deploy.lock"
+    alt_lock.touch(mode=0o644)
+    with open(alt_lock, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r = run(RESTORE, e, DEPLOY_LOCK_PATH=alt_lock, DEPLOY_LOCK_WAIT="1")
+    assert r.returncode == 7, r.stdout + r.stderr
+    assert str(alt_lock) in r.stdout
+
+
+def test_deploy_lock_old_variable_name_is_not_read(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    held = Path(e["DEPLOY_LOCK_PATH"])
+    other = tmp / "other"
+    other.mkdir(mode=0o755)
+    (other / ".deploy.lock").touch(mode=0o644)
+    with open(other / ".deploy.lock", "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r = run(RESTORE, e, DEPLOY_LOCK_FILE=other / ".deploy.lock", DEPLOY_LOCK_WAIT="1")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert str(held) in r.stdout
+
+
+def test_writable_lock_folder_message_says_what_to_do(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    Path(e["DEPLOY_LOCK_PATH"]).parent.chmod(0o775)
+    r = run(RESTORE, e, DEPLOY_LOCK_WAIT="1")
+    assert r.returncode == 2
+    assert "install -d -o <release user> -g root -m 755 /var/lib/sorento-deploy" in r.stdout
+    assert "DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/.deploy.lock" in r.stdout
+    assert "restore-test env and the deploy env" in r.stdout
