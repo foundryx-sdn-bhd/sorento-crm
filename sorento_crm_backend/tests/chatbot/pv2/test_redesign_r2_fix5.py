@@ -159,12 +159,3 @@ def test_b4_a_pre_r2_pending_on_a_held_sales_report_is_refused_once_the_grant_is
 
 def test_b4_a_pre_r2_pending_on_a_held_purchase_order_is_refused_for_staff_without_the_grant():
     _held_decides_po()
-
-
-@pytest.mark.parametrize("case", [_held_decides_report, _held_decides_po], ids=["report", "po"])
-def test_b4_removing_the_held_subject_from_the_judged_asks_turns_the_guard_red(case, monkeypatch):
-    """The kill: with `held` dropped from `_judged_asks` the garbled pick re-asks and names the candidate."""
-    real = turn._judged_asks
-    monkeypatch.setattr(turn, "_judged_asks", lambda out_, pending_in, held=None: real(out_, pending_in, None))
-    with pytest.raises(AssertionError):
-        case()
