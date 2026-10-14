@@ -1,0 +1,39 @@
+# PV2 battery audiences (UAC-2): one contact per audience on the shared dev DB sorento_cagent_stack. Each has a
+# non-test inbound webhook row in chatbot.turns (contact_respond_id, ingress 'webhook', is_test false, envelope
+# set), which the console borrows (app/services/chatbot/console_service.py _borrow_envelope). Profiles read
+# read-only on 14 Oct 2026 evening. Contact ids live ONLY in this file.
+audiences:
+  staff:
+    respond_id: "487555417"
+    note: >-
+      Office tier (chatbot_profile.tier = office): holds the sorento/mocha/cabana office access types plus the
+      dealer types, every delivery-order, purchase-order (placed, supplier, cost), sales_orders.outstanding,
+      sales_orders.sales_report and low-stock reveal, and incoming-stock field grants. No linked customer, so
+      staff scope. Office tier gets no bot-initiated escalation offer. 188 real webhook turns. The contact of the
+      owner's 14 Oct hand-test session.
+  dealer:
+    respond_id: "437264483"
+    note: >-
+      Dealer access type only (no office type, profile tier null): sales_orders.outstanding,
+      sales_orders.sales_report, the delivery-order customer / number / products / status reveals and the
+      purchase-order reveals; incoming-stock internal fields denied by per-contact overrides;
+      escalation_allowed false (misses end with 'Please refer to your salesman', no offer). 41 real webhook
+      turns. PRECONDITION: its five customer links (HANLIM TRADING SDN BHD [A/C I] to [A/C IV] and MODERNMED SDN
+      BHD) were deleted on 14 Oct 2026 at 09:35 MYT (audit_logs, entity respond_contact_customers), so it is
+      unlinked on the DB right now. The dealer cases (SO422057 / SO420420 / own outstanding / own sales report)
+      assume the links; restore them before the baseline or read those cases as unscoped.
+  dealer_nogrant:
+    respond_id: "534083804"
+    note: >-
+      Linked to one customer (EUROTAN ENTERPRISE SDN BHD) and holds no access type, so it sees no SRT products
+      (stock asks for SRT codes come back not-found with a warehouse offer); no sales_orders.* and no sales-report
+      reveal, so SO status and sales reports are refused. Only delivery-order status / driver / transporter,
+      sellable stock and purchase_orders.placed reveals. 2 real webhook turns (the last on 14 Sep). The crew's
+      round 7 / 8a refusal and Malay-language contact.
+  unlinked:
+    respond_id: "423755030"
+    note: >-
+      No linked customer (respond_contact_customers empty) and no office type: dealer, cabana_dealer,
+      mocha_dealer and end_user access types; no sales_orders.* or sales-report reveal (SO status and reports
+      refused); purchase_orders.placed without supplier or cost; delivery-order status-level reveals only.
+      Escalation allowed (not-found offers and hand-over accepted). 26 real webhook turns.

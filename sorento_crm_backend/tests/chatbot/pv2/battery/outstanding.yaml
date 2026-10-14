@@ -1,0 +1,134 @@
+# PV2 battery: outstanding (undelivered) orders and lines (UAC-1).
+# Owner rules: group / company name only (no "(N accounts)"), one fact per line, carried customer
+# kept on a narrowing follow-up, refusals before any lookup.
+domain: outstanding
+conversations:
+
+- id: outstanding-r01
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv S12-13 T1-T2 (T3 added); PV2-FIX-r7-livecheck-20261014.tsv JD-S12-13"
+  domain: outstanding
+  audience: staff
+  shapes: [number_pick, reply_to_question, refine]
+  turns:
+  - text: "Acfirst outstanding order"
+    expect:
+      kind: ask
+      about: "which ACFIRST customer, with the real names as numbered options (ACFIRST CERAMIC CENTRE, ACFIRST CERAMICS SDN BHD, ACFIRST TILES & SANITARYWARES)"
+      must: ["ACFIRST CERAMIC CENTRE", "ACFIRST CERAMICS", "ACFIRST TILES"]
+  - text: "2"
+    expect:
+      kind: answer
+      about: "outstanding orders for the customer shown as option 2 (or that it has none)"
+      must: ["ACFIRST"]
+      must_not: ["Sorry, I didn't catch your choice"]
+  - text: "how about the centre one"
+    expect:
+      kind: answer
+      about: "outstanding orders for ACFIRST CERAMIC CENTRE (or that it has none)"
+      must: ["ACFIRST CERAMIC CENTRE"]
+
+- id: outstanding-r02
+  source: real
+  origin: "crew/state/eval/dev/cand-0221.json; crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1572 REPORTS-STEP2 (T3 added)"
+  domain: outstanding
+  audience: staff
+  shapes: [refine, typo]
+  turns:
+  - text: "Srtkt71-ss outstanding"
+    expect:
+      kind: answer
+      about: "outstanding delivery quantity for SRTKT71SS (alone, or across the SRTKT71SS family); the dash typo is the same code"
+      must: ["SRTKT71SS"]
+  - text: "Dealer outstanding only"
+    expect:
+      kind: answer
+      about: "the same SRTKT71SS outstanding narrowed to the dealer channel; the product is kept"
+      must: ["SRTKT71SS"]
+  - text: "and project?"
+    expect:
+      kind: answer
+      about: "the SRTKT71SS outstanding for the project channel instead (the channel replaced, the product kept)"
+      must: ["SRTKT71SS"]
+
+- id: outstanding-i01
+  source: improvised
+  domain: outstanding
+  audience: dealer
+  shapes: [refine, point_into_answer]
+  turns:
+  - text: "any outstanding order for me?"
+    expect:
+      kind: any
+      about: "the dealer's own outstanding orders (its linked HANLIM / MODERNMED accounts), group name only, or a period question; never another customer's orders"
+      must_not: ["accounts)"]
+  - text: "SO422057 when deliver?"
+    expect:
+      kind: answer
+      about: "SO422057 (HANLIM TRADING) is open and not delivered yet; no invented delivery date"
+      must: ["SO422057"]
+  - text: "what product inside"
+    expect:
+      kind: answer
+      about: "the line of SO422057: CSH3010-BL-DIY"
+      must: ["CSH3010-BL-DIY"]
+
+- id: outstanding-i02
+  source: improvised
+  domain: outstanding
+  audience: dealer_nogrant
+  shapes: [permission, refine]
+  turns:
+  - text: "my outstanding SO pls"
+    expect:
+      kind: refuse
+      about: "no sales-order grant: the sales-order refusal line (any delivery-order outstanding it may add is for its own account only)"
+      must: ["Sales order figures are not enabled for your account."]
+  - text: "ok how about DO not yet deliver?"
+    expect:
+      kind: any
+      about: "outstanding delivery orders for the dealer's own linked account (EUROTAN ENTERPRISE) only, or that there are none"
+      must_not: ["HANLIM", "J & Y WORLD"]
+
+- id: outstanding-i04
+  source: improvised
+  domain: outstanding
+  audience: staff
+  shapes: [mixed_types, particle, refine, small_talk]
+  turns:
+  - text: "J & Y WORLD HARDWARE got outstanding DO mou?"
+    expect:
+      kind: answer
+      about: "outstanding delivery orders of J & Y WORLD HARDWARE ('mou' = or not), group name only"
+      must: ["J & Y WORLD"]
+      must_not: ['Which "mou"', "accounts)"]
+  - text: "only CKS1052-BL"
+    expect:
+      kind: answer
+      about: "the same outstanding narrowed to CKS1052-BL, customer kept"
+      must: ["CKS1052-BL"]
+  - text: "ok tq"
+    expect:
+      kind: answer
+      about: "a short acknowledgement; no lookup and no hand-over"
+      must_not: ["Routed to your PIC", "Couldn't find"]
+
+- id: outstanding-i05
+  source: improvised
+  domain: outstanding
+  audience: staff
+  shapes: [language_mix, refine]
+  turns:
+  - text: "HANLIM TRADING 还有什么没送？"
+    expect:
+      kind: answer
+      about: "HANLIM TRADING's undelivered (outstanding) orders, Chinese reply, group name only (no '(4 accounts)'), or a which-account question listing its accounts"
+      must: ["HANLIM"]
+      lang: zh
+      must_not: ["accounts)"]
+  - text: "A/C IV 的呢？"
+    expect:
+      kind: answer
+      about: "outstanding for HANLIM TRADING SDN BHD [A/C IV] only (SO422057 among them), Chinese reply"
+      must: ["HANLIM"]
+      lang: zh

@@ -1,0 +1,138 @@
+# PV2 battery: hand-over / escalation (UAC-1). Owner rules: hand over only when escalation is requested or an
+# offer is accepted; an unresolved product is clarified first; staff (office tier) get no bot-initiated offer;
+# a "no" closes the offer; the routed reply is never blank.
+domain: handover
+conversations:
+
+- id: handover-r01
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv X-human T1; PV2-FIX-r7-livecheck-20261014.tsv AL-X-human (T2 added)"
+  domain: handover
+  audience: unlinked
+  shapes: [small_talk]
+  turns:
+  - text: "can I talk to a real person please"
+    expect:
+      kind: handover
+      about: "explicit request for a person: handed over (for example 'Routed to your PIC, they will reply shortly.')"
+      must_any: [["Routed to your PIC", "reply shortly", "colleague"]]
+  - text: "thanks"
+    expect:
+      kind: answer
+      about: "a short acknowledgement; no second hand-over and no topic menu"
+      must_not: ["Couldn't find"]
+
+- id: handover-r02
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv S20-21 T1-T2; PV2-FIX-r6-livecheck-20261014.tsv S20-21"
+  domain: handover
+  audience: unlinked
+  shapes: [yes_no, reply_to_question]
+  turns:
+  - text: "SRTXYZ999 stock"
+    expect:
+      kind: ask
+      about: "SRTXYZ999 not found: did-you-mean SRTWB999 and an offer to escalate to the warehouse team"
+      must: ["SRTXYZ999"]
+  - text: "yes"
+    expect:
+      kind: handover
+      about: "the offer accepted: handed over to the warehouse PIC, routed reply"
+      must_any: [["Routed to your PIC", "reply shortly"]]
+
+- id: handover-r03
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv S28 T1-T2 (T3 added)"
+  domain: handover
+  audience: unlinked
+  shapes: [yes_no, topic_switch]
+  turns:
+  - text: "SRTXYZ999 stock"
+    expect:
+      kind: ask
+      about: "SRTXYZ999 not found: did-you-mean SRTWB999 with the escalation offer"
+      must: ["SRTXYZ999"]
+  - text: "no"
+    expect:
+      kind: answer
+      about: "the offer is declined and closed (for example 'Escalation declined.'); no hand-over"
+      must_not: ["Routed to your PIC"]
+  - text: "SRTWB999 stock then"
+    expect:
+      kind: answer
+      about: "stock / availability of SRTWB999; the closed offer is not re-asked"
+      must: ["SRTWB999"]
+      must_not: ["Sorry, I didn't catch your choice"]
+
+- id: handover-r04
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv C-S13 T1 and B-AL-X-ms; laneboard/scripts/1657.md step 13 (T2 added)"
+  domain: handover
+  audience: dealer_nogrant
+  shapes: [language_mix, particle, yes_no]
+  turns:
+  - text: "SRTWC286-SH ada stok tak?"
+    expect:
+      kind: any
+      about: "the contact cannot see SRT products: a not-found line with the warehouse escalation offer, IN MALAY ('ada ... tak' is a particle frame, not a product)"
+      lang: ms
+      must_not: ["Couldn't find", "Would you like me to escalate"]
+  - text: "ya"
+    expect:
+      kind: handover
+      about: "'ya' = yes to the offer: handed over, routed reply in Malay"
+      lang: ms
+      must_any: [["Telah diserahkan", "PIC"]]
+
+- id: handover-r05
+  source: real
+  origin: "crew/state/eval/dev/cand-0104 via crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1603 CHAT-SPARSE"
+  domain: handover
+  audience: staff
+  shapes: [yes_no, unclear]
+  turns:
+  - text: "help to check debtors HSA"
+    expect:
+      kind: any
+      about: "HSA is not a known customer: a did-you-mean with real customer names (an escalation offer is only allowed for non-office staff); never a blank reply"
+      must_not: ["I need at least one filter"]
+  - text: "yes"
+    expect:
+      kind: any
+      about: "if an offer was shown: routed to the PIC ('Routed to your PIC, they will reply shortly.'); if a did-you-mean was shown: a clarify for which name; never a blank or silent turn"
+      must_not: ["Sorry, I didn't catch your choice"]
+
+- id: handover-i02
+  source: improvised
+  domain: handover
+  audience: dealer_nogrant
+  shapes: [free_text_reply, small_talk]
+  turns:
+  - text: "boss can i talk to my salesman about my order"
+    expect:
+      kind: handover
+      about: "explicit request for the salesman: handed over / routed (no order data revealed)"
+      must_any: [["Routed to your PIC", "reply shortly", "salesman"]]
+      must_not: ["Sales order figures"]
+  - text: "ok tq"
+    expect:
+      kind: answer
+      about: "a short acknowledgement; no second hand-over"
+
+- id: handover-i03
+  source: improvised
+  domain: handover
+  audience: staff
+  shapes: [free_text_reply, reply_to_question]
+  turns:
+  - text: "SRTXYZ999 stock"
+    expect:
+      kind: ask
+      about: "SRTXYZ999 not found: did-you-mean SRTWB999 ending with a reply-with-a-code line; office-tier staff get NO escalation offer"
+      must: ["SRTXYZ999"]
+      must_not: ["escalate to"]
+  - text: "can pass to purchasing to check this code?"
+    expect:
+      kind: any
+      about: "the user now requests escalation: handed over to the purchasing team (or told plainly how it reaches them); never ignores the request and never a did-you-mean loop"
+      must_not: ["Sorry, I didn't catch your choice"]

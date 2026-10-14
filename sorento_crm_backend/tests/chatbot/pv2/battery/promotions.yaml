@@ -1,0 +1,143 @@
+# PV2 battery: promotions / offers (UAC-1).
+# Dev data (14 Oct): SRTKS7061 has dealer, end-user and office flyers (UPDATED SORENTO PROMO KITCHEN SINK_09092026);
+# SRTWC286-SH has an office-only flyer (UPDATED SORENTO WATER CLOSET PROMO_27082026); SRTKS6042-BL has dealer /
+# office / end-user honeycomb kitchen sink flyers; CGB1032B has no promotion.
+domain: promotions
+conversations:
+
+- id: promotions-r01
+  source: real
+  origin: "crew/state/eval/dev/cand-0262.json (message; T2-T3 added)"
+  domain: promotions
+  audience: staff
+  shapes: [reply_to_question, free_text_reply, refine]
+  turns:
+  - text: "promo srtks7061"
+    expect:
+      kind: any
+      about: "active promotion for SRTKS7061: asks which copy (office / dealer / end user) or sends it; expired flyers never offered"
+      must: ["SRTKS7061"]
+  - text: "dealer"
+    expect:
+      kind: answer
+      about: "the dealer copy of the SRTKS7061 promotion is sent"
+      attachments: true
+      must_not: ["Sorry, I didn't catch your choice"]
+  - text: "end user also"
+    expect:
+      kind: answer
+      about: "the end-user copy of the same SRTKS7061 promotion is sent"
+      attachments: true
+
+- id: promotions-r02
+  source: real
+  origin: "crew/state/eval/dev/cand-0274.json (history + message; T3 added)"
+  domain: promotions
+  audience: dealer
+  shapes: [small_talk, refine]
+  turns:
+  - text: "Hi"
+    expect:
+      kind: answer
+      about: "a short greeting back, no lookup"
+  - text: "Srtwc286 offer"
+    expect:
+      kind: answer
+      about: "no current promotion for SRTWC286 for a dealer (the only flyer is office use): says so; never sends the office-only file"
+      attachments: false
+      must: ["SRTWC286"]
+  - text: "any promo for kitchen sink then?"
+    expect:
+      kind: any
+      about: "dealer kitchen sink promotions currently active (dealer copies only), or a which-one question over them"
+      must_not: ["OFFICE.pdf", "(OFFICE", "OFFICE USE"]
+
+- id: promotions-r03
+  source: real
+  origin: "crew/state/eval/dev/cand-0265.json (message; T2-T3 added)"
+  domain: promotions
+  audience: staff
+  shapes: [topic_switch, reply_to_question]
+  turns:
+  - text: "CGB1032B promotion"
+    expect:
+      kind: answer
+      about: "no promotion is linked to CGB1032B: said directly (not a tier question that lists 'no promotion' per tier)"
+      must: ["CGB1032B"]
+      attachments: false
+  - text: "ok how about SRTKS6042-BL"
+    expect:
+      kind: any
+      about: "active promotions for SRTKS6042-BL (honeycomb kitchen sink flyers): which copy, or sends them"
+      must: ["SRTKS6042-BL"]
+  - text: "office use copy"
+    expect:
+      kind: answer
+      about: "the office copy of the SRTKS6042-BL promotion is sent"
+      attachments: true
+
+- id: promotions-i01
+  source: improvised
+  domain: promotions
+  audience: dealer
+  shapes: [particle, refine, multi_product]
+  turns:
+  - text: "SRTKS7061 got promo mou?"
+    expect:
+      kind: any
+      about: "the dealer promotion for SRTKS7061 ('mou' = or not): sends the dealer copy or says it exists and offers it"
+      must: ["SRTKS7061"]
+      must_not: ['Which "mou"']
+  - text: "send me the flyer lah"
+    expect:
+      kind: answer
+      about: "the dealer flyer of the SRTKS7061 promotion is sent (or sent again)"
+      attachments: true
+      allow_repeat: true
+  - text: "SRTKS6042-BL also"
+    expect:
+      kind: answer
+      about: "the dealer promotion flyer covering SRTKS6042-BL is sent"
+      attachments: true
+      must: ["SRTKS6042-BL"]
+
+- id: promotions-i02
+  source: improvised
+  domain: promotions
+  audience: dealer_nogrant
+  shapes: [unclear, free_text_reply]
+  turns:
+  - text: "any promotion?"
+    expect:
+      kind: ask
+      about: "too broad: asks which product or category (real options), no file dump"
+      attachments: false
+  - text: "kitchen sink"
+    expect:
+      kind: any
+      about: "kitchen sink promotions this contact may see, or that none is available for the account; never office-only files"
+      must_not: ["OFFICE.pdf", "(OFFICE", "OFFICE USE"]
+
+- id: promotions-i03
+  source: improvised
+  domain: promotions
+  audience: unlinked
+  shapes: [language_mix, reply_to_question, small_talk]
+  turns:
+  - text: "SRTKS7061 有什么offer?"
+    expect:
+      kind: any
+      about: "the SRTKS7061 promotion this contact may see (dealer or end-user copy) sent, or a which-copy question, Chinese reply"
+      must: ["SRTKS7061"]
+  - text: "dealer copy"
+    expect:
+      kind: answer
+      about: "the dealer copy of the SRTKS7061 promotion is sent"
+      attachments: true
+      allow_repeat: true
+  - text: "谢谢"
+    expect:
+      kind: answer
+      about: "a short thank-you reply in Chinese, no lookup"
+      lang: zh
+

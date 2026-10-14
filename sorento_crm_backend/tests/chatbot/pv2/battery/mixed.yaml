@@ -1,0 +1,178 @@
+# PV2 battery: conversations that cross domains on purpose (UAC-1).
+domain: mixed
+conversations:
+
+- id: mixed-r01
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r6-livecheck-20261014.tsv X-switch T1-T3; laneboard/scripts/1657.md step 16 (sources digest r8-11)"
+  domain: mixed
+  audience: dealer
+  shapes: [topic_switch, switch_back, qty_carried]
+  turns:
+  - text: "SRTWC286-SH stock 3 unit"
+    expect:
+      kind: answer
+      about: "availability of SRTWC286-SH for 3 units"
+      must: ["SRTWC286-SH"]
+  - text: "sales report for September delivered"
+    expect:
+      kind: any
+      about: "a topic switch: the dealer's own delivered sales for September 2026, or one question about it"
+  - text: "ok back to the SRTWC286-SH, got 10 unit?"
+    expect:
+      kind: answer
+      about: "switch back with the typed product: availability of SRTWC286-SH for 10 units"
+      must: ["SRTWC286-SH"]
+      must_not: ["I need at least one filter"]
+
+- id: mixed-r02
+  source: real
+  origin: "laneboard/scripts/1653.md step 6; crew/state/handtest/PV2-FIX-r6-livecheck-20261014.tsv X-zh-order4 and R6-zh-order4a/b (T2 added)"
+  domain: mixed
+  audience: dealer
+  shapes: [multi_product, language_mix, qty_carried]
+  turns:
+  - text: "老板，我要订货：SRTWC286-SH 5个，SRTWF12C-GM-NEW 3个，SRT373-8 2个，SRTWB999 4个"
+    expect:
+      kind: any
+      about: "an order request for four products with quantities: the purchase-request portal link (or the old bot's own reading), Chinese reply; only the typed codes, never squashed or widened codes"
+      lang: zh
+      must_not: ["Could not find portal link", "SRTWF12CGMNEW", "SRT3738", "SRTWC286-SH-NEW-150"]
+  - text: "SRTWB999 几时有货？"
+    expect:
+      kind: answer
+      about: "availability / next ETA for SRTWB999, Chinese reply"
+      must: ["SRTWB999"]
+      lang: zh
+
+- id: mixed-r03
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv S22 T1 (sources digest R1; T2-T3 added)"
+  domain: mixed
+  audience: unlinked
+  shapes: [topic_switch, refine]
+  turns:
+  - text: "any PO for SRTWC286?"
+    expect:
+      kind: answer
+      about: "the placed POs for SRTWC286 products, with supplier and cost stripped for a non-staff contact"
+      must: ["SRTWC286"]
+      must_not: ["Supplier:", "Unit Cost", "Cost:"]
+  - text: "SRTWC286-SH-NEW when arrive?"
+    expect:
+      kind: answer
+      about: "ETA / incoming for SRTWC286-SH-NEW"
+      must: ["SRTWC286-SH-NEW"]
+  - text: "ok send me photo of SRTWC286-SH"
+    expect:
+      kind: answer
+      about: "the photo of SRTWC286-SH is sent"
+      attachments: true
+      must: ["SRTWC286-SH"]
+      must_not: ["has no Product Photos"]
+
+- id: mixed-r04
+  source: real
+  origin: "crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1517 ROGUE (dealer typed 'product'; T2-T3 added)"
+  domain: mixed
+  audience: dealer
+  shapes: [unclear, free_text_reply, refine]
+  turns:
+  - text: "product"
+    expect:
+      kind: ask
+      about: "a bare 'product': asks which product (or what about it); no tool call, never a 50-row dump, never inactive rows"
+      must_not: ["FOR ACCOUNT DEPARTMENT ONLY"]
+  - text: "SRTKS7061"
+    expect:
+      kind: any
+      about: "SRTKS7061 named: its availability, or a short question what is needed (stock, ETA, files, promotion)"
+      must: ["SRTKS7061"]
+  - text: "got stock?"
+    expect:
+      kind: answer
+      about: "availability of SRTKS7061"
+      must: ["SRTKS7061"]
+
+- id: mixed-r05
+  source: real
+  origin: "crew/state/eval/dev/cand-0286.json (history + message)"
+  domain: mixed
+  audience: unlinked
+  shapes: [permission, typo, free_text_reply]
+  turns:
+  - text: "what cost srtkt72ss-new"
+    expect:
+      kind: any
+      about: "purchase cost is not given to this contact: refuses the cost (SRTKT72SS-NEW may also be a did-you-mean for SRTKT72SS); never a cost figure"
+      must_not: ["CNY", "MYR", "RM "]
+  - text: "SRTKT72SS"
+    expect:
+      kind: any
+      about: "the product picked; purchase cost still refused, other allowed facts (availability) fine; never a cost figure"
+      must_not: ["CNY", "MYR"]
+  - text: "why?"
+    expect:
+      kind: answer
+      about: "explains briefly that purchase cost is restricted for this account and the salesman can help; no topic menu"
+      must_not: ["CNY", "MYR", "Couldn't find"]
+
+- id: mixed-i01
+  source: improvised
+  domain: mixed
+  audience: staff
+  shapes: [topic_switch, switch_back, qty_carried, small_talk]
+  turns:
+  - text: "SRTKS6042-BL stock"
+    expect:
+      kind: answer
+      about: "stock for SRTKS6042-BL"
+      must: ["SRTKS6042-BL"]
+  - text: "promo?"
+    expect:
+      kind: any
+      about: "promotions for the held SRTKS6042-BL: which copy, or sends them"
+      must_not: ["Couldn't find"]
+  - text: "send dealer copy"
+    expect:
+      kind: answer
+      about: "the dealer copy of the SRTKS6042-BL promotion is sent"
+      attachments: true
+  - text: "back to the stock, got 10?"
+    expect:
+      kind: answer
+      about: "switch back to SRTKS6042-BL stock: whether 10 are on hand; no flyer re-sent"
+      must: ["SRTKS6042-BL"]
+      attachments: false
+  - text: "thanks"
+    expect:
+      kind: answer
+      about: "a short acknowledgement"
+
+- id: mixed-i02
+  source: improvised
+  domain: mixed
+  audience: dealer
+  shapes: [small_talk, unclear]
+  turns:
+  - text: "Morning boss"
+    expect:
+      kind: answer
+      about: "a short greeting back, no lookup"
+  - text: "??"
+    expect:
+      kind: any
+      about: "nothing to act on: a short question what they need; never a lookup, never a hand-over"
+      must_not: ["Routed to your PIC", "Couldn't find"]
+  - text: "SRTWB8001 photo"
+    expect:
+      kind: answer
+      about: "the photo of SRTWB8001 is sent"
+      attachments: true
+      must: ["SRTWB8001"]
+  - text: "haha ok thanks"
+    expect:
+      kind: answer
+      about: "a short acknowledgement, no files re-sent"
+      attachments: false
+

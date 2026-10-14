@@ -1,0 +1,244 @@
+# PV2 battery: ETA / incoming asks and their follow-ups (UAC-1).
+# ETA dates and incoming quantities drift: expectations name the products, never dates or numbers.
+domain: eta
+conversations:
+
+- id: eta-r01
+  source: real
+  origin: "crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T1-T5; PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T1-T5 and C-S3-5"
+  domain: eta
+  audience: staff
+  shapes: [particle, reply_to_question, number_pick, refine, language_mix, typo]
+  turns:
+  - text: "check stock srtwc286"
+    expect:
+      kind: answer
+      about: "stock for the SRTWC286 family (all variants)"
+      must: ["SRTWC286"]
+  - text: "any eta mou?"
+    expect:
+      kind: any
+      about: "ETA / incoming for the held SRTWC286 family ('mou' is the particle 'or not', never a product); a question back is acceptable only if it keeps the ETA ask and offers real SRTWC286 options"
+      must_not: ['Which "mou"', 'Couldn''t find: "mou"']
+  - text: "1"
+    expect:
+      kind: any
+      about: "continues the ETA ask: incoming for the picked or listed SRTWC286 member(s); never the stock answer again and never an escalation hand-over"
+      must_not: ["Stock details found", "Stock summary for", "Routed to your PIC"]
+  - text: "hmm ih tough i ask for eta"
+    expect:
+      kind: answer
+      about: "ETA answered directly for the SRTWC286 members that have incoming (the -NEW variants); no which-of-10 menu with has/no incoming stamps"
+      must: ["SRTWC286"]
+      must_not: ["Which product do you mean? Please choose", "Sorry, I didn't catch your choice"]
+  - text: "semua laa"
+    expect:
+      kind: any
+      about: "'semua' = all: incoming for every SRTWC286 member (a Malay reply is fine), or the same all-members ETA again; never read as Yes to an escalation or purchasing offer"
+      must_not: ["Routed to your PIC", "Telah diserahkan"]
+      allow_repeat: true
+
+- id: eta-r02
+  source: real
+  origin: "crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T1, T10-T11 (compressed; T4 added); PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T10-T11"
+  domain: eta
+  audience: staff
+  shapes: [switch_back, typo, free_text_reply]
+  turns:
+  - text: "check stock srtwc286"
+    expect:
+      kind: answer
+      about: "stock for the SRTWC286 family"
+      must: ["SRTWC286"]
+  - text: "srtwf12c eta"
+    expect:
+      kind: answer
+      about: "no incoming for SRTWF12C itself, with its alternative SRTWF12C-NEW incoming; the label reads SRTWF12C once"
+      must: ["SRTWF12C"]
+      must_not: ["SRTWF12C SRTWF12C"]
+  - text: "okay can help me check the stock fort he previous product I asked ealrie?"
+    expect:
+      kind: any
+      about: "the product asked before SRTWF12C is SRTWC286: its stock, or a question listing the earlier subjects (SRTWC286 and SRTWF12C) by code; never stock for SRTWF12C as if it were the earlier one"
+      must: ["SRTWC286"]
+      must_not: ["SRTWF12C SRTWF12C"]
+  - text: "the srtwc286 one i mean"
+    expect:
+      kind: answer
+      about: "stock for SRTWC286 (answers the question if one was asked, otherwise confirms the same SRTWC286 stock)"
+      must: ["SRTWC286"]
+      allow_repeat: true
+
+- id: eta-r03
+  source: real
+  origin: "crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T1, T10, T12; PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-JD T12"
+  domain: eta
+  audience: staff
+  shapes: [switch_back, unclear]
+  turns:
+  - text: "check stock srtwc286"
+    expect:
+      kind: answer
+      about: "stock for the SRTWC286 family"
+      must: ["SRTWC286"]
+  - text: "srtwf12c eta"
+    expect:
+      kind: answer
+      about: "ETA for SRTWF12C (none) with the SRTWF12C-NEW alternative"
+      must: ["SRTWF12C"]
+  - text: "before this"
+    expect:
+      kind: any
+      about: "switch back to the subject before SRTWF12C, which is SRTWC286: its answer again, or a question offering SRTWC286 (and SRTWF12C) by code; never a menu whose only option is SRTWF12C"
+      must: ["SRTWC286"]
+      must_not: ['Which "before this"', "SRTWF12C SRTWF12C"]
+
+- id: eta-r04
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r7-livecheck-20261014.tsv JD-OWN T1-T6; PV2-FIX-r8a-livecheck-20261014.tsv B-JD-OWN T1-T6; owner console 10:31 (sources digest A)"
+  domain: eta
+  audience: staff
+  shapes: [refine, reply_to_question, typo]
+  turns:
+  - text: "check stock srtwc286"
+    expect:
+      kind: answer
+      about: "stock for the SRTWC286 family"
+      must: ["SRTWC286"]
+  - text: "eta"
+    expect:
+      kind: answer
+      about: "ETA for the held SRTWC286 family answered directly for the members with incoming; never a which-product menu"
+      must: ["SRTWC286"]
+      must_not: ["Which product do you mean? Please choose"]
+  - text: "all"
+    expect:
+      kind: any
+      about: "'all' = incoming for every SRTWC286 member; if every member was already answered, the same ETA again or a short note that all are shown; never the same which-list again, never a hand-over"
+      must_not: ["Routed to your PIC", "Sorry, I didn't catch your choice"]
+      allow_repeat: true
+  - text: "photo and technical darwing?"
+    expect:
+      kind: answer
+      about: "both kinds for the held SRTWC286 family members that have them (SRTWC286-SH photo + technical drawing); attachment words are never read as a product"
+      attachments: true
+      must: ["SRTWC286-SH"]
+      must_not: ['Couldn''t find: "photo', "has no Product Photos"]
+  - text: "photo for this product"
+    expect:
+      kind: answer
+      about: "the photos of the held SRTWC286 product(s) (SRTWC286-SH has one)"
+      attachments: true
+      must: ["SRTWC286-SH"]
+      must_not: ["Couldn't find"]
+
+- id: eta-r05
+  source: real
+  origin: "laneboard/scripts/1653.md step 18; crew/state/handtest/PV2-FIX-r7-livecheck-20261014.tsv JD-ST18 T1; crew/state/eval/dev/cand-0026.json (T2-T3 added)"
+  domain: eta
+  audience: staff
+  shapes: [number_pick, reply_to_question, switch_back]
+  turns:
+  - text: "97503 eta"
+    expect:
+      kind: ask
+      about: "which product: the question lists the real codes MBF97503 and MMC97503 as numbered options"
+      must: ["MBF97503", "MMC97503"]
+  - text: "2"
+    expect:
+      kind: answer
+      about: "ETA / incoming for MMC97503 (option 2)"
+      must: ["MMC97503"]
+  - text: "and the first one?"
+    expect:
+      kind: answer
+      about: "ETA / incoming for MBF97503, option 1 of the list shown two turns ago"
+      must: ["MBF97503"]
+
+- id: eta-r06
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv S1-2 T1-T2; crew/state/eval/dev/cand-0044.json (T3 text)"
+  domain: eta
+  audience: staff
+  shapes: [number_pick, reply_to_question, multi_product]
+  turns:
+  - text: "Hi, can help check WF12C when arrived"
+    expect:
+      kind: ask
+      about: "which WF12C product: numbered options with the real SRTWF12C codes"
+      must: ["SRTWF12C"]
+  - text: "6"
+    expect:
+      kind: answer
+      about: "ETA for the 6th option (SRTWF12C-GM-NEW): says there is no incoming when none is held"
+      must: ["SRTWF12C-GM-NEW"]
+  - text: "no 1 & no 8 also"
+    expect:
+      kind: any
+      about: "ETA for options 1 and 8 of the same WF12C list (SRTWF12C and the 8th code), or a short question if that list is no longer usable; never treats 1 and 8 as quantities"
+      must: ["SRTWF12C"]
+
+- id: eta-r07
+  source: real
+  origin: "crew/state/eval/dev/cand-0102.json (message; T2-T3 added)"
+  domain: eta
+  audience: staff
+  shapes: [language_mix, particle, small_talk]
+  turns:
+  - text: "SRTWC8518-SH kile ada stock ke"
+    expect:
+      kind: answer
+      about: "when SRTWC8518-SH has stock again: its next ETA / incoming, or that none is incoming; Malay or English reply"
+      must: ["SRTWC8518-SH"]
+  - text: "ok noted, yang lain ada tak?"
+    expect:
+      kind: any
+      about: "'the others, any?': stock or incoming for the other SRTWC8518 variants, or a short question which ones; never a 'Couldn't find' on the words"
+      must_not: ["Couldn't find", "Tidak dapat menemui"]
+  - text: "terima kasih boss"
+    expect:
+      kind: answer
+      about: "a short thank-you reply, no lookup and no menu"
+      must_not: ["Routed to your PIC", "Couldn't find"]
+
+- id: eta-r08
+  source: real
+  origin: "crew/state/eval/dev/cand-0025.json (message; T2 added)"
+  domain: eta
+  audience: staff
+  shapes: [multi_product, refine]
+  turns:
+  - text: "incoming srtwc7014 srtwt9611-gm cb8001-5 srtsc07 srtwb7109 srtub6203-bi"
+    expect:
+      kind: answer
+      about: "incoming covered for every listed code, with a plain not-found line for SRTWC7014; none silently dropped"
+      must: ["SRTWT9611-GM", "SRTWC7014"]
+  - text: "srtwt9611-gm only, when arrive?"
+    expect:
+      kind: answer
+      about: "the incoming / ETA for SRTWT9611-GM alone"
+      must: ["SRTWT9611-GM"]
+
+- id: eta-i02
+  source: improvised
+  domain: eta
+  audience: unlinked
+  shapes: [unclear, free_text_reply, language_mix]
+  turns:
+  - text: "any shipment coming for this product?"
+    expect:
+      kind: ask
+      about: "no product is held yet: asks which product; never a lookup without a product and never 'Couldn't find: \"this product\"'"
+      must_not: ["Couldn't find", "I need at least one filter"]
+  - text: "SRTWB246"
+    expect:
+      kind: answer
+      about: "incoming / ETA for SRTWB246 (the reply to the question)"
+      must: ["SRTWB246"]
+  - text: "bila sampai?"
+    expect:
+      kind: answer
+      about: "'when does it arrive': the ETA for SRTWB246 again in Malay, or that nothing is incoming"
+      must: ["SRTWB246"]
+      lang: ms
+      allow_repeat: true

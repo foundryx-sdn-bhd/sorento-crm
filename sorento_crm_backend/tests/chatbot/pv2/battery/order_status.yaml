@@ -1,0 +1,275 @@
+# PV2 battery: SO / DO / PO status by number, and switching away and back (UAC-1).
+# Dev data (14 Oct): DO 202610-0151 = J & Y WORLD HARDWARE SDN BHD [A/C IV], 1 line CKS1052-BL x2;
+# SO422057 = HANLIM TRADING SDN BHD [A/C IV], 1 line CSH3010-BL-DIY x2 (photo on file);
+# SO420420 = HANLIM TRADING SDN BHD [A/C I], products SRTWT910-BL, SRTWT6232-GM, SRTWT1908-BL-DIY;
+# PO 202208-S0069 holds SRT373-8; PO 202606-S0105 holds SRTWC286-SH-NEW among others.
+domain: order_status
+conversations:
+
+- id: order-r01
+  source: real
+  origin: "laneboard/scripts/1653.md steps 1-3 and 1657.md steps 8-10; crew/state/handtest/PV2-FIX-r6-livecheck-20261014.tsv S6-8 T1-T3; PV2-FIX-r8a-livecheck-20261014.tsv C-S8-10"
+  domain: order_status
+  audience: staff
+  shapes: [topic_switch, switch_back]
+  turns:
+  - text: "202610-0151 STATUS?"
+    expect:
+      kind: answer
+      about: "order 202610-0151 of J & Y WORLD HARDWARE SDN BHD with its status and line"
+      must: ["202610-0151"]
+  - text: "SRTWC286 stock"
+    expect:
+      kind: answer
+      about: "a new topic: the full stock answer for the SRTWC286 family; the order is not mixed in"
+      must: ["SRTWC286"]
+      must_not: ["202610-0151"]
+  - text: "back to the order just now, which warehouse?"
+    expect:
+      kind: answer
+      about: "switch back to order 202610-0151 and answer its warehouse; if an offer is re-asked instead it names the warehouse team, never purchasing"
+      must: ["202610-0151"]
+      must_not: ['Which "which warehouse"', 'Which "the order just now"', "purchasing team", "Sorry, I didn't catch your choice"]
+
+- id: order-r02
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv S4 T1 (T2 added); PV2-FIX-r7-livecheck-20261014.tsv JD-S4"
+  domain: order_status
+  audience: staff
+  shapes: [language_mix, particle, small_talk]
+  turns:
+  - text: "boss PS202609-0469 sudah hantar ka? 几时到?"
+    expect:
+      kind: answer
+      about: "order PS202609-0469 of HONG BEE HARDWARE COMPANY SDN BHD (PROJECT): not delivered yet with its current status; a mixed Malay / Chinese / English reply is fine"
+      must: ["PS202609-0469"]
+  - text: "ok thanks boss"
+    expect:
+      kind: answer
+      about: "a short thank-you acknowledgement; no lookup, no repeat of the order card, no hand-over"
+      must_not: ["Routed to your PIC", "Couldn't find"]
+
+- id: order-r03
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv F-po T1 (T2-T3 added); crew/state/eval/dev/cand-0291.json"
+  domain: order_status
+  audience: staff
+  shapes: [refine, topic_switch]
+  turns:
+  - text: "SRT373-8 got po?"
+    expect:
+      kind: answer
+      about: "the outstanding PO for SRT373-8 (PO 202208-S0069)"
+      must: ["SRT373-8", "202208-S0069"]
+  - text: "supplier?"
+    expect:
+      kind: answer
+      about: "the supplier of that PO for SRT373-8 (staff hold the supplier field)"
+      must_not: ["Couldn't find", 'Which "supplier"']
+  - text: "PO 202606-S0105 status?"
+    expect:
+      kind: answer
+      about: "status and lines of PO 202606-S0105"
+      must: ["202606-S0105"]
+
+- id: order-r04
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-AL-F-osb T1-T3; PV2-FIX-r7-livecheck-20261014.tsv AL-F-osb"
+  domain: order_status
+  audience: dealer_nogrant
+  shapes: [permission, topic_switch, switch_back]
+  turns:
+  - text: "SO422057 status?"
+    expect:
+      kind: refuse
+      about: "no sales-order grant: the refusal line, before any lookup, so it never shows whether the order exists"
+      must: ["Sales order figures are not enabled for your account."]
+      must_not: ["Couldn't find", "escalate"]
+  - text: "SRTXYZ999 stock"
+    expect:
+      kind: any
+      about: "SRTXYZ999 is not a product: a not-found line, optionally with an offer to the warehouse team"
+      must: ["SRTXYZ999"]
+  - text: "back to the order just now, which warehouse?"
+    expect:
+      kind: refuse
+      about: "switching back to SO422057 is still refused with the same sales-order refusal; never re-asks the SRTXYZ999 offer"
+      must: ["Sales order figures are not enabled for your account."]
+      must_not: ["Sorry, I didn't catch your choice", "SRTXYZ999"]
+
+- id: order-r05
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv P-otherDO-jen T1 and S23 T1 (T2 added)"
+  domain: order_status
+  audience: unlinked
+  shapes: [yes_no, reply_to_question]
+  turns:
+  - text: "Delivery 202609-2012"
+    expect:
+      kind: any
+      about: "a delivery order that is not this contact's: a not-found line with an offer to the customer service team (no order details shown)"
+      must: ["202609-2012"]
+      must_not: ["DELUXE HOME CENTRE"]
+  - text: "yes"
+    expect:
+      kind: any
+      about: "accepts the offer: hands over to customer service (or asks which person when a picker is shown); never blank"
+      must_not: ["Sorry, I didn't catch your choice"]
+
+- id: order-r06
+  source: real
+  origin: "crew/state/eval/dev/cand-0216.json (history T1, T4 and message)"
+  domain: order_status
+  audience: staff
+  shapes: [mixed_types, typo, language_mix]
+  turns:
+  - text: "Acfirst ceramics SDN BHD order MFG6644-pp send yet"
+    expect:
+      kind: answer
+      about: "whether ACFIRST CERAMICS SDN BHD's order(s) for MFG6644-PP were delivered, or that there is none; customer and product both kept"
+      must: ["MFG6644-PP"]
+  - text: "Does Acfirst ceramics SDN BHD order mbf97521"
+    expect:
+      kind: answer
+      about: "whether ACFIRST CERAMICS SDN BHD has ordered MBF97521 (orders found or none)"
+      must: ["MBF97521"]
+  - text: "DAcfirst ceramics SDN BHD 有下单MBF97521 吗"
+    expect:
+      kind: answer
+      about: "the same question in Chinese with a typo in the customer ('DAcfirst'): same ACFIRST CERAMICS / MBF97521 answer, Chinese reply"
+      must: ["MBF97521"]
+      allow_repeat: true
+
+- id: order-r07
+  source: real
+  origin: "crew/state/eval/dev/cand-0220.json (history + message); crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md R5 extras"
+  domain: order_status
+  audience: staff
+  shapes: [mixed_types, topic_switch, language_mix]
+  turns:
+  - text: "SRT359C 有货吗？"
+    expect:
+      kind: answer
+      about: "stock for SRT359C"
+      must: ["SRT359C"]
+  - text: "Kbo 今天有送货吗？"
+    expect:
+      kind: any
+      about: "today's deliveries for KBO LOGISTICS & SUPPLY (or that there are none), or a question which KBO account / whether to keep SRT359C; never silently filters by SRT359C and never invents deliveries"
+      must_any: [["KBO"]]
+
+- id: order-r08
+  source: real
+  origin: "crew/state/eval/dev/cand-0230.json (history + message); crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1570 (a)"
+  domain: order_status
+  audience: dealer
+  shapes: [mixed_types, language_mix, free_text_reply, reply_to_question]
+  turns:
+  - text: "estimate delivery time ?"
+    expect:
+      kind: ask
+      about: "nothing named: asks which order or product the delivery estimate is for"
+  - text: "Delivery order list"
+    expect:
+      kind: any
+      about: "the dealer's own delivery orders, or a question for the period; never another customer's orders"
+  - text: "HANLIM TRADING SDN BHD 7/10/2026 有送货吗？"
+    expect:
+      kind: answer
+      about: "deliveries for HANLIM TRADING on 07/10/2026: says none if none (may mention outstanding orders); group name only"
+      must: ["HANLIM"]
+  - text: "SRT391-GM几时会安排送货？"
+    expect:
+      kind: ask
+      about: "carried customer + newly named product: asks whether the SRT391-GM delivery question is for HANLIM TRADING only or all customers, with nothing fetched"
+      must: ["SRT391-GM"]
+  - text: "十月"
+    expect:
+      kind: any
+      about: "October as the period for the SRT391-GM delivery question (answers it, or asks the still-open scope once); never repeats the identical question and never invents dates"
+      must: ["SRT391-GM"]
+
+- id: order-i01
+  source: improvised
+  domain: order_status
+  audience: staff
+  shapes: [point_into_answer, refine]
+  turns:
+  - text: "SO422057 status?"
+    expect:
+      kind: answer
+      about: "sales order SO422057 of HANLIM TRADING SDN BHD: open, not delivered yet, its one line CSH3010-BL-DIY"
+      must: ["SO422057"]
+  - text: "photo for this product"
+    expect:
+      kind: answer
+      about: "'this product' = CSH3010-BL-DIY, the only line of SO422057: its photo is sent, no which-one question"
+      attachments: true
+      must: ["CSH3010-BL-DIY"]
+      must_not: ['Which "this product"', "has no Product Photos"]
+      judge: "point_into_answer: SO422057 has exactly 1 product line (CSH3010-BL-DIY)"
+  - text: "ok and its stock?"
+    expect:
+      kind: answer
+      about: "stock for CSH3010-BL-DIY"
+      must: ["CSH3010-BL-DIY"]
+
+- id: order-i02
+  source: improvised
+  domain: order_status
+  audience: dealer
+  shapes: [point_into_answer, free_text_reply]
+  turns:
+  - text: "SO420420 status?"
+    expect:
+      kind: answer
+      about: "sales order SO420420 of HANLIM TRADING with its products SRTWT910-BL, SRTWT6232-GM and SRTWT1908-BL-DIY and what is still undelivered"
+      must: ["SO420420"]
+  - text: "drawing for this product"
+    expect:
+      kind: ask
+      about: "three products on that order: asks which, offering SRTWT910-BL, SRTWT6232-GM and SRTWT1908-BL-DIY (or all); never offers the order number as the product"
+      must: ["SRTWT6232-GM"]
+      attachments: false
+      judge: "point_into_answer: SO420420 has 3 products (SRTWT910-BL, SRTWT6232-GM, SRTWT1908-BL-DIY)"
+  - text: "SRTWT6232-GM"
+    expect:
+      kind: answer
+      about: "the technical drawing of SRTWT6232-GM is sent"
+      attachments: true
+      must: ["SRTWT6232-GM"]
+
+- id: order-i03
+  source: improvised
+  domain: order_status
+  audience: staff
+  shapes: [mixed_types, refine]
+  turns:
+  - text: "J & Y WORLD HARDWARE order CKS1052-BL send yet?"
+    expect:
+      kind: answer
+      about: "J & Y WORLD HARDWARE's order for CKS1052-BL (202610-0151): delivered or not, with status"
+      must: ["CKS1052-BL"]
+  - text: "how about their other orders this month"
+    expect:
+      kind: answer
+      about: "J & Y WORLD HARDWARE's orders this month (customer kept, product filter dropped); group name only"
+      must_not: ["accounts)"]
+
+- id: order-i04
+  source: improvised
+  domain: order_status
+  audience: unlinked
+  shapes: [permission, free_text_reply]
+  turns:
+  - text: "SO422057 status?"
+    expect:
+      kind: refuse
+      about: "no sales-order grant: the refusal line, never a not-found or an escalation offer that would reveal whether the order exists"
+      must: ["Sales order figures are not enabled for your account."]
+      must_not: ["Couldn't find", "HANLIM"]
+  - text: "why cannot see?"
+    expect:
+      kind: any
+      about: "explains briefly that sales-order figures are not enabled for this account and the salesman can help; never shows the order"
+      must_not: ["HANLIM", "CSH3010"]

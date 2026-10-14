@@ -1,0 +1,120 @@
+# PV2 battery: idea / suggestion capture (UAC-1). Ideation answers come from the capture service: the
+# reply is a saved idea (number / title), a similar-ideas pick, or one question for a missing field. The
+# expectations accept any of those and name the never-cases (a product lookup, a lost use case, a loop).
+domain: ideas
+conversations:
+
+- id: ideas-i01
+  source: improvised
+  domain: ideas
+  audience: staff
+  shapes: [reply_to_question, free_text_reply]
+  turns:
+  - text: "I have an idea: the price tag should show the promo price in red"
+    expect:
+      kind: any
+      about: "captures the price-tag idea (saved with a reference, or similar existing ideas offered to pick, or one question for a missing detail); never a product or price lookup"
+      must_not: ["Couldn't find", "Stock"]
+  - text: "it's a new one, not the same as those"
+    expect:
+      kind: any
+      about: "if similar ideas were offered: saves it as a new idea; if it was already saved: a short confirmation; never re-asks the identical question"
+      must_not: ["Couldn't find", "Sorry, I didn't catch your choice"]
+
+- id: ideas-i02
+  source: improvised
+  domain: ideas
+  audience: dealer
+  shapes: [refine, free_text_reply]
+  turns:
+  - text: "Suggestion: can the bot send me the new catalogue PDF every month automatically"
+    expect:
+      kind: any
+      about: "captures the monthly-catalogue suggestion as an idea (saved, similar offered, or one missing-field question); never sends a catalogue now"
+      attachments: false
+      must_not: ["Couldn't find"]
+  - text: "for Sorento and Mocha both"
+    expect:
+      kind: any
+      about: "adds the brands (Sorento and Mocha) to the held idea, or answers the open idea question with them; never starts a product or promotion lookup"
+      attachments: false
+      must_not: ["Couldn't find"]
+
+- id: ideas-i03
+  source: improvised
+  domain: ideas
+  audience: staff
+  shapes: [language_mix, refine]
+  turns:
+  - text: "Cadangan: boleh tak sistem hantar reminder bila stok SRTWC286-SH sampai"
+    expect:
+      kind: any
+      about: "a suggestion in Malay (a reminder when stock arrives): captured as an idea, reply in Malay; not a stock or ETA lookup for SRTWC286-SH"
+      lang: ms
+      must_not: ["Stock summary", "Stock details", "Butiran stok"]
+  - text: "untuk semua dealer, bukan saya sahaja"
+    expect:
+      kind: any
+      about: "adds the scope (all dealers) to the held idea or answers its open question; Malay reply"
+      lang: ms
+      must_not: ["Routed to your PIC"]
+
+- id: ideas-i04
+  source: improvised
+  domain: ideas
+  audience: staff
+  shapes: [language_mix, free_text_reply]
+  turns:
+  - text: "我有个建议：订单状态可以显示司机和车牌"
+    expect:
+      kind: any
+      about: "a Chinese suggestion (order status could show the driver and lorry plate): captured as an idea, Chinese reply; never an order lookup"
+      lang: zh
+      must_not: ["Couldn't find", "找不到"]
+  - text: "因为客户常常问几时到"
+    expect:
+      kind: any
+      about: "the reason / use case (customers often ask when it arrives) is added to the same idea, Chinese reply; never an ETA lookup"
+      lang: zh
+      must_not: ["找不到"]
+
+- id: ideas-r01
+  source: real
+  origin: "crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1625 IDEA-CAPTURE (problem message -> idea capture; use cases from message 1 survive the ask-back)"
+  domain: ideas
+  audience: unlinked
+  shapes: [reply_to_question, yes_no]
+  turns:
+  - text: "problem: every time I check stock the list too long, hard to read on phone. maybe can show only the warehouse near me"
+    expect:
+      kind: any
+      about: "a problem + suggestion: captured as an idea (or one question for a missing field) and the use case from this message is kept; never a stock lookup"
+      must_not: ["Stock summary", "Stock details", "I need at least one filter"]
+  - text: "yes save it"
+    expect:
+      kind: any
+      about: "confirms the idea is saved (the use case from the first message kept), or answers the open idea question; never a hand-over"
+      must_not: ["Routed to your PIC", "Sorry, I didn't catch your choice"]
+
+- id: ideas-i05
+  source: improvised
+  domain: ideas
+  audience: dealer
+  shapes: [topic_switch, switch_back]
+  turns:
+  - text: "idea: show the promo flyer expiry date in the chat"
+    expect:
+      kind: any
+      about: "captures the flyer-expiry idea (saved, similar offered, or one missing-field question)"
+      must_not: ["Couldn't find"]
+  - text: "ok now check stock SRTKS7061"
+    expect:
+      kind: answer
+      about: "a topic switch: availability of SRTKS7061; the idea dialogue does not swallow it"
+      must: ["SRTKS7061"]
+  - text: "back to my idea just now, add: for end user copy also"
+    expect:
+      kind: any
+      about: "switches back to the flyer-expiry idea and adds 'end user copy too' to it (or asks once how to add it); never a promotion file send and never a stock answer"
+      attachments: false
+      must_not: ["SRTKS7061 x"]

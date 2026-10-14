@@ -1,0 +1,2133 @@
+# PV2 battery judge calibration (UAC-3): real bot replies from crew live checks with the crew verdict.
+# history = the earlier turns of the same chat (bot text cut at 300 chars, marked [...]); reply = the full
+# reply of the judged turn read from chatbot.turns (send_message text); files = files the turn sent.
+# Person names do not occur; contact ids are only in contacts.yaml.
+- id: cal-p01
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  text: semua laa
+  reply: |-
+    Berikut ialah stok masuk yang ditemui.
+
+    1. *Kod Barang:* SRTWC286-SH-NEW
+    *Kontena:* WHSU7382874
+    *ETA:* 2026-09-08
+    *Kelewatan ETA:* 2026-09-09
+    *Kuantiti Masuk:* 209
+    *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+    2. *Kod Barang:* SRTWC286-SH-NEW-200
+    *Kontena:* WHSU7382874
+    *ETA:* 2026-09-08
+    *Kelewatan ETA:* 2026-09-09
+    *Kuantiti Masuk:* 150
+    *Peruntukan Gudang:* BRW (150)
+
+    3. *Kod Barang:* SRTWC286-SH-NEW-P
+    *Kontena:* WHSU7382874
+    *ETA:* 2026-09-08
+    *Kelewatan ETA:* 2026-09-09
+    *Kuantiti Masuk:* 33
+    *Peruntukan Gudang:* BRW (33)
+
+    4. *Kod Barang:* SRTWC286-SH-NEW
+    *Kontena:* WHSU7390118
+    *ETA:* 2026-09-08
+    *Kelewatan ETA:* 2026-09-09
+    *Kuantiti Masuk:* 105
+    *Peruntukan Gudang:* BRW (100), BRW-BB (5)
+
+    5. *Kod Barang:* SRTWC286-SH-NEW-200
+    *Kontena:* TRHU5749080
+    *ETA:* 2026-09-20
+    *Kelewatan ETA:* 2026-10-05
+    *Kuantiti Masuk:* 150
+    🚩  *(MENUNGGU PERUNTUKAN)*
+
+    6. *Kod Barang:* SRTWC286-SH-NEW-P
+    *Kontena:* TRHU5749080
+    *ETA:* 2026-09-20
+    *Kelewatan ETA:* 2026-10-05
+    *Kuantiti Masuk:* 44
+    🚩  *(MENUNGGU PERUNTUKAN)*
+    Tiada stok masuk untuk SRTWC286-SH-NEW-150, SRTWC286-SH-P, SRTWC286-SH-UF.
+
+    Tetapi berikut ialah butiran stok untuk produk yang diminta:
+
+    - *Kod Barang:* SRTWC286-SH-150
+    *Gudang:* BUKIT RAJA
+    *Lokasi Sistem:* BRW
+    *Kuantiti Ada:* 0
+    *Tertunggak:* 9
+
+    - *Kod Barang:* SRTWC286-SH-150
+    *Gudang:* BUKIT RAJA
+    *Lokasi Sistem:* BRW-SMC
+    *Kuantiti Ada:* 0
+    *Tertunggak:* 0
+
+    - *Kod Barang:* SRTWC286-SH-150
+    *Gudang:* BERSATU (PORT KLANG)
+    *Lokasi Sistem:* DC1
+    *Kuantiti Ada:* 0
+    *Tertunggak:* 0
+
+    - *Kod Barang:* SRTWC286-SH-150
+    *Gudang:* MERU
+    *Lokasi Sistem:* MWH
+    *Kuantiti Ada:* 0
+    *Tertunggak:* 0
+
+    - *Kod Barang:* SRTWC286-SH-150
+    *Gudang:* WH3 (PSM)
+    *Lokasi Sistem:* WH3-PSM
+    *Kuantiti Ada:* 0
+    *Tertunggak:* 0
+
+    - *Kod Barang:* SRTWC286-SH-200
+    *Gudang:* BUKIT RAJA
+    *Lokasi Sistem:* BRW
+    *Kuantiti Ada:* 0
+    *Tertunggak:* 0
+
+    - *Kod Barang:* SRTWC286-SH-200
+    *Gudang:* BERSATU (PORT KLANG)
+    *Lokasi Sistem:* DC1
+    *Kuantiti Ada:* 0
+    *Tertunggak:* 0
+
+    - *Kod Barang:* SRTWC286-SH-200
+    *Gudang:* MERU
+    *Lokasi Sistem:* MWH
+    *Kuantiti Ada:* 0
+    *Tertunggak:* 0
+
+    - *Kod Barang:* SRTWC286-SH-NEW-150
+    *Gudang:* BUKIT RAJA
+    *Lokasi Sistem:* BRW
+    *Kuantiti Ada:* 17
+    *Tertunggak:* 20
+
+    - *Kod Barang:* SRTWC286-SH-P
+    *Gudang:* BUKIT RAJA
+    *Lokasi Sistem:* BRW
+    *Kuantiti Ada:* 1
+    *Tertunggak:* 10
+    ⚠️  *(PRODUK DIHENTIKAN)*
+
+    - *Kod Barang:* SRTWC286-SH-UF
+    *Gudang:* MERU
+    *Lokasi Sistem:* MWH-IR
+    *Kuantiti Ada:* 48
+    *Tertunggak:* 0
+
+    - *Kod Barang:* SRTWC286-SH-UF
+    *Gudang:* WH3 (PSM)
+    *Lokasi Sistem:* WH3-IR
+    *Kuantiti Ada:* 3
+    *Tertunggak:* 0
+
+    Tiada stok masuk dan tiada stok untuk SRTWC286-SH-PP, tetapi PO telah dibuat:
+    *Kod Barang:* SRTWC286-SH-PP
+    *Dipesan:* 72
+    *Tertunggak:* 72
+    *Tarikh PO:* 2026-04-08
+    *Lokasi:* BRW-BB
+
+    Tiada stok masuk, stok 0 di setiap lokasi dan tiada pesanan untuk SRTWC286-SH-150, SRTWC286-SH-200.
+  files: []
+  expect:
+    kind: any
+    about: '''semua'' = all: incoming for every SRTWC286 member with incoming; a Malay reply is fine; never a hand-over'
+    must_not:
+    - Routed to your PIC
+  label: pass
+  why: 'Crew verdict PASS: ''semua laa'' read as all, incoming for the -NEW, -NEW-200 and -NEW-P members, in Malay. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T5.'
+- id: cal-p02
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  - user: semua laa
+    bot: |-
+      Berikut ialah stok masuk yang ditemui.
+
+      1. *Kod Barang:* SRTWC286-SH-NEW
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ETA:* 2026-09-09
+      *Kuantiti Masuk:* 209
+      *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+      2. *Kod Barang:* SRTWC286-SH-NEW-200
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ET [...]
+  - user: you got any pics or td drawing for htis?
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - has Product Photos, has Technical Specifications
+      2. SRTWC286-SH-150 - no Product Photos, has Technical Specifications
+      3. SRTWC286-SH-200 - no Product Photos, has Technical Specifications
+      4. SRTWC286-SH-NEW - no Product Photos, no Technical S [...]
+  - user: first one
+    bot: |-
+      I have attached the file(s) below.
+
+      1. *Product Code:* SRTWC286-SH
+      *Attachment Type:* Product Photos
+      *File Name:* SRTWC286-SH.jpg
+      *Attachment Type:* Technical Specifications
+      *File Name:* SRTWC286-SH_TD.jpg
+
+      SRTWC286-SH has no Product Photos.
+
+      _Data last updated: 14/05/2026 15:26:39_
+  text: 202610-0151 status?
+  reply: |-
+    Customer: all customers
+    Product: all products
+    Delivery order: 202610-0151
+    Dates: all dates
+
+    Here are the orders I found.
+
+    1. *Order Number:* 202610-0151
+    *Customer:* J & Y WORLD HARDWARE SDN BHD [A/C IV]
+    *Order Date:* 01/10/2026
+    *Status:* New Order
+    *Warehouse:* BRW
+    *Products:* CKS1052-BL (2)
+
+    _Data last updated: 01/10/2026 09:26:37_
+  files: []
+  expect:
+    kind: answer
+    about: order 202610-0151 of J & Y WORLD HARDWARE SDN BHD with its status and line CKS1052-BL x2, English reply
+    must:
+    - 202610-0151
+    - CKS1052-BL
+    lang: en
+  label: pass
+  why: 'Crew verdict PASS: right order, customer, status and line; the ''Delivery order:'' header label is a minor wording issue only. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T8.'
+- id: cal-p03
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  - user: semua laa
+    bot: |-
+      Berikut ialah stok masuk yang ditemui.
+
+      1. *Kod Barang:* SRTWC286-SH-NEW
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ETA:* 2026-09-09
+      *Kuantiti Masuk:* 209
+      *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+      2. *Kod Barang:* SRTWC286-SH-NEW-200
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ET [...]
+  - user: you got any pics or td drawing for htis?
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - has Product Photos, has Technical Specifications
+      2. SRTWC286-SH-150 - no Product Photos, has Technical Specifications
+      3. SRTWC286-SH-200 - no Product Photos, has Technical Specifications
+      4. SRTWC286-SH-NEW - no Product Photos, no Technical S [...]
+  - user: first one
+    bot: |-
+      I have attached the file(s) below.
+
+      1. *Product Code:* SRTWC286-SH
+      *Attachment Type:* Product Photos
+      *File Name:* SRTWC286-SH.jpg
+      *Attachment Type:* Technical Specifications
+      *File Name:* SRTWC286-SH_TD.jpg
+
+      SRTWC286-SH has no Product Photos.
+
+      _Data last updated: 14/05/2026 15:26:39_
+  - user: 202610-0151 status?
+    bot: |-
+      Customer: all customers
+      Product: all products
+      Delivery order: 202610-0151
+      Dates: all dates
+
+      Here are the orders I found.
+
+      1. *Order Number:* 202610-0151
+      *Customer:* J & Y WORLD HARDWARE SDN BHD [A/C IV]
+      *Order Date:* 01/10/2026
+      *Status:* New Order
+      *Warehouse:* BRW
+      *Products:* CKS1052-BL (2)
+
+      _Data l [...]
+  - user: got techncial drawign for this product/
+    bot: |-
+      Which "this product" do you mean?
+
+      1. 202610-0151
+
+      Reply with the number.
+  text: srtwf12c eta
+  reply: |-
+    No incoming stock found for SRTWF12C.
+    *Alternative:* SRTWF12C-NEW
+    Here are the results.
+
+    1. *Product Code:* SRTWF12C-NEW
+    *Container:* SEGU4428362
+    *ETA:* 2026-09-06
+    *ETA Delay:* 2026-09-16
+    *Incoming Quantity:* 204
+    *Warehouse Allocations:* BRW (204)
+    No incoming, no stock and nothing on order for SRTWF12C.
+  files: []
+  expect:
+    kind: answer
+    about: 'ETA for SRTWF12C: none for SRTWF12C itself, with the SRTWF12C-NEW alternative''s incoming'
+    must:
+    - SRTWF12C
+    must_not:
+    - SRTWF12C SRTWF12C
+  label: pass
+  why: 'Crew verdict PASS: no incoming for SRTWF12C, alternative SRTWF12C-NEW ETA, label single in the reply. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T10.'
+- id: cal-p04
+  history:
+  - user: SRTWC286-SH stock
+    bot: |-
+      Stock summary for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Total:* 611 (O/S: 561)
+      *BRW:* 3 (O/S: 20)
+      *BRW-ACTS:* 0 (O/S: 0)
+      *BRW-BB:* 0 (O/S: 0)
+      *BRW-IB:* 0 (O/S: 541)
+      *DC1-IB:* 485 (O/S: 0)
+      *MWH:* 0 (O/S: 0)
+      *MWH-BB:* 2 (O/S: 0)
+      *MWH-IB:* 121 (O/S: 0)
+      *WH3-PSM:* 0 (O/S: 0)
+
+      2. *Prod [...]
+  text: photo and technical drawing
+  reply: |-
+    I have attached the file(s) below.
+
+    1. *Product Code:* SRTWC286-SH
+    *Attachment Type:* Product Photos
+    *File Name:* SRTWC286-SH.jpg
+    *Attachment Type:* Technical Specifications
+    *File Name:* SRTWC286-SH_TD.jpg
+
+    _Data last updated: 14/05/2026 15:26:39_
+  files:
+  - SRTWC286-SH.jpg (Product Photos)
+  - SRTWC286-SH.jpg (Technical Specifications)
+  expect:
+    kind: answer
+    about: both the photo and the technical drawing of SRTWC286-SH sent, no gap line for a kind that was sent
+    attachments: true
+    must:
+    - SRTWC286-SH
+    must_not:
+    - has no Product Photos
+  label: pass
+  why: 'Crew verdict PASS (round 8a target): both files attached and no false ''has no Product Photos'' line. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-JD-ST12-14 T2.'
+- id: cal-p05
+  history:
+  - user: SRTWC286-SH stock
+    bot: |-
+      Stock summary for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Total:* 611 (O/S: 561)
+      *BRW:* 3 (O/S: 20)
+      *BRW-ACTS:* 0 (O/S: 0)
+      *BRW-BB:* 0 (O/S: 0)
+      *BRW-IB:* 0 (O/S: 541)
+      *DC1-IB:* 485 (O/S: 0)
+      *MWH:* 0 (O/S: 0)
+      *MWH-BB:* 2 (O/S: 0)
+      *MWH-IB:* 121 (O/S: 0)
+      *WH3-PSM:* 0 (O/S: 0)
+
+      2. *Prod [...]
+  - user: photo and technical drawing
+    bot: |-
+      I have attached the file(s) below.
+
+      1. *Product Code:* SRTWC286-SH
+      *Attachment Type:* Product Photos
+      *File Name:* SRTWC286-SH.jpg
+      *Attachment Type:* Technical Specifications
+      *File Name:* SRTWC286-SH_TD.jpg
+
+      _Data last updated: 14/05/2026 15:26:39_
+  text: photo for this product
+  reply: |-
+    I have attached the file(s) below.
+
+    1. *Product Code:* SRTWC286-SH
+    *Attachment Type:* Product Photos
+    *File Name:* SRTWC286-SH.jpg
+
+    _Data last updated: 29/04/2026 08:35:37_
+  files:
+  - SRTWC286-SH.jpg (Product Photos)
+  expect:
+    kind: answer
+    about: the photo of the held SRTWC286-SH
+    attachments: true
+    must:
+    - SRTWC286-SH
+  label: pass
+  why: 'Crew verdict PASS: ''this product'' resolved to the held SRTWC286-SH and its photo sent. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-JD-ST12-14 T3.'
+- id: cal-p06
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock summary for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Total:* 611 (O/S: 561)
+      *BRW:* 3 (O/S: 20)
+      *BRW-ACTS:* 0 (O/S: 0)
+      *BRW-BB:* 0 (O/S: 0)
+      *BRW-IB:* 0 (O/S: 541)
+      *DC1-IB:* 485 (O/S: 0)
+      *MWH:* 0 (O/S: 0)
+      *MWH-BB:* 2 (O/S: 0)
+      *MWH-IB:* 121 (O/S: 0)
+      *WH3-PSM:* 0 (O/S: 0)
+
+      2. *Prod [...]
+  text: eta
+  reply: |-
+    Here is the incoming stock I found.
+
+    1. *Product Code:* SRTWC286-SH-NEW
+    *Container:* WHSU7382874
+    *ETA:* 2026-09-08
+    *Incoming Quantity:* 209
+    *Warehouse Allocations:* BRW (136), BRW-BB (73)
+
+    2. *Product Code:* SRTWC286-SH-NEW-200
+    *Container:* WHSU7382874
+    *ETA:* 2026-09-08
+    *Incoming Quantity:* 150
+    *Warehouse Allocations:* BRW (150)
+
+    3. *Product Code:* SRTWC286-SH-NEW-P
+    *Container:* WHSU7382874
+    *ETA:* 2026-09-08
+    *Incoming Quantity:* 33
+    *Warehouse Allocations:* BRW (33)
+
+    4. *Product Code:* SRTWC286-SH-NEW
+    *Container:* WHSU7390118
+    *ETA:* 2026-09-08
+    *Incoming Quantity:* 105
+    *Warehouse Allocations:* BRW (100), BRW-BB (5)
+
+    5. *Product Code:* SRTWC286-SH-NEW-200
+    *Container:* TRHU5749080
+    *ETA:* 2026-09-20
+    *Incoming Quantity:* 150
+    🚩  *(PENDING ALLOCATION)*
+
+    6. *Product Code:* SRTWC286-SH-NEW-P
+    *Container:* TRHU5749080
+    *ETA:* 2026-09-20
+    *Incoming Quantity:* 44
+    🚩  *(PENDING ALLOCATION)*
+    No incoming for SRTWC286-SH-NEW-150, SRTWC286-SH-P, SRTWC286-SH-UF.
+
+    But here are the stock details for the requested products:
+
+    - *Product Code:* SRTWC286-SH-150
+    *Total:* 0 (O/S: 9)
+    *BRW:* 0 (O/S: 9)
+    *BRW-SMC:* 0 (O/S: 0)
+    *DC1:* 0 (O/S: 0)
+    *MWH:* 0 (O/S: 0)
+    *WH3-PSM:* 0 (O/S: 0)
+
+    - *Product Code:* SRTWC286-SH-200
+    *Total:* 0 (O/S: 0)
+    *BRW:* 0 (O/S: 0)
+    *DC1:* 0 (O/S: 0)
+    *MWH:* 0 (O/S: 0)
+
+    - *Product Code:* SRTWC286-SH-NEW-150
+    *Total:* 17 (O/S: 20)
+    *BRW:* 17 (O/S: 20)
+    *BRW-IR:* 0 (O/S: 0)
+    *MWH:* 0 (O/S: 0)
+    *MWH-BB:* 0 (O/S: 0)
+
+    - *Product Code:* SRTWC286-SH-P
+    *Total:* 1 (O/S: 10)
+    *BRW:* 1 (O/S: 10)
+    *BRW-SYNT:* 0 (O/S: 0)
+    *DC1:* 0 (O/S: 0)
+    *MWH:* 0 (O/S: 0)
+    *MWH-BB:* 0 (O/S: 0)
+    ⚠️  *(PRODUCT DISCONTINUED)*
+
+    - *Product Code:* SRTWC286-SH-PP
+    *Total:* 0 (O/S: 72)
+    *BRW-BB:* 0 (O/S: 72)
+
+    - *Product Code:* SRTWC286-SH-UF
+    *Total:* 51 (O/S: 36)
+    *BRW-IR:* 0 (O/S: 36)
+    *MWH-IR:* 48 (O/S: 0)
+    *WH3-IR:* 3 (O/S: 0)
+
+    No incoming and stock is 0 at every location for SRTWC286-SH-PP, but PO is placed:
+    *Product Code:* SRTWC286-SH-PP
+    *Ordered:* 72
+    *Outstanding:* 72
+    *PO date:* 2026-04-08
+    *Location:* BRW-BB
+
+    No incoming, stock is 0 at every location and nothing on order for SRTWC286-SH-150, SRTWC286-SH-200.
+
+    Would you like me to escalate to purchasing team?
+  files: []
+  expect:
+    kind: answer
+    about: ETA for the held SRTWC286 family answered directly for the members with incoming, no which-product menu
+    must:
+    - SRTWC286
+    must_not:
+    - Which product do you mean? Please choose
+  label: pass
+  why: 'Crew verdict PASS: ''eta'' answered for -NEW, -NEW-200 and -NEW-P directly. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv C-S6-7 T2.'
+- id: cal-p07
+  history: []
+  text: SO422057 status?
+  reply: Sales order figures are not enabled for your account.
+  files: []
+  expect:
+    kind: refuse
+    about: a dealer without the sales-order grant gets the refusal line before any lookup
+    must:
+    - Sales order figures are not enabled for your account.
+    must_not:
+    - Couldn't find
+  label: pass
+  why: 'Crew verdict PASS: exact refusal, no not-found or offer that would reveal the order. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-AL-SO T1.'
+- id: cal-p08
+  history: []
+  text: SRTWC286-SH ada stok tak?
+  reply: 'Tidak dapat menemui: "SRTWC286-SH" (product). Adakah anda mahu saya rujuk kepada pasukan warehouse?'
+  files: []
+  expect:
+    kind: any
+    about: 'the contact sees no SRT products: not-found plus the warehouse offer, in Malay'
+    lang: ms
+    must_not:
+    - Couldn't find
+    - Would you like me to escalate
+  label: pass
+  why: 'Crew verdict PASS: not-found and offer in Malay (a team name staying English is fine). crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv C-S13 T1.'
+- id: cal-p09
+  history: []
+  text: sales report for September
+  reply: Sales report is not enabled for your account.
+  files: []
+  expect:
+    kind: refuse
+    about: 'no sales-report grant: refused at the first step'
+    must:
+    - Sales report is not enabled for your account.
+  label: pass
+  why: 'Crew verdict PASS: refusal at the first step that needs the grant. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv C-S15 T1.'
+- id: cal-p10
+  history: []
+  text: 老板，我要订货：SRTWC286-SH 5个，SRTWF12C-GM-NEW 3个，SRT373-8 2个，SRTWB999 4个
+  reply: 找不到："SRTWC286-SH" (product), "SRTWF12C-GM-NEW" (product), "SRT373-8" (product), "SRTWB999" (product)。 需要我转交给 customer service 团队吗？
+  files: []
+  expect:
+    kind: any
+    about: 'an order request for four codes the contact cannot see: not-found for each typed code plus a customer service offer, in Chinese; no squashed or widened codes'
+    lang: zh
+    must_not:
+    - Could not find portal link
+    - SRTWF12CGMNEW
+    - SRT3738
+  label: pass
+  why: 'Crew verdict PASS: four typed codes kept verbatim, Chinese reply, customer service offer. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-AL-ST6 T1.'
+- id: cal-p11
+  history:
+  - user: SRTWC286-SH stock 3 unit
+    bot: 'Couldn''t find: "SRTWC286-SH" (product). Would you like me to escalate to warehouse team?'
+  - user: sales report for September delivered
+    bot: Sales report is not enabled for your account.
+  text: ok back to the SRTWC286-SH, got 10 unit?
+  reply: 'Couldn''t find: "SRTWC286-SH" (product). Would you like me to escalate to warehouse team?'
+  files: []
+  expect:
+    kind: any
+    about: 'switch back with the typed SRTWC286-SH: the same not-found plus warehouse offer this contact gets for SRT products; never ''I need at least one filter'''
+    must:
+    - SRTWC286-SH
+    must_not:
+    - I need at least one filter
+    allow_repeat: true
+  label: pass
+  why: 'Crew verdict PASS: typed product kept after a report refusal; v1 parity for a contact that sees no SRT products. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-AL-X-switch T3.'
+- id: cal-p12
+  history:
+  - user: 202610-0151 STATUS?
+    bot: |-
+      Customer: all customers
+      Product: all products
+      Delivery order: 202610-0151
+      Dates: all dates
+
+      Here are the orders I found.
+
+      1. *Order Number:* 202610-0151
+      *Customer:* J & Y WORLD HARDWARE SDN BHD [A/C IV]
+      *Order Date:* 01/10/2026
+      *Status:* New Order
+      *Warehouse:* BRW
+      *Products:* CKS1052-BL (2)
+
+      _Data l [...]
+  - user: SRTWC286 stock
+    bot: |-
+      Stock summary for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Total:* 611 (O/S: 561)
+      *BRW:* 3 (O/S: 20)
+      *BRW-ACTS:* 0 (O/S: 0)
+      *BRW-BB:* 0 (O/S: 0)
+      *BRW-IB:* 0 (O/S: 541)
+      *DC1-IB:* 485 (O/S: 0)
+      *MWH:* 0 (O/S: 0)
+      *MWH-BB:* 2 (O/S: 0)
+      *MWH-IB:* 121 (O/S: 0)
+      *WH3-PSM:* 0 (O/S: 0)
+
+      2. *Prod [...]
+  text: back to the order just now, which warehouse?
+  reply: |-
+    Carrying on from Wed 14 Oct: orders for 202610-0151.
+
+    Customer: all customers
+    Product: all products
+    Delivery order: 202610-0151
+    Dates: all dates
+
+    Here are the orders I found.
+
+    1. *Order Number:* 202610-0151
+    *Customer:* J & Y WORLD HARDWARE SDN BHD [A/C IV]
+    *Order Date:* 01/10/2026
+    *Status:* New Order
+    *Warehouse:* BRW
+    *Products:* CKS1052-BL (2)
+
+    _Data last updated: 01/10/2026 09:26:37_
+  files: []
+  expect:
+    kind: answer
+    about: switch back to order 202610-0151 and its warehouse after a stock topic
+    must:
+    - 202610-0151
+    must_not:
+    - Which "which warehouse"
+    - purchasing team
+  label: pass
+  why: 'Crew verdict PASS: the order answered again after ''back to the order just now''. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv C-S8-10 T3.'
+- id: cal-f01
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  text: any eta mou?
+  reply: |-
+    Which "mou" do you mean?
+
+    1. SRTWC286 (10 variants)
+
+    Reply with the number.
+  files: []
+  expect:
+    kind: any
+    about: ETA / incoming for the held SRTWC286 family; 'mou' is the particle 'or not'
+    must_not:
+    - Which "mou"
+  label: fail
+  why: 'Crew verdict FAIL: ''mou'' read as an unknown entity, the ETA ask lost, a which-mou menu offered the held family. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T2.'
+- id: cal-f02
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  text: '1'
+  reply: |-
+    Stock details found for the requested products.
+
+    1. *Product Code:* SRTWC286-SH
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 3
+    *Outstanding:* 20
+
+    2. *Product Code:* SRTWC286-SH
+    *Warehouse:* BERSATU (PORT KLANG)
+    *System Location:* DC1-IB
+    *Quantity On Hand:* 485
+    *Outstanding:* 0
+
+    3. *Product Code:* SRTWC286-SH
+    *Warehouse:* MERU
+    *System Location:* MWH-BB
+    *Quantity On Hand:* 2
+    *Outstanding:* 0
+
+    4. *Product Code:* SRTWC286-SH
+    *Warehouse:* MERU
+    *System Location:* MWH-IB
+    *Quantity On Hand:* 121
+    *Outstanding:* 0
+
+    5. *Product Code:* SRTWC286-SH-150
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 0
+    *Outstanding:* 9
+
+    6. *Product Code:* SRTWC286-SH-150
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW-SMC
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    7. *Product Code:* SRTWC286-SH-150
+    *Warehouse:* BERSATU (PORT KLANG)
+    *System Location:* DC1
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    8. *Product Code:* SRTWC286-SH-150
+    *Warehouse:* MERU
+    *System Location:* MWH
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    9. *Product Code:* SRTWC286-SH-150
+    *Warehouse:* WH3 (PSM)
+    *System Location:* WH3-PSM
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    10. *Product Code:* SRTWC286-SH-200
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    11. *Product Code:* SRTWC286-SH-200
+    *Warehouse:* BERSATU (PORT KLANG)
+    *System Location:* DC1
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    12. *Product Code:* SRTWC286-SH-200
+    *Warehouse:* MERU
+    *System Location:* MWH
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    13. *Product Code:* SRTWC286-SH-NEW
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 50
+    *Outstanding:* 120
+
+    14. *Product Code:* SRTWC286-SH-NEW
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW-IB
+    *Quantity On Hand:* 4
+    *Outstanding:* 275
+
+    15. *Product Code:* SRTWC286-SH-NEW
+    *Warehouse:* BERSATU (PORT KLANG)
+    *System Location:* DC1
+    *Quantity On Hand:* 84
+    *Outstanding:* 0
+
+    16. *Product Code:* SRTWC286-SH-NEW
+    *Warehouse:* BERSATU (PORT KLANG)
+    *System Location:* DC1-BB
+    *Quantity On Hand:* 13
+    *Outstanding:* 0
+
+    17. *Product Code:* SRTWC286-SH-NEW
+    *Warehouse:* MERU
+    *System Location:* MWH
+    *Quantity On Hand:* 203
+    *Outstanding:* 0
+
+    18. *Product Code:* SRTWC286-SH-NEW
+    *Warehouse:* MERU
+    *System Location:* MWH-BB
+    *Quantity On Hand:* 29
+    *Outstanding:* 0
+
+    19. *Product Code:* SRTWC286-SH-NEW
+    *Warehouse:* WH3 (PSM)
+    *System Location:* WH3
+    *Quantity On Hand:* 31
+    *Outstanding:* 0
+
+    20. *Product Code:* SRTWC286-SH-NEW-150
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 17
+    *Outstanding:* 20
+
+    21. *Product Code:* SRTWC286-SH-NEW-200
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 0
+    *Outstanding:* 49
+
+    22. *Product Code:* SRTWC286-SH-NEW-200
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW-HP
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    23. *Product Code:* SRTWC286-SH-NEW-200
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW-IR
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    24. *Product Code:* SRTWC286-SH-NEW-200
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW-NTC
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+
+    25. *Product Code:* SRTWC286-SH-NEW-P
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 12
+    *Outstanding:* 7
+
+    26. *Product Code:* SRTWC286-SH-NEW-P
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW-BB
+    *Quantity On Hand:* 22
+    *Outstanding:* 75
+
+    27. *Product Code:* SRTWC286-SH-P
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 1
+    *Outstanding:* 10
+    ⚠️  *(PRODUCT DISCONTINUED)*
+
+    28. *Product Code:* SRTWC286-SH-UF
+    *Warehouse:* MERU
+    *System Location:* MWH-IR
+    *Quantity On Hand:* 48
+    *Outstanding:* 0
+
+    29. *Product Code:* SRTWC286-SH-UF
+    *Warehouse:* WH3 (PSM)
+    *System Location:* WH3-IR
+    *Quantity On Hand:* 3
+    *Outstanding:* 0
+
+    _Data last updated: 21/09/2026 10:32:45_
+    No stock for SRTWC286-SH-NEW-200.
+
+    But there is INCOMING stock (ETA) for the requested products:
+
+    - *Product Code:* SRTWC286-SH-NEW-200
+    *Container:* WHSU7382874
+    *ETA:* 2026-09-08
+    *ETA Delay:* 2026-09-09
+    *CIDB Inspection:* 2026-09-09
+    *CIDB Approval:* 2026-09-11
+    *Gatepass:* 2026-09-17
+    *Loading:* 2026-08-28
+    *ETC:* 2026-08-29
+    *ETD:* 2026-08-31
+    *Liner:* WHL
+    *China Forwarder:* J&H
+    *Malaysia Forwarder:* MPM
+    *Consignee:* Sorento
+    *Free Days Available:* 14
+    *Location:* MWH
+    *Incoming Quantity:* 150
+    *Warehouse Allocations:* BRW (150)
+
+    - *Product Code:* SRTWC286-SH-NEW-200
+    *Container:* TRHU5749080
+    *ETA:* 2026-09-20
+    *ETA Delay:* 2026-10-05
+    *Loading:* 2026-09-08
+    *ETC:* 2026-09-09
+    *ETD:* 2026-09-11
+    *Liner:* CMA
+    *China Forwarder:* Haiian
+    *Malaysia Forwarder:* Haiian
+    *Consignee:* Sorento
+    *Free Days Available:* 14
+    *Incoming Quantity:* 150
+    🚩  *(PENDING ALLOCATION)*
+
+    No stock and no incoming for SRTWC286-SH-PP, but PO is placed:
+    *Product Code:* SRTWC286-SH-PP
+    *Ordered:* 72
+    *Outstanding:* 72
+    *PO date:* 2026-04-08
+    *Location:* BRW-BB
+
+    Stock is 0 at every location, no incoming and nothing on order for SRTWC286-SH-150, SRTWC286-SH-200.
+  files: []
+  expect:
+    kind: any
+    about: 'the pick keeps the ETA ask: incoming for SRTWC286, never the stock answer again'
+    must_not:
+    - Stock details found
+  label: fail
+  why: 'Crew verdict FAIL: the pick re-ran the stock answer instead of the ETA. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T3.'
+- id: cal-f03
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  - user: semua laa
+    bot: |-
+      Berikut ialah stok masuk yang ditemui.
+
+      1. *Kod Barang:* SRTWC286-SH-NEW
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ETA:* 2026-09-09
+      *Kuantiti Masuk:* 209
+      *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+      2. *Kod Barang:* SRTWC286-SH-NEW-200
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ET [...]
+  - user: you got any pics or td drawing for htis?
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - has Product Photos, has Technical Specifications
+      2. SRTWC286-SH-150 - no Product Photos, has Technical Specifications
+      3. SRTWC286-SH-200 - no Product Photos, has Technical Specifications
+      4. SRTWC286-SH-NEW - no Product Photos, no Technical S [...]
+  text: first one
+  reply: |-
+    I have attached the file(s) below.
+
+    1. *Product Code:* SRTWC286-SH
+    *Attachment Type:* Product Photos
+    *File Name:* SRTWC286-SH.jpg
+    *Attachment Type:* Technical Specifications
+    *File Name:* SRTWC286-SH_TD.jpg
+
+    SRTWC286-SH has no Product Photos.
+
+    _Data last updated: 14/05/2026 15:26:39_
+  files:
+  - SRTWC286-SH.jpg (Product Photos)
+  - SRTWC286-SH.jpg (Technical Specifications)
+  expect:
+    kind: answer
+    about: the files of the first member SRTWC286-SH, with no gap line for a kind that was sent
+    attachments: true
+    must_not:
+    - has no Product Photos
+  label: fail
+  why: 'Crew verdict FAIL: photo and drawing sent but the text says ''SRTWC286-SH has no Product Photos.'' (false gap). crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T7.'
+- id: cal-f04
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  - user: semua laa
+    bot: |-
+      Berikut ialah stok masuk yang ditemui.
+
+      1. *Kod Barang:* SRTWC286-SH-NEW
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ETA:* 2026-09-09
+      *Kuantiti Masuk:* 209
+      *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+      2. *Kod Barang:* SRTWC286-SH-NEW-200
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ET [...]
+  - user: you got any pics or td drawing for htis?
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - has Product Photos, has Technical Specifications
+      2. SRTWC286-SH-150 - no Product Photos, has Technical Specifications
+      3. SRTWC286-SH-200 - no Product Photos, has Technical Specifications
+      4. SRTWC286-SH-NEW - no Product Photos, no Technical S [...]
+  - user: first one
+    bot: |-
+      I have attached the file(s) below.
+
+      1. *Product Code:* SRTWC286-SH
+      *Attachment Type:* Product Photos
+      *File Name:* SRTWC286-SH.jpg
+      *Attachment Type:* Technical Specifications
+      *File Name:* SRTWC286-SH_TD.jpg
+
+      SRTWC286-SH has no Product Photos.
+
+      _Data last updated: 14/05/2026 15:26:39_
+  - user: 202610-0151 status?
+    bot: |-
+      Customer: all customers
+      Product: all products
+      Delivery order: 202610-0151
+      Dates: all dates
+
+      Here are the orders I found.
+
+      1. *Order Number:* 202610-0151
+      *Customer:* J & Y WORLD HARDWARE SDN BHD [A/C IV]
+      *Order Date:* 01/10/2026
+      *Status:* New Order
+      *Warehouse:* BRW
+      *Products:* CKS1052-BL (2)
+
+      _Data l [...]
+  text: got techncial drawign for this product/
+  reply: |-
+    Which "this product" do you mean?
+
+    1. 202610-0151
+
+    Reply with the number.
+  files: []
+  expect:
+    kind: answer
+    about: '''this product'' = CKS1052-BL, the only line of order 202610-0151: its technical drawing (or that none is on file)'
+    must:
+    - CKS1052-BL
+    must_not:
+    - Which "this product"
+  label: fail
+  why: 'Crew verdict FAIL: offered the order number as the product instead of CKS1052-BL. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T9.'
+- id: cal-f05
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  - user: semua laa
+    bot: |-
+      Berikut ialah stok masuk yang ditemui.
+
+      1. *Kod Barang:* SRTWC286-SH-NEW
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ETA:* 2026-09-09
+      *Kuantiti Masuk:* 209
+      *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+      2. *Kod Barang:* SRTWC286-SH-NEW-200
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ET [...]
+  - user: you got any pics or td drawing for htis?
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - has Product Photos, has Technical Specifications
+      2. SRTWC286-SH-150 - no Product Photos, has Technical Specifications
+      3. SRTWC286-SH-200 - no Product Photos, has Technical Specifications
+      4. SRTWC286-SH-NEW - no Product Photos, no Technical S [...]
+  - user: first one
+    bot: |-
+      I have attached the file(s) below.
+
+      1. *Product Code:* SRTWC286-SH
+      *Attachment Type:* Product Photos
+      *File Name:* SRTWC286-SH.jpg
+      *Attachment Type:* Technical Specifications
+      *File Name:* SRTWC286-SH_TD.jpg
+
+      SRTWC286-SH has no Product Photos.
+
+      _Data last updated: 14/05/2026 15:26:39_
+  - user: 202610-0151 status?
+    bot: |-
+      Customer: all customers
+      Product: all products
+      Delivery order: 202610-0151
+      Dates: all dates
+
+      Here are the orders I found.
+
+      1. *Order Number:* 202610-0151
+      *Customer:* J & Y WORLD HARDWARE SDN BHD [A/C IV]
+      *Order Date:* 01/10/2026
+      *Status:* New Order
+      *Warehouse:* BRW
+      *Products:* CKS1052-BL (2)
+
+      _Data l [...]
+  - user: got techncial drawign for this product/
+    bot: |-
+      Which "this product" do you mean?
+
+      1. 202610-0151
+
+      Reply with the number.
+  - user: srtwf12c eta
+    bot: |-
+      No incoming stock found for SRTWF12C.
+      *Alternative:* SRTWF12C-NEW
+      Here are the results.
+
+      1. *Product Code:* SRTWF12C-NEW
+      *Container:* SEGU4428362
+      *ETA:* 2026-09-06
+      *ETA Delay:* 2026-09-16
+      *Incoming Quantity:* 204
+      *Warehouse Allocations:* BRW (204)
+      No incoming, no stock and nothing on order for SRTWF [...]
+  text: okay can help me check the stock fort he previous product I asked ealrie?
+  reply: |-
+    Stock details found for the requested products.
+
+    1. *Product Code:* SRTWF12C-BL
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+    ⚠️  *(PRODUCT DISCONTINUED)*
+
+    2. *Product Code:* SRTWF12C-BL-NEW
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 8
+    *Outstanding:* 0
+
+    3. *Product Code:* SRTWF12C-FRG
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 18
+    *Outstanding:* 0
+
+    4. *Product Code:* SRTWF12C-GM
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+    ⚠️  *(PRODUCT DISCONTINUED)*
+
+    5. *Product Code:* SRTWF12C-GM
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW-SMC
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+    ⚠️  *(PRODUCT DISCONTINUED)*
+
+    6. *Product Code:* SRTWF12C-GM
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW-SYNT
+    *Quantity On Hand:* 0
+    *Outstanding:* 0
+    ⚠️  *(PRODUCT DISCONTINUED)*
+
+    7. *Product Code:* SRTWF12C-GM-NEW
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 7
+    *Outstanding:* 0
+
+    8. *Product Code:* SRTWF12C-GY
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 41
+    *Outstanding:* 0
+
+    9. *Product Code:* SRTWF12C-GY
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW-BB
+    *Quantity On Hand:* 1
+    *Outstanding:* 0
+
+    10. *Product Code:* SRTWF12C-NEW
+    *Warehouse:* BUKIT RAJA
+    *System Location:* BRW
+    *Quantity On Hand:* 0
+    *Outstanding:* 64
+
+    _Data last updated: 21/09/2026 10:32:45_
+  files: []
+  expect:
+    kind: any
+    about: 'the product asked before SRTWF12C (SRTWC286): its stock, or a question listing the earlier subjects'
+    must:
+    - SRTWC286
+  label: fail
+  why: 'Crew verdict FAIL: answered SRTWF12C variants, the subject just asked, not the earlier SRTWC286. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T11.'
+- id: cal-f06
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  - user: semua laa
+    bot: |-
+      Berikut ialah stok masuk yang ditemui.
+
+      1. *Kod Barang:* SRTWC286-SH-NEW
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ETA:* 2026-09-09
+      *Kuantiti Masuk:* 209
+      *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+      2. *Kod Barang:* SRTWC286-SH-NEW-200
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ET [...]
+  - user: you got any pics or td drawing for htis?
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - has Product Photos, has Technical Specifications
+      2. SRTWC286-SH-150 - no Product Photos, has Technical Specifications
+      3. SRTWC286-SH-200 - no Product Photos, has Technical Specifications
+      4. SRTWC286-SH-NEW - no Product Photos, no Technical S [...]
+  - user: first one
+    bot: |-
+      I have attached the file(s) below.
+
+      1. *Product Code:* SRTWC286-SH
+      *Attachment Type:* Product Photos
+      *File Name:* SRTWC286-SH.jpg
+      *Attachment Type:* Technical Specifications
+      *File Name:* SRTWC286-SH_TD.jpg
+
+      SRTWC286-SH has no Product Photos.
+
+      _Data last updated: 14/05/2026 15:26:39_
+  - user: 202610-0151 status?
+    bot: |-
+      Customer: all customers
+      Product: all products
+      Delivery order: 202610-0151
+      Dates: all dates
+
+      Here are the orders I found.
+
+      1. *Order Number:* 202610-0151
+      *Customer:* J & Y WORLD HARDWARE SDN BHD [A/C IV]
+      *Order Date:* 01/10/2026
+      *Status:* New Order
+      *Warehouse:* BRW
+      *Products:* CKS1052-BL (2)
+
+      _Data l [...]
+  - user: got techncial drawign for this product/
+    bot: |-
+      Which "this product" do you mean?
+
+      1. 202610-0151
+
+      Reply with the number.
+  - user: srtwf12c eta
+    bot: |-
+      No incoming stock found for SRTWF12C.
+      *Alternative:* SRTWF12C-NEW
+      Here are the results.
+
+      1. *Product Code:* SRTWF12C-NEW
+      *Container:* SEGU4428362
+      *ETA:* 2026-09-06
+      *ETA Delay:* 2026-09-16
+      *Incoming Quantity:* 204
+      *Warehouse Allocations:* BRW (204)
+      No incoming, no stock and nothing on order for SRTWF [...]
+  - user: okay can help me check the stock fort he previous product I asked ealrie?
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWF12C-BL
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 0
+      *Outstanding:* 0
+      ⚠️  *(PRODUCT DISCONTINUED)*
+
+      2. *Product Code:* SRTWF12C-BL-NEW
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 8 [...]
+  text: before this
+  reply: |-
+    Which "before this" do you mean?
+
+    1. SRTWF12C SRTWF12C
+
+    Reply with the number.
+  files: []
+  expect:
+    kind: any
+    about: switch back to the subject before SRTWF12C (SRTWC286), or a question offering the earlier subjects by code
+    must_not:
+    - Which "before this"
+    - SRTWF12C SRTWF12C
+  label: fail
+  why: 'Crew verdict FAIL: a which-before-this menu whose only option is the doubled label of the current subject. crew/state/handtest/PV2-owner-loo-r7-20261014.tsv T12.'
+- id: cal-f07
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock summary for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Total:* 611 (O/S: 561)
+      *BRW:* 3 (O/S: 20)
+      *BRW-ACTS:* 0 (O/S: 0)
+      *BRW-BB:* 0 (O/S: 0)
+      *BRW-IB:* 0 (O/S: 541)
+      *DC1-IB:* 485 (O/S: 0)
+      *MWH:* 0 (O/S: 0)
+      *MWH-BB:* 2 (O/S: 0)
+      *MWH-IB:* 121 (O/S: 0)
+      *WH3-PSM:* 0 (O/S: 0)
+
+      2. *Prod [...]
+  - user: any eta mou?
+    bot: |-
+      Sorry, I didn't catch your choice.
+      Would you like me to escalate to warehouse team?
+
+      1. Yes
+      2. No
+
+      Reply with the number.
+  - user: '1'
+    bot: Routed to your PIC, they will reply shortly.
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Here is the incoming stock I found.
+
+      1. *Product Code:* SRTWC286-SH-NEW
+      *Container:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Incoming Quantity:* 209
+      *Warehouse Allocations:* BRW (136), BRW-BB (73)
+
+      2. *Product Code:* SRTWC286-SH-NEW-200
+      *Container:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Incoming Quantity:* 150
+      *War [...]
+  - user: semua laa
+    bot: Telah diserahkan kepada PIC anda, mereka akan membalas tidak lama lagi.
+  - user: you got any pics or td drawing for htis?
+    bot: |-
+      I have attached the file(s) below.
+
+      1. *Product Code:* SRTWC286-SH
+      *Attachment Type:* Product Photos
+      *File Name:* SRTWC286-SH.jpg
+      *Attachment Type:* Technical Specifications
+      *File Name:* SRTWC286-SH_TD.jpg
+
+      2. *Product Code:* SRTWC286-SH-200
+      *Attachment Type:* Technical Specifications
+      *File Name:* S [...]
+  - user: first one
+    bot: |-
+      Which "first one" do you mean?
+
+      1. SRTWC286-SH
+      2. SRTWC286-SH-150
+      3. SRTWC286-SH-200
+      4. SRTWC286-SH-NEW
+      5. SRTWC286-SH-NEW-150
+      6. SRTWC286-SH-NEW-200
+      7. SRTWC286-SH-NEW-P
+      8. SRTWC286-SH-P
+      9. SRTWC286-SH-PP
+      10. SRTWC286-SH-UF
+
+      Reply with the number.
+  text: 202610-0151 status?
+  reply: |-
+    Sorry, I didn't catch your choice.
+    Which "first one" do you mean?
+
+    1. SRTWC286-SH
+    2. SRTWC286-SH-150
+    3. SRTWC286-SH-200
+    4. SRTWC286-SH-NEW
+    5. SRTWC286-SH-NEW-150
+    6. SRTWC286-SH-NEW-200
+    7. SRTWC286-SH-NEW-P
+    8. SRTWC286-SH-P
+    9. SRTWC286-SH-PP
+    10. SRTWC286-SH-UF
+
+    Reply with the number.
+  files: []
+  expect:
+    kind: answer
+    about: 'a clear new ask: the status of order 202610-0151; a stale pending question must not swallow it'
+    must:
+    - 202610-0151
+    must_not:
+    - Sorry, I didn't catch your choice
+  label: fail
+  why: 'Crew verdict FAIL: the order ask was swallowed by a stale which-one (''didn''t catch your choice''). crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-JD T8.'
+- id: cal-f08
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Sorry, I didn't catch your choice.
+      Which product do you mean? Please choose:
+
+      1. SRTWC286-SH
+      2. SRTWC286-SH-150
+      3. SRTWC286-SH-200
+      4. SRTWC286-SH-NEW
+      5. SRTWC286-SH-NEW-150
+      6. SRTWC286-SH-NEW-200
+      7. SRTWC286-SH-NEW-P
+      8. SRTWC286-SH-P
+      9. SRTWC286-SH-PP
+      10. SRTWC286-SH-UF
+
+      Reply with the number.
+  - user: semua laa
+    bot: |-
+      Berikut ialah stok masuk yang ditemui.
+
+      1. *Kod Barang:* SRTWC286-SH-NEW
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ETA:* 2026-09-09
+      *Kuantiti Masuk:* 209
+      *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+      2. *Kod Barang:* SRTWC286-SH-NEW-200
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ET [...]
+  text: you got any pics or td drawing for htis?
+  reply: 'Couldn''t find: "this" (product).'
+  files: []
+  expect:
+    kind: answer
+    about: photos and technical drawings for the held SRTWC286 family ('htis' = this)
+    attachments: true
+    must_not:
+    - 'Couldn''t find: "this"'
+  label: fail
+  why: 'Crew verdict FAIL: ''htis'' read as a product named ''this''. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T6.'
+- id: cal-f09
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Sorry, I didn't catch your choice.
+      Which product do you mean? Please choose:
+
+      1. SRTWC286-SH
+      2. SRTWC286-SH-150
+      3. SRTWC286-SH-200
+      4. SRTWC286-SH-NEW
+      5. SRTWC286-SH-NEW-150
+      6. SRTWC286-SH-NEW-200
+      7. SRTWC286-SH-NEW-P
+      8. SRTWC286-SH-P
+      9. SRTWC286-SH-PP
+      10. SRTWC286-SH-UF
+
+      Reply with the number.
+  - user: semua laa
+    bot: |-
+      Berikut ialah stok masuk yang ditemui.
+
+      1. *Kod Barang:* SRTWC286-SH-NEW
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ETA:* 2026-09-09
+      *Kuantiti Masuk:* 209
+      *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+      2. *Kod Barang:* SRTWC286-SH-NEW-200
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ET [...]
+  - user: you got any pics or td drawing for htis?
+    bot: 'Couldn''t find: "this" (product).'
+  - user: first one
+    bot: |-
+      Sorry, I didn't catch your choice.
+      Couldn't find: "this" (product).
+  text: 202610-0151 status?
+  reply: |-
+    Pelanggan: all customers
+    Produk: all products
+    Delivery order: 202610-0151
+    Dates: all dates
+
+    Berikut ialah pesanan yang saya temui.
+
+    1. *No. Pesanan:* 202610-0151
+    *Pelanggan:* J & Y WORLD HARDWARE SDN BHD [A/C IV]
+    *Tarikh Pesanan:* 01/10/2026
+    *Status:* New Order
+    *Gudang:* BRW
+    *Produk:* CKS1052-BL (2)
+
+    _Data dikemas kini: 01/10/2026 09:26:37_
+  files: []
+  expect:
+    kind: answer
+    about: order 202610-0151 answered in English (the turn is English; an earlier Malay turn must not stick)
+    must:
+    - 202610-0151
+    lang: en
+  label: fail
+  why: 'Crew verdict FAIL: right order but the reply is in Malay for an English turn (sticky language). crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T8.'
+- id: cal-f10
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  - user: hmm ih tough i ask for eta
+    bot: |-
+      Sorry, I didn't catch your choice.
+      Which product do you mean? Please choose:
+
+      1. SRTWC286-SH
+      2. SRTWC286-SH-150
+      3. SRTWC286-SH-200
+      4. SRTWC286-SH-NEW
+      5. SRTWC286-SH-NEW-150
+      6. SRTWC286-SH-NEW-200
+      7. SRTWC286-SH-NEW-P
+      8. SRTWC286-SH-P
+      9. SRTWC286-SH-PP
+      10. SRTWC286-SH-UF
+
+      Reply with the number.
+  - user: semua laa
+    bot: |-
+      Berikut ialah stok masuk yang ditemui.
+
+      1. *Kod Barang:* SRTWC286-SH-NEW
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ETA:* 2026-09-09
+      *Kuantiti Masuk:* 209
+      *Peruntukan Gudang:* BRW (136), BRW-BB (73)
+
+      2. *Kod Barang:* SRTWC286-SH-NEW-200
+      *Kontena:* WHSU7382874
+      *ETA:* 2026-09-08
+      *Kelewatan ET [...]
+  - user: you got any pics or td drawing for htis?
+    bot: 'Couldn''t find: "this" (product).'
+  - user: first one
+    bot: |-
+      Sorry, I didn't catch your choice.
+      Couldn't find: "this" (product).
+  - user: 202610-0151 status?
+    bot: |-
+      Pelanggan: all customers
+      Produk: all products
+      Delivery order: 202610-0151
+      Dates: all dates
+
+      Berikut ialah pesanan yang saya temui.
+
+      1. *No. Pesanan:* 202610-0151
+      *Pelanggan:* J & Y WORLD HARDWARE SDN BHD [A/C IV]
+      *Tarikh Pesanan:* 01/10/2026
+      *Status:* New Order
+      *Gudang:* BRW
+      *Produk:* CKS1052-BL (2) [...]
+  - user: got techncial drawign for this product/
+    bot: |-
+      Which "this product" do you mean?
+
+      1. 202610-0151
+
+      Reply with the number.
+  text: srtwf12c eta
+  reply: |-
+    No incoming stock found for SRTWF12C.
+    *Alternatif:* SRTWF12C-NEW
+    Berikut ialah hasilnya.
+
+    1. *Kod Barang:* SRTWF12C-NEW
+    *Kontena:* SEGU4428362
+    *ETA:* 2026-09-06
+    *Kelewatan ETA:* 2026-09-16
+    *Kuantiti Masuk:* 204
+    *Peruntukan Gudang:* BRW (204)
+    Tiada stok masuk, tiada stok dan tiada pesanan untuk SRTWF12C.
+  files: []
+  expect:
+    kind: answer
+    about: ETA for SRTWF12C in one language (English for this English turn)
+    must:
+    - SRTWF12C
+    lang: en
+  label: fail
+  why: 'Crew verdict FAIL: content right but the reply mixes English and Malay lines. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T10.'
+- id: cal-f11
+  history:
+  - user: check stock srtwc286
+    bot: |-
+      Stock details found for the requested products.
+
+      1. *Product Code:* SRTWC286-SH
+      *Warehouse:* BUKIT RAJA
+      *System Location:* BRW
+      *Quantity On Hand:* 3
+      *Outstanding:* 20
+
+      2. *Product Code:* SRTWC286-SH
+      *Warehouse:* BERSATU (PORT KLANG)
+      *System Location:* DC1-IB
+      *Quantity On Hand:* 485
+      *Outstanding:* 0 [...]
+  - user: any eta mou?
+    bot: |-
+      Which "mou" do you mean?
+
+      1. SRTWC286 (10 variants)
+
+      Reply with the number.
+  - user: '1'
+    bot: |-
+      Which product do you mean? Please choose:
+      1. SRTWC286-SH - no incoming
+      2. SRTWC286-SH-150 - no incoming
+      3. SRTWC286-SH-200 - no incoming
+      4. SRTWC286-SH-NEW - has incoming
+      5. SRTWC286-SH-NEW-150 - no incoming
+      6. SRTWC286-SH-NEW-200 - has incoming
+      7. SRTWC286-SH-NEW-P - has incoming
+      8. SRTWC286-SH-P - [...]
+  text: hmm ih tough i ask for eta
+  reply: |-
+    Sorry, I didn't catch your choice.
+    Which product do you mean? Please choose:
+
+    1. SRTWC286-SH
+    2. SRTWC286-SH-150
+    3. SRTWC286-SH-200
+    4. SRTWC286-SH-NEW
+    5. SRTWC286-SH-NEW-150
+    6. SRTWC286-SH-NEW-200
+    7. SRTWC286-SH-NEW-P
+    8. SRTWC286-SH-P
+    9. SRTWC286-SH-PP
+    10. SRTWC286-SH-UF
+
+    Reply with the number.
+  files: []
+  expect:
+    kind: answer
+    about: ETA answered directly for the SRTWC286 members with incoming; no didn't-catch prefix and no which-of-10 menu
+    must_not:
+    - Sorry, I didn't catch your choice
+    - Which product do you mean? Please choose
+  label: fail
+  why: 'Crew verdict FAIL: ''didn''t catch your choice'' plus the which-of-10 menu again. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv A-OWNLOO-LOO T4.'
+- id: cal-f12
+  history:
+  - user: sales report for September
+    bot: Sales report is not enabled for your account.
+  - user: delivered
+    bot: What would you like me to check?
+  - user: '1'
+    bot: |-
+      Sorry, I didn't catch your choice.
+      What would you like me to check?
+  text: only August
+  reply: |-
+    Would you like me to pass this to a colleague?
+
+    1. Yes
+    2. No
+
+    Reply with the number.
+  files: []
+  expect:
+    kind: refuse
+    about: a sales report for August is still refused for a contact without the grant
+    must:
+    - Sales report is not enabled for your account.
+    must_not:
+    - pass this to a colleague
+  label: fail
+  why: 'Crew verdict FAIL: a pass-to-colleague yes/no instead of the sales-report refusal. crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-AL-T7-10 T4.'
