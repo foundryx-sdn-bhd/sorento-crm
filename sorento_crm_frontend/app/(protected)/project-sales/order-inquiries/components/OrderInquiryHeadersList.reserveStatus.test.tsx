@@ -107,7 +107,9 @@ function renderList() {
 }
 
 async function openReserveOptions() {
-  fireEvent.click(await screen.findByRole('button', { name: /filters/i }));
+  const filtersButton = await screen.findByRole('button', { name: /filters/i });
+  fireEvent.pointerDown(filtersButton, { button: 0, ctrlKey: false });
+  fireEvent.click(filtersButton);
   fireEvent.click(await screen.findByLabelText('Reserve'));
 }
 
@@ -116,6 +118,7 @@ beforeEach(() => {
   searchParamsValue = '';
   headers = [header({ reserve_status: 'parked', parked_by_name: 'Joey' })];
   permissions = new Set(['projects.order_inquiries.acknowledge', 'projects.order_inquiries.reserve']);
+  getSummarySpy.mockImplementation(async () => ({ ...SUMMARY }));
 });
 
 describe('AC-SN-42 Reserve filter, chip and column', () => {
