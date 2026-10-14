@@ -79,6 +79,16 @@ class TurnV2Context:
     # Live policy: domain -> escalation team code; and how a miss may end (offer / refer / none).
     domain_teams: dict[str, str] | None = None
     offer_mode: Literal["offer", "refer", "none"] = "offer"
+    # Staff only: (team, v1 offer sentence) -> v1's member picker (`staff_roster_for`).
+    roster_for: Callable[[str, str], dict[str, Any] | None] | None = None
+    # (domain, codes) -> {code: has the thing}, from v1's did-you-mean probe; None = untagged.
+    dym_tags: Callable[[str, list[str]], dict[str, bool]] | None = None
+    # The console run this turn belongs to; state and history never cross runs.
+    test_run_id: str | None = None
+    # The previous reply's text (session_vars.user_response): v1's pending keeps no question text.
+    last_reply: str | None = None
+    # An availability-only stock dealer: v1 asks which one for a partial, never lists them.
+    stock_availability_only: bool = False
 
 
 def local_today(now: datetime) -> date:
@@ -95,9 +105,12 @@ def run_turn_v2(ctx: Any) -> answer_mod.TurnV2Result:
 
 
 def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Result:
-    state_in = roll_session(load_state(ctx.raw_state, ctx.now), ctx.now)
+    raw_state = ctx.raw_state
+    if ctx.test_run_id and not (isinstance(raw_state, dict) and raw_state.get("run_id") == ctx.test_run_id):
+        raw_state = None  # a new console run starts empty
+    state_in = roll_session(load_state(raw_state, ctx.now), ctx.now)
     if state_in.pending is None and v1_pending is not None:
-        state_in = mirror_v1_pending(state_in, v1_pending)
+        state_in = mirror_v1_pending(state_in, v1_pending, last_reply=ctx.last_reply)
     # Capped here, so CORE's `call.build_messages` and the injected `parse` both send the
     # compact form (a report table in a past reply is what blew the prompt budget).
     exchanges = compact_exchanges(ctx.load_exchanges(state_in.session_started_at))
@@ -113,6 +126,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
     else:
         out = ctx.parse(messages, user_message)
 
+    extra: dict[str, Any] = {"dym_tags": ctx.dym_tags} if ctx.dym_tags is not None else {}
     state_out, actions = apply_turn(
         state_in,
         out,
@@ -121,9 +135,13 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         can_offer_handover=ctx.can_offer_handover,
         domain_teams=ctx.domain_teams,
         offer_mode=ctx.offer_mode,
+        roster_for=ctx.roster_for,
+        stock_availability_only=ctx.stock_availability_only,
         now=ctx.now,
+        **extra,
     )
     state_out.last_turn_at = ctx.now
+    state_out.run_id = ctx.test_run_id
     refusal = _grant_refusal(ctx, actions, out, state_in.held.report)
     if refusal is not None:
         language = clarify_copy.lang(out.language)
@@ -276,7 +294,31 @@ def after_v1(
 # --------------------------------------------------------------------------- #
 
 
-def mirror_v1_pending(state: ConversationState, v1_pending: Any) -> ConversationState:
+def _question_text(reply: str | None, yes_no: bool) -> str:
+    """The question v1 printed, read off its own previous reply (v1's Pending keeps no text):
+    an offer is the reply's last line; a menu is the last line above its first numbered option.
+    Never the whole reply (a report table would land in every later turn), and bounded."""
+    from app.services.chatbot.pv2.history import compact_reply
+
+    lines = [ln.strip() for ln in str(reply or "").splitlines()]
+    lines = [ln for ln in lines if ln]
+    if not lines:
+        return ""
+    if yes_no:
+        return compact_reply(lines[-1])
+    head: list[str] = []
+    for ln in lines:
+        if ln.partition(". ")[0].isdigit():  # one of v1's numbered options
+            break
+        head.append(ln)
+    else:
+        head = lines  # no menu printed: the question is the reply's last line
+    return compact_reply(head[-1]) if head else ""
+
+
+def mirror_v1_pending(
+    state: ConversationState, v1_pending: Any, last_reply: str | None = None
+) -> ConversationState:
     """The v1 lane's open question (the v1 `Pending` the engine loaded: `kind`, `options`
     dicts with `label`) as the PV2 `v1_open_question`, so MEMORY shows it and the model
     answers it by exact key (`after_v1`'s keys). The v1 engine still holds its own pending
@@ -286,6 +328,8 @@ def mirror_v1_pending(state: ConversationState, v1_pending: Any) -> Conversation
     kind = getattr(v1_pending, "kind", None)
     if not kind:
         return state
+    if (getattr(v1_pending, "payload", None) or {}).get("answered_positions"):
+        return state  # a picker a pick already answered is not asked again
     # Keyed by v1's own `position` (what v1 `_answer_pending` accepts), legacy `idx` else.
     opts = [o for o in (getattr(v1_pending, "options", None) or []) if isinstance(o, dict) and o.get("label")]
     yes_no = getattr(v1_pending, "expects", None) == "yes_no"
@@ -300,7 +344,8 @@ def mirror_v1_pending(state: ConversationState, v1_pending: Any) -> Conversation
         option_labels=labels,
         option_keys=keys,
         offer=kind in OFFER_KINDS or yes_no or payload.get("escalate_offered") is True,
-        asked=str(getattr(v1_pending, "question", None) or getattr(v1_pending, "asked", None) or ""),
+        asked=str(getattr(v1_pending, "question", None) or getattr(v1_pending, "asked", None) or "")
+        or _question_text(last_reply, yes_no),
     )
 
 
@@ -440,6 +485,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     # so a console turn reads console history in its own world.
     ingress = getattr(envelope, "ingress", None)
     is_test = bool(getattr(envelope, "is_test", False) or getattr(hctx, "dry_run", False))
+    run_id = (getattr(envelope, "test_run_id", None) or None) if getattr(envelope, "is_test", False) else None
     session_block = hctx.session_block if isinstance(hctx.session_block, dict) else {}
     session_vars = session_block.get("session_vars") if isinstance(session_block.get("session_vars"), dict) else session_block
     raw_state = session_vars.get("pv2")
@@ -452,7 +498,9 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
 
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
-            return load_exchanges(edb, contact_respond_id=contact, ingress=ingress, is_test=is_test, since=since)
+            return load_exchanges(
+                edb, contact_respond_id=contact, ingress=ingress, is_test=is_test, since=since, test_run_id=run_id
+            )
 
     def parse_parts(history: list[tuple[str, str]], memory_block: str, text: str) -> Any:
         return pv2_call.parse_v2(config, history=history, memory_block=memory_block, text=text)
@@ -475,6 +523,11 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             granted_reveals=granted,
             domain_teams=domain_teams,
             offer_mode="none" if staff else ("offer" if offers_escalation(profile) else "refer"),
+            roster_for=staff_roster_for(factory, contact) if staff else None,
+            dym_tags=dym_tags_for(factory, contact, space_id),
+            test_run_id=run_id,
+            last_reply=session_vars.get("user_response") if isinstance(session_vars.get("user_response"), str) else None,
+            stock_availability_only=bool(getattr(profile, "stock_availability_only", False)),
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),
                 contact_id=contact,
@@ -499,6 +552,89 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
         state_in = getattr(hctx, "state_in", None)
         ctx.base_focus = getattr(state_in, "focus", None)
         return _run(ctx, v1_pending=getattr(state_in, "pending", None))
+
+
+def staff_roster_for(factory: Any, contact: str) -> Callable[[str, str], dict[str, Any] | None]:
+    """team code, v1 offer sentence -> v1's own member offer (`tail/member_offer`): its text
+    (the sentence, the picker header, the numbered members, the close) and the members
+    (`user_id`, `name`) in printed order; None when the team has no roster."""
+
+    def build(team: str, sentence: str) -> dict[str, Any] | None:
+        from app.services.chatbot.tail import member_offer as member_mod
+
+        try:
+            plan = member_mod.cs_roster_plan({})
+            ctx = {"parse": {"output": {"routing": {"suggested_team": team}}}, "contact": {"id": contact}}
+            with _session(factory) as db:
+                rosters = member_mod.fetch_rosters(db, plan, ctx)
+            offer = member_mod.build_cs_member_offer({"response": sentence}, plan, rosters)
+            if not offer.get("member_offer"):
+                return None
+            members = [
+                {"user_id": str(r.get("uuid")), "name": str(r.get("label"))}
+                for r in offer.get("cs_last_result_set") or []
+            ]
+            return {"text": offer["response"], "members": members}
+        except Exception:  # noqa: BLE001 - a roster failure leaves the plain not-found line
+            logger.warning("pv2: staff roster unavailable", exc_info=True)
+            return None
+
+    return build
+
+
+def dym_tags_for(factory: Any, contact: str, space_id: Any) -> Callable[[str, list[str]], dict[str, bool]] | None:
+    """(domain, codes) -> {code: has stock}: v1's own did-you-mean tag probe (`miss_suggest`'s
+    `DOMAIN_PROBE` entry and `dym_annotate`), for the domains it tags. {} = untagged (v1 fails
+    open the same way). None when v1 would stock-deny this contact: the tags are a stock
+    answer, so the did-you-mean stays untagged."""
+    from app.services.chatbot import engine as engine_mod
+    from app.services.chatbot import turn_runtime
+
+    db = factory()
+    try:
+        denied = bool(engine_mod._stock_denial_enabled(db)) and (
+            turn_runtime.load_profile(db, contact)[0].stock_allowed is not True
+        )
+    except Exception:  # noqa: BLE001 - unknown: the closed side, untagged
+        denied = True
+    finally:
+        db.close()
+    if denied:
+        return None
+
+    def tags(domain: str, codes: list[str]) -> dict[str, bool]:
+        from app.models.product import Product
+        from app.services.chatbot.lanes.business import miss_suggest as ms
+        from app.services.chatbot.lanes.business.services import _mcp_probe
+
+        row = ms.DOMAIN_PROBE.get(domain)
+        if row is None or row.get("predicate") != "qty_gt_zero":
+            return {}
+        codes = list(codes)[: int(row.get("probe_cap") or 3)]
+        try:
+            with _session(factory) as db:
+                ids = dict(db.query(Product.product_code, Product.id).filter(Product.product_code.in_(codes)).all())
+            cands = [{"uuid": str(ids[c]), "entity_type": "product", "code": c} for c in codes if c in ids]
+            if not cands:
+                return {}
+            probe = _mcp_probe(None)(
+                row["tool"], ms._probe_args(cands, parser={"domain_hint": domain}, contact_id=contact, space_id=space_id)
+            )
+            ann = ms.dym_annotate(
+                probe, payload={}, transform={
+                    "probe_predicate": row["predicate"], "probe_tool": row["tool"], "probe_noun": row.get("noun"),
+                    "dym_candidate_codes": [c["code"] for c in cands],
+                },
+            )
+        except Exception:  # noqa: BLE001 - an untagged offer is today's bare did-you-mean
+            logger.warning("pv2: did-you-mean tags unavailable", exc_info=True)
+            return {}
+        if not (ann.get("dym_probe_meta") or {}).get("ok"):
+            return {}
+        has = {ms._norm(c) for c in ann.get("dym_available_codes") or []}
+        return {c["code"]: ms._norm(c["code"]) in has for c in cands}
+
+    return tags
 
 
 def _first_name(envelope: Any) -> str | None:

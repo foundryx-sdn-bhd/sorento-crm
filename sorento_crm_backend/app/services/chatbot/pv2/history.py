@@ -102,8 +102,8 @@ def held_lines(held: Held) -> list[str]:
         refs = held.refs[kind]
         if refs:
             lines.append(f"  {kind}: {', '.join(_ref_text(r) for r in refs)}")
-    if held.attachment_type:
-        lines.append(f"  attachment_type: {held.attachment_type}")
+    if held.attachment_type or held.attachment_types:
+        lines.append(f"  attachment_type: {', '.join(held.attachment_types or [held.attachment_type])}")
     if held.specs:
         lines.append(f"  spec: {'; '.join(_spec_value(s) for s in held.specs)}")
     if held.period is not None:
@@ -120,8 +120,8 @@ def _topic_line(held: Held) -> str:
     for kind in sorted(held.refs):
         if held.refs[kind]:
             parts.append(f"{kind}: {', '.join(r.label for r in held.refs[kind])}")
-    if held.attachment_type:
-        parts.append(f"attachment_type: {held.attachment_type}")
+    if held.attachment_type or held.attachment_types:
+        parts.append(f"attachment_type: {', '.join(held.attachment_types or [held.attachment_type])}")
     if held.report is not None:
         measures = ",".join(held.report.measures) or NONE
         group = ",".join(held.report.group_by) or NONE
@@ -231,6 +231,7 @@ def load_exchanges(
     ingress: str | None,
     is_test: bool,
     since: datetime | None,
+    test_run_id: str | None = None,
 ) -> list[tuple[str, str]]:
     """This session's last 3 completed exchanges, oldest first: the same rows and scopes
     as `turn_runtime.recent_exchanges` (same contact, same world, same side of the
@@ -251,6 +252,9 @@ def load_exchanges(
             query = query.filter(ChatbotTurn.ingress != _CONSOLE_INGRESS)
         if since is not None:
             query = query.filter(ChatbotTurn.created_at >= since)
+        if test_run_id:
+            # A console chat is its run: an earlier run's turns are not this chat's history.
+            query = query.filter(ChatbotTurn.envelope["test_run_id"].as_string() == str(test_run_id))
         rows = query.order_by(*_newest_turn_first(ChatbotTurn)).limit(PV2_HISTORY_EXCHANGES * 2).all()
     except Exception:  # noqa: BLE001 - no history is no lines, never a failure
         return []

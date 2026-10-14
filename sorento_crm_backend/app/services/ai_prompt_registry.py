@@ -1070,6 +1070,9 @@ class PromptKeySpec:
     # fills from their tables itself, so no caller passes them. Always known (never an
     # unknown token), never required (the owner removes one to write the list himself).
     registry_variables: tuple[str, ...] = ()
+    # Does this key's LLM call read the label's `reasoning_effort`? True only where the
+    # caller passes it on; elsewhere the Prompts screen shows no control.
+    supports_reasoning_effort: bool = False
 
 
 PROMPT_KEYS: dict[str, PromptKeySpec] = {
@@ -1107,6 +1110,7 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         activates_in="chatbot_parser_mode = v2",
         variables=[],
         fallback=_chatbot_semantic_parser_v2_fallback,
+        supports_reasoning_effort=True,
     ),
     # --- The `low_signal` lane's own model call (S4). One per turn, only on a turn the
     #     parser could not route: small talk, or a request too vague to answer. ---
@@ -1570,6 +1574,24 @@ def agent_model(db: Session, name: str, label: str = "production") -> tuple[str 
     if row is None:
         return None, None
     return (row.provider or None), (row.model or None)
+
+
+def agent_reasoning_effort(db: Session, name: str, label: str = "production") -> str | None:
+    """The label's reasoning effort, or None (the provider's default: nothing is sent).
+    Uncached and never raises, like `agent_model`."""
+    if name not in PROMPT_KEYS or not PROMPT_KEYS[name].supports_reasoning_effort:
+        return None
+    try:
+        row = (
+            db.query(AIPromptLabel)
+            .filter(AIPromptLabel.name == name, AIPromptLabel.label == label)
+            .first()
+        )
+    except Exception:
+        logger.warning("agent reasoning effort lookup failed name=%s label=%s", name, label, exc_info=True)
+        _safe_rollback(db)
+        return None
+    return (row.reasoning_effort or None) if row is not None else None
 
 
 def render(

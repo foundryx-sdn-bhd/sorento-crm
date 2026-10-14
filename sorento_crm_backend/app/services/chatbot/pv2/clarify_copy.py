@@ -92,6 +92,11 @@ _COPY: dict[str, dict[str, str]] = {
         "zh": "需要我帮您转给同事处理吗？",
         "ms": "Mahu saya serahkan kepada rakan sekerja?",
     },
+    "more": {
+        "en": "...and {n} more.",
+        "zh": "...还有 {n} 个。",
+        "ms": "...dan {n} lagi.",
+    },
     "reply_number": {
         "en": "Reply with the number.",
         "zh": "请回复编号。",
@@ -172,6 +177,8 @@ def render(pending: PendingQuestion, language: str | None, *, reask: bool = Fals
     if pending.options and pending.kind not in ("offer_doc_handover", "clarify_did_you_mean"):
         lines.append("")
         lines.extend(f"{i}. {safe_label(o.label, language)}" for i, o in enumerate(pending.options, start=1))
+        if pending.more:
+            lines.append(text("more", language, n=pending.more))
         lines.append("")
         lines.append(text("reply_number", language))
     return "\n".join(lines)

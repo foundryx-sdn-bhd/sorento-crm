@@ -117,6 +117,9 @@ def apply_turn(
     now: datetime | None = None,
     domain_teams: dict[str, str] | None = None,
     offer_mode: Literal["offer", "refer", "none"] = "offer",
+    roster_for: Any = None,
+    dym_tags: Any = None,
+    stock_availability_only: bool = False,
 ) -> tuple[ConversationState, list[Action]]:
     """Apply one parser output to the state; one Action per ask (section 3).
 
@@ -127,7 +130,8 @@ def apply_turn(
     st.turn_no = state.turn_no + 1
     # What a not-found document says after its sentence: the offer, v1's refer line, or nothing.
     mode = offer_mode if offer_mode != "offer" else ("offer" if can_offer_handover else "none")
-    doc_offer = _DocOffer(mode, domain_teams)
+    doc_offer = _DocOffer(mode, domain_teams, roster_for, dym_tags)
+    doc_offer.availability_only = stock_availability_only
     language = out.language
     today = local_date(now) if now is not None else None
     actions: list[Action] = []
@@ -138,17 +142,25 @@ def apply_turn(
 
     # A clarify flag beside a new_topic ask does not re-ask an OPEN question as a miss: the new
     # topic replaces it and its own policy asks what it still needs.
+    carried = out.clarify.about == "entity" and bool(out.clarify.phrase) and any(
+        out.clarify.phrase in (e.phrase, e.doc_number, e.key) for a in out.asks for e in a.entities
+    )  # the flag is about an entity an ask carries: the ask's own resolution answers it
     flagged = out.clarify.needed and not (
-        st.pending is not None and any(a.act == "new_topic" for a in out.asks)
+        carried
+        or any(a.act == "new_topic" for a in out.asks) and st.pending is not None
+        or any(a.act == "switch_back" and a.switch_back_to is None for a in out.asks) and len(st.topics) == 1
     )
     if flagged or not out.asks:
-        about = out.clarify.about or "other"
+        about = _entity_about(st, out.clarify.about or "other")
         if st.pending is not None:
             # A garbled answer to the open question re-asks it with its real options and
             # counts a MISS (two -> the hand-over offer), never an option-less new question.
             act = _miss(st, 0, st.pending, _Miss(about), language, can_offer_handover)
         else:
-            act = _clarify(st, 0, about, out.clarify.phrase, language, options=_options_for(st, about))
+            options = _options_for(st, about)
+            # An entity question without options never quotes a phrase (no list to pick from).
+            phrase = out.clarify.phrase if options or about != "which_held" else None
+            act = _clarify(st, 0, about, phrase, language, options=options)
         st.pending = act.pending
         return st, [act]
 
@@ -180,7 +192,6 @@ def apply_turn(
                 and action.picked is None
                 and pending_in is not None
                 and pending_in.kind == "v1_open_question"
-                and pending_in.v1_kind == "product_pick"
                 and any(e.quantity is not None for e in ask.entities)
             ):
                 products = action.held.refs.get("product", [])
@@ -209,15 +220,45 @@ def apply_turn(
 # --------------------------------------------------------------------------- #
 
 
+_FILTER_KINDS = frozenset({"brand", "product_class", "product_type", "attachment_type"})
+
+
+def _new_subject_in_a_new_domain(st: ConversationState, ask: Ask) -> bool:
+    """A refines_held ask that names a NEW subject (an entity with a phrase, key or doc number
+    that is not the held one) AND changes the domain starts a new topic. Structured fields only."""
+    if ask.act != "refines_held" or ask.row_pick is not None or not ask.domain or st.held.is_empty():
+        return False
+    if ask.domain == st.held.domain:
+        return False
+    held_keys = {str(v) for refs in st.held.refs.values() for r in refs for v in (r.key, r.phrase) if v}
+    for e in ask.entities:
+        named = e.key or e.phrase or e.doc_number
+        if e.refers_to_held or e.op == "clear" or not named or e.kind in _FILTER_KINDS:
+            continue  # a brand or class narrows the held subject, it is not a new one
+        if e.kind not in st.held.refs or str(named) not in held_keys:
+            return True
+    return False
+
+
+def _is_a_new_ask(ask: Ask) -> bool:
+    """An option-less answer that carries its own subject (an entity naming something that is
+    not the held one) or its own attachment kind is a new ask, not an answer to the offer."""
+    named = any(
+        not e.refers_to_held and (e.key or e.phrase or e.doc_number) and e.op != "clear" for e in ask.entities
+    )
+    return named or bool(ask.attachment_type)
+
+
 def _answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
     """An answer that names no option but carries a structured quantity on the held product
     (under a v1 product pick) or a structured period (under a report question) is a refine of
     the held subject, not an answer to the open question. Structured fields only."""
     if pending is None or ask.answer is None or ask.answer.option_key is not None:
         return False
+    if pending.kind in ("v1_open_question", "offer_handover", "offer_doc_handover") and _is_a_new_ask(ask):
+        return True
     if (
         pending.kind == "v1_open_question"
-        and pending.v1_kind == "product_pick"
         and ask.answer.free_value is None
         and any(e.quantity is not None and e.refers_to_held and not e.key and not e.phrase for e in ask.entities)
     ):
@@ -253,6 +294,8 @@ def _one_ask(
 
     if ask.act == "switch_back":
         printed = topic_index(ask.switch_back_to, printed_topics)
+        if printed is None and ask.switch_back_to is None and len(printed_topics) == 1:
+            printed = 0  # no key and exactly one saved topic: that one
         if printed is None:
             raise _Miss("which_held")
         back = printed_topics[printed]
@@ -264,17 +307,28 @@ def _one_ask(
         held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True, today=today)
         return _commit(st, i, held, ask, qs), False
 
-    if ask.act == "new_topic":
+    if ask.act == "new_topic" or _new_subject_in_a_new_domain(st, ask):
         if i > 0 or not st.held.is_empty():
             st.topics = push_topic(st.topics, st.held)
         qs = _Qs(can_offer)
+        before = st.held.model_copy(deep=True)
         held = _apply_fields(st, Held(), ask, resolver, policy, language, i, qs, refine=False, today=today)
+        if (
+            before.refs.get("product")
+            and not held.refs.get("product")
+            and qs  # the new topic ended in a question (not found, did-you-mean, ambiguous)
+            and any(e.kind in DOCUMENT_KINDS and not e.refers_to_held for e in ask.entities)
+        ):
+            held.refs = set_refs(held.refs, "product", before.refs["product"], "set")  # the held product stays
         return _commit(st, i, held, ask, qs), False
 
     # refines_held
     if st.held.is_empty() and not ask.domain and ask.row_pick is None:
         raise _Miss("which_held", nothing_held=True)
-    if i > 0:
+    if i > 0 or (ask.domain and ask.domain != st.held.domain and not ask.cleared):
+        # A later ask, or a domain switch on the same subject, saves what was held so a
+        # switch back can return to it (the refine keeps the held subject). A refine that clears
+        # fields is reshaping the same topic, not leaving it.
         st.topics = push_topic(st.topics, st.held)
     row = None
     if ask.row_pick is not None:
@@ -287,6 +341,16 @@ def _one_ask(
     if row is not None and base.report is not None and _is_report_row(row):
         base, drilled = _drill(st, base, row, ask, language, i, qs)
     held = _apply_fields(st, base, ask, resolver, policy, language, i, qs, refine=True, today=today)
+    if (
+        ask.attachment_type
+        and not held.refs.get("product")
+        and not any(e.kind == "product" and not e.refers_to_held for e in ask.entities)
+    ):
+        # An attachment ask with no product held: the newest saved topic's product, else ask.
+        saved = st.topics[0].refs.get("product") if st.topics else None
+        if not saved:
+            raise _Miss("which_held", nothing_held=True)
+        held.refs = set_refs(held.refs, "product", saved, "set")
     if row is not None and not drilled:
         held = apply_payload(held, row.payload)
     if drilled and ask.report is None and not qs:
@@ -341,9 +405,15 @@ def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[Clarif
 class _DocOffer:
     """How a not-found document ends its sentence (see `apply_turn`)."""
 
-    def __init__(self, mode: str = "offer", teams: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, mode: str = "offer", teams: dict[str, str] | None = None, roster_for: Any = None,
+        dym_tags: Any = None,
+    ) -> None:
+        self.dym_tags = dym_tags
         self.mode = mode
         self.teams = teams
+        self.roster_for = roster_for
+        self.availability_only = False
 
 
 class _Qs(list):
@@ -380,6 +450,33 @@ def _answer(
     key = ask.answer.option_key if ask.answer is not None else None
     free = ask.answer.free_value if ask.answer is not None else None
     picked = next((o for o in pending.options if o.key == key), None) if key is not None else None
+    if key == "all" and picked is None:
+        # Every option of the question (the contract token for "all of them").
+        every = [o for o in pending.options if o.payload.get("kind") != "handover"]
+        if pending.kind == "v1_open_question" and every:
+            first = every[0]
+            return (
+                Lookup(
+                    ask_index=i, domain=st.held.domain, held=st.held.model_copy(deep=True), ask=ask,
+                    picked=first, pending_kind=pending.kind, pick_all=[o.key for o in every],
+                    pending_v1_kind=pending.v1_kind,
+                ),
+                True,
+            )
+        if pending.kind in ("clarify_entity", "clarify_did_you_mean") and every:
+            if getattr(can_offer, "availability_only", False):
+                # An availability-only contact is never handed every match: v1's own refusal,
+                # the same question kept open.
+                from app.services.chatbot.turn.apply import STOCK_PICK_NOT_ALL
+
+                return ClarifyAct(
+                    ask_index=i, about="entity", pending=pending.model_copy(deep=True), note=STOCK_PICK_NOT_ALL
+                ), True
+            held = st.held.model_copy(deep=True)
+            for o in every:
+                held = apply_payload(held, {**o.payload, "op": "add"})
+            st.held = held
+            return Lookup(ask_index=i, domain=held.domain, held=held.model_copy(deep=True), ask=ask), True
     if picked is None and key is not None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
         # A candidate question is keyed by position; its code (the payload key) still picks.
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
@@ -391,6 +488,8 @@ def _answer(
             if picked is None and 1 <= n <= len(pending.options) and not any(o.key.isdigit() for o in pending.options):
                 picked = pending.options[n - 1]
     if picked is None:
+        if free is not None and free == "all" and pending.kind == "v1_open_question":
+            raise _Miss("other")  # "all" is the option key's token, never a free value
         if free is not None and pending.kind in FREE_VALUE_PENDING:
             held = st.held.model_copy(deep=True)
             for ent in ask.entities:
@@ -413,7 +512,7 @@ def _answer(
     payload_kind = picked.payload.get("kind")
     if pending.kind == "offer_handover" or payload_kind == "handover":
         if picked.payload.get("value") is True:
-            return HandOver(ask_index=i, team_key=picked.payload.get("team_key")), True
+            return HandOver(ask_index=i, team_key=picked.payload.get("team_key"), agent_key=picked.payload.get("agent_key")), True
         return SmallTalk(ask_index=i, declined_offer=True), True
 
     if pending.kind in PASS_THROUGH_PENDING or payload_kind == "choice":
@@ -488,26 +587,34 @@ def _apply_fields(
     for name in ask.cleared:
         if name in CLEARABLE:
             setattr(held, name, [] if name == "specs" else None)
+            if name == "attachment_type":
+                held.attachment_types = []
 
     ask, filtered = _report_entity_filters(held, ask, resolver, refine=refine)
     held = _apply_entities(st, held, base, ask, resolver, policy, language, i, qs, refine=refine)
     held = _apply_specs(st, held, ask.specs, resolver, policy, language, i, qs)
 
-    if ask.attachment_type is not None:
-        res = resolver.resolve_attachment_type(ask.attachment_type, held=held)
-        status = getattr(res, "status", "none")
-        refs = list(getattr(res, "refs", None) or [])
-        if status == "exact" and refs:
-            held.attachment_type = refs[0].key
-        else:
-            options = list(getattr(res, "options", None) or [])
-            # No candidates: the held product carries no files to pick from, said truly.
-            qs.append(
-                _clarify(
-                    st, i, "attachment_type", None, language,
-                    options=options, kind="attachment_type", not_found=not options,
+    if ask.attachment_type:
+        kinds = [ask.attachment_type] if isinstance(ask.attachment_type, str) else list(ask.attachment_type)
+        keys: list[str] = []
+        for kind_key in kinds:  # every kind the ask names; none dropped silently
+            res = resolver.resolve_attachment_type(kind_key, held=held)
+            status = getattr(res, "status", "none")
+            refs = list(getattr(res, "refs", None) or [])
+            if status == "exact" and refs:
+                keys.append(refs[0].key)
+            else:
+                options = list(getattr(res, "options", None) or [])
+                # No candidates: the held product carries no files to pick from, said truly.
+                qs.append(
+                    _clarify(
+                        st, i, "attachment_type", None, language,
+                        options=options, kind="attachment_type", not_found=not options,
+                    )
                 )
-            )
+        if keys:
+            held.attachment_type = keys[0]
+            held.attachment_types = keys if len(keys) > 1 else []
     if ask.period is not None:
         held.period = ask.period
         if refine and held.report is not None and ask.report is None:
@@ -757,10 +864,34 @@ def _apply_entities(
         ):
             held = apply_payload(held, {**options[0].payload, "op": ent.op, **_qty_payload(ent)})
             continue
+        pool = list(getattr(res, "pool", None) or (options if not getattr(res, "more", 0) else []))
+        if (
+            status == "ambiguous" and ent.kind == "product" and pool and not getattr(res, "did_you_mean", False)
+            and _lists_all(held.domain)
+            and not getattr(qs.can_offer, "availability_only", False)
+        ):
+            # v1's narrowing for this domain answers every match directly (`list_all`).
+            every = [
+                ResolvedRef(kind="product", key=str(o.payload.get("key") or o.key), label=o.label,
+                            phrase=ent.phrase, quantity=ent.quantity)
+                for o in pool
+            ]
+            held.refs = set_refs(held.refs, "product", every, ent.op if ent.op != "set" else "set")
+            continue
+        if (
+            status == "ambiguous" and ent.kind == "product" and pool and ent.phrase
+            and not getattr(res, "did_you_mean", False) and _lists_all(held.domain)
+        ):
+            # An availability-only dealer is never handed the list: the typed partial goes to
+            # v1 as one reference and v1's AVAIL-MODE rule asks which one.
+            ref = ResolvedRef(kind="product", key=ent.phrase, label=ent.phrase, phrase=ent.phrase, quantity=ent.quantity)
+            held.refs = set_refs(held.refs, "product", [ref], ent.op if ent.op != "set" else "set")
+            continue
         if status == "ambiguous" or (status == "exact" and not refs and options):
             if ent.quantity is not None:
                 options = [o.model_copy(update={"payload": {**o.payload, **_qty_payload(ent)}}) for o in options]
             qs.append(_clarify(st, i, "entity", ent.phrase, language, options=options, kind=ent.kind))
+            qs[-1].pending.more = int(getattr(res, "more", 0) or 0)
             continue
         if status != "exact" or not refs:
             if not options and ent.kind in DOCUMENT_KINDS and (ent.doc_number or ent.phrase):
@@ -815,6 +946,18 @@ def _apply_entities(
 DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_order", "inbound_shipment", "product"})
 
 
+def _lists_all(domain: str | None) -> bool:
+    """v1's narrowing rule for the domain's product kind is `list_all` (policy rows)."""
+    from app.services.chatbot.turn.policy import default_policy
+
+    # Limited to the stock domain: order / sales also carry `list_all` in the seed, but their
+    # existing pins ask which product (the owner's 'WC286 stock' case is the stock ask).
+    if domain != "inventory":
+        return False
+    row = default_policy().domain(domain)
+    return bool(row is not None and (row.narrowing or {}).get("product") == "list_all")
+
+
 def _offer_team(offer: Any, held: Held) -> str:
     """The domain's escalation team: the live rows when given, else the seed policy."""
     if offer.teams is not None:
@@ -827,13 +970,32 @@ def _offer_team(offer: Any, held: Held) -> str:
     return team or "customer_service"
 
 
+#: v1's did-you-mean prints at most this many candidates (`miss_suggest._DYM_CAP_DEFAULT`).
+DYM_CAP = 3
+
+
+def _dym_tags(offer: Any, held: Held, codes: list[str]) -> dict[str, str]:
+    """v1's " - has stock details" / " - no stock details" per candidate, from the context's probe."""
+    if offer.dym_tags is None or not held.domain:
+        return {}
+    from app.services.chatbot.lanes.business.miss_suggest import DOMAIN_PROBE
+
+    noun = (DOMAIN_PROBE.get(held.domain) or {}).get("noun")
+    if not noun:
+        return {}
+    found = offer.dym_tags(held.domain, codes) or {}
+    return {c: f" - {'has' if found.get(c) else 'no'} {noun}" for c in codes if c in found}
+
+
 def _did_you_mean(
     st: ConversationState, i: int, ent: Entity, held: Held, options: list[Option], offer: Any, language: str
 ) -> ClarifyAct:
     """v1's did-you-mean sentence (lanes/business/answer.py build_suggest_offer): the typed
     token, the suggested codes, and its escalation clause per the contact's offer mode."""
+    options = options[:DYM_CAP]  # v1's `_DYM_CAP_DEFAULT`
     codes = [str(o.payload.get("key") or o.key) for o in options]
-    lines = "\n".join(f"{n}. {c}" for n, c in enumerate(codes, start=1))
+    tags = _dym_tags(offer, held, codes)
+    lines = "\n".join(f"{n}. {c}{tags.get(c, '')}" for n, c in enumerate(codes, start=1))
     asked = f'Couldn\'t find "{ent.phrase}" (product). Did you mean:\n{lines}\nReply with a code to continue'
     picks = [
         Option(key=str(n), label=o.label, payload={"kind": "product", "key": c, "label": o.label, "op": "set", **_qty_payload(ent)})
@@ -869,7 +1031,24 @@ def _doc_not_found(
     label = ent.kind.replace("_", " ")
     asked = "Couldn't find: " + ", ".join(f'"{w}" ({label})' for w in (words_list or [words])) + "."
     options: list[Option] = []
-    if offer.mode == "refer":
+    roster = None
+    if offer.roster_for is not None and ent.kind != "product":
+        # Staff: v1's own member picker (sentence, header, numbered members, close).
+        team = _offer_team(offer, held)
+        sentence = asked + f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        roster = offer.roster_for(team, sentence)
+    if roster:
+        asked = roster["text"]
+        options = [
+            Option(key=str(n), label=m["name"], payload={
+                "kind": "handover", "value": True, "team_key": team, "agent_key": m["user_id"]})
+            for n, m in enumerate(roster["members"], start=1)
+        ]
+        options += [
+            Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
+            for o in clarify_copy.handover_options(language)
+        ]
+    elif offer.mode == "refer":
         from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
         asked += f" {REFER_TO_SALESMAN}"
@@ -989,6 +1168,12 @@ def _which_held_options(refs: list[ResolvedRef]) -> list[Option]:
     ]
 
 
+def _entity_about(st: ConversationState, about: str) -> str:
+    """A question about an entity is never emitted with no options to pick: it becomes the
+    general question about what is held."""
+    return "which_held" if about == "entity" and not _options_for(st, about) else about
+
+
 def _options_for(st: ConversationState, about: str) -> list[Option]:
     """Real options for a model-raised clarify: the held subjects for which_held, else
     none (an open question; never a guessed list)."""
@@ -1041,15 +1226,16 @@ def _miss(
     """One MISS: re-ask the pending question with its real options; the second miss on
     the same question offers a hand-over instead."""
     if pending is None:
-        asked = clarify_copy.question_for(miss.about, None, language, nothing_held=miss.nothing_held)
+        about = _entity_about(st, miss.about)
+        asked = clarify_copy.question_for(about, None, language, nothing_held=miss.nothing_held)
         question = PendingQuestion(
-            kind=f"clarify_{miss.about}",
+            kind=f"clarify_{about}",
             asked=asked,
-            options=_options_for(st, miss.about),
+            options=_options_for(st, about),
             asked_turn=st.turn_no,
             misses=1,
         )
-        return ClarifyAct(ask_index=i, about=miss.about, pending=question, reask=True)
+        return ClarifyAct(ask_index=i, about=about, pending=question, reask=True)
     misses = pending.misses + 1
     if can_offer_handover and misses >= MISSES_BEFORE_HANDOVER and pending.kind != "offer_handover":
         offer = PendingQuestion(

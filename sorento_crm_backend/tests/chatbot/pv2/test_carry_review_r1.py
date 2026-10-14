@@ -255,8 +255,8 @@ def test_s2_carried_spec_is_not_current_named_spec_is():
         mk_state(h), Lookup(ask_index=0, domain=h.domain, held=h, ask=ask(act="refines_held", specs=[spec(attribute="trap_type", value_key="p_trap")])),
         today=TODAY)
     assert [e["current_message"] for e in named["entities"] if e["hint"] == "specification"] == [True]
-    # product refs stay current either way
-    assert [e["current_message"] for e in carried["entities"] if e["hint"] == "product"] == [True]
+    # PV2-FIX r7: owner item A, v1 carry parity (crew 14 Oct): a held product the ask does not name is carried
+    assert [e["current_message"] for e in carried["entities"] if e["hint"] == "product"] == [False]
 
 
 # -- S3: focus overlay ------------------------------------------------------------------------------- #

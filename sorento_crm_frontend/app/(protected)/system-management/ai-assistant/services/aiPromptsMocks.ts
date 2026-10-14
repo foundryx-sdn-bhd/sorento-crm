@@ -32,6 +32,8 @@ export const MOCK_PROMPT_KEYS: PromptKeySummary[] = [
     updated_by_name: 'System (seed)',
     provider: null,
     model: null,
+    reasoning_effort: null,
+    supports_reasoning_effort: false,
   },
   {
     name: 'router',
@@ -47,6 +49,8 @@ export const MOCK_PROMPT_KEYS: PromptKeySummary[] = [
     updated_by_name: 'Jayson',
     provider: null,
     model: null,
+    reasoning_effort: null,
+    supports_reasoning_effort: false,
   },
   {
     name: 'agent_system',
@@ -62,6 +66,8 @@ export const MOCK_PROMPT_KEYS: PromptKeySummary[] = [
     updated_by_name: 'System (seed)',
     provider: null,
     model: null,
+    reasoning_effort: null,
+    supports_reasoning_effort: false,
   },
   {
     name: 'synthesizer',
@@ -77,6 +83,8 @@ export const MOCK_PROMPT_KEYS: PromptKeySummary[] = [
     updated_by_name: 'System (seed)',
     provider: null,
     model: null,
+    reasoning_effort: null,
+    supports_reasoning_effort: false,
   },
   {
     name: 'planner',
@@ -92,6 +100,8 @@ export const MOCK_PROMPT_KEYS: PromptKeySummary[] = [
     updated_by_name: 'System (seed)',
     provider: null,
     model: null,
+    reasoning_effort: null,
+    supports_reasoning_effort: false,
   },
   {
     name: 'semantic_compressor',
@@ -107,6 +117,8 @@ export const MOCK_PROMPT_KEYS: PromptKeySummary[] = [
     updated_by_name: 'System (seed)',
     provider: null,
     model: null,
+    reasoning_effort: null,
+    supports_reasoning_effort: false,
   },
   {
     name: 'validator',
@@ -122,6 +134,8 @@ export const MOCK_PROMPT_KEYS: PromptKeySummary[] = [
     updated_by_name: 'System (seed)',
     provider: null,
     model: null,
+    reasoning_effort: null,
+    supports_reasoning_effort: false,
   },
   {
     name: 'clarifier',
@@ -137,6 +151,8 @@ export const MOCK_PROMPT_KEYS: PromptKeySummary[] = [
     updated_by_name: 'System (seed)',
     provider: null,
     model: null,
+    reasoning_effort: null,
+    supports_reasoning_effort: false,
   },
   {
     name: 'judge',
@@ -152,6 +168,8 @@ export const MOCK_PROMPT_KEYS: PromptKeySummary[] = [
     updated_by_name: 'System (seed)',
     provider: null,
     model: null,
+    reasoning_effort: null,
+    supports_reasoning_effort: false,
   },
 ];
 

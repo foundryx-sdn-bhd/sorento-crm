@@ -115,7 +115,7 @@ class Ask(_Strict):
     switch_back_to: str | None
     entities: list[Entity]
     specs: list[Spec]
-    attachment_type: str | None
+    attachment_type: str | list[str] | None
     period: Period | None
     row_pick: int | None
     answer: Answer | None
@@ -256,9 +256,18 @@ def validate(raw: dict, keys: IndexKeys) -> tuple[ParserV2Output, list[DroppedKe
     for i, ask in enumerate(out.asks):
         at = f"asks[{i}]"
         ask.domain = keep(ask.domain, keys.domains, f"{at}.domain", "domain")
-        ask.attachment_type = keep(
-            ask.attachment_type, keys.attachment_types, f"{at}.attachment_type", "attachment_type"
-        )
+        if isinstance(ask.attachment_type, list):
+            kept = [
+                k for k in (
+                    keep(v, keys.attachment_types, f"{at}.attachment_type", "attachment_type")
+                    for v in ask.attachment_type
+                ) if k is not None
+            ]
+            ask.attachment_type = kept or None
+        else:
+            ask.attachment_type = keep(
+                ask.attachment_type, keys.attachment_types, f"{at}.attachment_type", "attachment_type"
+            )
         kept_entities = []
         for j, ent in enumerate(ask.entities):
             where = f"{at}.entities[{j}]"

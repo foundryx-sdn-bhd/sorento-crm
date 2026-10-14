@@ -64,6 +64,7 @@ class V2Config:
     provider: str
     model: str
     api_key: str
+    reasoning_effort: str | None = None  # the label's setting; None = not sent
 
     @property
     def cache_key(self) -> str:
@@ -115,7 +116,7 @@ def resolve_v2_config(
     a LIVE index render, `prompt_version` None: usable for a hand test, marked in every
     trace by the `vfallback` cache key and the null version."""
     from app.services.ai_assistant_service import AIAssistantConfigService
-    from app.services.ai_prompt_registry import PROMPT_KEYS, agent_model
+    from app.services.ai_prompt_registry import PROMPT_KEYS, agent_model, agent_reasoning_effort
     from app.services.llm_provider import resolve_api_key
 
     pinned = _pinned_text(db, override_version_id, label)
@@ -145,6 +146,7 @@ def resolve_v2_config(
         provider=provider,
         model=model,
         api_key=api_key,
+        reasoning_effort=agent_reasoning_effort(db, pv2_index.PROMPT_KEY_V2, label),
     )
 
 
@@ -199,6 +201,7 @@ def parse_v2(
             json_schema=PV2_JSON_SCHEMA,
             json_schema_name=PV2_SCHEMA_NAME,
             prompt_cache_key=config.cache_key,
+            **({"reasoning_effort": config.reasoning_effort} if config.reasoning_effort and config.provider == "openai" else {}),
         )
     except llm_call.RateLimited as exc:
         raise ParserV2Error(f"parser v2 provider call failed: {exc}", rate_limited=True) from exc
@@ -212,6 +215,7 @@ def parse_v2(
         "completion_tokens": int(getattr(result, "completion_tokens", 0) or 0),
         "total_tokens": int(getattr(result, "total_tokens", 0) or 0),
         "cached_tokens": int(getattr(result, "cached_tokens", 0) or 0),
+        "reasoning_tokens": int(getattr(result, "reasoning_tokens", 0) or 0),
     }
     content = (getattr(result, "content", None) or "").strip()
     try:

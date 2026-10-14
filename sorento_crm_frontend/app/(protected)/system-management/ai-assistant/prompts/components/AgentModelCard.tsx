@@ -10,6 +10,13 @@ import { usePromptKeys, useSetAgentModel } from '../../hooks/useAIAssistantPromp
 import { MODEL_OPTIONS, PROVIDER_OPTIONS } from '../../lib/modelOptions';
 import { useProviderModels } from '@/hooks/useProviderModels';
 
+const EFFORT_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+];
+
 /**
  * Which LLM this one agent runs on.
  *
@@ -25,12 +32,14 @@ export function AgentModelCard({ name, canEdit }: { name: string; canEdit: boole
 
   const [provider, setProvider] = useState('');
   const [model, setModel_] = useState('');
+  const [effort, setEffort] = useState('');
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (row && !loaded) {
       setProvider(row.provider ?? '');
       setModel_(row.model ?? '');
+      setEffort(row.reasoning_effort ?? '');
       setLoaded(true);
     }
   }, [row, loaded]);
@@ -41,11 +50,18 @@ export function AgentModelCard({ name, canEdit }: { name: string; canEdit: boole
   // and the built-in list stands in when the provider cannot be reached.
   const modelsQuery = useProviderModels(provider);
   const options = modelsQuery.data?.models ?? MODEL_OPTIONS[provider] ?? [];
-  const dirty = (row?.provider ?? '') !== provider || (row?.model ?? '') !== model;
+  const dirty =
+    (row?.provider ?? '') !== provider ||
+    (row?.model ?? '') !== model ||
+    (row?.reasoning_effort ?? '') !== effort;
 
   const save = async () => {
     try {
-      await setModel.mutateAsync({ provider: provider || null, model: model || null });
+      await setModel.mutateAsync({
+        provider: provider || null,
+        model: model || null,
+        reasoning_effort: effort || null,
+      });
       toast.success(model ? `${name} now runs on ${model}` : `${name} back on the default model`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to set the model');
@@ -94,6 +110,21 @@ export function AgentModelCard({ name, canEdit }: { name: string; canEdit: boole
             disabled={!canEdit}
           />
         </div>
+        {row?.supports_reasoning_effort ? (
+          <div>
+            <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+              Reasoning effort
+            </label>
+            <SearchableSelect
+              value={effort}
+              onChange={setEffort}
+              options={EFFORT_OPTIONS}
+              placeholder="Default"
+              clearable
+              disabled={!canEdit}
+            />
+          </div>
+        ) : null}
         <p className="text-xs text-muted-foreground">
           {row?.model
             ? 'Clear both fields to put this agent back on the global assistant model.'

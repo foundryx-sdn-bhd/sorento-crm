@@ -59,6 +59,8 @@ class Held(BaseModel):
     refs: dict[str, list[ResolvedRef]] = Field(default_factory=dict)
     specs: list[ResolvedSpec] = Field(default_factory=list)
     attachment_type: str | None = None
+    # Every attachment kind the subject asked for (`attachment_type` is the first of them).
+    attachment_types: list[str] = Field(default_factory=list)
     period: Period | None = None
     report: ReportSpec | None = None
     idea_draft_id: str | None = None
@@ -71,6 +73,7 @@ class Held(BaseModel):
             or any(self.refs.values())
             or self.specs
             or self.attachment_type
+            or self.attachment_types
             or self.period
             or self.report
             or self.idea_draft_id
@@ -84,6 +87,7 @@ class PendingQuestion(BaseModel):
     asked_turn: int = 0
     misses: int = 0
     v1_kind: str | None = None
+    more: int = 0  # matches beyond the printed options (a capped menu)
 
 
 class ConversationState(BaseModel):
@@ -95,6 +99,8 @@ class ConversationState(BaseModel):
     pending: PendingQuestion | None = None
     topics: list[Held] = Field(default_factory=list)
     last_rows: list[Option] = Field(default_factory=list)
+    # The console run (`envelope.test_run_id`) this state belongs to; a new run starts empty.
+    run_id: str | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -126,6 +132,9 @@ class Lookup(BaseModel):
     row: Option | None = None
     misses: list[Miss] = Field(default_factory=list)
     requantify: bool = False
+    # Option keys of a v1 pick the reply chose in full ("all"): every position is passed to v1.
+    pick_all: list[str] = Field(default_factory=list)
+    pending_v1_kind: str | None = None  # the v1 question kind a pick answered
 
 
 class ClarifyAct(BaseModel):
@@ -152,6 +161,7 @@ class HandOver(BaseModel):
     type: Literal["hand_over"] = "hand_over"
     ask_index: int
     team_key: str | None = None
+    agent_key: str | None = None  # the member (users.id) a staff roster pick named
 
 
 class OfferHandover(BaseModel):

@@ -103,6 +103,14 @@ def _is_uuid(value: str) -> bool:
     return True
 
 
+def _is_current(action: Lookup, ref: ResolvedRef) -> bool:
+    """A held ref is typed NOW only when this ask names its kind; a refine that names none
+    carries the subject, as v1's own carry does (v1 then answers over it directly)."""
+    if action.ask is None or action.picked is not None or action.pending_kind is not None:
+        return True
+    return ref.kind in {e.kind for e in action.ask.entities}
+
+
 def _v1_entity(ref: ResolvedRef, *, current: bool = True) -> dict[str, Any]:
     if ref.kind == "customer" and _is_uuid(ref.key):
         # v1's carried-pick shape: the label as the typed words, the customer id beside it.
@@ -154,6 +162,11 @@ def _open_question_answer(action: Lookup) -> dict[str, Any] | None:
     """A v1 open question answered through PV2 (section 5: `v1_open_question` picks pass
     through as `open_question_answer`). Option keys are the v1 positions ("1", "2") or
     "yes" / "no" / "all" (`turn.v1_pending_options`)."""
+    if action.pending_kind == "v1_open_question" and action.pick_all:
+        # v1's own stock pick refuses "all" for availability-only dealers; other picks take every position.
+        mode = "all" if (action.pending_v1_kind or _v1_kind(None, action)) == "product_pick" else "pick"
+        return {"mode": mode, "picked": [] if mode == "all" else [int(k) for k in action.pick_all if k.isdigit()],
+                "items": [], "qty_for_all": None}  # `broaden_axis: "all"` rides on the verdict (below)
     if action.pending_kind != "v1_open_question" or action.picked is None:
         return None
     key = action.picked.key
@@ -183,16 +196,12 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
                 if r.key in seen_docs:
                     continue
                 seen_docs.add(r.key)
-            entities.append(_v1_entity(r))
-    if held.attachment_type:
-        entities.append(
-            _v1_entity(ResolvedRef(kind="attachment_type", key=held.attachment_type, label=held.attachment_type))
-        )
+            entities.append(_v1_entity(r, current=_is_current(action, r)))
+    for att in held.attachment_types or ([held.attachment_type] if held.attachment_type else []):
+        entities.append(_v1_entity(ResolvedRef(kind="attachment_type", key=att, label=att)))
         if domain == "resource_attachment":
             # The entity v1's own parser sends for a catalogue / brochure request.
-            entities.append(
-                _v1_entity(ResolvedRef(kind="attachment", key=held.attachment_type, label=held.attachment_type))
-            )
+            entities.append(_v1_entity(ResolvedRef(kind="attachment", key=att, label=att)))
     # A spec this ask did not name is CARRIED: grounding reads a current-message descriptor
     # against the message's own words and would demote a carried "p_trap" on "stock?".
     named_specs = bool(action.ask is not None and action.ask.specs)
@@ -204,10 +213,17 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
             **_v1_entity(ResolvedRef(kind=miss.kind, key=str(miss.phrase), label=str(miss.phrase))),
             "canonical_code": None, "confident": False, "hint_confident": False,
         })
-    verdict["entities"] = entities
     ask = action.ask
     verdict["status"] = held.status or (ask.status if ask is not None else None)
-    verdict["portal_form"] = held.portal_form or (ask.portal_form if ask is not None else None)
+    # A portal form is this turn's subject only while the turn's domain is portal_link; a
+    # form held from an earlier turn never strips the product of a later "stock?".
+    on_portal = domain == "portal_link"
+    verdict["portal_form"] = (held.portal_form or (ask.portal_form if ask is not None else None)) if on_portal else None
+    if verdict["portal_form"]:
+        # The form is the subject: a product, customer or brand beside it would turn v1's
+        # found portal link into a "could not find" miss.
+        entities = [e for e in entities if e["hint"] not in {V1_HINT.get(k, k) for k in ("product", "customer", "brand")}]
+    verdict["entities"] = entities
     date_from, date_to = period_dates(held.period, today)
     verdict["date_filter_start"] = date_from.isoformat() if date_from else None
     verdict["date_filter_end"] = date_to.isoformat() if date_to else None
@@ -235,6 +251,10 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
             e["current_message"] = False
             if e["hint"] == "product":
                 e["quantity"] = None
+    if answer is not None and answer["mode"] == "all" and action.pick_all:
+        # v1 reads "all" over a numbered menu off `broaden_axis` (decide.broadens_the_roster):
+        # staff get every position, an availability-only dealer is refused by `_stock_pick_refuses_all`.
+        verdict["broaden_axis"] = "all"
     if answer is not None:
         # A pick stays a business query: v1 routes "clarification" to its own clarify menu.
         verdict["open_question_answer"] = answer
@@ -283,6 +303,8 @@ def focus_from_v2(held: Held, base: Focus | None = None) -> Focus:
     focus.products, focus.customers, focus.warehouse, focus.brands = [], [], [], []
     focus.extra = {}
     for kind, refs in held.refs.items():
+        if held.domain == "portal_link" and held.portal_form and kind in ("product", "customer", "brand"):
+            continue  # the form is the subject; the typed codes were never a form the user filled in
         if kind == "brand":
             focus.brands = [r.key for r in refs]
             continue

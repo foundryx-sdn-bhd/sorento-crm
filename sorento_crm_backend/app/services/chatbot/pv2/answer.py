@@ -83,7 +83,8 @@ IdeaAnswer = Callable[..., Any]
 def reply_for(action: Action, language: str | None) -> str | None:
     """The text PV2 itself writes for a question action, else None."""
     if isinstance(action, ClarifyAct):
-        return clarify_copy.render(action.pending, language, reask=action.reask)
+        shown = clarify_copy.render(action.pending, language, reask=action.reask)
+        return f"{action.note}\n\n{shown}" if action.note else shown
     if isinstance(action, OfferHandover):
         return clarify_copy.render(action.pending, language)
     return None
@@ -164,7 +165,7 @@ def _is_idea(lookup: Lookup) -> bool:
     )
 
 
-def _verdict_for(kind: str, *, team_key: str | None = None) -> dict[str, Any]:
+def _verdict_for(kind: str, *, team_key: str | None = None, agent_key: str | None = None) -> dict[str, Any]:
     verdict = bridge.blank_verdict()
     verdict["entity_op"] = "reuse"
     if kind == "small_talk":
@@ -172,6 +173,9 @@ def _verdict_for(kind: str, *, team_key: str | None = None) -> dict[str, Any]:
     elif kind == "hand_over":
         verdict["message_type"] = "request_for_help"
         verdict["routing"] = {"suggested_team": team_key, "suggested_agent": None}
+        if agent_key:
+            # v1's member pick: the escalation lane assigns `escalation.preferred_assignee_id`.
+            verdict["escalation"] = {**verdict["escalation"], "preferred_assignee_id": agent_key}
     return verdict
 
 
@@ -214,7 +218,7 @@ def _build_result(state, actions, out, today, pending_in, report_answer, idea_an
 
     handover = next((a for a in actions if isinstance(a, HandOver)), None)
     if handover is not None:
-        verdict = _verdict_for("hand_over", team_key=handover.team_key)
+        verdict = _verdict_for("hand_over", team_key=handover.team_key, agent_key=handover.agent_key)
         return TurnV2Result(verdict, bridge.focus_from_v2(state.held, base_focus), None, state, actions, "hand_over", language, trace)
 
     if lookups:

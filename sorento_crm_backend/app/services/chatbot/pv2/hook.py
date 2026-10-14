@@ -62,6 +62,22 @@ class TurnV2Context:
     override_version_id: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """A console turn belongs to its run (`envelope.test_run_id`): a state stored by
+        another run, and the earlier-session summaries, are not this chat's memory."""
+        run = getattr(self.envelope, "test_run_id", None)
+        if not (run and getattr(self.envelope, "is_test", False)):
+            return
+        block = self.session_block if isinstance(self.session_block, dict) else {}
+        nested = isinstance(block.get("session_vars"), dict)
+        sv = block["session_vars"] if nested else block
+        stored = sv.get(STATE_KEY)
+        if STATE_KEY in sv and not (isinstance(stored, dict) and stored.get("run_id") == run):
+            kept = {k: v for k, v in sv.items() if k != STATE_KEY}
+            self.session_block = {**block, "session_vars": kept} if nested else kept
+        if isinstance(self.memory_intake, dict) and self.memory_intake.get("summaries"):
+            self.memory_intake = {**self.memory_intake, "summaries": []}
+
 
 def _turn_module():
     try:
