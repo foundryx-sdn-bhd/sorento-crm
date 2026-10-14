@@ -48,9 +48,9 @@ if args[0] == "compose":
     while rest and rest[0] == "--profile":
         rest = rest[2:]
     cmd = rest[0]
-    if cmd == "pull" and os.environ.get("DEPLOY_LOCK_FILE"):
+    if cmd == "pull" and os.environ.get("DEPLOY_LOCK_PATH"):
         # Is the deploy lock held while the deploy runs? (flock -n fails when it is.)
-        held = subprocess.run(["flock", "-n", os.environ["DEPLOY_LOCK_FILE"], "true"]).returncode != 0
+        held = subprocess.run(["flock", "-n", os.environ["DEPLOY_LOCK_PATH"], "true"]).returncode != 0
         open(os.path.join(d, "lock_held_during_deploy"), "a").write("yes\n" if held else "no\n")
     if cmd == "up" and os.path.exists(os.path.join(d, "spawn_child")):
         # A child that outlives the script and inherits its fds (as a stray background
@@ -74,6 +74,9 @@ if args[0] == "compose":
             if os.path.exists(os.path.join(d, "snapshot_fail")):
                 sys.stderr.write("pg_dump: error: connection failed\n")
                 sys.exit(1)
+            if os.path.exists(os.path.join(d, "snapshot_garbage")):
+                sys.stdout.write("pg_dump: warning: something odd\n")
+                sys.exit(0)
             sys.stdout.write("PGDMP fake custom-format dump\n")
         elif "pg_restore" in joined:
             data = sys.stdin.read()
@@ -93,7 +96,14 @@ if args[0] == "inspect":
 if args[0] == "logs":
     cid = args[-1]
     if cid == "cid-db":
-        sys.stdout.write(rd("db_logs"))
+        # Lines may carry an "@<RFC3339>|" prefix; honour --since on those like docker does.
+        since = args[args.index("--since") + 1] if "--since" in args else ""
+        for line in rd("db_logs").splitlines(keepends=True):
+            if line.startswith("@"):
+                ts, _, line = line[1:].partition("|")
+                if since and ts < since:
+                    continue
+            sys.stdout.write(line)
     elif cid == "cid-worker":
         print("APScheduler started in worker process")
     elif cid == "cid-worker_fast":
@@ -121,6 +131,12 @@ def box(tmp_path):
     _exe(bin_dir / "docker", DOCKER_STUB)
     _exe(bin_dir / "sudo", f'#!/bin/sh\necho "sudo $*" >> "{stub_dir}/calls.log"\nexit 0\n')
     _exe(bin_dir / "sleep", "#!/bin/sh\nexit 0\n")
+    # df -Pm <dir>: free MB from the stub dir (default plenty).
+    _exe(
+        bin_dir / "df",
+        f'#!/bin/sh\nfree=$(cat "{stub_dir}/disk_free_mb" 2>/dev/null || echo 500000)\n'
+        'printf "Filesystem 1048576-blocks Used Available Capacity Mounted on\\n/dev/x 900000 1 %s 1%% /\\n" "$free"\n',
+    )
     meminfo = tmp_path / "meminfo"
     meminfo.write_text("MemTotal:       16000000 kB\nMemAvailable:    8000000 kB\n")
     box = {"root": root, "stub": stub_dir, "bin": bin_dir, "meminfo": meminfo, "lock": root / ".deploy.lock"}
@@ -133,22 +149,23 @@ def box(tmp_path):
             pass
 
 
-def _run(box, **env_extra):
+def _run(box, timeout=120, **env_extra):
     env = {
         "PATH": f"{box['bin']}:{os.environ.get('PATH', '/usr/bin:/bin')}",
         "STUB_DIR": str(box["stub"]),
         "IMAGE_TAG": "abc123",
         "MEMINFO_FILE": str(box["meminfo"]),
-        "DEPLOY_LOCK_FILE": str(box["lock"]),
+        "DEPLOY_LOCK_PATH": str(box["lock"]),
         "HOME": str(box["root"]),
     }
     env.update(env_extra)
+    env = {k: v for k, v in env.items() if v != ""}
     return subprocess.run(
         ["bash", str(box["root"] / "scripts" / "blue_green_deploy.sh")],
         env=env,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=timeout,
     )
 
 
@@ -195,7 +212,6 @@ def test_healthy_deploy_snapshots_before_the_new_colour_and_succeeds(box):
     dump = _index(calls, "pg_dump")
     up = _index(calls, "up -d --no-deps backend_")
     assert dump != -1 and up != -1 and dump < up, calls
-    assert _index(calls, "pg_restore --list") != -1, "the dump must be checked before migrating"
     dumps = list((box["root"] / "backups" / "pre-migrate").glob("pre-migrate-*-abc123.dump"))
     assert len(dumps) == 1, dumps
     assert stat.S_IMODE(dumps[0].stat().st_mode) == 0o600
@@ -330,9 +346,42 @@ def _lock_is_free(path: Path) -> bool:
     return subprocess.run(["flock", "-n", str(path), "true"]).returncode == 0
 
 
-def test_the_lock_path_on_the_box_is_fixed():
-    """The restore test waits on this exact file; a different path means no mutual exclusion."""
-    assert 'DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/opt/sorento-crm2/.deploy.lock}"' in SCRIPT.read_text()
+def test_the_lock_path_defaults_to_the_one_the_restore_test_uses():
+    """HA-BACKUP-CHECK's restore test reads the same variable with the same default; a
+    different path means no mutual exclusion."""
+    assert 'DEPLOY_LOCK_PATH="${DEPLOY_LOCK_PATH:-/opt/sorento-crm2/.deploy.lock}"' in SCRIPT.read_text()
+
+
+@pytest.mark.parametrize("via", ["env", "deploy_env"])
+def test_the_lock_path_can_be_overridden(box, tmp_path, via):
+    """The /var/lib/sorento-deploy fallback for a box where /opt/sorento-crm2 is not root-owned."""
+    other = tmp_path / "var" / "lib" / "sorento-deploy" / "deploy.lock"
+    other.parent.mkdir(parents=True)
+    env = {}
+    if via == "env":
+        env["DEPLOY_LOCK_PATH"] = str(other)
+    else:
+        (box["root"] / ".deploy.env").write_text(f"DEPLOY_LOCK_PATH={other}\n")
+        env["DEPLOY_LOCK_PATH"] = ""  # unset by the caller: the on-box file decides
+    with open(other, "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        r = _run(box, timeout=30, DEPLOY_LOCK_WAIT_SECONDS="1", **env)
+    assert r.returncode != 0
+    assert str(other) in r.stdout, r.stdout
+    assert _calls(box) == []
+    r = _run(box, **env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _lock_is_free(other)
+
+
+def test_the_lock_wait_can_be_set_in_deploy_env(box):
+    (box["root"] / ".deploy.env").write_text("DEPLOY_LOCK_WAIT_SECONDS=1\n")
+    box["lock"].touch()
+    with open(box["lock"]) as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        r = _run(box, timeout=30)
+    assert r.returncode != 0
+    assert "still held" in r.stdout, r.stdout
 
 
 def test_the_lock_is_held_for_the_deploy_and_released_after_success(box):
@@ -368,3 +417,90 @@ def test_a_held_lock_makes_the_deploy_wait_then_give_up_without_touching_anythin
     assert r.returncode != 0
     assert "/.deploy.lock" in r.stdout and "held" in r.stdout, r.stdout
     assert _calls(box) == [], "nothing may run while a restore test or another deploy holds the box"
+
+
+# --- review round 1 -------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "knob", ["DEPLOY_MIN_AVAILABLE_MB=4500MB", "SNAPSHOT_KEEP_MINUTES=two-days", "SNAPSHOT_MIN_FREE_MB=10G", "DEPLOY_LOCK_WAIT_SECONDS=forever"]
+)
+def test_a_non_numeric_knob_fails_closed(box, knob):
+    """`[ 8000 -lt 4500MB ]` is an error, which an `if` reads as false: the guard would pass."""
+    (box["root"] / ".deploy.env").write_text(knob + "\n")
+    r = _run(box, timeout=30)
+    assert r.returncode != 0
+    assert knob.split("=")[0] in r.stdout, r.stdout
+    assert not _started_new_colour(_calls(box))
+
+
+def test_memory_is_checked_before_the_snapshot(box):
+    _set_mem_mb(box, 2000)
+    r = _run(box)
+    assert r.returncode != 0
+    assert _index(_calls(box), "pg_dump") == -1, "no dump on a box that cannot take the deploy"
+
+
+def test_low_disk_stops_the_deploy_before_the_dump(box):
+    (box["stub"] / "disk_free_mb").write_text("5000")  # default floor is 10240 MB
+    r = _run(box)
+    assert r.returncode != 0
+    assert "disk" in r.stdout, r.stdout
+    calls = _calls(box)
+    assert _index(calls, "pg_dump") == -1
+    assert not _started_new_colour(calls)
+
+
+@pytest.mark.parametrize("free_mb,ok", [(5, False), (7, True)])
+def test_disk_must_hold_twice_the_newest_dump(box, free_mb, ok):
+    snap_dir = box["root"] / "backups" / "pre-migrate"
+    snap_dir.mkdir(parents=True)
+    (snap_dir / "pre-migrate-20261013T000000Z-prev.dump").write_bytes(b"x" * (3 * 1024 * 1024))
+    (box["stub"] / "disk_free_mb").write_text(str(free_mb))
+    r = _run(box, SNAPSHOT_MIN_FREE_MB="1")
+    assert (r.returncode == 0) is ok, r.stdout + r.stderr
+
+
+def test_output_that_is_not_a_custom_format_dump_is_refused(box):
+    (box["stub"] / "snapshot_garbage").write_text("1")
+    r = _run(box)
+    assert r.returncode != 0
+    assert "snapshot failed" in r.stdout, r.stdout
+    assert not _started_new_colour(_calls(box))
+    assert not list((box["root"] / "backups" / "pre-migrate").glob("*"))
+
+
+def test_stale_partial_dumps_are_pruned_too(box):
+    snap_dir = box["root"] / "backups" / "pre-migrate"
+    snap_dir.mkdir(parents=True)
+    partial = snap_dir / "pre-migrate-20261001T000000Z-old.dump.partial"
+    partial.write_text("x")
+    three_days = time.time() - 3 * 24 * 3600
+    os.utime(partial, (three_days, three_days))
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not partial.exists()
+
+
+def test_ordinary_postgres_log_lines_do_not_fail_the_deploy(box):
+    _incident(
+        box,
+        "up",
+        log=(
+            "LOG:  checkpoint starting: time\n"
+            "LOG:  checkpoint complete: wrote 42 buffers (0.3%)\n"
+            "FATAL:  terminating connection due to administrator command\n"
+            "LOG:  connection received: host=172.18.0.5 port=40000\n"
+            "ERROR:  canceling statement due to statement timeout\n"
+        ),
+    )
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_crash_before_the_deploy_started_is_not_this_deploys(box):
+    (box["stub"] / "db_logs").write_text(
+        "@2020-01-01T00:00:00Z|LOG:  all server processes terminated; reinitializing\n"
+    )
+    r = _run(box)
+    assert r.returncode == 0, r.stdout + r.stderr
