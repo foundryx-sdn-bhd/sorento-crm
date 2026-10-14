@@ -70,8 +70,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
               }
             : undefined,
         // Picking the product answers the description too, so nobody retypes the catalogue.
-        onOptionSelected: (option, draft) => ({
-          ...draft,
+        onOptionSelected: (option) => ({
           product_name: option?.description ?? '',
         }),
       },

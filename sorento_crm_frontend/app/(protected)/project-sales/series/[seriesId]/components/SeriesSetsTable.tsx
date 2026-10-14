@@ -57,8 +57,7 @@ export function SeriesSetsTable({ seriesId }: { seriesId: string }) {
           row?.product_set_id
             ? { value: row.product_set_id, label: row.set_code ?? '' }
             : undefined,
-        onOptionSelected: (option, draft) => ({
-          ...draft,
+        onOptionSelected: (option) => ({
           set_name: option?.description ?? '',
         }),
       },

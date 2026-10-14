@@ -97,7 +97,7 @@ export function LineFlags({
         )}
       </div>
       {belowFloor && floorText && (
-        <p className="text-xs text-destructive">{floorText}</p>
+        <p className="whitespace-normal break-words text-xs text-destructive">{floorText}</p>
       )}
     </div>
   );
