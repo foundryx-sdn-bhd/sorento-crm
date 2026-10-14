@@ -109,7 +109,7 @@ echo | openssl s_client -connect 127.0.0.1:443 -servername <CRM_DOMAIN> 2>/dev/n
   (`ssl_verify_client on`). n8n sends no client certificate, so that would reject every n8n call
   on this path. When that lands, use `ssl_verify_client optional;` and refuse only requests that
   are neither verified nor from the tailnet, for example inside the `<CRM_DOMAIN>` server block:
-  `if ($ssl_client_verify != SUCCESS) { set $aop_block 1; }`,
+  `set $aop_block 0;`, `if ($ssl_client_verify != SUCCESS) { set $aop_block 1; }`,
   `if ($remote_addr = <N8N_TS_IP>) { set $aop_block 0; }`, `if ($aop_block) { return 403; }`.
 
 ### 0.3 How is pgbouncer published?
@@ -169,8 +169,10 @@ Tailscale admin console, **Access controls** (<https://login.tailscale.com/admin
 
 4. **Save**. The console validates the file and refuses a broken one.
 
-- Check: the save succeeds, and your laptop still reaches whatever it reached before (for
-  example `tailscale ping <OWNER_TS_IP>` from another of your devices).
+- Check: the save succeeds, and your laptop still makes a real connection it made before, for
+  example `ssh` to a tailnet machine you normally reach that way, or `nc -z -w 5 <that machine's
+  100.x address> <a port it serves>`. (`tailscale ping` is not a test here: the policy does not
+  filter it.)
 - Rollback: **Access controls**, the history (clock) icon, restore the previous version.
 
 ### 1.2 Join the boxes
@@ -468,7 +470,9 @@ Then, in hPanel:
 Then tidy the two leftovers that named the n8n box's public address:
 
 - In the nginx `listen 8765` block, delete `allow <N8N_HOST>;` (edge step 2), then
-  `sudo nginx -t && sudo nginx -s reload`. Check: step 5.1's MCP line still prints `ok`.
+  `sudo nginx -t && sudo nginx -s reload`. Check: from the n8n box host,
+  `curl -s -o /dev/null -w '%{http_code}\n' http://<CRM_TS_IP>:8765/mcp` still prints `200`, `405`
+  or `406` (a `403` means the tailnet line was removed instead).
   Rollback: put the line back and reload.
 - If edge step 5.4 added `sudo ufw allow proto tcp from <N8N_HOST> to any port 8765,6432`, delete
   it: `sudo ufw delete allow proto tcp from <N8N_HOST> to any port 8765,6432`. Rollback: the
@@ -515,7 +519,7 @@ On each box:
 
 ```bash
 sudo apt install -y wireguard
-cd /etc/wireguard && umask 077 && wg genkey | sudo tee privatekey | wg pubkey | sudo tee publickey
+sudo sh -c 'umask 077; cd /etc/wireguard && wg genkey | tee privatekey | wg pubkey > publickey'
 ```
 
 The addresses below are in `100.64.0.0/10` on purpose. A `10.x` address would fall inside the
@@ -556,11 +560,20 @@ Then `sudo systemctl enable --now wg-quick@wg0` on both, and in Hostinger on the
 Hostinger rule removal in step 6 still closes it publicly), or add a small `socat` systemd unit
 from `100.77.0.1:6432` to `127.0.0.1:6432` that starts after `wg-quick@wg0`.
 
-- Check: `sudo wg show` on each box shows a recent `latest handshake`, and `ping -c 3 100.77.0.1`
-  works from the n8n box.
-- Policy: WireGuard has no ACL. On the CRM box, limit `wg0` with the host firewall instead
-  (`sudo iptables -I INPUT -i wg0 -p tcp -m multiport ! --dports 443,8765,6432 -j DROP`, and the
-  same in the `DOCKER-USER` chain for pgbouncer if it is published on `0.0.0.0`).
+- Check: `sudo wg show` on each box shows a recent `latest handshake`, and
+  `nc -z -w 5 100.77.0.1 443 && echo ok` works from the n8n box (ping is dropped by the policy below).
+- Policy: WireGuard has no ACL, so the CRM box limits `wg0` itself. Add these to the CRM box's
+  `[Interface]` section; they apply whenever `wg0` is up (reboots included) and are removed with
+  it, so the rollback below covers them:
+
+  ```ini
+  PostUp   = iptables -I INPUT -i wg0 -j DROP; iptables -I INPUT -i wg0 -p tcp -m multiport --dports 443,8765,6432 -j ACCEPT
+  PostUp   = iptables -I DOCKER-USER -i wg0 -j DROP; iptables -I DOCKER-USER -i wg0 -p tcp --dport 6432 -j ACCEPT
+  PostDown = iptables -D INPUT -i wg0 -p tcp -m multiport --dports 443,8765,6432 -j ACCEPT; iptables -D INPUT -i wg0 -j DROP
+  PostDown = iptables -D DOCKER-USER -i wg0 -p tcp --dport 6432 -j ACCEPT; iptables -D DOCKER-USER -i wg0 -j DROP
+  ```
+
+  Check: step 2.4's port loop (with `100.77.0.1`) shows only 443, 8765 and 6432 open.
 - Rollback: `sudo systemctl disable --now wg-quick@wg0` on both, and delete the UDP rule. For
   good: also delete `/etc/wireguard/wg0.conf` and both key files on each box.
 
