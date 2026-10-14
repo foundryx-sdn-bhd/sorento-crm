@@ -118,16 +118,43 @@ def fetch_dev_openai_key() -> str:
         db.close()
 
 
-def check_ideation_target() -> None:
-    """Refuse the run unless the ideation service the app would call is local."""
+def check_ideation_target() -> str | None:
+    """Refuse the run unless the ideation service the app would call is local; returns that URL."""
     from app.database import SessionLocal
     from app.services.ideation_turn_service import _resolve_ideation_config
 
     db = SessionLocal()
     try:
-        guard.check_ideation_url(_resolve_ideation_config(db).base_url)
+        url = _resolve_ideation_config(db).base_url
+        guard.check_ideation_url(url)
+        return url
     finally:
         db.close()
+
+
+def probe_ideation(url: str) -> bool:
+    """True when GET <url>/health answers within 3 s; any error means down."""
+    import httpx
+
+    try:
+        return httpx.get(url.rstrip("/") + "/health", timeout=3).status_code < 500
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def env_blocked_domains(ideation_url: str | None, probe: Any = probe_ideation) -> dict[str, str]:
+    """Domains the copy cannot exercise right now, with the reason: ideas needs the ideation service."""
+    if not ideation_url:
+        return {"ideas": "ideation service not configured"}
+    try:
+        up = bool(probe(ideation_url))
+    except Exception:  # noqa: BLE001
+        up = False
+    if up:
+        return {}
+    from urllib.parse import urlparse
+
+    return {"ideas": f"ideation service down ({urlparse(ideation_url).netloc} unreachable)"}
 
 
 def git_sha() -> str:
@@ -305,7 +332,7 @@ def run_conversation(conv: Any, mode: str, rep: int, contact_id: str, pins: dict
     guard.take_blocked()
     for n, turn in enumerate(conv.turns, 1):
         started = time.monotonic()
-        row: dict[str, Any] = {"conversation": conv.id, "mode": mode, "rep": rep, "turn": n,
+        row: dict[str, Any] = {"conversation": conv.id, "domain": conv.domain, "mode": mode, "rep": rep, "turn": n,
                                "text": turn.text, "reply": "", "files": {"count": 0, "names": []},
                                "quick_replies": [], "parse": None, "branch_kind": None, "turn_id": None,
                                "prompt_version": None, "checks": [], "judge": None, "ok": False,
@@ -389,7 +416,7 @@ def run(args: Any) -> Path:
         from app.config import settings
 
         settings.openai_api_key = os.environ["OPENAI_API_KEY"]
-    check_ideation_target()
+    env_blocked = env_blocked_domains(check_ideation_target())
     battery_dir = Path(args.battery_dir) if args.battery_dir else schema.BATTERY_DIR
     convs = schema.load_battery(battery_dir)
     if args.ids:
@@ -433,12 +460,12 @@ def run(args: Any) -> Path:
             print(f"mode {mode} done: {sum(1 for r in all_rows if r['mode'] == mode)} turns", flush=True)
 
     meta = {"v2": pins["v2"], "v1": pins["v1"], "git_sha": git_sha(), "mcp_path": str(mcp_path),
-            "embedding_key": key_state,
+            "embedding_key": key_state, "env_blocked": env_blocked,
             "judge_agreement": read_calibration_agreement() if judge_client else None}
     results = report.build_results(convs, all_rows)
     (out_dir / "table.md").write_text(report.render_table(results, meta), encoding="utf-8")
     failing = [r for r in all_rows if not r["ok"]]
-    (out_dir / "failures.md").write_text(report.render_failures(failing), encoding="utf-8")
+    (out_dir / "failures.md").write_text(report.render_failures(failing, meta), encoding="utf-8")
     print(f"table: {out_dir / 'table.md'}", flush=True)
     blocked = [r for r in all_rows if any(c["check"] == "outbound_blocked" for c in r["checks"])]
     if blocked:

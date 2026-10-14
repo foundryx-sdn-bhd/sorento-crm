@@ -69,8 +69,8 @@ def _totals(results: list[dict[str, Any]], key: str) -> list[str]:
     lines = [f"| {key} | n | v2 pass | v1 pass |", "| --- | --- | --- | --- |"]
     for name in sorted(groups):
         g = groups[name]
-        v2 = [r for r in g if r["v2"]]
-        v1 = [r for r in g if r["v1"]]
+        v2 = [r for r in g if r["v2"] and r["v2"] != "env"]
+        v1 = [r for r in g if r["v1"] and r["v1"] != "env"]
         lines.append(f"| {name} | {len(g)} | {sum(1 for r in v2 if r['v2'] == 'pass')}/{len(v2)} "
                      f"| {sum(1 for r in v1 if r['v1'] == 'pass')}/{len(v1)} |")
     return lines
@@ -78,6 +78,9 @@ def _totals(results: list[dict[str, Any]], key: str) -> list[str]:
 
 def render_table(results: list[dict[str, Any]], meta: dict[str, Any]) -> str:
     agreement = meta.get("judge_agreement")
+    blocked = meta.get("env_blocked") or {}
+    results = [dict(r, v2="env", v1="env", first_fail_v2=None, first_fail_v1=None, classes=[])
+               if r.get("domain") in blocked else r for r in results]
     lines = ["# PV2 battery", ""]
     for mode in ("v2", "v1"):
         m = meta.get(mode) or {}
@@ -87,6 +90,8 @@ def render_table(results: list[dict[str, Any]], meta: dict[str, Any]) -> str:
         lines.append(f"- MCP package: {meta['mcp_path']}")
     if meta.get("embedding_key"):
         lines.append(f"- Embedding key: {meta['embedding_key']}")
+    if blocked:
+        lines.append("- Env blocked: " + "; ".join(f"{d} ({why})" for d, why in blocked.items()))
     if agreement is None or agreement < PROVISIONAL_BELOW:
         shown = "not calibrated" if agreement is None else f"{agreement:.2f}"
         lines.append(f"- judge agreement: {shown} (PROVISIONAL, below {PROVISIONAL_BELOW})")
@@ -106,8 +111,12 @@ def render_table(results: list[dict[str, Any]], meta: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_failures(rows: list[dict[str, Any]]) -> str:
+def render_failures(rows: list[dict[str, Any]], meta: dict[str, Any] | None = None) -> str:
+    blocked = (meta or {}).get("env_blocked") or {}
+    rows = [r for r in rows if r.get("domain") not in blocked]
     lines = ["# Failing turns", ""]
+    if blocked:
+        lines += ["Env blocked, left out: " + "; ".join(f"{d} ({why})" for d, why in blocked.items()), ""]
     if not rows:
         lines.append("None.")
     for r in rows:
