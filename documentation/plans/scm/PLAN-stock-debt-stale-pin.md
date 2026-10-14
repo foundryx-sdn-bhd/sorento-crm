@@ -32,8 +32,8 @@ SO419598 BRW 1 / 0.
 ## Fix
 
 1. `_holds`: allocation pins walk the same rule. Bin in the span with no on-hand event: the
-   hold is dropped (line short, no "Covered by"). Bin with an event: `assign()` already caps
-   the pin at what the bin has left.
+   hold is dropped (line short, no "Covered by"). Bin with an event: capped at what the bin
+   holds (item 2).
 2. One per-bin ledger in `_holds` caps every on-hand hold at what the bin holds (on hand
    less reserved): in the span from the on-hand event, OUTSIDE it (site pool, unflagged
    bin, another group under `group=`) from `_stand_in_floors` (one read). Shared by every

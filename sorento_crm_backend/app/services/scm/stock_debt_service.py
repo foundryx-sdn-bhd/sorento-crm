@@ -771,10 +771,11 @@ class StockDebtService:
                         ],
                     }
                 )
-                if pool is not None and event.key in pool["left"]:
+                if pool is not None and event.key in pool["left"] and event.key not in stood:
                     # A reserve's stock under the switch: stated as the projection reads
                     # it, every link netted (an order at ANY pool may hold it), so the row
-                    # foots with the projection line above it.
+                    # foots with the projection line above it. Not a stand-in row: that
+                    # states only what the pins hold, so the remainder would not foot.
                     supply[-1]["free_qty"] = (
                         round(max(pool["left"][event.key], 0.0), 4) if home else 0.0
                     )
