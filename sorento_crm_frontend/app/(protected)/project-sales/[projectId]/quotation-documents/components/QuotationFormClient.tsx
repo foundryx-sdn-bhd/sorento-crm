@@ -564,7 +564,8 @@ export function QuotationFormClient({
                     {
                       ...(savedRow ?? {}),
                       id: scope.id ?? '',
-                      scope_label: scope.scope_label,
+                      // The name the tab shows, so an unnamed scope opens as "Scope 2", not blank.
+                      scope_label: scopeTitle(scope, (scopes ?? []).indexOf(scope)),
                       series_id: scope.series_id || null,
                       notes: scope.notes !== undefined ? scope.notes : (savedRow?.notes ?? null),
                     } as ProjectQuotation
@@ -760,6 +761,16 @@ function FormLines({
         onSelect={onSelect}
         canEdit={project.can_edit}
         onAddScope={onAddScope}
+        onRename={onEditScope}
+        onRemove={(key) => {
+          const scope = scopes.find((row) => row.key === key);
+          if (scope) onRemove(scope);
+        }}
+        // The button's own rule for the open scope; another tab becomes the open one on the
+        // right-click, so a saved scope is only offered once its versions are known.
+        canRemove={(key) =>
+          key === active.key ? canRemove : !scopes.find((row) => row.key === key)?.id
+        }
       />
 
       <section aria-label={scopeTitle(active, scopes.indexOf(active))}>

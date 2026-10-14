@@ -663,6 +663,36 @@ export interface QuotationLineImage {
   filename?: string | null;
   /** Photographs somebody could choose between. Zero on `no_photos` and `off_catalog`. */
   candidate_count: number;
+  /** Those photographs, for the picker that sets the line's `image_attachment_id`. */
+  candidates?: QuotationLineFileCandidate[];
+}
+
+/** One image a line's photo or drawing could be: a signed thumbnail and the original. */
+export interface QuotationLineFileCandidate {
+  attachment_id: string;
+  filename?: string | null;
+  url?: string | null;
+  preview_url?: string | null;
+}
+
+/**
+ * The drawing cell: the product's "Technical Specifications" images. `chosen` is a picked or
+ * issued id, `default` the product's first drawing by upload.
+ */
+export interface QuotationLineDrawing {
+  state: 'chosen' | 'default' | 'no_drawings' | 'off_catalog';
+  url?: string | null;
+  preview_url?: string | null;
+  attachment_id?: string | null;
+  filename?: string | null;
+  candidate_count: number;
+  candidates?: QuotationLineFileCandidate[];
+}
+
+/** The photo and drawing cells for a product on a line not saved yet. */
+export interface QuotationLineImages {
+  product_image: QuotationLineImage;
+  technical_drawing: QuotationLineDrawing;
 }
 
 export interface QuotationLine {
@@ -675,6 +705,9 @@ export interface QuotationLine {
   image_attachment_id?: string | null;
   /** The picture cell. Absent on a payload from before S21. */
   product_image?: QuotationLineImage | null;
+  /** The drawing picked for (or issued with) this line. */
+  drawing_attachment_id?: string | null;
+  technical_drawing?: QuotationLineDrawing | null;
 
   unit_price: string;
   quantity: string;
@@ -713,6 +746,7 @@ export interface QuotationLineBody {
   sort_order?: number;
   notes?: string | null;
   image_attachment_id?: string | null;
+  drawing_attachment_id?: string | null;
 
   item_label?: string | null;
   /** The REQUEST's name for the brand. The response calls the same value `brand`. */

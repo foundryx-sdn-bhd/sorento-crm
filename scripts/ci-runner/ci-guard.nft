@@ -1,0 +1,26 @@
+#!/usr/sbin/nft -f
+# Loaded inside the colima VM (ci-guard.service) before the network comes up.
+# Everything the runner user opens (its jobs, and its rootless Docker's
+# network, which slirp4netns runs as that user) reaches the internet only:
+# never the Mac (lima maps 192.168.5.2 to the Mac's localhost, where the dev
+# Postgres and the lane servers listen), the LAN or the tailnet. On the VM
+# itself only 127.0.0.0/8 (the job's own service containers) and DNS. The
+# runner user cannot change this table.
+# Re-running this file replaces it.
+table inet ci_guard
+delete table inet ci_guard
+table inet ci_guard {
+  set private4 {
+    type ipv4_addr; flags interval
+    elements = { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 }
+  }
+  chain output {
+    type filter hook output priority -10; policy accept
+    ct state established,related accept
+    meta skuid "runner" ip daddr 127.0.0.0/8 accept
+    meta skuid "runner" fib daddr type local th dport 53 accept
+    meta skuid "runner" fib daddr type local counter drop
+    meta skuid "runner" ip daddr @private4 counter drop
+    meta skuid "runner" ip6 daddr != ::1 counter drop
+  }
+}

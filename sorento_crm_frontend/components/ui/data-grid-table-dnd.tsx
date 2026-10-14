@@ -45,13 +45,14 @@ import type { ColumnDef } from '@tanstack/react-table';
  * column is chrome, not a reader's own column" - a fixed utility column
  * (`meta.draggable === false`, e.g. the shared select column) or one carrying an
  * expanded row's own content (`meta.expandedContent`, e.g. the OI Lines "expand"
- * chevron). Module-local (nit, fix round 3: no test imports it) - the header, the
+ * chevron). Exported for the row-drag grid's own column drag
+ * (`data-grid-table-dnd-rows.tsx`), which must exclude the same columns - the header, the
  * body cell and the `orderedIds` drop-target filter below all read the SAME check
- * regardless, since they live in this one file - S1 (fix round 2): the body cell
+ * regardless - S1 (fix round 2): the body cell
  * used to run `useSortable` with no `disabled` at all, which could drift from what
  * the header decided the moment either predicate changed on one side only.
  */
-function isFixedUtilityColumn<TData>(columnDef: ColumnDef<TData>): boolean {
+export function isFixedUtilityColumn<TData>(columnDef: ColumnDef<TData>): boolean {
   return columnDef.meta?.draggable === false || Boolean(columnDef.meta?.expandedContent);
 }
 

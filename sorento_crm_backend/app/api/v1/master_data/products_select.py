@@ -82,6 +82,12 @@ async def get_products_select(
                             p.category.category_name if p.category is not None else None
                         ),
                         "brand_name": p.brand.brand_name if p.brand is not None else None,
+                        # What a quotation line fills itself from when this product is picked
+                        # (description, brand, unit). Ids, not names, so the line resolves them
+                        # through the same cached master-data lists as everywhere else.
+                        "description": p.description,
+                        "brand_id": p.brand_id,
+                        "base_uom_id": p.base_uom_id,
                         "list_price": str(p.list_price) if p.list_price is not None else None,
                         "currency": p.currency,
                         "is_discontinued": bool(p.is_discontinued),

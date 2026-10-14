@@ -227,7 +227,17 @@ export interface CellStockTableProps {
    * were never going to be combined would print a number nobody asked for.
    */
   showGroupSubtotal?: boolean;
+  /**
+   * The stock position alone, for a reader with no order in hand (the quotation's stock chip):
+   * On hand, SO qty, SPO qty and Available, with no document chevrons. PO qty, Taken and
+   * Available for Project only mean something for an order being planned, and outside one they
+   * read 0 or repeat Available.
+   */
+  stockOnly?: boolean;
 }
+
+/** The columns `stockOnly` keeps. */
+const STOCK_ONLY_COLUMNS = new Set(['on-hand', 'so', 'spo', 'available']);
 
 /**
  * See the module doc above. Forwards a small imperative handle (`CellStockTableHandle`) so
@@ -254,9 +264,14 @@ export const CellStockTable = React.forwardRef<
     selectable,
     badges,
     showGroupSubtotal = true,
+    stockOnly = false,
   },
   ref,
 ) {
+  const numericColumns = stockOnly
+    ? NUMERIC_COLUMNS.filter((column) => STOCK_ONLY_COLUMNS.has(column.key))
+    : NUMERIC_COLUMNS;
+  const spanAll = (stockOnly ? 2 : 3) + numericColumns.length;
   const drawn = taken ?? EMPTY_TAKEN;
   const drawnKinds = takenKinds ?? EMPTY_TAKEN_KINDS;
   /**
@@ -510,7 +525,7 @@ export const CellStockTable = React.forwardRef<
         <table className="w-full border-separate border-spacing-0 text-xs">
           <thead>
             <tr>
-              <th scope="col" className={cn(CHEVRON_COL, HEAD_CELL)} />
+              {!stockOnly && <th scope="col" className={cn(CHEVRON_COL, HEAD_CELL)} />}
               <th
                 ref={locationThRef}
                 scope="col"
@@ -547,7 +562,7 @@ export const CellStockTable = React.forwardRef<
               <th scope="col" className={cn(WHERE_COL, HEAD_CELL)}>
                 Where
               </th>
-              {NUMERIC_COLUMNS.map((column) => (
+              {numericColumns.map((column) => (
                 <th
                   key={column.key}
                   scope="col"
@@ -582,6 +597,7 @@ export const CellStockTable = React.forwardRef<
                 return (
                   <React.Fragment key={key}>
                     <tr data-testid={`cell-location-${testKey}`}>
+                      {!stockOnly && (
                       <td className={cn(CHEVRON_COL, BODY_CELL, 'px-1')}>
                         {addressable ? (
                           <Button
@@ -616,6 +632,7 @@ export const CellStockTable = React.forwardRef<
                           />
                         )}
                       </td>
+                      )}
                       <td className={cn(locationColClassName, BODY_CELL)} style={locationColStyle}>
                         <div className="flex items-start gap-2">
                           {selectable && entry.warehouse_id ? (
@@ -674,7 +691,7 @@ export const CellStockTable = React.forwardRef<
                           {WHERE_LABELS[entry.where ?? 'own']}
                         </span>
                       </td>
-                      {NUMERIC_COLUMNS.map((column) => {
+                      {numericColumns.map((column) => {
                         const value = valueOf(column, entry, drawn);
                         // Signed and never clamped: a negative Available IS the shortfall, and the
                         // colour is what makes it the number the eye lands on.
@@ -727,12 +744,12 @@ export const CellStockTable = React.forwardRef<
                       })}
                     </tr>
 
-                    {isOpen && addressable && (
+                    {isOpen && addressable && !stockOnly && (
                       <tr data-testid={`stock-expansion-${testKey}`}>
                         {/* Under the row it belongs to, spanning the whole table: the documents are
                         this location's evidence, not a column of it. */}
                         <td
-                          colSpan={3 + NUMERIC_COLUMNS.length}
+                          colSpan={spanAll}
                           className="border-b border-border p-0"
                         >
                           <StockDocumentsPanel
@@ -762,6 +779,7 @@ export const CellStockTable = React.forwardRef<
                       key={`subtotal-${section.key}`}
                       data-testid={`stock-subtotal-${section.key}`}
                     >
+                      {!stockOnly && (
                       <td className={cn(CHEVRON_COL, FOOT_CELL, 'px-1')}>
                         {section.netOf && sectionProductId(section) ? (
                           <Button
@@ -790,6 +808,7 @@ export const CellStockTable = React.forwardRef<
                           </Button>
                         ) : null}
                       </td>
+                      )}
                       <td
                         className={cn(
                           locationColClassName,
@@ -801,7 +820,7 @@ export const CellStockTable = React.forwardRef<
                         {section.label}
                       </td>
                       <td className={cn(WHERE_COL, FOOT_CELL)} />
-                      {NUMERIC_COLUMNS.map((column) => {
+                      {numericColumns.map((column) => {
                         if (!column.total) {
                           return (
                             <td
@@ -857,7 +876,8 @@ export const CellStockTable = React.forwardRef<
                         );
                       })}
                     </tr>,
-                    ...(expandedSets[section.key] &&
+                    ...(!stockOnly &&
+                    expandedSets[section.key] &&
                     section.netOf &&
                     sectionProductId(section)
                       ? [
@@ -870,7 +890,7 @@ export const CellStockTable = React.forwardRef<
                             data-testid={`stock-set-expansion-${section.key}`}
                           >
                             <td
-                              colSpan={3 + NUMERIC_COLUMNS.length}
+                              colSpan={spanAll}
                               className="border-b border-border p-0"
                             >
                               <StockDocumentsPanel
@@ -896,7 +916,7 @@ export const CellStockTable = React.forwardRef<
             // row repeating it is a row that says nothing.
             <tfoot>
               <tr>
-                <td className={cn(CHEVRON_COL, FOOT_CELL)} />
+                {!stockOnly && <td className={cn(CHEVRON_COL, FOOT_CELL)} />}
                 <td
                   className={cn(
                     locationColClassName,
@@ -908,7 +928,7 @@ export const CellStockTable = React.forwardRef<
                   Total
                 </td>
                 <td className={cn(WHERE_COL, FOOT_CELL)} />
-                {NUMERIC_COLUMNS.map((column) => {
+                {numericColumns.map((column) => {
                   if (!column.total) {
                     return (
                       <td
