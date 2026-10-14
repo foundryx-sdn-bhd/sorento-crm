@@ -22,6 +22,19 @@ _KIND_WORD: dict[str, dict[str, str]] = {
     "product_type": {"en": "product type", "zh": "产品类型", "ms": "jenis produk"},
     "warehouse": {"en": "warehouse", "zh": "仓库", "ms": "gudang"},
     "order": {"en": "order", "zh": "订单", "ms": "pesanan"},
+    "order_number": {"en": "order", "zh": "订单", "ms": "pesanan"},
+    "product_class": {"en": "product class", "zh": "产品类别", "ms": "kelas produk"},
+    "delivery_order": {"en": "delivery order", "zh": "送货单", "ms": "pesanan penghantaran"},
+    "customer_order": {"en": "delivery order", "zh": "送货单", "ms": "pesanan penghantaran"},
+    "sales_order": {"en": "sales order", "zh": "销售订单", "ms": "pesanan jualan"},
+    "customer_po_ref": {"en": "customer PO reference", "zh": "客户采购单号", "ms": "rujukan PO pelanggan"},
+    "purchase_order": {"en": "purchase order", "zh": "采购单", "ms": "pesanan belian"},
+    "purchase_request": {"en": "purchase request", "zh": "采购申请", "ms": "permohonan belian"},
+    "inbound_shipment": {"en": "inbound shipment", "zh": "到货批次", "ms": "penghantaran stok masuk"},
+    "supplier": {"en": "supplier", "zh": "供应商", "ms": "pembekal"},
+    "attachment": {"en": "attachment", "zh": "附件", "ms": "lampiran"},
+    "form": {"en": "form", "zh": "表格", "ms": "borang"},
+    "promotion": {"en": "promotion", "zh": "促销", "ms": "promosi"},
     "spec": {"en": "value", "zh": "规格", "ms": "nilai"},
     "report_filter": {"en": "match", "zh": "匹配项", "ms": "padanan"},
 }
@@ -30,7 +43,7 @@ _COPY: dict[str, dict[str, str]] = {
     "which": {
         "en": "Which one do you mean?",
         "zh": "您指的是哪一个？",
-        "ms": "Yang mana satu yang anda maksudkan?",
+        "ms": "Mana satu yang anda maksudkan?",
     },
     "which_phrase": {
         "en": 'Which "{phrase}" do you mean?',
@@ -105,6 +118,101 @@ _COPY: dict[str, dict[str, str]] = {
     "yes": {"en": "Yes", "zh": "是", "ms": "Ya"},
     "no": {"en": "No", "zh": "否", "ms": "Tidak"},
     "unnamed": {"en": "(unnamed)", "zh": "（未命名）", "ms": "(tiada nama)"},
+    # RG-6 (#1517): an ask with no product in a domain that needs one.
+    "which_product": {
+        "en": "Which product do you mean?",
+        "zh": "您指的是哪个产品？",
+        "ms": "Produk yang mana satu?",
+    },
+    # RG-1 (#1570): v1's carried-subject question and its two picks (label_catalog wording).
+    "carry_scope": {
+        "en": "{label} for {named}: only {subject} (from earlier) or all {plural}?",
+        "zh": "{named} 的{label}：只看 {subject}（之前提到的）还是全部{plural}？",
+        "ms": "{label} untuk {named}: hanya {subject} (yang disebut tadi) atau semua {plural}?",
+    },
+    "carry_only": {"en": "Only {subject}", "zh": "只看 {subject}", "ms": "Hanya {subject}"},
+    "carry_all": {"en": "All {plural}", "zh": "全部{plural}", "ms": "Semua {plural}"},
+    # RG-2 (#1582): a size none of the held products holds; axis names stay English until R3.
+    "size_miss": {
+        "en": "No {size} for {subject}. Sizes on file: {sizes}.",
+        "zh": "{subject} 没有 {size}。现有尺寸：{sizes}。",
+        "ms": "Tiada {size} untuk {subject}. Saiz yang ada: {sizes}.",
+    },
+}
+
+#: RG-1 (#1570): the carried-subject question's ask word per domain and its kinds' plurals (v1's catalog).
+_CARRY_LABEL: dict[str, dict[str, str]] = {
+    "order": {"en": "Delivery", "zh": "送货", "ms": "Penghantaran"},
+    "sales": {"en": "Sales", "zh": "销售", "ms": "Jualan"},
+}
+_KIND_PLURAL: dict[str, dict[str, str]] = {
+    "product": {"en": "products", "zh": "产品", "ms": "produk"},
+    "customer": {"en": "customers", "zh": "客户", "ms": "pelanggan"},
+}
+
+#: RG-1b (#1570): v1's loop-breaker line (`clarify_policy.missing_line`) per thing still missing,
+#: (with the subject, without one).
+_STILL_NEED: dict[str, dict[str, tuple[str, str]]] = {
+    "period": {
+        "en": ("I still need the period for {subject}.", "I still need the period."),
+        "zh": ("我仍需要 {subject} 的时间段。", "我仍需要时间段。"),
+        "ms": ("Saya masih perlukan tempoh untuk {subject}.", "Saya masih perlukan tempoh."),
+    },
+    "attachment_type": {
+        "en": ("I still need the attachment type for {subject}.", "I still need the attachment type."),
+        "zh": ("我仍需要 {subject} 的附件类型。", "我仍需要附件类型。"),
+        "ms": ("Saya masih perlukan jenis lampiran untuk {subject}.", "Saya masih perlukan jenis lampiran."),
+    },
+    "product": {
+        "en": ("I still need which products to include for {subject}.", "I still need which products to include."),
+        "zh": ("我仍需要知道 {subject} 要包括哪些产品。", "我仍需要知道要包括哪些产品。"),
+        "ms": ("Saya masih perlu tahu produk mana yang hendak disertakan untuk {subject}.",
+               "Saya masih perlu tahu produk mana yang hendak disertakan."),
+    },
+    "customer": {
+        "en": ("I still need which customers to include for {subject}.", "I still need which customers to include."),
+        "zh": ("我仍需要知道 {subject} 要包括哪些客户。", "我仍需要知道要包括哪些客户。"),
+        "ms": ("Saya masih perlu tahu pelanggan mana yang hendak disertakan untuk {subject}.",
+               "Saya masih perlu tahu pelanggan mana yang hendak disertakan."),
+    },
+    # A question about one item of a kind (an entity, which-held or did-you-mean pick, a spec): that kind's word;
+    # options of several kinds, or a kind with no word here, read "which_one".
+    "which": {
+        "en": ("I still need to know which {kind} you mean for {subject}.",
+               "I still need to know which {kind} you mean."),
+        "zh": ("关于 {subject}，我仍需要知道您指的是哪个{kind}。", "我仍需要知道您指的是哪个{kind}。"),
+        "ms": ("Saya masih perlu tahu {kind} mana satu yang anda maksudkan untuk {subject}.",
+               "Saya masih perlu tahu {kind} mana satu yang anda maksudkan."),
+    },
+    "which_one": {
+        "en": ("I still need to know which one you mean for {subject}.", "I still need to know which one you mean."),
+        "zh": ("关于 {subject}，我仍需要知道您指的是哪一个。", "我仍需要知道您指的是哪一个。"),
+        "ms": ("Saya masih perlu tahu mana satu yang anda maksudkan untuk {subject}.",
+               "Saya masih perlu tahu mana satu yang anda maksudkan."),
+    },
+    "measure": {
+        "en": ("I still need the figure to rank by for {subject}.", "I still need the figure to rank by."),
+        "zh": ("关于 {subject}，我仍需要知道按哪个数据排名。", "我仍需要知道按哪个数据排名。"),
+        "ms": ("Saya masih perlu tahu angka mana untuk menyusun kedudukan bagi {subject}.",
+               "Saya masih perlu tahu angka mana untuk menyusun kedudukan."),
+    },
+    "breakdown": {
+        "en": ("I still need which row to break down for {subject}.", "I still need which row to break down."),
+        "zh": ("关于 {subject}，我仍需要知道要细分哪一行。", "我仍需要知道要细分哪一行。"),
+        "ms": ("Saya masih perlu tahu baris mana yang hendak diperincikan untuk {subject}.",
+               "Saya masih perlu tahu baris mana yang hendak diperincikan."),
+    },
+    "what": {
+        "en": ("I still need to know what to check for {subject}.", "I still need to know what to check."),
+        "zh": ("关于 {subject}，我仍需要知道要查什么。", "我仍需要知道要查什么。"),
+        "ms": ("Saya masih perlu tahu apa yang hendak disemak untuk {subject}.",
+               "Saya masih perlu tahu apa yang hendak disemak."),
+    },
+    "more": {
+        "en": ("I still need more detail for {subject}.", "I still need more detail."),
+        "zh": ("我仍需要 {subject} 的更多详情。", "我仍需要更多详情。"),
+        "ms": ("Saya masih perlukan butiran lanjut untuk {subject}.", "Saya masih perlukan butiran lanjut."),
+    },
 }
 
 
@@ -148,6 +256,31 @@ def question_for(
     if about in ("attachment_type", "report_measure", "report_period"):
         return text(about, language)
     return text("other", language)
+
+
+def carry_scope(domain: str, kind: str, named: str, subject: str, language: str | None) -> tuple[str, list[Option]]:
+    """RG-1 (#1570): "Delivery for <named>: only <subject> (from earlier) or all <kind>s?" and its two picks:
+    keep the carried `kind`, or clear it."""
+    code = lang(language)
+    plural = _KIND_PLURAL[kind][code]
+    asked = text("carry_scope", language, label=_CARRY_LABEL[domain][code], named=named, subject=subject, plural=plural)
+    options = [
+        Option(key="1", label=text("carry_only", language, subject=subject), payload={"kind": "carry_scope"}),
+        Option(
+            key="2", label=text("carry_all", language, plural=plural), payload={"kind": "carry_scope", "clear": kind}
+        ),
+    ]
+    return asked, options
+
+
+def still_need(missing: str, subject: str | None, language: str | None, kind: str | None = None) -> str:
+    """RG-1b: v1's "I still need X for Y." (`missing` a `_STILL_NEED` key, else "more"; `kind` names the item
+    a "which" line is about, None or a kind with no word here: "which one")."""
+    if missing == "which" and kind not in _KIND_WORD:
+        missing = "which_one"  # never a raw kind name
+    with_subject, bare = _STILL_NEED.get(missing, _STILL_NEED["more"])[lang(language)]
+    word = _KIND_WORD[kind][lang(language)] if kind in _KIND_WORD else ""
+    return with_subject.format(subject=subject, kind=word) if subject else bare.format(kind=word)
 
 
 def handover_options(language: str | None) -> list[Option]:

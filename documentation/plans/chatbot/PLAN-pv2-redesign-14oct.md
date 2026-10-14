@@ -1,7 +1,7 @@
 # PLAN: PV2 redesign - typed refs, answer register, subject stack (14 Oct 2026)
 
-Status: Build, R-GAPS-a merge-ready (R1 merged 941fb867a #1670; R2 merged 0690ef90a #1673; R-GAPS-a = PR #1676,
-branch `crew/pv2-redesign-rgaps`); R-GAPS-b next after crew merges a.
+Status: Build, R-GAPS-b merge-ready (R1 merged 941fb867a #1670; R2 merged 0690ef90a #1673; R-GAPS-a merged 8ae511217
+#1676; R-GAPS-b = PR #1685, branch `crew/pv2-redesign-rgaps-b`); R3a next after crew merges R-GAPS-b.
 Round order: R1, R2, R-GAPS (crew 14 Oct), R3, R4, R5.
 Earlier: round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
 branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). Owner 14 Oct 18:35: NO CAP on LLM spend for
@@ -201,6 +201,40 @@ line with "Sizes on file", no closest-product picks.
 
 **Moved to R4:** RG-7 part 1 ("Dealer outstanding only"): no channel exists on the outstanding path (schema, bridge,
 fetch, MCP, route, service); it needs a backend channel param plus a parser field (`Ask.channel`), built with R4.
+
+## R3 design (map 14 Oct at 829fda9f4: scratchpad rgaps/map-R3.md; lines there)
+Facts: `chatbot_entity_kinds` (models/chatbot_policy.py:54-81, 18 seed rows in turn/policy_rows.py:392-555) and
+`chatbot_domains` (:22-51) already exist, are global (no company_id, so no `__company_shared__`), and are read once per
+turn as a frozen `Policy` by `load_policy` (turn/policy.py:107-140; PV2 pv2/turn.py:552-556, v1 engine.py:4436) with the
+seed as fallback (`default_policy()`, lru-cached). Adding ROWS changes the live v1 parser prompt (chatbot_prompt_vars.py
+:88, :271), the prompt staleness hash (chatbot_parser_prompt.py:1241) and the PV2 index (pv2/index.py:111-122); adding
+COLUMNS changes none of them. Alembic head on crew/pv2: pv2_0003_label_reasoning.
+**R3a (behaviour-preserving, replay-proven), migration `pv2_0004_kind_registry`:** columns only, no new rows.
+- chatbot_entity_kinds: `labels`, `plural_labels` (jsonb en/zh/ms; from clarify_copy `_KIND_WORD`, `_KIND_PLURAL`),
+  `default_domain` (apply `DOMAIN_BY_FOUND_KIND`), `v1_not_found` bool (apply `DOCUMENT_KINDS`: a miss uses v1's
+  not-found sentence; named for what it does, `product` included), `child_kinds` + `printed_fields` text[] (register
+  `_FIELD_KIND`), `pv2_resolver` text (resolve dispatch, `INDEX_KINDS`, apply `_FILTER_KINDS`).
+- chatbot_domains: `reads_quantity`, `subject_required`, `expands_sets`, `expands_family`, `single_subject` bool,
+  `carry_scope_kinds` text[], `ask_labels` jsonb (the R-GAPS "R3 registry" constants, `FAMILY_DOMAINS`,
+  `SINGLE_SUBJECT_DOMAINS`, `_CARRY_LABEL`).
+- Delete bridge `V1_HINT` (identity map). `_offer_team` / `INTENT_BY_DOMAIN` read the turn's live Policy, not the seed.
+- Read path: the turn's Policy rides on a new `TurnV2Context.registry` (name `policy` is taken by ClarifyPolicy) into
+  `apply_turn(registry=...)`, clarify copy and the register writer; pure callers default to `default_policy()`.
+  `Policy.from_rows` fills a key ABSENT from a stale schema with the seed value. Same values in policy_rows for blank
+  schemas; `apply(bind)` called from scripts/bootstrap_env.py (CI builds its DB there, not by alembic); ADD COLUMN IF
+  NOT EXISTS (the shared DB converges by create_all).
+- Not in R3a: product_class / product_type rows (they would change v1's live prompt; R4 re-renders the index KINDS and
+  adds them); `parent_kinds` (derive from child_kinds) and `domains` (no reader; would copy v1 gate.ALLOWED);
+  localized axis names (product_spec_registry, a reply change); grant gating constants (security stays in code).
+- Proof: test_core_replay, test_carry_converted, test_livecheck_replay unchanged; parity test (retired constants ==
+  seed == migrated rows), deletions guard, stale-schema fallback, one data-driven test (a row edit moves routing).
+**R3b (#1613 seat covers, new behaviour), migration `pv2_0005_kind_relations`:** `relations` jsonb on the product kind
+row (one relation, no table): seat_cover, direction covers, source `product_compatibility` (company scoped; code
+whitelist of sources, never a table name from data), marker {product_type: toilet_seat}. Trigger: held product refs
+plus the marker ref; linked covers replace the anchor; no link -> product_find's existing none line (en/ms/zh), no
+fetch; an anchor that is itself a seat cover answers as typed; a spec in the ask is no trigger. Built on handwritten
+parses (no recorded PV2 fit parse exists); verified live in R5; if the parser does not emit the marker, the trigger
+moves to R4's relation field. R4: reverse direction (WC for a cover), cross-turn relation carry, MEMORY.
 
 ## Work split (R1)
 - Tester: red tests per UAC R1 (pure builder tests from recorded envelopes, engine-hook test, so_status/MCP/report row

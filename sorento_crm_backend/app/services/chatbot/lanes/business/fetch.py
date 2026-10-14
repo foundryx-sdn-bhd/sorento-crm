@@ -1155,6 +1155,10 @@ def entity_ids_transformer(
         or jsc.get(semantic_input, "domain_hint") == "master_products"
     ):
         out["include_specs"] = True
+    if tool_name == "crm_master_products_list":
+        # #1517 (owner ruling 6 Oct 2026): every product list the chatbot asks for is its own read,
+        # searchable (product and category) and active; n8n and the admin UI never send it.
+        out["chat_visible"] = True
     if tool_name == "crm_inventory_stock_balance_list":
         access = trig.get("access") if isinstance(trig.get("access"), dict) else {}
         attributes = access.get("attributes") if isinstance(access.get("attributes"), list) else []

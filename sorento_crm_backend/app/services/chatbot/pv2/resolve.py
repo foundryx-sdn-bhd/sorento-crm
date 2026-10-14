@@ -18,7 +18,9 @@ Two kinds of input, two rules, no third:
 
 Numbers are matched against data: a number with no attribute is placed on the held-class
 attributes whose REAL stored range holds it (one -> exact + `inferred`, the clarify policy
-decides; several -> options; none -> truthful none with the closest real rows).
+decides; several -> options; none -> truthful none with the closest real rows). A size beside
+held products or a held class (RG-2) is first read on ANY length axis: the products holding
+it, else the sizes the held products carry.
 
 Labels are display names. Index keys, customer codes and ids stay in `Option.key` /
 `payload` / `ResolvedRef.key`, never in a label; product codes appear in labels only
@@ -123,8 +125,14 @@ class SpecResolution(BaseModel):
     # True when code placed a number on the only attribute whose real range holds it: the
     # clarify policy (PV2-CARRY) decides whether that is asked or taken.
     inferred: bool = False
-    # Real rows nearest a number no attribute's range holds ("0 -> truthful none + closest").
+    # Real rows nearest a number no attribute's range holds, when nothing narrows the ask (no class or
+    # product held); with one held, the sizes below are said instead (RG-2).
     closest: list[Option] = Field(default_factory=list)
+    # RG-2 (#1582): the held products (with only a class held, the class's products) holding the number on any
+    # length axis. They become the held products: no axis question.
+    products: list[ResolvedRef] = Field(default_factory=list)
+    # RG-2: none of the held products holds it: the sizes they carry, per axis ("Length 250, 600 mm").
+    sizes_on_file: list[str] = Field(default_factory=list)
 
 
 class Resolver(Protocol):
@@ -561,11 +569,75 @@ class DbResolver:
         codes = [
             code
             for (code,) in self.db.query(Product.product_code)
-            .filter(Product.family_code == family, chat_searchable_products())
+            .filter(Product.family_code == family, chat_searchable_products(), Product.is_active.is_(True))
             .order_by(*_product_family_order())
             .all()
         ]
         return [ResolvedRef(kind="product", key=c, label=c) for c in list(dict.fromkeys(codes))[:FAMILY_LIMIT]]
+
+    def _sets(self, code: str) -> list[tuple[str, str, str]]:
+        """RG-5 (#1443): the ACTIVE sets whose code is `code` (casefold + whitespace) with a chat-visible, active
+        member, as (id, code, company name). ORM: `ProductSet` and `Product` are company scoped by the session
+        listener, so another company's set or member is never found."""
+        from app.models.company import Company
+        from app.models.product import Product, chat_searchable_products
+        from app.models.product_set import ProductSet, ProductSetMember
+
+        rows = (
+            self.db.query(ProductSet.id, ProductSet.set_code, Company.name, Product.id)
+            .join(ProductSetMember, ProductSetMember.product_set_id == ProductSet.id)
+            .join(Product, Product.id == ProductSetMember.product_id)
+            .outerjoin(Company, Company.id == ProductSet.company_id)
+            .filter(func.lower(func.regexp_replace(ProductSet.set_code, r"\s", "", "g")) == _strip_ws(code),
+                    ProductSet.is_active.is_(True), chat_searchable_products(), Product.is_active.is_(True))
+            .all()
+        )
+        found = {(str(sid), set_code, name or "") for sid, set_code, name, _pid in rows}
+        return sorted(found, key=lambda r: (r[1], r[2], r[0]))
+
+    def set_members(self, set_id: str) -> list[tuple[ResolvedRef, float]]:
+        """RG-5 (#1443): the chat-visible, active members of the set `set_id` (a `_sets` / `family_sets` id),
+        each with its quantity in the set (1 only when none is stored). The set is read again, active and in
+        scope (`ProductSet` is selected, so the session listener scopes it): a set deactivated since it was
+        resolved has no members."""
+        from app.models.product import Product, chat_searchable_products
+        from app.models.product_set import ProductSet, ProductSetMember
+
+        rows = (
+            self.db.query(Product.product_code, ProductSetMember.quantity, ProductSet.id)
+            .join(ProductSetMember, ProductSetMember.product_id == Product.id)
+            .join(ProductSet, ProductSet.id == ProductSetMember.product_set_id)
+            .filter(ProductSet.id == set_id, ProductSet.is_active.is_(True), chat_searchable_products(),
+                    Product.is_active.is_(True))
+            .order_by(ProductSetMember.sort_order, Product.product_code)
+            .all()
+        )
+        return [(ResolvedRef(kind="product", key=c, label=c), 1.0 if q is None else float(q)) for c, q, _sid in rows]
+
+    def family_sets(self, key: str) -> list[Option]:
+        """RG-5 (#1443): the ACTIVE sets holding a chat-visible, active product of the family `key` (v1
+        `set_stock.sets_containing`, company scoped), then the family's variants in none of them (v1's "Not in a
+        set"), as one pick. Empty when no set holds one."""
+        from app.models.product import Product, chat_searchable_products
+        from app.models.product_set import ProductSet, ProductSetMember
+
+        family = _strip_ws(key or "").upper()
+        rows = (
+            self.db.query(ProductSet.id, ProductSet.set_code, Product.product_code)
+            .join(ProductSetMember, ProductSetMember.product_set_id == ProductSet.id)
+            .join(Product, Product.id == ProductSetMember.product_id)
+            .filter(Product.family_code == family, ProductSet.is_active.is_(True), chat_searchable_products(),
+                    Product.is_active.is_(True))
+            .all()
+        )
+        if not rows:
+            return []
+        in_sets = {code for _sid, _set, code in rows}
+        sets = [
+            Option(key=c, label=c, payload={"kind": "product", "key": c, "label": c, "set_id": sid})
+            for c, sid in sorted({(set_code, str(sid)) for sid, set_code, _code in rows})
+        ]
+        return sets + [_ref_option(m) for m in self.family_members(key) if m.key not in in_sets]
 
     def _product(self, phrase: str | None) -> Resolution:
         if not phrase or not _strip_ws(phrase):
@@ -588,13 +660,28 @@ class DbResolver:
             ]
             return Resolution(status="ambiguous", options=options, phrase=phrase)
 
+        # RG-5 (#1443): an ACTIVE product set's code typed whole, with a visible member. The set domains answer for
+        # its members; the same code in two companies in scope is a pick, never one merged set.
+        sets = self._sets(phrase)
+        if len(sets) == 1:
+            sid, code, _company = sets[0]
+            ref = ResolvedRef(kind="product", key=code, label=code, phrase=phrase, set_id=sid)
+            return Resolution(status="exact", refs=[ref])
+        if sets:
+            options = [
+                Option(key=code, label=f"{code} ({company})" if company else code,
+                       payload={"kind": "product", "key": code, "label": code, "set_id": sid})
+                for sid, code, company in sets
+            ]
+            return Resolution(status="ambiguous", options=options, phrase=phrase)
+
         # A model family typed whole ("SRTWC286"): the family code is EXACTLY equal, no prefix.
         family = _strip_ws(phrase).upper()
         variants = sorted(
             {
                 code
                 for (code,) in self.db.query(Product.product_code)
-                .filter(Product.family_code == family, chat_searchable_products())
+                .filter(Product.family_code == family, chat_searchable_products(), Product.is_active.is_(True))
                 .order_by(*_product_family_order())
                 .all()
             }
@@ -745,16 +832,41 @@ class DbResolver:
 
     # ------------------------------------------------------------------ specs
     def resolve_specs(self, specs: list[Spec], *, held: Held) -> list[SpecResolution]:
+        from app.models.product import Product
+
         registry = self._registry()
         classes = self._held_classes(held)
-        return [self._resolve_spec(s, registry, classes) for s in specs]
+        ids = self._held_product_ids(held)
+        refs = (held.refs or {}).get("product") or []
+        families = {r.key.upper() for r in refs if r.family} | {r.family_code for r in refs if r.family_code}
+        if ids is not None and families:
+            # RG-2b: a size is checked against the held family, not the variants an earlier size left.
+            more = self.db.query(Product.id).filter(Product.family_code.in_(sorted(families))).all()
+            ids = list(dict.fromkeys([*ids, *(str(r[0]) for r in more)]))
+        out = []
+        for s in specs:
+            res = self._resolve_spec(s, registry, classes, ids)
+            if res.products:
+                # RG-2b: each hit keeps the held family it narrows; a second size of the ask narrows this one's hits.
+                found = (
+                    self.db.query(Product.id, Product.product_code, Product.family_code)
+                    .filter(Product.product_code.in_([r.key for r in res.products]))
+                    .all()
+                )
+                family_of = {code: family for _id, code, family in found if family in families}
+                res.products = [r.model_copy(update={"family_code": family_of.get(r.key)}) for r in res.products]
+                ids = [str(pid) for pid, _code, _family in found]
+            out.append(res)
+        return out
 
     def _registry(self) -> dict[str, Any]:
         from app.services.product_spec_registry import active_registry
 
         return {row.spec_key: row for row in active_registry(self.db)}
 
-    def _resolve_spec(self, spec: Spec, registry: dict[str, Any], classes: set[str]) -> SpecResolution:
+    def _resolve_spec(
+        self, spec: Spec, registry: dict[str, Any], classes: set[str], ids: list[str] | None = None
+    ) -> SpecResolution:
         if spec.op == "clear":
             return SpecResolution(status="exact", phrase=spec.phrase)
         if spec.attribute is not None:
@@ -762,7 +874,7 @@ class DbResolver:
                 return SpecResolution(status="none", phrase=spec.phrase or spec.attribute, unrecognised=True)
             return self._spec_on(registry[spec.attribute], spec)
         if spec.number is not None:
-            return self._place_number(spec, registry, classes)
+            return self._place_number(spec, registry, classes, ids)
         if spec.value_key is not None:
             return self._place_value(spec, registry, classes)
         return SpecResolution(status="none", phrase=spec.phrase, unrecognised=bool(spec.phrase))
@@ -951,12 +1063,18 @@ class DbResolver:
                 out.append(opt)
         return out[:CLOSEST_CAP]
 
-    def _place_number(self, spec: Spec, registry: dict[str, Any], classes: set[str]) -> SpecResolution:
+    def _place_number(
+        self, spec: Spec, registry: dict[str, Any], classes: set[str], ids: list[str] | None = None
+    ) -> SpecResolution:
         pinned = self.pinned.get("spec_attribute", set())
         rows = [
             row for key, row in sorted(registry.items())
             if row.data_type == "numeric" and key in pinned and self._applies(row, classes)
         ]
+        if spec.comparator in ("eq", "about") and spec.number_to is None and (ids or classes):
+            sized = self._on_any_axis(spec, rows, classes, ids)
+            if sized is not None:
+                return sized
         holding: list[tuple[Any, float, float | None]] = []
         candidates: list[tuple[Any, float]] = []
         for row in rows:
@@ -990,7 +1108,46 @@ class DbResolver:
                 for row, number, number_to in holding
             ]
             return SpecResolution(status="ambiguous", options=options, phrase=spec.phrase)
-        return SpecResolution(status="none", phrase=spec.phrase, closest=self._closest(candidates, classes))
+        return SpecResolution(
+            status="none", phrase=spec.phrase, closest=[] if classes else self._closest(candidates, classes)
+        )
+
+    def _on_any_axis(
+        self, spec: Spec, rows: list[Any], classes: set[str], ids: list[str] | None
+    ) -> SpecResolution | None:
+        """RG-2 (#1582): a size on ANY length axis, never an axis question. With products held: those holding
+        it, else the sizes they carry per axis (none when they carry no size). With only a class held: the
+        class's products holding it (capped). None when no length axis takes the number, or with only a class
+        held and nothing holding it (the ranges decide)."""
+        from app.models.product import Product
+        from app.services.product_spec_search import _UNIT_TO_MM
+
+        hits: set[str] = set()
+        on_file: list[str] = []
+        axes = 0
+        for row in rows:
+            number = self._to_unit(spec.number, spec.unit, row.unit)
+            if number is None or norm(row.unit) not in _UNIT_TO_MM:
+                continue
+            axes += 1
+            value, q = self._spec_rows(row.spec_key, set() if ids else classes)
+            q = q.filter(Product.is_active.is_(True)).with_entities(Product.product_code, value)
+            if ids:
+                stored = q.filter(Product.id.in_(ids)).all()
+            else:
+                stored = q.filter(value == number).order_by(Product.product_code).limit(PRODUCT_POOL_LIMIT).all()
+            hits |= {code for code, v in stored if float(v) == number}
+            values = sorted({float(v) for _code, v in stored})
+            if ids and values:
+                on_file.append(f"{row.label} {', '.join(_fmt_number(v) for v in values)} {row.unit}")
+        if hits:
+            codes = sorted(hits)[:PRODUCT_POOL_LIMIT]
+            products = [ResolvedRef(kind="product", key=c, label=c) for c in codes]
+            return SpecResolution(status="exact", phrase=spec.phrase, products=products)
+        if ids and axes:
+            # Held products decide alone, sizes on file or none (RG-2b: never the class ranges' axis question).
+            return SpecResolution(status="none", phrase=spec.phrase, sizes_on_file=on_file)
+        return None
 
     def _place_value(self, spec: Spec, registry: dict[str, Any], classes: set[str]) -> SpecResolution:
         from app.services.product_spec_registry import display_spec_value, merged_allowed_values

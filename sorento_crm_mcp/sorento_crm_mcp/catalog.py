@@ -101,6 +101,9 @@ CATALOG: tuple[ToolSpec, ...] = (
             # from THIS tuple, so a param missing here never reaches the backend
             # however well the description documents it.
             "include_specifications", "include_specs",
+            # #1517: the chatbot's own visibility read (searchable and active rows only);
+            # n8n and the admin UI never send it.
+            "chat_visible",
             "sort", "dir",
             "contact_id", "space_id",
         ),

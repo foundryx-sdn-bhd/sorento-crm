@@ -180,6 +180,14 @@ def get_products(
             "not ask. Distinct from `include_specifications` (see that field)."
         ),
     ),
+    chat_visible: bool = Query(
+        False,
+        description=(
+            "Chatbot read: only products the chatbot may answer with (the product's and "
+            "its category's `is_searchable` not false); an unscoped list (no product_ids) "
+            "is also limited to active rows. The admin list never sends it and is unchanged."
+        ),
+    ),
     sort: Optional[str] = Query("created_at"),
     dir: Optional[str] = Query("asc"),
     current_user: dict = Depends(get_current_user_or_api_key),
@@ -223,6 +231,7 @@ def get_products(
             any_dimension_min=any_dimension_min,
             any_dimension_max=any_dimension_max,
             variant_filter=variant_filter,
+            chat_visible=chat_visible,
             sort_field=sort or "created_at",
             sort_dir=dir or "asc"
         )

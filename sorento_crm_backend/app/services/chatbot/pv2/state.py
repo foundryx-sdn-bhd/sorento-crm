@@ -22,7 +22,7 @@ SESSION_GAP = timedelta(hours=4)
 MISSES_BEFORE_HANDOVER = 2
 
 #: The payload kinds that set a held scalar rather than a ref list.
-SCALAR_PAYLOAD_KINDS = frozenset({"attachment_type", "domain", "spec", "handover", "choice", "row"})
+SCALAR_PAYLOAD_KINDS = frozenset({"attachment_type", "domain", "spec", "handover", "choice", "row", "carry_scope"})
 
 
 class Option(BaseModel):
@@ -45,6 +45,10 @@ class ResolvedRef(BaseModel):
     phrase: str | None = None
     quantity: Quantity | None = None
     family: bool = False  # a family key (matched by family_code), not an exact product code
+    # A variant a size narrowed from a held family (RG-2b): a follow-up size is checked against the family.
+    family_code: str | None = None
+    # A product set (`product_sets.id`; the key is its code): answered by its members in the set domains.
+    set_id: str | None = None
 
 
 class ResolvedSpec(BaseModel):
@@ -101,6 +105,9 @@ class PendingQuestion(BaseModel):
     # The entity (an `Entity` dump, no quantity) whose miss raised a which_held question; None when
     # no entity raised it (a flagged clarify, a switch_back) and for state saved before R-GAPS.
     raised_by: dict | None = None
+    # RG-1c: the held kind this question's ask leaves unnamed beside a newly named other one; its carry
+    # question follows once this question's pick lands the new item.
+    carry: str | None = None
 
 
 class RegisterEntry(BaseModel):
@@ -181,6 +188,8 @@ class ClarifyAct(BaseModel):
     not_found: bool = False
     reask: bool = False
     note: str | None = None
+    # The loop cap's closing line (RG-1b): said once, no options, and the open question is cleared.
+    closes: bool = False
 
 
 class SmallTalk(BaseModel):
@@ -326,6 +335,9 @@ def apply_payload(held: Held, payload: dict[str, Any]) -> Held:
             unit=payload.get("unit"),
         )
         out.specs = [s for s in out.specs if s.attribute != spec.attribute] + [spec]
+    elif kind == "carry_scope":
+        if payload.get("clear"):
+            out.refs = set_refs(out.refs, payload["clear"], [], "clear")  # "all <kind>s": that kind no longer narrows
     elif kind in SCALAR_PAYLOAD_KINDS:
         pass
     else:
@@ -338,6 +350,7 @@ def apply_payload(held: Held, payload: dict[str, Any]) -> Held:
                 label=str(payload.get("label") or key),
                 phrase=payload.get("phrase"),
                 quantity=Quantity(**payload["quantity"]) if payload.get("quantity") else None,
+                set_id=payload.get("set_id"),
             )
             for key in keys
         ]
