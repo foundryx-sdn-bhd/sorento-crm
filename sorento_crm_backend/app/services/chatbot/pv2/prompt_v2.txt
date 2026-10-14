@@ -22,7 +22,7 @@ OUTPUT (strict JSON, every key present, null where unused)
 =====================================================================
 {"asks": [ASK, ...], "clarify": {...}, "language": "en|zh|ms|mixed", "escalation": null | {...}}
 
-asks: one ASK per thing asked, in the order asked. Almost always ONE. Use two or more only when the message clearly asks two separate things ("stock for A and TD for B", "save both ideas" is still one). Never split one question into pieces.
+asks: one ASK per thing asked, in the order asked. Almost always ONE. Use two or more only when the message clearly asks two separate things ("stock for A and TD for B", "save both ideas" is still one). Never split one question into pieces: several attachment kinds for one product ("photo and drawing") are ONE ask with attachment_type a list of keys.
 
 ASK = {
  "act": TURN ACT (below),
@@ -30,7 +30,7 @@ ASK = {
  "switch_back_to": "T1".."T5" or null,
  "entities": [ENTITY, ...],
  "specs": [SPEC, ...],
- "attachment_type": ATTACHMENT TYPES key or null,
+ "attachment_type": ATTACHMENT TYPES key, or a list of keys when several kinds are asked, or null,
  "period": PERIOD or null,
  "row_pick": number or null,
  "answer": ANSWER or null,
@@ -108,7 +108,7 @@ Use only domains listed in the INDEX. A domain word in the message beats the hel
 =====================================================================
 ATTACHMENT TYPE
 =====================================================================
-`attachment_type` = the ATTACHMENT TYPES key the words mean (use the aka words as a guide, any language): "td", "drawing", "图纸", "lukisan" -> the technical drawing / specifications key; "photo", "gambar", "图片" -> the photos key; "cert", "sijil", "证书" -> certification; "manual", "安装" -> installation guide. Set it on the ask that asks for that file, normally with domain product_attachment; a catalogue / brochure / price list asked for with no product is domain resource_attachment with attachment_type the catalogue key. If the words name a file kind the index does not list, attachment_type null and clarify about "attachment_type" with the words in clarify.phrase. To stop asking for a file kind ("forget the drawing, just stock"), put "attachment_type" in `cleared`.
+`attachment_type` = the ATTACHMENT TYPES key the words mean (use the aka words as a guide, any language): "td", "drawing", "图纸", "lukisan" -> the technical drawing / specifications key; "photo", "gambar", "图片" -> the photos key; "cert", "sijil", "证书" -> certification; "manual", "安装" -> installation guide. Attachment words are never a product: they are attachment_type, and with a product held they apply to it (refines_held, refers_to_held true). Set it on the ask that asks for that file, normally with domain product_attachment; a catalogue / brochure / price list asked for with no product is domain resource_attachment with attachment_type the catalogue key. If the words name a file kind the index does not list, attachment_type null and clarify about "attachment_type" with the words in clarify.phrase. To stop asking for a file kind ("forget the drawing, just stock"), put "attachment_type" in `cleared`.
 
 =====================================================================
 PERIOD
@@ -122,7 +122,7 @@ PERIOD
 ROW PICK, ANSWER, CLEARED
 =====================================================================
 - row_pick: "the 2nd one", "no 3", "yang kedua", "第二个" pointing at LAST ANSWER ROWS (and no PENDING QUESTION lists options) -> that number, act refines_held. A number larger than the rows is still the number the person said; code checks it.
-- answer: only with act answers_bot_question. {"option_key": the EXACT key printed before the label under PENDING "options:" (for "1=dim_length (Length)" that is "dim_length"), or null; "free_value": the person's own value when the question asked for one (a name, a description, a reason), else null}. "the second" / "yang kedua" / "第二个" / "2" = the option printed as 2. A label or its meaning picks that option ("length", "panjang", "长度" -> dim_length). "yes"/"ok"/"boleh"/"好" picks the yes option of a yes/no question. If the reply matches no option and gives no value the question asked for, it is NOT an answer: decide the act from its content.
+- answer: only with act answers_bot_question. {"option_key": the EXACT key printed before the label under PENDING "options:" (for "1=dim_length (Length)" that is "dim_length"), or null; "free_value": the person's own value when the question asked for one (a name, a description, a reason), else null}. "the second" / "yang kedua" / "第二个" / "2" = the option printed as 2. A label or its meaning picks that option ("length", "panjang", "长度" -> dim_length). "yes"/"ok"/"boleh"/"好" picks the yes option of a yes/no question. A reply choosing every option ("all", "semua", "全部") is option_key "all": every option. If the reply matches no option and gives no value the question asked for, it is NOT an answer: decide the act from its content.
 - cleared: scalar things the person drops ("no need period", "any time", "forget the report") -> "period" / "report" / "attachment_type" / "specs".
 
 =====================================================================
