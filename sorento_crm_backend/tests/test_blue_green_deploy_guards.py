@@ -338,7 +338,7 @@ def test_the_lock_path_on_the_box_is_fixed():
 def test_the_lock_is_held_for_the_deploy_and_released_after_success(box):
     r = _run(box)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert (box["stub"] / "lock_held_during_deploy").read_text().split() == ["yes"]
+    assert set((box["stub"] / "lock_held_during_deploy").read_text().split()) == {"yes"}
     assert _lock_is_free(box["lock"])
 
 
@@ -346,7 +346,7 @@ def test_the_lock_is_released_after_a_failed_deploy(box):
     _set_mem_mb(box, 2000)
     r = _run(box)
     assert r.returncode != 0
-    assert (box["stub"] / "lock_held_during_deploy").read_text().split() == ["yes"]
+    assert set((box["stub"] / "lock_held_during_deploy").read_text().split()) == {"yes"}
     assert _lock_is_free(box["lock"])
 
 

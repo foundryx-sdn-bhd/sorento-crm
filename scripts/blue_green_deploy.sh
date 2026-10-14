@@ -23,6 +23,8 @@
 #   - postgres: fail the deploy when the db container restarted, or Postgres crash-recovered
 #     (a killed backend makes the postmaster reinitialize WITHOUT a container restart), at
 #     any point during the deploy.
+#   - lock: an exclusive flock on /opt/sorento-crm2/.deploy.lock for the whole deploy. The
+#     weekly restore test (HA-BACKUP-CHECK) waits on the same file, so the two never overlap.
 # Tunables may be set on the box in .deploy.env next to docker-compose.yml (sourced below).
 
 set -euo pipefail
@@ -30,6 +32,19 @@ set -euo pipefail
 cd "$(dirname "$0")/.."   # repo root containing docker-compose.yml
 : "${IMAGE_TAG:?must be set to the git SHA pushed by CI}"
 export IMAGE_TAG
+
+# Held from here to exit, before anything is read or changed. The path is fixed: the restore
+# test locks the same file (the override exists for the test suite only). Released by the
+# trap as well as by exit, because a child that inherited fd 9 would otherwise keep it held.
+DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/opt/sorento-crm2/.deploy.lock}"
+DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1200}"   # a restore test runs ~minutes
+exec 9>>"$DEPLOY_LOCK_FILE"
+echo "==> Waiting up to ${DEPLOY_LOCK_WAIT_SECONDS}s for ${DEPLOY_LOCK_FILE}"
+if ! flock -w "$DEPLOY_LOCK_WAIT_SECONDS" 9; then
+  echo "ERROR: ${DEPLOY_LOCK_FILE} is still held (another deploy or the restore test); nothing was changed"
+  exit 1
+fi
+trap 'flock -u 9' EXIT
 
 # Owner-tunable knobs live on the box, never in the workflow: see the runbook.
 if [ -f .deploy.env ]; then
