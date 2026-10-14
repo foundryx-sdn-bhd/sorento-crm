@@ -596,6 +596,11 @@ class OrderLine(Base, CompanyScopedMixin):
     )
 
 
+# `sales_orders.doc_type` (AC-CONSIGN-CRM).
+DOC_TYPE_SALES_ORDER = "sales_order"
+DOC_TYPE_CONSIGNMENT = "consignment"
+
+
 class SalesOrder(Base, CompanyScopedMixin):
     """SCM sales order (demand / committed source). Public core record - survives
     module uninstall. Sits with Order/DO in the order domain."""
@@ -674,6 +679,12 @@ class SalesOrder(Base, CompanyScopedMixin):
     # only by the ESB ingest, never touches `project_label`. Migration sopr_0001.
     po_ref = Column(String(255), nullable=True)
     po_ref_key = Column(String(255), nullable=True)
+    # AC-CONSIGN-CRM (owner ruling 1, 13 Oct): `consignment` is an AutoCount Consignment (CG)
+    # written as demand by the consignments ingest; every other order is `sales_order`. It
+    # labels the order "Consignment" and keeps it out of the SO-based sales figures (Q5 a).
+    # Migration ac_consign_0001_doc_type.
+    doc_type = Column(String(20), nullable=False, default=DOC_TYPE_SALES_ORDER,
+                      server_default=DOC_TYPE_SALES_ORDER)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -690,6 +701,8 @@ class SalesOrder(Base, CompanyScopedMixin):
         Index(
             "uq_sales_orders_company_so_number", "company_id", "so_number", unique=True
         ),
+        CheckConstraint("doc_type IN ('sales_order', 'consignment')",
+                        name="ck_sales_orders_doc_type"),
         Index("ix_sales_orders_customer_id", "customer_id"),
         Index("ix_sales_orders_debtor_code", "debtor_code"),
         Index("ix_sales_orders_so_number", "so_number"),
@@ -729,6 +742,10 @@ class SalesOrderLine(Base, CompanyScopedMixin):
     # of it. Only such a line reopens when the cancel lowers (a removed, CRM-cancelled or
     # header-cancelled line never does).
     cancelled_by_cancel_doc = Column(Boolean, default=False, server_default="false", nullable=False)
+    # AC-CONSIGN-CRM (ruling 2): on a consignment line, what live AutoCount Consignment Returns
+    # matched to it add up to, capped at ordered, derived on every sync. Reporting only: no
+    # planned, delivered or status reader looks at it.
+    qty_returned = Column(Numeric(15, 4), default=0, server_default="0", nullable=False)
     # What the customer pays for this line. The column has always been on the table and
     # was simply never mapped (same as `source_doc_no` / `internal_note` on the header
     # above), so every read through the ORM dropped it and a schema built from the models

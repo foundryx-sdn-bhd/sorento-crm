@@ -1,0 +1,334 @@
+"""AutoCount Consignment (CG) and Consignment Return on the CRM side (AC-CONSIGN-CRM).
+
+Plan: documentation/plans/autocount/PLAN-autocount-consign-crm-14oct.md. The documents arrive
+on #1623's `consignments` / `consignment_returns` doors and are kept in `autocount_cancel_docs`
+/ `_lines` exactly as sent; this module is what they then mean.
+
+**A consignment is demand (owner ruling 1, 13 Oct).** `consignment_payload` turns the STORED
+record into a canonical sales order, which the consignments ingest writes through the SO ingest
+itself (`DocumentIngestService`, `sales_doc_type = consignment`): customer ladder, demand class
+and adoption (Q3 a), line sync, status and the planning hooks are the sales order's own.
+AutoCount is truth (Q2 a): ordered is Qty, delivered is TransferedQty as sent (0 while the
+contract 2.8 shape sends none). A voided or vanished CG is a cancelled order.
+
+**A return is reporting only (ruling 2, Q4 a).** Each return line is matched to ONE consignment
+line or to none, with a reason: its FromDocDtlKey names the line exactly; without a key, the
+(CG, item, location) group's one line; anything else is undetermined and names no line (ruling
+3: never a guess). `recompute_returned` sets `qty_returned` to the sum of matched lines of live
+return docs, capped at ordered. Nothing else on the line moves.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from typing import Any, Iterable, Optional
+
+from sqlalchemy import String, func, or_
+from sqlalchemy.dialects.postgresql import array
+from sqlalchemy.orm import Session
+
+from app.models.autocount_cancel import (
+    KIND_CONSIGNMENT_RETURN,
+    MATCH_MATCHED,
+    MATCH_UNMATCHED,
+    MATCH_WAITING,
+    AutocountCancelDoc,
+    AutocountCancelLine,
+)
+from app.models.inventory import Warehouse
+from app.models.order import DOC_TYPE_CONSIGNMENT, SalesOrder, SalesOrderLine
+from app.models.product import Product
+
+CG_PREFIX = "CSGN"
+
+# Why a return line matched no consignment line. Shared words with the cancel matcher where
+# the meaning is the same (`line_key`, `item`, `dangling_line_key`, `order_not_found`, ...).
+REASON_LINE_KEY = "line_key"
+REASON_ITEM = "item"
+REASON_UNDETERMINED = "undetermined"
+REASON_ITEM_NOT_ON_ORDER = "item_not_on_order"
+REASON_DANGLING_LINE_KEY = "dangling_line_key"
+REASON_ORDER_NOT_FOUND = "order_not_found"
+REASON_NO_SOURCE_DOC = "no_source_doc"
+REASON_LINE_WITHOUT_ITEM = "line_without_item"
+REASON_AMBIGUOUS = "ambiguous"
+# A return line raised from something other than a consignment (FromDocType not 'CG').
+REASON_NOT_FROM_CONSIGNMENT = "not_from_consignment"
+REASON_GROUP_WHOLE = "group_whole"
+
+_ZERO = Decimal("0")
+
+
+# ============================================================================ CG -> sales order
+def consignment_source_ref(book: str, doc_key: Any) -> str:
+    return f"{book}:{CG_PREFIX}:{doc_key}"
+
+
+def _text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _number(value: Any) -> Any:
+    """A quantity or amount as sent, or None when absent or blank. A value that is not a number
+    is passed through so the SO ingest's own validation names the field."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return value
+
+
+def carries_transfers(doc: AutocountCancelDoc) -> bool:
+    """Crew gate, 14 Oct: a CG is demand only once its record states TransferedQty on every
+    item line (contract 2.9). Without it a consignment would read nothing delivered and stay
+    outstanding forever, so a 2.8 record is kept stored only until a push that carries it."""
+    details = [d for d in ((doc.source_record or {}).get("Details") or [])
+               if isinstance(d, dict) and _text(d.get("ItemCode"))]
+    return bool(details) and all(d.get("TransferedQty") is not None for d in details)
+
+
+def consignment_payload(book: str, doc: AutocountCancelDoc) -> dict[str, Any]:
+    """The canonical sales order a stored CG document stands for.
+
+    Built from the STORED record (the newest the CRM accepted, the LastModified guard already
+    applied), never from a stale push. A line without an ItemCode is a text line, not demand,
+    and is left out. Contract 2.9 fields (DebtorCode, DebtorName, SalesAgent; per line
+    UnitPrice, SubTotal, UOM, TransferedQty) are taken when sent; absent, the order lands with
+    no customer and nothing delivered, and the next push that carries them fills them in."""
+    raw = doc.source_record or {}
+    lines: list[dict[str, Any]] = []
+    for detail in raw.get("Details") or []:
+        if not isinstance(detail, dict):
+            continue
+        item = _text(detail.get("ItemCode"))
+        dtl_key = detail.get("DtlKey")
+        if not item or dtl_key is None:
+            continue
+        line: dict[str, Any] = {
+            "source_ref": f"{consignment_source_ref(book, doc.doc_key)}:{dtl_key}",
+            "product_code": item,
+            "qty_ordered": _number(detail.get("Qty")) or _ZERO,
+        }
+        seq = detail.get("Seq")
+        if isinstance(seq, int) and seq >= 0:
+            line["line_number"] = seq
+        location = _text(detail.get("Location"))
+        if location:
+            line["warehouse_code"] = location
+        for source, target in (("TransferedQty", "qty_delivered"), ("UnitPrice", "unit_price"),
+                               ("SubTotal", "line_total")):
+            value = _number(detail.get(source))
+            if value is not None:
+                line[target] = value
+        uom = _text(detail.get("UOM"))
+        if uom:
+            line["uom"] = uom
+        lines.append(line)
+
+    payload: dict[str, Any] = {
+        "source_ref": consignment_source_ref(book, doc.doc_key),
+        "so_number": doc.doc_no,
+        "doc_date": doc.doc_date.isoformat() if doc.doc_date else None,
+        "status": _status(doc, lines),
+        "lines": lines,
+    }
+    for source, target in (("DebtorCode", "customer_code"), ("DebtorName", "customer_name"),
+                           ("SalesAgent", "agent_code")):
+        value = _text(raw.get(source))
+        if value:
+            payload[target] = value
+    return payload
+
+
+def _status(doc: AutocountCancelDoc, lines: list[dict[str, Any]]) -> str:
+    """Stated, never left to the SO ingest's derivation, which keeps a cancelled order
+    cancelled: an un-voided or restored CG has to reopen."""
+    if doc.is_void or doc.source_vanished_at is not None:
+        return "cancelled"
+    settled = lines and all(
+        isinstance(l.get("qty_delivered"), Decimal)
+        and isinstance(l.get("qty_ordered"), Decimal)
+        and l["qty_delivered"] >= l["qty_ordered"]
+        for l in lines
+    )
+    return "closed" if settled else "open"
+
+
+# ============================================================================ returns
+def _loc(value: Optional[str]) -> str:
+    return (value or "").strip().upper()
+
+
+def _ref_matches(column, dtl_key: int):
+    return or_(column == str(dtl_key), column.like(f"%:{dtl_key}"))
+
+
+def _consignment(db: Session, company_id: str, number: Optional[str]) -> Optional[str]:
+    if not number:
+        return None
+    rows = (db.query(SalesOrder.id)
+            .filter(SalesOrder.company_id == company_id, SalesOrder.so_number == number,
+                    SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT)
+            .limit(2).all())
+    return str(rows[0][0]) if len(rows) == 1 else None
+
+
+@dataclass(frozen=True)
+class ReturnGroup:
+    """One consignment + item + location: what a key-less return line is decided with."""
+    header_id: str
+    number: str
+    item_code: str
+    location: str  # normalised (`_loc`)
+
+
+def return_line_answer(db: Session, company_id: str, line: AutocountCancelLine
+                       ) -> tuple[Optional[tuple[str, str, Optional[str]]], Optional[ReturnGroup]]:
+    """For one return line of a live doc: either a final (status, reason, line id), or the
+    group it is decided with (a key-less line naming a consignment the CRM holds)."""
+    if line.from_doc_type and line.from_doc_type.strip().upper() != "CG":
+        return (MATCH_UNMATCHED, REASON_NOT_FROM_CONSIGNMENT, None), None
+    if line.from_dtl_key is not None:
+        query = (db.query(SalesOrderLine.id)
+                 .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
+                 .filter(SalesOrderLine.company_id == company_id,
+                         SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT,
+                         _ref_matches(SalesOrderLine.source_ref, line.from_dtl_key)))
+        if line.from_doc_no:
+            query = query.filter(SalesOrder.so_number == line.from_doc_no)
+        hits = [str(r[0]) for r in query.limit(2).all()]
+        if len(hits) == 1:
+            return (MATCH_MATCHED, REASON_LINE_KEY, hits[0]), None
+        if hits:
+            return (MATCH_UNMATCHED, REASON_AMBIGUOUS, None), None
+        if _consignment(db, company_id, line.from_doc_no):
+            return (MATCH_UNMATCHED, REASON_DANGLING_LINE_KEY, None), None
+        return (MATCH_WAITING, REASON_ORDER_NOT_FOUND, None), None
+    if not line.from_doc_no:
+        return (MATCH_UNMATCHED, REASON_NO_SOURCE_DOC, None), None
+    header = _consignment(db, company_id, line.from_doc_no)
+    if header is None:
+        return (MATCH_WAITING, REASON_ORDER_NOT_FOUND, None), None
+    if not line.item_code:
+        return (MATCH_UNMATCHED, REASON_LINE_WITHOUT_ITEM, None), None
+    return None, ReturnGroup(header, line.from_doc_no, line.item_code, _loc(line.location_code))
+
+
+def group_of_line(db: Session, so_line_id: str) -> Optional[ReturnGroup]:
+    """The group a consignment line sits in (to re-decide the group a return line LEFT)."""
+    row = (db.query(SalesOrder.id, SalesOrder.so_number, Product.product_code,
+                    Warehouse.warehouse_code)
+           .join(SalesOrderLine, SalesOrderLine.sales_order_id == SalesOrder.id)
+           .join(Product, Product.id == SalesOrderLine.product_id)
+           .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
+           .filter(SalesOrderLine.id == so_line_id,
+                   SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT).first())
+    if row is None:
+        return None
+    return ReturnGroup(str(row[0]), row[1], row[2], _loc(row[3]))
+
+
+def _live_return():
+    return (AutocountCancelDoc.kind == KIND_CONSIGNMENT_RETURN,
+            AutocountCancelDoc.is_void.is_(False),
+            AutocountCancelDoc.source_vanished_at.is_(None))
+
+
+def resolve_return_group(db: Session, company_id: str, group: ReturnGroup
+                         ) -> list[tuple[AutocountCancelLine, str, str, Optional[str],
+                                         Optional[list[str]]]]:
+    """Every key-less live return line of the group, decided together by exact arithmetic
+    (the #1623 rule, owner 13 Oct): the group's one line; or, when the returns are every unit
+    still out on the group (C = sum of ordered less keyed returns), each line's own remainder
+    (`group_whole`, the lines named as candidates, no single line); else `undetermined`."""
+    rows = (db.query(SalesOrderLine.id, Warehouse.warehouse_code, SalesOrderLine.qty_ordered)
+            .join(Product, Product.id == SalesOrderLine.product_id)
+            .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
+            .filter(SalesOrderLine.sales_order_id == group.header_id,
+                    Product.product_code == group.item_code).all())
+    rows = [r for r in rows if _loc(r[1]) == group.location]
+    ids = sorted(str(r[0]) for r in rows)
+    members = [
+        l for l in (db.query(AutocountCancelLine)
+                    .join(AutocountCancelDoc,
+                          AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
+                    .filter(AutocountCancelLine.company_id == company_id, *_live_return(),
+                            AutocountCancelLine.from_dtl_key.is_(None),
+                            AutocountCancelLine.from_doc_no == group.number,
+                            AutocountCancelLine.item_code == group.item_code)
+                    .all())
+        if _loc(l.location_code) == group.location
+        and (not l.from_doc_type or l.from_doc_type.strip().upper() == "CG")
+    ]
+    if not ids:
+        return [(l, MATCH_UNMATCHED, REASON_ITEM_NOT_ON_ORDER, None, None) for l in members]
+    if len(ids) == 1:
+        return [(l, MATCH_MATCHED, REASON_ITEM, ids[0], None) for l in members]
+    returned = sum((Decimal(l.qty or 0) for l in members), _ZERO)
+    keyed = _matched_returns(db, ids, keyed_only=True)
+    remaining = sum((max(Decimal(r[2] or 0) - keyed.get(str(r[0]), _ZERO), _ZERO) for r in rows),
+                    _ZERO)
+    if returned > 0 and returned == remaining:
+        return [(l, MATCH_MATCHED, REASON_GROUP_WHOLE, None, ids) for l in members]
+    return [(l, MATCH_UNMATCHED, REASON_UNDETERMINED, None, None) for l in members]
+
+
+def _matched_returns(db: Session, ids: list[str], *, keyed_only: bool) -> dict[str, Decimal]:
+    """Per consignment line, the qty of live return lines matched to it (by key only, or all)."""
+    if not ids:
+        return {}
+    extra = (AutocountCancelLine.from_dtl_key.isnot(None),) if keyed_only else ()
+    return {
+        str(k): Decimal(v) for k, v in (
+            db.query(AutocountCancelLine.sales_order_line_id,
+                     func.coalesce(func.sum(AutocountCancelLine.qty), 0))
+            .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
+            .filter(AutocountCancelLine.sales_order_line_id.in_(ids), *_live_return(),
+                    AutocountCancelLine.match_status == MATCH_MATCHED, *extra)
+            .group_by(AutocountCancelLine.sales_order_line_id).all())
+    }
+
+
+def recompute_returned(db: Session, so_line_ids: Iterable[str]) -> None:
+    """`qty_returned` on these lines: the matched lines of live return docs, capped at ordered.
+    Only this column is written. In the caller's transaction."""
+    ids = sorted({str(i) for i in so_line_ids if i})
+    if not ids:
+        return
+    sums = _matched_returns(db, ids, keyed_only=False)
+    whole = {
+        str(i) for (members,) in (
+            db.query(AutocountCancelLine.candidate_line_ids)
+            .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
+            .filter(AutocountCancelLine.match_status == MATCH_MATCHED,
+                    AutocountCancelLine.match_reason == REASON_GROUP_WHOLE, *_live_return(),
+                    AutocountCancelLine.candidate_line_ids.op("?|")(array(ids, type_=String)))
+            .all())
+        for i in (members or [])
+    }
+    for row in db.query(SalesOrderLine).filter(SalesOrderLine.id.in_(ids)):
+        ordered = Decimal(row.qty_ordered or 0)
+        # A whole-group return: every unit still out on the group came back, so the line's
+        # returned qty is all of it (its keyed returns plus its own remainder).
+        total = ordered if str(row.id) in whole else sums.get(str(row.id), _ZERO)
+        value = max(min(total, ordered), _ZERO)
+        if Decimal(row.qty_returned or 0) != value:
+            row.qty_returned = value
+    db.flush()
+
+
+__all__ = [
+    "CG_PREFIX",
+    "carries_transfers",
+    "consignment_payload",
+    "consignment_source_ref",
+    "ReturnGroup",
+    "group_of_line",
+    "recompute_returned",
+    "resolve_return_group",
+    "return_line_answer",
+]

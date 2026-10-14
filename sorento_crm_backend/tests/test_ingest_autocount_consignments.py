@@ -40,10 +40,15 @@ XS_INGEST = "/api/v1/external/ingest/cancel_sales_orders"
 
 
 # ----------------------------------------------------------------------- builders
-def _cg_line(dtl_key, item="ZZAC-P1", qty=10.0, *, location="ZZAC-WH1", seq=None, **extra):
+def _cg_line(dtl_key, item="ZZAC-P1", qty=10.0, *, location="ZZAC-WH1", seq=None,
+             transferred=0, **extra):
+    """A contract 2.9 line (TransferedQty stated). `transferred=None` leaves the key out, the
+    2.8 shape ss#122 ships today."""
     row = {"DtlKey": dtl_key, "Seq": seq if seq is not None else dtl_key % 1000,
            "ItemCode": item, "Location": location, "Qty": qty,
            "FromDocType": None, "FromDocNo": None, "FromDocDtlKey": None}
+    if transferred is not None:
+        row["TransferedQty"] = transferred
     row.update(extra)
     return row
 
@@ -121,7 +126,6 @@ def test_a_consignment_lands_as_a_sales_order_marked_consignment(env):
     assert set(lines) == {"db1:CSGN:980001:981001", "db1:CSGN:980001:981002"}
     a = lines["db1:CSGN:980001:981001"]
     assert (a.product_id, a.warehouse_id) == (env.p1, env.wh1)
-    # 2.8 sends no TransferedQty: nothing delivered, the whole Qty is outstanding.
     assert (a.qty_ordered, a.qty_delivered, a.line_status) == (Decimal("10"), Decimal("0"), "open")
     assert lines["db1:CSGN:980001:981002"].qty_ordered == Decimal("5")
     # #1623's storage stays: the doc is still kept as sent.
@@ -138,7 +142,7 @@ def test_a_plain_sales_order_reads_sales_order(env):
 
 def test_the_2_9_fields_are_taken_when_sent(env):
     rec = _cg(details=[_cg_line(981001, UnitPrice=12.5, SubTotal=125.0, UOM="PCS",
-                                TransferedQty=10)],
+                                transferred=10)],
               DebtorCode="300-ZZAC01", DebtorName="ZZ Dealer Sdn Bhd")
     assert _records(env.post(CG_INGEST, [rec]))["db1:CSGN:980001"]["outcome"] == "created"
     order = _order(env)
@@ -200,11 +204,15 @@ def test_a_sales_order_push_never_takes_over_a_consignment(env):
     assert _order(env).doc_type == "consignment"
 
 
-def test_an_unknown_item_is_retryable_and_writes_no_order(env):
-    rec = _records(env.post(CG_INGEST, [_cg(details=[_cg_line(981001, "ZZAC-NOPE")])]))[
+def test_an_unknown_item_is_dropped_and_counted_like_an_so_line(env):
+    """The SO push's own rule: a line whose item the CRM does not hold is dropped and counted
+    (`lines.dropped`), the rest of the order lands."""
+    rec = _records(env.post(CG_INGEST, [_cg(details=[_cg_line(981001),
+                                                     _cg_line(981002, "ZZAC-NOPE")])]))[
         "db1:CSGN:980001"]
-    assert rec["outcome"] == "retryable"
-    assert _order(env) is None
+    assert rec["outcome"] == "created"
+    assert rec["lines"]["dropped"] == 1
+    assert set(_lines(env, _order(env))) == {"db1:CSGN:980001:981001"}
 
 
 def test_dry_run_writes_no_order(env):
@@ -324,3 +332,115 @@ def test_a_cancel_so_key_never_lands_on_a_consignment_line(env):
         AutocountCancelLine.dtl_key == 951001)).scalars().one()
     assert (stored.match_status, stored.sales_order_line_id) == ("matched", lines[981001])
     assert _line(env, "db1:CSGN:980001:981001").qty_cancelled == Decimal("0")
+
+
+def test_a_keyless_return_of_every_unit_out_on_the_group_is_exact_per_line(env):
+    """Two SAMPLE lines at CON, one key-less return line each naming the CG: the returns are
+    every unit still out on the group, so each line's returned qty is all of it (the #1623
+    whole-group arithmetic); no single line is named."""
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, qty=1), _cg_line(981002, qty=1),
+                                      _cg_line(981003, "ZZAC-P2", qty=1)])])
+    env.post(CR_INGEST, [_cr(details=[_cr_line(991001, 1), _cr_line(991002, 1)])])
+    stored = _return_lines(env, 990001)
+    for dtl in (991001, 991002):
+        assert (stored[dtl].match_status, stored[dtl].match_reason) == ("matched", "group_whole")
+        assert stored[dtl].sales_order_line_id is None
+    assert _line(env, "db1:CSGN:980001:981001").qty_returned == Decimal("1")
+    assert _line(env, "db1:CSGN:980001:981002").qty_returned == Decimal("1")
+    assert _line(env, "db1:CSGN:980001:981003").qty_returned == Decimal("0")
+
+
+def test_voiding_part_of_a_whole_group_return_makes_the_rest_undetermined(env):
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, qty=1), _cg_line(981002, qty=1)])])
+    env.post(CR_INGEST, [_cr(details=[_cr_line(991001, 1)]),
+                         _cr(990002, "ZZCR-0002", [_cr_line(992001, 1)])])
+    assert _line(env, "db1:CSGN:980001:981001").qty_returned == Decimal("1")
+    env.post(CR_INGEST, [_cr(details=[_cr_line(991001, 1)], cancelled="T",
+                             modified="2026-10-05T10:00:00.000")])
+    assert _return_lines(env, 990002)[992001].match_reason == "undetermined"
+    assert _line(env, "db1:CSGN:980001:981001").qty_returned == Decimal("0")
+    assert _line(env, "db1:CSGN:980001:981002").qty_returned == Decimal("0")
+
+
+def test_the_return_decision_does_not_depend_on_arrival_order(env):
+    cg = _cg(details=[_cg_line(981001, qty=1), _cg_line(981002, qty=1)])
+    returns = [_cr(details=[_cr_line(991001, 1)]), _cr(990002, "ZZCR-0002", [_cr_line(992001, 1)])]
+    env.post(CR_INGEST, [returns[1]])
+    env.post(CG_INGEST, [cg])
+    env.post(CR_INGEST, [returns[0]])
+    assert _return_lines(env, 990001)[991001].match_reason == "group_whole"
+    assert _return_lines(env, 990002)[992001].match_reason == "group_whole"
+    assert _line(env, "db1:CSGN:980001:981002").qty_returned == Decimal("1")
+
+
+def test_the_ss122_wire_shape_end_to_end(env):
+    """The consignments / consignment_returns preset shape ss#122 sends (crew, 14 Oct; every
+    value here is fake): header Debtor*, SalesAgent, Ref, Description, RefDocNo, CurrencyCode,
+    Note (RTF), and lines with DocKey, Description, UOM, UnitPrice, SubTotal, plus the 2.9
+    TransferedQty the follow-up SS lane adds. The return's DocNo carries the CG number plus a suffix and is stored as it is (Q4 a)."""
+    cg = {"DocKey": 980050, "DocNo": "ZZCG-202606-001", "DocDate": "2026-06-19T00:00:00.000",
+          "DebtorCode": "300-ZZAC01", "DebtorName": "ZZ DEALER SDN BHD (PROJECT)",
+          "SalesAgent": "ZZ AGENT", "Ref": None, "Description": "STOCK TRANSFER - TO CON",
+          "RefDocNo": None, "CurrencyCode": "MYR", "Note": "{\\rtf1\\ansi zz note\\par}",
+          "Cancelled": "F", "LastModified": "2026-06-19T11:28:32.560",
+          "Details": [{"DocKey": 980050, "DtlKey": 980051, "Seq": 16, "ItemCode": "ZZAC-P1",
+                       "Description": "ZZ TAP", "Location": "ZZAC-WH1", "Qty": 1, "UOM": "UNIT",
+                       "UnitPrice": 108, "SubTotal": 108, "FromDocType": None,
+                       "FromDocNo": None, "FromDocDtlKey": None, "TransferedQty": 1}]}
+    cr = {"DocKey": 990050, "DocNo": "ZZCG-202606-001(CVT TO DO)",
+          "DocDate": "2026-09-29T00:00:00.000", "DebtorCode": "300-ZZAC01",
+          "DebtorName": "ZZ DEALER SDN BHD (PROJECT)", "SalesAgent": "ZZ AGENT", "Ref": None,
+          "Description": "STOCK TRANSFER - ", "RefDocNo": None, "CurrencyCode": "MYR",
+          "Note": None, "Cancelled": "F", "LastModified": "2026-09-29T11:00:27.963",
+          "Details": [{"DocKey": 990050, "DtlKey": 990051, "Seq": 16, "ItemCode": "ZZAC-P1",
+                       "Description": "ZZ TAP", "Location": "ZZAC-WH1", "Qty": 1, "UOM": "UNIT",
+                       "UnitPrice": 108, "SubTotal": 108, "FromDocType": "CG",
+                       "FromDocNo": "ZZCG-202606-001", "FromDocDtlKey": None}]}
+    assert _records(env.post(CG_INGEST, [cg]))["db1:CSGN:980050"]["outcome"] == "created"
+    assert _records(env.post(CR_INGEST, [cr]))["db1:CSGR:990050"]["outcome"] == "created"
+
+    order = _order(env, "ZZCG-202606-001")
+    assert (order.doc_type, order.debtor_code, order.customer_id) == (
+        "consignment", "300-ZZAC01", env.customer)
+    line = _line(env, "db1:CSGN:980050:980051")
+    # AutoCount counts the CVT TO DO return in TransferedQty: nothing is outstanding.
+    assert (line.qty_ordered, line.qty_delivered, line.unit_price, line.uom) == (
+        Decimal("1"), Decimal("1"), Decimal("108"), "UNIT")
+    assert line.line_status == "closed"
+    assert line.qty_returned == Decimal("1")
+    stored = env.db.execute(select(AutocountCancelDoc).where(
+        AutocountCancelDoc.doc_key == 990050)).scalars().one()
+    assert stored.doc_no == "ZZCG-202606-001(CVT TO DO)"
+
+
+# ======================================================================= the 2.9 gate (crew, 14 Oct)
+def test_a_2_8_consignment_is_stored_only_until_a_push_states_transfers(env):
+    """ss#122 ships the 2.8 shape (no TransferedQty). Such a CG is kept as sent and is not
+    demand; the first push that carries TransferedQty makes it demand, even with the same
+    LastModified (the follow-up SS lane re-sends on its new fingerprint)."""
+    first = _cg(details=[_cg_line(981001, transferred=None)])
+    assert _records(env.post(CG_INGEST, [first]))["db1:CSGN:980001"]["outcome"] == "created"
+    assert _order(env) is None
+    assert _records(env.post(CG_INGEST, [copy.deepcopy(first)]))["db1:CSGN:980001"][
+        "outcome"] == "unchanged"
+    assert _order(env) is None
+
+    stated = _cg(details=[_cg_line(981001, transferred=4)])
+    assert _records(env.post(CG_INGEST, [stated]))["db1:CSGN:980001"]["outcome"] == "updated"
+    line = _line(env, "db1:CSGN:980001:981001")
+    assert (line.qty_ordered, line.qty_delivered) == (Decimal("10"), Decimal("4"))
+
+
+def test_a_line_without_transfers_keeps_the_whole_record_stored_only(env):
+    rec = _cg(details=[_cg_line(981001), _cg_line(981002, "ZZAC-P2", transferred=None)])
+    env.post(CG_INGEST, [rec])
+    assert _order(env) is None
+
+
+def test_a_return_naming_a_stored_only_consignment_waits(env):
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, transferred=None)])])
+    env.post(CR_INGEST, [_cr(details=[_cr_line(991001, 4)])])
+    assert _return_lines(env, 990001)[991001].match_status == "waiting"
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, transferred=4)])])
+    assert _return_lines(env, 990001)[991001].match_status == "matched"
+    assert _line(env, "db1:CSGN:980001:981001").qty_returned == Decimal("4")
