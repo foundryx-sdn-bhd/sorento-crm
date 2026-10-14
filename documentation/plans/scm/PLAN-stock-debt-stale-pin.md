@@ -3,9 +3,9 @@
 Status: in review. Track: small fix (no migration, no auth/RBAC, no new ingest). UAC:
 `stock-debt-stale-pin-acceptance-criteria.md`.
 
-Owner ruling, 14 Oct 2026: Stock Debt is FULLY DECOUPLED from Fulfilment Planning pins (lane
-STOCK-DEBT-DECOUPLE, base main). This lane stays for the Fulfilment Planning board, which reads
-the same `_holds`; its Stock Debt changes are interim until that lane lands.
+Owner, 14 Oct 2026: Stock Debt KEEPS reading pins (a decouple was ruled at noon and dropped at
+14:10). This lane caps pins at bin stock on Stock Debt AND on the Fulfilment Planning board,
+which reads the same `_holds`.
 
 ## Journey
 
@@ -44,9 +44,13 @@ SO419598 BRW 1 / 0.
    order. Pins and placements are read in the order made (`confirmed_at`, `linked_at`), so a
    thin bin keeps the promise made first, as the board already did in practice.
    The cap lives in `assign()`, the one place that knows whether a line still needs a pin.
-   Round 1 capped in `_holds` instead (so the book's S/O and landed goods would see real
-   cover); a dev probe showed it spending a bin on a pin `assign()` never serves (product
-   0fb2507c, BRW 79: next line short 47 with the stock left free), so round 3 moved it.
+   Round 1 capped in `_holds` instead; a dev probe showed it spending a bin on a pin
+   `assign()` never serves (product 0fb2507c, BRW 79: next line short 47 with the stock
+   left free), so round 3 moved it.
+   What a line already holds, for the landed goods (`_landed_holds`) and the book's S/O
+   (`book_so_pins`), is its holds' REAL takes: `_assignments` walks the decisions and
+   placements once (only products with a hold) and hands those takes over (`held`), so a
+   pin of 126 on a bin of 50 counts as 50 and the order's own SPO of 76 covers the rest.
 3. `cell()`: the Supply tab lists every source a line of the column is pinned on (R43 did
    this for PO pins only), stand-ins included, Free 0 outside its home column.
 4. Dialog: the Supply empty state says "What covers these lines is listed in an earlier
@@ -62,11 +66,6 @@ SO419598 BRW 1 / 0.
 - A pin on a partly stocked bin covers only what the bin holds; the rest is short.
 
 ## Not in scope
-
-The view gap round 1 tried to close (a pin above a partly stocked bin read as covered before
-the book's S/O, leaving the order's own SPO free) is open again until STOCK-DEBT-DECOUPLE
-lands, which stops Stock Debt reading pins at all. Same for the board's `_landed_holds`
-reading a pin's full quantity as already held.
 
 Netting holds of lines outside the read against a bin's stock (true before this lane too,
 for bins in the span and out of it).
