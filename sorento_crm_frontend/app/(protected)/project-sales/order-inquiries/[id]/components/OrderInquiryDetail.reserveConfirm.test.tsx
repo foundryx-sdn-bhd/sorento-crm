@@ -217,6 +217,20 @@ describe('AC-SN-41 reserve confirmation', () => {
     );
   });
 
+  it('D5: the sent toast names the confirmation To person, not the requester', async () => {
+    recipientsSpy.mockImplementation(async () => ({ to: { name: 'Niki' }, cc: [{ name: 'Eling' }] }));
+    try {
+      renderDetail();
+      await stageAndPressReserve();
+      fireEvent.click(await screen.findByRole('button', { name: 'Reserve and send to Niki' }));
+
+      await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(toastSuccessSpy).toHaveBeenCalledWith('Reserved, Niki notified'));
+    } finally {
+      recipientsSpy.mockImplementation(async () => ({ to: { name: 'Joey' }, cc: [{ name: 'Eling' }] }));
+    }
+  });
+
   it('ticked: commits with park_notice true and the parked toast', async () => {
     renderDetail();
     await stageAndPressReserve();

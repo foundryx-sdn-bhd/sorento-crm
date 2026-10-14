@@ -1015,3 +1015,24 @@ def test_fix_N1_split_items_resolve_their_own_recipients(sn, monkeypatch):
     assert len(emails) == 2, [(e["to"], e["cc"]) for e in emails]
     with_cs = [e for e in emails if cs_name in _names(e["cc"])]
     assert len(with_cs) == 1, f"only CS's own request may Cc CS: {[_names(e['cc']) for e in emails]}"
+
+
+def test_fix_D5_request_toast_names_the_to_person(sn, monkeypatch):
+    """Crew D5: the create-request response's `notified_name` is the email's To person
+    (first non-actor recipient, the same order the send uses), not the requester."""
+    client, world = sn
+    _automations(world)
+    _register()
+    _captured_dispatches(monkeypatch)
+    eling = _user(world.db, f"{MARKER} Eling")
+    inquiry = _new_oi(world, eling)
+    row = _oi_row(world, inquiry)
+    response = client.post(
+        REQUEST_URL(inquiry.id),
+        json={
+            "rows": [{"row_id": row.id, "qty_requested": "50", "warehouse_id": world.site.id}],
+            "park": False,
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["notified_name"] == f"{MARKER} Eling", response.json()["notified_name"]

@@ -7,7 +7,12 @@ const frameProps = vi.fn();
 vi.mock('@/app/(protected)/system-management/email-templates/components/EmailPreviewFrame', () => ({
   EmailPreviewFrame: (props: { subject?: string | null; html?: string | null }) => {
     frameProps(props);
-    return <div data-testid="email-frame">{props.html}</div>;
+    return (
+      <div data-testid="email-frame">
+        {props.subject ? <span>{props.subject}</span> : null}
+        {props.html}
+      </div>
+    );
   },
 }));
 
@@ -117,6 +122,19 @@ describe('AC-SN-44 ParkedSendDialog', () => {
     expect(frameProps).toHaveBeenLastCalledWith(
       expect.objectContaining({ html: '<p>eight-inquiries-body</p>' }),
     );
+  });
+
+  it('D4: the frame receives the subject and the dialog does not print a second one', () => {
+    renderDialog();
+    expect(frameProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ subject: 'Reserve requests: 9 order inquiries (Joey)' }),
+    );
+    expect(screen.getAllByText('Reserve requests: 9 order inquiries (Joey)')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('tab', { name: 'Email to Niki (8)' }));
+    expect(frameProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ subject: 'Reserve requests: 8 order inquiries (Joey)' }),
+    );
+    expect(screen.getAllByText('Reserve requests: 8 order inquiries (Joey)')).toHaveLength(1);
   });
 
   it('clicking a tab switches the preview', () => {
