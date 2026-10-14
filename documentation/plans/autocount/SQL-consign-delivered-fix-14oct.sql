@@ -1,7 +1,8 @@
 -- CONSIGN-DELIVERED-FIX: read-only before/after counts for the consignment re-projection.
 -- Plan: documentation/plans/autocount/PLAN-consign-delivered-fix-14oct.md.
 --
--- Run each block BEFORE `scripts/reproject_consignments.py --company SRT --apply` and again
+-- Run each block BEFORE `docker compose exec backend_<color> python scripts/reproject_consignments.py
+-- --company SRT --apply` and again
 -- AFTER it. Read-only: SELECTs only. Expected after: block 1 has no `open` row, blocks 2 and 3
 -- read 0, block 4 reads 0.
 

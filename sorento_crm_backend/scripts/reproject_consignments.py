@@ -17,9 +17,10 @@ consignments route's own post-commit hooks (plan exception batch, planning chang
 Dry run by default: counts only, ends with a rollback. Idempotent: a second `--apply` changes
 nothing.
 
-Run from sorento_crm_backend/ with the deployment's env, right after the deploy:
-    venv/bin/python scripts/reproject_consignments.py --company SRT            # dry run
-    venv/bin/python scripts/reproject_consignments.py --company SRT --apply
+Prod, right after the deploy, in the live backend container (plain python, no venv):
+    docker compose exec backend_<color> python scripts/reproject_consignments.py --company SRT
+    docker compose exec backend_<color> python scripts/reproject_consignments.py --company SRT --apply
+A dev checkout runs it from sorento_crm_backend/ as `venv/bin/python scripts/...`.
 """
 from __future__ import annotations
 

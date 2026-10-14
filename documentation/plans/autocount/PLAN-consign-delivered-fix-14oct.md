@@ -44,12 +44,16 @@ outstanding report and the reorder run.
 ## Re-projection (deploy step)
 
 A script, not a migration: it reuses the ingest's own projection and post-commit hooks, which a
-SQL migration would bypass. Crew runs it right after the deploy:
+SQL migration would bypass. Crew runs it on prod right after the deploy, in the live backend
+container (plain `python`, no venv; `<color>` is the live slot, blue or green):
 
 ```
-venv/bin/python scripts/reproject_consignments.py --company SRT          # dry run, counts only
-venv/bin/python scripts/reproject_consignments.py --company SRT --apply
+docker compose exec backend_<color> python scripts/reproject_consignments.py --company SRT          # dry run, counts only
+docker compose exec backend_<color> python scripts/reproject_consignments.py --company SRT --apply
 ```
+
+On a dev checkout the same script runs as `venv/bin/python scripts/reproject_consignments.py`.
+Dev was re-projected by crew on 14 Oct (1 CG changed open to closed; a second run changed 0).
 
 Idempotent: a second `--apply` reports `changed: 0`. Read-only before/after counts:
 `documentation/plans/autocount/SQL-consign-delivered-fix-14oct.sql`.
