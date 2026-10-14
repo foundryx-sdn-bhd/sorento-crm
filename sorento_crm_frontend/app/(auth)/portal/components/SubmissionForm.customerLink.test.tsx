@@ -14,8 +14,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 import type { PortalContact } from '../lib/portal-client';
 
+// One stable object, as Next returns at runtime (a fresh one per render re-runs the form's seed effect).
+const stableRouter = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => stableRouter,
 }));
 
 const toasts = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }));

@@ -21,6 +21,7 @@ from app.models.base import set_company_scope
 from app.models.order import Customer
 from app.models.user import User
 from app.services.company_scope import DEFAULT_COMPANY_ID, register_company_scope_listeners
+from app.services.company_scope_resolver import apply_company_scope
 from app.services.user_service import UserPermissionService
 from tests._pg_fixture import blank_session
 
@@ -63,6 +64,13 @@ def _client(db, monkeypatch, *, granted: bool = True) -> TestClient:
     monkeypatch.setattr(
         UserPermissionService, "check_user_has_permission", lambda self, u, slug: granted
     )
+
+    async def _override_scope():
+        scope = frozenset({DEFAULT_COMPANY_ID})
+        set_company_scope(db, scope)
+        return scope
+
+    app.dependency_overrides[apply_company_scope] = _override_scope
     return TestClient(app)
 
 
@@ -116,7 +124,7 @@ def test_create_accepts_and_returns_customer_id(db, monkeypatch, kind):
     stored = db.execute(
         text("SELECT customer_id FROM purchase_requests WHERE id = :i"), {"i": res.json()["id"]}
     ).scalar_one()
-    assert stored == str(cust.id)
+    assert str(stored) == str(cust.id)
 
 
 def test_update_can_set_and_clear_customer_id(db, monkeypatch):

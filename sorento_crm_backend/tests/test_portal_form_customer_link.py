@@ -122,9 +122,10 @@ def _draft(c, kind, fields, products=None):
 
 
 def _stored_customer_id(db, submission_id):
-    return db.execute(
+    value = db.execute(
         text("SELECT customer_id FROM purchase_requests WHERE id = :i"), {"i": submission_id}
     ).scalar_one()
+    return None if value is None else str(value)
 
 
 @pytest.mark.parametrize("kind", ["purchase_request", "sponsorship_form"])
