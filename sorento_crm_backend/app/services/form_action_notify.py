@@ -159,7 +159,6 @@ _STATUS_LABELS = {
     "approved": "Approved",
     "rejected": "Rejected",
     "processed_by_cs": "Processed by Customer Service",
-    "completed": "Completed",
     "closed": "Closed",
     "voided": "Voided",
     "fulfilled": "Fulfilled",
@@ -189,8 +188,6 @@ def _pr_display_status(header) -> str:
     # Terminal CS states outrank the approval decision.
     if lifecycle == "processed_by_cs":
         return "Processed by Customer Service"
-    if lifecycle == "completed":
-        return "Completed"
     if lifecycle == "closed":
         return "Closed"
     if lifecycle == "voided":

@@ -57,12 +57,11 @@ STATUS_LABELS: Tuple[Tuple[str, str], ...] = (
     ("submitted", "Submitted"),
     ("approved", "Approved"),
     ("processed_by_cs", "Processed by CS"),
-    ("completed", "Completed"),
     ("closed", "Closed"),
     ("rejected", "Rejected"),
 )
 
-DEFAULT_STATUSES: Tuple[str, ...] = ("approved", "processed_by_cs", "completed")
+DEFAULT_STATUSES: Tuple[str, ...] = ("approved", "processed_by_cs")
 
 def _blank_to_null(column) -> Any:
     return sa.func.nullif(sa.func.btrim(column), "")

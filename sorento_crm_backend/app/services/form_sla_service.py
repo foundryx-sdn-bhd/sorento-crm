@@ -899,13 +899,11 @@ class FormSLAOrchestrator:
             return existing
 
         # No CS outcome: the requestor's winning rule says this form needs no customer
-        # service, so it finishes at approval (no tracker, no team lookup).
+        # service, so no CS stage starts (no tracker, no team lookup). The form stays
+        # Approved: there is no status change.
         if self._reads_cs_pin(config) and self._winning_rule_is_no_cs(
             config, source_entity_id, contact_id
         ):
-            from app.services.procurement_service import PurchaseRequestService
-
-            PurchaseRequestService(self.db).complete_without_cs(str(source_entity_id))
             return None
 
         agent = (

@@ -8,7 +8,7 @@ The defaults are the workbook's own shape, decided with the user on 2026-08-26:
 
 - month bucket = `approved_at`, and the basis is a filter, because a form approved in July
   for a June enquiry belongs in July's takings;
-- statuses = approved + processed by CS + completed (finished at approval, no CS stage), because a draft is not a sponsorship;
+- statuses = approved + processed by CS, because a draft is not a sponsorship;
 - eight detail columns, the OTHERS column dropped (empty in all twelve 2025 sheets);
 - the summary is salesman by month on both money columns, which is the pivot the team
   reads first.

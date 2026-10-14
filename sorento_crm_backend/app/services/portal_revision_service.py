@@ -280,7 +280,7 @@ _PR_ADAPTER = RevisionAdapter(
     invalidated_on_revise=_REQUEST_INVALIDATED,
     status_for_stage=_request_status_for_stage,
     request_type="purchase_request",
-    terminal_statuses=("rejected", "voided", "closed", "processed_by_cs", "completed"),
+    terminal_statuses=("rejected", "voided", "closed", "processed_by_cs"),
     field_labels=_REQUEST_LABELS,
 )
 
@@ -309,7 +309,7 @@ _SF_ADAPTER = RevisionAdapter(
     invalidated_on_revise=_REQUEST_INVALIDATED,
     status_for_stage=_request_status_for_stage,
     request_type="sponsorship_form",
-    terminal_statuses=("rejected", "voided", "closed", "processed_by_cs", "completed"),
+    terminal_statuses=("rejected", "voided", "closed", "processed_by_cs"),
     field_labels=_REQUEST_LABELS,
 )
 

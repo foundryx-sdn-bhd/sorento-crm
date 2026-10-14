@@ -7839,23 +7839,12 @@ class PurchaseRequestService:
 
         return header
 
-    def complete_without_cs(self, request_id: str):
-        """No CS outcome: an approved form whose winning CS routing rule is "No CS"
-        finishes at approval (approved -> completed). No customer message (the approved
-        one already went), no SLA event (there is no CS stage). Idempotent."""
-        header = self.get_request(request_id)
-        if (getattr(header, "status", None) or "").strip().lower() == "approved":
-            header.status = "completed"
-            self.db.commit()
-            self.db.refresh(header)
-        return header
-
     # ----- Void (terminal, irreversible) -----
     # Blocked once terminal. PR uses status + approval_status: a rejected request
     # sets BOTH status='rejected' and approval_status='rejected' (reject_submitted /
     # decide_approval), so either signal blocks a second void.
     _VOID_BLOCKED_STATUSES: frozenset[str] = frozenset(
-        {"voided", "rejected", "closed", "processed_by_cs", "completed"}
+        {"voided", "rejected", "closed", "processed_by_cs"}
     )
 
     def void_request(

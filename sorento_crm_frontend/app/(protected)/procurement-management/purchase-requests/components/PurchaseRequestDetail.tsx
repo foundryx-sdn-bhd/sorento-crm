@@ -580,17 +580,16 @@ export default function PurchaseRequestDetail({
   // processed or closed; both finalize the customer-service form-SLA stage.
   const isProcessedByCs = lifecycleStatusNorm === 'processed_by_cs';
   const isClosedByCs = lifecycleStatusNorm === 'closed';
-  // Completed = finished at approval because the requestor's CS rule was No CS.
-  const isCompleted = lifecycleStatusNorm === 'completed';
-  const isCsFinalized = isProcessedByCs || isClosedByCs || isCompleted;
-  const showCsActions = isApprovedStatus && !isCsFinalized;
+  const isCsFinalized = isProcessedByCs || isClosedByCs;
+  // A No CS form stays Approved but never gets a customer-service stage, so the CS
+  // actions need that stage's tracker (active or resolved); hidden while trackers load.
+  const hasCsStage = (slaTrackers ?? []).some((t) => t.team_set_code === 'customer_service');
+  const showCsActions = isApprovedStatus && !isCsFinalized && hasCsStage;
   const csFinalizeLabel = isProcessedByCs
     ? 'Processed by CS'
     : isClosedByCs
       ? 'Closed'
-      : isCompleted
-        ? 'Completed'
-        : null;
+      : null;
 
   return (
     <div className="space-y-6">
@@ -808,7 +807,7 @@ export default function PurchaseRequestDetail({
                   )}
                 </>
               )}
-              {canVoid && !isVoided && !isCompleted && (
+              {canVoid && !isVoided && (
                 <DropdownMenuItem
                   variant="destructive"
                   onClick={() => setVoidDialogOpen(true)}
