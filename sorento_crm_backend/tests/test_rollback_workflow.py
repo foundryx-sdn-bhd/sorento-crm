@@ -78,6 +78,9 @@ def test_the_sha_is_validated_as_a_main_commit(job):
     assert "inputs.sha" in str(validate.get("env")), "the input arrives via env, not interpolation"
     assert re.search(r"\[0-9a-f\]\{40\}|\{40\}", validate["run"]), "40-hex check"
     assert "merge-base --is-ancestor" in validate["run"]
+    assert "deploy.yml/runs?head_sha=$SHA&event=workflow_dispatch&status=success" in validate["run"], (
+        "only a commit whose release succeeded qualifies"
+    )
     checkout = next(s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/checkout"))
     assert checkout["with"]["fetch-depth"] == 0, "ancestry needs main's history"
 
