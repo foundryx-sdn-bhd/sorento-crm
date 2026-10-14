@@ -235,6 +235,23 @@ describe('SalesOrderDetail - the truck button (AC-SD20)', () => {
     expect(screen.getByRole('button', { name: 'Deliveries for WESERP10B' })).toBeInTheDocument();
   });
 
+  it('shows no truck button on a line added in this edit session and not yet saved', () => {
+    const trucks = () => document.querySelectorAll('button[aria-label^="Deliveries for"]');
+    renderDetail();
+    clickEdit();
+    openLines();
+    expect(trucks()).toHaveLength(2);
+    const rowsBefore = document.querySelectorAll('tbody tr').length;
+
+    fireEvent.click(screen.getByRole('button', { name: /Add line/ }));
+
+    // a new row exists, but only the two saved lines carry a truck
+    expect(document.querySelectorAll('tbody tr').length).toBeGreaterThan(rowsBefore);
+    expect(trucks()).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Deliveries for WESERP10B' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deliveries for SRTWC8518-SH-200' })).toBeInTheDocument();
+  });
+
   it('opens "Deliveries · <SKU>" with the line figures, and Escape closes it', async () => {
     renderDetail();
     openLines();

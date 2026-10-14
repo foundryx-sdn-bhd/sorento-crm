@@ -161,6 +161,16 @@ describe('SoLineHistoryBody - Delivered (AC-SD22)', () => {
     expect(screen.getByText('1 DO line')).toBeInTheDocument();
   });
 
+  it('shows the heading alone, with no "0 DO lines" count, when the block is empty', () => {
+    renderBody({ data: data({ lines: [{ line_id: L_WESERP, deliveries: [], cancels: [] }] }) });
+
+    expect(screen.queryByText(/^0 DO lines?$/)).toBeNull();
+    const heading = screen
+      .getAllByText('Delivered')
+      .find((el) => el.classList.contains('font-semibold'));
+    expect(heading).toBeDefined();
+  });
+
   it('reads the empty sentence when the line has no DO', () => {
     renderBody({ data: data({ lines: [{ line_id: L_WESERP, deliveries: [], cancels: [] }] }) });
 
@@ -200,6 +210,40 @@ describe('SoLineHistoryBody - Cancelled (AC-SD23)', () => {
     expect(within(rowOf('XS-016503')).getByText('-')).toBeInTheDocument();
     const totals = screen.getAllByText('Total').map((el) => el.closest('tr') as HTMLElement);
     expect(totals.some((tr) => within(tr).queryByText('40'))).toBe(true);
+  });
+
+  it('shows the heading alone, with no "0 Cancel SO lines" count, when the block is empty', () => {
+    renderBody({ data: data({ lines: [{ line_id: L_WESERP, deliveries: [], cancels: [] }] }) });
+
+    expect(screen.queryByText(/^0 Cancel SO lines?$/)).toBeNull();
+    const heading = screen
+      .getAllByText('Cancelled')
+      .find((el) => el.classList.contains('font-semibold'));
+    expect(heading).toBeDefined();
+  });
+
+  it('reads - in the Total, not 0, when every cancel row is group_whole', () => {
+    renderBody({
+      line: line({ id: L_CB110, sku: 'CB110' }),
+      data: data({
+        lines: [
+          {
+            line_id: L_CB110,
+            deliveries: [],
+            cancels: [
+              { doc_no: 'XS-W1', doc_date: '2026-10-08', location: 'BRW', match_reason: 'group_whole', qty: null },
+              { doc_no: 'XS-W2', doc_date: '2026-10-09', location: 'BRW', match_reason: 'group_whole', qty: null },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const totals = screen.getAllByText('Total').map((el) => el.closest('tr') as HTMLElement);
+    const cancelTotal = totals.find((tr) => tr.closest('table')?.textContent?.includes('Cancel SO no.'));
+    expect(cancelTotal).toBeDefined();
+    expect(within(cancelTotal as HTMLElement).queryByText('0')).toBeNull();
+    expect(within(cancelTotal as HTMLElement).getByText('-')).toBeInTheDocument();
   });
 
   it('says "1 Cancel SO line" in the singular and reads the empty sentence with none', () => {
@@ -269,6 +313,15 @@ describe('SoLineHistoryBody - the product group block (AC-SD24)', () => {
     expect(screen.getByText('No Cancel SO for this product here.')).toBeInTheDocument();
   });
 
+  it('draws the group as a full bordered panel, not only a top rule', () => {
+    renderBody({ line: line({ id: L_FH1, sku: 'C-FH14' }), data: withGroup });
+
+    const panel = screen
+      .getByText(/C-FH14 on this SO, not tied to one line/)
+      .closest('section') as HTMLElement;
+    expect(panel.classList.contains('border')).toBe(true);
+  });
+
   it('shows no group block for a product on one line', () => {
     renderBody({ line: line({ id: L_CB110, sku: 'CB110' }), data: withGroup });
 
@@ -297,6 +350,19 @@ describe('SoLineHistoryBody - the DO link and permission (AC-SD25)', () => {
 });
 
 describe('SoLineHistoryBody - clear states (AC-SD26)', () => {
+  it('shows the shared SectionSkeleton (role=status) while loading', () => {
+    renderBody({ data: undefined, isLoading: true });
+
+    expect(screen.getByRole('status')).toBeInTheDocument();
+  });
+
+  it('keeps the loaded rows and shows no error when a background refetch fails', () => {
+    renderBody({ isError: true });
+
+    expect(screen.getByText('202609-1082')).toBeInTheDocument();
+    expect(screen.queryByText('Could not load deliveries.')).toBeNull();
+  });
+
   it('shows skeleton rows while loading, and no empty or error sentence', () => {
     const { container } = renderBody({ data: undefined, isLoading: true });
 

@@ -254,10 +254,10 @@ def test_do_lines_that_do_not_belong_are_left_out(db):
     other_so = seed_do(db, DEFAULT_COMPANY_ID, number="DO-OTHER-SO")
     seed_do_line(db, other_so, w["pa"], w["wh1"], from_doc_no=unique_code("SO"))
     # another company: same SO number, same product code
-    ocomp_p = seed_product(db, OTHER_COMPANY, w["pa"].product_code)
+    # same product as the SO line, so only the company filter can drop it
     ocomp_wh = seed_wh(db, OTHER_COMPANY)
     foreign = seed_do(db, OTHER_COMPANY, number="DO-OTHER-CO")
-    seed_do_line(db, foreign, ocomp_p, ocomp_wh, from_doc_no=so_no)
+    seed_do_line(db, foreign, w["pa"], ocomp_wh, from_doc_no=so_no)
 
     out = so_line_history(db, w["so"])
 
@@ -274,6 +274,44 @@ def test_a_do_line_of_another_document_type_is_not_a_delivery_of_this_so(db):
     out = so_line_history(db, w["so"])
 
     assert _by_line(out, w["la"])["deliveries"] == []
+
+
+def test_do_line_of_this_company_under_a_do_header_of_another_company_is_left_out(db):
+    w = _world(db)
+    header = seed_do(db, OTHER_COMPANY, number="DO-FOREIGN-HEADER")
+    seed_do_line(db, header, w["pa"], w["wh1"], from_doc_no=w["so"].so_number)
+    header.company_id = OTHER_COMPANY
+    db.query(OrderLine).filter(OrderLine.order_id == header.id).update(
+        {OrderLine.company_id: DEFAULT_COMPANY_ID})
+    db.flush()
+
+    out = so_line_history(db, w["so"])
+
+    assert _by_line(out, w["la"])["deliveries"] == []
+
+
+def test_stale_link_to_this_so_line_is_ignored_when_from_doc_no_names_another_so(db):
+    w = _world(db)
+    d = seed_do(db, DEFAULT_COMPANY_ID, number="DO-STALE")
+    seed_do_line(db, d, w["pa"], w["wh1"], so_line=w["la"], from_doc_no=unique_code("SO"))
+    d2 = seed_do(db, DEFAULT_COMPANY_ID, number="DO-STALE-GRP")
+    seed_do_line(db, d2, w["pb"], w["wh1"], so_line=w["lb1"], from_doc_no=unique_code("SO"))
+
+    out = so_line_history(db, w["so"])
+
+    assert _by_line(out, w["la"])["deliveries"] == []
+    assert _by_line(out, w["lb1"])["deliveries"] == []
+    assert _group(out, w["pb"].product_code)["deliveries"] == []
+
+
+def test_the_same_link_with_no_from_doc_no_is_under_the_line(db):
+    w = _world(db)
+    d = seed_do(db, DEFAULT_COMPANY_ID, number="DO-LINK-NULL")
+    seed_do_line(db, d, w["pa"], w["wh1"], so_line=w["la"], from_doc_no=None, from_doc_type=None)
+
+    out = so_line_history(db, w["so"])
+
+    assert [r["do_number"] for r in _by_line(out, w["la"])["deliveries"]] == ["DO-LINK-NULL"]
 
 
 # --------------------------------------------------------------------------- Cancel SO
@@ -458,6 +496,16 @@ def test_route_answers_404_for_an_so_of_another_company(route_world):
 
     with TestClient(app) as c:
         res = c.get(f"/api/v1/scm/sales-orders/{foreign.id}/deliveries")
+
+    assert res.status_code == 404, res.text
+    assert "SO_NOT_FOUND" in res.text
+
+
+def test_route_answers_404_so_not_found_for_a_malformed_id(route_world):
+    app, *_ = route_world
+
+    with TestClient(app, raise_server_exceptions=False) as c:
+        res = c.get("/api/v1/scm/sales-orders/not-a-uuid/deliveries")
 
     assert res.status_code == 404, res.text
     assert "SO_NOT_FOUND" in res.text
