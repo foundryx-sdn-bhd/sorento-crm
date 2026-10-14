@@ -3,8 +3,9 @@
 Status: Build, round R2 (R1 merged into crew/pv2 as 941fb867a via #1670; R2 on branch `crew/pv2-redesign-r2`, PR #1673).
 Round order: R1, R2, R-GAPS (crew 14 Oct), R3, R4, R5.
 Earlier: round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
-branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). CODE AND TESTS ONLY until crew relays
-the owner's OK for LLM spend: no parser calls, no evals, no live checks. pytest -n 1.
+branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). Owner 14 Oct 18:35: NO CAP on LLM spend for
+PV2; R2, R-GAPS and R3 stay code + tests, live checks on the PROD prompt version (on a copy) start after R4 (see R5).
+pytest -n 1.
 UAC: `pv2-redesign-14oct-acceptance-criteria.md` (beside this file).
 
 ## Why
@@ -64,7 +65,13 @@ derive the move. Still one parser call per turn; replies stay code templates.
 - **Security rule for R2+ (security review of R1):** acting on a register entry (an SO uuid, a PO number key) goes
   back through the same grant and links checks as a typed ask; a stored key is never used directly (e.g. a PO number
   recorded from a non-staff PO list must not reach the staff-only ref_status lookup).
-- **R5 Eval + live (needs the owner's spend OK).** Probe set, act-shadow comparison, one dev run, crew live check.
+- **R5 Live checks + iterate (owner 14 Oct 18:35: NO CAP on LLM spend for PV2).** After R4, run live checks on the PROD
+  prompt version on a copy (not only unit tests), with the PV2-EVAL lane's scenario battery + runner (built in parallel,
+  test data and harness only) pulled into the rounds as it lands. Iterate on live failures until the battery passes;
+  fixes go into code, schema or generic rules only (never keyword rules, never per-case prompt patches). Owner's bar for
+  the hand test: very smooth across many real and improvised scenarios. Dev key only; an auth/IP error means the prod
+  key was hit: stop and report. Until R4, rounds stay code + tests (no live calls needed to merge R2, R-GAPS, R3).
+  Includes the R4 act-shadow comparison (old act vs derived move) and the R-GAPS live list.
 
 ## R1 design (register writer)
 Facts (explorer map, 14 Oct, file:line on c56a5d34f):
