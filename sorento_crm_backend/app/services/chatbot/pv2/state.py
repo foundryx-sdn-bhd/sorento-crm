@@ -109,7 +109,7 @@ class RegisterEntry(BaseModel):
     key: str
     label: str
     parent: str | None = None  # the "R<n>" of the entry this one is a child of
-    subject: str = "S1"  # the printing subject's sid ("s<n>"); `subject_label` gives its current S<n>
+    subject: str | None = None  # the printing subject's sid ("s<n>"); `subject_label` gives its current S<n>
     turn: int = 0
 
 

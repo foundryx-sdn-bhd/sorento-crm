@@ -138,7 +138,7 @@ def entries_from_envelopes(
                     head -= 1
                 parent_id = ids.get(head)
             out.append(RegisterEntry(id=entry_id, kind=kind, key=key, label=label, parent=parent_id,
-                                     subject=sid or "S1", turn=turn))
+                                     subject=sid, turn=turn))
     return out
 
 
@@ -157,7 +157,7 @@ def entries_from_report_rows(rows: Sequence[Any], turn: int, subject: str | None
             continue
         keys = picked.get("keys") or []
         out.append(RegisterEntry(id=f"R{len(out) + 1}", kind=str(picked["dimension"]), key=str(keys[0] if keys else label),
-                                 label=label, parent=None, subject=subject or "S1", turn=turn))
+                                 label=label, parent=None, subject=subject, turn=turn))
     return out
 
 

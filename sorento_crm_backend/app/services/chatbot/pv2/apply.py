@@ -411,10 +411,16 @@ def _drill(
 def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[ClarifyAct]) -> Action:
     """Held becomes this ask's subject; the first open question (if any) is the action,
     else a Lookup."""
-    if not held.is_empty() and (held.sid is None or any(t.sid == held.sid for t in st.topics)):
-        # A subject starts (or a domain-switch refine left its old self in topics): a fresh id, kept
-        # through topics and back.
-        held.sid = new_sid(st)
+    if not held.is_empty() and held.sid is None:
+        # A subject starts. One that is already in topics (same content) comes back under its own id and
+        # leaves topics; any other gets a fresh id, kept through topics and back.
+        bare = held.model_copy(update={"sid": None})
+        back = next((t for t in st.topics if t.sid and t.model_copy(update={"sid": None}) == bare), None)
+        if back is not None:
+            st.topics = [t for t in st.topics if t is not back]
+        held.sid = back.sid if back is not None else new_sid(st)
+    elif not held.is_empty() and any(t.sid == held.sid for t in st.topics):
+        held.sid = new_sid(st)  # a domain-switch refine left its old self in topics: it needs its own id
     st.held = held
     if qs:
         return qs[0]
