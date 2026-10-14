@@ -71,16 +71,20 @@ def test_silent():
     assert "silent" not in names(run_checks(turn(), {"about": "x"}, None))
 
 
+PHOTO = {"url": "https://cdn.example/SRTWC286-SH.jpg", "filename": "SRTWC286-SH.jpg", "attachmentType": "Product Photos"}
+TD = {"url": "https://cdn.example/SRTWC286-SH_TD.jpg", "filename": "SRTWC286-SH_TD.jpg",
+      "attachmentType": "Technical Specifications"}
+
+
 def test_false_gap_real_example():
     t = turn("SRTWC286-SH has no Product Photos.",
-             actions=[msg("SRTWC286-SH has no Product Photos."),
-                      files("https://cdn.example/SRTWC286-SH.jpg", "https://cdn.example/SRTWC286-SH_TD.jpg")])
+             actions=[msg("SRTWC286-SH has no Product Photos."), {**files(), "attachments_src": [PHOTO, TD]}])
     assert "false_gap" in names(run_checks(t, {"about": "x"}, None))
 
 
-@pytest.mark.parametrize("reply", ["SRTWC286-SH tiada Gambar.", "SRTWC286-SH 没有产品图片。"])
+@pytest.mark.parametrize("reply", ["SRTWC286-SH tiada Product Photos.", "SRTWC286-SH 没有Product Photos。"])
 def test_false_gap_other_languages(reply):
-    t = turn(reply, actions=[msg(reply), files("https://cdn.example/SRTWC286-SH.jpg")])
+    t = turn(reply, actions=[msg(reply), {**files(), "attachments_src": [PHOTO]}])
     assert "false_gap" in names(run_checks(t, {"about": "x"}, None))
 
 
