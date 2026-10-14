@@ -44,3 +44,9 @@ UAC: `deploy-memory-guard-14oct-acceptance-criteria.md`
   disk check + PGDMP magic for the dump, SSH budget 100m, rollback regex/branch, /health
   without error text, 10s single-flight probe cache, runbook steps 0 and 6 (allowlist +
   limit_req).
+- 2026-10-14: crew audit of 4a123689 (fails safe everywhere), fix round (a)-(g): dump the app's
+  DB (DEPLOY_DB_NAME or the active backend's DATABASE_URL; the repo template's db container
+  POSTGRES_DB differs from the backend's), require TABLE DATA public alembic_version in the
+  dump's TOC (checked against a real pg_dump/pg_restore 16 in the sandbox), `--preflight`,
+  lock wait 600s, rollback promotes after the server step, runbook step 9 (lock_timeout now
+  fails a release that used to queue).
