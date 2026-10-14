@@ -419,10 +419,11 @@ def held_qty_expr():
     left from) FIRST, then the Buy. So the line's stock holds together hold its decided
     Reserve + Borrow less what was delivered, never more than is still owed, and the
     delivery drains its rows in payload order (Reserve, then Borrow), so what is left stays
-    on the last ones: the bins `delivered_credits` leaves whole on the write. SO424555 CB6633-NL (Own 336 + Buy 126, 336 delivered)
-    held 126 under `least(alloc.qty, still owed)` at a bin the goods had left; it holds 0,
-    off the decision it was written under, with no data change. Read off the DECISION,
-    never off the row: a row written after a delivery is already net of it.
+    on the last ones: the bins `delivered_credits` leaves whole on the write. SO424555
+    CB6633-NL (Own 336 + Buy 126, 336 delivered) held 126 under `least(alloc.qty, still
+    owed)` at a bin the goods had left; it holds 0, off the decision it was written under,
+    with no data change. Read off the DECISION, never off the row: a row written after a
+    delivery is already net of it.
 
     A row with no active decision stating the line's components (a hold under no revision,
     a revision older than `components`) keeps `least(alloc.qty, still owed)`. An allocation
@@ -435,15 +436,13 @@ def held_qty_expr():
     # planned only the then-owed quantity. That revision's `open_qty` was `qty_ordered`
     # less delivered, today's is the plan quantity; where the two differ (CS states a
     # `qty_required`), the larger gap is taken, so a delivery is never consumed twice.
+    # Both sides net the cancel, which `delivered` has already taken off once.
+    cancelled = func.coalesce(SalesOrderLine.qty_cancelled, 0)
     delivered = func.greatest(
-        func.greatest(
-            func.coalesce(SalesOrderLine.qty_delivered, 0)
-            - func.coalesce(SalesOrderLine.qty_cancelled, 0),
-            0,
-        )
+        func.greatest(func.coalesce(SalesOrderLine.qty_delivered, 0) - cancelled, 0)
         - func.greatest(
             plan_qty() - planned,
-            func.coalesce(SalesOrderLine.qty_ordered, 0) - planned,
+            func.coalesce(SalesOrderLine.qty_ordered, 0) - cancelled - planned,
             0,
         ),
         0,
