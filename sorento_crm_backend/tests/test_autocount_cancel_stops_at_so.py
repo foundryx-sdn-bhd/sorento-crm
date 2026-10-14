@@ -31,7 +31,7 @@ from app.models.project_so import (
 )
 
 from tests.test_order_inquiry_handover_automation import _captured_dispatches
-from tests.test_autocount_cancel_effects import _line, _push_so, _push_xs
+from tests.test_autocount_cancel_effects import _code_of_ref, _line, _push_so, _push_xs
 from tests.test_ingest_documents import env  # noqa: F401 - env is a fixture
 
 
@@ -250,3 +250,168 @@ def test_board_cs_cancelled_line_reads_as_before(api):
     assert row["cancel_reason"] == REASON
     assert row["cancelled_by"] != "AutoCount"
     assert row["cancel_open_oi_rows"] == 0
+
+
+# ======================================================================= the pending decision
+# Owner ruling 14 Oct 23:20: "when SO is cancelled, we trigger the transfer to cancel SO action
+# in fulfilment planning and let the CS confirm themselves". The sync saves the board's own
+# Transfer to Cancel SO as a pending decision (a draft); nothing else moves until CS confirms.
+from types import SimpleNamespace  # noqa: E402
+
+from app.models.project_so import SOSupplyDecisionDraft  # noqa: E402
+from app.services import project_line_draft_service  # noqa: E402
+from app.services.autocount_cancel_ingest_service import Derived, run_cancel_hooks  # noqa: E402
+
+from tests.test_order_inquiry_handover_automation import TRIGGER, _handover_calls  # noqa: E402
+from tests.test_so_cancel_line import _cancel_body, _confirm_all  # noqa: E402
+from tests.test_so_supply_confirmation import BASE  # noqa: E402
+
+
+def _draft(db, core_line_id):
+    db.expire_all()
+    return (
+        db.query(SOSupplyDecisionDraft)
+        .filter(SOSupplyDecisionDraft.core_line_id == str(core_line_id))
+        .one_or_none()
+    )
+
+
+def test_full_cancel_with_a_live_oi_row_proposes_transfer_to_cancel_so(env, monkeypatch):
+    """AC-12: the sync saves Transfer to Cancel SO for CS, naming the XS; the OI row is
+    untouched and nothing is dispatched."""
+    dispatched = _capture_dispatch(monkeypatch)
+    _push_so(env, "ZZ-STOP-SO4", ordered=10, delivered=10)
+    row_id = _oi_row_on(env, "ZZ-STOP-SO4")
+    before = _snapshot(env, row_id)
+
+    _push_xs(env, "ZZ-STOP-SO4", 10)
+
+    line = _line(env, "ZZ-STOP-SO4")
+    draft = _draft(env.db, line.id)
+    assert draft is not None
+    assert draft.decision["verdict"] == "cancelled"
+    assert draft.decision["reason"] == "AutoCount Cancel SO ZZXS-950001"
+    assert draft.decision["source"] == project_line_draft_service.AUTOCOUNT_CANCEL_SOURCE
+    assert _snapshot(env, row_id) == before
+    assert dispatched == []
+
+
+def test_full_cancel_with_no_live_oi_row_proposes_nothing(env):
+    """AC-13: nothing for CS to handle, so no pending decision."""
+    _push_so(env, "ZZ-STOP-SO5", ordered=10, delivered=10)
+    _push_xs(env, "ZZ-STOP-SO5", 10)
+    assert _draft(env.db, _line(env, "ZZ-STOP-SO5").id) is None
+
+
+def test_a_voided_cancel_withdraws_the_pending_decision(env):
+    """AC-14: AutoCount voids the XS, the line reopens (R6) and the proposal it made goes."""
+    _push_so(env, "ZZ-STOP-SO6", ordered=10, delivered=4)
+    _oi_row_on(env, "ZZ-STOP-SO6")
+    _push_xs(env, "ZZ-STOP-SO6", 10)
+    line = _line(env, "ZZ-STOP-SO6")
+    assert line.line_status == "cancelled" and _draft(env.db, line.id) is not None
+
+    record = {"DocKey": 950001, "DocNo": "ZZXS-950001", "DocDate": "2026-10-01",
+              "Cancelled": "T", "LastModified": "2026-10-02T10:00:00",
+              "Details": [{"DtlKey": 951001, "Seq": 1,
+                           "ItemCode": _code_of_ref(env, env.product_ref), "Qty": 10,
+                           "FromDocType": "SO", "FromDocNo": "ZZ-STOP-SO6",
+                           "FromDocDtlKey": 5001}]}
+    res = env.client.post("/api/v1/external/ingest/cancel_sales_orders",
+                          json={"companyCode": env.company_a_code, "book": "db1",
+                                "records": [record]})
+    assert res.status_code == 200, res.text
+
+    line = _line(env, "ZZ-STOP-SO6")
+    assert line.line_status == "open"
+    assert _draft(env.db, line.id) is None
+
+
+def _awaiting_world(api, monkeypatch=None):
+    """An order whose line A an AutoCount Cancel SO cancelled, with a live OI row, and the
+    hook run as the ingest runs it."""
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, product_a = w["a"]
+    inquiry = _inquiry(world.db, world.company_id, w["order"].id)
+    row = _oi_row(world.db, world.company_id, inquiry.id, mirror_a.id,
+                  product_a.product_code, "36")
+    _cancelled_by_autocount(world, core_a, doc_no="ZZXS-777")
+    run_cancel_hooks(world.db, SimpleNamespace(
+        derived=Derived(newly_cancelled=[(str(core_a.id), "ZZXS-777")])), actor=None)
+    return client, world, w, row
+
+
+def test_board_shows_the_pending_transfer_on_the_awaiting_line(api):
+    """AC-15: the board line carries the saved Transfer to Cancel SO, so it reads Saved."""
+    client, world, w, _row = _awaiting_world(api)
+    _core_a, _mirror_a, product_a = w["a"]
+
+    row = _contribution(_board(client, w["core_so"]), product_a)
+
+    assert row["cancel_open_oi_rows"] == 1
+    assert row["draft"]["decision"]["verdict"] == "cancelled"
+    assert row["draft"]["decision"]["reason"] == "AutoCount Cancel SO ZZXS-777"
+
+
+def test_cs_confirm_runs_the_existing_transfer_to_cancel_so(api, monkeypatch):
+    """AC-16: Confirm carries the pending decision through the SAME cancel the board's own
+    Transfer to Cancel SO runs: the OI row is cancelled, purchasing gets the handover, the
+    line records who / when / why, the draft is gone and the board reads it as CS's."""
+    calls = _captured_dispatches(monkeypatch)
+    client, world, w, oi_row = _awaiting_world(api)
+    core_a, mirror_a, product_a = w["a"]
+
+    result = _confirm_all(client, w["order"],
+                          **_cancel_body(mirror_a, reason="AutoCount Cancel SO ZZXS-777"))
+
+    assert result["ok"] is True, result
+    world.db.expire_all()
+    assert world.db.get(OrderInquiryRow, oi_row.id).state == "cancelled"
+    assert _handover_calls(calls), calls
+    core = world.db.get(type(core_a), core_a.id)
+    assert core.cancelled_at is not None
+    assert str(core.cancelled_by_id) == str(world.eling)
+    assert core.cancel_reason == "AutoCount Cancel SO ZZXS-777"
+    assert _draft(world.db, core_a.id) is None
+    row = _contribution(_board(client, w["core_so"]), product_a)
+    assert row["cancelled_by"] != "AutoCount"
+    assert row["cancel_open_oi_rows"] == 0
+    assert TRIGGER == "order_inquiry_handover"
+
+
+def test_cs_can_dismiss_the_pending_transfer(api, monkeypatch):
+    """AC-17: Undo on the board deletes the pending decision; nothing else moves."""
+    calls = _captured_dispatches(monkeypatch)
+    client, world, w, oi_row = _awaiting_world(api)
+    core_a, _mirror_a, product_a = w["a"]
+    key = _contribution(_board(client, w["core_so"]), product_a)["key"]
+
+    removal = client.delete(f"{BASE}/fulfilment-planning/lines/{key}/draft")
+
+    assert removal.status_code == 204, removal.text
+    assert _draft(world.db, core_a.id) is None
+    world.db.expire_all()
+    assert world.db.get(OrderInquiryRow, oi_row.id).state == "raised"
+    row = _contribution(_board(client, w["core_so"]), product_a)
+    assert row is not None and row["draft"] is None
+    assert _handover_calls(calls) == []
+
+
+def test_cs_can_save_the_transfer_again_but_nothing_else(api):
+    """AC-18: on the awaiting line the board accepts Transfer to Cancel SO (re-saved after a
+    dismiss, or with CS's own reason) and refuses any supply decision."""
+    client, world, w, _row = _awaiting_world(api)
+    core_a, _mirror_a, product_a = w["a"]
+    key = _contribution(_board(client, w["core_so"]), product_a)["key"]
+
+    again = client.put(f"{BASE}/fulfilment-planning/lines/{key}/draft",
+                       json={"decision": {"verdict": "cancelled", "reason": "CS: customer"}})
+    assert again.status_code == 200, again.text
+    assert _draft(world.db, core_a.id).decision["reason"] == "CS: customer"
+
+    buy = client.put(f"{BASE}/fulfilment-planning/lines/{key}/draft",
+                     json={"decision": {"verdict": "amended", "reserve_qty": "0",
+                                        "reserve": [], "borrow": [], "buy_qty": "36",
+                                        "reason": "x"}})
+    assert buy.status_code == 409, buy.text
