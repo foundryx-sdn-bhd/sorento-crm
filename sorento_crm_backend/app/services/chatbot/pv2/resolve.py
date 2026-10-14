@@ -596,19 +596,23 @@ class DbResolver:
         return sorted(found, key=lambda r: (r[1], r[2], r[0]))
 
     def set_members(self, set_id: str) -> list[tuple[ResolvedRef, float]]:
-        """RG-5 (#1443): the chat-visible, active members of the set `set_id` (read by id, so only the set the
-        scoped `_sets` / `family_sets` found), each with its quantity in the set (1 only when none is stored)."""
+        """RG-5 (#1443): the chat-visible, active members of the set `set_id` (a `_sets` / `family_sets` id),
+        each with its quantity in the set (1 only when none is stored). The set is read again, active and in
+        scope (`ProductSet` is selected, so the session listener scopes it): a set deactivated since it was
+        resolved has no members."""
         from app.models.product import Product, chat_searchable_products
-        from app.models.product_set import ProductSetMember
+        from app.models.product_set import ProductSet, ProductSetMember
 
         rows = (
-            self.db.query(Product.product_code, ProductSetMember.quantity)
+            self.db.query(Product.product_code, ProductSetMember.quantity, ProductSet.id)
             .join(ProductSetMember, ProductSetMember.product_id == Product.id)
-            .filter(ProductSetMember.product_set_id == set_id, chat_searchable_products(), Product.is_active.is_(True))
+            .join(ProductSet, ProductSet.id == ProductSetMember.product_set_id)
+            .filter(ProductSet.id == set_id, ProductSet.is_active.is_(True), chat_searchable_products(),
+                    Product.is_active.is_(True))
             .order_by(ProductSetMember.sort_order, Product.product_code)
             .all()
         )
-        return [(ResolvedRef(kind="product", key=c, label=c), 1.0 if q is None else float(q)) for c, q in rows]
+        return [(ResolvedRef(kind="product", key=c, label=c), 1.0 if q is None else float(q)) for c, q, _sid in rows]
 
     def family_sets(self, key: str) -> list[Option]:
         """RG-5 (#1443): the ACTIVE sets holding a chat-visible, active product of the family `key` (v1

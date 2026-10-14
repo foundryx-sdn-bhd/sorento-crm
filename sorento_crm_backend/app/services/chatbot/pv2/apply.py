@@ -681,6 +681,11 @@ def _answer(
             held = st.held.model_copy(deep=True)
             for o in every:
                 held = apply_payload(held, {**o.payload, "op": "add"})
+            owed = _carry_question(st, i, held, pending.carry, resolver, language) if pending.carry else None
+            if owed is not None:
+                # RG-1c: every match landed: the carry question their ask still owes, before any fetch.
+                owed.pending.origin = _waiting(valid_origin(pending.origin) or ask, held)
+                return _commit(st, i, held, ask, [owed]), True
             st.held = held
             return Lookup(ask_index=i, domain=held.domain, held=held.model_copy(deep=True), ask=ask), True
     if picked is None and key is not None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
