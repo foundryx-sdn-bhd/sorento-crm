@@ -38,10 +38,10 @@ def test_business_data_and_document_numbers_survive():
 
 
 def test_identity_keys_dropped_at_any_depth_case_insensitively():
+    # channel and meta are business keys (report filter args) and are kept; see test_battery_review_r3.py
     trace = [{"stage": "looked_up", "raw": {"rows": [{"Product Code": "AAA111", "Contact": {"n": "KEEPOUT1"}}],
-                                            "deep": {"x": {"META": {"a": "KEEPOUT2"}, "Profile": "KEEPOUT3",
-                                                           "Channel": {"name": "KEEPOUT4"}, "Envelope": "KEEPOUT5"}}}}]
+                                            "deep": {"x": {"Profile": "KEEPOUT3", "Envelope": "KEEPOUT5"}}}}]
     d = runner.facts_digest(trace)
     assert "AAA111" in d
-    for n in range(1, 6):
+    for n in (1, 3, 5):
         assert f"KEEPOUT{n}" not in d
