@@ -475,6 +475,41 @@ export function PurchaseRequestDocumentEditCard({
               </DocField>
             )}
 
+            {!isSponsorship && (
+              <DocField label="Sales Type" className="sm:col-span-2">
+                <FormField
+                  control={control}
+                  name="sales_type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <LookupBoundField
+                          table="purchase_requests"
+                          column="sales_type"
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Select sales type"
+                          renderFallback={() => (
+                            <SearchableSelect
+                              key={field.value || 'empty'}
+                              onChange={field.onChange}
+                              value={field.value || ''}
+                              placeholder="Select sales type"
+                              options={[
+                                { value: 'project', label: 'Project' },
+                                { value: 'cash_sales', label: 'Cash Sales' },
+                              ]}
+                            />
+                          )}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </DocField>
+            )}
+
             {isSponsorship && (
               <>
                 <DocField label="Total Project Value" className="sm:col-span-2">
