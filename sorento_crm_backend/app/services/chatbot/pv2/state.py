@@ -44,6 +44,7 @@ class ResolvedRef(BaseModel):
     label: str
     phrase: str | None = None
     quantity: Quantity | None = None
+    family: bool = False  # a family key (matched by family_code), not an exact product code
 
 
 class ResolvedSpec(BaseModel):

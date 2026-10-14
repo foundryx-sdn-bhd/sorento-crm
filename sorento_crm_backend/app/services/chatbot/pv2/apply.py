@@ -1015,7 +1015,7 @@ def _did_you_mean(
         offer_line = clarify_copy.escalate_offer(team.replace("_", " ").strip(), language)
         asked += (
             f", or would you like me to escalate to {team.replace('_', ' ').strip()} team?"
-            if clarify_copy.lang(language) == "en" else f" {offer_line}"
+            if clarify_copy.lang(language) == "en" else f". {offer_line}"
         )
         extra = [
             Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
@@ -1185,15 +1185,17 @@ FAMILY_DOMAINS = frozenset({"incoming", "product_attachment"})
 
 
 def _expand_family(held: Held, resolver: ResolverLike, qs: Any) -> Held:
-    """A held family key in incoming / product_attachment becomes its member codes, so v1 answers
-    for the members that have data instead of asking which variant. Availability-only dealers keep
-    the family (v1's which-one)."""
+    """A held FAMILY key (a ref the resolver marked `family`, never an exact product code) in
+    incoming / product_attachment becomes its member codes, so v1 answers for the members that
+    have data instead of asking which variant. v1 itself narrows these domains to one code
+    (`narrow_to_code` / `narrow_by_tier`); expanding is crew's ruling (owner turns 4 and 6), not
+    `list_all` parity. Availability-only dealers keep the family (v1's which-one)."""
     offer = getattr(qs, "can_offer", None)
     expand = getattr(resolver, "family_members", None)
     if held.domain not in FAMILY_DOMAINS or expand is None or getattr(offer, "availability_only", False):
         return held
     refs = held.refs.get("product") or []
-    if len(refs) != 1:
+    if len(refs) != 1 or not refs[0].family:
         return held
     members = expand(refs[0].key) or []
     if len(members) < 2:
