@@ -22,7 +22,8 @@ table itself; there is no `integration_references` row, because the row can pred
 **Links are resolved, never waited for.** A line names the SO / PO / SPO line it came from
 exactly when the vendor sends a real `FromDocDtlKey` (today it sends 0, which names nothing).
 Without one, a DO line that names its SO (`FromDocNo`) links to the one line of its product in
-that SO (PLAN-do-so-line-link-1oct.md), and its header links by `RefDocNo` (Q10 a). A GRN line
+that SO (PLAN-do-so-line-link-1oct.md), or, when several, to the one of them at its warehouse
+(PLAN-do-history-backfill-13oct.md section 3), and its header links by `RefDocNo` (Q10 a). A GRN line
 links to ONE line of the PO or SPO its `FromDocNo` (else `OurPONo`) names, by product and
 position (PLAN-autocount-grn-pull-crm-02oct.md 1.3: AutoCount writes one GRN line per SPO line
 in the SPO's Seq order). A link once made is never unset by a later push that cannot resolve
@@ -858,6 +859,32 @@ class AutocountDocIngestService(MasterRefResolver):
         warnings.append(WARN_BRANCH_UNRESOLVED)
         return None
 
+    def _delivered_status_id(self) -> Optional[str]:
+        key = ("order_statuses", "code", "delivered")
+        if key not in self._memo:
+            row = (
+                self.db.query(OrderStatus.id)
+                .filter(OrderStatus.status_code.ilike("delivered"))
+                .first()
+            )
+            self._memo[key] = str(row[0]) if row else None
+        return self._memo[key]
+
+    def _assumed_delivered_status(self, doc_date) -> Optional[str]:
+        """DO-HISTORY: the delivered status when a DO dated `doc_date` has no tracking to come
+        (`settings.do_assume_delivered_before`, owner 13 Oct 2026), else None. `settings` is
+        built once per process, so changing the env value needs a restart of every process
+        that ingests DOs (both backends, and the worker for the pull apply)."""
+        from app.config import settings
+
+        cutover = getattr(settings, "do_assume_delivered_before", None)
+        if cutover is None or doc_date is None or doc_date >= cutover:
+            return None
+        status_id = self._delivered_status_id()
+        if status_id is None:
+            logger.warning("ingest.assume_delivered_skipped: no 'delivered' order status")
+        return status_id
+
     def _new_status_id(self) -> Optional[str]:
         key = ("order_statuses", "code", "new")
         if key not in self._memo:
@@ -887,25 +914,32 @@ class AutocountDocIngestService(MasterRefResolver):
         return str(rows[0][0]) if len(rows) == 1 else None
 
     def _do_so_line(self, dtl_key: Optional[int], doc_no: Optional[str],
-                    product_id: Optional[str]) -> Optional[str]:
-        """The SO line a DO line came from: by its exact DtlKey when AutoCount sends one,
-        else the one line of this product inside the SO numbered `FromDocNo`. Several lines
-        of the product in that SO resolve to none: no guess by position, because SO lines
-        carry no `line_no` yet (#1400)."""
+                    product_id: Optional[str],
+                    warehouse_id: Optional[str] = None) -> Optional[str]:
+        """The SO line a DO line came from, only when it is provable (DO-HISTORY, owner
+        13 Oct: no guessing): by its exact DtlKey when AutoCount sends one; else the one line
+        of this product inside the SO numbered `FromDocNo`; else, when the product sits on
+        several lines, the one of them at the DO line's warehouse, and only when every
+        candidate states a warehouse (one without could be the real line). Anything else
+        resolves to none: no position, Seq or quantity tie-break."""
         if dtl_key is not None:
             return self._so_line(dtl_key, doc_no)
         if not doc_no or not product_id:
             return None
         rows = (
-            self.db.query(SalesOrderLine.id)
+            self.db.query(SalesOrderLine.id, SalesOrderLine.warehouse_id)
             .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
             .filter(SalesOrderLine.company_id == self.company_id,
                     SalesOrder.so_number == doc_no,
                     SalesOrderLine.product_id == product_id)
-            .limit(2)
             .all()
         )
-        return str(rows[0][0]) if len(rows) == 1 else None
+        if len(rows) == 1:
+            return str(rows[0][0])
+        if len(rows) < 2 or warehouse_id is None or any(r[1] is None for r in rows):
+            return None
+        here = [r for r in rows if str(r[1]) == str(warehouse_id)]
+        return str(here[0][0]) if len(here) == 1 else None
 
     def _po_or_spo_line(self, dtl_key: int, doc_no: Optional[str]) -> tuple[Optional[str], Optional[str]]:
         """(po_line_id, spo_allocation_id): exactly one match across both tables, else both
@@ -1130,16 +1164,22 @@ class AutocountDocIngestService(MasterRefResolver):
             if ((line.from_dtl_key is not None or line.from_doc_no)
                     and line.from_doc_type in (None, "SO")):
                 values["sales_order_line_id"] = self._do_so_line(
-                    line.from_dtl_key, line.from_doc_no, product_id)
+                    line.from_dtl_key, line.from_doc_no, product_id, warehouse_id)
                 if values["sales_order_line_id"] is None:
                     warnings.append(WARN_SO_LINE_UNRESOLVED)
             lines.append(values)
 
         counts = _line_counts()
         counts["skipped"] = sum(1 for line in doc.lines if line.item_code is None)
+        # DO-HISTORY: only the first landing assumes delivery; an update never does.
+        assumed_status = self._assumed_delivered_status(doc.doc_date)
         if existing is None:
-            order = Order(company_id=self.company_id, order_status_id=self._new_status_id(),
+            order = Order(company_id=self.company_id,
+                          order_status_id=assumed_status or self._new_status_id(),
                           last_synced_at=datetime.utcnow(), **header)
+            if assumed_status:
+                # Delivered by assumption: status only, `actual_delivery_date` stays empty.
+                order.tracking_assumed_at = datetime.now(timezone.utc)
             self.db.add(order)
             self.db.flush()
             for values in lines:
@@ -1151,6 +1191,13 @@ class AutocountDocIngestService(MasterRefResolver):
 
         if adopted:
             warnings.append(WARN_ADOPTED)
+            # An adopted Order Tracking row with no tracking yet (no date, status empty or
+            # new) is assumed delivered like a created one; any tracking it holds wins.
+            if (assumed_status and existing.actual_delivery_date is None
+                    and (existing.order_status_id is None
+                         or str(existing.order_status_id) == self._new_status_id())):
+                existing.order_status_id = assumed_status
+                existing.tracking_assumed_at = datetime.now(timezone.utc)
         if existing.source_vanished_at is not None:
             warnings.append(WARN_RESTORED)
         changed = self._write_lines(
@@ -1441,7 +1488,7 @@ class AutocountDocIngestService(MasterRefResolver):
             for row in waiting_lines:
                 # `or None`: a 0 stored before `_link_key` existed names no line either.
                 target = self._do_so_line(row.from_dtl_key or None, row.from_doc_no,
-                                          row.product_id)
+                                          row.product_id, row.warehouse_id)
                 if target is not None:
                     row.sales_order_line_id = target
             waiting_headers = (

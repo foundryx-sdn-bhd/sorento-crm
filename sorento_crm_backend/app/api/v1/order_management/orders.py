@@ -846,7 +846,8 @@ async def get_orders_by_product(
         description=(
             "Delivery bucket filter, same semantics as the orders list: 'outstanding' = "
             "orders NOT yet delivered, 'delivered' = status delivered/completed AND "
-            "actual_delivery_date set, omit/null = all."
+            "actual_delivery_date set (or assumed delivered by the DO history backfill), "
+            "omit/null = all."
         ),
     ),
     include_summary: bool = Query(

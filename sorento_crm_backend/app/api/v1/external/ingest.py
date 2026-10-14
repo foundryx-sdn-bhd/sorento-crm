@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, Path, Query, status
@@ -57,6 +58,7 @@ from app.services.autocount_doc_ingest_service import (
     AUTOCOUNT_BRANCH_ENTITIES,
     AUTOCOUNT_DOC_ENTITIES,
     BOOK_PATTERN,
+    DELIVERY_ORDERS_ENTITY,
     GOODS_RECEIVE_NOTES_ENTITY,
     AutocountDocIngestService,
     AutocountDocReadService,
@@ -77,6 +79,7 @@ from app.services.document_ingest_service import (
 )
 from app.services.master_ingest_service import (
     ENTITY_SPECS,
+    IngestOutcome,
     MasterIngestService,
     UnsupportedIngestEntity,
 )
@@ -797,6 +800,92 @@ def _book(payload: dict) -> str:
     return book
 
 
+def _backfill(payload: dict, entity: str) -> bool:
+    """DO-HISTORY C3: the optional envelope flag a history replay sets (shared service only,
+    never its hourly poll). Delivery orders only; anywhere else, or not a boolean, is a 422
+    rather than a flag silently ignored."""
+    if "backfill" not in payload:
+        return False
+    value = payload.get("backfill")
+    if not isinstance(value, bool):
+        raise AppException(status_code=422, message="'backfill' must be true or false",
+                           code="INVALID_BODY")
+    if value and entity != DELIVERY_ORDERS_ENTITY:
+        raise AppException(status_code=422,
+                           message=f"'backfill' is accepted on {DELIVERY_ORDERS_ENTITY} only",
+                           code="INVALID_BODY")
+    return value
+
+
+# The audit entity type of `orders` (its table name), as the Order Tracking import names it.
+_ORDER_AUDIT_ENTITY = "orders"
+
+
+@contextmanager
+def _quiet_backfill(db: Session, on: bool):
+    """For a backfill batch only: no per-DO audit row and no embedding event for the DO or
+    its lines (about 270,000 DOs and 900,000 lines from 2023-09-01, plan section 5). Both
+    suppressions end with the block, so a later request on the same session is untouched."""
+    if not on:
+        yield
+        return
+    from app.services.embedding_change_listener import suppress_embedding_events
+
+    skip = db.info.setdefault("skip_audit_entity_types", set())
+    added = _ORDER_AUDIT_ENTITY not in skip
+    skip.add(_ORDER_AUDIT_ENTITY)
+    try:
+        with suppress_embedding_events("order", "order_line"):
+            yield
+    finally:
+        if added:
+            skip.discard(_ORDER_AUDIT_ENTITY)
+
+
+def _log_backfill_batch(db: Session, current_user: dict, company_id: Optional[str],
+                        book: Optional[str], records: list, result) -> None:
+    """The audit a backfill batch leaves instead of one row per DO (security review B1): ONE
+    `IMPORT` row that still leads to every order it stands for. `items` names each created or
+    updated DO (source ref, order id, outcome), so nothing the batch wrote is missing from the
+    trail. Written in the batch's own transaction, before its commit: a batch never lands
+    without it.
+
+    The orders are queued for embedding in one insert, as the Order Tracking import does,
+    so the history reaches semantic search without one queue event per DO and line."""
+    from app.services.audit_service import log_audit
+    from app.services.embedding_change_listener import bulk_enqueue_embedding_events
+
+    written = [r for r in result.records
+               if r.outcome in (IngestOutcome.CREATED, IngestOutcome.UPDATED) and r.entity_id]
+    days = sorted(
+        str(raw.get("DocDate"))[:10] for raw in records
+        if isinstance(raw, dict) and raw.get("DocDate")
+    )
+    log_audit(
+        db,
+        _ORDER_AUDIT_ENTITY,
+        "",
+        "IMPORT",
+        new_values={
+            "backfill": True, "book": book, "records": len(records),
+            "doc_date_from": days[0] if days else None,
+            "doc_date_to": days[-1] if days else None,
+            "created": result.created, "updated": result.updated,
+            "unchanged": result.unchanged, "failed": result.failed,
+            "retryable": result.retryable,
+            "items": [
+                {"source_ref": r.source_ref, "order_id": r.entity_id, "outcome": r.outcome.value}
+                for r in written
+            ],
+        },
+        user_id=current_user.get("id"),
+        company_id=company_id,
+        description=f"AutoCount DO backfill ({book}), {len(records)} rows",
+    )
+    bulk_enqueue_embedding_events(db, "order", [r.entity_id for r in written],
+                                  event_type="order.updated")
+
+
 def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, current_user: dict):
     """Contract 2.7 deletions: the sweep's vanished DocKeys for a DocDate range, cancelled in
     place and never deleted (plan 1.10)."""
@@ -931,6 +1020,7 @@ def ingest_masters(
         if entity in AUTOCOUNT_DOC_ENTITIES | AUTOCOUNT_BRANCH_ENTITIES | AUTOCOUNT_CANCEL_ENTITIES
         else None
     )
+    backfill = _backfill(payload, entity)
 
     company_id = resolve_company_anchor(db, payload, current_user)
 
@@ -978,11 +1068,16 @@ def ingest_masters(
     # Unknown payload keys are dropped by every canonical schema (owner decision, 1 Oct
     # 2026); their NAMES, never their values, are logged once for the whole request so a
     # field the ESB believes it sends is not lost silently.
-    with collect_unknown_fields() as unknown_fields:
+    with _quiet_backfill(db, backfill), collect_unknown_fields() as unknown_fields:
         try:
             result = service.ingest(entity, records, dry_run=dry_run)
         except UnsupportedIngestEntity as exc:
             raise AppException(status_code=404, message=str(exc), code="UNKNOWN_ENTITY")
+        if not dry_run and backfill:
+            # Inside the quiet block: the summary row joins the batch's own transaction, and
+            # the commit flushes what the ingest left pending.
+            _log_backfill_batch(db, current_user, company_id, book, records, result)
+            db.commit()
     if unknown_fields:
         logger.info(
             "ingest.unknown_fields entity=%s integration=%s fields=%s",
