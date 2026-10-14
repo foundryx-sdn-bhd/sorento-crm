@@ -733,10 +733,13 @@ def test_the_stub_interpreter_keeps_ld_library_path(box, monkeypatch):
     """CI runs 38617923894 / 38620458673: setup-python's interpreter needs LD_LIBRARY_PATH
     (shared libpython). _run built the env without it, so the docker stub died with "error
     while loading shared libraries", the script swallowed that and reported no db container."""
-    monkeypatch.setenv("LD_LIBRARY_PATH", "/sentinel/python/lib")
+    # Prepend, never replace: on CI the real value is what lets the interpreter start
+    # (run 38623882187 replaced it and failed exactly this way).
+    sentinel = ":".join(p for p in ("/sentinel/python/lib", os.environ.get("LD_LIBRARY_PATH", "")) if p)
+    monkeypatch.setenv("LD_LIBRARY_PATH", sentinel)
     r = _run(box)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert (box["stub"] / "stub_env").read_text() == "/sentinel/python/lib"
+    assert (box["stub"] / "stub_env").read_text() == sentinel
 
 
 def test_the_runners_own_deploy_knobs_never_reach_the_script(box, monkeypatch):
