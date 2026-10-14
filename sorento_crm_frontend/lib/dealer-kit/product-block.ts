@@ -42,6 +42,7 @@ import type { PriceBadgeInput } from './price-badge';
 import { formatTagPrice } from './price-badge';
 import type { MergeFieldMode } from './merge-fields';
 import { hasMergeField, renderMergeFields } from './merge-fields';
+import { distinctName, sameDisplayText } from '@/lib/product-display';
 
 // ---------------------------------------------------------------------------
 // Reading a bound value
@@ -55,7 +56,7 @@ import { hasMergeField, renderMergeFields } from './merge-fields';
  * more often than it disagrees on the actual name.
  */
 function nameOrBlankIfCode(name: string, code: string): string {
-  return name.trim().toLowerCase() === code.trim().toLowerCase() ? '' : name;
+  return sameDisplayText(name, code) ? '' : name;
 }
 
 /** `- SK-1234 (Kitchen Sink) 800 x 500 x 220 mm`, or `- SK-1234` when the name repeats the code. */

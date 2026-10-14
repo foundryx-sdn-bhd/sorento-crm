@@ -48,6 +48,7 @@ import type {
   ContainerRequestDrillPoRow,
   ContainerRequestDrillSpoRow,
 } from '../services/containerRequestDrillService';
+import { distinctName, sameDisplayText } from '@/lib/product-display';
 
 /**
  * ONE lightbox for the SCM family (R7, AC-B1/AC-B7).
@@ -2119,7 +2120,7 @@ export function PlanRowDialog({
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
 }) {
-  const showName = !!productName && productName.trim().toLowerCase() !== productCode.trim().toLowerCase();
+  const showName = distinctName(productCode, productName) !== null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[85vh] w-full flex-col overflow-hidden p-0 sm:max-w-[95vw]">

@@ -112,6 +112,7 @@ import { PLAN_PERMISSION } from '../../lib/planActions';
 import { SOURCE_LABELS as LINE_SOURCE_LABELS } from '../../lib/sourceLabels';
 import { cancelSourcesTitle, isPartlyCancelled, PARTLY_CANCELLED } from '@/app/(protected)/scm/lib/autocountCancel';
 import { useHasPermission } from '@/hooks/usePermissions';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The sales-order detail, built to mirror `PurchaseOrderDetail` section for section: the
@@ -824,9 +825,7 @@ export function SalesOrderDetail({
             );
           }
           const showProductName =
-            !!row.original.product_name?.trim() &&
-            row.original.product_name.trim().toLowerCase() !==
-              row.original.sku?.trim().toLowerCase();
+            distinctName(row.original.sku, row.original.product_name) !== null;
           return (
             <div className="flex min-w-0 flex-col">
               <span className="font-medium">{row.original.sku}</span>

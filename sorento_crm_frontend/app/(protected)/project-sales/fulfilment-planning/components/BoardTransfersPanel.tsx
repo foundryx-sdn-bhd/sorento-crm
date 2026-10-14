@@ -29,6 +29,7 @@ import {
   TRANSFER_STATE_LABEL,
   type StockTransfer,
 } from '@/app/(protected)/inventory-management/stock-transfers/types/stockTransfer.types';
+import { distinctName, sameDisplayText } from '@/lib/product-display';
 
 /** What the transfers page gates its own state changes on. */
 const EDIT_PERMISSION = 'inventory.stock_transfers.edit';
@@ -140,8 +141,7 @@ export function BoardTransfersPanel({
         cell: ({ row }) => {
           const code = row.original.item_code ?? '';
           const name = row.original.product_name?.trim() ?? '';
-          const showName =
-            name !== '' && name.toUpperCase() !== code.trim().toUpperCase();
+          const showName = distinctName(code, name) !== null;
           return (
             <div className="min-w-0">
               <div className="truncate text-sm" title={code}>

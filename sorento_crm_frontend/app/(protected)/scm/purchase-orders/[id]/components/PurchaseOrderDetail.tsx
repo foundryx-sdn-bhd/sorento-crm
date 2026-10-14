@@ -77,6 +77,7 @@ import type {
   PurchaseOrderLineAllocation,
 } from '../../../types/scm.types';
 import BackToList from '@/components/common/BackToList';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The purchase-order detail, built section for section as the twin of `SalesOrderDetail`.
@@ -498,9 +499,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
             );
           }
           const showProductName =
-            !!row.original.product_name?.trim() &&
-            row.original.product_name.trim().toLowerCase() !==
-              row.original.sku?.trim().toLowerCase();
+            distinctName(row.original.sku, row.original.product_name) !== null;
           return (
             <div className="flex min-w-0 flex-col">
               <span className="font-medium">{row.original.sku}</span>
