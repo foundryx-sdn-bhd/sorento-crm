@@ -45,3 +45,19 @@ Plan: `PLAN-autocount-consign-crm-14oct.md`. [BE] backend, [FE] frontend, [T] au
   when GRN picks sit on a sibling allocation of the same product and its stated receipt lags.
 - **UAC-16 [BE][T]** Spreading a group's GRN picks never lands them on the cancelled part of a member.
 - **UAC-17** The PR lists every PO / SPO / incoming screen checked, with file:line and verdict.
+
+## Owner hand-test round (14 Oct): Consignment gets its own page
+
+- **UAC-18 [BE][T]** `GET /api/v1/scm/sales-orders` lists sales orders only (doc_type `sales_order`) unless asked for
+  `doc_type=consignment`; a search for a CG number on the Sales Orders page returns nothing, and its record count and
+  export (the same call) leave consignments out. Detail by id still answers for a consignment. An unknown doc_type is a 422.
+- **UAC-19 [FE][T]** Sidebar `MENU_SIDEBAR` > Project Sales Admin has a "Consignment" item right after Sales Orders,
+  path `/scm/consignments`, same permission and module as Sales Orders (`scm.dashboard.view`, `scm`).
+- **UAC-20 [FE][T]** `/scm/consignments` is a plain list (DataGrid, search, paging) of consignment orders only: number,
+  date, customer, status, qty ordered / delivered / returned (sums of the order's lines). A row opens
+  `/scm/consignments/{id}`.
+- **UAC-21 [FE][T]** `/scm/consignments/{id}` is the existing sales-order detail (Lines tab with Qty returned), its back
+  link and prev/next walk the consignment list. A `/scm/sales-orders/{id}` link to a consignment (from planning, Order
+  Inquiry, board) lands on `/scm/consignments/{id}`.
+- **UAC-22** Fulfilment Planning, Order Inquiry, Stock Debt and every demand reader keep counting consignments as before
+  (owner Q answers stand). The Sales Orders list no longer carries the Consignment label (it never shows one).
