@@ -42,8 +42,11 @@ def test_so_list_carries_doc_type_for_consignment_and_plain(client, db):
     res = client.get("/api/v1/scm/sales-orders", params={"limit": 100})
     assert res.status_code == 200, res.text
     by_no = {r["so_number"]: r for r in res.json()["data"]}
-    assert by_no[cg.so_number].get("doc_type") == "consignment", by_no[cg.so_number]
     assert by_no[so.so_number].get("doc_type") == "sales_order", by_no[so.so_number]
+    res = client.get("/api/v1/scm/sales-orders", params={"limit": 100, "doc_type": "consignment"})
+    assert res.status_code == 200, res.text
+    by_no = {r["so_number"]: r for r in res.json()["data"]}
+    assert by_no[cg.so_number].get("doc_type") == "consignment", by_no[cg.so_number]
 
 
 def test_so_detail_carries_doc_type(client, db):
