@@ -89,6 +89,15 @@ def test_returned_is_capped_at_ordered(env):
     assert _line(env, "db1:CSGN:980001:981001").qty_returned == Decimal("10")
 
 
+def test_a_non_finite_transfered_qty_is_ignored_not_raised(env):
+    for n, bad in enumerate(("NaN", "Infinity", "sNaN")):
+        res = env.post(CG_INGEST, [_cg(details=[_cg_line(981001, transferred=bad)],
+                                       modified=f"2026-10-0{n + 2}T10:00:00.000")])
+        assert _records(res)["db1:CSGN:980001"]["outcome"] in ("created", "updated"), bad
+        line = _line(env, "db1:CSGN:980001:981001")
+        assert (line.qty_delivered, line.qty_returned) == (Decimal("10"), Decimal("0")), bad
+
+
 def test_a_voided_consignment_is_still_cancelled(env):
     env.post(CG_INGEST, [_cg(details=[_cg_line(981001, transferred=0)])])
     env.post(CG_INGEST, [_cg(details=[_cg_line(981001, transferred=0)], cancelled="T",
@@ -191,3 +200,25 @@ def test_reproject_keeps_a_voided_consignment_cancelled(env):
     reproject_consignments.run(env.db, env.company, dry_run=False, commit=False)
     assert _order(env).status == "cancelled"
 
+
+
+def test_a_consignments_batch_keeps_each_products_first_before_snapshot(env, monkeypatch):
+    """Review should-fix 2: the consignments door runs the SO ingest once per CG, so a later
+    CG on the same product must not overwrite the "before" the plan-exception hook diffs."""
+    import app.api.v1.external.ingest as ingest
+    from app.services.scm import plan_exception_service
+
+    calls = []
+
+    def snapshot(db, product_ids):
+        calls.append(sorted(product_ids))
+        return {pid: len(calls) for pid in product_ids}
+
+    seen = {}
+    monkeypatch.setattr(plan_exception_service, "snapshot", snapshot)
+    monkeypatch.setattr(ingest, "_run_consignment_order_hooks",
+                        lambda db, service, actor: seen.update(
+                            service.consignment_orders.plan_exception_before))
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, transferred=0)]),
+                         _cg(980002, "ZZCG-0002", [_cg_line(982001, transferred=0)])])
+    assert seen[str(env.p1)] == 1

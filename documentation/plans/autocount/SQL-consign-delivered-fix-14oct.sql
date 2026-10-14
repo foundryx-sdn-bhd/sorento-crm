@@ -64,3 +64,14 @@ FROM sales_order_lines sol
 JOIN sales_orders so ON so.id = sol.sales_order_id
 WHERE so.doc_type = 'consignment'
   AND so.status <> 'cancelled';
+
+-- 6. Anything built on a consignment line while it read as open demand (review nit 4):
+--    project mirror lines adopted from a consignment line, and order inquiry rows on them.
+--    Informational: the re-projection does not retire these; a non-zero count goes to the
+--    owner before anything is touched.
+SELECT count(DISTINCT psol.id) AS project_mirror_lines,
+       count(DISTINCT oir.id)  AS order_inquiry_rows
+FROM sales_order_lines sol
+JOIN sales_orders so ON so.id = sol.sales_order_id AND so.doc_type = 'consignment'
+JOIN projects.sales_order_lines psol ON psol.core_sales_order_line_id = sol.id
+LEFT JOIN projects.order_inquiry_rows oir ON oir.so_line_id = psol.id;

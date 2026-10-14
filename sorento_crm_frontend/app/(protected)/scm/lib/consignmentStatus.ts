@@ -27,5 +27,5 @@ export function consignmentStatusLabel(order: Order): string {
 
 export function consignmentStatusVariant(order: Order): StatusBadgeVariant {
   if ((order.status ?? '').trim().toLowerCase() === 'cancelled') return salesOrderStatusVariant(order.status);
-  return consignmentAtCustomer(order) > 0 ? 'success' : 'secondary';
+  return consignmentAtCustomer(order) > 0 ? 'info' : 'secondary';
 }

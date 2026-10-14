@@ -323,17 +323,17 @@ def _transferred(db: Session, rows: list[SalesOrderLine]) -> dict[str, Decimal]:
         doc_key, dtl_key = _int(parts[2]), _int(parts[3])
         if doc_key is None or dtl_key is None:
             continue
-        wanted.setdefault((parts[0], doc_key), {})[dtl_key] = str(row.id)
+        wanted.setdefault((str(row.company_id), parts[0], doc_key), {})[dtl_key] = str(row.id)
     if not wanted:
         return {}
     out: dict[str, Decimal] = {}
     docs = (db.query(AutocountCancelDoc)
             .filter(AutocountCancelDoc.kind == KIND_CONSIGNMENT,
-                    AutocountCancelDoc.company_id == rows[0].company_id,
-                    AutocountCancelDoc.doc_key.in_(sorted({k for _, k in wanted})))
+                    AutocountCancelDoc.company_id.in_(sorted({c for c, _, _ in wanted})),
+                    AutocountCancelDoc.doc_key.in_(sorted({k for _, _, k in wanted})))
             .all())
     for doc in docs:
-        lines = wanted.get((doc.source_book, doc.doc_key))
+        lines = wanted.get((str(doc.company_id), doc.source_book, doc.doc_key))
         if not lines:
             continue
         for detail in (doc.source_record or {}).get("Details") or []:
@@ -341,7 +341,8 @@ def _transferred(db: Session, rows: list[SalesOrderLine]) -> dict[str, Decimal]:
                 continue
             line_id = lines.get(_int(detail.get("DtlKey")))
             value = _number(detail.get("TransferedQty"))
-            if line_id and isinstance(value, Decimal):
+            # A non-finite value (NaN, Infinity) is no quantity: ignored, never raised on.
+            if line_id and isinstance(value, Decimal) and value.is_finite():
                 out[line_id] = value
     return out
 

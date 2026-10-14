@@ -1,6 +1,6 @@
 # PLAN: consignment goods are delivered at issue (CONSIGN-DELIVERED-FIX)
 
-Status: in review (small fix track, URGENT prod data fix; PR #1686)
+Status: review fixes landed, merge-ready pending CI (small fix track, URGENT prod data fix; PR #1686)
 
 ## Problem
 

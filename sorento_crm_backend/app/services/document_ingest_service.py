@@ -734,6 +734,10 @@ class DocumentIngestService(MasterRefResolver):
                     # query too.
                     self._memo[(Product.__tablename__, "code", code.upper())] = pid
 
+        # The FIRST snapshot of a product wins: a service whose `ingest()` runs more than once
+        # in a batch (the consignments door, one CG at a time) must not overwrite a product's
+        # "before" with a picture its own earlier records already changed.
+        product_ids -= set(self.plan_exception_before)
         if not product_ids:
             return
         try:
