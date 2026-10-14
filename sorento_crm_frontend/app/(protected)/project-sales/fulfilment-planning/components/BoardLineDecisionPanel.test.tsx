@@ -2680,8 +2680,8 @@ describe('BoardLineDecisionPanel: a pool share beside a Buy is saveable (D5)', (
  * D7 (captain, 3 Sep, SO419208 line 3, CSK14A-NL). "BRW 62 · Buy 73", open 135: editing the
  * BRW reserve down to 60 used to leave `draft.buy_qty` frozen at 73 - short by 2, and blocked
  * - because Buy was never anything but the all-or-nothing switch. Buy is now the remainder,
- * derived inside `edit()` on every change and shown read-only beside the switch, so the line
- * stays composable while the reserve is being adjusted rather than needing the switch at all.
+ * derived inside `edit()` on every change until the planner types it (BUY-FIRST-PANEL pins a
+ * typed Buy), so the line stays composable while the reserve is being adjusted.
  */
 describe('BoardLineDecisionPanel: Buy follows the remainder of the line (D7)', () => {
   const POOL_LOCATIONS: BoardCellLocation[] = [
