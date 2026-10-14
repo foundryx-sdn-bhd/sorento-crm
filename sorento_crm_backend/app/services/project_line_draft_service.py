@@ -499,7 +499,10 @@ def remove_draft(db: Session, key: str) -> None:
     sales_order_id, line_no, item_code, _bucket = parse_contribution_key(key)
     try:
         core_line = _resolve_core_line(db, sales_order_id, line_no, item_code)
-    except AppException:
+    except AppException as exc:
+        # Two lines answering to one key is a conflict to show, never "already gone".
+        if getattr(exc, "code", None) == "board_contribution_line_ambiguous":
+            raise
         core_line = None
     row = None if core_line is None else _row_for(db, str(core_line.id))
     if row is None:

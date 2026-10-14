@@ -91,6 +91,7 @@ def _cancel_audits(env, row_id: str) -> int:
 def _capture_dispatch(monkeypatch) -> list:
     """Every post-commit purchasing dispatch (the handover email, changed-with-links)."""
     calls = _captured_dispatches(monkeypatch)
+    _register(None)  # the post-commit dispatch the app registers at startup (review B2)
 
     class _OrderInquiryOnly(list):
         def __eq__(self, other):
@@ -262,7 +263,11 @@ from app.models.project_so import SOSupplyDecisionDraft  # noqa: E402
 from app.services import project_line_draft_service  # noqa: E402
 from app.services.autocount_cancel_ingest_service import Derived, run_cancel_hooks  # noqa: E402
 
-from tests.test_order_inquiry_handover_automation import TRIGGER, _handover_calls  # noqa: E402
+from tests.test_order_inquiry_handover_automation import (  # noqa: E402
+    TRIGGER,
+    _handover_calls,
+    _register,
+)
 from tests.test_so_cancel_line import _cancel_body, _confirm_all  # noqa: E402
 from tests.test_so_supply_confirmation import BASE  # noqa: E402
 
@@ -359,6 +364,7 @@ def test_cs_confirm_runs_the_existing_transfer_to_cancel_so(api, monkeypatch):
     Transfer to Cancel SO runs: the OI row is cancelled, purchasing gets the handover, the
     line records who / when / why, the draft is gone and the board reads it as CS's."""
     calls = _captured_dispatches(monkeypatch)
+    _register(None)  # the post-commit dispatch the app registers at startup (review B2)
     client, world, w, oi_row = _awaiting_world(api)
     core_a, mirror_a, product_a = w["a"]
 
@@ -383,6 +389,7 @@ def test_cs_confirm_runs_the_existing_transfer_to_cancel_so(api, monkeypatch):
 def test_cs_can_dismiss_the_pending_transfer(api, monkeypatch):
     """AC-17: Undo on the board deletes the pending decision; nothing else moves."""
     calls = _captured_dispatches(monkeypatch)
+    _register(None)  # the post-commit dispatch the app registers at startup (review B2)
     client, world, w, oi_row = _awaiting_world(api)
     core_a, _mirror_a, product_a = w["a"]
     key = _contribution(_board(client, w["core_so"]), product_a)["key"]
@@ -457,6 +464,7 @@ def test_a_line_an_active_decision_covers_can_still_be_transferred(api, monkeypa
     from tests.test_fulfilment_line_draft_route import _covered_two_line_world
 
     calls = _captured_dispatches(monkeypatch)
+    _register(None)  # the post-commit dispatch the app registers at startup (review B2)
     client, world, _core_so, order, core_1, line_1, _c2, _l2 = _covered_two_line_world(api)
     inquiry = (world.db.query(OrderInquiry)
                .filter(OrderInquiry.project_sales_order_id == order.id).one_or_none()

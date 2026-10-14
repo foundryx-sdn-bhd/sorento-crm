@@ -28,7 +28,9 @@ Refuses unless the database this process is connected to is on this machine (the
 address Postgres itself reports, so a URL query string or PG* variable cannot point it
 elsewhere) AND is a dev database by name: one of `KNOWN_DEV_DATABASES` (the crew shared dev DB,
 `sorento_cagent_stack`), the exact name passed with `--allow-db`, or a name with a dev / ci /
-test / copy segment. The same checks run for setup and for `--undo`.
+test / copy segment. The same checks run for setup and for `--undo`. A unix socket or loopback
+address is taken as this machine, so a local socket proxy or SSH tunnel to a remote server
+would pass the address check and leave the name check as the only guard: dev copies only.
 
 Run from sorento_crm_backend/ with the copy's env (its DATABASE_URL):
     venv/bin/python scripts/handtest_1679_setup.py
