@@ -521,7 +521,6 @@ def _snapshot_set(
     product_set: ProductSet,
     *,
     new_pick: bool,
-    typed_complete_set: bool = False,
 ) -> None:
     """Freeze what the set looked like when it was quoted, as ONE line (SET-QUOTE-LINE).
 
@@ -559,15 +558,13 @@ def _snapshot_set(
 
         brand = db.query(Brand.brand_name).filter(Brand.id == driver.product.brand_id).first()
         line.brand_snapshot = brand[0] if brand else None
-    # Every set change rewrites Complete set to the new parts, unless this very write carries a
-    # text of its own (the grid sends the parts text it filled).
-    if not typed_complete_set:
-        line.complete_set = " + ".join(
-            m.product.product_code
-            if Decimal(m.quantity) == 1
-            else f"{Decimal(m.quantity).normalize():f} x {m.product.product_code}"
-            for m in members
-        )[:100]
+    # Every set change rewrites Complete set to the new parts, whatever the write body carries.
+    line.complete_set = " + ".join(
+        m.product.product_code
+        if Decimal(m.quantity) == 1
+        else f"{Decimal(m.quantity).normalize():f} x {m.product.product_code}"
+        for m in members
+    )[:100]
 
 
 def _uom_code(db: Session, uom_id: Optional[str]) -> Optional[str]:
@@ -916,13 +913,11 @@ def _write_line(
                 message="That product set is inactive.",
                 code="quotation_line_set_inactive",
             )
-        _snapshot_set(
-            db, line, product_set, new_pick=new_pick, typed_complete_set="complete_set" in payload
-        )
+        _snapshot_set(db, line, product_set, new_pick=new_pick)
     else:
         line.set_parts_snapshot = None
         # Off a set (to a product or to nothing): the parts text no longer describes the line.
-        if prior_set_id and "complete_set" not in payload:
+        if prior_set_id:
             line.complete_set = None
     if product is not None:
         _snapshot_product(db, line, product)

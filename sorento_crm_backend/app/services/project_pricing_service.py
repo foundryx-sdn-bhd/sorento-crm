@@ -1364,9 +1364,15 @@ def apply_series_product_codes(
     for hit in indirect.values():
         for ps in hit.get("sets", ()):
             set_by_id[ps.id] = ps
-    for row in stated:
-        for ps in indirect.get(normalize_code(row.code), {}).get("sets", ()):
-            set_pricing[ps.id] = (row.selling_price, row.max_discount_pct)
+    # Family rows first, then the set's own code rows, so a set's own code wins whatever the
+    # sheet order (the same rule products follow above).
+    for tier in ("family", "set"):
+        for row in stated:
+            hit = indirect.get(normalize_code(row.code), {})
+            if hit.get("via") != tier:
+                continue
+            for ps in hit.get("sets", ()):
+                set_pricing[ps.id] = (row.selling_price, row.max_discount_pct)
     existing_sets = {
         link.product_set_id: link
         for link in db.query(ProjectSeriesSet).filter(ProjectSeriesSet.series_id == series.id).all()
