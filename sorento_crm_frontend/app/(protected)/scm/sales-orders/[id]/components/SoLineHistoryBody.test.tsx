@@ -443,13 +443,15 @@ describe('SoLineHistoryBody - column widths (AC-SD27)', () => {
     return parseFloat(th.style.width || '0');
   };
 
-  it('DO no. >= 140, DO date >= 110', () => {
+  it('DO no. >= 140, DO date >= 130, Status >= 210, Actual delivery >= 140', () => {
     renderBody();
     expect(widthOf('DO no.')).toBeGreaterThanOrEqual(140);
-    expect(widthOf('DO date')).toBeGreaterThanOrEqual(110);
+    expect(widthOf('DO date')).toBeGreaterThanOrEqual(130);
+    expect(widthOf('Status')).toBeGreaterThanOrEqual(210);
+    expect(widthOf('Actual delivery')).toBeGreaterThanOrEqual(140);
   });
 
-  it('Cancel SO no. >= 140, Date >= 110', () => {
+  it('Cancel SO no. >= 140, Date >= 130, Matched by >= 190', () => {
     renderBody({
       line: line({ id: L_CB110, sku: 'CB110' }),
       data: data({
@@ -463,6 +465,7 @@ describe('SoLineHistoryBody - column widths (AC-SD27)', () => {
       }),
     });
     expect(widthOf('Cancel SO no.')).toBeGreaterThanOrEqual(140);
-    expect(widthOf('Date')).toBeGreaterThanOrEqual(110);
+    expect(widthOf('Date')).toBeGreaterThanOrEqual(130);
+    expect(widthOf('Matched by')).toBeGreaterThanOrEqual(190);
   });
 });
