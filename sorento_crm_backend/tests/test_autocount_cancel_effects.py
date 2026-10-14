@@ -7,7 +7,8 @@ Plan: documentation/plans/autocount/PLAN-autocount-cancel-crm-13oct.md (R4-R6, o
 - A full cancel retires the line's OI rows through the #1530 path; a partial one raises the
   AutoCount planning change for CS (#1599 flow), never a silent trim.
 - Readers: planned qty and the delivered figure leave the cancelled part out; outstanding
-  (ordered - TransferedQty) does not change.
+  (ordered - TransferedQty) does not change. The chatbot reader's net-of-cancel check lives in
+  `tests/chatbot/test_so_status_net_of_cancel.py` (the chatbot import boundary, AC-002).
 
 Reuses `tests/test_ingest_documents.py`'s `env` (canonical SO push, company A, a product).
 """
@@ -198,14 +199,6 @@ def test_demand_plan_qty_sql_leaves_the_cancel_out(env):
         select(plan_qty()).where(SalesOrderLine.id == line.id)
     ).scalar()
     assert Decimal(value) == Decimal("6")
-
-
-def test_chatbot_reads_ordered_and_delivered_net_of_the_cancel():
-    from app.services.chatbot.so_status import _net_of_cancel
-
-    assert _net_of_cancel(Decimal("10"), Decimal("10"), Decimal("6")) == (Decimal("4"),
-                                                                          Decimal("4"))
-    assert _net_of_cancel(Decimal("10"), Decimal("3"), None) == (Decimal("10"), Decimal("3"))
 
 
 def test_so_detail_shows_delivered_without_the_cancel(env):
