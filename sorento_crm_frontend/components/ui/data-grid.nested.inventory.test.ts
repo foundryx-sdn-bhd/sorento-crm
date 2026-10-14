@@ -207,11 +207,19 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'The DataGridTable of the same grid, not a second one',
   ],
   [
-    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx:257',
+    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx:261',
     "G6 (PLAN-oi-request-cs-reserve.md section 6d): one row per selected line, in a dialog opened as a sibling of the OI Lines tab (Request CS to reserve). Already scrollerMaxHeight={false}. Round 4 review (24 Sep, AC-RS-89): line moved - the inert outer overflow-x-auto wrapper is gone and columnsDraggable: false was added.",
   ],
   [
-    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx:269',
+    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx:273',
+    'The DataGridTable of the same grid, not a second one',
+  ],
+  [
+    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveConfirmDialog.tsx:157',
+    'OI-STAGED-NOTIFY: the staged lines of the Reserve confirmation, one row per line, in a dialog. Already scrollerMaxHeight={false}.',
+  ],
+  [
+    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveConfirmDialog.tsx:168',
     'The DataGridTable of the same grid, not a second one',
   ],
 ]);

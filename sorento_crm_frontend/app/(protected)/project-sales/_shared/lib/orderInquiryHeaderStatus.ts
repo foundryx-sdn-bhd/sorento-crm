@@ -18,3 +18,41 @@ export function orderInquiryHeaderStatusVariant(
 ): 'warning' | 'secondary' {
   return status === 'outstanding' ? 'warning' : 'secondary';
 }
+
+/** AC-SN-30: the reserve status of an OI's request rows, earliest first. */
+export type OrderInquiryReserveStatus = 'parked' | 'needs_reserve' | 'notice_parked' | 'reserved';
+
+export const ORDER_INQUIRY_RESERVE_STATUSES: OrderInquiryReserveStatus[] = [
+  'parked',
+  'needs_reserve',
+  'notice_parked',
+  'reserved',
+];
+
+export function orderInquiryReserveStatusLabel(status: OrderInquiryReserveStatus): string {
+  switch (status) {
+    case 'parked':
+      return 'Parked request to reserve';
+    case 'needs_reserve':
+      return 'Needs reserve';
+    case 'notice_parked':
+      return 'Parked reserve';
+    default:
+      return 'Reserved';
+  }
+}
+
+export function orderInquiryReserveStatusVariant(
+  status: OrderInquiryReserveStatus,
+): 'warning' | 'info' | 'success' | 'secondary' {
+  switch (status) {
+    case 'parked':
+      return 'secondary';
+    case 'needs_reserve':
+      return 'warning';
+    case 'notice_parked':
+      return 'info';
+    default:
+      return 'success';
+  }
+}
