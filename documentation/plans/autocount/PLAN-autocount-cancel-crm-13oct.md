@@ -1,6 +1,6 @@
 # PLAN: AutoCount Cancel SO / Cancel PO in the CRM (AC-CANCEL-CRM)
 
-Status: In review (exact-attribution rework built and reviewed; owner answered (b): undetermined cancels show nothing on screen). Track: full (migration, RBAC slugs).
+Status: Merge-ready (owner hand test PASS 14 Oct on the crew copy after the re-decide; reviewer and security reviewer READY). Track: full (migration, RBAC slugs).
 Lane: AC-CANCEL-CRM. Sibling: AC-CANCEL-PULL (the shared service that reads the cancel docs; payload agreed via crew).
 
 ## Goal
