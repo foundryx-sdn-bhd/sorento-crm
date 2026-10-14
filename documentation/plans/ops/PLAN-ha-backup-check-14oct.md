@@ -59,7 +59,7 @@ older than `RETENTION_DAYS`.
   envs. The owner creates the lock file once (644); the script never creates it and refuses a
   symlinked or group/other-writable lock folder (a planted symlink or FIFO would make root open any
   path). The release user may own the folder: it runs docker compose, so it is root-equivalent
-  already. Opened read-only so a non-root deploy user can lock it too.
+  already; the script enforces that argument (owner must be root or in the `docker` group). Opened read-only so a non-root deploy user can lock it too.
 - Healthchecks pings never fail the backup: `curl -fsS -m 10 --retry 3 ... || true`.
 
 ## Not in scope

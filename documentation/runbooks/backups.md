@@ -89,7 +89,9 @@ last -n 50 | awk '{print $1}' | sort | uniq -c   # who logs in; the release job 
   Then set `DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/.deploy.lock` in BOTH the restore-test env
   (`/etc/sorento-backup/backup.env`, step 2) and the deploy env (the env HA-MEM-DEPLOY-GUARD's
   runbook names). Use `<LOCK_DIR>` = `/var/lib/sorento-deploy` below. The release user owning the
-  folder is fine: it runs `docker compose`, which is root-equivalent on the box already.
+  folder is fine: it runs `docker compose`, which is root-equivalent on the box already. The restore
+  test checks that: a lock folder owned by anyone but root or a `docker` group member is refused
+  (exit 2). `id -nG <release user>` must list `docker` (or the release user is root).
 
 - Check: `stat -c '%U %G %a' <LOCK_DIR>` ends in `755`, `750` or `700` (no group or other write bit), and `ls -l <LOCK_DIR>/.deploy.lock` shows `-rw-r--r--`.
 - Rollback (b only): `sudo rm -rf /var/lib/sorento-deploy` and remove `DEPLOY_LOCK_PATH` from both envs.

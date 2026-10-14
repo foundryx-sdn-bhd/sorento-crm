@@ -145,6 +145,11 @@ if [ -d "$DEPLOY_LOCK_DIR" ]; then
   if [ -L "$DEPLOY_LOCK_DIR" ] || [ -n "$(find "$DEPLOY_LOCK_DIR" -maxdepth 0 -perm /022)" ]; then
     die 2 "$DEPLOY_LOCK_DIR is a symlink or writable by group or others. Follow runbook step 0 option (b): run once 'install -d -o <release user> -g root -m 755 /var/lib/sorento-deploy' and 'install -m 644 -o <release user> -g root /dev/null /var/lib/sorento-deploy/.deploy.lock', then set DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/.deploy.lock in BOTH the restore-test env and the deploy env"
   fi
+  # The "release user is root-equivalent" argument holds only for root or a docker-group member.
+  lock_owner="$(stat -c %U "$DEPLOY_LOCK_DIR")"
+  if [ "$lock_owner" != root ] && ! id -nG "$lock_owner" 2>/dev/null | grep -qw docker; then
+    die 2 "$DEPLOY_LOCK_DIR is owned by $lock_owner, which is neither root nor in the docker group. Only root or the release user (who runs docker compose) may own the deploy lock folder; see runbook step 0b"
+  fi
   if [ -L "$DEPLOY_LOCK_PATH" ] || [ ! -f "$DEPLOY_LOCK_PATH" ]; then
     die 2 "$DEPLOY_LOCK_PATH is missing or not a regular file; create it: install -m 644 /dev/null $DEPLOY_LOCK_PATH"
   fi
