@@ -1,6 +1,6 @@
 # Deploy memory guard, migration timeouts, rollback (HA-MEM-DEPLOY-GUARD)
 
-Status: in progress (2026-10-14). Track: small fix (no migration, no auth/RBAC change).
+Status: in review (2026-10-14). Track: small fix (no migration, no auth/RBAC change).
 Lane: `claude/deploy-memory-guard-05ussl` (crew-lane HA-MEM-DEPLOY-GUARD)
 UAC: `deploy-memory-guard-14oct-acceptance-criteria.md`
 
@@ -24,10 +24,18 @@ UAC: `deploy-memory-guard-14oct-acceptance-criteria.md`
    colour starts, kept 48 h under `backups/pre-migrate/`; failure stops the deploy.
 4. `.github/workflows/rollback.yml`: `workflow_dispatch` input `sha`, `environment: production`,
    re-promotes `<svc>-<sha>` to the release tag and runs the same script with `IMAGE_TAG=<sha>`.
-5. `/health` body gains Redis and scheduler state (status code unchanged); new `/health/deep`
-   that returns 503 when DB or Redis is down, for monitors only.
+5. `/health` body gains Redis and scheduler state (status code unchanged, probes bounded at
+   2s); new `/health/deep` that returns 503 when the DB, Redis or the scheduler
+   (`get_overdue_tasks`, the dashboard's rule) is not OK, for monitors only.
+7. (crew, HA-BACKUP-CHECK coordination) exclusive flock on `/opt/sorento-crm2/.deploy.lock`
+   for the whole deploy; the weekly restore test waits on the same file.
 6. Runbook `documentation/runbooks/memory-and-deploy-guards.md`.
 
 ## Progress
 
 - 2026-10-14: plan written, lane opened.
+- 2026-10-14: measured in a sandbox Postgres 16: killing one backend with SIGKILL makes the
+  postmaster log `all server processes terminated; reinitializing` and crash-recover, while
+  `pg_postmaster_start_time()` does not move and no container would restart. So the Postgres
+  check reads the db log since the deploy start as well as RestartCount/StartedAt.
+- 2026-10-14: slices 1-7 landed with red-first tests and kill proofs; runbook written.
