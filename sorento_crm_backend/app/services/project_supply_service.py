@@ -105,6 +105,7 @@ from app.models.project_so import (
     ACK_AWAITING,
     ALLOC_SOURCE_BRW,
     ALLOC_SOURCE_GROUP_TAKE,
+    ALLOC_BORROW_SOURCES,
     ALLOC_SOURCE_ORDER,
     ALLOC_SOURCE_OTHER_LOCATION,
     ALLOC_SOURCE_OTHER_PROJECT,
@@ -275,59 +276,66 @@ def _snapshot_number(value):
     )
 
 
-def _decided_line_exprs():
-    """`(stock, planned)` for an allocation row, off ITS decision's snapshot of the line
-    (`line_snapshots`), when that decision is active and states the line's components:
+def _line_snapshot(row):
+    """`(decision, snap, where)`: `row`'s OWN decision's snapshot of `row`'s line, when that
+    decision is active and the snapshot states the line's `components`."""
+    decision = aliased(SOSupplyDecision)
+    snap = (
+        func.jsonb_array_elements(decision.line_snapshots)
+        .table_valued(column("value", JSONB))
+        .lateral("snap")
+    )
+    where = (
+        decision.id == row.decision_id,
+        decision.state == DECISION_ACTIVE,
+        snap.c.value["project_line_id"].astext == cast(row.so_line_id, String),
+        func.jsonb_typeof(snap.c.value["components"]) == "array",
+    )
+    return decision, snap, where
 
-    - `stock`: the line's Reserve and Borrow components as the planner posted them, before
-      any delivered credit. A Borrow on a document (`supply_key`, ladder v7.1 step 3) holds a
-      placement, not stock, and is left out.
+
+def _stock_components(snap):
+    """The snapshot's components, numbered in payload order (Reserve, then Borrow, then
+    Buy), and the test for the ones on stock: a Borrow on a document (`supply_key`, ladder
+    v7.1 step 3) holds a placement, not stock."""
+    comp = (
+        func.jsonb_array_elements(snap.c.value["components"])
+        .table_valued(column("value", JSONB), with_ordinality="n")
+        .render_derived(name="comp")
+        .lateral()
+    )
+    on_stock = and_(
+        comp.c.value["kind"].astext.in_([RESERVE, BORROW]),
+        func.coalesce(comp.c.value["supply_key"].astext, "") == "",
+    )
+    return comp, on_stock
+
+
+def _decided_line_exprs():
+    """`(stock, planned)` for an allocation row, off its decision's snapshot of the line:
+
+    - `stock`: the line's Reserve and Borrow components on stock, as the planner posted
+      them, before any delivered credit.
     - `planned`: the quantity that decision planned the line for (`open_qty`). Since the
       14 Sep 2026 ruling it is the plan quantity, delivered units included; a revision
       decided before it planned only what was then still owed (SO389799 SRT2403-RG: 3 of
       20, 17 already gone), and the units delivered before it are not its to consume.
 
-    Both NULL otherwise (a hold under no revision, a revision older than `components`).
+    `planned` is NULL when `_line_snapshot` finds nothing (a hold under no revision, a
+    revision older than `components`); `stock` is then 0 and unread.
     """
-
-    def _snapshot():
-        decision = aliased(SOSupplyDecision)
-        snap = (
-            func.jsonb_array_elements(decision.line_snapshots)
-            .table_valued(column("value", JSONB))
-            .lateral("snap")
-        )
-        where = (
-            decision.id == SOLineAllocation.decision_id,
-            decision.state == DECISION_ACTIVE,
-            snap.c.value["project_line_id"].astext
-            == cast(SOLineAllocation.so_line_id, String),
-            func.jsonb_typeof(snap.c.value["components"]) == "array",
-        )
-        return decision, snap, where
-
-    decision, snap, where = _snapshot()
-    comp = (
-        func.jsonb_array_elements(snap.c.value["components"])
-        .table_valued(column("value", JSONB))
-        .lateral("comp")
-    )
+    decision, snap, where = _line_snapshot(SOLineAllocation)
+    comp, on_stock = _stock_components(snap)
     stock = (
         select(func.coalesce(func.sum(_snapshot_number(comp.c.value["qty"].astext)), 0))
         .select_from(decision)
         .join(snap, true())
-        .outerjoin(
-            comp,
-            and_(
-                comp.c.value["kind"].astext.in_([RESERVE, BORROW]),
-                func.coalesce(comp.c.value["supply_key"].astext, "") == "",
-            ),
-        )
+        .outerjoin(comp, on_stock)
         .where(*where)
         .correlate(SOLineAllocation)
         .scalar_subquery()
     )
-    decision, snap, where = _snapshot()
+    decision, snap, where = _line_snapshot(SOLineAllocation)
     planned = (
         select(func.max(_snapshot_number(snap.c.value["open_qty"].astext)))
         .select_from(decision)
@@ -339,10 +347,42 @@ def _decided_line_exprs():
     return stock, planned
 
 
-def _held_before_expr():
-    """What the rows of the same line and decision written before this one (`created_at`,
-    then `id`) hold: the order `held_qty_expr` hands the line's remaining stock out in."""
+#: Where a row with no matching component stands in the consumption order: last.
+_UNPLACED = 1_000_000
+
+
+def _consumed_at_expr(row):
+    """Where `row` stands in the order delivered qty consumes the line's stock: the payload
+    place of its own component (same kind, same bin) in its decision's snapshot - every
+    Reserve before every Borrow, in the order the planner posted them, the same order
+    `delivered_credits` spends the credit in on the write."""
+    decision, snap, where = _line_snapshot(row)
+    comp, on_stock = _stock_components(snap)
+    kind = case((row.source_type.in_(ALLOC_BORROW_SOURCES), BORROW), else_=RESERVE)
+    return func.coalesce(
+        select(func.min(comp.c.n))
+        .select_from(decision)
+        .join(snap, true())
+        .join(comp, true())
+        .where(
+            *where,
+            on_stock,
+            comp.c.value["kind"].astext == kind,
+            comp.c.value["source_warehouse_id"].astext == cast(row.warehouse_id, String),
+        )
+        .correlate(row)
+        .scalar_subquery(),
+        _UNPLACED,
+    )
+
+
+def _held_after_expr():
+    """What the rows of the same line and decision that delivered qty reaches AFTER this
+    one hold: delivery drains the line's rows front to back, so the rows at the back keep
+    what is left first. Ties (two rows of one component) break on `created_at`, then `id`."""
     other = aliased(SOLineAllocation)
+    mine = _consumed_at_expr(SOLineAllocation)
+    theirs = _consumed_at_expr(other)
     return (
         select(func.coalesce(func.sum(other.qty), 0))
         .where(
@@ -351,8 +391,14 @@ def _held_before_expr():
             other.confirmed_at.isnot(None),
             other.warehouse_id.isnot(None),
             other.source_type != ALLOC_SOURCE_ORDER,
-            tuple_(other.created_at, other.id)
-            < tuple_(SOLineAllocation.created_at, SOLineAllocation.id),
+            or_(
+                theirs > mine,
+                and_(
+                    theirs == mine,
+                    tuple_(other.created_at, other.id)
+                    > tuple_(SOLineAllocation.created_at, SOLineAllocation.id),
+                ),
+            ),
         )
         .correlate(SOLineAllocation)
         .scalar_subquery()
@@ -371,8 +417,9 @@ def held_qty_expr():
 
     Owner rule, 14 Oct 2026: delivered qty consumes the Reserve/Borrow (the bin the goods
     left from) FIRST, then the Buy. So the line's stock holds together hold its decided
-    Reserve + Borrow less what was delivered, never more than is still owed, handed out
-    across its rows in write order. SO424555 CB6633-NL (Own 336 + Buy 126, 336 delivered)
+    Reserve + Borrow less what was delivered, never more than is still owed, and the
+    delivery drains its rows in payload order (Reserve, then Borrow), so what is left stays
+    on the last ones: the bins `delivered_credits` leaves whole on the write. SO424555 CB6633-NL (Own 336 + Buy 126, 336 delivered)
     held 126 under `least(alloc.qty, still owed)` at a bin the goods had left; it holds 0,
     off the decision it was written under, with no data change. Read off the DECISION,
     never off the row: a row written after a delivery is already net of it.
@@ -385,14 +432,20 @@ def held_qty_expr():
     owed = owed_qty_expr()
     decided, planned = _decided_line_exprs()
     # Delivered (less AutoCount-cancelled), less what was delivered before a revision that
-    # planned only the then-owed quantity: plan quantity now minus what the decision planned.
+    # planned only the then-owed quantity. That revision's `open_qty` was `qty_ordered`
+    # less delivered, today's is the plan quantity; where the two differ (CS states a
+    # `qty_required`), the larger gap is taken, so a delivery is never consumed twice.
     delivered = func.greatest(
         func.greatest(
             func.coalesce(SalesOrderLine.qty_delivered, 0)
             - func.coalesce(SalesOrderLine.qty_cancelled, 0),
             0,
         )
-        - func.greatest(plan_qty() - planned, 0),
+        - func.greatest(
+            plan_qty() - planned,
+            func.coalesce(SalesOrderLine.qty_ordered, 0) - planned,
+            0,
+        ),
         0,
     )
     return case(
@@ -406,7 +459,7 @@ def held_qty_expr():
             SOLineAllocation.qty,
             func.greatest(
                 func.least(owed, func.greatest(decided - delivered, 0))
-                - _held_before_expr(),
+                - _held_after_expr(),
                 0,
             ),
         ),
@@ -686,7 +739,8 @@ def delivered_credits(
     Owner rule, 14 Oct 2026 (superseding the Buy-first attribution of 14 Sep): delivered
     units consume the Reserve/Borrow FIRST - the goods left from that bin - and only what is
     left over reaches the Buy and the timely SPO. SO424555 CB6633-NL, Own 336 + Buy 126 with
-    336 delivered: the Own is used up and the Buy covers the 126 still owed.
+    336 delivered: the Own is used up and the Buy covers the 126 still owed. A Borrow on a
+    document (`supply_key`) is no bin the goods left from and takes no credit.
     `held_qty_expr` reads existing holds by the same rule."""
     left = _ZERO
     if core is not None:
@@ -695,6 +749,9 @@ def delivered_credits(
     borrow: List[Decimal] = []
     for items, out in ((entry.reserve or [], reserve), (entry.borrow or [], borrow)):
         for item in items:
+            if getattr(item, "supply_key", None):
+                out.append(_ZERO)
+                continue
             covered = min(left, max(_dec(item.qty), _ZERO))
             left -= covered
             out.append(covered)
