@@ -501,7 +501,7 @@ def _one_ask(
         ):
             held.refs = set_refs(held.refs, "product", before.refs["product"], "set")  # the held product stays
         held = _carry(st, i, ask, before, held, resolver, language, qs)
-        if not qs and _no_subject(held, ask):
+        if not qs and not qs.misses and _no_subject(held, ask):  # a code that missed named one: v1 says so
             qs.append(_which_product(st, i, language))
         return _commit(st, i, held, ask, qs), False
 
@@ -544,7 +544,7 @@ def _one_ask(
     if drilled and ask.report is None and not qs:
         _plan_report(st, held, resolver, language, i, qs, today)
     held = _carry(st, i, ask, st.held, held, resolver, language, qs)
-    if not qs and _no_subject(held, ask):
+    if not qs and not qs.misses and _no_subject(held, ask):
         qs.append(_which_product(st, i, language))
     action = _commit(st, i, held, ask, qs)
     if isinstance(action, Lookup):
@@ -756,9 +756,13 @@ def _answer(
         rest = _without_picked(origin, answered, pending.kind, pending.raised_by)
         held = _complete_deferred(held, _deferred_of(rest))
         joined = answered.get("kind")
+        joins = frozenset({joined} if joined else ())
+        if pending.kind == CARRY_SCOPE:
+            # RG-1c: a carry pick lands no item; what its ask still waits on joins the items it landed.
+            joins = frozenset(k for k, refs in held.refs.items() if refs)
         held = _apply_fields(
             st, held, rest.model_copy(update={"attachment_type": None}), resolver, policy,
-            language, i, qs, refine=True, today=today, joins=frozenset({joined} if joined else ()),
+            language, i, qs, refine=True, today=today, joins=joins,
         )
     else:
         held = _complete_deferred(held, pending.deferred)  # no usable origin: state saved before R2, or a report pick
@@ -870,7 +874,7 @@ def _apply_fields(
         held.report = reports.edit_report(held.report if refine else None, ask.report, cleared=ask.cleared)
         if held.report is not None:
             _plan_report(st, held, resolver, language, i, qs, today)
-    held = _expand_family(_expand_sets(held, resolver), resolver, qs)
+    held = _expand_family(_expand_sets(held, resolver, qs), resolver, qs)
     return held
 
 
@@ -1528,18 +1532,23 @@ def _expand_family(held: Held, resolver: ResolverLike, qs: Any) -> Held:
 SET_DOMAINS = frozenset({"inventory"})
 
 
-def _expand_sets(held: Held, resolver: ResolverLike) -> Held:
+def _expand_sets(held: Held, resolver: ResolverLike, qs: Any) -> Held:
     """RG-5 (#1443): in the set domains a held set code becomes its member products, each counted as the asked
-    quantity times its quantity in the set (none asked: none). A set with no members stays as it is."""
+    quantity times its quantity in the set (none asked: none). A set with no visible members (deactivated since
+    it was resolved) is no set match (RG-5b): its code is a miss, sent unresolved as a fresh ask of it is."""
     members_of = getattr(resolver, "set_members", None)
     refs = held.refs.get("product") or []
     if held.domain not in SET_DOMAINS or members_of is None or not any(r.set_id for r in refs):
         return held
     out: list[ResolvedRef] = []
     for ref in refs:
-        members = members_of(ref.set_id) if ref.set_id else []
-        if not members:
+        if not ref.set_id:
             out.append(ref)
+            continue
+        members = members_of(ref.set_id)
+        if not members:
+            if isinstance(qs, _Qs):
+                qs.misses.append(Miss(kind="product", phrase=ref.phrase or ref.key))
             continue
         for member, per_set in members:
             qty = ref.quantity.model_copy(update={"number": ref.quantity.number * per_set}) if ref.quantity else None
