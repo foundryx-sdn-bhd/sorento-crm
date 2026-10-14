@@ -16,8 +16,8 @@ Plan: `PLAN-ha-monitor-14oct.md`. Tests: `sorento_crm_backend/tests/test_healthc
   (`test_send_never_raises_and_never_logs_the_url`, `test_ping_hits_the_url_with_a_short_timeout`,
   `test_ping_is_fire_and_forget`, `test_ping_survives_a_thread_that_cannot_start`,
   `test_tick_never_raises_when_the_ping_itself_breaks`)
-- **HB-5** The ping URL never reaches a log line, including the HTTP library's own logging.
-  (`test_a_real_ping_never_logs_the_url`)
+- **HB-5** The ping URL never reaches a log line, including the HTTP library's own logging, and a URL that is not http(s) is not sent.
+  (`test_a_real_ping_never_logs_the_url`, `test_a_url_that_is_not_http_is_refused_without_logging_it`)
 
 ## n8n heartbeat (N8N)
 

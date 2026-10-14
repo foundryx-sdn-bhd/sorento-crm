@@ -26,7 +26,7 @@ def _send(url: str) -> bool:
         with urllib.request.urlopen(url, timeout=PING_TIMEOUT_SECONDS) as response:
             status = response.status
     except Exception as exc:
-        # Only the type: an HTTPError's text carries the URL.
+        # Only the type: some errors carry the URL in their text.
         logger.warning("Healthchecks ping failed: %s", type(exc).__name__)
         return False
     if not 200 <= status < 300:
@@ -44,6 +44,10 @@ def ping(url: str | None, *, fail: bool = False) -> threading.Thread | None:
     """
     url = (url or "").strip()
     if not url:
+        return None
+    if not url.lower().startswith(("https://", "http://")):
+        # urlopen would also take file: or ftp:; a typo must not become a local read.
+        logger.warning("Healthchecks ping URL is not an http(s) URL; not sent")
         return None
     if fail:
         url = url.rstrip("/") + "/fail"
