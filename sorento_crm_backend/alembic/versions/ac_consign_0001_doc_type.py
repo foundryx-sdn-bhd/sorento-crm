@@ -13,14 +13,14 @@ Additive only: NOT NULL columns with server defaults, so no existing row changes
 Downgrade drops both.
 
 Revision ID: ac_consign_0001_doc_type
-Revises: qlg_0001_drawing_attachment
+Revises: sodv_0001_ol_from_doc_idx
 Create Date: 2026-10-14
 """
 import sqlalchemy as sa
 from alembic import op
 
 revision = "ac_consign_0001_doc_type"
-down_revision = "qlg_0001_drawing_attachment"
+down_revision = "sodv_0001_ol_from_doc_idx"
 branch_labels = None
 depends_on = None
 
