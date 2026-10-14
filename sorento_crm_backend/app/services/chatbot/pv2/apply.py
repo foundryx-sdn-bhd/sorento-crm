@@ -1221,9 +1221,11 @@ def _apply_entities(
         held.refs = set_refs(held.refs, kind, refs, op)
     for q, ent in asked:
         if ent.op != "remove" and ent.kind in set_kinds:
-            # A pick joins the same-kind items that landed beside it instead of replacing them (RG-7b).
+            # A pick joins the same-kind items that landed beside it instead of replacing them (RG-7b); the
+            # marker says so (an explicit add's op is no landed item).
             q.pending.options = [
-                o.model_copy(update={"payload": {**o.payload, "op": "add"}}) if o.payload.get("kind") == ent.kind else o
+                o.model_copy(update={"payload": {**o.payload, "op": "add", "landed_beside": True}})
+                if o.payload.get("kind") == ent.kind else o
                 for o in q.pending.options
             ]
     return held
@@ -1705,13 +1707,14 @@ def _without_picked(
 
 
 def _declined_item(pending: PendingQuestion) -> dict | None:
-    """A did-you-mean declined after part of its ask landed (its picks join those items, op add): the item it
-    asked about, so the rest of the ask is answered without it (RG-7g). None otherwise: v1's declined lane."""
+    """A did-you-mean declined after part of its ask landed (its picks join those items, `landed_beside`): the
+    item it asked about, so the rest of the ask is answered without it (RG-7g). None otherwise: v1's declined
+    lane."""
     if pending.kind != "clarify_did_you_mean" or pending.origin is None:
         return None
     return next(
         ({"kind": o.payload["kind"], "phrase": o.payload["phrase"]} for o in pending.options
-         if o.payload.get("op") == "add" and o.payload.get("phrase")),
+         if o.payload.get("landed_beside") and o.payload.get("phrase")),
         None,
     )
 

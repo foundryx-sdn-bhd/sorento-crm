@@ -194,7 +194,7 @@ _STILL_NEED: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("I still need the figure to rank by for {subject}.", "I still need the figure to rank by."),
         "zh": ("关于 {subject}，我仍需要知道按哪个数据排名。", "我仍需要知道按哪个数据排名。"),
         "ms": ("Saya masih perlu tahu angka mana untuk menyusun kedudukan bagi {subject}.",
-               "Saya masih perlukan angka untuk menyusun kedudukan."),
+               "Saya masih perlu tahu angka mana untuk menyusun kedudukan."),
     },
     "breakdown": {
         "en": ("I still need which row to break down for {subject}.", "I still need which row to break down."),
