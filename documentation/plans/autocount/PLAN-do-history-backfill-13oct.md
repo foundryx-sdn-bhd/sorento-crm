@@ -1,8 +1,10 @@
 # PLAN: DO history backfill from 2023-09-01, exact SO-line links, assumed delivery (DO-HISTORY)
 
-Status: **plan v4. Slice 1, C1, C2 and C3 are built. Line-key work is on HOLD (crew 13 Oct
-21:20): FXView cannot read DO/DODTL, the API sends no key, and the owner is deciding how to get
-line keys. Review round 1 (reviewer + security-reviewer) folded in.** Track: full
+Status: **plan v5. Slice 1, C1, C2 and C3 are built on PR #1633 (merge-ready at `4a193e088`).
+Owner rulings 14 Oct (section 0b): no line-key source, ever; several SO lines of the product link
+to the SO + product group (follow-up PR on branch `claude/do-history-group-links`, scope pending
+crew's answer on location narrowing); Q3 (a), no CRM SO write, the owner closes the pre-July open
+lines in AutoCount from `SQL-pre-july-open-so-lines-14oct.sql`.** Track: full
 (migration column, ingest behaviour change, external ingest surface flag). PR #1633, branch
 `claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
 Owner card: `DO-HISTORY-card.md`.
@@ -44,7 +46,35 @@ Crew answers that still stand:
   date stays empty.)
 - Q4 (a): a #1623 cancel relink on a pre-cutover SO raises no planning change and no OI flag.
 
-Q3 (the SO side) is with the owner.
+Q3 (the SO side): answered 14 Oct, section 0b.
+
+## 0b. Owner rulings, 14 Oct
+
+1. **No line-key source, ever.** The API sends `FromDocDtlKey` 0 on DO lines and the AutoCount
+   admin will not grant DO / DODTL SQL access; nothing is planned around either. DO and Cancel SO
+   link to the SO by document (`FromDocNo`) + product. One SO line of that product: the DO line
+   links to it (as today). Several: the DO line links to the SO + product **group**, never a
+   guessed line.
+   - The group is already stored: every DO line keeps `from_doc_no` and `product_id`
+     (`be/app/services/autocount_doc_ingest_service.py:1157-1161`), and #1623 already reads a
+     group's DO qty by name for an unlinked line (`autocount_cancel_ingest_service.py:364-391`).
+   - SO line quantities never come from DO links. The DO ingest writes no SO line column.
+     `qty_delivered` is the SO push's line field (`document_ingest_service.py:244`), AutoCount's
+     SODTL TransferedQty (`be/app/models/order.py:728-731`), so open qty (ordered less transferred)
+     stays exact. `qty_cancelled` is derived from Cancel SO lines; an `undetermined` group is kept
+     at SO + item level on no line (`autocount_cancel_matching.py:15-17`).
+   - No screen lists DOs under an SO line or product today, exact or group: the SO detail's
+     Delivery tab is SO-line totals only (`SalesOrderDetail.tsx:2057-2087`), and no API schema
+     exposes `order_lines.sales_order_line_id`.
+   - Open with crew (14 Oct): whether C1's location narrowing (section 3 step 3) and #1623's
+     location-keyed Cancel SO groups are "guessed lines" under this rule. Dev evidence: of 9,828
+     DO lines whose SO has one line of the product, 570 sit at a different warehouse than that line.
+2. **Q3 (a).** No CRM write to the pre-July open SO lines. The owner closes them in AutoCount from
+   the read-only list `SQL-pre-july-open-so-lines-14oct.sql` (the owner runs it on prod; dev:
+   10,565 lines, 1,075,160 open qty). No existing screen gives that list: `/scm/sales-orders` is
+   one row per SO and exports only the ticked rows of a page.
+3. **Pre-cutover relink gate** (Q4 (a), #1623's `_run_cancel_relink_hook`,
+   `be/app/api/v1/external/ingest.py:384`): its own follow-up lane, before the SS backfill runs.
 
 ## 1. Facts
 
@@ -117,7 +147,8 @@ Q3 (the SO side) is with the owner.
   then nothing, with a one-month switch.)
 - API DO lines: `FromDocDtlKey` is 0 always.
 - Mocha's SQL connection needs pymssql `tds_version='7.0'`.
-- Owner rule stands: exact links only. How to get line keys for ambiguous lines is an owner
+- Owner rule stands: exact links only. Line keys for ambiguous lines: none, ever (owner 14 Oct,
+  section 0b); the previous wording follows for the record. How to get line keys for ambiguous lines was an owner
   decision, pending. Nothing in this lane depends on it.
 
 ### 1.4 What the SS does (crew read of SS main 812dac2b)
@@ -262,8 +293,10 @@ Without the flag nothing changes.
 
 ## 8. Asks
 
-None open in this lane. Pending outside it: the owner's decision on a line-key source for
-ambiguous DO lines (1.3b), and Q3 (pre-July open SO lines).
+Both earlier asks are answered (owner, 14 Oct, section 0b): no line-key source, and Q3 (a).
+Open with crew (14 Oct): whether location narrowing (C1 step 3, and #1623's Cancel SO groups)
+counts as a guessed line; whether the SO screen gains a DO history section (its own lane, mock
+first); whether sales achievement counts group-linked DO qty by DO date.
 
 ## 9. Build slices
 
