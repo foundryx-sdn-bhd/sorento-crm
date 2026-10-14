@@ -1158,6 +1158,17 @@ class StockDebtService:
             # an unplaced SPO reaches a line at all.
             holds = holds + self._book_so_holds(supply_rows, demand_rows, holds, tba_from)
 
+        # STOCK-DEBT-STALE-PIN: what each bin outside the span named by an on-hand hold
+        # really holds, one read for the whole set (`assign()`'s `stand_in_floors`).
+        span = set(warehouse_ids)
+        outside_bins = {
+            hold.supply_key.partition(":")[2]
+            for hold in holds
+            if hold.kind == KIND_ON_HAND
+            and hold.supply_key.partition(":")[2] not in span
+        }
+        floors = self._stand_in_floors(product_ids, outside_bins, span=span)
+
         out: Dict[str, Assignment] = {}
         for product_id in product_ids:
             # The product's own lead, or the ladder's default - the SAME source the reserve
@@ -1173,6 +1184,7 @@ class StockDebtService:
             events = supply_rows.get(product_id, [])
             lines = demand_rows.get(product_id, [])
             line_keys = {line.key for line in lines}
+            pinned = [hold for hold in holds if hold.line_key in line_keys]
             out[product_id] = assign(
                 product_id,
                 as_of=as_of,
@@ -1180,13 +1192,22 @@ class StockDebtService:
                 lead_days=self._lead_cache[product_id],
                 supply=events,
                 demand=lines,
-                pinned=[hold for hold in holds if hold.line_key in line_keys],
+                pinned=pinned,
                 # R-O (3 Sep 2026): the grace a late document is counted under, off the
                 # SAME active policy row `tba_from` above is read from - the board, this
                 # view and the ladder all walk one assignment, so they cannot come to two
                 # views of how late is too late.
                 overdue_grace_days=grace,
                 overdue_dead_days=dead,
+                # A bin with no stock row holds nothing (0).
+                stand_in_floors={
+                    hold.supply_key: floors.get(
+                        (product_id, hold.supply_key.partition(":")[2]), 0.0
+                    )
+                    for hold in pinned
+                    if hold.kind == KIND_ON_HAND
+                    and hold.supply_key.partition(":")[2] in outside_bins
+                },
             )
             if keep_events:
                 self._event_cache[product_id] = events
@@ -1514,14 +1535,14 @@ class StockDebtService:
         "Covered by: On hand BRW-IB", Short 0, with the bin at 0 - the pin was confirmed
         after the stock had gone, which choosing the own location allows). Its bin in the
         span with no on-hand event is a bin the read found empty, so the hold is dropped
-        and the line reads short. A bin OUTSIDE the span is still honoured off a stand-in
-        (AC-S2-1b). Either way a hold pins no more than the bin holds (on hand less
-        reserved, `_supply`'s arithmetic; lines outside this read are not netted, in the
-        span or out of it), shared by every on-hand hold on the bin: confirmed decisions
-        first, then received-SPO placements, each nearer line first. Capped HERE rather than
-        left to `assign()`, because the book's S/O (`_book_so_holds`) and the landed goods
-        (`_landed_holds`) read what a line already holds off these quantities: a pin of 126
-        on a bin of 50 read as 126 there left the order's own SPO free beside a short line.
+        and the line reads short; with an event, `assign()` caps it at what the bin still
+        holds. A bin OUTSIDE the span is still honoured off a stand-in (AC-S2-1b), which
+        `assign()` caps at that bin's free stock (`stand_in_floors`, read by
+        `_stand_in_floors`). Either way the bin is shared by the pins on it in the order
+        they were made: confirmed decisions first, then placements, each the earliest
+        first. The cap stays in `assign()`, the one place that knows whether a line still
+        needs the pin: spent here, a second pin of a line its first pin already covered
+        took a bin the next line was pinned on (dev, 14 Oct 2026).
 
         `lendable_lines` (STOCK-DEBT-LENDABLE, the view only): the line keys that can wait
         for a re-buy. A converted received-SPO placement on such a line is `lendable` - it
@@ -1550,12 +1571,12 @@ class StockDebtService:
             )
             .join(Warehouse, Warehouse.id == SOLineAllocation.warehouse_id)
             .filter(ProjectSalesOrderLine.core_sales_order_line_id.in_(keys))
-            # Nearer line first, so a bin too thin for every pin on it covers them in the
-            # walk's own order rather than in the order the rows happen to come back.
+            # The promise made first is kept first on a bin too thin for every pin on it,
+            # whatever order the rows happen to come back in.
             .order_by(
-                SalesOrderLine.required_date.asc().nullslast(),
-                SalesOrder.so_number,
-                ProjectSalesOrderLine.core_sales_order_line_id,
+                SOLineAllocation.confirmed_at,
+                SOLineAllocation.created_at,
+                SOLineAllocation.id,
             )
             .all()
         )
@@ -1597,10 +1618,6 @@ class StockDebtService:
                 ProjectSalesOrderLine.id == OrderInquiryRow.so_line_id,
             )
             .outerjoin(
-                SalesOrderLine,
-                SalesOrderLine.id == ProjectSalesOrderLine.core_sales_order_line_id,
-            )
-            .outerjoin(
                 SPOAllocation, SPOAllocation.id == OrderInquiryLink.spo_allocation_id
             )
             .outerjoin(
@@ -1627,54 +1644,31 @@ class StockDebtService:
                 # hold whose SPO side names a retired line.
                 *spo_supply.visible_line_clauses(),
             )
-            # Nearer line first, as the allocation read above.
-            .order_by(
-                SalesOrderLine.required_date.asc().nullslast(),
-                ProjectSalesOrderLine.core_sales_order_line_id,
-                OrderInquiryLink.id,
-            )
+            # The placement made first is kept first, as the allocation read above.
+            .order_by(OrderInquiryLink.linked_at, OrderInquiryLink.id)
             .all()
         )
 
-        # STOCK-DEBT-STALE-PIN (see the docstring): what each bin an on-hand hold may name
-        # still holds, as the holds before it take their share. A bin outside the span is
-        # read once here; one inside it starts from the on-hand event `_supply` read.
-        floor_left = self._stand_in_floors(
-            product_ids,
-            {str(row.warehouse_id) for row in rows}
-            | {str(row.spo_warehouse_id) for row in links if row.spo_warehouse_id},
-            span=span,
-        )
-
-        def on_hand_take(product_id: str, bin_id: str, qty: float) -> float:
-            """How much of `qty` an on-hand hold at `bin_id` may pin."""
-            if span is None:
-                return qty
-            key = (product_id, bin_id)
-            if key not in floor_left:
-                # No event: the read found the bin empty. No stock row outside the span:
-                # nothing there either.
-                floor_left[key] = next(
-                    (
-                        float(event.qty)
-                        for event in (supply_rows or {}).get(product_id, [])
-                        if event.key == f"on_hand:{bin_id}"
-                    ),
-                    0.0,
-                ) if bin_id in span else 0.0
-            take = min(qty, floor_left[key])
-            floor_left[key] -= take
-            return take
+        def found_empty(product_id: str, bin_id: str) -> bool:
+            """A bin in the span with no on-hand event: the read found nothing there."""
+            if span is None or bin_id not in span:
+                return False
+            return f"on_hand:{bin_id}" not in {
+                event.key
+                for event in (supply_rows or {}).get(product_id, [])
+                if event.kind == KIND_ON_HAND
+            }
 
         for core_line_id, warehouse_id, qty, warehouse_code, product_id in rows:
-            take = on_hand_take(str(product_id), str(warehouse_id), _float(qty))
-            if take <= EPSILON:
+            # STOCK-DEBT-STALE-PIN (see the docstring): a pin on stock the bin no longer
+            # holds (or never held: the own location may be chosen at 0) covers nobody.
+            if _float(qty) <= 0 or found_empty(str(product_id), str(warehouse_id)):
                 continue
             out.append(
                 Hold(
                     line_key=str(core_line_id),
                     supply_key=f"on_hand:{warehouse_id}",
-                    qty=take,
+                    qty=_float(qty),
                     kind=KIND_ON_HAND,
                     warehouse=warehouse_code,
                 )
@@ -1724,10 +1718,9 @@ class StockDebtService:
                 if take <= EPSILON or not row.spo_warehouse_id:
                     continue
                 bin_id = str(row.spo_warehouse_id)
-                # A bin the read found empty: the landed goods are gone, so the promise
-                # covers nobody (AC-3). Outside the span: no more than the bin holds.
-                take = on_hand_take(str(row.spo_product_id), bin_id, take)
-                if take <= EPSILON:
+                if found_empty(str(row.spo_product_id), bin_id):
+                    # The read looked at this bin and it holds nothing of the product:
+                    # the landed goods are gone, so the promise covers nobody (AC-3).
                     continue
                 out.append(
                     Hold(
@@ -1770,7 +1763,7 @@ class StockDebtService:
     ) -> Dict[Tuple[str, str], float]:
         """The free stock (on hand less reserved, `_supply`'s arithmetic) at each bin in
         `bin_ids` that is OUTSIDE `span`, by (product, bin) - one read, and none at all
-        when no hold names such a bin. What `_holds` caps a stand-in pin at."""
+        when no hold names such a bin. What `assign()` caps a stand-in pin at."""
         outside = [bin_id for bin_id in bin_ids if span is not None and bin_id not in span]
         if not outside:
             return {}
