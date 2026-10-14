@@ -1384,7 +1384,7 @@ class TestMissLaneProbesAndFamilyFetch:
         )
 
     def test_family_fetch_takes_a_query_string_never_a_raw_url(self) -> None:
-        """D10/H52 (family-fetch's own httpRequest node hits `https://<prod-host>/...`
+        """D10/H52 (family-fetch's own httpRequest node hits `https://<CRM_ORIGIN>/...`
         directly today - the plan's H52 disposition is `fix S6b (config URL)`, and
         family-fetch is the one S6c read that would otherwise repeat the same mistake).
         The seam signature takes a bare query string; the production binding is the

@@ -95,6 +95,8 @@ export interface FulfilmentPlanningRow {
   sales_order_id?: string | null;
   /** The AutoCount / core sales-order number. The human key of an arm-1 row. */
   so_number?: string | null;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type ('consignment' / 'sales_order'). */
+  so_doc_type?: string | null;
   /** Whether the planning record was authored here or adopted from the core book. */
   origin?: 'authored' | 'adopted' | null;
   provisional_ref?: string | null;
@@ -1187,6 +1189,8 @@ export interface BoardContribution {
    */
   product_id?: string | null;
   so_number: string;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type ('consignment' / 'sales_order'). */
+  so_doc_type?: string | null;
   customer_name?: string | null;
   /**
    * The customer's own id, for GROUPING only - never rendered (no UUIDs in the UI).

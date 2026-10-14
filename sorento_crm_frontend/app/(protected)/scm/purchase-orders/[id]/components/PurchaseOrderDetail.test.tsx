@@ -926,4 +926,21 @@ describe('PurchaseOrderDetail - AutoCount Cancel PO on the lines', () => {
 
     expect(screen.getByText('Partly cancelled')).toBeInTheDocument();
   });
+
+  // AC-CONSIGN-CRM part C: the received figure on screen is net of the cancel, so an edit
+  // session that recomputes outstanding from it must add the cancel back, or the cancelled
+  // qty reads as still to arrive (320 ordered, 100 received + 20 cancelled = 200, not 220).
+  it('keeps a cancelled qty out of outstanding while the order is being edited', () => {
+    const order = cancelledPo();
+    order.lines[0] = {
+      ...order.lines[0], qty_received: 100, line_status: 'open', outstanding_qty: 200,
+    };
+    usePurchaseOrder.mockReturnValue({ data: order, isLoading: false, isError: false });
+    renderDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    openTab('Lines');
+    const row = screen.getByLabelText('Qty ordered on CW-BASIN-450').closest('tr') as HTMLElement;
+    expect(within(row).getByText('200')).toBeInTheDocument();
+    expect(within(row).queryByText('220')).toBeNull();
+  });
 });

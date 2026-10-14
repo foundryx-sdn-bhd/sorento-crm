@@ -475,16 +475,49 @@ describe('BoardDecideControl: Borrow from another order follows the switch (BR1)
     expect(within(select).queryByText('MWH-IB')).not.toBeInTheDocument();
   });
 
-  it('keeps the own location 0-free row out of the bulk Borrow picker (BORROW-OWN-LOC S5)', async () => {
-    const own = { ...nameless, warehouse_code: 'BRW-BB', warehouse_id: 'wh-own', free_qty: '0' };
-    renderControl({ contributions: [row({ borrow_candidates: [nameless, own] })] });
+  it('always lists the own location in the bulk Borrow picker, even at 0 free (owner, 14 Oct)', async () => {
+    // Owner hand test 14 Oct 2026 (overrides BORROW-OWN-LOC S5): the bulk dialog offers what
+    // the line's own "Add a borrow" offers, and the own location is always in it.
+    const own = {
+      ...nameless,
+      warehouse_code: 'BRW-BB',
+      warehouse_id: 'wh-own',
+      free_qty: '0',
+      donor_core_line_id: null,
+      rung: null,
+    };
+    renderControl({
+      contributions: [
+        row({ fulfilment_warehouse_id: 'wh-own', borrow_candidates: [nameless, own] }),
+      ],
+    });
     openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
 
     const dialog = await screen.findByRole('dialog');
     const select = within(dialog).getByLabelText('donor-or-location');
     expect(within(select).getByText('DC1-IR')).toBeInTheDocument();
-    expect(within(select).queryByText('BRW-BB')).not.toBeInTheDocument();
+    expect(within(select).getByText('BRW-BB')).toBeInTheDocument();
+  });
+
+  it('lists the own location when it is the only candidate (the screenshot: No results found)', async () => {
+    const own = {
+      ...nameless,
+      warehouse_code: 'BRW-BB',
+      warehouse_id: 'wh-own',
+      free_qty: '0',
+      donor_core_line_id: null,
+      rung: null,
+    };
+    renderControl({
+      contributions: [row({ fulfilment_warehouse_id: 'wh-own', borrow_candidates: [own] })],
+    });
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
+
+    const dialog = await screen.findByRole('dialog');
+    const select = within(dialog).getByLabelText('donor-or-location');
+    expect(within(select).getByText('BRW-BB')).toBeInTheDocument();
   });
 });
 

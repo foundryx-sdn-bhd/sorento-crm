@@ -367,7 +367,7 @@ class TestCallTool:
         mirroring `_probe()`'s own D10 docstring) is what binds it to
         `settings.ai_assistant_mcp_url` - never a literal host.
 
-        H52's own catalogued hazard is a raw IP (the prod server address) baked into an n8n HTTP
+        H52's own catalogued hazard is a raw IP (the CRM origin) baked into an n8n HTTP
         node. The static check below is the mechanical guarantee that this file never grows
         the same thing back in.
         """
@@ -390,9 +390,7 @@ class TestCallTool:
         assert result == '{"answers": []}'
 
         source = _fetch_source()
-        assert not re.search(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", source), (
-            "H52: no literal raw IP in fetch.py"
-        )
+        assert not re.search(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", source), "H52: no literal raw IP in fetch.py"
         assert "http://" not in source, "H52: no hard-coded scheme+host in fetch.py"
 
 

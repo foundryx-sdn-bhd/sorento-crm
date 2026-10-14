@@ -2,9 +2,11 @@
 # Blue/green orchestration. Run from the server checkout containing docker-compose.yml.
 #
 # Public endpoints stay stable across deploys:
-#   n8n  -> http://<prod-host>:8765/mcp                 (host nginx -> sorento_mcp upstream)
-#   API  -> https://fe-sorento.foundryx.my/api/v1/*     (host nginx -> sorento_backend upstream)
-#   UI   -> https://fe-sorento.foundryx.my/             (host nginx -> sorento_frontend upstream)
+#   n8n  -> http://<CRM_ORIGIN>:8765/mcp                (host nginx -> sorento_mcp upstream)
+#   API  -> https://<CRM_DOMAIN>/api/v1/*     (Cloudflare -> host nginx -> sorento_backend upstream)
+#   UI   -> https://<CRM_DOMAIN>/             (Cloudflare -> host nginx -> sorento_frontend upstream)
+# 8765 is not a Cloudflare port, so it is direct to the origin: allow the n8n host only
+# (documentation/runbooks/prod-edge-lockdown.md, step 2).
 #
 # Container loopback ports alternate per color:
 #   blue:  backend 127.0.0.1:8000 | frontend 127.0.0.1:3000 | mcp 127.0.0.1:8766
