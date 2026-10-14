@@ -1,7 +1,7 @@
 """Live parser probe for the crew's r5/r6 live-check turns (NOT a test; never run in CI).
 
 Calls `pv2.call.parse_v2` on the staging prompt for each row of
-`tests/chatbot/pv2/fixtures/livecheck_probe.jsonl` (its exact MEMORY block and message) and compares
+`tests/chatbot/pv2/probe/livecheck_probe.jsonl` (its exact MEMORY block and message) and compares
 the parse with `expect_parse`. Costs one model call per row per repeat.
 
     PYTHONPATH=. python scripts/pv2_livecheck_probe.py                      # every row, once
@@ -17,7 +17,7 @@ import json
 import sys
 from pathlib import Path
 
-FIXTURE = Path(__file__).resolve().parents[1] / "tests" / "chatbot" / "pv2" / "fixtures" / "livecheck_probe.jsonl"
+FIXTURE = Path(__file__).resolve().parents[1] / "tests" / "chatbot" / "pv2" / "probe" / "livecheck_probe.jsonl"
 
 
 def _as_list(value):
