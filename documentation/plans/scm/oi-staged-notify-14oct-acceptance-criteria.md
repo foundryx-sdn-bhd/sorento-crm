@@ -1,6 +1,6 @@
 # UAC: park reserve requests and reserve notices, send all parked (OI-STAGED-NOTIFY)
 
-Plan: `PLAN-oi-staged-notify-14oct.md`. Card: `oi-staged-notify-behaviour-card.md`. Mock v5.
+Plan: `PLAN-oi-staged-notify-14oct.md`. Card: `oi-staged-notify-behaviour-card.md`. Mock v6.
 Examples use dev OIs (9 raised by Eling, e.g. OI-2609-0001/0002/0004/0590/0592/0612/0614/0730/
 0731; 8 raised by Niki, e.g. OI-2609-0022/0641/0717/0718/0719/0727/0728/0733); tests seed their
 own equivalent chain (CI DB is empty).
@@ -76,10 +76,11 @@ own equivalent chain (CI DB is empty).
   parked. Send it from Order inquiries > Actions."
 - AC-SN-41 OI detail: Reserve (N) opens a confirmation "Reserve N lines on <OI no>" listing the
   staged lines (Product, Requested, Reserve, Balance to buy, Location, Reason) and "Notice to
-  purchasing: To <name>, Cc <names>"; "Reserve and send to <name>" commits with `park_notice:
-  false` (today's toast); "Reserve and park notice" commits with `park_notice: true` and toasts
-  "Reserved. Notice to <name> parked; send it from Order inquiries > Actions."; Cancel or Esc
-  commits nothing and keeps the staged lines.
+  purchasing: To <name>, Cc <names>", with the request lightbox's footer: "Park notice first"
+  tickbox (unticked on open), Cancel, one primary button. Unticked: "Reserve and send to <name>"
+  commits with `park_notice: false` (today's toast). Ticked: the button reads "Reserve and park
+  notice", commits with `park_notice: true` and toasts "Reserved. Notice to <name> parked; send
+  it from Order inquiries > Actions." Cancel or Esc commits nothing and keeps the staged lines.
 - AC-SN-42 Documents list: Filters has "Reserve" (Parked request to reserve / Needs reserve /
   Parked reserve / Reserved, counts from the summary, clearable) synced to `?reserve=`, with a chip
   "Reserve: <status>"; picking a value sets the state toggle to All; opening `?reserve=

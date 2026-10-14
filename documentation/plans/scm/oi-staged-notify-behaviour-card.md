@@ -116,3 +116,8 @@ The email button opens the receiver's status. Built as a reusable pattern (mock 
    or park it (no separate tickbox).
 2. Statuses renamed: "Parked request to reserve", "Parked reserve".
 3. Email button: Needs reserve for everyone (owner did not object to (a)).
+
+## Owner note on mock v5 (14 Oct, via crew)
+
+Unify the design: the CS Reserve confirmation uses the request side's tickbox ("Park notice first",
+unticked by default) and one primary button, not two buttons. Request side keeps "Park this first".

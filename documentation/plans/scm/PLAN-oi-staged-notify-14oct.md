@@ -2,11 +2,11 @@
 
 Status: Plan. Standard track, size L (additive migration + in-place template layout update, two
 sides, status filter, send-all with preview). Lane crew/oi-staged-notify. Card answered by crew
-14 Oct (Q1-Q5 all (a)); owner notes on mocks v1 to v4 applied; mock v5 (CS Reserve confirm
-sends or parks the notice, statuses renamed) awaiting owner.
+14 Oct (Q1-Q5 all (a)); owner notes on mocks v1 to v5 applied; mock v6 (CS Reserve confirmation
+uses the request side's park tickbox) awaiting owner.
 
 UAC: `oi-staged-notify-14oct-acceptance-criteria.md` (alongside). Card:
-`oi-staged-notify-behaviour-card.md`. Mock: `documentation/mockups/OI-STAGED-NOTIFY/index.html` (v5).
+`oi-staged-notify-behaviour-card.md`. Mock: `documentation/mockups/OI-STAGED-NOTIFY/index.html` (v6).
 
 ## Journey
 
@@ -22,8 +22,10 @@ then when user view, they just view what is in the status." Built as a reusable 
    sent now as today ("Send request"). Ticked = request saved, no email ("Park request").
 2. CS side is ONE flow (owner v4): "Reserve (N)" opens a confirmation "Reserve N lines on
    <OI no>" (Product, Requested, Reserve, Balance to buy, Location, Reason; "Notice to
-   purchasing: To <name>, Cc <names>") with "Reserve and send to <To name>" (primary, today's
-   behaviour) or "Reserve and park notice"; Cancel/Esc reserves nothing. No tickbox.
+   purchasing: To <name>, Cc <names>"). Its footer is the request lightbox's footer (owner v5:
+   unify): "Park notice first" tickbox left, unticked on open, Cancel, ONE primary button
+   "Reserve and send to <To name>" (today's behaviour) that reads "Reserve and park notice" when
+   ticked. Cancel/Esc reserves nothing.
 3. Documents list (Q4) gets ONE "Reserve" status filter (no batches, no send dates):
    - `parked` "Parked request to reserve": a request row CS has not answered whose request is
      parked (not sent to CS);
@@ -61,8 +63,9 @@ table: a component and a helper with plain arguments.
 - FE `components/common/ParkedSendDialog.tsx`: props `title`, `preview` (query result
   `{emails, unresolved}`), `onSend`, `isSending`; renders the recipient table, the line tabs with
   `EmailPreviewFrame`, the footer.
-- FE park choice: per screen, no new component (request lightbox: `Checkbox` + `Label`; CS: the
-  Reserve confirmation's two buttons).
+- FE park tickbox: the existing `Checkbox` + `Label`, same footer place on every dialog that
+  commits (request lightbox "Park this first", Reserve confirmation "Park notice first"); the
+  primary button's label follows it. No wrapper component.
 - FE status filter: today's Filters popover + `SearchableSelect`; the status list is per document.
 - BE `app/services/park_send.py`: `group_by_recipient(db, trigger_type, items, actor)` (resolve
   each item's recipients with the first enabled automation of the trigger, the same pick as
@@ -138,8 +141,8 @@ Routes (`app/api/v1/projects/order_inquiries.py`):
 - `ReserveRequestDialog.tsx`: Checkbox "Park this first" in the footer, unticked on open; payload
   `park`; button label follows it; toast "Request #n parked. Send it from Order inquiries > Actions."
 - `OrderInquiryDetail.tsx`: Reserve (N) opens new `ReserveConfirmDialog.tsx` (staged lines,
-  recipient line from a small `GET .../reserve-notices/recipients?inquiry_id=` read, two confirm
-  buttons); `commitStaged(parkNotice)` sends `park_notice`. Toast on park: "Reserved. Notice to
+  recipient line from a small `GET .../reserve-notices/recipients` read, "Park notice first"
+  tickbox + one primary button); `commitStaged(parkNotice)` sends `park_notice`. Toast on park: "Reserved. Notice to
   <name> parked; send it from Order inquiries > Actions."
 - `OrderInquiryHeadersList.tsx`: Reserve filter (SearchableSelect, clearable, counts) synced to
   `?reserve=`, chip, Reserve column (Badge pill + parked-by), toolbar `secondaryActions` rendered
