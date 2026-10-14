@@ -128,6 +128,15 @@ _MONTH_NAMES = (
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 )
 
+def _group_set(group: Optional[Sequence[str]]) -> Set[str]:
+    """The ownership groups asked for: stripped, upper-case, non-empty. A bare str is one
+    group (Location is a multi-select, owner 14 Oct 2026)."""
+    if not group:
+        return set()
+    values = [group] if isinstance(group, str) else group
+    return {str(v).strip().upper() for v in values if v and str(v).strip()}
+
+
 def _export_month_label(key: str) -> str:
     """`2026-09` -> `Sep 26` (AC-13). The export's own copy of the FE's `monthLabel` -
     the two are the same three lines twice, not a shared import, because one lives in
@@ -349,7 +358,7 @@ class StockDebtService:
         self,
         *,
         query: Optional[str] = None,
-        group: Optional[str] = None,
+        group: Optional[Sequence[str]] = None,
         only_debt: bool = True,
         page: int = 1,
         limit: int = 50,
@@ -542,7 +551,7 @@ class StockDebtService:
         self,
         product_id: str,
         month: str,
-        group: Optional[str] = None,
+        group: Optional[Sequence[str]] = None,
         *,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -856,9 +865,9 @@ class StockDebtService:
     # ------------------------------------------------------------------ the reads
 
     def _warehouses(
-        self, group: Optional[str], book: str = "all"
+        self, group: Optional[Sequence[str]], book: str = "all"
     ) -> Dict[str, Warehouse]:
-        """The bins this read spans, narrowed to one ownership group and/or one `book`
+        """The bins this read spans, narrowed to one or more ownership groups and/or one `book`
         (R1/A4, AC-8).
 
         `group=BB` narrows the SPAN of every read below it rather than filtering finished
@@ -880,7 +889,7 @@ class StockDebtService:
         # `group` filter: HQ is no group's own stock, and the filtered balance is the
         # group's own (AC-S2-6).
         reserves = (
-            {} if group else dict(self.supply.project_reserve_warehouses())
+            {} if _group_set(group) else dict(self.supply.project_reserve_warehouses())
         )
         if book == "project":
             return {**project_bins, **reserves}
@@ -889,17 +898,17 @@ class StockDebtService:
             return pool_bins
         return {**project_bins, **pool_bins, **reserves}
 
-    def _project_bins(self, group: Optional[str]) -> Dict[str, Warehouse]:
+    def _project_bins(self, group: Optional[Sequence[str]]) -> Dict[str, Warehouse]:
         """The flagged bins alone, narrowed by `group` - `_warehouses`'s own project half,
         and the whole of `_groups`'s span (a site pool admits no ownership group)."""
         rows = self.db.query(Warehouse).filter(fulfilment_planning_predicate()).all()
-        if group:
-            wanted = group.strip().upper()
+        wanted = _group_set(group)
+        if wanted:
             rows = [
                 row
                 for row in rows
                 if sales_agent_service.group_of_warehouse_code(row.warehouse_code)
-                == wanted
+                in wanted
             ]
         return {str(row.id): row for row in rows}
 
@@ -2585,7 +2594,7 @@ class StockDebtService:
         self,
         *,
         query: Optional[str] = None,
-        group: Optional[str] = None,
+        group: Optional[Sequence[str]] = None,
         only_debt: bool = True,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,

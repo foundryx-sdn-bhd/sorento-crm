@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import date as DateType
 from typing import Annotated, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.export_split import ExportSplit as ExportSplit
 
@@ -338,7 +338,7 @@ class StockDebtExportIn(BaseModel):
     """
 
     query: Optional[str] = None
-    group: Optional[str] = None
+    group: List[str] = []
     only_debt: bool = True
     date_from: Optional[DateType] = None
     date_to: Optional[DateType] = None
@@ -348,3 +348,13 @@ class StockDebtExportIn(BaseModel):
     show_aux: bool = False
     #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
     projected: bool = False
+
+    @field_validator("group", mode="before")
+    @classmethod
+    def _group_as_list(cls, value):
+        """A bare string wraps and None is empty (Location multi-select, owner 14 Oct 2026)."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        return value

@@ -25,6 +25,14 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { SavedViewsMenu } from '@/components/list/SavedViewsMenu';
+import type { SavedView } from '@/services/savedViewsService';
+import {
+  STOCK_DEBT_LISTING_KEY,
+  fromSavedView,
+  toSavedViewConfig,
+  type StockDebtFilters,
+} from '../lib/stockDebtSavedView';
 import { useCellSelection } from '../hooks/useCellSelection';
 import { useStockDebtQuery } from '../hooks/useStockDebtQuery';
 import type { StockDebtBook, StockDebtRow, StockDebtTone } from '../types/stockDebt.types';
@@ -74,6 +82,10 @@ import { StockDebtExportPopover } from './StockDebtExportPopover';
  * has a typeable `DD/MM/YYYY - DD/MM/YYYY` trigger (own file, own tests), so the AC-29 fix
  * is what actually made it usable, not the two-field detour. Chip reads `Delivery:
  * 1 Nov 26 to 30 Nov 26`.
+ *
+ * R16 is superseded (owner, 14 Oct 2026): Location is back as a multi-select (`groups`),
+ * its options the envelope's generic `groups` facet, disabled under Book = Retail. The
+ * filters also save as views through `SavedViewsMenu` (`lib/stockDebtSavedView`).
  */
 
 /** Cell tone as a CLASS, not a component (plan 3.4): three lines, no new file. */
@@ -187,10 +199,13 @@ export function StockDebtClient() {
   const {
     value: search,
     setValue: setSearch,
+    reset: resetSearch,
     debouncedValue: debounced,
     isSettling: debouncedSettling,
   } = useDebouncedSearch();
   const [book, setBook] = React.useState<StockDebtBook>('all');
+  // Location: a MULTI select of ownership group suffixes; empty = every location.
+  const [groups, setGroups] = React.useState<string[]>([]);
   // R15: a MULTI select - a product matches when its last supplier is ANY of these.
   const [supplierIds, setSupplierIds] = React.useState<string[]>([]);
   // R14: the single Cutoff date became a Due date RANGE. '' is "no bound", matching the
@@ -222,6 +237,7 @@ export function StockDebtClient() {
       // Storage denied: the choice lasts for this visit only.
     }
   };
+  const [viewId, setViewId] = React.useState<string | null>(null);
   const [openCell, setOpenCell] = React.useState<OpenCell | null>(null);
   const [pagination, setPagination] = React.useState<PaginationState>({
     pageIndex: 0,
@@ -232,7 +248,7 @@ export function StockDebtClient() {
   // (AC-24).
   React.useEffect(() => {
     setPagination((previous) => ({ ...previous, pageIndex: 0 }));
-  }, [debounced, onlyDebt, book, supplierIds, dateFrom, dateTo, projected]);
+  }, [debounced, onlyDebt, book, supplierIds, groups, dateFrom, dateTo, projected]);
 
   const list = useStockDebtQuery({
     pageIndex: pagination.pageIndex,
@@ -241,6 +257,7 @@ export function StockDebtClient() {
     onlyDebt,
     book,
     supplierIds,
+    groups,
     dateFrom,
     dateTo,
     projected,
@@ -252,6 +269,39 @@ export function StockDebtClient() {
   const tbaMonth = list.data?.tba_month ?? null;
   const suppliers = React.useMemo(() => list.data?.suppliers ?? [], [list.data]);
   const totals = list.data?.totals;
+  const groupOptions = React.useMemo(
+    () => (list.data?.groups ?? []).map((code) => ({ value: code, label: code })),
+    [list.data],
+  );
+
+  // Saved views: the filters as one object, so a view applies them at once. The search box
+  // is reset (no debounce) so the board does not flash the unfiltered list first.
+  const currentFilters: StockDebtFilters = {
+    query: search.trim(), book, supplierIds, groups, dateFrom, dateTo, onlyDebt, projected,
+  };
+  const savedViewConfig = React.useMemo(
+    () => toSavedViewConfig(currentFilters, new Date()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [search, book, supplierIds, groups, dateFrom, dateTo, onlyDebt, projected],
+  );
+  const applyView = (view: SavedView | null) => {
+    const next = fromSavedView(view, new Date());
+    resetSearch(next.query);
+    setBook(next.book);
+    setSupplierIds(next.supplierIds);
+    setGroups(next.groups);
+    setDateFrom(next.dateFrom);
+    setDateTo(next.dateTo);
+    setOnlyDebt(next.onlyDebt);
+    setProjected(next.projected);
+    setViewId(view?.id ?? null);
+  };
+
+  // Under Retail the backend ignores Location, so the chip and the count leave with it.
+  const groupsActive = book !== 'retail' && groups.length > 0;
+  const groupChipLabel = groupsActive
+    ? `${groups.length > 1 ? 'Locations' : 'Location'}: ${groups.join(', ')}`
+    : null;
 
   // R15: two or more picked suppliers render as ONE chip "Suppliers: N" (AC-19c); one
   // picked supplier prints its own name, resolved from the envelope's `suppliers` facet -
@@ -573,15 +623,16 @@ export function StockDebtClient() {
   });
 
   const filtered = Boolean(
-    debounced || book !== 'all' || supplierIds.length > 0 || dateFrom || dateTo,
+    debounced || book !== 'all' || supplierIds.length > 0 || groupsActive || dateFrom || dateTo,
   );
 
   // AC-19b: what the Filters button's badge counts. "Only in debt" is the SCREEN's
-  // default, so it counts only when the reader has turned it OFF (AC-19c). R16: no more
-  // Ownership group to count.
+  // default, so it counts only when the reader has turned it OFF (AC-19c). Location counts
+  // as one, and not under Retail.
   const activeFilterCount =
     (book !== 'all' ? 1 : 0) +
     (supplierIds.length > 0 ? 1 : 0) +
+    (groupsActive ? 1 : 0) +
     (dateFrom || dateTo ? 1 : 0) +
     (onlyDebt ? 0 : 1) +
     (projected ? 1 : 0);
@@ -604,6 +655,7 @@ export function StockDebtClient() {
     supplierChipLabel
       ? { label: supplierChipLabel, onClear: () => setSupplierIds([]) }
       : null,
+    groupChipLabel ? { label: groupChipLabel, onClear: () => setGroups([]) } : null,
     deliveryChipLabel
       ? {
           label: deliveryChipLabel,
@@ -673,6 +725,14 @@ export function StockDebtClient() {
               // Nothing to personalise while the axis is the calendar (see above), and
               // no selection to export: this table is a reading, not a worklist.
               showColumns={false}
+              leftActions={
+                <SavedViewsMenu
+                  listingKey={STOCK_DEBT_LISTING_KEY}
+                  currentViewId={viewId}
+                  currentConfig={savedViewConfig}
+                  onApply={applyView}
+                />
+              }
               exportConfig={false}
               searchSlot={
                 <ListSearchInput
@@ -718,6 +778,17 @@ export function StockDebtClient() {
                           ...suppliers.map((entry) => ({ value: entry.id, label: entry.name })),
                         ]}
                         placeholder="Every supplier"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Location</Label>
+                      <SearchableMultiSelect
+                        value={groups}
+                        onChange={setGroups}
+                        options={groupOptions}
+                        placeholder="Every location"
+                        disabled={book === 'retail'}
                       />
                     </div>
 
@@ -779,7 +850,7 @@ export function StockDebtClient() {
                 <StockDebtExportPopover
                   envelope={list.data}
                   filters={{
-                    query: debounced, onlyDebt, book, supplierIds, dateFrom, dateTo, showAux,
+                    query: debounced, onlyDebt, book, supplierIds, groups, dateFrom, dateTo, showAux,
                     projected,
                   }}
                 />
@@ -863,14 +934,14 @@ export function StockDebtClient() {
           monthLabel={openCell.label}
           balance={openCell.balance}
           // AC-11b: the board's own due date range and book travel straight through to
-          // the drill - R16 already dropped the Ownership group this dialog used to take
-          // instead, so there is nothing else to echo. `dateFrom` passes RAW (its own
+          // the drill, with the Location pick. `dateFrom` passes RAW (its own
           // default is already ''); `dateTo`'s `|| undefined` is a no-op once it is set,
           // it only clears the default.
           dateFrom={dateFrom}
           dateTo={dateTo || undefined}
           book={book}
           projected={projected}
+          groups={groups}
           onClose={() => setOpenCell(null)}
         />
       )}

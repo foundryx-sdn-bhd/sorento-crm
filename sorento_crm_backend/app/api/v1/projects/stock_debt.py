@@ -46,10 +46,11 @@ def list_stock_debt(
     query: Optional[str] = Query(
         None, description="Product code or name."
     ),
-    group: Optional[str] = Query(
-        None,
+    group: List[str] = Query(
+        [],
         description=(
-            "Ownership group suffix (`BB`, `IB`, ...). Narrows the STOCK and the DEMAND "
+            "Ownership group suffix (`BB`, `IB`, ...), repeatable: any of the listed "
+            "groups, spanning the flagged bins of every group named. Narrows the STOCK and the DEMAND "
             "read, so the balances are the group's own rather than the book's filtered. "
             "Ignored under `book=retail` - a site pool is nobody's ownership group."
         ),
@@ -136,10 +137,10 @@ def stock_debt_cell(
             "`YYYY-MM`, or `tba` / `undated` / `unlocated` for the three right-hand columns."
         ),
     ),
-    group: Optional[str] = Query(
-        None,
+    group: List[str] = Query(
+        [],
         description=(
-            "The ownership group the BOARD was narrowed to. Same meaning as on the list: it "
+            "The ownership group(s) the BOARD was narrowed to (repeatable). Same meaning as on the list: it "
             "narrows the span the balance is recomputed from, so the drill foots with the "
             "cell that opened it."
         ),

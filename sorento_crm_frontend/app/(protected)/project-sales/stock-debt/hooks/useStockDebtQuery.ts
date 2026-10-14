@@ -32,6 +32,7 @@ export function useStockDebtQuery(params: StockDebtListParams) {
       params.onlyDebt,
       params.book,
       params.supplierIds,
+      params.groups ?? [],
       params.dateFrom,
       params.dateTo,
       Boolean(params.projected),
@@ -71,9 +72,8 @@ export function useExportStockDebt() {
  *
  * `dateFrom`, `dateTo` and `book` are part of the KEY, not just of the request: the same
  * product and month answer differently under a narrowed board, so a shared cache entry
- * would hand the narrowed board the whole book's drill. R16 retired the Ownership group
- * this hook used to take instead - a straight pass-through to `getStockDebtCell`, no
- * `group` anywhere.
+ * would hand the narrowed board the whole book's drill. `groups` (Location, owner 14 Oct
+ * 2026) is part of the key for the same reason.
  */
 export function useStockDebtCellQuery(
   productId: string | null,
@@ -82,18 +82,25 @@ export function useStockDebtCellQuery(
   dateTo?: string,
   book?: StockDebtBook,
   projected?: boolean,
+  groups?: string[],
 ) {
   return useQuery({
     queryKey: [
       'project-sales', 'stock-debt', 'cell', productId, month, dateFrom ?? '', dateTo ?? '',
-      book ?? 'all', Boolean(projected),
+      book ?? 'all', Boolean(projected), groups ?? [],
     ],
     // The projection rides only when the switch is on, so the month view's request is
     // exactly what it was before the switch existed.
-    queryFn: () =>
-      projected
-        ? getStockDebtCell(productId as string, month as string, dateFrom, dateTo, book, true)
-        : getStockDebtCell(productId as string, month as string, dateFrom, dateTo, book),
+    queryFn: () => {
+      const id = productId as string;
+      const key = month as string;
+      if (groups?.length) {
+        return getStockDebtCell(id, key, dateFrom, dateTo, book, projected, groups);
+      }
+      return projected
+        ? getStockDebtCell(id, key, dateFrom, dateTo, book, true)
+        : getStockDebtCell(id, key, dateFrom, dateTo, book);
+    },
     enabled: Boolean(productId && month),
     staleTime: 60_000,
     retry: 1,

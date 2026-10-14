@@ -44,8 +44,9 @@
  *                               PLUS the site pools, in one span; `project` is
  *                               today's view; `retail` is pools only (R1, AC-8)
  *
- *      No `group` param - the Ownership group filter left the screen entirely (R16). The
- *      backend still accepts one; this service just never sends it.
+ *      &group=<BB>          REPEATABLE: Location came back as a multi-select (owner, 14 Oct
+ *                               2026, superseding R16); any of the values, spanning the
+ *                               flagged bins of every group named. Omitted when none picked.
  *
  *      -> 200 {
  *           data: [{
@@ -99,8 +100,8 @@
  *          &date_to=<YYYY-MM-DD>    the board's own `date_to`, same reason.
  *          &book=<all|project|retail>  the board's own book, same reason.
  *
- *      No `group` - the toolbar no longer has an Ownership group control to echo (R16);
- *      the backend param itself is untouched.
+ *      &group=<BB>          REPEATABLE: the board's own Location pick, echoed so the drill
+ *                               foots with the cell that opened it (owner, 14 Oct 2026).
  *
  *      -> 200 {
  *           demand: [{ so_number, agent_code, warehouse_code, required_date, open_qty,
@@ -128,8 +129,9 @@
  * 3) Export (AC-12 to AC-18; R14/R15/R16 owner round)
  *
  *      POST /api/v1/project-sales/stock-debt/export
- *          { query?, only_debt?, date_from?, date_to?, supplier_ids?, book?, split }
- *          (never `group`, `cutoff` or `supplier_id` - all three retired, not aliased)
+ *          { query?, only_debt?, date_from?, date_to?, supplier_ids?, group?, book?, split }
+ *          (`group` is a list, sent only when non-empty; `cutoff` and `supplier_id` are
+ *          retired, not aliased)
  *
  *      -> 201 MyDownload (`status: 'pending'`, `kind: 'stock_debt_xlsx'`) - a
  *         `user_downloads` row; `generate_stock_debt_xlsx` runs on the `imports`
@@ -181,10 +183,9 @@ export const USE_STOCK_DEBT_FILTER_MOCKS = false;
  * and the debt-only switch.
  *
  * Owner's hand-test round (R14-R16): the single `cutoff` became a `dateFrom`/`dateTo`
- * range, the single `supplierId` became a repeatable `supplierIds`, and the Ownership
- * group filter left the screen entirely - there is no `group` field here any more, and
- * this service never sends one (the backend's own `group` param and its tests stay,
- * untouched and simply FE-unreachable).
+ * range and the single `supplierId` became a repeatable `supplierIds`. The Ownership group
+ * filter left the screen in R16 and came back as the multi-select `groups` (Location,
+ * owner, 14 Oct 2026).
  */
 export interface StockDebtListParams {
   pageIndex: number;
@@ -196,6 +197,8 @@ export interface StockDebtListParams {
   /** Repeatable; `'none'` is one more value among the others, not a sentinel that
    *  excludes them (R15, AC-4). Empty = every supplier. */
   supplierIds: string[];
+  /** Location: repeatable ownership group suffixes; empty = every location. */
+  groups?: string[];
   /** `YYYY-MM-DD`, or '' for no lower bound (R14, AC-1b). */
   dateFrom: string;
   /** `YYYY-MM-DD`, or '' for no upper bound (R14, AC-1). */
@@ -210,6 +213,7 @@ export interface StockDebtExportParams {
   onlyDebt: boolean;
   book: StockDebtBook;
   supplierIds: string[];
+  groups?: string[];
   dateFrom: string;
   dateTo: string;
   /** Whether the workbook carries the four stock and PO columns (default off on the wire). */
@@ -242,6 +246,9 @@ export async function getStockDebtList(
   for (const id of params.supplierIds ?? []) {
     if (id) search.append('supplier_ids', id);
   }
+  for (const code of params.groups ?? []) {
+    if (code) search.append('group', code);
+  }
   const res = await apiFetch(`/api/v1/project-sales/stock-debt?${search}`);
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to load stock debt'));
   return (await res.json()) as StockDebtListResponse;
@@ -251,7 +258,7 @@ export async function getStockDebtList(
  * The demand and supply behind one cell (AC-S2-7, extended AC-11). `month` is `YYYY-MM`,
  * `tba`, `undated` or `unlocated`; `dateFrom`/`dateTo` (R14) and `book` are the board's
  * own narrowing, passed through so the drill is recomputed over the same span the cell
- * was. Never sends `group` or `cutoff` (R14/R16 - both retired, not aliased).
+ * was. `groups` repeats `group`, the board's Location pick; `cutoff` is retired (R14).
  */
 export async function getStockDebtCell(
   productId: string,
@@ -260,12 +267,16 @@ export async function getStockDebtCell(
   dateTo?: string,
   book?: StockDebtBook,
   projected?: boolean,
+  groups?: string[],
 ): Promise<StockDebtCell> {
   const search = new URLSearchParams({ month });
   if (dateFrom) search.set('date_from', dateFrom);
   if (dateTo) search.set('date_to', dateTo);
   if (book && book !== 'all') search.set('book', book);
   if (projected) search.set('projected', 'true');
+  for (const code of groups ?? []) {
+    if (code) search.append('group', code);
+  }
   const res = await apiFetch(
     `/api/v1/project-sales/stock-debt/${encodeURIComponent(productId)}/cell?${search}`,
   );
@@ -288,6 +299,7 @@ export async function exportStockDebt(params: StockDebtExportParams): Promise<My
       only_debt: params.onlyDebt,
       book: params.book,
       supplier_ids: params.supplierIds ?? [],
+      ...(params.groups?.length ? { group: params.groups } : {}),
       date_from: params.dateFrom || undefined,
       date_to: params.dateTo || undefined,
       split: params.split,

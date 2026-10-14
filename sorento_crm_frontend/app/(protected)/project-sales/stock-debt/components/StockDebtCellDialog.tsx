@@ -211,6 +211,7 @@ export function StockDebtCellDialog({
   dateTo,
   book,
   projected = false,
+  groups,
   onClose,
 }: {
   productId: string;
@@ -222,20 +223,21 @@ export function StockDebtCellDialog({
   monthLabel: string;
   balance: number;
   /** The board's own due date range (AC-11/AC-11b, R14), echoed so the drill foots with
-   *  the cell that opened it. R16 retired the Ownership group this dialog used to take
-   *  instead - there is no `group` prop any more. */
+   *  the cell that opened it. */
   dateFrom?: string;
   dateTo?: string;
   /** The board's own book (AC-11), same reason. */
   book?: StockDebtBook;
   /** STOCK-DEBT-PROJECTION: the board's "Projected balance" switch, same reason. */
   projected?: boolean;
+  /** The board's Location pick (owner, 14 Oct 2026), same reason. */
+  groups?: string[];
   onClose: () => void;
 }) {
   // The board's own narrowing travels with the request AND with the cache key: the same
   // product and month answer differently under a due date range / a book, so the
   // drill has to be recomputed over the span the cell that opened it was.
-  const cell = useStockDebtCellQuery(productId, month, dateFrom, dateTo, book, projected);
+  const cell = useStockDebtCellQuery(productId, month, dateFrom, dateTo, book, projected, groups);
   const projection = cell.data?.projection ?? null;
 
   const demand = cell.data?.demand ?? EMPTY_DEMAND;
