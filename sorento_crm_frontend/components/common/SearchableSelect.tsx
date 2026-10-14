@@ -147,8 +147,9 @@ export type SearchableSelectProps = {
   /**
    * A last row offering to create what was typed, for vocabularies a user may extend.
    *
-   * Opt-in and absent by default, so every existing caller is untouched: a select over
-   * customers or warehouses must never invite someone to invent one. `label` is called
+   * Opt-in and absent by default, so every existing caller is untouched: a caller offers it
+   * only where creating from the typed text is a real, permitted path (the Project Sales
+   * buyer picker creates a prospect customer through the lead's own create). `label` is called
    * with the trimmed search text; returning null suppresses the row for that text,
    * which is how a caller says "that word already exists under another name" without
    * this component needing to know the matching rules.

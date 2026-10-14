@@ -5,7 +5,6 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -42,12 +41,12 @@ export function DisqualifyLeadDialog({
 
   return (
     <Dialog open onOpenChange={(next) => !next && onDone()}>
-      <DialogContent className="max-h-[92vh] w-full max-w-md overflow-hidden">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[92vh] w-full max-w-md overflow-hidden"
+      >
         <DialogHeader>
           <DialogTitle>Disqualify {lead.lead_code}</DialogTitle>
-          <DialogDescription>
-            Closes the lead without registering anything. It can be reopened later.
-          </DialogDescription>
         </DialogHeader>
 
         <form
@@ -84,9 +83,6 @@ export function DisqualifyLeadDialog({
                   }))}
                   placeholder="Select a reason"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Picked from a list rather than typed, so the reasons can be counted.
-                </p>
               </div>
             )}
           </DialogBody>

@@ -324,3 +324,136 @@ describe('Archive and Delete are NOT direct service calls', () => {
     expect(exported.deleteComment).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// IDEA-CRM-SIDE: new fields, similar ideas, merge with per-field picks
+// ---------------------------------------------------------------------------
+
+describe('normalizeUseCases (AC-B-03)', () => {
+  it('splits a string on newlines, trims and drops blanks', () => {
+    expect(service.normalizeUseCases('  a \n\n b\r\n   \nc')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps a list, trimmed, blanks dropped', () => {
+    expect(service.normalizeUseCases([' a ', '', 'b', '  '])).toEqual(['a', 'b']);
+  });
+
+  it.each([[null], [undefined], [''], ['  \n ']])('turns %j into an empty list', (value) => {
+    expect(service.normalizeUseCases(value as never)).toEqual([]);
+  });
+});
+
+describe('ideas carry useCases as string[] (AC-B-03)', () => {
+  it('getIdea: a string useCases (ss #123 shape) becomes one entry per line', async () => {
+    apiFetch.mockResolvedValue(ok({ id: 'idea-1', useCases: 'Dealer asks\n\n Rush order ' }));
+    const idea = await service.getIdea('idea-1');
+    expect(idea.useCases).toEqual(['Dealer asks', 'Rush order']);
+  });
+
+  it('getIdea: a list stays a list; null and absent become []', async () => {
+    apiFetch.mockResolvedValueOnce(ok({ id: 'a', useCases: ['x', 'y'] }));
+    expect((await service.getIdea('a')).useCases).toEqual(['x', 'y']);
+    apiFetch.mockResolvedValueOnce(ok({ id: 'b', useCases: null }));
+    expect((await service.getIdea('b')).useCases).toEqual([]);
+    apiFetch.mockResolvedValueOnce(ok({ id: 'c' }));
+    expect((await service.getIdea('c')).useCases).toEqual([]);
+  });
+
+  it('listIdeas normalises every row', async () => {
+    apiFetch.mockResolvedValue(ok([{ id: 'a', useCases: 'one\ntwo' }, { id: 'b', useCases: null }]));
+    const rows = await service.listIdeas({});
+    expect(rows.map((r) => r.useCases)).toEqual([['one', 'two'], []]);
+  });
+
+  it('the new scalar fields pass through unchanged', async () => {
+    apiFetch.mockResolvedValue(
+      ok({ id: 'a', desiredOutcome: 'Same hour', currentWorkaround: 'Spreadsheet', title: 'T' }),
+    );
+    expect(await service.getIdea('a')).toMatchObject({
+      desiredOutcome: 'Same hour',
+      currentWorkaround: 'Spreadsheet',
+    });
+  });
+});
+
+describe('capture and edit carry the new fields (AC-B-01, AC-B-02)', () => {
+  it('createIdea: POST body carries title, desiredOutcome, currentWorkaround and useCases as a list', async () => {
+    await service.createIdea({
+      title: 'Faster quotes',
+      problem: 'Quotes are slow',
+      desiredOutcome: 'Same hour',
+      useCases: ['Dealer asks', 'Rush order'],
+      currentWorkaround: 'Spreadsheet',
+      rawText: 'raw',
+    } as never);
+    expect(call().body).toEqual({
+      title: 'Faster quotes',
+      problem: 'Quotes are slow',
+      desiredOutcome: 'Same hour',
+      useCases: ['Dealer asks', 'Rush order'],
+      currentWorkaround: 'Spreadsheet',
+      rawText: 'raw',
+    });
+  });
+
+  it('createIdea: an empty useCases list is not sent', async () => {
+    await service.createIdea({ problem: 'Quotes are slow', useCases: [] } as never);
+    expect(call().body).not.toHaveProperty('useCases');
+  });
+
+  it('updateIdea: PATCH carries useCases as a list', async () => {
+    await service.updateIdea('idea-1', { problem: 'p', useCases: ['a'] } as never);
+    const c = call();
+    expect([c.path, c.method]).toEqual([`${BASE}/ideas/idea-1`, 'PATCH']);
+    expect(c.body).toMatchObject({ problem: 'p', useCases: ['a'] });
+  });
+});
+
+describe('similar ideas (AC-C-01, AC-C-03)', () => {
+  it('getSimilarIdeas: GET /ideas/{id}/similar and returns {available, ideas}', async () => {
+    apiFetch.mockResolvedValue(
+      ok({ available: true, ideas: [{ id: 'idea-2', ideaNumber: 'IDEA-0002', useCases: 'a\nb' }] }),
+    );
+    const out = await service.getSimilarIdeas('idea-1');
+    const c = call();
+    expect([c.path, c.method]).toEqual([`${BASE}/ideas/idea-1/similar`, 'GET']);
+    expect(out.available).toBe(true);
+    expect(out.ideas).toHaveLength(1);
+    expect(out.ideas[0]).toMatchObject({ id: 'idea-2', ideaNumber: 'IDEA-0002', useCases: ['a', 'b'] });
+  });
+
+  it('getSimilarIdeas: available=false is returned, not thrown', async () => {
+    apiFetch.mockResolvedValue(ok({ available: false, ideas: [] }));
+    expect(await service.getSimilarIdeas('idea-1')).toEqual({ available: false, ideas: [] });
+  });
+
+  it('getSimilarIdeas: a gateway refusal is thrown with its message and status', async () => {
+    apiFetch.mockResolvedValue(fail(502, "The Ideas workspace isn't reachable right now."));
+    await expect(service.getSimilarIdeas('idea-1')).rejects.toMatchObject({
+      message: "The Ideas workspace isn't reachable right now.",
+      status: 502,
+    });
+  });
+});
+
+describe('merge with per-field picks (AC-D-02, AC-D-03)', () => {
+  it('mergeIdeas passes `fields` through', async () => {
+    await service.mergeIdeas({
+      survivorId: 'idea-1',
+      ideaIds: ['idea-1', 'idea-2'],
+      fields: { problem: ['idea-2'], useCases: ['idea-1', 'idea-2'] },
+    } as never);
+    const c = call();
+    expect([c.path, c.method]).toEqual([`${BASE}/ideas/merge`, 'POST']);
+    expect(c.body).toEqual({
+      survivorId: 'idea-1',
+      ideaIds: ['idea-1', 'idea-2'],
+      fields: { problem: ['idea-2'], useCases: ['idea-1', 'idea-2'] },
+    });
+  });
+
+  it('mergeIdeas without fields sends no fields key', async () => {
+    await service.mergeIdeas({ survivorId: 'idea-1', ideaIds: ['idea-1', 'idea-2'] });
+    expect(call().body).toEqual({ survivorId: 'idea-1', ideaIds: ['idea-1', 'idea-2'] });
+  });
+});

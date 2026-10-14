@@ -398,6 +398,39 @@ def _build_json_schema() -> dict[str, Any]:
             # `engine.run_turn` closes the conversation episode on it. Both readers shipped
             # with no way for the model to set it, so no live turn has ever reset a topic
             # or written an episode.
+            # MULTI-ASK-PLAN S2: every thing the message asks, in order, when it asks two
+            # or more (`turn/sub_asks.py` runs one query per entry), and whether a typed
+            # code means the exact code or its family. Tolerated absent: no prompt version
+            # before `maskp_0001_parser_sub_asks` emits them.
+            "sub_asks": {
+                "type": ["array", "null"],
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "measure": {
+                            "type": "string",
+                            "enum": [
+                                "stock", "incoming", "received_qty", "last_receipt", "supplier",
+                                "last_cost", "sold_total", "sold_by", "other",
+                            ],
+                        },
+                        "group_by": {
+                            "type": ["string", "null"],
+                            "enum": [
+                                "sales_agent", "customer", "product", "brand", "category",
+                                "location", "channel", "month", None,
+                            ],
+                        },
+                        "date_from": string_or_null,
+                        "date_to": string_or_null,
+                        "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", None]},
+                        "label": string_or_null,
+                    },
+                    "required": ["measure", "group_by", "date_from", "date_to", "basis", "label"],
+                },
+            },
+            "family": {"type": ["boolean", "null"]},
             "topic_reset": {"type": ["boolean", "null"]},
             # Ported from PR #1118 (not merged), D13/D15: "go ahead without answering
             # the open question" - said in any wording, in any language ("just
@@ -630,6 +663,8 @@ def _build_json_schema() -> dict[str, Any]:
             "low_stock",
             "chat_report",
             "po_refs",
+            "sub_asks",
+            "family",
             "find",
         ],
     }
@@ -696,6 +731,10 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
         # absent reads as "no PO number given".
         "po_refs",
+        # MULTI-ASK-PLAN S2: no prompt version before `maskp_0001_parser_sub_asks`
+        # emits either; absent reads as one ask, scope not said.
+        "sub_asks",
+        "family",
         # CHAT-FIND: no prompt version before the `{{find_filters}}` publish carries it;
         # absent reads as "not a find".
         "find",

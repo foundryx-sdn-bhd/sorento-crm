@@ -85,6 +85,7 @@ from app.services.project_supply_service import (
     _dec,
     _leading_factor,
     _open_of,
+    delivered_qty_of,
     plan_qty_of,
 )
 from app.services.scm import ladder_steps
@@ -397,6 +398,7 @@ class _Row:
         "qty",
         "qty_outstanding",
         "required_date", "warehouse_id", "location", "priority", "demand_class",
+        "so_doc_type",
         "payment_terms_days", "bucket_key", "is_past", "rank_score", "rank_factors",
         "sources", "trail", "options", "contested", "qty_ordered", "qty_delivered",
         "proposed",
@@ -1066,6 +1068,7 @@ class FulfilmentBoardService:
                     SalesOrderLine.warehouse_id.label("warehouse_id"),
                     owed.label("owed"),
                     SalesOrderLine.qty_delivered,
+                    SalesOrderLine.qty_cancelled,
                     Warehouse.warehouse_code.label("line_location"),
                     SalesAgent.sales_agent.label("agent_code"),
                 )
@@ -1084,7 +1087,10 @@ class FulfilmentBoardService:
             for row in done:
                 entry = _so_row(row)
                 entry["location"] = entry["location"] or row.line_location
-                entry["fulfilled_qty"] = qty_text(_dec(row.qty_delivered))
+                # AC-CANCEL-CRM: a Cancel SO is in TransferedQty but never went out.
+                entry["fulfilled_qty"] = qty_text(
+                    max(_dec(row.qty_delivered) - _dec(row.qty_cancelled), _ZERO)
+                )
                 sales_orders.append(entry)
         by_location = self.supply.incoming_by_location([product_id], target_ids)
         incoming_rows = [
@@ -1610,7 +1616,7 @@ class FulfilmentBoardService:
                 # because it and the planned quantity have stopped being the same number.
                 qty_outstanding=_open_of(line),
                 qty_ordered=_dec(line.qty_ordered),
-                qty_delivered=_dec(line.qty_delivered),
+                qty_delivered=delivered_qty_of(line),
                 required_date=line.required_date,
                 warehouse_id=str(line.warehouse_id) if line.warehouse_id else None,
                 location=warehouse.warehouse_code if warehouse else None,
@@ -1622,6 +1628,7 @@ class FulfilmentBoardService:
                 outside_planning=outside_fulfilment_planning(warehouse),
                 priority=line.priority,
                 demand_class=order.demand_class,
+                so_doc_type=order.doc_type,
                 # R7 (query-count): off the SAME `line` row this read already fetched -
                 # see `_Row.__slots__`'s own docstring.
                 source_ref=line.source_ref,
@@ -1786,7 +1793,7 @@ class FulfilmentBoardService:
                     project_line_id=str(project_line.id),
                     qty=_ZERO,
                     qty_ordered=core_line.qty_ordered,
-                    qty_delivered=core_line.qty_delivered,
+                    qty_delivered=delivered_qty_of(core_line),
                     required_date=core_line.required_date,
                     warehouse_id=str(core_line.warehouse_id) if core_line.warehouse_id else None,
                     location=warehouse.warehouse_code if warehouse else None,
@@ -1851,7 +1858,7 @@ class FulfilmentBoardService:
                     project_line_id=str(project_line.id),
                     qty=_ZERO,
                     qty_ordered=core_line.qty_ordered,
-                    qty_delivered=core_line.qty_delivered,
+                    qty_delivered=delivered_qty_of(core_line),
                     required_date=core_line.required_date,
                     warehouse_id=str(core_line.warehouse_id) if core_line.warehouse_id else None,
                     bucket_key=NO_DATE_BUCKET,
@@ -2061,6 +2068,7 @@ class FulfilmentBoardService:
                     "ack_state": ack_state,
                     "rejected_reason": None,
                     "rejected_by_name": None,
+                    "rejected_at": None,
                     "_row_id": str(row_id),
                     "redirected": bool(redirected_to_pool),
                 }
@@ -2092,6 +2100,7 @@ class FulfilmentBoardService:
                 "ack_state": None if answered_refusal else ack_state,
                 "rejected_reason": None,
                 "rejected_by_name": None,
+                "rejected_at": None,
                 # AC-RL-07: this ROW's own id (to address `links_for_rows`) and whether
                 # IT was redirected - popped/resolved below, never sent as `_row_id`.
                 "_row_id": str(row_id),
@@ -2124,6 +2133,7 @@ class FulfilmentBoardService:
             entry["ack_state"] = ACK_REJECTED
             entry["rejected_reason"] = reason
             entry["rejected_by_name"] = name
+            entry["rejected_at"] = rejected_at
         # A LINE WITH A LIVE INSTRUCTION IS ABOUT THAT INSTRUCTION. It replaces whatever
         # last-wins left standing, so the number the cell prints is the row that decides the
         # line and not a cancelled or refused one that happened to be written after it. A
@@ -2159,6 +2169,29 @@ class FulfilmentBoardService:
                 for link in links_by_row.get(row_id, [])
             ]
         return out
+
+    def open_refusals(self, core_line_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+        """The board's own order-inquiry entry for each line purchasing has refused and CS
+        has not decided again, keyed by core line id - for the Sales Order page's Lines tab
+        (PR 1622 mock v3), so both screens read a refusal by the SAME rules
+        (`_order_inquiries`, answered once an active revision is confirmed after it)."""
+        ids = [str(x) for x in core_line_ids if x]
+        if not ids:
+            return {}
+        self._addressing = self._mirror_addressing(ids)
+        frozen, _proposals, _names = self._frozen_decisions()
+        entries = self._order_inquiries(
+            ids,
+            decided_at={
+                core_id: (decision or {}).get("confirmed_at")
+                for core_id, decision in frozen.items()
+            },
+        )
+        return {
+            core_id: entry
+            for core_id, entry in entries.items()
+            if entry.get("ack_state") == ACK_REJECTED
+        }
 
     def _frozen_decisions(
         self,
@@ -2896,7 +2929,8 @@ class FulfilmentBoardService:
         whole free-stock cache once per row - but the RANKING is against this line's residual
         (13.11), so two rows covering different quantities are two different questions.
         Hot-selling no longer changes the donor set (own location is always Reserve-eligible,
-        never a Borrow source), so it is not part of the key.
+        and always offered as a plain Borrow too since BORROW-OWN-LOC), so it is not part of
+        the key.
         """
         cache_key = (fact.product_id, row.warehouse_id, need)
         if cache_key not in borrow_cache:
@@ -3301,8 +3335,13 @@ class FulfilmentBoardService:
             if outside_window
             else [c for c in row.borrow_candidates if c.get("rung") == "group_borrow"]
         )
+        # Less any row with nothing free: the line's own location is always offered as a
+        # plain Borrow (BORROW-OWN-LOC) at 0 free, and "borrowing is possible from" a place
+        # with nothing to give would break AC-V4.
         ungrouped_donors = (
-            [] if outside_window or fact.group_code else list(row.borrow_candidates)
+            []
+            if outside_window or fact.group_code
+            else [c for c in row.borrow_candidates if _dec(c.get("free_qty")) > _ZERO]
         )
 
         # ------------------------------------------- 0. Can the site pool spare us a share?
@@ -5145,6 +5184,7 @@ class FulfilmentBoardService:
             #: null is the honest answer: there is no planning record to confirm against.
             "project_line_id": row.project_line_id,
             "so_number": row.so_number,
+            "so_doc_type": row.so_doc_type,
             "customer_name": row.customer_name,
             #: Addressing only, and the key a pivot BY CUSTOMER groups on: two different
             #: customers can carry the same name, and grouping by the label would merge them.

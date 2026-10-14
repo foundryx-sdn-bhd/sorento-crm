@@ -284,6 +284,28 @@ register(
     )
 )
 
+def _delete_llm_model_price(db: Session, payload: dict):
+    """The same delete `DELETE /system/ai-assistant/model-prices/{id}` runs, by id."""
+    from app.models.ai_assistant import LLMModelPrice
+
+    row = db.query(LLMModelPrice).filter(LLMModelPrice.id == _entity_id(payload)).first()
+    if row is None:
+        return None
+    db.delete(row)
+    return None
+
+
+register(
+    FormAction(
+        key="llm_model_price.delete",
+        entity_types=("llm_model_price",),
+        execute=_delete_llm_model_price,
+        window=WINDOW_DESTRUCTIVE,
+        permission="system.ai_assistant_settings.edit",
+        label="Delete model price",
+    )
+)
+
 register(
     FormAction(
         key="order.delete",

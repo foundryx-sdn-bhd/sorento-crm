@@ -12,6 +12,7 @@ import {
 import { ColumnDef, RowSelectionState } from '@tanstack/react-table';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { Badge } from '@/components/ui/badge';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import { Button } from '@/components/ui/button';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
@@ -24,9 +25,11 @@ import { DecisionTrailButton } from '../../_shared/components/DecisionTrailButto
 import { SoLineAttachmentsButton } from '../../_shared/components/SoLineAttachmentsButton';
 import type { SoLineAttachmentsByLine } from '../../_shared/services/soLineAttachmentService';
 import { BoardCellBreakdownDialog } from './BoardCellBreakdownDialog';
+import { OrderInquiryRejectedBadge } from '../../_shared/components/OrderInquiryRejectedBadge';
 import { BoardDecidedMarker, decidedRevisions } from './BoardDecidedMarker';
 import {
   BoardDecisionPill,
+  matchesStatusFilter,
   VERDICT_FILTER_OPTIONS,
   VERDICT_SORT_RANK,
   verdictOf,
@@ -248,8 +251,7 @@ export function FulfilmentBoardListView({
           (!scope ||
             scope.value === 'all' ||
             scope.isSaved(contribution) === (scope.value === 'saved')) &&
-          (statusFilter.length === 0 ||
-            statusFilter.includes(verdictOf(contribution, draft[contribution.key] ?? null))),
+          matchesStatusFilter(contribution, draft[contribution.key] ?? null, statusFilter),
       ),
     [contributions, externalSearch, statusFilter, draft, scope],
   );
@@ -502,6 +504,7 @@ export function FulfilmentBoardListView({
                 >
                   {contribution.so_number}
                 </span>
+                <ConsignmentBadge docType={contribution.so_doc_type} size="xs" />
                 {/* The same tick the grid puts on a fully-decided cell, here per row: one
                     row IS one contribution, so it is decided or it is not. */}
                 <BoardDecidedMarker
@@ -665,25 +668,34 @@ export function FulfilmentBoardListView({
             inquiry.inquiry_id && inquiry.row_id
               ? `/project-sales/order-inquiries/${inquiry.inquiry_id}?row=${inquiry.row_id}`
               : null;
-          if (!href) {
-            return (
-              <span className="block truncate tabular-nums" title={inquiry.inquiry_no}>
-                {inquiry.inquiry_no}
-              </span>
-            );
-          }
-          return (
+          const number = href ? (
             <Link
               href={href}
               onClick={(event) => event.stopPropagation()}
-              className="block truncate tabular-nums text-primary hover:underline"
+              className="block min-w-0 truncate tabular-nums text-primary hover:underline"
               title={inquiry.inquiry_no}
             >
               {inquiry.inquiry_no}
             </Link>
+          ) : (
+            <span className="block min-w-0 truncate tabular-nums" title={inquiry.inquiry_no}>
+              {inquiry.inquiry_no}
+            </span>
+          );
+          // PR 1622 (owner, mock v3): an open purchasing refusal is the INQUIRY's status,
+          // so it reads here - never in the Verdict or Decided columns.
+          if (inquiry.ack_state !== 'rejected') return number;
+          return (
+            <span className="flex min-w-0 items-center gap-1.5">
+              {number}
+              <OrderInquiryRejectedBadge
+                refusal={inquiry}
+                testId={`oi-rejected-${row.original.key}`}
+              />
+            </span>
           );
         },
-        size: 120,
+        size: 220,
         minSize: 100,
         enableSorting: true,
       },

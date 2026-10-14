@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Check, ChevronDown, ChevronRight, ExternalLink, Info, X } from 'lucide-react';
 import { ColumnDef, RowSelectionState } from '@tanstack/react-table';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -35,6 +36,7 @@ import { spoDetailHref, spoNumberFromLabel } from '@/lib/spo-detail';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
 import { DecisionTrailButton } from '../../_shared/components/DecisionTrailButton';
 import { OrderInquiryStatePill } from '../../_shared/components/OrderInquiryVerbPill';
+import { OrderInquiryRejectedBadge } from '../../_shared/components/OrderInquiryRejectedBadge';
 import {
   PILL_TONE,
   SHORT_LABELS,
@@ -539,6 +541,7 @@ export function BoardCellBreakdownDialog({
               >
                 {row.original.so_number}
               </div>
+              <ConsignmentBadge docType={row.original.so_doc_type} size="xs" />
               <div className="truncate text-xs text-muted-foreground">
                 {soLineLabel(row.original)}
               </div>
@@ -935,11 +938,20 @@ export function BoardCellBreakdownDialog({
               >
                 {inquiry.inquiry_no ?? '-'}
               </span>
-              <OrderInquiryStatePill state={inquiry.state} />
+              {/* PR 1622 (owner, mock v3): an open purchasing refusal is this inquiry's
+                  status, with who/when/why behind the info icon. */}
+              {inquiry.ack_state === 'rejected' ? (
+                <OrderInquiryRejectedBadge
+                  refusal={inquiry}
+                  testId={`breakdown-oi-rejected-${row.original.key}`}
+                />
+              ) : (
+                <OrderInquiryStatePill state={inquiry.state} />
+              )}
             </div>
           );
         },
-        size: 110,
+        size: 190,
         minSize: 90,
         meta: { headerTitle: 'Order inquiry' },
       },

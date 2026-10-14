@@ -781,6 +781,17 @@ def _is_null_anchored_date_move(c) -> bool:
     return before_date is None or after_date is None
 
 
+def _carries_date_stamp(note: Optional[str]) -> bool:
+    """Whether a Buy row's note already says what the date was ("Was ..."). A CS reason
+    (`CS: ...`, PR 1622) is free text and is never read as one: "Was told by the customer"
+    must not suppress the date stamp a move earns."""
+    return any(
+        "Was" in fragment
+        for fragment in (note or "").split(";")
+        if not fragment.strip().startswith("CS: ")
+    )
+
+
 def _map_kind(c) -> str:
     if c.kind == CLOSED:
         return "cancelled"
@@ -3851,7 +3862,7 @@ def _oi_demand_rows(
                 # Stamp ITS note rather than raise a second row saying the same thing.
                 stamp = f"Was {from_date}" if from_date else "No previous delivery date"
                 for buy_row in buy_rows:
-                    if buy_row.note and "Was" in buy_row.note:
+                    if _carries_date_stamp(buy_row.note):
                         continue
                     buy_row.note = (
                         f"{buy_row.note}; {stamp}" if buy_row.note else stamp
@@ -4813,6 +4824,11 @@ def _apply_one_order(
         ProjectOrderInquiryService(db).derive_for_book_change(
             order, demand_rows, batch_id=str(batch.id), actor_user_id=actor
         )
+    # ORDERBACK-DELTA review B1: the confirm above already told each saved line once.
+    # Only when THIS apply confirmed lines: an older entry from another confirm in the same
+    # session must never swallow this apply's own notices.
+    if confirm_lines:
+        ProjectOrderInquiryService(db).forget_rows_told_for_saved_lines(str(order.id))
 
     for r in live:
         r.applied_state = PLANNING_CHANGE_STATE_APPLIED

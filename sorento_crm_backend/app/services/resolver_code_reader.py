@@ -385,6 +385,7 @@ def _log_usage(db: Session, provider_name: str, model_name: str, result: Any, el
                     prompt_tokens=int(getattr(result, "prompt_tokens", 0) or 0),
                     completion_tokens=int(getattr(result, "completion_tokens", 0) or 0),
                     total_tokens=int(getattr(result, "total_tokens", 0) or 0),
+                    cached_tokens=int(getattr(result, "cached_tokens", 0) or 0),
                     tool_calls_count=0,
                     response_time_ms=elapsed_ms,
                     was_answered=any(r.kind in ("code", "family") for r in readings.values()),

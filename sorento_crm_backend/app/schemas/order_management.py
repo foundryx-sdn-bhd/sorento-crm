@@ -103,6 +103,8 @@ class OutstandingSORow(BaseModel):
     transferred_qty: int
     outstanding_qty: int
     order_date: Optional[date] = None
+    #: AC-CONSIGN-CRM: 'consignment' marks a consignment order; 'sales_order' otherwise.
+    doc_type: Optional[str] = None
 
 
 class OutstandingDORow(BaseModel):

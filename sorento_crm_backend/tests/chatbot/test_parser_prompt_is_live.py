@@ -42,6 +42,7 @@ from app.services.chatbot_parser_prompt import (
     PROMOTION_KIND_ADDENDUM,
     CHAT_REPORT_ADDENDUM,
     PO_REFS_ADDENDUM,
+    SUB_ASKS_ADDENDUM,
     FIND_ADDENDUM,
     REF_KINDS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
@@ -281,6 +282,9 @@ def _without_growth_r1_addendum(text: str) -> str:
     # CA-3: CHAT_REPORT_ADDENDUM sits right after PO_REFS_ADDENDUM.
     if text.endswith(CHAT_REPORT_ADDENDUM):
         text = text[: -len(CHAT_REPORT_ADDENDUM)]
+    # MULTI-ASK-PLAN S2: SUB_ASKS_ADDENDUM sits between PO_REFS_ADDENDUM and CANONICAL_CODE_ADDENDUM.
+    if text.endswith(SUB_ASKS_ADDENDUM):
+        text = text[: -len(SUB_ASKS_ADDENDUM)]
     if text.endswith(PO_REFS_ADDENDUM):
         text = text[: -len(PO_REFS_ADDENDUM)]
     # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM sits between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
@@ -425,3 +429,7 @@ def test_the_constant_is_reproducible_from_the_live_file() -> None:
         "everything AFTER the requested-attributes block, and before the growth r1 addendum, "
         "must still be a pure mechanical derivation of the live file"
     )
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

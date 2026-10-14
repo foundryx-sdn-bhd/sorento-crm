@@ -775,6 +775,7 @@ def seed_chatbot_policy() -> None:
     pdyn6 = _load("_pdyn_0006_agents_in_prompt", "pdyn_0006_agents_in_prompt.py")
     report_engine = _load("_report_engine_0001_prompt", "report_engine_0001_prompt.py")
     ca3_domain = _load("_ca3_0002_chat_analytics_domain", "ca3_0002_chat_analytics_domain.py")
+    measure_words = _load("_maskp_0002_measure_words", "maskp_0002_measure_words.py")
 
     with engine.begin() as conn:
         domains_inserted, kinds_inserted = s0.seed_domains_and_kinds(conn)
@@ -813,6 +814,9 @@ def seed_chatbot_policy() -> None:
     # CA-3: the chat_analytics routing domain, before the republish renders the domain list.
     with engine.begin() as conn:
         ca3_domain.apply(conn)
+    # MULTI-ASK-PLAN2: the sub-ask measure glossary rows `{{sub_ask_measures}}` renders.
+    with engine.begin() as conn:
+        measure_words.apply(conn)
     # LAST, and after every narrowing step: it renders the blocks from the tables as
     # they now stand and leaves `production` on that version.
     with engine.begin() as conn:

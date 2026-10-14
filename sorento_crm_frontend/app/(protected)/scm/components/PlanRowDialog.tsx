@@ -99,7 +99,9 @@ export type PlanRowDialogKind =
   // that is the SUM of several documents on one line - the "Allocated to" card these replace
   // is gone (AC-L3).
   | 'placements'
-  | 'links';
+  | 'links'
+  // SO-DELIVERIES-VIEW: the DOs and Cancel SO documents under one sales-order line.
+  | 'deliveries';
 
 /** The word in front of the product code. Kept here so the titles cannot drift. */
 export const PLAN_ROW_DIALOG_TITLES: Record<PlanRowDialogKind, string> = {
@@ -115,6 +117,7 @@ export const PLAN_ROW_DIALOG_TITLES: Record<PlanRowDialogKind, string> = {
   blocks: 'Packed',
   placements: 'Placed on',
   links: 'Linked to',
+  deliveries: 'Deliveries',
 };
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,681 @@
+{
+ "_about": "Live gpt-5.4-mini emissions of the maskp_0001 parser template with the maskp_0002 measure glossary rendered (MULTI-ASK-PLAN2, 12 Oct 2026) for the owner's hand-test steps 4 to 9 (laneboard/scripts/1542.md). Replayed by test_multi_ask_live_replay.py; the steps 5 and 6 replies were parsed under their Open question line. Step 4's last_receipt ask carries a stray 2026 window the runner must ignore.",
+ "steps": {
+  "step4": {
+   "message": "SRTWT7445,2026 年 入库了多少数量 , 供应商是谁 ， 采购价是多少钱。 最后一次进库是什么时候 ，2026 总共卖了多少个，2026年每位业务员共卖了多少个",
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_spo",
+    "domain_hint": "spo_allocation",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "trying to check the last receipt, received quantity, supplier, purchase cost, and 2026 sales totals for SRTWT7445",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": "2026-01-01",
+    "date_filter_end": "2026-12-31",
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "SRTWT7445",
+      "hint": "product",
+      "canonical_code": "SRTWT7445",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": null,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [
+     "__all__"
+    ],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_analysis",
+    "group_by": "month",
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": null,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": "purchasing",
+     "suggested_agent": "incoming_stock_enquiries"
+    },
+    "escalation": {
+     "is_escalation_confirmation": null,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": [
+     {
+      "domain": "incoming",
+      "intent": "check_incoming"
+     },
+     {
+      "domain": "purchase_cost",
+      "intent": "check_po_cost"
+     },
+     {
+      "domain": "spo_allocation",
+      "intent": "check_spo"
+     },
+     {
+      "domain": "order",
+      "intent": "check_order"
+     },
+     {
+      "domain": "order",
+      "intent": "check_order"
+     }
+    ],
+    "sub_asks": [
+     {
+      "measure": "received_qty",
+      "group_by": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "basis": null,
+      "label": "入库了多少数量"
+     },
+     {
+      "measure": "supplier",
+      "group_by": null,
+      "date_from": null,
+      "date_to": null,
+      "basis": null,
+      "label": "供应商是谁"
+     },
+     {
+      "measure": "last_cost",
+      "group_by": null,
+      "date_from": null,
+      "date_to": null,
+      "basis": null,
+      "label": "采购价是多少钱"
+     },
+     {
+      "measure": "last_receipt",
+      "group_by": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "basis": null,
+      "label": "最后一次进库是什么时候"
+     },
+     {
+      "measure": "sold_total",
+      "group_by": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "basis": null,
+      "label": "2026 总共卖了多少个"
+     },
+     {
+      "measure": "sold_by",
+      "group_by": "sales_agent",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "basis": null,
+      "label": "2026年每位业务员共卖了多少个"
+     }
+    ],
+    "family": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   }
+  },
+  "step5": {
+   "message": "只要这个",
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_product",
+    "domain_hint": "master_products",
+    "scope_intent": "specific",
+    "is_affirmative": null,
+    "user_goal": "trying to choose just this code",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "reuse",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": "purchasing",
+     "suggested_agent": "general_enquiries"
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "sub_asks": null,
+    "family": false,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": "pick",
+     "picked": [
+      1
+     ],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   }
+  },
+  "step6": {
+   "message": "已出货",
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "trying to answer that sales are counted as delivered",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "reuse",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [
+     1
+    ],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_ranking",
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": "delivered",
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": "delivered",
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": "customer_service",
+     "suggested_agent": "order_enquiries"
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "sub_asks": null,
+    "family": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": "pick",
+     "picked": [
+      1
+     ],
+     "items": [
+      {
+       "position": 1,
+       "code": "delivered",
+       "qty": null
+      }
+     ],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   }
+  },
+  "step7": {
+   "message": "stock SRTWT7445",
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_stock",
+    "domain_hint": "inventory",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "trying to check stock for SRTWT7445",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "SRTWT7445",
+      "hint": "product",
+      "canonical_code": "SRTWT7445",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": null,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": "warehouse",
+     "suggested_agent": "general_enquiries"
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "sub_asks": null,
+    "family": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   }
+  },
+  "step8": {
+   "message": "SRTWT7445 系列 2026 卖了多少，按已出货，还有采购价",
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "trying to find how much SRTWT7445 series sold in 2026, broken down by delivered sales and purchase cost",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": "2026-01-01",
+    "date_filter_end": "2026-12-31",
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "SRTWT7445",
+      "hint": "product",
+      "canonical_code": "SRTWT7445",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": null,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [
+     "quantity"
+    ],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_report",
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": "delivered",
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": null,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": "customer_service",
+     "suggested_agent": "order_enquiries"
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": [
+     {
+      "domain": "order",
+      "intent": "check_order"
+     },
+     {
+      "domain": "purchase_cost",
+      "intent": "check_po_cost"
+     }
+    ],
+    "sub_asks": [
+     {
+      "measure": "sold_total",
+      "group_by": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "basis": "delivered",
+      "label": "卖了多少"
+     },
+     {
+      "measure": "last_cost",
+      "group_by": null,
+      "date_from": null,
+      "date_to": null,
+      "basis": null,
+      "label": "采购价"
+     }
+    ],
+    "family": true,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   }
+  },
+  "step9": {
+   "message": "SRTWT7445-ZZ stock and supplier",
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_stock",
+    "domain_hint": "inventory",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "trying to check stock and supplier for SRTWT7445-ZZ",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "SRTWT7445-ZZ",
+      "hint": "product",
+      "canonical_code": "SRTWT7445-ZZ",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": null,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": "warehouse",
+     "suggested_agent": "general_enquiries"
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": [
+     {
+      "domain": "inventory",
+      "intent": "check_stock"
+     },
+     {
+      "domain": "purchase_cost",
+      "intent": "check_po_cost"
+     }
+    ],
+    "sub_asks": [
+     {
+      "measure": "stock",
+      "group_by": null,
+      "date_from": null,
+      "date_to": null,
+      "basis": null,
+      "label": "stock"
+     },
+     {
+      "measure": "supplier",
+      "group_by": null,
+      "date_from": null,
+      "date_to": null,
+      "basis": null,
+      "label": "supplier"
+     }
+    ],
+    "family": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   }
+  }
+ }
+}

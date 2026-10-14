@@ -16,10 +16,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useIdeaMutations } from '@/hooks/useIdeas';
+import { normalizeUseCases } from '@/lib/ideaUseCases';
 
 /**
  * Capture idea: the CRM modal over ss `IdeaCreateIn`. No product picker (the connection is scoped
- * to the workspace's product); files go up after the idea exists.
+ * to the workspace's product); files go up after the idea exists. Proposed solution, Impact and
+ * Department are retired from capture (IDEA-CORE); `problem` is labelled Business problem. Use
+ * cases are typed one per line and sent as a list.
  */
 export function IdeaCaptureModal({
   open,
@@ -29,33 +32,43 @@ export function IdeaCaptureModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const { create } = useIdeaMutations();
+  const [title, setTitle] = useState('');
   const [problem, setProblem] = useState('');
-  const [proposedSolution, setProposedSolution] = useState('');
-  const [impact, setImpact] = useState('');
-  const [department, setDepartment] = useState('');
+  const [desiredOutcome, setDesiredOutcome] = useState('');
+  const [useCasesText, setUseCasesText] = useState('');
+  const [currentWorkaround, setCurrentWorkaround] = useState('');
   const [rawText, setRawText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [touched, setTouched] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    setTitle('');
     setProblem('');
-    setProposedSolution('');
-    setImpact('');
-    setDepartment('');
+    setDesiredOutcome('');
+    setUseCasesText('');
+    setCurrentWorkaround('');
     setRawText('');
     setFiles([]);
     setTouched(false);
   }, [open]);
 
-  const problemError = touched && problem.trim().length === 0 ? 'Problem statement is required' : null;
+  const problemError = touched && problem.trim().length === 0 ? 'Business problem is required' : null;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setTouched(true);
     if (!problem.trim() || create.isPending) return;
     try {
-      await create.mutateAsync({ problem, proposedSolution, impact, department, rawText, files });
+      await create.mutateAsync({
+        title,
+        problem,
+        desiredOutcome,
+        useCases: normalizeUseCases(useCasesText),
+        currentWorkaround,
+        rawText,
+        files,
+      });
       onOpenChange(false);
     } catch {
       // The hook toasted the reason; the modal stays open with what was typed.
@@ -69,9 +82,13 @@ export function IdeaCaptureModal({
           <DialogTitle>Capture idea</DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="flex flex-col gap-4">
-          <DialogBody className="flex max-h-[70dvh] flex-col gap-4 overflow-y-auto">
+          <DialogBody className="flex max-h-[55dvh] flex-col gap-4 overflow-y-auto">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="idea-problem">Problem statement</Label>
+              <Label htmlFor="idea-title">Title</Label>
+              <Input id="idea-title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="idea-problem">Business problem</Label>
               <Textarea
                 id="idea-problem"
                 value={problem}
@@ -80,7 +97,6 @@ export function IdeaCaptureModal({
                 aria-invalid={!!problemError}
                 aria-describedby={problemError ? 'idea-problem-error' : undefined}
                 rows={3}
-                autoFocus
               />
               {problemError ? (
                 <p id="idea-problem-error" className="text-xs text-destructive">
@@ -89,25 +105,30 @@ export function IdeaCaptureModal({
               ) : null}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="idea-solution">Proposed solution</Label>
+              <Label htmlFor="idea-outcome">Desired outcome</Label>
               <Textarea
-                id="idea-solution"
-                value={proposedSolution}
-                onChange={(e) => setProposedSolution(e.target.value)}
+                id="idea-outcome"
+                value={desiredOutcome}
+                onChange={(e) => setDesiredOutcome(e.target.value)}
                 rows={2}
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="idea-impact">Impact</Label>
-              <Textarea id="idea-impact" value={impact} onChange={(e) => setImpact(e.target.value)} rows={2} />
+              <Label htmlFor="idea-use-cases">Use cases</Label>
+              <Textarea
+                id="idea-use-cases"
+                value={useCasesText}
+                onChange={(e) => setUseCasesText(e.target.value)}
+                rows={3}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="idea-department">Department</Label>
-              <Input
-                id="idea-department"
-                value={department}
-                maxLength={120}
-                onChange={(e) => setDepartment(e.target.value)}
+              <Label htmlFor="idea-workaround">Current workaround</Label>
+              <Textarea
+                id="idea-workaround"
+                value={currentWorkaround}
+                onChange={(e) => setCurrentWorkaround(e.target.value)}
+                rows={2}
               />
             </div>
             <div className="flex flex-col gap-1.5">

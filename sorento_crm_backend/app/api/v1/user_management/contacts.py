@@ -695,12 +695,22 @@ class CsRoutingPinRequest(BaseModel):
     priority: int = 0
 
 
+class CsRoutingRule(CsRoutingPinRequest):
+    use_case: str
+
+
+class CsRoutingReplaceRequest(BaseModel):
+    # Every rule of the contact, in the page's order. Replaces what is stored. Capped
+    # so one request cannot carry an unbounded list (each rule costs queries).
+    rules: list[CsRoutingRule] = Field(max_length=100)
+
+
 @router.get("/cs-routing/candidates")
 async def list_cs_routing_candidates(
     current_user: dict = Depends(require_permission("user_management.contacts.view")),
     db: Session = Depends(get_db),
 ):
-    """Tier-1 members of the procurement customer-service team (pin dropdown options)."""
+    """Every eligible CS PIC, sorted by name (pin dropdown options)."""
     try:
         from app.services.cs_routing_service import CsRoutingService
 
@@ -728,12 +738,36 @@ async def get_contact_cs_routing(
         raise handle_internal_error(str(e))
 
 
+@router.put("/{contact_id}/cs-routing")
+async def replace_contact_cs_routing(
+    contact_id: str,
+    payload: CsRoutingReplaceRequest,
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
+    db: Session = Depends(get_db),
+):
+    """Save a salesman's routing rules page: validate every rule, then replace them
+    all in one transaction. A bad rule is a 400 naming it and nothing changes."""
+    try:
+        from app.services.cs_routing_service import CsRoutingService
+
+        pins = CsRoutingService(db).replace_all(
+            contact_id,
+            [rule.model_dump() for rule in payload.rules],
+            created_by=current_user.get("id"),
+        )
+        return {"pins": pins}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_internal_error(str(e))
+
+
 @router.put("/{contact_id}/cs-routing/{use_case}")
 async def upsert_contact_cs_routing(
     contact_id: str,
     use_case: str,
     payload: CsRoutingPinRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
     db: Session = Depends(get_db),
 ):
     """Pin this salesman to a CS PIC for ``use_case`` (purchase_request | sponsorship_form)."""
@@ -783,7 +817,7 @@ async def delete_contact_cs_routing(
     contact_id: str,
     use_case: str,
     row_id: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
     db: Session = Depends(get_db),
 ):
     """Clear routing rows for a use_case (or one ``row_id``) → reverts to round-robin."""

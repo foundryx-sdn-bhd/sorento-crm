@@ -484,6 +484,9 @@ class BoardLineOrderInquiry(BaseModel):
     #: back with no reason is the thing this exists to stop.
     rejected_reason: Optional[str] = None
     rejected_by_name: Optional[str] = None
+    #: When purchasing refused it (naive UTC, like every stamp on the wire); null with the
+    #: two above.
+    rejected_at: Optional[datetime] = None
     #: AC-RL-07 (`PLAN-oi-replan-received-links.md`): what backs the instruction - the
     #: winning row's own documents, empty on a row nobody has linked.
     documents: List[BoardLineOrderInquiryDocument] = []
@@ -597,6 +600,8 @@ class BoardContribution(BaseModel):
     #: a null is the honest answer rather than an absent key the screen has to interpret.
     project_line_id: Optional[str] = None
     so_number: str
+    #: AC-CONSIGN-CRM: the core sales order's doc_type ('consignment' / 'sales_order').
+    so_doc_type: Optional[str] = None
     customer_name: Optional[str] = None
     #: Addressing only, and what a pivot BY CUSTOMER groups on: two different customers can
     #: carry the same name, and grouping by the label would merge them.

@@ -62,6 +62,10 @@ const EXPANDED_CONTENT_SITES = new Map<string, string>([
     'BoardLineDecisionPanel - same as above',
   ],
   [
+    'app/(protected)/project-sales/[projectId]/components/QuotationLinesGrid.tsx',
+    'LineDetails - a form (Complete set, Priced per, Notes), no grid',
+  ],
+  [
     'app/(protected)/scm/components/PlanRowDialog.tsx',
     'NESTED GRID: StockDocumentsPanel (PanelDataGrid) inside OnHandTable rows. Covered by the context default AND by its own scrollerMaxHeight={false}',
   ],
@@ -155,8 +159,8 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'NESTED GRID: the items popover opens from a CELL of this section\'s own grid. It names scrollerMaxHeight="16rem", so the nested default leaves it alone and it keeps its sticky header inside that window',
   ],
   [
-    'app/(protected)/project-sales/fulfilment-planning/components/BoardCellBreakdownDialog.tsx:1294',
-    'Contributing lines, in a dialog opened as a sibling of the board (a hand-rolled matrix). Already scrollerMaxHeight={false}. (Line moved 1223 -> 1251 when the Decision column gained the Verdict actions and the Product column its chip; 1251 -> 1268 when PLAN-oi-decision-trail-ui.md round 2 added a DecisionTrailButton after the verdict chip in the same cell renderer; 1268 -> 1293 when #1362 round 2 gave a fulfilled line its own card in place of the Suggestion card; 1293 -> 1294 when #1362 round 4 imported soLineLabel; the census is keyed by line, so a site that moves is a one-line diff here rather than a silent pass)',
+    'app/(protected)/project-sales/fulfilment-planning/components/BoardCellBreakdownDialog.tsx:1304',
+    'Contributing lines, in a dialog opened as a sibling of the board (a hand-rolled matrix). Already scrollerMaxHeight={false}. (Line moved 1223 -> 1251 when the Decision column gained the Verdict actions and the Product column its chip; 1251 -> 1268 when PLAN-oi-decision-trail-ui.md round 2 added a DecisionTrailButton after the verdict chip in the same cell renderer; 1268 -> 1293 when #1362 round 2 gave a fulfilled line its own card in place of the Suggestion card; 1293 -> 1294 when #1362 round 4 imported soLineLabel; 1294 -> 1304 when #1622 showed OrderInquiryRejectedBadge in place of the state pill of a rejected inquiry; the census is keyed by line, so a site that moves is a one-line diff here rather than a silent pass)',
   ],
   [
     'app/(protected)/project-sales/fulfilment-planning/components/FulfilmentPlanningSheet.tsx:457',
@@ -171,12 +175,12 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'Drilldown dialog, rendered BEFORE the list grid in OrderInquiriesClient, not inside it. Already scrollerMaxHeight={false}. (Line moved 57 -> 97 when the cell drilldown gained its `axis`/`axis_key` filters; the census is keyed by line, so a site that moves is a one-line diff here rather than a silent pass)',
   ],
   [
-    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:684',
-    "Demand tab, dialog rendered after the calendar grid closes. Already scrollerMaxHeight={false}. (Line moved 635 -> 588 when R31a folded the R30 SPO/OI columns back into one Covered-by column, still rendering the OI screens' own `OrderInquiryDocumentLink`; 588 -> 636 when R42 linked a covering PO in Covered by and gave the Supply tab its PO-line columns.)",
+    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:722',
+    "Demand tab, dialog rendered after the calendar grid closes. Already scrollerMaxHeight={false}. (Line moved 635 -> 588 when R31a folded the R30 SPO/OI columns back into one Covered-by column, still rendering the OI screens' own `OrderInquiryDocumentLink`; 588 -> 636 when R42 linked a covering PO in Covered by and gave the Supply tab its PO-line columns; 684 -> 722 when #1594 added the projected PO coverage from sales orders.)",
   ],
   [
-    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:715',
-    'Supply tab, same dialog. (Line moved 666 -> 619, same round; 619 -> 667 in R42, same as above.)',
+    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:753',
+    'Supply tab, same dialog. (Line moved 666 -> 619, same round; 619 -> 667 in R42, same as above; 715 -> 753 in #1594.)',
   ],
   [
     'app/(protected)/scm/proforma-invoices/components/ConvertToPackingListDialog.tsx:455',

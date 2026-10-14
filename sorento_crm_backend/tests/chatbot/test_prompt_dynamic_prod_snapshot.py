@@ -259,3 +259,7 @@ def test_no_production_label_writes_nothing():
         count = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY).count()
         assert mod.apply(db.connection()) is None
         assert db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY).count() == count
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

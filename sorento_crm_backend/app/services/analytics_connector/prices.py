@@ -15,7 +15,7 @@ Adding or changing a price is one statement (USD per 1M tokens, cached NULL when
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy import text
 
@@ -39,3 +39,38 @@ def seed_prices(conn: Any) -> None:
             {"m": model, "i": inp, "c": cached, "o": out, "n": note},
         )
 
+
+
+class CostSql(NamedTuple):
+    """Four SQL boolean/numeric expressions over a usage-log alias and a price-table alias."""
+
+    cost_usd: str
+    priced: str
+    cached_price_missing: str
+    cache_unknown: str
+
+
+def cost_sql(u: str, p: str) -> CostSql:
+    """The one per-call cost formula (MODEL-PRICES UC-1), shared by the `llm_calls` view and the usage endpoints.
+
+    ``u`` is the `ai_assistant_usage_logs` alias, ``p`` the LEFT JOINed `llm_model_prices` alias.
+    Anthropic reports cache reads OUTSIDE `prompt_tokens`, OpenAI and Gemini inside it. Unpriced
+    or cached-without-cached-price is NULL, never 0. A NULL `cached_tokens` means the provider's
+    cache use was never recorded (CU-1): on a priced model that call is NULL too and flagged
+    `cache_unknown`; a recorded 0 prices normally, and an unpriced model stays plain unpriced.
+    """
+    cached = f"COALESCE({u}.cached_tokens, 0)"
+    return CostSql(
+        cost_usd=(
+            f"(CASE WHEN {p}.model IS NULL OR {u}.cached_tokens IS NULL OR ({cached} > 0 AND {p}.cached_input_usd_per_1m IS NULL) THEN NULL\n"
+            f"       ELSE ((\n"
+            f"         (CASE WHEN lower(btrim({u}.provider)) = 'anthropic' THEN {u}.prompt_tokens\n"
+            f"               ELSE GREATEST({u}.prompt_tokens - {cached}, 0) END) * {p}.input_usd_per_1m\n"
+            f"       + {cached} * COALESCE({p}.cached_input_usd_per_1m, 0)\n"
+            f"       + {u}.completion_tokens * {p}.output_usd_per_1m\n"
+            f"  ) / 1000000) END)"
+        ),
+        priced=f"({p}.model IS NOT NULL AND {u}.cached_tokens IS NOT NULL AND ({cached} = 0 OR {p}.cached_input_usd_per_1m IS NOT NULL))",
+        cached_price_missing=f"({p}.model IS NOT NULL AND {p}.cached_input_usd_per_1m IS NULL AND {cached} > 0)",
+        cache_unknown=f"({p}.model IS NOT NULL AND {u}.cached_tokens IS NULL)",
+    )

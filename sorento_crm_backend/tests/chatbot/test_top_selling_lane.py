@@ -488,7 +488,7 @@ class TestCustomerPicker:
             resolve_services=_ambiguous_hanlim_resolve_services(lambda **_: {"items": [], "has_result": False}),
         )
         assert _calls(captured) == []
-        assert "Which customer do you mean?" in reply
+        assert "Which one do you mean?" in reply
         assert " - has DO" not in reply and " - no DO" not in reply
 
         reply, captured = _turn(
@@ -903,7 +903,7 @@ class TestDealer:
             resolve_services=_ambiguous_hanlim_resolve_services(lambda **_: {"items": [], "has_result": False}),
         )
         assert reply.strip() != REFUSED
-        assert "Which customer do you mean?" in reply
+        assert "Which one do you mean?" in reply
 
     def test_linked_contact_with_only_an_inactive_office_type_stays_a_dealer(
         self, session_factory, monkeypatch, route
@@ -1084,6 +1084,8 @@ class TestParser:
             prompt_mod.REF_KINDS_ADDENDUM
         ).removesuffix(
             prompt_mod.CHAT_REPORT_ADDENDUM
+        ).removesuffix(
+            prompt_mod.SUB_ASKS_ADDENDUM
         ).removesuffix(
             prompt_mod.PO_REFS_ADDENDUM
         ).removesuffix(

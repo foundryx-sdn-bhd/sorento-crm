@@ -280,6 +280,13 @@ class ProjectResponse(BaseModel):
     lead_created_at: Optional[datetime] = None
     lead_owner_user_id: Optional[str] = None
 
+    # The customer, read through the lead (a project has no customer column of its own).
+    # Null with no lead, or with a lead whose buyer is not known yet.
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_attn: Optional[str] = None
+
     status_id: Optional[str] = None
     status_key: Optional[str] = None
     status_label: Optional[str] = None
@@ -1214,7 +1221,20 @@ class ProjectQuotationLineBase(BaseModel):
         False,
         description="Quoted at a rate and printed, contributing nothing to any total.",
     )
-    image_attachment_id: Optional[str] = None
+    image_attachment_id: Optional[str] = Field(
+        None,
+        description=(
+            "The photo picked for this line: an image attachment of the line's product. "
+            "Refused (422 quotation_line_image_invalid) when it is not."
+        ),
+    )
+    drawing_attachment_id: Optional[str] = Field(
+        None,
+        description=(
+            "The drawing picked for this line: a 'Technical Specifications' image of the "
+            "line's product. Refused (422 quotation_line_drawing_invalid) when it is not."
+        ),
+    )
 
 
 class ProjectQuotationLineCreate(ProjectQuotationLineBase):
@@ -1231,6 +1251,7 @@ class ProjectQuotationLineUpdate(BaseModel):
     sort_order: Optional[int] = None
     notes: Optional[str] = None
     image_attachment_id: Optional[str] = None
+    drawing_attachment_id: Optional[str] = None
     item_label: Optional[str] = Field(None, max_length=8)
     brand_snapshot: Optional[str] = Field(None, max_length=100)
     technical_spec: Optional[str] = None
@@ -1272,6 +1293,15 @@ class ProjectQuotationLineBulkWrite(BaseModel):
     )
 
 
+class QuotationLineFileCandidate(BaseModel):
+    """One image a line's photo or drawing could be: a signed thumbnail and the original."""
+
+    attachment_id: str
+    filename: Optional[str] = None
+    url: Optional[str] = None
+    preview_url: Optional[str] = None
+
+
 class QuotationLineImageResponse(BaseModel):
     """The picture cell for one line (S21).
 
@@ -1294,9 +1324,36 @@ class QuotationLineImageResponse(BaseModel):
     #: Lets the viewer download through the authenticated attachments route.
     attachment_id: Optional[str] = None
     filename: Optional[str] = None
-    #: Photographs somebody could choose between. Zero on `no_photos` and `off_catalog`, and
-    #: zero on a frozen line, which has nothing left to choose.
+    #: "Product Photos" images somebody could choose between (a drawing is never one). Zero on
+    #: `no_photos` and `off_catalog`.
     candidate_count: int = 0
+    #: The product's photos, for the picker that writes `image_attachment_id`.
+    candidates: List[QuotationLineFileCandidate] = Field(default_factory=list)
+
+
+class QuotationLineDrawingResponse(BaseModel):
+    """The drawing cell for one line (QUOTATION-UX): the product's "Technical Specifications"
+    images, printed in TECHNICAL SPEC.
+
+    Declared for the same reason as `QuotationLineImageResponse`: `response_model` drops any key
+    no field declares.
+    """
+
+    #: chosen (picked or stamped) | default (first by upload) | no_drawings | off_catalog
+    state: str
+    url: Optional[str] = None
+    preview_url: Optional[str] = None
+    attachment_id: Optional[str] = None
+    filename: Optional[str] = None
+    candidate_count: int = 0
+    candidates: List[QuotationLineFileCandidate] = Field(default_factory=list)
+
+
+class QuotationLineImagesResponse(BaseModel):
+    """The photo and drawing cells for a product on a line not saved yet (no picks)."""
+
+    product_image: QuotationLineImageResponse
+    technical_drawing: QuotationLineDrawingResponse
 
 
 class ProjectQuotationLineResponse(BaseModel):
@@ -1310,6 +1367,8 @@ class ProjectQuotationLineResponse(BaseModel):
     list_price: Optional[Decimal] = None
     image_attachment_id: Optional[str] = None
     product_image: Optional[QuotationLineImageResponse] = None
+    drawing_attachment_id: Optional[str] = None
+    technical_drawing: Optional[QuotationLineDrawingResponse] = None
 
     unit_price: Decimal = Decimal("0")
     quantity: Decimal = Decimal("1")

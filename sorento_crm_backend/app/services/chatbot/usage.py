@@ -104,7 +104,8 @@ def record_turn_llm_usage(
                 prompt_tokens=int(usage.get("prompt_tokens") or 0),
                 completion_tokens=int(usage.get("completion_tokens") or 0),
                 total_tokens=int(usage.get("total_tokens") or 0),
-                cached_tokens=int(usage.get("cached_tokens") or 0),
+                # NULL when the provider gave no figure: cache use unknown, never 0 (CU-2).
+                cached_tokens=int(usage["cached_tokens"]) if usage.get("cached_tokens") is not None else None,
                 tool_calls_count=0,
                 response_time_ms=int(response_time_ms),
                 was_answered=bool(answered),

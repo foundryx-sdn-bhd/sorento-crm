@@ -48,6 +48,10 @@ export interface Idea {
   advanceTransitionId: string | null;
   title: string | null;
   problem: string;
+  desiredOutcome: string | null;
+  /** Always a list: ss #123 sends a string, the service splits it (`normalizeUseCases`). */
+  useCases: string[];
+  currentWorkaround: string | null;
   proposedSolution: string | null;
   impact: string | null;
   department: string | null;
@@ -95,26 +99,53 @@ export interface IdeaBoard {
 }
 
 export interface IdeaCreateInput {
+  title?: string;
   problem: string;
+  desiredOutcome?: string;
+  useCases?: string[];
+  currentWorkaround?: string;
+  rawText?: string;
+  /** Legacy fields the gateway still forwards; the CRM UI no longer sends them. */
   proposedSolution?: string;
   impact?: string;
   department?: string;
-  rawText?: string;
   /** Uploaded after create through the attachments route. */
   files?: File[];
 }
 
 export interface IdeaUpdateInput {
+  title?: string | null;
   problem?: string;
+  desiredOutcome?: string | null;
+  useCases?: string[];
+  currentWorkaround?: string | null;
+  rawText?: string;
+  /** Legacy fields the gateway still forwards; the CRM UI no longer sends them. */
   proposedSolution?: string | null;
   impact?: string | null;
   department?: string | null;
-  rawText?: string;
 }
+
+/** The idea fields a merge can take per chosen idea (ss `fields` keys). */
+export type IdeaMergeFieldKey =
+  | 'title'
+  | 'problem'
+  | 'desiredOutcome'
+  | 'useCases'
+  | 'currentWorkaround'
+  | 'rawText';
 
 export interface IdeaMergeInput {
   survivorId: string;
   ideaIds: string[];
+  /** Field key to the ids whose value is used, in order; omitted = the survivor's own. */
+  fields?: Partial<Record<IdeaMergeFieldKey, string[]>>;
+}
+
+export interface SimilarIdeas {
+  /** False when the AI lookup is down: the caller offers Retry. */
+  available: boolean;
+  ideas: Idea[];
 }
 
 export interface IdeaPromoteInput {

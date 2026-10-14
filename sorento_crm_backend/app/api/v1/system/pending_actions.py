@@ -138,6 +138,7 @@ _ANY_OF_PERMISSIONS: dict = {
 #: Actions whose ids become an ss URL path: the record id (and `payload.idea_id`) must be a UUID
 #: at park time, so a crafted id is refused here and not ten seconds later (AC-A-10).
 _UUID_ENTITY_ACTIONS = (
+    "llm_model_price.delete",
     "idea.archive",
     "idea.delete",
     "idea_comment.delete",

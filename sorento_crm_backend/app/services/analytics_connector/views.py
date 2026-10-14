@@ -18,6 +18,8 @@ from typing import Any
 
 from sqlalchemy import text
 
+from app.services.analytics_connector.prices import cost_sql
+
 SCHEMA = "analytics_connector"
 RO_ROLE = "sorento_analytics_ro"
 
@@ -175,6 +177,7 @@ VIEWS = (MESSAGES_V, CONTACTS_V, BOT_TURNS_V, EPISODES_V)
 # cache WRITES (`cache_creation_input_tokens`, 1.25x input) are not captured: nothing in `app/`
 # sets `cache_control` today, so they are zero; capture them when prompt caching is turned on.
 _CACHED = "COALESCE(u.cached_tokens, 0)"
+_COST = cost_sql("u", "p")
 LLM_CALLS_V = f"""
 CREATE OR REPLACE VIEW {SCHEMA}.llm_calls AS
 SELECT u.id::text AS id,
@@ -186,20 +189,16 @@ SELECT u.id::text AS id,
        u.provider,
        u.model,
        u.prompt_tokens,
-       {_CACHED} AS cached_tokens,
+       u.cached_tokens AS cached_tokens,
        u.completion_tokens,
        u.total_tokens,
        u.response_time_ms,
        u.was_answered,
-       CASE WHEN p.model IS NULL OR ({_CACHED} > 0 AND p.cached_input_usd_per_1m IS NULL) THEN NULL
-            ELSE ((
-              (CASE WHEN lower(btrim(u.provider)) = 'anthropic' THEN u.prompt_tokens
-                    ELSE GREATEST(u.prompt_tokens - {_CACHED}, 0) END) * p.input_usd_per_1m
-            + {_CACHED} * COALESCE(p.cached_input_usd_per_1m, 0)
-            + u.completion_tokens * p.output_usd_per_1m
-       ) / 1000000) END AS cost_usd,
-       (p.model IS NOT NULL AND ({_CACHED} = 0 OR p.cached_input_usd_per_1m IS NOT NULL)) AS priced,
-       (p.model IS NOT NULL AND p.cached_input_usd_per_1m IS NULL AND {_CACHED} > 0) AS cached_price_missing
+       {_COST.cost_usd} AS cost_usd,
+       {_COST.priced} AS priced,
+       {_COST.cached_price_missing} AS cached_price_missing,
+       -- New columns go LAST (CREATE OR REPLACE VIEW cannot reorder).
+       {_COST.cache_unknown} AS cache_unknown
   FROM ai_assistant_usage_logs u
   LEFT JOIN respond_contacts rc ON rc.id = u.contact_id
   LEFT JOIN llm_model_prices p ON p.model = u.model
@@ -248,7 +247,8 @@ SELECT t.id::text AS id,
        COALESCE(calls.cached_price_missing, false) AS cached_price_missing,
        -- New columns go LAST: CREATE OR REPLACE VIEW cannot insert or reorder columns, and a
        -- database that already holds an earlier version of this view upgrades in place.
-       rc.phone_number AS contact_phone
+       rc.phone_number AS contact_phone,
+       COALESCE(calls.cache_unknown, false) AS cache_unknown
   FROM chatbot.turns t
   LEFT JOIN LATERAL (
         SELECT r.id, r.name, r.phone_number FROM respond_contacts r
@@ -268,7 +268,8 @@ SELECT t.id::text AS id,
                sum(lc.response_time_ms) AS llm_ms,
                sum(lc.cost_usd) AS cost_usd,
                bool_and(lc.priced) AS priced,
-               bool_or(lc.cached_price_missing) AS cached_price_missing
+               bool_or(lc.cached_price_missing) AS cached_price_missing,
+               bool_or(lc.cache_unknown) AS cache_unknown
           FROM {SCHEMA}.llm_calls lc
          WHERE lc.chatbot_turn_id = t.id::text
          GROUP BY lc.chatbot_turn_id

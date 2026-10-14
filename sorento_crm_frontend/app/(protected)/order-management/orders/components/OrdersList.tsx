@@ -191,6 +191,23 @@ export default function OrdersList() {
         meta: { headerTitle: 'Debtor Name', skeleton: <Skeleton className="h-4 w-32" /> },
       },
       {
+        // DO-BRANCH-NAME: the AutoCount branch the DO ingest resolves, so the chatbot's
+        // Branch line can be cross-checked here.
+        accessorKey: 'branch_name',
+        header: ({ column }) => <DataGridColumnHeader title="Branch" column={column} />,
+        cell: ({ row }) =>
+          row.original.branch_name ? (
+            <span className="truncate block" title={row.original.branch_name}>
+              {row.original.branch_name}
+            </span>
+          ) : (
+            '-'
+          ),
+        enableSorting: false,
+        size: 180,
+        meta: { headerTitle: 'Branch', skeleton: <Skeleton className="h-4 w-28" /> },
+      },
+      {
         accessorKey: 'order_date',
         header: ({ column }) => <DataGridColumnHeader title="Delivery Order Date" column={column} />,
         cell: ({ row }) => row.original.order_date ? formatDate(new Date(row.original.order_date)) : '-',

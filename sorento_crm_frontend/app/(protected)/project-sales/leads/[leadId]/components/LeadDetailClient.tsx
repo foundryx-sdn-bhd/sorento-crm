@@ -73,7 +73,7 @@ import { QualifyLeadDialog } from './QualifyLeadDialog';
 const TABS = [
   { id: 'overview', label: 'Overview', icon: Info },
   { id: 'informant', label: 'Who told us', icon: UserRound },
-  { id: 'handover', label: 'Handover', icon: ArrowRightLeft },
+  { id: 'handover', label: 'Assignment', icon: ArrowRightLeft },
   { id: 'buyer', label: 'Buyer', icon: Building2 },
   { id: 'projects', label: 'Projects', icon: FolderKanban },
   { id: 'activity', label: 'Activity', icon: History },
@@ -533,10 +533,9 @@ function AcceptanceCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Handover</CardTitle>
+        <CardTitle className="text-sm">Assignment</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <LeadAcceptanceBadge lead={lead} className="flex flex-wrap items-center gap-1.5" />
         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
           <Fact label="Assigned to" value={lead.owner_name} />
           <Fact

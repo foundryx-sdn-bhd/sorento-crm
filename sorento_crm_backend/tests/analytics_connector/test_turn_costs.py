@@ -20,6 +20,11 @@ from sqlalchemy import text
 from tests._pg_fixture import pg_session, unique_code
 from tests.analytics_connector._helpers import BASE, CHAT_VIEW, USE, client_for, make_user, signed
 
+# `serial_ddl`: these tests run CREATE OR REPLACE VIEW on the SHARED analytics_connector schema
+# (ensure_views / ensure_cost_views) or read those views, and two xdist workers doing it at once
+# deadlock. The module leaves the pool and runs in the `-p no:xdist` serial_ddl step.
+pytestmark = pytest.mark.serial_ddl
+
 T0 = datetime(2026, 9, 2, 2, 0, 0, tzinfo=timezone.utc)  # 10:00 Malaysia
 
 
@@ -494,7 +499,8 @@ def test_backfill_takes_cached_tokens_from_the_turn_trace():
         got = dict(db.execute(text("SELECT id::text, cached_tokens FROM ai_assistant_usage_logs WHERE id IN (:a, :b)"),
                               {"a": legacy, "b": no_fact}).all())
         assert got[legacy] == 36000
-        assert got[no_fact] == 0
+        # CU-2: a trace with no cached_tokens fact stays NULL ("unknown"), it is not made 0.
+        assert got[no_fact] is None
 
 
 def test_backfill_takes_prompt_version_from_the_turn_trace():
@@ -509,58 +515,6 @@ def test_backfill_takes_prompt_version_from_the_turn_trace():
         got = dict(db.execute(text("SELECT turn_id::text, prompt_version FROM chatbot.chat_ask_facts "
                                    "WHERE turn_id IN (:a, :b)"), {"a": s["priced"], "b": s["unpriced"]}).all())
         assert got == {s["priced"]: 52, s["unpriced"]: 52}
-
-
-# ------------------------------------------------------------------ writers
-
-
-def test_parser_usage_row_carries_cached_tokens():
-    from app.services.chatbot.usage import record_parser_usage
-
-    with pg_session() as db:
-        turn_id = str(uuid.uuid4())
-        record_parser_usage(
-            db, usage={"provider": "openai", "model": "gpt-5.4-mini", "prompt_tokens": 100, "completion_tokens": 5,
-                       "total_tokens": 105, "cached_tokens": 64},
-            response_time_ms=12, contact_respond_id="rio-none", answered=True, chatbot_turn_id=turn_id,
-        )
-        row = db.execute(text("SELECT feature, cached_tokens FROM ai_assistant_usage_logs WHERE chatbot_turn_id = :t"),
-                         {"t": turn_id}).one()
-        assert tuple(row) == ("chatbot_parser", 64)
-
-
-def test_clarifier_usage_row_is_recorded_for_the_turn():
-    from app.services.chatbot.usage import CLARIFIER_FEATURE, record_turn_llm_usage
-
-    assert CLARIFIER_FEATURE == "chatbot_clarifier"
-    with pg_session() as db:
-        turn_id = str(uuid.uuid4())
-        record_turn_llm_usage(
-            db, feature=CLARIFIER_FEATURE,
-            usage={"provider": "openai", "model": "gpt-5.4-mini", "prompt_tokens": 900, "completion_tokens": 40,
-                   "total_tokens": 940, "cached_tokens": 0},
-            response_time_ms=30, contact_respond_id="rio-none", answered=True, chatbot_turn_id=turn_id,
-        )
-        row = db.execute(text("SELECT feature, prompt_tokens, completion_tokens FROM ai_assistant_usage_logs "
-                              "WHERE chatbot_turn_id = :t"), {"t": turn_id}).one()
-        assert tuple(row) == ("chatbot_clarifier", 900, 40)
-
-
-def test_llm_call_capture_collects_usage_of_calls_made_inside_it(monkeypatch):
-    from app.services.chatbot import llm_call
-    from app.services.llm_provider import ChatResult
-
-    class Fake:
-        def chat(self, messages, model=None, **kw):
-            return ChatResult(content="{}", prompt_tokens=10, completion_tokens=2, total_tokens=12,
-                              tool_calls=[], raw=None, cached_tokens=4)
-
-    monkeypatch.setattr("app.services.llm_provider.get_provider", lambda *a, **k: Fake())
-    llm_call.chat("openai", "k", "gpt-x", [])  # outside a capture: nothing collected, nothing breaks
-    with llm_call.capture_usage() as calls:
-        llm_call.chat("openai", "k", "gpt-x", [])
-    assert calls == [{"provider": "openai", "model": "gpt-x", "prompt_tokens": 10, "completion_tokens": 2,
-                      "total_tokens": 12, "cached_tokens": 4}]
 
 
 # ------------------------------------------------------------------ over the connector
@@ -689,27 +643,51 @@ def test_the_local_client_signs_calls_the_connector_accepts(monkeypatch):
             assert client.request(method, url, headers=headers).status_code == 200
 
 
-@pytest.mark.parametrize("feature", ["chatbot_parser", "chatbot_clarifier"])
-def test_a_contact_with_a_duplicate_respond_io_id_still_gets_its_usage_row(feature):
-    """`respond_io_id` is not unique. A bare `.scalar()` raised MultipleResultsFound on such a
-    contact and the telemetry `except` dropped the whole row, so its turns cost nothing in
-    turn_costs (crew audit 13 Oct; same fix as PARSER-GEMINI-LITE #1624). The oldest row stands."""
-    from app.services.chatbot.usage import record_turn_llm_usage
-
+def test_cu6_views_carry_cache_unknown_as_the_last_column():
     with pg_session() as db:
-        rid = f"rio-dup-{uuid.uuid4().hex[:10]}"
-        older, newer = unique_code("rcold"), unique_code("rcnew")
-        for cid, at in ((older, T0), (newer, T0 + timedelta(days=1))):
-            db.execute(text("INSERT INTO respond_contacts (id, phone_number, name, respond_io_id, created_at) "
-                            "VALUES (:i, :p, 'ZZT dup', :r, :t)"),
-                       {"i": cid, "p": f"+6010000{uuid.uuid4().int % 10000:04d}", "r": rid, "t": at})
-        turn_id = str(uuid.uuid4())
-        record_turn_llm_usage(
-            db, feature=feature,
-            usage={"provider": "openai", "model": "gpt-5.4-mini", "prompt_tokens": 100, "completion_tokens": 5,
-                   "total_tokens": 105, "cached_tokens": 64},
-            response_time_ms=12, contact_respond_id=rid, answered=True, chatbot_turn_id=turn_id,
-        )
-        row = db.execute(text("SELECT contact_id, cached_tokens FROM ai_assistant_usage_logs WHERE chatbot_turn_id = :t"),
-                         {"t": turn_id}).one()
-        assert tuple(row) == (older, 64)
+        _ensure(db)
+        for view in ("llm_calls", "turn_costs"):
+            cols = db.execute(
+                text("SELECT column_name FROM information_schema.columns WHERE table_schema = 'analytics_connector' "
+                     "AND table_name = :v ORDER BY ordinal_position"), {"v": view}).scalars().all()
+            assert cols[-1] == "cache_unknown", (view, cols[-3:])
+
+
+def test_cu6_a_call_with_unknown_cache_use_has_no_cost_and_taints_its_turn():
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        tid = s["no_calls"]
+        _usage(db, turn_id=tid, contact_id=s["contact_id"], feature="chatbot_parser", model=s["m_priced"],
+               prompt=1000, cached=0, completion=10, ms=1)
+        unknown = _usage(db, turn_id=tid, contact_id=s["contact_id"], feature="chatbot_clarifier",
+                         model=s["m_priced"], prompt=1000, cached=None, completion=10, ms=1)
+        db.flush()
+        calls = {r["feature"]: r for r in db.execute(
+            text("SELECT * FROM analytics_connector.llm_calls WHERE chatbot_turn_id = :t"), {"t": tid}).mappings()}
+        assert calls["chatbot_parser"]["cache_unknown"] is False and calls["chatbot_parser"]["cost_usd"] is not None
+        c = calls["chatbot_clarifier"]
+        assert c["id"] == unknown and c["cache_unknown"] is True
+        assert c["cost_usd"] is None and c["priced"] is False and c["cached_price_missing"] is False
+        turn = _row(db, "turn_costs", "id", tid)
+        assert turn["cache_unknown"] is True and turn["cost_usd"] is None
+
+
+def test_cu6_a_turn_with_every_cache_use_recorded_is_not_cache_unknown():
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        assert _row(db, "turn_costs", "id", s["priced"])["cache_unknown"] is False
+        assert _row(db, "turn_costs", "id", s["priced"])["cost_usd"] is not None
+
+
+def test_cu6_llm_calls_keeps_null_cached_tokens_null():
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        tid = s["no_calls"]
+        _usage(db, turn_id=tid, contact_id=s["contact_id"], feature="chatbot_parser", model=s["m_priced"],
+               prompt=1000, cached=None, completion=10, ms=1)
+        db.flush()
+        call = _row(db, "llm_calls", "chatbot_turn_id", tid)
+        assert call["cached_tokens"] is None

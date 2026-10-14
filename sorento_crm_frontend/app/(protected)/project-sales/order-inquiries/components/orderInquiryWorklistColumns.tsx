@@ -19,6 +19,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import {
   ackStateOf,
   bundledHostChangeLines,
@@ -1019,13 +1020,12 @@ export function useOrderInquiryWorklistColumns({
         cell: ({ row }) => {
           const label = orderInquirySoLineLabel(row.original);
           const href = orderInquirySoLineHref(row.original) ?? orderInquiryRowHref(row.original);
-          if (!href)
-            return (
-              <span className="block truncate" title={label}>
-                {label}
-              </span>
-            );
-          return (
+          // AC-CONSIGN-CRM: a consignment reads as one beside its number.
+          const text = !href ? (
+            <span className="block truncate" title={label}>
+              {label}
+            </span>
+          ) : (
             <Link
               href={href}
               className="block truncate font-medium text-primary hover:underline"
@@ -1033,6 +1033,12 @@ export function useOrderInquiryWorklistColumns({
             >
               {label}
             </Link>
+          );
+          return (
+            <div className="flex min-w-0 flex-col gap-0.5">
+              {text}
+              <ConsignmentBadge docType={row.original.so_doc_type} size="xs" />
+            </div>
           );
         },
       },

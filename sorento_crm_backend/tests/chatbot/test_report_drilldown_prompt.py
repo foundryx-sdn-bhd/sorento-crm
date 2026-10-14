@@ -125,3 +125,9 @@ def test_global_only_when_said_and_doubt_is_unsure() -> None:
     from app.services.chatbot_parser_prompt import REPORT_ASK_ADDENDUM
 
     assert "In doubt, \"unsure\", never \"global\"" in REPORT_ASK_ADDENDUM
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

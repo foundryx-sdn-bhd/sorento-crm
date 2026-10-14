@@ -1301,6 +1301,31 @@ def test_the_cell_states_ordered_delivered_and_outstanding(scm_app):
     assert line["open_qty"] == 70
 
 
+def test_the_cell_leaves_an_autocount_cancel_out_of_ordered_and_delivered(scm_app):
+    """AC-CANCEL-CRM: 100 ordered, TransferedQty 30 of which 20 is AutoCount Cancel SO. The
+    drill reads Ordered 80 and Delivered 10; Outstanding stays 70 (cancel is not owed)."""
+    app, db = _client(scm_app)
+    marker = f"ZZTSD{_u()[:6]}".upper()
+    warehouse = _warehouse(db, f"ZZTBRW{_u()[:4]}-BB")
+    product = _product(db, f"{marker}-A")
+    due = _months_ahead(1)
+    _demand(
+        db, product, warehouse, qty=100, qty_delivered=30, required_date=due,
+        so_number=f"{marker}-SO1",
+    )
+    db.flush()
+    db.execute(text(
+        "UPDATE sales_order_lines SET qty_cancelled = 20 WHERE sales_order_id IN "
+        "(SELECT id FROM sales_orders WHERE so_number = :n)"), {"n": f"{marker}-SO1"})
+    db.flush()
+
+    with TestClient(app) as c:
+        got = c.get(f"{BASE}/{product.id}/cell", params={"month": month_key(due)})
+    assert got.status_code == 200, got.text
+    line = got.json()["demand"][0]
+    assert (line["qty_ordered"], line["qty_delivered"], line["open_qty"]) == (80, 10, 70)
+
+
 def test_the_cell_states_ordered_as_the_cs_required_quantity_when_set(scm_app):
     """R22: `qty_required` (the Order Inquiry sheet's own CS statement) wins over
     `qty_ordered` for the drill's Ordered column - the same coalesce `demand_qty()` and
@@ -1754,8 +1779,18 @@ def _assert_pinned_on_the_bin(c, *, marker, warehouse, product, due):
     assert so2["short_qty"] == 50
 
     # The received document is not supply, and no stand-in is built for it: the only
-    # supply row anywhere is the bin, and it is spoken for by SO1.
-    assert cell["supply"] == []
+    # supply row anywhere is the bin, and it is spoken for by SO1. STOCK-DEBT-STALE-PIN:
+    # SO1's own column lists that bin too (Free 0 there), so the tab is never empty next
+    # to a row it covers.
+    assert [
+        (row["kind"], row["warehouse_code"], row["free_qty"], row["assigned_to"])
+        for row in cell["supply"]
+    ] == [
+        (
+            "on_hand", warehouse.warehouse_code, 0,
+            [{"so_number": f"{marker}-SO1", "line_no": None, "qty": 50}],
+        ),
+    ]
     assert [row["kind"] for row in now["supply"]] == ["on_hand"]
     [on_hand] = now["supply"]
     assert on_hand["warehouse_code"] == warehouse.warehouse_code

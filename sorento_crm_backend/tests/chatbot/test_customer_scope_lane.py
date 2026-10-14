@@ -224,7 +224,7 @@ class TestWhoIsScoped:
         reply, captured = _turn(
             session_factory, monkeypatch, _ask([_ent("hanlim")]), resolve_services=_hanlim_services(),
         )
-        assert "Which customer" in reply, reply
+        assert "Which one do you mean?" in reply, reply
         assert "under your account" not in reply
         assert captured == []
 
@@ -235,7 +235,7 @@ class TestWhoIsScoped:
         reply, captured = _turn(
             session_factory, monkeypatch, _ask([_ent("hanlim")]), resolve_services=_hanlim_services(),
         )
-        assert "Which customer" in reply, reply
+        assert "Which one do you mean?" in reply, reply
         assert "under your account" not in reply
         assert captured == []
 
@@ -295,7 +295,7 @@ class TestUpstreamBlock:
         assert reply.strip() == refusal(OWN_A), reply
         assert captured == []
         assert not _asked_about(looked_up, "hanlim"), looked_up
-        assert "Which customer" not in reply
+        assert "Which one do you mean?" not in reply
         assert "HANLIM" not in reply
         assert not _open_question(session_factory), _open_question(session_factory)
 
@@ -325,7 +325,7 @@ class TestUpstreamBlock:
         )
         (args,) = _calls(captured, REPORT)
         assert args["customer_ids"] == [own_id], args
-        assert "Which customer" not in reply
+        assert "Which one do you mean?" not in reply
         assert not _asked_about(looked_up, "hanlim"), looked_up
 
     def test_word_matching_two_own_links_uses_both(self, session_factory, monkeypatch) -> None:
@@ -338,7 +338,7 @@ class TestUpstreamBlock:
         )
         (args,) = _calls(captured, REPORT)
         assert args["customer_ids"] == [one, two], args
-        assert "Which customer" not in reply
+        assert "Which one do you mean?" not in reply
 
     def test_other_customer_code_is_refused(self, session_factory, monkeypatch) -> None:
         """AC-CS-14: another customer's exact code is a customer word -> AC-CS-10."""
@@ -581,7 +581,7 @@ class TestReviewRound1:
             session_factory, monkeypatch, _ask([_ent("hanlim", hint)]), resolve_services=_hanlim_services(),
         )
         assert reply.strip() == refusal(OWN_A), reply
-        assert "Which customer" not in reply
+        assert "Which one do you mean?" not in reply
         assert not any(name in reply for name in HANLIM_NAMES), reply
         assert captured == []
 
@@ -599,7 +599,7 @@ class TestReviewRound1:
             "purchase orders for hanlim", attributes=(), resolve_services=_hanlim_services(),
         )
         assert not any(name in reply for name in HANLIM_NAMES), reply
-        assert "Which customer" not in reply, reply
+        assert "Which one do you mean?" not in reply, reply
 
     def test_foreign_do_number_miss_never_prints_the_other_customers_name(self, session_factory, monkeypatch) -> None:
         """R-S3: as AC-CS-15, but the resolver's match carries the owning customer's name in
