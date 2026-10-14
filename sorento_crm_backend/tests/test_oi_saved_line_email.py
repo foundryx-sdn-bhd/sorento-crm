@@ -191,18 +191,21 @@ def _migration(name):
 
 def _template(db):
     """Seed `oihr_0006`'s document (inserted on a blank schema), then convert it with
-    `oihr_0007`: the path a real database takes."""
+    `oihr_0007` and `oihr_0008`: the path a real database takes."""
     from app.models.email_template import EmailTemplate
 
     from .test_order_inquiry_handover_automation import _run_upgrade
 
-    _run_upgrade(_migration("oihr_0006_no_remark_column"), db)
-    _run_upgrade(_migration("oihr_0007_excel_remark"), db)
+    for name in ("oihr_0006_no_remark_column", "oihr_0007_excel_remark", LAYOUT_MIGRATION):
+        _run_upgrade(_migration(name), db)
     return (
         db.query(EmailTemplate)
         .filter(EmailTemplate.code == "order_inquiry_handover_default")
         .one()
     )
+
+
+LAYOUT_MIGRATION = "oihr_0008_so_table_on_top"
 
 
 def _rows(html):
@@ -225,7 +228,10 @@ def _context(lines):
     return {
         "handover": {
             "subject_scope": "SO425879", "verbs": ["ORDER"], "headline": "ORDER, USE BRW",
-            "orders": [{"so_number": "SO425879", "customer": "KHOO SOON LEE", "project": "RESIDENSI A"}],
+            "orders": [{
+                "so_number": "SO425879", "so_date": "10/10/2026", "customer": "KHOO SOON LEE",
+                "project": "RESIDENSI A",
+            }],
             "lines": lines, "line_count": len(lines),
             "link": "https://crm.test/project-sales/order-inquiries?query=SO425879",
         },
@@ -244,53 +250,56 @@ def _line(**over):
     return base
 
 
-def test_the_email_reads_in_the_owners_excel_columns_with_remark():
+def _render(lines):
     from app.services.email_template_service import EmailTemplateService
 
     from ._pg_fixture import blank_session
 
     with blank_session() as db:
         template = _template(db)
-        rendered = EmailTemplateService(db).render(template, _context([
-            _line(),
-            _line(item_code="SRTWCY8826", qty="2", remark="USE BRW"),
-        ]))
+        return EmailTemplateService(db).render(template, _context(lines))
+
+
+def test_the_email_reads_as_before_so_table_on_top_lines_with_their_remark_below():
+    """Owner hand test 14 Oct 2026: "just like before" (`oihr_0006`): the S/O facts once in
+    their own table at the top, then the item lines, each with its REMARK."""
+    rendered = _render([_line(), _line(item_code="SRTWCY8826", qty="2", remark="USE BRW")])
     rows = _rows(rendered["body_html"])
-    assert rows[0] == [
-        "SO DATE", "S/O NO", "ITEM CODE", "QTY", "DELIVERY DATE", "PROJECT/CUSTOMER",
-        "STOCK LOCATION", "REMARK",
-    ], rows[0]
-    assert rows[1] == [
-        "10/10/2026", "SO425879", "SRTWC8826-SC", "4", "15/11/2026",
-        "KHOO SOON LEE / RESIDENSI A", "BRW-BB", "ORDER",
-    ], rows[1]
-    assert rows[2][-1] == "USE BRW"
+    assert rows[0] == ["S/O NO", "SO DATE", "CUSTOMER", "PROJECT"], rows[0]
+    assert rows[1] == ["SO425879", "10/10/2026", "KHOO SOON LEE", "RESIDENSI A"], rows[1]
+    assert rows[2] == ["LOCATION", "ITEM CODE", "QTY", "DELIVERY", "REMARK"], rows[2]
+    assert rows[3] == ["BRW-BB", "SRTWC8826-SC", "4", "15/11/2026", "ORDER"], rows[3]
+    assert rows[4] == ["BRW-BB", "SRTWCY8826", "2", "15/11/2026", "USE BRW"], rows[4]
+    assert len(rows) == 5, rows
+    text = rendered["body_text"]
+    assert "LOCATION | ITEM CODE | QTY | DELIVERY | REMARK" in text, text
+    assert "BRW-BB | SRTWCY8826 | 2 | 15/11/2026 | USE BRW" in text, text
 
 
-def test_a_cut_line_shows_qty_change_to_beside_its_remark():
-    from app.services.email_template_service import EmailTemplateService
-
-    from ._pg_fixture import blank_session
-
-    with blank_session() as db:
-        template = _template(db)
-        rendered = EmailTemplateService(db).render(template, _context([
-            _line(qty="1", was={"qty": "2"}, remark="CANCEL 1"),
-        ]))
-    rows = _rows(rendered["body_html"])
-    assert rows[0][3:5] == ["QTY", "QTY CHANGE TO"], rows[0]
-    assert rows[1][3:5] == ["2", "1"] and rows[1][-1] == "CANCEL 1", rows[1]
+def test_the_heading_is_one_plain_heading_whatever_the_lines_say():
+    """Owner, 14 Oct 2026: one plain heading; the details live only in each line's REMARK."""
+    rendered = _render([_line(remark="ORDER BACK")])
+    assert "ORDER INQUIRY" in rendered["body_html"]
+    assert "ORDER, USE BRW" not in rendered["body_html"]
+    assert rendered["body_text"].startswith("ORDER INQUIRY\n"), rendered["body_text"][:60]
 
 
-def test_the_template_migration_downgrades_to_the_previous_document():
+def test_a_cut_line_shows_new_qty_beside_its_remark():
+    rows = _rows(_render([_line(qty="1", was={"qty": "2"}, remark="CANCEL 1")])["body_html"])
+    assert rows[2] == ["LOCATION", "ITEM CODE", "QTY", "NEW QTY", "DELIVERY", "REMARK"], rows[2]
+    assert rows[3] == ["BRW-BB", "SRTWC8826-SC", "2", "1", "15/11/2026", "CANCEL 1"], rows[3]
+
+
+def test_the_layout_migration_downgrades_to_the_previous_document():
     from app.models.email_template import EmailTemplate
 
     from ._pg_fixture import blank_session
     from .test_order_inquiry_handover_automation import _run_downgrade, _run_upgrade
 
     with blank_session() as db:
-        previous = _migration("oihr_0006_no_remark_column")
-        latest = _migration("oihr_0007_excel_remark")
+        previous = _migration("oihr_0007_excel_remark")
+        latest = _migration(LAYOUT_MIGRATION)
+        _run_upgrade(_migration("oihr_0006_no_remark_column"), db)
         _run_upgrade(previous, db)
         _run_upgrade(latest, db)
         row = db.query(EmailTemplate).filter(
