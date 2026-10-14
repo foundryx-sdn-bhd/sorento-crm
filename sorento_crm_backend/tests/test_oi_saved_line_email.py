@@ -14,6 +14,7 @@ from decimal import Decimal
 import pytest
 
 from .test_planning_change_apply_on_board import (  # noqa: F401 - fixtures reused
+    BASE,
     _confirm,
     api,
     world,
@@ -336,3 +337,95 @@ def test_a_buy_replaced_by_stock_says_to_take_the_order_back(api, emails):
         (world.product.product_code, "10", world.own_wh.warehouse_code,
          f"USE {pool}, CANCEL ORDER 10"),
     ]
+
+
+# ----------------------------------------------- a Borrow reads the line's OWN location
+# Owner rule (13 Oct 2026, re-confirmed 14 Oct): every email line telling a Borrow shows the
+# SO line's OWN location, and the subject "OI: <location> @ <S/O NO>" uses it too. The
+# ORDER BACK row itself keeps its donor `stock_location` (purchasing orders back there).
+
+
+def _borrow_from(world, donor, qty):
+    return [{
+        "source": "other_location", "warehouse_id": donor.id, "qty": qty,
+        "reason": "Donor can spare it.",
+    }]
+
+
+def _donor(world, tag):
+    from .test_planning_changes import _warehouse
+
+    donor = _warehouse(world.db, f"ZZT-{tag}-{world.own_wh.warehouse_code[-4:]}")
+    _stock(world.db, world.product, donor, on_hand=100)
+    world.db.commit()
+    return donor
+
+
+def test_a_changed_borrow_reads_the_lines_own_location_in_the_email(api, emails):
+    from app.models.project_so import INQUIRY_CANCELLED, IV_ORDER_BACK, OrderInquiryRow
+
+    _client, world = api
+    donor_x = _donor(world, "DX")
+    donor_y = _donor(world, "DY")
+    order, line_a, _line_b = _order(api)
+    own = world.own_wh.warehouse_code
+    code = world.product.product_code
+
+    _post(api, order, [_line_payload(line_a.id, borrow=_borrow_from(world, donor_x, "10"))])
+    emails.clear()
+    _post(api, order, [_line_payload(
+        line_a.id, borrow=_borrow_from(world, donor_y, "10"), amend_reason="Y has it.",
+    )])
+
+    assert len(emails) == 1, emails
+    assert _lines(emails[0]) == [(code, "10", own, "ORDER BACK")], _lines(emails[0])
+    assert emails[0]["subject_scope"].startswith(f"{own} @ "), emails[0]["subject_scope"]
+    live = (
+        world.db.query(OrderInquiryRow)
+        .filter(OrderInquiryRow.so_line_id == line_a.id, OrderInquiryRow.verb == IV_ORDER_BACK,
+                OrderInquiryRow.state != INQUIRY_CANCELLED)
+        .all()
+    )
+    assert [r.stock_location for r in live] == [donor_y.warehouse_code], "rows keep the donor"
+
+
+def test_a_rejected_borrow_reads_the_lines_own_location_in_the_email(api, emails):
+    from app.models.project_so import IV_ORDER_BACK, OrderInquiryRow
+
+    from .test_fulfilment_line_draft_route import _board, _stage_reject
+
+    client, world = api
+    db = world.db
+    donor = _donor(world, "DR")
+    core_so = _core_so(db, world.company_id)
+    core_line = _core_line(db, core_so, world.product, world.own_wh, qty_ordered="2",
+                           required_date=D_A)
+    order = _project_so(db, world.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    line = _project_line(db, order, line_no=10, product=world.product, core_line=core_line)
+    db.commit()
+    own = world.own_wh.warehouse_code
+    code = world.product.product_code
+
+    _post(api, order, [_line_payload(line.id, borrow=_borrow_from(world, donor, "2"))])
+    emails.clear()
+    key = next(
+        c["key"] for c in _board(client, core_so)["contributions"] if c["item_code"] == code
+    )
+    _stage_reject(client, key)
+    response = client.post(
+        f"{BASE}/sales-orders/{order.id}/confirm",
+        json={"lines": [], "rejected_line_ids": [str(line.id)]},
+    )
+    assert response.status_code == 200, response.text
+    db.commit()
+
+    assert len(emails) == 1, emails
+    assert _lines(emails[0]) == [(code, "0", own, "CANCEL ALL")], _lines(emails[0])
+    assert emails[0]["lines"][0]["was"] == {"qty": "2"}, emails[0]["lines"]
+    assert emails[0]["subject_scope"].startswith(f"{own} @ "), emails[0]["subject_scope"]
+    row = (
+        db.query(OrderInquiryRow)
+        .filter(OrderInquiryRow.so_line_id == line.id, OrderInquiryRow.verb == IV_ORDER_BACK)
+        .one()
+    )
+    assert row.stock_location == donor.warehouse_code, "the row keeps its donor location"
