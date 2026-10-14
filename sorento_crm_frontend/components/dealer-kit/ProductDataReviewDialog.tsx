@@ -28,6 +28,7 @@ import type {
   LineDataChange,
   TagDataChangeSet,
 } from '@/lib/dealer-kit/product-data-changes';
+import { distinctName } from '@/lib/product-display';
 
 interface ProductDataReviewDialogProps {
   open: boolean;
@@ -72,7 +73,7 @@ export default function ProductDataReviewDialog({
                 are what a reader is shown everywhere else; neither is an id. */}
             {changeSet.code}
             {changeSet.tag_label ? ` ${changeSet.tag_label}` : ''}
-            {changeSet.name ? ` / ${changeSet.name}` : ''}
+            {distinctName(changeSet.code, changeSet.name) ? ` / ${changeSet.name}` : ''}
           </DialogDescription>
         </DialogHeader>
 

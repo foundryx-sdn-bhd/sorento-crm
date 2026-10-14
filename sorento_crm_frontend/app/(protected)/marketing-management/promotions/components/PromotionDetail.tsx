@@ -42,6 +42,7 @@ import type { PromotionProduct, PromotionGroup } from '../types/promotion.types'
 import { useContactAccessTypes } from '@/app/(protected)/user-management/contact-access-types/hooks/useContactAccessTypes';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 type FocTierRow = { purchase: string; foc: string };
 
@@ -443,13 +444,15 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
           )}
         </td>
         <td className="p-2 text-sm">
-          {productHref ? (
-            <Link href={productHref} className="text-primary hover:underline">
-              {pp.product?.product_name || '-'}
-            </Link>
-          ) : (
-            pp.product?.product_name || '-'
-          )}
+          {distinctName(pp.product?.product_code, pp.product?.product_name) ? (
+            productHref ? (
+              <Link href={productHref} className="text-primary hover:underline">
+                {pp.product?.product_name}
+              </Link>
+            ) : (
+              pp.product?.product_name
+            )
+          ) : null}
         </td>
         <td className="p-2 text-sm text-right">{fmtMoney(listPrice)}</td>
         <td className="p-2 text-sm text-right">{fmtMoney(promoPrice)}</td>
@@ -818,12 +821,12 @@ export default function PromotionDetail({ promotionId }: PromotionDetailProps) {
                 onChange={(id) => {
                   setSelectedProductId(id);
                   const p = availableProducts.find((x) => x.id === id);
-                  if (p) setPickedProductLabel(`${p.product_code} - ${p.product_name}`);
+                  if (p) setPickedProductLabel(codeWithName(p.product_code, p.product_name));
                 }}
                 options={(() => {
                   const opts = availableProducts.map((product) => ({
                     value: product.id,
-                    label: `${product.product_code} - ${product.product_name}`,
+                    label: codeWithName(product.product_code, product.product_name),
                     searchText: [product.product_code, product.product_name, product.id]
                       .filter(Boolean)
                       .join(' '),

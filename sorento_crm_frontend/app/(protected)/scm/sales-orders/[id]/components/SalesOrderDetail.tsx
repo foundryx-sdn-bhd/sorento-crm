@@ -80,6 +80,7 @@ import { SoLineHistoryBody } from './SoLineHistoryBody';
 import { fmtDate, fmtInt } from '../../../lib/format';
 import { demandClassBadge } from '../../../lib/demandClass';
 import { ConsignmentBadge } from '../../../lib/docType';
+import { consignmentStatusLabel, consignmentStatusVariant } from '../../../lib/consignmentStatus';
 import { transferableBadge } from '../../../lib/transferable';
 import { salesOrderPlannedBadge } from '../../../lib/salesOrderPlanned';
 import {
@@ -112,6 +113,7 @@ import { PLAN_PERMISSION } from '../../lib/planActions';
 import { SOURCE_LABELS as LINE_SOURCE_LABELS } from '../../lib/sourceLabels';
 import { cancelSourcesTitle, isPartlyCancelled, PARTLY_CANCELLED } from '@/app/(protected)/scm/lib/autocountCancel';
 import { useHasPermission } from '@/hooks/usePermissions';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The sales-order detail, built to mirror `PurchaseOrderDetail` section for section: the
@@ -824,9 +826,7 @@ export function SalesOrderDetail({
             );
           }
           const showProductName =
-            !!row.original.product_name?.trim() &&
-            row.original.product_name.trim().toLowerCase() !==
-              row.original.sku?.trim().toLowerCase();
+            distinctName(row.original.sku, row.original.product_name) !== null;
           return (
             <div className="flex min-w-0 flex-col">
               <span className="font-medium">{row.original.sku}</span>
@@ -1596,21 +1596,36 @@ export function SalesOrderDetail({
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex min-w-0 flex-wrap items-center gap-3">
                 <CardTitle className="text-lg">{so.so_number}</CardTitle>
-                <Badge variant={salesOrderStatusVariant(so.status)} appearance="light" size="md">
-                  {salesOrderStatusLabel(so.status)}
+                {/* CONSIGN-DELIVERED-FIX: a consignment reads where its goods are. */}
+                <Badge
+                  variant={
+                    so.doc_type === 'consignment'
+                      ? consignmentStatusVariant(so)
+                      : salesOrderStatusVariant(so.status)
+                  }
+                  appearance="light"
+                  size="md"
+                >
+                  {so.doc_type === 'consignment'
+                    ? consignmentStatusLabel(so)
+                    : salesOrderStatusLabel(so.status)}
                 </Badge>
                 <ConsignmentBadge docType={so.doc_type} size="md" />
                 {/* How far the order has been PLANNED, beside the status it keeps being
                     confused with. The SAME chip the list carries, in the header rather than a
                     tab body because it is read-only metadata about the whole record - so view
-                    and edit show it identically, with nothing to change about it here. */}
-                <Badge
-                  variant={plannedBadge.variant}
-                  appearance="light"
-                  size="md"
-                >
-                  {plannedBadge.label}
-                </Badge>
+                    and edit show it identically, with nothing to change about it here. A
+                    consignment is never planned (its goods are already at the customer,
+                    CONSIGN-DELIVERED-FIX), so it carries no such chip. */}
+                {so.doc_type === 'consignment' ? null : (
+                  <Badge
+                    variant={plannedBadge.variant}
+                    appearance="light"
+                    size="md"
+                  >
+                    {plannedBadge.label}
+                  </Badge>
+                )}
               </div>
               {/* Read-only metadata belongs in the header, not a tab body - the project the
                   order carries, resolved from whichever source ranked highest. Nothing when
@@ -1658,9 +1673,10 @@ export function SalesOrderDetail({
                 // the permission the board's own page requires: a door that answers 403 is
                 // worse than no door. Also absent off a non-project demand class (AC-S2-6b):
                 // the fulfilment board only accepts project demand, so a retail order's Plan
-                // would open onto an empty board.
+                // would open onto an empty board. Absent on a consignment too: its goods are
+                // already at the customer, so there is nothing to plan.
                 primary={
-                  canPlan && so.demand_class === 'project' ? (
+                  canPlan && so.demand_class === 'project' && so.doc_type !== 'consignment' ? (
                     <Button asChild variant="primary" size="sm" className="gap-1.5">
                       <Link
                         href={`/project-sales/fulfilment-planning?orders=${encodeURIComponent(

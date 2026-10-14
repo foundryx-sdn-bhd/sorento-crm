@@ -18,6 +18,7 @@ import {
 } from '@/components/common/select-trigger-variants';
 import { SEARCH_DEBOUNCE_MS } from '@/hooks/useDebouncedSearch';
 import { isInsideOpenDialog } from '@/components/common/floatingAncestry';
+import { sameDisplayText } from '@/lib/product-display';
 import { PopoverScrollLock } from '@/components/common/PopoverScrollLock';
 import {
   SelectLoadFailure,
@@ -509,7 +510,7 @@ export function SearchableSelect({
                     ) : (
                       <div className="flex flex-1 flex-col min-w-0">
                         <span className="break-words">{opt.label}</span>
-                        {opt.description ? (
+                        {opt.description && !sameDisplayText(opt.label, opt.description) ? (
                           <span
                             className="text-xs text-muted-foreground break-words"
                             title={opt.description}

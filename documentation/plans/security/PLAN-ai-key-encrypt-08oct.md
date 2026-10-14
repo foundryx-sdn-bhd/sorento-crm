@@ -103,7 +103,7 @@ Prod compose (`/opt/sorento-crm2/docker-compose.yml`) is edited by hand on the s
 
 1. **Env var.** Generate ONE key (above) and add the same `FIELD_ENCRYPTION_KEY=<key>` to all four
    services built from the backend image: **`backend_blue`, `backend_green`, `worker`,
-   `worker_fast`** (`scripts/blue_green_deploy.sh:40-41`). A colour or worker without it refuses
+   `worker_fast`** (`scripts/blue_green_deploy.sh:42-43`). A colour or worker without it refuses
    to start; a colour with a different key cannot read what the other wrote. `mcp_blue` /
    `mcp_green` do NOT need it: their image holds only `sorento_crm_mcp/`, which talks to the
    backend over HTTP and never imports `app` or touches the database. Keep `JWT_SECRET`

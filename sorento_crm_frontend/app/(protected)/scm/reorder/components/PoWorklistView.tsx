@@ -34,6 +34,7 @@ import {
   type KeyedStatus,
   type PoWorklistRow,
 } from '../types/poWorklist.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The PO creation worklist (UAC Group E2).
@@ -164,10 +165,10 @@ export function PoWorklistView({ runId = null, onBack }: PoWorklistViewProps) {
             <div className="truncate font-medium" title={row.original.product_code}>
               {row.original.product_code}
             </div>
-            {row.original.product_name ? (
+            {distinctName(row.original.product_code, row.original.product_name) ? (
               <div
                 className="truncate text-2xs text-muted-foreground"
-                title={row.original.product_name}
+                title={row.original.product_name ?? undefined}
               >
                 {row.original.product_name}
               </div>

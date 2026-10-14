@@ -25,6 +25,7 @@ import {
   listCustomerAsks,
   updateCustomerAsk,
 } from '../lib/customer-asks-service';
+import { codeWithName } from '@/lib/product-display';
 
 /**
  * Sales-asks-todo S1: the "Show done" history under the portal to-do. It is the #1333 list
@@ -131,7 +132,7 @@ export function CustomerAsksHistory({
         header: 'Product',
         size: 140,
         cell: ({ row }) => (
-          <span className="block truncate" title={row.original.product_name ?? row.original.product_code}>
+          <span className="block truncate" title={codeWithName(row.original.product_code, row.original.product_name)}>
             {row.original.product_code}
           </span>
         ),

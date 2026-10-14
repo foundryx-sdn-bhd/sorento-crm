@@ -27,6 +27,7 @@ import {
 } from '../../lib/format';
 import type { AdjustPayload } from '../types/decisions.types';
 import type { ReorderRecommendation, SupplierChoice } from '../types/reorder.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * M4-D7 - Adjust a recommendation before it drafts a PO: override the buy qty
@@ -157,7 +158,9 @@ export function AdjustRecommendationModal({
           ) : null}
 
           <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
-            <div className="font-medium">{rec.product_name}</div>
+            {distinctName(rec.sku, rec.product_name) ? (
+              <div className="font-medium">{rec.product_name}</div>
+            ) : null}
             <div className="mt-0.5 text-xs text-muted-foreground">
               Proposed: {fmtInt(rec.order_qty)} units · {rec.supplier?.supplier_name ?? EM_DASH} ·{' '}
               {fmtMoney(rec.cash_impact)}

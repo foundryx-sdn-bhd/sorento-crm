@@ -6,6 +6,7 @@ import { Image as ImageIcon } from 'lucide-react';
 import { Popover, PopoverContent, PopoverPortal, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useProductPhoto } from '../hooks/useReorderRun';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * What the product actually looks like, on the row the buyer is deciding.
@@ -169,8 +170,8 @@ export function ProductPhotoPopover({
             <div className="truncate text-xs font-semibold" title={sku}>
               {sku}
             </div>
-            {productName ? (
-              <div className="truncate text-2xs text-muted-foreground" title={productName}>
+            {distinctName(sku, productName) ? (
+              <div className="truncate text-2xs text-muted-foreground" title={productName ?? undefined}>
                 {productName}
               </div>
             ) : null}

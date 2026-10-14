@@ -32,6 +32,7 @@ import type {
   ConfirmReserveComponent,
 } from '../types/fulfilmentPlanning.types';
 import {
+  awaitsCancelSo,
   borrowPassThrough,
   borrowReasonKeyOf,
   confirmLineFrom,
@@ -340,7 +341,7 @@ function pressRoleFor(
   // SO-CANCEL-LINE: a saved Transfer to Cancel SO rides its own body channel
   // (`cancelled_lines`), never `lines`, so the composition recheck never sees it.
   if (decision?.verdict === 'cancelled') {
-    if (!contribution.cancelled) {
+    if (!contribution.cancelled || awaitsCancelSo(contribution)) {
       if ((contribution.covered && contribution.decision) || !contribution.project_line_id) {
         return { kind: 'skip' };
       }
@@ -884,6 +885,21 @@ export function confirmSummaryFor(
     // it, and Confirm retires it. Nobody saves a decision for it, so the untouched-line skip
     // below would drop it from the count and the press would silently do one thing more than
     // it said - which is the one thing the counter exists to stop.
+    // CANCEL-STOP-AT-SO: a saved Transfer to Cancel SO on a line AutoCount cancelled is
+    // what this press confirms, posted in `cancelled_lines` like any other transfer.
+    if (awaitsCancelSo(contribution)) {
+      if (
+        pressRoleFor(
+          contribution,
+          draft[contribution.key],
+          batchBlockedSalesOrderIds.has(contribution.sales_order_id),
+          options?.batchNamedKeys,
+        ).kind === 'cancel_so'
+      ) {
+        orderIds.add(contribution.sales_order_id);
+      }
+      continue;
+    }
     if (contribution.cancelled && contribution.cancelled_at) continue;
     if (contribution.cancelled) {
       orderIds.add(contribution.sales_order_id);

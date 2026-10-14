@@ -315,6 +315,8 @@ SUPPORTED_ENTITIES = (
 # "2.9" (AC-CONSIGN-CRM): a consignment becomes a sales order marked consignment once every
 # item line states TransferedQty (a 2.8 record without it stays stored only); a
 # consignment_return derives qty_returned on the consignment line and is reporting only.
+# CONSIGN-DELIVERED-FIX (14 Oct): the order is delivered in full and closed at issue, and
+# TransferedQty is the returned qty, not delivered. Same wire shape.
 # Additive.
 CONTRACT_VERSION = "2.9"
 
@@ -389,8 +391,9 @@ def _run_document_hooks(
 def _run_cancel_relink_hook(db: Session, service, numbers, *, actor: Optional[str]) -> None:
     """AC-CANCEL-CRM: the orders this push wrote may be what a waiting Cancel SO / Cancel PO
     line names, or their quantities moved what a cancel caps at or how a key-less one is
-    decided. Re-match those lines, derive again, then retire the OI rows of any SO line that
-    became fully cancelled. Best effort, its own commit, like every hook here."""
+    decided. Re-match those lines, derive again, then run the cancel hooks (a partial cancel's
+    planning change; a full cancel stops at the SO, CANCEL-STOP-AT-SO). Best effort, its own
+    commit, like every hook here."""
     if not numbers:
         return
     from types import SimpleNamespace

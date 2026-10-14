@@ -15,6 +15,7 @@ import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Columns3 } from 'lucide-react';
 import { usePromotionProducts } from '../../promotions/hooks/usePromotions';
 import type { PromotionProduct } from '../../promotions/types/promotion.types';
+import { distinctName } from '@/lib/product-display';
 
 interface PromotionProductsGridProps {
   promotionId: string;
@@ -33,7 +34,8 @@ export default function PromotionProductsGrid({ promotionId }: PromotionProducts
       {
         accessorKey: 'product.product_name',
         header: 'Product Name',
-        cell: ({ row }) => row.original.product?.product_name || '-',
+        cell: ({ row }) =>
+          distinctName(row.original.product?.product_code, row.original.product?.product_name) ?? '',
       },
       {
         accessorKey: 'product.list_price',

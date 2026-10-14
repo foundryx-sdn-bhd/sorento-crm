@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { createBundle } from '../../services/catalogueService';
 import { PICKER_PAGE_SIZE, listPickerProducts } from '../../services/productPickerService';
+import { sameDisplayText } from '@/lib/product-display';
 
 /**
  * Building a bundle: a name, one price, and the products it contains.
@@ -174,9 +175,11 @@ export function BundleDialog({
                   renderOption={(option) => (
                     <span className="min-w-0">
                       <span className="block truncate font-mono text-xs">{option.label}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {option.description}
-                      </span>
+                      {option.description && !sameDisplayText(option.label, option.description) ? (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {option.description}
+                        </span>
+                      ) : null}
                     </span>
                   )}
                   placeholder="Pick a product"

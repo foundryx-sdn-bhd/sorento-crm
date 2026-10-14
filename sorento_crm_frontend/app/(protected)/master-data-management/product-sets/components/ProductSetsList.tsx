@@ -30,6 +30,7 @@ import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { useProductSets } from '../hooks/useProductSets';
 import type { ProductSet } from '../types/productSet.types';
 import { ProductSetFormModal } from './ProductSetFormModal';
+import { distinctName } from '@/lib/product-display';
 
 /** RM, or an explicit absence. A price of zero and a missing price differ. */
 function priceCell(set: ProductSet) {
@@ -127,8 +128,8 @@ export default function ProductSetsList() {
         accessorKey: 'name',
         header: ({ column }) => <DataGridColumnHeader title="Name" column={column} />,
         cell: ({ row }) => (
-          <span className="truncate" title={row.original.name}>
-            {row.original.name}
+          <span className="truncate" title={distinctName(row.original.set_code, row.original.name) ?? undefined}>
+            {distinctName(row.original.set_code, row.original.name)}
           </span>
         ),
         size: 280,
