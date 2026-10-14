@@ -110,3 +110,12 @@ only (`:1085`, `:1098-1108`); proven by `test_the_group_filter_recomputes_rather
 Save both with Book = Project (under Book = All the site pools stay in the span, `:887-890`).
 A saved include-list does not pick up a location added later; no exclude mode unless asked.
 How ED gets in: crew-ask on PR #1683, recommendation is the admin flag (no code).
+
+## Dev data (crew, 15 Oct, shared dev DB, read-only)
+
+Location facet on dev: ACT, AM, BB, IB, IR, NTC; no `-ED` warehouse exists on dev, so IB stands in
+for ED in the hand test. B2155-NL-BLUE (Book All, no range, Only in debt), Oct / Nov / Dec / TBA /
+Total: whole book -681 / -5,622 / -5,813 / -23,668 / -68,154; Only IB -940 / -1,084 / -833 /
+-3,576 / -10,115; All except IB 355 / -4,538 / -4,980 / -20,092 / -57,943; Only IR -335 / -1,236 /
+-916 / -912 / -5,691; All except IR -250 / -4,386 / -4,897 / -22,756 / -62,367. Only X plus All
+except X is not the whole book (HQ reserve left out under Only; pools sealed).
