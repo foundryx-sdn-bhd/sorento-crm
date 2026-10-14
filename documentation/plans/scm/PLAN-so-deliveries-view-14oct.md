@@ -7,7 +7,7 @@ Status: Review (hand test filed).
 - Built red-first (325e2c2f3 / bda4affdd), plus review round 1 (0dd352660 / bec05341e).
 - Reviewer and security-reviewer READY.
 - The pre-existing DO route permission gap is #1669.
- Track: M+ (new section on an existing screen, plus one index-only
+Track: M+ (new section on an existing screen, plus one index-only
 migration). Because of the migration it gets the dev-copy check and the security-reviewer (for
 the permission-gated link).
 

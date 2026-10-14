@@ -84,7 +84,8 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
   - a Total row summing Qty.
   - Status is the DO's own status pill, the same `Badge status=` as the DO list.
   - Dates read dd/mm/yyyy; an empty actual delivery reads "-".
-  - With no rows the block reads "No DO in the CRM for this line." (owner Q3 a).
+  - With no rows the block reads "No DO in the CRM for this line." (owner Q3 a), as text only: no
+    empty table and no Total row (mock v2; browser pass round 2).
 - **AC-SD23 Cancelled block.** Heading "Cancelled", plus "<n> Cancel SO line(s)" only when there
   are rows, then a table:
   - columns Cancel SO no., Date, Location, Matched by, Qty;
@@ -92,7 +93,7 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
     `group_whole`), the Total reads "-", never 0.
   - Matched by reads: line key / item / every line of the item / not tied to one line.
   - A `group_whole` qty reads "-".
-  - With no rows: "No Cancel SO for this line."
+  - With no rows: "No Cancel SO for this line.", text only, no table and no Total row.
 - **AC-SD24 Group block.** When the line's product sits on several lines of the SO:
   - below the two blocks sits a bordered panel (a full border, as the mock's block) headed
     "<SKU> on this SO, not tied to one line"
@@ -114,7 +115,8 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
 - **AC-SD27 Layout.**
   - The lightbox is at most 85% of the viewport height, and its body scrolls.
   - Tables wider than the lightbox scroll sideways inside their own frame.
-  - Usable, nothing clipped, at 1280 and 375.
+  - Usable, nothing clipped, at 1280 and 375. At 375 a DO number (e.g. 202609-1082), a Cancel SO
+    number and a dd/mm/yyyy date read in full in their columns; the table scrolls sideways.
 - **AC-SD28 No UUIDs on screen.** No SO line, product, DO or cancel id is rendered as text.
 - **AC-SD29 Column preference.** A user with a saved Lines column preference (`-v3`) still gets
   the truck column as the first column.
