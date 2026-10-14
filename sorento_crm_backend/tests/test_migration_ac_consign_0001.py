@@ -45,7 +45,7 @@ def _columns(conn) -> tuple[bool, bool]:
     return "doc_type" in so, "qty_returned" in sol
 
 
-def test_revision_fits_and_chains_onto_the_cancel_lane():
+def test_revision_id_fits_the_alembic_length_limit():
     module = _load()
     assert module.revision == REVISION
     assert len(module.revision) <= 32
