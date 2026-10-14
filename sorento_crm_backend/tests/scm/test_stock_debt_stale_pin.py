@@ -64,7 +64,7 @@ def _stock(db, product, warehouse, *, on_hand, reserved=0):
     db.flush()
 
 
-def _own_pin(db, project_line, warehouse, qty):
+def _own_pin(db, project_line, warehouse, qty, confirmed_at=None):
     """A CONFIRMED 'own' allocation - the prod row's own source - holding `qty` at the bin."""
     from datetime import datetime
 
@@ -77,22 +77,31 @@ def _own_pin(db, project_line, warehouse, qty):
         source_type=ALLOC_SOURCE_OWN,
         warehouse_id=warehouse.id,
         qty=Decimal(str(qty)),
-        confirmed_at=datetime.utcnow(),
+        confirmed_at=confirmed_at or datetime.utcnow(),
     )
     db.add(row)
     db.flush()
     return row
 
 
-def _pinned_line(db, product, warehouse, *, qty, due, so_number, pin_at=None):
+def _pinned_line(
+    db, product, warehouse, *, qty, due, so_number, pin_at=None, confirmed_at=None
+):
     """One open sales-order line at `warehouse`, pinned for its whole quantity at `pin_at`
     (its own bin unless given)."""
     _order, core_line = _demand(
         db, product, warehouse, qty=qty, required_date=due, so_number=so_number
     )
     _pso, project_line = _project_line_for(db, core_line)
-    _own_pin(db, project_line, pin_at or warehouse, qty)
+    _own_pin(db, project_line, pin_at or warehouse, qty, confirmed_at=confirmed_at)
     return core_line
+
+
+def _at(minutes):
+    """A confirm / link time `minutes` after a fixed base, so pin order is explicit."""
+    from datetime import datetime
+
+    return datetime(2026, 9, 1, 9, 0) + timedelta(minutes=minutes)
 
 
 def _on_hand_entry(warehouse, qty):
@@ -263,9 +272,13 @@ def test_a_pin_at_a_bin_outside_the_span_is_capped_at_its_free_stock(
     assert balance == -(40 - covered)
 
 
-def test_two_pins_at_one_bin_outside_the_span_share_its_free_stock_nearest_first(scm_app):
-    """Two pins (8 due first, 2 due later) on an unflagged bin holding 5: the bin covers 5
-    in all, to the nearer line first, whatever order the pins were written in."""
+def test_two_pins_at_one_bin_outside_the_span_share_its_free_stock_first_confirmed_first(
+    scm_app,
+):
+    """Two pins (2 confirmed first but due later, 8 confirmed later but due first) on an
+    unflagged bin holding 5: the bin covers 5 in all, the promise made first kept first -
+    the order the walk honours pins in on a bin it can see, so a bin outside the span is
+    shared the same way. Neither row order nor the due date decides it."""
     app, db = _client(scm_app)
     marker = f"ZZTSP{_u()[:6]}".upper()
     bb = _warehouse(db, f"ZZTBRW{_u()[:4]}-BB")
@@ -273,37 +286,36 @@ def test_two_pins_at_one_bin_outside_the_span_share_its_free_stock_nearest_first
     product = _product(db, f"{marker}-A")
     _stock(db, product, unflagged, on_hand=5)
     due = _months_ahead(1)
-    # The LATER line's pin is written first, so a read in row order would serve it first.
+    # Written in the opposite order to their confirm times, so row order cannot pass this.
     _pinned_line(
-        db, product, bb, qty=2, due=due + timedelta(days=3),
-        so_number=f"{marker}-SO2", pin_at=unflagged,
+        db, product, bb, qty=8, due=due, so_number=f"{marker}-SO1", pin_at=unflagged,
+        confirmed_at=_at(10),
     )
     _pinned_line(
-        db, product, bb, qty=8, due=due, so_number=f"{marker}-SO1", pin_at=unflagged
+        db, product, bb, qty=2, due=due + timedelta(days=3),
+        so_number=f"{marker}-SO2", pin_at=unflagged, confirmed_at=_at(0),
     )
 
     with TestClient(app) as c:
         cell = _cell(c, product, month_key(due))
 
     by_so = {line["so_number"]: line for line in cell["demand"]}
-    first, later = by_so[f"{marker}-SO1"], by_so[f"{marker}-SO2"]
-    assert (first["assigned_qty"], first["short_qty"]) == (5, 3)
-    assert (later["assigned_qty"], later["short_qty"]) == (0, 2)
+    confirmed_first, confirmed_later = by_so[f"{marker}-SO2"], by_so[f"{marker}-SO1"]
+    assert (confirmed_first["assigned_qty"], confirmed_first["short_qty"]) == (2, 0)
+    assert (confirmed_later["assigned_qty"], confirmed_later["short_qty"]) == (3, 5)
 
 
-@pytest.mark.parametrize(
-    "on_hand,covered,status",
-    [(0, 76, "short"), (50, 126, "pinned")],
-    ids=["bin-0", "bin-50"],
-)
+@pytest.mark.parametrize("on_hand,covered,status", [(0, 76, "short")], ids=["bin-0"])
 def test_a_partly_stocked_pin_leaves_the_rest_to_the_orders_own_spo(
     scm_app, on_hand, covered, status
 ):
-    """Reviewer, round 1 (the SRTWCX7604 / SO382618 shape: a pin above the bin's stock on a
-    line that also has its own purchase). Pinned 126 at a bin holding 50, and an SPO of 76
-    whose S/O names the line: the pin holds the 50 the bin has, the SPO the 76 left, and
-    the line owes nothing. The pin's own quantity must not read as covered before the
-    book's S/O is read, or the SPO is left free in its month beside a red cell."""
+    """Reviewer, round 1: a stale pin (bin 0) on a line with an SPO of 76 whose S/O names
+    it: the pin covers nothing, so it no longer reads as cover and the SPO takes 76.
+
+    The partly stocked shape (bin 50) is not pinned here: the owner ruled on 14 Oct 2026
+    that Stock Debt stops reading Fulfilment Planning pins at all (STOCK-DEBT-DECOUPLE),
+    which settles it there, and capping it in `_holds` ahead of `assign()` spent bins on
+    pins `assign()` never serves (see the shared-bin test below)."""
     app, db = _client(scm_app)
     marker = f"ZZTSP{_u()[:6]}".upper()
     bb = _warehouse(db, f"ZZTDC1{_u()[:4]}-BB")
@@ -333,10 +345,12 @@ def test_a_partly_stocked_pin_leaves_the_rest_to_the_orders_own_spo(
     )
 
 
-def test_received_spo_placements_share_a_thin_bin_outside_the_span_nearest_first(scm_app):
+def test_received_spo_placements_share_a_thin_bin_outside_the_span_first_linked_first(
+    scm_app,
+):
     """Reviewer, round 1: placements on a received SPO, at a bin outside the span holding 5,
-    share it nearer line first whatever order they were written in (the links read had no
-    order, so the split could move between refreshes)."""
+    share it the placement made first served first, whatever order the rows come back in
+    (the links read had no order, so the split could move between refreshes)."""
     app, db = _client(scm_app)
     marker = f"ZZTSP{_u()[:6]}".upper()
     bb = _warehouse(db, f"ZZTBRW{_u()[:4]}-BB")
@@ -348,26 +362,72 @@ def test_received_spo_placements_share_a_thin_bin_outside_the_span_nearest_first
         db, product, unflagged, qty=20, arrives=TODAY - timedelta(days=20),
         received=20, receipt_status="fully_received",
     )
-    # The LATER line's placement is written first.
-    for so_number, required in (
-        (f"{marker}-SO2", due + timedelta(days=3)),
-        (f"{marker}-SO1", due),
+    # Written in the opposite order to their link times; SO2 (due later) linked first.
+    for so_number, required, linked in (
+        (f"{marker}-SO1", due, _at(10)),
+        (f"{marker}-SO2", due + timedelta(days=3), _at(0)),
     ):
         _order, core_line = _demand(
             db, product, bb, qty=4, required_date=required, so_number=so_number
         )
         project_order, project_line = _project_line_for(db, core_line)
-        _order_back_link_on_spo(
+        _inquiry, _row, link = _order_back_link_on_spo(
             db, project_order, project_line, allocation=allocation, qty=4
         )
+        link.linked_at = linked
+    db.flush()
 
     with TestClient(app) as c:
         cell = _cell(c, product, month_key(due))
 
     by_so = {line["so_number"]: line for line in cell["demand"]}
-    assert by_so[f"{marker}-SO1"]["assigned_qty"] == 4
-    assert by_so[f"{marker}-SO2"]["assigned_qty"] == 1
-    assert by_so[f"{marker}-SO2"]["short_qty"] == 3
+    assert by_so[f"{marker}-SO2"]["assigned_qty"] == 4
+    assert by_so[f"{marker}-SO1"]["assigned_qty"] == 1
+    assert by_so[f"{marker}-SO1"]["short_qty"] == 3
+
+
+@pytest.mark.parametrize("flagged", [True, False], ids=["in-span", "outside-span"])
+def test_a_pin_the_walk_does_not_serve_leaves_the_bin_to_the_next_pin(scm_app, flagged):
+    """Crew probe on dev, 14 Oct (product 0fb2507c, BRW 79): a line already covered by its
+    FIRST pin takes nothing from its second, so that second pin must not spend the bin.
+    A owes 30, pinned 30 at Y (30) first and 30 at X (40, another group) next; B owes 40,
+    pinned 40 at X last. A is covered from Y and B gets the whole 40 at X. Spending A's X
+    pin on the bin left 30 of X free while B read short 30 (nothing else B may draw)."""
+    from tests.scm.test_stock_debt_routes import _demand as _demand_line
+
+    app, db = _client(scm_app)
+    marker = f"ZZTSP{_u()[:6]}".upper()
+    bb = _warehouse(db, f"ZZTBRW{_u()[:4]}-BB")
+    y_bin = _warehouse(db, f"ZZTDC1{_u()[:4]}-BB")
+    x_bin = _warehouse(db, f"ZZTBRW{_u()[:4]}-HP", planning=flagged)
+    product = _product(db, f"{marker}-A")
+    _stock(db, product, y_bin, on_hand=30)
+    _stock(db, product, x_bin, on_hand=40)
+    due = _months_ahead(1)
+    _order, line_a = _demand_line(
+        db, product, bb, qty=30, required_date=due, so_number=f"{marker}-SO1"
+    )
+    _pso, project_a = _project_line_for(db, line_a)
+    _own_pin(db, project_a, y_bin, 30, confirmed_at=_at(0))
+    _own_pin(db, project_a, x_bin, 30, confirmed_at=_at(5))
+    _pinned_line(
+        db, product, bb, qty=40, due=due + timedelta(days=3),
+        so_number=f"{marker}-SO2", pin_at=x_bin, confirmed_at=_at(10),
+    )
+
+    with TestClient(app) as c:
+        cell = _cell(c, product, month_key(due))
+
+    by_so = {line["so_number"]: line for line in cell["demand"]}
+    a, b = by_so[f"{marker}-SO1"], by_so[f"{marker}-SO2"]
+    assert (a["assigned_qty"], a["short_qty"]) == (30, 0)
+    assert [(entry["ref"], entry["qty"]) for entry in a["assigned_from"]] == [
+        (f"On hand {y_bin.warehouse_code}", 30),
+    ]
+    assert (b["assigned_qty"], b["short_qty"], b["status"]) == (40, 0, "pinned")
+    assert [(entry["ref"], entry["qty"]) for entry in b["assigned_from"]] == [
+        (f"On hand {x_bin.warehouse_code}", 40),
+    ]
 
 
 # ------------------------------------------------------------------ the Supply tab
