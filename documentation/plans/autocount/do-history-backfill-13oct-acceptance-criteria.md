@@ -1,6 +1,6 @@
 # UAC: DO history backfill (DO-HISTORY), v2
 
-Plan: `PLAN-do-history-backfill-13oct.md` (v2, owner direction 13 Oct). Status: v4. Slice 1, C1, C2 and C3 are built; line keys for ambiguous lines are on hold for the owner. The backfill
+Plan: `PLAN-do-history-backfill-13oct.md` (v2, owner direction 13 Oct). Status: v5. Slice 1, C1, C2 and C3 are built (PR #1633). Owner rulings 14 Oct: no line-key source; several lines of the product link to the SO + product group (AC-DH22..26, follow-up PR). The backfill
 itself runs in the shared service. These are the CRM-side criteria.
 
 ## Slice 1 (built)
@@ -14,13 +14,19 @@ itself runs in the shared service. These are the CRM-side criteria.
   ends in that key. The key wins over the product match. (built, `test_exact_so_line_link`)
 - **AC-DH21** Unique match: with no key, an SO with exactly one line of the product links.
   (built, `test_from_dtl_key_zero_links_by_doc_no_and_item`)
-- **AC-DH22** Ambiguous: two lines of the product, with no location to tell them apart, stay
-  unlinked with `so_line_unresolved`. (built, `test_from_dtl_key_zero_with_two_candidate_so_lines_warns`)
-- **AC-DH23** Location narrowing: two lines of the product at different warehouses, and the DO
-  line at one of them: links to that one.
-- **AC-DH24** Location still ambiguous: two lines of the product at the DO line's warehouse, or a
-  candidate with no warehouse: unlinked.
-- **AC-DH25** The waiting fill applies the same narrowing.
+- **AC-DH22** Group link (owner rule 14 Oct): with no key, an SO with two or more lines of the
+  product links the DO line to no single line, whatever their warehouses. The line keeps
+  `from_doc_no` + `product_id` (the SO + product group) and warns `so_line_unresolved`.
+  (`test_from_dtl_key_zero_with_two_candidate_so_lines_warns`, `tests/test_do_history_links.py`)
+- **AC-DH23** No location narrowing (owner rule 14 Oct, supersedes the 13 Oct crew definition):
+  two lines of the product at different warehouses, the DO line at one of them: still no line,
+  group-linked. Dev: 570 of 9,828 single-match DO lines sit at another warehouse than their SO
+  line, so the warehouse does not prove the line.
+- **AC-DH24** Two lines at the DO line's warehouse, or a candidate with no warehouse: no line,
+  group-linked (unchanged).
+- **AC-DH25** The waiting fill never narrows by location either.
+- **AC-DH26** The unique match ignores location: the one line of the product links even when it
+  sits at another warehouse than the DO line.
 
 ## C2 assumed delivery (owner answer 13 Oct)
 
