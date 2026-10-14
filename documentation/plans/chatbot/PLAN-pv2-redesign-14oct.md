@@ -1,7 +1,7 @@
 # PLAN: PV2 redesign - typed refs, answer register, subject stack (14 Oct 2026)
 
-Status: Build, round R2 merge-ready (R1 merged into crew/pv2 as 941fb867a via #1670; R2 = PR #1673, branch
-`crew/pv2-redesign-r2`); next R-GAPS after crew merges R2.
+Status: Build, round R-GAPS-a (R1 merged 941fb867a #1670; R2 merged 0690ef90a #1673; R-GAPS-a on branch
+`crew/pv2-redesign-rgaps`).
 Round order: R1, R2, R-GAPS (crew 14 Oct), R3, R4, R5.
 Earlier: round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
 branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). Owner 14 Oct 18:35: NO CAP on LLM spend for
@@ -140,6 +140,55 @@ Build:
 Not in R2: rendering S<n>/R<n> in MEMORY, parser schema changes (R4), registry columns (R3).
 Carried to R4: after a re-started subject, held and its topic copy share one sid (pre-R2 MEMORY keeps the copy), so
 `subject_at("S3")` and `subject_label` are not inverse; the S<n> rendering must settle copies before it numbers them.
+
+## R-GAPS design (maps 14 Oct on crew/pv2 0690ef90a; file:line there)
+Two read-only maps (in-memory probes, no DB, no LLM) measured every case; ~405 app + ~900 test lines, so the round splits.
+Generic rules only: structured parse fields, resolver facts and registry-shaped constants (marked for the R3 move);
+never words from the user's text.
+
+**R-GAPS-a (PV2-only conversation mechanics, PR 1):**
+- RG-3 #1603: engine.py `_pv2_hand_over_turn` (9247-9256) is true for any turn with a pv2_turn event in parser_mode v2,
+  so a "yes" to a v1 escalate offer (PV2 Lookup, route lookup) gets the routed reply text saved (9201-9206). Remove when
+  v1 #1603 merges. test_fix_r2f.py:63-71 flips.
+- RG-4 #1617: a count that names nothing (quantity set; no key, phrase or doc number) counts the held subject: on a
+  new_topic it is `refers_to_held`; on refines_held/new_topic with no domain named, when the held domain does not read
+  quantities (`QUANTITY_DOMAINS = {"inventory"}`, R3 registry), the domain becomes inventory (v1 rule "a quantity is a
+  stock question"); with nothing pending, answers_bot_question carrying only a count is a refine. Real shape:
+  fixtures/livecheck_r5r6.jsonl:24, :50.
+- RG-7 part 2 #1572: in `_new_subject_in_a_new_domain` (apply.py:240-254) a refine that opens a report on a subject
+  without one, in a new domain, starts a new topic (a `refers_to_held` entity still carries); `_report_entity_filters`
+  also runs when the ask itself opens a report (apply.py:692), so brands beside a new report become report filters.
+- RG-7b: options of a question raised beside a same-kind sibling that landed carry `{"op": "add", "phrase": ...}`;
+  `_without_picked` drops only the entity with that phrase (all of the kind for older state) and turns remaining
+  same-kind "set" entities into "add"; inventory `list_all` branches (apply.py:927, 936) honour `set_kinds`.
+  Pins flip: test_redesign_r2_fix2.py:169, :178; test_redesign_r2_fix4.py:223.
+- RG-7c: `_Miss(entity=...)` at the raise sites (apply.py:842, 849, 863, 965) records the raiser on
+  `PendingQuestion.raised_by`; a which_held pick drops the raiser, `refers_to_held` entities and same-kind non-remove
+  entities, and replays the other removes (raised_by None = R2 fix 6 rule).
+
+**R-GAPS-b (PR 2, after a merges; rulings below):**
+- RG-1 #1570: `clarify_carry_scope` when an ask (no `refers_to_held`, no report) leaves a held narrowing kind A unnamed
+  and resolves a new narrowing kind B (customer + product on order and sales, from v1's policy rows): "Delivery for B:
+  only A (from earlier) or all <A>s?", nothing fetched; pick 1 keeps A, pick 2 clears A and keeps the period (v1); a
+  subject-less reply while it is open re-asks and merges its period into the origin. Never asked about the contact's
+  own (scope-limited) customer (v1 guard). Loop cap: identical clarify questions count as misses for every clarify kind;
+  at the cap a contact who cannot be offered a hand-over gets a closing line (ruling pending). case-072
+  (converted_replay.jsonl:114-115) corrected with its turn-1 resolver row; test_carry_turn.py:108-116 and
+  converted_replay.jsonl:58 flip.
+- RG-2 #1582: the held product ids reach `_place_number` (resolve.py:954-993); members holding the number on any mm axis
+  become the held products (no axis question); none -> "No 300 mm for SRTWC286. Sizes on file: <axis> <values> mm; ..."
+  (en/zh/ms, no options, no closest picks); no product held -> class products holding it on any axis, capped; a parser
+  flag about a spec phrase the ask already carries is skipped (as apply.py:149-151 does for entities). Flips:
+  test_resolve_specs.py:120-128, test_redesign_r2_fix4.py a1. prompt_v2.txt:169-172 example stays for R4/R5.
+- RG-5 #1443: the resolver keeps a `product_set` match (resolve.py:621 drops it today): `ResolvedRef.set`, members from
+  product_sets/product_set_members (company scoped, active only), expanded to member refs like a family in inventory
+  (v1 SET_EXPANDING_DOMAINS); a base code whose products belong to active sets offers those sets as a pick.
+- RG-6 #1517: an empty subject (no refs, specs, report, low stock, period, form) in inventory or master_products (#1517
+  ruling; R3 registry) is a which-product question, no tool call; port #1517's `chat_visible` (product_service, products
+  route, fetch.py, MCP catalog; MCP rebuild at deploy); `Product.is_active` on the PV2 family lists (resolve.py:564, 597).
+
+**Moved to R4:** RG-7 part 1 ("Dealer outstanding only"): no channel exists on the outstanding path (schema, bridge,
+fetch, MCP, route, service); it needs a backend channel param plus a parser field (`Ask.channel`), built with R4.
 
 ## Work split (R1)
 - Tester: red tests per UAC R1 (pure builder tests from recorded envelopes, engine-hook test, so_status/MCP/report row

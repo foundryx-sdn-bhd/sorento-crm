@@ -77,4 +77,10 @@ RG-7b (R2 review) "5 A1 and 3 mou" -> pick 1 for mou -> the answer covers A1 x 5
      "sorento + moc" -> pick mocha -> both brands. Today (and pre-R2) the pick drops the other same-kind items.
 RG-7c (R2 review) "remove customer Z and this SO" with Z held and no SO held -> which_held pick -> Z is removed.
      Today (and pre-R2) the which_held pick drops the remove and Z stays.
+RG-4b (R-GAPS-a shapes) After a photo answer, a count that names nothing reaches the stock answer for that count in
+     every parse shape: refines_held or new_topic with no domain, with or without refers_to_held, and an
+     answers_bot_question carrying only a count with nothing pending; a count after a stock answer stays a stock ask.
+RG-7d (R-GAPS-a) After "CBDR4003 stock", a refine that opens a sales report starts a new subject (CBDR4003 is not on
+     S1); brands named beside a newly opened report are its filters.
+RG-7e (R4) "Dealer outstanding only" needs a channel on the outstanding path and a parser field: built in R4.
 RG-8 No LLM calls; v1 turns unchanged.
