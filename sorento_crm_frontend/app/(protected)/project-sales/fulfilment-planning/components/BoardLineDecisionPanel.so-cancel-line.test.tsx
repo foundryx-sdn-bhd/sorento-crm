@@ -129,9 +129,7 @@ describe('AC-F22: the re-seed effect follows a cancel decision', () => {
     expect(screen.queryByTestId(`line-decision-hint-${KEY}`)).toBeNull();
     expect(screen.getByLabelText(/Reason/)).toHaveValue('CANCEL ORDER');
     // The draft itself re-seeded to zeros (draftFor's cancelled branch), not just the summary.
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
-      'Buy 0',
-    );
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(0);
 
     rerender(
       <BoardLineDecisionPanel
@@ -144,6 +142,6 @@ describe('AC-F22: the re-seed effect follows a cancel decision', () => {
     expect(screen.getByTestId(summaryId)).not.toHaveTextContent(
       'Transfer to Cancel SO',
     );
-    expect(screen.queryByTestId(`line-buy-derived-${KEY}`)).toBeNull();
+    expect(screen.queryByLabelText('Buy quantity')).toBeNull();
   });
 });
