@@ -45,6 +45,7 @@ from tests._mc_lookup_seed import (
     seed_mocha,
     warehouse,
 )
+from tests._orders_view_seed import orders_view_principal
 from tests._pg_fixture import blank_session, unique_code
 
 BASE = "/api/v1/order-management/orders/by-product"
@@ -241,7 +242,8 @@ def client(db):
     def _override_db():
         yield db
 
-    principal = {"id": str(uuid.uuid4()), "email": "zzt-by-product-so@test.com"}
+    # A real user holding the grant: the DO read routes are gated on it (#1669).
+    principal = orders_view_principal(db)
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_user] = lambda: principal
     app.dependency_overrides[get_current_user_or_api_key] = lambda: principal

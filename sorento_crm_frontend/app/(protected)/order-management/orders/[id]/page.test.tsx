@@ -28,22 +28,45 @@ vi.mock('@/components/common/container', () => ({
   Container: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
+// #1669: the page is gated on `order_management.orders.view` via RequireAccess.
+const usePermissions = vi.fn();
+vi.mock('@/hooks/usePermissions', () => ({
+  usePermissions: () => usePermissions(),
+}));
+
+function grant(slugs: string[]) {
+  usePermissions.mockReturnValue({
+    permissions: slugs,
+    permissionSet: new Set(slugs),
+    isLoading: false,
+    isError: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  });
+}
+
 const PARAMS = Promise.resolve({ id: 'o1' });
 
 beforeEach(async () => {
   cleanup();
+  grant(['order_management.orders.view']);
   await PARAMS;
 });
 
+async function renderPage() {
+  await act(async () => {
+    render(
+      <Suspense fallback={null}>
+        <OrderDetailPage params={PARAMS} />
+      </Suspense>,
+    );
+  });
+}
+
 describe('Delivery order detail toolbar', () => {
   it('S3-01, S3-02: the toolbar action row holds exactly one Back, carrying the list query', async () => {
-    await act(async () => {
-      render(
-        <Suspense fallback={null}>
-          <OrderDetailPage params={PARAMS} />
-        </Suspense>,
-      );
-    });
+    await renderPage();
 
     const back = screen.getByRole('link', { name: /Back to delivery orders/ });
     expect(back.getAttribute('href')).toBe(`/order-management/orders?${searchString}`);
@@ -56,5 +79,13 @@ describe('Delivery order detail toolbar', () => {
     expect(screen.queryByRole('button', { name: /Delivery order options/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Edit$/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Previous delivery order/ })).toBeNull();
+  });
+
+  it('#1669: a user without order_management.orders.view sees the access-denied state, not the record', async () => {
+    grant([]);
+    await renderPage();
+
+    expect(screen.getByText("You don't have access to this page")).toBeTruthy();
+    expect(screen.queryByTestId('order-detail')).toBeNull();
   });
 });
