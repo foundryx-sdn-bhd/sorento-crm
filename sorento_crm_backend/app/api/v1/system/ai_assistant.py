@@ -418,12 +418,13 @@ def set_ai_assistant_agent_model(
 ):
     """Choose which LLM this agent runs on. Blank = the global assistant model."""
     _ensure_known_prompt(name)
+    effort = {"reasoning_effort": payload.reasoning_effort} if "reasoning_effort" in payload.model_fields_set else {}
     result = AIPromptService(db).set_agent_model(
         name,
         label=payload.label,
         provider=payload.provider,
         model=payload.model,
-        reasoning_effort=payload.reasoning_effort,
+        **effort,
     )
     return SetAgentModelResponse(**result)
 

@@ -38,6 +38,8 @@ class AIPromptRegistryError(AppException):
         self.missing_vars = missing_vars
 
 
+_UNSET: Any = object()  # `set_agent_model`: reasoning_effort not sent in the request
+
 class AIPromptService:
     def __init__(self, db: Session):
         self.db = db
@@ -259,7 +261,7 @@ class AIPromptService:
         label: str,
         provider: Optional[str],
         model: Optional[str],
-        reasoning_effort: Optional[str] = None,
+        reasoning_effort: Any = _UNSET,
     ) -> dict[str, Optional[str]]:
         """Point one agent at one LLM. Empty/None means "use the global default".
 
@@ -288,9 +290,11 @@ class AIPromptService:
         row.provider = (provider or "").strip() or None
         row.model = (model or "").strip() or None
         # Stored only for a key whose call reads it; blank = the provider's default.
-        row.reasoning_effort = (
-            (reasoning_effort or "").strip() or None if PROMPT_KEYS[name].supports_reasoning_effort else None
-        )
+        # Only when the request set it: an explicit null clears, an omitted field keeps the value.
+        if reasoning_effort is not _UNSET:
+            row.reasoning_effort = (
+                (reasoning_effort or "").strip() or None if PROMPT_KEYS[name].supports_reasoning_effort else None
+            )
         self.db.commit()
         return {"provider": row.provider, "model": row.model, "reasoning_effort": row.reasoning_effort}
 
