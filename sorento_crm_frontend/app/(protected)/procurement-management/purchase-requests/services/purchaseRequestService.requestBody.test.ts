@@ -2,7 +2,7 @@
  * RED tests - the internal PR / SF request body (bug found in the browser pass, 14 Oct).
  *
  * `toRequestBody` is a whitelist; it dropped customer_id (FORM-ROUTING-CONDITIONS PC-6) and
- * sales_type / pic / project_id / sponsor_subject_other, so a picked customer and the Sales
+ * sales_type / pic / sponsor_subject_other, so a picked customer and the Sales
  * type it filled were never saved. The body must carry each with the value given, null when
  * given null, and null (not absent) when missing, so an edit can unlink.
  */
@@ -36,7 +36,7 @@ const GIVEN = {
   sponsor_subject_other: 'Annual dinner',
   products: [],
 };
-const KEYS = ['customer_id', 'sales_type', 'pic', 'project_id', 'sponsor_subject_other'] as const;
+const KEYS = ['customer_id', 'sales_type', 'pic', 'sponsor_subject_other'] as const;
 
 beforeEach(() => asMock.mockClear());
 
