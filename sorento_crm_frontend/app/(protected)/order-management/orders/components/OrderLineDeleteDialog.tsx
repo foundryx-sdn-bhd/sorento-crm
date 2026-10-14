@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useDeleteOrderLine } from '../hooks/useOrders';
 import type { OrderLine } from '../types/order.types';
+import { codeWithName } from '@/lib/product-display';
 
 export interface OrderLineDeleteDialogProps {
   open: boolean;
@@ -47,7 +48,7 @@ export default function OrderLineDeleteDialog({
   };
 
   const displayLabel = line.product
-    ? `${line.product.product_code ?? ''} - ${line.product.product_name ?? ''}`
+    ? codeWithName(line.product.product_code ?? '', line.product.product_name)
     : line.product_id;
 
   return (

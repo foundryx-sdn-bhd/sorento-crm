@@ -34,6 +34,7 @@ import type {
   ProductSetLineRef,
   ProductSetPayload,
 } from '../types/productSet.types';
+import { codeWithName } from '@/lib/product-display';
 
 const BASE = '/api/v1/master-data/product-sets';
 
@@ -175,7 +176,7 @@ export async function getProductSetMemberOptions(
   };
   return (body.data ?? []).map((p) => ({
     value: p.product_code,
-    label: p.product_name ? `${p.product_code} - ${p.product_name}` : p.product_code,
+    label: codeWithName(p.product_code, p.product_name),
     product_id: p.id,
     product_name: p.product_name,
     list_price: num(p.list_price),

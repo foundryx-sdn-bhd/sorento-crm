@@ -25,6 +25,7 @@ import { importDeliveryOrderDetail } from '../services/orderService';
 import type { OrderLine } from '../types/order.types';
 import { toast } from '@/lib/toast';
 import OrderLineDeleteDialog from './OrderLineDeleteDialog';
+import { codeWithName } from '@/lib/product-display';
 
 interface OrderLinesCardProps {
   orderId: string;
@@ -117,8 +118,8 @@ export default function OrderLinesCard({ orderId, lines, readOnly = false }: Ord
     if (line.product) {
       const code = line.product.product_code ?? '';
       const name = line.product.product_name ?? '';
-      if (code && name) return `${code} - ${name}`;
-      return (code || name || line.product_id).trim();
+      if (code) return codeWithName(code, name);
+      return (name || line.product_id).trim();
     }
     return line.product_id;
   };

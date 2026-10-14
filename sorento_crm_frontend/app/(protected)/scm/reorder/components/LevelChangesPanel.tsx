@@ -19,6 +19,7 @@ import {
   levelRowsForExport,
   type LevelSuggestion,
 } from '../lib/levelSuggestion';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 /**
  * The run's AutoCount level changes, as one list to carry over (S13f, AC-S13f.3).
@@ -133,12 +134,14 @@ function LevelChangeRow({
   return (
     <tr className="border-t">
       <td className="max-w-64 py-1.5 pr-3">
-        <span className="block truncate font-medium" title={s.product_name}>
+        <span className="block truncate font-medium" title={codeWithName(s.product_code, s.product_name)}>
           {s.product_code}
         </span>
-        <span className="block truncate text-xs text-muted-foreground" title={s.product_name}>
-          {s.product_name}
-        </span>
+        {distinctName(s.product_code, s.product_name) ? (
+          <span className="block truncate text-xs text-muted-foreground" title={s.product_name}>
+            {s.product_name}
+          </span>
+        ) : null}
       </td>
       <td className="py-1.5 pr-3">{s.warehouse_code ?? EM_DASH}</td>
       <td className="py-1.5 pr-3 text-right tabular-nums">{s.current_level ?? 'none'}</td>
