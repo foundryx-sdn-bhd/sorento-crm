@@ -15,12 +15,32 @@ import {
   useProductCompatibilityUnlink,
 } from '../../hooks/useProductCompatibility';
 import type {
+  CompatibilityKind,
   CompatibilityRole,
   ProductCompatibilityRow,
 } from '../../types/productCompatibility.types';
 import ProductVariantPickerDialog from './ProductVariantPickerDialog';
 
 const PRODUCT_BASE_PATH = '/master-data-management/products';
+
+const KINDS: CompatibilityKind[] = ['seat_cover', 'mirror', 'shelf'];
+
+/** Link type picker label and the two nouns of a kind: accessory end, host end. */
+const KIND_LABELS: Record<CompatibilityKind, string> = {
+  seat_cover: 'Seat cover / WC',
+  mirror: 'Mirror / cabinet',
+  shelf: 'Shelf / cabinet',
+};
+const KIND_NOUNS: Record<CompatibilityKind, [string, string]> = {
+  seat_cover: ['Seat cover', 'WC'],
+  mirror: ['Mirror', 'Cabinet'],
+  shelf: ['Shelf', 'Cabinet'],
+};
+const COVERS_HEADINGS: Record<CompatibilityKind, string> = {
+  seat_cover: 'Seat covers that fit',
+  mirror: 'Mirrors that fit',
+  shelf: 'Shelves that fit',
+};
 
 /** A seat cover code (`SRTSC...`) or a seat cover sold under a WC code (`...-SC`). */
 function looksLikeSeatCover(code: string | undefined): boolean {
@@ -124,7 +144,8 @@ export default function ProductCompatibilitySection({
   const add = useAddProductCompatibility(productId);
   const unlink = useProductCompatibilityUnlink();
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [otherRole, setOtherRole] = useState<CompatibilityRole>('seat_cover');
+  const [kind, setKind] = useState<CompatibilityKind>('seat_cover');
+  const [otherRole, setOtherRole] = useState<CompatibilityRole>('accessory');
 
   const covers = data?.covers ?? [];
   const fits = data?.fits ?? [];
@@ -135,12 +156,38 @@ export default function ProductCompatibilitySection({
     ...fits.map((r) => r.product_id),
   ];
 
+  // Only seat cover links: today's layout, both groups with their empty states.
+  const seatCoverOnly = [...covers, ...fits].every(
+    (r) => r.kind === 'seat_cover',
+  );
+  const coverGroups = KINDS.map((k) => ({
+    kind: k,
+    rows: covers.filter((r) => r.kind === k),
+  })).filter((g) => (seatCoverOnly ? g.kind === 'seat_cover' : g.rows.length));
+  const fitsGroups = [
+    {
+      heading: 'Fits these WCs',
+      rows: fits.filter((r) => r.kind === 'seat_cover'),
+    },
+    {
+      heading: 'Fits these cabinets',
+      rows: fits.filter((r) => r.kind !== 'seat_cover'),
+    },
+  ].filter((g, i) => (seatCoverOnly ? i === 0 : g.rows.length));
+
   function openPicker() {
-    // This product's side decides the other's: a seat cover is linked to WCs.
-    const isCover =
-      fits.length > 0 ||
-      (covers.length === 0 && looksLikeSeatCover(productCode));
-    setOtherRole(isCover ? 'wc' : 'seat_cover');
+    // This product's side decides the other's: whatever it already fits is a host
+    // link away, a seat cover code is linked to WCs.
+    if (fits.length > 0) {
+      setKind(fits[0].kind);
+      setOtherRole('host');
+    } else if (covers.length > 0) {
+      setKind(covers[0].kind);
+      setOtherRole('accessory');
+    } else {
+      setKind('seat_cover');
+      setOtherRole(looksLikeSeatCover(productCode) ? 'host' : 'accessory');
+    }
     setPickerOpen(true);
   }
 
@@ -173,32 +220,36 @@ export default function ProductCompatibilitySection({
         </p>
       ) : (
         <div className="space-y-4">
-          <div>
-            <h4 className="mb-2 text-sm font-medium text-muted-foreground">
-              Seat covers that fit
-            </h4>
-            {covers.length ? (
-              <LinkRows rows={covers} canEdit={canEdit} unlink={unlink} />
-            ) : (
-              <EmptyList
-                title="No seat covers"
-                hint="None linked to this product."
-              />
-            )}
-          </div>
-          <div>
-            <h4 className="mb-2 text-sm font-medium text-muted-foreground">
-              Fits these WCs
-            </h4>
-            {fits.length ? (
-              <LinkRows rows={fits} canEdit={canEdit} unlink={unlink} />
-            ) : (
-              <EmptyList
-                title="No WCs"
-                hint="This product is not linked as a seat cover."
-              />
-            )}
-          </div>
+          {coverGroups.map((g) => (
+            <div key={g.kind}>
+              <h4 className="mb-2 text-sm font-medium text-muted-foreground">
+                {COVERS_HEADINGS[g.kind]}
+              </h4>
+              {g.rows.length ? (
+                <LinkRows rows={g.rows} canEdit={canEdit} unlink={unlink} />
+              ) : (
+                <EmptyList
+                  title="No seat covers"
+                  hint="None linked to this product."
+                />
+              )}
+            </div>
+          ))}
+          {fitsGroups.map((g) => (
+            <div key={g.heading}>
+              <h4 className="mb-2 text-sm font-medium text-muted-foreground">
+                {g.heading}
+              </h4>
+              {g.rows.length ? (
+                <LinkRows rows={g.rows} canEdit={canEdit} unlink={unlink} />
+              ) : (
+                <EmptyList
+                  title="No WCs"
+                  hint="This product is not linked as a seat cover."
+                />
+              )}
+            </div>
+          ))}
         </div>
       )}
       <ProductVariantPickerDialog
@@ -211,27 +262,47 @@ export default function ProductCompatibilitySection({
         submitting={add.isPending}
         onConfirm={(id) =>
           add.mutate(
-            { otherProductId: id, otherRole },
+            { otherProductId: id, otherRole, kind },
             { onSuccess: () => setPickerOpen(false) },
           )
         }
       >
-        <div className="space-y-2 py-1">
-          <Label>The other product is a</Label>
-          <RadioGroup
-            value={otherRole}
-            onValueChange={(value) => setOtherRole(value as CompatibilityRole)}
-            className="flex gap-6"
-          >
-            <label className="flex items-center gap-2 text-sm">
-              <RadioGroupItem value="seat_cover" aria-label="Seat cover" />
-              Seat cover
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <RadioGroupItem value="wc" aria-label="WC" />
-              WC
-            </label>
-          </RadioGroup>
+        <div className="space-y-4 py-1">
+          <div className="space-y-2">
+            <Label>Link type</Label>
+            <RadioGroup
+              value={kind}
+              onValueChange={(value) => setKind(value as CompatibilityKind)}
+              className="flex flex-wrap gap-x-6 gap-y-2"
+            >
+              {KINDS.map((k) => (
+                <label key={k} className="flex items-center gap-2 text-sm">
+                  <RadioGroupItem value={k} aria-label={KIND_LABELS[k]} />
+                  {KIND_LABELS[k]}
+                </label>
+              ))}
+            </RadioGroup>
+          </div>
+          <div className="space-y-2">
+            <Label>The other product is a</Label>
+            <RadioGroup
+              value={otherRole}
+              onValueChange={(value) =>
+                setOtherRole(value as CompatibilityRole)
+              }
+              className="flex flex-wrap gap-x-6 gap-y-2"
+            >
+              {(['accessory', 'host'] as const).map((role, i) => (
+                <label key={role} className="flex items-center gap-2 text-sm">
+                  <RadioGroupItem
+                    value={role}
+                    aria-label={KIND_NOUNS[kind][i]}
+                  />
+                  {KIND_NOUNS[kind][i]}
+                </label>
+              ))}
+            </RadioGroup>
+          </div>
         </div>
       </ProductVariantPickerDialog>
     </div>

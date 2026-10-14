@@ -1,4 +1,5 @@
-"""Seat cover <-> WC compatibility (WC-SEAT-COMPAT).
+"""Accessory <-> host compatibility (WC-SEAT-COMPAT, MIRROR-LINKS): seat cover/WC, mirror/cabinet,
+shelf/cabinet. Rows carry `kind`; the add takes `kind` + `other_role`.
 
     GET  /products/{product_id}/compatibility                  (master_data.products.view)
     POST /products/{product_id}/compatibility                  (master_data.products.edit)
@@ -7,7 +8,7 @@ The add is session-only (`require_permission`), as for alternatives: an integrat
 never rewrites what fits what. Unlink is the server-deferred record action
 `product_compatibility.unlink` (`app/services/record_actions.py`), parked through
 `/api/v1/pending-actions`. The flyer itself is linked once by
-`scripts/oneoff/link_seat_cover_flyer.py`; there is no flyer route.
+`scripts/oneoff/link_seat_cover_flyer.py` and `link_mirror_shelf_flyer.py`; there is no flyer route.
 Plan: documentation/plans/products/PLAN-wc-seat-compat-12oct.md.
 """
 from __future__ import annotations
@@ -54,5 +55,7 @@ def add_product_compatibility(
 ):
     product_id = validate_uuid_path(product_id, resource="Product")
     other_id = validate_uuid_path(payload.other_product_id, resource="Product")
-    row = compat.add_manual(db, product_id, other_id, payload.other_role, current_user.get("id"))
+    row = compat.add_manual(
+        db, product_id, other_id, payload.other_role, current_user.get("id"), kind=payload.kind
+    )
     return {"data": row}

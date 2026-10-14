@@ -148,17 +148,17 @@ def test_same_pair_same_kind_twice_is_refused_other_kind_allowed(db):
     stem = _stem()
     mirror, cabinet = _p(db, f"{stem}M"), _p(db, f"{stem}B")
     _link(db, mirror, cabinet, "mirror")
-    db.add(
-        ProductCompatibility(
-            company_id=mirror.company_id,
-            seat_cover_product_id=mirror.id,
-            wc_product_id=cabinet.id,
-            source="manual",
-            kind="mirror",
-        )
-    )
     with pytest.raises(IntegrityError):
         with db.begin_nested():
+            db.add(
+                ProductCompatibility(
+                    company_id=mirror.company_id,
+                    seat_cover_product_id=mirror.id,
+                    wc_product_id=cabinet.id,
+                    source="manual",
+                    kind="mirror",
+                )
+            )
             db.flush()
     # The same two products under another kind are a different link.
     _link(db, mirror, cabinet, "shelf")
