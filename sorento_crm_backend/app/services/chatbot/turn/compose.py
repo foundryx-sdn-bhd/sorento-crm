@@ -112,8 +112,16 @@ def _types_without_files(
             for f in fig.get("fields") or []
             if isinstance(f, dict)
         }
-        if fields.get("Product Code") and fields.get("Attachment Type"):
-            present.add((fields["Product Code"].casefold(), fields["Attachment Type"].casefold()))
+        # A product's files fold into ONE row with a repeated "Attachment Type" field
+        # (`fetch._file_rows`): every one of them is present, not only the last.
+        kinds = [
+            str(f.get("value") or "").strip()
+            for f in fig.get("fields") or []
+            if isinstance(f, dict) and f.get("label") == "Attachment Type" and str(f.get("value") or "").strip()
+        ]
+        for kind in kinds:
+            if fields.get("Product Code"):
+                present.add((fields["Product Code"].casefold(), kind.casefold()))
     types = [
         (str(t.get("name")).strip(), {str(k).strip().casefold() for k in t.get("keys") or [] if k})
         for t in asked_types
