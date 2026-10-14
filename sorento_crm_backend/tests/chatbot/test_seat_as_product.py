@@ -1025,3 +1025,83 @@ def test_g3_the_partial_code_through_the_engine_answers_the_covers_stock(session
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)
+
+
+# --------------------------------------------------------------------------- crew audit @ ec84f482 (14 Oct)
+
+#: Real-shaped (dev has 17 SRTWC8152-* SKUs on links): one model, many finishes and variants,
+#: the plain ones fitting one cover and the BL ones another (flyer rows 14 and 25).
+MODEL_SKUS = [f"ZZTWC9152{s}" for s in (
+    "", "-RL", "-SH", "-S", "-RL-S", "-SH-S", "-RL-250", "-SH-250", "-RL-UF", "-SH-UF", "-RL-PP",
+    "-BL", "-RL-BL", "-SH-BL", "-S-BL", "-RL-S-BL", "-SH-S-BL",
+)]
+
+
+def _seed_big_family(session_factory) -> None:
+    from app.models.product_compatibility import ProductCompatibility
+    from tests._mc_lookup_seed import product as seed_product
+
+    db = session_factory()
+    covers = {c: seed_product(db, company_id=DEFAULT_COMPANY_ID, code=c) for c in ("ZZTSCBD920", "ZZTSCBD924-BL")}
+    for code in MODEL_SKUS:
+        wc = seed_product(db, company_id=DEFAULT_COMPANY_ID, code=code)
+        cover = covers["ZZTSCBD924-BL" if code.endswith("-BL") else "ZZTSCBD920"]
+        db.add(ProductCompatibility(company_id=DEFAULT_COMPANY_ID, seat_cover_product_id=cover.id,
+                                    wc_product_id=wc.id, source="manual"))
+    db.commit()
+
+
+def test_a1_a_model_with_many_linked_skus_reads_as_their_covers(session_factory) -> None:
+    """Crew audit FAIL 1: "8152 seat cover stock" answered the 17 WCs' own stock because the
+    fallback gave up past 8 matched SKUs. The limit is on the answer (the linked codes)."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed_big_family(session_factory)
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), _verdict("9152"), message="9152 seat cover stock")
+    assert _codes(out) == ["ZZTSCBD920", "ZZTSCBD924-BL"] and lines == []
+
+
+def test_a2_the_model_code_through_the_engine_answers_the_two_covers(session_factory, monkeypatch) -> None:
+    _seed_big_family(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_a2")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text="stock ZZTSCBD920 ZZTSCBD924-BL", msg_id="ZZT-seat-a2-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product("ZZTSCBD920"), _product("ZZTSCBD924-BL")],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_a2")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text="9152 seat cover stock", msg_id="ZZT-seat-a2-asked",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product("9152")], find=FITS,
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+
+
+def test_a3_the_relation_word_double_booked_as_a_file_type_is_dropped_beside_a_real_file_word(session_factory, monkeypatch) -> None:
+    """Crew audit FAIL 2: "SRTWC8383-RL-MBL seat cover files" answered "attachment type:
+    Installation Guide". The parser tagged the relation's own word ("seat cover", its fits value)
+    as the file type; the file word ("files") names no type, so the reply asks which kind, as
+    "<cover> files" does."""
+    as_type = {"raw": "seat cover", "hint": "attachment_type", "canonical_code": "installation guide",
+               "current_message": True, "confident": True}
+    files = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "files"}]}
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_a3")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=f"{COVER_ONE} files", msg_id="ZZT-seat-a3-control",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(COVER_ONE)], domain_in_message=True,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_a3")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=f"{WC_ONE} seat cover files", msg_id="ZZT-seat-a3-asked",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE), as_type], domain_in_message=True, find=files,
+    )
+    assert "Installation Guide" not in a_reply and "installation guide" not in a_reply.lower(), a_reply
+    assert a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
