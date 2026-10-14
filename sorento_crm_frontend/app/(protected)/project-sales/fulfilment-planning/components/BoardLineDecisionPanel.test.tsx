@@ -968,9 +968,7 @@ describe('BoardLineDecisionPanel: the balance hint and Save gating (C7, D7)', ()
     expect(
       screen.queryByTestId(`line-decision-hint-${KEY}`),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
-      'Buy 4',
-    );
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(4);
     expect(
       screen.queryByText(/either met wholly from stock or wholly bought/),
     ).not.toBeInTheDocument();
@@ -1004,7 +1002,7 @@ describe('BoardLineDecisionPanel: the balance hint and Save gating (C7, D7)', ()
     });
 
     expect(screen.getByTestId(`line-decision-hint-${KEY}`)).toHaveTextContent(
-      '15 over',
+      'Over by 15',
     );
   });
 
@@ -2756,17 +2754,13 @@ describe('BoardLineDecisionPanel: Buy follows the remainder of the line (D7)', (
   it('reads "Buy 75" and drops the short blocker once the reserve is edited down to 60', () => {
     renderRemainder();
 
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
-      'Buy 73',
-    );
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(73);
 
     fireEvent.change(screen.getByLabelText('Reserve at BRW'), {
       target: { value: '60' },
     });
 
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
-      'Buy 75',
-    );
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(75);
     expect(
       screen.queryByText(/short of the open quantity/),
     ).not.toBeInTheDocument();
@@ -2814,9 +2808,7 @@ describe('BoardLineDecisionPanel: Buy follows the remainder of the line (D7)', (
       target: { value: '135' },
     });
 
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
-      'Buy 0',
-    );
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(0);
     // `amendSummary` only prints a Buy segment for a positive quantity (`boardAmend.ts`), so
     // the Decision text on the right names no Buy component either.
     expect(
@@ -2855,9 +2847,7 @@ describe('BoardLineDecisionPanel: Buy follows the remainder of the line (D7)', (
 
     fireEvent.change(reserveInput, { target: { value: '' } });
     expect(switchControl).not.toBeChecked();
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
-      'Buy 135',
-    );
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(135);
     expect(screen.getByLabelText('Reserve at BRW')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Add location' }),
@@ -2867,17 +2857,13 @@ describe('BoardLineDecisionPanel: Buy follows the remainder of the line (D7)', (
       target: { value: '0' },
     });
     expect(switchControl).not.toBeChecked();
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
-      'Buy 135',
-    );
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(135);
     expect(screen.getByLabelText('Reserve at BRW')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Reserve at BRW'), {
       target: { value: '60' },
     });
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
-      'Buy 75',
-    );
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(75);
 
     fireEvent.click(switchControl);
     expect(
@@ -2887,9 +2873,7 @@ describe('BoardLineDecisionPanel: Buy follows the remainder of the line (D7)', (
     fireEvent.click(switchControl);
     // The `stockBefore` path (D7): the 60 that was typed comes back, never a zero.
     expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(60);
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
-      'Buy 75',
-    );
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(75);
   });
 });
 
@@ -3023,7 +3007,7 @@ describe('BoardLineDecisionPanel: the delivered part is never capped (OI-CLOSED-
     fireEvent.change(screen.getByLabelText('Reserve at ZZT-BB'), { target: { value: '98' } });
 
     expect(screen.queryByText(/Only .* available here/)).not.toBeInTheDocument();
-    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent('Buy 2');
+    expect(screen.getByLabelText('Buy quantity')).toHaveValue(2);
     fireEvent.click(screen.getByRole('switch', { name: 'Order back' }));
     fireEvent.change(screen.getByLabelText(/^Reason/), {
       target: { value: '98 used from BB, 2 order back.' },
@@ -3148,5 +3132,295 @@ describe('BoardLineDecisionPanel: the note purchasing reads (PR 1622)', () => {
     fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'Took it from stock' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
     expect(lastSaved(onDecide).cs_note).toBeFalsy();
+  });
+});
+
+/**
+ * BUY-FIRST-PANEL (owner, 14 Oct 2026): "I want to key in the BUY quantity first; now I must
+ * calculate reserve and borrow and the rest is buy". Buy is a number input. Until it is typed
+ * it follows the remainder exactly as D7 had it; once typed it is PINNED, and the panel says
+ * what is left ("Unassigned N" / "Over by N") instead of changing the typed number. Save stays
+ * locked by the existing sum blocker until the line adds up.
+ */
+describe('BoardLineDecisionPanel: Buy can be typed first (BUY-FIRST-PANEL)', () => {
+  const buyInput = () => screen.getByLabelText('Buy quantity');
+  const hint = () => screen.getByTestId(`line-decision-hint-${KEY}`);
+  const type = (label: string, value: string) =>
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+  /** SO419208 line 3's shape (D7): BRW 62 + Buy 73 of 135, with a free bin to add. */
+  function renderPoolLine() {
+    const onDecide = vi.fn();
+    render(
+      <BoardLineDecisionPanel
+        contribution={contributionOf({
+          line_no: 3,
+          item_code: 'CSK14A-NL',
+          qty: '135',
+          qty_ordered: '135',
+          qty_outstanding: '135',
+          qty_proposed_reserve: '62',
+          qty_proposed_buy: '73',
+          sources: [
+            {
+              kind: 'reserve',
+              qty: '62',
+              location: 'BRW',
+              warehouse_id: 'wh-BRW',
+              reason: 'BRW may spare 62 of its pile to a project line.',
+              rung: 'pool',
+            },
+            {
+              kind: 'buy',
+              qty: '73',
+              location: null,
+              warehouse_id: null,
+              reason: 'The remainder has to be bought.',
+              rung: 'buy',
+            },
+          ],
+        })}
+        decision={null}
+        locations={[
+          {
+            location: 'BRW',
+            warehouse_id: 'wh-BRW',
+            qty: '0',
+            available_qty: '124',
+            qty_free: '124',
+            qty_free_remaining: '124',
+            where: 'site_pool',
+            available_for_project: '62',
+            net: '400',
+            net_raw: '400',
+            net_of: 'pools',
+          },
+          {
+            location: 'MWH-IB',
+            warehouse_id: 'wh-MWH-IB',
+            qty: '0',
+            available_qty: '400',
+            qty_free: '400',
+            qty_free_remaining: '400',
+            where: 'own',
+          },
+        ]}
+        onDecide={onDecide}
+      />,
+    );
+    return { onDecide };
+  }
+
+  it('Buy is an input that follows the remainder until typed', () => {
+    renderPanel();
+
+    expect(buyInput()).toHaveValue(0);
+    type('Reserve at BRW', '10');
+    expect(buyInput()).toHaveValue(5);
+  });
+
+  it('a typed Buy is pinned: editing Reserve afterwards never changes it, and the line saves once it adds up', async () => {
+    const { onDecide } = renderPanel();
+
+    type('Buy quantity', '10');
+    expect(buyInput()).toHaveValue(10);
+    expect(hint()).toHaveTextContent('Over by 10');
+    const save = screen.getByRole('button', { name: 'Save decision' });
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: 'Customer wants 10 of the new batch.' },
+    });
+    expect(save).toBeDisabled();
+
+    type('Reserve at BRW', '5');
+    expect(buyInput()).toHaveValue(10);
+    expect(
+      screen.queryByTestId(`line-decision-hint-${KEY}`),
+    ).not.toBeInTheDocument();
+    expect(save).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(save);
+    });
+    expect(onDecide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: 'amended',
+        buy_qty: '10',
+        reserve: expect.arrayContaining([
+          expect.objectContaining({ warehouse_id: 'wh-BRW-AM', qty: '9' }),
+          expect.objectContaining({ warehouse_id: 'wh-BRW', qty: '5' }),
+        ]),
+      }),
+    );
+  });
+
+  it('says what is Unassigned while the parts fall short, and keeps Save locked', () => {
+    renderPanel();
+
+    type('Buy quantity', '10');
+    type('Reserve at BRW-AM', '0');
+    type('Reserve at BRW', '0');
+
+    expect(buyInput()).toHaveValue(10);
+    expect(hint()).toHaveTextContent('Unassigned 14');
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: 'Working it out.' },
+    });
+    expect(screen.getByRole('button', { name: 'Save decision' })).toBeDisabled();
+  });
+
+  it('Rest to Buy puts everything unassigned on the Buy', () => {
+    renderPanel();
+
+    type('Buy quantity', '10');
+    type('Reserve at BRW-AM', '0');
+    type('Reserve at BRW', '0');
+    fireEvent.click(screen.getByRole('button', { name: 'Rest to Buy' }));
+
+    expect(buyInput()).toHaveValue(24);
+    expect(
+      screen.queryByTestId(`line-decision-hint-${KEY}`),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Rest to Buy' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('Rest to Reserve adds everything unassigned to the FIRST Reserve row, and leaves Buy alone', () => {
+    renderPanel();
+
+    type('Buy quantity', '10');
+    type('Reserve at BRW-AM', '3');
+    type('Reserve at BRW', '0');
+    expect(hint()).toHaveTextContent('Unassigned 11');
+    fireEvent.click(screen.getByRole('button', { name: 'Rest to Reserve' }));
+
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(14);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(0);
+    expect(buyInput()).toHaveValue(10);
+    expect(
+      screen.queryByTestId(`line-decision-hint-${KEY}`),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers the helpers only while something is unassigned, and never a Rest to Borrow', () => {
+    renderPanel();
+
+    expect(screen.queryByRole('button', { name: 'Rest to Buy' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Rest to Reserve' })).toBeNull();
+
+    type('Buy quantity', '10');
+    expect(hint()).toHaveTextContent('Over by 10');
+    expect(screen.queryByRole('button', { name: 'Rest to Buy' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Rest to Reserve' })).toBeNull();
+
+    type('Reserve at BRW', '0');
+    expect(screen.getByRole('button', { name: 'Rest to Buy' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rest to Reserve' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rest to Borrow' })).toBeNull();
+  });
+
+  it('Buy the whole line: ON buys it all, OFF restores the stock side and Buy follows the remainder again', () => {
+    renderPanel();
+
+    type('Buy quantity', '10');
+    type('Reserve at BRW', '5');
+    const wholeLine = screen.getByRole('switch', { name: 'Buy the whole line' });
+
+    fireEvent.click(wholeLine);
+    expect(screen.getByText('Buy the whole 24')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Buy quantity')).toBeNull();
+
+    fireEvent.click(wholeLine);
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(9);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(5);
+    expect(buyInput()).toHaveValue(10);
+
+    // Unpinned by the switch: Buy follows the remainder again.
+    type('Reserve at BRW', '3');
+    expect(buyInput()).toHaveValue(12);
+  });
+
+  it('a typed Buy of 0 clears Order back and the document cited', () => {
+    renderPoolLine();
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Order back' }));
+    fireEvent.change(screen.getByLabelText('Document cited'), {
+      target: { value: 'SPO-2026/08-0061' },
+    });
+
+    type('Buy quantity', '0');
+    expect(screen.queryByRole('switch', { name: 'Order back' })).toBeNull();
+
+    type('Buy quantity', '5');
+    expect(screen.getByRole('switch', { name: 'Order back' })).not.toBeChecked();
+    expect(screen.queryByLabelText('Document cited')).toBeNull();
+  });
+
+  it('Add location seeds what is left after a pinned Buy too', () => {
+    renderPoolLine();
+
+    type('Buy quantity', '50');
+    expect(hint()).toHaveTextContent('Unassigned 23');
+    fireEvent.click(screen.getByRole('button', { name: 'Add location' }));
+
+    expect(screen.getByLabelText('Quantity')).toHaveValue(23);
+  });
+
+  it('a decision re-seeded under the panel drops the pin: Buy follows the remainder again', async () => {
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const props = { locations: LOCATIONS, onDecide, onDirtyChange: vi.fn() };
+    const { rerender } = render(
+      <BoardLineDecisionPanel contribution={contributionOf()} decision={null} {...props} />,
+    );
+
+    type('Buy quantity', '10');
+    type('Reserve at BRW', '5');
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: 'Customer wants 10 of the new batch.' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    });
+
+    // A Decide-dropdown pick lands on the untouched panel (BOARD-DECIDE-RESEED).
+    rerender(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={{
+          verdict: 'amended',
+          reserve: [
+            { warehouse_id: 'wh-BRW-AM', location: 'BRW-AM', qty: '9' },
+            { warehouse_id: 'wh-BRW', location: 'BRW', qty: '15' },
+          ],
+          borrow: [],
+          timely_spo_qty: '0',
+          buy_qty: '0',
+          reason: 'Picked from Decide.',
+        }}
+        {...props}
+      />,
+    );
+    expect(buyInput()).toHaveValue(0);
+
+    type('Reserve at BRW', '10');
+    expect(buyInput()).toHaveValue(5);
+  });
+
+  it('the Buy input is disabled on a locked (covered) row until Amend', () => {
+    renderPanel({
+      covered: true,
+      decision: {
+        revision_no: 1,
+        confirmed_at: '2026-08-18T02:00:00',
+        timely_spo_qty: '0',
+        reserve: [{ warehouse_id: 'wh-BRW-AM', location: 'BRW-AM', qty: '9' }],
+        borrow: [],
+        buy_qty: '15',
+      },
+    });
+
+    expect(buyInput()).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Amend' }));
+    expect(buyInput()).toBeEnabled();
   });
 });
