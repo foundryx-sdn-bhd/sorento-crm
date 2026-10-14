@@ -15,7 +15,8 @@ AutoCount simply drops out of the sum on the next sync.
 **Exact, or say why not (R2, R7; owner rule 13 Oct).** A line with a `FromDocDtlKey` matches
 that exact line; a key naming a line that is not there while its document is stays unmatched
 (`dangling_line_key`), never an item match. Without a key, the line is decided with its whole
-group (one document + item + location) by `autocount_cancel_matching.resolve_group`, by
+group (one document + item, plus the location for a PO / SPO; owner rule 14 Oct: a Cancel SO
+groups on SO + item whatever the location) by `autocount_cancel_matching.resolve_group`, by
 arithmetic only: the group's one line, or, when nothing moved and the cancels are every
 transfer, each line's own transfer (`group_whole`: the cancel names the group, and each line's
 cancelled qty is its transfer). Anything else is `undetermined`: kept at document + item level,
@@ -269,6 +270,13 @@ def _loc(value: Optional[str]) -> str:
     return (value or "").strip().upper()
 
 
+def _group_location(target: str, value: Optional[str]) -> str:
+    """The location part of a group key: none for an SO, the normalised location for a PO /
+    SPO. Owner rule 14 Oct: a Cancel SO links to its SO by document + item, because a cancel or
+    DO line's location can differ from its SO line's (dev: 570 of 9,828 single-match DO lines)."""
+    return "" if target == "so" else _loc(value)
+
+
 def _names_any(ids: list[str]):
     """A `group_whole` cancel line whose group holds any of these order lines."""
     return and_(AutocountCancelLine.match_reason == REASON_GROUP_WHOLE,
@@ -277,13 +285,14 @@ def _names_any(ids: list[str]):
 
 @dataclass(frozen=True)
 class _Group:
-    """One document + item + location: the unit the exact arithmetic is decided over."""
+    """One document + item (+ location for a PO / SPO): the unit the exact arithmetic is
+    decided over."""
     kind: str  # cancel_so / cancel_po
     target: str  # so / po / spo
     doc: str  # SO / PO header id, or the SPO match key
     number: str  # the number the cancel lines name
     item_code: str
-    location: str  # normalised (`_loc`)
+    location: str  # `_group_location`: "" for an SO
 
 
 class CancelLineMatcher:
@@ -364,31 +373,25 @@ class CancelLineMatcher:
     def _candidates(self, group: _Group) -> tuple[list[CandidateIn], Decimal]:
         """The group's lines with T_i (TransferedQty less the live cancels matched to the line by
         line key) and the group's moved qty D: DO qty for an SO (linked to a group line, or
-        naming the SO, item and location as sent, since a repeated item's DO line is never
-        linked), GRN qty on the group's lines for a PO / SPO."""
+        naming the SO and item at any location, since a repeated item's DO line links to the
+        SO + item group and no line), GRN qty on the group's lines for a PO / SPO."""
         if group.target == "so":
-            rows = (self.db.query(SalesOrderLine.id, Warehouse.warehouse_code,
-                                  SalesOrderLine.qty_delivered)
+            rows = (self.db.query(SalesOrderLine.id, SalesOrderLine.qty_delivered)
                     .join(Product, Product.id == SalesOrderLine.product_id)
-                    .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
                     .filter(SalesOrderLine.sales_order_id == group.doc,
                             Product.product_code == group.item_code).all())
-            rows = [r for r in rows if _loc(r[1]) == group.location]
             ids = [str(r[0]) for r in rows]
             named = and_(OrderLine.from_doc_no == group.number,
                          OrderLine.item_code == group.item_code)
-            dos = (self.db.query(OrderLine.quantity, OrderLine.sales_order_line_id,
-                                 OrderLine.location_code)
+            dos = (self.db.query(OrderLine.quantity)
                    .join(Order, Order.id == OrderLine.order_id)
                    # company_id: defence in depth over the ORM company scope, not instead of it
                    .filter(Order.company_id == self.company_id, Order.is_cancelled.is_(False),
                            or_(OrderLine.sales_order_line_id.in_(ids), named) if ids else named)
                    .all())
-            moved = sum((as_decimal(q) for q, linked, loc in dos
-                         if (linked and str(linked) in ids) or _loc(loc) == group.location),
-                        _ZERO)
+            moved = sum((as_decimal(q) for (q,) in dos), _ZERO)
             keyed = self._keyed(AutocountCancelLine.sales_order_line_id, ids)
-            return [CandidateIn(str(r[0]), as_decimal(r[2]) - keyed.get(str(r[0]), _ZERO))
+            return [CandidateIn(str(r[0]), as_decimal(r[1]) - keyed.get(str(r[0]), _ZERO))
                     for r in rows], moved
         if group.target == "po":
             rows = (self.db.query(PurchaseOrderLine.id, Warehouse.warehouse_code,
@@ -444,7 +447,8 @@ class CancelLineMatcher:
             .group_by(column))
 
     def _group_lines(self, group: _Group) -> list[tuple[AutocountCancelLine, AutocountCancelDoc]]:
-        """Every key-less cancel line of a LIVE doc naming this document, item and location."""
+        """Every key-less cancel line of a LIVE doc naming this document and item (and, for a
+        PO / SPO, location)."""
         query = (self.db.query(AutocountCancelLine, AutocountCancelDoc)
                  .join(AutocountCancelDoc,
                        AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
@@ -459,7 +463,8 @@ class CancelLineMatcher:
             query = query.filter(_spo_match_key_sql(AutocountCancelLine.from_doc_no) == group.doc)
         else:
             query = query.filter(AutocountCancelLine.from_doc_no == group.number)
-        return [(l, d) for l, d in query.all() if _loc(l.location_code) == group.location]
+        return [(l, d) for l, d in query.all()
+                if _group_location(group.target, l.location_code) == group.location]
 
     def _resolve(self, group: _Group) -> dict[str, tuple[AutocountCancelLine, _Match, str]]:
         members = self._group_lines(group)
@@ -475,16 +480,15 @@ class CancelLineMatcher:
         return out
 
     def _target_group(self, kind: str, target: str, target_id: str) -> Optional[_Group]:
-        """The group a line-key match lands in: its document, item and location (keyed matches
-        change the T_i the group is decided on)."""
+        """The group a line-key match lands in: its document and item, plus the location for a
+        PO / SPO (keyed matches change the T_i the group is decided on)."""
         if target == "so":
-            row = (self.db.query(SalesOrder.id, SalesOrder.so_number, Product.product_code,
-                                 Warehouse.warehouse_code)
+            row = (self.db.query(SalesOrder.id, SalesOrder.so_number, Product.product_code)
                    .join(SalesOrderLine, SalesOrderLine.sales_order_id == SalesOrder.id)
                    .join(Product, Product.id == SalesOrderLine.product_id)
-                   .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
                    .filter(SalesOrderLine.id == target_id).first())
-            return _Group(kind, "so", str(row[0]), row[1], row[2], _loc(row[3])) if row else None
+            return (_Group(kind, "so", str(row[0]), row[1], row[2], _group_location("so", None))
+                    if row else None)
         if target == "po":
             row = (self.db.query(PurchaseOrder.id, PurchaseOrder.po_number, Product.product_code,
                                  Warehouse.warehouse_code)
@@ -540,7 +544,7 @@ class CancelLineMatcher:
         if target is None:
             return None
         return _Group(kind, target, doc, line.from_doc_no, line.item_code,
-                      _loc(line.location_code))
+                      _group_location(target, line.location_code))
 
     # ------------------------------------------------------------- the pass
     def match_all(self, lines: Iterable[AutocountCancelLine], kinds: dict[str, str],
