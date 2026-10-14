@@ -87,3 +87,13 @@ Schema (additive, no backfill): `order_inquiry_reserve_requests.parked_at`;
 - Q5 Subject of a bulk email: (a) "Reserve requests: 3 order inquiries (Joey)" /
   "Reserved: 2 order inquiries (Eling)", body one section per OI; (b) keep today's per-OI subject
   even for bulk (first OI named, "+2 more"). Rec (a). A single parked item keeps today's subject.
+
+## Owner notes on mock v1 (14 Oct, via crew) - supersede the rules above where they differ
+
+1. Default SEND, not park: "Park this first" opens unticked; the CS "Park notice" too (my call A,
+   same rule, filed with mock v2).
+2. ONE summary preview: a table To | Cc | Order inquiries | Lines, one line per email, no bodies.
+3. A multi-OI email is short: heading with the count, intro, first 5 OIs (OI NO, S/O NO,
+   CUSTOMER, LINES), "and N more", ONE button that opens the Documents list filtered to exactly
+   that email's OIs (send id in the URL, chip "From email: ..."). An email with one OI keeps
+   today's detailed email (my call B, filed with mock v2).

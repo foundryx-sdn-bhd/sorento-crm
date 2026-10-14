@@ -12,10 +12,11 @@ tests seed their own equivalent chain (CI DB is empty).
 - AC-SN-03 A parked request is visible and answerable by CS like any open request (commit works).
 - AC-SN-04 `GET /order-inquiries/reserve-parked/summary`: `requests_total` counts every parked
   request still `requested` with at least one unanswered row; `my_requests` only the caller's.
-- AC-SN-05 Preview (`.../reserve-requests/parked/preview`) lists only the caller's parked
-  requests, grouped one email per first non-actor recipient; dev config (no fixed CS user):
-  Joey's 5 parked -> 2 emails, To Eling (3 OIs) Cc Joey, To Niki (2 OIs) Cc Joey. With a fixed
-  CS user configured: 1 email To that user, Cc Joey + Niki (deduped, Eling once).
+- AC-SN-05 Preview (`.../reserve-requests/parked/preview`) covers only the caller's parked
+  requests, grouped one email per first non-actor recipient, and returns per email only
+  `to`, `cc`, `inquiry_count`, `line_count` (no bodies). Dev config (no fixed CS user): Joey's
+  17 parked (9 raised by Eling, 8 by Niki) -> 2 lines, To Eling Cc Joey 9, To Niki Cc Joey 8.
+  With a fixed CS user configured: 1 line To that user, Cc Joey + Niki (deduped, Eling once).
 - AC-SN-06 Preview rows are only rows CS has not answered (`qty_reserved IS NULL`), with
   current remaining; a request answered in full or cancelled is not listed.
 - AC-SN-07 Send stamps exactly the previewed set's current members (`parked_at` null), queues one
@@ -29,9 +30,16 @@ tests seed their own equivalent chain (CI DB is empty).
 - AC-SN-10 A colleague's parked request is listed by the Parked filter but is neither previewed
   nor sent by the caller.
 - AC-SN-11 Cancelling a parked request clears `parked_at` and sends no email.
-- AC-SN-12 A one-OI email renders today's subject and body unchanged; a multi-OI email renders
-  subject "Reserve requests: N order inquiries (Joey)" and one section per OI (OI no, ordinal,
-  SO, customer, project, rows table, link).
+- AC-SN-12 A one-OI email renders today's subject and body unchanged. A multi-OI email renders
+  subject "Reserve requests: N order inquiries (Joey)", heading "N order inquiries waiting for
+  your reserve", the OI and line counts, the first 5 OIs by OI no (OI NO, S/O NO, CUSTOMER,
+  LINES = requested lines), "and M more order inquiries." when M > 0, and ONE button "View the N
+  order inquiries waiting for your reserve" linking to `/project-sales/order-inquiries?
+  reserve_batch=<send batch id>`. It never lists more than 5 OIs.
+- AC-SN-13 Each email a send produces gets one `order_inquiry_reserve_send_batches` row; its
+  requests carry that `sent_batch_id`. `GET /order-inquiry-headers?reserve_batch=<id>` returns
+  exactly those OIs whatever their state; `GET .../reserve-send-batches/{id}` returns kind,
+  sender name, sent_at, inquiry count; a batch of another company or an unknown id is 404.
 
 ## Notice side (CS -> purchasing)
 
@@ -48,7 +56,9 @@ tests seed their own equivalent chain (CI DB is empty).
   that row only, figure 150. Amend back to 200 before sending -> nothing parked for that row.
 - AC-SN-24 Two parked commits on one row before sending -> one email row with the latest figure.
 - AC-SN-25 Double send / concurrency / unresolved / colleague rules as AC-SN-08/09/10.
-- AC-SN-26 Multi-OI notice subject "Reserved: N order inquiries (Eling)"; one-OI keeps today's.
+- AC-SN-26 Multi-OI notice email: subject "Reserved: N order inquiries (Eling)", the same short
+  shape as AC-SN-12 (LINES = lines in the notice), button "View the N order inquiries CS
+  reserved" -> `?notice_batch=<id>`; rows carry `notice_batch_id`; one-OI keeps today's email.
 
 ## List (Documents view)
 
@@ -59,16 +69,19 @@ tests seed their own equivalent chain (CI DB is empty).
 
 ## Frontend
 
-- AC-SN-40 Request lightbox shows "Park this first" ticked on every open; ticked -> button
-  "Park request", payload `park: true`, toast "Request #n parked. Send it from Order
-  inquiries."; unticked -> "Send request", `park: false`, today's toast.
-- AC-SN-41 OI detail shows "Park notice" (ticked) beside Reserve (N) for RESERVE holders;
-  Reserve sends `park_notice` matching the tickbox.
+- AC-SN-40 Request lightbox shows "Park this first" UNTICKED on every open (owner: default
+  send); unticked -> "Send request", `park: false`, today's toast; ticked -> button "Park
+  request", payload `park: true`, toast "Request #n parked. Send it from Order inquiries."
+- AC-SN-41 OI detail shows "Park notice" (unticked on load) beside Reserve (N) for RESERVE
+  holders; Reserve sends `park_notice` matching the tickbox.
 - AC-SN-42 Documents list: Parked filter with counts from the summary, Parked column, chip;
   picking a Parked value sets the state toggle to All.
 - AC-SN-43 Toolbar: "Send parked requests to CS (N)" (ACKNOWLEDGE) / "Notify purchasing (N)"
   (RESERVE), N = `my_requests` / `my_notices`; disabled with reason when N = 0.
-- AC-SN-44 Preview dialog: one card per email (To, Cc, subject, OI count, rendered body via
-  EmailPreviewFrame), a "No recipient" card per unresolved group, footer "Send N emails";
-  success toast "N emails sent (M order inquiries)"; `emails_sent = 0` -> "Nothing left to send".
+- AC-SN-44 Preview dialog: ONE summary table (To, Cc, Order inquiries, Lines; total row), a
+  "No recipient, stays parked" line per unresolved group, footer "Send N emails"; success toast
+  "N emails sent (M order inquiries)"; `emails_sent = 0` -> "Nothing left to send".
+- AC-SN-46 Opening `?reserve_batch=<id>` (or `?notice_batch=`) shows the Documents list with
+  the state toggle on All and a chip "From email: Joey's reserve requests, 14/10/2026 (9)"
+  ("... reserve notices ..." for notices); its X clears the param and returns to the normal list.
 - AC-SN-45 Usable at 375 and 1280 (lightbox grid and email frame scroll inside, toolbar wraps).
