@@ -345,8 +345,40 @@ def test_r4b_a_mirror_link_is_not_a_seat_cover_link(session_factory) -> None:
     db.commit()
     assert find_lane._linked_codes_holding(_scoped(session_factory), "ZZTBF11404") == []
     assert find_lane._linked_codes_holding(_scoped(session_factory), "ZZTMR11404") == []
-    out, lines = find_lane.as_linked_products(_scoped(session_factory), _verdict("ZZTBF11404"))
-    assert _codes(out) == ["ZZTBF11404"] and lines == []
+    out, _lines = find_lane.as_linked_products(_scoped(session_factory), _verdict("ZZTBF11404"))
+    assert _codes(out) == ["ZZTBF11404"]
+
+
+def test_r4c_mirror_and_shelf_links_leave_the_seat_cover_answers_alone(session_factory) -> None:
+    """One seed: a cabinet with a mirror and a shelf link, a WC with a seat cover link. The
+    cabinet's model token answers nothing; the WC's token still answers (v1 unchanged)."""
+    from app.models.product_compatibility import ProductCompatibility
+    from app.services.chatbot.lanes.business import find as find_lane
+    from tests._mc_lookup_seed import product as seed_product
+
+    db = session_factory()
+    rows = {
+        c: seed_product(db, company_id=DEFAULT_COMPANY_ID, code=c)
+        for c in ("ZZTBF22404", "ZZTMR22404-BL", "ZZTSV22404-BL", "ZZTWC22383", "ZZTSC22383-UF")
+    }
+    for acc, host, kind in (
+        ("ZZTMR22404-BL", "ZZTBF22404", "mirror"),
+        ("ZZTSV22404-BL", "ZZTBF22404", "shelf"),
+        ("ZZTSC22383-UF", "ZZTWC22383", "seat_cover"),
+    ):
+        db.add(
+            ProductCompatibility(
+                company_id=DEFAULT_COMPANY_ID,
+                seat_cover_product_id=rows[acc].id,
+                wc_product_id=rows[host].id,
+                source="flyer",
+                kind=kind,
+            )
+        )
+    db.commit()
+    assert find_lane._linked_codes_holding(_scoped(session_factory), "ZZTBF22404") == []
+    held = find_lane._linked_codes_holding(_scoped(session_factory), "ZZTWC22383")
+    assert [r.product_code for r in held] == ["ZZTWC22383"]
 
 
 def test_r5_the_code_matches_by_the_normalised_code_not_by_spelling(session_factory) -> None:

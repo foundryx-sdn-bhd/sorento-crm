@@ -400,3 +400,12 @@ def test_get_rows_carry_kind_and_include_mirror_and_shelf(db, monkeypatch):
     }
     on_mirror = client.get(_page(mirror)).json()["data"]
     assert [(r["kind"], r["product_id"]) for r in on_mirror["fits"]] == [("mirror", cabinet.id)]
+
+
+def test_each_kind_product_type_is_a_registry_product_type():
+    from app.services.product_spec_registry import SPEC_REGISTRY_SEED
+
+    [entry] = [e for e in SPEC_REGISTRY_SEED if e["spec_key"] == "product_type"]
+    for kind, nouns in compat.KINDS.items():
+        assert nouns.product_type in entry["allowed_values"], kind
+    assert compat.KINDS["seat_cover"].product_type == "toilet_seat"

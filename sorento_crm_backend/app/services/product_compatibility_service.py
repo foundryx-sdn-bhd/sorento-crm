@@ -23,7 +23,7 @@ documentation/plans/products/PLAN-mirror-shelf-links-14oct.md.
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Optional
+from typing import Iterable, NamedTuple, Optional
 
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -46,11 +46,21 @@ SOURCE_MANUAL = "manual"
 KIND_SEAT_COVER = "seat_cover"
 KIND_MIRROR = "mirror"
 KIND_SHELF = "shelf"
-#: kind -> (accessory noun, host noun); the dict order is the display order.
+
+
+class Kind(NamedTuple):
+    accessory: str  # noun for the accessory end
+    host: str  # noun for the host end
+    #: The accessory's `product_type` spec value (`product_spec_registry.SPEC_REGISTRY_SEED`:
+    #: towel_shelf, mirror, toilet_seat).
+    product_type: str
+
+
+#: kind -> its nouns and accessory product_type; the dict order is the display order.
 KINDS = {
-    KIND_SEAT_COVER: ("seat cover", "WC"),
-    KIND_MIRROR: ("mirror", "cabinet"),
-    KIND_SHELF: ("shelf", "cabinet"),
+    KIND_SEAT_COVER: Kind("seat cover", "WC", "toilet_seat"),
+    KIND_MIRROR: Kind("mirror", "cabinet", "mirror"),
+    KIND_SHELF: Kind("shelf", "cabinet", "towel_shelf"),
 }
 
 ROLE_ACCESSORY = "accessory"
@@ -181,9 +191,9 @@ def add_manual(
     if other_role in (ROLE_SEAT_COVER, ROLE_WC) and kind != KIND_SEAT_COVER:
         raise handle_validation_error(f"The role {other_role} only fits seat cover links.")
     if other_role not in (ROLE_ACCESSORY, ROLE_HOST, ROLE_SEAT_COVER, ROLE_WC):
-        accessory_noun, host_noun = KINDS[kind]
+        nouns = KINDS[kind]
         raise handle_validation_error(
-            f"Pick whether the other product is a {accessory_noun} or a {host_noun}."
+            f"Pick whether the other product is a {nouns.accessory} or a {nouns.host}."
         )
     product = _product_or_404(db, product_id)
     if str(other_product_id) == str(product.id):
