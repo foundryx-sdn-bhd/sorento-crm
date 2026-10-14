@@ -518,6 +518,11 @@ def _one_ask(
         if not (1 <= ask.row_pick <= len(st.last_rows)):
             raise _Miss("other")
         row = st.last_rows[ask.row_pick - 1]
+        if row.payload.get("row_kind"):
+            # R4a: a row the reply printed (the register) is its printed label looked up again as its kind, through
+            # the scoped resolver like any named entity; its stored key is never acted on.
+            picked = Entity(kind=row.payload["row_kind"], key=None, phrase=row.label, op="set", refers_to_held=False)
+            ask, row = ask.model_copy(update={"entities": [picked, *ask.entities]}), None
     qs = _Qs(can_offer)
     base = st.held
     drilled = False

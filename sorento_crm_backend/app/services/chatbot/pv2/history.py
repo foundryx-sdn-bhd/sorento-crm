@@ -5,7 +5,7 @@ by the new message verbatim.
 
 MEMORY is for the model, not the user: it prints index keys (domains, attachment type,
 spec attributes) and option keys the model must echo back exactly, but never a ref's
-live id: refs print their label.
+live id: refs print their label (a product whose label is a description, its code).
 """
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.services.chatbot.pv2.state import ConversationState, Held, topic_key
+from app.services.chatbot.pv2.apply import FREE_VALUE_PENDING
+from app.services.chatbot.pv2.register import _clean, latest
+from app.services.chatbot.pv2.state import ConversationState, Held, PendingQuestion, topic_key
 
 PV2_HISTORY_EXCHANGES = 3
 TIMEZONE = "Asia/Kuala_Lumpur"
@@ -88,9 +90,16 @@ def _report(report: Any) -> str:
     return "; ".join(parts)
 
 
+def _held_label(r) -> str:
+    """R4a: a held product whose label is a description (it does not lead with the code) prints its code, the
+    identifier the parser copies; a uuid key is never printed."""
+    code = _clean(r.key) if r.kind == "product" else None
+    return code if code and not r.label.startswith(code) else r.label
+
+
 def _ref_text(r) -> str:
-    q = r.quantity
-    return r.label if q is None else f"{r.label} x{q.number:g}" + (f" {q.unit}" if q.unit else "")
+    q, label = r.quantity, _held_label(r)
+    return label if q is None else f"{label} x{q.number:g}" + (f" {q.unit}" if q.unit else "")
 
 
 def held_lines(held: Held) -> list[str]:
@@ -129,6 +138,30 @@ def _topic_line(held: Held) -> str:
     return " | ".join(parts)
 
 
+def _missed(q: PendingQuestion) -> str | None:
+    """The parsed words a question with no options was raised for: the entity that raised it, else the first
+    named entity of the ask it interrupted."""
+    for e in [q.raised_by, *((q.origin or {}).get("entities") or [])]:
+        words = isinstance(e, dict) and (e.get("phrase") or e.get("doc_number"))
+        if words:
+            return str(words)
+    return None
+
+
+def _last_reply(state: ConversationState) -> str:
+    """R4a: what the bot did last turn, from state alone (never the user's text): the open question's kind, the
+    words a question with no options found nothing for (an open question asking for a value is asked), the
+    domain a lookup answered, else none."""
+    q = state.pending
+    if q is not None:
+        missed = None if q.options or q.kind in FREE_VALUE_PENDING else _missed(q)
+        return f"not found {missed}" if missed else f"asked {q.kind}"
+    if state.last_lookup_ask is not None:
+        domain = state.held.domain or state.last_lookup_ask.get("domain")
+        return f"answered {domain}" if domain else "answered"
+    return NONE
+
+
 def render_memory(state: ConversationState, profile: MemoryProfile, now: datetime) -> str:
     """The `<memory>` block (section 2), fixed key order, every key printed."""
     p = profile
@@ -157,7 +190,16 @@ def render_memory(state: ConversationState, profile: MemoryProfile, now: datetim
         lines.extend(f"  {topic_key(i)}: {_topic_line(t)}" for i, t in enumerate(state.topics))
     else:
         lines.append(f"TOPICS (switch_back keys, newest first): {NONE}")
-    if state.last_rows:
+    lines.append(f"LAST REPLY: {_last_reply(state)}")
+    shown = latest(state.register)
+    if shown:
+        # R4a: the rows the latest reply printed (the register), a child marked with its parent's number.
+        number = {e.id: n for n, e in enumerate(shown, start=1)}
+        lines.append("LAST ANSWER ROWS: " + " | ".join(
+            f"{n}={e.kind} {e.label}" + (f" (in {number[e.parent]})" if e.parent in number else "")
+            for n, e in enumerate(shown, start=1)
+        ))
+    elif state.last_rows:
         lines.append("LAST ANSWER ROWS: " + " | ".join(f"{n}={o.label}" for n, o in enumerate(state.last_rows, 1)))
     else:
         lines.append(f"LAST ANSWER ROWS: {NONE}")

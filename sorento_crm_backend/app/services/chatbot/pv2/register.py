@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable, Iterable, Sequence
 
-from app.services.chatbot.pv2.state import RegisterEntry
+from app.services.chatbot.pv2.state import Option, RegisterEntry
 
 REGISTER_CAP = 20
 REGISTER_REPLIES = 2
@@ -181,4 +181,22 @@ def roll(previous: Sequence[RegisterEntry], fresh: Sequence[RegisterEntry]) -> l
             "parent": remap.get((e.turn, e.parent)) if e.parent else None,
         })
         for e in kept
+    ]
+
+
+def latest(entries: Sequence[RegisterEntry]) -> list[RegisterEntry]:
+    """R4a: the latest reply's entries (the register's highest turn) in printed order, capped as the register is:
+    MEMORY's LAST ANSWER ROWS numbers them 1..n and a row_pick indexes them."""
+    if not entries:
+        return []
+    turn = max(e.turn for e in entries)
+    return [e for e in entries if e.turn == turn][:REGISTER_CAP]
+
+
+def shown_rows(entries: Sequence[RegisterEntry]) -> list[Option]:
+    """`latest` as the rows a row_pick indexes: each printed label and its kind, never the stored key (a picked
+    row is looked up again by its label through the scoped resolver, which re-checks grants and links)."""
+    return [
+        Option(key=str(n), label=e.label, payload={"kind": "row", "row_kind": e.kind})
+        for n, e in enumerate(latest(entries), start=1)
     ]

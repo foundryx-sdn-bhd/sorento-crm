@@ -4233,6 +4233,9 @@ def _pv2_write_register(media_box: dict[str, Any], envelopes: Any) -> None:
 
         fresh = pv2_register.entries_from_envelopes(envelopes, int(getattr(state, "turn_no", 0) or 0), printing_subject)
         state.register = pv2_register.roll(getattr(state, "register", None) or [], fresh)
+        if fresh:
+            # R4a: the next row_pick indexes exactly the rows MEMORY shows from this register.
+            state.last_rows = pv2_register.shown_rows(state.register)
     except Exception:  # noqa: BLE001 - the register is a convenience; the reply is already decided
         logger.warning("pv2: could not write the answer register", exc_info=True)
 
