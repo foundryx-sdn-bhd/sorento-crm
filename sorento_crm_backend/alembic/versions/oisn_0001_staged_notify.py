@@ -132,27 +132,33 @@ _BULK = {
         "({{ requester.name if requester else '-' }})",
         "heading": "{{ reserve.oi_count }} order inquiries need your reserve",
         "intro": "{{ requester.name if requester else '-' }} asks CS to reserve stock on "
-        "{{ reserve.line_count }} lines across {{ reserve.oi_count }} order inquiries.",
+        "{{ reserve.oi_count }} order inquiries ({{ reserve.line_count }} lines).",
+        "footer_html": "<p>Requested by {{ requester.name if requester else '-' }} on {{ today }}.</p>",
         "button": "View order inquiries that need your reserve",
         "text": "{{ requester.name if requester else '-' }} asks CS to reserve stock on "
-        "{{ reserve.line_count }} lines across {{ reserve.oi_count }} order inquiries.\n\n"
+        "{{ reserve.oi_count }} order inquiries ({{ reserve.line_count }} lines).\n\n"
         "OI NO | S/O NO | CUSTOMER | LINES\n"
         "{% for r in reserve.requests %}{{ r.inquiry_no }} | {{ r.so_number }} | {{ r.customer }} | {{ r.line_count }}\n{% endfor %}"
         "{% if reserve.more_count %}and {{ reserve.more_count }} more order inquiries.\n{% endif %}"
+        "Requested by {{ requester.name if requester else '-' }} on {{ today }}.\n"
         "View order inquiries that need your reserve: {{ reserve.link }}\n",
     },
     RESERVED_CODE: {
         "subject": "Reserved: {{ reserve.oi_count }} order inquiries "
         "({{ actor.name if actor else '-' }})",
         "heading": "CS answered your reserve requests on {{ reserve.oi_count }} order inquiries",
-        "intro": "{{ actor.name if actor else '-' }} answered {{ reserve.line_count }} lines "
-        "across {{ reserve.oi_count }} order inquiries.",
+        "intro": "{{ actor.name if actor else '-' }} reserved stock on "
+        "{{ reserve.oi_count }} order inquiries ({{ reserve.line_count }} lines). "
+        "Check the balance still to buy.",
+        "footer_html": "<p>Reserved by {{ actor.name if actor else '-' }} on {{ today }}.</p>",
         "button": "View reserved order inquiries",
-        "text": "{{ actor.name if actor else '-' }} answered {{ reserve.line_count }} lines "
-        "across {{ reserve.oi_count }} order inquiries.\n\n"
+        "text": "{{ actor.name if actor else '-' }} reserved stock on "
+        "{{ reserve.oi_count }} order inquiries ({{ reserve.line_count }} lines). "
+        "Check the balance still to buy.\n\n"
         "OI NO | S/O NO | CUSTOMER | LINES\n"
         "{% for r in reserve.requests %}{{ r.inquiry_no }} | {{ r.so_number }} | {{ r.customer }} | {{ r.line_count }}\n{% endfor %}"
         "{% if reserve.more_count %}and {{ reserve.more_count }} more order inquiries.\n{% endif %}"
+        "Reserved by {{ actor.name if actor else '-' }} on {{ today }}.\n"
         "View reserved order inquiries: {{ reserve.link }}\n",
     },
 }
@@ -180,7 +186,7 @@ def _bulk_layout(code: str) -> dict:
         elif kind == "intro":
             block["text"] = _branch(spec["intro"], block["text"])
         elif kind == "custom_text":
-            block["html"] = _branch(_BULK_TABLE, block["html"])
+            block["html"] = _branch(_BULK_TABLE + spec["footer_html"], block["html"])
         elif kind == "button":
             block["label"] = _branch(spec["button"], block["label"])
     return layout
