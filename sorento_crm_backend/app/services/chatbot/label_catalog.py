@@ -272,6 +272,29 @@ LABELS: dict[str, dict[str, str]] = {
     "{code}: customers and months": {"ms": "{code}: pelanggan dan bulan", "zh": "{code}：客户和月份"},
     "How many items do you want to see? Reply with a number from 1 to {max}.": {"ms": "Berapa banyak item yang anda mahu lihat? Balas dengan nombor dari 1 hingga {max}.", "zh": "您想看多少个项目？请回复 1 到 {max} 之间的数字。"},
     "How many categories do you want to see? Reply with a number from 1 to {max}.": {"ms": "Berapa banyak kategori yang anda mahu lihat? Balas dengan nombor dari 1 hingga {max}.", "zh": "您想看多少个类别？请回复 1 到 {max} 之间的数字。"},
+    # Owner ruling 13 Oct 2026 (size-miss wording, option b; the MCP presenter's sentences).
+    "No {size}.": {"ms": "Tiada {size}.", "zh": "没有 {size}。"},
+    "Sizes on file: {sizes}.": {"ms": "Saiz yang ada: {sizes}.", "zh": "现有尺寸：{sizes}。"},
+    # Owner hand test round 2 (13 Oct): the size miss over a typed family code.
+    "No {size} for {subject}.": {"ms": "Tiada {size} untuk {subject}.", "zh": "{subject} 没有 {size}。"},
+    # Owner option (b), 13 Oct: a size miss names each millimetre axis of the registry seed.
+    "Diameter: {sizes}.": {"ms": "Diameter: {sizes}.", "zh": "直径：{sizes}。"},
+    "Length: {sizes}.": {"ms": "Panjang: {sizes}.", "zh": "长度：{sizes}。"},
+    "Width: {sizes}.": {"ms": "Lebar: {sizes}.", "zh": "宽度：{sizes}。"},
+    "Height: {sizes}.": {"ms": "Tinggi: {sizes}.", "zh": "高度：{sizes}。"},
+    "Depth: {sizes}.": {"ms": "Kedalaman: {sizes}.", "zh": "深度：{sizes}。"},
+    "Thickness: {sizes}.": {"ms": "Ketebalan: {sizes}.", "zh": "厚度：{sizes}。"},
+    "Hose length: {sizes}.": {"ms": "Panjang hos: {sizes}.", "zh": "软管长度：{sizes}。"},
+    "Trap outlet length: {sizes}.": {"ms": "Panjang saluran keluar perangkap: {sizes}.", "zh": "存水弯出口长度：{sizes}。"},
+    # The spec-miss unrecorded count (MCP presenter `_spec_miss_intro`; crew live check #3).
+    "{count} have no {label} recorded.": {"ms": "{count} tiada rekod {label}.", "zh": "{count} 个没有记录{label}。"},
+    "{count} has no {label} recorded.": {"ms": "{count} tiada rekod {label}.", "zh": "{count} 个没有记录{label}。"},
+    "{count} have no Size recorded.": {"ms": "{count} tiada rekod saiz.", "zh": "{count} 个没有记录尺寸。"},
+    "{count} has no Size recorded.": {"ms": "{count} tiada rekod saiz.", "zh": "{count} 个没有记录尺寸。"},
+    "Showing {from} to {to} of {total}. Reply to see more.": {
+        "ms": "Menunjukkan {from} hingga {to} daripada {total}. Balas untuk lihat lagi.",
+        "zh": "显示第 {from} 至 {to} 项，共 {total} 项。回复即可查看更多。",
+    },
     "I can list at most the top {n} in one reply.": {"ms": "Saya boleh senaraikan paling banyak {n} teratas dalam satu balasan.", "zh": "我一次最多只能列出前 {n} 个。"},
     "Top {n} selling item": {"ms": "{n} item paling laris", "zh": "最畅销的 {n} 个项目"},
     "Top {n} selling category": {"ms": "{n} kategori paling laris", "zh": "最畅销的 {n} 个类别"},
@@ -593,6 +616,21 @@ INLINE = frozenset(
         "I could not fetch {label} just now, please try again.",
         "*{label}*: this is not enabled for your account.",
         "Nothing on {names} either.",
+        "No {size}.",
+        "No {size} for {subject}.",
+        "Diameter: {sizes}.",
+        "Length: {sizes}.",
+        "Width: {sizes}.",
+        "Height: {sizes}.",
+        "Depth: {sizes}.",
+        "Thickness: {sizes}.",
+        "Hose length: {sizes}.",
+        "Trap outlet length: {sizes}.",
+        "Sizes on file: {sizes}.",
+        "{count} have no {label} recorded.",
+        "{count} has no {label} recorded.",
+        "{count} have no Size recorded.",
+        "{count} has no Size recorded.",
         "Not checked: {names}.",
         "I could not find {names}.",
         "I have attached the file(s) below.",
@@ -793,8 +831,23 @@ _WRAPPERS = (("*_", "_*"), ("*", "*"), ("_", "_"))
 _NUMERIC_TOKENS = frozenset({"available"})
 
 
+#: A measure ("250 mm", "130.5mm") and a list of them: the size-miss sentences (owner ruling
+#: 13 Oct) name only measures, so "No {size}." never takes "No exact match." (review, b6da364a).
+_MEASURE = r"\d[\d.,]*(?: ?[A-Za-z]{1,4})?"
+_MEASURE_TOKENS = {
+    "size": _MEASURE,
+    "sizes": f"{_MEASURE}(?:, {_MEASURE})*",
+    "count": r"\d[\d,]*",
+    # A product family code ("SRTWC286"), one word: "No {size} for {subject}." never takes prose.
+    "subject": r"[A-Za-z0-9][\w\-/]*",
+}
+
+
 def _token_pattern(name: str) -> str:
-    body = r"\d[\d,]*" if name in _NUMERIC_TOKENS else f"[^\\n]{{1,{_TOKEN_MAX}}}?"
+    if name in _MEASURE_TOKENS:
+        body = _MEASURE_TOKENS[name]
+    else:
+        body = r"\d[\d,]*" if name in _NUMERIC_TOKENS else f"[^\\n]{{1,{_TOKEN_MAX}}}?"
     return f"(?P<{name}>{body})"
 
 

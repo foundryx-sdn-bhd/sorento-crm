@@ -254,6 +254,8 @@ def apply_crossdomain_hit(
         availability = envelope.get("stock_availability")
         if isinstance(availability, list) and availability:
             item["stock_availability"] = availability
+        if envelope.get("spec_filtered") is True:
+            item["spec_filtered"] = True
         result = _run_crossdomain_ladder(
             parser=parser,
             resolved=_hit_ladder_resolved(resolved, focus_products),
@@ -729,11 +731,21 @@ def _access_ask_answer(
     rows = rows if isinstance(rows, list) else []
     from app.services.chatbot import turn_runtime
 
-    question = _tier_options(
-        rows, asked_at_turn=asked_at_turn, promo_filter=turn_runtime.promo_filter(
-            parser or {}, db, (fetch or {}).get("gate") or (payload or {}).get("gate")
-        )
+    asked_filter: dict[str, Any] = dict(
+        turn_runtime.promo_filter(parser or {}, db, (fetch or {}).get("gate") or (payload or {}).get("gate"))
     )
+    # SPEC-PROMO-PARAMS (owner hand test 13 Oct): a size the ask named rides the open pick, so
+    # the answering turn (which names none) asks the same promotions list a contact with one
+    # tier gets (`lanes/business.run_fetch` reads it back off `promo_filter`). A class alone
+    # stays main's `scope_terms`.
+    from app.services.chatbot.lanes.business.fetch import carries_size, spec_constraints_for
+
+    asked_constraints = spec_constraints_for(parser or {}, db)
+    if asked_constraints and carries_size(asked_constraints) and asked_filter.get("scope_terms"):
+        # Only when the class IS the subject (`promo_filter`, AC-17): a typed code keeps
+        # its product_ids on the pick.
+        asked_filter["spec_constraints"] = asked_constraints
+    question = _tier_options(rows, asked_at_turn=asked_at_turn, promo_filter=asked_filter)
     return turn_compose.Answer(text=text, question=question)
 
 
@@ -1731,8 +1743,11 @@ def _miss_triggers(
     # PROMO-SUBJECT-FILTER: a subject word the fetch applied as a filter and answered rows for
     # is satisfied; the resolver having no entity for it is no miss.
     subject_filtered = isinstance(fetch_item, Mapping) and fetch_item.get("subject_filtered") is True
+    # SPEC-PROMO-PARAMS: a spec-filtered zero the presenter answered with what the data
+    # holds (values on file, the axis to pick) is the reply, never the generic miss.
+    spec_miss_stated = isinstance(fetch_item, Mapping) and fetch_item.get("spec_miss_stated") is True
     via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (
-        so_status_answered or low_stock_answered or subject_filtered
+        so_status_answered or low_stock_answered or subject_filtered or spec_miss_stated
     )
     via_error_fragment = fragment_outcome == "not_found"
     # R5 (AC-1699, AC-1702): a THIRD trigger - the resolver settled a real subject,
@@ -1757,6 +1772,7 @@ def _miss_triggers(
         and raw_fragment.get("kind") == "result"
         and isinstance(fetch_item, Mapping)
         and not fetch_item.get("has_result")
+        and not spec_miss_stated
     )
     return raw_fragment, fetch_item, (via_resolver_exit, via_error_fragment, via_fetched_empty)
 
@@ -1941,6 +1957,10 @@ def answer_for(
             ),
         )
         if primary_tool_ran
+        # SPEC-PROMO-PARAMS (owner hand test round 2): a stated size miss ("No 250 mm for
+        # SRTWC286. Sizes on file: ...") already says what the data holds; the codes the size
+        # filtered out are no stock miss.
+        and not (isinstance(envelope, Mapping) and envelope.get("spec_filtered") is True)
         # The shape `answer.run_crossdomain` itself returns for an inactive ladder, so
         # `_apply_crossdomain_render` below folds nothing, exactly as on any other turn
         # the ladder had no claim to make.

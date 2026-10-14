@@ -95,6 +95,19 @@ async def get_promotions(
             "UUIDs. Never falls back to inactive rows. csv / JSON list / repeated."
         ),
     ),
+    spec_constraints: Optional[str] = Query(
+        None,
+        description=(
+            "JSON list of {key, op, value} (same contract as GET /master-data/products): only "
+            "promotions with a linked product satisfying every constraint. Key `size` matches a "
+            "product holding it on any mm axis. Never falls back to inactive rows. An unknown "
+            "key is HTTP 422."
+        ),
+    ),
+    contact_id: Optional[str] = Query(
+        None, description="The contact asked on behalf of (with `space_id`): its hidden spec keys never filter."
+    ),
+    space_id: Optional[str] = Query(None, description="Respond.io workspace id for `contact_id`."),
     user_type: Optional[str] = Query(None, description="Filter by a single access level code (FE listing)."),
     access_levels: Optional[list[str]] = Query(
         None,
@@ -172,6 +185,12 @@ async def get_promotions(
     free-text `query`, or `entities`). Without any, returns an empty page so
     callers cannot accidentally enumerate the whole catalog.
     """
+    # The contact's hidden spec keys never filter: they drop a constraint on that key here and,
+    # in the service, keep a size off that axis (as on the product and stock routes).
+    from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys
+
+    hidden_spec_keys = request_hidden_keys(db, contact_id, space_id)
+    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints, hidden_spec_keys)
     try:
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
@@ -233,6 +252,8 @@ async def get_promotions(
             scope_terms=scope_terms,
             promotion_types=promotion_types,
             brand_ids=brand_ids,
+            spec_constraints=parsed_spec_constraints,
+            hidden_spec_keys=hidden_spec_keys,
         )
         # Data-miss path (§3.3): when the service attached `alternatives` /
         # `relaxed_axis` (empty result only), bypass the strict `ListResponse`

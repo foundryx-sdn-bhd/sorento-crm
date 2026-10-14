@@ -381,7 +381,12 @@ def _leg_certificate(db: Session, value: Any, access_levels: list[str] | None = 
 
 
 def _leg_promotion(db: Session, value: Any, access_levels: list[str] | None = None) -> ColumnElement:
+    return active_promotion_clause(db, access_levels)
+
+
+def active_promotion_clause(db: Session, access_levels: list[str] | None = None) -> ColumnElement:
     """Member of an active promotion: switched on AND inside its date window.
+    Correlates on `Product.id`, so it is a WHERE on a query that has Product in it.
 
     REV-B1/AC-1310 (third console pass): `with_loader_criteria` (the
     `do_orm_execute` listener's own scoping mechanism) filters ORM entities,

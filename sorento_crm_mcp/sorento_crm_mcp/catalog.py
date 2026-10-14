@@ -86,6 +86,19 @@ CATALOG: tuple[ToolSpec, ...] = (
             "Distinct from `include_specifications` above (this is the ranked-list shape the render "
             "presenter appends as fields; that one is the sentence/values block for a catalogue "
             "editor).\n\n"
+            "SPEC FILTER: `spec_constraints` = JSON list of {key, op, value} - op is eq (default) | "
+            "between ([lo, hi]) | gte | lte, key comes from the Specification lines (the product spec "
+            "registry), value is in the key's own unit (mm for sizes), constraints AND. An enum value must "
+            "be the canonical stored value from that line (e.g. floor_grating), never a synonym: synonyms are "
+            "not resolved here. Key `brand` (eq, the brand name) narrows by the product's own brand. Key `size` (a number "
+            "in mm when no axis is said) is resolved by the data to the mm keys that hold it "
+            "(`spec_resolved`); when several hold it a product matches on any of them. A spec-filtered "
+            "call states its page as `spec_page` {page, limit, total}. A product with no "
+            "recorded value for a key does not match. On zero rows the response carries `spec_alternatives` "
+            "(the values that do exist) and `spec_unrecorded` (how many products have no value recorded), "
+            "so never say none exists when spec_unrecorded > 0. `has_active_promotion=true` keeps only "
+            "products in a promotion live today. `access_levels`: the asking contact's tier; filled by the caller, "
+            "restricts has_active_promotion to promotions that tier can see.\n\n"
             "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
             "results to that contact's company/companies; omit both for all-company results."
         ),
@@ -101,6 +114,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             # from THIS tuple, so a param missing here never reaches the backend
             # however well the description documents it.
             "include_specifications", "include_specs",
+            "spec_constraints", "has_active_promotion", "access_levels",
             "sort", "dir",
             "contact_id", "space_id",
         ),
@@ -305,7 +319,10 @@ CATALOG: tuple[ToolSpec, ...] = (
             "  • `scope_terms` (class phrases, e.g. \"bathroom furniture\") - only promotions with a linked "
             "product of that class; an empty match returns no promotions.\n"
             "  • `promotion_types` (promotion type codes, e.g. a3_flyer) and `brand_ids` (brand UUIDs of a linked "
-            "product); both AND with every other filter.\n\n"
+            "product); both AND with every other filter.\n"
+            "  • `spec_constraints` (JSON list of {key, op, value}, same contract as crm_master_products_list) - "
+            "only promotions with a linked product satisfying every constraint; key `size` (a number in mm) "
+            "matches a product holding it on any axis.\n\n"
             "Unfiltered MCP calls are auto-capped to limit=10 newest-first so open questions like "
             "\"what is sorento's latest promo\" return a bounded page instead of the full catalog.\n\n"
             "ACCESS LEVELS: `access_levels` filters promotions whose `access_levels` JSONB overlaps the "
@@ -316,7 +333,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         ),
         "/api/v1/marketing/promotions",
         (),
-        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "scope_terms", "promotion_types", "brand_ids", "contact_id", "space_id"),
+        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "scope_terms", "promotion_types", "brand_ids", "spec_constraints", "contact_id", "space_id"),
         domain="promotions",
         related_tools=("crm_marketing_promotion_products_list", "crm_marketing_promotion_attachments_list"),
         escalation_team="sales",
@@ -511,6 +528,19 @@ CATALOG: tuple[ToolSpec, ...] = (
             "own open sales-order quantity, not yet a delivery order) to every stock row, and an "
             "`(O/S: n)` suffix on the compact block's Total and warehouse lines. Default false. "
             "Field-reveal gated downstream (`inventory.sellable`), not by this tool.\n\n"
+            "SPEC FILTER: `spec_constraints` = JSON list of {key, op, value} - op is eq (default) | "
+            "between ([lo, hi]) | gte | lte, key comes from the Specification lines (the product spec "
+            "registry), value is in the key's own unit (mm for sizes), constraints AND. An enum value must "
+            "be the canonical stored value from that line (e.g. floor_grating), never a synonym: synonyms are "
+            "not resolved here. Key `brand` (eq, the brand name) narrows by the product's own brand. Key `size` (a number "
+            "in mm when no axis is said) is resolved by the data to the mm keys that hold it "
+            "(`spec_resolved`); when several hold it a product matches on any of them. A spec-filtered "
+            "call states its page as `spec_page` {page, limit, total}. A product with no "
+            "recorded value for a key does not match. On zero rows the response carries `spec_alternatives` "
+            "(the values that do exist) and `spec_unrecorded` (how many products have no value recorded), "
+            "so never say none exists when spec_unrecorded > 0. `has_active_promotion=true` keeps only "
+            "products in a promotion live today. `access_levels`: the asking contact's tier; filled by the caller, "
+            "restricts has_active_promotion to promotions that tier can see.\n\n"
             "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
             "results to that contact's company/companies; omit both for all-company results. "
             "Pass BOTH or NEITHER: `contact_id` without `space_id` returns no rows."
@@ -520,6 +550,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         (
             "page", "limit", "product_ids", "sort", "dir", "warehouse_ids", "quantity_operator",
             "quantity_value", "status", "requested_qty", "requested_quantities", "include_sellable",
+            "spec_constraints", "has_active_promotion", "access_levels",
             "contact_id", "space_id",
         ),
         domain="inventory",

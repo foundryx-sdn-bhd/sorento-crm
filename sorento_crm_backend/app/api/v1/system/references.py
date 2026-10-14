@@ -3645,31 +3645,14 @@ def resolve_reference_post(
         # answer for that contact.
         hidden_spec_keys = {str(k) for k in (payload.hidden_spec_keys or [])}
         if payload.contact_id:
-            from app.services.field_access import (
-                resolve_contact_with_null_workspace_fallback,
-            )
-            from app.services.spec_visibility import (
-                full_registry_rows,
-                hidden_keys as _hidden_keys,
-                resolve_policy as _resolve_spec_policy,
-            )
+            from app.services.spec_visibility import contact_hidden_keys
 
-            # SF-1 (security re-verify): resolved through the SAME NULL-
-            # workspace fallback `check_access` uses, not the bare
-            # `resolve_contact_id` `resolve_policy` calls internally - a
-            # contact with `workspace_id IS NULL` (16 measured) resolves to
-            # nothing through the plain path, so this route would have handed
-            # such a contact the closed DEFAULT policy while `check_access`
-            # gives them their real one. Once resolved to the internal id,
-            # `resolve_policy` re-resolving it is a same-id no-op.
-            resolved_contact_id = resolve_contact_with_null_workspace_fallback(
-                db, contact_id=payload.contact_id, space_id=payload.space_id
-            )
-            contact_policy = _resolve_spec_policy(
-                db, resolved_contact_id or payload.contact_id, payload.space_id
-            )
-            registry_keys = {key for key, _label in full_registry_rows(db)}
-            hidden_spec_keys |= _hidden_keys(contact_policy, registry_keys)
+            # SF-1 (security re-verify): resolved through the SAME NULL-workspace
+            # fallback `check_access` uses, not the bare `resolve_contact_id`
+            # `resolve_policy` calls internally - a contact with `workspace_id IS
+            # NULL` (16 measured) would otherwise get the closed DEFAULT policy here
+            # while `check_access` gives them their real one (`contact_hidden_keys`).
+            hidden_spec_keys |= contact_hidden_keys(db, payload.contact_id, payload.space_id)
         if hidden_spec_keys:
             specs = [s for s in specs if s.get("key") not in hidden_spec_keys]
 

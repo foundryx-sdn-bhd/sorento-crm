@@ -13,6 +13,8 @@ from app.services.product_service import ProductService
 from app.services import product_purchase_history_service
 from app.services.attachment_field_link_service import AttachmentFieldLinkService
 from app.services.uuid_list_param import parse_uuid_list
+from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys, request_tier
+from app.services.entity_filter_helpers import normalize_list_query_param
 from app.schemas.product import (
     ProductCreate,
     ProductUpdate,
@@ -102,6 +104,11 @@ def _with_specs_and_or_specifications(
             serialized["specifications"] = specifications_by_product.get(str(row.id))
         if include_specs:
             serialized["specs"] = specs_by_product.get(str(row.id)) or []
+    for key in ("spec_resolved", "spec_page"):
+        # The axis a virtual `size` constraint resolved to, and the page a spec-filtered
+        # answer returned (SPEC-PROMO-PARAMS).
+        if result.get(key):
+            body[key] = result[key]
     return JSONResponse(content=body)
 
 
@@ -180,12 +187,44 @@ def get_products(
             "not ask. Distinct from `include_specifications` (see that field)."
         ),
     ),
+    spec_constraints: Optional[str] = Query(
+        None,
+        description=(
+            "JSON list of {key, op, value}: a hard filter on the product spec registry. "
+            "op is eq (default) | between ([lo, hi]) | gte | lte; constraints AND; a product "
+            "with no recorded value for a key does not match. An unknown key is HTTP 422. "
+            "On zero rows the body carries `spec_alternatives` and `spec_unrecorded`."
+        ),
+    ),
+    has_active_promotion: bool = Query(
+        False, description="True keeps only products in a promotion live today."
+    ),
+    access_levels: Optional[list[str]] = Query(
+        None,
+        description=(
+            "The asking contact's tier name(s) (repeated / csv / JSON). Only read with "
+            "`has_active_promotion`: restricts it to promotions that tier can see. Absent = no "
+            "restriction; an unknown name matches nothing."
+        ),
+    ),
+    contact_id: Optional[str] = Query(
+        None,
+        description=(
+            "The contact this question is asked ON BEHALF OF (chatbot callers; with "
+            "`space_id`). Its spec visibility policy applies to `spec_constraints`: a hidden "
+            "key is neither filtered on nor named in the response."
+        ),
+    ),
+    space_id: Optional[str] = Query(None, description="Respond.io workspace id for `contact_id`."),
     sort: Optional[str] = Query("created_at"),
     dir: Optional[str] = Query("asc"),
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db)
 ):
     """Get products with pagination, filtering, and sorting."""
+    # Parsed OUTSIDE the try below: its `except Exception` would turn the 422 into a 500.
+    hidden_spec_keys = request_hidden_keys(db, contact_id, space_id)
+    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints, hidden_spec_keys)
     started = time.perf_counter()
     logger.info(
         "products.get start page=%s limit=%s query=%s category_id=%s brand_id=%s status=%s item_type=%s",
@@ -223,6 +262,15 @@ def get_products(
             any_dimension_min=any_dimension_min,
             any_dimension_max=any_dimension_max,
             variant_filter=variant_filter,
+            spec_constraints=parsed_spec_constraints,
+            hidden_spec_keys=hidden_spec_keys,
+            has_active_promotion=has_active_promotion,
+            # No explicit tier on a contact's call: that contact's own (fail closed).
+            access_levels=(
+                request_tier(db, contact_id, space_id, normalize_list_query_param(access_levels))
+                if has_active_promotion
+                else normalize_list_query_param(access_levels)
+            ),
             sort_field=sort or "created_at",
             sort_dir=dir or "asc"
         )
@@ -240,10 +288,12 @@ def get_products(
         # response_model - which would silently drop those keys - and emit the raw
         # dict. `data` is always [] here, so the with-data path stays byte-identical
         # (AC-R1).
-        if isinstance(result, dict) and result.get("alternatives"):
+        if isinstance(result, dict) and (
+            result.get("alternatives") or "spec_alternatives" in result
+        ):
             from fastapi.encoders import jsonable_encoder
             return JSONResponse(content=jsonable_encoder(result))
-        if (include_specifications or include_specs) and isinstance(result, dict):
+        if (include_specifications or include_specs or result.get("spec_resolved") or result.get("spec_page")) and isinstance(result, dict):
             return _with_specs_and_or_specifications(
                 service,
                 result,

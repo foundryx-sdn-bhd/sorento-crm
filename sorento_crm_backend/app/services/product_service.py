@@ -185,6 +185,15 @@ from app.schemas.common import PaginationResponse
 from app.models.user import SystemSetting
 from app.services.embedding_events import publish_embedding_event
 from app.services.identifier_resolver import is_uuid, resolve_identifier
+from app.services.product_spec_filter import (
+    product_filter_clause,
+    promoted_clause,
+    resolve_size,
+    spec_base_for,
+    spec_miss_detail,
+    stamp_size_subject,
+    stamp_spec_page,
+)
 
 
 # Lifted out of `bulk_import_products` (PLAN-autocount-pull-review.md, P11) so the
@@ -326,6 +335,9 @@ class ProductService:
         variant_filter: Optional[str] = None,
         discontinued_from: Optional[date] = None,
         discontinued_to: Optional[date] = None,
+        spec_constraints: Optional[list[dict]] = None,
+        has_active_promotion: bool = False,
+        access_levels: Optional[list[str]] = None,
     ):
         """Build the filtered + sorted products query shared by ``list_products``
         and ``neighbours`` so the two can never drift.
@@ -452,6 +464,10 @@ class ProductService:
         if advanced_filter_clause is not None:
             filters.append(advanced_filter_clause)
 
+        spec_promo_clause = product_filter_clause(self.db, spec_constraints, has_active_promotion, access_levels)
+        if spec_promo_clause is not None:
+            filters.append(spec_promo_clause)
+
         if filters:
             q = q.filter(and_(*filters))
 
@@ -524,6 +540,10 @@ class ProductService:
         variant_filter: Optional[str] = None,
         discontinued_from: Optional[date] = None,
         discontinued_to: Optional[date] = None,
+        spec_constraints: Optional[list[dict]] = None,
+        has_active_promotion: bool = False,
+        access_levels: Optional[list[str]] = None,
+        hidden_spec_keys: frozenset[str] = frozenset(),
     ):
         """List products with filtering and pagination.
 
@@ -535,6 +555,24 @@ class ProductService:
             EntityFilterBuckets,
             resolve_entities_to_filters,
         )
+
+        # The virtual `size` key resolves to one mm key from the data, or the answer is a
+        # clarify / a miss with no rows (SPEC-PROMO-PARAMS card section 9, slice 1).
+        # With has_active_promotion the answer is about promoted products, so the size and the
+        # miss detail are read among those only.
+        spec_base = spec_base_for(promoted_clause(self.db, access_levels) if has_active_promotion else None, product_ids)
+        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys, spec_base)
+        stamp_size_subject(self.db, spec_extra, product_ids)
+        if spec_constraints and sized_constraints is None:
+            payload = {
+                "data": [],
+                "pagination": {"total": 0, "page": page, "limit": limit},
+                "empty": True,
+                **spec_extra,
+            }
+            stamp_lookup_companies(self.db, payload, [], product_ids=product_ids)
+            return payload
+        spec_constraints = sized_constraints
 
         entity_buckets: Optional[EntityFilterBuckets] = None
         if entities:
@@ -582,6 +620,9 @@ class ProductService:
             variant_filter=variant_filter,
             discontinued_from=discontinued_from,
             discontinued_to=discontinued_to,
+            spec_constraints=spec_constraints,
+            has_active_promotion=has_active_promotion,
+            access_levels=access_levels,
         )
         if q is self._EMPTY_RESULT:
             payload = {
@@ -631,6 +672,10 @@ class ProductService:
             payload["resolved_entities"] = entity_buckets.as_echo()
         if total == 0:
             self._attach_product_alternatives(payload, query)
+            if spec_constraints:
+                payload.update(spec_miss_detail(self.db, spec_constraints, spec_base))
+        payload.update(spec_extra)
+        stamp_spec_page(payload, spec_constraints)
         return payload
 
     def specifications_for_products(self, product_ids: List[str]) -> dict:

@@ -155,6 +155,10 @@ _PASSTHROUGH_KEYS = (
     # mode (which format to print, whether to ask the quantity question again)
     # instead of inferring it from which block happens to be present.
     "stock_visibility",
+    # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the page a spec-filtered answer
+    # returned and how many matched. Its reader is the chatbot lane, which shows a few
+    # matches first and offers the rest; only the routes' spec-filtered calls carry it.
+    "spec_page",
 )
 
 
@@ -191,6 +195,78 @@ def _qty(v: Any) -> Any:
         return str(d.to_integral_value())
     s = format(d, "f")  # fixed-point, never exponent notation
     return s.rstrip("0").rstrip(".") if "." in s else s
+
+
+# --------------------------------------------------------------------------
+# spec miss (SPEC-PROMO-PARAMS): a `spec_constraints` call that returned no rows
+# --------------------------------------------------------------------------
+# The two tools that take `spec_constraints` and list products answer a zero with what the data holds:
+# `spec_alternatives` (the values that do exist, each with label and unit) and
+# `spec_unrecorded` (how many have no value recorded). A size held on several axes matches
+# any of them (owner ruling, 12 Oct 2026), so no axis question is asked. The intro states only those; nothing is added that the body does not carry.
+_SPEC_MISS_TOOLS = frozenset(
+    {"crm_master_products_list", "crm_inventory_stock_balance_list"}
+)
+
+
+# The virtual `size` key's label, the same word the parser vocabulary gives it
+# (`chatbot_parser_prompt.specification_lines`: 'Specification size ("Size")').
+_SIZE_LABEL = "Size"
+
+
+def _spec_value(v: Any, unit: Any) -> str:
+    text = str(_qty(v)) if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v)
+    return f"{text} {unit}" if _filled(unit) else text
+
+
+def _spec_miss_intro(data: dict) -> str | None:
+    """The reply for a spec-filtered zero, or None when the body carries no spec miss."""
+    labels = data.get("spec_labels") if isinstance(data.get("spec_labels"), dict) else {}
+    alternatives = [a for a in data.get("spec_alternatives") or [] if isinstance(a, dict) and a.get("values")]
+    unrecorded = data.get("spec_unrecorded") if isinstance(data.get("spec_unrecorded"), dict) else {}
+    unrecorded = {k: n for k, n in unrecorded.items() if isinstance(n, int) and n > 0}
+    if not alternatives and not unrecorded:
+        return None
+    asked = data.get("spec_size_asked") if isinstance(data.get("spec_size_asked"), dict) else None
+    if asked is not None:
+        # Owner ruling 13 Oct 2026 (option b): the size asked, then one sorted list of the sizes
+        # on file over every axis, never one line per axis.
+        unit = asked.get("unit") or "mm"
+        sizes = sorted(  # as numbers, then formatted (review B2: "1000 mm" sorted before "90 mm")
+            {float(v) for a in alternatives if (a.get("unit") or unit) == unit for v in a["values"]
+             if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        )
+        # A typed family code (owner hand test round 2, 13 Oct): "No 250 mm for SRTWC286."; the
+        # route names the family only when every named variant shares it.
+        subject = asked.get("subject") if _filled(asked.get("subject")) else None
+        size = _spec_value(asked.get("value"), unit)
+        lines = [f"No {size} for {subject}." if subject else f"No {size}."]
+        # Owner hand test PASS (13 Oct), option (b): values from more than one axis are named per
+        # axis ("Trap outlet length: 180 mm. Height: 365 mm."), axes in the order of their
+        # smallest value; one axis keeps "Sizes on file: ...".
+        axes = []
+        for a in alternatives:
+            values = sorted({float(v) for v in a["values"] if isinstance(v, (int, float)) and not isinstance(v, bool)})
+            if values and (a.get("unit") or unit) == unit:
+                axes.append((values, str(a.get("label") or labels.get(a.get("key")) or a.get("key"))))
+        if len(axes) > 1:
+            for values, label in sorted(axes, key=lambda axis: (axis[0][0], axis[1])):
+                lines.append(f"{label}: {', '.join(_spec_value(v, unit) for v in values)}.")
+        elif sizes:
+            lines.append(f"Sizes on file: {', '.join(_spec_value(v, unit) for v in sizes)}.")
+    else:
+        lines = ["No exact match."]
+        for a in alternatives:
+            label = a.get("label") or labels.get(a.get("key")) or a.get("key")
+            values = ", ".join(_spec_value(v, a.get("unit")) for v in a["values"])
+            lines.append(f"{label} values on file: {values}.")
+    for key, n in unrecorded.items():
+        label = labels.get(key) or next(
+            (a.get("label") for a in alternatives if a.get("key") == key and a.get("label")),
+            _SIZE_LABEL if key == "size" else key,
+        )
+        lines.append(f"{n} {'has' if n == 1 else 'have'} no {label} recorded.")
+    return " ".join(lines)
 
 
 def _dims(o: dict) -> str | None:
@@ -2018,8 +2094,11 @@ def present_response(tool_name: str, raw: str) -> str:
         it["file_urls"] = list(dict.fromkeys(canonical))
 
     has_result = bool(b.items or attachments or b.action_links)
+    spec_miss = _spec_miss_intro(data) if not has_result and tool_name in _SPEC_MISS_TOOLS else None
     if attachments:
         intro = "I have attached the file(s) below."
+    elif spec_miss:
+        intro = spec_miss
     elif not has_result:
         # An empty answer over more than one company has to name the companies it
         # searched, or the reader cannot tell "not stocked anywhere" from "I only
@@ -2057,6 +2136,10 @@ def present_response(tool_name: str, raw: str) -> str:
         "last_updated_at": _latest_updated(data),
         "has_result": has_result,
     }
+    if spec_miss:
+        # The intro states what the data holds for a spec-filtered zero; the chatbot lane
+        # reads this flag to print it rather than its own generic miss line.
+        envelope["spec_miss"] = True
     if dealer and has_result:
         # Printed after the product lines (`output_structurer`): a dealer's contact
         # point is their salesman, never a team offer.

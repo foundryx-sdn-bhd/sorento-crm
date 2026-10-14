@@ -33,6 +33,7 @@ or code change.
 """
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -48,6 +49,9 @@ _SPEC_HINTS = frozenset({SPECIFICATION_HINT, "spec"})
 #: The kinds whose raw can hold a descriptor glued to what the thing is.
 _CLASS_HINTS = frozenset({"category", "product_type"})
 _ATTACHMENT_HINT = "attachment_type"
+#: The virtual size key, a number in mm with no axis word: the same key
+#: `product_spec_filter.SIZE_KEY` resolves to one mm key from the data on the route.
+SIZE_KEY = "size"
 
 #: Registry keys that are not descriptors: the class and the type are what the thing IS
 #: (they stay in the category token), and the brand is its own entity kind.
@@ -261,8 +265,16 @@ class Grounded:
     known: list[str] = field(default_factory=list)
     #: the registry's own words for the value ("gunmetal" for a typed "gunmetl")
     words: str | None = None
+    #: a measure axis the customer named with no number of its own ("length only" after a
+    #: size list): no unknown value, the number is the last ask's (`fetch.ask_constraints`)
+    axis_only: bool = False
 
     def entity(self, template: dict[str, Any]) -> dict[str, Any]:
+        if self.axis_only:
+            return {**self._entity(template), "spec_axis_only": True}
+        return self._entity(template)
+
+    def _entity(self, template: dict[str, Any]) -> dict[str, Any]:
         return {
             **{k: template.get(k) for k in ("current_message", "confident", "hint_confident", "quantity")},
             "raw": self.said,
@@ -591,13 +603,63 @@ def _remainder(raw: str, used: set[int]) -> str:
     return " ".join(kept)
 
 
-def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
+def _validate_size(raw: str, value: Any, vocab: Vocabulary) -> list[Grounded]:
+    """The virtual `size` key (SPEC-PROMO-PARAMS): a number in mm said with no axis word.
+    Words that do name an axis ground as that key; otherwise a numeric value is kept as
+    `size` (the route resolves the axis from the data), and anything else is dropped.
+    Kept only while the registry has an active mm key for the route to resolve it to."""
+    found, _ = ground_words(raw, vocab)
+    if found:
+        return found
+    if isinstance(value, bool) or not any(k.data_type == "numeric" and (k.unit or "").lower() == "mm" for k in vocab.keys):
+        return []
+    try:
+        number = float(str(value).split()[0])
+    except (TypeError, ValueError, IndexError):
+        return []
+    if not math.isfinite(number) or number <= 0:
+        return []
+    return [Grounded(SIZE_KEY, "Size", raw or str(value), int(number) if number.is_integer() else number, "mm")]
+
+
+def _axis_said(key: str, texts: list[str | None], vocab: Vocabulary) -> bool:
+    """Does any of `texts` (the entity's own words, the customer's message) name the mm axis
+    `key`, read by the registry's own word reader (`ground_words`)? The parser's axis stands
+    only when the customer said it (owner Q2 and the 12 Oct ruling: a bare mm size is any axis)."""
+    if any(
+        (g.unit or "").lower() == "mm" and g.key == key
+        for text in texts
+        if text
+        for g in ground_words(str(text), vocab)[0]
+    ):
+        return True
+    # Crew live check on 1e3250479: "length only" after a size list. The entity's own words name
+    # the axis with no number (the number is the last ask's), by the registry's own words for
+    # the key (`_Key.names`); the parser's axis stands.
+    entry = next((k for k in vocab.keys if k.key == key), None)
+    own = texts[0] if texts else None
+    return bool(entry and own and entry.names & set(_words(own)))
+
+
+def _validate(entity: dict[str, Any], vocab: Vocabulary, message: str | None = None) -> list[Grounded]:
     """A `specification` entity the parser emitted, checked against the registry: a key
     it knows and a value among that key's choices, else grounded from its raw words."""
     key_name = str(entity.get("spec_key") or "").strip()
     value = entity.get("spec_value")
     raw = str(entity.get("raw") or "").strip()
     entry = next((k for k in vocab.keys if k.key == key_name), None)
+    if key_name == SIZE_KEY and entry is None:
+        return _validate_size(raw, value, vocab)
+    if (
+        entry is not None
+        and value in (None, "")
+        and entry.data_type == "numeric"
+        and (entry.unit or "").lower() == "mm"
+        and entry.names & set(_words(raw))
+    ):
+        # Crew live check on 1e3250479: a follow-up naming an axis with no number of its own
+        # ("length only"): the axis stands, the number is the last ask's (`fetch.ask_constraints`).
+        return [Grounded(entry.key, entry.label, raw, None, entry.unit, axis_only=True)]
     if entry is not None and value not in (None, ""):
         said = raw or str(value)
         if entry.data_type == "numeric":
@@ -606,6 +668,13 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
             except (TypeError, ValueError, IndexError):
                 number = None
             if number is not None:
+                if (entry.unit or "").lower() == "mm" and not _axis_said(
+                    entry.key, [raw, message if entity.get("current_message") is not False else None], vocab
+                ):
+                    # Owner Q2 (12 Oct 2026): a millimetre number whose own words name no axis
+                    # ("600mm") is a size; the data says which axis holds it, not the parser's
+                    # guess (live parse: "600mm" -> dim_width while 600 sits on Length).
+                    return _validate_size(raw, value, vocab)
                 return [Grounded(entry.key, entry.label, said, int(number) if number.is_integer() else number, entry.unit)]
         else:
             spoken = " ".join(_words(value))
@@ -622,6 +691,41 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
     if entry is not None and entry.data_type == "enum":
         return [Grounded(entry.key, entry.label, raw or str(value or ""), None, None, list(entry.known))]
     return []
+
+
+def _only_a_measure(raw: str, vocab: Vocabulary) -> bool:
+    """Is `raw` nothing but numbers and registry units ("600mm", "600 mm")? Read with the
+    grounding's own tokenizer and the registry's units, never a word list of this function."""
+    units = {str(k.unit).lower() for k in vocab.keys if k.unit}
+    words = _words(raw)
+    return bool(words) and all(_NUMBER_RE.match(w) or w in units for w in words)
+
+
+def _without_measure(raw: str, vocab: Vocabulary) -> str:
+    """`raw`'s words without its numbers and registry units ("250mm floor grating" -> "floor
+    grating"), read like `_only_a_measure`; empty when nothing else is said."""
+    units = {str(k.unit).lower() for k in vocab.keys if k.unit}
+    return " ".join(w for w in _words(raw) if not (_NUMBER_RE.match(w) or w in units))
+
+
+def _spec_of_category(entity: dict[str, Any], vocab: Vocabulary, message: str | None = None) -> list[Grounded]:
+    """The spec pair a category entity carries, as the parser emitted it. A millimetre number
+    there was said with no axis word of its own (the parser named the axis on the category,
+    not the customer), so it is the virtual `size` key and the route reads the axis from the
+    data. Any other registry key keeps its key; a key the registry does not hold is dropped."""
+    key = str(entity.get("spec_key") or "").strip()
+    value = entity.get("spec_value")
+    entry = next((k for k in vocab.keys if k.key == key), None)
+    if key == SIZE_KEY or (entry is not None and entry.data_type == "numeric" and (entry.unit or "").lower() == "mm"):
+        # Reviewer S2: an axis word in the category's own words ("600mm wide basin") is the
+        # customer's axis, read by the registry's word reader; only a number with none is a size.
+        said = [g for g in ground_words(str(entity.get("raw") or ""), vocab)[0] if (g.unit or "").lower() == "mm"]
+        if not said and key != SIZE_KEY and entity.get("current_message") is not False and _axis_said(key, [message], vocab):
+            said = [Grounded(entry.key, entry.label, str(value), value, entry.unit)]
+        return said or _validate_size(str(value), value, vocab)
+    if entry is None:
+        return []
+    return _validate({"spec_key": key, "spec_value": value, "raw": str(value)}, vocab)
 
 
 def _as_typed(grounded: list[Grounded], entity: dict[str, Any], message: str | None, vocab: Vocabulary, others: list[str]) -> list[Grounded]:
@@ -714,6 +818,40 @@ def ground(
         hint = str(entity.get("hint") or "").strip().lower()
         raw = str(entity.get("raw") or "").strip()
         canonical = str(entity.get("canonical_code") or "").strip()
+        if (hint in _CLASS_HINTS or hint == _PRODUCT_HINT) and str(entity.get("spec_key") or "").strip() and entity.get("spec_value") not in (None, ""):
+            # SPEC-PROMO-PARAMS hand test step 1 (owner, 12 Oct 2026, "600mm basin got stock?"):
+            # a spec pair the parser put ON the category entity is a specification of the ask.
+            # Left there, nothing read it and every basin was listed.
+            carried = _spec_of_category(entity, vocab, message)
+            # Reviewer S1 (owner "exact only", #833 round 10): a word the parser put right binds
+            # nothing; it is said back as typed, as for any specification entity. A number is
+            # never a corrected word.
+            words = [g for g in carried if not isinstance(g.value, (int, float)) or isinstance(g.value, bool)]
+            if words:
+                others = [
+                    str(e.get("raw") or "")
+                    for e in entities
+                    if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() not in _SPEC_HINTS
+                ]
+                typed = _as_typed(words, {**entity, "raw": str(entity.get("spec_value"))}, message, vocab, others)
+                carried = [g for g in carried if g not in words] + typed
+            add(carried, entity)
+            notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in carried], "spec_on_category": True})
+            entity = {k: v for k, v in entity.items() if k not in ("spec_key", "spec_value")}
+            if hint in _CLASS_HINTS and any(g.unit for g in carried):
+                # Crew live trace a92941c7 (v87): ONE entity, category "250mm floor grating"
+                # with size 250. The measure is now its own specification; left in the
+                # category's words it names no type ("floor grating" does) and no tool ran.
+                # The same reader as `_only_a_measure`: numbers and registry units.
+                kept = _without_measure(raw, vocab)
+                if kept and kept != raw:
+                    entity = {**entity, "raw": kept}
+                    raw = kept
+            if hint == _PRODUCT_HINT and carried and _only_a_measure(raw, vocab):
+                # A prompt line whose entity hints list no "specification" (v52, v86) puts a
+                # size on a "product" entity ("600mm"). Its words are nothing but that measure,
+                # so it is no product token: the split spec above is all it said.
+                continue
         if (
             hint in _CLASS_HINTS
             and canonical
@@ -741,7 +879,7 @@ def ground(
                 for e in entities
                 if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() not in _SPEC_HINTS
             ]
-            grounded = _as_typed(_validate(entity, vocab), entity, message, vocab, others)
+            grounded = _as_typed(_validate(entity, vocab, message), entity, message, vocab, others)
             if not grounded and raw and str(verdict.get("domain_hint") or "").strip().lower() == "promotion":
                 # PROMO-SUBJECT-FILTER AC-38: on a promotion ask a qualifier no listed key
                 # holds is an unknown descriptor, asked back as typed, never dropped.

@@ -59,6 +59,8 @@ from app.dependencies import (
 )
 from app.services.inventory_service import StockService
 from app.services.uuid_list_param import parse_requested_quantities, parse_uuid_list
+from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys, request_tier
+from app.services.entity_filter_helpers import normalize_list_query_param
 from app.schemas.inventory import StockResponse, StockBalanceListResponse, StockDashboardResponse, BulkImportStockRequest, BulkImportStockResponse, StockLedgerResponse
 from app.schemas.common import ListResponse, ValidateImportResponse
 from app.services.error_handler import handle_internal_error
@@ -231,6 +233,9 @@ def _with_sellable(service: StockService, result: dict) -> JSONResponse:
                 _attach_total(entry, pid, entry["total_on_hand"])
             summary.append(entry)
         body["stock_summary"] = summary
+    for key in ("spec_resolved", "spec_page"):
+        if result.get(key):
+            body[key] = result[key]
     return JSONResponse(content=body)
 
 
@@ -321,6 +326,27 @@ def get_stock_balance(
             "caller that does not ask. Never attached in `availability` mode."
         ),
     ),
+    spec_constraints: Optional[str] = Query(
+        None,
+        description=(
+            "JSON list of {key, op, value}: a hard filter on the product spec registry, "
+            "narrowing the stock rows by product. op is eq (default) | between ([lo, hi]) | "
+            "gte | lte; constraints AND; a product with no recorded value does not match. "
+            "An unknown key is HTTP 422. On zero rows the body carries `spec_alternatives` "
+            "and `spec_unrecorded`."
+        ),
+    ),
+    has_active_promotion: bool = Query(
+        False, description="True keeps only stock of products in a promotion live today."
+    ),
+    access_levels: Optional[list[str]] = Query(
+        None,
+        description=(
+            "The asking contact's tier name(s) (repeated / csv / JSON). Only read with "
+            "`has_active_promotion`: restricts it to promotions that tier can see. Absent = no "
+            "restriction; an unknown name matches nothing."
+        ),
+    ),
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db)
 ):
@@ -353,6 +379,8 @@ def get_stock_balance(
     parsed_requested_quantities = parse_requested_quantities(requested_quantities)
     parsed_warehouse_ids = parse_uuid_list(warehouse_ids, param_name="warehouse_ids")
     parsed_product_ids = parse_uuid_list(product_ids, param_name="product_ids")
+    hidden_spec_keys = request_hidden_keys(db, contact_id, space_id)
+    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints, hidden_spec_keys)
     try:
         service = StockService(db)
         result = service.list_stock(
@@ -374,17 +402,35 @@ def get_stock_balance(
             space_id=space_id,
             requested_qty=requested_qty,
             requested_quantities=parsed_requested_quantities,
+            spec_constraints=parsed_spec_constraints,
+            hidden_spec_keys=hidden_spec_keys,
+            has_active_promotion=has_active_promotion,
+            # No explicit tier on a contact's call: that contact's own (fail closed).
+            access_levels=(
+                request_tier(db, contact_id, space_id, normalize_list_query_param(access_levels))
+                if has_active_promotion
+                else normalize_list_query_param(access_levels)
+            ),
         )
         # Data-miss path (§3.3): when the service attached `alternatives` /
         # `relaxed_axis` (only on an empty result), bypass the strict
         # `ListResponse` response_model - which would silently drop those keys - 
         # and emit the raw dict. `data` is always [] here, so encoding is trivial
         # and the with-data path stays byte-identical (AC-R1).
-        if isinstance(result, dict) and result.get("alternatives"):
+        if isinstance(result, dict) and (
+            result.get("alternatives") or "spec_alternatives" in result
+        ):
             from fastapi.encoders import jsonable_encoder
             return JSONResponse(content=jsonable_encoder(result))
         if include_sellable and isinstance(result, dict):
             return _with_sellable(service, result)
+        if isinstance(result, dict) and (result.get("spec_resolved") or result.get("spec_page")):
+            # Bypasses response_model, which would drop the undeclared keys.
+            body = StockBalanceListResponse.model_validate(result).model_dump(mode="json")
+            for key in ("spec_resolved", "spec_page"):
+                if result.get(key):
+                    body[key] = result[key]
+            return JSONResponse(content=body)
         return result
     except Exception as e:
         raise handle_internal_error(str(e))

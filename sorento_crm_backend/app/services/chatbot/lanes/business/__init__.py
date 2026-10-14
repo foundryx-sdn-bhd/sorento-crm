@@ -1748,6 +1748,62 @@ def run_fetch(
                 outcome="access_denied",
             )
 
+    # SPEC-PROMO-PARAMS (card section 9, slices 2 and 3): a described ask (no typed code)
+    # carries its subject and grounded specs as `spec_constraints` on the MCP call, and a
+    # promotion ask with a subject answers from the promotion products tool.
+    # Crew live check on 1e3250479: a follow-up the parser reads as the same ask (entity_op) with
+    # no new subject narrows the CARRIED ask (`Focus.spec_ask`), per axis (`ask_constraints`).
+    spec_constraints, carried_ids, from_carry = (
+        fetch_mod.ask_constraints(parse_output, db)
+        if db is not None and jsc.js_string(domain or "") in fetch_mod.SPEC_CONSTRAINT_DOMAINS
+        else (None, [], False)
+    )
+    if not spec_constraints and picked and jsc.js_string(domain or "") == "promotion":
+        # The tier pick's own turn names no subject: the menu turn's constraints rode the
+        # open pick (`answer_bridge`, beside `promo_filter`) and `narrow` above put them here.
+        carried = semantic_input.get("spec_constraints")
+        spec_constraints = [c for c in carried if isinstance(c, dict)] if isinstance(carried, list) else None
+    # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the parser read this message as "more of
+    # the same list" (`continuation`); the list's own constraints ride the carry
+    # (`focus.set_page["spec_page"]`, handed in by `turn_runtime`'s runner) and the next page
+    # is asked with exactly those filters, whatever subject the parser repeated (reviewer B1).
+    spec_page_carry = parse_output.get("spec_page") if isinstance(parse_output.get("spec_page"), dict) else None
+    if spec_page_carry and isinstance(spec_page_carry.get("spec_constraints"), list):
+        spec_constraints = [c for c in spec_page_carry["spec_constraints"] if isinstance(c, dict)] or None
+    if (
+        spec_constraints
+        and jsc.js_string(domain or "") == "promotion"
+        and not semantic_input.get("scope_terms")
+        and not spec_page_carry
+        and not from_carry
+    ):
+        # `promo_filter` (PROMO-SUBJECT-FILTER AC-17) found the class is not the subject: a
+        # product token the resolver placed is the stricter ask and keeps its product_ids.
+        spec_constraints = None
+    if spec_constraints and not fetch_mod.carries_size(spec_constraints):
+        # The resolver's described set (products, stock) and `promo_filter`'s scope terms
+        # (promotion) already apply the subject and every registry key exactly, with the answers
+        # the owner ruled on. Only the virtual size never reaches them (`resolve_gate`), so only
+        # a size ask hands the filtering to the route. On promotion that route is the existing
+        # promotions list (owner hand test 13 Oct: the size only resolves the products).
+        spec_constraints = None
+    if spec_constraints:
+        semantic_input["spec_constraints"] = spec_constraints
+        # Owner hand test round 2 (13 Oct): a typed code ("250mm srtwc286") is the set the size
+        # narrows, so the call keeps the code's resolved ids beside the constraints.
+        from app.services.chatbot.lanes.business.resolve_gate import _names_a_typed_code
+
+        semantic_input["spec_keeps_ids"] = _names_a_typed_code(parse_output) or bool(carried_ids)
+        # The carried ask's code ("200mm only" after "srtwc286 got stock?"): its ids, never
+        # whatever the resolver read off this turn's narrowing words.
+        semantic_input["spec_carried_ids"] = list(carried_ids)
+        if trace is not None:
+            trace.add("spec_constraints", {"constraints": spec_constraints})
+    else:
+        # A copy the open pick carried in (`narrow`) is no instruction of its own.
+        semantic_input.pop("spec_constraints", None)
+        semantic_input.pop("spec_keeps_ids", None)
+        semantic_input.pop("spec_carried_ids", None)
     candidates = fetch_mod.select_tool(domain)
 
     has_product = (
@@ -2258,6 +2314,16 @@ def run_fetch(
         # stay byte-inert for every non-HAS turn.
         "predicate": gate.get("predicate"),
     }
+    spec_filtered = bool(semantic_input.get("spec_constraints")) and tool_name in fetch_mod.SPEC_CONSTRAINT_TOOLS
+    # Owner ruling (12 Oct 2026): a spec-filtered product or stock answer is paged, a few lines
+    # first. A promotion answer is the existing promotions list (owner hand test 13 Oct).
+    spec_paged = spec_filtered and jsc.js_string(domain or "") != "promotion"
+    if spec_filtered:
+        # The route filters by `spec_constraints` and its rows ARE the answer: the
+        # resolver's counted set (its total, its header, its product_ids slice) describes
+        # a different set (it never saw the size), so it neither gates nor heads this
+        # reply, and its zero is no reason not to ask the tool.
+        trigger["predicate"] = None
     if tool_name == "crm_portal_link_get":
         # DEV-FAILURES RC-B: the intro names the form the link opens, in the reply language.
         templates = reply_copy.resolve(db) if db is not None else reply_copy.fallback_copy()
@@ -2265,7 +2331,7 @@ def run_fetch(
             fetch_mod.PORTAL_LINK_COPY.get(submission_type or "", "portal_link"),
             getattr(ctx.get("localizer"), "language", None),
         )
-    predicate = gate.get("predicate")
+    predicate = trigger["predicate"]
     if isinstance(predicate, dict) and not predicate.get("qualifying_total"):
         # Reviewer B2 on PR #833: a described set with nothing in it has no product to
         # send, and the tool called without one answers about every product. The miss
@@ -2275,6 +2341,16 @@ def run_fetch(
         args = fetch_mod.entity_ids_transformer(trigger, space_id=space_id)
         if dry_run and tool_name == _LOW_STOCK_TOOL:
             args["dry_run"] = True
+        if spec_paged:
+            # A few matches first (owner ruling, 12 Oct 2026); a continuation asks the next page.
+            args["limit"] = fetch_mod.SPEC_PAGE_SIZE
+            args["page"] = int((spec_page_carry or {}).get("page") or 0) + 1
+            if spec_page_carry and isinstance(spec_page_carry.get("args"), dict):
+                # The next page is asked with exactly the first page's arguments (its tier,
+                # date mode, brand and kind); only the page moves. A continuation names none of
+                # them, and its own read drifted (crew, 045a0fea: date_mode null -> overlap; an
+                # empty access_levels reads as "no tier filter").
+                args = {**args, **spec_page_carry["args"], "limit": args["limit"], "page": args["page"]}
         if tool_name == find_lane.TOOL:
             find_args, ask = find_lane.route_args(args, find_items)
             if find_args is None:
@@ -2408,6 +2484,7 @@ def run_fetch(
         and semantic_input.get("scope_terms")
         and isinstance(envelope, dict)
         and envelope.get("has_result") is False
+        and envelope.get("spec_miss") is not True
     ):
         # PROMO-SUBJECT-FILTER owner hand test: a picked level with nothing for the subject is
         # one line, the same fact the menu stamped ("- no promotion"); never a miss sentence.
@@ -2558,6 +2635,52 @@ def run_fetch(
             alternative_tail, alternative_found = [], False
 
     structured = fetch_mod.output_structurer(envelope, trigger)
+    if spec_paged and isinstance(structured, dict) and structured.get("has_result") and isinstance(envelope, dict):
+        # The route states the page it returned (`spec_page`); when more matched, the reply says
+        # how far it got and that a reply shows more, and the list's constraints are carried
+        # for the parser's `continuation` on the next message. The last page carries nothing.
+        page_info = envelope.get("spec_page") if isinstance(envelope.get("spec_page"), dict) else {}
+        total, page, limit = (int(page_info.get(k) or 0) for k in ("total", "page", "limit"))
+        end = min(page * limit, total)
+        if limit and total > end:
+            response = jsc.js_string(structured.get("response") or "").rstrip()
+            more = f"Showing {(page - 1) * limit + 1} to {end} of {total}. Reply to see more."
+            localizer = trigger.get("localizer")
+            structured["response"] = f"{response}\n\n{localizer.sentence(more) if localizer is not None else more}"
+            structured["spec_carry"] = {
+                "domain": jsc.js_string(domain or ""),
+                "spec_constraints": list(spec_constraints or []),
+                "page": page,
+                "total": total,
+                "args": {k: v for k, v in args.items() if k not in ("page", "limit", "_diagnostics")},
+            }
+    if tool_name in fetch_mod.SPEC_CONSTRAINT_TOOLS and isinstance(structured, dict):
+        # Crew live check on 1e3250479: this ask's own filters, kept on the focus
+        # (`Focus.spec_ask`) so a follow-up the parser reads as the same ask narrows it.
+        structured["spec_ask"] = {
+            "domain": jsc.js_string(domain or ""),
+            "spec_constraints": list(spec_constraints or []) if spec_filtered else [],
+            "product_ids": [
+                jsc.js_string(i) for i in jsc.array(args.get("product_ids")) if fetch_mod.is_uuid(i)
+            ],
+            # The products this reply asked a quantity for ("How many units for each?"), so the
+            # dealer's quantity reply answers exactly those, never a re-read of the filter.
+            "asked_ids": [
+                jsc.js_string(entry.get("product_id"))
+                for entry in jsc.array(envelope.get("stock_availability") if isinstance(envelope, dict) else None)
+                if isinstance(entry, dict) and entry.get("needs_quantity") and fetch_mod.is_uuid(entry.get("product_id"))
+            ],
+        }
+    if spec_filtered and isinstance(structured, dict) and isinstance(envelope, dict):
+        if structured.get("has_result"):
+            # The subject and specs were satisfied by the filter; the resolver not
+            # placing a word of them (the size) is no miss (`answer_bridge._miss_triggers`).
+            structured["subject_filtered"] = True
+            structured["spec_filtered"] = True
+        elif envelope.get("spec_miss") is True:
+            # The presenter stated what the data holds (the values on file, the axis to
+            # pick); that is the reply, never the generic not-found line.
+            structured["spec_miss_stated"] = True
     if (
         tool_name == fetch_mod.TIER_PROBE_TOOL
         and args.get("scope_terms")

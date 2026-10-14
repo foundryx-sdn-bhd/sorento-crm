@@ -137,7 +137,10 @@ TOOL_OPTIONAL_BODY_PARAMS: dict[str, tuple[str, ...]] = {
 TOOL_OBJECT_QUERY_PARAMS: dict[str, tuple[str, ...]] = {
     # Chatbot stock ask v2 (ported from PR #1118): the per-product
     # {product_id: quantity} map, parsed backend-side by `parse_requested_quantities`.
-    "crm_inventory_stock_balance_list": ("requested_quantities",),
+    "crm_inventory_stock_balance_list": ("requested_quantities", "spec_constraints"),
+    # SPEC-PROMO-PARAMS: a JSON LIST of {key, op, value} objects (see `_OBJECT_UNIONS`).
+    "crm_master_products_list": ("spec_constraints",),
+    "crm_marketing_promotions_list": ("spec_constraints",),
     # CHAT-FIND: a JSON LIST of {key, product_ids} filters (see `_OBJECT_UNIONS`).
     "crm_find": ("filters",),
 }

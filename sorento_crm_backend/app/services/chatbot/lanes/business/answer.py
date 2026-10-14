@@ -542,6 +542,12 @@ def crossdomain_zeroset(
     ):
         return off("dealer_view")
 
+    # SPEC-PROMO-PARAMS (owner hand test round 2, 13 Oct): a spec-filtered answer's rows ARE the
+    # set asked about ("250mm srtwc286"); a variant the size filtered out was never a product
+    # with "no stock and no incoming", and a stated size miss already says what the data holds.
+    if passthrough.get("spec_filtered") is True or passthrough.get("spec_miss_stated") is True:
+        return off("spec_filtered")
+
     qf = parser if isinstance(parser, dict) else {}
     dh = qf.get("domain_hint")
     if dh != "inventory" and dh != "incoming":

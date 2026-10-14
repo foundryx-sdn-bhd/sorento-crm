@@ -18,6 +18,15 @@ from app.services.error_handler import handle_not_found, handle_conflict, handle
 from app.services.company_scope import get_company_scope, stamp_lookup_companies
 from app.services.import_log_service import ImportLogService
 from app.services.identifier_resolver import resolve_identifier
+from app.services.product_spec_filter import (
+    product_filter_clause,
+    promoted_clause,
+    resolve_size,
+    spec_base_for,
+    spec_miss_detail,
+    stamp_size_subject,
+    stamp_spec_page,
+)
 from app.services.rules.master_rules import resolve_master_by_code
 
 
@@ -667,6 +676,10 @@ class StockService:
         space_id: Optional[str] = None,
         requested_qty: Optional[int] = None,
         requested_quantities: Optional[dict] = None,
+        spec_constraints: Optional[list[dict]] = None,
+        has_active_promotion: bool = False,
+        access_levels: Optional[list[str]] = None,
+        hidden_spec_keys: frozenset[str] = frozenset(),
     ):
         """List stock with product and warehouse info.
 
@@ -735,6 +748,24 @@ class StockService:
                     "pagination": {"total": 0, "page": page, "limit": limit},
                     "empty": True,
                 }
+        # The virtual `size` key resolves to one mm key from the data, or the answer is a
+        # clarify / a miss with no rows (SPEC-PROMO-PARAMS card section 9, slice 1).
+        # With has_active_promotion the answer is about promoted products only (see products).
+        spec_base = spec_base_for(
+            promoted_clause(self.db, access_levels) if has_active_promotion else None,
+            product_ids,
+            by_code=policy is not None and policy.mode == "availability",
+        )
+        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys, spec_base)
+        stamp_size_subject(self.db, spec_extra, product_ids)
+        if spec_constraints and sized_constraints is None:
+            return {
+                "data": [],
+                "pagination": {"total": 0, "page": page, "limit": limit},
+                "empty": True,
+                **spec_extra,
+            }
+        spec_constraints = sized_constraints
         from sqlalchemy.orm import selectinload
         from app.models.product import Product, ProductCategory
         from app.services.entity_resolver import (
@@ -940,6 +971,23 @@ class StockService:
         if product_ids:
             q = q.filter(Stock.product_id.in_(product_ids))
 
+        # SPEC-PROMO-PARAMS: narrows by product only; the location and policy filters
+        # above are untouched.
+        spec_promo_clause = product_filter_clause(self.db, spec_constraints, has_active_promotion, access_levels)
+        if spec_promo_clause is not None:
+            matching = select(Product.id).where(spec_promo_clause)
+            if policy is not None and policy.mode == "availability":
+                # D27: a code is one product to the dealer, so a size read on the code keeps
+                # its same-code rows in the other company, spec row or not (reviewer S1). The
+                # same holds for `has_active_promotion`: a code promoted on one company's row
+                # is promoted to the dealer.
+                matching = select(Product.id).where(
+                    func.lower(Product.product_code).in_(
+                        select(func.lower(Product.product_code)).where(spec_promo_clause)
+                    )
+                )
+            q = q.filter(Stock.product_id.in_(matching))
+
         if entity_buckets is not None and entity_buckets.product_codes:
             lowered = [c.lower() for c in entity_buckets.product_codes]
             code_id_rows = (
@@ -1115,6 +1163,7 @@ class StockService:
         if policy is not None:
             self._apply_stock_visibility(
                 payload,
+                spec_narrowed=bool(spec_constraints),
                 policy=policy,
                 policy_q=policy_q,
                 location_q=location_q,
@@ -1173,6 +1222,10 @@ class StockService:
             if alternatives:
                 payload["alternatives"] = alternatives
                 payload["relaxed_axis"] = "entity"
+        if total == 0 and spec_constraints:
+            payload.update(spec_miss_detail(self.db, spec_constraints, spec_base))
+        payload.update(spec_extra)
+        stamp_spec_page(payload, spec_constraints)
         return payload
 
     def stock_last_updated_by_company(self, company_ids) -> dict[str, datetime]:
@@ -1385,6 +1438,7 @@ class StockService:
         requested_quantities: Optional[dict] = None,
         product_id_order: Optional[list[str]] = None,
         resolved_contact_id: Optional[str] = None,
+        spec_narrowed: bool = False,
     ) -> None:
         """Attach the visibility block(s) and, for the two summary modes, empty `data`.
 
@@ -1631,7 +1685,10 @@ class StockService:
         #
         # `compact` and `detailed` return above and are untouched: they answer with
         # rows and locations, and a caller asking either of them for a page means it.
-        if not named_ids:
+        # SPEC-PROMO-PARAMS (crew live check, 045a0fea): a `spec_constraints` ask ("600mm basin
+        # got stock?") names no product but its candidate set is already the described one
+        # (`policy_q` carries the spec filter), so it is answered like a named list.
+        if not named_ids and not spec_narrowed:
             payload["stock_visibility"]["needs_product"] = True
             payload["stock_availability"] = []
             return

@@ -590,6 +590,27 @@ def _allowed_entity_types(ctx: dict[str, Any], entities: list[Any]) -> list[Any]
     return out
 
 
+def _size_reaches_the_tool(parse_output: dict[str, Any]) -> bool:
+    """Will this ask's `size` reach a tool as `spec_constraints` (`fetch.spec_constraints_for`)?
+    Only then may the resolver's `require` leg go (reviewer B1, step-1 round): a size ask in a
+    domain that never sends the constraints ("600mm basin cert?") keeps its cert condition, and
+    so does an ask that names no subject word. A typed code keeps its resolver call whole (the
+    code's ids are the set the route narrows, `spec_keeps_ids`), so this is False for it too.
+    Read off the parse alone."""
+    from app.services.chatbot.lanes.business.fetch import SPEC_CONSTRAINT_DOMAINS, _SUBJECT_HINTS
+
+    if jsc.js_string(parse_output.get("domain_hint") or "") not in SPEC_CONSTRAINT_DOMAINS:
+        return False
+    if _names_a_typed_code(parse_output):
+        return False
+    return any(
+        isinstance(e, dict)
+        and jsc.nullish_str(e.get("hint")).strip().lower() in _SUBJECT_HINTS
+        and jsc.nullish_str(e.get("raw")).strip()
+        for e in parse_output.get("entities") or []
+    )
+
+
 def resolve_entity_body(
     ctx: dict[str, Any],
     *,
@@ -644,10 +665,20 @@ def resolve_entity_body(
     # not a record to look up. It travels as a registry binding (`extracted_specs`), and
     # a value the registry does not know as `unknown_values`, said back before anything
     # is counted; the resolver's token map never sees it.
-    from app.services.chatbot.head.grounding import specification_entities
+    from app.services.chatbot.head.grounding import SIZE_KEY, specification_entities
 
     grounded = specification_entities(entities)
     entities = [e for e in entities if not any(e is g for g in grounded)]
+    # SPEC-PROMO-PARAMS: the virtual `size` key is no registry key, so the resolver never
+    # sees it (an unknown key there); it travels only as a `spec_constraints` item on the
+    # MCP call (`fetch.spec_constraints_for`), where the route resolves its axis.
+    # A size: the virtual key, or an envelope axis named outright ("600mm length"); either is
+    # answered by the route (owner ruling, 12 Oct 2026), so no counted set is built for it. A
+    # thickness is mm too but no envelope axis: it keeps the counted set.
+    from app.services.product_spec_search import _ENVELOPE_KEYS
+
+    sized = any(g.get("spec_key") == SIZE_KEY or g.get("spec_key") in _ENVELOPE_KEYS for g in grounded)
+    grounded = [g for g in grounded if g.get("spec_key") != SIZE_KEY]
     if excluded_entity_ids:
         entities = [e for e in entities if id(e) not in excluded_entity_ids]
 
@@ -756,7 +787,7 @@ def resolve_entity_body(
             "known": list(g.get("spec_known") or []),
         }
         for g in grounded
-        if g.get("spec_value") is None and (g.get("raw") or "").strip()
+        if g.get("spec_value") is None and (g.get("raw") or "").strip() and not g.get("spec_axis_only")
     ]
     if unknown_values:
         body["unknown_values"] = unknown_values
@@ -787,6 +818,25 @@ def resolve_entity_body(
     require = derive_require(parse_output, message_text=_query_text(ctx))
     if require is not None and not set(require) <= set(REQUIRE_LEGS):
         require = None
+    if sized and _size_reaches_the_tool(parse_output):
+        # SPEC-PROMO-PARAMS hand test step 1: the counted set would be the subject without
+        # the size (the resolver never sees it), so its count, its header and its "no stock
+        # matched these" describe a different set. A size ask is answered by the route, which
+        # filters by the size (`fetch.spec_constraints_for`, `product_spec_filter.resolve_size`).
+        require = None
+        # Crew latency trace a92941c7 (routed 3037 ms): with no `require`, an unplaced subject
+        # fell into the spec fallback's MODEL phrase read (2-3 s, `references.py`). The route
+        # filters this ask, so that read is wasted; the deterministic word read still runs.
+        body["understand_phrase"] = False
+        # Crew live check on 045a0fea ("600mm 的洗手盆有货吗？"): the resolver places a class word
+        # by reading the QUERY, and a Chinese or Malay message holds no word it knows, so the
+        # subject went unplaced even with the parser's English canonical_code as its token.
+        # The route filters this ask; the resolver is asked only to place the subject, in the
+        # words grounding settled on (the parser's own, its canonical where it gave one). The
+        # whole token list goes on purpose: a carried brand or a spec's own words only narrow
+        # what the resolver places, and the route does the filtering.
+        if body.get("tokens"):
+            body["query"] = " ".join(str(t) for t in body["tokens"] if t)
     # The class word the PARSER named, forwarded as a value (turn re-architecture,
     # D11): a `product_type` / `category` entity IS "which taps", and reading it off
     # the verdict is what lets a HAS turn be described by something other than this

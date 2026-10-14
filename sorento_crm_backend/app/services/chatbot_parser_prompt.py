@@ -1109,6 +1109,48 @@ SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM)
 SEMANTIC_PARSER_PROMPT += PORTAL_FORM_ADDENDUM
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
+# SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): a long answer shows a few matches and says the
+# customer can reply to see more; whether the next message asks for more of THAT list is the
+# parser's call, on the `continuation` key the schema already carries. No word rule in code.
+# `chatbot_prompt_vars.publish_specs_block` adds it to the published version, the text prod runs;
+# the code fallback above stays as measured (`test_parser_prompt_budget`: the static prompt does
+# not grow, and its addenda keep their order).
+CONTINUATION_RULE = """
+
+== MORE OF THE SAME LIST ==
+"continuation" is true when the Previous response listed results and said the customer can
+reply to see more, and the current message asks for more of THAT list, in any language or
+phrasing ("more", "show more", "next", "lagi", "ada lagi?", "还有吗", "next page"). It names
+no new subject: entities [], entity_op "reuse", domain_hint and intent_hint the previous
+turn's. A message that names a product, a category, a size or a question of its own is not a
+continuation: continuation false, read it as usual. Default false.
+"""
+
+# SPEC-PROMO-PARAMS (crew live check, 045a0fea): a size or a class word said in another language
+# was left untranslated, or the number was read as a product code. The parser is told the business
+# rule only (owner rule 11 Oct: no language teaching in the prompt); code reads only its keys. Published with the specs block, like
+# CONTINUATION_RULE, never appended to the code constant (`test_parser_prompt_budget`).
+SIZE_AND_CLASS_RULE = """
+
+== A SIZE AND A CLASS WORD, IN ANY LANGUAGE ==
+A number with a length unit said about a kind of product, in any language, is its own entity:
+hint "specification", raw the number and unit, spec_value the number in mm, spec_key "size"
+unless a length, width, height or diameter word names the axis. It is never a product code and
+never part of the class word.
+The kind of product is a "category" entity in whatever language it was said: raw stays the
+customer's own words, and canonical_code is that kind in English, as the Product types and
+classes above name it.
+The size entity is never dropped, whatever is asked about those products: stock, price, details
+or a promotion. A size or other specification stated with a promotion ask filters the products
+the promotions must contain, so it stays its own specification entity beside the category entity,
+as on a stock ask.
+A follow-up that narrows the last answer by a measure axis, a size, a brand or another
+specification names only that narrowing, entity_op "replace_combine", and domain_hint and
+intent_hint stay the previous turn's: it is the same question, narrowed. A measure axis named
+without a number is a specification entity on that axis whose spec_value is the size the last
+ask stated; a size is a specification entity even when it is the only thing said.
+"""
+
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the
 # live 46,906). Classified section by section in
 # `documentation/plans/chatbot/parser-prompt-inventory.md`.
@@ -1287,6 +1329,7 @@ def specification_lines(db: "Session") -> list[str]:
 
     lines: list[str] = []
     types: list[str] = []
+    has_mm = False
     for row in active_registry(db):
         synonyms = merged_synonyms(row)
         labels = dict(getattr(row, "value_labels", None) or {})
@@ -1301,6 +1344,7 @@ def specification_lines(db: "Session") -> list[str]:
         label = (row.label or "").replace('"', "'")
         head = f'Specification {row.spec_key} ("{label}")'
         if data_type == "numeric":
+            has_mm = has_mm or (row.unit or "").lower() == "mm"
             unit = f" in {row.unit}" if row.unit else ""
             worded = [
                 f"{value} ({', '.join(words)})" for value, words in synonyms.items() if value != "_self" and words
@@ -1323,6 +1367,13 @@ def specification_lines(db: "Session") -> list[str]:
             choices.append(f"{shown} = {value}" + (f" ({', '.join(words)})" if words else ""))
         if choices:
             lines.append(f"{head}: choices {'; '.join(choices)}.")
+    if has_mm:
+        # The virtual size key (SPEC-PROMO-PARAMS): the catalogue, not the parser, knows
+        # which axis a bare "250mm" is recorded on, so the route resolves it from the data.
+        lines.append(
+            'Specification size ("Size"): a number in mm. Only when the customer gives a size '
+            "with no length, width, height or diameter word."
+        )
     if types:
         lines.append(f"Product types (the category entity keeps these, never a specification): {', '.join(types)}.")
     return lines

@@ -848,6 +848,84 @@ def test_a_named_id_answers_for_every_company_row_of_that_code(db):
     )
 
 
+def test_a_size_on_a_named_code_keeps_its_sister_company_row(db):
+    """SPEC-PROMO-PARAMS reviewer S1 (owner hand test round 2): a dealer asks a code plus a size.
+    The named row (Mocha) holds the size; its same-code sister row (Sorento) has no spec row of its
+    own and holds the supply. A code is one product to the dealer (D27), so the size read on the
+    code keeps the sister row and the answer is still `in_stock`."""
+    import uuid as _uuid
+
+    from app.models.product_spec import ProductSpecifications
+    from app.services.product_spec_registry import seed_spec_registry
+
+    seed_spec_registry(db)
+    seed_mocha(db)
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    sorento_wh = _wh(db, unique_code("ZZTSZS")[:50])
+    mocha_wh = warehouse(db, company_id=MOCHA_ID, code=unique_code("ZZTSZM")[:50])
+    shared = unique_code("ZZTSZC")[:50]
+    mocha_p = product(db, company_id=MOCHA_ID, code=shared)
+    sorento_p = product(db, company_id=DEFAULT_COMPANY_ID, code=shared)
+    _category_of(db, mocha_p).chatbot_max_qty = 50
+    db.add(ProductSpecifications(
+        id=str(_uuid.uuid4()), product_id=mocha_p.id, values={"trap_length": {"value": 250, "unit": "mm"}},
+    ))
+    stock(db, company_id=MOCHA_ID, product_id=mocha_p.id, warehouse_id=mocha_wh.id, on_hand=0)
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=sorento_p.id, warehouse_id=sorento_wh.id, on_hand=20)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[sorento_wh.id, mocha_wh.id], contact=contact)
+    db.flush()
+
+    result = StockService(db).list_stock(
+        product_ids=[mocha_p.id],
+        contact_id=contact.id,
+        requested_quantities={mocha_p.id: 5},
+        spec_constraints=[{"key": "size", "op": "eq", "value": 250}],
+    )
+
+    assert len(result["stock_availability"]) == 1, result
+    assert result["stock_availability"][0]["branch"] == "in_stock", result["stock_availability"]
+
+
+def test_a_size_held_only_by_the_sister_company_row_is_no_miss(db):
+    """Reviewer N1 (80b181a0): the reverse of the test above. The named row (Mocha) has no spec
+    row; its same-code sister (Sorento) holds 250 and the supply. Which row the resolver names is
+    its own ordering, so the size is read on the code: `in_stock`, never "No 250 mm"."""
+    import uuid as _uuid
+
+    from app.models.product_spec import ProductSpecifications
+    from app.services.product_spec_registry import seed_spec_registry
+
+    seed_spec_registry(db)
+    seed_mocha(db)
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    sorento_wh = _wh(db, unique_code("ZZTSRS")[:50])
+    mocha_wh = warehouse(db, company_id=MOCHA_ID, code=unique_code("ZZTSRM")[:50])
+    shared = unique_code("ZZTSRC")[:50]
+    mocha_p = product(db, company_id=MOCHA_ID, code=shared)
+    sorento_p = product(db, company_id=DEFAULT_COMPANY_ID, code=shared)
+    _category_of(db, mocha_p).chatbot_max_qty = 50
+    db.add(ProductSpecifications(
+        id=str(_uuid.uuid4()), product_id=sorento_p.id, values={"trap_length": {"value": 250, "unit": "mm"}},
+    ))
+    stock(db, company_id=MOCHA_ID, product_id=mocha_p.id, warehouse_id=mocha_wh.id, on_hand=0)
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=sorento_p.id, warehouse_id=sorento_wh.id, on_hand=20)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[sorento_wh.id, mocha_wh.id], contact=contact)
+    db.flush()
+
+    result = StockService(db).list_stock(
+        product_ids=[mocha_p.id],
+        contact_id=contact.id,
+        requested_quantities={mocha_p.id: 5},
+        spec_constraints=[{"key": "size", "op": "eq", "value": 250}],
+    )
+
+    assert "spec_size_asked" not in result, result
+    assert len(result.get("stock_availability") or []) == 1, result
+    assert result["stock_availability"][0]["branch"] == "in_stock", result["stock_availability"]
+
+
 def test_merged_entry_takes_the_earliest_qualifying_shipment_across_the_group(db):
     """The merge structure extended to R5: both merged ids carry their own qualifying
     shipment (Sorento March, Mocha February); the merged entry's `eta` is built off the

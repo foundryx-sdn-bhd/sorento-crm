@@ -3544,6 +3544,19 @@ def _drop_focus_entities(focus: Focus, dropped: list[dict[str, Any]]) -> None:
         setattr(focus, attr, kept)
 
 
+def _route_filters_the_ask(parse_output: Any, db: Any) -> bool:
+    """Will the lane send this ask's class and size as `spec_constraints` (`fetch.spec_constraints_for`,
+    the size gate `carries_size`)? Then the route narrows it, and the broad-stock guard's "no
+    filter" is wrong (crew round 5 on b962ddf7: "250mm wc got stock?" refused while the class and
+    the size ARE the filters)."""
+    from app.services.chatbot.lanes.business import fetch as fetch_mod
+
+    if db is None or not isinstance(parse_output, dict):
+        return False
+    constraints, _ids, _carried = fetch_mod.ask_constraints(parse_output, db)
+    return bool(constraints) and fetch_mod.carries_size(constraints)
+
+
 def make_tool_runner(
     db: Session,
     *,
@@ -3615,6 +3628,11 @@ def make_tool_runner(
         page_ids: list[str] = []
         listed_products: list[dict[str, Any]] = []
         carry = spec.filters.get("set_page")
+        spec_page = carry.get("spec_page") if isinstance(carry, dict) else None
+        if isinstance(spec_page, dict):
+            # SPEC-PROMO-PARAMS: the next page of a spec-filtered list. No counted set to
+            # replay: the lane re-sends the carried constraints with the next page.
+            carry = None
         if isinstance(carry, dict):
             # Security B2: the entitlement comes off the CARRY (what the first answer
             # counted under), never off this turn's verdict - a bare count states no
@@ -3641,6 +3659,17 @@ def make_tool_runner(
         # instead. Flagged here so the next reader does not assume parity.
         lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
         lane_out = _spec_window(lane_out, spec)
+        # The last ask the lane answered (`Focus.spec_ask`), so a follow-up the parser reads as
+        # the same ask narrows it (`fetch.ask_constraints`). Only what this bot saved.
+        lane_out = {k: v for k, v in lane_out.items() if k != "spec_ask"}
+        if focus is not None and isinstance(focus.spec_ask, dict):
+            lane_out = {**lane_out, "spec_ask": dict(focus.spec_ask)}
+        if isinstance(spec_page, dict):
+            lane_out = {**lane_out, "spec_page": dict(spec_page)}
+        else:
+            # Only a page this bot saved scopes a turn; a key the verdict carried itself (a
+            # provider without strict schemas) is dropped (reviewer S1).
+            lane_out = {k: v for k, v in lane_out.items() if k != "spec_page"}
         if asked_promo_filter and domain == "promotion":
             # PROMO-SUBJECT-FILTER AC-6: the tier pick's own turn names no subject; the
             # one the menu was asked for rides the open pick's payload.
@@ -3946,6 +3975,7 @@ def make_tool_runner(
             and block is None
             and not would_be_unfiltered
             and not any(isinstance(e, dict) and e.get("uuid") for e in entities)
+            and not _route_filters_the_ask(lane_out, db)
         ):
             probe_gate = gate_mod.run_gate(
                 {},
@@ -5485,7 +5515,13 @@ def envelope_of(
         "entities": codes,
         # The PRODUCT subjects alone, for the composer's "No stock found for X" line: a
         # customer pinned from an earlier turn is a subject too, and is not a stock code.
-        "product_codes": [
+        # SPEC-PROMO-PARAMS: none when the lane answered a spec-filtered set (`spec_filtered`):
+        # its rows are the described set, so a class member the filter left out (a basin
+        # with no 600 mm on any axis) is not a product that "has no stock". The promotion
+        # tier probe's `subject_filtered` keeps its codes (reviewer N4).
+        "product_codes": []
+        if fetched.get("spec_filtered") is True
+        else [
             name
             for name in (
                 _answer_subject(e)
@@ -5524,7 +5560,12 @@ def envelope_of(
         # The TOOL's own verdict, before the rows test above: a report or a refusal
         # renders as `lane_text` with no figures yet DID find something, and the
         # composer's miss rule (an offer to escalate) must not read it as a miss.
-        "tool_has_result": bool(fetched.get("has_result")),
+        # SPEC-PROMO-PARAMS: a spec-filtered zero whose reply states what the data holds
+        # (`spec_miss_stated`, the values on file or the axis to pick) answered too.
+        "tool_has_result": bool(fetched.get("has_result")) or fetched.get("spec_miss_stated") is True,
+        # SPEC-PROMO-PARAMS (owner hand test round 2): the rows are a spec-filtered set, so a
+        # resolved code the filter left out is no stock miss (`crossdomain_zeroset`).
+        "spec_filtered": fetched.get("spec_filtered") is True or fetched.get("spec_miss_stated") is True,
         # The lane's own failure, when the fetch did not complete: neither a hit nor a
         # miss, so the composer offers nothing on it (the error text is the answer).
         "error": fragment.get("error") if isinstance(fragment.get("error"), str) else None,
@@ -5628,6 +5669,12 @@ def envelope_of(
         # count answer recounts the set under the SAME entitlement rather than under the
         # parser's own, empty, list. `None` on every arm that never called the tool.
         "access_levels_used": fetched.get("access_levels"),
+        # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the constraints and page of a
+        # spec-filtered answer that offered "Reply to see more"; `engine.py` keeps it on
+        # `focus.set_page` for the parser's `continuation`. None when nothing is left.
+        "spec_carry": fetched.get("spec_carry") if isinstance(fetched.get("spec_carry"), dict) else None,
+        # Crew live check on 1e3250479: this ask's own filters, for `Focus.spec_ask`.
+        "spec_ask": fetched.get("spec_ask") if isinstance(fetched.get("spec_ask"), dict) else None,
         # The top selling question this reply asked (`group` / `metric` / `basis` /
         # `how_many`), or None when it asked nothing. `engine.py` records it on
         # `focus.top_selling` (`turn/apply.record_top_selling_asked`), reviewer B2 on

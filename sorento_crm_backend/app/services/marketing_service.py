@@ -620,6 +620,8 @@ class PromotionService:
         scope_terms: Optional[list[str]] = None,
         promotion_types: Optional[list[str]] = None,
         brand_ids: Optional[list[str]] = None,
+        spec_constraints: Optional[list[dict]] = None,
+        hidden_spec_keys: frozenset[str] = frozenset(),
     ):
         """List promotions with active-first fallback semantics.
 
@@ -708,6 +710,25 @@ class PromotionService:
                 PromotionProduct.product_id == Product.id
             ).where(Product.brand_id.in_(brand_list))
             subject_clause = brand_clause if subject_clause is None else and_(subject_clause, brand_clause)
+        # SPEC-PROMO-PARAMS (owner hand test 13 Oct): a described subject ("600mm basin") only
+        # RESOLVES the products; the answer is this same promotions list, narrowed to promotions
+        # with a linked product satisfying the constraints (a bare size on any axis, as on the
+        # product and stock routes). A size no product holds matches nothing.
+        if spec_constraints:
+            from app.models.product_spec import ProductSpecifications
+            from app.services.product_spec_filter import _one, resolve_size
+
+            sized, _extra = resolve_size(self.db, spec_constraints, hidden_spec_keys)
+            spec_clause = (
+                text("false")
+                if sized is None
+                else exists().where(PromotionProduct.promotion_id == Promotion.id).where(
+                    PromotionProduct.product_id.in_(
+                        select(ProductSpecifications.product_id).where(and_(*[_one(c) for c in sized]))
+                    )
+                )
+            )
+            subject_clause = spec_clause if subject_clause is None else and_(subject_clause, spec_clause)
 
         (
             _ordered_query,

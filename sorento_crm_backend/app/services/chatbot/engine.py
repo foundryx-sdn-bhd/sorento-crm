@@ -4714,13 +4714,18 @@ def _run_stages_body(  # noqa: PLR0915
         verdict, latest_user_message, carried=state_in.focus.set_clarify
     )
     verdict = _with_account_answer(verdict, state_in.focus.set_clarify)
+    # SPEC-PROMO-PARAMS (reviewer S2): a size list's page is no counted set; whether the next
+    # message asks for more of it is the parser's `continuation`, so these text readers get none.
+    counted_set = state_in.focus.set_page
+    if isinstance(counted_set, dict) and "spec_page" in counted_set:
+        counted_set = None
     verdict = turn_runtime.with_set_count_from_text(
-        verdict, latest_user_message, carried=state_in.focus.set_page
+        verdict, latest_user_message, carried=counted_set
     )
     # Round 7 on PR #833 (owner hand test, item 6): a brand the last set answer offered
     # narrows that set.
     verdict = turn_runtime.with_brand_from_offer(
-        verdict, latest_user_message, carried=state_in.focus.set_page
+        verdict, latest_user_message, carried=counted_set
     )
     # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): an echo of a row
     # the focus already holds settled is the carry restated, not an axis to rewrite with
@@ -6838,7 +6843,13 @@ def _run_stages_body(  # noqa: PLR0915
                 # has cert ZZQ9917") is listed by the reply and stays carried, so the
                 # follow-up count continues it; only the missed code is named beside it.
                 # `miss_on_typed_product` is the one computation beside the resolve outcome.
-                if paged:
+                spec_carry = envelopes[0].get("spec_carry") if envelopes else None
+                if isinstance(spec_carry, dict):
+                    # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): a spec-filtered answer
+                    # that offered "Reply to see more"; the parser's `continuation` on the
+                    # next message pages it (`turn/apply.py`). The last page carries nothing.
+                    state_out.focus.set_page = {"spec_page": spec_carry}
+                elif paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
                     # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local
@@ -6955,6 +6966,17 @@ def _run_stages_body(  # noqa: PLR0915
                     None,
                 )
                 state_out.focus.low_stock = low_stock_frame
+                # Crew live check on 1e3250479: the last stock / product / promotion ask's own
+                # filters (`Focus.spec_ask`). A turn in another domain keeps it, so the customer
+                # can come back to it; a stock or product turn that asked something else drops it.
+                spec_ask = next(
+                    (e["spec_ask"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("spec_ask"), dict)),
+                    None,
+                )
+                if spec_ask is not None:
+                    state_out.focus.spec_ask = spec_ask
+                elif any(d in ("inventory", "master_products") for d in (plan.domains or [])):
+                    state_out.focus.spec_ask = None
                 if (
                     (state_out.focus.top_selling or {}).get("asked")
                     and state_out.pending is not None
