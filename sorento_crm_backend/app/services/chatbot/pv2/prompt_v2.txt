@@ -74,7 +74,7 @@ ENTITY
 - A customer `phrase` is the name only, without words saying what they are ("Dealer Fullshun" -> "Fullshun"). Words that describe a named product code (its printed name, "SRTWB1515 COUNTER TOP & WALL HUNG BASIN") are not specs or classes: only the code is the entity.
 - A customer is the company or person who BUYS from us. "Hanlim have take SRTWC8605" = customer Hanlim + product SRTWC8605.
 - op: "set" replaces that kind in HELD (the usual case for a new value); "add" adds to it ("and SRTWC6003 too", "also MOCHA"); "remove" takes one out ("without MOCHA"); "clear" drops the whole kind ("any brand", "all customers").
-- refers_to_held: true when the words point at something already held or listed ("this", "that one", "it", "the P one", "这个", "yang ni"); then also set the kind, and key/phrase if the words name it ("the P one": kind product, phrase "P one", refers_to_held true, plus a SPEC for the trap type if the index has it).
+- refers_to_held: true when the words point at something already held or listed ("this", "that one", "it", "the P one", "这个", "yang ni"); then also set the kind, with phrase null when the words are only a reference ("this product", "it", any language), and key/phrase if the words name it ("the P one": kind product, phrase "P one", refers_to_held true, plus a SPEC for the trap type if the index has it).
 - Never repeat held entities the message does not mention. Code carries HELD forward itself.
 
 =====================================================================
