@@ -1,6 +1,6 @@
 # PLAN: a Confirm sends only what it decided (ORDERBACK-DELTA)
 
-Status: Hand test (standard track since the 13 Oct 22:40 extension: template migration `oihr_0007_excel_remark`; backend only, no auth/RBAC change). PR #1631.
+Status: Hand test (standard track since the 13 Oct 22:40 extension: template migrations `oihr_0007_excel_remark` + `oihr_0008_so_table_on_top`; no auth/RBAC change). PR #1631. Owner fix round 14 Oct: reviewer READY @ 8bb165772, hand test next.
 
 UAC: `orderback-delta-13oct-acceptance-criteria.md` (alongside).
 
@@ -125,8 +125,8 @@ reactions on unsaved lines and amendment emails keep their own row lines.
 - Cloud browser pass on a sandbox mirror of SO304546 + one SO323450 line, evidence in
   `evidence/orderback-delta/script-pass/` (`r2-*`): every Confirm's email matched the owner's
   mapping; the hand-test script is `laneboard/scripts/1631.md`.
-- Open for the owner (not changed here): a Reject of a Borrow line tells purchasing CANCEL ALL at
-  the donor row's location (subject `OI: <donor> @ SO`), not at the SO line's own location.
+- ~~Open for the owner: a Reject of a Borrow line tells purchasing CANCEL ALL at the donor row's
+  location.~~ Ruled 14 Oct (crew, owner's 13 Oct rule): fixed in the round below, item 6.
 
 ## Owner hand test fix round (14 Oct), red-first
 
@@ -143,3 +143,31 @@ reactions on unsaved lines and amendment emails keep their own row lines.
    (every fact unchanged) is no longer listed under "Would write" (`_preview_row_facts`). The
    email side was already right on this branch: the carried row is kept, not cancelled and
    re-raised, and not sent.
+
+Continued locally by lane ORDERBACK-DELTA-L (the cloud session stopped after bfa4ef76d):
+
+5. Review S1 (reviewer, 14 Oct): Simulate held stock TRANSFERS to the same rule as rows, so a
+   transfer the press only re-filed is no longer listed (`_preview_move_facts`). The row facts
+   also read the note. Dead STOCK_SHORT headline vocabulary removed.
+6. Every Borrow line reads the SO line's own location (owner 13 Oct rule, re-confirmed by crew
+   14 Oct): a CHANGED Borrow is one ORDER BACK line at the own location, and a REJECTED Borrow's
+   CANCEL ALL line and the subject use the own location too. The ORDER BACK rows keep their donor
+   location on the worklist. A move plus a cut or a new Buy split reads exactly as the same change
+   without the move (review B1), and a Borrow reshuffled across donors, with holes resized in
+   place, nets to one hole settled (`_hole_move`): never a false CANCEL ORDER.
+7. Hand-test script re-pointed at SO422076, because the morning test used SO419944. Browser pass
+   mirroring the script on SO380096: `evidence/orderback-delta/script-pass-r3/` (at d3ae516d5) and
+   `script-pass-r4/` (changed and rejected Borrow, at f5100e707) and `script-pass-r5/` (a Borrow
+   split across two donors, at 8bb165772: one row, ORDER BACK 3 & ORDER BACK 2, no CANCEL).
+
+Follow-up (not this PR): an own-location ORDER BACK row that the raise-time cascade auto-placed
+onto an already-received SPO within seconds (SO380096 CWCY605 at BRW-BB, SPO-2026/05-0058,
+`order_inquiry_links.auto = t`) stays live after the line's Borrow moves to another location,
+because placed rows are netted and kept on a re-confirm (`project_order_inquiry_service.py:1729`;
+the cascade-only test is `_cascade_only`, :8248).
+
+Follow-up (review nit, not this PR): when the NUMBER of Borrow parts changes together with the
+line quantity (X 10 to X 5 + Y 3 with a cut to 8), the email line loses its QTY / NEW QTY "was"
+columns, because `_decision_words` reads one ORDER BACK part and two as different decisions, so
+`held_before` is false in `_queue_saved_line`. The numbers are right; the single-donor twin
+shows "was 10".
