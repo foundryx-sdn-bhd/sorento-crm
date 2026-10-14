@@ -86,6 +86,8 @@ export interface PromptKeySummary {
   model: string | null;
   /** none | low | medium | high; null = the provider default. */
   reasoning_effort?: string | null;
+  /** The label the runtime reads for this agent (production, or staging for the v2 parser). */
+  runtime_label?: string;
   /** Whether this agent's key honours a reasoning effort at all. */
   supports_reasoning_effort?: boolean;
 }
