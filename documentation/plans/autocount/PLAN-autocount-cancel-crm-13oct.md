@@ -2,6 +2,9 @@
 
 Status: Merge-ready (owner hand test PASS 14 Oct on the crew copy after the re-decide; reviewer and security reviewer READY). Track: full (migration, RBAC slugs).
 Lane: AC-CANCEL-CRM. Sibling: AC-CANCEL-PULL (the shared service that reads the cancel docs; payload agreed via crew).
+Follow-up lane CANCEL-STOP-AT-SO (14 Oct, owner ruling, small fix track, no migration): R5 revised below; UAC
+`cancel-stop-at-so-acceptance-criteria.md`; owner repair SQL `SQL-cancel-so-retired-oi-rows-14oct.sql` (read
+only) and `SQL-cancel-so-restore-oi-rows-14oct.sql`. Status: PR open, in review.
 
 ## Goal
 
@@ -127,11 +130,14 @@ R4. Delivered shown = TransferedQty - cancelled. Planned = coalesce(required, or
 R5. Fully cancelled (cancelled >= ordered): SO / PO line `cancelled`. **Effects stop at the SO** (owner
     ruling 14 Oct, lane CANCEL-STOP-AT-SO, reversing the original R5): no OI row is retired, no
     handover is queued, no purchasing email goes out. Open OI rows / pins on a cancelled line stay as they
-    are and CS handles them in Fulfilment Planning. Superseded original text: "SO OI rows retired by the
+    are and CS handles them in Fulfilment Planning, where such a line stays on the board read-only (pill
+    Cancelled, "by AutoCount", the XS numbers and the open OI row count) while a live OI row remains.
+    Superseded original text: "SO OI rows retired by the
     #1530 path ("Transferred to Cancel SO <XS no>") and flagged". Partial: a `qty_down` planning change for
     CS (Q4 a).
 R6. Cancel lowers: a line this lane cancelled returns to the status its quantities give; board-cancelled
-    lines and cancelled orders stay cancelled. OI rows already retired stay retired.
+    lines and cancelled orders stay cancelled. OI rows already retired stay retired (since R5's revision a
+    Cancel SO retires none).
 R7. Every cancel line ends matched, waiting or unmatched with a reason; each batch logs the counts per
     reason (`ingest.cancel_match ...`). No screen, nothing spins.
 
