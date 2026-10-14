@@ -2,9 +2,9 @@
 
 Status: **plan v5. Slice 1, C1, C2 and C3 are built on PR #1633 (merge-ready at `4a193e088`).
 Owner rulings 14 Oct (section 0b): no line-key source, ever; several SO lines of the product link
-to the SO + product group (follow-up PR on branch `claude/do-history-group-links`, scope pending
-crew's answer on location narrowing); Q3 (a), no CRM SO write, the owner closes the pre-July open
-lines in AutoCount from `SQL-pre-july-open-so-lines-14oct.sql`.** Track: full
+to the SO + product group, with no warehouse narrowing (built on the follow-up PR, branch
+`claude/do-history-group-links`, stacked on #1633); Q3 (a), no CRM SO write, the owner closes the
+pre-July open lines in AutoCount from `SQL-pre-july-open-so-lines-14oct.sql`.** Track: full
 (migration column, ingest behaviour change, external ingest surface flag). PR #1633, branch
 `claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
 Owner card: `DO-HISTORY-card.md`.
@@ -66,9 +66,12 @@ Q3 (the SO side): answered 14 Oct, section 0b.
    - No screen lists DOs under an SO line or product today, exact or group: the SO detail's
      Delivery tab is SO-line totals only (`SalesOrderDetail.tsx:2057-2087`), and no API schema
      exposes `order_lines.sales_order_line_id`.
-   - Open with crew (14 Oct): whether C1's location narrowing (section 3 step 3) and #1623's
-     location-keyed Cancel SO groups are "guessed lines" under this rule. Dev evidence: of 9,828
-     DO lines whose SO has one line of the product, 570 sit at a different warehouse than that line.
+   - Crew answers (14 Oct): the DO line's warehouse no longer narrows several candidates to one
+     (Q1 (a), section 3), because the warehouse does not prove the line: of 9,828 dev DO lines
+     whose SO has one line of the product, 570 sit at a different warehouse than that line. The
+     SO screen gains no DO history in this lane (Q3 (a): the owner wants a Deliveries section,
+     Cancel SO lines included, as its own lane SO-DELIVERIES-VIEW, mock first). Sales achievement
+     stays as is (Q4 (a)): group-linked DO qty counts on the SO date, like any unlinked line.
 2. **Q3 (a).** No CRM write to the pre-July open SO lines. The owner closes them in AutoCount from
    the read-only list `SQL-pre-july-open-so-lines-14oct.sql` (the owner runs it on prod; dev:
    10,565 lines, 1,075,160 open qty). No existing screen gives that list: `/scm/sales-orders` is
@@ -192,15 +195,12 @@ The resolver for a DO line with `FromDocType` absent or `SO` (`_do_so_line`,
 2. **Unique product.** Otherwise, the lines of the DO line's product inside SO `FromDocNo` in the
    anchor company. Exactly one: link. Already built (test
    `test_from_dtl_key_zero_links_by_doc_no_and_item`).
-3. **Location narrowing (new).** Several candidates, the DO line has a warehouse, and **every**
-   candidate has a warehouse: keep the candidates whose warehouse equals the DO line's. Exactly
-   one: link. A candidate with no warehouse could be the real line, so it blocks narrowing.
-4. **Otherwise unlinked**, with the existing `so_line_unresolved` warning. No position, Seq or
-   quantity tie-break (test `test_from_dtl_key_zero_with_two_candidate_so_lines_warns`, plus a new
-   one where the location matches several lines).
-
-The prod-clone dry run counts how many of today's 13,259 ambiguous lines rule 3 resolves. The
-rest wait for crew's key source (K).
+3. **Several candidates: the SO + product group** (owner 14 Oct). The DO line keeps its
+   `from_doc_no` + `product_id` and links to no single line, with the existing
+   `so_line_unresolved` warning. No warehouse, position, Seq or quantity pick (tests
+   `test_from_dtl_key_zero_with_two_candidate_so_lines_warns`, `tests/test_do_history_links.py`).
+   The 13 Oct crew step that narrowed several candidates by the DO line's warehouse is removed
+   (follow-up PR): the warehouse does not prove the line (section 0b).
 
 ## 4. C2: assumed delivery, inside the ingest (owner answer 13 Oct)
 
@@ -294,9 +294,8 @@ Without the flag nothing changes.
 ## 8. Asks
 
 Both earlier asks are answered (owner, 14 Oct, section 0b): no line-key source, and Q3 (a).
-Open with crew (14 Oct): whether location narrowing (C1 step 3, and #1623's Cancel SO groups)
-counts as a guessed line; whether the SO screen gains a DO history section (its own lane, mock
-first); whether sales achievement counts group-linked DO qty by DO date.
+Answered 14 Oct (section 0b): no warehouse narrowing; no SO-screen DO history in this lane (lane
+SO-DELIVERIES-VIEW); sales achievement unchanged.
 
 ## 9. Build slices
 
@@ -309,6 +308,8 @@ first); whether sales achievement counts group-linked DO qty by DO date.
 4. **Built**: C3, the optional `backfill` envelope flag. Its tests are in `tests/test_do_history_backfill_flag.py`, and
    section 13.2 of `PLAN-autocount-cross-repo-contract.md` is updated for the SS lane. The flag is additive and
    optional, so the contract version string stays as is (avoids a clash with #1623's 2.8).
-5. The #1623 gate (Q4 a), after #1623 merges.
+5. The #1623 gate (Q4 a): its own follow-up lane, before the SS backfill runs (section 0b).
+6. **Built (follow-up PR)**: group links, no warehouse narrowing (owner 14 Oct); tests in
+   `tests/test_do_history_links.py`.
 
 Not built: SO history, and a UI badge for assumed rows (trigger: the owner asks to tell them apart).
