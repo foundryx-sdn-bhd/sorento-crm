@@ -27,12 +27,24 @@
 #     for the whole deploy. The weekly restore test (HA-BACKUP-CHECK) waits on the same file,
 #     so the two never overlap.
 # Tunables may be set on the box in .deploy.env next to docker-compose.yml (sourced below).
+# `blue_green_deploy.sh --preflight` checks all of it and changes nothing (runbook step 3).
 
 set -euo pipefail
 
+# `--preflight`: run every check a release depends on, print PASS/FAIL per item and exit
+# 0/1. Changes nothing: no lock file, no snapshot dir, no pull, no container touched.
+MODE=deploy
+case "${1:-}" in
+  "") ;;
+  --preflight) MODE=preflight ;;
+  *) echo "usage: $0 [--preflight]"; exit 2 ;;
+esac
+
 cd "$(dirname "$0")/.."   # repo root containing docker-compose.yml
-: "${IMAGE_TAG:?must be set to the git SHA pushed by CI}"
-export IMAGE_TAG
+if [ "$MODE" = deploy ]; then
+  : "${IMAGE_TAG:?must be set to the git SHA pushed by CI}"
+  export IMAGE_TAG
+fi
 
 # Owner-tunable knobs live on the box, never in the workflow: see the runbook. Read before
 # the lock so DEPLOY_LOCK_PATH / DEPLOY_LOCK_WAIT_SECONDS can be set there too.
@@ -41,22 +53,201 @@ if [ -f .deploy.env ]; then
   . ./.deploy.env
 fi
 
+# DEPLOY_LOCK_PATH and its default are shared with HA-BACKUP-CHECK's restore test, which
+# waits on the same file; the runbook gives the /var/lib/sorento-deploy fallback for a box
+# where /opt/sorento-crm2 is not root-owned.
+DEPLOY_LOCK_PATH="${DEPLOY_LOCK_PATH:-/opt/sorento-crm2/.deploy.lock}"
+# 600s keeps the worst case inside the SSH step's 100m: 60m worker stop grace + this +
+# pull, dump, health wait, drain and checks.
+DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-600}"
+UPSTREAMS_FILE="/etc/nginx/conf.d/sorento_upstreams.conf"
+DRAIN_SECONDS="${DRAIN_SECONDS:-30}"
+HEALTH_WAIT_TICKS="${HEALTH_WAIT_TICKS:-120}"   # 120 * 2s = 4 min max
+TICK_SECONDS=2
+# A new colour (backend + frontend + mcp) measured ~3.8 GB with gunicorn preload; the
+# default leaves ~0.7 GB headroom on top (PLAN-deploy-memory-and-ci-speed.md).
+DEPLOY_MIN_AVAILABLE_MB="${DEPLOY_MIN_AVAILABLE_MB:-4500}"
+MEMINFO_FILE="${MEMINFO_FILE:-/proc/meminfo}"
+DB_SERVICE="${DB_SERVICE:-db}"
+# The database the APP uses. Empty: parsed from the active backend's DATABASE_URL.
+DEPLOY_DB_NAME="${DEPLOY_DB_NAME:-}"
+SNAPSHOT_DIR="${SNAPSHOT_DIR:-backups/pre-migrate}"
+SNAPSHOT_KEEP_MINUTES="${SNAPSHOT_KEEP_MINUTES:-2880}"   # 48 h
+# Free space the dump may not eat into: Postgres PANICs when its own disk fills (lesson 95).
+SNAPSHOT_MIN_FREE_MB="${SNAPSHOT_MIN_FREE_MB:-10240}"
+NUMERIC_KNOBS="DEPLOY_LOCK_WAIT_SECONDS DEPLOY_MIN_AVAILABLE_MB SNAPSHOT_KEEP_MINUTES SNAPSHOT_MIN_FREE_MB"
+
+ACTIVE=$(cat .active_color 2>/dev/null || echo blue)
+if [ "$ACTIVE" = "blue" ]; then
+  NEW=green; OLD=blue
+  NEW_BE_PORT=8010; NEW_FE_PORT=3010; NEW_MCP_PORT=8776
+else
+  NEW=blue;  OLD=green
+  NEW_BE_PORT=8000; NEW_FE_PORT=3000; NEW_MCP_PORT=8766
+fi
+
+# --- helpers --------------------------------------------------------------------
+
 # A non-number would make `[ "$x" -lt "$y" ]` an error, which an `if` reads as false: the
 # guard would silently pass. Fail closed instead.
+is_number() {
+  case "${!1}" in ''|*[!0-9]*) return 1;; esac
+}
 require_number() {
-  case "${!1}" in
-    ''|*[!0-9]*) echo "ERROR: $1='${!1}' must be a whole number (check .deploy.env)"; exit 1;;
-  esac
+  is_number "$1" || { echo "ERROR: $1='${!1}' must be a whole number (check .deploy.env)"; exit 1; }
 }
 
-# Held from here to exit, before anything is changed. DEPLOY_LOCK_PATH and its default are
-# shared with HA-BACKUP-CHECK's restore test, which waits on the same file; the runbook gives
-# the /var/lib/sorento-deploy fallback for a box where /opt/sorento-crm2 is not root-owned.
-# Released by the trap as well as by exit, because a child that inherited fd 9 would
-# otherwise keep it held.
-DEPLOY_LOCK_PATH="${DEPLOY_LOCK_PATH:-/opt/sorento-crm2/.deploy.lock}"
-DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1200}"   # a restore test runs ~minutes
-require_number DEPLOY_LOCK_WAIT_SECONDS
+# MemAvailable in MB (the kernel's own estimate of what can be allocated without swapping).
+mem_available_mb() {
+  awk '/^MemAvailable:/ { printf "%d", $2 / 1024; found=1 } END { if (!found) exit 1 }' "$MEMINFO_FILE"
+}
+
+# Room a new dump needs: twice the newest one, and never below SNAPSHOT_MIN_FREE_MB.
+snapshot_need_mb() {
+  local need=$SNAPSHOT_MIN_FREE_MB newest newest_mb
+  newest=$(ls -t "$SNAPSHOT_DIR"/pre-migrate-*.dump 2>/dev/null | head -1 || true)
+  if [ -n "$newest" ]; then
+    newest_mb=$(( ($(stat -c %s "$newest") + 1048575) / 1048576 ))
+    if [ $((newest_mb * 2)) -gt "$need" ]; then need=$((newest_mb * 2)); fi
+  fi
+  echo "$need"
+}
+
+# Free MB on the filesystem that holds (or will hold) SNAPSHOT_DIR.
+snapshot_free_mb() {
+  local d=$SNAPSHOT_DIR
+  while [ ! -d "$d" ]; do d=$(dirname "$d"); done
+  df -Pm "$d" | awk 'NR==2 { print $4 }'
+}
+
+# Sets DB_NAME (and DB_NAME_SOURCE) to the database the app uses, or returns 1. The URL
+# carries the password: it is parsed here and never printed.
+resolve_db_name() {
+  local name="" url cid
+  if [ -n "$DEPLOY_DB_NAME" ]; then
+    name=$DEPLOY_DB_NAME; DB_NAME_SOURCE="DEPLOY_DB_NAME"
+  else
+    cid=$(docker compose ps -q "backend_${ACTIVE}" 2>/dev/null || true)
+    if [ -n "$cid" ]; then
+      url=$(docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$cid" 2>/dev/null \
+        | sed -n 's/^DATABASE_URL=//p' | head -1 || true)
+      if [ -n "$url" ]; then
+        name=${url##*/}; name=${name%%\?*}
+      fi
+    fi
+    DB_NAME_SOURCE="DATABASE_URL of backend_${ACTIVE}"
+  fi
+  case "$name" in ''|*[!A-Za-z0-9_-]*) return 1;; esac
+  DB_NAME=$name
+}
+
+# Rows in public.alembic_version of the app's database (an empty answer: not reachable).
+alembic_rows() {
+  docker compose exec -T -e DUMP_DB="$DB_NAME" "$DB_SERVICE" \
+    sh -c 'psql -U "$POSTGRES_USER" -d "$DUMP_DB" -Atc "select count(*) from public.alembic_version"' 2>/dev/null || true
+}
+
+# --- preflight ------------------------------------------------------------------
+
+preflight() {
+  local fails=0 knob avail need free mode owner lockdir rows
+  pf() {  # pf PASS|FAIL|WARN <item> <detail>
+    printf '%-4s %-16s %s\n' "$1" "$2" "$3"
+    if [ "$1" = FAIL ]; then fails=$((fails + 1)); fi
+  }
+  echo "==> Preflight (changes nothing)"
+  for knob in $NUMERIC_KNOBS; do
+    if is_number "$knob"; then pf PASS "$knob" "${!knob}"; else pf FAIL "$knob" "'${!knob}' is not a whole number"; fi
+  done
+
+  if [ -e "$DEPLOY_LOCK_PATH" ]; then
+    if [ ! -r "$DEPLOY_LOCK_PATH" ]; then
+      pf FAIL lock "${DEPLOY_LOCK_PATH} exists but this user cannot open it"
+    elif ( exec 8<"$DEPLOY_LOCK_PATH"; flock -n 8 ); then
+      pf PASS lock "${DEPLOY_LOCK_PATH} free"
+    else
+      pf WARN lock "${DEPLOY_LOCK_PATH} is held right now (a deploy or the restore test is running)"
+    fi
+  else
+    lockdir=$(dirname "$DEPLOY_LOCK_PATH")
+    if [ -d "$lockdir" ] && [ -w "$lockdir" ]; then
+      pf PASS lock "${DEPLOY_LOCK_PATH} will be created on the first deploy"
+    else
+      pf FAIL lock "${lockdir} missing or not writable, so ${DEPLOY_LOCK_PATH} cannot be created (runbook step 0)"
+    fi
+  fi
+
+  if [ -n "$(docker compose ps -q "$DB_SERVICE" 2>/dev/null || true)" ]; then
+    pf PASS "db service" "${DB_SERVICE} running"
+  else
+    pf FAIL "db service" "no running container for service '${DB_SERVICE}' (set DB_SERVICE)"
+  fi
+
+  if resolve_db_name; then
+    pf PASS "db name" "${DB_NAME} (from ${DB_NAME_SOURCE})"
+    rows=$(alembic_rows)
+    if is_number rows && [ "$rows" -ge 1 ]; then
+      pf PASS alembic_version "${DB_NAME} has alembic_version (${rows} row(s))"
+    else
+      pf FAIL alembic_version "cannot read public.alembic_version in '${DB_NAME}' inside ${DB_SERVICE}: wrong DB name? set DEPLOY_DB_NAME"
+    fi
+  else
+    pf FAIL "db name" "not resolved from ${DB_NAME_SOURCE}; set DEPLOY_DB_NAME in .deploy.env"
+    pf FAIL alembic_version "skipped: no db name"
+  fi
+
+  if is_number DEPLOY_MIN_AVAILABLE_MB && avail=$(mem_available_mb); then
+    if [ "$avail" -ge "$DEPLOY_MIN_AVAILABLE_MB" ]; then
+      pf PASS memory "${avail} MB available, minimum ${DEPLOY_MIN_AVAILABLE_MB} MB"
+    else
+      pf FAIL memory "${avail} MB available, below DEPLOY_MIN_AVAILABLE_MB=${DEPLOY_MIN_AVAILABLE_MB}"
+    fi
+  else
+    pf FAIL memory "cannot compare MemAvailable from ${MEMINFO_FILE}"
+  fi
+
+  if is_number SNAPSHOT_MIN_FREE_MB; then
+    need=$(snapshot_need_mb); free=$(snapshot_free_mb)
+    if [ "${free:-0}" -ge "$need" ] 2>/dev/null; then
+      pf PASS disk "${free} MB free for snapshots, need ${need} MB"
+    else
+      pf FAIL disk "${free:-?} MB free for snapshots, need ${need} MB (10 GB floor or twice the newest dump)"
+    fi
+  else
+    pf FAIL disk "SNAPSHOT_MIN_FREE_MB is not a number"
+  fi
+
+  if [ -d "$SNAPSHOT_DIR" ]; then
+    mode=$(stat -c %a "$SNAPSHOT_DIR"); owner=$(stat -c %U "$SNAPSHOT_DIR")
+    if [ "$mode" = 700 ] && [ "$owner" = "$(id -un)" ]; then
+      pf PASS "snapshot dir" "${SNAPSHOT_DIR} mode 700, owner ${owner}"
+    else
+      pf FAIL "snapshot dir" "${SNAPSHOT_DIR} is mode ${mode} owner ${owner}; want 700 owned by $(id -un) (customer data)"
+    fi
+  else
+    lockdir=$(dirname "$SNAPSHOT_DIR")
+    while [ ! -d "$lockdir" ]; do lockdir=$(dirname "$lockdir"); done
+    if [ -w "$lockdir" ]; then
+      pf PASS "snapshot dir" "${SNAPSHOT_DIR} will be created with mode 700"
+    else
+      pf FAIL "snapshot dir" "${lockdir} is not writable, ${SNAPSHOT_DIR} cannot be created"
+    fi
+  fi
+
+  if [ "$fails" -eq 0 ]; then
+    echo "==> Preflight PASSED (nothing was changed)"; return 0
+  fi
+  echo "==> Preflight FAILED: ${fails} item(s), see FAIL lines (nothing was changed)"; return 1
+}
+
+if [ "$MODE" = preflight ]; then
+  if preflight; then exit 0; else exit 1; fi
+fi
+
+for knob in $NUMERIC_KNOBS; do require_number "$knob"; done
+
+# Held from here to exit, before anything is changed. Released by the trap as well as by
+# exit, because a child that inherited fd 9 would otherwise keep it held.
 if [ -e "$DEPLOY_LOCK_PATH" ] && [ ! -w "$DEPLOY_LOCK_PATH" ]; then
   exec 9<"$DEPLOY_LOCK_PATH"    # created by another user: flock works on a read-only fd
 elif ! exec 9>>"$DEPLOY_LOCK_PATH"; then
@@ -70,30 +261,9 @@ if ! flock -w "$DEPLOY_LOCK_WAIT_SECONDS" 9; then
 fi
 trap 'flock -u 9' EXIT
 
-UPSTREAMS_FILE="/etc/nginx/conf.d/sorento_upstreams.conf"
-DRAIN_SECONDS="${DRAIN_SECONDS:-30}"
-HEALTH_WAIT_TICKS="${HEALTH_WAIT_TICKS:-120}"   # 120 * 2s = 4 min max
-TICK_SECONDS=2
-# A new colour (backend + frontend + mcp) measured ~3.8 GB with gunicorn preload; the
-# default leaves ~0.7 GB headroom on top (PLAN-deploy-memory-and-ci-speed.md).
-DEPLOY_MIN_AVAILABLE_MB="${DEPLOY_MIN_AVAILABLE_MB:-4500}"
-MEMINFO_FILE="${MEMINFO_FILE:-/proc/meminfo}"
-DB_SERVICE="${DB_SERVICE:-db}"
-SNAPSHOT_DIR="${SNAPSHOT_DIR:-backups/pre-migrate}"
-SNAPSHOT_KEEP_MINUTES="${SNAPSHOT_KEEP_MINUTES:-2880}"   # 48 h
-# Free space the dump may not eat into: Postgres PANICs when its own disk fills (lesson 95).
-SNAPSHOT_MIN_FREE_MB="${SNAPSHOT_MIN_FREE_MB:-10240}"
-require_number DEPLOY_MIN_AVAILABLE_MB
-require_number SNAPSHOT_KEEP_MINUTES
-require_number SNAPSHOT_MIN_FREE_MB
 DEPLOY_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # --- guards -------------------------------------------------------------------
-
-# MemAvailable in MB (the kernel's own estimate of what can be allocated without swapping).
-mem_available_mb() {
-  awk '/^MemAvailable:/ { printf "%d", $2 / 1024; found=1 } END { if (!found) exit 1 }' "$MEMINFO_FILE"
-}
 
 check_memory() {
   local avail
@@ -148,11 +318,12 @@ postgres_survived() {
   return 0
 }
 
-# Custom-format pg_dump of the whole database, taken inside the db container and written
-# atomically. Completeness rests on pg_dump's exit status; the PGDMP magic catches output
-# that is not a custom-format dump at all. Owner-only files (customer data).
+# Custom-format pg_dump of the APP's database, taken inside the db container and written
+# atomically. pg_dump's exit status decides completeness; the PGDMP magic catches output
+# that is not an archive; the TOC must list alembic_version's data, so a dump of the wrong
+# database (or one without the schema version) never passes. Owner-only files.
 take_snapshot() {
-  local ts file newest newest_mb need_mb free_mb
+  local ts file need_mb free_mb toc
   ts=$(date -u +%Y%m%dT%H%M%SZ)
   file="${SNAPSHOT_DIR}/pre-migrate-${ts}-${IMAGE_TAG}.dump"
   mkdir -p "$SNAPSHOT_DIR"
@@ -160,42 +331,44 @@ take_snapshot() {
   find "$SNAPSHOT_DIR" -maxdepth 1 \( -name 'pre-migrate-*.dump' -o -name 'pre-migrate-*.dump.partial' \) \
     -mmin "+${SNAPSHOT_KEEP_MINUTES}" -delete || true
 
-  # Room for this dump: twice the newest one, and never below SNAPSHOT_MIN_FREE_MB.
-  need_mb=$SNAPSHOT_MIN_FREE_MB
-  newest=$(ls -t "$SNAPSHOT_DIR"/pre-migrate-*.dump 2>/dev/null | head -1 || true)
-  if [ -n "$newest" ]; then
-    newest_mb=$(( ($(stat -c %s "$newest") + 1048575) / 1048576 ))
-    if [ $((newest_mb * 2)) -gt "$need_mb" ]; then need_mb=$((newest_mb * 2)); fi
-  fi
-  free_mb=$(df -Pm "$SNAPSHOT_DIR" | awk 'NR==2 { print $4 }')
+  need_mb=$(snapshot_need_mb)
+  free_mb=$(snapshot_free_mb)
   if ! [ "${free_mb:-0}" -ge "$need_mb" ] 2>/dev/null; then
     echo "ERROR: snapshot disk check: ${free_mb:-?} MB free in ${SNAPSHOT_DIR}, need ${need_mb} MB; not starting ${NEW} (${ACTIVE} keeps serving)"
     exit 1
   fi
 
-  if ! ( umask 077; docker compose exec -T "$DB_SERVICE" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "${file}.partial" ) \
+  if ! ( umask 077; docker compose exec -T -e DUMP_DB="$DB_NAME" "$DB_SERVICE" \
+           sh -c 'pg_dump -U "$POSTGRES_USER" -d "$DUMP_DB" -Fc' > "${file}.partial" ) \
      || [ "$(head -c 5 "${file}.partial")" != "PGDMP" ]; then
     rm -f "${file}.partial"
     echo "ERROR: pre-migration snapshot failed; not starting ${NEW} (no migration has run, ${ACTIVE} keeps serving)"
     exit 1
   fi
+  # pg_restore -l reads only the header and TOC; `cat` drains the rest so docker never
+  # writes into a closed pipe and reports that as a failure.
+  if ! toc=$(docker compose exec -T "$DB_SERVICE" \
+               sh -c 'out=$(pg_restore -l); rc=$?; cat > /dev/null; printf "%s\n" "$out"; exit $rc' < "${file}.partial") \
+     || ! printf '%s\n' "$toc" | grep -Eq '^[0-9]+; [0-9]+ [0-9]+ TABLE DATA public alembic_version( |$)'; then
+    rm -f "${file}.partial"
+    echo "ERROR: pre-migration snapshot of '${DB_NAME}' does not list TABLE DATA public alembic_version; not starting ${NEW} (${ACTIVE} keeps serving)"
+    exit 1
+  fi
   mv "${file}.partial" "$file"
-  echo "    snapshot: ${file} ($(du -h "$file" | cut -f1))"
+  echo "    snapshot: ${file} of ${DB_NAME} ($(du -h "$file" | cut -f1))"
 }
-
-ACTIVE=$(cat .active_color 2>/dev/null || echo blue)
-if [ "$ACTIVE" = "blue" ]; then
-  NEW=green; OLD=blue
-  NEW_BE_PORT=8010; NEW_FE_PORT=3010; NEW_MCP_PORT=8776
-else
-  NEW=blue;  OLD=green
-  NEW_BE_PORT=8000; NEW_FE_PORT=3000; NEW_MCP_PORT=8766
-fi
 
 echo "==> Active=${ACTIVE} New=${NEW} IMAGE_TAG=${IMAGE_TAG}"
 
 echo "==> Recording Postgres state"
 record_postgres_baseline
+
+echo "==> Resolving the app's database"
+if ! resolve_db_name; then
+  echo "ERROR: cannot tell which database the app uses (${DB_NAME_SOURCE}); set DEPLOY_DB_NAME in .deploy.env. Nothing was changed."
+  exit 1
+fi
+echo "    database: ${DB_NAME} (from ${DB_NAME_SOURCE})"
 
 # 1. Pull new images (SHA-tagged) + worker + worker_fast (both use backend image)
 echo "==> Pulling images"
