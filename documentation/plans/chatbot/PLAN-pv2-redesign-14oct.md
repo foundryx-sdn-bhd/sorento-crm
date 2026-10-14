@@ -1,7 +1,7 @@
 # PLAN: PV2 redesign - typed refs, answer register, subject stack (14 Oct 2026)
 
-Status: Build, R-GAPS-b merge-ready (R1 merged 941fb867a #1670; R2 merged 0690ef90a #1673; R-GAPS-a merged 8ae511217
-#1676; R-GAPS-b = PR #1685, branch `crew/pv2-redesign-rgaps-b`); R3a next after crew merges R-GAPS-b.
+Status: Build, R4a (owner GO 15 Oct 00:30; R3 postponed, branch crew/pv2-redesign-r3a kept at 6dcef793d). R1, R2,
+R-GAPS-a, R-GAPS-b merged into crew/pv2 (last 082cc73be); R4a on branch `crew/pv2-redesign-r4a`.
 Round order: R1, R2, R-GAPS (crew 14 Oct), R3, R4, R5.
 Earlier: round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
 branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). Owner 14 Oct 18:35: NO CAP on LLM spend for
@@ -235,6 +235,25 @@ plus the marker ref; linked covers replace the anchor; no link -> product_find's
 fetch; an anchor that is itself a seat cover answers as typed; a spec in the ask is no trigger. Built on handwritten
 parses (no recorded PV2 fit parse exists); verified live in R5; if the parser does not emit the marker, the trigger
 moves to R4's relation field. R4: reverse direction (WC for a cover), cross-turn relation carry, MEMORY.
+
+## R4a (owner GO 15 Oct 00:30; R3 postponed): the parser sees what the bot printed
+1. Why: crew root-cause C10 (a short follow-up on the held subject read as unclear, 11 conversations) and C1 (pointing
+   into the printed answer; R1 records the rows but nothing reads them, 7 conversations).
+2. MEMORY (pv2/history.py render_memory), code only: `SHOWN ROWS` replaces `LAST ANSWER ROWS`. The latest reply's
+   register entries numbered R1..Rn as `R<n> <kind> <printed label>`, children indented under their parent (an
+   order's product lines), doc numbers as printed, keys and uuids never rendered; PV2's own pick/report rows when the
+   reply printed no register rows. HELD lines show the held refs' printed codes. One `LAST REPLY:` line says what the
+   bot did (answered <domain> / asked <question kind> / refused <what> / not found <phrase>), from state, no user text.
+3. Parser output: no schema change. A reference to shown rows copies their printed code / doc number into entity
+   phrases (the resolver resolves it exactly); "both", "no 1 & no 8", "all" give one entity per row.
+4. Prompt: one generic rule: a message that points at HELD or SHOWN ROWS (this, that one, a number, both, all, a
+   description matching rows) names those rows; a short message naming nothing new continues HELD; never unclear or a
+   which-question when the reference picks rows. No word lists, no particle lines.
+5. Not in R4a: apply/engine changes (incl. the flag branch that drops a structured ask), schema refs[] (R4b), R3.
+6. Tests (no LLM, fresh paraphrases): MEMORY render pins (numbering, children, codes, no uuid, cap, fallback);
+   handwritten parses that copy shown codes reach the Lookup through apply; replay sets stay green; the MEMORY
+   byte-identity pins (R1-10, R2-4 and later) flip on purpose. Live effect needs the prompt rule published as a new
+   v2 version: crew runs train / held-out / fresh x3.
 
 ## Work split (R1)
 - Tester: red tests per UAC R1 (pure builder tests from recorded envelopes, engine-hook test, so_status/MCP/report row
