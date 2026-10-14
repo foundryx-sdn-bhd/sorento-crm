@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bulk reserve (mockup v1)</title>
+<title>Bulk reserve (mockup v2)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set the other lane mockups use */
 :root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;--success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--info:#1d4ed8;--info-soft:#eff6ff;--info-line:#bfdbfe;--page:#f7f7f8}
@@ -185,16 +185,16 @@ tr.part td{background:#fffbeb}
 <body>
 <div class="doc">
 
-<h1>Bulk reserve on the OI Lines tab (OI-BULK-RESERVE, mockup v1)</h1>
-<p class="intro">Owner 15 Oct: reserve many lines in one go, like Fulfilment Planning's bulk select then Decide, and only then press Reserve to confirm. Real dev OI-2609-0731 (SO419603, APEX CONNECTION SDN BHD (PROJECT), raised by Eling): scenario where Joey asked CS to reserve 12 lines due 01/12/2026. Eling ticks them, stages them in one lightbox, then confirms with today's Reserve (N). Dashed amber outline = new element.</p>
-<nav class="nav"><a href="#s1">1 Tick lines, Reserve menu</a><a href="#s2">2 Reserve 12 lines lightbox</a><a href="#s3">3 Staged, Reserve (12)</a><a href="#s4">4 Confirm (unchanged from #1684)</a><a href="#s5">5 Phone 375</a><a href="#map">Component map</a></nav>
+<h1>Bulk reserve on the OI Lines tab (OI-BULK-RESERVE, mockup v2)</h1>
+<p class="intro">v2 applies the owner's note on v1 ("just need one button, put it on the right"): one "Reserve (12)" button at the right of the selection strip, no menu; the panel opens prefilled, so a full reserve is just Stage. Owner 15 Oct: reserve many lines in one go, like Fulfilment Planning's bulk select then Decide, and only then press Reserve to confirm. Real dev OI-2609-0731 (SO419603, APEX CONNECTION SDN BHD (PROJECT), raised by Eling): scenario where Joey asked CS to reserve 12 lines due 01/12/2026. Eling ticks them, stages them in one lightbox, then confirms with today's Reserve (N). Dashed amber outline = new element.</p>
+<nav class="nav"><a href="#s1">1 Tick lines, Reserve (12)</a><a href="#s2">2 Reserve 12 lines lightbox</a><a href="#s3">3 Staged, Reserve (12)</a><a href="#s4">4 Confirm (unchanged from #1684)</a><a href="#s5">5 Phone 375</a><a href="#map">Component map</a></nav>
 
 <section id="s1">
-<h2><span class="nb">1</span>Tick lines, then the selection strip's "Reserve" menu (FP Decide pattern)</h2>
-<p class="why">The tick boxes and the "12 selected / Clear" strip exist today. New: a "Reserve" button in that strip with two choices. "Reserve as requested (12)" stages every ticked line at its requested qty and location in one click; "Reserve..." opens the lightbox for partial lines.</p>
+<h2><span class="nb">1</span>Tick lines, then ONE button "Reserve (12)" at the right end of the selection strip (owner v1 note)</h2>
+<p class="why">The tick boxes and the "12 selected / Clear" strip exist today. New: one button, "Reserve (12)", on the right of that strip. It opens the "Reserve 12 lines" panel already filled with each line's requested qty and location, so a full reserve is just "Stage 12 lines". No menu.</p>
 <div class="row"><div class="desk"><div class="screen stage" style="min-height:760px"><div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div>Procurement</div><div class="on">Order Inquiries</div><div>Purchase Orders</div><div>Stock</div></div><div class="main" style="position:relative">
 <div class="pagehead"><div><div class="t">OI-2609-0731 <span class="pill warning">Outstanding</span></div><div class="s">SO419603 &nbsp; APEX CONNECTION SDN BHD (PROJECT)</div></div><div class="tools"><span class="btn pri" aria-disabled="true">Reserve</span><span class="btn icon">&#8942;</span></div></div><div class="seg outline" style="margin-bottom:12px"><span class="on">Lines</span><span>General</span><span>Related PO</span><span>Related SPO</span></div>
-<div class="card"><div class="strip new">12 selected <span class="btn">&#9662; Reserve</span><span class="btn ghost">Clear</span></div>
+<div class="card"><div class="strip">12 selected <span class="btn ghost">Clear</span><span style="margin-left:auto" class="btn pri new">Reserve (12)</span></div>
 <div class="scroll"><table class="dg" style="min-width:960px"><colgroup><col style="width:40px"><col style="width:44px"><col style="width:190px"><col style="width:110px"><col style="width:90px"><col style="width:90px"><col style="width:80px"><col style="width:210px"><col style="width:100px"></colgroup><thead><tr><th></th><th>No.</th><th>Product</th><th>Delivery date</th><th>Location</th><th>Instruction</th><th class="r">Qty</th><th>State</th><th></th></tr></thead><tbody>
 <tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">1</td><td><b>B2155-NL-BLUE</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td class="mut">Reserve&nbsp;&nbsp;Edit</td></tr>
 <tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">2</td><td><b>B2155-NL-BLUE</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td class="mut">Reserve&nbsp;&nbsp;Edit</td></tr>
@@ -209,13 +209,12 @@ tr.part td{background:#fffbeb}
 <tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">11</td><td><b>CGB9032B-NEW</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td class="mut">Reserve&nbsp;&nbsp;Edit</td></tr>
 <tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">12</td><td><b>CKS1050</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td class="mut">Reserve&nbsp;&nbsp;Edit</td></tr>
 </tbody></table></div><div class="ft"><span>12 of 51 lines</span><span>Rows per page 25</span></div></div>
-<div class="menu new" style="left:150px;top:206px"><div class="hl">Reserve as requested (12)</div><div>Reserve...</div></div>
 </div></div></div></div>
-<p class="note">The menu counts only ticked lines that have an open request; an already answered line stays on the single-line "Amend reserve". Header "Reserve" stays greyed until something is staged, as today.</p>
+<p class="note">The count is the ticked lines that have an open request; an already answered line stays on the single-line "Amend reserve" (owner Q2 (a)). With none of those ticked the button is greyed. The header "Reserve" stays greyed until something is staged, as today.</p>
 </section>
 
 <section id="s2">
-<h2><span class="nb">2</span>"Reserve..." opens one lightbox for all ticked lines</h2>
+<h2><span class="nb">2</span>"Reserve (12)" opens the panel prefilled: a full reserve is just Stage</h2>
 <p class="why">One row per line. Reserve defaults to the requested qty, Location to the request's location. A Reason is needed only where Reserve is below Requested (rows tinted); the box at the top fills every empty partial reason in one go, each row stays editable. "Stage 12 lines" fills the staged chips exactly like 12 single stages; nothing is saved yet.</p>
 <div class="row"><div class="desk"><div class="screen stage" style="min-height:900px"><div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div>Procurement</div><div class="on">Order Inquiries</div><div>Purchase Orders</div><div>Stock</div></div><div class="main"><div style="height:500px;background:#fafafa;border-radius:12px"></div></div>
 <div class="overlay" style="padding-top:28px"><div class="dlg new" style="max-width:860px">
@@ -246,7 +245,7 @@ tr.part td{background:#fffbeb}
 
 <section id="s3">
 <h2><span class="nb">3</span>Staged: chips on each line, header "Reserve (12)"</h2>
-<p class="why">Exactly what 12 single stages give today. Single-line Edit reserve still works on any staged line; a second bulk stage replaces the staged entries it covers.</p>
+<p class="why">Exactly what 12 single stages give today. Staging clears the ticks, so the strip (and its button) goes away and only the header "Reserve (12)" is left to confirm. Single-line Edit reserve still works on any staged line; a second bulk stage replaces the staged entries it covers.</p>
 <div class="row"><div class="desk"><div class="screen stage" style="min-height:700px"><div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div>Procurement</div><div class="on">Order Inquiries</div><div>Purchase Orders</div><div>Stock</div></div><div class="main">
 <div class="pagehead"><div><div class="t">OI-2609-0731 <span class="pill warning">Outstanding</span></div><div class="s">SO419603 &nbsp; APEX CONNECTION SDN BHD (PROJECT)</div></div><div class="tools"><span class="btn pri">Reserve (12)</span><span class="btn icon">&#8942;</span></div></div><div class="seg outline" style="margin-bottom:12px"><span class="on">Lines</span><span>General</span><span>Related PO</span><span>Related SPO</span></div>
 <div class="card"><div class="scroll"><table class="dg" style="min-width:960px"><colgroup><col style="width:40px"><col style="width:44px"><col style="width:190px"><col style="width:110px"><col style="width:90px"><col style="width:90px"><col style="width:80px"><col style="width:210px"><col style="width:100px"></colgroup><thead><tr><th></th><th>No.</th><th>Product</th><th>Delivery date</th><th>Location</th><th>Instruction</th><th class="r">Qty</th><th>State</th><th></th></tr></thead><tbody>
@@ -324,7 +323,7 @@ tr.part td{background:#fffbeb}
 <h2>Element to existing component map</h2>
 <table class="map"><thead><tr><th>Element</th><th>Reuses</th><th>Repo path</th></tr></thead><tbody>
 <tr><td>Tick boxes, "12 selected / Clear" strip</td><td>Existing line selection and the toolbar selection strip</td><td><code>app/(protected)/project-sales/order-inquiries/[id]/components/OrderInquiryLinesTab.tsx</code> (enableRowSelection ~243), <code>components/ui/data-grid-list-toolbar.tsx</code> (selection strip ~456-475, <code>bulkActionsSlot</code>)</td></tr>
-<tr><td>"Reserve" button + menu <span class="tag">new</span></td><td>Fulfilment Planning's Decide button + DropdownMenu ("As suggested" quick path, then the lightbox choices)</td><td><code>app/(protected)/project-sales/fulfilment-planning/components/BoardDecideControl.tsx</code></td></tr>
+<tr><td>"Reserve (12)" button, right end of the strip <span class="tag">new</span></td><td>The toolbar's selection-strip slot (a plain Button, no menu), same place FP's Decide button opens its lightbox from</td><td><code>components/ui/data-grid-list-toolbar.tsx</code> (<code>bulkActionsSlot</code>); pattern <code>app/(protected)/project-sales/fulfilment-planning/components/BoardDecideControl.tsx</code></td></tr>
 <tr><td>"Reserve 12 lines" lightbox <span class="tag">new</span></td><td>FP's "Decide N lines" Dialog shell and "Save N lines" footer; the per-line DataGrid with inputs from the request lightbox</td><td><code>BoardDecideControl.tsx</code>; <code>[id]/components/ReserveRequestDialog.tsx</code> (DataGrid + Input + SearchableSelect cells)</td></tr>
 <tr><td>Reason rule (required only when partial)</td><td>Single-line Edit reserve's rule</td><td><code>[id]/components/ReserveLineForm.tsx</code> (canStage ~125-126)</td></tr>
 <tr><td>Staged chips, header Reserve (N)</td><td>Existing staged map and commit</td><td><code>[id]/components/orderInquiryHeaderLinesColumns.tsx</code> (StagedReserveEntry ~84), <code>[id]/components/OrderInquiryDetail.tsx</code> (commitStaged)</td></tr>

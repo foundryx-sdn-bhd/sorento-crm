@@ -64,3 +64,10 @@ the shared reason box, Stage 12 lines, then Reserve (12), ticks Park notice firs
 - Q3 Reason for partial lines: (a) per-line Reason column plus one shared "Reason for partial
   lines" box that fills the empty ones; (b) per-line only. Rec (a): typing "Partial stock" 20
   times is the click-by-click pain this removes.
+
+## Owner note on mock v1 (15 Oct, via crew)
+
+"just need one button, put it on the right please": Q1 = one button "Reserve (N)" at the right end
+of the selection strip, no menu. It opens the "Reserve N lines" panel prefilled with each line's
+requested qty and location, so a full reserve is just "Stage N lines". Staging clears the ticks.
+Owner confirmed Q2 (a) (bulk covers only lines with an open request; amend stays single-line) and Q3 (a) (per-line Reason plus one shared box for partial lines).
