@@ -149,6 +149,7 @@ conversations:
     expect:
       kind: answer
       about: "a short acknowledgement"
+      judge: "The staff contact's stored first name is the honorific 'Mr'; addressing the contact as 'Mr' is its own stored name, not a broken placeholder."
 
 - id: mixed-i02
   source: improvised

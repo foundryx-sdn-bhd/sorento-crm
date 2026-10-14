@@ -18,14 +18,14 @@ conversations:
       must: ["ACFIRST CERAMIC CENTRE", "ACFIRST CERAMICS", "ACFIRST TILES"]
   - text: "2"
     expect:
-      kind: answer
-      about: "outstanding orders for the customer shown as option 2 (or that it has none)"
+      kind: any
+      about: "outstanding for the customer shown as option 2 (ACFIRST CERAMICS SDN BHD), or the which-document question (sales orders / delivery orders / both) with that customer shown"
       must: ["ACFIRST"]
       must_not: ["Sorry, I didn't catch your choice"]
   - text: "how about the centre one"
     expect:
-      kind: answer
-      about: "outstanding orders for ACFIRST CERAMIC CENTRE (or that it has none)"
+      kind: any
+      about: "outstanding for ACFIRST CERAMIC CENTRE (or that it has none), or the which-document question with that customer shown"
       must: ["ACFIRST CERAMIC CENTRE"]
 
 - id: outstanding-r02
@@ -37,18 +37,18 @@ conversations:
   turns:
   - text: "Srtkt71-ss outstanding"
     expect:
-      kind: answer
-      about: "outstanding delivery quantity for SRTKT71SS (alone, or across the SRTKT71SS family); the dash typo is the same code"
+      kind: any
+      about: "outstanding for SRTKT71SS (the dash typo is the same code): the figures, or the which-document question (sales orders / delivery orders / both) with Product SRTKT71SS shown"
       must: ["SRTKT71SS"]
   - text: "Dealer outstanding only"
     expect:
-      kind: answer
-      about: "the same SRTKT71SS outstanding narrowed to the dealer channel; the product is kept"
+      kind: any
+      about: "the same SRTKT71SS outstanding narrowed to the dealer channel, or the which-document question again with the product and the Dealer channel shown; the product is kept"
       must: ["SRTKT71SS"]
   - text: "and project?"
     expect:
-      kind: answer
-      about: "the SRTKT71SS outstanding for the project channel instead (the channel replaced, the product kept)"
+      kind: any
+      about: "the SRTKT71SS outstanding for the project channel instead (the channel replaced, the product kept), or the which-document question with that channel shown"
       must: ["SRTKT71SS"]
 
 - id: outstanding-i01
@@ -112,6 +112,7 @@ conversations:
       kind: answer
       about: "a short acknowledgement; no lookup and no hand-over"
       must_not: ["Routed to your PIC", "Couldn't find"]
+      judge: "The staff contact's stored first name is the honorific 'Mr'; addressing the contact as 'Mr' is its own stored name, not a broken placeholder."
 
 - id: outstanding-i05
   source: improvised

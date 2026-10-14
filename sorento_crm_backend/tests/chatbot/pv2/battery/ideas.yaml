@@ -1,6 +1,9 @@
 # PV2 battery: idea / suggestion capture (UAC-1). Ideation answers come from the capture service: the
 # reply is a saved idea (number / title), a similar-ideas pick, or one question for a missing field. The
 # expectations accept any of those and name the never-cases (a product lookup, a lost use case, a loop).
+# Idea capture needs an ACTIVE CRM user with the Ideas permission linked to the contact
+# (ideation_capture_service._access_user). On dev (14 Oct) only the dealer contact has one; the staff and
+# unlinked contacts correctly get "You need a CRM login with Ideas access ..." (ideas-i01 checks that gate).
 domain: ideas
 conversations:
 
@@ -8,18 +11,21 @@ conversations:
   source: improvised
   domain: ideas
   audience: staff
-  shapes: [reply_to_question, free_text_reply]
+  shapes: [permission, free_text_reply]
   turns:
   - text: "I have an idea: the price tag should show the promo price in red"
     expect:
-      kind: any
-      about: "captures the price-tag idea (saved with a reference, or similar existing ideas offered to pick, or one question for a missing detail); never a product or price lookup"
+      kind: refuse
+      about: "the staff contact has no linked CRM user with Ideas access, so idea capture answers the no-access line; never a product or price lookup"
+      must: ["You need a CRM login with Ideas access"]
       must_not: ["Couldn't find", "Stock"]
   - text: "it's a new one, not the same as those"
     expect:
-      kind: any
-      about: "if similar ideas were offered: saves it as a new idea; if it was already saved: a short confirmation; never re-asks the identical question"
+      kind: refuse
+      about: "still no CRM login: the same no-access line again is right; never a lookup and never a hand-over"
+      must: ["You need a CRM login with Ideas access"]
       must_not: ["Couldn't find", "Sorry, I didn't catch your choice"]
+      allow_repeat: true
 
 - id: ideas-i02
   source: improvised
@@ -43,7 +49,7 @@ conversations:
 - id: ideas-i03
   source: improvised
   domain: ideas
-  audience: staff
+  audience: dealer
   shapes: [language_mix, refine]
   turns:
   - text: "Cadangan: boleh tak sistem hantar reminder bila stok SRTWC286-SH sampai"
@@ -62,7 +68,7 @@ conversations:
 - id: ideas-i04
   source: improvised
   domain: ideas
-  audience: staff
+  audience: dealer
   shapes: [language_mix, free_text_reply]
   turns:
   - text: "我有个建议：订单状态可以显示司机和车牌"
@@ -82,7 +88,7 @@ conversations:
   source: real
   origin: "crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1625 IDEA-CAPTURE (problem message -> idea capture; use cases from message 1 survive the ask-back)"
   domain: ideas
-  audience: unlinked
+  audience: dealer
   shapes: [reply_to_question, yes_no]
   turns:
   - text: "problem: every time I check stock the list too long, hard to read on phone. maybe can show only the warehouse near me"

@@ -148,6 +148,7 @@ conversations:
       kind: answer
       about: "a short polite acknowledgement; no new lookup, no menu, no hand-over"
       must_not: ["Couldn't find", "Routed to your PIC"]
+      judge: "The staff contact's stored first name is the honorific 'Mr'; addressing the contact as 'Mr' is its own stored name, not a broken placeholder."
 
 - id: stock-r07
   source: real

@@ -285,6 +285,7 @@ conversations:
       kind: answer
       about: "a short greeting back; no lookup, no topic menu dump"
       must_not: ["Couldn't find"]
+      judge: "The staff contact's stored first name is the honorific 'Mr'; addressing the contact as 'Mr' is its own stored name, not a broken placeholder."
   - text: "SRTUB206-BI stock pls"
     expect:
       kind: answer

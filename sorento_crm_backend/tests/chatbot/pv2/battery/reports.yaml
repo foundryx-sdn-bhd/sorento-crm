@@ -40,9 +40,10 @@ conversations:
   turns:
   - text: "CBDR4003 stock"
     expect:
-      kind: answer
-      about: "stock for CBDR4003"
+      kind: any
+      about: "stock for CBDR4003; on 14 Oct dev CBDR4003 sits in category CB-ACC (is_searchable false), so chat search excludes it and a not-found / did-you-mean naming CBDR4003 is the right reply"
       must: ["CBDR4003"]
+      judge: "CBDR4003 is excluded from chat search on dev; near codes in a did-you-mean are resolver candidates, not invented data."
   - text: "Top sales Sorento and Mocha water closet this month"
     expect:
       kind: any
@@ -50,9 +51,10 @@ conversations:
       must_not: ["CBDR4003"]
   - text: "Sorento and mocha"
     expect:
-      kind: answer
-      about: "the brands pick (not a product): the water closet ranking this month for Sorento + Mocha; never CBDR4003 and never 'No sales for BK007A'"
+      kind: any
+      about: "the brands (not a product) for the held water closet ranking this month: the ranking, or, while the delivered / ordered / outstanding question is still open, that question again with Sorento + Mocha kept (a non-answer never closes the open question; basis is never defaulted, owner 4 Oct); never CBDR4003 and never 'No sales for BK007A'"
       must_not: ["CBDR4003", "No sales for BK007A"]
+      allow_repeat: true
 
 - id: reports-r03
   source: real

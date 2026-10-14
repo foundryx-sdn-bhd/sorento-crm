@@ -60,7 +60,7 @@ conversations:
   - text: "SRTWB999 stock then"
     expect:
       kind: answer
-      about: "stock / availability of SRTWB999; the closed offer is not re-asked"
+      about: "stock / availability of SRTWB999; the declined SRTXYZ999 offer is not re-asked (a new warehouse offer on SRTWB999's own zero-stock result is fine for this escalation-allowed contact)"
       must: ["SRTWB999"]
       must_not: ["Sorry, I didn't catch your choice"]
 

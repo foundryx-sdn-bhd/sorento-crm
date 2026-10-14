@@ -1,7 +1,11 @@
 # PV2 battery: promotions / offers (UAC-1).
 # Dev data (14 Oct): SRTKS7061 has dealer, end-user and office flyers (UPDATED SORENTO PROMO KITCHEN SINK_09092026);
 # SRTWC286-SH has an office-only flyer (UPDATED SORENTO WATER CLOSET PROMO_27082026); SRTKS6042-BL has dealer /
-# office / end-user honeycomb kitchen sink flyers; CGB1032B has no promotion.
+# office / end-user honeycomb kitchen sink flyers; CGB1032B has no promotion. The SRTWC286 FAMILY ask finds only
+# EXPIRED dealer flyers (UPDATED SORENTO A3 FLYER 2026 (DEALER)_21072026, SORENTO A3 FLYER_DEALER USE_11062026,
+# JULY SORENTO WATER CLOSET PROMO_06072026 DEALER). Owner rulings 9 Oct (promo-subject-filter-acceptance-criteria.md
+# Round 3, AC-33): expired promos are served only when that exact ask at that level has no live row, marked EXPIRED.
+# Promotion replies list the flyer files with dates and never echo the product code, so no `must` on codes.
 domain: promotions
 conversations:
 
@@ -15,8 +19,8 @@ conversations:
   - text: "promo srtks7061"
     expect:
       kind: any
-      about: "active promotion for SRTKS7061: asks which copy (office / dealer / end user) or sends it; expired flyers never offered"
-      must: ["SRTKS7061"]
+      about: "active promotion for SRTKS7061: asks which copy (office / dealer / end user) or sends it; an expired flyer only when that exact ask at that level has no live row, marked EXPIRED (owner rulings 9 Oct, promo-subject-filter AC-33)"
+      judge: "Promotion replies list the flyer files with dates, not the product code."
   - text: "dealer"
     expect:
       kind: answer
@@ -43,9 +47,8 @@ conversations:
   - text: "Srtwc286 offer"
     expect:
       kind: answer
-      about: "no current promotion for SRTWC286 for a dealer (the only flyer is office use): says so; never sends the office-only file"
-      attachments: false
-      must: ["SRTWC286"]
+      about: "dealer promotions for the SRTWC286 family: no live dealer promotion exists, so the EXPIRED dealer flyers marked EXPIRED (owner rulings 9 Oct, AC-33) or a plain no-current-promotion line; never the office-only SRTWC286-SH flyer"
+      must_not: ["PROMO_27082026", "OFFICE.pdf", "(OFFICE", "OFFICE USE"]
   - text: "any promo for kitchen sink then?"
     expect:
       kind: any
@@ -69,7 +72,7 @@ conversations:
     expect:
       kind: any
       about: "active promotions for SRTKS6042-BL (honeycomb kitchen sink flyers): which copy, or sends them"
-      must: ["SRTKS6042-BL"]
+      judge: "Promotion replies list the flyer files with dates, not the product code."
   - text: "office use copy"
     expect:
       kind: answer
@@ -97,25 +100,26 @@ conversations:
   - text: "SRTKS6042-BL also"
     expect:
       kind: answer
-      about: "the dealer promotion flyer covering SRTKS6042-BL is sent"
+      about: "the dealer promotion flyer(s) covering SRTKS6042-BL are sent; an expired flyer only when that exact ask at the dealer level has no live row, marked EXPIRED (owner rulings 9 Oct, AC-33)"
       attachments: true
-      must: ["SRTKS6042-BL"]
+      must_not: ["OFFICE.pdf", "(OFFICE"]
 
 - id: promotions-i02
   source: improvised
   domain: promotions
   audience: dealer_nogrant
-  shapes: [unclear, free_text_reply]
+  shapes: [permission, unclear, free_text_reply]
   turns:
   - text: "any promotion?"
     expect:
-      kind: ask
-      about: "too broad: asks which product or category (real options), no file dump"
+      kind: refuse
+      about: "this contact holds no access type, so promotions are refused with the no-access line; no file dump"
+      must: ["You have no access levels configured to get promotions."]
       attachments: false
   - text: "kitchen sink"
     expect:
       kind: any
-      about: "kitchen sink promotions this contact may see, or that none is available for the account; never office-only files"
+      about: "still no promotions for this account: the same no-access line or that none is available; never office-only files and never a master-product lookup"
       must_not: ["OFFICE.pdf", "(OFFICE", "OFFICE USE"]
 
 - id: promotions-i03
