@@ -147,7 +147,6 @@ function toRequestBody(data: PurchaseRequestFormData) {
     customer_id: data.customer_id ?? null,
     pic: data.pic ?? null,
     project_title: data.project_title || null,
-    project_id: data.project_id ?? null,
     purpose: data.purpose ?? null,
     delivery_address: data.delivery_address ?? null,
     total_project_value: data.total_project_value ?? null,
