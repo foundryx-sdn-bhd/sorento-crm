@@ -9,7 +9,7 @@ pointing and never rendered; no label is a uuid.
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from app.services.chatbot.pv2.state import RegisterEntry
 
@@ -114,15 +114,16 @@ def _rows(env: dict[str, Any]) -> Iterable[tuple[str, str, str, int | None]]:
 
 
 def entries_from_envelopes(
-    envelopes: Sequence[dict[str, Any]], turn: int, subject: str | None = None
+    envelopes: Sequence[dict[str, Any]], turn: int, subject: str | Callable[[dict[str, Any]], str | None] | None = None
 ) -> list[RegisterEntry]:
     """The reply's register entries: ids R1..Rn depth-first (an entry, then its children). `subject` is the
-    printing subject's sid."""
+    printing subject's sid, or a function giving each envelope's own."""
     out: list[RegisterEntry] = []
     for env in envelopes or []:
         if not isinstance(env, dict):
             continue
         base = len(out)
+        sid = subject(env) if callable(subject) else subject
         rows = list(_rows(env))
         ids: dict[int, str] = {}
         for i, (kind, key, label, parent) in enumerate(rows):
@@ -137,7 +138,7 @@ def entries_from_envelopes(
                     head -= 1
                 parent_id = ids.get(head)
             out.append(RegisterEntry(id=entry_id, kind=kind, key=key, label=label, parent=parent_id,
-                                     subject=subject or "S1", turn=turn))
+                                     subject=sid or "S1", turn=turn))
     return out
 
 

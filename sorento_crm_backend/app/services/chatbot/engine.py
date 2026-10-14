@@ -4216,16 +4216,22 @@ def _run_stages(envelope: Envelope, *, session_factory: SessionFactory, **kwargs
 def _pv2_write_register(media_box: dict[str, Any], envelopes: Any) -> None:
     """PV2 redesign R1: on a parser-v2 turn (its state is in the media box) the lanes' printed rows become
     the saved state's answer register. A v1 turn has no `pv2_state`, so nothing is written; a PV2 direct
-    reply never reaches the lanes and keeps the previous entries. Never fails the turn."""
+    reply never reaches the lanes (a report reply writes its own rows in `pv2/answer.py`, any other keeps the
+    previous entries). Never fails the turn."""
     state = media_box.get("pv2_state")
     if state is None or not isinstance(envelopes, list):
         return
     try:
         from app.services.chatbot.pv2 import register as pv2_register
 
-        fresh = pv2_register.entries_from_envelopes(
-            envelopes, int(getattr(state, "turn_no", 0) or 0), getattr(state.held, "sid", None)
-        )
+        # Each envelope names the subject of the ask it answered: the newest subject in its domain, else the held one.
+        subjects = [state.held, *getattr(state, "topics", [])]
+
+        def printing_subject(env: dict[str, Any]) -> str | None:
+            own = next((s for s in subjects if s.domain is not None and s.domain == env.get("domain")), state.held)
+            return own.sid
+
+        fresh = pv2_register.entries_from_envelopes(envelopes, int(getattr(state, "turn_no", 0) or 0), printing_subject)
         state.register = pv2_register.roll(getattr(state, "register", None) or [], fresh)
     except Exception:  # noqa: BLE001 - the register is a convenience; the reply is already decided
         logger.warning("pv2: could not write the answer register", exc_info=True)
@@ -8140,7 +8146,7 @@ def _run_entities_only_arm(
     recalled: list[dict[str, Any]],
     from_photo: bool,
     media_prefixed: bool = False,
-    media_box: dict[str, Any] | None = None,
+    media_box: dict[str, Any],
 ) -> TurnResult:
     """S3 (PLAN-chatbot-media-into-turn.md): bare entities, no domain, no carried
     focus (AC-1822 to AC-1832). Resolved directly against the SAME resolver seam
@@ -8279,11 +8285,11 @@ def _run_entities_only_arm(
     answer = turn_compose.Answer(text=text)
     # PV2 redesign R2: the codes this reply placed are what it printed, so they are the register.
     _pv2_write_register(
-        media_box or {},
+        media_box,
         [{"rows": [
             {"kind": "product", "key": row.get("canonical_code") or raw, "label": raw}  # labelled as typed
             for raw in placed
-            for row in [next((r for r in state.focus.products if isinstance(r, dict) and r.get("raw") == raw), {})]
+            for row in [by_raw[raw]]
         ]}],
     )
     # `_run_answer` opens and commits its OWN session for the tail (persist, close);

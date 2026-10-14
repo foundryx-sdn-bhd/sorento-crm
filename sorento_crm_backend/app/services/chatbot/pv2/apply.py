@@ -228,6 +228,8 @@ def apply_turn(
     elif answered_pending or any(isinstance(a, (Lookup, HandOver)) for a in actions):
         st.pending = None
     st.last_lookup_ask = _last_lookup_ask(actions, pending_in if answered_pending else None)
+    if not st.held.is_empty() and st.held.sid is None:
+        st.held.sid = new_sid(st)  # a pick answered without `_commit` (a pre-R2 held, a v1 or "all" pick)
     return st, actions
 
 
@@ -549,22 +551,26 @@ def _answer(
             True,
         )
 
-    held = _pick_into_report_filter(apply_payload(st.held, picked.payload), picked.payload)
+    origin = valid_origin(pending.origin) if "report" not in picked.payload else None
+    payload = picked.payload
+    if origin is not None and _joins_held_kind(origin, payload, st.held):
+        payload = {**payload, "op": "add"}  # the ask named other products too: the pick joins them
+    held = _pick_into_report_filter(apply_payload(st.held, payload), payload)
     qs = _Qs(can_offer)
     settled = None
-    origin = valid_origin(pending.origin) if "report" not in picked.payload else None
     if origin is not None:
         # The pick completes the ORIGINAL ask: its fields apply to the picked subject through the same
         # path as any ask (the picked entity stands in for the phrase that was ambiguous). Its attachment
         # kinds were vetted when it was asked, so they copy as they are (as `_complete_deferred` did).
-        settled = _without_picked(origin, picked.payload, held)
+        settled = _without_picked(origin, payload, st.held)
         held = _complete_deferred(held, _deferred_of(settled))
+        held = _carry_quantity(held, origin, picked.payload, st.held)
         held = _apply_fields(
             st, held, settled.model_copy(update={"attachment_type": None}), resolver, policy,
             language, i, qs, refine=True, today=today,
         )
     else:
-        held = _complete_deferred(held, pending.deferred)  # state saved before R2
+        held = _complete_deferred(held, pending.deferred)  # no usable origin: state saved before R2, or a report pick
     if pending.kind == "clarify_report_breakdown" and "report" in picked.payload:
         # v1's drill-down pick: the held report is unchanged; the reply runs v1's report by it.
         return (
@@ -1330,19 +1336,49 @@ def _without_picked(origin: Ask, payload: dict[str, Any], held: Held) -> Ask:
         sp for sp in origin.specs if sp.attribute not in drop_attrs and not (kind == "spec" and sp.attribute is None)
     ]
     picked_kind = kind if kind and kind not in SCALAR_PAYLOAD_KINDS else None
-    quantity = None
     kept: list[Entity] = []
     for e in origin.entities:
         have = {str(v) for r in held.refs.get(e.kind, []) for v in (r.key, r.phrase) if v}
         named = e.key or e.phrase
-        if picked_kind is not None and e.kind == picked_kind and not e.refers_to_held:
-            quantity = quantity or e.quantity  # the pick stands in for this phrase; its count carries over
-        elif not (named is not None and not e.refers_to_held and str(named) in have):
+        if picked_kind is not None and e.kind == picked_kind and e.key is None and not e.refers_to_held:
+            continue  # the pick stands in for this phrase (an entity with a code is not ambiguous)
+        if not (named is not None and not e.refers_to_held and str(named) in have):
             kept.append(e)
-    if quantity is not None:
-        kept.append(Entity(kind=picked_kind, key=None, phrase=None, op="set", refers_to_held=True, quantity=quantity))
     update["entities"] = kept
+    # A name the origin itself sets again is not cleared: the clear already ran when it was asked, and
+    # replaying it here would wipe the value the same ask set.
+    sets = {"attachment_type": origin.attachment_type, "specs": origin.specs, "period": origin.period, "report": origin.report}
+    update["cleared"] = [n for n in origin.cleared if not sets.get(n)]
     return origin.model_copy(update=update)
+
+
+def _joins_held_kind(origin: Ask, payload: dict[str, Any], held: Held) -> bool:
+    """The origin named another entity of the picked kind that is already held: the pick adds to it."""
+    kind = payload.get("kind")
+    if not kind or kind in SCALAR_PAYLOAD_KINDS:
+        return False
+    have = {r.key for r in held.refs.get(kind, [])}
+    return any(e.kind == kind and e.key is not None and e.key in have for e in origin.entities)
+
+
+def _carry_quantity(held: Held, origin: Ask, payload: dict[str, Any], before: Held) -> Held:
+    """The count the origin gave the phrase the pick replaced, on the picked refs only and only when the
+    option has none of its own; an entity that was already held is not that phrase."""
+    kind = payload.get("kind")
+    if not kind or kind in SCALAR_PAYLOAD_KINDS or payload.get("quantity"):
+        return held
+    have = {str(v) for r in before.refs.get(kind, []) for v in (r.key, r.phrase) if v}
+    quantity = next(
+        (e.quantity for e in origin.entities
+         if e.kind == kind and not e.refers_to_held and e.quantity is not None and str(e.key or e.phrase) not in have),
+        None,
+    )
+    if quantity is None:
+        return held
+    picked = {str(k) for k in payload.get("keys") or []} or {str(payload.get("key"))}
+    out = held.model_copy(deep=True)
+    out.refs[kind] = [r.model_copy(update={"quantity": quantity}) if r.key in picked else r for r in out.refs[kind]]
+    return out
 
 
 def _deferred_of(ask: Ask) -> dict | None:

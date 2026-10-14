@@ -244,11 +244,15 @@ def roll_session(state: ConversationState, now: datetime) -> ConversationState:
 
 
 def push_topic(topics: list[Held], held: Held) -> list[Held]:
-    """`held` onto the front of `topics`, an identical earlier entry dropped, cap 5."""
+    """`held` onto the front of `topics`, an earlier entry for the same subject dropped, cap 5. The same
+    subject is compared without its sid; the earlier topic's sid stays, so register entries still name it."""
     if held.is_empty():
         return list(topics)
-    kept = [t for t in topics if t != held]
-    return [held.model_copy(deep=True), *kept][:TOPICS_CAP]
+    bare = held.model_copy(update={"sid": None})
+    same = next((t for t in topics if t.model_copy(update={"sid": None}) == bare), None)
+    kept = [t for t in topics if t is not same]
+    pushed = held.model_copy(update={"sid": same.sid}, deep=True) if same is not None else held.model_copy(deep=True)
+    return [pushed, *kept][:TOPICS_CAP]
 
 
 def subject_label(state: ConversationState, sid: str | None) -> str | None:
