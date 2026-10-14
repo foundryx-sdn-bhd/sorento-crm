@@ -143,3 +143,31 @@ def test_apply_writes_flyer_links_with_kind_and_is_idempotent(db, seeded):
     # And a dry run now has nothing left to write.
     _, dry = _run(db)
     assert "DRY RUN: 0 links to write." in dry
+
+
+def test_reversed_same_kind_link_counts_as_already_and_is_not_written(db, seeded):
+    rows, made = seeded
+    kind, acc, host = next(r for r in rows if r[1] == "SRTMR11404-BL" and r[2] == "SRTBF11404")
+    db.add(
+        ProductCompatibility(
+            company_id=DEFAULT_COMPANY_ID,
+            seat_cover_product_id=made[host].id,
+            wc_product_id=made[acc].id,
+            kind=kind,
+            source="manual",
+        )
+    )
+    db.commit()
+    plan = script.plan(db)
+    [link] = [l for l in plan["links"] if (l["accessory_code"], l["host_code"]) == (acc, host)]
+    assert link["already"] is True
+    code, out = _run(db, "--apply")
+    assert code == 0, out
+    with company_scope(db, None):
+        pair = [
+            l
+            for l in db.query(ProductCompatibility).all()
+            if {l.seat_cover_product_id, l.wc_product_id} == {made[acc].id, made[host].id}
+            and l.kind == kind
+        ]
+    assert len(pair) == 1 and pair[0].source == "manual"

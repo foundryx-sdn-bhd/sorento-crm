@@ -87,8 +87,25 @@ def test_upgrade_twice_then_downgrade():
             "ON product_compatibility (seat_cover_product_id, wc_product_id)",
         ):
             db.execute(text(stmt))
+        # A link written before the migration is a seat cover link afterwards.
+        from tests._mc_lookup_seed import product
+        from app.services.company_scope import DEFAULT_COMPANY_ID
+
+        acc = product(db, company_id=DEFAULT_COMPANY_ID)
+        host = product(db, company_id=DEFAULT_COMPANY_ID)
+        db.execute(
+            text(
+                "INSERT INTO product_compatibility "
+                "(id, company_id, seat_cover_product_id, wc_product_id, source) "
+                "VALUES (gen_random_uuid(), :c, :a, :h, 'manual')"
+            ),
+            {"c": DEFAULT_COMPANY_ID, "a": acc.id, "h": host.id},
+        )
         _run(db, module.upgrade)
         _run(db, module.upgrade)  # idempotent
+        assert db.execute(text("SELECT kind FROM product_compatibility")).scalars().all() == [
+            "seat_cover"
+        ]
         is_nullable, default = _kind_column(db)
         assert is_nullable == "NO"
         assert "seat_cover" in (default or "")
