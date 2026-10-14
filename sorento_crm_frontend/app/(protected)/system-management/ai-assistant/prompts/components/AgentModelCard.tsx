@@ -61,6 +61,7 @@ export function AgentModelCard({ name, canEdit }: { name: string; canEdit: boole
         provider: provider || null,
         model: model || null,
         reasoning_effort: effort || null,
+        label: row?.runtime_label || 'production',
       });
       toast.success(model ? `${name} now runs on ${model}` : `${name} back on the default model`);
     } catch (e) {

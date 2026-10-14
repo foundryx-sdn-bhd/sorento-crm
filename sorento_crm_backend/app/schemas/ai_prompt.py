@@ -33,6 +33,8 @@ class PromptKeySummary(BaseModel):
     reasoning_effort: Optional[str] = None
     # Whether this key's call reads a reasoning effort (so the FE shows the control).
     supports_reasoning_effort: bool = False
+    # The label the runtime reads this key from; provider / model / reasoning_effort are its values.
+    runtime_label: str = "production"
     latest_version: Optional[int] = None
     updated_at: Optional[datetime] = None
     updated_by_name: Optional[str] = None

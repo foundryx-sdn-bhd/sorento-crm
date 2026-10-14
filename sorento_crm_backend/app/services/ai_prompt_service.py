@@ -103,9 +103,10 @@ class AIPromptService:
             if latest is not None:
                 updated_at = latest.created_at
                 actor_id = latest.created_by
+            # The label the runtime reads (the parser v2 reads staging): its model and effort.
             prod_label = (
                 self.db.query(AIPromptLabel)
-                .filter(AIPromptLabel.name == name, AIPromptLabel.label == "production")
+                .filter(AIPromptLabel.name == name, AIPromptLabel.label == spec.runtime_label)
                 .first()
             )
             if prod_label is not None and prod_label.updated_at is not None:
@@ -131,6 +132,7 @@ class AIPromptService:
                     "model": prod_label.model if prod_label is not None else None,
                     "reasoning_effort": prod_label.reasoning_effort if prod_label is not None else None,
                     "supports_reasoning_effort": spec.supports_reasoning_effort,
+                    "runtime_label": spec.runtime_label,
                     "staging_version": labels.get("staging"),
                     "latest_version": int(latest.version) if latest is not None else None,
                     "updated_at": updated_at,

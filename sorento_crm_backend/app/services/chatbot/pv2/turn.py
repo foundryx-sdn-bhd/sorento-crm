@@ -110,7 +110,11 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         raw_state = None  # a new console run starts empty
     state_in = roll_session(load_state(raw_state, ctx.now), ctx.now)
     if state_in.pending is None and v1_pending is not None:
-        state_in = mirror_v1_pending(state_in, v1_pending, last_reply=ctx.last_reply)
+        # The question text is the last reply the contact was SHOWN (the loaded exchanges), not
+        # `session_vars.user_response`, which can hold an older reply.
+        shown = ctx.load_exchanges(state_in.session_started_at)
+        reply = shown[-1][1] if shown else ctx.last_reply
+        state_in = mirror_v1_pending(state_in, v1_pending, last_reply=reply)
     # Capped here, so CORE's `call.build_messages` and the injected `parse` both send the
     # compact form (a report table in a past reply is what blew the prompt budget).
     exchanges = compact_exchanges(ctx.load_exchanges(state_in.session_started_at))
@@ -126,6 +130,12 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
     else:
         out = ctx.parse(messages, user_message)
 
+    early = _pre_grant_refusal(ctx, out, state_in.pending)
+    if early is not None:
+        # Nothing was looked up and nothing is kept: the turn changes no state.
+        language = clarify_copy.lang(out.language)
+        trace = {"acts": [a.act for a in out.asks], "actions": [], "grant_refused": True}
+        return answer_mod.TurnV2Result(None, None, early[0], state_in, [], early[1], language, trace)
     extra: dict[str, Any] = {"dym_tags": ctx.dym_tags} if ctx.dym_tags is not None else {}
     state_out, actions = apply_turn(
         state_in,
@@ -142,7 +152,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
     )
     state_out.last_turn_at = ctx.now
     state_out.run_id = ctx.test_run_id
-    refusal = _grant_refusal(ctx, actions, out, state_in.held.report)
+    refusal = _grant_refusal(ctx, actions, out, state_in.held.report, state_in.pending)
     if refusal is not None:
         language = clarify_copy.lang(out.language)
         trace = {"acts": [a.act for a in out.asks], "actions": [a.type for a in actions], "grant_refused": True}
@@ -180,6 +190,8 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
 #: Whole-domain grants (v1 `turn_runtime.domain_denial_text`, `engine` sales-report seam).
 PO_GRANT = "purchase_orders.placed"
 SALES_REPORT_GRANT = "sales_orders.sales_report"
+SO_GRANT = "sales_orders.outstanding"
+SALES_ORDER_KINDS = frozenset({"sales_order", "customer_po_ref"})
 PO_DOMAIN_SUBJECT = {"purchase_order": "purchase orders", "spo_allocation": "purchase order allocation"}
 
 
@@ -194,7 +206,36 @@ def _is_sales_dataset(spec: Any) -> bool:
     return ds is None or ds.key == "sales"
 
 
-def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any, held_report: Any = None) -> tuple[str, str] | None:
+REPORT_QUESTION_KINDS = frozenset({"clarify_report_measure", "clarify_report_period"})
+
+
+def _pre_grant_refusal(ctx: TurnV2Context, out: Any, pending_in: Any) -> tuple[str, str] | None:
+    """The permission checks that read only the parse and the open question, run BEFORE any
+    lookup so a refusal never reveals whether a record exists: a sales order without the SO
+    grant, a sales ask (or the answer to a report question) without the sales report grant."""
+    granted = ctx.granted_reveals or frozenset()
+    asks = getattr(out, "asks", None) or []
+    # Audience-split as v1: a dealer is refused; staff keep probing the kinds they may see (not-found + roster offer).
+    staff = getattr(ctx.profile, "audience", None) == "staff"
+    if not staff and SO_GRANT not in granted and any(
+        getattr(e, "kind", None) in SALES_ORDER_KINDS for ask in asks for e in getattr(ask, "entities", None) or []
+    ):
+        from app.services.chatbot.lanes.business.fetch import SO_NOT_ENABLED_MESSAGE
+
+        return SO_NOT_ENABLED_MESSAGE, "clarify"
+    if SALES_REPORT_GRANT not in granted and (
+        any(getattr(ask, "domain", None) == "sales" for ask in asks)
+        or (pending_in is not None and getattr(pending_in, "kind", None) in REPORT_QUESTION_KINDS)
+    ):
+        from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+
+        return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
+    return None
+
+
+def _grant_refusal(
+    ctx: TurnV2Context, actions: list[Any], out: Any, held_report: Any = None, pending_in: Any = None
+) -> tuple[str, str] | None:
     """(reply, route) when this turn asks for a domain the contact holds no grant for, else
     None. Refused before any lookup or report question, so nothing of the data is read."""
     granted = ctx.granted_reveals or frozenset()
@@ -294,10 +335,11 @@ def after_v1(
 # --------------------------------------------------------------------------- #
 
 
-def _question_text(reply: str | None, yes_no: bool) -> str:
+def _question_text(reply: str | None, yes_no: bool, labels: list[str] | None = None) -> str:
     """The question v1 printed, read off its own previous reply (v1's Pending keeps no text):
-    an offer is the reply's last line; a menu is the last line above its first numbered option.
-    Never the whole reply (a report table would land in every later turn), and bounded."""
+    an offer is the reply's last line; a menu is the last line above its first numbered option,
+    and only when that menu IS this pending's (every option label is printed in it) - an older
+    reply is never mirrored as the question. Bounded, never the whole reply."""
     from app.services.chatbot.pv2.history import compact_reply
 
     lines = [ln.strip() for ln in str(reply or "").splitlines()]
@@ -307,13 +349,27 @@ def _question_text(reply: str | None, yes_no: bool) -> str:
     if yes_no:
         return compact_reply(lines[-1])
     head: list[str] = []
+    menu: list[str] = []
     for ln in lines:
         if ln.partition(". ")[0].isdigit():  # one of v1's numbered options
-            break
-        head.append(ln)
-    else:
-        head = lines  # no menu printed: the question is the reply's last line
+            menu.append(ln)
+        elif not menu:
+            head.append(ln)
+    if not menu:
+        # A single-option offer prints no menu: its question is the last line. A pending with
+        # several options but a reply that printed none is not the reply that asked it.
+        return compact_reply(lines[-1]) if len(labels or []) <= 1 else ""
+    if labels and len(menu) != len(labels):
+        return ""  # a menu of a different size is not this pending's: stale
     return compact_reply(head[-1]) if head else ""
+
+
+def _offer_sentence(v1_pending: Any, yes_no: bool) -> str:
+    """v1's own escalation offer, worded from the pending's own team (never a reply's)."""
+    team = str(getattr(v1_pending, "team", None) or "").replace("_", " ").strip()
+    if not (yes_no and team):
+        return ""
+    return f"Would you like me to escalate to {team} team?"
 
 
 def mirror_v1_pending(
@@ -345,7 +401,8 @@ def mirror_v1_pending(
         option_keys=keys,
         offer=kind in OFFER_KINDS or yes_no or payload.get("escalate_offered") is True,
         asked=str(getattr(v1_pending, "question", None) or getattr(v1_pending, "asked", None) or "")
-        or _question_text(last_reply, yes_no),
+        or _offer_sentence(v1_pending, yes_no)
+        or _question_text(last_reply, yes_no, labels),
     )
 
 
@@ -564,11 +621,16 @@ def staff_roster_for(factory: Any, contact: str) -> Callable[[str, str], dict[st
 
         try:
             plan = member_mod.cs_roster_plan({})
-            ctx = {"parse": {"output": {"routing": {"suggested_team": team}}}, "contact": {"id": contact}}
+            from app.services.chatbot.contracts import DEFAULT_SUGGESTED_AGENT
+
+            # The same routing v1 reads for a CS offer: the roster read needs the agent code too.
+            routing = {"suggested_team": team, "suggested_agent": DEFAULT_SUGGESTED_AGENT}
+            ctx = {"parse": {"output": {"routing": routing}}, "contact": {"id": contact}}
             with _session(factory) as db:
                 rosters = member_mod.fetch_rosters(db, plan, ctx)
             offer = member_mod.build_cs_member_offer({"response": sentence}, plan, rosters)
             if not offer.get("member_offer"):
+                logger.warning("pv2: staff roster is empty for team %s (rosters=%s)", team, rosters)
                 return None
             members = [
                 {"user_id": str(r.get("uuid")), "name": str(r.get("label"))}

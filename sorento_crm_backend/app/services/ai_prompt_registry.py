@@ -1073,6 +1073,9 @@ class PromptKeySpec:
     # Does this key's LLM call read the label's `reasoning_effort`? True only where the
     # caller passes it on; elsewhere the Prompts screen shows no control.
     supports_reasoning_effort: bool = False
+    # The label the runtime reads this key's text, model and effort from (the parser v2 reads
+    # its staging label; every other key reads production).
+    runtime_label: str = "production"
 
 
 PROMPT_KEYS: dict[str, PromptKeySpec] = {
@@ -1111,6 +1114,7 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         variables=[],
         fallback=_chatbot_semantic_parser_v2_fallback,
         supports_reasoning_effort=True,
+        runtime_label="staging",
     ),
     # --- The `low_signal` lane's own model call (S4). One per turn, only on a turn the
     #     parser could not route: small talk, or a request too vague to answer. ---

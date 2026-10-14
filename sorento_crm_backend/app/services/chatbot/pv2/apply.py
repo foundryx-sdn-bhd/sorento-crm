@@ -158,9 +158,11 @@ def apply_turn(
             act = _miss(st, 0, st.pending, _Miss(about), language, can_offer_handover)
         else:
             options = _options_for(st, about)
+            deferred = _deferred_of(out.asks[0]) if out.asks else None
             # An entity question without options never quotes a phrase (no list to pick from).
             phrase = out.clarify.phrase if options or about != "which_held" else None
             act = _clarify(st, 0, about, phrase, language, options=options)
+            act.pending.deferred = deferred
         st.pending = act.pending
         return st, [act]
 
@@ -170,6 +172,8 @@ def apply_turn(
     # T-keys name the topics MEMORY printed, not ones an earlier ask of this message pushed.
     printed_topics = [t.model_copy(deep=True) for t in st.topics]
     for i, ask in enumerate(out.asks):
+        if _bare_switch_back_beside_a_new_ask(out.asks, i, printed_topics):
+            continue  # it adds nothing: the other ask carries the subject in that same domain
         held_before, topics_before = st.held.model_copy(deep=True), list(st.topics)
         try:
             action, answered = _one_ask(
@@ -184,6 +188,8 @@ def apply_turn(
             action = _miss(st, i, reask, miss, language, can_offer_handover)
             if reask is None and pending_in is not None and isinstance(action, ClarifyAct):
                 action.reask = False  # its own question, not a retry of the open one
+            if isinstance(action, ClarifyAct) and action.pending.deferred is None and reask is None:
+                action.pending.deferred = _deferred_of(ask)
         else:
             answered_pending = answered_pending or answered
             action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover)
@@ -529,7 +535,7 @@ def _answer(
             True,
         )
 
-    held = apply_payload(st.held, picked.payload)
+    held = _complete_deferred(apply_payload(st.held, picked.payload), pending.deferred)
     qs = _Qs(can_offer)
     if pending.kind == "clarify_report_breakdown" and "report" in picked.payload:
         # v1's drill-down pick: the held report is unchanged; the reply runs v1's report by it.
@@ -628,6 +634,7 @@ def _apply_fields(
         held.report = reports.edit_report(held.report if refine else None, ask.report, cleared=ask.cleared)
         if held.report is not None:
             _plan_report(st, held, resolver, language, i, qs, today)
+    held = _expand_family(held, resolver, qs)
     return held
 
 
@@ -996,7 +1003,8 @@ def _did_you_mean(
     codes = [str(o.payload.get("key") or o.key) for o in options]
     tags = _dym_tags(offer, held, codes)
     lines = "\n".join(f"{n}. {c}{tags.get(c, '')}" for n, c in enumerate(codes, start=1))
-    asked = f'Couldn\'t find "{ent.phrase}" (product). Did you mean:\n{lines}\nReply with a code to continue'
+    head = clarify_copy.did_you_mean_head(f'"{ent.phrase}" (product)', language)
+    asked = f"{head}\n{lines}\nReply with a code to continue"
     picks = [
         Option(key=str(n), label=o.label, payload={"kind": "product", "key": c, "label": o.label, "op": "set", **_qty_payload(ent)})
         for n, (o, c) in enumerate(zip(options, codes), start=1)
@@ -1004,7 +1012,11 @@ def _did_you_mean(
     extra: list[Option] = []
     if offer.mode == "offer":
         team = _offer_team(offer, held)
-        asked += f", or would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        offer_line = clarify_copy.escalate_offer(team.replace("_", " ").strip(), language)
+        asked += (
+            f", or would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+            if clarify_copy.lang(language) == "en" else f". {offer_line}"
+        )
         extra = [
             Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
             for o in clarify_copy.handover_options(language)
@@ -1029,13 +1041,13 @@ def _doc_not_found(
     with its escalation offer for a non-staff contact (`_esc_offer`, the domain's team)."""
     words = ent.doc_number or ent.phrase
     label = ent.kind.replace("_", " ")
-    asked = "Couldn't find: " + ", ".join(f'"{w}" ({label})' for w in (words_list or [words])) + "."
+    asked = clarify_copy.not_found_line(", ".join(f'"{w}" ({label})' for w in (words_list or [words])), language)
     options: list[Option] = []
     roster = None
     if offer.roster_for is not None and ent.kind != "product":
         # Staff: v1's own member picker (sentence, header, numbered members, close).
         team = _offer_team(offer, held)
-        sentence = asked + f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        sentence = asked + " " + clarify_copy.escalate_offer(team.replace("_", " ").strip(), language)
         roster = offer.roster_for(team, sentence)
     if roster:
         asked = roster["text"]
@@ -1054,7 +1066,7 @@ def _doc_not_found(
         asked += f" {REFER_TO_SALESMAN}"
     elif offer.mode == "offer":
         team = _offer_team(offer, held)
-        asked += f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        asked += " " + clarify_copy.escalate_offer(team.replace("_", " ").strip(), language)
         options = [
             Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
             for o in clarify_copy.handover_options(language)
@@ -1166,6 +1178,79 @@ def _which_held_options(refs: list[ResolvedRef]) -> list[Option]:
         )
         for n, r in enumerate(refs, start=1)
     ]
+
+
+#: Domains where v1's `list_all` answers every member of a held family (like the stock ask).
+FAMILY_DOMAINS = frozenset({"incoming", "product_attachment"})
+
+
+def _expand_family(held: Held, resolver: ResolverLike, qs: Any) -> Held:
+    """A held FAMILY key (a ref the resolver marked `family`, never an exact product code) in
+    incoming / product_attachment becomes its member codes, so v1 answers for the members that
+    have data instead of asking which variant. v1 itself narrows these domains to one code
+    (`narrow_to_code` / `narrow_by_tier`); expanding is crew's ruling (owner turns 4 and 6), not
+    `list_all` parity. Availability-only dealers keep the family (v1's which-one)."""
+    offer = getattr(qs, "can_offer", None)
+    expand = getattr(resolver, "family_members", None)
+    if held.domain not in FAMILY_DOMAINS or expand is None or getattr(offer, "availability_only", False):
+        return held
+    refs = held.refs.get("product") or []
+    if len(refs) != 1 or not refs[0].family:
+        return held
+    members = expand(refs[0].key) or []
+    if len(members) < 2:
+        return held
+    out = held.model_copy(deep=True)
+    out.refs = set_refs(
+        out.refs, "product",
+        [m.model_copy(update={"quantity": refs[0].quantity, "phrase": refs[0].phrase}) for m in members], "set",
+    )
+    return out
+
+
+def _bare_switch_back_beside_a_new_ask(asks: list[Ask], i: int, topics: list[Held]) -> bool:
+    """A switch_back that names no entity, spec or attachment, beside a new_topic / refine that
+    carries a subject in the same domain as the topic it would switch to. Structured fields only."""
+    ask = asks[i]
+    if ask.act != "switch_back" or ask.entities or ask.specs or ask.attachment_type:
+        return False
+    idx = topic_index(ask.switch_back_to, topics)
+    if idx is None and ask.switch_back_to is None and len(topics) == 1:
+        idx = 0
+    target = ask.domain or (topics[idx].domain if idx is not None else None)
+    if not target:
+        return False
+    return any(
+        o.act in ("new_topic", "refines_held") and o.domain == target and any(not e.refers_to_held for e in o.entities)
+        for j, o in enumerate(asks) if j != i
+    )
+
+
+def _deferred_of(ask: Ask) -> dict | None:
+    """The ask a question asked back would otherwise drop: its domain, attachment kinds, quantity."""
+    kinds = [ask.attachment_type] if isinstance(ask.attachment_type, str) else list(ask.attachment_type or [])
+    qty = next((e.quantity for e in ask.entities if e.quantity is not None), None)
+    if not (ask.domain or kinds or qty):
+        return None
+    return {
+        "domain": ask.domain,
+        "attachment_types": kinds,
+        "quantity": qty.model_dump() if qty is not None else None,
+    }
+
+
+def _complete_deferred(held: Held, deferred: dict | None) -> Held:
+    """The picked subject answers the ask that was interrupted (its domain and attachment kinds)."""
+    if not deferred:
+        return held
+    out = held.model_copy(deep=True)
+    if deferred.get("domain"):
+        out.domain = deferred["domain"]
+    kinds = list(deferred.get("attachment_types") or [])
+    if kinds:
+        out.attachment_type = kinds[0]
+        out.attachment_types = kinds if len(kinds) > 1 else []
+    return out
 
 
 def _entity_about(st: ConversationState, about: str) -> str:

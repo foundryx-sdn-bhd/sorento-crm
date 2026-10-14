@@ -182,3 +182,32 @@ def render(pending: PendingQuestion, language: str | None, *, reask: bool = Fals
         lines.append("")
         lines.append(text("reply_number", language))
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# v1's own localized sentences (label_catalog), for PV2's not-found / offer / did-you-mean lines
+# --------------------------------------------------------------------------- #
+
+
+def v1_line(english: str, language: str | None, **fields: Any) -> str:
+    """`english` (a label_catalog key) filled with `fields`, in the turn language the way v1's
+    Localizer prints it; English, or any sentence v1 does not translate, comes back as written."""
+    from app.services.chatbot import label_catalog
+
+    code = lang(language)
+    return label_catalog.Localizer(code, label_catalog.defaults(code)).fill(english, **fields)
+
+
+def not_found_line(names: str, language: str | None) -> str:
+    """`Couldn't find: {names}.` (v1's not-found sentence)."""
+    return v1_line("Couldn't find: {names}.", language, names=names)
+
+
+def escalate_offer(team: str, language: str | None) -> str:
+    """`Would you like me to escalate to {team} team?` (v1's escalation offer)."""
+    return v1_line("Would you like me to escalate to {team} team?", language, team=team)
+
+
+def did_you_mean_head(shown: str, language: str | None) -> str:
+    """`Couldn't find {shown}. Did you mean:` (v1's did-you-mean heading)."""
+    return v1_line("Couldn't find {shown}. Did you mean:", language, shown=shown)

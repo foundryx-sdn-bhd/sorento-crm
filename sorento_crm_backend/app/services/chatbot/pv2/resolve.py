@@ -143,6 +143,8 @@ INDEX_KINDS: frozenset[str] = frozenset({"brand", "product_class", "product_type
 #: Owner 13 Oct 23:50: at most this many customer-name candidates.
 CUSTOMER_FAMILY_ROW_LIMIT = 200
 CUSTOMER_CANDIDATE_CAP = 8
+#: The most members one family expands to (v1's `entity_resolver.PREFIX_LIMIT`).
+FAMILY_LIMIT = 20
 #: The most matches one partial product phrase carries to a domain that answers every match.
 PRODUCT_POOL_LIMIT = 50
 #: Real candidates offered when an index key is null.
@@ -548,6 +550,23 @@ class DbResolver:
         return options
 
     # ------------------------------------------------------------------ products
+    def family_members(self, key: str) -> list[ResolvedRef]:
+        """The chat-visible products of one family (`family_code` equal to `key`), in v1's order."""
+        from app.models.product import Product, chat_searchable_products
+        from app.services.entity_resolver import _product_family_order
+
+        family = _strip_ws(key or "").upper()
+        if not family:
+            return []
+        codes = [
+            code
+            for (code,) in self.db.query(Product.product_code)
+            .filter(Product.family_code == family, chat_searchable_products())
+            .order_by(*_product_family_order())
+            .all()
+        ]
+        return [ResolvedRef(kind="product", key=c, label=c) for c in list(dict.fromkeys(codes))[:FAMILY_LIMIT]]
+
     def _product(self, phrase: str | None) -> Resolution:
         if not phrase or not _strip_ws(phrase):
             return Resolution(status="none", phrase=phrase)
@@ -560,7 +579,7 @@ class DbResolver:
             codes.setdefault(hit.canonical_code, (hit.display or {}).get("product_name") or "")
         if len(codes) == 1:
             code, name = next(iter(codes.items()))
-            label = f"{code} {name}".strip()
+            label = code if not name or name.strip().casefold() == code.strip().casefold() else f"{code} {name}".strip()
             return Resolution(status="exact", refs=[ResolvedRef(kind="product", key=code, label=label, phrase=phrase)])
         if len(codes) > 1:  # two products whose codes differ only by case/spacing
             options = [
@@ -582,7 +601,7 @@ class DbResolver:
         )
         if variants:
             label = f"{family} ({len(variants)} variant{'s' if len(variants) != 1 else ''})"
-            return Resolution(status="exact", refs=[ResolvedRef(kind="product", key=family, label=label, phrase=phrase)])
+            return Resolution(status="exact", refs=[ResolvedRef(kind="product", key=family, label=label, phrase=phrase, family=True)])
 
         # Not an exact code: v1's own product search (prefix / substring / family), then its
         # did-you-mean. Candidates are options to pick, never auto-joined.
