@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
+import { useHasPermission } from '@/hooks/usePermissions';
 import type { TeamMember } from '../../types/team.types';
 import type { UserSelectItem } from '../../services/teamService';
 import {
@@ -44,6 +45,8 @@ export default function TeamMembersList({
   onRetryUsers?: () => void;
 }) {
   const queryClient = useQueryClient();
+  // Adding, removing and round-robin all change who is handed work: teams.edit.
+  const canEdit = useHasPermission('user_management.teams.edit');
   const [addOpen, setAddOpen] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [isAdding, setIsAdding] = useState(false);
@@ -135,6 +138,7 @@ export default function TeamMembersList({
           <Switch
             size="sm"
             checked={row.original.include_in_round_robin ?? true}
+            disabled={!canEdit}
             onCheckedChange={(checked) =>
               roundRobinMutation.mutate({
                 userId: row.original.user_id,
@@ -147,30 +151,34 @@ export default function TeamMembersList({
         size: 220,
         meta: { headerTitle: 'Auto-assign (round robin)' },
       },
-      {
-        id: 'actions',
-        header: () => <span className="sr-only">Actions</span>,
-        cell: ({ row }) => (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-destructive hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation();
-              removeMutation.mutate(row.original.user_id);
-            }}
-            disabled={removeMutation.isPending}
-            aria-label="Remove member"
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        ),
-        size: 80,
-        enableResizing: false,
-        meta: { headerTitle: 'Actions' },
-      },
+      ...(canEdit
+        ? [
+            {
+              id: 'actions',
+              header: () => <span className="sr-only">Actions</span>,
+              cell: ({ row }) => (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeMutation.mutate(row.original.user_id);
+                  }}
+                  disabled={removeMutation.isPending}
+                  aria-label="Remove member"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              ),
+              size: 80,
+              enableResizing: false,
+              meta: { headerTitle: 'Actions' },
+            } satisfies ColumnDef<TeamMember>,
+          ]
+        : []),
     ],
-    [members, userMap, roundRobinMutation, removeMutation],
+    [members, userMap, roundRobinMutation, removeMutation, canEdit],
   );
 
   return (
@@ -178,10 +186,12 @@ export default function TeamMembersList({
       <PanelDataGrid<TeamMember>
         title="Members"
         toolbar={
-          <Button onClick={() => setAddOpen(true)} disabled={availableUsers.length === 0}>
-            <UserPlus className="me-2 size-4" />
-            Add member
-          </Button>
+          canEdit ? (
+            <Button onClick={() => setAddOpen(true)} disabled={availableUsers.length === 0}>
+              <UserPlus className="me-2 size-4" />
+              Add member
+            </Button>
+          ) : undefined
         }
         columns={columns}
         rows={members}
@@ -189,7 +199,7 @@ export default function TeamMembersList({
         listingKey="user_management.teams.view::members"
         isLoading={isLoading}
         emptyTitle="No members."
-        emptyBody="Add users to this team for round-robin assignment."
+        emptyBody={canEdit ? 'Add users to this team for round-robin assignment.' : undefined}
       />
 
       <Dialog
