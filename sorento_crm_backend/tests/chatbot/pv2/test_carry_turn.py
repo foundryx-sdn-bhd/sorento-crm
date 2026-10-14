@@ -41,11 +41,12 @@ def _lookup_out():
 def test_memory_given_to_the_parser_carries_the_held_subject_and_the_message():
     spy = Spy(_lookup_out())
     h = held("product_attachment", {"product": ["SRTWC6003"]})
-    h.refs["product"][0] = ResolvedRef(kind="product", key="uid-1", label="SRTWC6003 Family")
+    # R4a: a product key is its code; only a uuid key stays hidden
+    h.refs["product"][0] = ResolvedRef(kind="product", key="4f1c9a2e-7b3d-4e5a-9c6f-2d8e1a0b3c57", label="SRTWC6003 Family")
     r = turn.run_turn_v2(_ctx(spy, dump_state(mk_state(h))))
     messages, user_message = spy.calls[0]
     assert "HELD: domain=product_attachment" in user_message and "SRTWC6003 Family" in user_message
-    assert "uid-1" not in user_message
+    assert "4f1c9a2e-7b3d-4e5a-9c6f-2d8e1a0b3c57" not in user_message
     assert user_message.endswith("<message>stock of SRTWC286</message>")
     assert [m["content"] for m in messages] == ["hi", "hello", "stock?", "which product?"]
     assert r.route == "lookup" and r.verdict["domain_hint"] == "inventory"
