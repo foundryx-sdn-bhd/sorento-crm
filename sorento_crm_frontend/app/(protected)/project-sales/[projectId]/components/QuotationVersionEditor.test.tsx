@@ -521,9 +521,11 @@ describe('QuotationVersionEditor', () => {
 
     renderEditor();
 
-    expect(await screen.findByText('Custom item')).toBeInTheDocument();
+    expect(await screen.findByTitle('Not a catalogue product')).toBeInTheDocument();
     expect(screen.queryByText('Off-catalog')).toBeNull();
-    expect(screen.getByText('Non-standard')).toBeInTheDocument();
+    expect(screen.queryByText(/custom/i)).toBeNull();
+    // One word, one pill: the server's non-standard verdict does not add a second.
+    expect(screen.getAllByText('Non-standard')).toHaveLength(1);
   });
 
   /**
@@ -533,20 +535,22 @@ describe('QuotationVersionEditor', () => {
    * dropdown and the line kept insisting it was off-catalog, and non-standard, until the
    * save and the refetch. Both badges were being read off the stored line.
    */
-  it('clears Custom item the moment a product is picked, before any save', async () => {
+  it('clears the Non-standard (not a catalogue product) pill the moment a product is picked, before any save', async () => {
     listQuotationLines.mockResolvedValue([
       line({ product_code: null, product_id: null, description: 'BT009', is_non_standard: true }),
     ]);
     await renderEditing();
 
-    expect(screen.getByText('Custom item')).toBeInTheDocument();
+    expect(screen.getByTitle('Not a catalogue product')).toBeInTheDocument();
 
     // Pick a product on the line. `Off-catalog` means "no product is linked" and nothing
     // else, so it is a fact about the draft and can be answered here.
     fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
     fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
 
-    await waitFor(() => expect(screen.queryByText('Custom item')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByTitle('Not a catalogue product')).not.toBeInTheDocument(),
+    );
   });
 
   it('asks the server for a fresh verdict the moment the product changes - on the spot, not at save', async () => {
@@ -940,7 +944,7 @@ describe('QuotationVersionEditor', () => {
       target: { value: '4' },
     });
 
-    expect(await screen.findByText('A custom item needs a description')).toBeInTheDocument();
+    expect(await screen.findByText('A non-standard item needs a description')).toBeInTheDocument();
     expect(description).toHaveAttribute('aria-invalid', 'true');
     expectNothingWritten();
   });
@@ -953,7 +957,7 @@ describe('QuotationVersionEditor', () => {
 
     // Empty is not wrong. Marking a row red the instant it appears would be the screen
     // shouting at somebody for pressing the button it offered them.
-    expect(screen.queryByText('A custom item needs a description')).toBeNull();
+    expect(screen.queryByText('A non-standard item needs a description')).toBeNull();
   });
 
   it('fills the line from the product that was picked', async () => {
@@ -1226,7 +1230,7 @@ describe('QuotationVersionEditor', () => {
 
     expect(
       await screen.findByText(
-        /46 lines name products this company's catalogue does not carry.*custom item/i,
+        /46 lines name products this company's catalogue does not carry.*non-standard/i,
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/off-catalog/i)).toBeNull();
@@ -1300,7 +1304,8 @@ describe('QuotationVersionEditor on a scope not saved yet (AC-QF073)', () => {
         expect.objectContaining({ description_snapshot: 'Grab bar', unit_price: '80.00' }),
       ]),
     );
-    expect(screen.getByText('Custom item')).toBeInTheDocument();
+    expect(screen.getByTitle('Not a catalogue product')).toBeInTheDocument();
+    expect(screen.getAllByText('Non-standard')).toHaveLength(1);
     expect(listQuotationVersions).not.toHaveBeenCalled();
     expect(listQuotationLines).not.toHaveBeenCalled();
     expect(judgeQuotationLine).not.toHaveBeenCalled();
@@ -1473,10 +1478,11 @@ describe('QuotationVersionEditor lines grid (QUOTATION-UX)', () => {
 });
 
 describe('QuotationVersionEditor custom item (QUOTATION-UX)', () => {
-  it('words a line with no product as Custom item with a Pick a product placeholder, never Off-catalog', async () => {
+  it('words a line with no product as Non-standard with a Pick a product placeholder, never Off-catalog', async () => {
     listQuotationLines.mockResolvedValue([line({ product_code: null, product_id: null, description: 'Bespoke top', is_non_standard: true })]);
     await renderEditing();
-    expect(screen.getByText('Custom item')).toBeInTheDocument();
+    expect(screen.getByTitle('Not a catalogue product')).toBeInTheDocument();
+    expect(screen.getAllByText('Non-standard')).toHaveLength(1);
     expect(screen.getByRole('combobox', { name: /^Product on / })).toHaveTextContent('Pick a product');
     expect(document.body.textContent).not.toMatch(/off-catalog/i);
   });
@@ -1486,7 +1492,7 @@ describe('QuotationVersionEditor custom item (QUOTATION-UX)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
     await screen.findByRole('textbox', { name: 'Description on line 2' });
     fireEvent.change(screen.getByRole('textbox', { name: 'Qty on line 2' }), { target: { value: '4' } });
-    expect(await screen.findByText('A custom item needs a description')).toBeInTheDocument();
+    expect(await screen.findByText('A non-standard item needs a description')).toBeInTheDocument();
     expect(unfinishedStagedLines(session?.scopes[QUOTATION.id]?.lines ?? [])).toBeGreaterThan(0);
   });
 });
@@ -1874,10 +1880,10 @@ describe('QuotationVersionEditor fix round 2 (QUOTATION-UX)', () => {
     await renderEditing();
     fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
     const description = await screen.findByRole('textbox', { name: 'Description on line 2' });
-    expect(screen.queryByText('A custom item needs a description')).toBeNull();
+    expect(screen.queryByText('A non-standard item needs a description')).toBeNull();
     fireEvent.focus(description);
     fireEvent.blur(description);
-    expect(await screen.findByText('A custom item needs a description')).toBeInTheDocument();
+    expect(await screen.findByText('A non-standard item needs a description')).toBeInTheDocument();
     expect(description).toHaveAttribute('aria-invalid', 'true');
   });
 

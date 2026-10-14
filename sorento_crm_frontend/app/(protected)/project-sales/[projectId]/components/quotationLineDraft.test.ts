@@ -99,7 +99,7 @@ describe('the draft of a set line', () => {
   it('does not ask a set line for a description (the set name is the description)', () => {
     expect(lineErrors({ ...emptyDraft(), product_set_id: 'set-1' })).toEqual({});
     expect(lineErrors(emptyDraft())).toEqual({
-      description: 'A custom item needs a description',
+      description: 'A non-standard item needs a description',
     });
   });
 });

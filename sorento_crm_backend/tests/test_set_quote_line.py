@@ -584,6 +584,7 @@ def test_a7_a_line_with_neither_still_needs_a_description_and_a_set_line_does_no
         with pytest.raises(AppException) as refused:
             _save(db, env, {"unit_price": "10.00", "quantity": "1"})
         assert refused.value.detail["code"] == "quotation_line_description_required"
+        assert refused.value.detail["message"] == "A non-standard item needs a description."
 
         product_set = _set(db, env["company_id"], env["category"], env["uom"])
         line = _set_line(db, env)
