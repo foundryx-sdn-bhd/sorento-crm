@@ -464,18 +464,24 @@ def test_the_board_reads_the_same_capped_pin(scm_app, flagged, on_hand, covered)
 
 
 def test_a_pinned_reserve_bin_outside_the_span_reads_free_0_under_the_projection(scm_app):
-    """Reviewer, round 1: under `group=BB` the HQ project reserve is outside the span, so a
-    BB line pinned there is covered off a stand-in. With the projection switch on, its
+    """Reviewer, rounds 1-2: under `group=BB` the HQ project reserve is outside the span, so
+    a BB line pinned there is covered off a stand-in. With the projection switch on, its
     Supply row states what the pin holds and Free 0, never the reserve's whole projected
-    remainder beside a Qty of only the pinned part."""
-    from app.models.inventory import Warehouse
-    from tests.scm.test_stock_debt_projection_routes import _seed
+    remainder (470 here) beside a Qty of only the pinned part. The pinned line is the only
+    demand, so nothing else spends the remainder and hides the override."""
+    from tests.scm.test_stock_debt_projection_routes import _warehouse as _segment_warehouse
 
     app, db = _client(scm_app)
-    seed = _seed(db, hq_in_span=True, reserve=True)
-    marker, product, hq = seed["marker"], seed["product"], seed["hq"]
-    bb = db.query(Warehouse).filter(Warehouse.warehouse_code == f"{marker}BRW-BB").one()
-    _stock(db, product, hq, on_hand=50)
+    marker = f"ZZTSP{_u()[:6]}".upper()
+    pool = _segment_warehouse(db, f"{marker}BRW", planning=False, segment="dealer")
+    bb = _segment_warehouse(
+        db, f"{marker}BRW-BB", planning=True, segment="project", pool=pool
+    )
+    hq = _segment_warehouse(db, f"{marker}HQ", planning=False, segment="project")
+    hq.pool_warehouse_id = hq.id
+    db.flush()
+    product = _product(db, f"{marker}-SRTWT2215")
+    _stock(db, product, hq, on_hand=500)
     _pinned_line(
         db, product, bb, qty=30, due=TODAY, so_number=f"{marker}-SO-PIN", pin_at=hq
     )
@@ -485,8 +491,8 @@ def test_a_pinned_reserve_bin_outside_the_span_reads_free_0_under_the_projection
             c, product, month_key(TODAY), group="BB", book="project", projected="true"
         )
 
-    pinned = [line for line in cell["demand"] if line["so_number"] == f"{marker}-SO-PIN"]
-    assert pinned and pinned[0]["assigned_qty"] == 30
+    [line] = cell["demand"]
+    assert (line["so_number"], line["assigned_qty"]) == (f"{marker}-SO-PIN", 30)
     rows = [
         row for row in cell["supply"]
         if row["kind"] == "on_hand" and row["warehouse_code"] == hq.warehouse_code
