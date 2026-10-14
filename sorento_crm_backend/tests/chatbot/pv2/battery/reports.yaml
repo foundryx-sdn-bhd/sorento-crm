@@ -1,0 +1,153 @@
+# PV2 battery: sales reports and top-selling rankings (UAC-1).
+# Owner rules: a ranking never defaults metric or basis (asks them together), a fresh ranking never borrows
+# the earlier customer / product / period, refusals sit at the first step that needs the grant.
+domain: reports
+conversations:
+
+- id: reports-r01
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r6-livecheck-20261014.tsv S24-27 T1-T4 and T7-10; PV2-FIX-r5-livecheck-20261014.tsv S24-27"
+  domain: reports
+  audience: dealer
+  shapes: [reply_to_question, number_pick, refine]
+  turns:
+  - text: "sales report for September"
+    expect:
+      kind: any
+      about: "the dealer's own September 2026 sales report, or the question delivered / ordered / outstanding"
+  - text: "delivered"
+    expect:
+      kind: answer
+      about: "delivered sales 1 to 30 September 2026 for the dealer's own accounts with the total and a drill-down offer"
+      must_not: ["Which figure should I rank by?", "Sorry, I didn't catch your choice"]
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
+  - text: "1"
+    expect:
+      kind: answer
+      about: "the first drill-down offered (by customer) for the same September delivered report; never a top-N / measure question"
+      must_not: ["How many? For example top 5", "Sorry, I didn't catch your choice"]
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
+  - text: "only August"
+    expect:
+      kind: answer
+      about: "the same delivered report for 1 to 31 August 2026 (period replaced, everything else kept)"
+      must_not: ["Sorry, I didn't catch your choice"]
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
+
+- id: reports-r02
+  source: real
+  origin: "crew/state/eval/dev/cand-p9ob.json (history + message); crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1572"
+  domain: reports
+  audience: staff
+  shapes: [topic_switch, reply_to_question]
+  turns:
+  - text: "CBDR4003 stock"
+    expect:
+      kind: any
+      about: "stock for CBDR4003; on 14 Oct dev CBDR4003 sits in category CB-ACC (is_searchable false), so chat search excludes it and a not-found / did-you-mean naming CBDR4003 is the right reply"
+      must: ["CBDR4003"]
+      judge: "CBDR4003 is excluded from chat search on dev; near codes in a did-you-mean are resolver candidates, not invented data."
+  - text: "Top sales Sorento and Mocha water closet this month"
+    expect:
+      kind: any
+      about: "a fresh ranking: top water closet sales this month for Sorento and Mocha, or the question for metric / basis (asked together); never carries CBDR4003"
+      must_not: ["CBDR4003"]
+  - text: "Sorento and mocha"
+    expect:
+      kind: any
+      about: "the brands (not a product) for the held water closet ranking this month: the ranking, or, while the delivered / ordered / outstanding question is still open, that question again with Sorento + Mocha kept (a non-answer never closes the open question; basis is never defaulted, owner 4 Oct); never CBDR4003 and never 'No sales for BK007A'"
+      must_not: ["CBDR4003", "No sales for BK007A"]
+      allow_repeat: true
+
+- id: reports-r03
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r8a-livecheck-20261014.tsv B-AL-T7-10 T1-T4 and C-S15; laneboard/scripts/1657.md step 15"
+  domain: reports
+  audience: dealer_nogrant
+  shapes: [permission, refine]
+  turns:
+  - text: "sales report for September"
+    expect:
+      kind: refuse
+      about: "no sales-report grant: refused at this first step"
+      must: ["Sales report is not enabled for your account."]
+  - text: "delivered"
+    expect:
+      kind: any
+      about: "still no sales figures: the same refusal or a neutral 'what would you like me to check'; never a rank-by question"
+      must_not: ["Which figure should I rank by?", "Sorry, I didn't catch your choice"]
+      allow_repeat: true
+  - text: "only August"
+    expect:
+      kind: refuse
+      about: "a sales report for August is still refused with the sales-report line; never a pass-to-colleague yes/no"
+      must: ["Sales report is not enabled for your account."]
+      must_not: ["pass this to a colleague"]
+      allow_repeat: true
+
+- id: reports-r04
+  source: real
+  origin: "crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md R5 extras (owner 13 Oct report flow)"
+  domain: reports
+  audience: staff
+  shapes: [refine, reply_to_question, small_talk]
+  turns:
+  - text: "top 5 selling product this month"
+    expect:
+      kind: any
+      about: "top 5 products this month, or the metric / basis question asked together (never defaulted silently)"
+  - text: "i want to see dealer sales only"
+    expect:
+      kind: any
+      about: "the same ranking narrowed to the dealer channel, or one short question (for example which brand); the earlier choices kept; while turn 1's delivered / ordered / outstanding question is still unanswered, that question again is right (basis is never defaulted, owner 4 Oct)"
+      allow_repeat: true
+  - text: "sorento"
+    expect:
+      kind: any
+      about: "the dealer-channel top 5 for Sorento this month once the basis is known; if the basis was never given, the delivered / ordered / outstanding question with Sorento and the dealer channel kept, or the clarify-loop breaker"
+      must_not: ["Sorry, I didn't catch your choice"]
+      judge: "Clarify-loop cap (#1570, crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md): a third identical basis question in a row (T1, T2 and T3) FAILS; a re-ask that shows the kept choices (Sorento, dealer channel) or the loop breaker passes. Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures absent from the facts."
+  - text: "Hello Mr"
+    expect:
+      kind: answer
+      about: "a short greeting back; no report re-run, no hand-over, no menu"
+      must_not: ["Routed to your PIC"]
+
+- id: reports-i01
+  source: improvised
+  domain: reports
+  audience: staff
+  shapes: [language_mix, reply_to_question, refine]
+  turns:
+  - text: "jualan terbaik bulan lepas untuk kitchen sink"
+    expect:
+      kind: any
+      about: "top-selling kitchen sinks for last month (the calendar month before the run date), or the metric / basis question in Malay"
+  - text: "ikut kuantiti"
+    expect:
+      kind: answer
+      about: "the kitchen sink ranking for last month by quantity"
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
+  - text: "top 10 pula"
+    expect:
+      kind: answer
+      about: "the same ranking widened to the top 10 (category, month and metric kept)"
+      judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
+
+- id: reports-i02
+  source: improvised
+  domain: reports
+  audience: unlinked
+  shapes: [permission, topic_switch]
+  turns:
+  - text: "Top sales Sorento and Mocha water closet this month"
+    expect:
+      kind: refuse
+      about: "no sales-report grant: the sales-report refusal line"
+      must: ["Sales report is not enabled for your account."]
+  - text: "ok then SRTWC286-SH stock"
+    expect:
+      kind: answer
+      about: "a new topic: stock / availability of SRTWC286-SH; the refusal does not lock the next turn"
+      must: ["SRTWC286-SH"]
+

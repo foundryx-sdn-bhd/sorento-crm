@@ -1,0 +1,248 @@
+# PV2 battery: stock (on-hand) asks and their follow-ups. Contract: UAC-1 of
+# documentation/plans/chatbot/pv2-eval-battery-14oct-acceptance-criteria.md.
+# Quantities and warehouse figures drift on the dev DB: expectations name subjects, never numbers.
+domain: stock
+conversations:
+
+- id: stock-r01
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r6-livecheck-20261014.tsv S10-11 T1-T2 and R6-S10-11a/b; PV2-FIX-r5-livecheck-20261014.tsv X-refine T2; laneboard/scripts/1653.md steps 4-5"
+  domain: stock
+  audience: staff
+  shapes: [qty_carried, refine]
+  turns:
+  - text: "SRTWC286 stock"
+    expect:
+      kind: answer
+      about: "stock for the whole SRTWC286 family (every variant), as the staff stock answer"
+      must: ["SRTWC286"]
+  - text: "5 unit"
+    expect:
+      kind: answer
+      about: "the quantity 5 narrows the SRTWC286 stock ask just answered; for staff the stock answer again (or the same stock read for 5 units) is right; never a yes/no re-ask of an escalation offer"
+      must: ["SRTWC286"]
+      must_not: ["Sorry, I didn't catch your choice", "1. Yes"]
+      allow_repeat: true
+  - text: "only SRTWC286-SH-NEW"
+    expect:
+      kind: answer
+      about: "stock narrowed to SRTWC286-SH-NEW (and its own sizes at most), not the whole family again"
+      must: ["SRTWC286-SH-NEW"]
+
+- id: stock-r02
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r6-livecheck-20261014.tsv T4-6 T1-T3 (dealer contact); PV2-FIX-r5-livecheck-20261014.tsv S16-17"
+  domain: stock
+  audience: dealer
+  shapes: [qty_carried, number_pick, reply_to_question]
+  turns:
+  - text: "SRTWC286 stock"
+    expect:
+      kind: ask
+      about: "an availability dealer typing the family code is asked which SRTWC286 variant, the options being the real variant codes"
+      must: ["SRTWC286-SH"]
+  - text: "5 unit"
+    expect:
+      kind: ask
+      about: "the same which-variant question kept open with the quantity 5 carried (for example 'SRTWC286 x 5: which one?'), never the bare menu that drops the 5"
+      must: ["SRTWC286"]
+      must_any: [["x 5", "x5", "5 unit"]]
+      must_not: ["Sorry, I didn't catch your choice"]
+  - text: "1"
+    expect:
+      kind: answer
+      about: "availability of the first option (SRTWC286-SH) for 5 units in the availability wording (Got stock / No stock with ETA), on-hand only"
+      must: ["SRTWC286-SH"]
+
+- id: stock-r03
+  source: real
+  origin: "crew/state/handtest/PV2-FIX-r5-livecheck-20261014.tsv S18-19 T1-T2 and R-S18-19 (T3 added)"
+  domain: stock
+  audience: dealer
+  shapes: [reply_to_question, language_mix, qty_carried]
+  turns:
+  - text: "SRTWC286-SH stock"
+    expect:
+      kind: any
+      about: "availability of SRTWC286-SH for the dealer, or the question how many units are needed"
+      must: ["SRTWC286-SH"]
+  - text: "5件"
+    expect:
+      kind: answer
+      about: "5 units of SRTWC286-SH: availability verdict for 5 units, reply in Chinese"
+      must: ["SRTWC286-SH"]
+      lang: zh
+  - text: "SRTWC286-SH-NEW 呢？"
+    expect:
+      kind: answer
+      about: "same availability ask for SRTWC286-SH-NEW with the 5 units carried, reply in Chinese"
+      must: ["SRTWC286-SH-NEW"]
+      lang: zh
+
+- id: stock-r04
+  source: real
+  origin: "laneboard/scripts/1653.md step 17; crew/state/handtest/PV2-FIX-r7-livecheck-20261014.tsv LOO-B2 T1 and JD-ST17 T1 (T2-T3 added)"
+  domain: stock
+  audience: staff
+  shapes: [typo, number_pick, refine]
+  turns:
+  - text: "SRTWC268-SH stock"
+    expect:
+      kind: ask
+      about: "SRTWC268-SH does not exist: a did-you-mean with real codes, SRTWC286-SH among them"
+      must: ["SRTWC268-SH", "SRTWC286-SH"]
+  - text: "1"
+    expect:
+      kind: answer
+      about: "stock for the first suggestion, SRTWC286-SH"
+      must: ["SRTWC286-SH"]
+      must_not: ["Sorry, I didn't catch your choice"]
+  - text: "the NEW one also"
+    expect:
+      kind: answer
+      about: "stock for SRTWC286-SH-NEW (added to or replacing SRTWC286-SH); not a question about what 'NEW' means"
+      must: ["SRTWC286-SH-NEW"]
+
+- id: stock-r05
+  source: real
+  origin: "laneboard/scripts/1653.md step 16; crew/state/handtest/PV2-FIX-r7-livecheck-20261014.tsv JD-ST16 T1 and LOO-B3 T1 (T2-T3 added)"
+  domain: stock
+  audience: staff
+  shapes: [refine, qty_carried]
+  turns:
+  - text: "WC286 stock"
+    expect:
+      kind: answer
+      about: "stock for every SRTWC286-SH product; if a list is shown instead it ends with '...and N more.' and never hides products silently"
+      must: ["SRTWC286-SH"]
+  - text: "only the NEW ones"
+    expect:
+      kind: answer
+      about: "stock narrowed to the SRTWC286-SH-NEW variants only"
+      must: ["SRTWC286-SH-NEW"]
+  - text: "SRTWC286-SH-NEW-200 got 20?"
+    expect:
+      kind: answer
+      about: "whether 20 units of SRTWC286-SH-NEW-200 are on hand, from the held stock data"
+      must: ["SRTWC286-SH-NEW-200"]
+
+- id: stock-r06
+  source: real
+  origin: "crew/state/eval/dev/cand-0163.json (message; T2-T3 added)"
+  domain: stock
+  audience: staff
+  shapes: [multi_product, typo, small_talk]
+  turns:
+  - text: "srtwt9820 srtks2826-bl srtkt67ss-bl hav stock?"
+    expect:
+      kind: answer
+      about: "stock for SRTWT9820 and SRTKT67SS-BL, and a plain line that srtks2826-bl was not found (offering near codes is fine)"
+      must: ["SRTWT9820", "SRTKT67SS-BL"]
+  - text: "srtwt9820 got 5 unit?"
+    expect:
+      kind: answer
+      about: "whether 5 units of SRTWT9820 are on hand"
+      must: ["SRTWT9820"]
+  - text: "ok thanks"
+    expect:
+      kind: answer
+      about: "a short polite acknowledgement; no new lookup, no menu, no hand-over"
+      must_not: ["Couldn't find", "Routed to your PIC"]
+      judge: "The staff contact's stored first name is the honorific 'Mr'; addressing the contact as 'Mr' is its own stored name, not a broken placeholder."
+
+- id: stock-r07
+  source: real
+  origin: "crew/state/eval/dev/cand-0153.json (history + message)"
+  domain: stock
+  audience: dealer
+  shapes: [qty_carried, language_mix, particle]
+  turns:
+  - text: "SRTWT5807 2 UNIT GOT?"
+    expect:
+      kind: answer
+      about: "availability of SRTWT5807 for 2 units"
+      must: ["SRTWT5807"]
+  - text: "SRTWT5827 2 UNIT"
+    expect:
+      kind: answer
+      about: "availability of SRTWT5827 for 2 units (same kind of ask, new product)"
+      must: ["SRTWT5827"]
+  - text: "SRTBF11705 10 SETS ADA?"
+    expect:
+      kind: answer
+      about: "availability of SRTBF11705 for 10 sets ('ada' = is there); Malay or English reply both fine"
+      must: ["SRTBF11705"]
+
+- id: stock-r09
+  source: real
+  origin: "crew/state/eval/dev/cand-0066.json (history + message)"
+  domain: stock
+  audience: staff
+  shapes: [language_mix, typo, topic_switch]
+  turns:
+  - text: "SRTKS 8848有来货吗？"
+    expect:
+      kind: answer
+      about: "incoming for SRTKS8848 (the space inside the code is a typo), stated as the data holds it (its ETA, or that nothing is incoming); Chinese or English reply"
+      judge: "On 14 Oct the dev DB held no incoming for SRTKS8848 (discontinued); SRTKS8848-BL is a real active family member, so the 'Related products' list is the family picker, not invented. Judge against the turn's facts, not this note."
+      must: ["SRTKS8848"]
+  - text: "SRTKS8848 stock"
+    expect:
+      kind: answer
+      about: "stock for SRTKS8848"
+      must: ["SRTKS8848"]
+  - text: "SRTKS 8152有货吗？"
+    expect:
+      kind: ask
+      about: "SRTKS8152 does not exist: a did-you-mean or which-product question offering real codes; never a stock answer for SRTKS8848 again"
+      judge: "A did-you-mean that lists SRTKS8848 among the options is fine; repeating the SRTKS8848 stock answer is a fail."
+
+- id: stock-r10
+  source: real
+  origin: "crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md #1443 COMBO-STOCK (owner 2 Oct)"
+  domain: stock
+  audience: staff
+  shapes: [typo, refine, reply_to_question]
+  turns:
+  - text: "chck stock SRTWC8608-RL"
+    expect:
+      kind: any
+      about: "SRTWC8608-RL is not an exact code: the stock for the SRTWC8608 products or a did-you-mean offering the real SRTWC8608 codes"
+      must: ["SRTWC8608"]
+      must_not: ["I need at least one filter"]
+  - text: "SRTWC8608 stock"
+    expect:
+      kind: any
+      about: "stock for the SRTWC8608 products, or the SRTWC8608 complete sets offered to pick from"
+      must: ["SRTWC8608"]
+      must_not: ["I need at least one filter"]
+  - text: "I want complete set"
+    expect:
+      kind: any
+      about: "the complete set: stock of each member of the SRTWC8608 set, or a which-set question listing the sets (unless T1 and T2 already asked that same question); never a request for a filter"
+      must_not: ["I need at least one filter"]
+      judge: "Clarify-loop cap (#1570, crew/state/reports/PV2-FROZEN-LANES-coverage-14oct.md; owner rule: the loop breaker is a hand-over offer): if T1 and T2 both asked the same which-product / which-set question, a third identical ask here FAILS; an answer or the loop breaker (refer-to-salesman line or hand-over offer) passes."
+
+- id: stock-i01
+  source: improvised
+  domain: stock
+  audience: unlinked
+  shapes: [particle, refine, qty_carried]
+  turns:
+  - text: "SRTWB8001 have stock ?"
+    expect:
+      kind: answer
+      about: "stock / availability of SRTWB8001"
+      must: ["SRTWB8001"]
+  - text: "how about SRTWB8003"
+    expect:
+      kind: answer
+      about: "same stock ask for SRTWB8003"
+      must: ["SRTWB8003"]
+  - text: "both got 20 pcs mou?"
+    expect:
+      kind: answer
+      about: "whether 20 pieces each of SRTWB8001 and SRTWB8003 are available ('mou' = or not, a particle, never a product)"
+      must: ["SRTWB8001", "SRTWB8003"]
+      must_not: ['Which "mou"', 'Couldn''t find: "mou"']
+
