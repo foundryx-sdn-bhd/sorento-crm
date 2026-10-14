@@ -71,8 +71,9 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
               }
             : undefined,
         // Picking the product answers the description too, so nobody retypes the catalogue.
-        onOptionSelected: (option, draft) => ({
-          ...draft,
+        // No `...draft`: the draft handed in is the render-time copy, so spreading it would put
+        // the old (empty) product_id back over the one this pick has just set.
+        onOptionSelected: (option) => ({
           product_code: option?.label ?? '',
           product_name: option?.description ?? '',
         }),
