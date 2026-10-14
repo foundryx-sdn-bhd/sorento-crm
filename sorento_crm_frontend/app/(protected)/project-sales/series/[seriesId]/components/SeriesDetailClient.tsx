@@ -124,7 +124,24 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
     [brandId, brands.data],
   );
 
+  // Every category name seen so far, from any brand's list and from the saved row, so a
+  // picked category keeps its name when a brand change drops it from the fetched list.
+  const knownCategories = React.useRef(
+    new Map<string, { label: string; description?: string }>(),
+  );
+
   const categoryOptions = React.useMemo(() => {
+    const names = knownCategories.current;
+    (row?.category_ids ?? []).forEach((id, index) => {
+      const label = row?.category_names?.[index];
+      if (label && !names.has(id)) names.set(id, { label });
+    });
+    (categories.data ?? []).forEach((category) =>
+      names.set(category.id, {
+        label: category.category_name,
+        description: category.category_code,
+      }),
+    );
     const fetched = (categories.data ?? [])
       .filter((category) => category.is_active || categoryIds.includes(category.id))
       .map((category) => ({
@@ -132,12 +149,10 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
         label: category.category_name,
         description: category.category_code,
       }));
-    // A brand change can drop an already-picked category from the fetched list; keep it
-    // labelled by name so it never shows as a bare id.
-    const known = new Set(fetched.map((option) => option.value));
-    const kept = (row?.category_ids ?? [])
-      .map((id, index) => ({ value: id, label: row?.category_names?.[index] ?? '' }))
-      .filter((option) => categoryIds.includes(option.value) && !known.has(option.value) && option.label);
+    const listed = new Set(fetched.map((option) => option.value));
+    const kept = categoryIds
+      .filter((id) => !listed.has(id) && names.has(id))
+      .map((id) => ({ value: id, ...names.get(id)! }));
     return [...fetched, ...kept];
   }, [categories.data, categoryIds, row]);
 

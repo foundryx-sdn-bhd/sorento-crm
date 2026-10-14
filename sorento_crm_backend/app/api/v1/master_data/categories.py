@@ -19,7 +19,7 @@ from app.schemas.product import (
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.services.error_handler import handle_internal_error
 from app.services.uuid_list_param import parse_uuid_list
-from app.services.uuid_path_param import validate_uuid_path
+from app.services.uuid_path_param import UUID_PATTERN
 from app.services.stock_ask_limits import guard_chatbot_limits_edit, NULL_LIMITS
 
 router = APIRouter()
@@ -125,6 +125,7 @@ async def get_categories_select(
     query: Optional[str] = Query(None),
     brand_id: Optional[str] = Query(
         None,
+        pattern=UUID_PATTERN,
         description="Only categories holding an active product of this brand, plus their ancestors.",
     ),
     # Any signed-in user (owner ruling 1 Oct 2026, never-stuck L10); an API key still
@@ -139,7 +140,6 @@ async def get_categories_select(
         q = db.query(ProductCategory).filter(ProductCategory.is_active == True)
 
         if brand_id:
-            validate_uuid_path(brand_id, resource="Brand")
             holding = {
                 row[0]
                 for row in db.query(Product.category_id)

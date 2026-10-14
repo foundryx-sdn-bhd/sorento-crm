@@ -16,7 +16,8 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 
-from sqlalchemy import func, or_, text
+from sqlalchemy import func, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
 from app.models.product import Product, ProductCategory
@@ -1010,10 +1011,14 @@ def _compact_upper(raw: str) -> str:
 def _starts_with_any(column: Any, prefixes: Sequence[str]) -> Any:
     """SQL: the column, whitespace removed and upper-cased, starts with one of ``prefixes``.
 
-    ``left() =`` rather than ``LIKE`` so a sheet code holding ``%`` or ``_`` is just text.
+    One ``LIKE ANY`` so the column is squashed once per row, not once per prefix. Each prefix
+    has ``\\``, ``%`` and ``_`` escaped, so a sheet code holding them is just text.
     """
     squashed = func.upper(func.regexp_replace(column, r"\s", "", "g"))
-    return or_(*[func.left(squashed, len(prefix)) == prefix for prefix in prefixes])
+    patterns = [
+        re.sub(r"([\\%_])", r"\\\1", prefix) + "%" for prefix in prefixes
+    ]
+    return squashed.like(func.any(postgresql.array(patterns)))
 
 
 def resolve_series_codes(
@@ -1066,6 +1071,8 @@ def resolve_series_codes(
     set_members = members_of([ps.id for ps in sets])
     for norm, found in by_norm.items():
         products = {p.id: p for ps in found for p in set_members.get(ps.id, [])}
+        if not products:
+            continue
         indirect[norm] = {
             "code": spelling[norm],
             "via": "set",
@@ -1102,12 +1109,12 @@ def resolve_series_codes(
         for norm, prefix in prefixes.items():
             direct = [p for p in fam_products if _compact_upper(p.product_code).startswith(prefix)]
             via_sets = [ps for ps in fam_sets if _compact_upper(ps.set_code).startswith(prefix)]
-            if not direct and not via_sets:
-                continue
             products = {p.id: p for p in direct}
             for ps in via_sets:
                 for p in fam_set_members.get(ps.id, []):
                     products.setdefault(p.id, p)
+            if not products:
+                continue
             indirect[norm] = {
                 "code": spelling[norm],
                 "via": "family",
@@ -1181,14 +1188,19 @@ def apply_series_product_codes(
     # What each product should now cost. Only rows that actually state something appear, so a
     # code-only paste never blanks a price an admin typed on this page.
     pricing: Dict[str, tuple[Any, Any]] = {}
-    for row in sheet_rows:
-        if row.selling_price is None and row.max_discount_pct is None:
-            continue
-        for product in matched.get(normalize_code(row.code), []):
-            pricing[product.id] = (row.selling_price, row.max_discount_pct)
-        # Family variants take the sheet's numbers; set members never do (D3, D3b).
+    stated = [
+        row
+        for row in sheet_rows
+        if row.selling_price is not None or row.max_discount_pct is not None
+    ]
+    # Family variants take the sheet's numbers, set members never do (D3, D3b). Applied
+    # BEFORE the exact rows so an exact code's own price wins whatever the row order.
+    for row in stated:
         for product_id in indirect.get(normalize_code(row.code), {}).get("priced", ()):
             pricing[product_id] = (row.selling_price, row.max_discount_pct)
+    for row in stated:
+        for product in matched.get(normalize_code(row.code), []):
+            pricing[product.id] = (row.selling_price, row.max_discount_pct)
 
     outcome = set_series_products(
         db, series=series, product_ids=wanted, pricing=pricing
