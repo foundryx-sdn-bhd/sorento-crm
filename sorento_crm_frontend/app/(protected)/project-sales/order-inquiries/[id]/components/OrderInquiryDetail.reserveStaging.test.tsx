@@ -260,6 +260,11 @@ vi.mock('../../../_shared/services/orderInquiryReserveService', async (importOri
     commitOrderInquiryReserve: (inquiryId: string, payload: CommitReservePayload) =>
       commitReserveSpy(inquiryId, payload),
     getOrderInquiryRowHistory: (requestId: string, rowId: string) => historyMock(requestId, rowId),
+    // AC-SN-41: the confirmation reads who the notice goes to.
+    getReserveNoticeRecipients: vi.fn(async () => ({
+      to: { name: 'Joey' },
+      cc: [{ name: 'Eling' }],
+    })),
   };
 });
 
@@ -315,6 +320,11 @@ function gridRowFor(itemCode: string): HTMLElement {
     .find((tr): tr is HTMLTableRowElement => Boolean(tr));
   expect(withinRow).toBeTruthy();
   return withinRow as HTMLElement;
+}
+
+/** AC-SN-41: Reserve (N) now opens a confirmation; this is its unticked primary button. */
+async function confirmReserve() {
+  fireEvent.click(await screen.findByRole('button', { name: /^reserve and send to/i }));
 }
 
 beforeEach(() => {
@@ -500,6 +510,7 @@ describe('AC-RS-87: header Reserve CTA, disabled while nothing staged, commits t
     expect(enabledCta).toBeEnabled();
 
     fireEvent.click(enabledCta);
+    await confirmReserve();
 
     await waitFor(() => expect(commitReserveSpy).toHaveBeenCalledTimes(1));
     // 6e.4: ONE inquiry-keyed call carrying lines of two different requests (the open
@@ -527,6 +538,7 @@ describe('AC-RS-87: header Reserve CTA, disabled while nothing staged, commits t
     await screen.findByText('Reserve 107 @ BRW');
 
     fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
+    await confirmReserve();
 
     await waitFor(() => expect(toastErrorSpy).toHaveBeenCalled());
     expect(screen.getByText('Reserve 107 @ BRW')).toBeInTheDocument();
@@ -790,6 +802,7 @@ describe('6e.4 review round: declined lines, the action column gate, amend prefi
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'same' } });
     fireEvent.click(screen.getByRole('button', { name: /^stage$/i }));
     fireEvent.click(await screen.findByRole('button', { name: /^reserve \(1\)$/i }));
+    await confirmReserve();
 
     await waitFor(() => expect(toastSuccessSpy).toHaveBeenCalledWith('Nothing to change'));
     expect(toastSuccessSpy).not.toHaveBeenCalledWith(expect.stringMatching(/notified/i));
@@ -808,6 +821,7 @@ describe('6e.4 review round: declined lines, the action column gate, amend prefi
     fireEvent.click(within(gridRowFor('ZZT-REQUESTED')).getByLabelText('Reserve'));
     expect(await screen.findByText('Reserve 107')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
+    await confirmReserve();
 
     await waitFor(() => expect(commitReserveSpy).toHaveBeenCalledTimes(1));
     const [, payload] = commitReserveSpy.mock.calls[0];
