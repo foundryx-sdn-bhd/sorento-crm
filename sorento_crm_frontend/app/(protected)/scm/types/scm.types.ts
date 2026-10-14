@@ -7,6 +7,7 @@
  */
 
 import type { PlanningChangeFromTo } from '@/app/(protected)/project-sales/_shared/types/planningChange.types';
+import type { CancelSource } from '../lib/autocountCancel';
 
 /** Health-state vocabulary. Backend-real: stockout (rendered "Out of stock"), dead,
  *  low (rendered "Low stock" - stocked but net <= demand-aware reorder point, M8-B),
@@ -276,6 +277,9 @@ export interface SalesOrderLine {
   qty_ordered: number;
   /** Stamped by create-DO-from-SO (soft link, no hard FK). */
   qty_delivered: number;
+  /** AC-CANCEL-CRM: what AutoCount Cancel SO cancelled on this line, and the documents. */
+  qty_cancelled?: number;
+  cancels?: CancelSource[];
   /** What is still to go out on this line, off the SERVER: `ordered - delivered` floored at
    *  0, and **0 on a closed line** whatever those two say. A book re-upload closes a line by
    *  absence without knowing what shipped, so the subtraction alone reads as the whole
@@ -658,6 +662,9 @@ export interface PurchaseOrderLine {
   product_name: string;
   qty_ordered: number;
   qty_received: number;
+  /** AC-CANCEL-CRM: what AutoCount Cancel PO cancelled on this line, and the documents. */
+  qty_cancelled?: number;
+  cancels?: CancelSource[];
   /** What is still to ARRIVE on this line, off the SERVER: `ordered - received` floored at
    *  0, and **0 on a closed line** whatever those two say. Same rule and same reason as the
    *  sales book's own `outstanding_qty`. */

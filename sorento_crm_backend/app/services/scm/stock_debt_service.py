@@ -1387,7 +1387,13 @@ class StockDebtService:
                 # qty_ordered)`), reused rather than re-derived so the two screens cannot
                 # come to disagree about what "Ordered" means for a line CS has stated.
                 plan_qty().label("qty_ordered"),
-                func.coalesce(SalesOrderLine.qty_delivered, 0).label("qty_delivered"),
+                # AC-CANCEL-CRM: Ordered is net of AutoCount Cancel SO (`plan_qty()`), so
+                # Delivered is too; TransferedQty counts the cancel as gone out.
+                func.greatest(
+                    func.coalesce(SalesOrderLine.qty_delivered, 0)
+                    - func.coalesce(SalesOrderLine.qty_cancelled, 0),
+                    0,
+                ).label("qty_delivered"),
             )
             .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
             .outerjoin(SalesAgent, SalesAgent.id == SalesOrder.sales_agent_id)
