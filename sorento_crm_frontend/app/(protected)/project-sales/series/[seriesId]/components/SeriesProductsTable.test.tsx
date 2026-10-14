@@ -30,6 +30,7 @@ if (!window.matchMedia) {
 const getSeriesProductRows = vi.fn();
 const updateSeriesProductPricing = vi.fn();
 const removeSeriesProduct = vi.fn();
+const importSeriesProducts = vi.fn();
 const getProductsForLineSelect = vi.fn().mockResolvedValue([]);
 
 vi.mock('../../../_shared/services/projectService', async (importOriginal) => {
@@ -41,6 +42,7 @@ vi.mock('../../../_shared/services/projectService', async (importOriginal) => {
     getSeriesProductRows: (...args: unknown[]) => getSeriesProductRows(...args),
     updateSeriesProductPricing: (...args: unknown[]) => updateSeriesProductPricing(...args),
     removeSeriesProduct: (...args: unknown[]) => removeSeriesProduct(...args),
+    importSeriesProducts: (...args: unknown[]) => importSeriesProducts(...args),
   };
 });
 
@@ -212,6 +214,45 @@ describe('SeriesProductsTable', () => {
     renderTable();
     await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledTimes(1));
     expect(getSeriesProductRows).toHaveBeenCalledWith('s1');
+  });
+  it('does not repeat the code as the Description when the name equals the code', async () => {
+    getSeriesProductRows.mockResolvedValue([row({ product_code: '1861', product_name: '1861' })]);
+    renderTable();
+
+    await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(screen.queryAllByText('1861')).toHaveLength(1));
+    const dash = screen.getAllByText('-').find((el) => el.getAttribute('title') === '');
+    expect(dash?.textContent).toBe('-');
+  });
+
+  it('shows the Description when the name differs from the code', async () => {
+    getSeriesProductRows.mockResolvedValue([row({ product_code: 'SRT6641', product_name: 'FLOOR TRAP' })]);
+    renderTable();
+
+    expect(await screen.findByText('FLOOR TRAP')).toBeInTheDocument();
+  });
+  it('keeps the product picked on a NEW row, and saves it by its code', async () => {
+    getSeriesProductRows.mockResolvedValue([]);
+    const product = { id: 'p1', product_code: '1861', product_name: '1861' };
+    getProductsForLineSelect.mockResolvedValue([product]);
+    importSeriesProducts.mockResolvedValue({});
+    renderTable();
+
+    fireEvent.click(await screen.findByRole('button', { name: /add a product/i }));
+    const picker = await screen.findByRole('combobox', { name: /product/i });
+    fireEvent.click(picker);
+    fireEvent.click(await screen.findByRole('option', { name: /1861/ }));
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /product/i })).toHaveTextContent('1861'));
+    expect(screen.getByRole('combobox', { name: /product/i })).not.toHaveTextContent('Pick a product');
+
+    fireEvent.click(screen.getByRole('button', { name: /^save/i }));
+    await waitFor(() =>
+      expect(importSeriesProducts).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ codes: ['1861'] }),
+      ),
+    );
   });
 
   it("shows no Remove (bin) button on an in-scope row, and keeps it on others (C6)", async () => {

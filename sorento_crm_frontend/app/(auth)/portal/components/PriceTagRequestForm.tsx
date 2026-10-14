@@ -112,6 +112,7 @@ import {
 import type { TagSheetDesignPayload } from '@/lib/dealer-kit/design-payload';
 import { cn } from '@/lib/utils';
 import { promotionOptionName } from '@/lib/dealer-kit/line-pricing-types';
+import { codeWithName, distinctName, sameDisplayText } from '@/lib/product-display';
 
 /** Where an AI-extracted product line stands against the catalogue lookup
  *  (D7/AC-S6-2), shown in the extract dialog's own result table. */
@@ -1011,7 +1012,11 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
       return items.map((i) => ({
         value: `${i.kind}:${i.id}`,
         label: i.name || i.code,
-        description: `${i.kind === 'product_set' ? 'Set' : 'Product'} - ${i.code}`,
+        description: distinctName(i.code, i.name)
+          ? `${i.kind === 'product_set' ? 'Set' : 'Product'} - ${i.code}`
+          : i.kind === 'product_set'
+            ? 'Set'
+            : 'Product',
       }));
     },
     [],
@@ -1413,7 +1418,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
         .map((i) => ({
           value: `product:${i.id}`,
           label: i.name || i.code,
-          description: `Product - ${i.code}`,
+          description: distinctName(i.code, i.name) ? `Product - ${i.code}` : undefined,
         }));
     },
     [],
@@ -2258,7 +2263,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {line.line_type === 'product' ? 'Product' : 'Set'}
-                                    {line.code ? ` - ${line.code}` : ''}
+                                    {line.code && !sameDisplayText(line.code, line.name) ? ` - ${line.code}` : ''}
                                   </div>
                                   {/* AC-S1-10/AC-S1-11: below the app's 992px
                                       mobile breakpoint (useIsMobile), the same
@@ -2314,7 +2319,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
                                             {part.name || part.code}
                                           </span>
                                           <span className="text-xs text-muted-foreground">
-                                            {part.code ? ` - ${part.code}` : ''}
+                                            {part.code && !sameDisplayText(part.code, part.name) ? ` - ${part.code}` : ''}
                                             {part.role ? ` (${part.role})` : ''}
                                           </span>
                                         </>
@@ -3129,7 +3134,9 @@ function PartRow({
                 <div className="truncate text-sm" title={part.name || part.code}>
                   {part.name || part.code}
                 </div>
-                <div className="text-xs text-muted-foreground">{part.code || '-'}</div>
+                {!sameDisplayText(part.code, part.name) ? (
+                  <div className="text-xs text-muted-foreground">{part.code || '-'}</div>
+                ) : null}
               </div>
             )}
           </div>
@@ -3194,7 +3201,11 @@ function LineRow({
     ? {
         value: picked,
         label: line.name || line.code,
-        description: `${isSet ? 'Set' : 'Product'}${line.code ? ` - ${line.code}` : ''}`,
+        description: distinctName(line.code, line.name)
+          ? `${isSet ? 'Set' : 'Product'}${line.code ? ` - ${line.code}` : ''}`
+          : isSet
+            ? 'Set'
+            : 'Product',
       }
     : undefined;
 
@@ -3550,7 +3561,7 @@ function AIMatchCell({
         onChange={(v) => onPick(product, v)}
         options={suggestions.map((s) => ({
           value: s.product_id,
-          label: s.product_name ? `${s.product_code} - ${s.product_name}` : s.product_code,
+          label: codeWithName(s.product_code, s.product_name),
         }))}
         placeholder="Did you mean?"
         aria-label={`Did you mean, for ${product.product_code ?? 'this row'}`}

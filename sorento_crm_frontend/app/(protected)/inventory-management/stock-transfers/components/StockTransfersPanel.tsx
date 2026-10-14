@@ -54,6 +54,7 @@ import { RowActionsMenu } from '@/components/common/RowActionsMenu';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { stockTransferActions } from '../actions';
+import { distinctName } from '@/lib/product-display';
 
 // Both option lists are derived from the label maps rather than retyped, so a word can only
 // ever be changed in one place. The filter and the badge cannot say `moved` two ways.
@@ -334,7 +335,11 @@ export function StockTransfersPanel({
         cell: ({ row }) => (
           <span
             className="block truncate"
-            title={row.original.product_name ?? row.original.item_code ?? undefined}
+            title={
+              distinctName(row.original.item_code, row.original.product_name) ??
+              row.original.item_code ??
+              undefined
+            }
           >
             {row.original.item_code ?? '-'}
           </span>

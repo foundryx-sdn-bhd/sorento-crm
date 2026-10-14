@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 // it first; the endpoint and the shape are the generic ones.
 import { getProductsForVariantSelect } from '@/app/(protected)/master-data-management/products/services/productService';
 import type { POVersionLine } from '../../../_shared/types/poIntake.types';
+import { sameDisplayText } from '@/lib/product-display';
 
 /**
  * Our code, hiding inside theirs, as a search term.
@@ -109,12 +110,14 @@ const MENU_CLASS = 'min-w-[280px] w-[max(var(--radix-popper-anchor-width),24rem)
  * One line per option: the code, then the short name, clipped with an ellipsis if even that
  * does not fit. The whole description is the row's hover title.
  */
-function renderProductOption(option: SearchableSelectOption) {
+export function renderProductOption(option: SearchableSelectOption) {
   const name = productShortName(option.description);
   return (
     <div className="flex min-w-0 flex-1 items-baseline gap-2" title={option.description}>
       <span className="shrink-0 font-medium">{option.label}</span>
-      {name ? <span className="truncate text-xs text-muted-foreground">{name}</span> : null}
+      {name && !sameDisplayText(option.label, name) ? (
+        <span className="truncate text-xs text-muted-foreground">{name}</span>
+      ) : null}
     </div>
   );
 }

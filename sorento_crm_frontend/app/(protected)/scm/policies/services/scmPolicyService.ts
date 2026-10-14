@@ -119,6 +119,7 @@ import {
   mockUpdateReorderPolicy,
   mockWarehouseOptions,
 } from '../lib/scmPolicyMock';
+import { codeWithName } from '@/lib/product-display';
 
 /** Phase-1 flag - true = deterministic mock store, false = live backend. */
 export const USE_POLICY_MOCKS = false;
@@ -322,7 +323,7 @@ export async function getProductScopeOptions(): Promise<Option[]> {
   const body = (await res.json()) as {
     data: { id: string; product_code: string; product_name: string }[];
   };
-  return body.data.map((p) => ({ value: p.id, label: `${p.product_code} · ${p.product_name}` }));
+  return body.data.map((p) => ({ value: p.id, label: codeWithName(p.product_code, p.product_name, ' · ') }));
 }
 
 export async function getClassScopeOptions(): Promise<Option[]> {

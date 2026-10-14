@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SEARCH_DEBOUNCE_MS } from '@/hooks/useDebouncedSearch';
+import { codeWithName } from '@/lib/product-display';
 
 interface ProductOption {
   id: string;
@@ -69,13 +70,13 @@ export function ProductCombobox({
       onSearchChange={onSearch ? handleSearch : undefined}
       options={options.map((p) => ({
         value: p.id,
-        label: `${p.product_code}${p.product_name ? ` - ${p.product_name}` : ''}`,
+        label: codeWithName(p.product_code, p.product_name),
         searchText: `${p.product_code} ${p.product_name ?? ''}`,
       }))}
       renderTriggerLabel={(opt) => {
         const p = options.find((o) => o.id === opt.value);
         if (!p) return opt.label;
-        return `${p.product_code}${p.product_name && p.product_name !== p.product_code ? ` - ${p.product_name}` : ''}`;
+        return codeWithName(p.product_code, p.product_name);
       }}
     />
   );
