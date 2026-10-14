@@ -31,6 +31,9 @@ derive the move. Still one parser call per turn; replies stay code templates.
   within, phrase, key, doc_number, op, quantity}, unclear[], social, escalation; act kept as shadow. MEMORY renders the
   register (R<n>, children indented) and the stack (S<n>). Code derives the move (design D rules 1-8). One generic
   prompt rule for refs. Built and tested on recorded + handwritten parses only.
+- **Security rule for R2+ (security review of R1):** acting on a register entry (an SO uuid, a PO number key) goes
+  back through the same grant and links checks as a typed ask; a stored key is never used directly (e.g. a PO number
+  recorded from a non-staff PO list must not reach the staff-only ref_status lookup).
 - **R5 Eval + live (needs the owner's spend OK).** Probe set, act-shadow comparison, one dev run, crew live check.
 
 ## R1 design (register writer)
