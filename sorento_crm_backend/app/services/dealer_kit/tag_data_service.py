@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.product import Product
 from app.models.product_set import ProductSet, ProductSetMember
+from app.utils.product_display import distinct_name
 from app.services.dealer_kit.pricing import DEFAULT_CURRENCY, resolve_prices
 from app.services.dealer_kit.product_images import gallery_images
 from app.services.dealer_kit.viewer import ViewerContext
@@ -464,12 +465,13 @@ def product_set_tag_data(
 
 
 def _set_member_text(members: Sequence[dict]) -> str:
-    """``- CODE (NAME) 800 x 500 x 220 mm`` per member (AC-L.4)."""
+    """``- CODE (NAME) 800 x 500 x 220 mm`` per member (AC-L.4); ``(NAME)`` only when it differs from the code."""
     lines = []
     for member in members:
         head = f"- {member['code']}"
-        if member.get("name"):
-            head += f" ({member['name']})"
+        shown = distinct_name(member["code"], member.get("name"))
+        if shown:
+            head += f" ({shown})"
         if member.get("dimensions"):
             head += f" {member['dimensions']}"
         lines.append(head)
@@ -727,7 +729,11 @@ def _package_text(parts: list[dict], open_groups: list[dict]) -> str:
     lines = [
         " ".join(
             piece
-            for piece in (f"+ {part['code']}", part["name"], part["dimensions"])
+            for piece in (
+                f"+ {part['code']}",
+                distinct_name(part["code"], part["name"]),
+                part["dimensions"],
+            )
             if piece
         )
         for part in parts

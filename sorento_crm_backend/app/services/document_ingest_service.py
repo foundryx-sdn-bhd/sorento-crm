@@ -734,6 +734,10 @@ class DocumentIngestService(MasterRefResolver):
                     # query too.
                     self._memo[(Product.__tablename__, "code", code.upper())] = pid
 
+        # The FIRST snapshot of a product wins: a service whose `ingest()` runs more than once
+        # in a batch (the consignments door, one CG at a time) must not overwrite a product's
+        # "before" with a picture its own earlier records already changed.
+        product_ids -= set(self.plan_exception_before)
         if not product_ids:
             return
         try:
@@ -1575,8 +1579,9 @@ class DocumentIngestService(MasterRefResolver):
                 if spec.entity_type in ("sales_orders", "purchase_orders"):
                     # AC-CANCEL-CRM (R5): AutoCount Cancel SO / Cancel PO documents cancelled the
                     # whole line (`cancelled_by_cancel_doc`, set by the cancel ingest). The push
-                    # recomputes the status from quantities and would read it closed, then the
-                    # relink would cancel it again and retire its OI rows a second time. A line
+                    # recomputes the status from quantities and would read it closed (and this
+                    # push would flag its OI rows as newly cancelled), then the relink would
+                    # cancel it again. A line
                     # only NOW fully covered (ordered lowered) is left to the relink, which
                     # reports it as newly cancelled.
                     ordered = values.get("qty_ordered", row.qty_ordered) or 0

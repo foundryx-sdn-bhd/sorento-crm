@@ -205,11 +205,14 @@ def _distinct_name(code: Any, name: Any) -> str | None:
     """Product name only when it differs from the code.
 
     Sorento usually sets product_name == product_code, so showing both is
-    redundant. Surface the name only when it carries extra info (code != name).
+    redundant. Surface the name only when it carries extra info. Equal means
+    the same after trim, whitespace-run collapse and lower-casing (same rule
+    as the backend's ``app.utils.product_display``; inlined because this
+    package cannot import the backend).
     """
     if not _filled(name):
         return None
-    if _filled(code) and str(name).strip() == str(code).strip():
+    if _filled(code) and " ".join(str(name).split()).lower() == " ".join(str(code).split()).lower():
         return None
     return name
 

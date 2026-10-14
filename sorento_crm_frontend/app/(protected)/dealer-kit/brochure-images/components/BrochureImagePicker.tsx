@@ -67,6 +67,7 @@ import {
   useSetBrochureImage,
 } from '../hooks/useBrochureImages';
 import { BrochureImageDialog } from './BrochureImageDialog';
+import { distinctName } from '@/lib/product-display';
 
 export function BrochureImagePicker() {
   const [promotionId, setPromotionId] = useState('');
@@ -245,9 +246,9 @@ export function BrochureImagePicker() {
         cell: ({ row }) => (
           <span
             className="block truncate text-sm text-muted-foreground"
-            title={row.original.productName}
+            title={distinctName(row.original.productCode, row.original.productName) ?? undefined}
           >
-            {row.original.productName}
+            {distinctName(row.original.productCode, row.original.productName)}
           </span>
         ),
       },

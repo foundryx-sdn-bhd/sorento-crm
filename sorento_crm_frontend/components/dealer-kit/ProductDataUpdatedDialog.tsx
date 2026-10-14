@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import type { LineDataChange } from '@/lib/dealer-kit/product-data-changes';
 import { ProductDataChangeRows } from './ProductDataReviewDialog';
+import { distinctName } from '@/lib/product-display';
 
 interface ProductDataUpdatedDialogProps {
   open: boolean;
@@ -77,7 +78,7 @@ export default function ProductDataUpdatedDialog({
           <DialogDescription>
             {code}
             {tagLabel ? ` ${tagLabel}` : ''}
-            {name ? ` / ${name}` : ''}
+            {distinctName(code, name) ? ` / ${name}` : ''}
           </DialogDescription>
         </DialogHeader>
 

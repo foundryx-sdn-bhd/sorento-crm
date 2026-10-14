@@ -41,6 +41,7 @@ import type {
   CoverageTransferProposal,
   CoverageUndatedDemand,
 } from '../types/coverage.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Coverage Timeline inside the row-click explanation dialog (UAC Group B).
@@ -631,7 +632,7 @@ export function CoverageTimelinePanel({
             ) : null}
             <div className="text-2xs text-muted-foreground">
               {data.product_code}
-              {data.product_name ? ` · ${data.product_name}` : ''} · pool {data.pool_code} ·{' '}
+              {distinctName(data.product_code, data.product_name) ? ` · ${data.product_name}` : ''} · pool {data.pool_code} ·{' '}
               {data.locations.length} {data.locations.length === 1 ? 'location' : 'locations'}
             </div>
           </div>

@@ -8,14 +8,19 @@ on #1623's `consignments` / `consignment_returns` doors and are kept in `autocou
 record into a canonical sales order, which the consignments ingest writes through the SO ingest
 itself (`DocumentIngestService`, `sales_doc_type = consignment`): customer ladder, demand class
 and adoption (Q3 a), line sync, status and the planning hooks are the sales order's own.
-AutoCount is truth (Q2 a): ordered is Qty, delivered is TransferedQty as sent (0 while the
-contract 2.8 shape sends none). A voided or vanished CG is a cancelled order.
+
+**A consignment's goods are already at the customer (CONSIGN-DELIVERED-FIX, owner 14 Oct).**
+A CG is a stock transfer to the CON location, so each line is delivered in full at issue
+(delivered = Qty) and the order is closed: never open demand. TransferedQty on a CG line is
+the qty already RETURNED (Consignment Return, incl. 'CVT TO DO'), so it is `qty_returned`,
+never delivered. A voided or vanished CG is a cancelled order.
 
 **A return is reporting only (ruling 2, Q4 a).** Each return line is matched to ONE consignment
 line or to none, with a reason: its FromDocDtlKey names the line exactly; without a key, the
 (CG, item, location) group's one line; anything else is undetermined and names no line (ruling
 3: never a guess). `recompute_returned` sets `qty_returned` to the sum of matched lines of live
-return docs, capped at ordered. Nothing else on the line moves.
+return docs or the CG's own TransferedQty, whichever is larger, capped at ordered. Nothing else
+on the line moves.
 """
 from __future__ import annotations
 
@@ -29,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.services.autocount_doc_ingest_service import _int
 from app.models.autocount_cancel import (
+    KIND_CONSIGNMENT,
     KIND_CONSIGNMENT_RETURN,
     MATCH_MATCHED,
     MATCH_UNMATCHED,
@@ -84,9 +90,9 @@ def _number(value: Any) -> Any:
 
 
 def carries_transfers(doc: AutocountCancelDoc) -> bool:
-    """Crew gate, 14 Oct: a CG is demand only once its record states TransferedQty on every
-    item line (contract 2.9). Without it a consignment would read nothing delivered and stay
-    outstanding forever, so a 2.8 record is kept stored only until a push that carries it."""
+    """Crew gate, 14 Oct: a CG becomes an order only once its record states TransferedQty on
+    every item line (contract 2.9), the returned qty the order carries; a 2.8 record is kept
+    stored only until a push that carries it."""
     details = [d for d in ((doc.source_record or {}).get("Details") or [])
                if isinstance(d, dict) and _text(d.get("ItemCode"))]
     return bool(details) and all(d.get("TransferedQty") is not None for d in details)
@@ -98,8 +104,10 @@ def consignment_payload(book: str, doc: AutocountCancelDoc) -> dict[str, Any]:
     Built from the STORED record (the newest the CRM accepted, the LastModified guard already
     applied), never from a stale push. A line without an ItemCode is a text line, not demand,
     and is left out. Contract 2.9 fields (DebtorCode, DebtorName, SalesAgent; per line
-    UnitPrice, SubTotal, UOM, TransferedQty) are taken when sent; absent, the order lands with
-    no customer and nothing delivered, and the next push that carries them fills them in."""
+    UnitPrice, SubTotal, UOM) are taken when sent; absent, the order lands with no customer,
+    and the next push that carries them fills them in. Every line is delivered in full: the
+    goods left with the CG (CONSIGN-DELIVERED-FIX). TransferedQty is the returned qty and is
+    folded into `qty_returned` by `recompute_returned`, not sent to the SO ingest."""
     raw = doc.source_record or {}
     lines: list[dict[str, Any]] = []
     for detail in raw.get("Details") or []:
@@ -110,10 +118,12 @@ def consignment_payload(book: str, doc: AutocountCancelDoc) -> dict[str, Any]:
         dtl_key = _int(detail.get("DtlKey"))
         if not item or dtl_key is None:
             continue
+        qty = _number(detail.get("Qty")) or _ZERO
         line: dict[str, Any] = {
             "source_ref": f"{consignment_source_ref(book, doc.doc_key)}:{dtl_key}",
             "product_code": item,
-            "qty_ordered": _number(detail.get("Qty")) or _ZERO,
+            "qty_ordered": qty,
+            "qty_delivered": qty,
         }
         seq = detail.get("Seq")
         if isinstance(seq, int) and seq >= 0:
@@ -121,8 +131,7 @@ def consignment_payload(book: str, doc: AutocountCancelDoc) -> dict[str, Any]:
         location = _text(detail.get("Location"))
         if location:
             line["warehouse_code"] = location
-        for source, target in (("TransferedQty", "qty_delivered"), ("UnitPrice", "unit_price"),
-                               ("SubTotal", "line_total")):
+        for source, target in (("UnitPrice", "unit_price"), ("SubTotal", "line_total")):
             value = _number(detail.get(source))
             if value is not None:
                 line[target] = value
@@ -148,16 +157,11 @@ def consignment_payload(book: str, doc: AutocountCancelDoc) -> dict[str, Any]:
 
 def _status(doc: AutocountCancelDoc, lines: list[dict[str, Any]]) -> str:
     """Stated, never left to the SO ingest's derivation, which keeps a cancelled order
-    cancelled: an un-voided or restored CG has to reopen."""
+    cancelled: an un-voided or restored CG has to come back. A live CG is `closed`: its goods
+    are at the customer, so it is never open demand (CONSIGN-DELIVERED-FIX)."""
     if doc.is_void or doc.source_vanished_at is not None:
         return "cancelled"
-    settled = lines and all(
-        isinstance(l.get("qty_delivered"), Decimal)
-        and isinstance(l.get("qty_ordered"), Decimal)
-        and l["qty_delivered"] >= l["qty_ordered"]
-        for l in lines
-    )
-    return "closed" if settled else "open"
+    return "closed"
 
 
 # ============================================================================ returns
@@ -308,10 +312,47 @@ def _matched_returns(db: Session, ids: list[str], *, keyed_only: bool,
     }
 
 
+def _transferred(db: Session, rows: list[SalesOrderLine]) -> dict[str, Decimal]:
+    """Per consignment line, the TransferedQty its stored CG record states (the qty AutoCount
+    counts as returned), read off the line's `source_ref` `<book>:CSGN:<DocKey>:<DtlKey>`."""
+    wanted: dict[tuple[str, int], dict[int, str]] = {}
+    for row in rows:
+        parts = (row.source_ref or "").rsplit(":", 3)
+        if len(parts) != 4 or parts[1] != CG_PREFIX:
+            continue
+        doc_key, dtl_key = _int(parts[2]), _int(parts[3])
+        if doc_key is None or dtl_key is None:
+            continue
+        wanted.setdefault((str(row.company_id), parts[0], doc_key), {})[dtl_key] = str(row.id)
+    if not wanted:
+        return {}
+    out: dict[str, Decimal] = {}
+    docs = (db.query(AutocountCancelDoc)
+            .filter(AutocountCancelDoc.kind == KIND_CONSIGNMENT,
+                    AutocountCancelDoc.company_id.in_(sorted({c for c, _, _ in wanted})),
+                    AutocountCancelDoc.doc_key.in_(sorted({k for _, _, k in wanted})))
+            .all())
+    for doc in docs:
+        lines = wanted.get((str(doc.company_id), doc.source_book, doc.doc_key))
+        if not lines:
+            continue
+        for detail in (doc.source_record or {}).get("Details") or []:
+            if not isinstance(detail, dict):
+                continue
+            line_id = lines.get(_int(detail.get("DtlKey")))
+            value = _number(detail.get("TransferedQty"))
+            # A non-finite value (NaN, Infinity) is no quantity: ignored, never raised on.
+            if line_id and isinstance(value, Decimal) and value.is_finite():
+                out[line_id] = value
+    return out
+
+
 def recompute_returned(db: Session, so_line_ids: Iterable[str],
                        company_id: Optional[str] = None) -> None:
-    """`qty_returned` on these lines: the matched lines of live return docs, capped at ordered.
-    Only this column is written. In the caller's transaction."""
+    """`qty_returned` on these lines: the matched lines of live return docs, or the CG's own
+    TransferedQty (AutoCount's returned qty, CONSIGN-DELIVERED-FIX), whichever is larger,
+    capped at ordered. The two are one fact pushed twice; the larger is the one that has
+    landed. Only this column is written. In the caller's transaction."""
     ids = sorted({str(i) for i in so_line_ids if i})
     if not ids:
         return
@@ -330,11 +371,14 @@ def recompute_returned(db: Session, so_line_ids: Iterable[str],
     rows_q = db.query(SalesOrderLine).filter(SalesOrderLine.id.in_(ids))
     if company_id:
         rows_q = rows_q.filter(SalesOrderLine.company_id == company_id)
-    for row in rows_q:
+    rows = rows_q.all()
+    transferred = _transferred(db, rows)
+    for row in rows:
         ordered = Decimal(row.qty_ordered or 0)
         # A whole-group return: every unit still out on the group came back, so the line's
         # returned qty is all of it (its keyed returns plus its own remainder).
         total = ordered if str(row.id) in whole else sums.get(str(row.id), _ZERO)
+        total = max(total, transferred.get(str(row.id), _ZERO))
         value = max(min(total, ordered), _ZERO)
         if Decimal(row.qty_returned or 0) != value:
             row.qty_returned = value

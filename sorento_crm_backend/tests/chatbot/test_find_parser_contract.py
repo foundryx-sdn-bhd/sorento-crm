@@ -46,7 +46,9 @@ def test_p1_schema_declares_find_as_a_strict_required_object_or_null() -> None:
     item = filters["items"]
     assert item["additionalProperties"] is False
     # Round 3: a typed value (code, number + unit, enum) rides `value` + `unit`.
-    assert set(item["required"]) == {"key", "value", "unit"}
+    # SEAT-AS-PRODUCT: the parser states the file word of THIS message (null when none).
+    assert set(item["required"]) == {"key", "value", "unit", "file_word"}
+    assert set(item["properties"]["file_word"]["type"]) == {"string", "null"}
     assert set(item["properties"]["unit"]["type"]) == {"string", "null"}
     assert item["properties"]["key"]["type"] == "string"
     assert set(item["properties"]["value"]["type"]) == {"string", "number", "null"}
@@ -67,7 +69,9 @@ def test_p2_find_filters_variable_renders_the_rule_and_every_filter_line() -> No
     with blank_session() as db:
         text = chatbot_prompt_vars.VARIABLES["find_filters"].render(db)
     assert "find" in text.lower()
-    assert "master_products" in text, "the rule names the domain_hint to use"
+    # SEAT-AS-PRODUCT: the relation picks WHICH products; the domain is the ask's own.
+    assert "domain_hint is master_products" not in text
+    assert "domain_hint and intent_hint included" in text
     for key, row in registry.FILTERS.items():
         assert key in text
         assert row.vocabulary in text

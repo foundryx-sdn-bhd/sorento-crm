@@ -26,6 +26,7 @@ import { todayRunKey } from '../hooks/useReorderRun';
 import type { ReorderRecommendation } from '../types/reorder.types';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Items the plan could not size because nobody has set a reorder level for them.
@@ -106,12 +107,14 @@ export function NeedsLevelView({
             <div className="truncate text-xs font-medium" title={row.original.sku}>
               {row.original.sku}
             </div>
-            <div
-              className="truncate text-2xs text-muted-foreground"
-              title={row.original.product_name ?? undefined}
-            >
-              {row.original.product_name ?? EM_DASH}
-            </div>
+            {distinctName(row.original.sku, row.original.product_name) ? (
+              <div
+                className="truncate text-2xs text-muted-foreground"
+                title={row.original.product_name ?? undefined}
+              >
+                {row.original.product_name}
+              </div>
+            ) : null}
           </div>
         ),
         size: 240,
