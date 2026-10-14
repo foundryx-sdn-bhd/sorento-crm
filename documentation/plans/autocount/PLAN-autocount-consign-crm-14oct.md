@@ -33,8 +33,9 @@ UAC: `consign-crm-acceptance-criteria.md` (alongside).
   CG-202606-062 (3 lines incl. two `SAMPLE` at CON, key-less partial return R-H), CG-202608-072 (1 line,
   'CVT TO DO' return). Every line sits at location `CON`. FromDocDtlKey is NULL on every return line since
   Nov 2024 (2025: 0/3053, 2026: 0/1944).
-- Prod copy `sorento_prod_20261012`: warehouse `CON` exists; products SAMPLE, CB2516SS, CB2806A, SRTWT165,
-  SRTSWT3011 exist; debtors 300-S075 / 300-J096 / 300-V033 exist.
+- Shared dev DB `sorento_cagent_stack` (read only): warehouse `CON` exists; products SAMPLE, CB2516SS, CB2806A,
+  SRTWT165, SRTSWT3011 exist; debtors 300-S075 / 300-J096 / 300-V033 exist; sales agents ACT, ERIC NG, JENNIFER
+  are `project` demand class, so the three example CGs land as project demand (Fulfilment Planning).
 - `app/api/v1/external/ingest.py:311` advertised `CONTRACT_VERSION = "2.8"` at takeover: ss#125 sends
   TransferedQty only to a consumer advertising >= 2.9 (`canonical/documents.py:603,708-729` on the ss branch),
   so without a bump no CG would ever project. The contract text (`contract.py:140-147,245-251`) still said
