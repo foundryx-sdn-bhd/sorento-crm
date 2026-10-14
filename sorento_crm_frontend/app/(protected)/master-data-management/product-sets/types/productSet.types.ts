@@ -79,6 +79,22 @@ export interface ProductSetPayload {
   members?: ProductSetMemberPayload[];
 }
 
+/**
+ * A set as a line picker needs it (`GET /product-sets/select`): no cost, no UUID beyond the id the
+ * pick is stored under. Readable by every role that can quote, which `master_data.product_sets.view`
+ * is not.
+ */
+export interface ProductSetLineRef {
+  id: string;
+  set_code: string;
+  name: string;
+  is_active: boolean;
+  member_count: number;
+  list_price: string | number | null;
+  complete_sets: number | null;
+  parts: { product_code: string; quantity: string | number }[];
+}
+
 /** A set this product belongs to, for the Sets section on product detail (S4). */
 export interface ProductSetRef {
   id: string;

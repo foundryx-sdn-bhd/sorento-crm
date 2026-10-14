@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permission_with_api_key
+from app.dependencies import get_current_user_or_api_key, require_permission_with_api_key
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.schemas.product_set import (
     ApplyProductSetProposalsRequest,
@@ -121,6 +121,51 @@ def list_product_sets(
         }
     except Exception as e:
         raise handle_internal_error(str(e))
+
+
+@router.get("/select")
+def select_product_sets(
+    query: Optional[str] = Query(None),
+    ids: Optional[str] = Query(None, description="Comma list; inactive sets included."),
+    current_user: dict = Depends(get_current_user_or_api_key),
+    db: Session = Depends(get_db),
+):
+    """Sets for the quotation line picker, session-gated like `products/select`.
+
+    Deliberately NOT behind `master_data.product_sets.view`: the sales roles that quote a set
+    do not hold it, exactly as they read products through `products/select`. Own company only
+    (the scoped session), items carry no cost figure.
+
+    DECLARED BEFORE `/{product_set_id}`, or that route swallows `select` whole.
+    """
+    try:
+        wanted = [part.strip() for part in (ids or "").split(",") if part.strip()]
+        for part in wanted:
+            validate_uuid_path(part, resource="Product set")
+        rows = ProductSetService(db).select(query=query, ids=wanted or None)
+        return {
+            "data": [
+                {
+                    "id": row.id,
+                    "set_code": row.set_code,
+                    "name": row.name,
+                    "is_active": row.is_active,
+                    "member_count": row.member_count,
+                    "list_price": row.price.resolved,
+                    "complete_sets": row.complete_sets,
+                    "parts": [
+                        {
+                            "product_code": getattr(m.product, "product_code", None),
+                            "quantity": m.quantity,
+                        }
+                        for m in row.members
+                    ],
+                }
+                for row in rows
+            ]
+        }
+    except Exception as e:
+        raise e if hasattr(e, "status_code") else handle_internal_error(str(e))
 
 
 # --------------------------------------------------------------- proposals

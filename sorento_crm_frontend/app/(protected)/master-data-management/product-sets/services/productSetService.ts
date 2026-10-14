@@ -31,6 +31,7 @@ import type { DataGridApiFetchParams, DataGridApiResponse } from '@/components/u
 import type {
   ProductSet,
   ProductSetDetail,
+  ProductSetLineRef,
   ProductSetPayload,
 } from '../types/productSet.types';
 
@@ -180,4 +181,24 @@ export async function getProductSetMemberOptions(
     list_price: num(p.list_price),
     is_discontinued: Boolean(p.is_discontinued),
   }));
+}
+
+/**
+ * Sets for the quotation line picker. `query` finds ACTIVE sets by code or name; `ids` returns
+ * exactly those sets, inactive included, so a saved line can still name its set. Session-gated
+ * like `products/select`, not by the product-set permission the sales roles lack.
+ */
+export async function getProductSetsForLineSelect(params: {
+  query?: string;
+  ids?: string[];
+}): Promise<ProductSetLineRef[]> {
+  const search = new URLSearchParams();
+  if (params.query) search.set('query', params.query);
+  if (params.ids?.length) search.set('ids', params.ids.join(','));
+  const response = await apiFetch(`${BASE}/select?${search.toString()}`);
+  if (!response.ok) {
+    throw new Error(await extractApiError(response, 'Failed to load product sets'));
+  }
+  const body = (await response.json()) as { data?: ProductSetLineRef[] };
+  return body.data ?? [];
 }

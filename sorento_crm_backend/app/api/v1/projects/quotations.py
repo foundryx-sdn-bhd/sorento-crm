@@ -275,7 +275,7 @@ def _quotation_for_edit(db: Session, quotation_id: str, current_user: dict):
 async def judge_draft_line(
     quotation_id: str,
     product_id: Optional[str] = Query(None),
-    product_set_id: Optional[str] = Query(None),
+    product_set_id: Optional[str] = Query(None, pattern=UUID_PATTERN),
     unit_price: Optional[str] = Query(None),
     _user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),

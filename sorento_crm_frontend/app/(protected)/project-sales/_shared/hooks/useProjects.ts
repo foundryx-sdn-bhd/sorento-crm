@@ -6,6 +6,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import type { QueryKey } from '@tanstack/react-query';
 import type { ListPagerPage, ListPagerParams } from '@/hooks/useListPager';
 import { toast } from '@/lib/toast';
+import { getProductSetsForLineSelect } from '@/app/(protected)/master-data-management/product-sets/services/productSetService';
 import {
   addStakeholder,
   changeProjectStatus,
@@ -1421,6 +1422,16 @@ export function useQuotationLineImages(productId: string | null) {
     enabled: Boolean(productId),
     // The signed URLs are reused server-side for 45 minutes; a few minutes here is well inside.
     staleTime: 5 * 60_000,
+  });
+}
+
+/** One set as a quotation line reads it (complete sets, price, parts), by id; null asks nothing. */
+export function useProductSetLineRef(setId: string | null) {
+  return useQuery({
+    queryKey: ['product-set-line-ref', setId ?? ''],
+    queryFn: async () => (await getProductSetsForLineSelect({ ids: [setId as string] }))[0] ?? null,
+    enabled: Boolean(setId),
+    staleTime: 60_000,
   });
 }
 

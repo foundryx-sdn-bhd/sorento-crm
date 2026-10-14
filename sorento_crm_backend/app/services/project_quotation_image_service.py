@@ -233,7 +233,10 @@ def freeze_version_images(db: Session, version_id: str) -> int:
         db.query(ProjectQuotationLine)
         .filter(
             ProjectQuotationLine.version_id == str(version_id),
-            ProjectQuotationLine.product_id.isnot(None),
+            or_(
+                ProjectQuotationLine.product_id.isnot(None),
+                ProjectQuotationLine.set_parts_snapshot.isnot(None),
+            ),
             or_(
                 ProjectQuotationLine.image_attachment_id.is_(None),
                 ProjectQuotationLine.drawing_attachment_id.is_(None),
@@ -244,13 +247,18 @@ def freeze_version_images(db: Session, version_id: str) -> int:
     if not lines:
         return 0
 
-    product_ids = [line.product_id for line in lines]
+    # A set line reads its DRIVER part's product, the same one the editor showed it.
+    pids = {line.id: line_product_id(line) for line in lines}
+    lines = [line for line in lines if pids[line.id]]
+    if not lines:
+        return 0
+    product_ids = [pids[line.id] for line in lines]
     files = images.files_for(db, product_ids)
     chosen = images.images_for(db, product_ids, files=files)
     filled = 0
     for line in lines:
         touched = False
-        found = chosen.get(str(line.product_id))
+        found = chosen.get(str(pids[line.id]))
         if (
             line.image_attachment_id is None
             and found is not None
@@ -261,7 +269,7 @@ def freeze_version_images(db: Session, version_id: str) -> int:
             touched = True
         visible = found is not None and found.state != images.OFF_CATALOG
         first_drawing = next(
-            (f for f in files.get(str(line.product_id), []) if f.is_drawing), None
+            (f for f in files.get(str(pids[line.id]), []) if f.is_drawing), None
         )
         if line.drawing_attachment_id is None and visible and first_drawing is not None:
             line.drawing_attachment_id = first_drawing.attachment_id

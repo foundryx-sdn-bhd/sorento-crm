@@ -185,6 +185,39 @@ class ProductSetService:
             self._decorate(row, available=available)
         return _ListPage(rows, total, page, limit)
 
+    def select(
+        self, *, query: Optional[str] = None, ids: Optional[list[str]] = None, limit: int = 20
+    ) -> list[ProductSet]:
+        """Sets for a line picker, decorated, in ONE stock query for the batch.
+
+        `ids` returns exactly those sets (inactive included, so a saved line can still name its
+        set); otherwise `query` matches code or name over ACTIVE sets, capped at `limit`. Both
+        read through the scoped session, so another company's set is simply absent.
+        """
+        q = self.db.query(ProductSet).options(
+            joinedload(ProductSet.members).joinedload(ProductSetMember.product)
+        )
+        if ids:
+            q = q.filter(ProductSet.id.in_(ids))
+        else:
+            q = q.filter(ProductSet.is_active.is_(True))
+            if query and query.strip():
+                needle = f"%{query.strip().lower()}%"
+                q = q.filter(
+                    or_(
+                        func.lower(ProductSet.set_code).like(needle),
+                        func.lower(ProductSet.name).like(needle),
+                    )
+                )
+        q = q.order_by(ProductSet.set_code.asc())
+        if not ids:
+            q = q.limit(limit)
+        rows = q.all()
+        available = self._available_for([m.product_id for row in rows for m in row.members])
+        for row in rows:
+            self._decorate(row, available=available)
+        return rows
+
     # ----------------------------------------------------------------- writing
 
     def create(self, payload: dict[str, Any], *, created_by: Optional[str]) -> ProductSet:

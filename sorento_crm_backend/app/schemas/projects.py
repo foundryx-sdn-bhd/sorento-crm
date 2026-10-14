@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from app.services.uuid_path_param import UUID_PATTERN
+
 # A pure, dependency-free lookup table (no DB, no network), so a schema importing it introduces
 # no cycle. It lives in services because the PDF renderer needs the same answer.
 from app.services import geo_places
@@ -1203,6 +1205,7 @@ class ProjectQuotationLineBase(BaseModel):
     )
     product_set_id: Optional[str] = Field(
         None,
+        pattern=UUID_PATTERN,
         description="A product set quoted as ONE line. Never together with product_id (422).",
     )
     description_snapshot: Optional[str] = Field(
@@ -1262,7 +1265,7 @@ class ProjectQuotationLineCreate(ProjectQuotationLineBase):
 
 class ProjectQuotationLineUpdate(BaseModel):
     product_id: Optional[str] = None
-    product_set_id: Optional[str] = None
+    product_set_id: Optional[str] = Field(None, pattern=UUID_PATTERN)
     description_snapshot: Optional[str] = None
     unit_price: Optional[Decimal] = None
     quantity: Optional[Decimal] = None

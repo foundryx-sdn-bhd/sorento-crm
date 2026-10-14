@@ -1179,14 +1179,16 @@ class ProjectSODraftService:
 
         # A quoted SET line carries its parts frozen at quote time: the driver at the quoted
         # rate, the others at zero, so the set's price is counted once.
-        if quoted is not None and quoted.product_set_id and quoted.set_parts_snapshot:
+        # The snapshot alone triggers it: a set deleted since the quote (product_set_id nulled by
+        # the FK) still splits from what was frozen.
+        if quoted is not None and quoted.set_parts_snapshot:
             return _Explosion(
                 components=[
                     _Component(
                         product_id=part["product_id"],
                         code=part["product_code"],
                         description=part.get("description"),
-                        uom=None,
+                        uom=part.get("uom"),
                         unit_price=parent_price if part.get("is_driver") else _ZERO,
                         numerator=_dec(part["quantity"], Decimal("1")),
                         denominator=Decimal("1"),

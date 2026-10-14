@@ -53,7 +53,10 @@ import {
   isDecimalString,
   multiplyMoney,
 } from '../../_shared/lib/money';
-import { useQuotationLineImages } from '../../_shared/hooks/useProjects';
+import {
+  useProductSetLineRef,
+  useQuotationLineImages,
+} from '../../_shared/hooks/useProjects';
 import { formatMyr } from './QuotationsPanel';
 import {
   emptyDraft,
@@ -73,7 +76,6 @@ import {
   type LineFileShown,
 } from './QuotationLineFileCell';
 import { QuotationStockChip } from './QuotationStockChip';
-import { useProductSet } from '@/app/(protected)/master-data-management/product-sets/hooks/useProductSets';
 import { SET_OPTION_PREFIX, isSetOption } from '@/app/(protected)/scm/components/productOrSetPicker';
 import { LineFlags } from './QuotationLineFlags';
 
@@ -291,7 +293,7 @@ function renderLineOption(option: SearchableSelectOption): React.ReactNode {
 
 /** What a set line reads where a product line reads its stock: the complete sets on hand. */
 function SetCompleteChip({ setId }: { setId: string }) {
-  const set = useProductSet(setId);
+  const set = useProductSetLineRef(setId);
   const count = set.data?.complete_sets;
   if (count == null) return null;
   return (
@@ -1090,7 +1092,6 @@ export function QuotationLinesGrid({
         update(key, {
           product_id: '',
           product_set_id: setId,
-          description: option.description ?? '',
           uom: 'SET',
           ...clearPicks,
         });

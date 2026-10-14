@@ -543,10 +543,17 @@ def _snapshot_set(
             "product_code": m.product.product_code,
             "description": m.product.description or m.product.product_name,
             "quantity": format(Decimal(m.quantity).normalize(), "f"),
+            # The part's own unit, so the SO split does not stamp the PO's "SETS" on a pedestal.
+            "uom": _uom_code(db, m.product.base_uom_id),
             "is_driver": driver is not None and m.id == driver.id,
         }
         for m in members
     ]
+    if not line.brand_snapshot and driver is not None and driver.product.brand_id:
+        from app.models.product import Brand
+
+        brand = db.query(Brand.brand_name).filter(Brand.id == driver.product.brand_id).first()
+        line.brand_snapshot = brand[0] if brand else None
     if not line.complete_set:
         line.complete_set = " + ".join(
             m.product.product_code
@@ -728,6 +735,15 @@ def assert_line_picks(
     set_id = payload["product_set_id"] if "product_set_id" in payload else (
         line.product_set_id if line is not None else None
     )
+    if set_id:
+        # Before anything reads the set's members: another company's set is as absent as none,
+        # whatever picks ride along, so a pick cannot be used to probe for it.
+        if db.query(ProductSet.id).filter(ProductSet.id == str(set_id)).first() is None:
+            raise AppException(
+                status_code=404,
+                message="That product set was not found.",
+                code="product_set_not_found",
+            )
     if set_id and not product_id:
         # A set line's files are its DRIVER part's product's. A set that is being picked now
         # (not yet frozen on the line) reads the driver live.
@@ -1149,7 +1165,7 @@ def recompute_version(
 
         # Named by what a person calls the line. No id reaches the reader.
         report["changed_lines"].append(
-            line.product_code_snapshot or line.description_snapshot or "Custom item"
+            line.product_code_snapshot or line.description_snapshot or "Non-standard item"
         )
 
     db.flush()

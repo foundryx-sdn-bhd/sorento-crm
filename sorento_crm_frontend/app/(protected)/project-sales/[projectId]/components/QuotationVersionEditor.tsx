@@ -11,14 +11,12 @@ import { useUOMSelectQuery } from '@/app/(protected)/master-data-management/shar
 import { useBrandSelectQuery } from '@/app/(protected)/master-data-management/shared/hooks/use-brand-select-query';
 // The shared products `/select` mapper, keeping the fields a picked product decides.
 import { getProductsForLineSelect } from '@/app/(protected)/master-data-management/products/services/productService';
-import {
-  getProductSet,
-  getProductSets,
-} from '@/app/(protected)/master-data-management/product-sets/services/productSetService';
+import { getProductSetsForLineSelect } from '@/app/(protected)/master-data-management/product-sets/services/productSetService';
 import {
   SET_OPTION_PREFIX,
   isSetOption,
 } from '@/app/(protected)/scm/components/productOrSetPicker';
+import type { ProductSetLineRef } from '@/app/(protected)/master-data-management/product-sets/types/productSet.types';
 import type { ProductLineRef } from '@/app/(protected)/master-data-management/products/types/product.types';
 import {
   useQuotationLines,
@@ -189,7 +187,7 @@ export function QuotationVersionEditor({
   const productsById = React.useRef(new Map<string, ProductLineRef>());
 
   /** The sets the picker has shown, by id: a never-saved set line is named after one. */
-  const setsById = React.useRef(new Map<string, { set_code: string; name: string }>());
+  const setsById = React.useRef(new Map<string, ProductSetLineRef>());
 
   const fetchProducts = React.useCallback(async (query: string) => {
     const products = await getProductsForLineSelect(query || undefined);
@@ -198,23 +196,16 @@ export function QuotationVersionEditor({
     // code). Best-effort: a reader without the product-set permission still gets the products.
     let setOptions: SearchableSelectOption[] = [];
     try {
-      const sets = await getProductSets({
-        pageIndex: 0,
-        pageSize: 20,
-        sorting: [],
-        searchQuery: query,
+      const sets = await getProductSetsForLineSelect({ query: query || undefined });
+      setOptions = sets.map((set) => {
+        setsById.current.set(set.id, set);
+        return {
+          value: `${SET_OPTION_PREFIX}${set.id}`,
+          label: set.set_code,
+          description: `${set.member_count} ${set.member_count === 1 ? 'part' : 'parts'} - ${set.name}`,
+          searchText: `${set.set_code} ${set.name}`,
+        };
       });
-      setOptions = (sets.data ?? [])
-        .filter((set) => set.is_active)
-        .map((set) => {
-          setsById.current.set(set.id, { set_code: set.set_code, name: set.name });
-          return {
-            value: `${SET_OPTION_PREFIX}${set.id}`,
-            label: set.set_code,
-            description: set.name,
-            searchText: `${set.set_code} ${set.name}`,
-          };
-        });
     } catch {
       setOptions = [];
     }
@@ -277,35 +268,26 @@ export function QuotationVersionEditor({
 
   /**
    * What picking a SET decides for the rest of its line: the set name as the description, UOM
-   * SET, the set's resolved list price, the driver (else first) part's brand, the parts as the
-   * Complete set text, and the series' price for the set where it names one. The parts
-   * themselves are not shown on the line; the server freezes them when the line is saved.
+   * SET, the set's resolved list price, the parts as the Complete set text, and the series' price for the
+   * set where it names one. The parts themselves are not shown on the line; the server freezes them when the line is saved.
    */
   const fillFromSet = React.useCallback(
     async (setId: string): Promise<LineDraft> => {
-      const detail = await getProductSet(setId);
-      const members = [...(detail.members ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+      const [set] = await getProductSetsForLineSelect({ ids: [setId] });
+      if (!set) return {};
       const filled: LineDraft = {
-        description: detail.name,
+        description: set.name,
         uom: 'SET',
-        list_price: detail.price?.resolved != null ? String(detail.price.resolved) : '',
-        complete_set: completeSetText(
-          members.map((member) => ({
-            product_code: member.product_code,
-            quantity: member.quantity,
-          })),
-        ),
+        list_price: set.list_price != null ? String(set.list_price) : '',
+        complete_set: completeSetText(set.parts),
       };
-      // The brand is the part the set is named after: the first one, which the server also
-      // treats as the driver in the ordinary case.
-      const lead = members[0] ? productsById.current.get(members[0].product_id) : undefined;
-      const brand = lead ? (brands.data ?? []).find((row) => row.id === lead.brand_id) : undefined;
-      filled.brand_snapshot = brand?.brand_name ?? '';
+      // The brand is NOT written here: the server fills a blank brand from the driver part,
+      // and an empty string from this side would overwrite one somebody typed.
       const agreed = seriesPriceBySet.get(setId);
       if (agreed) filled.unit_price = agreed;
       return filled;
     },
-    [brands.data, seriesPriceBySet],
+    [seriesPriceBySet],
   );
 
   const fillFromProduct = React.useCallback(

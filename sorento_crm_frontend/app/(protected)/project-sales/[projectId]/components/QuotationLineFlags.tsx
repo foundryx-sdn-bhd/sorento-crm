@@ -73,7 +73,6 @@ export function LineFlags({
   return (
     <div className="space-y-0.5">
       <div className="flex flex-wrap items-center gap-1">
-
         {belowFloor && (
           <Badge
             variant="destructive"
