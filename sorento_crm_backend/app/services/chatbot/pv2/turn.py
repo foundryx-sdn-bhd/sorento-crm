@@ -355,6 +355,7 @@ def after_v1(
             misses=0,
             v1_kind=question_kind,
         )
+        st.last_reply = "asked v1_open_question"  # R4a: the reply asked v1's question, whatever it answered
     elif st.pending is not None and st.pending.kind == "v1_open_question":
         st.pending = None
     if rows is not None:

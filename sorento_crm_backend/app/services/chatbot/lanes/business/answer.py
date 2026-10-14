@@ -316,6 +316,8 @@ def access_level_choice_message(
         # truncated, because half a promotion name reads like a different promotion.
         # AC-16: a brand entity that names a live brand (the parser's canonical name, exact) is
         # echoed by that row's real brand_name, bound to ITS entity; any other word stays as typed.
+        # A product is never echoed (owner rule 15 Oct: a parser hands over the resolved code as
+        # its raw); the list stays narrowed to it.
         from app.services.chatbot.turn_runtime import brand_entity_rows
 
         named = {
@@ -324,6 +326,8 @@ def access_level_choice_message(
         }
         raws: list[str] = []
         for e in jsc.array(q.get("entities")):
+            if jsc.get(e, "hint") == "product":
+                continue
             v = named.get(id(e)) or jsc.js_string(jsc.get(e, "raw") or "").strip()
             if v and not any(x.lower() == v.lower() for x in raws):
                 raws.append(v)
@@ -2187,9 +2191,12 @@ def promo_picker(
         # can resolve to two products, so naming one would say we searched something they did
         # not ask for. Past 60 characters the echo is noise and is dropped rather than
         # truncated, because a half-printed promotion name reads like a different one.
+        # A product is never echoed (owner rule 15 Oct), only the other words of the scope.
         unmet_set = {jsc.js_string(t).strip().lower() for t in unmatched_products}
         raws: list[str] = []
         for entity in (q["entities"] if isinstance(jsc.get(q, "entities"), list) else []):
+            if jsc.get(entity, "hint") == "product":
+                continue
             value = jsc.js_string(jsc.get(entity, "raw") or "").strip()
             if value.lower() in unmet_set:
                 continue

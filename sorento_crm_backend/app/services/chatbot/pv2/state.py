@@ -49,9 +49,6 @@ class ResolvedRef(BaseModel):
     family_code: str | None = None
     # A product set (`product_sets.id`; the key is its code): answered by its members in the set domains.
     set_id: str | None = None
-    # R4a: the resolver matched this key as the product code (MEMORY's HELD prints it); a key an option payload
-    # or a report row carried may be an internal id and is never printed.
-    code_key: bool = False
 
 
 class ResolvedSpec(BaseModel):

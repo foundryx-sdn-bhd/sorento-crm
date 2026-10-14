@@ -4033,6 +4033,13 @@ def _fallback_context(
         current_turn_id=turn_id,
         level=level,
     )
+    # C1 (crew 15 Oct): small talk after an answer in this same conversation (the open conversation names an
+    # ask) is a close, never a recap of it.
+    closing = kind == "small_talk" and level != "off" and bool(
+        memory_mod.history_items(
+            db, contact_respond_id=contact_respond_id, is_test=dry_run, current_turn_id=turn_id, level="conversation"
+        )
+    )
     facts = memory_intake.get("profile_facts") if level == "full" else None
     usual_sites = _as_list(_fact_value(facts, "usual_sites"))
 
@@ -4072,6 +4079,7 @@ def _fallback_context(
         first_name=(first_name or "").strip() or None,
         memory_slice=_clarifier_memory_slice(memory_intake) if level in ("episodes", "full") else "",
         copy=copy_mod.resolve(db),
+        closing=closing,
     )
 
 
@@ -4238,6 +4246,13 @@ def _pv2_write_register(media_box: dict[str, Any], envelopes: Any) -> None:
         state.last_rows = pv2_register.shown_rows(state.register, state.turn_no, len(fresh)) if fresh else []
     except Exception:  # noqa: BLE001 - the register is a convenience; the reply is already decided
         logger.warning("pv2: could not write the answer register", exc_info=True)
+
+
+def _pv2_language(pv2_result: Any) -> str | None:
+    """The reply language a PV2 turn read from the message; a mixed reading decides nothing (the typed line
+    does, as before)."""
+    raw = ((getattr(pv2_result, "trace", None) or {}).get("pv2_turn") or {}).get("language")
+    return None if raw == "mixed" else getattr(pv2_result, "language", None)
 
 
 def _pv2_refused(media_box: dict[str, Any], what: str) -> None:
@@ -4792,6 +4807,7 @@ def _run_stages_body(  # noqa: PLR0915
             # capture service wrote it already; a dry run hands it back in the patch below.
             media_box["pv2_ideation"] = (getattr(pv2_result, "trace", None) or {}).get("ideation_session_vars")
             media_box["pv2_contact_pk"] = memory_intake.get("contact_pk")
+            media_box["pv2_language"] = _pv2_language(pv2_result)
             media_box["pv2_v1_before"] = {
                 key: remembered_before.get(key) for key in session_state.FIVE_KEYS
             }
@@ -6023,7 +6039,9 @@ def _run_stages_body(  # noqa: PLR0915
         # CHAT-LANGUAGE: this turn's reply language, from the message's own words first. Pure,
         # so every arm has it (`run_tail` carries `item["reply_language"]` to the next turn);
         # the business lane below recomputes it once its codes and names are known.
-        item["reply_language"] = _turn_language(latest_user_message, remembered_before, profile)
+        item["reply_language"] = _turn_language(
+            latest_user_message, remembered_before, profile, parsed=media_box.get("pv2_language")
+        )
 
         # Owner ruling, hand pass 10 (21 Sep 2026, `test_rearch_r10_handpass10_
         # replay.py::TestHandPass10PromotionAskRepeatsAfterATierPick`): a fresh
@@ -6268,6 +6286,7 @@ def _run_stages_body(  # noqa: PLR0915
                     latest_user_message,
                     remembered_before,
                     state_out.profile,
+                    parsed=media_box.get("pv2_language"),
                     strip=[
                         str(e[k])
                         for e in verdict.get("entities") or []
@@ -6326,6 +6345,7 @@ def _run_stages_body(  # noqa: PLR0915
                 latest_user_message,
                 remembered_before,
                 state_out.profile,
+                parsed=media_box.get("pv2_language"),
                 strip=[
                     str(e[k])
                     for e in verdict.get("entities") or []
@@ -6648,6 +6668,7 @@ def _run_stages_body(  # noqa: PLR0915
                 latest_user_message,
                 remembered_before,
                 state_out.profile,
+                parsed=media_box.get("pv2_language"),
                 strip=[
                     str(e[k])
                     for e in compatible_entities
@@ -9787,9 +9808,13 @@ def _turn_language(
     profile: Any,
     *,
     strip: Any = (),
+    parsed: str | None = None,
 ) -> str:
     """`language.for_turn` on the typed line (the quoted `reply to:` line is not the customer's
-    words), against a copy so `remembered_before` stays the state the turn started with."""
+    words), against a copy so `remembered_before` stays the state the turn started with. On a
+    PV2 lookup the parser's reading of the message (`parsed`) decides (owner rule 15 Oct)."""
+    if parsed in label_catalog.LANGUAGES:
+        return str(parsed)
     carried = {"reply_language": remembered_before.get("reply_language")}
     first_line = (latest_user_message or "").split("\n")[0]
     return language_mod.for_turn(first_line, carried, getattr(profile, "language", None), strip=strip)

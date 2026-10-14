@@ -348,15 +348,20 @@ def _held_count(st: ConversationState, ask: Ask, pending: PendingQuestion | None
 
 
 #: RG-1 (#1570): the kinds that narrow each domain's answer, in the order a carried one is asked about (v1
-#: policy rows; R3 registry). One held but left unnamed beside a newly named other is asked, not carried.
+#: policy rows; R3 registry). One held but left unnamed beside a newly named other is asked about, not carried
+#: (a customer carries: `SILENT_CARRY_KINDS`).
 CARRY_SCOPE_KINDS: dict[str, tuple[str, ...]] = {"order": ("product", "customer"), "sales": ("product", "customer")}
 CARRY_SCOPE = "clarify_carry_scope"
+#: Owner rule 15 Oct: a held customer carries beside a newly named product with no question (the dealer's own
+#: customer too: dropping it would widen the reply to the dealer's other accounts). Only a held product beside a
+#: newly named customer is asked about.
+SILENT_CARRY_KINDS = frozenset({"customer"})
 
 
-def _carried(i: int, ask: Ask, before: Held, held: Held, resolver: Any) -> str | None:
+def _carried(i: int, ask: Ask, before: Held, held: Held) -> str | None:
     """RG-1 (#1570): the held narrowing kind A this ask leaves unnamed beside a newly named other one B, whether B
-    was held before or not (RG-1c): it is asked about, never carried silently. None when the ask points back at
-    held (`refers_to_held`, or a remove of a held item), opens a report, or A is only the contact's own customer."""
+    was held before or not (RG-1c). None when the ask points back at held (`refers_to_held`, or a remove of a held
+    item) or opens a report."""
     if (
         i > 0 or ask.report is not None or held.report is not None
         or any(e.refers_to_held or e.op == "remove" for e in ask.entities)
@@ -366,26 +371,17 @@ def _carried(i: int, ask: Ask, before: Held, held: Held, resolver: Any) -> str |
     named = {e.kind for e in ask.entities}
     new = {e.kind for e in ask.entities if e.op in ("set", "add")}
     for kind in kinds:
-        if kind not in named and _carried_refs(before, kind, resolver) and new & (set(kinds) - {kind}):
+        if kind not in named and before.refs.get(kind) and new & (set(kinds) - {kind}):
             return kind
     return None
 
 
-def _carried_refs(held: Held, kind: str, resolver: Any) -> list[ResolvedRef]:
-    """The held refs of `kind` a carry question is about: never the contact's own customer (inside its enforced
-    resolver scope, v1 guard)."""
-    scope = getattr(resolver, "customer_scope", None) or {}
-    own = {str(x) for x in scope.get("ids") or []} if scope.get("enforced") else set()
-    return [r for r in held.refs.get(kind, []) if not (kind == "customer" and r.key in own)]
-
-
-def _carry(
-    st: ConversationState, i: int, ask: Ask, before: Held, held: Held, resolver: Any, language: str, qs: list
-) -> Held:
+def _carry(st: ConversationState, i: int, ask: Ask, before: Held, held: Held, language: str, qs: list) -> Held:
     """RG-1 / RG-1c: an ask that leaves a held kind unnamed beside a newly named other one holds only its own items,
-    that kind and the period (never another held item), and asks "only A or all?": now when the ask raised no
-    question of its own, else once those questions' picks land the new item (`PendingQuestion.carry`)."""
-    kind = _carried(i, ask, before, held, resolver)
+    that kind and the period (never another held item), and asks "only A or all?" (a customer is never asked
+    about: it carries): now when the ask raised no question of its own, else once those questions' picks land the
+    new item (`PendingQuestion.carry`)."""
+    kind = _carried(i, ask, before, held)
     if kind is None:
         return held
     keep = held.model_copy(deep=True)
@@ -396,23 +392,23 @@ def _carry(
             keep.refs = set_refs(keep.refs, k, [r for r in keep.refs.get(k, []) if r.key not in old], "set")
     keep.refs = set_refs(keep.refs, kind, before.refs[kind], "set")
     keep.period = held.period or before.period
+    if kind in SILENT_CARRY_KINDS:
+        return keep
     if qs:
         qs[0].pending.carry = kind
     else:
-        question = _carry_question(st, i, keep, kind, resolver, language)
+        question = _carry_question(st, i, keep, kind, language)
         if question is not None:
             qs.append(question)
     return keep
 
 
-def _carry_question(
-    st: ConversationState, i: int, held: Held, kind: str, resolver: Any, language: str
-) -> ClarifyAct | None:
+def _carry_question(st: ConversationState, i: int, held: Held, kind: str, language: str) -> ClarifyAct | None:
     """RG-1 (#1570): "Delivery for B: only A (from earlier) or all <A>s?" over `held`; nothing is fetched. Pick 1
     keeps A, pick 2 clears it."""
     kinds = CARRY_SCOPE_KINDS.get(held.domain or "", ())
     new = [r for k in kinds if k != kind for r in held.refs.get(k, [])]
-    carried = _carried_refs(held, kind, resolver)
+    carried = held.refs.get(kind, [])
     if not new or not carried:
         return None
     asked, options = clarify_copy.carry_scope(
@@ -531,7 +527,7 @@ def _one_ask(
             and any(e.kind in DOCUMENT_KINDS and not e.refers_to_held for e in ask.entities)
         ):
             held.refs = set_refs(held.refs, "product", before.refs["product"], "set")  # the held product stays
-        held = _carry(st, i, ask, before, held, resolver, language, qs)
+        held = _carry(st, i, ask, before, held, language, qs)
         if not qs and _no_subject(held, ask):
             qs.append(_which_product(st, i, language))
         return _commit(st, i, held, ask, qs), False
@@ -575,7 +571,7 @@ def _one_ask(
         held = apply_payload(held, row.payload)
     if drilled and ask.report is None and not qs:
         _plan_report(st, held, resolver, language, i, qs, today)
-    held = _carry(st, i, ask, st.held, held, resolver, language, qs)
+    held = _carry(st, i, ask, st.held, held, language, qs)
     if not qs and _no_subject(held, ask):
         qs.append(_which_product(st, i, language))
     action = _commit(st, i, held, ask, qs)
@@ -715,7 +711,7 @@ def _answer(
                 # The first lands as a single pick would (it replaces unless its ask landed a same-kind item);
                 # the rest join it.
                 held = apply_payload(held, {**o.payload, "op": "add"} if n else o.payload)
-            owed = _carry_question(st, i, held, pending.carry, resolver, language) if pending.carry else None
+            owed = _carry_question(st, i, held, pending.carry, language) if pending.carry else None
             if owed is not None:
                 # RG-1c: every match landed: the carry question their ask still owes, before any fetch.
                 owed.pending.origin = _waiting(valid_origin(pending.origin) or ask, held)
@@ -820,7 +816,7 @@ def _answer(
     held = _apply_fields(st, held, ask, resolver, policy, language, i, qs, refine=True, today=today)
     if pending.carry and not qs:
         # RG-1c: the pick landed the new item its ask named: the carry question that ask still owes.
-        owed = _carry_question(st, i, held, pending.carry, resolver, language)
+        owed = _carry_question(st, i, held, pending.carry, language)
         if owed is not None:
             qs.append(owed)
     action = _commit(st, i, held, ask, qs)
@@ -1156,12 +1152,8 @@ def _apply_entities(
             qs.append(_did_you_mean(st, i, ent, held, options, qs.can_offer, language))
             asked.append((qs[-1], ent))
             continue
-        if (
-            status == "ambiguous"
-            and len(options) == 1
-            and not getattr(res, "did_you_mean", False)
-            and policy.decide("entity", held.domain) == "default"
-        ):
+        if status == "ambiguous" and len(options) == 1 and not getattr(res, "did_you_mean", False):
+            # C2 (crew 15 Oct): a pick with exactly one option asks nothing; that option is used.
             held = apply_payload(held, {**options[0].payload, "op": ent.op, **_qty_payload(ent)})
             continue
         pool = list(getattr(res, "pool", None) or (options if not getattr(res, "more", 0) else []))
@@ -1245,8 +1237,6 @@ def _apply_entities(
             held.domain = DOMAIN_BY_FOUND_KIND[refs[0].kind]
         if ent.quantity is not None:
             refs = [r.model_copy(update={"quantity": ent.quantity}) for r in refs]
-        if refs[0].kind == "product":
-            refs = [r.model_copy(update={"code_key": True}) for r in refs]  # R4a: the resolver matched the code
         # Several entities of one kind in one ask are one list: the first "set" replaces
         # what was held, the later ones join it.
         kind = refs[0].kind  # filed under the kind FOUND

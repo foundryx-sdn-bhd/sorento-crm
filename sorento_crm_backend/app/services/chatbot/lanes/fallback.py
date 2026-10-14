@@ -140,6 +140,8 @@ class FallbackContext:
     memory_slice: str = ""
     #: The turn's resolved canned copy (`chatbot/copy.CannedCopy`), read with the rest.
     copy: Any = None
+    #: Small talk after an answer in this same conversation (a thank-you): the ack closes it alone.
+    closing: bool = False
 
 
 def clarifier_tail(fb: FallbackContext) -> str:
@@ -203,6 +205,8 @@ def memory_line_and_offer(fb: FallbackContext, copy: Any, lang: str) -> tuple[st
     if fb.kind == "unknown" and fb.customer and fb.team:
         return "", copy.render_in("fallback_offer_customer", lang, customer=fb.customer, team=fb.team)
 
+    if fb.closing:
+        return "", ""  # C1 (crew 15 Oct): no recap of this conversation as "last time", no re-run offer
     memory_line = copy.render_in("fallback_last_time", lang, summary=fb.last_time) if fb.last_time else ""
     if fb.usual_products:
         products = " or ".join(fb.usual_products[:2]) if lang == "en" else ", ".join(fb.usual_products[:2])

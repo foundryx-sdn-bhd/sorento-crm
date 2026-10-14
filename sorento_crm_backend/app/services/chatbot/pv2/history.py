@@ -5,7 +5,7 @@ by the new message verbatim.
 
 MEMORY is for the model, not the user: it prints index keys (domains, attachment type,
 spec attributes) and option keys the model must echo back exactly, but never a ref's
-live id: refs print their label (a product whose code the resolver matched, that code).
+live id: refs print their label.
 Every element is one line: a newline inside a value (a contact's words quoted in a
 question) never starts a MEMORY line of its own.
 """
@@ -91,15 +91,9 @@ def _report(report: Any) -> str:
     return "; ".join(parts)
 
 
-def _held_label(r) -> str:
-    """R4a: a product whose code the resolver matched prints that code, the identifier the parser copies; a
-    family prints its label (its code and variant count) and any other ref its label, never a stored key."""
-    return r.key if r.code_key and not r.family else r.label
-
-
 def _ref_text(r) -> str:
-    q, label = r.quantity, _held_label(r)
-    return label if q is None else f"{label} x{q.number:g}" + (f" {q.unit}" if q.unit else "")
+    q = r.quantity
+    return r.label if q is None else f"{r.label} x{q.number:g}" + (f" {q.unit}" if q.unit else "")
 
 
 def held_lines(held: Held) -> list[str]:

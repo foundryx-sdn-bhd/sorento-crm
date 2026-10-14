@@ -259,7 +259,8 @@ def _build_result(state, actions, out, today, pending_in, report_answer, idea_an
                 st.last_reply = f"asked {st.pending.kind}"  # R4a: the lane asked, not answered
             rows = _rows_from(_attr(rep, "rows"))
             if rows:
-                st.last_rows = rows[:20]
+                # R4a: a list cut to the cap says how long it was (MEMORY's LAST ANSWER ROWS).
+                st.last_rows = [r.model_copy(update={"payload": {**r.payload, "of": len(rows)}}) for r in rows[:20]]
                 fresh = register.entries_from_report_rows(st.last_rows, st.turn_no, st.held.sid)
                 st.register = register.roll(st.register, fresh)
             elif st.pending is None:
