@@ -69,6 +69,14 @@ def _ask_failures(want: dict, got) -> list[str]:
         ok = bool(got.switch_back_to) if want["switch_back_to"] == "*" else got.switch_back_to == want["switch_back_to"]
         if not ok:
             bad.append(f"switch_back_to {got.switch_back_to!r} vs {want['switch_back_to']!r}")
+    if "attachment_type" in want and got.attachment_type != want["attachment_type"]:
+        bad.append(f"attachment_type {got.attachment_type!r} != {want['attachment_type']!r}")
+    if "option_key" in want and (got.answer.option_key if got.answer else None) != want["option_key"]:
+        bad.append(f"option_key {(got.answer.option_key if got.answer else None)!r} != {want['option_key']!r}")
+    if want.get("no_typed_entities"):
+        typed = [e for e in got.entities if e.phrase or e.key or e.doc_number]
+        if typed:
+            bad.append(f"typed entities {[(e.kind, e.phrase) for e in typed]}")
     if "entities" in want:
         if len(got.entities) != len(want["entities"]):
             bad.append(f"{len(got.entities)} entities, wanted {len(want['entities'])}")
@@ -125,7 +133,7 @@ def main() -> int:
                 failures = [f"ERROR {exc}"]
             ok += not failures
             passed += not failures
-            summary = [(a.act, a.domain, a.switch_back_to, a.portal_form,
+            summary = [(a.act, a.domain, a.switch_back_to, a.portal_form, a.attachment_type, (a.answer.option_key if a.answer else None),
                         [(e.kind, e.phrase, e.doc_number, e.quantity.number if e.quantity else None) for e in a.entities])
                        for a in output.asks] if not failures or not str(failures[0]).startswith("ERROR") else []
             print(("PASS " if not failures else "FAIL ") + f"{row['case']} #{n} {summary} {failures}")
