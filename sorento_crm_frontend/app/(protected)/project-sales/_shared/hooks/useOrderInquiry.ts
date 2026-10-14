@@ -39,6 +39,12 @@ import {
   getDecisionTrail,
   getOrderInquiryReserveRequests,
   getOrderInquiryRowHistory,
+  getReserveNoticeRecipients,
+  getReserveStatusSummary,
+  previewParkedReserveNotices,
+  previewParkedReserveRequests,
+  sendParkedReserveNotices,
+  sendParkedReserveRequests,
   type CommitReservePayload,
   type CreateReserveRequestPayload,
 } from '../services/orderInquiryReserveService';
@@ -75,6 +81,9 @@ export const ORDER_INQUIRY_HEADER_LINES_KEY = 'order-inquiry-header-lines';
 export const ORDER_INQUIRY_HEADER_RELATED_DOCUMENTS_KEY =
   'order-inquiry-header-related-documents';
 export const ORDER_INQUIRY_RESERVE_REQUESTS_KEY = 'order-inquiry-reserve-requests';
+export const ORDER_INQUIRY_RESERVE_SUMMARY_KEY = 'order-inquiry-reserve-summary';
+export const ORDER_INQUIRY_PARKED_PREVIEW_KEY = 'order-inquiry-parked-preview';
+export const ORDER_INQUIRY_NOTICE_RECIPIENTS_KEY = 'order-inquiry-notice-recipients';
 export const ORDER_INQUIRY_ROW_HISTORY_KEY = 'order-inquiry-row-history';
 export const DECISION_TRAIL_KEY = 'order-inquiry-decision-trail';
 
@@ -112,6 +121,7 @@ function orderInquiryHeaderListParamsFromUrl(
     raised_by: params.filters.raised_by || undefined,
     agent: params.filters.agent || undefined,
     project: params.filters.project || undefined,
+    reserve: (params.filters.reserve as OrderInquiryHeaderListParams['reserve']) || undefined,
   };
 }
 
@@ -191,9 +201,15 @@ export function useCreateOrderInquiryReserveRequest(inquiryId: string | undefine
   return useMutation({
     mutationFn: (payload: CreateReserveRequestPayload) =>
       createOrderInquiryReserveRequest(inquiryId as string, payload),
-    onSuccess: (response) => {
-      toast.success(`Request #${response.ordinal} sent to ${response.first_to_name ?? 'CS'}`);
+    onSuccess: (response, variables) => {
+      toast.success(
+        variables.park
+          ? `Request #${response.ordinal} parked. Send it from Order inquiries > Actions.`
+          : `Request #${response.ordinal} sent to ${response.first_to_name ?? 'CS'}`,
+      );
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY, inquiryId] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -215,16 +231,22 @@ export function useCommitOrderInquiryReserve(inquiryId: string | undefined) {
       payload: CommitReservePayload;
       /** The requester's own name, for the toast alone - never read by `mutationFn`. */
       requesterName?: string | null;
+      /** The notice recipient named in the parked toast. */
+      noticeName?: string | null;
     }) => commitOrderInquiryReserve(inquiryId as string, payload),
     onSuccess: (data, variables) => {
       // Every staged line was a no-op on the server: nothing was written or mailed.
       toast.success(
         data.length === 0
           ? 'Nothing to change'
-          : `Reserved, ${variables.requesterName ?? 'the requester'} notified`,
+          : variables.payload.park_notice
+            ? `Reserved. Notice to ${variables.noticeName ?? 'purchasing'} parked; send it from Order inquiries > Actions.`
+            : `Reserved, ${variables.requesterName ?? 'the requester'} notified`,
       );
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADER_LINES_KEY, inquiryId] });
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY, inquiryId] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -758,4 +780,58 @@ export function useOrderInquiryHandshake() {
   });
 
   return { acknowledge, reject, rejectRows, linkNow, unacknowledge };
+}
+
+/** OI counts per reserve status and the caller's own parked items (AC-SN-31). */
+export function useReserveStatusSummary(enabled = true) {
+  return useQuery({
+    queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY],
+    queryFn: getReserveStatusSummary,
+    enabled,
+  });
+}
+
+/** Who the reserve confirmation's notice goes to (AC-SN-27); read while it is open. */
+export function useReserveNoticeRecipients(inquiryId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: [ORDER_INQUIRY_NOTICE_RECIPIENTS_KEY, inquiryId],
+    queryFn: () => getReserveNoticeRecipients(inquiryId as string),
+    enabled: enabled && Boolean(inquiryId),
+    staleTime: 0,
+  });
+}
+
+export type ParkedKind = 'requests' | 'notices';
+
+/** The send-all dialog's preview, fetched fresh each time it opens (AC-SN-44). */
+export function useParkedPreview(kind: ParkedKind | null) {
+  return useQuery({
+    queryKey: [ORDER_INQUIRY_PARKED_PREVIEW_KEY, kind],
+    queryFn: () =>
+      kind === 'notices' ? previewParkedReserveNotices() : previewParkedReserveRequests(),
+    enabled: kind !== null,
+    gcTime: 0,
+    staleTime: 0,
+  });
+}
+
+/** Send all of the caller's parked requests / notices; toast + invalidate (AC-SN-44). */
+export function useSendParked(kind: ParkedKind) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => (kind === 'notices' ? sendParkedReserveNotices() : sendParkedReserveRequests()),
+    onSuccess: (result) => {
+      if (result.emails_sent === 0) {
+        toast.success('Nothing left to send: someone already sent these.');
+      } else {
+        toast.success(
+          `${result.emails_sent} ${result.emails_sent === 1 ? 'email' : 'emails'} sent (${result.items_sent} order ${result.items_sent === 1 ? 'inquiry' : 'inquiries'})`,
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 }
