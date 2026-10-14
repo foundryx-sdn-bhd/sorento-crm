@@ -187,3 +187,14 @@ def test_a_new_console_run_ignores_the_stored_pv2_state_and_earlier_sessions(
 
 from tests.chatbot.pv2.test_core_engine_hook import fake_turn  # noqa: E402,F401 - fixture
 from tests.chatbot.test_engine import seeded, stub_access, stub_parser  # noqa: E402,F401 - fixtures
+
+
+def test_a_capped_entity_menu_renders_and_n_more_under_the_options():
+    from app.services.chatbot.pv2 import clarify_copy
+    from tests.chatbot.pv2.carry_fakes import option, pending
+
+    q = pending("clarify_entity", [option(str(i), f"SRTWC286-V{i:02d}") for i in range(1, 9)], asked='Which "WC286" do you mean?')
+    q.more = 2
+    lines = clarify_copy.render(q, "en").splitlines()
+    assert "...and 2 more." in lines, lines
+    assert lines.index("8. SRTWC286-V08") < lines.index("...and 2 more.")
