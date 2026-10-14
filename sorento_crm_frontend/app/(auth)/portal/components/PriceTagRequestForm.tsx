@@ -1014,7 +1014,9 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
         label: i.name || i.code,
         description: distinctName(i.code, i.name)
           ? `${i.kind === 'product_set' ? 'Set' : 'Product'} - ${i.code}`
-          : undefined,
+          : i.kind === 'product_set'
+            ? 'Set'
+            : 'Product',
       }));
     },
     [],
@@ -2261,7 +2263,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {line.line_type === 'product' ? 'Product' : 'Set'}
-                                    {line.code ? ` - ${line.code}` : ''}
+                                    {line.code && distinctName(line.code, line.name) ? ` - ${line.code}` : ''}
                                   </div>
                                   {/* AC-S1-10/AC-S1-11: below the app's 992px
                                       mobile breakpoint (useIsMobile), the same
@@ -2317,7 +2319,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
                                             {part.name || part.code}
                                           </span>
                                           <span className="text-xs text-muted-foreground">
-                                            {part.code ? ` - ${part.code}` : ''}
+                                            {part.code && distinctName(part.code, part.name) ? ` - ${part.code}` : ''}
                                             {part.role ? ` (${part.role})` : ''}
                                           </span>
                                         </>
@@ -3132,7 +3134,9 @@ function PartRow({
                 <div className="truncate text-sm" title={part.name || part.code}>
                   {part.name || part.code}
                 </div>
-                <div className="text-xs text-muted-foreground">{part.code || '-'}</div>
+                {distinctName(part.code, part.name) ? (
+                  <div className="text-xs text-muted-foreground">{part.code || '-'}</div>
+                ) : null}
               </div>
             )}
           </div>
@@ -3199,7 +3203,9 @@ function LineRow({
         label: line.name || line.code,
         description: distinctName(line.code, line.name)
           ? `${isSet ? 'Set' : 'Product'}${line.code ? ` - ${line.code}` : ''}`
-          : undefined,
+          : isSet
+            ? 'Set'
+            : 'Product',
       }
     : undefined;
 

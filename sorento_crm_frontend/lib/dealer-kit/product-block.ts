@@ -42,7 +42,7 @@ import type { PriceBadgeInput } from './price-badge';
 import { formatTagPrice } from './price-badge';
 import type { MergeFieldMode } from './merge-fields';
 import { hasMergeField, renderMergeFields } from './merge-fields';
-import { distinctName, sameDisplayText } from '@/lib/product-display';
+import { sameDisplayText } from '@/lib/product-display';
 
 // ---------------------------------------------------------------------------
 // Reading a bound value

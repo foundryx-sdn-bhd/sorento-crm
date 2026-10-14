@@ -128,7 +128,7 @@ import {
   type PriceTagAction,
   type PriceTagActionSpec,
 } from './priceTagRequestActions';
-import { codeWithName } from '@/lib/product-display';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 type DetailTab = 'request' | 'lines' | 'attachments';
 
@@ -1155,12 +1155,14 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
                                 {line.code}
                               </td>
                               <td className="py-2 pr-3">
-                                <span
-                                  className="truncate block max-w-[200px]"
-                                  title={line.name}
-                                >
-                                  {line.name}
-                                </span>
+                                {distinctName(line.code, line.name) ? (
+                                  <span
+                                    className="truncate block max-w-[200px]"
+                                    title={line.name}
+                                  >
+                                    {line.name}
+                                  </span>
+                                ) : null}
                                 {line.package_warning && (
                                   <span className="mt-1 flex flex-wrap items-center gap-1.5">
                                     <Badge

@@ -30,7 +30,7 @@ import type {
   StockDebtSupplyEvent,
   StockDebtSupplyKind,
 } from '../types/stockDebt.types';
-import { distinctName, sameDisplayText } from '@/lib/product-display';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The two tables behind one cell (R28, AC-S2-11): what is DUE in that month, and what

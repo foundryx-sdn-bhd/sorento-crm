@@ -364,8 +364,11 @@ export function MatchReportSections({
         accessorKey: 'productName',
         header: 'Product',
         cell: ({ row }) => (
-          <div className="truncate text-sm" title={row.original.productName}>
-            {row.original.productName}
+          <div
+            className="truncate text-sm"
+            title={distinctName(row.original.code, row.original.productName) ?? undefined}
+          >
+            {distinctName(row.original.code, row.original.productName)}
           </div>
         ),
         size: 380,

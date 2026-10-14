@@ -47,6 +47,7 @@ import { productsPagerQuery } from '../../lib/listQuery';
 import AuditTrail from '@/components/audit/AuditTrail';
 import FieldAttachmentTooltip from './FieldAttachmentTooltip';
 import { NO_CURRENCY_NOTE, formatUnitCost } from '../lib/cost';
+import { distinctName } from '@/lib/product-display';
 
 interface ProductDetailProps {
   productId: string;
@@ -162,9 +163,11 @@ export default function ProductDetail({ productId }: ProductDetailProps) {
               {product.is_active ? 'Active' : 'Inactive'}
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground break-words">
-            Product Code: {product.product_code}
-          </p>
+          {distinctName(product.product_code, product.product_name) ? (
+            <p className="text-sm text-muted-foreground break-words">
+              Product Code: {product.product_code}
+            </p>
+          ) : null}
         </div>
         <DetailActions
           pager={{
@@ -349,7 +352,9 @@ export default function ProductDetail({ productId }: ProductDetailProps) {
                       </div>
                       <div>
                         <p className="text-muted-foreground">Product Name</p>
-                        <p className="font-medium">{product.product_name || '-'}</p>
+                        <p className="font-medium">
+                          {distinctName(product.product_code, product.product_name) || '-'}
+                        </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Category</p>

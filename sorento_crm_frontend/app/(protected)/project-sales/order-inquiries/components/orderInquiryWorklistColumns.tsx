@@ -46,7 +46,7 @@ import type {
 import { OrderInquiryBackingDocumentsDialog } from './OrderInquiryBackingDocumentsDialog';
 import { OrderInquiryDocumentLink } from './OrderInquiryDocumentDialog';
 import { OrderInquiryQtyAnnotationDialog } from './OrderInquiryQtyAnnotationDialog';
-import { distinctName, sameDisplayText } from '@/lib/product-display';
+import { sameDisplayText } from '@/lib/product-display';
 
 function Muted({ children }: { children: React.ReactNode }) {
   return <span className="text-muted-foreground">{children}</span>;

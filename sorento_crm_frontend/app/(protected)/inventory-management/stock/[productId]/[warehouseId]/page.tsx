@@ -31,6 +31,7 @@ import {
   type StockLedgerEntry,
 } from '../../../stock-ledger/types/stockLedger.types';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
+import { distinctName } from '@/lib/product-display';
 
 type StockDetailPageProps = {
   params: Promise<{ productId: string; warehouseId: string }>;
@@ -240,7 +241,7 @@ export default function StockDetailPage({ params }: StockDetailPageProps) {
                     <h2 className="text-2xl font-bold break-words min-w-0">
                       {stock.product?.product_code || '-'}
                     </h2>
-                    {stock.product?.product_name && (
+                    {distinctName(stock.product?.product_code, stock.product?.product_name) && (
                       <Badge variant="secondary">
                         {stock.product.product_name}
                       </Badge>
@@ -278,7 +279,9 @@ export default function StockDetailPage({ params }: StockDetailPageProps) {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-sm">
                 <div>
                   <div className="text-muted-foreground">Product</div>
-                  <div className="font-medium">{stock.product?.product_name || '-'}</div>
+                  <div className="font-medium">
+                    {distinctName(stock.product?.product_code, stock.product?.product_name) || '-'}
+                  </div>
                   <div className="text-muted-foreground">{stock.product?.product_code || '-'}</div>
                 </div>
                 <div>

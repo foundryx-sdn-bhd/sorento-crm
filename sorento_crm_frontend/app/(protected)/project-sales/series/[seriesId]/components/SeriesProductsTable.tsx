@@ -15,6 +15,7 @@ import {
   useSeriesProductRows,
 } from '../../../_shared/hooks/useProjects';
 import type { SeriesProductRow } from '../../../_shared/types/project.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The client's sheet, as a table: what this series sells, for how much, and how far it may be
@@ -80,11 +81,14 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
         header: 'Description',
         width: 280,
         kind: 'derived',
-        derive: (draft) => (
-          <span className="block truncate" title={draft.product_name || ''}>
-            {draft.product_name || '-'}
-          </span>
-        ),
+        derive: (draft) => {
+          const name = distinctName(draft.product_code, draft.product_name);
+          return (
+            <span className="block truncate" title={name || ''}>
+              {name || '-'}
+            </span>
+          );
+        },
       },
       {
         key: 'selling_price',

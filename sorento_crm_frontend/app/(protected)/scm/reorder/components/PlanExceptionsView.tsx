@@ -34,6 +34,7 @@ import {
   type PlanExceptionStatus,
   type PlanExceptionType,
 } from '../types/planException.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Plan Exceptions (UAC Group D).
@@ -123,7 +124,7 @@ export function PlanExceptionsView({ runId = null, onBack }: PlanExceptionsViewP
             <div className="truncate font-medium" title={row.original.product_code}>
               {row.original.product_code}
             </div>
-            {row.original.product_name ? (
+            {distinctName(row.original.product_code, row.original.product_name) ? (
               <div
                 className="truncate text-2xs text-muted-foreground"
                 title={row.original.product_name}

@@ -21,7 +21,7 @@ import { useProductComboImage } from '../../hooks/useProductComboImage';
 import { getProducts } from '../../services/productService';
 import type { ProductComboPartRow, ProductComboRow } from '../../types/productCombo.types';
 import { AddComboModal } from './AddComboModal';
-import { codeWithName } from '@/lib/product-display';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 /** Server-searched and PAGED, never one cached page: the catalogue is 22,000 rows. */
 const PRODUCT_PAGE_SIZE = 50;
@@ -67,9 +67,11 @@ function PartRow({
         <p className="truncate font-medium" title={part.code}>
           {part.code}
         </p>
-        <p className="truncate text-sm text-muted-foreground" title={part.product_name}>
-          {part.product_name}
-        </p>
+        {distinctName(part.code, part.product_name) ? (
+          <p className="truncate text-sm text-muted-foreground" title={part.product_name}>
+            {part.product_name}
+          </p>
+        ) : null}
         <p className="truncate text-xs text-muted-foreground">{part.dimensions || '-'}</p>
       </div>
       {canEdit ? (

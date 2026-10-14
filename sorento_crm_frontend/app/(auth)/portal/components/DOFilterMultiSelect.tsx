@@ -414,7 +414,7 @@ export function DOFilterMultiSelect({
                               </span>
                             )}
                           </p>
-                          {r.name && (
+                          {distinctName(r.code, r.name) && (
                             <p className="text-xs text-muted-foreground break-words">
                               {r.name}
                             </p>

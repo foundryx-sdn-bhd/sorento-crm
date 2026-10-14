@@ -29,7 +29,7 @@ import {
   TRANSFER_STATE_LABEL,
   type StockTransfer,
 } from '@/app/(protected)/inventory-management/stock-transfers/types/stockTransfer.types';
-import { distinctName, sameDisplayText } from '@/lib/product-display';
+import { distinctName } from '@/lib/product-display';
 
 /** What the transfers page gates its own state changes on. */
 const EDIT_PERMISSION = 'inventory.stock_transfers.edit';

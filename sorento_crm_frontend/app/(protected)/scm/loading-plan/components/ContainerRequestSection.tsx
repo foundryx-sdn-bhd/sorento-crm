@@ -62,7 +62,7 @@ import {
   type ContainerRequestMatrixAxis,
   type ContainerRequestMatrixGranularity,
 } from './containerRequestMatrix';
-import { distinctName, sameDisplayText } from '@/lib/product-display';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Stage 1 of Ms Tee's journey (PLAN-scm-loading-plan-demand-first.md, amended section 4/6b -

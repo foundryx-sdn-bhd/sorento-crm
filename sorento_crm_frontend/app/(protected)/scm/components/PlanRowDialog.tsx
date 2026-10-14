@@ -48,7 +48,7 @@ import type {
   ContainerRequestDrillPoRow,
   ContainerRequestDrillSpoRow,
 } from '../services/containerRequestDrillService';
-import { distinctName, sameDisplayText } from '@/lib/product-display';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * ONE lightbox for the SCM family (R7, AC-B1/AC-B7).
