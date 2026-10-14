@@ -58,14 +58,19 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
 
 ## Screen: SO detail, Lines tab
 
-- **AC-SD20 Chevron.**
-  - Every line row has a chevron button as the first column, in view and in edit alike.
-  - It cannot be hidden or dragged.
-  - It carries `aria-expanded` and an aria-label naming the line's product ("Show deliveries
-    for WESERP10B" / "Hide deliveries for WESERP10B").
-  - Clicking opens the line's history in place under the row; clicking again closes it.
-- **AC-SD21 One fetch.** The deliveries read is fetched once, the first time any line is opened.
-  Opening more lines does not fetch again.
+- **AC-SD20 Truck icon (owner, mock v1 note 14 Oct: "lightbox popup, opened by an icon").**
+  - Every line row has an icon-only button with a truck icon as the first column, in view and in
+    edit alike.
+  - The column has an empty header and cannot be hidden.
+  - The button's aria-label and title read "Deliveries for <SKU>".
+  - Clicking it opens a lightbox titled "Deliveries · <SKU>"; the close X, Escape and the overlay
+    close it.
+  - At the top of the lightbox body, a strip of the line's own figures: Ordered, Delivered,
+    Cancelled, Outstanding, Location, Delivery date. They are the same values as the grid row, so
+    for a product on several lines it is clear which line was opened.
+- **AC-SD21 One fetch.**
+  - The deliveries read is fetched once, the first time any line's lightbox opens.
+  - Opening another line's lightbox, or the same one again, does not fetch again.
 - **AC-SD22 Delivered block.** Heading "Delivered" with "<n> DO line(s)", then a table:
   - columns DO no., DO date, Location, Status, Actual delivery, Qty;
   - a Total row summing Qty.
@@ -83,20 +88,19 @@ Plan: `PLAN-so-deliveries-view-14oct.md`. Card: `CARD-so-deliveries-view-14oct.m
     with "· <n> lines";
   - it holds the same two tables with the group's rows, or "No DO in the CRM for this product
     here." / "No Cancel SO for this product here.";
-  - it shows under EVERY line of that product (owner Q2 a).
+  - it shows in the lightbox of EVERY line of that product (owner Q2 a).
   - Products on one line show no group block.
 - **AC-SD25 DO link and permission.**
   - With `order_management.orders.view` the DO number links to `/order-management/orders/{id}`.
   - Without it the number is plain text and the row still shows (owner Q4 a).
 - **AC-SD26 Clear states.**
-  - While loading, the opened panel shows skeleton rows.
+  - While loading, the lightbox shows skeleton rows.
   - On error it shows "Could not load deliveries." with a Try again button that refetches.
   - No state leaves a spinner running.
 - **AC-SD27 Layout.**
-  - The opened panel stays pinned to the left edge at the grid's visible width (the existing
-    expanded-row behaviour).
-  - Tables wider than the screen scroll inside their own frame.
+  - The lightbox is at most 85% of the viewport height, and its body scrolls.
+  - Tables wider than the lightbox scroll sideways inside their own frame.
   - Usable, nothing clipped, at 1280 and 375.
 - **AC-SD28 No UUIDs on screen.** No SO line, product, DO or cancel id is rendered as text.
 - **AC-SD29 Column preference.** A user with a saved Lines column preference (`-v3`) still gets
-  the chevron as the first column.
+  the truck column as the first column.
