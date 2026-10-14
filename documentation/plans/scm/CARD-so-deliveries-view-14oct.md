@@ -107,7 +107,10 @@ Dev split of the 20,154 DO lines that name an SO:
   (fact 2). In dev, 871 post-July groups have more on DOs than the SO sync says was delivered
   (sync lag).
 
-## Questions
+## Questions (owner answered 14 Oct: all five recommendations, (a) each)
+
+- Q1 (a) chevron per line on the Lines tab; Q2 (a) product block under every line of the product, labelled; Q3 (a) "No DO in the CRM for this line"; Q4 (a) anyone who can open the SO, DO no. links only with the DO view permission; Q5 (a) DO lines whose product is not on the SO are left out.
+
 
 - **Q1 Where.**
   - (a) Lines tab: a chevron on each line opens its history in place. This is the existing
