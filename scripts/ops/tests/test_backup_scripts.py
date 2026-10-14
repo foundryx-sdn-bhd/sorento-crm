@@ -878,6 +878,7 @@ def test_writable_lock_folder_message_says_what_to_do(env):
     assert "install -d -o <release user> -g root -m 755 /var/lib/sorento-deploy" in r.stdout
     assert "DEPLOY_LOCK_PATH=/var/lib/sorento-deploy/.deploy.lock" in r.stdout
     assert "restore-test env and the deploy env" in r.stdout
+    assert "runbook step 0 option (b)" in r.stdout
 
 
 # ------------------------------------------------------------- reviewer round 3 leftovers
