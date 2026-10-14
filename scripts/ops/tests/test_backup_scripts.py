@@ -44,7 +44,7 @@ echo "docker $*" >> "$FAKE_LOG"
 case "$1" in
   run) [ -n "${FAKE_DOCKER_RUN_FAIL:-}" ] && exit 1; echo fakecontainerid; exit 0 ;;
   rm) exit 0 ;;
-  ps) [ -n "${FAKE_DOCKER_PS:-}" ] && echo "$FAKE_DOCKER_PS"; exit 0 ;;
+  ps) [ -n "${FAKE_DOCKER_PS_FAIL:-}" ] && exit 1; for c in ${FAKE_DOCKER_PS:-}; do echo "$c"; done; exit 0 ;;
   exec)
     shift
     [ "$1" = "-i" ] && { shift; stdin=1; }
@@ -466,6 +466,10 @@ def test_env_file_writable_by_others_is_refused(env):
     r = run(BACKUP, bare(e), BACKUP_ENV_FILE=envf)
     assert r.returncode == 2
     assert not any("pg_dump" in c for c in calls(tmp))
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, bare(e), BACKUP_ENV_FILE=envf)
+    assert r.returncode == 2
+    assert not any(c.startswith("rclone") or c.startswith("docker") for c in calls(tmp))
 
 
 def test_restore_empty_sanity_latest_skips_max(env):
@@ -522,3 +526,52 @@ def test_restore_removes_leftover_containers_first(env):
     first_run = next(i for i, c in enumerate(log) if c.startswith("docker run"))
     assert any(c.startswith("docker rm") and "restore-test-sorento_crm-20261007T043000Z" in c
                for c in log[:first_run])
+
+
+# ------------------------------------------------------------- review round 2
+
+
+def test_restore_sweep_touches_only_this_jobs_leftovers(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    work = tmp / "restore"
+    work.mkdir(mode=0o700)
+    mine = work / "run.sorento_crm.abc123"
+    other = work / "run.sorento_crm_2.def456"
+    mine.mkdir()
+    other.mkdir()
+    (other / "in-progress.sql.gz").write_text("x")
+    leftovers = ["restore-test-sorento_crm-20261007T043000Z",
+                 "restore-test-sorento_crm-2-20261014T043000Z",
+                 "restore-test-sorento_crm-20261007T043000Z-x"]
+    r = run(RESTORE, e, FAKE_DOCKER_PS=" ".join(leftovers))
+    assert r.returncode == 0, r.stderr
+    assert not mine.exists()
+    assert (other / "in-progress.sql.gz").exists()
+    rms = [c for c in calls(tmp) if c.startswith("docker rm")]
+    assert any(c.endswith(" restore-test-sorento_crm-20261007T043000Z") for c in rms)
+    assert not any("sorento_crm-2-" in c or c.endswith("-x") for c in rms)
+
+
+def test_restore_ignores_dump_of_job_sharing_prefix(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz", "sorento_crm_2_20261020T030000Z.sql.gz"])
+    r = run(RESTORE, e)
+    assert r.returncode == 0, r.stderr
+    assert any(c.startswith("rclone copyto") and "sorento_crm_20261014T030000Z" in c for c in calls(tmp))
+
+
+def test_backup_prune_pattern_has_full_stamp(env):
+    e, tmp = env
+    r = run(BACKUP, e)
+    assert r.returncode == 0, r.stderr
+    d = [c for c in calls(tmp) if c.startswith("rclone delete")][0]
+    assert "sorento_crm_" + "[0-9]" * 8 + "T" + "[0-9]" * 6 + "Z.sql.gz*" in d
+
+
+def test_restore_docker_down_exits_4(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    r = run(RESTORE, e, HC_RESTORE_URL=HCR, FAKE_DOCKER_PS_FAIL="1")
+    assert r.returncode == 4
+    assert curl_urls(tmp)[-1] == f"{HCR}/fail"
