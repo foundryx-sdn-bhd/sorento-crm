@@ -197,7 +197,13 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
                     continue
                 seen_docs.add(r.key)
             entities.append(_v1_entity(r, current=_is_current(action, r)))
-    for att in held.attachment_types or ([held.attachment_type] if held.attachment_type else []):
+    from app.services.chatbot.lanes.business.gate import ALLOWED
+
+    # A held attachment kind rides only where the domain's gate row reads one (a count after a photo is
+    # the stock ask, RG-4); a domain with no row passes everything, as the gate does.
+    allowed = ALLOWED.get(domain or "")
+    kinds = held.attachment_types or ([held.attachment_type] if held.attachment_type else [])
+    for att in kinds if allowed is None or "attachment_type" in allowed else []:
         entities.append(_v1_entity(ResolvedRef(kind="attachment_type", key=att, label=att)))
         if domain == "resource_attachment":
             # The entity v1's own parser sends for a catalogue / brochure request.

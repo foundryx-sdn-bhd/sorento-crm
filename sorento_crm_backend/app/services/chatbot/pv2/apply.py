@@ -100,10 +100,11 @@ DEFAULT_POLICY = ClarifyPolicy()
 class _Miss(Exception):
     """A short-reply safety check failed: re-ask (one MISS)."""
 
-    def __init__(self, about: str = "other", *, nothing_held: bool = False):
+    def __init__(self, about: str = "other", *, nothing_held: bool = False, entity: Entity | None = None):
         super().__init__(about)
         self.about = about
         self.nothing_held = nothing_held
+        self.entity = entity  # the entity whose miss raised it (RG-7c)
 
 
 #: The acts that can answer (or fail to answer) an open question.
@@ -194,6 +195,8 @@ def apply_turn(
                 action.reask = False  # its own question, not a retry of the open one
             if isinstance(action, ClarifyAct) and reask is None:
                 action.pending.origin = _origin_of(ask)
+                if miss.entity is not None:
+                    action.pending.raised_by = _entity_id(miss.entity)
         else:
             answered_pending = answered_pending or answered
             action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover)
@@ -238,12 +241,15 @@ _FILTER_KINDS = frozenset({"brand", "product_class", "product_type", "attachment
 
 
 def _new_subject_in_a_new_domain(st: ConversationState, ask: Ask) -> bool:
-    """A refines_held ask that names a NEW subject (an entity with a phrase, key or doc number
-    that is not the held one) AND changes the domain starts a new topic. Structured fields only."""
+    """A refines_held ask that changes the domain AND names a NEW subject (an entity with a phrase, key
+    or doc number that is not the held one) or opens a report on a subject without one starts a new
+    topic (RG-7d: an entity that refers to held still carries). Structured fields only."""
     if ask.act != "refines_held" or ask.row_pick is not None or not ask.domain or st.held.is_empty():
         return False
     if ask.domain == st.held.domain:
         return False
+    if ask.report is not None and st.held.report is None:
+        return True
     held_keys = {str(v) for refs in st.held.refs.values() for r in refs for v in (r.key, r.phrase) if v}
     for e in ask.entities:
         named = e.key or e.phrase or e.doc_number
@@ -280,6 +286,33 @@ def _answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
     return pending.kind in ("clarify_report_measure", "clarify_report_breakdown", "clarify_report_period") and ask.period is not None
 
 
+#: Domains whose answer reads a quantity (v1: "a quantity is a stock question"). R3 registry.
+QUANTITY_DOMAINS: frozenset[str] = frozenset({"inventory"})
+
+
+def _count_only(e: Entity) -> bool:
+    """A count that names nothing: a quantity, no key, phrase or document number."""
+    return e.quantity is not None and not (e.key or e.phrase or e.doc_number)
+
+
+def _held_count(st: ConversationState, ask: Ask, pending: PendingQuestion | None) -> Ask | None:
+    """RG-4 (#1617): an ask whose only entities are counts naming nothing counts the held subject. Returned
+    reshaped: on a new topic the counts point back at held, and with no domain named a held domain that
+    reads no quantity becomes the stock ask. An answer counts only with nothing pending. None otherwise."""
+    if (
+        ask.act == "switch_back" or (ask.act == "answers_bot_question" and pending is not None)
+        or ask.row_pick is not None or ask.attachment_type or not ask.entities
+        or not all(_count_only(e) and st.held.refs.get(e.kind) for e in ask.entities)
+    ):
+        return None
+    update: dict[str, Any] = {}
+    if ask.act == "new_topic":
+        update["entities"] = [e.model_copy(update={"refers_to_held": True}) for e in ask.entities]
+    if not ask.domain and st.held.domain not in QUANTITY_DOMAINS:
+        update["domain"] = "inventory"
+    return ask.model_copy(update=update)
+
+
 def _one_ask(
     st: ConversationState,
     i: int,
@@ -305,7 +338,10 @@ def _one_ask(
     if ask.act == "small_talk":
         return SmallTalk(ask_index=i), False
 
-    if ask.act == "answers_bot_question" and not _answer_is_a_refine(ask, pending):
+    counted = _held_count(st, ask, pending)
+    if counted is not None:
+        ask = counted  # a bare count: a refine (or a new topic) on the held subject
+    elif ask.act == "answers_bot_question" and not _answer_is_a_refine(ask, pending):
         return _answer(st, i, ask, pending, resolver, policy, language, today, can_offer)
 
     if ask.act == "switch_back":
@@ -568,11 +604,11 @@ def _answer(
         # The pick completes the ORIGINAL ask: what is left of it applies to the picked subject through
         # the same path as any ask. Its attachment kinds were vetted when it was asked, so they copy as
         # they are.
-        rest = _without_picked(origin, picked.payload, pending.kind)
+        rest = _without_picked(origin, picked.payload, pending.kind, pending.raised_by)
         held = _complete_deferred(held, _deferred_of(rest))
         held = _apply_fields(
             st, held, rest.model_copy(update={"attachment_type": None}), resolver, policy,
-            language, i, qs, refine=True, today=today,
+            language, i, qs, refine=True, today=today, joins=frozenset({payload_kind} if payload_kind else ()),
         )
     else:
         held = _complete_deferred(held, pending.deferred)  # no usable origin: state saved before R2, or a report pick
@@ -618,10 +654,12 @@ def _apply_fields(
     *,
     refine: bool,
     today: date | None = None,
+    joins: frozenset[str] = frozenset(),
 ) -> Held:
     """`base` with this ask's fields applied. An item that needs the user appends its
     question to `qs` and is left out; every other item still applies (section 3: held =
-    this ask, then the unresolved items go to the resolver and are asked)."""
+    this ask, then the unresolved items go to the resolver and are asked). `joins`: the kinds
+    already landed for this ask (a pick on one of its items), which its other items join."""
     held = base.model_copy(deep=True)
     if ask.domain:
         held.domain = ask.domain
@@ -638,7 +676,7 @@ def _apply_fields(
                 held.attachment_types = []
 
     ask, filtered = _report_entity_filters(held, ask, resolver, refine=refine)
-    held = _apply_entities(st, held, base, ask, resolver, policy, language, i, qs, refine=refine)
+    held = _apply_entities(st, held, base, ask, resolver, policy, language, i, qs, refine=refine, joins=joins)
     held = _apply_specs(st, held, ask.specs, resolver, policy, language, i, qs)
 
     if ask.attachment_type:
@@ -685,15 +723,20 @@ REPORT_FILTER_DIMENSION = {"brand": "brand", "product_class": "category"}
 
 
 def _report_entity_filters(held: Held, ask: Ask, resolver: Any, *, refine: bool) -> tuple[Ask, bool]:
-    """On a refine of a held report, brand / product_class entities become that dimension's
-    report filter instead of held refs. Returns the ask without them and whether any applied."""
+    """On a refine of a held report, or beside a report the ask opens (RG-7d), brand / product_class
+    entities become that dimension's report filter instead of held refs; the first "set" of a
+    dimension replaces its filter, later ones join it. Returns the ask without them (an opened report
+    carrying the filters) and whether any applied."""
     from app.services.chatbot.pv2.answer import REPORT_DOMAINS
 
-    if not refine or held.report is None or held.domain not in REPORT_DOMAINS:
+    opens = ask.report is not None and (not refine or held.report is None)
+    spec = ask.report if opens else held.report if refine else None
+    if spec is None or held.domain not in REPORT_DOMAINS:
         return ask, False
     keep: list[Entity] = []
     changed = False
-    filters = list(held.report.filters)
+    filters = list(spec.filters)
+    set_dims: set[str] = set()
     for ent in ask.entities:
         dim = REPORT_FILTER_DIMENSION.get(ent.kind)
         if dim is None or ent.refers_to_held:
@@ -711,16 +754,20 @@ def _report_entity_filters(held: Held, ask: Ask, resolver: Any, *, refine: bool)
             continue
         keys = [str(_get(r, "key")) for r in refs]
         have = list(current.keys) if current is not None else []
-        if ent.op == "add":
+        if ent.op == "add" or (ent.op == "set" and dim in set_dims):
             keys = have + [k for k in keys if k not in have]
         elif ent.op == "remove":
             keys = [k for k in have if k not in keys]
+        if ent.op == "set":
+            set_dims.add(dim)
         filters = [f for f in filters if f.dimension != dim]
         if keys:
             filters.append(Filter(dimension=dim, op="in", keys=keys, values=[]))
         changed = True
     if not changed:
         return ask, False
+    if opens:
+        return ask.model_copy(update={"entities": keep, "report": spec.model_copy(update={"filters": filters})}), True
     held.report = held.report.model_copy(update={"filters": filters})
     return ask.model_copy(update={"entities": keep}), True
 
@@ -829,6 +876,7 @@ def _apply_entities(
     qs: list[ClarifyAct],
     *,
     refine: bool,
+    joins: frozenset[str] = frozenset(),
 ) -> Held:
     to_resolve: list[Entity] = []
     for ent in _fold_quantity_only(ask.entities):
@@ -839,14 +887,14 @@ def _apply_entities(
             # A new ask about "this one": the subject held before this message.
             carried_refs = st.held.refs.get(ent.kind) or []
             if not carried_refs:
-                raise _Miss("which_held", nothing_held=True)
+                raise _Miss("which_held", nothing_held=True, entity=ent)
             held.refs = set_refs(held.refs, ent.kind, carried_refs, "set")
             if ent.key is None and ent.phrase is None:
                 _set_quantity(held, ent)
                 continue
             has_held = True
         if ent.refers_to_held and not has_held:
-            raise _Miss("which_held", nothing_held=True)
+            raise _Miss("which_held", nothing_held=True, entity=ent)
         if ent.op == "clear":
             held.refs = set_refs(held.refs, ent.kind, [], "clear")
             continue
@@ -860,13 +908,14 @@ def _apply_entities(
             _set_quantity(held, ent)  # "this one": the held subject stays; a restated count replaces
             continue
         if ent.op == "remove" and not has_held:
-            raise _Miss("which_held", nothing_held=True)
+            raise _Miss("which_held", nothing_held=True, entity=ent)
         to_resolve.append(ent)
     if not to_resolve:
         return held
 
     results = resolver.resolve_entities(to_resolve, held=held)
-    set_kinds: set[str] = set()
+    set_kinds: set[str] = set(joins)
+    asked: list[tuple[ClarifyAct, Entity]] = []  # the entity questions this ask raised
     listed = Counter(e.kind for e in to_resolve)
     found = {
         e.kind for e, r in zip(to_resolve, results)
@@ -924,7 +973,7 @@ def _apply_entities(
                             phrase=ent.phrase, quantity=ent.quantity)
                 for o in pool
             ]
-            held.refs = set_refs(held.refs, "product", every, ent.op if ent.op != "set" else "set")
+            held.refs = set_refs(held.refs, "product", every, _list_op(ent, set_kinds))
             continue
         if (
             status == "ambiguous" and ent.kind == "product" and pool and ent.phrase
@@ -933,13 +982,15 @@ def _apply_entities(
             # An availability-only dealer is never handed the list: the typed partial goes to
             # v1 as one reference and v1's AVAIL-MODE rule asks which one.
             ref = ResolvedRef(kind="product", key=ent.phrase, label=ent.phrase, phrase=ent.phrase, quantity=ent.quantity)
-            held.refs = set_refs(held.refs, "product", [ref], ent.op if ent.op != "set" else "set")
+            held.refs = set_refs(held.refs, "product", [ref], _list_op(ent, set_kinds))
             continue
         if status == "ambiguous" or (status == "exact" and not refs and options):
-            if ent.quantity is not None:
-                options = [o.model_copy(update={"payload": {**o.payload, **_qty_payload(ent)}}) for o in options]
+            # The phrase names which item of the ask a pick answers (RG-7b).
+            stamp = {**_qty_payload(ent), **({"phrase": ent.phrase} if ent.phrase else {})}
+            options = [o.model_copy(update={"payload": {**o.payload, **stamp}}) for o in options]
             qs.append(_clarify(st, i, "entity", ent.phrase, language, options=options, kind=ent.kind))
             qs[-1].pending.more = int(getattr(res, "more", 0) or 0)
+            asked.append((qs[-1], ent))
             continue
         if status != "exact" or not refs:
             if not options and ent.kind in DOCUMENT_KINDS and (ent.doc_number or ent.phrase):
@@ -962,7 +1013,7 @@ def _apply_entities(
         if ent.op == "remove":
             current = {r.key for r in held.refs.get(ent.kind, [])}
             if not current.intersection(r.key for r in refs):
-                raise _Miss("which_held")
+                raise _Miss("which_held", entity=ent)
             held.refs = set_refs(held.refs, ent.kind, refs, "remove")
             continue
         carried = base.refs.get(ent.kind, []) if refine else []
@@ -987,7 +1038,18 @@ def _apply_entities(
         op = "add" if ent.op == "set" and kind in set_kinds else ent.op
         set_kinds.add(kind)
         held.refs = set_refs(held.refs, kind, refs, op)
+    for q, ent in asked:
+        if ent.op != "remove" and ent.kind in set_kinds:
+            # A pick joins the same-kind items that landed beside it instead of replacing them (RG-7b).
+            q.pending.options = [o.model_copy(update={"payload": {**o.payload, "op": "add"}}) for o in q.pending.options]
     return held
+
+
+def _list_op(ent: Entity, set_kinds: set[str]) -> str:
+    """The op a `list_all` product answer lands with: a "set" after a product of the same ask joins it."""
+    op = "add" if ent.op == "set" and "product" in set_kinds else ent.op
+    set_kinds.add("product")
+    return op
 
 
 #: Entity kinds whose miss says v1's own not-found sentence: the documents and a product.
@@ -1272,6 +1334,12 @@ def _origin_of(ask: Ask) -> dict:
     return ask.model_dump(mode="json")
 
 
+def _entity_id(e: Entity) -> dict:
+    """An entity as `PendingQuestion.raised_by` records it: without its quantity, which a count beside
+    it may have been folded into."""
+    return e.model_dump(mode="json", exclude={"quantity"})
+
+
 def _keep_origin(
     action: Action, ask: Ask, held: Held, pending_in: PendingQuestion | None, answered: bool
 ) -> None:
@@ -1328,17 +1396,26 @@ def valid_origin(origin: dict | None) -> Ask | None:
         return None
 
 
-def _without_picked(origin: Ask, payload: dict[str, Any], question: str) -> Ask:
-    """The original ask minus the item the pick answered: every entity of the picked kind (the pick
-    replaces that kind, as before R2), on a which_held question every entity that pointed back at held
-    ("this one", a remove: the pick is the held subject they meant, and replaying them misses again),
-    the spec a spec question asked about (a pick among the closest products answers the spec that found
-    nothing), the attachment kind or domain picked."""
+def _without_picked(
+    origin: Ask, payload: dict[str, Any], question: str, raised_by: dict | None = None
+) -> Ask:
+    """The original ask minus the item the pick answered: the entity whose phrase the option carries,
+    so the other same-kind items stay and join the pick (RG-7b; an option with no phrase answers every
+    entity of its kind, as before R2). On a which_held question: the entity that raised it, every
+    entity that pointed back at held ("this one": the pick is the held subject it meant) and the
+    picked kind's other items, while any other remove replays (RG-7c); with no raiser recorded, every
+    remove goes too (R2 fix 6). Also the spec a spec question asked about (a pick among the closest
+    products answers the spec that found nothing), the attachment kind or domain picked."""
     kind = payload.get("kind")
+    phrase = payload.get("phrase")
     which_held = question == "clarify_which_held"
 
     def answered(e: Entity) -> bool:
-        return e.kind == kind or (which_held and (e.refers_to_held or e.op == "remove"))
+        if not which_held:
+            return e.kind == kind and (phrase is None or e.phrase == phrase)
+        if raised_by is None:
+            return e.kind == kind or e.refers_to_held or e.op == "remove"
+        return _entity_id(e) == raised_by or e.refers_to_held or (e.kind == kind and e.op != "remove")
 
     update: dict[str, Any] = {"entities": [e for e in origin.entities if not answered(e)]}
     if question == "clarify_spec_attribute":
