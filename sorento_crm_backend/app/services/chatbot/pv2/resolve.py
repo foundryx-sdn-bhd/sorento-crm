@@ -110,6 +110,8 @@ class Resolution(BaseModel):
     phrase: Optional[str] = None
     unrecognised: bool = False      # true -> chatbot_unrecognised_phrases
     did_you_mean: bool = False      # options are v1's did-you-mean alternatives, no real match
+    more: int = 0                   # matches beyond the capped `options`: len(options) + more == total
+    pool: list[Option] = Field(default_factory=list)  # every match (bounded), for a domain that answers all
 
 
 class SpecResolution(BaseModel):
@@ -141,6 +143,8 @@ INDEX_KINDS: frozenset[str] = frozenset({"brand", "product_class", "product_type
 #: Owner 13 Oct 23:50: at most this many customer-name candidates.
 CUSTOMER_FAMILY_ROW_LIMIT = 200
 CUSTOMER_CANDIDATE_CAP = 8
+#: The most matches one partial product phrase carries to a domain that answers every match.
+PRODUCT_POOL_LIMIT = 50
 #: Real candidates offered when an index key is null.
 INDEX_CANDIDATE_CAP = 8
 #: Closest real rows offered when no attribute's range holds a number.
@@ -604,11 +608,16 @@ class DbResolver:
                 found = list(dict.fromkeys(m.canonical_code for m in res.alternatives if m.entity_type == "product"))
                 dym = True
             if found:
-                options = [
+                every = [
                     Option(key=c, label=c, payload={"kind": "product", "key": c, "label": c})
-                    for c in found[:CUSTOMER_CANDIDATE_CAP]
+                    for c in found[:PRODUCT_POOL_LIMIT]
                 ]
-                return Resolution(status="ambiguous", options=options, phrase=phrase, did_you_mean=dym)
+                options = every[:CUSTOMER_CANDIDATE_CAP]
+                more = len(found) - len(options) if not dym else 0
+                return Resolution(
+                    status="ambiguous", options=options, phrase=phrase, did_you_mean=dym, more=max(more, 0),
+                    pool=[] if dym else every,
+                )
         return Resolution(status="none", phrase=phrase)
 
     # ------------------------------------------------------------------ customers

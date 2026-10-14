@@ -118,6 +118,7 @@ def apply_turn(
     domain_teams: dict[str, str] | None = None,
     offer_mode: Literal["offer", "refer", "none"] = "offer",
     roster_for: Any = None,
+    dym_tags: Any = None,
 ) -> tuple[ConversationState, list[Action]]:
     """Apply one parser output to the state; one Action per ask (section 3).
 
@@ -128,7 +129,7 @@ def apply_turn(
     st.turn_no = state.turn_no + 1
     # What a not-found document says after its sentence: the offer, v1's refer line, or nothing.
     mode = offer_mode if offer_mode != "offer" else ("offer" if can_offer_handover else "none")
-    doc_offer = _DocOffer(mode, domain_teams, roster_for)
+    doc_offer = _DocOffer(mode, domain_teams, roster_for, dym_tags)
     language = out.language
     today = local_date(now) if now is not None else None
     actions: list[Action] = []
@@ -230,12 +231,23 @@ def _new_subject_in_a_new_domain(st: ConversationState, ask: Ask) -> bool:
     return False
 
 
+def _is_a_new_ask(ask: Ask) -> bool:
+    """An option-less answer that carries its own subject (an entity naming something that is
+    not the held one) or its own attachment kind is a new ask, not an answer to the offer."""
+    named = any(
+        not e.refers_to_held and (e.key or e.phrase or e.doc_number) and e.op != "clear" for e in ask.entities
+    )
+    return named or bool(ask.attachment_type)
+
+
 def _answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
     """An answer that names no option but carries a structured quantity on the held product
     (under a v1 product pick) or a structured period (under a report question) is a refine of
     the held subject, not an answer to the open question. Structured fields only."""
     if pending is None or ask.answer is None or ask.answer.option_key is not None:
         return False
+    if pending.kind in ("v1_open_question", "offer_handover", "offer_doc_handover") and _is_a_new_ask(ask):
+        return True
     if (
         pending.kind == "v1_open_question"
         and ask.answer.free_value is None
@@ -290,7 +302,14 @@ def _one_ask(
         if i > 0 or not st.held.is_empty():
             st.topics = push_topic(st.topics, st.held)
         qs = _Qs(can_offer)
+        before = st.held.model_copy(deep=True)
         held = _apply_fields(st, Held(), ask, resolver, policy, language, i, qs, refine=False, today=today)
+        if (
+            before.refs.get("product")
+            and not held.refs.get("product")
+            and any(e.kind == "product" and not e.refers_to_held for e in ask.entities)
+        ):
+            held.refs = set_refs(held.refs, "product", before.refs["product"], "set")  # the held product stays
         return _commit(st, i, held, ask, qs), False
 
     # refines_held
@@ -309,6 +328,16 @@ def _one_ask(
     if row is not None and base.report is not None and _is_report_row(row):
         base, drilled = _drill(st, base, row, ask, language, i, qs)
     held = _apply_fields(st, base, ask, resolver, policy, language, i, qs, refine=True, today=today)
+    if (
+        ask.attachment_type
+        and not held.refs.get("product")
+        and not any(e.kind == "product" and not e.refers_to_held for e in ask.entities)
+    ):
+        # An attachment ask with no product held: the newest saved topic's product, else ask.
+        saved = st.topics[0].refs.get("product") if st.topics else None
+        if not saved:
+            raise _Miss("which_held", nothing_held=True)
+        held.refs = set_refs(held.refs, "product", saved, "set")
     if row is not None and not drilled:
         held = apply_payload(held, row.payload)
     if drilled and ask.report is None and not qs:
@@ -363,7 +392,11 @@ def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[Clarif
 class _DocOffer:
     """How a not-found document ends its sentence (see `apply_turn`)."""
 
-    def __init__(self, mode: str = "offer", teams: dict[str, str] | None = None, roster_for: Any = None) -> None:
+    def __init__(
+        self, mode: str = "offer", teams: dict[str, str] | None = None, roster_for: Any = None,
+        dym_tags: Any = None,
+    ) -> None:
+        self.dym_tags = dym_tags
         self.mode = mode
         self.teams = teams
         self.roster_for = roster_for
@@ -403,6 +436,24 @@ def _answer(
     key = ask.answer.option_key if ask.answer is not None else None
     free = ask.answer.free_value if ask.answer is not None else None
     picked = next((o for o in pending.options if o.key == key), None) if key is not None else None
+    if key == "all" and picked is None:
+        # Every option of the question (the contract token for "all of them").
+        every = [o for o in pending.options if o.payload.get("kind") != "handover"]
+        if pending.kind == "v1_open_question" and every:
+            first = every[0]
+            return (
+                Lookup(
+                    ask_index=i, domain=st.held.domain, held=st.held.model_copy(deep=True), ask=ask,
+                    picked=first, pending_kind=pending.kind, pick_all=[o.key for o in every],
+                ),
+                True,
+            )
+        if pending.kind in ("clarify_entity", "clarify_did_you_mean") and every:
+            held = st.held.model_copy(deep=True)
+            for o in every:
+                held = apply_payload(held, {**o.payload, "op": "add"})
+            st.held = held
+            return Lookup(ask_index=i, domain=held.domain, held=held.model_copy(deep=True), ask=ask), True
     if picked is None and key is not None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
         # A candidate question is keyed by position; its code (the payload key) still picks.
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
@@ -414,6 +465,8 @@ def _answer(
             if picked is None and 1 <= n <= len(pending.options) and not any(o.key.isdigit() for o in pending.options):
                 picked = pending.options[n - 1]
     if picked is None:
+        if free is not None and free == "all" and pending.kind == "v1_open_question":
+            raise _Miss("other")  # "all" is the option key's token, never a free value
         if free is not None and pending.kind in FREE_VALUE_PENDING:
             held = st.held.model_copy(deep=True)
             for ent in ask.entities:
@@ -511,26 +564,34 @@ def _apply_fields(
     for name in ask.cleared:
         if name in CLEARABLE:
             setattr(held, name, [] if name == "specs" else None)
+            if name == "attachment_type":
+                held.attachment_types = []
 
     ask, filtered = _report_entity_filters(held, ask, resolver, refine=refine)
     held = _apply_entities(st, held, base, ask, resolver, policy, language, i, qs, refine=refine)
     held = _apply_specs(st, held, ask.specs, resolver, policy, language, i, qs)
 
-    if ask.attachment_type is not None:
-        res = resolver.resolve_attachment_type(ask.attachment_type, held=held)
-        status = getattr(res, "status", "none")
-        refs = list(getattr(res, "refs", None) or [])
-        if status == "exact" and refs:
-            held.attachment_type = refs[0].key
-        else:
-            options = list(getattr(res, "options", None) or [])
-            # No candidates: the held product carries no files to pick from, said truly.
-            qs.append(
-                _clarify(
-                    st, i, "attachment_type", None, language,
-                    options=options, kind="attachment_type", not_found=not options,
+    if ask.attachment_type:
+        kinds = [ask.attachment_type] if isinstance(ask.attachment_type, str) else list(ask.attachment_type)
+        keys: list[str] = []
+        for kind_key in kinds:  # every kind the ask names; none dropped silently
+            res = resolver.resolve_attachment_type(kind_key, held=held)
+            status = getattr(res, "status", "none")
+            refs = list(getattr(res, "refs", None) or [])
+            if status == "exact" and refs:
+                keys.append(refs[0].key)
+            else:
+                options = list(getattr(res, "options", None) or [])
+                # No candidates: the held product carries no files to pick from, said truly.
+                qs.append(
+                    _clarify(
+                        st, i, "attachment_type", None, language,
+                        options=options, kind="attachment_type", not_found=not options,
+                    )
                 )
-            )
+        if keys:
+            held.attachment_type = keys[0]
+            held.attachment_types = keys if len(keys) > 1 else []
     if ask.period is not None:
         held.period = ask.period
         if refine and held.report is not None and ask.report is None:
@@ -780,6 +841,19 @@ def _apply_entities(
         ):
             held = apply_payload(held, {**options[0].payload, "op": ent.op, **_qty_payload(ent)})
             continue
+        pool = list(getattr(res, "pool", None) or (options if not getattr(res, "more", 0) else []))
+        if (
+            status == "ambiguous" and ent.kind == "product" and pool and not getattr(res, "did_you_mean", False)
+            and _lists_all(held.domain)
+        ):
+            # v1's narrowing for this domain answers every match directly (`list_all`).
+            every = [
+                ResolvedRef(kind="product", key=str(o.payload.get("key") or o.key), label=o.label,
+                            phrase=ent.phrase, quantity=ent.quantity)
+                for o in pool
+            ]
+            held.refs = set_refs(held.refs, "product", every, ent.op if ent.op != "set" else "set")
+            continue
         if status == "ambiguous" or (status == "exact" and not refs and options):
             if ent.quantity is not None:
                 options = [o.model_copy(update={"payload": {**o.payload, **_qty_payload(ent)}}) for o in options]
@@ -838,6 +912,18 @@ def _apply_entities(
 DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_order", "inbound_shipment", "product"})
 
 
+def _lists_all(domain: str | None) -> bool:
+    """v1's narrowing rule for the domain's product kind is `list_all` (policy rows)."""
+    from app.services.chatbot.turn.policy import default_policy
+
+    # Limited to the stock domain: order / sales also carry `list_all` in the seed, but their
+    # existing pins ask which product (the owner's 'WC286 stock' case is the stock ask).
+    if domain != "inventory":
+        return False
+    row = default_policy().domain(domain)
+    return bool(row is not None and (row.narrowing or {}).get("product") == "list_all")
+
+
 def _offer_team(offer: Any, held: Held) -> str:
     """The domain's escalation team: the live rows when given, else the seed policy."""
     if offer.teams is not None:
@@ -850,13 +936,32 @@ def _offer_team(offer: Any, held: Held) -> str:
     return team or "customer_service"
 
 
+#: v1's did-you-mean prints at most this many candidates (`miss_suggest._DYM_CAP_DEFAULT`).
+DYM_CAP = 3
+
+
+def _dym_tags(offer: Any, held: Held, codes: list[str]) -> dict[str, str]:
+    """v1's " - has stock details" / " - no stock details" per candidate, from the context's probe."""
+    if offer.dym_tags is None or not held.domain:
+        return {}
+    from app.services.chatbot.lanes.business.miss_suggest import DOMAIN_PROBE
+
+    noun = (DOMAIN_PROBE.get(held.domain) or {}).get("noun")
+    if not noun:
+        return {}
+    found = offer.dym_tags(held.domain, codes) or {}
+    return {c: f" - {'has' if found.get(c) else 'no'} {noun}" for c in codes if c in found}
+
+
 def _did_you_mean(
     st: ConversationState, i: int, ent: Entity, held: Held, options: list[Option], offer: Any, language: str
 ) -> ClarifyAct:
     """v1's did-you-mean sentence (lanes/business/answer.py build_suggest_offer): the typed
     token, the suggested codes, and its escalation clause per the contact's offer mode."""
+    options = options[:DYM_CAP]  # v1's `_DYM_CAP_DEFAULT`
     codes = [str(o.payload.get("key") or o.key) for o in options]
-    lines = "\n".join(f"{n}. {c}" for n, c in enumerate(codes, start=1))
+    tags = _dym_tags(offer, held, codes)
+    lines = "\n".join(f"{n}. {c}{tags.get(c, '')}" for n, c in enumerate(codes, start=1))
     asked = f'Couldn\'t find "{ent.phrase}" (product). Did you mean:\n{lines}\nReply with a code to continue'
     picks = [
         Option(key=str(n), label=o.label, payload={"kind": "product", "key": c, "label": o.label, "op": "set", **_qty_payload(ent)})
