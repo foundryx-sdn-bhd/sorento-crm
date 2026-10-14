@@ -19,6 +19,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from 'sonner';
 import type {
   Project,
   ProjectQuotation,
@@ -94,6 +95,10 @@ const getProductsForLineSelect = vi.fn(async () => PRODUCTS);
 vi.mock('@/app/(protected)/master-data-management/products/services/productService', () => ({
   getProductsForLineSelect: () => getProductsForLineSelect(),
   getProductsForVariantSelect: vi.fn(async () => []),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 
 // SET-QUOTE-LINE: the picker's set options come from the NEW `getProductSetsForLineSelect`
@@ -2367,5 +2372,44 @@ describe('QuotationVersionEditor sets (SET-QUOTE-LINE)', () => {
 
     await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9' }));
     expect(stagedBody()[0]).toMatchObject({ brand_snapshot: 'SORENTO' });
+  });
+  // Round 2
+
+  it('R2 brand: picking a set on a line with a blank brand fills the brand from the option brand_name at pick', async () => {
+    getProductSetsForLineSelect.mockResolvedValue([{ ...SET_REF, brand_name: 'MOCHA' }]);
+    await openPicker();
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9' }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ brand_snapshot: 'MOCHA' }));
+  });
+
+  it('R2 brand: a typed brand is kept when the picked set carries a brand_name', async () => {
+    getProductSetsForLineSelect.mockResolvedValue([{ ...SET_REF, brand_name: 'MOCHA' }]);
+    listQuotationLines.mockResolvedValue([line({ brand: 'SORENTO' })]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9' }));
+    await waitFor(() => expect(getProductSetsForLineSelect).toHaveBeenCalledWith({ ids: ['s9'] }));
+    expect(stagedBody()[0]).toMatchObject({ brand_snapshot: 'SORENTO' });
+  });
+
+  it('R2 reject: a failed set lookup during a pick shows an error toast and no unhandled rejection', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    vi.mocked(toast.error).mockClear();
+    try {
+      await openPicker();
+      getProductSetsForLineSelect.mockRejectedValue(new Error('boom'));
+      fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
   });
 });
