@@ -568,6 +568,8 @@ export interface OrderInquiryWorklistRow extends OrderInquiryAckFields {
   project_id?: string | null;
   project_sales_order_id?: string | null;
   core_sales_order_id?: string | null;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type; null when there is no core order. */
+  so_doc_type?: string | null;
   /**
    * S6 (`PLAN-board-oi-mechanical-22sep.md`, AC-B6-1/AC-B6-7): the AutoCount line number,
    * for the "SO line" column's own text (`SO402757 · L5`, `orderInquirySoLineLabel`).
@@ -1305,6 +1307,8 @@ export interface OrderInquiryHeader {
   raised_by_name?: string | null;
   /** The CORE sales order id, for the S/O no link (AC-HL-06). Null when there is none. */
   sales_order_id?: string | null;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type; null when there is no core order. */
+  so_doc_type?: string | null;
   project_sales_order_id?: string | null;
   so_number?: string | null;
   so_date?: string | null;

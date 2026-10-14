@@ -12,6 +12,7 @@ import {
 import { ColumnDef, RowSelectionState } from '@tanstack/react-table';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { Badge } from '@/components/ui/badge';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import { Button } from '@/components/ui/button';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
@@ -503,6 +504,7 @@ export function FulfilmentBoardListView({
                 >
                   {contribution.so_number}
                 </span>
+                <ConsignmentBadge docType={contribution.so_doc_type} size="xs" />
                 {/* The same tick the grid puts on a fully-decided cell, here per row: one
                     row IS one contribution, so it is decided or it is not. */}
                 <BoardDecidedMarker

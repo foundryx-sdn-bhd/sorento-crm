@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import BackToList from '@/components/common/BackToList';
 import { Badge } from '@/components/ui/badge';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -697,6 +698,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
                 >
                   {orderInquiryHeaderStatusLabel(header.status)}
                 </Badge>
+                <ConsignmentBadge docType={header.so_doc_type} size="md" />
               </div>
               <span className="text-sm text-muted-foreground">
                 Raised by {header.raised_by_name ?? 'Not recorded'}

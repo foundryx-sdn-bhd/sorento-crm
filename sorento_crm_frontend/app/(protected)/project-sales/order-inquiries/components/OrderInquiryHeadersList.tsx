@@ -34,6 +34,7 @@ import {
   useOrderInquiryWorklistSummary,
 } from '../../_shared/hooks/useOrderInquiry';
 import { formatInquiryQty } from '../../_shared/lib/orderInquiryWorklist';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import {
   orderInquiryHeaderStatusLabel,
   orderInquiryHeaderStatusVariant,
@@ -276,16 +277,14 @@ export function OrderInquiryHeadersList() {
         size: 140,
         meta: { headerTitle: 'S/O no', skeleton: <Skeleton className="h-4 w-20" /> },
         cell: ({ row }) => {
-          const { so_number, sales_order_id } = row.original;
+          const { so_number, sales_order_id, so_doc_type } = row.original;
           if (!so_number) return <span className="text-muted-foreground">-</span>;
-          if (!sales_order_id) {
-            return (
-              <span className="block truncate" title={so_number}>
-                {so_number}
-              </span>
-            );
-          }
-          return (
+          // AC-CONSIGN-CRM: a consignment reads as one beside its number.
+          const number = !sales_order_id ? (
+            <span className="block truncate" title={so_number}>
+              {so_number}
+            </span>
+          ) : (
             <Link
               href={`/scm/sales-orders/${sales_order_id}`}
               onClick={(e) => e.stopPropagation()}
@@ -294,6 +293,12 @@ export function OrderInquiryHeadersList() {
             >
               {so_number}
             </Link>
+          );
+          return (
+            <div className="flex min-w-0 flex-col gap-0.5">
+              {number}
+              <ConsignmentBadge docType={so_doc_type} size="xs" />
+            </div>
           );
         },
       },

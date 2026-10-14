@@ -265,6 +265,8 @@ export type SalesOrderStatus =
 
 export interface SalesOrderLine {
   id: string;
+  /** AC-CONSIGN-CRM: what a Consignment Return handed back; reporting only. */
+  qty_returned?: number;
   /**
    * AutoCount's own line number (`Seq`), kept as it arrives - the address the Lines tab
    * sorts and labels by (PLAN-so-lines-autocount-order.md). `null` for a line AutoCount
@@ -459,6 +461,8 @@ export interface SalesOrderLineInquiry {
 
 export interface SalesOrder {
   id: string;
+  /** AC-CONSIGN-CRM: 'consignment' for an AutoCount consignment order, else 'sales_order'. */
+  doc_type?: string | null;
   /** Human-readable SO number - shown in the UI (never a UUID). */
   so_number: string;
   order_type: string;

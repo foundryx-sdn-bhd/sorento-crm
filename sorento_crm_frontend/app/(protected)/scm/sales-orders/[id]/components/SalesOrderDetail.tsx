@@ -77,6 +77,7 @@ import { PlanNumberButton } from '../../../components/PlanNumberButton';
 import { SoLineLinksBody } from './SoLineLinksBody';
 import { fmtDate, fmtInt } from '../../../lib/format';
 import { demandClassBadge } from '../../../lib/demandClass';
+import { ConsignmentBadge } from '../../../lib/docType';
 import { transferableBadge } from '../../../lib/transferable';
 import { salesOrderPlannedBadge } from '../../../lib/salesOrderPlanned';
 import {
@@ -866,6 +867,26 @@ export function SalesOrderDetail({ id }: { id: string }) {
           cellClassName: 'text-right tabular-nums',
         },
       },
+      // AC-CONSIGN-CRM (owner Q6 a): what a Consignment Return handed back. Reporting only, so
+      // it never feeds delivered or outstanding; a plain sales order has no such figure.
+      ...(data?.doc_type === 'consignment'
+        ? [
+            {
+              id: 'qty_returned',
+              accessorFn: (line) => Number(line.qty_returned ?? 0),
+              header: ({ column }) => (
+                <DataGridColumnHeader title="Qty returned" column={column} />
+              ),
+              cell: ({ row }) => fmtInt(Number(row.original.qty_returned ?? 0)),
+              size: 130,
+              meta: {
+                headerTitle: 'Qty returned',
+                headerClassName: 'text-right',
+                cellClassName: 'text-right tabular-nums',
+              },
+            } as ColumnDef<SalesOrderLine>,
+          ]
+        : []),
       {
         id: 'outstanding',
         // Computed here rather than sent, so it cannot disagree with the two columns beside
@@ -1353,6 +1374,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
       amountTotal,
       handleRemoveLine,
       soNumber,
+      data?.doc_type,
     ],
   );
 
@@ -1522,6 +1544,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
                 <Badge variant={salesOrderStatusVariant(so.status)} appearance="light" size="md">
                   {salesOrderStatusLabel(so.status)}
                 </Badge>
+                <ConsignmentBadge docType={so.doc_type} size="md" />
                 {/* How far the order has been PLANNED, beside the status it keeps being
                     confused with. The SAME chip the list carries, in the header rather than a
                     tab body because it is read-only metadata about the whole record - so view
