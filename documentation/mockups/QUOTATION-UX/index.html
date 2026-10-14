@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quotation lines (mockup v2)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set the other lane mockups use */
+:root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--radius:8px;--page:#f7f7f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:980px}
+.nav{position:sticky;top:0;z-index:50;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:980px}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.desk{width:1280px;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{display:flex;background:#fff;position:relative}
+.side{width:280px;flex:none;background:#0d0e12;color:#a1a1aa;font-size:12.5px;padding:18px 14px}
+.side .logo{color:#fff;font-weight:600;margin:0 0 18px}
+.side div{padding:6px 8px;border-radius:6px}
+.side .on{background:#1f2128;color:#fff}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:760px;overflow:auto;background:#fff;position:relative}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+.main{flex:1;min-width:0;padding:20px 24px;position:relative}
+.phone .main{padding:14px 16px}
+.pagehead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.pagehead .t{font-size:22px;font-weight:600}
+.crumb{font-size:13px;color:var(--muted-fg)}
+.btn{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 10px;border-radius:6px;border:1px solid var(--input);background:#fff;font-size:12.5px;font-weight:500;white-space:nowrap;color:var(--foreground);cursor:pointer}
+.btn.pri{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.link{border:0;background:transparent;color:var(--primary);padding:0 4px}
+.btn.lg{height:34px;font-size:13px;padding:0 14px}
+.tabs{display:flex;gap:22px;border-bottom:1px solid var(--border);margin:0 0 14px;font-size:13.5px}
+.tabs span{padding:8px 0;color:var(--muted-fg)}
+.tabs .on{color:var(--primary);border-bottom:2px solid var(--primary);font-weight:500}
+.chips{display:inline-flex;background:var(--muted);border-radius:8px;padding:3px;gap:2px;margin-bottom:12px}
+.chips span{font-size:12.5px;padding:4px 10px;border-radius:6px}
+.chips .on{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.06);font-weight:500}
+.card{border:1px solid var(--border);border-radius:12px;background:#fff}
+.card>.hd{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-weight:600;font-size:13.5px}
+.card>.bd{padding:16px 20px}
+.toolbar{display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap}
+.search{height:32px;border:1px solid var(--input);border-radius:6px;padding:0 10px;font-size:13px;color:var(--muted-fg);display:flex;align-items:center;gap:6px;width:240px}
+.sel{height:28px;border:1px solid var(--input);border-radius:6px;padding:0 8px;font-size:12.5px;display:flex;align-items:center;justify-content:space-between;gap:6px;background:#fff;white-space:nowrap;overflow:hidden}
+.sel::after{content:"\25BE";color:var(--muted-fg);font-size:10px;flex:none}
+.sel.ph{color:var(--muted-fg)}
+.inp{height:28px;border:1px solid var(--input);border-radius:6px;padding:0 8px;font-size:12.5px;display:flex;align-items:center;background:#fff;font-variant-numeric:tabular-nums}
+.inp.r{justify-content:flex-end}
+.ta{border:1px solid var(--input);border-radius:6px;background:#fff;padding:5px 8px;font-size:12px;line-height:1.4;white-space:pre-wrap;min-height:28px;color:var(--foreground)}
+.ta.ph{color:var(--muted-fg)}
+.ta.err{border-color:var(--destructive)}
+.errtxt{font-size:11px;color:var(--destructive);margin-top:2px}
+
+/* DataGrid look: components/ui/data-grid-table.tsx */
+.grid{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.grid table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12.5px}
+.grid th{position:relative;height:36px;background:#fafafa;color:var(--muted-fg);font-weight:500;font-size:12px;text-align:left;padding:0 8px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grid th .rz{position:absolute;right:0;top:8px;bottom:8px;width:1px;background:var(--border)}
+.grid th.r,.grid td.r{text-align:right}
+.grid td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top}
+.grid tr.band td{background:var(--warning-soft);border-bottom:1px solid var(--warning-line);padding:6px 8px;font-weight:600;font-size:12px;letter-spacing:.02em}
+.grid tr.band .bl{display:flex;align-items:center;gap:8px}
+.grid tr.band .lbl{flex:1;text-align:center;text-transform:uppercase}
+.grid tr.foot td{background:#fafafa;font-weight:600;border-bottom:0}
+.grid tr.sub td{background:#fff;font-size:12px;color:var(--muted-fg);padding:5px 8px}
+.handle{color:#a1a1aa;cursor:grab;font-size:14px;line-height:28px;user-select:none}
+.num{font-variant-numeric:tabular-nums}
+.thumb{width:40px;height:40px;border:1px solid var(--border);border-radius:4px;background:#fff;object-fit:contain;display:block;cursor:zoom-in}
+.thumbwrap{position:relative;display:inline-block}
+.thumbwrap .more{position:absolute;right:-6px;bottom:-6px;background:var(--foreground);color:#fff;border-radius:999px;font-size:10px;line-height:15px;min-width:15px;text-align:center;padding:0 3px}
+.pick{width:40px;height:40px;border:1px dashed var(--primary);border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--primary);font-size:9.5px;line-height:1.15;text-align:center;cursor:pointer;background:var(--primary-soft)}
+.thumbwrap .more{cursor:pointer}
+.picker{position:absolute;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:30;padding:10px;width:332px;font-size:12px}
+.picker .ttl{display:flex;justify-content:space-between;align-items:center;margin:0 0 8px;font-weight:600;font-size:12.5px}
+.picker .cands{display:grid;grid-template-columns:repeat(4,72px);gap:8px}
+.picker .cand{border:1px solid var(--border);border-radius:6px;padding:3px;cursor:pointer;position:relative;text-align:center}
+.picker .cand img{width:64px;height:64px;object-fit:contain;display:block;margin:0 auto}
+.picker .cand .fn{font-size:9.5px;color:var(--muted-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.picker .cand.on{border:2px solid var(--primary);padding:2px}
+.picker .cand.on::after{content:"\2713";position:absolute;top:2px;right:4px;color:#fff;background:var(--primary);border-radius:999px;font-size:10px;line-height:14px;width:14px;height:14px}
+.picker .cand .zoom{position:absolute;left:4px;top:4px;background:rgba(255,255,255,.9);border:1px solid var(--border);border-radius:4px;font-size:10px;line-height:14px;padding:0 3px;color:var(--muted-fg)}
+.picker .ft{margin-top:8px;font-size:11px;color:var(--muted-fg)}
+.noimg{width:40px;height:40px;border:1px dashed var(--input);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#a1a1aa;font-size:9.5px;line-height:1.1;text-align:center}
+.badge{display:inline-flex;align-items:center;gap:3px;border-radius:6px;padding:0 6px;font-size:11px;line-height:18px;font-weight:500;border:1px solid var(--border);background:#fff;white-space:nowrap}
+.badge.custom{background:var(--muted);color:var(--foreground)}
+.badge.rate{background:var(--muted);color:var(--muted-fg);border-color:transparent}
+.badge.ns{background:var(--muted);border-color:transparent}
+.stack{display:flex;flex-direction:column;gap:4px}
+.sub{font-size:11px;color:var(--muted-fg)}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:0 7px;font-size:11px;line-height:20px;font-weight:500;cursor:pointer;white-space:nowrap;border:1px solid transparent;font-variant-numeric:tabular-nums}
+.chip.ok{background:var(--success-soft);color:var(--success);border-color:#bbf7d0}
+.chip.part{background:var(--warning-soft);color:var(--warning);border-color:var(--warning-line)}
+.chip.none{background:var(--destructive-soft);color:var(--destructive);border-color:#fecaca}
+.chip.na{background:var(--muted);color:var(--muted-fg)}
+.cb{display:inline-block;width:13px;height:13px;border:1px solid #a1a1aa;border-radius:3px;vertical-align:-2px;background:#fff}
+.cb.on{background:var(--primary);border-color:var(--primary);position:relative}
+.cb.on::after{content:"";position:absolute;left:3.5px;top:1px;width:4px;height:7px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+.rate{display:flex;align-items:center;gap:4px;justify-content:flex-end;font-size:11px;color:var(--muted-fg);margin-top:4px;white-space:nowrap}
+.dots{color:var(--muted-fg);font-size:16px;line-height:26px;text-align:center;cursor:pointer;border-radius:6px}
+.dots:hover{background:var(--muted)}
+.addbar{display:flex;gap:14px;padding:10px 12px;font-size:12.5px}
+.addbar span{color:var(--primary)}
+tr.detail td{background:#fcfcfd;padding:12px 16px 14px 72px}
+.dgrid{display:grid;grid-template-columns:240px 300px 1fr;gap:16px}
+.flabel{font-size:12px;font-weight:500;margin:0 0 4px}
+.fhint{font-size:11px;color:var(--muted-fg);margin-top:3px}
+.flash{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
+
+/* popover: components/ui/popover.tsx */
+.pop{position:absolute;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:20;font-size:12.5px}
+.pop .ph{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border)}
+.pop .ph b{font-size:13px}
+.pop table{border-collapse:collapse;width:100%;font-size:12px}
+.pop th{font-weight:500;color:var(--muted-fg);text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.pop th:first-child,.pop td:first-child{text-align:left}
+.pop td{padding:5px 10px;text-align:right;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pop tr.grp td{background:#fafafa;font-weight:600;text-align:left;font-size:11.5px}
+.pop tr.tot td{font-weight:600}
+.neg{color:var(--destructive)}
+.pop .inc{padding:8px 12px;font-size:12px;color:var(--muted-fg)}
+.menu{position:absolute;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:230px;z-index:20;font-size:13px}
+.menu div{padding:6px 8px;border-radius:4px}
+.menu .hl{background:var(--muted)}
+.menu .d{font-size:11.5px;color:var(--muted-fg);padding-top:0}
+.menu hr{border:0;border-top:1px solid var(--border);margin:4px 0}
+
+/* lightbox: components/common/AttachmentPreviewModal.tsx */
+.lb{position:fixed;inset:0;background:rgba(9,9,11,.82);z-index:100;display:none;flex-direction:column}
+.lb.open{display:flex}
+.lb .bar{display:flex;justify-content:space-between;align-items:center;color:#fff;padding:12px 18px;font-size:13px}
+.lb .bar .btn{background:transparent;color:#fff;border-color:#3f3f46}
+.lb .stage{flex:1;display:flex;align-items:center;justify-content:center;gap:18px;padding:0 18px 24px;min-height:0}
+.lb .stage img{max-width:min(900px,80vw);max-height:78vh;background:#fff;border-radius:6px}
+.lb .arrow{color:#fff;font-size:28px;cursor:pointer;user-select:none;padding:10px}
+.lbstatic{position:relative;height:430px;background:rgba(9,9,11,.82);display:flex;flex-direction:column}
+.lbstatic .bar{display:flex;justify-content:space-between;align-items:center;color:#fff;padding:12px 18px;font-size:13px}
+.lbstatic .bar .btn{background:transparent;color:#fff;border-color:#3f3f46}
+.lbstatic .stage{flex:1;display:flex;align-items:center;justify-content:center;gap:18px;min-height:0;padding:0 18px 18px}
+.lbstatic img{max-height:330px;max-width:760px;background:#fff;border-radius:6px}
+.lbstatic .arrow{color:#fff;font-size:28px}
+
+.note{font-size:12px;color:var(--muted-fg);border-left:2px solid var(--border);padding:2px 0 2px 10px;margin:8px 0 0;max-width:980px}
+.facts{background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-size:12.5px;max-width:1100px}
+.facts h3{font-size:13px;margin:10px 0 4px}
+.facts h3:first-child{margin-top:0}
+.facts p{margin:0 0 6px}
+.facts code,.map code{font-size:11.5px;background:var(--muted);padding:0 4px;border-radius:4px}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.cmp>div{border:1px solid var(--border);border-radius:6px;padding:8px 10px}
+.cmp .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-fg);margin-bottom:4px}
+.map{font-size:12.5px;max-width:1150px;border-collapse:collapse;background:#fff}
+.map th,.map td{white-space:normal;vertical-align:top;padding:6px 8px;border-bottom:1px solid var(--border);text-align:left}
+.map th{font-size:12px;color:var(--muted-fg);font-weight:500}
+.excel{max-width:640px;border:1px solid var(--border);border-radius:6px}
+.mob .grid table{width:860px}
+.mob .gridscroll{overflow-x:auto}
+.mob .grid tr.band .lbl{text-align:left}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Quotation lines: a DataGrid you can prepare a quotation in fast</h1>
+<p class="intro"><b>Mockup v2 (14 Oct 2026)</b>: owner answers applied (Q1 a + choose, Q2 a + choose, Q3 Custom item, Q4 Priced per, Q5 Stock at), new section 2b: choosing the photo or drawing when a product has several. v1 (13 Oct 2026) was for the owner's notes on Project Sales &gt; Project &gt; New quotation &gt; Lines. The case is the owner's own Excel quotation (screenshots 609/610: sections BILL NO 3 PAGE 15/4, OPTION, OPTIONAL ITEMS FOR OKU TOILET, rate-only alternates, grand total). The dev database holds no quotation lines at all (<code>select count(*) from projects.quotation_lines</code> = 0 on the shared dev DB), so the lines are the Excel's structure filled with <b>real dev products</b>: codes, descriptions, brands, list prices, product photos, technical drawings and stock numbers are read from the dev DB / its file storage and the real stock-detail service. SRT5674 and SRT5732 are the Excel's own grab bars. Quoted unit rates for the WC/basin/trap lines are illustrative (no quotation exists to copy them from). Click any thumbnail, stock chip or row menu: they work.</p>
+<div class="nav"><a href="#q">? Card + 5 questions</a><a href="#s1">1 Edit at 1280</a><a href="#s2">2 Lightbox</a><a href="#s2b">2b Choose photo / drawing</a><a href="#s3">3 Stock popover (owner: ok)</a><a href="#s4">4 Line details (Priced per)</a><a href="#s5">5 Custom item</a><a href="#s6">6 Read view</a><a href="#s7">7 375 px</a><a href="#s8">8 What the old labels did</a><a href="#s9">9 Component mapping</a></div>
+
+<!-- ============================================================== Q -->
+<section id="q">
+<h2><span class="nb">?</span>Behaviour card: the rules this mock proposes, and five decisions for the owner</h2>
+<div class="facts">
+ <h3>Owner decisions, 14 Oct</h3>
+ <p><b>Q1 (a)</b> a product with exactly one "Product Photos" image uses it, everywhere; <b>several: the user chooses</b> (section 2b). <b>Q2 (a)</b> drawings on the grid, the PDF and the Excel, frozen at issue in a new <code>drawing_attachment_id</code> column; <b>several: the user chooses</b>, same picker. <b>Q3</b> "Custom item". <b>Q4 (a)</b> "Priced per" in Line details. <b>Q5 (a)</b> "Stock at" dropdown, remembered per browser, reusing the Fulfilment Planning / Order Inquiry stock components. Section 3 (stock popover): owner "ok".</p>
+ <h3>Rules</h3>
+ <p>R1 The quotation line table is the app DataGrid: drag rows by the handle, resize and reorder columns, layout remembered per user. A section bar drags with the line it opens. Line numbers stay continuous through sections (today's rule, <code>QuotationVersionEditor.tsx:353-364</code>).</p>
+ <p>R2 At 1280 px with the sidebar open, a row never scrolls sideways (grid 910 px). Photo and Drawing are 40 px thumbnails opening the existing viewer.</p>
+ <p>R3 Drawing = the product's attachments of type <b>Technical Specifications</b> that are images (dev: 1,180 products have one, 1,124 exactly one, 56 several, max 6). A custom item, or a product without one, shows "no drawing".</p>
+ <p>R4 Brand is picked from the brands master (stored as the brand name, as today: <code>brand_snapshot</code>). Picking a product still fills brand, description, UOM and list price (<code>:304-328</code>).</p>
+ <p>R5 Description is multi-line; line breaks are kept on screen, PDF and Excel.</p>
+ <p>R6 Stock chip = Available (on hand - SO qty + SPO qty, <code>project_fulfilment_board_service.py:1240-1244</code>) for the chosen group, popover adds site pools and incoming SPOs: the same <code>stock-detail</code> endpoint and table Order Inquiry uses. Read-only; never blocks Save. No chip on a custom item.</p>
+ <p>R7 Wording: "Off-catalog" becomes "Custom item"; "Counts per" becomes "Priced per" inside Line details (it changes no total, section 8). Rate only stays one click, under the total.</p>
+ <p>Unchanged: totals (rate-only excluded), one Save for every scope, below-floor / non-standard checks, revisions, item numbering.</p>
+ <h3>Edge cases</h3>
+ <p>Product with 2+ drawings (SRTWB1410: 2, SRTWB1421-RW: 6): count on the thumbnail, viewer pages through them. Product with no photo chosen (dev: 1 of 2,308 products with photos has one chosen): today's "No photo chosen" link stays, see Q1. Negative Available (SRT6641 BB -37): red chip, number shown as is, never clamped (stock-detail rule). Search hides rows but keeps numbering and totals (today). Frozen / issued version: read view only (today).</p>
+ <h3>The five questions as asked (answered above)</h3>
+ <p><b>Q1 Photo when nobody has chosen one.</b> Photo shows only the chosen photo (<code>product_image_service.py:117-137</code>, "no fallback" by design), and in dev 2,060 of 2,308 products with photos have exactly ONE "Product Photos" image but only 1 product has a chosen one, so almost every line shows "No photo chosen". (a) <b>Recommended:</b> use the photo when the product has exactly one "Product Photos" image; still "No photo chosen" when there are several. Applied in <code>product_image_service.py</code>, the one photo decision the brochure, 3D models and quotation all read, so they never disagree. (b) keep chosen-only; someone picks photos in Products first.</p>
+ <p><b>Q2 Which drawing, and does the print change?</b> PDF and Excel print the typed tech-spec TEXT today (<code>project_quotation_pdf_service.py:396</code>, <code>project_quotation_excel_service.py:433-434</code>). (a) <b>Recommended:</b> thumbnail = the product's first drawing by upload order, viewer shows all; PDF and Excel print that drawing in TECHNICAL SPEC like your Excel; the typed tech-spec box leaves the grid (old text kept and printed under the description). Needs one new column on quotation lines so an issued quotation keeps the drawing the customer got, frozen at issue exactly like the photo (<code>project_quotation_image_service.py:1-17</code>). (b) screen only, print unchanged. (c) add a "chosen drawing" on the product like the photo (schema change, bigger lane).</p>
+ <p><b>Q3 Name for a line with no product.</b> (a) <b>Recommended:</b> "Custom item". (b) "Not in catalogue". (c) other wording.</p>
+ <p><b>Q4 "Counts per".</b> It is stored and validated but changes no total and is not printed (section 8). (a) <b>Recommended:</b> move into Line details as "Priced per", reference only. (b) remove from the screen (data kept). (c) make it multiply qty by the project's unit / bathroom counts (new feature, separate lane).</p>
+ <p><b>Q5 Whose stock locations?</b> Nothing links a user to locations today: no user-warehouse link, 3 of 74 users reach a sales agent through their portal contact and none of those agents has a location group (dev query); "own" on the board is the SO's warehouse and the sales agent's <code>location_group</code> (<code>project_so_draft_service.py:3238-3273</code>). (a) <b>Recommended:</b> a "Stock at" group dropdown on the Lines tab (BB / NTC / IB / IR / AM, the fulfilment-planning groups), remembered per browser; no schema change. (b) a stock group set per user in User Management (schema change, bigger lane). (c) read it through user &rarr; portal contact &rarr; sales agent (no data today).</p>
+</div>
+</section>
+
+<!-- ============================================================== 1 -->
+<section id="s1">
+<h2><span class="nb">1</span>Edit a quotation at 1280 px, sidebar open: every column fits, nothing scrolls sideways</h2>
+<p class="why">The custom table becomes the app's DataGrid: drag a row by its handle (&#8942;&#8942;), drag or resize a column header, column order and widths remembered per user like every other grid. Photo and Drawing are 40 px thumbnails that open the lightbox. Description is a growing multi-line box. Brand is the brands-master dropdown. UOM and the stock chip sit under Qty; the list price sits under the rate; Rate only is a tick under the total, next to the money it changes. Complete set, Priced per (was "Counts per") and Notes move into the line's details (row menu, section 4). Grid width here: 910 px, the width the card has at 1280 with the 280 px sidebar open.</p>
+<div class="row"><div class="desk"><div class="screen">
+ <div class="side"><div class="logo">SORENTO</div><div>Dashboards</div><div>Order management</div><div class="on">Project Sales</div><div>Inventory</div><div>Procurement</div><div>Master data</div></div>
+ <div class="main" id="m1">
+  <div class="pagehead"><div><div class="t">New quotation</div><div class="crumb">Dashboards &rsaquo; Project Sales &rsaquo; Projects &rsaquo; Project &rsaquo; New quotation</div></div>
+  <div style="display:flex;gap:8px"><span class="btn lg">Cancel</span><span class="btn lg pri">Save quotation</span></div></div>
+  <div class="tabs"><span>Header</span><span class="on">Lines</span><span>Cover letter</span><span>Terms</span></div>
+  <div class="chips"><span class="on">Scope 1 &nbsp;$</span><span>+</span></div>
+  <div class="card"><div class="hd"><span>Scope 1 &#9998;</span><span class="btn" style="color:var(--destructive);border-color:#fecaca">Remove scope</span></div>
+  <div class="bd" style="position:relative">
+   <div class="toolbar"><div class="search">&#9906; Search lines</div><span class="sub" style="margin-left:6px">Stock at</span><div class="sel" style="width:150px">BB group + site pools</div></div>
+   <div class="grid" id="g1"><table>
+    <colgroup><col style="width:24px"><col style="width:30px"><col style="width:52px"><col style="width:64px"><col style="width:124px"><col><col style="width:96px"><col style="width:84px"><col style="width:96px"><col style="width:100px"><col style="width:30px"></colgroup>
+    <thead><tr><th></th><th>#<span class="rz"></span></th><th>Photo<span class="rz"></span></th><th>Drawing<span class="rz"></span></th><th>Product<span class="rz"></span></th><th>Description<span class="rz"></span></th><th>Brand<span class="rz"></span></th><th class="r">Qty<span class="rz"></span></th><th class="r">Rate (RM)<span class="rz"></span></th><th class="r">Total (RM)<span class="rz"></span></th><th></th></tr></thead>
+    <tbody id="tb1"></tbody>
+   </table>
+   <div class="addbar"><span>+ Add a line</span><span>+ Add a section</span></div></div>
+  </div></div>
+ </div>
+</div><div class="cap">1280 &middot; DataGrid with row drag + column resize/reorder &middot; three section bars from the Excel &middot; grand total excludes the five rate-only lines</div></div></div>
+</section>
+
+<!-- ============================================================== 2 -->
+<section id="s2">
+<h2><span class="nb">2</span>Click a Drawing (or Photo) thumbnail: the app's existing file viewer opens</h2>
+<p class="why">The same viewer the Photo cell already opens today and Resource Management uses (zoom, download, arrows). Arrows step through every drawing of the quotation in line order, so a salesperson can check all the drawings one after another. A product with more than one drawing shows a small count on its thumbnail (SRTWB1410 has 2 in dev; 56 products have more than one, max 6).</p>
+<div class="row"><div class="desk"><div class="lbstatic">
+ <div class="bar"><span>SRTWC8356-RL_TD.png &middot; line 1 &middot; drawing 1 of 7</span><span style="display:flex;gap:8px"><span class="btn">Zoom +</span><span class="btn">Download</span><span class="btn">&#10005;</span></span></div>
+ <div class="stage"><span class="arrow">&#8249;</span><img src="assets/SRTWC8356-RL_td.jpg" alt="SRTWC8356-RL technical drawing"><span class="arrow">&#8250;</span></div>
+</div><div class="cap">AttachmentPreviewModal over the Lines tab (real technical drawing of SRTWC8356-RL from the product's "Technical Specifications" attachments)</div></div></div>
+</section>
+
+<!-- ============================================================== 2b -->
+<section id="s2b">
+<h2><span class="nb">2b</span>Several photos or drawings on file: choose one for the line</h2>
+<p class="why">Owner, 14 Oct: "let the user choose when the product has multiple photos", same picker for drawings. Real case: SRT320-CR (chrome paper holder) carries four photos and four drawings, one per colour (BL, CR, FRG, GY). One photo on file: used automatically (Q1 a). Several and none chosen: the cell says "Choose &middot; 4 photos". Drawings default to the first on file (here SRT320-BL, the wrong colour, which is why the count badge opens the same picker). Click a candidate to use it; the magnifier opens it in the viewer first. The choice is stored on the quotation line (it is what this customer is sent) and frozen when the version is issued; the product's own files and its brochure photo are not changed. Read view and issued versions show no picker. Try it in section 1, line 4.</p>
+<div class="row"><div class="desk"><div style="padding:16px 20px;position:relative;height:330px;background:#fcfcfd">
+ <div style="display:flex;gap:16px;align-items:flex-start">
+  <div><div class="sub" style="margin-bottom:4px">Photo cell, nothing chosen</div><div class="pick">Choose<br>4 photos</div></div>
+  <div><div class="sub" style="margin-bottom:4px">Drawing cell, default + count</div><span class="thumbwrap"><img class="thumb" src="assets/SRT320-CR_td_BL.jpg" alt=""><span class="more">4</span></span></div>
+ </div>
+ <div class="picker" id="pick2b" style="left:20px;top:96px"></div>
+</div><div class="cap">Popover (components/ui/popover.tsx) with the product's candidate images; same component for photos and drawings</div></div></div>
+</section>
+
+<!-- ============================================================== 3 -->
+<section id="s3">
+<h2><span class="nb">3</span>Stock chip: same numbers and rules as Fulfilment Planning / Order Inquiry, in a popover</h2>
+<p class="why">Chip under Qty = <b>Available</b> in the chosen stock group (on hand &minus; SO qty + SPO qty, the stock-detail rule). Green: covers the quoted qty. Amber: some, not all. Red: nothing or negative. Clicking it opens the Order Inquiry stock table (<code>OrderInquiryStockGrid</code> &rarr; <code>CellStockTable</code>) for the group, then the site pools, then incoming SPOs. Read-only; the row chevrons that open documents are off here. Real numbers for SRT6641 (line 3), dev DB.</p>
+<div class="row"><div class="desk" style="position:relative;height:560px;background:#fcfcfd">
+ <div style="position:absolute;left:640px;top:24px;font-size:12.5px"><div class="inp r" style="width:76px">2092</div><div class="sel" style="width:76px;margin-top:4px">EA</div><span class="chip none" style="margin-top:4px">&#9679; -37 avail</span></div>
+ <div class="pop" style="left:300px;top:118px;width:640px">
+  <div class="ph"><b>SRT6641 &middot; stock</b><span class="sub">Quoted 2092 EA</span></div>
+  <table>
+   <tr><th>Location</th><th>On hand</th><th>SO qty</th><th>SPO qty</th><th>Available</th></tr>
+   <tr class="grp"><td colspan="5">BB group</td></tr>
+   <tr><td>BRW-BB</td><td>6</td><td>69</td><td>26</td><td class="neg">-37</td></tr>
+   <tr><td>DC1-BB</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+   <tr><td>MWH-BB</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+   <tr><td>RSW-BB</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+   <tr><td>WH3-BB</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+   <tr class="tot"><td>BB group</td><td>6</td><td>69</td><td>26</td><td class="neg">-37</td></tr>
+   <tr class="grp"><td colspan="5">Site pools</td></tr>
+   <tr><td>BRW</td><td>0</td><td>251</td><td>221</td><td class="neg">-30</td></tr>
+   <tr class="tot"><td>Site pools</td><td>0</td><td>251</td><td>221</td><td class="neg">-30</td></tr>
+  </table>
+  <div class="inc">Incoming: SPO-2026/09-0034, expected 12/09/2026</div>
+ </div>
+</div><div class="cap">Popover (components/ui/popover.tsx) holding OrderInquiryStockGrid; columns are CellStockTable's On hand / SO qty / SPO qty / Available (its PO qty, Taken and Available-for-Project columns read 0 or repeat Available outside an order, so they are hidden here)</div></div></div>
+<p class="note">Other lines, same source: SRTWC8356-RL BB 0 / pools 30 (BRW); SRTWB1410 BB 0 / pools 217 (BRW 44, MWH 173); SRTWC8152-RL BB 11 (MWH-BB 31, BRW-BB -20); SRTWC286-SH BB 2 / pools -17; SRT5674 BB -4; SRT5732 BB -54 / pools 23; SRT6753-WH BB 0 / pools 31. Chip shows the group figure; the popover shows both.</p><div style="height:8px"></div>
+</section>
+
+<!-- ============================================================== 4 -->
+<section id="s4">
+<h2><span class="nb">4</span>Row menu &rsaquo; Line details: Complete set, Priced per, Notes open under the line</h2>
+<p class="why">"Counts per: Not counted per unit" leaves the grid. It never changes a number (section 8), so it does not need a column. It moves into the line's details as <b>Priced per</b> with whole-word choices, empty by default; no two-row cell anywhere. Details open as a full-width row under the line (DataGrid's expanded row), closed by default.</p>
+<div class="row"><div class="desk"><div style="padding:16px 20px;position:relative;height:330px" id="m4">
+ <div class="grid" style="width:910px"><table>
+  <colgroup><col style="width:24px"><col style="width:30px"><col style="width:52px"><col style="width:64px"><col style="width:124px"><col><col style="width:96px"><col style="width:84px"><col style="width:96px"><col style="width:100px"><col style="width:30px"></colgroup>
+  <tbody id="tb4"></tbody>
+ </table></div>
+ <div class="menu" style="left:900px;top:44px"><div class="hl">Line details</div><div>Move up</div><div>Move down</div><div>Insert a line below</div><div>Insert a section above</div><hr><div style="color:var(--destructive)">Remove line</div></div>
+</div><div class="cap">Row menu (&#8943;) + expanded detail row. Remove stays the staged strike-through with Restore it is today, saved with the quotation.</div></div></div>
+</section>
+
+<!-- ============================================================== 5 -->
+<section id="s5">
+<h2><span class="nb">5</span>"Off-catalog" becomes "Custom item"</h2>
+<p class="why">Today "Off-catalog line" is the empty product picker's placeholder and "Off-catalog" the badge under it, on a line where no product is picked (section 8). New words: the picker says <b>Pick a product</b>; a line with no product says <b>Custom item</b>; its rule is spelled out where it bites: "A custom item needs a description".</p>
+<div class="row"><div class="desk"><div style="padding:16px 20px;position:relative;height:400px">
+ <div class="grid" style="width:910px"><table>
+  <colgroup><col style="width:24px"><col style="width:30px"><col style="width:52px"><col style="width:64px"><col style="width:124px"><col><col style="width:96px"><col style="width:84px"><col style="width:96px"><col style="width:100px"><col style="width:30px"></colgroup>
+  <tbody>
+   <tr><td class="handle">&#8942;&#8942;</td><td class="num">10</td><td><div class="noimg">none</div></td><td><div class="noimg">none</div></td><td><div class="stack"><div class="sel ph">Pick a product</div><span class="badge custom">Custom item</span></div></td><td><div class="ta ph err">Type what the customer reads</div><div class="errtxt">A custom item needs a description</div></td><td><div class="sel ph">Brand</div></td><td><div class="stack"><div class="inp r">1</div><div class="sel ph">UOM</div></div></td><td><div class="inp r">0.00</div></td><td class="r num">0.00<div class="rate"><span class="cb"></span>Rate only</div></td><td class="dots">&#8943;</td></tr>
+  </tbody></table></div>
+ <div class="menu" style="left:250px;top:58px;width:300px"><div style="color:var(--muted-fg)">&#9906; srt5674</div><hr><div class="hl">SRT5674<div class="d">****SORENTO STAINLESS STEEL GRAB BAR (600x695MM)</div></div><div>SRT5674-BL<div class="d">SORENTO STAINLESS STEEL GRAB BAR (600x695MM)</div></div><div>SRT5674-N<div class="d">SORENTO STAINLESS STEEL GRAB BAR (620x710MM)</div></div><hr><div class="d" style="padding-top:6px">Leave empty for a custom item</div></div>
+</div><div class="cap">SearchableSelect (async product search, the picker used today) &middot; Badge &middot; the same description rule the server enforces</div></div></div>
+</section>
+
+<!-- ============================================================== 6 -->
+<section id="s6">
+<h2><span class="nb">6</span>Read view (quotation opened, not editing): the same grid, values instead of inputs</h2>
+<p class="why">View and Edit are the same layout (ADR-PRODUCT-STANDARDS): same columns in the same order; an input becomes its value. Description reads as the multi-line text the PDF prints.</p>
+<div class="row"><div class="desk"><div style="padding:16px 20px">
+ <div class="grid" style="width:910px"><table>
+  <colgroup><col style="width:30px"><col style="width:52px"><col style="width:64px"><col style="width:124px"><col><col style="width:96px"><col style="width:84px"><col style="width:96px"><col style="width:110px"></colgroup>
+  <thead><tr><th>#</th><th>Photo</th><th>Drawing</th><th>Product</th><th>Description</th><th>Brand</th><th class="r">Qty</th><th class="r">Rate (RM)</th><th class="r">Total (RM)</th></tr></thead>
+  <tbody id="tb6"></tbody>
+ </table></div>
+</div><div class="cap">Read: no handles, no inputs, no row menu; stock chip and thumbnails still open their popover / viewer</div></div></div>
+</section>
+
+<!-- ============================================================== 7 -->
+<section id="s7">
+<h2><span class="nb">7</span>375 px: the grid scrolls inside its own frame, the page does not</h2>
+<p class="why">Same rule the line table follows today (<code>min-w-0</code> wrapper): at phone width the grid keeps its columns and scrolls sideways inside the card; header, tabs and buttons stay put.</p>
+<div class="row"><div class="phone mob"><div class="screen"><div class="main">
+ <div class="pagehead"><div><div class="t" style="font-size:18px">New quotation</div><div class="crumb">&hellip; &rsaquo; Project &rsaquo; New quotation</div></div></div>
+ <div style="display:flex;gap:8px;margin-bottom:10px"><span class="btn">Cancel</span><span class="btn pri">Save quotation</span></div>
+ <div class="tabs" style="gap:14px"><span>Header</span><span class="on">Lines</span><span>Cover letter</span><span>Terms</span></div>
+ <div class="card"><div class="hd" style="padding:10px 12px"><span>Scope 1 &#9998;</span></div><div class="bd" style="padding:10px">
+  <div class="search" style="width:100%;margin-bottom:8px">&#9906; Search lines</div>
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span class="sub">Stock at</span><div class="sel" style="flex:1">BB group + site pools</div></div>
+  <div class="grid gridscroll"><table>
+   <colgroup><col style="width:24px"><col style="width:30px"><col style="width:52px"><col style="width:64px"><col style="width:124px"><col style="width:220px"><col style="width:96px"><col style="width:84px"><col style="width:96px"><col style="width:100px"><col style="width:30px"></colgroup>
+   <tbody id="tb7"></tbody></table></div>
+  <div class="addbar" style="padding:8px 0"><span>+ Add a line</span><span>+ Add a section</span></div>
+ </div></div>
+</div></div><div class="cap">375 &middot; horizontal scroll confined to the grid</div></div></div>
+</section>
+
+<!-- ============================================================== 8 -->
+<section id="s8">
+<h2><span class="nb">8</span>What the two confusing labels actually do today (read from the code)</h2>
+<div class="facts">
+ <h3>"Off-catalog" = the line has no product picked</h3>
+ <p>Nothing else. <code>product_id</code> is empty, so: the badge shows (<code>QuotationVersionEditor.tsx:1055-1058</code>, read off the live draft); the description becomes required, on screen (<code>:119-123</code>) and on the server (<code>project_quotation_service.py:649-657</code>, 422 "An off-catalog line needs a description"); the line is always flagged <b>Non-standard</b> (<code>:522-529</code>); there is no photo, list price or price floor to compare against (<code>product_image_service.py:141-143</code>). It prints like any other line.</p>
+ <div class="cmp"><div><div class="lbl">Today</div>Product picker placeholder "Off-catalog line" &middot; badge "Off-catalog" &middot; error "Needed on an off-catalog line"</div><div><div class="lbl">Proposed</div>Placeholder "Pick a product" &middot; badge "Custom item" &middot; error "A custom item needs a description" &middot; recompute note "&hellip; stays a custom item"</div></div>
+ <h3>"Counts per" (unit_type) = a label only; it changes no number and is not printed</h3>
+ <p>Four choices: Per house unit / Per bathroom / Per facility / Common area (<code>QuotationVersionEditor.tsx:55-60</code>; backend <code>models/projects.py:787-799</code>). It is stored (<code>projects.py:1441</code>), checked against the four values (<code>project_quotation_service.py:603-608</code>), copied into a revision (<code>:350</code>) and sent back to the screen (<code>:1214</code>). The line total is always qty &times; unit price (<code>:659-661</code>); the PDF and Excel exports never read it (no reference in <code>project_quotation_pdf_service.py</code> or <code>project_quotation_excel_service.py</code>). "Not counted per unit" is just the empty choice's placeholder, 168 px wide, which is why it wraps.</p>
+ <div class="cmp"><div><div class="lbl">Today</div>Column "Counts per", placeholder "Not counted per unit", in every row</div><div><div class="lbl">Proposed</div>In Line details: "Priced per" &middot; Each house unit / Each bathroom / Each facility / Whole site (common area) &middot; empty = not set &middot; hint "For your reference only. Does not change the total."</div></div>
+</div>
+</section>
+
+<!-- ============================================================== 9 -->
+<section id="s9">
+<h2><span class="nb">9</span>Every element and the existing component it reuses</h2>
+<table class="map">
+ <tr><th style="width:210px">Element</th><th>Reuses (repo path, sorento_crm_frontend/)</th><th style="width:300px">Change needed</th></tr>
+ <tr><td>Line grid, column resize, column header menu</td><td><code>components/ui/data-grid.tsx</code> (<code>tableLayout: {width:'fixed', columnsResizable:true}</code>, <code>columnResizeMode:'onChange'</code>), <code>data-grid-column-header.tsx:256-271</code> (Move left/right)</td><td>Replaces <code>_shared/components/InlineLineTable</code> for quotations only (PO, SO, series editors keep it)</td></tr>
+ <tr><td>Row drag handle + drop</td><td><code>components/ui/data-grid-table-dnd-rows.tsx</code> (<code>DataGridTableDndRows</code>, <code>DataGridTableDndRowHandle</code>), as in <code>project-sales/[projectId]/components/SalesOrderLinesTable.tsx:415-464</code> and the editable <code>master-data-management/product-specifications/components/SpecRulesGrid.tsx:549-640</code></td><td>Add to DndRows what DataGridTable already has: column drag, footer row, full-width rows (section bars, line details)</td></tr>
+ <tr><td>Column order/width remembered</td><td><code>lib/listing-column-preferences/useListingColumnPreferences.ts</code>, key <code>projects.projects.view::quotation-lines</code> (same shape as SalesOrderLinesTable:524)</td><td>none</td></tr>
+ <tr><td>Section bars (BILL NO 3 PAGE 15/4, OPTION, OPTIONAL ITEMS)</td><td>Today's band rows (<code>band_label</code> on the line that opens the section, <code>InlineLineTable.tsx:933-968</code>)</td><td>Same data, drawn as a full-width DataGrid row that drags with its line</td></tr>
+ <tr><td>Photo / Drawing thumbnails + lightbox</td><td><code>[projectId]/components/QuotationLinePhoto.tsx</code>, <code>components/common/AttachmentPreviewModal.tsx</code> (already opened by the Photo cell)</td><td>Backend returns the product's "Technical Specifications" image attachments per line, the way it returns <code>product_image</code></td></tr>
+ <tr><td>Product picker</td><td><code>components/common/SearchableSelect.tsx</code> (async, <code>getProductsForLineSelect</code>)</td><td>wording only</td></tr>
+ <tr><td>Description</td><td><code>components/ui/textarea.tsx</code></td><td>multi-line instead of one-line input</td></tr>
+ <tr><td>Brand dropdown</td><td><code>SearchableSelect</code> + <code>master-data-management/shared/hooks/use-brand-select-query.ts</code> (brands master, already used to fill brand on product pick)</td><td>stores the picked brand name, as today (<code>brand_snapshot</code>); no schema change</td></tr>
+ <tr><td>UOM dropdown</td><td><code>use-uom-select-query.ts</code> (as today)</td><td>moves under Qty</td></tr>
+ <tr><td>Stock chip + popover</td><td><code>project-sales/_shared/components/OrderInquiryStockGrid.tsx</code> &rarr; <code>fulfilment-planning/components/CellStockTable.tsx</code>, <code>_shared/hooks/useFulfilmentPlanning.ts:405</code> <code>useStockDetail</code> &rarr; <code>GET /project-sales/fulfilment-planning/stock-detail?group=</code>; <code>components/ui/popover.tsx</code> (precedent: <code>BoardTrailPopover.tsx</code>)</td><td>prop to hide the order-only columns and the document chevrons</td></tr>
+ <tr><td>Badges (Custom item, Below floor, Non-standard, rate only)</td><td><code>components/ui/badge.tsx</code>, today's <code>LineFlags</code></td><td>wording only</td></tr>
+ <tr><td>Row menu, line details</td><td><code>components/ui/dropdown-menu</code>; DataGrid expanded row (<code>meta.expandedContent</code>, <code>data-grid-table.tsx:974-1001</code>, used in <code>order-inquiries/[id]/components/orderInquiryHeaderLinesColumns.tsx:424-447</code>)</td><td>Notes leave today's popover for the details row</td></tr>
+ <tr><td>Search lines, Add a line / Add a section, staged Save</td><td><code>components/common/ListSearchInput.tsx</code>, today's staging in <code>QuotationVersionEditor.tsx:675-696</code></td><td>none</td></tr>
+</table>
+<p class="note">Not changed: totals rule (rate-only lines excluded), save as one batch for every scope, below-floor / non-standard checks, revisions, PDF/Excel layout (except Q2 on the card).</p>
+</section>
+</div>
+
+<!-- live lightbox -->
+<div class="lb" id="lb"><div class="bar"><span id="lbcap"></span><span style="display:flex;gap:8px"><span class="btn">Download</span><span class="btn" onclick="closeLb()">&#10005;</span></span></div><div class="stage"><span class="arrow" onclick="stepLb(-1)">&#8249;</span><img id="lbimg" alt=""><span class="arrow" onclick="stepLb(1)">&#8250;</span></div></div>
+
+<script>
+const L = [
+ {band:'BILL NO 3 PAGE 15/4'},
+ {code:'SRTWC8356-RL', photo:'SRTWC8356-RL_photo', td:'SRTWC8356-RL_td', desc:'SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 250MM)\nC/W TOILET SEAT & COVER\nSIZE L705 X W365 X H780MM', brand:'SORENTO', qty:'1046', uom:'EA', rate:'980.00', list:'1,320.00', total:'1,025,080.00', stock:{v:0,c:'none'}},
+ {code:'SRTWB1410', photo:'SRTWB1410_photo', td:'SRTWB1410_td', tdn:2, desc:'SORENTO WASH BASIN ONLY (420x420x125MM)', brand:'SORENTO', qty:'1046', uom:'EA', rate:'245.00', list:'328.00', total:'256,270.00', stock:{v:0,c:'none'}},
+ {code:'SRT6641', photo:'SRT6641_photo', td:'SRT6641_td', desc:'SORENTO ANTI-ODOR FLOOR TRAP (150x150MM)', brand:'SORENTO', qty:'2092', uom:'EA', rate:'72.00', list:'100.00', total:'150,624.00', stock:{v:-37,c:'none'}},
+ {code:'SRT320-CR', photos:['BL','CR','FRG','GY'], photoPick:null, tds:['BL','CR','FRG','GY'], tdPick:'BL', desc:'SORENTO S/STEEL PAPER HOLDER (CHROME)', brand:'SORENTO', qty:'1046', uom:'EA', rate:'85.00', list:'108.00', total:'88,910.00', stock:{v:-1820,c:'none'}},
+ {band:'OPTION'},
+ {code:'SRTWC8152-RL', photo:'SRTWC8152-RL_photo', td:'SRTWC8152-RL_td', desc:'SORENTO ONE PIECE WASHDOWN (RIMLESS) TOILET (S-TRAP 250MM)\nC/W TOILET SEAT & COVER', brand:'SORENTO', qty:'1', uom:'EA', rate:'1,180.00', list:'1,600.00', rateOnly:true, stock:{v:11,c:'ok'}},
+ {code:'SRTWC286-SH', photo:'SRTWC286-SH_photo', td:'SRTWC286-SH_td', desc:'SORENTO ONE PIECE TWISTER FLUSH WC (S-TRAP 250MM)', brand:'SORENTO', qty:'1', uom:'EA', rate:'920.00', list:'1,260.00', rateOnly:true, stock:{v:2,c:'ok'}},
+ {band:'OPTIONAL ITEMS FOR OKU TOILET'},
+ {code:'SRT5674', photo:'SRT5674_photo', desc:'STAINLESS STEEL GRAB BAR\nSIZE L620 x W90 X H710', brand:'SORENTO', qty:'1', uom:'EA', rate:'150.00', list:'375.00', rateOnly:true, stock:{v:-4,c:'none'}},
+ {code:'SRT5732', photo:'SRT5732_photo', desc:'STAINLESS STEEL GRAB BAR\nSIZE L750x W98 X H247', brand:'SORENTO', qty:'1', uom:'EA', rate:'240.00', list:'600.00', rateOnly:true, stock:{v:-54,c:'none'}},
+ {code:'SRT6753-WH', photo:'SRT6753-WH_photo', td:'SRT6753-WH_td', desc:'SORENTO ABS SHOWER SEAT (395X480X200MM)', brand:'SORENTO', qty:'11', uom:'EA', rate:'250.00', list:'315.00', total:'2,750.00', stock:{v:0,c:'none'}},
+ {code:null, desc:'INSTALLATION OF GRAB BARS AND SHOWER SEAT\nTO OKU TOILETS (LABOUR ONLY)', brand:'', qty:'11', uom:'SET', rate:'150.00', total:'1,650.00', stock:null},
+];
+const GRAND = '1,525,284.00';
+const gallery = [];
+L.forEach(l=>{ if(l.td) gallery.push({src:'assets/'+l.td+'.jpg', cap:l.code+' drawing'}); if(l.tds) gallery.push({src:'assets/'+l.code+'_td_'+l.tdPick+'.jpg', cap:l.code+' drawing ('+l.code.split('-')[0]+'-'+l.tdPick+')'}); });
+const photoGallery = [];
+L.forEach(l=>{ if(l.photo) photoGallery.push({src:'assets/'+l.photo+'.jpg', cap:l.code+' photo'}); if(l.photos&&l.photoPick) photoGallery.push({src:'assets/'+l.code+'_photo_'+l.photoPick+'.jpg', cap:l.code+' photo'}); });
+let lbList=[], lbIdx=0;
+function openLb(kind, code){ lbList = kind==='td'?gallery:photoGallery; lbIdx = Math.max(0, lbList.findIndex(g=>g.cap.startsWith(code))); showLb(); document.getElementById('lb').classList.add('open'); }
+function showLb(){ const g=lbList[lbIdx]; document.getElementById('lbimg').src=g.src; document.getElementById('lbcap').textContent=g.cap+' · '+(lbIdx+1)+' of '+lbList.length+' in this quotation'; }
+function stepLb(d){ lbIdx=(lbIdx+d+lbList.length)%lbList.length; showLb(); }
+function closeLb(){ document.getElementById('lb').classList.remove('open'); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeLb(); if(document.getElementById('lb').classList.contains('open')){ if(e.key==='ArrowRight') stepLb(1); if(e.key==='ArrowLeft') stepLb(-1);} });
+
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function chip(l){ if(!l.stock) return '<span class="chip na" title="No product, no stock">no stock check</span>'; return `<span class="chip ${l.stock.c}" onclick="toggleStock(event,'${l.code}')">&#9679; ${l.stock.v} avail</span>`; }
+function imgCell(l,kind){ if(!l.code) return '<div class="noimg">none</div>';
+ const many = kind==='td'?l.tds:l.photos; const pick = kind==='td'?l.tdPick:l.photoPick; const what = kind==='td'?'drawing':'photo';
+ if(many){ if(!pick) return `<div class="pick" onclick="openPicker(event,'${l.code}','${kind}')" title="${many.length} ${what}s on file: choose one for this line">Choose<br>${many.length} ${what==='photo'?'photos':'dwgs'}</div>`;
+  return `<span class="thumbwrap"><img class="thumb" src="assets/${l.code}_${kind==='td'?'td':'photo'}_${pick}.jpg" alt="${l.code} ${what}" onclick="openLb('${kind}','${l.code}')"><span class="more" onclick="openPicker(event,'${l.code}','${kind}')" title="${many.length} ${what}s on file: change">${many.length}</span></span>`; }
+ const k = kind==='td'?l.td:l.photo; if(!k) return `<div class="noimg" title="No technical drawing on file for ${l.code}">no<br>drawing</div>`; return `<span class="thumbwrap"><img class="thumb" src="assets/${k}.jpg" alt="${l.code} ${what}" onclick="openLb('${kind}','${l.code}')">${(kind==='td'&&l.tdn>1)?'<span class="more" title="'+l.tdn+' drawings on file: change">'+l.tdn+'</span>':''}</span>`; }
+function pickerHtml(code, kind, live, force){ const l=L.find(x=>x.code===code); const many = kind==='td'?l.tds:l.photos; const pick = force || (kind==='td'?l.tdPick:l.photoPick); const what = kind==='td'?'drawing':'photo';
+ return `<div class="ttl"><span>${what==='photo'?'Photo':'Drawing'} for line ${lineNo(code)} &middot; ${code}</span><span class="sub">${many.length} on file</span></div><div class="cands">${many.map(v=>`<div class="cand ${v===pick?'on':''}" ${live?`onclick="choose(event,'${code}','${kind}','${v}')"`:''}><span class="zoom" ${live?`onclick="zoomCand(event,'${code}','${kind}','${v}')"`:''}>&#9906;</span><img src="assets/${code}_${kind==='td'?'td':'photo'}_${v}.jpg" alt=""><div class="fn">${code.split('-')[0]}-${v}.jpg</div></div>`).join('')}</div><div class="ft">Saved on this line with the quotation. The product's own files are not changed.</div>`; }
+function lineNo(code){ let i=0,n=0; L.forEach(l=>{ if(!l.band){ i++; if(l.code===code) n=i; } }); return n; }
+function openPicker(e, code, kind){ e.stopPropagation(); const old=document.getElementById('livepick'); if(old) old.remove(); const host=e.target.closest('.bd')||e.target.closest('.main')||document.body; const hr=host.getBoundingClientRect(); const cr=e.target.getBoundingClientRect(); const d=document.createElement('div'); d.className='picker'; d.id='livepick'; d.innerHTML=pickerHtml(code,kind,true); d.onclick=ev=>ev.stopPropagation(); host.appendChild(d); d.style.left=Math.max(8,cr.left-hr.left)+'px'; d.style.top=(cr.bottom-hr.top+6)+'px'; }
+function choose(e, code, kind, v){ e.stopPropagation(); const l=L.find(x=>x.code===code); if(kind==='td') l.tdPick=v; else l.photoPick=v; const p=document.getElementById('livepick'); if(p) p.remove(); rebuild(); }
+function zoomCand(e, code, kind, v){ e.stopPropagation(); lbList=[{src:'assets/'+code+'_'+(kind==='td'?'td':'photo')+'_'+v+'.jpg', cap:code+' '+(kind==='td'?'drawing':'photo')+' candidate '+code.split('-')[0]+'-'+v}]; lbIdx=0; showLb(); document.getElementById('lb').classList.add('open'); }
+function flags(l){ let f=''; if(!l.code) f+='<span class="badge custom">Custom item</span> '; if(l.below) f+='<span class="badge" style="color:var(--destructive);border-color:#fecaca">&#9888; Below floor</span> '; return f? '<div style="display:flex;flex-wrap:wrap;gap:3px">'+f+'</div>':''; }
+function editRow(l,i,opts){ opts=opts||{};
+ if(l.band) return `<tr class="band"><td colspan="11"><div class="bl"><span class="handle">&#8942;&#8942;</span><span class="lbl">${esc(l.band)}</span><span class="dots" style="width:24px">&#8943;</span></div></td></tr>`;
+ return `<tr data-code="${l.code||'custom'}"><td class="handle">&#8942;&#8942;</td><td class="num">${i}</td><td>${imgCell(l,'photo')}</td><td>${imgCell(l,'td')}</td>
+ <td><div class="stack"><div class="sel ${l.code?'':'ph'}">${l.code||'Pick a product'}</div>${flags(l)}</div></td>
+ <td><div class="ta">${esc(l.desc)}</div></td>
+ <td><div class="sel ${l.brand?'':'ph'}">${l.brand||'Brand'}</div></td>
+ <td><div class="stack" style="align-items:flex-end"><div class="inp r" style="width:100%">${l.qty}</div><div class="sel" style="width:100%">${l.uom}</div>${chip(l)}</div></td>
+ <td><div class="inp r">${l.rate}</div>${l.list?'<div class="sub" style="text-align:right;margin-top:3px">List '+l.list+'</div>':''}</td>
+ <td class="r num">${l.rateOnly?'<span class="badge rate">rate only</span>':l.total}<div class="rate"><span class="cb ${l.rateOnly?'on':''}"></span>Rate only</div></td>
+ <td><div class="dots" onclick="toggleDetail(event,this)">&#8943;</div></td></tr>`; }
+function readRow(l,i){
+ if(l.band) return `<tr class="band"><td colspan="9"><div class="bl"><span class="lbl">${esc(l.band)}</span></div></td></tr>`;
+ return `<tr><td class="num">${i}</td><td>${imgCell(l,'photo')}</td><td>${imgCell(l,'td')}</td><td><div class="stack"><span style="font-weight:500">${l.code||'&nbsp;'}</span>${flags(l)}</div></td><td style="white-space:pre-wrap;font-size:12px">${esc(l.desc)}</td><td>${l.brand||'-'}</td><td class="r num"><div class="stack" style="align-items:flex-end"><span>${l.qty} ${l.uom}</span>${chip(l)}</div></td><td class="r num">${l.rate}${l.list?'<div class="sub">List '+l.list+'</div>':''}</td><td class="r num">${l.rateOnly?'<span class="badge rate">rate only</span>':l.total}</td></tr>`; }
+function build(id, fn, withFoot, cols){ let i=0, h=''; L.forEach(l=>{ if(!l.band) i++; h+=fn(l, l.band?null:i); }); if(withFoot) h+=`<tr class="foot"><td colspan="${cols-2}" style="text-align:right">Scope total (rate-only lines not counted)</td><td class="r num">${GRAND}</td><td></td></tr>`; document.getElementById(id).innerHTML=h; }
+function rebuild(){ build('tb1', editRow, true, 11);
+build('tb7', editRow, false, 11);
+(function(){ let i=0,h=''; L.forEach(l=>{ if(!l.band) i++; h+=readRow(l, l.band?null:i); }); h+=`<tr class="foot"><td colspan="8" style="text-align:right">Scope total (rate-only lines not counted)</td><td class="r num">${GRAND}</td></tr>`; document.getElementById('tb6').innerHTML=h; })(); }
+rebuild();
+// section 4: line 3 with details open
+(function(){ const l=L[3]; document.getElementById('tb4').innerHTML = editRow(l,3) + detailRow(); })();
+function detailRow(){ return `<tr class="detail"><td colspan="11"><div class="dgrid">
+ <div><div class="flabel">Complete set</div><div class="inp" style="color:var(--muted-fg)">e.g. c/w grating, sealing ring</div><div class="fhint">Printed in the COMPLETE SET column.</div></div>
+ <div><div class="flabel">Priced per</div><div class="sel ph">Not set</div><div class="fhint">Each house unit &middot; Each bathroom &middot; Each facility &middot; Whole site (common area). For your reference only; does not change the total.</div></div>
+ <div><div class="flabel">Notes (internal)</div><div class="ta" style="min-height:52px">Rate agreed with QS for 2 traps per unit (1046 units).</div><div class="fhint">Not printed.</div></div>
+ </div></td></tr>`; }
+function toggleDetail(e, el){ e.stopPropagation(); const tr=el.closest('tr'); const nx=tr.nextElementSibling; if(nx && nx.classList.contains('detail')){ nx.remove(); return; } tr.insertAdjacentHTML('afterend', detailRow()); }
+// stock popover (live, section 1)
+const STOCK = {
+ 'SRTWC8356-RL':{grp:[['BRW-BB',0,0,0,0],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[0,0,0,0], pools:[['BRW',30,0,0,30]], pt:[30,0,0,30]},
+ 'SRTWB1410':{grp:[['BRW-BB',0,0,0,0],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[0,0,0,0], pools:[['BRW',44,0,0,44],['MWH',173,0,0,173]], pt:[217,0,0,217]},
+ 'SRT6641':{grp:[['BRW-BB',6,69,26,-37],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[6,69,26,-37], pools:[['BRW',0,251,221,-30]], pt:[0,251,221,-30], inc:'SPO-2026/09-0034, expected 12/09/2026'},
+ 'SRTWC8152-RL':{grp:[['BRW-BB',0,20,0,-20],['DC1-BB',0,0,0,0],['MWH-BB',31,0,0,31],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[31,20,0,11], pools:[], pt:[0,0,0,0]},
+ 'SRTWC286-SH':{grp:[['BRW-BB',0,0,0,0],['DC1-BB',0,0,0,0],['MWH-BB',2,0,0,2],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[2,0,0,2], pools:[['BRW',3,20,0,-17]], pt:[3,20,0,-17]},
+ 'SRT5674':{grp:[['BRW-BB',0,4,0,-4],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[0,4,0,-4], pools:[], pt:[0,0,0,0]},
+ 'SRT5732':{grp:[['BRW-BB',78,146,0,-68],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',14,0,0,14]], gt:[92,146,0,-54], pools:[['BRW',46,23,0,23]], pt:[46,23,0,23]},
+ 'SRT320-CR':{grp:[['BRW-BB',188,2008,0,-1820],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[188,2008,0,-1820], pools:[['BRW',205,38,0,167]], pt:[205,38,0,167]},
+ 'SRT6753-WH':{grp:[['BRW-BB',0,0,0,0],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[0,0,0,0], pools:[['BRW',31,0,0,31]], pt:[31,0,0,31]},
+};
+function n(v){ return v<0?`<span class="neg">${v}</span>`:v; }
+function toggleStock(e, code){ e.stopPropagation(); const old=document.getElementById('livepop'); if(old){ const same=old.dataset.code===code; old.remove(); if(same) return; }
+ const s=STOCK[code]; if(!s) return; const host=e.target.closest('.bd')||e.target.closest('.main'); const hr=host.getBoundingClientRect(); const cr=e.target.getBoundingClientRect();
+ const rows = r=>r.map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td>${x[2]}</td><td>${x[3]}</td><td>${n(x[4])}</td></tr>`).join('');
+ const pop=document.createElement('div'); pop.className='pop'; pop.id='livepop'; pop.dataset.code=code; pop.style.width='520px';
+ pop.innerHTML=`<div class="ph"><b>${code} &middot; stock</b><span class="sub">Read-only &middot; same as Order Inquiry</span></div><table><tr><th>Location</th><th>On hand</th><th>SO qty</th><th>SPO qty</th><th>Available</th></tr><tr class="grp"><td colspan="5">BB group</td></tr>${rows(s.grp)}<tr class="tot"><td>BB group</td><td>${s.gt[0]}</td><td>${s.gt[1]}</td><td>${s.gt[2]}</td><td>${n(s.gt[3])}</td></tr>${s.pools.length?'<tr class="grp"><td colspan="5">Site pools</td></tr>'+rows(s.pools)+`<tr class="tot"><td>Site pools</td><td>${s.pt[0]}</td><td>${s.pt[1]}</td><td>${s.pt[2]}</td><td>${n(s.pt[3])}</td></tr>`:''}</table><div class="inc">${s.inc?'Incoming: '+s.inc:'No incoming SPO'}</div>`;
+ host.appendChild(pop); pop.style.left=Math.max(8, cr.left-hr.left-430)+'px'; pop.style.top=(cr.bottom-hr.top+6)+'px'; }
+document.addEventListener('click',()=>{ const p=document.getElementById('livepop'); if(p) p.remove(); const q=document.getElementById('livepick'); if(q) q.remove(); });
+document.getElementById('pick2b').innerHTML = pickerHtml('SRT320-CR','photo',false,'CR');
+</script>
+</body>
+</html>

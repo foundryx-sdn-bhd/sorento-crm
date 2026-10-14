@@ -43,6 +43,7 @@ from app.schemas.projects import (
     SeriesProductImportJobResponse,
     ProjectSeriesResponse,
     ProjectSeriesUpdate,
+    QuotationLineImagesResponse,
     QuotationLineVerdictResponse,
     QuotationRecomputeResponse,
     SeriesProductPricingUpdate,
@@ -53,7 +54,7 @@ from app.services.error_handler import AppException
 from app.services import project_quotation_service as svc
 from app.services import project_service as projects
 from app.services.error_handler import handle_internal_error
-from app.services.uuid_path_param import validate_uuid_path
+from app.services.uuid_path_param import UUID_PATTERN, validate_uuid_path
 
 logger = logging.getLogger(__name__)
 
@@ -343,6 +344,31 @@ async def judge_draft_line(
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
 
 
+@router.get("/quotation-line-images", response_model=QuotationLineImagesResponse)
+async def quotation_line_images(
+    product_id: str = Query(..., pattern=UUID_PATTERN),
+    _user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    """The photo and drawing cells a line with this product would show, before it is saved.
+
+    A new line (or one whose product was just changed) has no stored row to read its pictures
+    from, so the editor asks here and can show the thumbnails and offer the picker at once. Same
+    answer as a saved editable line with no picks; a product this company cannot see is 404.
+    """
+    try:
+        from app.models.product import Product
+        from app.services import project_quotation_image_service as line_images
+
+        if db.query(Product.id).filter(Product.id == product_id).first() is None:
+            raise AppException(
+                status_code=404, message="Product not found.", code="product_not_found"
+            )
+        return line_images.product_cells(db, product_id)
+    except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
 # ----------------------------------------------------------------- versions
 
 
@@ -419,12 +445,14 @@ async def create_line(
 ):
     try:
         validate_uuid_path(version_id, resource="Quotation version")
-        version, _quotation = _version_for_edit(db, version_id, current_user)
+        version, quotation = _version_for_edit(db, version_id, current_user)
+        body = payload.model_dump(exclude_unset=True)
+        svc.assert_line_picks(db, quotation=quotation, payload=body)
         line = svc.upsert_line(
             db,
             version=version,
             actor_user_id=current_user["id"],
-            payload=payload.model_dump(exclude_unset=True),
+            payload=body,
         )
         _notify_breaches(db, line, current_user["id"])
         db.commit()
@@ -496,14 +524,16 @@ async def update_line(
     try:
         validate_uuid_path(version_id, resource="Quotation version")
         validate_uuid_path(line_id, resource="Line")
-        version, _quotation = _version_for_edit(db, version_id, current_user)
+        version, quotation = _version_for_edit(db, version_id, current_user)
         line = _line_or_404(db, version_id, line_id)
+        body = payload.model_dump(exclude_unset=True)
+        svc.assert_line_picks(db, quotation=quotation, payload=body, line=line)
         line = svc.upsert_line(
             db,
             version=version,
             actor_user_id=current_user["id"],
             line=line,
-            payload=payload.model_dump(exclude_unset=True),
+            payload=body,
         )
         _notify_breaches(db, line, current_user["id"])
         db.commit()
