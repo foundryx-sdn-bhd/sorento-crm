@@ -419,7 +419,6 @@ from tests.chatbot.pv2.test_core_engine_hook import FakeResult, fake_turn  # noq
 from tests.chatbot.test_customer_scope_lane import _link_customers  # noqa: E402
 from tests.chatbot.test_engine import CONTACT_ID, _envelope, _parser_output, seeded, stub_access, stub_parser  # noqa: E402,F401
 from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact  # noqa: E402
-from sorento_crm_mcp.presenters import present_response  # noqa: E402
 
 
 def _go_v2(session_factory):
@@ -445,7 +444,7 @@ def test_r2_2_the_engine_writes_the_printing_subjects_sid_into_the_register(sess
                              date_filter_end="2026-09-30")
     st = _state_with(mk_held("order", {}, sid="s4"), next_sid=5)
     fake_turn(FakeResult(verdict=verdict, state=st))
-    rendered = present_response(E.ORDERS_TOOL, json.dumps(E.ORDERS_RAW))
+    rendered = E.present_response(E.ORDERS_TOOL, json.dumps(E.ORDERS_RAW))
     _run_turn(session_factory, monkeypatch, qf=verdict, text_body="my orders",
               msg_id=f"ZZT-r2-{uuid.uuid4().hex[:8]}", attributes=E.ALL_REVEALS, matches={}, mcp_response=rendered)
     saved = _saved(session_factory)["pv2"]

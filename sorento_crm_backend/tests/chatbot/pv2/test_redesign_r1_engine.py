@@ -12,7 +12,6 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from sorento_crm_mcp.presenters import present_response
 from tests.chatbot.pv2 import _register_envelopes as E
 from app.services.chatbot.pv2.state import Held
 from tests.chatbot.pv2.carry_fakes import mk_state
@@ -51,7 +50,7 @@ def test_a_do_list_turn_saves_orders_and_their_product_lines_in_the_register(ses
     state = mk_state(Held(domain="order", sid="s4"))
     state.next_sid = 5
     fake_turn(FakeResult(verdict=verdict, state=state))
-    rendered = present_response(E.ORDERS_TOOL, json.dumps(E.ORDERS_RAW))
+    rendered = E.present_response(E.ORDERS_TOOL, json.dumps(E.ORDERS_RAW))
     result, _ = _run_turn(session_factory, monkeypatch, qf=verdict, text_body="my orders",
                           msg_id=f"ZZT-reg-{uuid.uuid4().hex[:8]}", attributes=E.ALL_REVEALS, matches={},
                           mcp_response=rendered)
