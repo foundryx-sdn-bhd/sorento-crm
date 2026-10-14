@@ -450,3 +450,20 @@ def test_real_http_client_does_not_follow_a_redirect_with_the_token(cf, monkeypa
     finally:
         server.shutdown()
     assert [p for p, _ in hits if p == "/stolen"] == []
+
+
+def test_a_zone_id_that_is_not_a_plain_id_refuses(cf, token_file, capsys):
+    api = FakeCloudflare(zones=[{"id": "../x", "name": "foundryx.my"}])
+    code, out = _run(cf, ["status"], api, capsys)
+    assert code == 2
+    assert [c for c in api.calls if "/dns_records" in c[1]] == []
+
+
+def test_the_list_filter_alone_refuses_a_record_id_that_is_not_plain(cf, token_file, capsys):
+    """Dry run, so only the list filter (not the write guard) can catch it."""
+    recs = _zone_records(proxied=True)
+    recs[0]["id"] = "../dns_records/other1"
+    api = FakeCloudflare(records=recs)
+    code, out = _run(cf, ["off"], api, capsys)
+    assert code == 1
+    assert "REFUSED" in out

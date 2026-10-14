@@ -75,6 +75,18 @@ def test_unset_url_does_nothing(monkeypatch, url):
     assert rec.calls == []
 
 
+@pytest.mark.parametrize(
+    "url", ["file:///etc/passwd", "ftp://hc-ping.example.test/abc-123", "hc-ping.example.test/abc-123"]
+)
+def test_a_url_that_is_not_http_is_refused_without_logging_it(monkeypatch, caplog, url):
+    rec = _Recorder()
+    _patch_urlopen(monkeypatch, rec)
+    with caplog.at_level(logging.DEBUG):
+        assert healthchecks_ping.ping(url) is None
+    assert rec.calls == []
+    assert "abc-123" not in caplog.text and "passwd" not in caplog.text
+
+
 def test_ping_hits_the_url_with_a_short_timeout(monkeypatch):
     rec = _Recorder()
     _patch_urlopen(monkeypatch, rec)
@@ -99,6 +111,7 @@ def test_fail_ping_hits_the_fail_endpoint(monkeypatch):
         TimeoutError("slow"),
         urllib.error.HTTPError(URL, 500, "boom", {}, None),
         RuntimeError("anything else"),
+        ValueError(f"unknown url type: {URL!r}"),
     ],
 )
 def test_send_never_raises_and_never_logs_the_url(monkeypatch, caplog, exc):
