@@ -82,5 +82,11 @@ RG-4b (R-GAPS-a shapes) After a photo answer, a count that names nothing reaches
      answers_bot_question carrying only a count with nothing pending; a count after a stock answer stays a stock ask.
 RG-7d (R-GAPS-a) After "CBDR4003 stock", a refine that opens a sales report starts a new subject (CBDR4003 is not on
      S1); brands named beside a newly opened report are its filters.
+RG-7f (R-GAPS-a review) A which_held pick never re-misses on a replayed remove: held C1, Z, A1; "remove customer Z and
+     this SO" -> pick C1 -> Lookup with customers [C1]; likewise two removes, a remove raiser, the new_topic raise site.
+RG-7g (R-GAPS-a review) did-you-mean and closest-product questions keep the other items like RG-7b ("3 mou + 2
+     srtwc28" -> both, each with its quantity); a count after an ETA answer is a stock ask with that count, and the held
+     subject keeps no attachment kind the stock domain does not take; "sorento and mocha" on a held brand report keeps
+     both brands.
 RG-7e (R4) "Dealer outstanding only" needs a channel on the outstanding path and a parser field: built in R4.
 RG-8 No LLM calls; v1 turns unchanged.

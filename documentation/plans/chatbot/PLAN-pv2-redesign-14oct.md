@@ -153,18 +153,25 @@ never words from the user's text.
 - RG-4 #1617: a count that names nothing (quantity set; no key, phrase or doc number) counts the held subject: on a
   new_topic it is `refers_to_held`; on refines_held/new_topic with no domain named, when the held domain does not read
   quantities (`QUANTITY_DOMAINS = {"inventory"}`, R3 registry), the domain becomes inventory (v1 rule "a quantity is a
-  stock question"); with nothing pending, answers_bot_question carrying only a count is a refine. Real shape:
+  stock question", lead ruling 14 Oct: also after an incoming, order, PO or promotion answer, v1 parity: the only v1
+  reader of a quantity is the stock demand block; the switch drops attachment kinds the new domain does not take);
+  with nothing pending, answers_bot_question carrying only a count is a refine. Real shape:
   fixtures/livecheck_r5r6.jsonl:24, :50.
 - RG-7 part 2 #1572: in `_new_subject_in_a_new_domain` (apply.py:240-254) a refine that opens a report on a subject
   without one, in a new domain, starts a new topic (a `refers_to_held` entity still carries); `_report_entity_filters`
   also runs when the ask itself opens a report (apply.py:692), so brands beside a new report become report filters.
+  Same-dimension filters named together in one ask join (a refine of a held brand report with "sorento and mocha"
+  gives both, base gave the last).
 - RG-7b: options of a question raised beside a same-kind sibling that landed carry `{"op": "add", "phrase": ...}`;
-  `_without_picked` drops only the entity with that phrase (all of the kind for older state) and turns remaining
-  same-kind "set" entities into "add"; inventory `list_all` branches (apply.py:927, 936) honour `set_kinds`.
+  `_without_picked` drops only the entity with that phrase (all of the kind for older state); the replay treats the
+  picked kind as already landed (`joins`), so remaining same-kind items land or are asked as add; every option-bearing
+  entity question (ambiguous, did-you-mean, closest) carries the phrase and quantity; inventory `list_all` branches
+  honour `set_kinds`.
   Pins flip: test_redesign_r2_fix2.py:169, :178; test_redesign_r2_fix4.py:223.
 - RG-7c: `_Miss(entity=...)` at the raise sites (apply.py:842, 849, 863, 965) records the raiser on
   `PendingQuestion.raised_by`; a which_held pick drops the raiser, `refers_to_held` entities and same-kind non-remove
-  entities, and replays the other removes (raised_by None = R2 fix 6 rule).
+  entities, and replays the other removes (raised_by None = R2 fix 6 rule); in a pick replay a remove whose target was
+  held before the pick is satisfied, never a miss; the raiser is matched on its identifying fields, not the whole dump.
 
 **R-GAPS-b (PR 2, after a merges; rulings below):**
 - RG-1 #1570: `clarify_carry_scope` when an ask (no `refers_to_held`, no report) leaves a held narrowing kind A unnamed
