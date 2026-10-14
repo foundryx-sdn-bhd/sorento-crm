@@ -149,7 +149,8 @@ docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}'
   chmod 600 /opt/sorento-crm2/.deploy.env
   ```
 
-  Uncomment only what you change. Numbers must be whole numbers without units (`4500`, not
+  Uncomment only what you change. Never set `IMAGE_TAG` here: it would override the commit CI
+  deploys. Numbers must be whole numbers without units (`4500`, not
   `4500MB`): anything else stops the deploy.
 - **Rollback:** `rm /opt/sorento-crm2/.deploy.env` (the defaults apply again).
 
@@ -159,9 +160,11 @@ the worker's 60 min stop grace, up to 20 min waiting on the deploy lock, and the
 ```bash
 cd /opt/sorento-crm2
 df -h .
-time docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > /tmp/dump-check.dump
-ls -lh /tmp/dump-check.dump && head -c 5 /tmp/dump-check.dump; echo
-rm /tmp/dump-check.dump
+# Customer data: owner-only file, in the deploy's own 700 directory, removed right after.
+mkdir -p backups/pre-migrate && chmod 700 backups/pre-migrate
+(umask 077; time docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backups/pre-migrate/dump-check.tmp)
+ls -lh backups/pre-migrate/dump-check.tmp && head -c 5 backups/pre-migrate/dump-check.tmp; echo
+rm backups/pre-migrate/dump-check.tmp
 ```
 
 - **Check:** the dump finishes in under 10 minutes, prints `PGDMP`, and `df` shows more than twice
