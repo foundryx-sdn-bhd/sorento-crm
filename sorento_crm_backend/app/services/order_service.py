@@ -20,6 +20,7 @@ from app.schemas.order import (
     OrderStatusCreate, OrderStatusUpdate,
     OrderLineCreate, OrderLineUpdate,
 )
+from app.utils.product_display import code_with_name
 from app.services import customer_identity
 from app.services.error_handler import handle_not_found, handle_conflict, handle_unprocessable
 from app.services.import_log_service import ImportLogService
@@ -1677,9 +1678,9 @@ class OrderService:
                     key,
                     {
                         "label": (
-                            f"{r.product_code} - {r.product_name}"
-                            if r.product_name
-                            else (r.product_code or "(unknown)")
+                            code_with_name(r.product_code, r.product_name)
+                            if r.product_code
+                            else (r.product_name or "(unknown)")
                         ),
                         "orders": {},
                         "line_total": 0.0,
