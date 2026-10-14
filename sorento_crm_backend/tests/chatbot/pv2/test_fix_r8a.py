@@ -271,3 +271,20 @@ def test_a_switch_back_that_carries_a_typed_code_uses_it():
     assert held.domain == "inventory"
     assert [r.key for r in held.refs["product"]] == ["SRTWC286-SH"]
     assert held.refs["product"][0].quantity.number == 10
+
+
+# ------------------------------------------------------------------ 11c a bare switch back beside a new ask for the same domain
+
+
+def test_a_bare_switch_back_beside_a_new_stock_ask_adds_nothing():
+    """Probe call 2 on v21: [switch_back T1 (no entity), new_topic inventory SRTWC286-SH x10]. The bare switch back
+    resolves the saved inventory topic (no product) and v1 answered 'I need at least one filter'. One stock answer
+    for SRTWC286-SH x 10 is the reply."""
+    result = _run("r8-11c-bare-switch-back-beside-a-new-ask")
+    lookups = [a for a in result.actions if isinstance(a, Lookup)]
+    assert len(lookups) == 1, [type(a).__name__ for a in result.actions]
+    action = lookups[0]
+    assert action.domain == "inventory"
+    refs = action.held.refs.get("product", [])
+    assert [r.key for r in refs] == ["SRTWC286-SH"], refs
+    assert refs[0].quantity.number == 10
