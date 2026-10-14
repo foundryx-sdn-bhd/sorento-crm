@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from sorento_crm_mcp.presenters import present_response
 from tests.chatbot.pv2 import _register_envelopes as E
+from app.services.chatbot.pv2.state import Held
 from tests.chatbot.pv2.carry_fakes import mk_state
 from tests.chatbot.pv2.test_core_engine_hook import FakeResult, fake_turn  # noqa: F401 - fixture
 from tests.chatbot.test_customer_scope_lane import _link_customers
@@ -46,7 +47,10 @@ def test_a_do_list_turn_saves_orders_and_their_product_lines_in_the_register(ses
     _go_v2(session_factory)
     verdict = _verdict(domain_hint="order", intent_hint="check_order", order_status=None, entities=[],
                        date_filter_start="2026-09-01", date_filter_end="2026-09-30")
-    fake_turn(FakeResult(verdict=verdict, state=mk_state()))
+    # R2: subject is the stable sid (UAC R2-2)
+    state = mk_state(Held(domain="order", sid="s4"))
+    state.next_sid = 5
+    fake_turn(FakeResult(verdict=verdict, state=state))
     rendered = present_response(E.ORDERS_TOOL, json.dumps(E.ORDERS_RAW))
     result, _ = _run_turn(session_factory, monkeypatch, qf=verdict, text_body="my orders",
                           msg_id=f"ZZT-reg-{uuid.uuid4().hex[:8]}", attributes=E.ALL_REVEALS, matches={},
@@ -57,7 +61,7 @@ def test_a_do_list_turn_saves_orders_and_their_product_lines_in_the_register(ses
     assert [e["label"] for e in orders] == ["202609-2012", "202609-2013"]
     kids = [e["label"] for e in register if e["parent"] == orders[0]["id"]]
     assert kids == ["SRTWB1096", "SRTWT7203"]
-    assert all(e["subject"] == "S1" for e in register)
+    assert all(e["subject"] == "s4" for e in register)  # R2: subject is the stable sid (UAC R2-2)
 
 
 def test_an_so_card_turn_saves_the_sales_order_in_the_register(session_factory, monkeypatch, fake_turn):

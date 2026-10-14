@@ -262,19 +262,30 @@ def test_r2_5_a_re_asked_question_keeps_the_origin_it_had():
 
 
 def test_r2_5_the_v1_picker_mirrored_after_a_pv2_lookup_keeps_the_ask_that_lookup_answered():
-    """Design assumption (the plan gives no signature): the mirror builds the origin from what the Lookup left on
-    the state (held domain, refs, period, attachment kinds), so `mirror_v1_pending(state, v1_pending, last_reply)`
-    needs no new argument."""
+    """`ConversationState.last_lookup_ask` (an Ask dump) is set when a PV2 turn ends in a Lookup bridged to v1 and
+    cleared on a turn that does not; `mirror_v1_pending` builds `PendingQuestion.origin` from it."""
     from app.services.chatbot.turn import pending as v1p
 
+    a = ask(act="new_topic", domain="incoming", period=LAST_MONTH, entities=[entity("product", key="SRTWC286")])
+    r = FakeResolver({"entities": PRODUCTS})
+    after, actions = apply_turn(new_state(NOW), out(a), resolver=r, now=NOW)
+    assert isinstance(actions[0], Lookup)
+    assert Ask.model_validate(after.last_lookup_ask) == a
     opts = [{"code": f"C{i}", "label": f"SRTWC286-V{i}", "position": i, "entity_type": "product"} for i in (1, 2, 3)]
     v1 = v1p.ask("product_pick", opts, team="purchasing", expects=None, payload={"domain": "incoming"}, asked_at_turn=3)
-    st = mk_state(mk_held("incoming", {"product": ["SRTWC286"]}, attachment_type="datasheet", period=LAST_MONTH))
-    mirrored = turn.mirror_v1_pending(st, v1, last_reply="Which product do you mean? Please choose:\n1. SRTWC286-V1")
+    mirrored = turn.mirror_v1_pending(after, v1, last_reply="Which product do you mean? Please choose:\n1. SRTWC286-V1")
     assert mirrored.pending is not None and mirrored.pending.kind == "v1_open_question"
     origin = _origin_of(mirrored.pending)
-    assert origin.domain == "incoming"
-    assert origin.period == LAST_MONTH
+    assert origin == a and origin.domain == "incoming" and origin.period == LAST_MONTH
+
+
+def test_r2_5_last_lookup_ask_is_cleared_by_a_turn_that_is_not_a_lookup():
+    a = ask(act="new_topic", domain="incoming", entities=[entity("product", key="SRTWC286")])
+    after, _ = apply_turn(new_state(NOW), out(a), resolver=FakeResolver({"entities": PRODUCTS}), now=NOW)
+    assert after.last_lookup_ask is not None
+    nxt, actions = apply_turn(after, out(ask(act="small_talk")), resolver=FakeResolver({}), now=NOW)
+    assert not isinstance(actions[0], Lookup)
+    assert nxt.last_lookup_ask is None
 
 
 # ------------------------------------------------------------------ R2-6 a pick completes the ORIGINAL ask
