@@ -103,3 +103,9 @@ Schema (additive, no backfill): `order_inquiry_reserve_requests.parked_at`;
 1. The send sits under the Documents list's Actions menu, not a top-bar button.
 2. The preview shows the email itself (one tab per email) under the recipient table.
 3. "Sent in email" is a normal filter in Filters (recent emails), not only reachable from the email button.
+
+## Owner note on mock v3 (14 Oct, via crew) - supersedes the batch filter
+
+No batches. Generic pattern: park, view what is parked, send all parked; afterwards everyone
+filters by plain status (Parked / Needs reserve / Reserved, purchasing not told yet / Reserved).
+The email button opens the receiver's status. Built as a reusable pattern (mock v4 section 9).
