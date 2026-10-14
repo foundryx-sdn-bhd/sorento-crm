@@ -66,4 +66,6 @@ RG-6 (#1517) An ask with no product ("product") -> a which-product question and 
      an unsearchable or inactive row (e.g. "FOR ACCOUNT DEPARTMENT ONLY").
 RG-7 (#1572) "Srtkt71-ss outstanding" -> "Dealer outstanding only" keeps the product and adds the channel; "CBDR4003
      stock" -> "Top sales Sorento and Mocha" -> "Sorento and mocha" never carries CBDR4003 or BK007A.
+RG-7b (R2 review) "5 A1 and 3 mou" -> pick 1 for mou -> the answer covers A1 x 5 and the picked product x 3; brand
+     "sorento + moc" -> pick mocha -> both brands. Today (and pre-R2) the pick drops the other same-kind items.
 RG-8 No LLM calls; v1 turns unchanged.

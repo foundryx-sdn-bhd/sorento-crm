@@ -43,6 +43,8 @@ derive the move. Still one parser call per turn; replies stay code templates.
   - #1443 COMBO-STOCK: set codes (sets are not in gate.py:85 / resolve.py:570-631 today).
   - #1517 ROGUE: an empty ask is a question, not a lookup; lists never show unsearchable or inactive rows.
   - #1572 REPORTS-STEP2: outstanding by channel keeps the product; a stale subject never rides a report chain.
+  - Found in R2 review (pre-R2 behaviour, kept for parity in R2): a pick on one of several same-kind items drops the
+    others ("5 A1 and 3 mou", pick 1 -> only SRTWC286; brand "sorento + moc", pick 1 -> only mocha).
   - Not in R-GAPS: #1613 seat-cover peer links (-> R3, relation kinds in the registry; the parser field is R4);
     #1625 idea capture (after #1625 merges); #1624 Gemini (only if the owner picks Gemini).
   - R5 live list from the coverage file: cand-0230/0220 replays; "HAVE 10??" after a photo; "product" alone;
