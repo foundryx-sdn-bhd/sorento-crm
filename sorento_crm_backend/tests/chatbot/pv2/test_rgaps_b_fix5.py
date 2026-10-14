@@ -107,7 +107,7 @@ def test_l1e_the_ms_measure_line_does_not_say_angka_untuk_disusun():
         st, acts = apply_turn(st, out(ask(act="answers_bot_question", answer={"option_key": "99", "free_value": None}),
                                       language="ms"), resolver=r, now=NOW, can_offer_handover=False)
     reply = reply_for(acts[0], "ms")
-    assert "Saya masih perlukan" in reply, f"the cap line was not reached: {reply}"
+    assert "Saya masih perlu tahu angka mana untuk menyusun kedudukan" in reply, f"the cap line was not reached: {reply}"
     assert "angka untuk disusun" not in reply, reply
 
 

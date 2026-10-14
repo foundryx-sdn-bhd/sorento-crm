@@ -6,7 +6,7 @@ from tests.chatbot.pv2 import _register_envelopes as E  # noqa: F401 - loads the
 
 from app.services.chatbot.pv2 import clarify_copy
 from app.services.chatbot.pv2.apply import apply_turn
-from app.services.chatbot.pv2.state import ClarifyAct, Lookup, new_state
+from app.services.chatbot.pv2.state import ClarifyAct, Lookup, SmallTalk, new_state
 from tests.chatbot.pv2.carry_fakes import NOW, ask, entity, out
 from tests.chatbot.pv2.test_fix_round2 import _Fake
 from tests.chatbot.pv2.test_rgaps_b_fix1 import SEVENTH, _pick, _p, _t
@@ -82,3 +82,23 @@ def test_n4_an_explicit_add_whose_typo_becomes_a_did_you_mean_keeps_the_held_pro
 
 def test_n4_guard_a_plain_did_you_mean_still_replaces():
     assert _typo_then_pick("set") == ["SRTWC286"]
+
+
+def test_o2_the_ms_measure_cap_line_without_a_subject_matches_the_line_with_one():
+    assert _junk_picks("ms", 2) == "Saya masih perlu tahu angka mana untuk menyusun kedudukan."
+
+
+# ------------------------------------------------------------------ O1: an explicit add declined at a did-you-mean
+# (The RG-7g case, a same-kind item landed in the SAME ask then a "no", is guarded by test_rgaps_a_fix2.py G1.)
+
+
+def test_o1_declining_the_did_you_mean_of_an_explicit_add_takes_v1s_declined_reply():
+    r = _Fake(TABLE)
+    st = new_state(NOW)
+    typo = entity("product", phrase="srtwc28").model_copy(update={"op": "add"})
+    for parsed in (out(ask(act="new_topic", domain="inventory", entities=[_p("SRT391-GM")])),
+                   out(ask(act="refines_held", domain="inventory", entities=[typo]))):
+        st, acts = apply_turn(st, parsed, resolver=r, now=NOW, can_offer_handover=True)
+    assert isinstance(acts[0], ClarifyAct) and acts[0].pending.kind == "clarify_did_you_mean", type(acts[0]).__name__
+    st, acts = apply_turn(st, _pick("no"), resolver=r, now=NOW, can_offer_handover=True)
+    assert isinstance(acts[0], SmallTalk) and acts[0].declined_offer is True, type(acts[0]).__name__
