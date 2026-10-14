@@ -1,8 +1,10 @@
 # PLAN: DO history backfill from 2023-09-01, exact SO-line links, assumed delivery (DO-HISTORY)
 
-Status: **plan v4. Slice 1, C1, C2 and C3 are built. Line-key work is on HOLD (crew 13 Oct
-21:20): FXView cannot read DO/DODTL, the API sends no key, and the owner is deciding how to get
-line keys. Review round 1 (reviewer + security-reviewer) folded in.** Track: full
+Status: **plan v5. Slice 1, C1, C2 and C3 are built on PR #1633 (merge-ready at `4a193e088`).
+Owner rulings 14 Oct (section 0b): no line-key source, ever; several SO lines of the product link
+to the SO + product group, with no warehouse narrowing (built on the follow-up PR, branch
+`claude/do-history-group-links`, stacked on #1633); Q3 (a), no CRM SO write, the owner closes the
+pre-July open lines in AutoCount from `SQL-pre-july-open-so-lines-14oct.sql`.** Track: full
 (migration column, ingest behaviour change, external ingest surface flag). PR #1633, branch
 `claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
 Owner card: `DO-HISTORY-card.md`.
@@ -31,8 +33,9 @@ Crew answer to v2, 13 Oct:
 - (Superseded by the owner's answer, section 4.) Crew first said cutover = 2023-09-01 for
   `do_assume_delivered_before` as well.
 - **"Exact" = one provable SO line.** The key link wins when present. Otherwise, when `FromDocNo`
-  names the SO and that SO has exactly ONE line of the DO's product (after location narrowing, when
-  the location is exact on both), the link is exact by construction and **stays**: that is how all
+  names the SO and that SO has exactly ONE line of the DO's product, the link is exact by
+  construction and **stays** (the location narrowing first proposed here is superseded by the
+  owner, 14 Oct, section 0b): that is how all
   29,040 of today's links were made. Several candidate lines (about 13,259 today) stay
   **unlinked**: no lowest-Seq, no qty-fit guess. API `FromDocDtlKey` is 0 on every DO line (verified
   live 8 Oct, and on 51,418 stored lines).
@@ -44,7 +47,41 @@ Crew answers that still stand:
   date stays empty.)
 - Q4 (a): a #1623 cancel relink on a pre-cutover SO raises no planning change and no OI flag.
 
-Q3 (the SO side) is with the owner.
+Q3 (the SO side): answered 14 Oct, section 0b.
+
+## 0b. Owner rulings, 14 Oct
+
+1. **No line-key source, ever.** The API sends `FromDocDtlKey` 0 on DO lines and the AutoCount
+   admin will not grant DO / DODTL SQL access; nothing is planned around either. DO and Cancel SO
+   link to the SO by document (`FromDocNo`) + product. One SO line of that product: the DO line
+   links to it (as today). Several: the DO line links to the SO + product **group**, never a
+   guessed line.
+   - The group is already stored: every DO line keeps `from_doc_no` and `product_id`
+     (`be/app/services/autocount_doc_ingest_service.py:1157-1161`), and #1623 already reads a
+     group's DO qty by name for an unlinked line (`autocount_cancel_ingest_service.py:364-391`).
+   - SO line quantities never come from DO links. The DO ingest writes no SO line column.
+     `qty_delivered` is the SO push's line field (`document_ingest_service.py:244`), AutoCount's
+     SODTL TransferedQty (`be/app/models/order.py:728-731`), so open qty (ordered less transferred)
+     stays exact. `qty_cancelled` is derived from Cancel SO lines; an `undetermined` group is kept
+     at SO + item level on no line (`autocount_cancel_matching.py:15-17`).
+   - No screen lists DOs under an SO line or product today, exact or group: the SO detail's
+     Delivery tab is SO-line totals only (`SalesOrderDetail.tsx:2057-2087`), and no API schema
+     exposes `order_lines.sales_order_line_id`.
+   - Crew answers (14 Oct): the DO line's warehouse no longer narrows several candidates to one
+     (Q1 (a), section 3), because the warehouse does not prove the line: of 9,828 dev DO lines
+     whose SO has one line of the product, 570 sit at a different warehouse than that line. The
+     SO screen gains no DO history in this lane (Q3 (a): the owner wants a Deliveries section,
+     Cancel SO lines included, as its own lane SO-DELIVERIES-VIEW, mock first). Sales achievement
+     stays as is (Q4 (a)): group-linked DO qty counts on the SO date, like any unlinked line.
+   - Owner Q2 (a), 14 Oct: a Cancel SO group is SO + item, whatever the location (Cancel PO / SPO
+     keep it). Built on the follow-up PR as its own commits; `PLAN-autocount-cancel-crm-13oct.md`
+     R2 step 4 carries the amendment. UAC AC-DH27..30a.
+2. **Q3 (a).** No CRM write to the pre-July open SO lines. The owner closes them in AutoCount from
+   the read-only list `SQL-pre-july-open-so-lines-14oct.sql` (the owner runs it on prod; dev:
+   10,630 lines, 1,080,457 open qty, 64 of them from the pre-feed Excel upload). No existing screen gives that list: `/scm/sales-orders` is
+   one row per SO and exports only the ticked rows of a page.
+3. **Pre-cutover relink gate** (Q4 (a), #1623's `_run_cancel_relink_hook`,
+   `be/app/api/v1/external/ingest.py:384`): its own follow-up lane, before the SS backfill runs.
 
 ## 1. Facts
 
@@ -117,7 +154,8 @@ Q3 (the SO side) is with the owner.
   then nothing, with a one-month switch.)
 - API DO lines: `FromDocDtlKey` is 0 always.
 - Mocha's SQL connection needs pymssql `tds_version='7.0'`.
-- Owner rule stands: exact links only. How to get line keys for ambiguous lines is an owner
+- Owner rule stands: exact links only. Line keys for ambiguous lines: none, ever (owner 14 Oct,
+  section 0b); the previous wording follows for the record. How to get line keys for ambiguous lines was an owner
   decision, pending. Nothing in this lane depends on it.
 
 ### 1.4 What the SS does (crew read of SS main 812dac2b)
@@ -137,7 +175,7 @@ Q3 (the SO side) is with the owner.
 | S1 | SS (its own lane) | Change the DO start floor in `doc_feed/constants.py:48` from 2023-01-01 to **2023-09-01**. | none |
 | S2 | SS | Make sure db1 (Sorento) and db2 (Mocha) each have a DO feed config row. A missing row fails loudly for that book. | none |
 | S3 | SS | Run the existing DocDate backfill for DO from 2023-09-01 to today (rules below the table). | S1, S2, K, C1-C3 deployed |
-| C1 | CRM (this lane) | Provable links only: key, else a unique product match narrowed by location (section 3). | none |
+| C1 | CRM (this lane) | Provable links only: key, else a unique product match; several candidates link the SO + product group (section 3, owner 14 Oct). | none |
 | C2 | CRM (built) | Assumed delivery when a DO dated before 2026-07-01 is created or adopted (section 4). | owner answered |
 | C3 | CRM | Quiet backfill: no per-DO embedding events or audit rows on backfill pushes (section 5). | contract 2.9 agreed with the SS lane |
 
@@ -161,15 +199,12 @@ The resolver for a DO line with `FromDocType` absent or `SO` (`_do_so_line`,
 2. **Unique product.** Otherwise, the lines of the DO line's product inside SO `FromDocNo` in the
    anchor company. Exactly one: link. Already built (test
    `test_from_dtl_key_zero_links_by_doc_no_and_item`).
-3. **Location narrowing (new).** Several candidates, the DO line has a warehouse, and **every**
-   candidate has a warehouse: keep the candidates whose warehouse equals the DO line's. Exactly
-   one: link. A candidate with no warehouse could be the real line, so it blocks narrowing.
-4. **Otherwise unlinked**, with the existing `so_line_unresolved` warning. No position, Seq or
-   quantity tie-break (test `test_from_dtl_key_zero_with_two_candidate_so_lines_warns`, plus a new
-   one where the location matches several lines).
-
-The prod-clone dry run counts how many of today's 13,259 ambiguous lines rule 3 resolves. The
-rest wait for crew's key source (K).
+3. **Several candidates: the SO + product group** (owner 14 Oct). The DO line keeps its
+   `from_doc_no` + `product_id` and links to no single line, with the existing
+   `so_line_unresolved` warning. No warehouse, position, Seq or quantity pick (tests
+   `test_from_dtl_key_zero_with_two_candidate_so_lines_warns`, `tests/test_do_history_links.py`).
+   The 13 Oct crew step that narrowed several candidates by the DO line's warehouse is removed
+   (follow-up PR): the warehouse does not prove the line (section 0b).
 
 ## 4. C2: assumed delivery, inside the ingest (owner answer 13 Oct)
 
@@ -262,20 +297,28 @@ Without the flag nothing changes.
 
 ## 8. Asks
 
-None open in this lane. Pending outside it: the owner's decision on a line-key source for
-ambiguous DO lines (1.3b), and Q3 (pre-July open SO lines).
+Both earlier asks are answered (owner, 14 Oct, section 0b): no line-key source, and Q3 (a).
+Answered 14 Oct (section 0b): no warehouse narrowing; no SO-screen DO history in this lane (lane
+SO-DELIVERIES-VIEW); sales achievement unchanged.
 
 ## 9. Build slices
 
 1. **Built**: the `tracking_assumed_at` column (migration `do_hist_0001_tracking_assumed`), system-owned,
    cleared by a tracking row.
-2. **Built**: C1 location narrowing for several unique-product candidates; tests (key, unique match,
-   ambiguous unlinked, location-narrowed link, location still ambiguous).
+2. **Built, then superseded** (owner 14 Oct, slice 6): C1 location narrowing for several
+   unique-product candidates. Its tests now pin the group link instead.
 3. **Built**: C2 assumed delivery in the ingest behind the setting, plus the marker-aware
    delivered rule; tests in `tests/test_do_history_assume_delivered.py`.
 4. **Built**: C3, the optional `backfill` envelope flag. Its tests are in `tests/test_do_history_backfill_flag.py`, and
    section 13.2 of `PLAN-autocount-cross-repo-contract.md` is updated for the SS lane. The flag is additive and
    optional, so the contract version string stays as is (avoids a clash with #1623's 2.8).
-5. The #1623 gate (Q4 a), after #1623 merges.
+5. The #1623 gate (Q4 a): its own follow-up lane, before the SS backfill runs (section 0b).
+6. **Built (follow-up PR)**: group links, no warehouse narrowing (owner 14 Oct); tests in
+   `tests/test_do_history_links.py`.
+
+Trigger, not built: the waiting fill (`_fill_waiting_links`) re-tries every unlinked DO line, so
+group-linked lines (permanent by the 14 Oct rule) share its 500-row window with lines still
+waiting for their SO. Build a "group-linked" marker when a DO line waiting for a late SO is ever
+seen staying unlinked after the SO arrived.
 
 Not built: SO history, and a UI badge for assumed rows (trigger: the owner asks to tell them apart).

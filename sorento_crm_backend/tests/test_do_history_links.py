@@ -1,13 +1,14 @@
-"""DO-HISTORY C1: a DO line links only to a provable SO line (owner rule 3, crew definition 13 Oct).
+"""DO-HISTORY C1: a DO line links only to a provable SO line (owner rules 13 and 14 Oct).
 
-Plan: documentation/plans/autocount/PLAN-do-history-backfill-13oct.md section 3.
-UAC:  documentation/plans/autocount/do-history-backfill-13oct-acceptance-criteria.md (AC-DH20..25).
+Plan: documentation/plans/autocount/PLAN-do-history-backfill-13oct.md sections 0b and 3.
+UAC:  documentation/plans/autocount/do-history-backfill-13oct-acceptance-criteria.md (AC-DH20..26).
 
 Order of the resolver: the `FromDocDtlKey` wins when sent; else the one line of the product in SO
-`FromDocNo`; else, when several, the one of them at the DO line's warehouse, only when every
-candidate states a warehouse. Anything else stays unlinked: no Seq, position or quantity guess.
+`FromDocNo`. When the SO holds several lines of the product, the DO line links to the SO +
+product group (its own `from_doc_no` + `product_id`) and to no single line: no warehouse, Seq,
+position or quantity pick (owner, 14 Oct: "never a guessed line").
 The key / unique / two-candidate cases are pinned in tests/test_ingest_autocount_do_grn.py
-(AC-AG031, AC-DSL001, AC-DSL004); this file repeats them in one place next to the narrowing ones.
+(AC-AG031, AC-DSL001, AC-DSL004); this file repeats them in one place next to the group ones.
 """
 from __future__ import annotations
 
@@ -83,17 +84,33 @@ def test_two_lines_of_the_product_without_locations_stay_unlinked(env):
     assert _first_line(env).sales_order_line_id is None
 
 
-def test_location_narrows_two_lines_to_one(env):
-    """AC-DH23: one candidate sits at the DO line's warehouse, the other elsewhere."""
+def _assert_group_linked(env, r: dict) -> None:
+    """No single line, and the line still names its SO + product group."""
+    line = _first_line(env)
+    assert "so_line_unresolved" in r["warnings"]
+    assert line.sales_order_line_id is None
+    assert (line.from_doc_no, str(line.product_id)) == (SO_NO, str(env.p1))
+
+
+def test_unique_product_match_links_at_another_location(env):
+    """AC-DH26: the one line of the product links even when it sits at another warehouse."""
     other_wh = _wh(env, "ZZAC-WH2")
-    here, _elsewhere = _so(env, [(env.wh1, "SRT_DB:4101:5101"), (other_wh, "SRT_DB:4101:5102")])
+    (only,) = _so(env, [(other_wh, "SRT_DB:4101:5101")])
     r = _push_first_line(env)
     assert "so_line_unresolved" not in r.get("warnings", [])
-    assert _first_line(env).sales_order_line_id == here
+    assert _first_line(env).sales_order_line_id == only
 
 
-def test_two_lines_at_the_same_location_stay_unlinked(env):
-    """AC-DH24: narrowing leaves two."""
+def test_two_lines_at_different_locations_link_the_group_not_a_line(env):
+    """AC-DH23 (owner 14 Oct): the DO line sits at one candidate's warehouse; still no line."""
+    other_wh = _wh(env, "ZZAC-WH2")
+    _so(env, [(env.wh1, "SRT_DB:4101:5101"), (other_wh, "SRT_DB:4101:5102")])
+    r = _push_first_line(env)
+    _assert_group_linked(env, r)
+
+
+def test_two_lines_at_the_same_location_link_the_group(env):
+    """AC-DH24: two candidates at the DO line's warehouse, a third elsewhere: no line."""
     other_wh = _wh(env, "ZZAC-WH2")
     _so(env, [(env.wh1, "SRT_DB:4101:5101"), (env.wh1, "SRT_DB:4101:5102"),
               (other_wh, "SRT_DB:4101:5103")])
@@ -102,20 +119,22 @@ def test_two_lines_at_the_same_location_stay_unlinked(env):
     assert _first_line(env).sales_order_line_id is None
 
 
-def test_a_candidate_without_location_blocks_narrowing(env):
-    """AC-DH24: the line with no warehouse could be the real one."""
+def test_a_candidate_without_location_links_the_group(env):
+    """AC-DH24: one candidate at the DO line's warehouse, one with none: no line."""
     _so(env, [(env.wh1, "SRT_DB:4101:5101"), (None, "SRT_DB:4101:5102")])
     r = _push_first_line(env)
     assert "so_line_unresolved" in r["warnings"]
     assert _first_line(env).sales_order_line_id is None
 
 
-def test_waiting_fill_narrows_by_location_too(env):
-    """AC-DH25: the DO landed before its SO; a later batch links it by location."""
+def test_waiting_fill_never_narrows_by_location(env):
+    """AC-DH25: the DO landed before its SO; a later batch leaves it group-linked."""
     _push_first_line(env)
     assert _first_line(env).sales_order_line_id is None
     other_wh = _wh(env, "ZZAC-WH2")
-    here, _ = _so(env, [(env.wh1, "SRT_DB:4101:5101"), (other_wh, "SRT_DB:4101:5102")])
+    _so(env, [(env.wh1, "SRT_DB:4101:5101"), (other_wh, "SRT_DB:4101:5102")])
     env.push_do([_another(do_records()[1], 900007, "ZZDO-DH07", 910070)])
     env.db.expire_all()
-    assert _first_line(env).sales_order_line_id == here
+    line = _first_line(env)
+    assert line.sales_order_line_id is None
+    assert (line.from_doc_no, str(line.product_id)) == (SO_NO, str(env.p1))

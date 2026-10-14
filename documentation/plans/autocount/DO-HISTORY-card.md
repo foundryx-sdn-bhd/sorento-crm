@@ -8,9 +8,10 @@ Plan: `PLAN-do-history-backfill-13oct.md`. Counts: prod clone `sorento_prod_2026
 2. **The start is 2023-09-01**, set in the shared service. MCH's first SO in the CRM is also
    2023-09-01, so both books start inside the CRM's SO history.
 3. **Only provable SO-line links.** The key link wins when present. Otherwise a link is made when
-   the SO has exactly one line of that product, narrowed by location if needed. This rule made all
-   29,040 of today's links, and they stay. When several lines could match (about 13,259 today), the
-   DO line stays unlinked, with no guessing. AutoCount's API sends no line key (0 of 45,157 lines).
+   the SO has exactly one line of that product. This rule made all 29,040 of today's links, and
+   they stay. When several lines could match (about 13,259 today), the DO line links to the SO +
+   product group and to no line, with no guessing (owner 14 Oct: no narrowing by location).
+   AutoCount's API sends no line key (0 of 45,157 lines).
 
 ## Who does what
 

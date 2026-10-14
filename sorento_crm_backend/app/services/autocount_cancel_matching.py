@@ -2,7 +2,8 @@
 
 Pure: no database, so the rule is testable on its own. A line with a `FromDocDtlKey` is matched
 by the caller to that exact line; this decides the rest, one group at a time. A group is one
-order + item + location: its order lines i with transferred qty T_i (AutoCount TransferedQty
+order + item, plus the location for a PO / SPO (a Cancel SO groups on SO + item whatever the
+location, owner 14 Oct): its order lines i with transferred qty T_i (AutoCount TransferedQty
 less the live line-key cancels on that line), the group's moved qty D (DO qty for an SO, GRN qty
 for a PO / SPO) and the key-less cancel lines, whose qty sums to C.
 
