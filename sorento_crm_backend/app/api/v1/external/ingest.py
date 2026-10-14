@@ -391,8 +391,9 @@ def _run_document_hooks(
 def _run_cancel_relink_hook(db: Session, service, numbers, *, actor: Optional[str]) -> None:
     """AC-CANCEL-CRM: the orders this push wrote may be what a waiting Cancel SO / Cancel PO
     line names, or their quantities moved what a cancel caps at or how a key-less one is
-    decided. Re-match those lines, derive again, then retire the OI rows of any SO line that
-    became fully cancelled. Best effort, its own commit, like every hook here."""
+    decided. Re-match those lines, derive again, then run the cancel hooks (a partial cancel's
+    planning change; a full cancel stops at the SO, CANCEL-STOP-AT-SO). Best effort, its own
+    commit, like every hook here."""
     if not numbers:
         return
     from types import SimpleNamespace

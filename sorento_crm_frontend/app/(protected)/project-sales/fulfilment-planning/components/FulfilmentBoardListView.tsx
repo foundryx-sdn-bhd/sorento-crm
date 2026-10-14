@@ -40,7 +40,7 @@ import { UnsavedDecisionPrompt, useDecisionRowExpansion } from './decisionRowExp
 import { BoardChangeTable } from './BoardChangeTable';
 import { changedFieldsOf, lineKeyOf } from '../../_shared/lib/boardChangeAnnotations';
 import type { BoardChangeAnnotation } from '../../_shared/lib/boardChangeAnnotations';
-import { canDecide } from '../../_shared/lib/boardAmend';
+import { awaitsCancelSo, canDecide } from '../../_shared/lib/boardAmend';
 import {
   contributionMatchesSearch,
   soLineLabel,
@@ -548,7 +548,15 @@ export function FulfilmentBoardListView({
             // A cancelled line has no decision to take (R3): the book removed it, and
             // Confirm retires it. The row still opens, and says that rather than offering
             // controls that would compose supply for a quantity nobody is owed.
-            contribution.cancelled_at ? (
+            awaitsCancelSo(contribution) && contribution.cancelled_at ? (
+              // CANCEL-STOP-AT-SO: cancelled in AutoCount, not yet transferred: the pending
+              // Transfer to Cancel SO is in Decided, confirmed or undone like any decision.
+              <p className="px-4 py-3 text-sm text-muted-foreground">
+                {`Cancelled in AutoCount, ${formatDateTimeInMalaysia(contribution.cancelled_at)}${
+                  contribution.cancel_reason ? ` · ${contribution.cancel_reason}` : ''
+                }`}
+              </p>
+            ) : contribution.cancelled_at ? (
               <p className="px-4 py-3 text-sm text-muted-foreground">
                 {`Transferred to Cancel SO${
                   contribution.cancelled_by ? ` by ${contribution.cancelled_by}` : ''
@@ -1155,7 +1163,11 @@ function suggestedSortText(contribution: BoardContribution): string {
 
 /** SO-CANCEL-LINE: the line is saved for, or already confirmed as, Transfer to Cancel SO. */
 function isCancelSo(contribution: BoardContribution, drafted: BoardDecision | null): boolean {
-  return Boolean(contribution.cancelled_at) || drafted?.verdict === 'cancelled';
+  // CANCEL-STOP-AT-SO: a line AutoCount cancelled is not transferred until CS confirms it.
+  return (
+    (Boolean(contribution.cancelled_at) && !awaitsCancelSo(contribution)) ||
+    drafted?.verdict === 'cancelled'
+  );
 }
 
 /** The Decided column's own equivalent of `suggestedSortText` above. */
