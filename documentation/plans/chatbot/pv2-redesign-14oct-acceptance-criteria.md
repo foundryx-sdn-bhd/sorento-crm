@@ -61,16 +61,29 @@ R2-11 No LLM calls; v1 turns unchanged.
 All from handwritten parses (no LLM). [cust] = a customer named in the earlier turn.
 RG-1 (#1570) Staff: "[cust] 7/10/2026 有送货吗？" -> "SRT391-GM几时会安排送货？": the carried customer plus the new product is a
      clarify ("Delivery for SRT391-GM: only [cust] (from earlier) or all customers?"), nothing fetched. PV2 table case-072
-     (converted_replay.jsonl:115) expects a lookup today and is corrected to expect this clarify. The 3rd identical clarify to staff refers them to the salesman instead of asking again.
+     (converted_replay.jsonl:115) expects a lookup today and is corrected to expect this clarify. The 3rd identical clarify
+     to staff gives v1's "I still need X for Y." instead of asking again (crew a76095395).
+RG-1b Pick 1 keeps the earlier customer; pick 2 ("all customers") clears only it and keeps the earlier period; a
+     subject-less reply while the question is open re-asks it and keeps its period for the pick. No carry question when
+     the ask points back ("this customer"), opens a report, switches to a domain where the kinds do not both narrow, or
+     the carried customer is the contact's own (scope-limited) customer: tested on staff and on a dealer with a non-own
+     customer. The 2nd identical question to anyone counts as a miss (not only which_held).
 RG-2 (#1582) "250mm srtwc286 got stock?" answers only the variants with 250 on any axis, with no Length/Width question;
-     "srtwc286 300mm" with no 300 on any axis -> "No 300 mm for SRTWC286. Sizes on file: ..." (localized).
+     "srtwc286 300mm" with no 300 on any axis -> "No 300 mm for SRTWC286. Sizes on file: Length 250, 600 mm; Trap outlet
+     length 180 mm." (en/zh/ms; axis names stay English until R3), no options, no closest-product picks; a class + size
+     with no code lists the class products holding it on any axis (capped); a parser flag about a spec phrase the ask
+     already carries asks nothing.
 RG-3 (#1603) A v1 escalate offer answered "yes" -> "Routed to your PIC, they will reply shortly." and the hand-over saves
      the asked text, never "".
 RG-4 (#1617) "SRTWT5880-CR picture" -> "HAVE 10??" (no open question) -> the stock answer for 10, no photo re-send, no
      type question.
 RG-5 (#1443) A set code -> its member stock, never "I need at least one filter"; "SRTWC8608 stock" offers its sets.
+     Inventory only; a base code offers its ACTIVE sets as one pick for everyone; an inactive set does not answer; set
+     members are read company-scoped.
 RG-6 (#1517) An ask with no product ("product") -> a which-product question and no tool call; a product list never shows
-     an unsearchable or inactive row (e.g. "FOR ACCOUNT DEPARTMENT ONLY").
+     an unsearchable or inactive row (e.g. "FOR ACCOUNT DEPARTMENT ONLY"). The empty-ask question applies to inventory
+     and master_products only (#1517 ruling); a chat product list (crm_master_products_list from the chatbot) applies
+     the chat-visible filter (is_searchable product and category, is_active); PV2 family lists skip inactive products.
 RG-7 (#1572) "Srtkt71-ss outstanding" -> "Dealer outstanding only" keeps the product and adds the channel; "CBDR4003
      stock" -> "Top sales Sorento and Mocha" -> "Sorento and mocha" never carries CBDR4003 or BK007A.
 RG-7b (R2 review) "5 A1 and 3 mou" -> pick 1 for mou -> the answer covers A1 x 5 and the picked product x 3; brand
