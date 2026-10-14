@@ -78,13 +78,14 @@ def _bare_continuation(verdict: dict[str, Any], entities: list[Any]) -> bool:
     return verdict.get("domain_in_message") is False and bool(own) and all(entity_code(e) for e in own)
 
 
-#: The most linked SKUs a partial code may stand for (one model's finishes and variants).
+#: The most linked codes a model code may answer with (crew audit: one model's 17 WC SKUs on dev
+#: fit 2 covers; the limit is on the answer, not on how many SKUs the model has).
 MAX_FAMILY = 8
 
 
 def _linked_codes_holding(db: Any, token: str) -> list[Any]:
-    """The products on a seat-cover link whose normalised code holds `token`; [] when none, or
-    when more than `MAX_FAMILY` do (too short a token names no one model)."""
+    """The products on a seat-cover link whose model segment is, or ends in, `token`; [] when
+    none, or when they link to more than `MAX_FAMILY` codes (no one model's answer)."""
     from sqlalchemy import or_
 
     from app.models.product import Product
@@ -107,7 +108,11 @@ def _linked_codes_holding(db: Any, token: str) -> list[Any]:
     # The token names the model: the code's first segment is it, or ends in it ("8152" ->
     # SRTWC8152-BL), never a shorter stem of another model ("SRTWC83" is not SRTWC8383).
     rows = [r for r in rows if normalize_code(r.product_code).split("-")[0].endswith(token)]
-    return [] if len(rows) > MAX_FAMILY else rows
+    from app.services.product_compatibility_service import covers_for, wcs_for
+
+    ids = [str(r.id) for r in rows]
+    answer = {p.product_code for found in (covers_for(db, ids), wcs_for(db, ids)) for ps in found.values() for p in ps}
+    return [] if len(answer) > MAX_FAMILY else rows
 
 
 def as_linked_products(
@@ -269,13 +274,26 @@ def as_linked_products(
         ]
     linked = {**verdict, "entities": out}
     fits_item = items.get("fits") or {}
+    relation_word = jsc.js_string(fits_item.get("value") or "").strip().casefold()
+    if relation_word:
+        # Crew audit: "<WC> seat cover files" came back with the relation's own word ("seat
+        # cover", the parser's fits value) also tagged as a file type (Installation Guide). Two of
+        # the parser's own fields name the same word; as the relation it names no file type.
+        linked["entities"] = [
+            e for e in linked["entities"]
+            if not (
+                isinstance(e, dict)
+                and e.get("hint") == "attachment_type"
+                and jsc.js_string(e.get("raw") or "").strip().casefold() == relation_word
+            )
+        ]
     if "file_word" in fits_item and not jsc.js_string(fits_item.get("file_word") or "").strip():
         # The parser says THIS message asks for no file (crew v94 check 2: v94 read "seat cover" as
         # an Installation Guide / "which kind of file?" ask). The relation's word is no file type,
         # so the turn is the bare linked codes: no attachment type of this message, and a file
         # domain is left to the engine's own continuation (null), as a bare code's is.
         linked["entities"] = [
-            e for e in out
+            e for e in linked["entities"]
             if not (isinstance(e, dict) and e.get("hint") == "attachment_type" and e.get("current_message") is not False)
         ]
         if linked.get("domain_hint") == "product_attachment":
