@@ -41,9 +41,9 @@ STOCK_REPLY = ("SRTWC286 matches 10 products. Which one?\n1. SRTWC286-SH\n2. SRT
 OFFER_REPLY = "Stock summary for the requested products.\n\n1. *Product Code:* SRTWC286-SH\n\nWould you like me to escalate to warehouse team?"
 
 
-def _v1_pending(kind, expects=None, payload=None, n=3):
+def _v1_pending(kind, expects=None, payload=None, n=3, team="purchasing"):
     opts = [{"code": f"C{i}", "label": f"SRTWC286-V{i}", "position": i, "entity_type": "product"} for i in range(1, n + 1)]
-    return v1p.ask(kind, [] if expects == "yes_no" else opts, team="purchasing", expects=expects,
+    return v1p.ask(kind, [] if expects == "yes_no" else opts, team=team, expects=expects,
                    payload=payload or {}, asked_at_turn=3)
 
 
@@ -57,7 +57,9 @@ def test_the_mirrored_pick_question_carries_the_text_v1_printed(reply, asked):
 
 
 def test_the_mirrored_offer_carries_the_question_v1_printed():
-    state = turn.mirror_v1_pending(mk_state(), _v1_pending("team_pick", expects="yes_no"), last_reply=OFFER_REPLY)
+    # crew 14 Oct r8a item 4: the offer is worded from v1's own pending team (what v1 printed: warehouse)
+    state = turn.mirror_v1_pending(mk_state(), _v1_pending("team_pick", expects="yes_no", team="warehouse"),
+                                   last_reply=OFFER_REPLY)
     assert state.pending.asked == "Would you like me to escalate to warehouse team?", state.pending.asked
 
 

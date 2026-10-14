@@ -38,10 +38,12 @@ def _row(client, name=V2):
 # ------------------------------------------------------------------ 1 API round trip
 
 
-def test_the_reasoning_effort_round_trips_through_the_model_endpoint(api):
+def test_the_reasoning_effort_round_trips_through_the_model_endpoint(api, seeded):
+    # crew 14 Oct r8a item 6: v2's card reads and saves its runtime label, "staging"
     client, allow = api
     allow.update({"system.ai_assistant_settings.view", "system.ai_assistant_settings.edit"})
-    res = client.post(URL, json={"label": "production", "provider": "openai", "model": "gpt-5.4-mini",
+    _stage_label(seeded, None)
+    res = client.post(URL, json={"label": "staging", "provider": "openai", "model": "gpt-5.4-mini",
                                  "reasoning_effort": "medium"})
     assert res.status_code == 200, res.text
     assert res.json().get("reasoning_effort") == "medium"
@@ -195,12 +197,14 @@ def test_the_migration_adds_the_column_and_sets_the_v2_labels_to_low():
         assert rows["semantic_parser"] is None
 
 
-def test_a_set_model_call_without_reasoning_effort_keeps_the_stored_value(api):
+def test_a_set_model_call_without_reasoning_effort_keeps_the_stored_value(api, seeded):
+    # crew 14 Oct r8a item 6: v2's card reads and saves its runtime label, "staging"
     client, allow = api
+    _stage_label(seeded, None)
     allow.update({"system.ai_assistant_settings.view", "system.ai_assistant_settings.edit"})
-    client.post(URL, json={"label": "production", "provider": "openai", "model": "gpt-5.4-mini",
+    client.post(URL, json={"label": "staging", "provider": "openai", "model": "gpt-5.4-mini",
                            "reasoning_effort": "low"})
-    res = client.post(URL, json={"label": "production", "provider": "openai", "model": "gpt-5.4"})
+    res = client.post(URL, json={"label": "staging", "provider": "openai", "model": "gpt-5.4"})
     assert res.status_code == 200, res.text
     assert _row(client)["reasoning_effort"] == "low"
     assert _row(client)["model"] == "gpt-5.4"
