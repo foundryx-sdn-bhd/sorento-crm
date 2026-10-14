@@ -90,7 +90,13 @@ if args[0] == "compose":
             # A real TOC is ~240 KB (3103 lines for the CI schema); alembic_version sits ~40 KB
             # in. Pad well past the 64 KB pipe buffer so an early-exit reader under pipefail
             # (printf | grep -q) is caught.
+            truncated = os.path.exists(os.path.join(d, "snapshot_truncated"))
             for n in range(5000):
+                if truncated and n == 2500:
+                    # pg_dump killed mid-stream (OOM): a valid-looking head, then a non-zero exit.
+                    sys.stdout.flush()
+                    sys.stderr.write("pg_dump: error: server closed the connection unexpectedly\n")
+                    sys.exit(1)
                 sys.stdout.write(f"{10000 + n}; 0 {30000 + n} TABLE DATA public padding_table_{n:05d} sorento\n")
         elif "pg_restore" in joined:
             data = sys.stdin.read()
@@ -749,3 +755,15 @@ def test_the_runners_own_deploy_knobs_never_reach_the_script(box, monkeypatch):
     monkeypatch.setenv("SNAPSHOT_MIN_FREE_MB", "999999999")
     r = _run(box)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_pg_dump_that_dies_part_way_stops_the_deploy(box):
+    """A dump cut mid-stream still starts with PGDMP and still lists alembic_version (checked
+    on a real PG16 dump cut at 1.5, 2.5 and 3.0 of 3.1 MB): only pg_dump's exit status
+    catches it. Reviewer round 3, B2."""
+    (box["stub"] / "snapshot_truncated").write_text("1")
+    r = _run(box)
+    assert r.returncode != 0
+    assert "snapshot failed" in r.stdout, r.stdout
+    assert not _started_new_colour(_calls(box))
+    assert not list((box["root"] / "backups" / "pre-migrate").glob("pre-migrate-*")), "no truncated dump is kept"
