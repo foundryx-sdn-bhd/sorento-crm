@@ -18,8 +18,10 @@ line returns to the status its quantities give and `qty_cancelled` to 0 (plan R6
 XS stays stored, like any voided AutoCount document; running setup again makes it live again
 on the same line.
 
-Refuses unless the database is on this machine AND its name says dev / ci / test / copy, and
-unless the ingest URL is on this machine.
+Refuses unless the database is on this machine AND it is a dev database by name: one of
+`KNOWN_DEV_DATABASES` (the crew shared dev DB, `sorento_cagent_stack`), the exact name passed
+with `--allow-db`, or a name that says dev / ci / test / copy. The ingest URL must be on this
+machine too. The same checks run for setup and for `--undo`.
 
 Run from sorento_crm_backend/ with the COPY's env (its DATABASE_URL and EXTERNAL_API_KEY):
     venv/bin/python scripts/handtest_1679_setup.py --ingest-url http://localhost:8106
@@ -45,6 +47,8 @@ from app.database import SessionLocal  # noqa: E402
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 DEV_NAME = re.compile(r"(dev|_ci$|_ci_|test|copy)", re.IGNORECASE)
+#: Dev databases whose names say nothing about it, accepted by exact name only.
+KNOWN_DEV_DATABASES = frozenset({"sorento_cagent_stack"})  # crew shared dev DB (crew.toml)
 BOOK = "handtest"
 DOC_KEY = 167900001
 DOC_NO = "XS-HT1679"
@@ -56,14 +60,16 @@ class Refused(RuntimeError):
     pass
 
 
-def guard(database_url: str, ingest_url: str) -> str:
+def guard(database_url: str, ingest_url: str, allow_db: str | None = None) -> str:
     parts = urlsplit(database_url)
     host = (parts.hostname or "").lower()
     name = parts.path.lstrip("/")
     if host not in LOCAL_HOSTS:
         raise Refused(f"database host {host or '(none)'!r} is not this machine")
-    if not DEV_NAME.search(name):
-        raise Refused(f"database {name!r} is not a dev / ci / test / copy database")
+    allowed = name in KNOWN_DEV_DATABASES or (allow_db is not None and name == allow_db)
+    if not allowed and not DEV_NAME.search(name):
+        raise Refused(f"database {name!r} is not a dev / ci / test / copy database "
+                      f"(pass --allow-db {name} if it is one)")
     ingest_host = (urlsplit(ingest_url).hostname or "").lower()
     if ingest_host not in LOCAL_HOSTS:
         raise Refused(f"ingest URL host {ingest_host or '(none)'!r} is not this machine")
@@ -218,9 +224,11 @@ def main() -> int:
                         help="env var holding the copy's integration API key")
     parser.add_argument("--so", help="pick this SO number's first eligible line")
     parser.add_argument("--undo", action="store_true", help="void the hand-test XS")
+    parser.add_argument("--allow-db", metavar="NAME",
+                        help="accept this exact database name as a dev database")
     args = parser.parse_args()
     try:
-        name = guard(settings.database_url, args.ingest_url)
+        name = guard(settings.database_url, args.ingest_url, args.allow_db)
     except Refused as refusal:
         print(f"Refused: {refusal}.", file=sys.stderr)
         return 2
