@@ -92,7 +92,7 @@ def test_a_staff_product_did_you_mean_has_no_roster():
     roster = _Roster()
     parsed = out(_ask(domain="inventory", entities=[_e(phrase="SRTXYZ999")]))
     table = {"product|SRTXYZ999": ("ambiguous", [("product", "SRTWB999")], True)}
-    res = turn._run(_ctx(parsed, resolver=_Fake(table), roster_for=roster, domain_teams={"inventory": "warehouse"}))
+    res = turn._run(_ctx(parsed, resolver=_Fake(table), roster_for=roster))
     assert roster.calls == []
     assert member_offer.PICKER_HEADER not in res.direct_reply
 
