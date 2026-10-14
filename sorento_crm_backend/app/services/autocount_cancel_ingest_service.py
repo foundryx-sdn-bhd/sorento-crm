@@ -739,8 +739,9 @@ def _settled_status(ordered: Any, transferred: Any) -> str:
 
 @dataclass
 class Derived:
-    """What a recompute moved, for the post-commit hooks: SO lines that BECAME fully cancelled
-    (`(line id, cancel doc no)`, R5) and SO lines whose planned qty moved while they stayed
+    """What a recompute moved, for the post-commit hooks and the redecide summary: SO lines
+    that BECAME fully cancelled (`(line id, cancel doc no)`, R5: counted, no hook acts on them
+    since CANCEL-STOP-AT-SO) and SO lines whose planned qty moved while they stayed
     live (`(line id, planned before, planned after)`, Q4 a)."""
     newly_cancelled: list[tuple[str, str]] = field(default_factory=list)
     plan_moves: list[tuple[str, Decimal, Decimal]] = field(default_factory=list)
@@ -820,8 +821,8 @@ def _apply(row, total: Decimal, transferred: Any, header_status: Optional[str]) 
     if now_full:
         if row.line_status != CANCELLED:
             # A flag left set on a line something reopened (an SO push raising ordered, a
-            # relink that failed) is re-cancelled here, but it is not a NEW cancellation: its
-            # OI rows were retired the first time (review N1).
+            # relink that failed) is re-cancelled here, but it is not a NEW cancellation
+            # (review N1).
             newly = not row.cancelled_by_cancel_doc
             row.line_status = CANCELLED
             row.cancelled_by_cancel_doc = True
@@ -1316,31 +1317,16 @@ def run_cancel_hooks(db: Session, service: Any, *, actor: Optional[str]) -> None
     """After the batch's own commit, each reaction best effort with its own commit (a failure
     costs that reaction only, logged, never the ingest):
 
-    - R5: the order inquiry rows of every SO line that just became fully cancelled are retired
-      the way a board Cancel SO retires them (#1530: rows cancelled, links removed, handover
-      queued, "Transferred to Cancel SO: <XS no>") and the acknowledged ones flagged. Rows
-      already retired stay retired (owner, 13 Oct).
+    - R5 (owner ruling 14 Oct, CANCEL-STOP-AT-SO): a line that just became fully cancelled
+      gets nothing here. The effects stop at the SO: its order inquiry rows are not retired
+      or flagged, no handover is queued and purchasing is not emailed. CS handles the line
+      in Fulfilment Planning, where it shows read-only while it has a live OI row
+      (`FulfilmentBoardService._crm_cancelled_rows`).
     - Q4 a: a partial cancel moved a live line's planned qty, so the AutoCount planning change
       is raised for CS on the board exactly as an SO push's qty edit raises it (#1599 flow;
       `planning_change_service.build_batch` keeps its own gate: held or inquired lines only).
     """
     derived = getattr(service, "derived", None) or Derived()
-    if derived.newly_cancelled:
-        try:
-            from app.services.project_order_inquiry_service import (
-                ProjectOrderInquiryService,
-                flag_rows_for_cancelled_lines,
-            )
-
-            ProjectOrderInquiryService(db).retire_rows_for_cancelled_lines(
-                [(line_id, doc_no or "AutoCount") for line_id, doc_no in derived.newly_cancelled],
-                actor_user_id=actor,
-            )
-            flag_rows_for_cancelled_lines(db, [line_id for line_id, _ in derived.newly_cancelled])
-            db.commit()
-        except Exception as exc:  # noqa: BLE001 - the ingest itself already committed
-            db.rollback()
-            logger.warning("ingest.cancel_oi_hook_failed error=%s", _safe_error(exc))
     if derived.plan_moves:
         try:
             _raise_planning_change(db, derived.plan_moves, actor=actor)
