@@ -1,9 +1,8 @@
 # PLAN - Stock Debt fully decoupled from Fulfilment Planning pins (STOCK-DEBT-DECOUPLE)
 
-Status: building R1-R3 (backend), 14 Oct 2026. Owner answers on the card: Q1 (a), Q2 (a),
-Q5 (a, keep "pinned"). Q3 (pool) and Q4 (Planned column) still open: pool decisions keep
-today's behaviour and no Planned column is built until they land. Feature track, size M (read model + one drill
-column + one pill label; no write, no migration, no RBAC change, no new ingest surface).
+Status: PARKED 14 Oct 2026 14:10 (owner scaled back: no decoupling, no pool change; the lane
+switched to the CB6633-NL delivered-credit fix, see PLAN-own-delivered-first.md). Owner had
+answered Q1 (a), Q2 (a), Q5 (a); Q3 and Q4 never answered. Kept as the record of the card.
 UAC: `stock-debt-decouple-acceptance-criteria.md`. Domain: SCM, Stock Debt view
 (`StockDebtService._assignments(view=True)`). The Fulfilment Planning board
 (`assignments_for`, `view=False`) is untouched.
@@ -107,3 +106,42 @@ fulfilment planning board suites) green unchanged.
   today's behaviour; a board test pins it.
 - #1658 (STOCK-DEBT-STALE-PIN) edits `_holds`, `cell()` and the dialog. This lane bases on
   main and rebases after #1658 merges; its cap stays for the board.
+
+## Appendix: the behaviour card as filed (14 Oct 2026)
+
+STOCK-DEBT-DECOUPLE behaviour card (size M). Owner model: incoming cover only from AutoCount SO<->PO/SPO links; on hand is the only thing Stock Debt walks (due date, per group); CRM planning pins/borrows = info only. Board path (view=False, assignments_for stock_debt_service.py:997) untouched.
+
+TODAY, what covers a line in the view (_assignments stock_debt_service.py:1026-1190):
+1. Board decisions so_line_allocations (_holds :1508-1534 via _hold_query project_supply_service.py:9487). CRM planner writes (confirm -> _write_allocations project_supply_service.py:8640; planning_change_service.py:3487). Dev: active non-order pins 176 (own 26, brw pool 110, other_location 29, group_take 11). = CRM.
+2. OI placements order_inquiry_links (_holds :1536-1685). Written by CRM (_write_link project_order_inquiry_service.py:9184). auto=True = follow-book, copies AutoCount refs (follow_book_for_rows :3202, from_so_line_ref + PO->SPO chain); auto=False = manual Link dialog / SPO conversion / borrow. Since 25 Sep (3ca359cf6, #1220) the CRM FIFO cascade writes suggestions only. Dev, live placements on open SOs: 4,057 match the line's AutoCount ref, 763 do not (752 linked before 25 Sep by the retired cascade). = MIXED.
+3. Received-SPO placement -> on-hand hold (:1626-1667). Same placements as 2.
+4. _landed_holds (:2051): PO.from_so_line_ref + SPO receipt = AutoCount, but _landed_for_refs prefers OI links (project_supply_service.py:349, :3070) and nets CRM holds (:2085). = mostly AutoCount.
+5. _book_so_holds (:2125): PO/SPO from_so_line_ref, written only by AutoCount ingest (document_ingest_service.py:1366, shipping_order_ingest_service.py:466; no CRM writer), less live placements (:2216-2249). Reads the SPO's OWN ref only, not SPO->PO chain. = AutoCount, CRM-netted.
+6. Due-date walk over on hand per group (supply_assignment.py:783-804); SPO/PO are pin_only, never walked (R45, supply_assignment.py:785, stock_debt_service.py:1078).
+
+PROPOSED (view only):
+R1 Document cover = AutoCount ref only: PO.from_so_line_ref, SPO.from_so_line_ref, or SPO.from_po_line_ref -> PO.from_so_line_ref; landed goods = same refs + SPO receipt. Placements and decisions never pin and never net the S/O.
+R2 On hand: due-date walk per group as today. No pool->project or group->group move from a pin.
+R3 PO/SPO with no AutoCount link stays out of the walk, free in its own month (R45 kept).
+R4 Decisions + placements shown in a new "Planned" info column in the drill Demand table.
+R5 Board unchanged; proof = board/ladder suites green.
+
+EXAMPLES (dev sorento_cagent_stack read-only; real view walk run twice, today vs CRM holds removed):
+E1 Borrow across groups, SRTSH1040: SO402757 BRW-IB due 1 Sep 350. Today pinned on 6 borrows of BRW-BB on hand. After: covered by its own AutoCount-linked PO 202607-S0067 lines 77+65 (200+150). BB stock stays in BB: SO385493 BB Jan short 49 -> covered; SO383872 BB 75/84/84/42 short -> covered. Planned: "Borrow BRW-BB 350".
+E2 Pool borrow, TPE-9204: SO402757 BRW-IB Sep 305 and Jan 200 pinned on BRW pool -> short 305 / 200; SO400418 BB Dec 4 -> short 4. Pool lines get the BRW stock: SO413738 BRW Jun 2027 short 202 -> covered.
+E3 Thin/stale pin (#1658 shape), CSH2073: SO419595 IB 30 Sep 8, pool pin 8 on BRW holding 5. Today short 3 (pinned 5). After short 8, BRW 5 free in pool. Dev has no zero-stock own pin (CB6633 pins are all source 'order', never read).
+E4 Out-of-span stand-in, SRTSH1040 Group=IB: SO402757 Sep 350 today stood up on BRW-BB outside the IB span (supply_assignment.py:748-766). After: its AutoCount PO lines. Stand-ins leave the view (only decisions/placements create them).
+E5 Received-SPO placement, SRTSH1040 BB: SO394056 111, SO396347 110, SO396350 234. Today pinned via placement on received SPO; after pinned via landed AutoCount goods, same qty. 3,260 of 3,698 received-SPO placements on dev chain to the line's AutoCount ref.
+E6 In-transit SPO, CB310-CR-L: SO398090 BB 3 lines x 175 on SPO-2026/09-0034 (pending; the SPO has no own S/O ref, its PO has). Today pinned via placement. Without R1's chain read -> short 175 x 3; with it, still covered.
+E7 PO with no S/O link, TPE-9204: PO-2026/05-0022 line 1 has no from_so_line_ref but carries 534 placed (SO419376, SO314594, SO314595, SO419595; linked 17-18 Sep by the retired cascade). After: SO419376 BB 76 short, SO314594 IR 280 short; the PO shows 6,450 free in its own month.
+
+Whole dev book (approx: CRM holds dropped, chain not yet added): 18,508 lines, 622 change status: pinned->short 268, pinned->covered 114, short->pinned 116 (S/O no longer netted by placements), covered->pinned 51, short->covered 39, covered->short 34. Dated shortfall 770,679 -> 789,179 (+2.4%).
+
+SCREEN: list grid shows month balances only; numbers move, no new column (StockDebtClient.tsx:504-547). Drill: Status, Covered by, Assigned, Short, Free move; one new "Planned" column (StockDebtCellDialog.tsx:426-501). Export columns unchanged (stock_debt_service.py:2484-2489), numbers move. Projection: pool reaches a project line only through an AutoCount link now (:1832-1836). Lendable / order back unchanged (landed goods). No mock (one column on an existing table). #1658 cap stays for the board; I base on main and rebase after it merges.
+
+QUESTIONS
+Q1 Source of AutoCount links: (a) read AutoCount's refs directly (PO ref, SPO ref, SPO->PO chain) and ignore placements for cover; (b) count auto (follow-book) placements as AutoCount's record. Rec (a): the auto flag cannot tell the 763 non-matching placements (E7) apart; cost is one chain read in _book_so_holds so E6 stays covered.
+Q2 PO/SPO with no S/O link (E7): (a) out of the walk, free in its own month (R45 kept); (b) walk it by due date as incoming. Rec (a): "on hand should be the only one we need to calculate", and R45.
+Q3 Pool (BRW/MWH) reserves for project lines (E2; 110 active brw pins on dev): (a) info only like any borrow, line reads short; (b) keep confirmed pool reserves as cover. Rec (a): a pool is its own pile (POOL_GROUP, supply_assignment.py:149) and a pool pin is a planning pin.
+Q4 "Planned" content: (a) board decisions only ("Reserve BRW-IB 54", "Borrow BRW-BB 350"); (b) decisions + placements that differ from the line's Covered by ("OI PO-2026/05-0022 76"); (c) decisions + every placement. Rec (b): a placement that matches AutoCount already shows in Covered by; a mismatching one is what the planner must chase.
+Q5 Status pill for AutoCount-linked cover (today bare "pinned", StockDebtCellDialog.tsx:499): (a) keep "pinned"; (b) relabel "linked". Rec (b): on this page "pinned" would read as a planning pin, which no longer counts.

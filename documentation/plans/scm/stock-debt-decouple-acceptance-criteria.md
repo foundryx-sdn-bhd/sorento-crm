@@ -1,6 +1,7 @@
 # UAC - Stock Debt fully decoupled from Fulfilment Planning pins (STOCK-DEBT-DECOUPLE)
 
-Plan: `PLAN-stock-debt-decouple.md`. Status: R1-R3 in build, 14 Oct 2026. Owner answers:
+Plan: `PLAN-stock-debt-decouple.md`. Status: PARKED 14 Oct 2026 14:10 (owner scaled back), never
+built. Owner answers:
 Q1 (a), Q2 (a), Q5 (a). HELD until the owner answers: Q3 (pool decisions, AC-H1) and Q4
 (Planned column, AC-H2).
 
