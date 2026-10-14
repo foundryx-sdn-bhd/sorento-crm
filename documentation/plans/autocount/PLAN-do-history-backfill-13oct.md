@@ -72,6 +72,9 @@ Q3 (the SO side): answered 14 Oct, section 0b.
      SO screen gains no DO history in this lane (Q3 (a): the owner wants a Deliveries section,
      Cancel SO lines included, as its own lane SO-DELIVERIES-VIEW, mock first). Sales achievement
      stays as is (Q4 (a)): group-linked DO qty counts on the SO date, like any unlinked line.
+   - Owner Q2 (a), 14 Oct: a Cancel SO group is SO + item, whatever the location (Cancel PO / SPO
+     keep it). Built on the follow-up PR as its own commits; `PLAN-autocount-cancel-crm-13oct.md`
+     R2 step 4 carries the amendment. UAC AC-DH27..30a.
 2. **Q3 (a).** No CRM write to the pre-July open SO lines. The owner closes them in AutoCount from
    the read-only list `SQL-pre-july-open-so-lines-14oct.sql` (the owner runs it on prod; dev:
    10,565 lines, 1,075,160 open qty). No existing screen gives that list: `/scm/sales-orders` is

@@ -106,6 +106,13 @@ R2. Matching, per cancel line, from stored state only (never arrival order):
          no extra list and no line change; it lives only in the sync log and the stored documents.
        Every decision re-decides the groups its lines are in now AND the groups they were last decided
        in (through the target or `candidate_line_ids`); a removed line queues its group's other lines.
+       **Amended 14 Oct (owner, DO-HISTORY Q2 (a)):** a Cancel SO group is one SO + item, whatever
+       the location: its lines are every line of the item on the SO, its cancels every key-less
+       cancel line naming the SO and item, and D every live DO line linked to a group line or
+       naming the SO and item, at any location. A cancel or DO line's location can differ from
+       its SO line's (dev: 570 of 9,828 single-match DO lines), so it proves nothing. Cancel PO
+       and SPO groups keep the location. Built on the DO-HISTORY follow-up PR (branch
+       `claude/do-history-group-links`).
        Locations are compared in Python only (`_loc`), never against a SQL upper / trim.
        The SO / PO Lines tooltip lists a `group_whole` document once per line with no qty.
 R3. `qty_cancelled` = sum of matched lines of live docs (not void, not vanished), or the line's own

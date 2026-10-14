@@ -28,6 +28,19 @@ itself runs in the shared service. These are the CRM-side criteria.
 - **AC-DH26** The unique match ignores location: the one line of the product links even when it
   sits at another warehouse than the DO line.
 
+## Cancel SO groups (owner Q2 (a), 14 Oct)
+
+- **AC-DH27** A key-less Cancel SO line is decided with every line of its item on the SO,
+  whatever the location: two lines of the item at two warehouses, one cancel that is not every
+  transfer: `undetermined`, no line. (`test_no_key_the_so_group_is_so_and_item_whatever_the_location`)
+- **AC-DH28** The SO's one line of the item takes the cancel even at another location (`item`).
+  (`test_no_key_one_line_of_the_item_at_another_location_matches`)
+- **AC-DH29** The group's DO qty counts every live DO line naming the SO and item at any
+  location. (`test_a_do_at_another_location_still_counts_as_delivered_for_the_so_group`)
+- **AC-DH30a** Cancels at two locations that together are every transfer, with nothing
+  delivered, are one `group_whole`. (`test_two_locations_in_one_batch_are_one_so_group`)
+- Cancel PO / SPO groups keep the location (unchanged).
+
 ## C2 assumed delivery (owner answer 13 Oct)
 
 - **AC-DH30** With `do_assume_delivered_before` unset (the default), nothing changes: status
