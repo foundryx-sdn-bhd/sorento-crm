@@ -555,8 +555,13 @@ def _build_json_schema() -> dict[str, Any]:
                                 # and the number's unit, when its line says it takes one.
                                 "value": {"type": ["string", "number", "null"]},
                                 "unit": {"type": ["string", "null"]},
+                                # SEAT-AS-PRODUCT (crew v94 check, 13 Oct): the word of THIS
+                                # message asking for a file, as typed, null when none. The
+                                # parser states it; `lanes/business/find.as_linked_products`
+                                # reads it so the relation's own word is never a file ask.
+                                "file_word": {"type": ["string", "null"]},
                             },
-                            "required": ["key", "value", "unit"],
+                            "required": ["key", "value", "unit", "file_word"],
                         },
                     },
                 },

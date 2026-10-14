@@ -6,7 +6,7 @@ services:
   api:
     build: .
     ports:
-      - "${API_PORT:-8000}:${API_PORT:-8000}"
+      - "127.0.0.1:${API_PORT:-8000}:${API_PORT:-8000}"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@db:5432/sorento_crm
       - DIRECT_URL=postgresql://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@db:5432/sorento_crm
@@ -28,7 +28,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -41,7 +41,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?required}
       - POSTGRES_DB=sorento_crm
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped

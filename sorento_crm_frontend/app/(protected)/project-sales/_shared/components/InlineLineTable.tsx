@@ -199,6 +199,8 @@ export interface InlineStaging<TRow> {
 export interface InlineLineTableProps<TRow> {
   rows: TRow[];
   getRowId: (row: TRow) => string;
+  /** False hides that row's remove button. Defaults to every row being removable. */
+  canDeleteRow?: (row: TRow) => boolean;
   columns: InlineLineColumn<TRow>[];
   /** A saved row as an editable draft. Must include every field `onUpdate` will send. */
   toDraft: (row: TRow) => InlineDraft;
@@ -330,6 +332,7 @@ export function InlineLineTable<TRow>({
   onCreate,
   onUpdate,
   onDelete,
+  canDeleteRow,
   staging,
   validateRow,
   rowDetail,
@@ -1072,7 +1075,7 @@ export function InlineLineTable<TRow>({
                             >
                               <Undo2 className="size-3.5 text-primary" />
                             </Button>
-                          ) : (
+                          ) : !row || canDeleteRow?.(row) !== false ? (
                             <Button
                               type="button"
                               mode="icon"
@@ -1083,7 +1086,7 @@ export function InlineLineTable<TRow>({
                             >
                               <Trash2 className="size-3.5 text-destructive" />
                             </Button>
-                          )}
+                          ) : null}
                         </div>
                         {dirty && !isStaged && (
                           <p className="mt-0.5 text-end text-[11px] text-muted-foreground">

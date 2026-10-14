@@ -207,6 +207,37 @@ describe('UAC-06: Consignment label in the SO detail header', () => {
   });
 });
 
+describe('CONSIGN-DELIVERED-FIX: a consignment header reads where the goods are', () => {
+  it('reads At customer while units are out, never Completed / Outstanding', () => {
+    stub({ doc_type: 'consignment', status: 'closed', lines: lines(3) });
+    renderDetail();
+    expect(screen.getByText('At customer')).toBeInTheDocument();
+    expect(screen.queryByText('Completed')).toBeNull();
+  });
+
+  it('a consignment carries no planned chip and no Plan button', () => {
+    hasPermission = true;
+    stub({ doc_type: 'consignment', status: 'closed', demand_class: 'project', planned_lines: 0, plannable_lines: 1, lines: lines(3) });
+    renderDetail();
+    expect(screen.queryByText('Not planned')).toBeNull();
+    expect(screen.queryByRole('link', { name: /^plan$/i })).toBeNull();
+  });
+
+  it('a project sales order keeps its planned chip and Plan button', () => {
+    hasPermission = true;
+    stub({ doc_type: 'sales_order', status: 'open', demand_class: 'project', planned_lines: 0, plannable_lines: 1, lines: lines(0) });
+    renderDetail();
+    expect(screen.getByText('Not planned')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^plan$/i })).toBeInTheDocument();
+  });
+
+  it('reads Fully returned when every unit came back', () => {
+    stub({ doc_type: 'consignment', status: 'closed', lines: lines(10) });
+    renderDetail();
+    expect(screen.getByText('Fully returned')).toBeInTheDocument();
+  });
+});
+
 describe('UAC-12: Qty returned column on the Lines grid', () => {
   it('a consignment order has a Qty returned column showing the line qty_returned', () => {
     stub({ doc_type: 'consignment', lines: lines(3) });

@@ -193,6 +193,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
       <InlineLineTable<SeriesProductRow>
         rows={visible}
         getRowId={(row) => row.product_id}
+        canDeleteRow={(row) => !row.in_scope}
         columns={columns}
         toDraft={toDraft}
         emptyDraft={emptyDraft}

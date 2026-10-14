@@ -3,9 +3,13 @@ import { apiFetch } from '@/lib/api';
 import { extractApiError } from '@/lib/api-client';
 import type { ProductCategory } from '@/app/(protected)/master-data-management/products/types/product.types';
 
-export const useProductCategorySelectQuery = () => {
+export const useProductCategorySelectQuery = (brandId?: string) => {
   const fetchCategoryList = async (): Promise<ProductCategory[]> => {
-    const response = await apiFetch('/api/v1/master-data/product-categories/select');
+    const response = await apiFetch(
+      brandId
+        ? `/api/v1/master-data/product-categories/select?brand_id=${encodeURIComponent(brandId)}`
+        : '/api/v1/master-data/product-categories/select',
+    );
 
     // Throw, never return [] or the error body (NEVER-STUCK-UI S3, lever L5): the
     // picker then says "no access" or "could not load, retry" instead of looking
@@ -16,7 +20,7 @@ export const useProductCategorySelectQuery = () => {
   };
 
   return useQuery({
-    queryKey: ['product-category-select'],
+    queryKey: ['product-category-select', brandId ?? null],
     queryFn: fetchCategoryList,
     staleTime: Infinity,
     gcTime: 1000 * 60 * 60, // 60 minutes

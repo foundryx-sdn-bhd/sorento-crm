@@ -5,15 +5,13 @@ SRTWC8088-SC. `narrow_code_tokens` (`product_code_family.py`) read the words "se
 code's line as a variant descriptor and swapped the typed code for its -SC sibling before any
 resolver tier ran. On a find those words name the relation's target, not a variant, so a find
 turn's resolve body carries `keep_typed_codes` and the route leaves the typed codes alone; every
-other ask keeps the word narrowing (PR #833's owner rule). `find.named_this_turn` takes the
-exact code first, a code it merely contains only when nothing matches exactly.
-Fake ZZT codes only.
+other ask keeps the word narrowing (PR #833's owner rule). SEAT-AS-PRODUCT removed the find reply
+lane: a linked code now reaches the turn as a typed code (`find.as_linked_products`), and the
+flag still keeps it exact. Fake ZZT codes only.
 """
 from __future__ import annotations
 
 from types import SimpleNamespace
-
-from app.services.chatbot.lanes.business import find as find_lane
 
 BASE = "ZZTWC8088"
 SPARE = "ZZTWC8088-SC"
@@ -120,25 +118,9 @@ def test_e9_a_find_turn_keeps_the_typed_code_against_a_grounded_spec_too(session
     assert _narrowed_payload(_scoped(session_factory), payload).tokens == [BASE]
 
 
-def _ent(uuid, code):
-    return {"uuid": uuid, "entity_type": "product", "code": code, "canonical_code": code}
-
-
-def test_e4_named_this_turn_takes_the_exact_code_over_a_longer_one() -> None:
-    parse = {"entities": [{"raw": "zztwc8088", "hint": "product", "canonical_code": "zztwc8088", "current_message": True}]}
-    entities = [_ent("a", SPARE), _ent("b", BASE)]
-    assert [e["uuid"] for e in find_lane.named_this_turn(parse, entities)] == ["b"]
-
-
-def test_e5_a_typed_prefix_with_no_exact_row_still_matches_by_containment() -> None:
-    parse = {"entities": [{"raw": "zztwc8088", "hint": "product", "canonical_code": "zztwc8088", "current_message": True}]}
-    entities = [_ent("a", SPARE)]
-    assert [e["uuid"] for e in find_lane.named_this_turn(parse, entities)] == ["a"]
-
-
 # --------------------------------------------------------------------------- the stray miss line
 
-FIND_TEXT = "Seat cover for SRTWT7445:\nCode: SRTSCBD823-MBL\nStock: 12"
+FIND_TEXT = "ZZT existing reply"
 
 
 def _find_turn(session_factory, monkeypatch, *, extra_entities, msg_id):
@@ -164,21 +146,6 @@ def _find_turn(session_factory, monkeypatch, *, extra_entities, msg_id):
         mcp_response=__import__("json").dumps({"response": FIND_TEXT, "has_result": True, "result_type": "find"}),
     )
     return (result.reply or {}).get("text") or "", captured
-
-
-def test_e6_a_type_word_the_parser_also_emitted_is_no_miss_line(session_factory, monkeypatch) -> None:
-    """Crew live check: "SRTWC8383-RL-MBL 配什么马桶盖" printed a stray "找不到 马桶盖。"."""
-    reply, captured = _find_turn(
-        session_factory,
-        monkeypatch,
-        extra_entities=[{"raw": "马桶盖", "hint": "category", "canonical_code": None,
-                         "current_message": True, "confident": True}],
-        msg_id="ZZT-find-stray-1",
-    )
-    assert captured and captured[0][0] == "crm_find", captured
-    # The message is Chinese, so the reply is too: the head line names 马桶盖 itself.
-    assert reply.splitlines()[:3] == ["SRTWT7445 适配的马桶盖：", "代码: SRTSCBD823-MBL", "库存: 12"], reply
-    assert "找不到" not in reply and "could not find" not in reply.lower(), reply
 
 
 def test_e7_a_mistyped_second_code_is_still_named(session_factory, monkeypatch) -> None:

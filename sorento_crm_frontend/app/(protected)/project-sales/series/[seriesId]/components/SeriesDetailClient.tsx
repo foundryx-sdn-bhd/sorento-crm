@@ -50,7 +50,6 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
   const seriesIndex = (series.data ?? []).findIndex((item) => item.id === seriesId);
   const { create, update, remove } = useSeriesMutations();
   const brands = useBrandSelectQuery();
-  const categories = useProductCategorySelectQuery();
 
   const row: ProjectSeries | null = React.useMemo(
     () => (series.data ?? []).find((item) => item.id === seriesId) ?? null,
@@ -59,35 +58,44 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
 
   const [name, setName] = React.useState('');
   const [brandId, setBrandId] = React.useState('');
+  const categories = useProductCategorySelectQuery(brandId || undefined);
   const [description, setDescription] = React.useState('');
   const [isActive, setIsActive] = React.useState(true);
   const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
   const [seeded, setSeeded] = React.useState(false);
+  // The series the last save resolved with. The cached list refetches after the mutation,
+  // so until it lands `row` is stale; this is the baseline "unsaved changes" is measured from.
+  const [saved, setSaved] = React.useState<ProjectSeries | null>(null);
+  const base = saved && saved.id === seriesId ? saved : row;
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
 
   // Seed ONCE from the server row. Re-seeding on every render of a refetched list would
   // overwrite what somebody is halfway through typing - the same trap the line table avoids.
+  const seedFrom = React.useCallback((source: ProjectSeries) => {
+    setName(source.name);
+    setBrandId(source.brand_id ?? '');
+    setDescription(source.description ?? '');
+    setIsActive(source.is_active);
+    setCategoryIds(source.category_ids ?? []);
+  }, []);
+
   React.useEffect(() => {
     if (isNew || seeded || !row) return;
-    setName(row.name);
-    setBrandId(row.brand_id ?? '');
-    setDescription(row.description ?? '');
-    setIsActive(row.is_active);
-    setCategoryIds(row.category_ids ?? []);
+    seedFrom(row);
     setSeeded(true);
-  }, [isNew, row, seeded]);
+  }, [isNew, row, seeded, seedFrom]);
 
   const pending = create.isPending || update.isPending;
   const loading = series.isLoading && !isNew;
   const dirty = isNew
     ? name.trim().length > 0
     : Boolean(
-        row &&
-          (name !== row.name ||
-            brandId !== (row.brand_id ?? '') ||
-            description !== (row.description ?? '') ||
-            isActive !== row.is_active ||
-            categoryIds.join(',') !== (row.category_ids ?? []).join(',')),
+        base &&
+          (name !== base.name ||
+            brandId !== (base.brand_id ?? '') ||
+            description !== (base.description ?? '') ||
+            isActive !== base.is_active ||
+            categoryIds.join(',') !== (base.category_ids ?? []).join(',')),
       );
 
   const save = async () => {
@@ -109,8 +117,9 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
       router.replace(`/project-sales/series/${created.id}`);
       return;
     }
-    await update.mutateAsync({ id: seriesId, body });
-    setSeeded(false);
+    const result = await update.mutateAsync({ id: seriesId, body });
+    setSaved(result);
+    seedFrom(result);
   };
 
   const brandOptions = React.useMemo(
@@ -125,17 +134,37 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
     [brandId, brands.data],
   );
 
-  const categoryOptions = React.useMemo(
-    () =>
-      (categories.data ?? [])
-        .filter((category) => category.is_active || categoryIds.includes(category.id))
-        .map((category) => ({
-          value: category.id,
-          label: category.category_name,
-          description: category.category_code,
-        })),
-    [categories.data, categoryIds],
+  // Every category name seen so far, from any brand's list and from the saved row, so a
+  // picked category keeps its name when a brand change drops it from the fetched list.
+  const knownCategories = React.useRef(
+    new Map<string, { label: string; description?: string }>(),
   );
+
+  const categoryOptions = React.useMemo(() => {
+    const names = knownCategories.current;
+    (row?.category_ids ?? []).forEach((id, index) => {
+      const label = row?.category_names?.[index];
+      if (label && !names.has(id)) names.set(id, { label });
+    });
+    (categories.data ?? []).forEach((category) =>
+      names.set(category.id, {
+        label: category.category_name,
+        description: category.category_code,
+      }),
+    );
+    const fetched = (categories.data ?? [])
+      .filter((category) => category.is_active || categoryIds.includes(category.id))
+      .map((category) => ({
+        value: category.id,
+        label: category.category_name,
+        description: category.category_code,
+      }));
+    const listed = new Set(fetched.map((option) => option.value));
+    const kept = categoryIds
+      .filter((id) => !listed.has(id) && names.has(id))
+      .map((id) => ({ value: id, ...names.get(id)! }));
+    return [...fetched, ...kept];
+  }, [categories.data, categoryIds, row]);
 
   return (
     <Container>
