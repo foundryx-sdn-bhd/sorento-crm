@@ -5,9 +5,29 @@ the keys the presenters read (copied from sorento_crm_mcp/tests)."""
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
 from typing import Any
 
-from sorento_crm_mcp.presenters import present_response
+
+def _worktree_mcp():
+    """`sorento_crm_mcp` from THIS checkout. The backend venv's editable install points at the primary
+    checkout (an older presenter with no field keys and no `restrict`), so the worktree's package is put
+    first and any already-imported copy from elsewhere is dropped. Without this the reveal-filter tests
+    ran against a presenter that never marks a field restricted."""
+    root = Path(__file__).resolve().parents[4] / "sorento_crm_mcp"
+    if str(root) not in sys.path[:1]:
+        sys.path.insert(0, str(root))
+    loaded = sys.modules.get("sorento_crm_mcp")
+    if loaded is not None and not str(getattr(loaded, "__file__", "")).startswith(str(root)):
+        for name in [n for n in sys.modules if n == "sorento_crm_mcp" or n.startswith("sorento_crm_mcp.")]:
+            del sys.modules[name]
+    from sorento_crm_mcp.presenters import present_response
+
+    return present_response
+
+
+present_response = _worktree_mcp()
 
 from app.services.chatbot import turn_runtime
 from app.services.chatbot.lanes.business import fetch

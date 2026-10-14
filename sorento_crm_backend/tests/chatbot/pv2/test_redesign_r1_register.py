@@ -49,6 +49,7 @@ def _with_printed(env, indices=None):
 def _orders(access=None, with_lines=True):
     env = E.envelope(E.ORDERS_TOOL, E.ORDERS_RAW, domain="order", access=access)
     for fig, raw in zip(env["figures"], E.ORDERS_RAW["data"]):
+        fig.pop("lines", None)  # the presenter may already carry it; the test sets exactly what it means to
         if with_lines:
             fig["lines"] = [{"product_code": ln["product"]["product_code"], "qty": ln["quantity"]}
                             for ln in raw["lines"]]
