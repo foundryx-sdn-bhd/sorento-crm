@@ -147,7 +147,7 @@ if [ -d "$DEPLOY_LOCK_DIR" ]; then
   fi
   # The "release user is root-equivalent" argument holds only for root or a docker-group member.
   lock_owner="$(stat -c %U "$DEPLOY_LOCK_DIR")"
-  if [ "$lock_owner" != root ] && ! id -nG "$lock_owner" 2>/dev/null | grep -qw docker; then
+  if [ "$lock_owner" != root ] && ! id -nG "$lock_owner" 2>/dev/null | tr " " "\n" | grep -qx docker; then
     die 2 "$DEPLOY_LOCK_DIR is owned by $lock_owner, which is neither root nor in the docker group. Only root or the release user (who runs docker compose) may own the deploy lock folder; see runbook step 0b"
   fi
   if [ -L "$DEPLOY_LOCK_PATH" ] || [ ! -f "$DEPLOY_LOCK_PATH" ]; then
