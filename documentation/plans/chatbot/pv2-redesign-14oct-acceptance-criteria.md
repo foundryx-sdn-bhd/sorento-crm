@@ -88,5 +88,8 @@ RG-7g (R-GAPS-a review) did-you-mean and closest-product questions keep the othe
      srtwc28" -> both, each with its quantity); a count after an ETA answer is a stock ask with that count, and the held
      subject keeps no attachment kind the stock domain does not take; "sorento and mocha" on a held brand report keeps
      both brands.
+RG-7h (R-GAPS-a review) A dealer's "no" to a did-you-mean asked after other items of the same ask landed answers those
+     items (and asks any item still waiting); a did-you-mean alone still takes v1's declined lane. "customer Y and remove
+     customer Z" with Z held is no question: held customers end as [Y].
 RG-7e (R4) "Dealer outstanding only" needs a channel on the outstanding path and a parser field: built in R4.
 RG-8 No LLM calls; v1 turns unchanged.
