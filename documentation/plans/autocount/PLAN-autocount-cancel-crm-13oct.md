@@ -130,8 +130,11 @@ R4. Delivered shown = TransferedQty - cancelled. Planned = coalesce(required, or
 R5. Fully cancelled (cancelled >= ordered): SO / PO line `cancelled`. **Effects stop at the SO** (owner
     ruling 14 Oct, lane CANCEL-STOP-AT-SO, reversing the original R5): no OI row is retired, no
     handover is queued, no purchasing email goes out. Open OI rows / pins on a cancelled line stay as they
-    are and CS handles them in Fulfilment Planning, where such a line stays on the board read-only (pill
-    Cancelled, "by AutoCount", the XS numbers and the open OI row count) while a live OI row remains.
+    are and CS handles them in Fulfilment Planning (owner 14 Oct 23:20: "when SO is cancelled, we
+    trigger the transfer to cancel SO action in fulfilment planning and let the CS confirm
+    themselves"): the sync saves the board's own Transfer to Cancel SO as the line's pending decision
+    while a live OI row remains; CS confirms it (the existing cancel: OI rows cancelled, the same
+    handover to purchasing) or dismisses it. A cancel that reopens the line withdraws it.
     Superseded original text: "SO OI rows retired by the
     #1530 path ("Transferred to Cancel SO <XS no>") and flagged". Partial: a `qty_down` planning change for
     CS (Q4 a).

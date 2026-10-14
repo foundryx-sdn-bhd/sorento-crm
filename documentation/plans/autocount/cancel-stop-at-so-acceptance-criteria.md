@@ -5,6 +5,10 @@ Plan: `PLAN-autocount-cancel-crm-13oct.md` (R5 as revised 14 Oct). [BE] backend,
 
 Owner ruling 14 Oct ~19:55: "for the cancel order we shouldn't auto retire the OI rows; our effect
 should stop at the SO, that's all; the future flow is CS handles it in Fulfilment Planning."
+Owner rulings 14 Oct 23:16 / 23:20: "why the CS cannot cancel it in fulfilment planning and flow that
+to order inquiry to cancel the OI line just like how we did for Transfer to Cancel SO action in
+fulfilment planning?" and "it is essentially when SO is cancelled, we trigger the transfer to cancel
+SO action in fulfilment planning and let the CS confirm themselves".
 
 ## The cancel stops at the SO
 
@@ -26,12 +30,35 @@ should stop at the SO, that's all; the future flow is CS handles it in Fulfilmen
 ## Fulfilment Planning shows it for CS
 
 - **UAC-07 [BE][FE][T]** A line an AutoCount Cancel SO cancelled that still has a live order inquiry row
-  (state not `cancelled`) is on the board, read-only at zero, pill **Cancelled**, opening to
-  "Transferred to Cancel SO by AutoCount, <when the CRM received the latest XS> · <XS nos> ·
-  <n> open order inquiry row(s)". `cancel_open_oi_rows` = n. Confirm never acts on it.
+  (state not `cancelled`) is on the board at zero, opening to "Cancelled in AutoCount, <when the CRM
+  received the latest XS> · <XS nos> · <n> open order inquiry row(s)". `cancel_open_oi_rows` = n.
+  With its pending Transfer to Cancel SO (UAC-12) the pill reads **Saved** and Decided reads
+  "Cancel SO"; dismissed (UAC-17) the pill reads **Cancelled**. Confirm acts on it only through the
+  pending transfer (UAC-16).
 - **UAC-08 [BE][T]** Such a line with no live order inquiry row is not on the board (nothing for CS).
 - **UAC-09 [BE][T]** A line CS transferred on the board reads exactly as before (its own who / when /
   why, pill Confirmed, `cancel_open_oi_rows` 0).
+
+## The pending Transfer to Cancel SO (rulings 23:16 / 23:20)
+
+- **UAC-12 [BE][T]** When a Cancel SO fully cancels a line that has a live order inquiry row, the sync
+  saves the board's own Transfer to Cancel SO as that line's pending decision (a board draft: verdict
+  `cancelled`, reason "AutoCount Cancel SO <XS no>", marked `source: autocount_cancel`, saved by the
+  integration). Nothing else moves: OI rows, acknowledgements, emails as in UAC-02/03.
+- **UAC-13 [BE][T]** No live order inquiry row: no pending decision.
+- **UAC-14 [BE][T]** A cancel that lowers or is voided, so the line reopens (R6), withdraws the pending
+  decision the sync saved (a decision CS saved stays).
+- **UAC-15 [BE][T]** The board line carries the pending decision (`draft.decision`), like any saved line.
+- **UAC-16 [BE][FE][T]** Confirm posts it in `cancelled_lines` and runs the existing Transfer to Cancel
+  SO (`ProjectSupplyService.cancel_lines`, which takes this one cancelled line, active decision or not):
+  the OI rows are cancelled in Order Inquiry with the same handover to purchasing CS's own transfer
+  sends, the line records who / when / why, the draft is gone and the board reads it as UAC-09.
+  The Confirm count and dialog list it ("Cancel SO").
+- **UAC-17 [BE][FE][T]** CS can dismiss it with the decision's Undo: the draft is deleted, nothing else
+  moves, the line stays on the board (UAC-07, pill Cancelled).
+- **UAC-18 [BE][FE][T]** On such a line the Decide strip and the line's draft route accept Transfer to
+  Cancel SO (CS can re-save it, with their own reason) and refuse any supply decision (409
+  `board_line_cancelled_in_autocount`; the strip skips it).
 
 ## Owner data repair (rows retired on 14 Oct before the ruling)
 
