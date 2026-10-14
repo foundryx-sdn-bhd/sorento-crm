@@ -53,7 +53,10 @@ search (`:187-192`), book all/project/retail (`:193`), suppliers multi (`:195`),
 sales order delivery date range `dateFrom`/`dateTo` (`:199-200`), only in debt (`:203`),
 projected balance (`:206`), show aux columns (localStorage display pref, `:209-223`).
 
-There is NO project filter and NO project location filter on the screen.
+The owner's "choose project" is the Book filter set to Project (`StockDebtClient.tsx:702`,
+values all|project|retail; crew correction, 14 Oct). There is no project LOCATION filter on
+the screen. The saved view stores ALL current filters: search, only in debt, book, suppliers,
+the sales order delivery date range, projected, and Location if Q1 brings it back.
 - Backend `GET /projects/stock-debt` takes `group` (ownership group suffix: BB, IB, ...)
   (`app/api/v1/projects/stock_debt.py:49-56`) and returns the `groups` facet
   (`app/services/scm/stock_debt_service.py:498, 906-917`), but the Ownership group control
