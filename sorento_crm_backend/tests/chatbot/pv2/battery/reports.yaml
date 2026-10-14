@@ -125,8 +125,9 @@ conversations:
       about: "top-selling kitchen sinks for last month (the calendar month before the run date), or the metric / basis question in Malay"
   - text: "ikut kuantiti"
     expect:
-      kind: answer
-      about: "the kitchen sink ranking for last month by quantity"
+      kind: any
+      about: "the kitchen sink ranking for last month by quantity, or the delivered / ordered / outstanding basis question that keeps kitchen sink, last month and by-quantity (basis is never defaulted; same pattern as reports-r04; owner ruling 15 Oct)"
+      allow_repeat: true
       judge: "Report figures come from the PV2 report route, which records no lookup event in the trace; do not fail on figures that are absent from the facts. Header customer names are customer GROUP names (on dev MODERNMED SDN BHD sits in group 1 LIVING DEPOT SDN BHD); a by-customer drill lists accounts."
   - text: "top 10 pula"
     expect:

@@ -143,7 +143,7 @@ conversations:
   - text: "back to the stock, got 10?"
     expect:
       kind: answer
-      about: "switch back to SRTKS6042-BL stock: whether 10 are on hand; no flyer re-sent"
+      about: "switch back to SRTKS6042-BL stock: the numbers table answers whether 10 are on hand (staff); a 'Carrying on from <real date>' recap line is fine; no flyer re-sent (owner ruling 15 Oct)"
       must: ["SRTKS6042-BL"]
       attachments: false
   - text: "thanks"

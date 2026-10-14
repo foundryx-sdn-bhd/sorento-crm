@@ -193,8 +193,9 @@ conversations:
   - text: "I want the DESCRIPTION SIZE!!!"
     expect:
       kind: answer
-      about: "gives the CB1512ASS description held (CABANA stainless steel 2-way wall-mounted sink tap) and says no dimensions are on record if none; never the same clarify a third time"
+      about: "a plain statement that there is no size on record for CB1512ASS (owner ruling 15 Oct); repeating the CB1512ASS product card instead fails; never the same clarify a third time"
       must: ["CB1512ASS"]
+      judge: "Pass: a plain 'no size on record for CB1512ASS' (a short offer of what is on file is fine). Fail: the same product card as the earlier turn repeated without saying there is no size on record, or the same clarify a third time."
 
 - id: attachments-r05
   source: real
