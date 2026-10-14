@@ -70,6 +70,7 @@ import {
   purchaseOrderLineStatusPill,
   purchaseOrderStatusPill,
 } from '../../../lib/purchaseOrderStatus';
+import { cancelSourcesTitle, isPartlyCancelled, PARTLY_CANCELLED } from '@/app/(protected)/scm/lib/autocountCancel';
 import type {
   PurchaseOrder,
   PurchaseOrderLine,
@@ -567,6 +568,32 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         },
       },
       {
+        // AC-CANCEL-CRM (owner hand test, 13 Oct): AutoCount Cancel PO is part of
+        // TransferedQty; this states it, and the tooltip names each cancel document and how
+        // it was matched to this line.
+        id: 'qty_cancelled',
+        accessorFn: (line) => Number(line.qty_cancelled ?? 0),
+        header: ({ column }) => <DataGridColumnHeader title="Qty cancelled" column={column} />,
+        cell: ({ row }) => {
+          const qty = Number(row.original.qty_cancelled ?? 0);
+          return (
+            <span
+              data-testid={`qty-cancelled-${row.original.id}`}
+              title={cancelSourcesTitle(row.original.cancels)}
+              className="truncate"
+            >
+              {fmtInt(qty)}
+            </span>
+          );
+        },
+        size: 130,
+        meta: {
+          headerTitle: 'Qty cancelled',
+          headerClassName: 'text-right',
+          cellClassName: 'text-right tabular-nums',
+        },
+      },
+      {
         id: 'outstanding',
         // Computed here rather than sent, so it cannot disagree with the two columns beside
         // it. An over-receipt reads as 0 rather than as a negative commitment. In an EDIT
@@ -834,7 +861,10 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         // The same light chip as every other pill on this page, worded the same two ways the
         // header pill is - the same helper both read.
         cell: ({ row }) => {
-          const pill = purchaseOrderLineStatusPill(row.original.line_status);
+          // AC-CANCEL-CRM: part of the line cancelled by AutoCount Cancel PO.
+          const pill = isPartlyCancelled(row.original)
+            ? PARTLY_CANCELLED
+            : purchaseOrderLineStatusPill(row.original.line_status);
           return (
             <Badge variant={pill.variant} appearance="light" size="md">
               {pill.label}
@@ -1209,7 +1239,9 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
             // A real key, not the empty "do not persist" one: a 200-line order is read with
             // the same few columns every time, and the choice has to survive the visit.
             // Keyed off the permission slug plus a stable id, never the record's own path.
-            listingKey="scm.dashboard.view::purchase-order-lines"
+            // -v2 (AC-CANCEL-CRM, owner 13 Oct): Qty cancelled and Status must show by
+            // default; a saved preference could keep either hidden.
+            listingKey="scm.dashboard.view::purchase-order-lines-v2"
           >
             <Card>
               <CardHeader className="flex-wrap gap-3">

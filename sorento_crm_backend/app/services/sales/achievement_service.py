@@ -311,8 +311,12 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
             select(
                 SOL.id.label("sol_id"),
                 SOL.product_id.label("product_id"),
-                case((mine, SOL.qty_ordered), else_=0).label("qty_ordered"),
-                case((mine, SOL.qty_delivered), else_=0).label("qty_delivered"),
+                # AC-CANCEL-CRM: an AutoCount Cancel SO is neither sold nor delivered, though
+                # TransferedQty (`qty_delivered`) counts it; both leave it out.
+                case((mine, SOL.qty_ordered - func.coalesce(SOL.qty_cancelled, 0)),
+                     else_=0).label("qty_ordered"),
+                case((mine, func.greatest(SOL.qty_delivered - func.coalesce(SOL.qty_cancelled, 0),
+                                          0)), else_=0).label("qty_delivered"),
                 case((mine, SOL.line_total), else_=0).label("line_total"),
                 mine.label("mine"),
                 SO.order_date.label("order_date"),

@@ -514,7 +514,18 @@ def plan_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
     if core is None or (core.line_status or "open") == "cancelled":
         return _ZERO
     required = core.qty_required
-    return max(_dec(core.qty_ordered if required is None else required), _ZERO)
+    # AC-CANCEL-CRM (owner, 13 Oct): what AutoCount Cancel SO documents cancelled is not
+    # planned. A partial cancel lowers the plan; a full one cancels the line (above).
+    base = _dec(core.qty_ordered if required is None else required)
+    return max(base - _dec(getattr(core, "qty_cancelled", None)), _ZERO)
+
+
+def delivered_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
+    """AC-CANCEL-CRM: what really went out on a line. `qty_delivered` is AutoCount's
+    TransferedQty, which a Cancel SO adds to; the cancelled part never left the bin."""
+    if core is None:
+        return _ZERO
+    return max(_dec(core.qty_delivered) - _dec(getattr(core, "qty_cancelled", None)), _ZERO)
 
 
 def delivered_credits(
@@ -531,7 +542,7 @@ def delivered_credits(
     left = _ZERO
     if core is not None:
         left = max(
-            min(_dec(core.qty_delivered), _dec(open_qty))
+            min(delivered_qty_of(core), _dec(open_qty))
             - _dec(entry.buy_qty)
             - _dec(entry.timely_spo_qty),
             _ZERO,

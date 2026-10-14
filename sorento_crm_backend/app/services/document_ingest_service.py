@@ -349,6 +349,9 @@ class DocumentIngestService(MasterRefResolver):
         # is a Python-level no-op here since execution never reaches that point.
         self.touched_product_ids: set[str] = set()
         self.so_numbers: set[str] = set()
+        # AC-CANCEL-CRM: the PO numbers this batch wrote, for the cancel relink hook (a Cancel
+        # PO line waiting for its PO links once it lands; an ordered qty change re-caps).
+        self.po_numbers: set[str] = set()
         self.written_header_ids: set[str] = set()
         # S2 (`PLAN-oi-follow-book-chain.md`, AC-FB-21/25): every `from_so_line_ref`
         # a purchase-order LINE carried on a line this push CREATED or UPDATED -
@@ -763,6 +766,7 @@ class DocumentIngestService(MasterRefResolver):
         if spec.entity_type == "sales_orders":
             self.so_numbers.add(payload.so_number)
         elif spec.entity_type == "purchase_orders":
+            self.po_numbers.add(payload.po_number)
             supplier_id = header_values.get("supplier_id")
             if supplier_id:
                 for values in line_values:
@@ -1240,7 +1244,8 @@ class DocumentIngestService(MasterRefResolver):
                     doc_number=payload.so_number,
                     item_code=self._product_code_of(row.product_id) or "",
                     location=self._warehouse_code_of(row.warehouse_id) or "",
-                    qty=float(row.qty_ordered or 0),
+                    # AC-CANCEL-CRM: the planned basis leaves out what Cancel SO took.
+                    qty=float((row.qty_ordered or 0) - (row.qty_cancelled or 0)),
                     required_date=row.required_date,
                     row_ref=str(row.id),
                     # Same identity `SalesOrderService._propagate_planning_change` sets
@@ -1272,7 +1277,8 @@ class DocumentIngestService(MasterRefResolver):
                     doc_number=payload.so_number,
                     item_code=self._product_code_of(row.product_id) or "",
                     location=self._warehouse_code_of(row.warehouse_id) or "",
-                    qty=float(row.qty_ordered or 0),
+                    # AC-CANCEL-CRM: the planned basis leaves out what Cancel SO took.
+                    qty=float((row.qty_ordered or 0) - (row.qty_cancelled or 0)),
                     required_date=row.required_date,
                     row_ref=str(row.id),
                     line_id=str(row.id),
@@ -1547,6 +1553,17 @@ class DocumentIngestService(MasterRefResolver):
                     # AutoCount does not know that document, so its push (which would
                     # recompute the status from quantities) must not reopen the line.
                     values["line_status"] = CANCELLED
+                if spec.entity_type in ("sales_orders", "purchase_orders"):
+                    # AC-CANCEL-CRM (R5): AutoCount Cancel SO / Cancel PO documents cancelled the
+                    # whole line (`cancelled_by_cancel_doc`, set by the cancel ingest). The push
+                    # recomputes the status from quantities and would read it closed, then the
+                    # relink would cancel it again and retire its OI rows a second time. A line
+                    # only NOW fully covered (ordered lowered) is left to the relink, which
+                    # reports it as newly cancelled.
+                    ordered = values.get("qty_ordered", row.qty_ordered) or 0
+                    if (row.cancelled_by_cancel_doc and ordered > 0
+                            and (row.qty_cancelled or 0) >= ordered):
+                        values["line_status"] = CANCELLED
                 for column, value in values.items():
                     setattr(row, column, value)
                 counts["updated"] += 1
