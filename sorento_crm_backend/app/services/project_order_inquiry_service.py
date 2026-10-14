@@ -552,6 +552,17 @@ def _saved_decision_key(snapshot: Mapping[str, Any]) -> Tuple[Any, ...]:
     )
 
 
+def _borrow_donors(snapshot: Mapping[str, Any]) -> Tuple[Optional[str], ...]:
+    """Where each Borrow of a saved line draws from. Its email line reads ORDER BACK at the
+    line's own location (owner, 13 Oct 2026), so `_saved_decision_key` no longer sees the
+    donor: a Borrow moved to another donor is told apart by this."""
+    return tuple(
+        component.get("source_location") or None
+        for component in snapshot.get("components") or []
+        if component.get("kind") == "borrow" and _dec(component.get("qty")) > _ZERO
+    )
+
+
 def handover_remark(
     kind: str, row: Any, was: Optional[Dict[str, Any]], qty: Optional[Decimal] = None
 ) -> str:
@@ -4121,6 +4132,18 @@ class ProjectOrderInquiryService:
             line_no = so_line.line_no if so_line is not None else None
             core_line_id = so_line.core_sales_order_line_id if so_line is not None else None
             self._handover_line_no_cache[row.so_line_id] = (line_no, core_line_id)
+        location = row.stock_location
+        if row.verb == IV_ORDER_BACK and row.so_line_id:
+            # Owner, 13 Oct 2026 (re-confirmed 14 Oct): a line telling a Borrow reads the SO
+            # line's OWN location, in LOCATION and in the subject. The row keeps its donor
+            # on the worklist; only the email reads the line's. An Order back Buy row
+            # already names the line's own location.
+            so_line = self.db.get(ProjectSalesOrderLine, row.so_line_id)
+            location = (
+                (so_line.stock_location if so_line is not None else None)
+                or self._stock_location(str(row.so_line_id))
+                or row.stock_location
+            )
         line = {
             "so_date": _handover_fmt_date(facts.get("so_date")),
             "so_number": so_number,
@@ -4132,7 +4155,7 @@ class ProjectOrderInquiryService:
             # AC-1: "very, very important" to the owner - blank, never the word "None",
             # when the row carries no stock location (`_build_handover_context`'s own
             # subject-scope reduction already treats a blank the same way).
-            "location": row.stock_location or "",
+            "location": location or "",
             "remark": handover_remark(kind, row, was, qty),
             "was": _format_handover_was(was),
         }
@@ -4148,7 +4171,8 @@ class ProjectOrderInquiryService:
                 "so_number": so_number,
                 "customer": facts.get("customer"),
                 "project": facts.get("project"),
-                "stock_location": row.stock_location,
+                #: The subject's location: what LOCATION prints (a Borrow's, the line's own).
+                "stock_location": location,
                 #: AC-2/AC-3: what `_build_handover_context` sorts the whole queue by -
                 #: `so_number` above, then these two.
                 "line_no": line_no,
@@ -4217,6 +4241,13 @@ class ProjectOrderInquiryService:
         for line, now, before in saved:
             row_lines = told.get(str(line.id), [])
             unchanged = before is not None and _saved_decision_key(before) == _saved_decision_key(now)
+            if unchanged and _borrow_donors(before) != _borrow_donors(now):
+                # Only a Borrow's donor moved (owner, 13 Oct 2026, re-confirmed 14 Oct): a
+                # changed decision, told as its one line at the line's own location, never
+                # as its rows' lines at the donors. The old donor's CANCEL ALL is the same
+                # order back moved, not an order taken back.
+                self._queue_saved_line(pso_id, line, now, before, actor_user_id=actor_user_id)
+                continue
             same_kind = before is not None and _decision_words(before) == _decision_words(now)
             buy_words = _decision_words(now) in (("ORDER",), ("ORDER BACK",)) and _buy_qty(now) > _ZERO
             # No frozen "before", or an empty one (a revision rebuilt without this line's
