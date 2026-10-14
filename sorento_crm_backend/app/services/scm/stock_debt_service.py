@@ -2231,7 +2231,7 @@ class StockDebtService:
         else:
             for hold in holds:
                 already[hold.line_key] = already.get(hold.line_key, 0.0) + float(hold.qty)
-        candidates = []
+        candidates: List[Tuple[str, Dict[str, str], List[DemandLine]]] = []
         for product_id, lines in demand_rows.items():
             floors = {
                 str(event.warehouse): event.key
