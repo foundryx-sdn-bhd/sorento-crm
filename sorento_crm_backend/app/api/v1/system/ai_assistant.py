@@ -423,6 +423,7 @@ def set_ai_assistant_agent_model(
         label=payload.label,
         provider=payload.provider,
         model=payload.model,
+        reasoning_effort=payload.reasoning_effort,
     )
     return SetAgentModelResponse(**result)
 

@@ -127,6 +127,8 @@ class AIPromptService:
                     # assistant model, which is what every agent used before this.
                     "provider": prod_label.provider if prod_label is not None else None,
                     "model": prod_label.model if prod_label is not None else None,
+                    "reasoning_effort": prod_label.reasoning_effort if prod_label is not None else None,
+                    "supports_reasoning_effort": spec.supports_reasoning_effort,
                     "staging_version": labels.get("staging"),
                     "latest_version": int(latest.version) if latest is not None else None,
                     "updated_at": updated_at,
@@ -251,7 +253,13 @@ class AIPromptService:
         }
 
     def set_agent_model(
-        self, name: str, *, label: str, provider: Optional[str], model: Optional[str]
+        self,
+        name: str,
+        *,
+        label: str,
+        provider: Optional[str],
+        model: Optional[str],
+        reasoning_effort: Optional[str] = None,
     ) -> dict[str, Optional[str]]:
         """Point one agent at one LLM. Empty/None means "use the global default".
 
@@ -279,8 +287,12 @@ class AIPromptService:
             )
         row.provider = (provider or "").strip() or None
         row.model = (model or "").strip() or None
+        # Stored only for a key whose call reads it; blank = the provider's default.
+        row.reasoning_effort = (
+            (reasoning_effort or "").strip() or None if PROMPT_KEYS[name].supports_reasoning_effort else None
+        )
         self.db.commit()
-        return {"provider": row.provider, "model": row.model}
+        return {"provider": row.provider, "model": row.model, "reasoning_effort": row.reasoning_effort}
 
     def set_label(
         self, name: str, *, label: str, version_id: str, user_id: Optional[str]

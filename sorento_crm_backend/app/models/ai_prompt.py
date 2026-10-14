@@ -73,6 +73,9 @@ class AIPromptLabel(Base):
     # tunes for the hardest of them or for none of them.
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # none | low | medium | high for the agent's LLM call; NULL = the provider's default
+    # (nothing is sent). Only keys that declare `supports_reasoning_effort` read it.
+    reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

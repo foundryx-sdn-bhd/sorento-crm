@@ -41,17 +41,6 @@ logger = logging.getLogger(__name__)
 
 PV2_HISTORY_EXCHANGES = 3
 PV2_MAX_TOKENS = 1200
-#: The parser call's reasoning effort (owner approved, 14 Oct 2026). `PV2_REASONING_EFFORT` in the
-#: environment overrides it; "none" or an empty value sends no `reasoning_effort` at all.
-PV2_REASONING_EFFORT = "low"
-
-
-def reasoning_effort_from_env() -> str | None:
-    raw = os.environ.get("PV2_REASONING_EFFORT")
-    if raw is None:
-        return PV2_REASONING_EFFORT
-    raw = raw.strip()
-    return None if raw in ("", "none") else raw
 RECORD_ENV = "PV2_RECORD_DIR"
 
 
@@ -75,7 +64,7 @@ class V2Config:
     provider: str
     model: str
     api_key: str
-    reasoning_effort: str | None = PV2_REASONING_EFFORT
+    reasoning_effort: str | None = None  # the label's setting; None = not sent
 
     @property
     def cache_key(self) -> str:
@@ -127,7 +116,7 @@ def resolve_v2_config(
     a LIVE index render, `prompt_version` None: usable for a hand test, marked in every
     trace by the `vfallback` cache key and the null version."""
     from app.services.ai_assistant_service import AIAssistantConfigService
-    from app.services.ai_prompt_registry import PROMPT_KEYS, agent_model
+    from app.services.ai_prompt_registry import PROMPT_KEYS, agent_model, agent_reasoning_effort
     from app.services.llm_provider import resolve_api_key
 
     pinned = _pinned_text(db, override_version_id, label)
@@ -157,7 +146,7 @@ def resolve_v2_config(
         provider=provider,
         model=model,
         api_key=api_key,
-        reasoning_effort=reasoning_effort_from_env(),
+        reasoning_effort=agent_reasoning_effort(db, pv2_index.PROMPT_KEY_V2, label),
     )
 
 

@@ -8,6 +8,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -27,6 +29,10 @@ class PromptKeySummary(BaseModel):
     # The LLM this agent runs on in production. None = the global assistant model.
     provider: Optional[str] = None
     model: Optional[str] = None
+    # none | low | medium | high; None = the provider's default (nothing is sent).
+    reasoning_effort: Optional[str] = None
+    # Whether this key's call reads a reasoning effort (so the FE shows the control).
+    supports_reasoning_effort: bool = False
     latest_version: Optional[int] = None
     updated_at: Optional[datetime] = None
     updated_by_name: Optional[str] = None
@@ -99,11 +105,13 @@ class SetAgentModelRequest(BaseModel):
     label: str = Field(default="production", description="production | staging")
     provider: Optional[str] = Field(default=None, max_length=64)
     model: Optional[str] = Field(default=None, max_length=128)
+    reasoning_effort: Optional[Literal["none", "low", "medium", "high"]] = None
 
 
 class SetAgentModelResponse(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
+    reasoning_effort: Optional[str] = None
 
 
 class DryRunRequest(BaseModel):
