@@ -12,7 +12,6 @@ from typing import Optional
 from app.database import get_db
 from app.dependencies import (
     get_current_user,
-    get_current_user_or_api_key,
     require_permission,
     require_permission_with_api_key,
 )
@@ -1162,7 +1161,7 @@ async def create_order(
 async def update_order(
     order_id: str,
     order_data: OrderUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("order_management.orders.view")),
     db: Session = Depends(get_db)
 ):
     """Update an order."""
@@ -1184,7 +1183,7 @@ class OrderCancelRequest(BaseModel):
 async def cancel_order(
     order_id: str,
     body: OrderCancelRequest = Body(default_factory=OrderCancelRequest),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Cancel an order (sets is_cancelled=true, optional reason → remarks).
@@ -1246,7 +1245,7 @@ async def delete_order(
 async def create_order_line(
     order_id: str,
     data: OrderLineCreate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Add a line to an order (delivery order detail)."""
@@ -1265,7 +1264,7 @@ async def update_order_line(
     order_id: str,
     line_id: str,
     data: OrderLineUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
     """Update an order line."""

@@ -140,3 +140,40 @@ def test_api_key_act_as_user_with_grant_is_200(label, seeded, make_client):
     _, path, query = _route(seeded, label)
     res = make_client(None).get(path, params=query, headers={"X-API-Key": seeded["granted_key"]})
     assert res.status_code == 200, res.text
+
+
+# Security review B1: these write routes answer with the full DO (`OrderResponse` /
+# `OrderLineResponse`), so `PUT {}` was a read of any DO without the grant. Nobody who
+# may not view a DO may change it, so they carry the view gate too.
+WRITE_LABELS = ["update", "cancel", "line-create", "line-update"]
+
+
+def _write_route(s, label) -> tuple[str, str, dict]:
+    do_id = s["do"].id
+    return {
+        "update": ("PUT", f"{BASE}/{do_id}", {}),
+        "cancel": ("POST", f"{BASE}/{do_id}/cancel", {}),
+        "line-create": ("POST", f"{BASE}/{do_id}/lines", {"product_id": s["product"].id, "quantity": 1}),
+        "line-update": ("PUT", f"{BASE}/{do_id}/lines/{uuid.uuid4()}", {"quantity": 2}),
+    }[label]
+
+
+@pytest.mark.parametrize("label", WRITE_LABELS)
+def test_write_route_returning_the_do_is_403_without_view_grant(label, seeded, make_client):
+    method, path, body = _write_route(seeded, label)
+    res = make_client(seeded["no_grant"]).request(method, path, json=body)
+    assert res.status_code == 403, res.text
+    assert PERMISSION_SLUG in res.text
+
+
+def test_empty_put_still_returns_the_do_to_a_user_with_the_grant(seeded, make_client):
+    method, path, body = _write_route(seeded, "update")
+    res = make_client(seeded["granted"]).request(method, path, json=body)
+    assert res.status_code == 200, res.text
+    assert res.json()["id"] == seeded["do"].id
+
+
+def test_cancel_by_api_key_without_grant_is_403(seeded, make_client):
+    method, path, body = _write_route(seeded, "cancel")
+    res = make_client(None).request(method, path, json=body, headers={"X-API-Key": seeded["no_grant_key"]})
+    assert res.status_code == 403, res.text
