@@ -322,6 +322,7 @@ def test_r2_6_the_full_owner_flow_question_then_pick_from_the_recorded_turn():
     pick = dict(next(r for r in rows if r["case"] == "r8-2-eta-mou-pick-1"), turn=2, state_in=None)
     results = replay.run_case([first, pick])
     assert _origin_of(results[0].state_out.pending).domain == "incoming"
+    assert results[0].state_out.pending.deferred is None, "a new pending carries origin; deferred is for pre-R2 state"
     held = results[1].state_out.held
     assert held.domain == "incoming" and [r.key for r in held.refs["product"]] == ["SRTWC286"]
 

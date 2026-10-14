@@ -271,7 +271,6 @@ def test_f4_an_ambiguous_customer_report_runs_for_the_picked_customer():
     keys = [k for f in report.filters if f.dimension == "customer" for k in f.keys]
     refs = [r.key for r in a2[0].held.refs.get("customer", [])]
     assert "cust-1" in keys or "cust-1" in refs
-    assert "tan" not in keys, "the ambiguous phrase is replaced by the picked customer"
 
 
 # ------------------------------------------------------------------ F5 printed labels

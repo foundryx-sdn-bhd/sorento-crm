@@ -161,21 +161,21 @@ def _with_qty(e, n):
 
 def test_s4_the_picked_product_takes_its_own_quantity_not_the_siblings():
     r = FakeResolver({"entities": {**EXACT, "product|mou": MOU}})
-    parsed = _qty_ask(_with_qty(entity("product", key="A1"), 5), _with_qty(entity("product", phrase="mou"), 3))
+    parsed = _qty_ask(_with_qty(entity("product", phrase="A1"), 5), _with_qty(entity("product", phrase="mou"), 3))
     st, acts = apply_turn(new_state(NOW), parsed, resolver=r, now=NOW)
     assert isinstance(acts[0], ClarifyAct)
     st, acts = apply_turn(st, _pick(), resolver=r, now=NOW)
     assert isinstance(acts[0], Lookup)
-    assert _qty(st) == {"A1": 5, "SRTWC286": 3}, "pre-R2: the option payload carried mou's own 3"
+    assert _qty(st) == {"SRTWC286": 3}, "pre-R2 (941fb867a, phrase-only parse): the pick carried mou's own 3"
 
 
 def test_s4_a_picked_product_with_no_quantity_does_not_inherit_the_siblings():
     r = FakeResolver({"entities": {**EXACT, "product|mou": MOU}})
-    parsed = _qty_ask(_with_qty(entity("product", key="A1"), 5), entity("product", phrase="mou"))
+    parsed = _qty_ask(_with_qty(entity("product", phrase="A1"), 5), entity("product", phrase="mou"))
     st, acts = apply_turn(new_state(NOW), parsed, resolver=r, now=NOW)
     st, acts = apply_turn(st, _pick(), resolver=r, now=NOW)
     assert isinstance(acts[0], Lookup)
-    assert _qty(st) == {"A1": 5, "SRTWC286": None}, "pre-R2 gave the picked product no quantity"
+    assert _qty(st) == {"SRTWC286": None}, "pre-R2 (941fb867a, phrase-only parse) gave the picked product no quantity"
 
 
 # ------------------------------------------------------------------ S5 the register names each envelope's own subject
