@@ -367,3 +367,40 @@ def test_prod_paths_resolve_to_the_real_client_with_trusted_proxies_set(monkeypa
 def test_prod_paths_fall_back_to_the_peer_with_trusted_proxies_unset(monkeypatch, peer, xff):
     monkeypatch.setattr(settings, "trusted_proxies", "")
     assert _login_ip_seen(monkeypatch, peer, xff) == peer
+
+
+# --- behind Cloudflare (HA-SEC-EDGE, 14 Oct) -----------------------------------------------
+#
+# Cloudflare appends the address it saw to any typed header, and the host nginx appends the
+# Cloudflare edge it saw, so the backend gets peer = gateway, XFF = "<typed>, <client>, <edge>".
+# TRUSTED_PROXIES is then the private ranges PLUS Cloudflare's published ranges
+# (documentation/runbooks/prod-edge-lockdown.md builds the value from cloudflare.com/ips).
+# Two sample ranges stand in for the full list here.
+CF_RANGES = "173.245.48.0/20,2606:4700::/32"
+CF_EDGE = "173.245.48.10"
+CF_EDGE_V6 = "2606:4700::6810:1"
+
+
+def _behind_cloudflare(monkeypatch):
+    from app.services.client_ip import RECOMMENDED_TRUSTED_PROXIES
+
+    monkeypatch.setattr(settings, "trusted_proxies", f"{RECOMMENDED_TRUSTED_PROXIES},{CF_RANGES}")
+
+
+@pytest.mark.parametrize("edge", [CF_EDGE, CF_EDGE_V6])
+def test_cloudflare_path_resolves_to_the_client(monkeypatch, edge):
+    _behind_cloudflare(monkeypatch)
+    assert client_ip(_req(GATEWAY, f"6.6.6.6, {CLIENT}, {edge}")) == CLIENT
+
+
+def test_cloudflare_path_without_its_ranges_trusted_stops_at_the_edge(monkeypatch):
+    # The state before the owner adds the ranges: one bucket per Cloudflare edge, not forgeable.
+    assert client_ip(_req(GATEWAY, f"6.6.6.6, {CLIENT}, {CF_EDGE}")) == CF_EDGE
+
+
+def test_a_direct_hit_on_the_origin_cannot_borrow_a_cloudflare_address(monkeypatch):
+    # Someone going round Cloudflare straight to the origin types a Cloudflare edge into the
+    # header; nginx appends their real address, which is not trusted, so that is the answer.
+    _behind_cloudflare(monkeypatch)
+    attacker = "198.51.100.66"
+    assert client_ip(_req(GATEWAY, f"{CLIENT}, {CF_EDGE}, {attacker}")) == attacker
