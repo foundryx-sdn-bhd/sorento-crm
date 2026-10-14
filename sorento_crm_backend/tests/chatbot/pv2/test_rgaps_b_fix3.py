@@ -11,7 +11,7 @@ from app.services.chatbot.pv2.resolve import DbResolver
 from app.services.chatbot.pv2.state import ClarifyAct, Lookup, new_state
 from tests.chatbot.pv2.carry_fakes import NOW, FakeResolver, entity, out
 from tests.chatbot.pv2.test_rgaps_b_fix1 import (
-    PINNED, SEVENTH, WHO, _amb, _c, _ex, _inv, _is_carry, _p, _pick, _prods, _set, _t, _turn, db,
+    SEVENTH, WHO, _amb, _c, _ex, _is_carry, _p, _pick, _t,
 )
 
 # ------------------------------------------------------------------ S1: the carry chain with a second ambiguous item
@@ -67,32 +67,4 @@ def test_s1_guard_all_on_the_ber_question_keeps_all_four(can_offer):
     assert _lookup_keys(acts, "product") == ["BER-1", "BER-2", "MOU-1", "MOU-2"]
 
 
-# ------------------------------------------------------------------ S2: a stale held set code (RG-5b)
-
-
-def _held_then_deactivated(db):
-    a, b = _prods(db, "SRTSETS2-A", "SRTSETS2-B")
-    row = _set(db, "SRTSETS2", [(a, 1), (b, 2)])
-    st, _ = _turn(db, out(_order_ask("SRTSETS2")))
-    row.is_active = False
-    db.flush()
-    return st
-
-
-def _order_ask(code):
-    from tests.chatbot.pv2.carry_fakes import ask
-
-    return ask(act="new_topic", domain="order", entities=[entity("product", phrase=code)])
-
-
-def _shape(act):
-    return (type(act).__name__, getattr(getattr(act, "pending", None), "kind", None))
-
-
-def test_s2_a_stale_held_set_code_is_not_sent_to_v1_as_a_product_code_and_misses_like_a_fresh_ask(db):
-    st = _held_then_deactivated(db)
-    st, acts = _turn(db, _inv(act="refines_held"), state=st)
-    fresh_st, fresh_acts = _turn(db, _inv(entity("product", phrase="SRTSETS2")))
-    held = [r.key for a in acts if isinstance(a, Lookup) for r in a.held.refs.get("product", [])]
-    assert "SRTSETS2" not in held, f"the stale set code went out as a product code: {held}"
-    assert _shape(acts[0]) == _shape(fresh_acts[0]), (_shape(acts[0]), "vs fresh", _shape(fresh_acts[0]))
+# S2 (a stale held set code) is pinned by test_rgaps_b_fix4.py::test_k3a / test_k3b: it resolves like a fresh ask.
