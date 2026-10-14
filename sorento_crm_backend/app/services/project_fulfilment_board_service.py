@@ -1953,8 +1953,9 @@ class FulfilmentBoardService:
             out[core_id] = {
                 "at": max(times) if times else None,
                 "open": count,
+                # `cancelled_by` already says AutoCount; the reason names the documents.
                 "reason": " · ".join(
-                    [*(["AutoCount " + ", ".join(docs)] if docs else []),
+                    [*([", ".join(docs)] if docs else []),
                      f"{count} open order inquiry {rows_word}"]
                 ),
             }

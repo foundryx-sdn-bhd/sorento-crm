@@ -12,7 +12,9 @@
 --   the row moved (qty, dates, verb, ack_state, po_ref / po_line_id untouched).
 -- What this script restores, for a row it can restore exactly:
 --   state -> raised (a row with no link is `raised`: INQUIRY_LINK_STATES), note -> the note
---   without the retirement's stamp (NULL when the stamp was the whole note).
+--   without the retirement's stamp (NULL when the stamp was the whole note); its inquiry header
+--   reads raised again. Also rows on a line that has reopened since (cancel lowered / voided /
+--   re-decided): those rows are live demand again.
 -- What it does NOT restore (listed in 2, left for CS / purchasing by hand):
 --   rows whose retirement removed links (were partly linked / placed: the link qty is not
 --   recorded anywhere) and rows tagged to a PO (`po_line_id`, were placed).
@@ -31,7 +33,8 @@ BEGIN;
 
 CREATE TEMP TABLE cancel_so_restore ON COMMIT DROP AS
 WITH cutoff AS (
-    SELECT (timestamptz '2026-10-14 00:00:00+08' AT TIME ZONE current_setting('TimeZone')) AS at
+    -- audit_logs.changed_at is naive UTC (the app's sessions run timezone=utc).
+    SELECT (timestamptz '2026-10-14 00:00:00+08' AT TIME ZONE 'UTC') AS at
 ), retired AS (
     SELECT DISTINCT ON (a.entity_id) a.entity_id, a.changed_at AS retired_at
     FROM public.audit_logs a, cutoff
@@ -60,12 +63,15 @@ JOIN projects.order_inquiries oi ON oi.id = oir.order_inquiry_id
 JOIN projects.sales_order_lines pl ON pl.id = oir.so_line_id
 JOIN public.sales_order_lines core ON core.id = pl.core_sales_order_line_id
 JOIN public.sales_orders so ON so.id = core.sales_order_id
-WHERE core.cancelled_by_cancel_doc          -- an AutoCount Cancel SO cancelled the line
-  AND core.cancelled_at IS NULL             -- and CS never transferred it on the board
+WHERE core.cancelled_at IS NULL             -- CS never transferred it on the board (the board
+                                            -- sets this with its retire, nothing clears it).
+                                            -- Not `cancelled_by_cancel_doc`: a cancel lowered or
+                                            -- re-decided since clears it, the rows stay retired.
   AND oir.state = 'cancelled'               -- nothing revived the row since
   AND oir.note ~ '(^|; )Transferred to Cancel SO: [^;]*$';  -- the stamp is still the last word
 
--- The stamp must name a Cancel SO document the CRM holds (or the hook's "AutoCount" fallback).
+-- The stamp must name a Cancel SO document the CRM holds for the row's company (or the hook's
+-- "AutoCount" fallback): that is what says the AutoCount hook, not CS, retired it.
 DELETE FROM cancel_so_restore c
 WHERE c.cancel_doc <> 'AutoCount'
   AND NOT EXISTS (SELECT 1 FROM public.autocount_cancel_docs d
@@ -90,16 +96,27 @@ WHERE o.id = c.row_id
   AND o.state = 'cancelled'
   AND o.note = c.note_now;
 
+-- 3b. The inquiry header reads raised again while a raised row is on it
+--     (`_refresh_inquiry_states`: any raised / partly linked row keeps the header raised).
+UPDATE projects.order_inquiries i
+SET state = 'raised'
+WHERE i.id IN (SELECT o.order_inquiry_id
+               FROM cancel_so_restore c
+               JOIN projects.order_inquiry_rows o ON o.id = c.row_id
+               WHERE NOT c.manual AND o.state = 'raised')
+  AND i.state <> 'raised';
+
 -- 4. The trail: one audit row per restored row, next to the OI_ROW_CANCELLED it reverses.
 INSERT INTO public.audit_logs (id, entity_type, entity_id, action, event, new_values,
                                description, company_id, root_entity_type, root_entity_id,
-                               actor_type)
+                               actor_type, source, reason)
 SELECT gen_random_uuid(), 'project_order_inquiry_rows', c.row_id::text, 'EVENT',
        'OI_ROW_RESTORED',
        jsonb_build_object('cause', 'cancel_so_restore', 'cancel_doc', c.cancel_doc,
                           'state', 'raised'),
        'CANCEL-STOP-AT-SO owner repair: AutoCount Cancel SO retirement reversed',
-       c.company_id, 'project_sales_orders', c.project_sales_order_id::text, 'system'
+       c.company_id, 'project_sales_orders', c.project_sales_order_id::text, 'system', 'script',
+       'Owner ruling 14 Oct: AutoCount Cancel SO effects stop at the SO'
 FROM cancel_so_restore c
 JOIN projects.order_inquiry_rows o ON o.id = c.row_id
 WHERE NOT c.manual AND o.state = 'raised';

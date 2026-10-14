@@ -27,7 +27,7 @@ should stop at the SO, that's all; the future flow is CS handles it in Fulfilmen
 
 - **UAC-07 [BE][FE][T]** A line an AutoCount Cancel SO cancelled that still has a live order inquiry row
   (state not `cancelled`) is on the board, read-only at zero, pill **Cancelled**, opening to
-  "Transferred to Cancel SO by AutoCount, <when the CRM received the latest XS> · AutoCount <XS nos> ·
+  "Transferred to Cancel SO by AutoCount, <when the CRM received the latest XS> · <XS nos> ·
   <n> open order inquiry row(s)". `cancel_open_oi_rows` = n. Confirm never acts on it.
 - **UAC-08 [BE][T]** Such a line with no live order inquiry row is not on the board (nothing for CS).
 - **UAC-09 [BE][T]** A line CS transferred on the board reads exactly as before (its own who / when /
@@ -40,7 +40,9 @@ should stop at the SO, that's all; the future flow is CS handles it in Fulfilmen
   restore does with each; it also lists acknowledged rows the hook sent back to To confirm, and the
   CANCEL ALL emails written since then.
 - **UAC-11 [OWNER]** `SQL-cancel-so-restore-oi-rows-14oct.sql`, after the fix is deployed, puts every
-  AutoCount-retired row whose retirement removed no link back to `raised` with its note as it was, writes
-  one `OI_ROW_RESTORED` audit row each, verifies, and waits for the owner's COMMIT. Rows whose retirement
+  AutoCount-retired row (stamp names a held Cancel SO of that company, line never transferred by CS; the
+  line may have reopened since) whose retirement removed no link back to `raised` with its note as it
+  was, sets its inquiry header back to raised, writes one `OI_ROW_RESTORED` audit row each, verifies,
+  and waits for the owner's COMMIT. Rows whose retirement
   removed a link (or that carry a PO tag) are listed for manual re-link and left alone. Re-running it
   restores nothing more.

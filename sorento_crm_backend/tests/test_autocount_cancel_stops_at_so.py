@@ -154,7 +154,6 @@ def test_relink_path_stops_at_the_so_line(env, monkeypatch):
     assert dispatched == []
 
 
-
 # ======================================================================= Fulfilment Planning
 from datetime import date as _date  # noqa: E402
 
@@ -211,20 +210,23 @@ def test_board_shows_a_cancel_doc_line_with_a_live_oi_row_for_cs(api):
     assert row["cancelled"] is True
     assert row["cancelled_at"]
     assert row["cancelled_by"] == "AutoCount"
-    assert row["cancel_reason"] == "AutoCount ZZXS-777 · 1 open order inquiry row"
+    assert row["cancel_reason"] == "ZZXS-777 · 1 open order inquiry row"
     assert row["cancel_open_oi_rows"] == 1
     assert float(row["qty"]) == 0
 
 
 def test_board_leaves_out_a_cancel_doc_line_with_no_live_oi_row(api):
-    """AC-6: nothing for CS to handle (no row, or only cancelled rows): not on the board."""
+    """AC-6: nothing for CS to handle (no row, or only cancelled rows): not on the board. A live
+    row on ANOTHER line of the order does not count (the EXISTS is per line)."""
     client, world = api
     w = _cb_world(world)
     core_a, mirror_a, product_a = w["a"]
     core_b, _mirror_b, product_b = w["b"]
+    _open_core, open_line = w["open"]
     inquiry = _inquiry(world.db, world.company_id, w["order"].id)
     _oi_row(world.db, world.company_id, inquiry.id, mirror_a.id, product_a.product_code, "36",
             state="cancelled")
+    _oi_row(world.db, world.company_id, inquiry.id, open_line.id, "ZZT-OTHER", "5")
     _cancelled_by_autocount(world, core_a)
     _cancelled_by_autocount(world, core_b)
 

@@ -49,7 +49,7 @@ describe('BoardDecisionPill with a CRM cancel', () => {
           cancelled: true,
           cancelled_at: '2026-10-14T11:55:00',
           cancelled_by: 'AutoCount',
-          cancel_reason: 'AutoCount XS001 · 2 open order inquiry rows',
+          cancel_reason: 'XS001 · 2 open order inquiry rows',
           cancel_open_oi_rows: 2,
         })}
         decision={null}

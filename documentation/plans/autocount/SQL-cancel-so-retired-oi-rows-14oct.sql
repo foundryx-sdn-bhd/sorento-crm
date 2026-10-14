@@ -3,10 +3,12 @@
 -- Lists every order inquiry row retired with cause `cancel_so` (audit event OI_ROW_CANCELLED)
 -- since 14 Oct 2026 00:00 MYT, and tells apart the two writers of that cause:
 --   * "AutoCount Cancel SO": the cancel ingest hook (run_cancel_hooks) the owner's ruling of
---     14 Oct removes. The core line was cancelled by a cancel document
---     (`cancelled_by_cancel_doc`) and never by CS (`cancelled_at` IS NULL).
---   * "CS board Cancel SO": CS pressed Transfer to Cancel SO on the board (`cancelled_at` set).
---     Intended, NOT to be restored.
+--     14 Oct removes. Its stamp names a Cancel SO document the CRM holds for that company (or
+--     the hook's "AutoCount" fallback) and CS never transferred the line (`cancelled_at` IS
+--     NULL). Not keyed on `cancelled_by_cancel_doc`: a cancel lowered, voided or re-decided
+--     since clears that flag and reopens the line, but its rows stayed retired.
+--   * "CS board Cancel SO": CS pressed Transfer to Cancel SO on the board (`cancelled_at` set
+--     in the same transaction as the retire, never cleared). Intended, NOT to be restored.
 -- `restore` says what step 2 (SQL-cancel-so-restore-oi-rows-14oct.sql) does with the row.
 --
 -- What the audit row holds: only cause, qty, item_code and SO line no (`_record_cancel`).
@@ -22,9 +24,9 @@ BEGIN TRANSACTION READ ONLY;
 
 -- 1. The retired rows.
 WITH cutoff AS (
-    -- audit_logs.changed_at is clock_timestamp() stored without a zone, i.e. in the server's
-    -- own TimeZone setting; convert 00:00 MYT into that.
-    SELECT (timestamptz '2026-10-14 00:00:00+08' AT TIME ZONE current_setting('TimeZone')) AS at
+    -- audit_logs.changed_at is clock_timestamp() stored without a zone on a session the app
+    -- opens with timezone=utc (app/database.py), i.e. naive UTC.
+    SELECT (timestamptz '2026-10-14 00:00:00+08' AT TIME ZONE 'UTC') AS at
 ), retired AS (
     SELECT DISTINCT ON (a.entity_id)
            a.entity_id, a.changed_at AS retired_at, a.user_id, a.actor_type, a.integration_id,
@@ -45,15 +47,17 @@ SELECT r.retired_at,
        oir.state                                    AS state_now,
        oir.ack_state,
        CASE
+           WHEN core.id IS NULL THEN 'unknown (no core line)'
            WHEN core.cancelled_at IS NOT NULL THEN 'CS board Cancel SO'
-           WHEN core.cancelled_by_cancel_doc THEN 'AutoCount Cancel SO'
+           WHEN ac.held THEN 'AutoCount Cancel SO'
            ELSE 'unknown'
        END                                          AS source,
+       core.line_status                             AS core_line_status_now,
        substring(oir.note FROM 'Transferred to Cancel SO: ([^;]*)$') AS cancel_doc,
        oir.note ~ '(^|; )Unlinked( from [^;]*)?; Transferred to Cancel SO: [^;]*$' AS lost_links,
        oir.po_line_id IS NOT NULL                   AS po_tagged,
        CASE
-           WHEN core.cancelled_at IS NOT NULL OR NOT core.cancelled_by_cancel_doc
+           WHEN core.id IS NULL OR core.cancelled_at IS NOT NULL OR NOT ac.held
                THEN 'leave (not AutoCount)'
            WHEN oir.state <> 'cancelled'
                THEN 'leave (row changed since)'
@@ -71,11 +75,18 @@ JOIN projects.order_inquiry_rows oir ON oir.id::text = r.entity_id
 LEFT JOIN projects.sales_order_lines pl ON pl.id = oir.so_line_id
 LEFT JOIN public.sales_order_lines core ON core.id = pl.core_sales_order_line_id
 LEFT JOIN public.sales_orders so ON so.id = core.sales_order_id
+CROSS JOIN LATERAL (
+    SELECT substring(oir.note FROM 'Transferred to Cancel SO: ([^;]*)$') = 'AutoCount'
+           OR EXISTS (SELECT 1 FROM public.autocount_cancel_docs d
+                      WHERE d.kind = 'cancel_so' AND d.company_id = oir.company_id
+                        AND d.doc_no = substring(oir.note FROM 'Transferred to Cancel SO: ([^;]*)$'))
+           AS held
+) ac
 ORDER BY r.retired_at, so.so_number, pl.line_no;
 
 -- 2. Rows the same hook sent back to purchasing's To confirm (`flag_rows_for_cancelled_lines`:
 --    acknowledged, not cancelled -> ack_state 'changed'). Not audited either; these are the
---    candidates on AutoCount-cancelled lines. Step 2 does NOT touch them: the earlier
+--    candidates on lines an AutoCount Cancel SO still cancels. Step 2 does NOT touch them: the earlier
 --    changed_at is not recorded, so this is the owner's call.
 WITH cutoff AS (
     -- changed_at is written as datetime.utcnow() (naive UTC).
@@ -99,7 +110,7 @@ ORDER BY so.so_number, pl.line_no;
 --    unsent; listed so purchasing can be told which ones to ignore).
 SELECT e.created_at, e.status, e.sent_at, e.recipient_email, e.subject
 FROM public.email_outbox e
-WHERE e.created_at >= (timestamptz '2026-10-14 00:00:00+08' AT TIME ZONE current_setting('TimeZone'))
+WHERE e.created_at >= (timestamptz '2026-10-14 00:00:00+08' AT TIME ZONE 'UTC')  -- naive UTC
   AND (e.subject ILIKE '%CANCEL ALL%' OR e.body_text ILIKE '%CANCEL ALL%')
 ORDER BY e.created_at;
 

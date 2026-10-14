@@ -1575,8 +1575,9 @@ class DocumentIngestService(MasterRefResolver):
                 if spec.entity_type in ("sales_orders", "purchase_orders"):
                     # AC-CANCEL-CRM (R5): AutoCount Cancel SO / Cancel PO documents cancelled the
                     # whole line (`cancelled_by_cancel_doc`, set by the cancel ingest). The push
-                    # recomputes the status from quantities and would read it closed, then the
-                    # relink would cancel it again (and flag its OI rows here). A line
+                    # recomputes the status from quantities and would read it closed (and this
+                    # push would flag its OI rows as newly cancelled), then the relink would
+                    # cancel it again. A line
                     # only NOW fully covered (ordered lowered) is left to the relink, which
                     # reports it as newly cancelled.
                     ordered = values.get("qty_ordered", row.qty_ordered) or 0
