@@ -391,7 +391,7 @@ def plan_report(
     from app.services.chatbot.pv2.schema import Period
     from app.services.sales_report_service import TOP_SELLING_N_CEILING
 
-    if not spec.measures and _delivered_breakdown(spec):
+    if not spec.measures and _delivered_breakdown(spec, dealer):
         # v1's delivery-order report takes this breakdown itself: no measure / top-N question.
         base = plan_report(
             spec.model_copy(update={"group_by": [], "top_n": None}, deep=True),
@@ -664,12 +664,13 @@ def _delivered_sales_report_args(
 _DELIVERED_BREAKDOWNS = ("customer", "product", "delivery_order", "sales_agent")
 
 
-def _delivered_breakdown(spec: Any) -> Optional[str]:
+def _delivered_breakdown(spec: Any, dealer: bool = False) -> Optional[str]:
     """The one breakdown of a delivered sales spec that v1's `crm_sales_report` takes."""
     group = list(getattr(spec, "group_by", None) or [])
     if (
         len(group) == 1
         and group[0] in _DELIVERED_BREAKDOWNS
+        and not (dealer and group[0] == "sales_agent")  # a dealer gets PV2's refusal line
         and getattr(spec, "basis", None) == "delivered"
         and getattr(spec, "dataset", None) in (None, "sales")
         and getattr(spec, "top_n", None) is None
@@ -734,7 +735,7 @@ def answer_report(
     from app.services.chatbot.lanes.business import fetch
     from app.services.chatbot.lanes.business import report_ask
 
-    detail_pick = _delivered_breakdown(spec)
+    detail_pick = _delivered_breakdown(spec, dealer)
     if detail_pick:
         # A delivered breakdown v1's report takes runs there, never asking a top N (v1 does not).
         base = spec.model_copy(update={"group_by": [], "top_n": None}, deep=True)
