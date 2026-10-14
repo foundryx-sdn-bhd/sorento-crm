@@ -22,6 +22,19 @@ _KIND_WORD: dict[str, dict[str, str]] = {
     "product_type": {"en": "product type", "zh": "产品类型", "ms": "jenis produk"},
     "warehouse": {"en": "warehouse", "zh": "仓库", "ms": "gudang"},
     "order": {"en": "order", "zh": "订单", "ms": "pesanan"},
+    "order_number": {"en": "order", "zh": "订单", "ms": "pesanan"},
+    "product_class": {"en": "product class", "zh": "产品类别", "ms": "kelas produk"},
+    "delivery_order": {"en": "delivery order", "zh": "送货单", "ms": "pesanan penghantaran"},
+    "customer_order": {"en": "delivery order", "zh": "送货单", "ms": "pesanan penghantaran"},
+    "sales_order": {"en": "sales order", "zh": "销售订单", "ms": "pesanan jualan"},
+    "customer_po_ref": {"en": "customer PO reference", "zh": "客户采购单号", "ms": "rujukan PO pelanggan"},
+    "purchase_order": {"en": "purchase order", "zh": "采购单", "ms": "pesanan belian"},
+    "purchase_request": {"en": "purchase request", "zh": "采购申请", "ms": "permohonan belian"},
+    "inbound_shipment": {"en": "inbound shipment", "zh": "到货批次", "ms": "penghantaran stok masuk"},
+    "supplier": {"en": "supplier", "zh": "供应商", "ms": "pembekal"},
+    "attachment": {"en": "attachment", "zh": "附件", "ms": "lampiran"},
+    "form": {"en": "form", "zh": "表格", "ms": "borang"},
+    "promotion": {"en": "promotion", "zh": "促销", "ms": "promosi"},
     "spec": {"en": "value", "zh": "规格", "ms": "nilai"},
     "report_filter": {"en": "match", "zh": "匹配项", "ms": "padanan"},
 }
@@ -153,36 +166,44 @@ _STILL_NEED: dict[str, dict[str, tuple[str, str]]] = {
     "product": {
         "en": ("I still need which products to include for {subject}.", "I still need which products to include."),
         "zh": ("我仍需要知道 {subject} 要包括哪些产品。", "我仍需要知道要包括哪些产品。"),
-        "ms": ("Saya masih perlu tahu produk mana yang disertakan untuk {subject}.",
-               "Saya masih perlu tahu produk mana yang disertakan."),
+        "ms": ("Saya masih perlu tahu produk mana yang hendak disertakan untuk {subject}.",
+               "Saya masih perlu tahu produk mana yang hendak disertakan."),
     },
     "customer": {
         "en": ("I still need which customers to include for {subject}.", "I still need which customers to include."),
         "zh": ("我仍需要知道 {subject} 要包括哪些客户。", "我仍需要知道要包括哪些客户。"),
-        "ms": ("Saya masih perlu tahu pelanggan mana yang disertakan untuk {subject}.",
-               "Saya masih perlu tahu pelanggan mana yang disertakan."),
+        "ms": ("Saya masih perlu tahu pelanggan mana yang hendak disertakan untuk {subject}.",
+               "Saya masih perlu tahu pelanggan mana yang hendak disertakan."),
     },
-    # A question about one item of a kind (an entity, which-held or did-you-mean pick, a spec): that kind's word.
+    # A question about one item of a kind (an entity, which-held or did-you-mean pick, a spec): that kind's word;
+    # options of several kinds, or a kind with no word here, read "which_one".
     "which": {
-        "en": ("I still need which {kind} you mean for {subject}.", "I still need which {kind} you mean."),
-        "zh": ("我仍需要知道 {subject} 您指的是哪个{kind}。", "我仍需要知道您指的是哪个{kind}。"),
-        "ms": ("Saya masih perlu tahu {kind} yang mana satu untuk {subject}.",
-               "Saya masih perlu tahu {kind} yang mana satu."),
+        "en": ("I still need to know which {kind} you mean for {subject}.",
+               "I still need to know which {kind} you mean."),
+        "zh": ("关于 {subject}，我仍需要知道您指的是哪个{kind}。", "我仍需要知道您指的是哪个{kind}。"),
+        "ms": ("Saya masih perlu tahu {kind} yang mana satu yang anda maksudkan untuk {subject}.",
+               "Saya masih perlu tahu {kind} yang mana satu yang anda maksudkan."),
+    },
+    "which_one": {
+        "en": ("I still need to know which one you mean for {subject}.", "I still need to know which one you mean."),
+        "zh": ("关于 {subject}，我仍需要知道您指的是哪一个。", "我仍需要知道您指的是哪一个。"),
+        "ms": ("Saya masih perlu tahu yang mana satu yang anda maksudkan untuk {subject}.",
+               "Saya masih perlu tahu yang mana satu yang anda maksudkan."),
     },
     "measure": {
         "en": ("I still need the figure to rank by for {subject}.", "I still need the figure to rank by."),
-        "zh": ("我仍需要 {subject} 的排名数据。", "我仍需要排名数据。"),
-        "ms": ("Saya masih perlukan angka untuk disusun bagi {subject}.", "Saya masih perlukan angka untuk disusun."),
+        "zh": ("关于 {subject}，我仍需要知道按哪个数据排名。", "我仍需要知道按哪个数据排名。"),
+        "ms": ("Saya masih perlukan ukuran kedudukan untuk {subject}.", "Saya masih perlukan ukuran kedudukan."),
     },
     "breakdown": {
         "en": ("I still need which row to break down for {subject}.", "I still need which row to break down."),
-        "zh": ("我仍需要知道 {subject} 要细分哪一行。", "我仍需要知道要细分哪一行。"),
+        "zh": ("关于 {subject}，我仍需要知道要细分哪一行。", "我仍需要知道要细分哪一行。"),
         "ms": ("Saya masih perlu tahu baris mana yang hendak diperincikan untuk {subject}.",
                "Saya masih perlu tahu baris mana yang hendak diperincikan."),
     },
     "what": {
         "en": ("I still need what to check for {subject}.", "I still need what to check."),
-        "zh": ("我仍需要知道 {subject} 要查什么。", "我仍需要知道要查什么。"),
+        "zh": ("关于 {subject}，我仍需要知道要查什么。", "我仍需要知道要查什么。"),
         "ms": ("Saya masih perlu tahu apa yang hendak disemak untuk {subject}.",
                "Saya masih perlu tahu apa yang hendak disemak."),
     },
@@ -253,9 +274,11 @@ def carry_scope(domain: str, kind: str, named: str, subject: str, language: str 
 
 def still_need(missing: str, subject: str | None, language: str | None, kind: str | None = None) -> str:
     """RG-1b: v1's "I still need X for Y." (`missing` a `_STILL_NEED` key, else "more"; `kind` names the item
-    a "which" line is about)."""
+    a "which" line is about, None or a kind with no word here: "which one")."""
+    if missing == "which" and kind not in _KIND_WORD:
+        missing = "which_one"  # never a raw kind name
     with_subject, bare = _STILL_NEED.get(missing, _STILL_NEED["more"])[lang(language)]
-    word = kind_word(kind, language)
+    word = _KIND_WORD[kind][lang(language)] if kind in _KIND_WORD else ""
     return with_subject.format(subject=subject, kind=word) if subject else bare.format(kind=word)
 
 

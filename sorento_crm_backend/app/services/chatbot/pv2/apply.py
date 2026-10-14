@@ -1231,8 +1231,11 @@ def _apply_entities(
 
 def _stamped(ent: Entity, options: list[Option]) -> list[Option]:
     """An entity question's options with the entity's quantity and phrase: the phrase names which item of
-    the ask a pick answers (RG-7b)."""
-    stamp = {**_qty_payload(ent), **({"phrase": ent.phrase} if ent.phrase else {})}
+    the ask a pick answers (RG-7b). An explicit add stays one: the pick joins what is held."""
+    stamp = {
+        **_qty_payload(ent), **({"phrase": ent.phrase} if ent.phrase else {}),
+        **({"op": "add"} if ent.op == "add" else {}),
+    }
     return [o.model_copy(update={"payload": {**o.payload, **stamp}}) for o in options]
 
 
@@ -1875,7 +1878,8 @@ STILL_MISSING = {
     "clarify_report_measure": "measure", "clarify_report_breakdown": "breakdown",
     "clarify_other": "what", "clarify_domain": "what",
 }
-#: The questions about one item of a kind: the line names the kind its options carry, else this one.
+#: The questions about one item of a kind: the line names the one kind its options carry (several: none, a
+#: "which one" line), else this one.
 STILL_WHICH = {
     "clarify_entity": "product", "clarify_which_held": "product", "clarify_did_you_mean": "product",
     "clarify_spec_attribute": "spec",
@@ -1892,10 +1896,8 @@ def _still_need(st: ConversationState, i: int, pending: PendingQuestion, languag
     kind = None
     if not carried and pending.kind in STILL_WHICH:
         missing = "which"
-        kind = next(
-            (o.payload["kind"] for o in pending.options if o.payload.get("kind") not in (None, "handover")),
-            STILL_WHICH[pending.kind],
-        )
+        kinds = {o.payload["kind"] for o in pending.options if o.payload.get("kind") not in (None, "handover")}
+        kind = (kinds.pop() if len(kinds) == 1 else None) if kinds else STILL_WHICH[pending.kind]
     line = clarify_copy.still_need(missing, _labels(refs or [], language) or None, language, kind=kind)
     if mode == "refer":
         from app.services.chatbot.turn.task import REFER_TO_SALESMAN
