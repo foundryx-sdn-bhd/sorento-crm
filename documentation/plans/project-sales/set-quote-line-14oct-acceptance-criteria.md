@@ -48,7 +48,7 @@ A salesperson quotes a development. The customer's bill of quantities says "WC C
 - **E2** The parts come from the line's frozen copy, not today's set master (a set edited after quoting still drafts what was quoted).
 - **E3** An AutoCount item package for the code still wins over the set line (unchanged order); old quotations quoted as component lines still split by today's fallback.
 - **E4** Each part keeps its OWN unit (the part's base UOM, frozen with the parts), not the PO's "SETS". The split also works after the set is deleted (the frozen parts are enough).
-- **E5** A PO line naming a set code that splits from a quoted set line raises no "has no product" (unresolved_product) stop; a PO line with an unknown code still does. Spreading a set across delivery-schedule phases is NOT in this lane (crew decision filed 14 Oct); set part lines draft without a delivery date.
+- **E5** A PO line naming a set code that splits from a quoted set line raises no "has no product" (unresolved_product) stop; a PO line with an unknown code still does. Owner ruling 14 Oct (a): a set PO line drafts UNPHASED and CS types the delivery date on the SO draft; mapping a schedule column to a SET is a follow-up lane.
 
 ## F - Grid (frontend)
 

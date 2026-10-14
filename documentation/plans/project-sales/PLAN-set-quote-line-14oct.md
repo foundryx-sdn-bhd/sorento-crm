@@ -1,6 +1,6 @@
 # PLAN - A product set is ONE quotation line (SET-QUOTE-LINE)
 
-**Status:** review round 2, track L (additive migration, FE + BE). Owner answers 14 Oct 2026: Q1 (a), Q2 (a), Q3 (a), Q4 (b), Q5 (a); mockup v2 APPROVED ('ok can'): no parts list on the line, parts in the COMPLETE SET text box; naming ruling: one word Non-standard. Open: set phasing on the SO draft (crew decision), sheet-import slice S4 after #1680.
+**Status:** review round 2, track L (additive migration, FE + BE). Owner answers 14 Oct 2026: Q1 (a), Q2 (a), Q3 (a), Q4 (b), Q5 (a); mockup v2 APPROVED ('ok can'): no parts list on the line, parts in the COMPLETE SET text box; naming ruling: one word Non-standard. Set phasing ruled (a) 14 Oct: set PO lines draft unphased, CS types the date; schedule-column-to-set mapping is a follow-up lane. Open: sheet-import slice S4 after #1680.
 **UAC:** `set-quote-line-14oct-acceptance-criteria.md`
 **Mock:** `documentation/mockups/set-quote-line/index.html`
 **Depends on:** lane SERIES-BRAND-SCOPE (PR #1680) scope (d) for the import slice (S4) only.
@@ -112,3 +112,4 @@ permission parity with series products routes.
 ## Out of scope / triggers
 - Quoting a FAMILY itself as a line: not a sellable thing; trigger = owner asks.
 - Re-snapshotting parts on old lines when the set master changes: Q5 (a) says never.
+- Mapping a delivery-schedule column to a SET so set PO lines are sliced by phase: owner ruling (a), follow-up lane. Trigger: CS asks for set delivery dates from the schedule.
