@@ -54,8 +54,10 @@ Tags: `[BE]` backend · `[FE]` frontend · `[T]` unit/service test · `[MIG]` mi
 - **PC-3 `[BE][T]`** Portal PR/SF draft save + submit accept `customer_id` (editable field whitelist,
   `portal_service._editable_fields`); an unknown customer_id -> 422; `customer_id` without a matching
   `customer_name` is allowed (name is still what prints).
-- **PC-4 `[BE][T]`** Internal `GET /procurement/purchase-requests/lookups/customers?q=` (gated like the PR
-  edit route) returns the same item shape as PC-2; internal PR/SF create/update accept `customer_id`.
+- **PC-4 `[BE][T]`** Internal `GET /procurement/purchase-requests/lookups/customers?q=` returns the same
+  item shape as PC-2. Gate = the PR edit route's (`purchase_requests.py:279`): an authenticated user
+  inside the procurement module guard, no extra permission slug (none exists for PR view/edit);
+  unauthenticated -> 401. Internal PR/SF create/update accept `customer_id`.
 - **PC-5 `[FE][T]`** Portal SubmissionForm "Customer name" picker shows code as meta; picking a customer
   sets `customer_name` + `customer_id`; typing free text clears `customer_id`. For a PR, picking a
   customer whose `sales_type` is non-null sets Sales type to it; the field stays editable; picking a
@@ -89,8 +91,8 @@ Tags: `[BE]` backend · `[FE]` frontend · `[T]` unit/service test · `[MIG]` mi
 - **NC-4 `[BE][T]`** GIVEN the winning rule is a PIC rule or nothing matches, THEN behaviour is unchanged
   (pinned PIC / round-robin, status stays `approved`).
 - **NC-5 `[BE][T]`** A `completed` form: Processed by CS / Close -> 4xx (needs approved); Void -> conflict
-  (terminal, like processed_by_cs); portal revision blocked unless an admin adds Completed to
-  allowed statuses.
+  (terminal, like processed_by_cs); portal revision refused as terminal ("is completed and can no
+  longer be revised"), whatever the allowed-statuses config says (same as processed_by_cs).
 - **NC-6 `[FE][T]`** Rule editor CS PIC dropdown offers **No CS (finish at approval)**; picking it saves
   `cs_pic_user_id: null`; a reloaded rule shows it selected; a rule with no choice at all is still
   skipped on save as today.
