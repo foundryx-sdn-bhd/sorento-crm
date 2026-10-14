@@ -112,7 +112,10 @@ R2. Matching, per cancel line, from stored state only (never arrival order):
        naming the SO and item, at any location. A cancel or DO line's location can differ from
        its SO line's (dev: 570 of 9,828 single-match DO lines), so it proves nothing. Cancel PO
        and SPO groups keep the location. Built on the DO-HISTORY follow-up PR (branch
-       `claude/do-history-group-links`).
+       `claude/do-history-group-links`). After its deploy, lines stored under the per-location
+       rule are re-decided with `scripts/autocount_cancel_redecide.py --company SRT` (dry run,
+       then `--apply` on the owner's go), then the same for MCH; until then a group is re-keyed
+       only when one of its documents is pushed again.
        Locations are compared in Python only (`_loc`), never against a SQL upper / trim.
        The SO / PO Lines tooltip lists a `group_whole` document once per line with no qty.
 R3. `qty_cancelled` = sum of matched lines of live docs (not void, not vanished), or the line's own
