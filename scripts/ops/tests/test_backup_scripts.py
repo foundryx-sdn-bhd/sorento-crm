@@ -92,6 +92,9 @@ echo "fakefs 2000000000000 0 $avail 0% /"
 if [ "$1" = "-nG" ] && [ -n "${FAKE_DOCKER_MEMBER:-}" ] && [ "${2:-}" = "$FAKE_DOCKER_MEMBER" ]; then
   echo "$(/usr/bin/id -nG "$2") docker"; exit 0
 fi
+if [ "$1" = "-nG" ] && [ -n "${FAKE_DOCKER_LOOKALIKE:-}" ] && [ "${2:-}" = "$FAKE_DOCKER_LOOKALIKE" ]; then
+  echo "$(/usr/bin/id -nG "$2") docker-ro"; exit 0
+fi
 exec /usr/bin/id "$@"
 """,
     "pg_dump": r"""#!/usr/bin/env bash
@@ -899,3 +902,14 @@ def test_restore_measuring_pass_is_niced(env):
     log = calls(tmp)
     first_run = next(i for i, c in enumerate(log) if c.startswith("docker run"))
     assert any(c.startswith("nice -n 19 ionice -c3 gzip -dc") for c in log[:first_run])
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="needs root to chown the folder to another user")
+def test_restore_docker_group_match_is_exact(env):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    folder = Path(e["DEPLOY_LOCK_PATH"]).parent
+    os.chown(folder, 65534, 0)
+    folder.chmod(0o755)
+    r = run(RESTORE, e, DEPLOY_LOCK_WAIT="1", FAKE_DOCKER_LOOKALIKE="nobody")
+    assert r.returncode == 2, r.stdout + r.stderr
