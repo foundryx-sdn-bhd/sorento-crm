@@ -61,3 +61,22 @@ sit in the same categories are not part of the standard range any more.
   refreshes to the new scope without a page reload.
 - **C10** The table stays usable at the BRAVAT size (~926 rows): scrolling, search and typing a
   price without visible lag at 1280 and 375. If not, it is paged or virtualised in this PR.
+
+### D - Sheet import resolves sets and families (addendum, crew answers 14 Oct: Q1 a, Q3 a; Q2 (c) built here, set-as-one-quotation-line is its own L lane)
+- **D1** Each sheet code resolves in a fixed order, first hit wins, never fuzzy: (1) exact product
+  code, ignoring spaces and dashes (today's rule); (2) product SET code (`product_sets.set_code`,
+  active, same normalisation) -> the set's member products; (3) FAMILY: every active product
+  whose code is the sheet code followed by `-` and more (`SRTWC286` -> `SRTWC286-SH`,
+  `SRTWC286-SH-150`, ...; never `SRTWC2861`), plus every active set whose code is the sheet code
+  followed by `-` and more, each expanded to its members.
+- **D2** Family members (variant products) each get their own series row and the sheet row's
+  price/discount fills each of them (Q1 a). Re-import updates them all.
+- **D3** Set members get series rows (standard) but NO price or discount is written on them, even
+  when the sheet row states one (Q2 c): the price belongs to the set.
+- **D4** The load report lists, per code that did not match exactly, what it resolved to: "set"
+  with its parts, or "family" with every product/set it fanned out to (Q3 a). Codes that resolve
+  to nothing stay in the "not in the catalogue" list.
+- **D5** A code with an exact product match never fans out (exact wins), and a set code never
+  fans out to a family.
+- **D6** Rows written by the import are named rows: standard regardless of brand (B1/B4).
+- **D7** Company scope: another company's products/sets never resolve.

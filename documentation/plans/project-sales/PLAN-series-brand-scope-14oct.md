@@ -65,3 +65,20 @@ typed is ever lost. Membership rule (b) makes the derived rows standard by the s
 ## Out of scope / triggers
 - Scope (d) sets/families: separate addendum card, then its own slice in this lane.
 - Backfill of stored badges on existing quotations (Q5 a): trigger = owner reports a stale badge.
+
+## Scope (d) - import resolves sets and families
+
+Facts: import matches exact normalised product codes only (`resolve_product_codes`
+`project_pricing_service.py:912-950`, called by `apply_series_product_codes` :953-1040). Sets:
+`product_sets`/`product_set_members` (`models/product_set.py:48,91`); the shared resolver
+`product_code_resolution.py` has a set tier (:178) but also substring tiers, which this import
+must NOT use (owner: no fuzzy). Quotation lines name one product (`models/projects.py:1416`).
+
+Design: extend `resolve_product_codes` (or a series-local wrapper) with two tiers after exact:
+set (normalised exact on `set_code`, active) and family (normalised code starts with the sheet
+code AND the original code continues with `-`; products and sets, active, company-scoped by the
+ORM). Return, per normalised code, the matched products plus HOW (`exact` / `set` / `family`)
+and, for set members, a flag so `apply_series_product_codes` writes no price on them. The
+report gains `resolved` entries `{code, via, members:[codes]}`; FE `SeriesSheetLoader` lists them
+under the existing result block (no new control). Dev examples: card addendum (CWC1009-RL set of
+3, SRTWC286 family of 10, SRTWC8608 family of 5 sets + 2 products, PSJLTPE-9204 missing).
