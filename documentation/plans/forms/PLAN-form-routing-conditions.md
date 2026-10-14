@@ -1,6 +1,6 @@
 # PLAN: CS routing conditions (product lines, debtor type) + No CS finish
 
-**Status:** Phase 2 (red tests) · Track: normal (migration) · Lane FORM-ROUTING-CONDITIONS · branch
+**Status:** Built; reviewer + security-reviewer READY at 63c2f440f; owner hand test next · Track: normal (migration) · Lane FORM-ROUTING-CONDITIONS · branch
 `crew/form-routing-conditions`, base origin/main 760ed152b
 **Domain:** forms / procurement / customers
 **UAC:** `documentation/plans/forms/form-routing-conditions-acceptance-criteria.md` (the contract)
