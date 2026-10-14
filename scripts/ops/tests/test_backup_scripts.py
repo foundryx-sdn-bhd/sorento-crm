@@ -172,7 +172,8 @@ def env(tmp_path):
         "DEPLOY_LOCK_RETRY": "1",
         "FAKE_DOCKER_ROOT": str(tmp_path / "dockerroot"),
     }
-    (tmp_path / "deploy").mkdir()
+    (tmp_path / "deploy").mkdir(mode=0o755)
+    (tmp_path / "deploy" / ".deploy.lock").touch(mode=0o644)
     return e, tmp_path
 
 
@@ -726,4 +727,46 @@ def test_restore_disk_preflight_needs_exactly_four_times_the_dump(env):
     r = run(RESTORE, e, FAKE_DF_AVAIL=4 * size - 1)
     assert r.returncode == 4, r.stdout
     r = run(RESTORE, e, FAKE_DF_AVAIL=4 * size)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ------------------------------------------------------------- security round 3: lock file in a shared folder
+
+
+@pytest.mark.parametrize("case", ["missing", "symlink", "dir_writable", "fifo"])
+def test_restore_refuses_unsafe_deploy_lock(env, case):
+    e, tmp = env
+    seed_remote(tmp, ["sorento_crm_20261014T030000Z.sql.gz"])
+    lock = Path(e["DEPLOY_LOCK_FILE"])
+    target = tmp / "victim"
+    lock.unlink()
+    if case == "symlink":
+        lock.symlink_to(target)
+    elif case == "dir_writable":
+        lock.touch(mode=0o644)
+        lock.parent.chmod(0o777)
+    elif case == "fifo":
+        os.mkfifo(lock)
+    r = run(RESTORE, e, HC_RESTORE_URL=HCR, DEPLOY_LOCK_WAIT="1")
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert curl_urls(tmp)[-1] == f"{HCR}/fail"
+    assert not target.exists()
+    if case == "missing":
+        assert not lock.exists()  # never created by root
+    assert not any(c.startswith("rclone copyto") or c.startswith("docker run") for c in calls(tmp))
+
+
+def test_restore_disk_need_covers_uncompressed_size(env):
+    e, tmp = env
+    d = tmp / "remote" / "db-backups"
+    d.mkdir(parents=True)
+    name = "sorento_crm_20261014T030000Z.sql.gz"
+    with gzip.open(d / name, "wt") as fh:
+        fh.write(DUMP_SQL + "-- " + "0" * 1_000_000 + "\n")
+    gz = (d / name).stat().st_size
+    plain = len((DUMP_SQL + "-- " + "0" * 1_000_000 + "\n").encode())
+    assert 4 * gz < 2 * plain
+    r = run(RESTORE, e, FAKE_DF_AVAIL=2 * plain - 1)
+    assert r.returncode == 4, r.stdout
+    r = run(RESTORE, e, FAKE_DF_AVAIL=2 * plain)
     assert r.returncode == 0, r.stdout + r.stderr
