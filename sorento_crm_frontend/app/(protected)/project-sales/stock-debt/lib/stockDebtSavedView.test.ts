@@ -14,6 +14,10 @@ import {
   type StockDebtFilters,
 } from './stockDebtSavedView';
 
+// Pin a zone east of UTC so a late-night-local `today` is still YESTERDAY in UTC. A runner on
+// UTC would otherwise never tell a local-date computation from a `toISOString` one.
+process.env.TZ = 'Asia/Kuala_Lumpur';
+
 const OCT_14 = new Date(2026, 9, 14);
 const OCT_20 = new Date(2026, 9, 20);
 
@@ -191,5 +195,29 @@ describe('fromSavedView', () => {
     expect(fromSavedView(view(null), OCT_14)).toEqual(DEFAULT_STOCK_DEBT_FILTERS);
     expect(fromSavedView(view(undefined), OCT_14)).toEqual(DEFAULT_STOCK_DEBT_FILTERS);
     expect(fromSavedView(null, OCT_14)).toEqual(DEFAULT_STOCK_DEBT_FILTERS);
+  });
+});
+
+describe('local dates, not UTC dates', () => {
+  // 01:00 on 14 Oct in Kuala Lumpur is 17:00 on 13 Oct in UTC.
+  const earlyLocal = new Date(2026, 9, 14, 1, 0);
+
+  it('the pinned zone is in effect', () => {
+    expect(earlyLocal.getUTCDate()).toBe(13);
+  });
+
+  it('applies offsets from the LOCAL day', () => {
+    const applied = fromSavedView(view({ date_from_days: '0', date_to_days: '30' }), earlyLocal);
+    expect(applied.dateFrom).toBe('2026-10-14');
+    expect(applied.dateTo).toBe('2026-11-13');
+  });
+
+  it('saves offsets from the LOCAL day', () => {
+    const config = toSavedViewConfig(
+      filters({ dateFrom: '2026-10-14', dateTo: '2026-11-13' }),
+      earlyLocal,
+    );
+    expect(config.quick_filters?.date_from_days).toBe('0');
+    expect(config.quick_filters?.date_to_days).toBe('30');
   });
 });

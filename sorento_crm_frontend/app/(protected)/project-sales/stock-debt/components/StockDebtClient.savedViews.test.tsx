@@ -50,16 +50,18 @@ vi.mock('@/components/list/SavedViewsMenu', () => ({
 }));
 
 const getStockDebtList = vi.fn();
+const getStockDebtCell = vi.fn();
+const exportStockDebt = vi.fn();
 vi.mock('../services/stockDebtService', () => ({
   getStockDebtList: (...args: unknown[]) => getStockDebtList(...args),
-  getStockDebtCell: vi.fn().mockResolvedValue({ demand: [], supply: [] }),
-  exportStockDebt: vi.fn(),
-  previewStockDebtExport: () => ({ rows: 0, sheets: 0 }),
+  getStockDebtCell: (...args: unknown[]) => getStockDebtCell(...args),
+  exportStockDebt: (...args: unknown[]) => exportStockDebt(...args),
+  previewStockDebtExport: () => ({ rows: 1, sheets: 1 }),
 }));
 
 import { StockDebtClient } from './StockDebtClient';
 
-function envelope(): StockDebtListResponse {
+function envelope(total = 1): StockDebtListResponse {
   return {
     data: [
       {
@@ -80,7 +82,7 @@ function envelope(): StockDebtListResponse {
         total: -5,
       },
     ],
-    pagination: { total: 1, page: 1, limit: 25 },
+    pagination: { total, page: 1, limit: 25 },
     months: ['2026-10'],
     tba_month: '2030-01',
     groups: ['BB', 'ED', 'FG'],
@@ -157,6 +159,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   menuProps = null;
   getStockDebtList.mockResolvedValue(envelope());
+  getStockDebtCell.mockResolvedValue({ demand: [], supply: [] });
+  exportStockDebt.mockResolvedValue({ id: 'd1' });
 });
 
 afterEach(() => {
@@ -303,6 +307,103 @@ describe('Saved views menu (AC-V1..V4)', () => {
           onlyDebt: true,
           query: '',
         }),
+      ),
+    );
+  });
+});
+
+describe('Location and saved views reach every consumer (kill-test survivors)', () => {
+  it('AC-F2: the cell drill is fetched under the picked locations', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    pick('ED');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'SRTWB242, Oct 26, balance -5' }),
+    );
+
+    await waitFor(() => expect(getStockDebtCell).toHaveBeenCalled());
+    const call = getStockDebtCell.mock.calls.at(-1)!;
+    expect(call[0]).toBe('p1');
+    expect(call[6]).toEqual(['ED']);
+  });
+
+  it('AC-F2: the export is started under the picked locations', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    pick('ED');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    const buttons = await screen.findAllByRole('button', { name: 'Export' });
+    fireEvent.click(buttons[buttons.length - 1]);
+
+    await waitFor(() => expect(exportStockDebt).toHaveBeenCalled());
+    expect(exportStockDebt.mock.calls[0][0]).toMatchObject({ groups: ['ED'] });
+  });
+
+  it('AC-F4: under Retail the Filters badge does not count Location', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    pick('ED');
+    fireEvent.click(await screen.findByRole('radio', { name: 'Retail' }));
+
+    // Book = Retail is the only active filter; ED is picked but ignored by the backend.
+    await screen.findByText('Book: Retail');
+    const trigger = screen.getByRole('button', { name: /^Filters/, hidden: true });
+    expect(trigger.textContent?.trim()).toBe('Filters1');
+  });
+
+  it('AC-V3: applying a view sets search, supplier, only-debt and projected', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+
+    applyView({
+      query: 'SRTWB',
+      suppliers: 's1',
+      only_debt: 'false',
+      projected: 'true',
+      book: 'all',
+      groups: '',
+      date_from_days: '',
+      date_to_days: '',
+    });
+
+    expect(await screen.findByRole('textbox', { name: 'Search products' })).toHaveValue('SRTWB');
+    await waitFor(() =>
+      expect(getStockDebtList).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          query: 'SRTWB',
+          supplierIds: ['s1'],
+          onlyDebt: false,
+          projected: true,
+        }),
+      ),
+    );
+  });
+
+  it('AC-F5: picking a location returns to page 1', async () => {
+    getStockDebtList.mockResolvedValue(envelope(60));
+    renderBoard();
+    await screen.findByText('SRTWB242');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Go to next page' }));
+    await waitFor(() =>
+      expect(getStockDebtList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ pageIndex: 1 }),
+      ),
+    );
+
+    await openFilters();
+    pick('ED');
+
+    await waitFor(() =>
+      expect(getStockDebtList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ groups: ['ED'], pageIndex: 0 }),
       ),
     );
   });
