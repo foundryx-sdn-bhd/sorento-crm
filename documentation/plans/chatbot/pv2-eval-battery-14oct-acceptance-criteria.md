@@ -96,6 +96,11 @@ Checks (name: fails when):
   should_clarify, needless_clarify, invented_data, wrong_language, leak, false_gap, permission, handover_wrong,
   stuck, tone, other`. Unparseable output = `judge_error`, never a pass.
 - The judge runs only when the deterministic checks pass (a deterministic fail is the verdict).
+- What leaves the machine for the judge: the conversation text, the reply and a facts digest built from the turn's
+  trace (tool results, looked_up raw, crossdomain lookups, access grants). The digest drops the inbound
+  envelope / contact / profile keys and masks `wamid.` tokens; phone-shaped numbers (every Malaysian format) are
+  masked in the facts, the reply and the history. Names inside business rows (customers, salesmen, drivers) go out as
+  they are: the bot prints them and the app already sends the same data to its own LLM provider.
 - Calibration: `--calibrate` runs the judge over `calibration.yaml` and prints agreement; a baseline table states
   the agreement and is marked PROVISIONAL below 0.9.
 
@@ -130,6 +135,9 @@ Checks (name: fails when):
   domain, audience, source), `failures.md` (each failing turn: conversation, turn, text, reply excerpt, reasons,
   turn_id).
 - A conversation passes only when every turn passes. Repeats: pass in all reps = pass, mixed = flaky.
+- Env-blocked domains (crew answer a80240368): while the ideation shared service is unreachable, `ideas`
+  conversations show `env` in the table and are left out of every pass rate; failures.md still lists their
+  deterministic fails in a separate section. They return automatically when the service answers.
 
 ## UAC-9 Baseline
 
