@@ -212,4 +212,18 @@ describe('SeriesProductsTable', () => {
     await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledTimes(1));
     expect(getSeriesProductRows).toHaveBeenCalledWith('s1');
   });
+  it('does not repeat the code as the Description when the name equals the code', async () => {
+    getSeriesProductRows.mockResolvedValue([row({ product_code: '1861', product_name: '1861' })]);
+    renderTable();
+
+    await waitFor(() => expect(getSeriesProductRows).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(screen.queryAllByText('1861')).toHaveLength(1));
+  });
+
+  it('shows the Description when the name differs from the code', async () => {
+    getSeriesProductRows.mockResolvedValue([row({ product_code: 'SRT6641', product_name: 'FLOOR TRAP' })]);
+    renderTable();
+
+    expect(await screen.findByText('FLOOR TRAP')).toBeInTheDocument();
+  });
 });

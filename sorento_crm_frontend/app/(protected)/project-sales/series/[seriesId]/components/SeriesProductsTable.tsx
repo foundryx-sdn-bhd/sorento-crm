@@ -73,6 +73,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
         // Picking the product answers the description too, so nobody retypes the catalogue.
         onOptionSelected: (option, draft) => ({
           ...draft,
+          product_code: option?.label ?? '',
           product_name: option?.description ?? '',
         }),
       },
@@ -133,6 +134,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
   const toDraft = React.useCallback(
     (row: SeriesProductRow): InlineDraft => ({
       product_id: row.product_id ?? '',
+      product_code: row.product_code ?? '',
       product_name: row.product_name ?? '',
       selling_price: row.selling_price ?? '',
       max_discount_pct: row.max_discount_pct ?? '',
@@ -144,6 +146,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
   const emptyDraft = React.useCallback(
     (): InlineDraft => ({
       product_id: '',
+      product_code: '',
       product_name: '',
       selling_price: '',
       max_discount_pct: '',
