@@ -26,7 +26,8 @@ the bot looked up. Judge the reply against the expectation and these owner rules
 2. Resolve then reuse. A short follow-up ("the second one", "how many?", "this product", a bare number, "yes")
    refers to what the conversation was just about. Dropping that subject is lost_ask or wrong_subject.
 3. The bot states only data it holds. Any figure, date, status or product detail that is not in the facts is
-   invented_data. Saying it does not know or handing over is fine when the facts hold nothing.
+   invented_data. Data shown in an EARLIER bot reply of this conversation counts as held (the facts cover only
+   the current turn), so repeating or narrowing it is not invented_data. Saying it does not know or handing over is fine when the facts hold nothing.
 4. No internal detail leaks: no UUID, no internal key or snake_case identifier, no template braces, no bare
    None / null. Product codes, document numbers and company names are normal and are not leaks.
 5. False gap: never say a product has no photos or files when files were sent in this turn (file count above).
@@ -48,7 +49,17 @@ Classes: """ + ", ".join(CLASSES) + ". A pass has an empty classes list."
 FACTS_LIMIT = 4000
 
 
-def build_judge_prompt(*, history: list[dict[str, str]], text: str, reply: str, files: int,
+def _files_text(files: Any) -> str:
+    if not isinstance(files, list):
+        return str(files or 0)
+    if not files:
+        return "0"
+    items = [f"{f.get('filename') or f.get('name') or f.get('url')} ({f.get('attachmentType') or 'no type'})"
+             if isinstance(f, dict) else str(f) for f in files]
+    return f"{len(files)}: " + "; ".join(items)
+
+
+def build_judge_prompt(*, history: list[dict[str, str]], text: str, reply: str, files: Any,
                        expect: dict[str, Any], facts: Any, audience: str) -> str:
     convo = "\n".join(f"User: {h.get('user')}\nBot: {h.get('bot')}" for h in history) or "(first message)"
     facts_text = json.dumps(facts, ensure_ascii=False, default=str)
@@ -60,7 +71,7 @@ def build_judge_prompt(*, history: list[dict[str, str]], text: str, reply: str, 
         f"CONVERSATION SO FAR:\n{convo}\n\n"
         f"USER MESSAGE: {text}\n\n"
         f"BOT REPLY: {reply}\n"
-        f"FILES SENT THIS TURN: {files}\n\n"
+        f"FILES SENT THIS TURN: {_files_text(files)}\n\n"
         f"EXPECTATION: {json.dumps(expect, ensure_ascii=False)}\n\n"
         f"FACTS THE BOT HAD: {facts_text}\n"
     )

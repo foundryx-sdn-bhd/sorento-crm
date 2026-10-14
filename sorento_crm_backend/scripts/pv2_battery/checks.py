@@ -11,7 +11,7 @@ _UPPER_SNAKE = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){2,}\b")
 _LOWER_SNAKE = re.compile(r"\b[a-z]{2,}(?:_[a-z]+)+\b(?!\.[A-Za-z0-9])")
 _BRACES = re.compile(r"\{\{|\{[a-z_]+\}")
 _BARE_NULL = re.compile(r"\b(?:None(?!\s+[a-z])|null|undefined)\b")
-_GAP = re.compile(r"([A-Za-z0-9][A-Za-z0-9\-]{2,})\s*(?:has no|have no|has not|tiada|没有|沒有)", re.IGNORECASE)
+_GAP = re.compile(r"([A-Za-z0-9][A-Za-z0-9\-]{2,})\s*(?:has no|have no|has not|tiada|没有|沒有)\s*([^.。\n]*)", re.IGNORECASE)
 
 
 @dataclass
@@ -59,10 +59,6 @@ def _has_text_message(actions: list[dict[str, Any]]) -> bool:
                for a in actions or [])
 
 
-def _file_haystack(files: list[dict[str, Any]]) -> str:
-    return " ".join(str(f.get(k) or "") for f in files for k in ("url", "name", "label", "filename")).lower()
-
-
 def run_checks(turn: TurnRecord, expect: dict[str, Any], prev_reply: str | None) -> list[CheckFail]:
     fails: list[CheckFail] = []
     reply = turn.reply or ""
@@ -77,13 +73,16 @@ def run_checks(turn: TurnRecord, expect: dict[str, Any], prev_reply: str | None)
         fails.append(CheckFail("silent", "no send_message action with text"))
 
     files = sent_files(turn.actions)
-    if files:
-        hay = _file_haystack(files)
-        for m in _GAP.finditer(reply):
-            code = m.group(1)
-            if any(ch.isdigit() for ch in code) and code.lower() in hay:
-                fails.append(CheckFail("false_gap", f"says {code} has none but files for it were sent"))
-                break
+    for m in _GAP.finditer(reply):
+        code, types_part = m.group(1).lower(), m.group(2).lower()
+        hit = next((f for f in files
+                    if str(f.get("attachmentType") or "").strip()
+                    and str(f["attachmentType"]).strip().lower() in types_part
+                    and code in f"{f.get('filename') or ''} {f.get('url') or ''}".lower()), None)
+        if hit is not None:
+            fails.append(CheckFail("false_gap", f"says {m.group(1)} has no {hit['attachmentType']} "
+                                                f"but {hit.get('filename') or hit.get('url')} was sent"))
+            break
 
     if prev_reply is not None and not expect.get("allow_repeat") and reply.strip() == prev_reply.strip():
         fails.append(CheckFail("stuck", "same reply as the previous turn"))

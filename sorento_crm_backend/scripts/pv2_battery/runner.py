@@ -200,7 +200,7 @@ def run_conversation(conv: Any, mode: str, rep: int, contact_id: str, pins: dict
                                         for f in files]})
             if not fails and judge_client is not None:
                 row["judge"] = judge.judge_turn(
-                    judge_client, history=history, text=turn.text, reply=rec.reply, files=len(files),
+                    judge_client, history=history, text=turn.text, reply=rec.reply, files=files,
                     expect=turn.expect, facts=extra["facts"], audience=conv.audience)
             history.append({"user": turn.text, "bot": rec.reply})
             prev_reply = rec.reply
@@ -296,7 +296,7 @@ def calibrate(args: Any) -> float:
 
     def one(r: dict[str, Any]) -> dict[str, Any]:
         return judge.judge_turn(client, history=r.get("history") or [], text=r["text"], reply=r["reply"],
-                                files=int(r.get("files") or 0), expect=r["expect"],
+                                files=r.get("files") or 0, expect=r["expect"],
                                 facts=r.get("facts") or {}, audience=r.get("audience") or "staff")
 
     with ThreadPoolExecutor(max_workers=4) as pool:
