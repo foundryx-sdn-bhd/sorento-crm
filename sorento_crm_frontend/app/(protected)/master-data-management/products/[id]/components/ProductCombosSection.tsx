@@ -21,6 +21,7 @@ import { useProductComboImage } from '../../hooks/useProductComboImage';
 import { getProducts } from '../../services/productService';
 import type { ProductComboPartRow, ProductComboRow } from '../../types/productCombo.types';
 import { AddComboModal } from './AddComboModal';
+import { codeWithName } from '@/lib/product-display';
 
 /** Server-searched and PAGED, never one cached page: the catalogue is 22,000 rows. */
 const PRODUCT_PAGE_SIZE = 50;
@@ -38,7 +39,7 @@ async function fetchProductOptions(
   });
   return (products.data ?? []).map((product) => ({
     value: product.id,
-    label: `${product.product_code} - ${product.product_name}`,
+    label: codeWithName(product.product_code, product.product_name),
     searchText: `${product.product_code} ${product.product_name}`,
   }));
 }

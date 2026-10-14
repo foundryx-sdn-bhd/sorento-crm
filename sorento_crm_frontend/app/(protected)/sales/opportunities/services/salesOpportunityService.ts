@@ -28,6 +28,7 @@ import type {
   SalesOpportunitySalesOrderOption,
   SalesOpportunitySavePayload,
 } from '../types/salesOpportunity.types';
+import { codeWithName } from '@/lib/product-display';
 
 const BASE = '/api/v1/sales/opportunities';
 
@@ -119,7 +120,7 @@ export async function getSalesOpportunityProductOptions(
     const price = p.list_price != null ? Number(p.list_price) : 0;
     return {
       value: p.id,
-      label: `${p.product_code} - ${p.product_name}`,
+      label: codeWithName(p.product_code, p.product_name),
       ...(Number.isFinite(price) && price > 0 ? { listPrice: p.list_price as string } : {}),
     };
   });

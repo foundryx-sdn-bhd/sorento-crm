@@ -178,6 +178,7 @@ import type {
   SpecRegistryKey,
   SpecRegistryKeyUpdateResult,
 } from '../types/productSpec.types';
+import { codeWithName } from '@/lib/product-display';
 
 /**
  * One product's derived specs, or the reason there are none. Used by the
@@ -831,7 +832,7 @@ export async function fetchProductPickerOptions(
   return (body.data ?? []).map(
     (p: { id: string; product_code: string; product_name: string }) => ({
       value: p.id,
-      label: `${p.product_code} - ${p.product_name}`,
+      label: codeWithName(p.product_code, p.product_name),
       searchText: `${p.product_code} ${p.product_name}`,
     }),
   );

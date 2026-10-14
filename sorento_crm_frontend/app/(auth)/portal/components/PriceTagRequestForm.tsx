@@ -112,6 +112,7 @@ import {
 import type { TagSheetDesignPayload } from '@/lib/dealer-kit/design-payload';
 import { cn } from '@/lib/utils';
 import { promotionOptionName } from '@/lib/dealer-kit/line-pricing-types';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 /** Where an AI-extracted product line stands against the catalogue lookup
  *  (D7/AC-S6-2), shown in the extract dialog's own result table. */
@@ -1011,7 +1012,9 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
       return items.map((i) => ({
         value: `${i.kind}:${i.id}`,
         label: i.name || i.code,
-        description: `${i.kind === 'product_set' ? 'Set' : 'Product'} - ${i.code}`,
+        description: distinctName(i.code, i.name)
+          ? `${i.kind === 'product_set' ? 'Set' : 'Product'} - ${i.code}`
+          : undefined,
       }));
     },
     [],
@@ -1413,7 +1416,7 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
         .map((i) => ({
           value: `product:${i.id}`,
           label: i.name || i.code,
-          description: `Product - ${i.code}`,
+          description: distinctName(i.code, i.name) ? `Product - ${i.code}` : undefined,
         }));
     },
     [],
@@ -3194,7 +3197,9 @@ function LineRow({
     ? {
         value: picked,
         label: line.name || line.code,
-        description: `${isSet ? 'Set' : 'Product'}${line.code ? ` - ${line.code}` : ''}`,
+        description: distinctName(line.code, line.name)
+          ? `${isSet ? 'Set' : 'Product'}${line.code ? ` - ${line.code}` : ''}`
+          : undefined,
       }
     : undefined;
 
@@ -3550,7 +3555,7 @@ function AIMatchCell({
         onChange={(v) => onPick(product, v)}
         options={suggestions.map((s) => ({
           value: s.product_id,
-          label: s.product_name ? `${s.product_code} - ${s.product_name}` : s.product_code,
+          label: codeWithName(s.product_code, s.product_name),
         }))}
         placeholder="Did you mean?"
         aria-label={`Did you mean, for ${product.product_code ?? 'this row'}`}

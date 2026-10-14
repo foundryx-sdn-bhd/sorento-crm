@@ -31,6 +31,7 @@ import type {
   SupplierScoringWrite,
 } from '../types/policy.types';
 import type { Option } from '../../services/scmOptionsService';
+import { codeWithName } from '@/lib/product-display';
 
 // ── Mock catalogs (drive the pickers + the resolve chain) ───────────────────
 
@@ -232,7 +233,7 @@ export function mockScopeLabel(scopeType: ScopeType, scopeRef: string | null): s
   if (scopeType === 'global' || !scopeRef) return '-';
   if (scopeType === 'sku') {
     const p = MOCK_PRODUCTS.find((x) => x.id === scopeRef);
-    return p ? `${p.product_code} · ${p.product_name}` : scopeRef;
+    return p ? codeWithName(p.product_code, p.product_name, ' · ') : scopeRef;
   }
   if (scopeType === 'product_class') {
     const c = MOCK_CATEGORIES.find((x) => x.code === scopeRef);
@@ -248,7 +249,7 @@ export function mockProductOptions(): Option[] {
   // value = products.id (hidden resolver key); label carries the readable code+name.
   return MOCK_PRODUCTS.map((p) => ({
     value: p.id,
-    label: `${p.product_code} · ${p.product_name}`,
+    label: codeWithName(p.product_code, p.product_name, ' · '),
     description: p.category_name,
   }));
 }
@@ -377,7 +378,7 @@ export function mockResolve(productId: string, warehouseCode: string | null): Re
     const isWinner = winningLevel === level.scope_type;
     const label =
       level.scope_type === 'sku'
-        ? `${product.product_code} · ${product.product_name}`
+        ? codeWithName(product.product_code, product.product_name, ' · ')
         : level.scope_type === 'abc_xyz_cell'
           ? cell
             ? cell.replace('-', '·')

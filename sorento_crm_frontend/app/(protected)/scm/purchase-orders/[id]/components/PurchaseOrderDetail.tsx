@@ -77,7 +77,7 @@ import type {
   PurchaseOrderLineAllocation,
 } from '../../../types/scm.types';
 import BackToList from '@/components/common/BackToList';
-import { distinctName } from '@/lib/product-display';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 /**
  * The purchase-order detail, built section for section as the twin of `SalesOrderDetail`.
@@ -254,7 +254,7 @@ function productFallback(
   if (!row.sku || sku !== row.sku) return undefined;
   return {
     value: row.sku,
-    label: row.product_name ? `${row.sku} · ${row.product_name}` : row.sku,
+    label: codeWithName(row.sku, row.product_name, ' · '),
   };
 }
 

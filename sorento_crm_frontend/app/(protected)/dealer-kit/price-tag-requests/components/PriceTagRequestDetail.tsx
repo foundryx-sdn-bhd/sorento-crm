@@ -128,6 +128,7 @@ import {
   type PriceTagAction,
   type PriceTagActionSpec,
 } from './priceTagRequestActions';
+import { codeWithName } from '@/lib/product-display';
 
 type DetailTab = 'request' | 'lines' | 'attachments';
 
@@ -1316,7 +1317,7 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
                                   colSpan={columns - 1}
                                 >
                                   {part.product_id
-                                    ? `${part.code ?? ''}${part.name ? ` - ${part.name}` : ''}${part.role ? ` (${part.role})` : ''}`
+                                    ? `${codeWithName(part.code ?? '', part.name)}${part.role ? ` (${part.role})` : ''}`
                                     : `${part.role ?? 'Open'}: ${part.candidates
                                         .map((candidate) => candidate.code)
                                         .join(' / ')}`}
