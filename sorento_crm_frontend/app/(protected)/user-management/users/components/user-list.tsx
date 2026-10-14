@@ -532,7 +532,7 @@ const UserList = () => {
                 )}
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
-              <span className="font-medium text-sm truncate" title={user.name}>
+              <span className="font-medium text-sm truncate" title={user.name ?? undefined}>
                 {user.name}
               </span>
             </div>
