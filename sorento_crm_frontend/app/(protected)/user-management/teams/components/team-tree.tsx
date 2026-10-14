@@ -150,10 +150,12 @@ export default function TeamTree({
     onError: (e: Error) => toastAlert(e.message, false),
   });
 
-  // a drop is valid if target isn't the dragged node, its current parent, or a descendant
+  // a drop is valid if target isn't the dragged node, its current parent, or a descendant.
+  // Without teams.edit nothing drops: the Members link is natively draggable and its
+  // dragstart bubbles to the row even though the row itself is not draggable.
   const canDrop = useCallback(
     (targetId: string | null): boolean => {
-      if (!draggingId) return false;
+      if (!canEdit || !draggingId) return false;
       const dragged = teams.find((t) => t.id === draggingId);
       if (!dragged) return false;
       const currentParent = dragged.parent_team_id ?? null;
@@ -163,7 +165,7 @@ export default function TeamTree({
       if (descendantsOf(draggingId).has(targetId)) return false; // would create a cycle
       return true;
     },
-    [draggingId, teams, descendantsOf],
+    [canEdit, draggingId, teams, descendantsOf],
   );
 
   const handleDrop = (targetId: string | null) => {
@@ -217,6 +219,7 @@ export default function TeamTree({
             key={team.id}
             draggable={canEdit || undefined}
             onDragStart={(e) => {
+              if (!canEdit) return;
               setDraggingId(team.id);
               e.dataTransfer.effectAllowed = 'move';
             }}
