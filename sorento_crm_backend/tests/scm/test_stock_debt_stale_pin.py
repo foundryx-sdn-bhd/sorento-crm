@@ -433,6 +433,36 @@ def test_a_pin_the_walk_does_not_serve_leaves_the_bin_to_the_next_pin(scm_app, f
     ]
 
 
+def test_a_line_that_lends_keeps_its_lent_units_out_of_the_book_so(scm_app):
+    """Reviewer, round 4: what a line already holds, for the book's S/O, is what its pins
+    really cover PLUS what it lent (STOCK-DEBT-LENDABLE). The far line lends 32 of its 88
+    landed units to a nearer line; its order also has an SPO of 40 whose S/O names it. The
+    lent units stay lent (`order_back`) and the SPO pins nothing, exactly as before this
+    lane: counting only the 56 kept pinned the SPO's 32 back onto the far line."""
+    from tests.scm.test_stock_debt_lendable_routes import DEFAULT_WINDOW, _owner_case
+
+    app, db = _client(scm_app)
+    far_due = DEFAULT_WINDOW + timedelta(days=60)
+    world = _owner_case(db, far_due=far_due)
+    product, marker = world["product"], world["marker"]
+    far_order, far_line = world["far"]
+    far_order.source_ref = f"ZZTBOOK:{marker}"
+    arrives = _months_ahead(1)
+    allocation = _spo(db, product, world["warehouse"], qty=40, arrives=arrives)
+    allocation.from_so_line_ref = far_line.source_ref
+    db.flush()
+
+    with TestClient(app) as c:
+        far_cell = _cell(c, product, month_key(far_due))
+        spo_cell = _cell(c, product, month_key(arrives))
+
+    [far] = [row for row in far_cell["demand"] if row["so_number"].endswith("SO381065")]
+    assert (far["status"], far["lent_qty"]) == ("order_back", 32)
+    assert [entry for entry in far["assigned_from"] if entry["kind"] == "spo"] == []
+    [spo_row] = [row for row in spo_cell["supply"] if row["kind"] == "spo"]
+    assert (spo_row["free_qty"], spo_row["assigned_to"]) == (40, [])
+
+
 # ------------------------------------------------------------------ the Supply tab
 
 
