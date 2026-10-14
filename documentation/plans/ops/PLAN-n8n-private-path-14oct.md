@@ -33,6 +33,8 @@ path; the clear-text MCP follow-up now points at the new runbook).
 
 ## Acceptance
 
+Full list: `n8n-private-path-acceptance-criteria.md` alongside this plan.
+
 - From inside an n8n container, a request to `https://<CRM_DOMAIN>/api/v1/...` shows the peer as
   `<CRM_TS_IP>` with no `cf-ray` header (runbook step 5.1).
 - One chatbot turn on the test number answers, with the CRM nginx log showing `<N8N_TS_IP>`
