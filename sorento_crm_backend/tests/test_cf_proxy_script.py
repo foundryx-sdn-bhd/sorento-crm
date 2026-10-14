@@ -27,7 +27,7 @@ ZONE_ID = "023e105f4ecef8ad9ca31a8372d0c353"
 ORIGIN_IP = "203.0.113.77"
 OTHER_IP = "198.51.100.9"
 
-SORENTO = ["fe-sorento.foundryx.my", "automate-sorento.foundryx.my", "chat.foundryx.my", "ss.foundryx.my"]
+SORENTO = ["fe-sorento.foundryx.my", "automate-sorento.foundryx.my", "chat.foundryx.my"]
 
 
 def _load():
@@ -84,6 +84,8 @@ def _zone_records(proxied=True):
     recs.append(_rec("other1", "shop.foundryx.my", content=OTHER_IP, proxied=proxied, ttl=ttl))
     recs.append(_rec("other2", "foundryx.my", content=OTHER_IP, proxied=proxied, ttl=ttl))
     recs.append(_rec("txt1", "chat.foundryx.my", rtype="TXT", content="v=spf1 -all", proxied=False, ttl=300))
+    # ss is a CNAME to an R2 bucket: unproxying it would break it, so it is NOT switchable.
+    recs.append(_rec("ss1", "ss.foundryx.my", rtype="CNAME", content="bucket.r2.dev", proxied=proxied, ttl=ttl))
     return recs
 
 
@@ -94,6 +96,10 @@ def token_file(tmp_path, monkeypatch):
     p.chmod(0o600)
     monkeypatch.setenv("CF_TOKEN_FILE", str(p))
     return p
+
+
+def by_id_of(api):
+    return {r["id"]: r for r in api.records}
 
 
 def _run(cf, argv, api, capsys):
@@ -111,7 +117,7 @@ def _assert_no_secrets(text):
 # --- the allowlist ---------------------------------------------------------------------
 
 
-def test_allowlist_is_exactly_the_four_sorento_hosts(cf):
+def test_allowlist_is_exactly_the_three_sorento_hosts(cf):
     assert cf.ZONE_NAME == "foundryx.my"
     assert sorted(cf.ALLOWED_HOSTS) == sorted(SORENTO)
 
@@ -156,9 +162,10 @@ def test_off_with_yes_unproxies_only_the_sorento_address_records(cf, token_file,
     code, out = _run(cf, ["off", "--yes"], api, capsys)
     assert code == 0
     patched = dict(api.patches())
-    assert sorted(patched) == ["r0", "r1", "r2", "r3"]
+    assert sorted(patched) == ["r0", "r1", "r2"]
     for body in patched.values():
         assert body == {"proxied": False, "ttl": 60}
+    assert by_id_of(api)["ss1"]["proxied"] is True
     by_id = {r["id"]: r for r in api.records}
     assert by_id["other1"]["proxied"] is True and by_id["other2"]["proxied"] is True
     assert by_id["txt1"]["ttl"] == 300
@@ -170,7 +177,7 @@ def test_on_with_yes_reproxies_with_auto_ttl(cf, token_file, capsys):
     code, out = _run(cf, ["on", "--yes"], api, capsys)
     assert code == 0
     patched = dict(api.patches())
-    assert sorted(patched) == ["r0", "r1", "r2", "r3"]
+    assert sorted(patched) == ["r0", "r1", "r2"]
     for body in patched.values():
         assert body == {"proxied": True, "ttl": 1}
     by_id = {r["id"]: r for r in api.records}
@@ -232,11 +239,21 @@ def test_wrong_zone_lookup_refuses(cf, token_file, capsys):
     assert api.patches() == []
 
 
+def test_ss_is_never_read_or_written(cf, token_file, capsys):
+    """ss.foundryx.my is a CNAME to an R2 bucket (crew audit 15 Oct), not the shared service."""
+    api = FakeCloudflare()
+    code, out = _run(cf, ["off", "--yes"], api, capsys)
+    assert code == 0
+    assert [p for m, p, b in api.calls if "ss.foundryx.my" in p and "sorento" not in p] == []
+    assert by_id_of(api)["ss1"]["proxied"] is True
+    assert "ss.foundryx.my" not in out
+
+
 def test_a_missing_sorento_host_is_reported_not_fatal_for_status(cf, token_file, capsys):
-    recs = [r for r in _zone_records() if r["name"] != "ss.foundryx.my"]
+    recs = [r for r in _zone_records() if r["name"] != "chat.foundryx.my"]
     api = FakeCloudflare(records=recs)
     code, out = _run(cf, ["status"], api, capsys)
-    assert "ss.foundryx.my" in out
+    assert "chat.foundryx.my" in out
     assert "no record" in out.lower()
 
 
