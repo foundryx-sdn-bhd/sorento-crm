@@ -1441,6 +1441,7 @@ class ProjectSOReconciliationService:
                 # Who sold it, in the same read: the worklist's own row, not a per-row lookup.
                 SalesAgent.sales_agent,
                 SalesAgent.person_label,
+                SalesOrder.doc_type,
             )
             .join(SalesOrderLine, SalesOrderLine.sales_order_id == SalesOrder.id)
             .outerjoin(SalesAgent, SalesAgent.id == SalesOrder.sales_agent_id)
@@ -1456,6 +1457,7 @@ class ProjectSOReconciliationService:
                 SalesOrder.customer_id,
                 SalesAgent.sales_agent,
                 SalesAgent.person_label,
+                SalesOrder.doc_type,
             )
         )
         if sales_order_id:
@@ -1492,6 +1494,7 @@ class ProjectSOReconciliationService:
                 "open_line_count": row[6] or 0,
                 "agent_code": row[7],
                 "agent_label": row[8],
+                "so_doc_type": row[9],
             }
             for row in rows
         ]
@@ -1593,6 +1596,8 @@ class ProjectSOReconciliationService:
             #: there rather than this method inventing a key for a row that has none.
             "agent_code": core["agent_code"],
             "agent_label": core["agent_label"],
+            # AC-CONSIGN-CRM: the authored arm fills its own (a record's core order, if any).
+            "so_doc_type": core["so_doc_type"],
             "record": record,
             "project_id": str(record.project_id)
             if record is not None and record.project_id
@@ -1649,12 +1654,26 @@ class ProjectSOReconciliationService:
             order for order in rows.all() if str(order.so_id or "") not in taken
         ]
         totals = self._authored_line_totals([str(order.id) for order in orders])
+        # AC-CONSIGN-CRM: a record can point at a core order that is not on the project-class
+        # arm; its doc_type still marks it, in one read for the page.
+        so_ids = [str(order.so_id) for order in orders if order.so_id]
+        doc_types = (
+            {
+                str(sid): doc_type
+                for sid, doc_type in self.db.query(SalesOrder.id, SalesOrder.doc_type)
+                .filter(SalesOrder.id.in_(so_ids))
+                .all()
+            }
+            if so_ids
+            else {}
+        )
         return [
             {
                 "row_kind": ROW_KIND_PLANNING_RECORD,
                 "id": str(order.id),
                 "sales_order_id": None,
                 "so_number": None,
+                "so_doc_type": doc_types.get(str(order.so_id or "")),
                 "project_string": None,
                 "core_customer_name": None,
                 "earliest_required_date": totals.get(str(order.id), (None, None, 0))[0],
@@ -1772,6 +1791,7 @@ class ProjectSOReconciliationService:
             "id": str(record.id) if record is not None else None,
             "sales_order_id": row["sales_order_id"],
             "so_number": row["so_number"],
+            "so_doc_type": row.get("so_doc_type"),
             "origin": _origin_of(record),
             "provisional_ref": record.provisional_ref if record is not None else None,
             "autocount_doc_no": record.autocount_doc_no if record is not None else None,

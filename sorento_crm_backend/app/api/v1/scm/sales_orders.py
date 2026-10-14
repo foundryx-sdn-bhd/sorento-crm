@@ -6,7 +6,7 @@ SCM operator capability). No UUIDs surfaced - SO by so_number.
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel
@@ -111,6 +111,11 @@ def list_sales_orders(
         description="AutoCount's Transferable flag: yes | no | unknown (never stated). "
                     "Omit for all.",
     ),
+    doc_type: Literal["sales_order", "consignment"] = Query(
+        "sales_order",
+        description="Which documents to list: sales orders (default) or consignments, "
+                    "which have their own page.",
+    ),
     db: Session = Depends(get_db),
     _user: dict = Depends(_READ),
 ):
@@ -129,7 +134,7 @@ def list_sales_orders(
         page, limit, sort, dir, query, status, priority, source,
         date_from=date_from, date_to=date_to, customer_code=customer_code,
         outstanding=outstanding, sales_agent_id=sales_agent_id,
-        demand_class=demand_class, transferable=transferable,
+        demand_class=demand_class, transferable=transferable, doc_type=doc_type,
     )
     out["data"] = svc.with_planning_state(
         svc.with_planning_changes(

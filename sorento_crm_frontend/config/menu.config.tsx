@@ -698,6 +698,12 @@ export const MENU_SIDEBAR: MenuConfig = [
         moduleKey: 'scm',
       },
       {
+        title: 'Consignment',
+        path: '/scm/consignments',
+        permission: 'scm.dashboard.view',
+        moduleKey: 'scm',
+      },
+      {
         title: 'Purchase Requests',
         path: '/procurement-management/purchase-requests',
         permission: 'procurement.purchase_requests.view',

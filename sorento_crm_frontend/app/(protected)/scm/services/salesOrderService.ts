@@ -65,6 +65,8 @@ export interface SalesOrderListQuery {
   demandClass?: string | null;
   /** AutoCount's Transferable flag: 'yes' | 'no' | 'unknown' (never stated). Omit for all. */
   transferable?: string | null;
+  /** AC-CONSIGN-CRM: 'consignment' lists consignments; omitted lists sales orders. */
+  docType?: 'sales_order' | 'consignment' | null;
 }
 
 /**
@@ -141,6 +143,7 @@ export async function getSalesOrders(
       sales_agent_id: params.salesAgentId || undefined,
       demand_class: params.demandClass || undefined,
       transferable: params.transferable || undefined,
+      doc_type: params.docType || undefined,
     },
   );
   const res = await apiFetch(`${BASE}?${sp.toString()}`);

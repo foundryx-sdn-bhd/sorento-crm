@@ -71,7 +71,7 @@ import {
 } from '../../../services/scmOptionsService';
 import { useSalesAgentOptions } from '../../hooks/useSalesAgentOptions';
 import DetailActions from '@/components/common/DetailActions';
-import { salesOrdersPagerQuery } from '../../../hooks/useSalesOrders';
+import { consignmentsPagerQuery, salesOrdersPagerQuery } from '../../../hooks/useSalesOrders';
 import { getSalesOrderUoms, type SalesOrderPlanningChangeBatch } from '../../../services/salesOrderService';
 import { PlanRowDialog } from '../../../components/PlanRowDialog';
 import { PlanNumberButton } from '../../../components/PlanNumberButton';
@@ -79,6 +79,7 @@ import { SoLineLinksBody } from './SoLineLinksBody';
 import { SoLineHistoryBody } from './SoLineHistoryBody';
 import { fmtDate, fmtInt } from '../../../lib/format';
 import { demandClassBadge } from '../../../lib/demandClass';
+import { ConsignmentBadge } from '../../../lib/docType';
 import { transferableBadge } from '../../../lib/transferable';
 import { salesOrderPlannedBadge } from '../../../lib/salesOrderPlanned';
 import {
@@ -374,15 +375,25 @@ function SupplyText({
   );
 }
 
-export function SalesOrderDetail({ id }: { id: string }) {
+export function SalesOrderDetail({
+  id,
+  docType,
+}: {
+  id: string;
+  /** AC-CONSIGN-CRM: 'consignment' on the Consignment route, which backs out to that list. */
+  docType?: 'consignment';
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { data, isLoading, isError } = useSalesOrder(id);
+  const isConsignmentRoute = docType === 'consignment';
+  const listPath = isConsignmentRoute ? '/scm/consignments' : '/scm/sales-orders';
+  const listLabel = isConsignmentRoute ? 'Back to consignments' : 'Back to sales orders';
   // Read here rather than off `so` below, which is narrowed after the loading and error
   // returns: the Lines columns are built above them, and the What-changed dialog titles
   // itself with the order this line belongs to.
   const soNumber = data?.so_number ?? '';
-  const backHref = useBackToListHref('/scm/sales-orders');
+  const backHref = useBackToListHref(listPath);
   // Same gate the list's own "Plan selected" carries (S2, R3): a door that answers 403
   // is worse than not offering it, so the primary is simply absent without it.
   // Which LINE's truck button was pressed (SO-DELIVERIES-VIEW). The read is enabled by the
@@ -393,6 +404,16 @@ export function SalesOrderDetail({ id }: { id: string }) {
   const canOpenDo = useHasPermission('order_management.orders.view');
   const deliveries = useSalesOrderDeliveries(id, deliveriesRequested);
   const searchParams = useSearchParams();
+  // A consignment opened by a sales-orders link lands on its own page.
+  const isConsignmentOnSalesOrderRoute = !docType && data?.doc_type === 'consignment';
+  const redirectQs = searchParams.toString();
+  const redirected = useRef(false);
+  useEffect(() => {
+    if (isConsignmentOnSalesOrderRoute && !redirected.current) {
+      redirected.current = true;
+      router.replace(`/scm/consignments/${id}${redirectQs ? `?${redirectQs}` : ''}`);
+    }
+  }, [isConsignmentOnSalesOrderRoute, id, redirectQs, router]);
 
   const updateMut = useUpdateSalesOrder();
   const agentOptions = useSalesAgentOptions();
@@ -900,6 +921,26 @@ export function SalesOrderDetail({ id }: { id: string }) {
           cellClassName: 'text-right tabular-nums',
         },
       },
+      // AC-CONSIGN-CRM (owner Q6 a): what a Consignment Return handed back. Reporting only, so
+      // it never feeds delivered or outstanding; a plain sales order has no such figure.
+      ...(data?.doc_type === 'consignment'
+        ? [
+            {
+              id: 'qty_returned',
+              accessorFn: (line) => Number(line.qty_returned ?? 0),
+              header: ({ column }) => (
+                <DataGridColumnHeader title="Qty returned" column={column} />
+              ),
+              cell: ({ row }) => fmtInt(Number(row.original.qty_returned ?? 0)),
+              size: 130,
+              meta: {
+                headerTitle: 'Qty returned',
+                headerClassName: 'text-right',
+                cellClassName: 'text-right tabular-nums',
+              },
+            } as ColumnDef<SalesOrderLine>,
+          ]
+        : []),
       {
         id: 'outstanding',
         // Computed here rather than sent, so it cannot disagree with the two columns beside
@@ -1387,6 +1428,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
       amountTotal,
       handleRemoveLine,
       soNumber,
+      data?.doc_type,
     ],
   );
 
@@ -1428,7 +1470,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
   // Back carries the list query the row click wrote (S3-01). It lives on the
   // toolbar row now; the empty states below keep one of their own.
   const backLink = (
-    <BackToList listPath="/scm/sales-orders" label="Back to sales orders" />
+    <BackToList listPath={listPath} label={listLabel} />
   );
 
   if (isLoading) {
@@ -1557,6 +1599,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
                 <Badge variant={salesOrderStatusVariant(so.status)} appearance="light" size="md">
                   {salesOrderStatusLabel(so.status)}
                 </Badge>
+                <ConsignmentBadge docType={so.doc_type} size="md" />
                 {/* How far the order has been PLANNED, beside the status it keeps being
                     confused with. The SAME chip the list carries, in the header rather than a
                     tab body because it is read-only metadata about the whole record - so view
@@ -1599,10 +1642,10 @@ export function SalesOrderDetail({ id }: { id: string }) {
             ) : (
               <DetailActions
                 pager={{
-                  ...salesOrdersPagerQuery,
-                  detailPath: '/scm/sales-orders',
+                  ...(isConsignmentRoute ? consignmentsPagerQuery : salesOrdersPagerQuery),
+                  detailPath: listPath,
                   currentId: id,
-                  ariaLabel: 'sales order',
+                  ariaLabel: isConsignmentRoute ? 'consignment' : 'sales order',
                 }}
                 actions={actions}
                 pendingAction={deletionPending}
