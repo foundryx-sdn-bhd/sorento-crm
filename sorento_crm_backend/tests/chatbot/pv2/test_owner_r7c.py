@@ -136,3 +136,13 @@ def test_an_entity_clarify_with_nothing_held_never_has_zero_options():
     state, actions = apply_turn(mk_state(), parsed, resolver=_Fake({}))
     for action in actions:
         assert not (isinstance(action, ClarifyAct) and action.about == "entity" and not action.pending.options), action
+
+
+def test_a_photo_refine_shape_under_an_offer_replaces_it_with_a_new_ask():
+    result = _run_row("owner-D2-photo-strwc286-refine-shape")
+    action = result.actions[0]
+    assert isinstance(action, Lookup) and action.picked is None and action.pending_kind is None
+    held = result.state_out.held
+    assert held.domain == "product_attachment" and held.attachment_type == "product_photos"
+    assert [r.key for r in held.refs["product"]] == ["SRTWC286"]
+    assert result.state_out.pending is None

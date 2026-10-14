@@ -61,8 +61,8 @@ def _ask_failures(want: dict, got) -> list[str]:
     if "act" in want and got.act not in _as_list(want["act"]):
         bad.append(f"act {got.act!r} not in {_as_list(want['act'])}")
     answering = got.act == "answers_bot_question" or "answers_bot_question" in _as_list(want.get("act"))
-    if "domain" in want and not answering and got.domain != want["domain"]:
-        bad.append(f"domain {got.domain!r} != {want['domain']!r}")
+    if "domain" in want and not answering and got.domain not in _as_list(want["domain"]):
+        bad.append(f"domain {got.domain!r} not in {_as_list(want['domain'])!r}")
     if "portal_form" in want and got.portal_form not in _as_list(want["portal_form"]):
         bad.append(f"portal_form {got.portal_form!r} not in {_as_list(want['portal_form'])!r}")
     if "switch_back_to" in want:
@@ -73,6 +73,10 @@ def _ask_failures(want: dict, got) -> list[str]:
         have_kinds = set(_as_list(got.attachment_type)) - {None}
         if have_kinds != set(want["attachment_kinds"]):
             bad.append(f"attachment kinds {sorted(have_kinds)} != {sorted(want['attachment_kinds'])}")
+    if "attachment_kinds_include" in want:
+        have_kinds = set(_as_list(got.attachment_type)) - {None}
+        if not set(want["attachment_kinds_include"]) <= have_kinds:
+            bad.append(f"attachment kinds {sorted(have_kinds)} lack {want['attachment_kinds_include']}")
     if "attachment_type" in want and got.attachment_type != want["attachment_type"]:
         bad.append(f"attachment_type {got.attachment_type!r} != {want['attachment_type']!r}")
     if "option_key" in want and (got.answer.option_key if got.answer else None) != want["option_key"]:
