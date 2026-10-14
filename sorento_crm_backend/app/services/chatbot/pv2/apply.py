@@ -309,7 +309,8 @@ def _one_ask(
         if (
             before.refs.get("product")
             and not held.refs.get("product")
-            and any(e.kind == "product" and not e.refers_to_held for e in ask.entities)
+            and qs  # the new topic ended in a question (not found, did-you-mean, ambiguous)
+            and any(e.kind in DOCUMENT_KINDS and not e.refers_to_held for e in ask.entities)
         ):
             held.refs = set_refs(held.refs, "product", before.refs["product"], "set")  # the held product stays
         return _commit(st, i, held, ask, qs), False
@@ -317,7 +318,10 @@ def _one_ask(
     # refines_held
     if st.held.is_empty() and not ask.domain and ask.row_pick is None:
         raise _Miss("which_held", nothing_held=True)
-    if i > 0:
+    if i > 0 or (ask.domain and ask.domain != st.held.domain and not ask.cleared):
+        # A later ask, or a domain switch on the same subject, saves what was held so a
+        # switch back can return to it (the refine keeps the held subject). A refine that clears
+        # fields is reshaping the same topic, not leaving it.
         st.topics = push_topic(st.topics, st.held)
     row = None
     if ask.row_pick is not None:
