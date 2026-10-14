@@ -1,7 +1,8 @@
 # PLAN: PV2 redesign - typed refs, answer register, subject stack (14 Oct 2026)
 
-Status: Build, R-GAPS-b merge-ready (R1 merged 941fb867a #1670; R2 merged 0690ef90a #1673; R-GAPS-a merged 8ae511217
-#1676; R-GAPS-b = PR #1685, branch `crew/pv2-redesign-rgaps-b`); R3a next after crew merges R-GAPS-b.
+Status: Build, R3a (R1 #1670, R2 #1673, R-GAPS-a #1676, R-GAPS-b #1685 merged into crew/pv2, last 082cc73be; R3a on
+branch `crew/pv2-redesign-r3a`). R3b is redesigned on the generic product_compatibility.kind of lane MIRROR-LINKS
+(#1690) per crew 15 Oct, not seat-cover only.
 Round order: R1, R2, R-GAPS (crew 14 Oct), R3, R4, R5.
 Earlier: round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
 branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). Owner 14 Oct 18:35: NO CAP on LLM spend for

@@ -118,3 +118,25 @@ RG-7h (R-GAPS-a review) A dealer's "no" to a did-you-mean asked after other item
      customer Z" with Z held is no question: held customers end as [Y].
 RG-7e (R4) "Dealer outstanding only" needs a channel on the outstanding path and a parser field: built in R4.
 RG-8 No LLM calls; v1 turns unchanged.
+
+## R3a Entity-kind and domain registry columns (behaviour-preserving; plan "R3 design")
+R3a-1 Migration `pv2_0004_kind_registry` (down_revision pv2_0003_label_reasoning) adds the R3a columns to
+      chatbot_entity_kinds and chatbot_domains with ADD COLUMN IF NOT EXISTS and server defaults, seeds them by name
+      (idempotent), and its downgrade drops them; alembic has a single head.
+R3a-2 Every value the retired constants held equals the registry value: the seed (policy_rows), the migration's data
+      and the live Policy read from migrated rows (a parity test with the old values hard-coded).
+R3a-3 The retired tables no longer exist in code (a deletions guard): bridge V1_HINT; apply DOMAIN_BY_FOUND_KIND,
+      DOCUMENT_KINDS, QUANTITY_DOMAINS, CARRY_SCOPE_KINDS, SUBJECT_REQUIRED_DOMAINS, SET_DOMAINS, FAMILY_DOMAINS,
+      SINGLE_SUBJECT_DOMAINS, _FILTER_KINDS; register _FIELD_KIND; the per-kind / per-domain word tables in clarify_copy
+      for kinds and domains that have a row (kinds with no row keep a code fallback until R4 adds their rows).
+R3a-4 Behaviour is unchanged: the replay sets (test_core_replay, test_carry_converted, test_livecheck_replay) and every
+      R1/R2/R-GAPS test pass unchanged; replies are byte-identical for the same parses.
+R3a-5 A Policy loaded from rows that lack the new keys (stale schema) behaves exactly as the seed.
+R3a-6 Changing a registry value changes PV2 behaviour with no code change (one data-driven test per table family: a
+      kind's default_domain, a domain's reads_quantity, a kind's labels).
+R3a-7 No new kind rows: v1's {{entity_kinds}} prompt vars, the prompt blocks hash and the PV2 index text are
+      byte-identical.
+R3a-8 The CI DB built by scripts/bootstrap_env.py carries the seeded values; PV2 reads the turn's live Policy
+      (TurnV2Context.registry), pure callers the seed.
+R3a-9 No LLM calls in tests; v1 turns unchanged.
+
