@@ -220,6 +220,7 @@ vi.mock('../[documentId]/components/useQuotationEditSession', async (importOrigi
 });
 
 import { QuotationFormClient } from './QuotationFormClient';
+import { QuotationScopeTabs } from '../[documentId]/components/QuotationScopeTabs';
 
 function project(overrides: Partial<Project> = {}): Project {
   return {
@@ -1043,5 +1044,60 @@ describe('QuotationFormClient review round (fix round 2)', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Save quotation' })).toBeEnabled(),
     );
+  });
+});
+
+describe('QuotationFormClient scope tab context menu (owner hand test)', () => {
+  const tabOf = (name: string) => screen.getByRole('tab', { name });
+
+  it('right-clicking a scope tab opens Rename and Remove scope', async () => {
+    renderForm();
+    await openLines();
+    fireEvent.contextMenu(tabOf('Scope 1'));
+    expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Remove scope' })).toBeInTheDocument();
+  });
+
+  it('Rename opens the Edit scope dialog for that scope', async () => {
+    renderForm();
+    await openLines();
+    fireEvent.contextMenu(tabOf('Scope 1'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('textbox', { name: /^Scope/ })).toHaveValue('Scope 1');
+    expect(within(dialog).getByText('Series')).toBeInTheDocument();
+  });
+
+  it('Remove scope from the menu has the same staged result as the button: gone now, one PATCH on Save', async () => {
+    renderForm('d1');
+    const card = await waitFor(() => scopeCard('Townhouse'), { timeout: 3000 }).catch(async () => {
+      await openTab('Lines');
+      return waitFor(() => scopeCard('Townhouse'));
+    });
+    expect(card).toBeInTheDocument();
+    fireEvent.contextMenu(tabOf('Townhouse'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove scope' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Townhouse' })).toBeNull());
+    expect(updateQuotationDocument).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save quotation' }));
+    await waitFor(() => expect(updateQuotationDocument).toHaveBeenCalledTimes(1));
+    const body = updateQuotationDocument.mock.calls[0][2];
+    expect(body.remove_scope_ids).toEqual(['q1']);
+    expect(body.scopes).toEqual([]);
+  });
+
+  it('the read page strip (no form handlers) has no context menu', async () => {
+    render(
+      <QuotationScopeTabs
+        scopes={[{ id: 'q1', scope_label: 'Scope 1', scope_total: '9000.00' } as never]}
+        activeScopeId="q1"
+        onSelect={() => {}}
+        canEdit
+      />,
+    );
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'Scope 1' }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('menuitem')).toBeNull();
   });
 });

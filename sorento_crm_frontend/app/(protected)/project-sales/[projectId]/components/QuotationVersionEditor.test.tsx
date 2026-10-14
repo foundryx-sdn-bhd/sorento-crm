@@ -175,14 +175,24 @@ vi.mock('@/components/ui/data-grid-table-dnd-rows', async (importOriginal) => {
 
 // The real hook, watched: AC-QLG02 asks which listing key the grid remembers its columns under.
 const listingKeysSeen: string[] = [];
+const columnVisibilitySeen: { listingKey: string; visibility: Record<string, boolean> }[] = [];
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', async (importOriginal) => {
   const actual = await importOriginal<
     typeof import('@/lib/listing-column-preferences/useListingColumnPreferences')
   >();
   return {
     ...actual,
-    useListingColumnPreferences: (args: { listingKey?: string }) => {
-      if (args?.listingKey) listingKeysSeen.push(args.listingKey);
+    useListingColumnPreferences: (args: {
+      listingKey?: string;
+      table: { getState: () => { columnVisibility?: Record<string, boolean> } };
+    }) => {
+      if (args?.listingKey) {
+        listingKeysSeen.push(args.listingKey);
+        columnVisibilitySeen.push({
+          listingKey: args.listingKey,
+          visibility: { ...(args.table.getState().columnVisibility ?? {}) },
+        });
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (actual.useListingColumnPreferences as any)(args);
     },
@@ -660,7 +670,7 @@ describe('QuotationVersionEditor', () => {
 
     // UAC grid: the shared DataGrid, columns per the approved mock section 1.
     expect(document.querySelector('[data-slot="data-grid-table"]')).not.toBeNull();
-    for (const header of ['#', 'Photo', 'Drawing', 'Product', 'Description', 'Brand', 'Qty', 'Rate (RM)', 'Total (RM)']) {
+    for (const header of ['#', 'Photo', 'Drawing', 'Product', 'Description', 'Brand', 'Qty', 'UOM', 'Rate (RM)', 'Total (RM)']) {
       expect(await screen.findByRole('columnheader', { name: header })).toBeInTheDocument();
     }
     for (const gone of ['Counts per', 'Tech spec', 'Rate only', 'Complete set']) {
@@ -688,8 +698,7 @@ describe('QuotationVersionEditor', () => {
     // Tech spec is no longer a column: the legacy text is carried through the save untouched.
     expect(screen.queryByRole('textbox', { name: 'Tech spec on SRT-WC-01' })).toBeNull();
     // Complete set lives in the Line details row.
-    fireEvent.click(screen.getByRole('button', { name: 'Line actions on SRT-WC-01' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Line details' }));
+    await openDetails('SRT-WC-01');
     expect(screen.getByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toHaveValue(
       'c/w seat cover',
     );
@@ -1316,6 +1325,24 @@ function openTrigger(name: string) {
   fireEvent.click(trigger);
 }
 
+/** The line's table row, found through its Qty cell (a details row has none of its own). */
+function rowOf(label: string): HTMLElement {
+  return screen.getByRole('textbox', { name: `Qty on ${label}` }).closest('tr') as HTMLElement;
+}
+
+/** Owner hand test: details open by clicking the row itself, not through a menu item. */
+async function openDetails(label: string) {
+  fireEvent.click(rowOf(label).querySelector('td') as HTMLElement);
+  await screen.findByRole('textbox', { name: `Complete set on ${label}` });
+}
+
+/** What a drop of dnd-kit would do: the table's own handler, fired with the two keys. */
+function dragLine(activeId: string, overId: string) {
+  act(() => {
+    dnd.dragEnd!({ active: { id: activeId }, over: { id: overId } });
+  });
+}
+
 async function chooseMenuItem(label: string, item: string) {
   openTrigger(`Line actions on ${label}`);
   fireEvent.click(await screen.findByText(item));
@@ -1378,14 +1405,14 @@ describe('QuotationVersionEditor lines grid (QUOTATION-UX)', () => {
     await waitFor(() => expect(stagedBody()[0]).toMatchObject({ brand_snapshot: 'MOCHA' }));
   });
 
-  it('moves a line down and up from its row menu, reordering the staged body and the numbers', async () => {
+  it('moves a line down and up by dragging, reordering the staged body and the numbers (replaces the Move down/up menu items)', async () => {
     listQuotationLines.mockResolvedValue(TWO_LINES);
     await renderEditing();
-    await chooseMenuItem('A-1', 'Move down');
+    dragLine('l1', 'l2');
     await waitFor(() => expect(stagedBody().map((l) => l.id)).toEqual(['l2', 'l1']));
     expect(descriptionOrder()).toEqual(['Second', 'First']);
     expect(itemNumbers()).toEqual(['1', '2']);
-    await chooseMenuItem('A-1', 'Move up');
+    dragLine('l1', 'l2');
     await waitFor(() => expect(stagedBody().map((l) => l.id)).toEqual(['l1', 'l2']));
     expect(descriptionOrder()).toEqual(['First', 'Second']);
   });
@@ -1406,11 +1433,17 @@ describe('QuotationVersionEditor lines grid (QUOTATION-UX)', () => {
     expectNothingWritten();
   });
 
-  it('lists the six row actions', async () => {
+  it('lists exactly the three row actions, with no Line details, Move up or Move down', async () => {
     await renderEditing();
     openTrigger('Line actions on SRT-WC-01');
-    for (const item of ['Line details', 'Move up', 'Move down', 'Insert a line below', 'Insert a section above', 'Remove line']) {
-      expect(await screen.findByText(item)).toBeInTheDocument();
+    await screen.findByRole('menuitem', { name: 'Remove line' });
+    expect(screen.getAllByRole('menuitem').map((el) => el.textContent?.trim())).toEqual([
+      'Insert a line below',
+      'Insert a section above',
+      'Remove line',
+    ]);
+    for (const gone of ['Line details', 'Move up', 'Move down']) {
+      expect(screen.queryByRole('menuitem', { name: gone })).toBeNull();
     }
   });
 
@@ -1418,7 +1451,7 @@ describe('QuotationVersionEditor lines grid (QUOTATION-UX)', () => {
     listQuotationLines.mockResolvedValue([ext({ unit_type: 'bathroom', complete_set: 'c/w seat', notes: 'Ex-stock' })]);
     await renderEditing();
     expect(screen.queryByRole('textbox', { name: 'Notes on SRT-WC-01' })).toBeNull();
-    await chooseMenuItem('SRT-WC-01', 'Line details');
+    await openDetails('SRT-WC-01');
     expect(screen.getByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toHaveValue('c/w seat');
     expect(screen.getByRole('textbox', { name: 'Notes on SRT-WC-01' })).toHaveValue('Ex-stock');
     const per = screen.getByRole('combobox', { name: 'Priced per on SRT-WC-01' });
@@ -1434,7 +1467,7 @@ describe('QuotationVersionEditor lines grid (QUOTATION-UX)', () => {
 
   it('shows Not set when a line has no Priced per', async () => {
     await renderEditing();
-    await chooseMenuItem('SRT-WC-01', 'Line details');
+    await openDetails('SRT-WC-01');
     expect(screen.getByRole('combobox', { name: 'Priced per on SRT-WC-01' })).toHaveTextContent('Not set');
   });
 });
@@ -1852,7 +1885,7 @@ describe('QuotationVersionEditor fix round 2 (QUOTATION-UX)', () => {
     await renderEditing();
     fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
     await screen.findByRole('textbox', { name: 'Description on line 2' });
-    await chooseMenuItem('line 2', 'Line details');
+    await openDetails('line 2');
     fireEvent.change(screen.getByRole('textbox', { name: 'Complete set on line 2' }), {
       target: { value: 'c/w seat cover' },
     });
@@ -1867,11 +1900,12 @@ describe('QuotationVersionEditor fix round 2 (QUOTATION-UX)', () => {
     fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
     await screen.findByRole('textbox', { name: 'Description on SRT-BASIN-02' });
 
-    await chooseMenuItem('SRT-BASIN-02', 'Line details');
+    await openDetails('SRT-BASIN-02');
     fireEvent.change(screen.getByRole('textbox', { name: 'Complete set on SRT-BASIN-02' }), {
       target: { value: 'c/w trap' },
     });
-    await chooseMenuItem('SRT-BASIN-02', 'Move up');
+    const keys = (session?.scopes[QUOTATION.id]?.lines ?? []).map((l) => l.key);
+    dragLine(keys[1], keys[0]);
 
     await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_id: 'p9' }));
     expect(screen.getByRole('textbox', { name: 'Complete set on SRT-BASIN-02' })).toHaveValue('c/w trap');
@@ -1962,5 +1996,157 @@ describe('QuotationVersionEditor fix round 2 part B (QUOTATION-UX)', () => {
     // Give the delayed refetch time to land; the seed must not have frozen the stale rows.
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(stagedBody()[0]).toMatchObject({ complete_set: 'c/w seat' });
+  });
+});
+
+describe('QuotationVersionEditor owner hand-test round (QUOTATION-UX)', () => {
+  const rightClick = (el: Element) => fireEvent.contextMenu(el);
+
+  it('row context menu: right-clicking a line row opens the same three items', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    await renderEditing();
+    rightClick(rowOf('A-1').querySelector('td') as HTMLElement);
+    expect(await screen.findByRole('menuitem', { name: 'Insert a line below' })).toBeInTheDocument();
+    expect(screen.getAllByRole('menuitem').map((el) => el.textContent?.trim())).toEqual([
+      'Insert a line below',
+      'Insert a section above',
+      'Remove line',
+    ]);
+  });
+
+  it('Remove line, from the row menu or the right-click menu, strikes through and restores as today', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    await renderEditing();
+    await chooseMenuItem('A-1', 'Remove line');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restore A-1' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Restore A-1' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Restore A-1' })).toBeNull());
+
+    rightClick(rowOf('A-2').querySelector('td') as HTMLElement);
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove line' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restore A-2' })).toBeInTheDocument());
+  });
+
+  it('clicking a row outside its inputs toggles its details row, and clicking an input does not', async () => {
+    await renderEditing();
+    expect(screen.queryByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toBeNull();
+
+    fireEvent.click(rowOf('SRT-WC-01').querySelector('td') as HTMLElement);
+    expect(await screen.findByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Priced per on SRT-WC-01' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Notes on SRT-WC-01' })).toBeInTheDocument();
+
+    // Typing and opening a select inside the row are not row clicks.
+    fireEvent.click(screen.getByRole('textbox', { name: 'Qty on SRT-WC-01' }));
+    fireEvent.click(screen.getByRole('textbox', { name: 'Description on SRT-WC-01' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'UOM on SRT-WC-01' }));
+    expect(screen.getByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    fireEvent.click(rowOf('SRT-WC-01').querySelector('td') as HTMLElement);
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toBeNull());
+
+    // And an input click on a CLOSED row does not open it either.
+    fireEvent.click(screen.getByRole('textbox', { name: 'Qty on SRT-WC-01' }));
+    expect(screen.queryByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toBeNull();
+  });
+
+  describe('section bar menu', () => {
+    const BANDED = [
+      line({ id: 'l1', product_code: 'A-1', description: 'First', band_label: 'BILL NO 1' }),
+      line({ id: 'l2', product_code: 'A-2', description: 'Second', sort_order: 10 }),
+    ];
+    const barOf = () =>
+      screen.getByRole('textbox', { name: 'Section heading on A-1' }).closest('td') as HTMLElement;
+
+    it('Rename focuses the section heading', async () => {
+      listQuotationLines.mockResolvedValue(BANDED);
+      await renderEditing();
+      rightClick(barOf().firstElementChild as Element);
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+      await waitFor(() =>
+        expect(screen.getByRole('textbox', { name: 'Section heading on A-1' })).toHaveFocus(),
+      );
+    });
+
+    it('Remove section drops the bar, keeps the line, and saves band_label null', async () => {
+      listQuotationLines.mockResolvedValue(BANDED);
+      await renderEditing();
+      rightClick(barOf().firstElementChild as Element);
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove section' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('textbox', { name: 'Section heading on A-1' })).toBeNull(),
+      );
+      expect(screen.getByRole('textbox', { name: 'Qty on A-1' })).toBeInTheDocument();
+      await waitFor(() => expect(stagedBody()[0].band_label ?? null).toBeNull());
+      expect(stagedBody()[0].id).toBe('l1');
+    });
+  });
+
+  it('thumbnails fill their column: w-full and object-contain, no fixed size class', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1', product_image: PHOTO(), technical_drawing: DRAWING() })]);
+    renderEditor();
+    for (const name of ['SRT-WC-01 product photo', 'SRT-WC-01 technical drawing']) {
+      const img = await screen.findByRole('img', { name });
+      expect(img.className).toMatch(/\bw-full\b/);
+      expect(img.className).toMatch(/object-contain/);
+      expect(img.className).not.toMatch(/\bsize-\d+/);
+    }
+  });
+
+  it('puts UOM in its own column right of Qty, and keeps the stock chip under Qty', async () => {
+    withStock();
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1' })]);
+    await renderEditing();
+    const headers = screen
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent?.trim())
+      .filter((text) => Boolean(text) && text !== 'Reorder');
+    expect(headers).toEqual(['#', 'Photo', 'Drawing', 'Product', 'Description', 'Brand', 'Qty', 'UOM', 'Rate (RM)', 'Total (RM)']);
+
+    const qtyTd = screen.getByRole('textbox', { name: 'Qty on SRT-WC-01' }).closest('td');
+    const uomTd = screen.getByRole('combobox', { name: 'UOM on SRT-WC-01' }).closest('td');
+    expect(uomTd).not.toBe(qtyTd);
+    expect(qtyTd?.nextElementSibling).toBe(uomTd);
+    expect(within(qtyTd as HTMLElement).getByRole('button', { name: 'Stock on SRT-WC-01' })).toBeInTheDocument();
+  });
+
+  it('a Columns button opens Toggle Columns, and unchecking Brand hides it and reports the visibility', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    renderEditor();
+    await screen.findByText('First');
+    expect(screen.getByRole('columnheader', { name: 'Brand' })).toBeInTheDocument();
+
+    const trigger = screen.getByRole('button', { name: 'Columns' });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
+    expect(await screen.findByText('Toggle Columns')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: /brand/i }));
+
+    await waitFor(() => expect(screen.queryByRole('columnheader', { name: 'Brand' })).toBeNull());
+    const last = columnVisibilitySeen[columnVisibilitySeen.length - 1];
+    expect(last.listingKey).toBe('projects.projects.view::quotation-lines');
+    expect(Object.entries(last.visibility).filter(([id, v]) => /brand/i.test(id) && v === false)).toHaveLength(1);
+  });
+
+  it('keeps the stock popover in the viewport: collision handling and a height cap with scroll', async () => {
+    withStock();
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1' })]);
+    await renderEditing();
+    const chip = await screen.findByRole('button', { name: 'Stock on SRT-WC-01' });
+    fireEvent.pointerDown(chip, { button: 0, ctrlKey: false });
+    fireEvent.click(chip);
+    const content = (await screen.findByText(/SPO-1001/)).closest(
+      '[data-slot="popover-content"]',
+    ) as HTMLElement;
+    expect(content).not.toBeNull();
+    // Radix applies avoidCollisions (default on) and collisionPadding inside the popper; neither
+    // is a DOM attribute, so what is observable is that the content is capped to the room the
+    // popper reports it has and scrolls inside that cap.
+    // The caller's classes land on PopoverContent's inner surface div.
+    const surface = content.firstElementChild as HTMLElement;
+    expect(content.getAttribute('data-avoid-collisions')).not.toBe('false');
+    expect(surface.className).toMatch(/max-h-\[var\(--radix-popover-content-available-height\)\]/);
+    expect(surface.className).toMatch(/overflow-y-auto|overflow-auto/);
   });
 });
