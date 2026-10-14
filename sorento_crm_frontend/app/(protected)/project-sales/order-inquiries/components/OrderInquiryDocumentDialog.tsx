@@ -30,6 +30,7 @@ import type {
   OrderInquirySpoDetailLine,
 } from '../../_shared/types/orderInquiry.types';
 import { BookSoCell, bookSoSortValue } from '@/app/(protected)/scm/components/BookSoCell';
+import { sameDisplayText } from '@/lib/product-display';
 
 /**
  * ONE document, read-only, in a real dialog (R9; the captain, 27 Aug: "the popup on the
@@ -318,7 +319,7 @@ function SkuCellContent({ sku, name }: { sku?: string | null; name?: string | nu
       <span className="block truncate font-medium" title={sku ?? ''}>
         {sku || <span className="text-muted-foreground">Unresolved</span>}
       </span>
-      {name && name !== sku ? (
+      {name && !sameDisplayText(name, sku) ? (
         <span className="block truncate text-muted-foreground" title={name}>
           {name}
         </span>

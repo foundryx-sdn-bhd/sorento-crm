@@ -38,6 +38,7 @@ import {
   useReopenEdition,
   useSubmitEdition,
 } from '../../hooks/useEditions';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * One Edition, and the single decision available at this point in its life.
@@ -314,7 +315,9 @@ function EditionChanges({ editionId }: { editionId: string }) {
                 <span className="font-mono line-through text-muted-foreground">
                   {row.productCode ?? 'Unknown product'}
                 </span>
-                <span className="truncate text-muted-foreground">{row.productName ?? ''}</span>
+                <span className="truncate text-muted-foreground">
+                  {distinctName(row.productCode, row.productName) ?? ''}
+                </span>
                 <span className={`${STATUS_PILL_BASE} bg-amber-100 text-amber-800`}>
                   {DROPPED_REASON[row.reason] ?? row.reason}
                 </span>
@@ -331,7 +334,9 @@ function EditionChanges({ editionId }: { editionId: string }) {
             {newSince.map((row) => (
               <li key={row.productId} className="flex flex-wrap items-center gap-2">
                 <span className="font-mono">{row.productCode}</span>
-                <span className="truncate text-muted-foreground">{row.productName}</span>
+                <span className="truncate text-muted-foreground">
+                  {distinctName(row.productCode, row.productName)}
+                </span>
                 <span className={`${STATUS_PILL_BASE} bg-sky-100 text-sky-800`}>New</span>
                 <span className="text-xs text-muted-foreground">
                   {row.stockOnHand} in stock

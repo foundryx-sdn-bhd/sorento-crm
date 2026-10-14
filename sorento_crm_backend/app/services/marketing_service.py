@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import Any, Optional
 from decimal import Decimal
 
+from app.utils.product_display import code_with_name
 from app.services import promotion_serving, promotion_window
 from app.models.marketing import (
     Promotion,
@@ -193,7 +194,7 @@ def _product_display_label(db: Session, product_id: str) -> str:
     code = (p.product_code or "").strip()
     name = (p.product_name or "").strip()
     if code and name:
-        return f"{code} - {name}"
+        return code_with_name(code, name)
     return code or name or product_id
 
 

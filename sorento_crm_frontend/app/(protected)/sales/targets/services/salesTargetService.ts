@@ -29,6 +29,7 @@ import type {
   SalesTargetOptions,
   SalesTargetUpdatePayload,
 } from '../types/salesTarget.types';
+import { codeWithName } from '@/lib/product-display';
 
 const BASE = '/api/v1/sales/targets';
 
@@ -121,5 +122,5 @@ export async function searchTargetProducts(
     { data?: { id: string; product_code: string; product_name: string }[] } | { id: string; product_code: string; product_name: string }[]
   >(await apiFetch(`/api/v1/master-data/products/select?${search.toString()}`), 'Could not load products');
   const rows = Array.isArray(body) ? body : (body.data ?? []);
-  return rows.map((row) => ({ value: row.id, label: `${row.product_code} - ${row.product_name}` }));
+  return rows.map((row) => ({ value: row.id, label: codeWithName(row.product_code, row.product_name) }));
 }

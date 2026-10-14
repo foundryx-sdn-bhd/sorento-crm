@@ -15,6 +15,7 @@ import { orderInquiryWorklistHref } from '../lib/orderInquiryLink';
 import { fmtQty } from '../lib/qtyPrecision';
 import { useOrderSummaryDemand } from '../hooks/useSummaryOrder';
 import type { OrderSummaryDemandKind } from '../types/summaryOrder.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * One aggregate on the Summary Order Report, opened behind an information icon
@@ -126,7 +127,7 @@ export function DemandDrillPopover({
                 <div className="text-xs font-semibold">{KIND_LABEL[kind]}</div>
                 <div className="text-2xs text-muted-foreground">
                   {productCode}
-                  {productName ? ` · ${productName}` : ''}
+                  {distinctName(productCode, productName) ? ` · ${productName}` : ''}
                 </div>
               </div>
               <Badge variant="secondary" appearance="light" size="xs" className="w-fit shrink-0">

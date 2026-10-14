@@ -15,6 +15,7 @@ import {
   useSeriesProductRows,
 } from '../../../_shared/hooks/useProjects';
 import type { SeriesProductRow } from '../../../_shared/types/project.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The client's sheet, as a table: what this series sells, for how much, and how far it may be
@@ -70,8 +71,10 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
               }
             : undefined,
         // Picking the product answers the description too, so nobody retypes the catalogue.
-        onOptionSelected: (option, draft) => ({
-          ...draft,
+        // No `...draft`: the draft handed in is the render-time copy, so spreading it would put
+        // the old (empty) product_id back over the one this pick has just set.
+        onOptionSelected: (option) => ({
+          product_code: option?.label ?? '',
           product_name: option?.description ?? '',
         }),
       },
@@ -80,11 +83,14 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
         header: 'Description',
         width: 280,
         kind: 'derived',
-        derive: (draft) => (
-          <span className="block truncate" title={draft.product_name || ''}>
-            {draft.product_name || '-'}
-          </span>
-        ),
+        derive: (draft) => {
+          const name = distinctName(draft.product_code, draft.product_name);
+          return (
+            <span className="block truncate" title={name || ''}>
+              {name || '-'}
+            </span>
+          );
+        },
       },
       {
         key: 'selling_price',
@@ -129,6 +135,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
   const toDraft = React.useCallback(
     (row: SeriesProductRow): InlineDraft => ({
       product_id: row.product_id ?? '',
+      product_code: row.product_code ?? '',
       product_name: row.product_name ?? '',
       selling_price: row.selling_price ?? '',
       max_discount_pct: row.max_discount_pct ?? '',
@@ -140,6 +147,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
   const emptyDraft = React.useCallback(
     (): InlineDraft => ({
       product_id: '',
+      product_code: '',
       product_name: '',
       selling_price: '',
       max_discount_pct: '',

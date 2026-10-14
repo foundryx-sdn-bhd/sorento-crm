@@ -11,6 +11,7 @@ import type { AskThreadSource } from '@/hooks/useAskThread';
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import type { StockAsk } from '@/lib/stock-asks';
 import { askAnswerText, askProductText, type AskConversation } from '@/lib/stock-asks-todo';
+import { distinctName } from '@/lib/product-display';
 
 /** Where the CRM's chat history for one contact lives. */
 const CONVERSATIONS_PATH = '/sla-management/conversations';
@@ -113,7 +114,7 @@ export function AskConversationPanel({
         <div className="space-y-1 rounded-lg border bg-muted/40 px-3 py-2.5">
           <p className="text-sm break-words">
             Asked: {askProductText(ask)}
-            {ask.product_name ? ` (${ask.product_name})` : ''}
+            {distinctName(ask.product_code, ask.product_name) ? ` (${ask.product_name})` : ''}
           </p>
           <p className="text-sm break-words">
             <span className="text-muted-foreground">Answered: </span>

@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { RejectPayload } from '../types/decisions.types';
 import type { ReorderRecommendation } from '../types/reorder.types';
+import { codeWithName } from '@/lib/product-display';
 
 /**
  * M4-D8 - Reject a recommendation. Destructive confirm (AlertDialog) with a
@@ -58,7 +59,7 @@ export function RejectRecommendationDialog({
           <AlertDialogDescription>
             {rec ? (
               <>
-                {rec.sku} - {rec.product_name} will be dismissed and won&apos;t draft a purchase
+                {codeWithName(rec.sku, rec.product_name)} will be dismissed and won&apos;t draft a purchase
                 order. This can&apos;t be undone.
               </>
             ) : null}

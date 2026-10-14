@@ -42,6 +42,22 @@ describe('BoardDecisionPill with a CRM cancel', () => {
     expect(screen.getByTestId(`decision-pill-${KEY}`)).toHaveTextContent('Confirmed');
   });
 
+  it('reads Cancelled for an AutoCount cancel that left OI rows for CS (CANCEL-STOP-AT-SO)', () => {
+    render(
+      <BoardDecisionPill
+        contribution={contributionOf({
+          cancelled: true,
+          cancelled_at: '2026-10-14T11:55:00',
+          cancelled_by: 'AutoCount',
+          cancel_reason: 'XS001 · 2 open order inquiry rows',
+          cancel_open_oi_rows: 2,
+        })}
+        decision={null}
+      />,
+    );
+    expect(screen.getByTestId(`decision-pill-${KEY}`).textContent).toBe('Cancelled');
+  });
+
   it('keeps Cancelled for a book-cancelled line with no cancelled_at', () => {
     render(<BoardDecisionPill contribution={contributionOf({ cancelled: true })} decision={null} />);
     expect(screen.getByTestId(`decision-pill-${KEY}`).textContent).toBe('Cancelled');

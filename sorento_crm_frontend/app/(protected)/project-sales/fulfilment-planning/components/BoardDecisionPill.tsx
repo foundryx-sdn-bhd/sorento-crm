@@ -149,7 +149,13 @@ export type VerdictKey =
 export function verdictOf(
   contribution: Pick<
     BoardContribution,
-    'cancelled' | 'cancelled_at' | 'unplannable' | 'covered' | 'draft' | 'decision'
+    | 'cancelled'
+    | 'cancelled_at'
+    | 'cancel_open_oi_rows'
+    | 'unplannable'
+    | 'covered'
+    | 'draft'
+    | 'decision'
   >,
   decision: BoardDecision | null,
 ): VerdictKey {
@@ -173,7 +179,13 @@ export function verdictOf(
   // quantity nobody is owed would be the board agreeing to supply it.
   // SO-CANCEL-LINE: CS transferred it to Cancel SO and pressed Confirm. No label of its own:
   // the line wears Confirmed, and the cancel reads in Decided.
-  if (contribution.cancelled_at) return 'confirmed';
+  // CANCEL-STOP-AT-SO: an AutoCount Cancel SO left live order inquiry rows for CS to handle,
+  // so nothing about the line is settled yet. With the Transfer to Cancel SO the sync (or CS)
+  // saved it reads Saved, waiting for Confirm; dismissed, it wears Cancelled.
+  if (contribution.cancelled_at) {
+    if (!contribution.cancel_open_oi_rows) return 'confirmed';
+    return draftSource?.verdict === 'cancelled' ? 'saved' : 'cancelled';
+  }
   if (contribution.cancelled) return 'cancelled';
   if (covered) return 'confirmed';
   if (draftSource?.verdict === 'rejected') return 'rejected';
