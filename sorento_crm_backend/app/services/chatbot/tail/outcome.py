@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from app.services.chatbot import jsc
+from app.services.chatbot.contracts import UNSUPPORTED_TOPIC_COPY
 from app.services.chatbot.copy import CannedCopy
 
 # The 15 keys, in `build-outcome`'s own order (which is ccs's precedence order for the
@@ -161,7 +162,10 @@ def escalate_catalog(
         manual_response = True
 
     elif kind == "not_supported":
-        response = copy.render("not_supported")
+        topic_key = UNSUPPORTED_TOPIC_COPY.get(jsc.js_string(_template_value(qf, "domain_hint")))
+        response = (
+            copy.render_in(topic_key, out.get("reply_language")) if topic_key else copy.render("not_supported")
+        )
         manual_response = True
 
     elif kind == "clarify_menu":

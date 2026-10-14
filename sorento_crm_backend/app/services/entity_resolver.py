@@ -856,8 +856,14 @@ def _probe_product(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEnt
         return result
     # Build (original_token, normalized_token) pairs so we can map matched rows
     # back to the caller's token after the SQL comparison.
-    normalized_tokens = [_strip_all_ws(t.lower()) for t in tokens]
-    norm_to_token = dict(zip(normalized_tokens, tokens))
+    # Both spellings of a token are probed: as typed (a stored code may really contain "/") and with the "/"
+    # read as the separator "-" ("Cb88ss/diy" is CB88SS-DIY). Token side only, so the shared normaliser (and
+    # the index expression behind it) is unchanged.
+    norm_to_token: dict[str, str] = {}
+    for t in tokens:
+        norm_to_token.setdefault(_strip_all_ws(t.lower()), t)
+        if "/" in t:
+            norm_to_token.setdefault(_strip_all_ws(t.lower().replace("/", "-")), t)
     # A placeholder's exact code is still not an answer: that is the whole point
     # of the flag (issue #300), so the filter sits on the exact tier too.
     rows = (
@@ -5498,8 +5504,12 @@ def resolve_references(
             # entity types keep strict single-hit semantics - variant siblings
             # are a product-domain concept (SKU suffixes); customers / orders /
             # promotions don't have the same family pattern.
+            # A code typed with "/" for its dash ("Cb88ss/diy" for CB88SS-DIY) names that one full code, so it
+            # carries no family of siblings.
             existing_product_hit = any(
-                m.entity_type == "product" for m in per_token[tok]
+                m.entity_type == "product"
+                and not ("/" in tok and str(m.canonical_code or "").lower() != tok.lower())
+                for m in per_token[tok]
             )
             if existing_product_hit and (tok_allowed is None or "product" in tok_allowed):
                 seen_uuids = {m.uuid for m in per_token[tok] if m.uuid}

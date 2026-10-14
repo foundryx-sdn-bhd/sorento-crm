@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.services.chatbot import jsc
+from app.services.chatbot.lanes.business import analysis_ask
 from app.services.chatbot.label_catalog import IDENTITY, Localizer
 from app.services.chatbot.contracts import (
     SALES_REPORT_GROUP_BYS,
@@ -62,6 +63,7 @@ from app.services.chatbot.contracts import (
     named_count,
 )
 from app.services.chatbot.turn.policy import default_policy
+from app.services.chatbot.turn.state import report_from_frame
 from app.services.chatbot.turn import policy_rows
 from app.services.product_spec_registry import display_spec_value
 
@@ -836,6 +838,9 @@ def entity_ids_transformer(
         picked_code = sales_report_product_code(entities, semantic_input)
         if jsc.truthy(picked_code):
             out["product_code"] = picked_code
+            if jsc.get(semantic_input, "sales_report_narrowed") is True:
+                # A held report narrowed to one product counts that code alone, not its longer siblings.
+                out["product_code_exact"] = True
         warehouse_codes = jsc.get(semantic_input, "outstanding_warehouse_codes")
         if isinstance(warehouse_codes, list) and warehouse_codes:
             out["warehouse_codes"] = warehouse_codes
@@ -1055,13 +1060,17 @@ def entity_ids_transformer(
             space_id if space_id is not None else jsc.get(semantic_input, "space_id")
         )
 
-    # REPORT-ENGINE slice 1b: `crm_report_ask`'s params are settled whole by the lane
+    # REPORT-ENGINE slice 1b: `crm_report`'s (and `crm_report_ask`'s) params are settled whole by the lane
     # (`report_ask.route_args`, put on `semantic_input` by `run_fetch`, which hands no
     # entities of its own); nothing else the generic steps above built travels with them
     # but the entity ids. The customer scope tail below and `contact_id` / `space_id`
     # still apply.
-    if tool_name == "crm_report_ask":
+    if tool_name in ("crm_report_ask", "crm_report"):
         args = jsc.get(semantic_input, "report_ask_args")
+        if tool_name == "crm_report" and isinstance(args, dict):
+            # The lane works in basis + figure; the route takes the registry key.
+            key = f"{args.get('basis')}_{args.get('measure')}"
+            args = {**{k: v for k, v in args.items() if k not in ("basis", "measure")}, "measure": key}
         out = {
             "_diagnostics": out["_diagnostics"],
             "view": "render",
@@ -1266,10 +1275,10 @@ def entity_ids_transformer(
             raise ScopeViolation(
                 f"{tool_name} asked for a customer outside the contact's scope", dropped=outside
             )
-        # REPORT-ENGINE 1b code review N3: `crm_report_ask`'s route forces the dealer's own
-        # links itself (`enforce_customer_scope`), so the lane sends only what was named
+        # REPORT-ENGINE 1b code review N3: `crm_report_ask`'s and `crm_report`'s route force the dealer's own
+        # links themselves (`enforce_customer_scope`), so the lane sends only what was named
         # (no 50-id cap hit, no header listing every account); the check above stays.
-        if requested or tool_name != "crm_report_ask":
+        if requested or tool_name not in ("crm_report_ask", "crm_report"):
             out["customer_ids"] = requested or list(scope_ids)
         out.pop("customer_query", None)
 
@@ -1356,6 +1365,7 @@ CUSTOMER_SCOPED_TOOLS: frozenset[str] = frozenset(
         "crm_sales_report",
         "crm_top_selling_report",
         "crm_report_ask",
+        "crm_report",
         "crm_order_analytics",
         "crm_master_customers_list",
     }
@@ -2302,7 +2312,13 @@ def sales_report_product_code(entities: Any, semantic_input: Any) -> str:
     for code in codes[1:]:
         while shared and not code.upper().startswith(shared.upper()):
             shared = shared[:-1]
-    return shared if len(shared) >= _SALES_REPORT_MIN_PREFIX else codes[0]
+    if len(shared) >= _SALES_REPORT_MIN_PREFIX:
+        return shared
+    # No usable shared prefix: the first code the customer typed exactly (a family stem typed
+    # beside it is not a code the route can take), else the first code as before.
+    si = semantic_input if isinstance(semantic_input, dict) else {}
+    exact = [jsc.js_string(c).strip().casefold() for c in jsc.array(si.get("outstanding_exact_product_codes"))]
+    return next((c for c in codes if c.strip().casefold() in exact), codes[0])
 
 
 #: The offer BLOCK the presenter appended, in either form: R9's single sentence, or the
@@ -2493,7 +2509,24 @@ def _sales_report_filters_from_ctx(ctx: dict[str, Any]) -> dict[str, Any]:
         "customer_ids": customer_ids,
         "warehouse_codes": semantic_input.get("outstanding_warehouse_codes") or [],
         "location_token": semantic_input.get("outstanding_location_token"),
-        "channel": semantic_input.get("sales_channel"),
+        "channel": semantic_input.get("sales_channel") or semantic_input.get("outstanding_carried_channel"),
+    }
+
+
+def _held_sales_report(ctx: dict[str, Any]) -> dict[str, Any]:
+    """`Focus.report` entry for a plain sales report: its customers and period, kind `sales_report`."""
+    filters = _sales_report_filters_from_ctx(ctx)
+    keep = ("customer_ids", "date_filter_start", "date_filter_end", "warehouse_codes", "location_token", "channel")
+    args = {k: filters[k] for k in keep if filters.get(k)}
+    si = ctx.get("semantic_input")
+    si = _safe_json(si) if isinstance(si, str) else si
+    if isinstance(si, dict) and si.get("sales_report_narrowed") is True:
+        args["product_code_exact"] = True  # a drill pick next turn keeps the exact code, not the family
+    return {
+        "kind": "sales_report",
+        "measure": "delivered_sales",
+        "args": args,
+        "shown": None,
     }
 
 
@@ -2530,6 +2563,21 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         # string here is never a rendered report, so it is never treated as a result.
         text = result if isinstance(result, str) else jsc.js_string(result)
         has_result = False
+    ctx_si = ctx.get("semantic_input")
+    if isinstance(ctx_si, str):
+        ctx_si = _safe_json(ctx_si)
+    narrowed_miss = (
+        not has_result
+        and isinstance(ctx_si, dict)
+        and ctx_si.get("sales_report_narrowed") is True
+        and "response" in envelope
+        and text.strip().endswith(SALES_REPORT_MISS_MESSAGE)
+    )
+    if narrowed_miss:
+        # A held report narrowed to one product with nothing sold is an answer, the presenter's own
+        # text (code and period header, then the miss line), never the miss lane over the family
+        # or the held total, and no escalate offer.
+        has_result = True
     offer = [
         {
             "idx": row.get("idx"),
@@ -2558,7 +2606,7 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         # 2026): a bare, non-envelope string is never a rendered report, so it must
         # never reach `response` either - only "Error executing tool" ever got
         # stripped downstream, so any other unrendered string rode through verbatim.
-        "response": text if "response" in envelope else "",
+        "response": text if "response" in envelope or narrowed_miss else "",
         "response_intro": None,
         "answers": [],
         "attachments": [],
@@ -2571,6 +2619,11 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         "requested_attributes": [],
         "keys_served": False,
         "outstanding_ask": outstanding_ask,
+        # A narrowed report with nothing sold shows no options: the engine closes the drill offer.
+        "narrowed_miss": narrowed_miss,
+        # The plain report that ran, held as `Focus.report` (kind marks it non-ranking) so a
+        # narrowing to one product next turn re-runs it.
+        "report": _held_sales_report(ctx),
         # AC-1659: this report carries its OWN Customer / Product / Channel /
         # Location / Delivery date header, so `tail/compile_state.py` must skip the
         # generic search-scope header (the same marker `crm_outstanding_report`
@@ -2776,7 +2829,7 @@ def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[s
     for ...") is an answer, never the miss lane (the top selling ruling, 27 Sep 2026)."""
     envelope = result if isinstance(result, dict) else {}
     text = jsc.js_string(envelope.get("response") or "").strip() if "response" in envelope else ""
-    # The args a ranking that ran was asked with, held for a refine (`Focus.sales_ranking_frame`).
+    # The args a ranking that ran was asked with, held for a refine (`Focus.report`).
     semantic_input = (ctx or {}).get("semantic_input")
     args = semantic_input.get("report_ask_args") if isinstance(semantic_input, dict) else None
     note = semantic_input.get("report_ask_note") if isinstance(semantic_input, dict) else None
@@ -2786,12 +2839,18 @@ def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[s
     # (`shown`), so "these agents" next turn means exactly them. Never a route param.
     drill = envelope.get("drill_rows")
     frame = dict(args) if text and isinstance(args, dict) else None
+    report = None
     if frame is not None:
         frame.pop("shown", None)
+        frame.pop("carried", None)
+        shown = None
         if isinstance(drill, dict) and drill.get("group_by") == frame.get("group_by") and drill.get("rows"):
-            frame["shown"] = drill
+            shown = drill
+        report = report_from_frame({**frame, "shown": shown})
+        if frame.get("dataset") == "chat":
+            report["kind"] = "chat_report"  # held for a narrowing; never read as a sales ranking
     return {
-        "sales_ranking_frame": frame,
+        "report": report,
         "response": text or _REPORT_ASK_ERROR_TEXT,
         "response_intro": None,
         "answers": [],
@@ -2984,7 +3043,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         return _low_stock_report_output(result)
     if jsc.js_string(ctx.get("tool") or "") == "crm_top_selling_report":
         return _top_selling_output(result, ctx)
-    if jsc.js_string(ctx.get("tool") or "") == "crm_report_ask":
+    if jsc.js_string(ctx.get("tool") or "") in ("crm_report_ask", "crm_report"):
         return _report_ask_output(result, ctx)
     if jsc.js_string(ctx.get("tool") or "") == "crm_find":
         return _find_output(result, ctx)
@@ -2992,10 +3051,23 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # The same envelope: the presenter's text and, when there is one, the Excel. It
         # states its own scope (company, channel, basis, period), so the order domain's
         # generic Customer/Product/Dates header must not print above it.
-        return {
+        output = {
             **_low_stock_report_output(result, fallback=_SALES_ANALYSIS_ERROR_TEXT),
             "own_header": True,
         }
+        options = result.get("company_options") if isinstance(result, dict) else None
+        if isinstance(options, list) and options:
+            # The company question is an OPEN question: stored, so the next reply is read as its answer.
+            si = ctx.get("semantic_input")
+            si = _safe_json(si) if isinstance(si, str) else si
+            output["required_ask"] = analysis_ask.slot_for(
+                [str(o) for o in options], output["response"], si if isinstance(si, dict) else {}
+            )
+        else:
+            held = analysis_ask.held_analysis(ctx)
+            if held:
+                output["report"] = held  # the analysis ask held on the focus: a narrowing keeps its company
+        return output
     e = _file_rows(_extract_envelope(result), links=bool(ctx.get("files_as_links")))
     if ctx.get("portal_intro") and any(isinstance(a, dict) and a.get("type") == "portal_link" for a in e.get("action_links") or []):
         # DEV-FAILURES RC-B: the copy line naming the form, already in the reply language.

@@ -273,7 +273,7 @@ def test_ac_s1_21_a_contact_in_both_companies_naming_neither_is_asked(db, queue)
     before = _downloads(db)
     with _client(db, _actor(db), [DEFAULT_COMPANY_ID, MOCHA_ID]) as client:
         body = client.get(ROUTE, params=_q(contact)).json()
-    assert body == {"status": "clarify", "message": "Sorento or Mocha?"}
+    assert body == {"status": "clarify", "message": "Sorento or Mocha?", "companies": ["Sorento", "Mocha"]}
     assert _downloads(db) == before and not queue
 
 

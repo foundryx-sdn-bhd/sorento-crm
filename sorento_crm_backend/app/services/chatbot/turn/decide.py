@@ -735,6 +735,29 @@ def decide(
                 scope=picked_scope,
                 **facts,
             )
+        if (
+            named_scope is not None
+            and not positions
+            and not entities
+            and pending.kind == "outstanding_detail"
+            and own_status in (None, "")
+            and verdict.get("entity_op") == "reuse"
+        ):
+            # REPORTS-STEP2 S3a (AC-30), the parser's real reading of "Delivery order list" under the open
+            # detail offer: `document: ["DO"]`, `entity_op: "reuse"`, no entity, no status, no position.
+            # A document the open offer lists, named with nothing new beside it, is the pick of that
+            # option (the sales drill's `named_document_pick`, here for the outstanding offer): the held
+            # report re-runs with that detail, never a fresh summary.
+            offered = [
+                o["position"]
+                for o in pending.options
+                if (o.get("payload") or {}).get("value") == named_scope and o.get("position") is not None
+            ]
+            if offered:
+                return Decision(
+                    ANSWER, "named_document_pick", positions=tuple(offered[:1]), window=window,
+                    scope=named_scope, **facts,
+                )
         if named_scope is not None:
             # "Sales order", typed straight after the DO detail list, emitted
             # `document: ["SO"]` AND `reference_positions: [1]`, and the position won:

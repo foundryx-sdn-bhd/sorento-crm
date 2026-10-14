@@ -242,10 +242,13 @@ def test_ac_re_7_no_agent_is_one_row_and_the_rows_sum_to_the_total(client, db):
     _sale(db, cust=cust, wh=wh, agent=None, prod=prod, qty=2, total="20.00")
     _sale(db, cust=cust, wh=wh, agent=None, prod=prod, qty=3, total="30.00")
     db.commit()
-    body = _ok(client, _full(db), group_by="sales_agent", top_n=10)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=10, sales_agent_ids=[agent.id, "none"])
     assert _rows(body) == [("(no agent)", 5, D("50.00")), ("ZZT-AG-N", 1, D("10.00"))], body["rows"]
     assert sum(money(r["amount"]) for r in body["rows"]) == money(body["total"]["amount"]), body
     assert money(body["total"]["amount"]) == D("60.00"), body
+    # Owner ruling 13 Oct 2026: with no filter naming "none" the bucket is left out of the ranking and its total.
+    plain = _ok(client, _full(db), group_by="sales_agent", top_n=10)
+    assert _rows(plain) == [("ZZT-AG-N", 1, D("10.00"))] and money(plain["total"]["amount"]) == D("10.00"), plain
 
 
 # ================================================================ AC-RE-8: basis and echo

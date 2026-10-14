@@ -36,6 +36,7 @@ from app.services.chatbot.contracts import (
     DEFAULT_SUGGESTED_AGENT,
     DEFAULT_SUGGESTED_TEAM,
     ORDER_OR_SALES_DOMAINS,
+    SALES_DOMAIN,
     SALES_REPORT_GROUP_BYS,
     named_count,
 )
@@ -1817,6 +1818,64 @@ def _report_status_means_order_domain(out: dict[str, Any]) -> None:
     out["domain_corrected"] = f"{prior}->{target} (order_status {status})"
 
 
+def _picks_the_open_drill_offer(out: dict[str, Any], pending: Any) -> bool:
+    """Is this verdict a pick of the open `sales_report_detail` offer, by the engine's own test
+    (`decide.picked_positions`: a position, or an entity matching an option's label)?"""
+    if pending is None or getattr(pending, "kind", None) != "sales_report_detail":
+        return False
+    from app.services.chatbot.turn.decide import picked_positions
+
+    # `picked_positions` is the engine's one pick test: a declared `open_question_answer` pick
+    # with no position and no label match is not read as a pick anywhere, so it is not one here.
+    return picked_positions(pending, out) is not None
+
+
+def _narrows_held_sales_report(out: dict[str, Any], pending: Any = None) -> bool:
+    """The parser read a scoped sales ranking, or a plain sales report that names no domain word (its
+    own refinement signal: `domain_in_message` strictly false, no topic reset), naming ONE product and no
+    axis. A null `topic_reset` counts as no reset on purpose; only an explicit true blocks the narrowing.
+    The parser sometimes reads that refinement as `sales_analysis`; the same signal narrows it too."""
+    status = jsc.js_string(out.get("order_status") or "").strip()
+    scoped_ranking = status == "sales_ranking" and out.get("ranking_drill") == "scoped"
+    # The held report is delivered-only and company-free: an analysis naming another basis or a company is its own ask.
+    analysis_fits = status == "sales_analysis" and out.get("sales_basis") in (None, "delivered") and not out.get("sales_company")
+    refinement = (
+        (status == "sales_report" or analysis_fits)
+        and out.get("domain_in_message") is False
+        and out.get("topic_reset") is not True
+    )
+    # A status-less reading ("only <code>" with no order_status): a sales domain (or none), no domain word,
+    # and the one product as the message's only entity. A dealer locator, a receivables ask and the like
+    # name another domain and never narrow a sales report.
+    current = [e for e in jsc.array(out.get("entities")) if isinstance(e, dict) and e.get("current_message") is not False]
+    status_less = (
+        not status
+        and not jsc.js_string(out.get("status") or "").strip()
+        and out.get("domain_hint") in (None, "", "order", SALES_DOMAIN)
+        and out.get("message_type") in (None, "", "business_query")
+        and out.get("entity_op") == "replace"  # the parser's own "only X / just X" signal
+        and out.get("domain_in_message") is False
+        and out.get("topic_reset") is not True
+        and len(current) == 1
+        and jsc.nullish_str(current[0].get("hint")).strip().lower() == "product"
+    )
+    if not (scoped_ranking or refinement or status_less):
+        return False
+    if _picks_the_open_drill_offer(out, pending):
+        return False
+    axis = jsc.js_string(out.get("group_by") or "").strip()
+    # With the drill offer open the parser echoes the offered axis on "only <code>": `product` is
+    # no axis of its own there (a pick of the offer was ruled out above).
+    if axis and axis != "product":
+        return False
+    products = [
+        e for e in jsc.array(out.get("entities"))
+        if isinstance(e, dict) and e.get("current_message") is not False
+        and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
+    ]
+    return len(products) == 1
+
+
 def lane_parse_output(
     verdict: dict[str, Any],
     *,
@@ -1829,6 +1888,7 @@ def lane_parse_output(
     declined_offer_copy: bool = False,
     prior_session: Any = None,
     policy: Any = None,
+    open_offer: Pending | None = None,
 ) -> dict[str, Any]:
     """`ctx.parse.output` for the kept lanes, projected from the v3 verdict.
 
@@ -1897,6 +1957,12 @@ def lane_parse_output(
         out["order_status"] = _DOCUMENT_STATUS_TO_ORDER_STATUS.get(key, status)
     else:
         out.setdefault("order_status", None)
+        if jsc.js_string(out.get("order_status") or "").strip() == "outstanding" and document:
+            # A raw "outstanding" the parser sent with no projected `status` is read through the document
+            # axis exactly as a projected one is (SO -> so_outstanding, DO -> do_outstanding).
+            out["order_status"] = _DOCUMENT_STATUS_TO_ORDER_STATUS.get(
+                (",".join(sorted(document)), "outstanding"), "outstanding"
+            )
     # Contract 38: an outstanding ask that named NO document is asked which one before
     # anything is fetched. The lane's gate reads this flag and adds the grant check it
     # is the only place able to make; the flag itself was set by the retired
@@ -1906,8 +1972,12 @@ def lane_parse_output(
     # the one bucket in the map above that means "outstanding, no document named", and
     # reading it here keeps this true for a caller still speaking the pre-rearch
     # vocabulary (`order_status` straight on the verdict, no `document`/`status` pair).
+    # A message that holds SEVERAL asks (REPORTS-STEP2 S3a, "<code> got stock? got outstanding for X") answers
+    # every half now: its outstanding half runs for both documents (the report's default) instead of the
+    # scope question hanging beside the other answers. A single ask is unchanged.
+    several_asks = len({a.get("domain") for a in (out.get("asks") or []) if isinstance(a, dict) and a.get("domain")}) > 1
     out["outstanding_scope_ask_candidate"] = (
-        jsc.js_string(out.get("order_status") or "").strip() == "outstanding"
+        jsc.js_string(out.get("order_status") or "").strip() == "outstanding" and not several_asks
     )
     # PLAN-chatbot-sales-report.md S4 wiring point 2: the sales report's channel, off the
     # FOCUS when this message named none of its own. The turn that answers a customer
@@ -1949,11 +2019,63 @@ def lane_parse_output(
     # which the lane asks about rather than guess); any other verdict never sees it.
     if (
         jsc.js_string(out.get("order_status") or "").strip() == "sales_ranking"
-        and out.get("ranking_drill") != "global"
         and focus is not None
-        and focus.sales_ranking_frame
+        and focus.report
     ):
-        out["sales_ranking_frame"] = dict(focus.sales_ranking_frame)
+        # A global reading rides it too: the lane decides whether it restates the held ranking.
+        from app.services.chatbot.turn.state import frame_from_report
+
+        out["sales_ranking_frame"] = frame_from_report(focus.report)
+    if (
+        focus is not None and isinstance(focus.report, dict) and focus.report.get("kind") == "sales_analysis"
+        and jsc.js_string(verdict.get("order_status") or "").strip() == "sales_analysis"
+    ):
+        out["held_analysis"] = dict(focus.report.get("args") or {})  # a narrowing keeps the company (`analysis_ask`)
+    if focus is not None and isinstance(focus.report, dict) and focus.report.get("kind") == "chat_report":
+        out["held_chat_report"] = dict(focus.report.get("args") or {})  # a narrowing keeps its axis, period and count
+    held_plain = focus.report if focus is not None and isinstance(focus.report, dict) and focus.report.get("kind") == "sales_report" else None
+    if (
+        held_plain is not None
+        and (held_plain.get("args") or {}).get("product_code_exact")
+        and _picks_the_open_drill_offer(verdict, pending or open_offer)
+        and not any(
+            isinstance(e, dict) and e.get("current_message") is not False
+            and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
+            for e in jsc.array(out.get("entities"))
+        )
+    ):
+        # A drill pick over a report narrowed to one exact code is that code's drill, not the family's.
+        out["sales_report_narrowed"] = True
+    if held_plain is not None and _narrows_held_sales_report(verdict, pending or open_offer):
+        # Read off the parser's own verdict: `out["order_status"]` was re-projected from the focus status above.
+        # A plain sales report is held (no ranking): "only this one" narrows IT. The same report
+        # runs again for the exact code the parser typed, with the held customers and period.
+        held_args = held_plain.get("args") or {}
+        typed = [
+            e for e in jsc.array(out.get("entities"))
+            if isinstance(e, dict) and e.get("current_message") is not False
+            and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
+        ]
+        out["order_status"] = "sales_report"
+        out["sales_report_narrowed"] = True
+        out["outstanding_carried_product_code"] = (
+            jsc.nullish_str(typed[0].get("canonical_code")).strip() or jsc.nullish_str(typed[0].get("raw")).strip()
+        )
+        names_customer = any(
+            isinstance(e, dict) and e.get("current_message") is not False
+            and jsc.nullish_str(e.get("hint")).strip().lower() == "customer"
+            for e in jsc.array(out.get("entities"))
+        )
+        if held_args.get("customer_ids") and not names_customer:
+            out["outstanding_carried_customer_ids"] = list(held_args["customer_ids"])
+        for key in ("date_filter_start", "date_filter_end", "sales_channel"):
+            held_key = "channel" if key == "sales_channel" else key
+            if not out.get(key) and held_args.get(held_key):
+                out[key] = held_args[held_key]
+        if held_args.get("warehouse_codes") and not out.get("outstanding_carried_warehouse_codes"):
+            out["outstanding_carried_warehouse_codes"] = list(held_args["warehouse_codes"])
+        if held_args.get("location_token") and not out.get("outstanding_carried_location_token"):
+            out["outstanding_carried_location_token"] = held_args["location_token"]
     # Fix lane round 8 (owner hand test, 28 Sep 2026): an outstanding ask after a ranking
     # is the ORDINARY outstanding ask with the ranked codes as its products
     # (`apply._hop_to_report` wrote them on the hop). The same carried keys an answering
@@ -2772,6 +2894,20 @@ def resolve_kinds(
     compatible = [e for e in jsc.array(gate.get("compatible_entities")) if isinstance(e, dict)]
     unplaced = named_unplaced(entities, resolved)
     compatible = _without_guesses(compatible, resolved, unplaced)
+    if unplaced and db is not None:
+        # A location word the lane places itself (`resolve_warehouse_token`, the outstanding
+        # report's `outstanding_warehouse_codes`) is not one the resolver missed: the generic
+        # resolver never looks in `warehouses`, so its echo of the word is not a "not found".
+        # Dropped AFTER the guesses it drew are, so those never reach the call.
+        from app.services.chatbot.lanes.business.services import resolve_warehouse_token
+
+        for e in entities:
+            if not isinstance(e, dict) or jsc.nullish_str(e.get("hint")).strip().lower() != "warehouse":
+                continue
+            word = jsc.nullish_str(e.get("canonical_code")).strip() or jsc.nullish_str(e.get("raw")).strip()
+            key = _token_key(jsc.nullish_str(e.get("raw")).strip() or word)
+            if key in unplaced and resolve_warehouse_token(db, word):
+                unplaced.pop(key)
     if is_order_domain and live_brands_read:
         # #1262 fix lane round 3, S5: a brand word that is NOT on the live list, typed
         # beside one that is ("Sorento and XYZ"), must be said back like any other
@@ -3567,6 +3703,7 @@ def make_tool_runner(
     not_checked: list[str] | None = None,
     asked_promo_filter: dict[str, list[str]] | None = None,
     profile: Any = None,
+    open_offer: Pending | None = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
 
@@ -3639,7 +3776,7 @@ def make_tool_runner(
         # ARGS (access levels, date filters, entities), never an escalate sentence
         # or a pending write, both of which read the turn's real `ctx.parse.output`
         # instead. Flagged here so the next reader does not assume parity.
-        lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
+        lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy, open_offer=open_offer)
         lane_out = _spec_window(lane_out, spec)
         if asked_promo_filter and domain == "promotion":
             # PROMO-SUBJECT-FILTER AC-6: the tier pick's own turn names no subject; the
@@ -5643,7 +5780,7 @@ def envelope_of(
         # `focus.required_ask` by `engine.py` for the next message only.
         "required_ask": fetched.get("required_ask"),
         # REPORT-ENGINE: the route args of a sales ranking that ran, held on the focus by `engine.py`.
-        "sales_ranking_frame": fetched.get("sales_ranking_frame"),
+        "report": fetched.get("report"),
         # LOWSTOCK-SEMANTIC: the filters a low stock report ran with, recorded on
         # `focus.low_stock` by `engine.py` so a refinement narrows that report.
         "low_stock_frame": fetched.get("low_stock_frame"),

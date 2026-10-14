@@ -1,0 +1,1399 @@
+{
+ "note": "Product sales report: the family report, a narrowing to the exact code (names that code only), both drill offer replies (number and typed label) keeping the exact code, then a stock ask and a narrowing to the sibling code.",
+ "seed": {
+  "brands": [
+   {
+    "id": "00000000-0000-0000-0000-00000000b801",
+    "brand_code": "ZZTZRX",
+    "brand_name": "Zorvex",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   },
+   {
+    "id": "00000000-0000-0000-0000-00000000b802",
+    "brand_code": "ZZTMCH",
+    "brand_name": "Mochi",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ],
+  "sales_agents": [
+   {
+    "id": "00000000-0000-0000-0000-00000000a801",
+    "sales_agent": "AGENT ALPHA",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   },
+   {
+    "id": "00000000-0000-0000-0000-00000000a802",
+    "sales_agent": "AGENT BRAVO",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ]
+ },
+ "turns": [
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000806,
+     "firstName": "ZZT-900000806",
+     "lastName": "",
+     "phone": "+60900000806",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000806
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000806,
+      "messageId": "zzt-rpt-900000806-1",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "sales report"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_report",
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [],
+   "expected": {
+    "branch_kind": "business_query",
+    "canned": [
+     "Which product or customer is this for?"
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000806,
+     "firstName": "ZZT-900000806",
+     "lastName": "",
+     "phone": "+60900000806",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000806
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000806,
+      "messageId": "zzt-rpt-900000806-2",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "ZZT100"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": "2026-01-01",
+    "date_filter_end": "2026-12-31",
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "ZZT100",
+      "hint": "product",
+      "canonical_code": "ZZT100",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": true,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_report",
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_sales_report",
+     "args": {
+      "contact_id": "x",
+      "space_id": "x",
+      "view": "render",
+      "_diagnostics": null,
+      "access_levels": [],
+      "date_mode": null,
+      "is_active": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "product_code": "ZZT100"
+     },
+     "envelope": {
+      "response": "*Customer:* all\n*Product:* ZZT100, ZZT100-A\n*Delivery date:* 01/01/2026 to 31/12/2026\n\n*Total:* Qty 40, RM 4000.00\n*Drill down:*\n1. By customer\n2. By product\n3. Delivery orders",
+      "has_result": true,
+      "options": [
+       {
+        "idx": 1,
+        "label": "By customer",
+        "value": "customer",
+        "aliases": [
+         "by customer",
+         "customer"
+        ]
+       },
+       {
+        "idx": 2,
+        "label": "By product",
+        "value": "product",
+        "aliases": [
+         "by product",
+         "product"
+        ]
+       },
+       {
+        "idx": 3,
+        "label": "Delivery orders",
+        "value": "delivery_order",
+        "aliases": [
+         "delivery orders",
+         "delivery order",
+         "do"
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "pending": {
+     "option_labels": [
+      "By customer",
+      "By product",
+      "Delivery orders"
+     ]
+    },
+    "entity_ids": [],
+    "canned": [
+     "*Product:* ZZT100, ZZT100-A",
+     "*Drill down:*"
+    ]
+   },
+   "resolutions": {
+    "tokens": [
+     "ZZT100"
+    ],
+    "unresolved_tokens": [],
+    "resolutions": [
+     {
+      "token": "ZZT100",
+      "resolved": true,
+      "matches": [
+       {
+        "canonical_code": "ZZT100",
+        "entity_type": "product",
+        "uuid": "00000000-0000-0000-0000-00000000d801"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000806,
+     "firstName": "ZZT-900000806",
+     "lastName": "",
+     "phone": "+60900000806",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000806
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000806,
+      "messageId": "zzt-rpt-900000806-3",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "only ZZT100"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": "specific",
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "ZZT100",
+      "hint": "product",
+      "canonical_code": "ZZT100",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": true,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_report",
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_sales_report",
+     "args": {
+      "contact_id": "x",
+      "space_id": "x",
+      "view": "render",
+      "_diagnostics": null,
+      "access_levels": [],
+      "date_mode": null,
+      "is_active": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "product_code": "ZZT100",
+      "product_code_exact": true
+     },
+     "envelope": {
+      "response": "*Customer:* all\n*Product:* ZZT100\n*Delivery date:* 01/01/2026 to 31/12/2026\n\n*Total:* Qty 25, RM 2500.00\n*Drill down:*\n1. By customer\n2. By product\n3. Delivery orders",
+      "has_result": true,
+      "options": [
+       {
+        "idx": 1,
+        "label": "By customer",
+        "value": "customer",
+        "aliases": [
+         "by customer",
+         "customer"
+        ]
+       },
+       {
+        "idx": 2,
+        "label": "By product",
+        "value": "product",
+        "aliases": [
+         "by product",
+         "product"
+        ]
+       },
+       {
+        "idx": 3,
+        "label": "Delivery orders",
+        "value": "delivery_order",
+        "aliases": [
+         "delivery orders",
+         "delivery order",
+         "do"
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "pending": {
+     "option_labels": [
+      "By customer",
+      "By product",
+      "Delivery orders"
+     ]
+    },
+    "entity_ids": [],
+    "canned": [
+     "*Product:* ZZT100\n*Delivery date:*",
+     "*Drill down:*"
+    ]
+   },
+   "resolutions": {
+    "tokens": [
+     "ZZT100"
+    ],
+    "unresolved_tokens": [],
+    "resolutions": [
+     {
+      "token": "ZZT100",
+      "resolved": true,
+      "matches": [
+       {
+        "canonical_code": "ZZT100",
+        "entity_type": "product",
+        "uuid": "00000000-0000-0000-0000-00000000d801"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000806,
+     "firstName": "ZZT-900000806",
+     "lastName": "",
+     "phone": "+60900000806",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000806
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000806,
+      "messageId": "zzt-rpt-900000806-4",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "1"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "casual",
+    "intent_hint": null,
+    "domain_hint": null,
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "replace_combine",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [
+     1
+    ],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_sales_report",
+     "args": {
+      "contact_id": "x",
+      "space_id": "x",
+      "view": "render",
+      "_diagnostics": null,
+      "access_levels": [],
+      "date_mode": null,
+      "is_active": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "product_code": "ZZT100",
+      "product_code_exact": true,
+      "group_by": "customer"
+     },
+     "envelope": {
+      "response": "*Customer:* all\n*Product:* ZZT100\n*Delivery date:* 01/01/2026 to 31/12/2026\n\n*Total:* Qty 25, RM 2500.00\n*Drill down:*\n1. By customer\n2. By product\n3. Delivery orders",
+      "has_result": true,
+      "options": [
+       {
+        "idx": 1,
+        "label": "By customer",
+        "value": "customer",
+        "aliases": [
+         "by customer",
+         "customer"
+        ]
+       },
+       {
+        "idx": 2,
+        "label": "By product",
+        "value": "product",
+        "aliases": [
+         "by product",
+         "product"
+        ]
+       },
+       {
+        "idx": 3,
+        "label": "Delivery orders",
+        "value": "delivery_order",
+        "aliases": [
+         "delivery orders",
+         "delivery order",
+         "do"
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "pending": {
+     "option_labels": [
+      "By customer",
+      "By product",
+      "Delivery orders"
+     ]
+    },
+    "entity_ids": [],
+    "canned": [
+     "*Product:* ZZT100\n*Delivery date:*"
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000806,
+     "firstName": "ZZT-900000806",
+     "lastName": "",
+     "phone": "+60900000806",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000806
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000806,
+      "messageId": "zzt-rpt-900000806-5",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "delivery orders"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "casual",
+    "intent_hint": null,
+    "domain_hint": null,
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "delivery orders",
+      "hint": "order",
+      "canonical_code": null,
+      "current_message": true,
+      "confident": true,
+      "hint_confident": true,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "reuse",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_sales_report",
+     "args": {
+      "contact_id": "x",
+      "space_id": "x",
+      "view": "render",
+      "_diagnostics": null,
+      "access_levels": [],
+      "date_mode": null,
+      "is_active": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "product_code": "ZZT100",
+      "product_code_exact": true,
+      "group_by": "delivery_order"
+     },
+     "envelope": {
+      "response": "*Customer:* all\n*Product:* ZZT100\n*Delivery date:* 01/01/2026 to 31/12/2026\n\n*Total:* Qty 25, RM 2500.00\n*Drill down:*\n1. By customer\n2. By product\n3. Delivery orders",
+      "has_result": true,
+      "options": [
+       {
+        "idx": 1,
+        "label": "By customer",
+        "value": "customer",
+        "aliases": [
+         "by customer",
+         "customer"
+        ]
+       },
+       {
+        "idx": 2,
+        "label": "By product",
+        "value": "product",
+        "aliases": [
+         "by product",
+         "product"
+        ]
+       },
+       {
+        "idx": 3,
+        "label": "Delivery orders",
+        "value": "delivery_order",
+        "aliases": [
+         "delivery orders",
+         "delivery order",
+         "do"
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "pending": {
+     "option_labels": [
+      "By customer",
+      "By product",
+      "Delivery orders"
+     ]
+    },
+    "entity_ids": [],
+    "canned": [
+     "*Product:* ZZT100\n*Delivery date:*"
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000806,
+     "firstName": "ZZT-900000806",
+     "lastName": "",
+     "phone": "+60900000806",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000806
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000806,
+      "messageId": "zzt-rpt-900000806-6",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "stock of ZZT100"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_stock",
+    "domain_hint": "inventory",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking stock of ZZT100",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "ZZT100",
+      "hint": "product",
+      "canonical_code": "ZZT100",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": true,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_inventory_stock_balance_list",
+     "args": {
+      "_diagnostics": null,
+      "access_levels": [],
+      "contact_id": "x",
+      "date_mode": null,
+      "is_active": null,
+      "product_ids": [
+       "00000000-0000-0000-0000-00000000d801"
+      ],
+      "space_id": "x",
+      "view": "render"
+     },
+     "envelope": {
+      "action_links": [],
+      "attachments": [],
+      "fallback_used": false,
+      "has_result": true,
+      "intro": "Stock details found for the requested products.",
+      "items": [
+       {
+        "fields": [
+         {
+          "key": "company_name",
+          "label": "Company",
+          "value": "Zorvex"
+         },
+         {
+          "key": "product_code",
+          "label": "Product Code",
+          "value": "ZZT100"
+         },
+         {
+          "key": "warehouse",
+          "label": "Warehouse",
+          "value": "ZZT WAREHOUSE"
+         },
+         {
+          "key": "quantity_on_hand",
+          "label": "Quantity On Hand",
+          "value": 25
+         }
+        ],
+        "flags": {
+         "discontinued": false,
+         "expired": false,
+         "expiring_soon": false,
+         "partially_allocated": false,
+         "unallocated": false
+        },
+        "title": "ZZT100"
+       }
+      ],
+      "last_updated_at": "2026-10-12T09:00:00",
+      "lookup_companies": [],
+      "restricted_fields": {},
+      "result_type": "stock"
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "entity_ids": [
+     "00000000-0000-0000-0000-00000000d801"
+    ],
+    "canned": [
+     "Stock details found"
+    ],
+    "pending": {
+     "option_labels": [
+      "By customer",
+      "By product",
+      "Delivery orders"
+     ]
+    }
+   },
+   "resolutions": {
+    "tokens": [
+     "ZZT100"
+    ],
+    "unresolved_tokens": [],
+    "resolutions": [
+     {
+      "token": "ZZT100",
+      "resolved": true,
+      "matches": [
+       {
+        "canonical_code": "ZZT100",
+        "entity_type": "product",
+        "uuid": "00000000-0000-0000-0000-00000000d801"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000806,
+     "firstName": "ZZT-900000806",
+     "lastName": "",
+     "phone": "+60900000806",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000806
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000806,
+      "messageId": "zzt-rpt-900000806-7",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "and only ZZT100-A"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": "specific",
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "ZZT100-A",
+      "hint": "product",
+      "canonical_code": "ZZT100-A",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": true,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_report",
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_sales_report",
+     "args": {
+      "contact_id": "x",
+      "space_id": "x",
+      "view": "render",
+      "_diagnostics": null,
+      "access_levels": [],
+      "date_mode": null,
+      "is_active": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "product_code": "ZZT100-A",
+      "product_code_exact": true
+     },
+     "envelope": {
+      "response": "*Customer:* all\n*Product:* ZZT100-A\n*Delivery date:* 01/01/2026 to 31/12/2026\n\n*Total:* Qty 25, RM 2500.00\n*Drill down:*\n1. By customer\n2. By product\n3. Delivery orders",
+      "has_result": true,
+      "options": [
+       {
+        "idx": 1,
+        "label": "By customer",
+        "value": "customer",
+        "aliases": [
+         "by customer",
+         "customer"
+        ]
+       },
+       {
+        "idx": 2,
+        "label": "By product",
+        "value": "product",
+        "aliases": [
+         "by product",
+         "product"
+        ]
+       },
+       {
+        "idx": 3,
+        "label": "Delivery orders",
+        "value": "delivery_order",
+        "aliases": [
+         "delivery orders",
+         "delivery order",
+         "do"
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "pending": {
+     "option_labels": [
+      "By customer",
+      "By product",
+      "Delivery orders"
+     ]
+    },
+    "entity_ids": [],
+    "canned": [
+     "*Product:* ZZT100-A\n*Delivery date:*"
+    ]
+   },
+   "resolutions": {
+    "tokens": [
+     "ZZT100-A"
+    ],
+    "unresolved_tokens": [],
+    "resolutions": [
+     {
+      "token": "ZZT100-A",
+      "resolved": true,
+      "matches": [
+       {
+        "canonical_code": "ZZT100-A",
+        "entity_type": "product",
+        "uuid": "00000000-0000-0000-0000-00000000d802"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

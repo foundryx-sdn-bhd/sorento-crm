@@ -100,7 +100,7 @@ def _ask(
         matches=CUSTOMER_MATCH,
         mcp_response=hit,
     )
-    assert captured and captured[0][0] == "crm_sales_report", ("setup: the ask must run the report", captured)
+    assert captured and captured[0][0] in ("crm_sales_report", "crm_report"), ("setup: the ask must run the report", captured)
     if expect_armed:
         open_question = _open_question(session_factory)
         assert open_question.get("kind") == "sales_report_detail" and any(

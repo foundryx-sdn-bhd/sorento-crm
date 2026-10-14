@@ -19,20 +19,20 @@ def _lane_out(v, focus):
 
 # AC-HT8-11
 def test_refine_never_takes_the_focus_channel():
-    from app.services.chatbot.turn.state import Focus
+    from app.services.chatbot.turn.state import Focus, report_from_frame
 
     v = verdict(order_status="sales_ranking", ranking_refine=True, sales_channel=None, top_n=10, domain_hint="order")
-    out = _lane_out(v, Focus(sales_channel="dealer", sales_ranking_frame=dict(HELD)))
+    out = _lane_out(v, Focus(sales_channel="dealer", report=report_from_frame(dict(HELD))))
     assert not out.get("sales_channel")
     assert _args(out).get("channel") is None
 
 
 def test_refine_keeps_the_held_frame_channel():
-    from app.services.chatbot.turn.state import Focus
+    from app.services.chatbot.turn.state import Focus, report_from_frame
 
     frame = dict(HELD, channel="dealer")
     v = verdict(order_status="sales_ranking", ranking_refine=True, sales_channel=None, top_n=10, domain_hint="order")
-    out = _lane_out(v, Focus(sales_channel="dealer", sales_ranking_frame=frame))
+    out = _lane_out(v, Focus(sales_channel="dealer", report=report_from_frame(frame)))
     assert _args(out).get("channel") == "dealer"
 
 

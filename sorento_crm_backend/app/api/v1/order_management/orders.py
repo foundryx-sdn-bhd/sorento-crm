@@ -1787,6 +1787,10 @@ async def get_sales_report(
             "but at least one of product_code / customer_ids / customer_query is required."
         ),
     ),
+    product_code_exact: bool = Query(
+        False,
+        description="True reads product_code as that one whole code (equality), not a prefix. Default false.",
+    ),
     customer_query: Optional[str] = Query(
         None,
         description="Partial match on customers.customer_name (ILIKE) ONLY - never debtor/customer code.",
@@ -2000,6 +2004,7 @@ async def get_sales_report(
     data = delivered_sales_report(
         db,
         product_code=product_code,
+        product_code_exact=product_code_exact,
         customer_query=None if scoped_customer_ids is not None else customer_query,
         customer_ids=resolved_customer_ids,
         channel=channel_norm,

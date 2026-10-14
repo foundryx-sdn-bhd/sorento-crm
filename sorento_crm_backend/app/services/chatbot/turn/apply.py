@@ -1300,6 +1300,11 @@ TOP_SELLING_BROADEN_KEYS = {
 }
 
 
+#: The held top selling keys a restatement compares (the filters) and keeps (the metric and basis).
+TOP_SELLING_RESTATE_FILTERS = ("brand_ids", "agent_ids", "customer_ids", "category_words", "category_code")
+TOP_SELLING_RESTATE_KEYS = ("rank_by", "basis", "held_channel", *TOP_SELLING_RESTATE_FILTERS)
+
+
 def _narrows_the_ranking(verdict: dict[str, Any]) -> bool:
     """Is this message only narrowing the ranking on screen, whatever the parser said
     about `domain_in_message`? True when it carries a top selling key of its own, or
@@ -1376,6 +1381,48 @@ def record_top_selling_asked(focus: Focus, envelopes: list[dict[str, Any]]) -> N
                 slot.pop("ranked_codes", None)
 
 
+def _is_unsubjected_sales_ranking(verdict: dict[str, Any]) -> bool:
+    """The parser read a ranking ("top 10 sorento dealer") as `sales_report`: a count or a
+    direction and no product or customer to total. That is the top selling ask (the lane asks
+    quantity or amount), never the per-subject sales report, which needs a subject."""
+    order_status = verdict.get("order_status")
+    if not (isinstance(order_status, str) and order_status.strip() in ("sales_report", "sales_analysis")):
+        return False
+    if order_status.strip() == "sales_analysis" and (
+        str(verdict.get("group_by") or "").strip() not in ("", "product", "category")
+        or verdict.get("sales_basis") not in (None, "delivered", "ordered")
+        # On purpose the plain brand-equals-company rule: there is no db here, and a count with no axis is a
+        # product ranking anyway. The lane (`_company_is_only_a_brand`) checks the Company row; do not align
+        # one side to the other.
+        or (verdict.get("sales_company") and not contracts.company_is_a_brand(verdict))
+    ):
+        # A real analysis ask (a month or channel breakdown, another basis, a company) is not a ranking of items.
+        return False
+    if verdict.get("top_n") is None and verdict.get("rank_direction") is None:
+        return False
+    return not any(
+        isinstance(e, dict) and e.get("hint") in ("product", "customer") for e in (verdict.get("entities") or [])
+    )
+
+
+_AXIS_OF_RANK_GROUP = {"item": "product", "category": "category"}
+
+
+def _axis_is_the_held_one(verdict: dict[str, Any], slot: dict[str, Any]) -> bool:
+    """No axis of its own, or an echo of the one the held top selling ask ranks (parser enums only:
+    `item` is `product`, `category` is `category`). An echo counts only when the parser did not
+    say `ranking_refine` false (its "new ask"), and the stored `rank_group` must match, except under
+    the group question itself, where the echoed axis IS the answer."""
+    axis = str(verdict.get("group_by") or "").strip()
+    if not axis:
+        return True
+    if verdict.get("ranking_refine") is False:
+        return False
+    if slot.get("asked") == "group":
+        return axis in _AXIS_OF_RANK_GROUP.values()
+    return _AXIS_OF_RANK_GROUP.get(slot.get("rank_group")) == axis
+
+
 def _top_selling_rules(
     focus: Focus, verdict: dict[str, Any], decision: Decision, trace: Trace, *, was_ranking: bool = False
 ) -> None:
@@ -1400,10 +1447,28 @@ def _top_selling_rules(
       customer, `entity_resolver._DOMAIN_HINT_EXPANSIONS`).
     """
     order_status = verdict.get("order_status")
-    asked = isinstance(order_status, str) and order_status.strip() == TOP_SELLING_STATUS
+    asked = (isinstance(order_status, str) and order_status.strip() == TOP_SELLING_STATUS) or _is_unsubjected_sales_ranking(
+        verdict
+    )
     # A verdict the parser itself named a sales ranking is a new ask (owner held-state rule:
     # a new intent always wins), never an answer inside an open top selling question.
     new_sales_ranking = isinstance(order_status, str) and order_status.strip() == "sales_ranking"
+    # ... unless the parser flipped the status on a bare answer: no domain word, no axis of its
+    # own, nothing fresh, and a top selling question is open. Then it answers that question. Any
+    # open `asked` counts on purpose (how_many and who too): the worst case is a bounded re-ask of
+    # the same question.
+    ranking_answers_open_ask = (
+        new_sales_ranking
+        and focus.status == TOP_SELLING_STATUS
+        and isinstance(focus.top_selling, dict)
+        and bool(focus.top_selling.get("asked"))
+        and domain_in_message(verdict) is False
+        and _axis_is_the_held_one(verdict, focus.top_selling)
+        and not decision.starts_fresh
+    )
+    if ranking_answers_open_ask:
+        new_sales_ranking = False
+        asked = True
     names_its_ask = decision.starts_fresh or domain_in_message(verdict) is True or new_sales_ranking
     hopped = isinstance(focus.top_selling, dict) and bool(focus.top_selling.get("hop"))
     if was_ranking and not asked and not new_sales_ranking:
@@ -1422,7 +1487,9 @@ def _top_selling_rules(
         new_sales_ranking or not _narrows_the_ranking(verdict)
     ):
         focus.status = verdict.get("status") or None
-        focus.top_selling = None
+        if new_sales_ranking or verdict.get("topic_reset") is True:
+            focus.top_selling = None
+        # else: an answer in another domain keeps the slot (owner rule: "back to the ranking" finds it)
         trace.rules_fired.append("new_ask_leaves_top_selling")
         return
     elif hopped and not names_its_ask:
@@ -1430,16 +1497,29 @@ def _top_selling_rules(
         # for which document?") keeps the carried filters and their header line.
         return
     if focus.status != TOP_SELLING_STATUS:
-        focus.top_selling = None
+        # An answer in another domain keeps the top selling slot (owner rule: "back to the ranking, dealers
+        # only" finds it); a topic reset drops it, and a top selling ask replaces it (`asked` above).
+        if verdict.get("topic_reset") is True:
+            focus.top_selling = None
         return
     carried = dict(focus.top_selling or {})
     carried.pop("hop", None)
     carried.pop("answered", None)
+    carried.pop("restates", None)  # one hop: the engine consumed it or it never applied
     # What the last reply asked lives one turn: this turn's reply records its own.
     asked_last = carried.pop("asked", None)
     # A word the last reply said it does not know is said once (owner retest, 27 Sep).
     carried.pop("unknown", None)
     own = {k: verdict.get(k) for k in TOP_SELLING_KEYS if verdict.get(k) is not None}
+    if ranking_answers_open_ask and "rank_by" not in own:
+        # The ranking reading carries the metric as `measure`; the top selling slot keeps it as `rank_by`.
+        metric = {"qty": "quantity", "amount": "amount"}.get(verdict.get("measure"))
+        if metric:
+            own["rank_by"] = metric
+    if ranking_answers_open_ask and "rank_group" not in own and asked_last == "group":
+        group = {"product": "item", "category": "category"}.get(str(verdict.get("group_by") or "").strip())
+        if group:
+            own["rank_group"] = group
     if _top_selling_waiting(asked_last, own):
         # One turn: the lane input of THIS answer sends no channel (`lane_parse_output`).
         carried["answered"] = True
@@ -1522,15 +1602,28 @@ def _top_selling_rules(
     if categories:
         own["category_words"] = categories
         carried.pop("category_code", None)
+    fresh_ask = False
     if asked and names_its_ask and not only_narrows and not _top_selling_waiting(asked_last, own):
         # A fresh ask names the ask ITSELF ("top 10 selling items": `domain_in_message`);
         # "by amount" under a ranking names only the axis it changes. A fresh ask states
         # its own filters too (owner: never assume): a customer, channel or date window
         # it does not name is not carried from the last ask (reviewer B2, PR #1273).
-        carried = {}
+        # What the held ask settled rides along one hop (`restates`): the engine compares it with the
+        # filters this message's words resolve to (`engine._apply_top_selling_updates`) and keeps the
+        # metric and basis when they are the same filters, so a restated count never re-asks them.
+        held = {k: carried[k] for k in TOP_SELLING_RESTATE_KEYS if carried.get(k) is not None}
+        carried = {"restates": held} if held.get("rank_by") else {}
         _drop_unnamed_filters(focus, verdict)
         trace.rules_fired.append("top_selling_fresh_ask")
+        fresh_ask = True
     carried.update(own)
+    # The channel this ask runs under, kept on the slot (`focus.sales_channel` is overwritten by every
+    # turn before these rules run) so a restatement can tell a different channel from the same one.
+    channel = verdict.get("sales_channel")
+    if channel and (fresh_ask or not _top_selling_waiting(asked_last, own)):
+        carried["held_channel"] = str(channel)
+    elif fresh_ask:
+        carried.pop("held_channel", None)
     focus.top_selling = carried
 
 
@@ -2113,6 +2206,8 @@ def _lane_of(verdict: dict[str, Any], domains: list[str], policy: Policy) -> str
         and not _help_request_is_an_ask(verdict)
     ):
         return "escalation"
+    if verdict.get("domain_hint") in contracts.UNSUPPORTED_TOPIC_COPY:
+        return "not_supported"
     if domains and all(
         (policy.domain(name) is not None and not policy.domain(name).supported) for name in domains
     ):

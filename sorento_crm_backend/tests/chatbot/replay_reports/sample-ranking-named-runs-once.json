@@ -1,0 +1,175 @@
+{
+ "note": "Hand-built guard for the replay harness itself: a ranking with every field named calls crm_report (compared as a set of tool name + arg keys, not a count) and answers.",
+ "seed": {
+  "brands": [
+   {
+    "id": "00000000-0000-0000-0000-00000000b701",
+    "brand_code": "ZZTSOR",
+    "brand_name": "Sorento",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ],
+  "sales_agents": [
+   {
+    "id": "00000000-0000-0000-0000-00000000a701",
+    "sales_agent": "AGENT A",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ]
+ },
+ "turns": [
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000771,
+     "firstName": "ZZT-900000771",
+     "lastName": "",
+     "phone": "+60900000771",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000771
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000771,
+      "messageId": "zzt-rpt-sample-1",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "top 3 salesman for Sorento brand in September by amount, delivered"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": "specific",
+    "is_affirmative": null,
+    "user_goal": "checking a product",
+    "access_levels": [],
+    "broaden_axis": null,
+    "date_mode": null,
+    "date_filter_start": "2026-09-01",
+    "date_filter_end": "2026-09-30",
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "Sorento",
+      "hint": "brand",
+      "canonical_code": null,
+      "current_message": true,
+      "confident": true
+     }
+    ],
+    "entity_op": "replace_combine",
+    "scope_exclusive": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_ranking",
+    "correction": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null,
+     "team_source": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "continuation": null,
+    "group_by": "sales_agent",
+    "top_n": 3,
+    "ranking_refine": false,
+    "measure": "amount",
+    "document": null,
+    "status": null,
+    "answers_open_question": {
+     "resolved": null,
+     "picks": null,
+     "answer": null
+    },
+    "anaphora": {
+     "backward_reference": null
+    },
+    "rank_direction": "top",
+    "rank_by": null,
+    "basis": "delivered"
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_report",
+     "args": {
+      "measure": "delivered_amount",
+      "group_by": "sales_agent",
+      "top_n": 3,
+      "sort": "desc",
+      "brand_ids": [
+       "00000000-0000-0000-0000-00000000b701"
+      ],
+      "date_from": "2026-09-01",
+      "date_to": "2026-09-30",
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null
+     },
+     "envelope": {
+      "result_type": "report_ask",
+      "response": "Top 1 sales agent by delivered sales\nPeriod: 2026-09-01 to 2026-09-30\n1. AGENT A RM 1,200.00, 30 pcs\nTotal RM 1,200.00, 30 pcs",
+      "has_result": true,
+      "drill_rows": {
+       "group_by": "sales_agent",
+       "rows": [
+        {
+         "name": "AGENT A",
+         "keys": []
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "entity_ids": [
+     "00000000-0000-0000-0000-00000000b701"
+    ]
+   }
+  }
+ ],
+ "grade": {
+  "expect": {
+   "outcome": "answer",
+   "must": [
+    {
+     "text": "AGENT A"
+    },
+    {
+     "number": "1200"
+    }
+   ]
+  }
+ }
+}

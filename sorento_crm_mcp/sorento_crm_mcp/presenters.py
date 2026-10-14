@@ -60,6 +60,7 @@ PRESENTER_TOOLS: frozenset[str] = frozenset(
         "crm_top_selling_report",
         "crm_sales_analysis",
         "crm_report_ask",
+        "crm_report",
         "crm_find",
     }
 )
@@ -1883,6 +1884,51 @@ def _http_error_envelope(tool_name: str, data: dict) -> dict:
     }
 
 
+#: `crm_report`'s `report_kind` -> the tool whose presenter renders it (a ranking is `crm_report_ask`'s).
+_REPORT_KIND_TOOLS = {
+    "outstanding": "crm_outstanding_report",
+    "sales_report": "crm_sales_report",
+    "sales_analysis": "crm_sales_analysis",
+    "low_stock": "crm_low_stock_report",
+}
+
+
+_LOW_STOCK_READ_TOP = 10
+
+
+def _low_stock_read_envelope(body: dict) -> dict:
+    """A full low stock read view as a chat reply: the run date, how many items are low, then the
+    low items by shortage (reorder level minus on hand), largest first. The supplier is named only
+    when the view carries the Supplier column (the contact holds that grant)."""
+    columns = list(body.get("columns") or [])
+
+    def _cell(row: list, name: str):
+        return row[columns.index(name)] if name in columns and columns.index(name) < len(row) else None
+
+    def _num(value) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    low = []
+    for row in body.get("rows") or []:
+        on_hand, level = _num(_cell(row, "BRW on hand")), _num(_cell(row, "Reorder level"))
+        if on_hand < level:
+            low.append((level - on_hand, row))
+    low.sort(key=lambda pair: -pair[0])
+    count = (body.get("counts") or {}).get("low")
+    as_of = body.get("run_date") or (body.get("run") or {}).get("as_of")
+    lines = [f"As of: {as_of}"] if as_of else []
+    lines.append(f"Low items: {count if count is not None else len(low)}")
+    for _gap, row in low[:_LOW_STOCK_READ_TOP]:
+        lines.append(f"{_cell(row, 'Item code')}: {_cell(row, 'Description') or ''}".rstrip(": ").rstrip())
+        supplier = _cell(row, "Supplier")
+        if "Supplier" in columns and supplier:
+            lines.append(f"Supplier: {supplier}")
+    return {"result_type": "low_stock_report", "response": "\n".join(lines), "attachments": [], "has_result": True}
+
+
 def present_response(tool_name: str, raw: str) -> str:
     """Transform a sanitized tool JSON string into the render envelope JSON string.
 
@@ -1904,6 +1950,19 @@ def present_response(tool_name: str, raw: str) -> str:
     # own `code` / `detail` are what the operator reads.
     if isinstance(data.get("status_code"), int) and data["status_code"] >= 400:
         return json.dumps(_http_error_envelope(tool_name, data))
+
+    # REPORTS-STEP2 S4: `crm_report` renders each `report_kind` with the presenter that kind uses
+    # today, so the reply is the old tool's, word for word.
+    if tool_name == "crm_report":
+        kind = data.get("report_kind")
+        if kind == "low_stock" and data.get("status") in ("no_snapshot", "preparing"):
+            return json.dumps({
+                "result_type": "low_stock_report", "response": str(data.get("message") or ""),
+                "attachments": [], "has_result": True,
+            })
+        if kind == "low_stock" and "status" not in data:
+            return json.dumps(_low_stock_read_envelope(data))
+        tool_name = _REPORT_KIND_TOOLS.get(kind, "crm_report_ask")
 
     # S4 point 5 (AC-1114b): `crm_outstanding_report` never goes through the
     # generic item/field envelope below - the report's shape (two named
@@ -1948,7 +2007,7 @@ def present_response(tool_name: str, raw: str) -> str:
         return json.dumps(_sales_analysis_envelope(data))
 
     # The report engine's ask: a ranking or one number, rendered whole from the route's body.
-    if tool_name == "crm_report_ask":
+    if tool_name in ("crm_report_ask", "crm_report"):
         return json.dumps(_report_ask_envelope(data))
 
     # CHAT-FIND: the generic find, one group per named product, rendered whole (`_find_envelope`).
@@ -3311,6 +3370,14 @@ _REPORT_ASK_PLURALS = {
 }
 
 
+def _ask_date(iso: Any) -> str:
+    """``"2026-09-01"`` -> ``"01/09/2026"``, the form the sales report prints; anything else as given."""
+    try:
+        return datetime.strptime(str(iso), "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        return str(iso)
+
+
 def _ask_rm(value: Any) -> str:
     try:
         return f"RM {float(value):,.2f}"
@@ -3325,19 +3392,41 @@ def _ask_pcs(value: Any) -> str:
         return "0 pcs"
 
 
+#: The route param a `/report` filter line stands for, where it is not `<key>_ids`.
+_REPORT_ASK_FILTER_PARAMS = {
+    "product": ("product_ids", "product_code"),
+    "location": ("warehouse_codes",),
+    "channel": ("channel",),
+}
+
+
 def _report_ask(body: dict) -> str:
     """The whole reply for `crm_report_ask`: a head line, then one fact per line (`Label: value`
     per filter, then the period; owner rule, REPORT-DRILLDOWN), the ranked rows, `and N more`,
     the whole set's total; for the number shape the total alone."""
     if body.get("status") in ("refused", "busy"):
         return str(body.get("message") or "")
+    # REPORTS-STEP2: a fact whose value came from an earlier turn ends " (from earlier)".
+    carried = set(body.get("carried") or [])
+    earlier = " (from earlier)"
+
+    def _mark(line: str, *params: str) -> str:
+        return line + earlier if carried.intersection(params) else line
+
     if body.get("dataset") == "chat":
         return _chat_report_ask(body)
     facts = [
-        f"{f.get('label')}: {', '.join(str(v) for v in f.get('values') or [])}"
+        _mark(
+            f"{f.get('label')}: {', '.join(str(v) for v in f.get('values') or [])}",
+            *_REPORT_ASK_FILTER_PARAMS.get(str(f.get("key")), (f"{f.get('key')}_ids",)),
+        )
         for f in body.get("filters") or []
     ]
-    facts.append(f"Period: {body.get('date_from')} to {body.get('date_to')}")
+    facts.append(
+        _mark(
+            f"Period: {_ask_date(body.get('date_from'))} to {_ask_date(body.get('date_to'))}", "date_from", "date_to"
+        )
+    )
     total = body.get("total") or {}
     figures = f"{_ask_rm(total.get('amount'))}, {_ask_pcs(total.get('qty'))}"
     basis = body.get("basis_label")
@@ -3476,7 +3565,12 @@ def _sales_analysis_envelope(payload: dict) -> dict:
     status = payload.get("status")
     envelope = {"result_type": "sales_analysis", "attachments": [], "has_result": True}
     if status in ("clarify", "refused", "busy"):
-        return {**envelope, "response": str(payload.get("message") or _SALES_ANALYSIS_ERROR)}
+        out = {**envelope, "response": str(payload.get("message") or _SALES_ANALYSIS_ERROR)}
+        companies = payload.get("companies")
+        if status == "clarify" and isinstance(companies, list) and companies:
+            # The question's options, structured: the caller stores it as an open question.
+            out["company_options"] = [str(c) for c in companies]
+        return out
     if status not in ("ready", "pending", "error") or not isinstance(payload.get("rows"), list):
         return {**envelope, "response": _SALES_ANALYSIS_ERROR}
     text = _sales_analysis_text(payload)

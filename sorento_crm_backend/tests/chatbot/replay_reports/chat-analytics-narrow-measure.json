@@ -1,0 +1,357 @@
+{
+ "note": "Chat analytics: a follow-up that only changes the measure to failed asks narrows the report that just ran; the held axis, period and count stay and no period is asked again.",
+ "seed": {
+  "brands": [
+   {
+    "id": "00000000-0000-0000-0000-00000000b801",
+    "brand_code": "ZZTZRX",
+    "brand_name": "Zorvex",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   },
+   {
+    "id": "00000000-0000-0000-0000-00000000b802",
+    "brand_code": "ZZTMCH",
+    "brand_name": "Mochi",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ],
+  "sales_agents": [
+   {
+    "id": "00000000-0000-0000-0000-00000000a801",
+    "sales_agent": "AGENT ALPHA",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   },
+   {
+    "id": "00000000-0000-0000-0000-00000000a802",
+    "sales_agent": "AGENT BRAVO",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ]
+ },
+ "turns": [
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000817,
+     "firstName": "ZZT-900000817",
+     "lastName": "",
+     "phone": "+60900000817",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000817
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000817,
+      "messageId": "zzt-rpt-900000817-1",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "top 5 questions customers ask in 2026"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "chat_report",
+    "domain_hint": "chat_analytics",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": "2026-01-01",
+    "date_filter_end": "2026-12-31",
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": 5,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": {
+     "group_by": "topic",
+     "measure": "asks"
+    },
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report",
+     "chatbot.analytics"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_report_ask",
+     "args": {
+      "dataset": "chat",
+      "basis": "asks",
+      "measure": "asks",
+      "sort": "desc",
+      "group_by": "topic",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "top_n": 5,
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null
+     },
+     "envelope": {
+      "result_type": "report_ask",
+      "response": "Top 2 topics by asks\nPeriod: 01/01/2026 to 31/12/2026\n1. Stock 40 asks\n2. Delivery 22 asks\nTotal 62 asks",
+      "has_result": true
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "canned": [
+     "Top 2 topics by asks"
+    ]
+   },
+   "extractor": {
+    "group_by": "topic",
+    "measure": "asks",
+    "subject": null,
+    "top_n": 5,
+    "date_from": "2026-01-01",
+    "date_to": "2026-12-31",
+    "askers": [],
+    "category_words": [],
+    "brand_words": [],
+    "customer_words": [],
+    "product_words": []
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000817,
+     "firstName": "ZZT-900000817",
+     "lastName": "",
+     "phone": "+60900000817",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000817
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000817,
+      "messageId": "zzt-rpt-900000817-2",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "failed ones only"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "chat_report",
+    "domain_hint": "chat_analytics",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "replace_combine",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": {
+     "group_by": null,
+     "measure": "failed"
+    },
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report",
+     "chatbot.analytics"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_report_ask",
+     "args": {
+      "dataset": "chat",
+      "basis": "turns",
+      "measure": "failed",
+      "sort": "desc",
+      "group_by": "topic",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "top_n": 5,
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null
+     },
+     "envelope": {
+      "result_type": "report_ask",
+      "response": "Top 2 topics by asks\nPeriod: 01/01/2026 to 31/12/2026\n1. Stock 40 asks\n2. Delivery 22 asks\nTotal 62 asks",
+      "has_result": true
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "canned": [
+     "Top 2 topics by asks"
+    ]
+   },
+   "extractor": {
+    "group_by": null,
+    "measure": "failed",
+    "subject": null,
+    "top_n": null,
+    "date_from": null,
+    "date_to": null,
+    "askers": [],
+    "category_words": [],
+    "brand_words": [],
+    "customer_words": [],
+    "product_words": []
+   }
+  }
+ ]
+}

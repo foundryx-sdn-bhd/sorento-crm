@@ -58,6 +58,7 @@ CHATBOT_TOOL_DOMAINS: dict[str, str] = {
     "crm_sales_report": "sales",
     "crm_top_selling_report": "sales",
     "crm_report_ask": "sales",
+    "crm_report": "sales",
     # CHAT-FIND: the generic product find, reached by the lane override on `find.filters`.
     "crm_find": "master_products",
     "crm_sales_analysis": "sales",

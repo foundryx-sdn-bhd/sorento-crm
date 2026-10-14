@@ -64,7 +64,7 @@ def test_catalog_declares_the_spec_params():
 def test_ranking_reply_lines():
     lines = _report_ask(_body()).split("\n")
     # REPORT-DRILLDOWN: one fact per line, `Label: value` (owner rule).
-    assert lines[:3] == ["Top 3 sales agents by delivered sales", "Brand: SORENTO", "Period: 2026-09-01 to 2026-09-30"], lines
+    assert lines[:3] == ["Top 3 sales agents by delivered sales", "Brand: SORENTO", "Period: 01/09/2026 to 30/09/2026"], lines
     assert "1. SA01 RM 1,200.00, 30 pcs" in lines, lines
     assert "2. SA02 RM 600.00, 15 pcs" in lines, lines
     assert "and 2 more" in lines, lines
@@ -90,14 +90,14 @@ def test_ordered_basis_is_named_in_the_header():
 def test_number_shape():
     body = _body(group_by=None, group_label=None, rows=[], more=0, total_count=0)
     assert _report_ask(body) == (
-        "Sales by delivered sales\nBrand: SORENTO\nPeriod: 2026-09-01 to 2026-09-30\nTotal RM 2,100.00, 55 pcs"
+        "Sales by delivered sales\nBrand: SORENTO\nPeriod: 01/09/2026 to 30/09/2026\nTotal RM 2,100.00, 55 pcs"
     )
 
 
 def test_no_rows_names_its_scope_one_fact_per_line():
     body = _body(rows=[], more=0, total_count=0)
     assert _report_ask(body) == (
-        "No delivered sales found\nBrand: SORENTO\nPeriod: 2026-09-01 to 2026-09-30"
+        "No delivered sales found\nBrand: SORENTO\nPeriod: 01/09/2026 to 30/09/2026"
     )
 
 
@@ -131,7 +131,7 @@ def test_each_filter_is_its_own_line_values_joined_with_commas():
     ]
     lines = _report_ask(_body(filters=filters)).split("\n")
     assert lines[:4] == ["Top 3 sales agents by delivered sales", "Brand: SORENTO, MOCHA", "Category: Chairs",
-                         "Period: 2026-09-01 to 2026-09-30"], lines
+                         "Period: 01/09/2026 to 30/09/2026"], lines
 
 
 def test_the_card_link_is_named_in_the_header():

@@ -76,6 +76,9 @@ UNDOMAINED_CHATBOT_TOOLS: tuple[str, ...] = (
     "crm_project_forecast",
     "crm_project_quotations_list",
     "crm_projects_list",
+    # The chatbot routes sales rankings to it since REPORTS-STEP2 S2; the order-domain policy row
+    # still lists crm_report_ask until S4 removes the old tools, so it is undomained until then.
+    "crm_report",
     "crm_purchase_request_by_number",
     "crm_sla_conversation_event_logs_list",
     "crm_sla_conversation_tracking_dashboard",
@@ -103,6 +106,7 @@ BrandScopeTreatment = Literal["filtered", "no_products"]
 BRAND_SCOPE_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
     "crm_top_selling_report": ("code",),
     "crm_report_ask": ("name",),
+    "crm_report": ("name",),
     "crm_order_analytics": ("group_key",),
     "crm_complaint_analytics": ("group_key",),
 }
@@ -154,6 +158,7 @@ BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
     "crm_resource_attachments_catalogue": "filtered",
     "crm_resource_attachments_current_stock_list": "filtered",
     "crm_report_ask": "filtered",
+    "crm_report": "filtered",
     "crm_resource_attachments_list": "filtered",
     "crm_sales_analysis": "filtered",
     "crm_sales_report": "filtered",
@@ -189,7 +194,16 @@ INTENT_HINTS: tuple[str, ...] = tuple(
 )
 IntentHint = Literal[INTENT_HINTS]  # type: ignore[valid-type]
 
-DOMAIN_HINTS: tuple[str, ...] = tuple(row["name"] for row in policy_rows.DEFAULT_DOMAIN_ROWS)
+#: Asks the bot cannot answer, read by the parser as a `domain_hint` of their own (REPORTS-STEP2 S3a):
+#: `domain_hint -> the canned copy key` of its line. No policy row: the turn is `not_supported` by this table.
+UNSUPPORTED_TOPIC_COPY: dict[str, str] = {
+    "receivables": "not_supported_receivables",
+    "dealer_locator": "not_supported_dealer_locator",
+}
+
+DOMAIN_HINTS: tuple[str, ...] = (
+    tuple(row["name"] for row in policy_rows.DEFAULT_DOMAIN_ROWS) + tuple(UNSUPPORTED_TOPIC_COPY)
+)
 DomainHint = Literal[DOMAIN_HINTS]  # type: ignore[valid-type]
 
 
@@ -723,8 +737,8 @@ class Focus(BaseModel):
     # LOWSTOCK-FILTER-ASK: the question `required_fields` left open, one turn long
     # (`turn/state.py::Focus.required_ask`).
     required_ask: dict[str, Any] | None = None
-    # REPORT-ENGINE: the last sales ranking's route args (`turn/state.py::Focus.sales_ranking_frame`).
-    sales_ranking_frame: dict[str, Any] | None = None
+    # REPORT-ENGINE: the last sales ranking's measure key and route args (`turn/state.py::Focus.report`).
+    report: dict[str, Any] | None = None
     # LOWSTOCK-SEMANTIC: the last low stock report's filters (`turn/state.py::Focus.low_stock`).
     low_stock: dict[str, Any] | None = None
     # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner ruling
@@ -1018,3 +1032,19 @@ PREVIEW = "<preview>"
 # property of the build at all - the same kind delegates or completes depending on data -
 # so a module-level constant claiming otherwise could only mislead. `delegate.delegate_for`
 # is the one place that answers the question, and it needs both halves to do it.
+
+
+def company_is_a_brand(verdict: dict[str, Any]) -> bool:
+    """The parser tagged the brand it also put in `entities` as the sales company too: a
+    `sales_company` equal (case and spacing aside) to a brand entity's raw is that brand, not a
+    company. Both are parser fields of the same verdict."""
+    company = " ".join(str(verdict.get("sales_company") or "").split()).casefold()
+    if not company:
+        return False
+    return any(
+        isinstance(e, dict)
+        and e.get("hint") == "brand"
+        and e.get("current_message") is not False
+        and " ".join(str(e.get("raw") or "").split()).casefold() == company
+        for e in (verdict.get("entities") or [])
+    )

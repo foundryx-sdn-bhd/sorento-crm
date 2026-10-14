@@ -46,6 +46,7 @@ from app.services.chatbot.contracts import (
     SALES_DOMAIN,
     SELF_CLOSING_BRANCH_KINDS,
     TURN_FAILURE_STAGES,
+    UNSUPPORTED_TOPIC_COPY,
     Envelope,
     named_count,
     visible_reference_kinds,
@@ -2469,7 +2470,7 @@ def _apply_top_selling_updates(focus: Any, updates: dict[str, Any]) -> None:
     """Write `_top_selling_narrowing`'s updates onto the ranking's slot. A new agent,
     brand or customer word replaces that axis (the ranking is narrowed by what the
     customer names NOW, owner retest 27 Sep 2026)."""
-    if not updates or focus.status != "top_selling":
+    if focus.status != "top_selling":
         return
     slot = focus.top_selling if isinstance(focus.top_selling, dict) else {}
     for key in ("agent_ids", "brand_ids"):
@@ -2481,6 +2482,20 @@ def _apply_top_selling_updates(focus: Any, updates: dict[str, Any]) -> None:
         slot["who"] = dict(updates["who"])
     if updates.get("unknown"):
         slot["unknown"] = [*(slot.get("unknown") or []), *[list(u) for u in updates["unknown"]]]
+    # A fresh ask whose resolved filters equal the held ask's is a restatement: the count changes, the
+    # metric and basis stay (a different filter is a new ask, and the metric is asked again).
+    from app.services.chatbot.turn import apply as _turn_apply_mod
+
+    held = slot.pop("restates", None)
+    # A restatement names the same filters again; a fresh ask with no filter of its own ("top 10 selling
+    # items") states its own metric (owner: never assume), so an empty filter set is never one.
+    if isinstance(held, dict) and any(held.get(k) for k in _turn_apply_mod.TOP_SELLING_RESTATE_FILTERS) and all(
+        sorted(map(str, held.get(k) or [])) == sorted(map(str, slot.get(k) or []))
+        for k in _turn_apply_mod.TOP_SELLING_RESTATE_FILTERS
+    ) and held.get("held_channel") == slot.get("held_channel"):
+        for key in ("rank_by", "basis"):
+            if slot.get(key) is None and held.get(key) is not None:
+                slot[key] = held[key]
     focus.top_selling = slot
 
 
@@ -4742,6 +4757,12 @@ def _run_stages_body(  # noqa: PLR0915
     # so grounding never splits one ("ZZT SINK" into the class SINK plus a spec word).
     from app.services.chatbot.lanes.business import report_ask as _report_ask
 
+    verdict = _report_ask.as_ranking_basis_status(verdict, state_in.focus.report)
+    verdict = _report_ask.as_ranking_filter_refine(verdict, state_in.focus.report)
+    verdict = _report_ask.as_ranking_basis_status(verdict, state_in.focus.report)  # again: the refine may have made it a ranking
+    verdict = _report_ask.as_ranking_refine(verdict, state_in.focus.report, state_in.focus.top_selling)
+    verdict = _report_ask.as_outstanding_ranking(verdict)
+    verdict = _report_ask.as_top_selling(verdict, state_in.focus.report)
     verdict, _ranking_words = _report_ask.hold_words(verdict)
     with _session(session_factory) as grounding_db:
         verdict, grounding_notes = grounding.ground(
@@ -4821,6 +4842,13 @@ def _run_stages_body(  # noqa: PLR0915
         open_ask = state_in.focus.required_ask
         state_in.focus.required_ask = None
         if (open_ask or {}).get("ask") == report_ask.ASK_NAME and report_ask.names_its_own_ask(verdict, open_ask):
+            held_group = ((open_ask.get("extras") or {}).get("args") or {}).get("group_by")
+            raw_group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
+            if open_ask.get("asking") == "period" and (not raw_group or report_ask.GROUP_BY.get(raw_group, raw_group) == held_group):
+                # The same ranking restated with still no period: the lane re-asks it once, in
+                # other words, and counts the miss against the same bound a slot answer has. Another
+                # ranking starts its own period question at zero.
+                verdict = {**verdict, "report_ask_restated": {"misses": int(open_ask.get("misses") or 0)}}
             open_ask = None  # a new sales ranking ask, not the answer to the open question
         if (open_ask or {}).get("ask") == chat_report.ASK_NAME and not verdict.get("order_status"):
             # The reply to a chat report question is read ONCE by the extractor, with the open ask;
@@ -4985,6 +5013,27 @@ def _run_stages_body(  # noqa: PLR0915
                     },
                 )
                 verdict = engine_verdict
+
+        # The sales report drill offer: `decide.picked_positions` is the one pick test. A declared
+        # `open_question_answer` pick with no position and no label match is not a pick, so it is
+        # stripped before APPLY would turn it into positions (the live parser declares `picked: [2]`
+        # beside the product code it typed on "only <code>").
+        from app.services.chatbot.turn import decide as _decide
+
+        if (
+            state_in.pending is not None
+            and state_in.pending.kind == "sales_report_detail"
+            and isinstance(verdict.get("open_question_answer"), dict)
+            and verdict["open_question_answer"].get("mode") == "pick"
+            and _decide.picked_positions(state_in.pending, verdict) is None
+            # Only the typed-code shape: a worded pick ("the second one", "kedua") carries no product
+            # entity, and `apply._open_pick_answer` converts it.
+            and sum(
+                1 for e in (verdict.get("entities") or [])
+                if isinstance(e, dict) and e.get("current_message") is not False and e.get("hint") == "product"
+            ) == 1
+        ):
+            verdict = {**verdict, "open_question_answer": dict(turn_question.NO_ANSWER)}
 
         # PR #1353 fix round 2: a bare pick answered in the roster's domain takes the
         # roster's axis from the option picked, never from a value the parser carried.
@@ -5737,6 +5786,17 @@ def _run_stages_body(  # noqa: PLR0915
         # so every arm has it (`run_tail` carries `item["reply_language"]` to the next turn);
         # the business lane below recomputes it once its codes and names are known.
         item["reply_language"] = _turn_language(latest_user_message, remembered_before, profile)
+        if branch_kind == "not_supported" and verdict.get("domain_hint") in UNSUPPORTED_TOPIC_COPY:
+            # The fixed line for a topic the bot cannot answer is told in the contact's own language (the
+            # conversation's, else the saved one), whatever words the question used.
+            # A message that is plainly Chinese or Malay says its own language; English marker words are weak
+            # (they only say "not asked in another language"), so they do not override a remembered one.
+            detected = language_mod.detect(latest_user_message.split("\n")[0])
+            item["reply_language"] = language_mod.choose(
+                detected if detected in ("zh", "ms") else None,
+                remembered_before.get("reply_language"),
+                getattr(profile, "language", None),
+            )
 
         # Owner ruling, hand pass 10 (21 Sep 2026, `test_rearch_r10_handpass10_
         # replay.py::TestHandPass10PromotionAskRepeatsAfterATierPick`): a fresh
@@ -6393,6 +6453,7 @@ def _run_stages_body(  # noqa: PLR0915
                         else None
                     ),
                     profile=state_out.profile,
+                    open_offer=state_in.pending,
                     resolver_gate=(
                         resolver_payload.get("gate")
                         if isinstance(resolver_payload, dict)
@@ -6942,12 +7003,27 @@ def _run_stages_body(  # noqa: PLR0915
                 )
                 # The frame lives only through sales ranking turns (one that ran replaces it,
                 # one that asked a required field keeps it); any other ask clears it.
-                state_out.focus.sales_ranking_frame = next(
-                    (e["sales_ranking_frame"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("sales_ranking_frame"), dict)),
-                    state_out.focus.sales_ranking_frame
-                    if jsc.js_string(parsed_output.get("order_status") or "").strip() == "sales_ranking"
-                    else None,
+                # Owner rule: the held report survives an answer in another domain (a stock ask between a
+                # ranking and "back to the ranking, dealers only"); a new report replaces it, and a topic
+                # reset drops it.
+                from app.services.chatbot import contracts as _contracts
+
+                new_report = next(
+                    (e["report"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("report"), dict)),
+                    None,
                 )
+                held_report = None if verdict.get("topic_reset") is True else state_out.focus.report
+                if (
+                    new_report is None
+                    and isinstance(held_report, dict)
+                    and not held_report.get("kind")
+                    and jsc.js_string(parsed_output.get("domain_hint") or "").strip() == "order"
+                    and jsc.js_string(parsed_output.get("order_status") or "").strip() not in _contracts.SALES_FIGURE_STATUSES
+                ):
+                    # An order list answered after the ranking: the list is the latest answer, so a brand word
+                    # alone continues it (`order_list.is_open_order_list` reads this).
+                    held_report = {**held_report, "listed_after": True}
+                state_out.focus.report = new_report if new_report is not None else held_report
                 # LOWSTOCK-SEMANTIC (crew root cause, 4 Oct 2026): the filters a low stock
                 # report was built with outlive the turn, so "taiyang only" narrows it.
                 low_stock_frame = next(
@@ -6972,6 +7048,13 @@ def _run_stages_body(  # noqa: PLR0915
                     # crew-tester re-run on PR #1435 (3 Oct 2026): "1" under the summary got
                     # the SO list's period question, and the sticky detail offer then read
                     # "september" as narrowing the summary. The SO list answered: it closes.
+                    state_out = dataclasses_replace(state_out, pending=None)
+                if (
+                    state_out.pending is not None
+                    and state_out.pending.kind == "sales_report_detail"
+                    and _answered_by_narrowed_miss(envelopes)
+                ):
+                    # A narrowed report with nothing sold lists no drill options: the old offer closes.
                     state_out = dataclasses_replace(state_out, pending=None)
                 turn_trace.record(
                     "looked_up",
@@ -7066,10 +7149,12 @@ def _run_stages_body(  # noqa: PLR0915
         # nothing else composed it, exactly the shape `stock_denied` handles the
         # same way just above.
         if answer is None and sales_report_grant_refused and completes_here:
-            from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+            from app.services.chatbot.lanes.business import _report_line
 
             stage[0] = "replied"
-            answer = turn_compose.Answer(text=SALES_REPORT_NOT_ENABLED_MESSAGE)
+            # `localizer` is unset on this path (the fetch block that resolves it is skipped).
+            refused_localizer = label_catalog.resolve(db, item.get("reply_language") or "en", dry_run=dry_run)
+            answer = turn_compose.Answer(text=_report_line(db, {"localizer": refused_localizer}, "report_not_enabled"))
 
         # -- the REFUSAL: a customer word outside a scoped contact's links -------- #
         # Once for the whole turn, however many domains the plan fans out to; no picker,
@@ -9388,6 +9473,16 @@ def _stock_ask_packing_list_files(envelopes: list[dict[str, Any]]) -> list[dict[
                 }
             )
     return files
+
+
+def _answered_by_narrowed_miss(envelopes: list[dict[str, Any]]) -> bool:
+    """Did a narrowed sales report with no sales (`fetch._sales_report_output`) answer this turn?"""
+    for env in envelopes:
+        raw = env.get("raw_fragment") if isinstance(env, dict) else None
+        fetched = raw.get("fetch") if isinstance(raw, dict) else None
+        if isinstance(fetched, dict) and fetched.get("narrowed_miss") is True:
+            return True
+    return False
 
 
 def _answered_by_so_list(envelopes: list[dict[str, Any]]) -> bool:

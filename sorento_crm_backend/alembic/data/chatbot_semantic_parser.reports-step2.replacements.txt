@@ -1,0 +1,15 @@
+# REPORTS-STEP2 line replacements for the prod parser line (crew applies them to v52).
+# Source of the OLD text: alembic/data/chatbot_semantic_parser.prod-20261001.txt (line numbers are that file's).
+# Format: one entry per block; the OLD and NEW lines are everything after "OLD: " / "NEW: ", leading spaces included.
+#
+# README: chat analytics (part c). The prod line lacks CHAT_REPORT_ADDENDUM
+# (app/services/chatbot_parser_prompt.py, CHAT_REPORT_ADDENDUM, from #1553). Append that text as is,
+# before chatbot_semantic_parser.reports-step2.addendum.txt; it is not duplicated in the addendum.
+
+prod-20261001.txt:1443 (contradicts part b: it names delivered as the default basis)
+OLD:   - "selling" / "sold" with no basis word -> null (the default, delivered)
+NEW:   - "selling" / "sold" with no basis word -> null (the bot asks which sale is counted; NEVER guess)
+
+prod-20261001.txt:1406 (the basis values the prompt lists lack outstanding, which part a emits)
+OLD:   "basis": "delivered|ordered|unclear|null",
+NEW:   "basis": "delivered|ordered|outstanding|unclear|null",

@@ -39,6 +39,8 @@ class ReportAskResponse(BaseModel):
     basis: str
     basis_label: str
     measure: str
+    measure_key: Optional[str] = None
+    carried: Optional[List[str]] = None
     sort: str = "desc"
     group_by: Optional[str] = None
     group_label: Optional[str] = None

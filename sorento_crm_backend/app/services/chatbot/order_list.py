@@ -62,6 +62,9 @@ def _is_filler(word: str) -> bool:
 def is_open_order_list(focus: Any) -> bool:
     """Is the conversation on an order list (a DO, SO or outstanding list)?"""
     domains = list(getattr(focus, "domains", None) or [])
+    report = getattr(focus, "report", None)
+    if isinstance(report, dict) and report and not report.get("kind") and not report.get("listed_after"):
+        return False  # a sales ranking is the latest answer (no order list after it): its words are the ranking's
     return "order" in domains and getattr(focus, "status", None) not in _NOT_A_LIST
 
 

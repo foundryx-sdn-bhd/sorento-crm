@@ -165,7 +165,7 @@ and the time on the automation (Q7); the period is ruled (Q8).
   - Round 2: Owner ruling 26 Sep 06:27 (Lavish) 6: the golden is now the text header plus an attachment (AC-R2-13, AC-R2-14); the header and total lines stay; the month lines move into the file.
   - Round 4: Owner ruling 26 Sep 07:16 Q2: the month lines come back into the text (the text is the whole answer) and the attachment stays (AC-R4-1).
 - **AC-S1-21 [BE][T]** A contact granted both companies who names none gets `Sorento or Mocha?`
-  and nothing is fetched.
+  and nothing is fetched. The clarify body also carries `companies`, the option names in the same order, so the chatbot can store the question as an open question.
   - Round 4: a clarify question carries no file (AC-R4-3).
 - **AC-S1-22 [BE][T]** No period in the message = the current calendar year, printed in the
   header (G6). An ambiguous period ("last quarter" in January) gets `Which period: last quarter of

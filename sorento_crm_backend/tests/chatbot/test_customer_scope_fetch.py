@@ -105,9 +105,9 @@ class TestUnscopedTools:
 
 
 class TestSetIsPinnedToTheCatalogue:
-    def test_the_set_is_the_seven_tools(self) -> None:
-        """AC-CS-31: the set named in D4."""
-        assert fetch.CUSTOMER_SCOPED_TOOLS == frozenset(SCOPED_TOOLS)
+    def test_the_set_is_the_eight_tools_plus_crm_report(self) -> None:
+        """AC-CS-31: the set named in D4, plus `crm_report` (REPORTS-STEP2, lead sign-off)."""
+        assert fetch.CUSTOMER_SCOPED_TOOLS == frozenset(SCOPED_TOOLS) | {"crm_report"}
 
     def test_customer_scoped_tools_pinned_to_catalogue(self) -> None:
         """AC-CS-32: every catalogue tool whose `query_params` carry `customer_ids` is in
@@ -271,3 +271,11 @@ class TestMyMeansAllLinkedAccounts:
             _trigger("crm_sales_report", [a, b], [_customer(b)], self_reference=True, outstanding_carried_customer_ids=[a])
         )
         assert out["customer_ids"] == [b], out
+
+
+def test_crm_report_does_not_inject_a_big_scope_list_as_customer_ids() -> None:
+    """REPORTS-STEP2 review: like crm_report_ask, crm_report's route forces the dealer's links, so a
+    dealer with more linked customers than the route's 50-value cap gets none injected."""
+    scope = [str(uuid.uuid4()) for _ in range(60)]
+    out = fetch.entity_ids_transformer(_trigger("crm_report", scope, []))
+    assert not out.get("customer_ids"), out

@@ -1,0 +1,1081 @@
+{
+ "note": "Sales ranking drill: the scope question answered 'above' runs the customers of exactly the agents printed; a count narrowing keeps the agents; a stock ask; back to the customers ranking with another count.",
+ "seed": {
+  "brands": [
+   {
+    "id": "00000000-0000-0000-0000-00000000b801",
+    "brand_code": "ZZTZRX",
+    "brand_name": "Zorvex",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   },
+   {
+    "id": "00000000-0000-0000-0000-00000000b802",
+    "brand_code": "ZZTMCH",
+    "brand_name": "Mochi",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ],
+  "sales_agents": [
+   {
+    "id": "00000000-0000-0000-0000-00000000a801",
+    "sales_agent": "AGENT ALPHA",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   },
+   {
+    "id": "00000000-0000-0000-0000-00000000a802",
+    "sales_agent": "AGENT BRAVO",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ]
+ },
+ "turns": [
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000803,
+     "firstName": "ZZT-900000803",
+     "lastName": "",
+     "phone": "+60900000803",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000803
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000803,
+      "messageId": "zzt-rpt-900000803-1",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "top 3 sales agents for Zorvex in 2026 by amount, delivered"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": "2026-01-01",
+    "date_filter_end": "2026-12-31",
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "Zorvex",
+      "hint": "brand",
+      "canonical_code": null,
+      "current_message": true,
+      "confident": true,
+      "hint_confident": true,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_ranking",
+    "group_by": "sales_agent",
+    "top_n": 3,
+    "sales_channel": null,
+    "rank_by": "amount",
+    "basis": "delivered",
+    "rank_group": null,
+    "rank_direction": "top",
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": false,
+    "ranking_drill": "global",
+    "measure": "amount",
+    "sales_basis": "delivered",
+    "sales_company": "Zorvex",
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_report",
+     "args": {
+      "sort": "desc",
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null,
+      "measure": "delivered_amount",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "brand_ids": [
+       "00000000-0000-0000-0000-00000000b801"
+      ],
+      "group_by": "sales_agent",
+      "top_n": 3
+     },
+     "envelope": {
+      "result_type": "report_ask",
+      "response": "Top 2 sales agents by delivered amount\nBrand: Zorvex\nPeriod: 01/01/2026 to 31/12/2026\n1. AGENT ALPHA RM 1,200.00\n2. AGENT BRAVO RM 480.00\nTotal RM 1,680.00",
+      "has_result": true,
+      "drill_rows": {
+       "group_by": "sales_agent",
+       "rows": [
+        {
+         "name": "AGENT ALPHA",
+         "keys": [
+          "00000000-0000-0000-0000-00000000a801"
+         ]
+        },
+        {
+         "name": "AGENT BRAVO",
+         "keys": [
+          "00000000-0000-0000-0000-00000000a802"
+         ]
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "entity_ids": [
+     "00000000-0000-0000-0000-00000000b801"
+    ],
+    "canned": [
+     "Top 2 sales agents by delivered amount"
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000803,
+     "firstName": "ZZT-900000803",
+     "lastName": "",
+     "phone": "+60900000803",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000803
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000803,
+      "messageId": "zzt-rpt-900000803-2",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "top 5 customers"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_ranking",
+    "group_by": "customer",
+    "top_n": 5,
+    "sales_channel": null,
+    "rank_by": "amount",
+    "basis": "delivered",
+    "rank_group": null,
+    "rank_direction": "top",
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": false,
+    "ranking_drill": "unsure",
+    "measure": "amount",
+    "sales_basis": "delivered",
+    "sales_company": "Zorvex",
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [],
+   "expected": {
+    "branch_kind": "business_query",
+    "canned": [
+     "Top 5 customers of the 2 sales agents above, or across all customers?"
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000803,
+     "firstName": "ZZT-900000803",
+     "lastName": "",
+     "phone": "+60900000803",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000803
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000803,
+      "messageId": "zzt-rpt-900000803-3",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "above"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "reuse",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_ranking",
+    "group_by": "customer",
+    "top_n": 5,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": "top",
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": false,
+    "ranking_drill": "scoped",
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": "Zorvex",
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_report",
+     "args": {
+      "sort": "desc",
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null,
+      "measure": "delivered_amount",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "brand_ids": [
+       "00000000-0000-0000-0000-00000000b801"
+      ],
+      "group_by": "customer",
+      "top_n": 5,
+      "customer_agent_ids": [
+       "00000000-0000-0000-0000-00000000a801",
+       "00000000-0000-0000-0000-00000000a802"
+      ]
+     },
+     "envelope": {
+      "result_type": "report_ask",
+      "response": "Top 2 customers by delivered amount\nBrand: Zorvex\nSales agents: AGENT ALPHA, AGENT BRAVO\nPeriod: 01/01/2026 to 31/12/2026\n1. ZZT CUSTOMER ONE RM 900.00\n2. ZZT CUSTOMER TWO RM 300.00\nTotal RM 1,200.00",
+      "has_result": true,
+      "drill_rows": {
+       "group_by": "customer",
+       "rows": [
+        {
+         "name": "ZZT CUSTOMER ONE",
+         "keys": [
+          "00000000-0000-0000-0000-00000000c801"
+         ]
+        },
+        {
+         "name": "ZZT CUSTOMER TWO",
+         "keys": [
+          "00000000-0000-0000-0000-00000000c802"
+         ]
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "entity_ids": [
+     "00000000-0000-0000-0000-00000000b801",
+     "00000000-0000-0000-0000-00000000a801",
+     "00000000-0000-0000-0000-00000000a802"
+    ],
+    "canned": [
+     "Top 2 customers by delivered amount",
+     "Sales agents: AGENT ALPHA, AGENT BRAVO"
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000803,
+     "firstName": "ZZT-900000803",
+     "lastName": "",
+     "phone": "+60900000803",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000803
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000803,
+      "messageId": "zzt-rpt-900000803-4",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "top 10"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "reuse",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_ranking",
+    "group_by": "customer",
+    "top_n": 10,
+    "sales_channel": null,
+    "rank_by": "amount",
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": "top",
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": true,
+    "ranking_drill": "global",
+    "measure": "amount",
+    "sales_basis": null,
+    "sales_company": "Zorvex",
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_report",
+     "args": {
+      "sort": "desc",
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null,
+      "measure": "delivered_amount",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "brand_ids": [
+       "00000000-0000-0000-0000-00000000b801"
+      ],
+      "group_by": "customer",
+      "top_n": 10,
+      "customer_agent_ids": [
+       "00000000-0000-0000-0000-00000000a801",
+       "00000000-0000-0000-0000-00000000a802"
+      ],
+      "carried": [
+       "brand_ids",
+       "customer_agent_ids",
+       "date_from",
+       "date_to"
+      ]
+     },
+     "envelope": {
+      "result_type": "report_ask",
+      "response": "Top 2 customers by delivered amount\nBrand: Zorvex\nSales agents: AGENT ALPHA, AGENT BRAVO\nPeriod: 01/01/2026 to 31/12/2026\n1. ZZT CUSTOMER ONE RM 900.00\n2. ZZT CUSTOMER TWO RM 300.00\nTotal RM 1,200.00",
+      "has_result": true,
+      "drill_rows": {
+       "group_by": "customer",
+       "rows": [
+        {
+         "name": "ZZT CUSTOMER ONE",
+         "keys": [
+          "00000000-0000-0000-0000-00000000c801"
+         ]
+        },
+        {
+         "name": "ZZT CUSTOMER TWO",
+         "keys": [
+          "00000000-0000-0000-0000-00000000c802"
+         ]
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "entity_ids": [
+     "00000000-0000-0000-0000-00000000b801",
+     "00000000-0000-0000-0000-00000000a801",
+     "00000000-0000-0000-0000-00000000a802"
+    ],
+    "canned": [
+     "Sales agents: AGENT ALPHA, AGENT BRAVO"
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000803,
+     "firstName": "ZZT-900000803",
+     "lastName": "",
+     "phone": "+60900000803",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000803
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000803,
+      "messageId": "zzt-rpt-900000803-5",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "stock of ZZT100"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_stock",
+    "domain_hint": "inventory",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking stock of ZZT100",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "ZZT100",
+      "hint": "product",
+      "canonical_code": "ZZT100",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": true,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_inventory_stock_balance_list",
+     "args": {
+      "_diagnostics": null,
+      "access_levels": [],
+      "contact_id": "x",
+      "date_mode": null,
+      "is_active": null,
+      "product_ids": [
+       "00000000-0000-0000-0000-00000000d801"
+      ],
+      "space_id": "x",
+      "view": "render"
+     },
+     "envelope": {
+      "action_links": [],
+      "attachments": [],
+      "fallback_used": false,
+      "has_result": true,
+      "intro": "Stock details found for the requested products.",
+      "items": [
+       {
+        "fields": [
+         {
+          "key": "company_name",
+          "label": "Company",
+          "value": "Zorvex"
+         },
+         {
+          "key": "product_code",
+          "label": "Product Code",
+          "value": "ZZT100"
+         },
+         {
+          "key": "warehouse",
+          "label": "Warehouse",
+          "value": "ZZT WAREHOUSE"
+         },
+         {
+          "key": "quantity_on_hand",
+          "label": "Quantity On Hand",
+          "value": 25
+         }
+        ],
+        "flags": {
+         "discontinued": false,
+         "expired": false,
+         "expiring_soon": false,
+         "partially_allocated": false,
+         "unallocated": false
+        },
+        "title": "ZZT100"
+       }
+      ],
+      "last_updated_at": "2026-10-12T09:00:00",
+      "lookup_companies": [],
+      "restricted_fields": {},
+      "result_type": "stock"
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "entity_ids": [
+     "00000000-0000-0000-0000-00000000d801"
+    ],
+    "canned": [
+     "Stock details found"
+    ]
+   },
+   "resolutions": {
+    "tokens": [
+     "ZZT100"
+    ],
+    "unresolved_tokens": [],
+    "resolutions": [
+     {
+      "token": "ZZT100",
+      "resolved": true,
+      "matches": [
+       {
+        "canonical_code": "ZZT100",
+        "entity_type": "product",
+        "uuid": "00000000-0000-0000-0000-00000000d801"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000803,
+     "firstName": "ZZT-900000803",
+     "lastName": "",
+     "phone": "+60900000803",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000803
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000803,
+      "messageId": "zzt-rpt-900000803-6",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "back to the customers, top 3"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "order",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "reuse",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_ranking",
+    "group_by": "customer",
+    "top_n": 3,
+    "sales_channel": null,
+    "rank_by": "amount",
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": "top",
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": true,
+    "ranking_drill": "global",
+    "measure": "amount",
+    "sales_basis": null,
+    "sales_company": "Zorvex",
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_report",
+     "args": {
+      "sort": "desc",
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null,
+      "measure": "delivered_amount",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "brand_ids": [
+       "00000000-0000-0000-0000-00000000b801"
+      ],
+      "group_by": "customer",
+      "top_n": 3,
+      "customer_agent_ids": [
+       "00000000-0000-0000-0000-00000000a801",
+       "00000000-0000-0000-0000-00000000a802"
+      ],
+      "carried": [
+       "brand_ids",
+       "customer_agent_ids",
+       "date_from",
+       "date_to"
+      ]
+     },
+     "envelope": {
+      "result_type": "report_ask",
+      "response": "Top 2 customers by delivered amount\nBrand: Zorvex\nSales agents: AGENT ALPHA, AGENT BRAVO\nPeriod: 01/01/2026 to 31/12/2026\n1. ZZT CUSTOMER ONE RM 900.00\n2. ZZT CUSTOMER TWO RM 300.00\nTotal RM 1,200.00",
+      "has_result": true,
+      "drill_rows": {
+       "group_by": "customer",
+       "rows": [
+        {
+         "name": "ZZT CUSTOMER ONE",
+         "keys": [
+          "00000000-0000-0000-0000-00000000c801"
+         ]
+        },
+        {
+         "name": "ZZT CUSTOMER TWO",
+         "keys": [
+          "00000000-0000-0000-0000-00000000c802"
+         ]
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "entity_ids": [
+     "00000000-0000-0000-0000-00000000b801",
+     "00000000-0000-0000-0000-00000000a801",
+     "00000000-0000-0000-0000-00000000a802"
+    ],
+    "canned": [
+     "Sales agents: AGENT ALPHA, AGENT BRAVO"
+    ]
+   }
+  }
+ ]
+}

@@ -71,7 +71,7 @@ ALL_WORDS = frozenset({"all", "any", "everything", "every", "semua", "全部", "
 ENGINE_KEYS = frozenset(
     {
         "required_ask", "required_ask_reply", "required_ask_answer", "low_stock_frame",
-        "report_ask_words", "sales_ranking_frame",
+        "report_ask_words", "sales_ranking_frame", "report_ask_restated",
     }
 )
 #: An OPTIONAL field also takes these as "no filter" (it was never required).
@@ -113,6 +113,9 @@ class FieldSpec:
     ask_unknown: bool = False
     #: The first line of a numbered pick, when "Which <noun> do you mean?" does not fit.
     pick_head: str | None = None
+    #: The fixed answers a free question takes (codes), stated to the parser as the options of
+    #: its `Open question:` object.
+    choices: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -130,9 +133,16 @@ class AskType:
     #: the original capture (a short reply is the answer, a longer other ask or a "?" drops
     #: it), which IDEATION-CAPTURE (#1444) is written and tested against.
     answered_by_parser: bool = False
+    #: A verdict naming its own ask (`domain_in_message` true, `ranking_refine` false) is a new question
+    #: that wins over any reply reading, a declared answer included (the sales ranking ask only).
+    new_ask_wins: bool = False
     #: Verdict keys an ANSWER to this ask never carries on: the answer fills the asked slot
     #: only, so a filter the parser put on it is not a new filter (AC-HT8-16).
     answer_drops: tuple[str, ...] = ()
+    #: The open question is stated to the parser as the turn's `Open question:` object although
+    #: replies are still read by shape (`answered_by_parser` False): the parser then knows what
+    #: the message may be answering, and its words are never matched in code.
+    stated_to_parser: bool = False
     #: Verdict keys that make a LONG reply read as another ask still an answer: the parser
     #: put the answer's own words in them (CA-3: a period or a count named in "top 5 for
     #: September"). Empty keeps the original capture.
@@ -225,6 +235,23 @@ def _from_pick(spec: FieldSpec, options: list[list[Any]], word: str) -> Resolved
     return None
 
 
+def _keep_other_givens(
+    db: Any, ask: AskType, asked: str, values: dict[str, dict[str, Any]], given: dict[str, Any] | None,
+    carried: dict[str, Any],
+) -> None:
+    """A reply that missed the asked field still carried other fields (the parser read a metric
+    under the period question): the ones that settle are kept, never asked again."""
+    for other in ask.fields:
+        if other.name == asked or other.name in values:
+            continue
+        word = (given or {}).get(other.name)
+        got = word if isinstance(word, Resolved) else None
+        if got is None and isinstance(word, str) and word.strip():
+            got = _settle(db, _live(other), word, carried)
+        if got is not None and got.status == "ok":
+            values[other.name] = {"value": got.value, "label": got.label}
+
+
 def collect(
     db: Any,
     ask: AskType,
@@ -281,6 +308,7 @@ def collect(
                 # A reply the caller could read nothing from is asked again, plainly (a
                 # numbered pick shows its list again).
                 again = _pick_line(spec, options) if options else spec.question
+                _keep_other_givens(db, ask, spec.name, values, given, carried)
                 return Outcome(values=values, reply=_miss_line(word, spec, got.note) if word else again,
                                slot=_slot(ask, values, carried, asking=spec.name, options=options, misses=misses),
                                extras=carried)
@@ -319,6 +347,10 @@ def collect(
     return Outcome(values=values, extras=carried)
 
 
+def _names_its_own_ask(verdict: dict[str, Any]) -> bool:
+    return verdict.get("domain_in_message") is True and verdict.get("ranking_refine") is False
+
+
 def reply_verdict(
     verdict: dict[str, Any],
     slot: dict[str, Any] | None,
@@ -341,7 +373,10 @@ def reply_verdict(
         return _reply_verdict_by_shape(verdict, slot, text, ask)
     answer = verdict.get("open_question_answer")
     mode = answer.get("mode") if isinstance(answer, dict) else None
-    answers = mode in ANSWER_MODES
+    # A verdict that names its own ask (a domain word, not a refine) is a new question, which wins
+    # over an answer the parser also declared.
+    names_its_own_ask = ask.new_ask_wins and _names_its_own_ask(verdict)
+    answers = mode in ANSWER_MODES and not names_its_own_ask
     if not (text or "").strip() or not answers:
         return verdict, "required_ask_dropped"
     rerouted = {
@@ -363,6 +398,8 @@ def _reply_verdict_by_shape(
     words = (text or "").split()
     if not words or "?" in text:
         return verdict, "required_ask_dropped"
+    if ask.new_ask_wins and _names_its_own_ask(verdict):
+        return verdict, "required_ask_dropped"  # names its own ask: a new question wins
     same_ask = verdict.get("intent_hint") == ask.reroute.get("intent_hint")
     other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (
         "business_query", "clarification", None,

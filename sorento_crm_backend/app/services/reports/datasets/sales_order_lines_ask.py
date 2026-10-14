@@ -107,6 +107,12 @@ def sales_agent_condition(ctx: Any, values: List[str]) -> Optional[Any]:
     return _agent_in(SalesOrder.sales_agent_id, values)
 
 
+def has_agent_condition(ctx: Any, values: List[str]) -> Optional[Any]:
+    """Only lines of an order that has a sales agent (a sales agent ranking leaves the "(no agent)"
+    bucket out of its set, so the rows and the total agree)."""
+    return SalesOrder.sales_agent_id.isnot(None)
+
+
 def customer_agent_condition(ctx: Any, values: List[str]) -> Optional[Any]:
     """The customer CARD link (REPORT-DRILLDOWN, owner 8 Oct 2026): lines of customers whose
     assigned agent (`customers.sales_agent_id`) is one of the values, whoever sold the order."""
@@ -183,6 +189,7 @@ def _definition(basis: str) -> reg.ReportDefinition:
             reg.SelectParam("category", "Category", True, (), _no_options, category_condition),
             reg.SelectParam("sales_agent", "Sales agent", True, (), _no_options, sales_agent_condition),
             reg.SelectParam("customer_agent", "Customers assigned to", True, (), _no_options, customer_agent_condition),
+            reg.SelectParam("has_agent", "Has a sales agent", True, (), _no_options, has_agent_condition),
             reg.SelectParam("location", "Location", True, (), _no_options, location_condition),
             reg.SelectParam("channel", "Channel", True, (), _no_options, channel_condition),
         ),

@@ -833,6 +833,18 @@ def current_subject_line(focus: Any) -> str | None:
     status = getattr(focus, "status", None)
     if isinstance(status, str) and status.strip():
         parts.append(f"status {status.strip()}")
+    report = getattr(focus, "report", None)
+    if isinstance(report, dict) and report and not report.get("kind"):
+        # A sales ranking is held: say its axis (and count and channel), so a follow-up that only
+        # changes a filter is read against the ranking on screen, not guessed from its heading.
+        held = report.get("args") if isinstance(report.get("args"), dict) else {}
+        if held.get("group_by"):
+            bits = [f"ranking by {held['group_by']}"]
+            if held.get("top_n"):
+                bits.append(f"top {held['top_n']}")
+            if held.get("channel"):
+                bits.append(f"channel {held['channel']}")
+            parts.append(", ".join(bits))
     window = getattr(focus, "date_window", None)
     if isinstance(window, dict):
         bounds = [str(window.get(key)).strip() for key in ("start", "end") if window.get(key)]

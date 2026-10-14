@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from app.services.chatbot_reply_copy import CHATBOT_REPLY_COPY
 
 from tests.chatbot import test_report_ask_lane as lane_tests
 from tests.chatbot.test_report_ask_lane import (  # noqa: F401  (console is a fixture)
@@ -28,6 +29,7 @@ from tests.chatbot.test_report_ask_lane import (  # noqa: F401  (console is a fi
     SEP,
     TOPN_Q,
     _e,
+    _split_key,
     _parser_output,
     _rank,
     _reply,
@@ -102,7 +104,7 @@ def test_scoped_customers_of_these_agents_keep_every_filter_and_use_the_card_lin
     assert "sales_agent_ids" not in args, args
     assert args["product_code"] == PRODUCT_CODE, args
     assert args["date_from"] == SEP["date_filter_start"] and args["date_to"] == SEP["date_filter_end"], args
-    assert args["basis"] == "delivered" and args["measure"] == "amount" and args["sort"] == "desc", args
+    assert _split_key(args)["basis"] == "delivered" and _split_key(args)["measure"] == "amount" and args["sort"] == "desc", args
     assert "shown" not in args and "drill_rows" not in args, args
     assert PERIOD_Q not in text and TOPN_Q not in text, text
 
@@ -140,7 +142,7 @@ def test_the_message_own_basis_measure_and_period_replace_the_held_ones(console)
         "bottom 10 customers of these agents by quantity, ordered, first half",
     )
     (args,) = calls
-    assert args["basis"] == "ordered" and args["measure"] == "qty" and args["sort"] == "asc", args
+    assert _split_key(args)["basis"] == "ordered" and _split_key(args)["measure"] == "qty" and args["sort"] == "asc", args
     assert args["date_from"] == "2026-01-01" and args["date_to"] == "2026-06-30", args
     assert args["customer_agent_ids"] == [AG1, AG2, "none"], args
 
@@ -297,7 +299,7 @@ def test_a_dealer_drill_to_a_staff_axis_is_refused() -> None:
     verdict = {"order_status": "sales_ranking", "group_by": "customer", "ranking_drill": "scoped", "top_n": 5,
                "sales_ranking_frame": frame}
     outcome, line = report_ask.settle(None, verdict, [], dealer=True)
-    assert outcome is None and line == report_ask.DEALER_REFUSAL, (outcome, line)
+    assert outcome is None and line == CHATBOT_REPLY_COPY["report_dimension_denied"][1], (outcome, line)
 
 
 def test_the_frame_keeps_shown_rows_only_for_its_own_axis() -> None:
@@ -306,10 +308,10 @@ def test_the_frame_keeps_shown_rows_only_for_its_own_axis() -> None:
     rows = {"group_by": "customer", "rows": [{"name": "X", "keys": ["c"]}]}
     args = {"group_by": "sales_agent", "basis": "delivered"}
     out = _report_ask_output({"response": "Top 1 sales agent", "drill_rows": rows}, {"semantic_input": {"report_ask_args": args}})
-    assert "shown" not in out["sales_ranking_frame"], out["sales_ranking_frame"]
+    assert not out["report"]["shown"], out["report"]
     same = {**rows, "group_by": "sales_agent"}
     out = _report_ask_output({"response": "Top 1 sales agent", "drill_rows": same}, {"semantic_input": {"report_ask_args": args}})
-    assert out["sales_ranking_frame"]["shown"] == same, out
+    assert out["report"]["shown"] == same, out
 
 
 # ============================================================================ review round 2
@@ -320,7 +322,7 @@ def test_the_same_axis_keeps_the_held_count_and_direction(console) -> None:
     _text, calls = console.say(_drill(group_by="sales_agent", top_n=None, rank_direction=None, measure="qty"),
                                "these agents by quantity")
     (args,) = calls
-    assert args["top_n"] == 3 and args["sort"] == "asc" and args["measure"] == "qty", args
+    assert args["top_n"] == 3 and args["sort"] == "asc" and _split_key(args)["measure"] == "qty", args
     assert args["sales_agent_ids"] == [AG1, AG2, "none"], args
 
 
@@ -386,17 +388,19 @@ def test_the_scope_reply_runs_the_drill_with_the_held_period(console) -> None:
     assert args["date_from"] == SEP["date_filter_start"] and args["date_to"] == SEP["date_filter_end"], args
 
 
-def test_the_scope_reply_global_is_the_fresh_ask(console) -> None:
-    _turn1(console)
+def test_the_scope_reply_global_keeps_the_held_filters_and_drops_only_the_agent_link(console) -> None:
+    """Revised 13 Oct (owner rule): "all" ranks the new axis across every row, with the held product, period,
+    measure and basis; only the link to the agents printed above goes. Nothing is asked again."""
+    _text, first = console.say(_rank(_e(PRODUCT_CODE, "product"), top_n=3), f"top 3 salesman for {PRODUCT_CODE}")
+    (held,) = first
     console.say(_drill(ranking_drill="unsure"), "top 10 customers")
     text, calls = console.say(_scope_reply("global", group_by="customer"), "across all customers")
-    assert calls == [] and text.strip() == PERIOD_Q, text
-    _text, calls = console.say(_reply(**SEP), "september")
-    _text, calls = console.say(_reply(measure="amount"), "by amount") if not calls else (_text, calls)
-    _text, calls = console.say(_reply(basis="delivered"), "delivered") if not calls else (_text, calls)
     (args,) = calls
     assert args["group_by"] == "customer" and args["top_n"] == 10, args
-    assert "customer_agent_ids" not in args and "product_code" not in args, args
+    for key in ("product_code", "date_from", "date_to", "measure"):
+        assert args.get(key) == held.get(key), (key, args, held)
+    assert "customer_agent_ids" not in args and "sales_agent_ids" not in args, args
+    assert PERIOD_Q not in text, text
 
 
 def test_an_unread_scope_reply_asks_again_then_gives_up(console) -> None:
@@ -432,7 +436,7 @@ def test_a_carried_filter_on_the_target_dimension_does_not_carry(console) -> Non
     assert args["group_by"] == "product" and args["customer_ids"] == [CU1, CU2], args
     assert "product_code" not in args and "product_ids" not in args, args
     assert args["brand_ids"] == [console.ids["brand"]], args
-    assert args["date_from"] == SEP["date_filter_start"] and args["basis"] == "delivered", args
+    assert args["date_from"] == SEP["date_filter_start"] and _split_key(args)["basis"] == "delivered", args
 
 
 def test_a_carried_filter_on_another_dimension_still_carries(console) -> None:

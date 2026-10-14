@@ -223,6 +223,13 @@ def _probe(db: Session | None = None) -> ProbeFn:
     return call
 
 
+#: The legacy tools whose chat call is sent as `crm_report` with this measure key.
+REPORT_MEASURE_OF: dict[str, str] = {
+    "crm_outstanding_report": "order_outstanding",
+    "crm_sales_report": "delivered_sales",
+}
+
+
 def _mcp_call(db: Session | None = None) -> McpCallFn:
     def call(name: str, args: dict[str, Any]) -> Any:
         """One MCP tool call at the CONFIGURED url (H52, D10).
@@ -270,7 +277,13 @@ def _mcp_call(db: Session | None = None) -> McpCallFn:
         # `CHATBOT_MCP_TIMEOUT_SECONDS` overrides it per environment.
         timeout = int(getattr(settings, "chatbot_mcp_timeout_seconds", 0) or 10)
         client = MCPRuntimeClient(settings.ai_assistant_mcp_url, timeout_seconds=timeout)
-        result = parse_mcp_content(client.call_tool(name, args))
+        # REPORTS-STEP2 S5a: the outstanding and delivered sales reports go out as `crm_report` with
+        # their measure key. The checks above and the brand guard below keep the legacy name's rules.
+        sent_name, sent_args = name, args
+        measure = REPORT_MEASURE_OF.get(name)
+        if measure:
+            sent_name, sent_args = "crm_report", {**args, "measure": measure}
+        result = parse_mcp_content(client.call_tool(sent_name, sent_args))
         # CONTACT-BRAND-SCOPE: the probes (cross-domain, did-you-mean, siblings) read through
         # this seam too, so a brand-scoped session's result is guarded here as well.
         if db is not None:

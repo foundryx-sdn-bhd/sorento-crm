@@ -572,6 +572,11 @@ def brand_tokens(entities: list[Any], brand_entities: Mapping[int, str] | None) 
     return out
 
 
+def _holds_several_asks(parse_output: dict[str, Any]) -> bool:
+    domains = {a.get("domain") for a in jsc.array(parse_output.get("asks")) if isinstance(a, dict) and a.get("domain")}
+    return len(domains) > 1
+
+
 def _visible_reference_kinds(ctx: dict[str, Any]) -> list[str]:
     """The reference kinds the engine put on `ctx["reference_kinds"]`; delivery orders only
     when it put none (the closed default, never a kind the asker may not see)."""
@@ -579,7 +584,7 @@ def _visible_reference_kinds(ctx: dict[str, Any]) -> list[str]:
     return list(kinds) if isinstance(kinds, list) and kinds else ["customer_order"]
 
 
-def _allowed_entity_types(ctx: dict[str, Any], entities: list[Any]) -> list[Any]:
+def _reference_entity_types(ctx: dict[str, Any], entities: list[Any]) -> list[Any]:
     """The entities' hints, with every reference hint (a typed number whose kind may be any
     visible one) replaced by the kinds this asker may probe."""
     hints = [jsc.get(x, "hint") for x in entities]
@@ -588,6 +593,46 @@ def _allowed_entity_types(ctx: dict[str, Any], entities: list[Any]) -> list[Any]
     out = [h for h in hints if h not in REFERENCE_NARROW]
     out += [k for k in _visible_reference_kinds(ctx) if k not in out]
     return out
+
+
+#: The resolver kinds a typed reference number may be placed as; each is visibility gated. Today all
+#: of them are also `REFERENCE_NARROW` keys, so the widening's narrow branch handles them first; this
+#: set is the backstop for a gated kind added to `ALLOWED` without a `REFERENCE_NARROW` entry.
+_RESOLVER_REFERENCE_KINDS = frozenset(
+    {"customer_order", "sales_order", "customer_po_ref", "purchase_order", "purchase_request"}
+)
+
+
+def _allowed_entity_types(
+    ctx: dict[str, Any], entities: list[Any], parse_output: dict[str, Any] | None = None
+) -> list[Any]:
+    """The resolver's type filter: the hints with reference hints swapped for the visible kinds,
+    or, when the message holds SEVERAL asks (REPORTS-STEP2 S3a, "<code> got stock? got
+    outstanding for scr"), those plus the kinds each ask's domain allows, so a token hinted as a
+    product is still probed as the customer the other ask needs. A single ask is unchanged."""
+    base = _reference_entity_types(ctx, entities)
+    domains = [a.get("domain") for a in jsc.array((parse_output or {}).get("asks")) if isinstance(a, dict) and a.get("domain")]
+    if len(set(domains)) < 2:
+        return base
+    from app.services.chatbot.lanes.business.gate import ALLOWED
+
+    visible = _visible_reference_kinds(ctx)
+    widened: list[Any] = []
+    for t in (t for d in domains for t in (ALLOWED.get(d) or [])):
+        if t in REFERENCE_NARROW:
+            # A reference hint is resolved the way a typed one is: its narrow set (any visible kind
+            # when None) limited to the kinds this asker may probe, never passed through raw.
+            narrow = REFERENCE_NARROW[t]
+            widened += [k for k in visible if narrow is None or k in narrow]
+        elif t not in _RESOLVER_REFERENCE_KINDS or t in visible:
+            widened.append(t)
+    return list(dict.fromkeys([*base, *widened]))
+
+
+def _widened_entity_types(ctx: dict[str, Any], entities: list[Any], parse_output: dict[str, Any]) -> list[Any]:
+    """The kinds `_allowed_entity_types` added beyond the hints (after the reference swap)."""
+    base = set(_reference_entity_types(ctx, entities))
+    return [t for t in _allowed_entity_types(ctx, entities, parse_output) if t not in base]
 
 
 def resolve_entity_body(
@@ -691,7 +736,7 @@ def resolve_entity_body(
         # parallel (the route's own `raw_tokens` contract), so the shared resolver's code
         # reader is asked about "TAP SRTWT5608" and not only the folded "TAPSRTWT5608".
         "raw_tokens": [jsc.nullish_str(jsc.get(x, "raw")) for x in entities],
-        "allowed_entity_types": _allowed_entity_types(ctx, entities),
+        "allowed_entity_types": _allowed_entity_types(ctx, entities, parse_output),
         "access_levels": (
             recomposed_access_levels
             if isinstance(recomposed_access_levels, list) and recomposed_access_levels
@@ -736,9 +781,16 @@ def resolve_entity_body(
     # Basin never ran. Present only when non-empty, so every body with nothing to lock is
     # byte-identical to today and every other caller of the route is untouched.
     locked = hint_locked_tokens(entities, brand_entities=brand_entities)
+    brands = brand_tokens(entities, brand_entities)
+    if _holds_several_asks(parse_output):
+        # Several asks (REPORTS-STEP2 S3a): a word hinted as a product may be the customer of the other ask,
+        # so only the decided brands stay locked.
+        locked = [t for t in locked if t in brands]
     if locked:
         body["hint_locked_tokens"] = locked
-    brands = brand_tokens(entities, brand_entities)
+    widened = _widened_entity_types(ctx, entities, parse_output)
+    if widened:
+        body["widened_entity_types"] = widened
     if brands:
         body["brand_tokens"] = brands
     grounded_specs = [
@@ -1489,6 +1541,7 @@ def run(
         tier_gate=tier_gate_out,
         aggregate=aggregate,
         roster_caps=roster_caps,
+        union_ask_domains=True,
     )
     gate_snapshot = _snapshot(gate_item)
 

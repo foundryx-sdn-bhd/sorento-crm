@@ -349,6 +349,68 @@ IDEATION_CAPTURE_CONFIG_ERROR = {
     "zh": "此处的创意收集设置不正确，所以我无法保存。请告知您的 Sorento 联系人。",
 }
 
+# REPORTS-STEP2 S3a: asks the bot cannot answer from its data, told apart by the parser's `domain_hint`.
+NOT_SUPPORTED_RECEIVABLES = {
+    "en": "Overdue and payment balances are not available in this chat. Please check with your salesman or our accounts team.",
+    "ms": "Baki tertunggak dan bayaran tidak dapat disemak dalam chat ini. Sila semak dengan jurujual anda atau pasukan akaun kami.",
+    "zh": "此聊天无法查询逾期款项和付款余额。请向您的业务员或我们的账务部查询。",
+}
+
+NOT_SUPPORTED_DEALER_LOCATOR = {
+    "en": "I can't look up nearby dealers in this chat. Please ask your salesman for the dealer nearest you.",
+    "ms": "Saya tidak dapat mencari pengedar berdekatan dalam chat ini. Sila tanya jurujual anda tentang pengedar yang paling dekat.",
+    "zh": "此聊天无法查询附近的经销商。请向您的业务员询问离您最近的经销商。",
+}
+
+# REPORTS-STEP2 (owner, 11 Oct 2026): the report lane's own lines, editable in Settings > AI
+# Prompts with no deploy, and filled per ask from what the lane knows. The three route 403 lines
+# are picked by the route's `detail.code`; the route's own message is never echoed.
+REPORT_SUBJECT_ASK = {
+    "en": "Which {{missing}} is this for?",
+    "ms": "Ini untuk {{missing}} yang mana?",
+    "zh": "这是针对哪个{{missing}}的？",
+}
+REPORT_REFUSED = {
+    "en": "I can't run {{report}} as asked. Tell me the product, customer or period you want.",
+    "ms": "Saya tidak dapat menjalankan {{report}} seperti yang diminta. Beritahu saya produk, pelanggan atau tempoh yang anda mahu.",
+    "zh": "我无法按您的要求生成{{report}}。请告诉我您想要的产品、客户或时间段。",
+}
+REPORT_PERIOD_MISSING = {
+    "en": "I still need a period for {{asked}}.",
+    "ms": "Saya masih memerlukan tempoh untuk {{asked}}.",
+    "zh": "我仍需要{{asked}}的时间段。",
+}
+REPORT_PERIOD_GIVE_UP = {
+    "en": "I still need a period. Ask again in one message, e.g. {{example}}.",
+    "ms": "Saya masih memerlukan tempoh. Tanya semula dalam satu mesej, cth. {{example}}.",
+    "zh": "我仍需要一个时间段。请用一条信息重新提问，例如：{{example}}。",
+}
+REPORT_OWN_ACCOUNT = {
+    "en": "You can only see sales for your own account.",
+    "ms": "Anda hanya boleh melihat jualan untuk akaun anda sendiri.",
+    "zh": "您只能查看自己账户的销售。",
+}
+REPORT_DIMENSION_DENIED = {
+    "en": "That breakdown is not available for your account.",
+    "ms": "Pecahan itu tidak tersedia untuk akaun anda.",
+    "zh": "您的账户无法使用该分类明细。",
+}
+REPORT_NOT_ENABLED = {
+    "en": "Sales report is not enabled for your account.",
+    "ms": "Laporan jualan tidak diaktifkan untuk akaun anda.",
+    "zh": "您的账户未开通销售报告。",
+}
+# Plain fill words (not registry rows) for the period re-ask / give-up when the contact's reply
+# language is not English: used in place of the English summary of the held ask.
+REPORT_ASKED_FALLBACK = {"ms": "permintaan itu", "zh": "该查询"}
+REPORT_EXAMPLE_FALLBACK = {"ms": "jualan bulan ini", "zh": "本月销售"}
+REPORT_EXAMPLE_PERIOD = {"ms": "bulan ini", "zh": "本月"}
+
+REPORT_CHAT_NOT_ENABLED = {
+    "en": "Chat analytics is not enabled for your account.",
+    "ms": "Analitik sembang tidak diaktifkan untuk akaun anda.",
+    "zh": "您的账户未开通聊天分析。",
+}
 # DEV-FAILURES RC-B (owner approved 12 Oct): a portal link reply names the form the link opens;
 # the bare line is for a link that opens no particular form.
 CHATBOT_REPLY_PORTAL_LINK = {
@@ -422,6 +484,16 @@ FALLBACK_REPLY_COPY: dict[str, tuple[dict[str, str], tuple[str, ...]]] = {
     "ideation_capture_complete_no_link": (IDEATION_CAPTURE_COMPLETE_NO_LINK, ("idea_number", "title")),
     "ideation_capture_error": (IDEATION_CAPTURE_ERROR, ()),
     "ideation_capture_config_error": (IDEATION_CAPTURE_CONFIG_ERROR, ()),
+    "not_supported_receivables": (NOT_SUPPORTED_RECEIVABLES, ()),
+    "not_supported_dealer_locator": (NOT_SUPPORTED_DEALER_LOCATOR, ()),
+    "report_subject_ask": (REPORT_SUBJECT_ASK, ("missing",)),
+    "report_refused": (REPORT_REFUSED, ("report",)),
+    "report_period_missing": (REPORT_PERIOD_MISSING, ("asked",)),
+    "report_period_give_up": (REPORT_PERIOD_GIVE_UP, ("example",)),
+    "report_own_account": (REPORT_OWN_ACCOUNT, ()),
+    "report_dimension_denied": (REPORT_DIMENSION_DENIED, ()),
+    "report_not_enabled": (REPORT_NOT_ENABLED, ()),
+    "report_chat_not_enabled": (REPORT_CHAT_NOT_ENABLED, ()),
 }
 
 #: The languages the new templates carry (plan 7.2). English is the bare key.

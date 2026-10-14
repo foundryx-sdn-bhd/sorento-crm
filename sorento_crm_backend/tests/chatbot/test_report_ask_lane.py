@@ -36,7 +36,7 @@ from tests.chatbot.test_outstanding_lane import (
 )
 from tests.chatbot.test_top_selling_round6 import _seed_borrowable_envelope
 
-TOOL = "crm_report_ask"
+TOOL = "crm_report"
 GRANT = "sales_orders.sales_report"
 DENIAL = "Sales report is not enabled for your account."
 PERIOD_Q = "Which period? For example this month, September, 2026, or 1 to 15 Sep."
@@ -84,8 +84,18 @@ def _reply(**overrides: Any) -> dict[str, Any]:
     return _parser_output(**base)
 
 
+def _split_key(args: dict[str, Any]) -> dict[str, Any]:
+    """The call's args in the lane's own words: `crm_report` takes one registry key
+    (`delivered_amount`), split back here into `basis` and `measure` (REPORTS-STEP2 S2 rename)."""
+    key = str(args.get("measure") or "")
+    assert "_" in key, f"crm_report takes a registry key, got {key!r}"
+    basis, _, figure = key.partition("_")
+    return {**args, "basis": basis, "measure": figure}
+
+
 def _fake_body(args: dict[str, Any]) -> dict[str, Any]:
     """The route's own body (`ReportAskResponse`) for the lane's args."""
+    args = _split_key(args)
     group_by = args.get("group_by")
     rows = [{"rank": 1, "name": "AGENT A", "qty": 30, "amount": 1200.0}] if group_by else []
     return {
@@ -235,7 +245,7 @@ def test_the_owner_example_runs_crm_report_ask_with_the_resolved_args(console) -
     (args,) = calls
     assert args["group_by"] == "sales_agent", args
     assert args["top_n"] == 3, args
-    assert args["sort"] == "desc" and args["measure"] == "amount" and args["basis"] == "delivered", args
+    assert args["sort"] == "desc" and _split_key(args)["measure"] == "amount" and _split_key(args)["basis"] == "delivered", args
     assert args["brand_ids"] == [console.ids["brand"]], args
     assert args["date_from"] == "2026-09-01" and args["date_to"] == "2026-09-30", args
     assert args["contact_id"] and args["space_id"], args
@@ -252,13 +262,13 @@ def test_bottom_is_sort_asc(console) -> None:
 def test_rank_by_quantity_is_measure_qty(console) -> None:
     _text, calls = console.say(_rank(_e("Sorento", "brand"), measure="qty"), "top 3 salesman by qty for Sorento")
     (args,) = calls
-    assert args["measure"] == "qty", args
+    assert _split_key(args)["measure"] == "qty", args
 
 
 def test_basis_ordered_passes_through(console) -> None:
     _text, calls = console.say(_rank(_e("Sorento", "brand"), basis="ordered"), "top 3 salesman ordered for Sorento")
     (args,) = calls
-    assert args["basis"] == "ordered", args
+    assert _split_key(args)["basis"] == "ordered", args
 
 
 def test_an_unclear_basis_is_asked_never_delivered(console) -> None:
@@ -894,7 +904,7 @@ def test_c2_top_selling_items_by_an_agent_stays_top_selling_with_the_agent_filte
 def test_the_lane_takes_measure_qty_from_the_parsers_measure_key(console, body) -> None:
     _text, calls = console.say(_rank(_e("sorento", "brand"), measure="qty", **THIS_YEAR), body)
     (args,) = calls
-    assert args["measure"] == "qty", (body, args)
+    assert _split_key(args)["measure"] == "qty", (body, args)
 
 
 @pytest.mark.parametrize("body", ["top 3 salesman for sorento this year by quantity", "top 3 salesman for sorento this year"])
@@ -909,7 +919,7 @@ def test_a_null_measure_is_asked_whatever_the_words_say(console, body) -> None:
 def test_the_lane_takes_measure_amount_from_the_parsers_measure_key(console) -> None:
     _text, calls = console.say(_rank(_e("sorento", "brand"), measure="amount", **THIS_YEAR), "top 3 salesman by amount")
     (args,) = calls
-    assert args["measure"] == "amount", args
+    assert _split_key(args)["measure"] == "amount", args
 
 
 def test_a_ranking_noun_entity_is_not_filtered_by_the_lane_it_is_the_parsers_to_omit(console) -> None:
@@ -1023,7 +1033,7 @@ def test_kill_the_message_words_do_not_set_the_measure(console) -> None:
         "top 3 salesman for sorento this year",
     )
     (args,) = calls
-    assert args["measure"] == "qty", args
+    assert _split_key(args)["measure"] == "qty", args
 
 
 def test_kill_a_top_selling_verdict_for_the_owner_message_is_not_rerouted(console, monkeypatch) -> None:
@@ -1138,14 +1148,14 @@ def test_d2_a_count_refine_reruns_the_held_ranking_with_the_new_top_n(console, r
     assert args["brand_ids"] == [console.cabana], args
     assert args["date_from"] == "2026-09-01" and args["date_to"] == "2026-09-30", args
     assert args["top_n"] == n, args
-    assert args["measure"] == "amount" and args["basis"] == "delivered", args
+    assert _split_key(args)["measure"] == "amount" and _split_key(args)["basis"] == "delivered", args
 
 
 def test_d2_a_measure_refine_reruns_the_held_ranking_by_qty(console) -> None:
     _t1(console)
     _text, calls = console.say(_refine(measure="qty"), "by quantity")
     (args,) = calls
-    assert args["measure"] == "qty" and args["group_by"] == "sales_agent" and args["top_n"] == 3, args
+    assert _split_key(args)["measure"] == "qty" and args["group_by"] == "sales_agent" and args["top_n"] == 3, args
     assert args["brand_ids"] == [console.cabana], args
 
 
@@ -1153,7 +1163,7 @@ def test_d2_a_basis_refine_reruns_the_held_ranking_ordered(console) -> None:
     _t1(console)
     _text, calls = console.say(_refine(basis="ordered"), "ordered")
     (args,) = calls
-    assert args["basis"] == "ordered" and args["group_by"] == "sales_agent" and args["top_n"] == 3, args
+    assert _split_key(args)["basis"] == "ordered" and args["group_by"] == "sales_agent" and args["top_n"] == 3, args
 
 
 def test_a_parser_emitted_sales_ranking_frame_is_stripped(console) -> None:
@@ -1174,13 +1184,26 @@ def test_a_dealer_refine_over_a_held_staff_frame_is_refused_locally(console) -> 
     assert calls == []
 
 
-def test_a_frame_does_not_survive_another_ask(console) -> None:
-    """ranking, then an order ask, then a refine: the old ranking is gone, so it is a fresh ask."""
+def test_a_frame_survives_an_order_ask_and_a_refine_finds_it(console) -> None:
+    """Revised 13 Oct (owner rule: topic switch and back): ranking, then an order ask, then a refine: the held
+    ranking is still there, so the refine runs on it."""
     _t1(console)
     console.say(_order_ask(_e(CUSTOMER_NAME, "customer")), f"orders for {CUSTOMER_NAME}")
     text, calls = console.say(_refine(top_n=5), "5")
-    assert calls == [], (text, calls)
-    assert text.strip() == PERIOD_Q, text
+    (args,) = calls
+    assert args["top_n"] == 5 and args.get("brand_ids"), args
+
+
+def test_a_new_ranking_ask_after_an_order_ask_does_not_inherit_the_old_frame(console) -> None:
+    """The held ranking survives, but a NEW ranking ask (its own axis and period) is a new ask."""
+    _t1(console)
+    console.say(_order_ask(_e(CUSTOMER_NAME, "customer")), f"orders for {CUSTOMER_NAME}")
+    text, calls = console.say(
+        _rank(group_by="customer", top_n=3, ranking_drill="global", **THIS_YEAR), "top 3 customers this year"
+    )
+    (args,) = calls
+    assert args["group_by"] == "customer" and args["date_from"] == "2026-01-01", args
+    assert not args.get("brand_ids") and "carried" not in args, args
 
 
 def test_d3_a_fresh_ranking_that_names_its_own_subject_never_borrows_the_previous_period(console) -> None:
@@ -1612,7 +1635,7 @@ def test_d_the_parsers_basis_maps_onto_the_routes(console, parser_basis, route_b
         _rank(_e("Sorento", "brand"), basis=parser_basis, **THIS_YEAR), "top 3 salesman for sorento by outstanding"
     )
     (args,) = calls
-    assert args["basis"] == route_basis, (parser_basis, args)
+    assert _split_key(args)["basis"] == route_basis, (parser_basis, args)
     assert args["group_by"] == "sales_agent" and args["brand_ids"] == [console.ids["brand"]], args
 
 
@@ -1630,11 +1653,11 @@ def test_d_a_basis_refine_to_outstanding_reruns_the_held_ranking(console) -> Non
     _t1(console)
     _text, calls = console.say(_refine(basis="outstanding"), "by outstanding")
     (args,) = calls
-    assert args["basis"] == "outstanding", args
+    assert _split_key(args)["basis"] == "outstanding", args
     assert args["group_by"] == "sales_agent" and args["top_n"] == 3, args
     assert args["brand_ids"] == [console.cabana], args
     assert args["date_from"] == "2026-09-01" and args["date_to"] == "2026-09-30", args
-    assert args["measure"] == "amount", args
+    assert _split_key(args)["measure"] == "amount", args
 
 
 def test_d_a_refine_that_names_no_basis_keeps_the_held_outstanding_basis(console) -> None:
@@ -1642,14 +1665,14 @@ def test_d_a_refine_that_names_no_basis_keeps_the_held_outstanding_basis(console
     console.say(_rank(_e("Cabana", "brand"), basis="outstanding", top_n=3, **SEP_RANGE), CABANA_MSG)
     _text, calls = console.say(_refine(top_n=5), "top 5")
     (args,) = calls
-    assert args["basis"] == "outstanding" and args["top_n"] == 5, args
+    assert _split_key(args)["basis"] == "outstanding" and args["top_n"] == 5, args
 
 
 def test_d_an_unknown_basis_on_a_refine_leaves_the_held_basis(console) -> None:
     _t1(console)
     _text, calls = console.say(_refine(basis="invoiced", top_n=5), "invoiced top 5")
     (args,) = calls
-    assert args["basis"] == "delivered" and args["top_n"] == 5, args
+    assert _split_key(args)["basis"] == "delivered" and args["top_n"] == 5, args
 
 
 # E ----------------------------------------------------------------------- #
