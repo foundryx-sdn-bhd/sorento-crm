@@ -315,6 +315,8 @@ SUPPORTED_ENTITIES = (
 # "2.9" (AC-CONSIGN-CRM): a consignment becomes a sales order marked consignment once every
 # item line states TransferedQty (a 2.8 record without it stays stored only); a
 # consignment_return derives qty_returned on the consignment line and is reporting only.
+# CONSIGN-DELIVERED-FIX (14 Oct): the order is delivered in full and closed at issue, and
+# TransferedQty is the returned qty, not delivered. Same wire shape.
 # Additive.
 CONTRACT_VERSION = "2.9"
 

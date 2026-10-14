@@ -69,6 +69,7 @@ function row(overrides: Partial<SeriesProductRow> = {}): SeriesProductRow {
     selling_price: null,
     max_discount_pct: null,
     derived_floor: null,
+    in_scope: false,
     ...overrides,
   };
 }
@@ -252,5 +253,17 @@ describe('SeriesProductsTable', () => {
         expect.objectContaining({ codes: ['1861'] }),
       ),
     );
+  });
+
+  it("shows no Remove (bin) button on an in-scope row, and keeps it on others (C6)", async () => {
+    getSeriesProductRows.mockResolvedValue([
+      row({ product_id: "p1", product_code: "IN-SCOPE", product_name: "Inside item", in_scope: true }),
+      row({ product_id: "p2", product_code: "OUT-SCOPE", product_name: "Outside item", in_scope: false }),
+    ]);
+    renderTable();
+
+    await screen.findByText("Inside item");
+    expect(screen.queryByRole("button", { name: "Remove IN-SCOPE" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove OUT-SCOPE" })).toBeInTheDocument();
   });
 });
