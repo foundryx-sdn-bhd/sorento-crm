@@ -1,9 +1,12 @@
 # PLAN: deliveries and cancellations under each SO line (SO-DELIVERIES-VIEW)
 
-Status: Build.
+Status: Review (hand test filed).
 - Card answered by the owner on 14 Oct: Q1-Q5 all (a).
 - Mock v1 note from the owner: put the history in a lightbox opened by an icon.
 - Mock v2 (3c8b05149) approved by the owner on 14 Oct.
+- Built red-first (325e2c2f3 / bda4affdd), plus review round 1 (0dd352660 / bec05341e).
+- Reviewer and security-reviewer READY.
+- The pre-existing DO route permission gap is #1669.
  Track: M+ (new section on an existing screen, plus one index-only
 migration). Because of the migration it gets the dev-copy check and the security-reviewer (for
 the permission-gated link).
