@@ -1,7 +1,16 @@
 'use client';
 
 import * as React from 'react';
-import { Check, CheckCircle2, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
+import {
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Pencil,
+  Plus,
+  ShoppingCart,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -1042,10 +1051,10 @@ export function BoardLineDecisionPanel({
 
           <Block label="Buy">
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {/* BUY-FIRST-PANEL: typed like a Reserve row. While the whole line is being
-                    bought the switch states the quantity, so the box steps aside. */}
-                {!buying && (
+              {/* BUY-FIRST-PANEL: typed like a Reserve row. While the whole line is being
+                  bought the switch states the quantity, so the box steps aside. */}
+              {!buying && (
+                <div className="flex flex-wrap items-center gap-2">
                   <Input
                     type="number"
                     min="0"
@@ -1058,30 +1067,38 @@ export function BoardLineDecisionPanel({
                     onBlur={settleBuy}
                     className="h-8 w-24 tabular-nums"
                   />
-                )}
-                <Switch
-                  id={`line-buy-switch-${contribution.key}`}
-                  aria-label="Buy the whole line"
-                  checked={buying}
-                  disabled={locked}
-                  onCheckedChange={setBuying}
-                />
-                <label
-                  htmlFor={`line-buy-switch-${contribution.key}`}
-                  className="text-sm text-muted-foreground"
-                >
-                  {buying
-                    ? `Buy the whole ${draft.open_qty}`
-                    : 'Buy the whole line'}
-                </label>
-              </div>
-              {/* An order back is a Buy whose supply is ALREADY on order or already shipped,
+                </div>
+              )}
+              {/* One row under the box, where Reserve and Borrow keep their own secondary
+                  action (owner hand test, 14 Oct 2026: a switch squeezed beside the box and
+                  Order back floating below it read as clutter). The whole-line switch is drawn
+                  as the same outline button as "Add location", pressed while on; it keeps the
+                  switch role, so it still reads as on or off.
+                  An order back is a Buy whose supply is ALREADY on order or already shipped,
                   so the row purchasing gets carries verb ORDER BACK. Offered whenever the
                   line buys anything (OI-CLOSED-LINE: "98 from BB, 2 order back"); with no Buy
                   there is no row to mark. */}
-              {(buying || toMinor(draft.buy_qty) > 0) && (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  role="switch"
+                  aria-checked={buying}
+                  aria-label="Buy the whole line"
+                  selected={buying}
+                  disabled={locked}
+                  onClick={() => setBuying(!buying)}
+                >
+                  {buying ? (
+                    <Check className="size-4" aria-hidden />
+                  ) : (
+                    <ShoppingCart className="size-4" aria-hidden />
+                  )}
+                  {buying ? `Buy the whole ${draft.open_qty}` : 'Buy the whole line'}
+                </Button>
+                {(buying || toMinor(draft.buy_qty) > 0) && (
+                  <div className="flex items-center gap-2">
                     <Switch
                       id={`line-order-back-${contribution.key}`}
                       aria-label="Order back"
@@ -1102,25 +1119,25 @@ export function BoardLineDecisionPanel({
                       Order back
                     </label>
                   </div>
-                  {draft.order_back && (
-                    <div className="space-y-1">
-                      <label
-                        className="block text-2xs uppercase tracking-wide text-muted-foreground"
-                        htmlFor={`line-cited-document-${contribution.key}`}
-                      >
-                        Document cited
-                      </label>
-                      <Input
-                        id={`line-cited-document-${contribution.key}`}
-                        value={draft.cited_document}
-                        disabled={locked}
-                        placeholder="202604-S0083 or SPO-2026/08-0061"
-                        onChange={(event) =>
-                          edit({ ...draft, cited_document: event.target.value })
-                        }
-                      />
-                    </div>
-                  )}
+                )}
+              </div>
+              {(buying || toMinor(draft.buy_qty) > 0) && draft.order_back && (
+                <div className="space-y-1">
+                  <label
+                    className="block text-2xs uppercase tracking-wide text-muted-foreground"
+                    htmlFor={`line-cited-document-${contribution.key}`}
+                  >
+                    Document cited
+                  </label>
+                  <Input
+                    id={`line-cited-document-${contribution.key}`}
+                    value={draft.cited_document}
+                    disabled={locked}
+                    placeholder="202604-S0083 or SPO-2026/08-0061"
+                    onChange={(event) =>
+                      edit({ ...draft, cited_document: event.target.value })
+                    }
+                  />
                 </div>
               )}
             </div>
