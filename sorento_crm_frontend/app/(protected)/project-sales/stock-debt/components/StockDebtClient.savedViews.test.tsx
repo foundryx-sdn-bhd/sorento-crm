@@ -110,7 +110,7 @@ function renderBoard() {
 }
 
 async function openFilters() {
-  fireEvent.pointerDown(screen.getByRole('button', { name: 'Filters' }), { button: 0 });
+  fireEvent.pointerDown(screen.getByRole('button', { name: /^Filters/ }), { button: 0 });
   await screen.findByText('Book');
 }
 
@@ -211,8 +211,9 @@ describe('Location filter (AC-F1..F4)', () => {
 
     pick('ED');
     expect(screen.getByText('Location: ED')).toBeInTheDocument();
+    // The Filters panel stays open behind the closed select, so Book is right there.
     fireEvent.keyDown(document.body, { key: 'Escape' });
-    await openFilters();
+    if (!screen.queryByRole('radio', { name: 'Retail' })) await openFilters();
     fireEvent.click(screen.getByRole('radio', { name: 'Retail' }));
 
     expect(screen.queryByText('Location: ED')).not.toBeInTheDocument();

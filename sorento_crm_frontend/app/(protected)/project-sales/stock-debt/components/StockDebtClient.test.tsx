@@ -41,6 +41,11 @@ import { getUserListColumnConfig } from '@/lib/listing-column-preferences/listCo
 
 // R19: the Copy fallback is asserted against these spies, not real sonner DOM output -
 // no `<Toaster>` is mounted in this render tree.
+// The toolbar's <SavedViewsMenu> has its own tests (StockDebtClient.savedViews.test.tsx,
+// components/list/SavedViewsMenu.test.tsx); stubbed here so its session and per-user
+// default reads stay out of what this file asserts about the board.
+vi.mock('@/components/list/SavedViewsMenu', () => ({ SavedViewsMenu: () => null }));
+
 vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));

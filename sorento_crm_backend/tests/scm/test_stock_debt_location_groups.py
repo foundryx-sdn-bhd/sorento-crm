@@ -127,7 +127,13 @@ def test_cell_with_repeated_group_foots_with_the_board(scm_app):
         cell = c.get(
             f"{BASE}/{product.id}/cell", params=[("month", due), *groups]
         )
+        # On hand is listed in its HOME month (the current one) unless a line pins it.
+        now_cell = c.get(
+            f"{BASE}/{product.id}/cell",
+            params=[("month", month_key(TODAY)), *groups],
+        )
     assert cell.status_code == 200, cell.text
+    assert now_cell.status_code == 200, now_cell.text
     body = cell.json()
 
     assert _balances(board, product).get(due) == -40
@@ -136,7 +142,7 @@ def test_cell_with_repeated_group_foots_with_the_board(scm_app):
     assert body["demand"][0]["short_qty"] == 40
     assert body["demand"][0]["assigned_qty"] == 0
     # The IB bin is in the span, so its 100 is listed as supply; the IR 7 is not.
-    on_hand = [row for row in body["supply"] if row["kind"] != "po"]
+    on_hand = [row for row in now_cell.json()["supply"] if row["kind"] != "po"]
     assert sum(row["qty"] for row in on_hand) == 100
 
 
