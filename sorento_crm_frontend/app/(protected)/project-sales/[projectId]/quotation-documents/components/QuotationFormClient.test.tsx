@@ -1100,4 +1100,15 @@ describe('QuotationFormClient scope tab context menu (owner hand test)', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.queryByRole('menuitem')).toBeNull();
   });
+
+  it('right-clicking a scope tab that is not the active one selects it before the menu opens', async () => {
+    renderForm();
+    await openLines();
+    await addScope('Guard House');
+    // Guard House is now active; right-click the other one.
+    expect(screen.getByRole('tab', { name: 'Guard House' })).toHaveAttribute('data-state', 'active');
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'Scope 1' }));
+    await screen.findByRole('menuitem', { name: 'Rename' });
+    expect(screen.getByRole('tab', { name: 'Scope 1' })).toHaveAttribute('data-state', 'active');
+  });
 });

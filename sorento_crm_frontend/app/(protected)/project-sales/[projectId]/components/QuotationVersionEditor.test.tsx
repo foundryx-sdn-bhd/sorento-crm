@@ -2101,7 +2101,7 @@ describe('QuotationVersionEditor owner hand-test round (QUOTATION-UX)', () => {
     const headers = screen
       .getAllByRole('columnheader')
       .map((h) => h.textContent?.trim())
-      .filter((text) => Boolean(text) && text !== 'Reorder');
+      .filter((text) => Boolean(text) && text !== 'Reorder' && text !== 'Row actions');
     expect(headers).toEqual(['#', 'Photo', 'Drawing', 'Product', 'Description', 'Brand', 'Qty', 'UOM', 'Rate (RM)', 'Total (RM)']);
 
     const qtyTd = screen.getByRole('textbox', { name: 'Qty on SRT-WC-01' }).closest('td');
@@ -2148,5 +2148,51 @@ describe('QuotationVersionEditor owner hand-test round (QUOTATION-UX)', () => {
     expect(content.getAttribute('data-avoid-collisions')).not.toBe('false');
     expect(surface.className).toMatch(/max-h-\[var\(--radix-popover-content-available-height\)\]/);
     expect(surface.className).toMatch(/overflow-y-auto|overflow-auto/);
+  });
+
+  describe('right-click scope (small round)', () => {
+    const noLineMenu = () => {
+      expect(screen.queryByRole('menuitem', { name: 'Insert a line below' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Remove section' })).toBeNull();
+    };
+
+    it('outside any row or bar (a header cell, Add a line) is not prevented and opens no line menu', async () => {
+      listQuotationLines.mockResolvedValue(TWO_LINES);
+      await renderEditing();
+      const header = screen.getByRole('columnheader', { name: 'Description' });
+      expect(fireEvent.contextMenu(header)).toBe(true);
+      expect(fireEvent.contextMenu(screen.getByRole('button', { name: 'Add a line' }))).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      noLineMenu();
+    });
+
+    it('over an editable control in a row (description, qty, section heading) is not prevented, no menu', async () => {
+      listQuotationLines.mockResolvedValue([
+        line({ id: 'l1', product_code: 'A-1', description: 'First', band_label: 'BILL NO 1' }),
+        line({ id: 'l2', product_code: 'A-2', description: 'Second', sort_order: 10 }),
+      ]);
+      await renderEditing();
+      for (const name of ['Description on A-1', 'Qty on A-1', 'Section heading on A-1']) {
+        expect(fireEvent.contextMenu(screen.getByRole('textbox', { name }))).toBe(true);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      noLineMenu();
+      expect(screen.queryByRole('menuitem')).toBeNull();
+    });
+
+    it('a non-input part of the same row still opens the 3-item line menu, prevented', async () => {
+      listQuotationLines.mockResolvedValue(TWO_LINES);
+      await renderEditing();
+      expect(fireEvent.contextMenu(rowOf('A-1').querySelector('td') as HTMLElement)).toBe(false);
+      await screen.findByRole('menuitem', { name: 'Insert a line below' });
+      expect(screen.getAllByRole('menuitem')).toHaveLength(3);
+    });
+
+    it('the row-actions column header carries the screen-reader text Row actions', async () => {
+      listQuotationLines.mockResolvedValue(TWO_LINES);
+      await renderEditing();
+      const header = screen.getByRole('columnheader', { name: 'Row actions' });
+      expect(header.querySelector('.sr-only')?.textContent).toBe('Row actions');
+    });
   });
 });
