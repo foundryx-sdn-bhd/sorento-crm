@@ -533,3 +533,155 @@ class TestSecurityReviewRound2:
         reply = (result.reply or {}).get("text") or ""
 
         assert FOREIGN not in reply and "SOZZT200001" not in reply, reply
+
+
+# --------------------------------------------------------------------------- #
+# V1-DOC-SCOPE-SALES: salespeople keep document access
+# --------------------------------------------------------------------------- #
+#
+# Crew ruling (14 Oct 2026) on the owner's prod check: many unlinked non-staff contacts are
+# salespeople. A salesperson is `contact_asker.classify(...) == "salesperson"` (owner rule
+# 11 Oct: an ACTIVE CRM user holding the role `salesperson`, else a `sales_agents.contact_id`
+# link; a customer link does not make such a contact a dealer). For document scope a
+# salesperson is staff: unlinked, it sees any customer's DO / SO as main does today; linked,
+# it is not held to its links. Anyone else unlinked and not staff stays blocked.
+
+
+def _make_salesperson(
+    session_factory, *, via: str = "role", status: str = "ACTIVE", role_trashed: bool = False
+) -> None:
+    """Make the seeded contact (`CONTACT_ID`) a salesperson the way `contact_asker` reads one:
+    `via="role"` links an ACTIVE CRM user holding the role `salesperson`; `via="agent"` links
+    a sales agent (`sales_agents.contact_id`) and no user."""
+    from app.models.access import RespondContact
+    from tests._chat_asker_seed import give_role, link_agent, link_user
+
+    db = session_factory()
+    contact = db.query(RespondContact).filter(RespondContact.respond_io_id == str(CONTACT_ID)).one()
+    if via == "role":
+        give_role(db, link_user(db, contact, status=status, name="ZZT Sales User"), "salesperson", role_trashed=role_trashed)
+    else:
+        link_agent(db, contact, f"ZZT AGENT {uuid.uuid4().hex[:6].upper()}")
+    db.commit()
+
+
+class TestSalespersonUnlinked:
+    """An unlinked salesperson sees what main shows it today."""
+
+    @pytest.mark.parametrize("via", ["role", "agent"])
+    def test_sees_any_so_by_number(self, session_factory, monkeypatch, via) -> None:
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory, via=via)
+        cust = _other_customer(session_factory, "ZZT ANY SDN BHD")
+        _seed_so(session_factory, SO_NO, customer_id=cust, debtor_name="ZZT ANY SDN BHD", lines=[(10, 10)])
+
+        reply, _ = _turn(session_factory, monkeypatch, _number_ask(SO_NO, "order_number"), f"status of {SO_NO}")
+
+        assert SO_NO in reply and "ZZT ANY SDN BHD" in reply and "fully delivered" in reply, reply
+
+    def test_sees_any_do_by_number(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory)
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_do(session_factory, DO_NO, foreign, debtor_name=FOREIGN)
+
+        _reply, captured = _turn(session_factory, monkeypatch, _number_ask(DO_NO, "order"), f"status of {DO_NO}")
+
+        assert _calls(captured, ORDERS), "a salesperson still gets any customer's DO through the orders list"
+
+    @pytest.mark.parametrize("via", ["role", "agent"])
+    def test_lists_dos_unscoped(self, session_factory, monkeypatch, via) -> None:
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory, via=via)
+
+        reply, captured = _turn(session_factory, monkeypatch, _list_ask(), "deliveries this month")
+
+        (args,) = _calls(captured, ORDERS)
+        assert not args.get("customer_ids"), args
+        assert reply.strip() != NO_LINK_REFUSAL, reply
+
+    def test_gets_the_outstanding_report(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory)
+
+        _reply, captured = _outstanding_turn(session_factory, monkeypatch)
+
+        assert _calls(captured, REPORT), captured
+
+
+class TestSalespersonLinked:
+    """A linked salesperson is not held to its links on the in-process number lookups (owner
+    rule 11 Oct: the customer link does not make it a dealer)."""
+
+    def test_sees_another_customers_so_by_number(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory)
+        _link_customers(session_factory, OWN)
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_so(session_factory, "SO421777", customer_id=foreign, debtor_name=FOREIGN, lines=[(10, 10)])
+
+        reply, _ = _turn(session_factory, monkeypatch, _number_ask("SO421777", "order_number"), "status of SO421777")
+
+        assert "SO421777" in reply and FOREIGN in reply and "fully delivered" in reply, reply
+        assert not reply.strip().startswith(REFUSAL_PREFIX), reply
+
+    def test_scope_counts_as_staff_but_stays_enforced(self, session_factory) -> None:
+        """Crew ruling (a), 14 Oct: the salesperson is document staff (lifted on the in-process
+        number lookups), while `enforced` stays the core flag, so the customer-word gate, the
+        lists and the order routes keep it on its links as main does
+        (tests/chatbot/test_chat_report_scope_leak.py)."""
+        from app.services.chatbot.lanes.business import services
+
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory)
+        own = _link_customers(session_factory, OWN)
+
+        scope, staff = services.customer_scope_and_staff(session_factory(), CONTACT_ID, None)
+
+        assert staff is True
+        assert scope is not None and scope["ids"] == own, scope
+        assert scope["enforced"] is True and scope["staff"] is True, scope
+
+    def test_a_linked_dealer_is_still_enforced(self, session_factory) -> None:
+        """Guard: the salesperson read does not lift an ordinary dealer."""
+        from app.services.chatbot.lanes.business import services
+
+        _seed_contact(session_factory, variables={})
+        _link_customers(session_factory, OWN)
+
+        scope, staff = services.customer_scope_and_staff(session_factory(), CONTACT_ID, None)
+
+        assert staff is False
+        assert scope is not None and scope["enforced"] is True, scope
+
+
+class TestNotASalespersonStaysBlocked:
+    """Only the `salesperson` class lifts the block: an inactive user, or a user whose only
+    salesperson role is trashed, is no salesperson (`contact_asker`)."""
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            {"status": "INACTIVE"},
+            {"role_trashed": True},
+        ],
+        ids=["inactive_user", "trashed_role"],
+    )
+    def test_unlinked_lists_nothing(self, session_factory, monkeypatch, make) -> None:
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory, **make)
+
+        reply, captured = _turn(session_factory, monkeypatch, _list_ask(), "deliveries this month")
+
+        assert _calls(captured, ORDERS) == [], captured
+        assert reply.strip() == NO_LINK_REFUSAL, reply
+
+    def test_unlinked_gets_no_foreign_so(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        _make_salesperson(session_factory, status="INACTIVE")
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_so(session_factory, SO_NO, customer_id=foreign, debtor_name=FOREIGN, lines=[(10, 10)])
+
+        reply, _ = _turn(session_factory, monkeypatch, _number_ask(SO_NO, "order_number"), f"status of {SO_NO}")
+
+        assert FOREIGN not in reply and reply.strip() == NO_LINK_REFUSAL, reply
