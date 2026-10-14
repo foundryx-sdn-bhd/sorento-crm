@@ -1,6 +1,6 @@
 # PLAN: Quotation lines grid (13 Oct)
 
-Status: REVIEW-CLEAN, owner hand test pending (size L: one additive migration; security-reviewer joins
+Status: BUILDING, owner hand-test round 1 (7 points, 14 Oct) (size L: one additive migration; security-reviewer joins
 because the line write accepts attachment ids). Owner answers 14 Oct recorded in the UAC. PR #1643.
 
 Lane: QUOTATION-UX, branch `crew/quotation-ux`. Source: owner notes 13 Oct on Project Sales >
@@ -101,3 +101,13 @@ migration (column exists, nullable, FK SET NULL).
 Frontend (vitest): `QuotationVersionEditor.test.tsx` and new `QuotationLinesGrid.test.tsx`,
 `QuotationStockChip.test.tsx`, `data-grid-table-dnd-rows` footer/full-width/expanded test.
 Browser: 1280 sidebar open (no horizontal scroll, no truncated header), 375 (no page scroll).
+
+## Owner hand-test round 1 (14 Oct)
+
+1. Scope tab right-click: Rename, Remove scope (QuotationScopeTabs via components/ui/context-menu.tsx; same handlers as the pen and the Remove scope button).
+2. Lines: no Line details / Move up / Move down menu items; a click on a row (not an input) toggles its details row; reorder only by the drag handle; right-click on a row and the ... button open Insert a line below, Insert a section above, Remove line.
+3. Section bars: right-click Rename, Remove section (clears band_label on the line that opens it; the line stays).
+4. Photo and Drawing thumbnails fill their column width, so widening the column enlarges them.
+5. UOM gets its own column right of Qty (stock chip stays under Qty); default widths rebalanced so 1280 with the sidebar open still has no horizontal scroll.
+6. Columns button (components/ui/data-grid-column-visibility.tsx, as SalesOrderDetail.tsx:1998-2002) to show/hide columns, remembered per user through useListingColumnPreferences (projects.projects.view::quotation-lines).
+7. Stock popover stays inside the viewport (Radix collision handling + height capped to the available space, scrolling).
