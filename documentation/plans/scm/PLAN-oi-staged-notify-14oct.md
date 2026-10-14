@@ -1,9 +1,9 @@
 # PLAN: park reserve requests and reserve notices, send all parked (OI-STAGED-NOTIFY)
 
-Status: Plan. Standard track, size L (additive migration + in-place template layout update, two
+Status: Build (owner approved mock v6, 14 Oct). Standard track, size L (additive migration + in-place template layout update, two
 sides, status filter, send-all with preview). Lane crew/oi-staged-notify. Card answered by crew
-14 Oct (Q1-Q5 all (a)); owner notes on mocks v1 to v5 applied; mock v6 (CS Reserve confirmation
-uses the request side's park tickbox) awaiting owner.
+14 Oct (Q1-Q5 all (a)); owner notes on mocks v1 to v5 applied; mock v6 approved by the owner
+14 Oct. Red tests next (tester), then coder.
 
 UAC: `oi-staged-notify-14oct-acceptance-criteria.md` (alongside). Card:
 `oi-staged-notify-behaviour-card.md`. Mock: `documentation/mockups/OI-STAGED-NOTIFY/index.html` (v6).

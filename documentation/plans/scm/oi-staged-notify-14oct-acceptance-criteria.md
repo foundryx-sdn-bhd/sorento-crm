@@ -53,6 +53,10 @@ own equivalent chain (CI DB is empty).
   that row only, figure 150. Amend back to 200 before sending -> nothing parked for that row.
 - AC-SN-24 Two parked commits on one row before sending -> one email row with the latest figure.
 - AC-SN-25 Double send / concurrency / unresolved / colleague rules as AC-SN-07/08/09.
+- AC-SN-27 `GET /order-inquiries/{inquiry_id}/reserve-notices/recipients` (RESERVE) returns
+  `{to: {name}, cc: [{name}]}` = what the enabled `order_inquiry_reserved` automation would
+  resolve for this OI's request (requester To, OI raiser Cc, the caller moved to Cc); `to` null
+  when nobody resolves. Unknown or foreign inquiry 404.
 - AC-SN-26 Multi-OI notice email: subject "Reserved: N order inquiries (Eling)", the short shape
   of AC-SN-11 (heading "CS answered your reserve requests on N order inquiries", LINES = lines in
   the notice), button "View reserved order inquiries" -> `?reserve=reserved`; one-OI keeps today's.
