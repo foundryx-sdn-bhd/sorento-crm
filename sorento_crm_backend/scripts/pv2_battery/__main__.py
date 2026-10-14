@@ -41,6 +41,7 @@ def _parser() -> argparse.ArgumentParser:
     r.add_argument("--judge-key-file")
     r.add_argument("--v2-version")
     r.add_argument("--v1-version")
+    r.add_argument("--no-embedding-key", action="store_true")
     r.add_argument("--battery-dir", help=argparse.SUPPRESS)
     c = sub.add_parser("calibrate", help="run the judge over calibration.yaml")
     c.add_argument("--judge-key-file")

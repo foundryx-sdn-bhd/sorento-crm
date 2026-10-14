@@ -25,6 +25,11 @@ CALIBRATION_FILE = "calibration-latest.json"
 
 _write_lock = threading.Lock()
 
+FACTS_LIMIT = 12000
+_TOOL_CAP, _PARSE_CAP, _LOOKED_CAP = 6000, 2000, 3000
+#: The dev embedding key ends in this; a key that does not is refused (it may be production's).
+DEV_KEY_SUFFIX = "bG4A"
+
 
 def bootstrap_env() -> None:
     """The backend .env into os.environ with override, as `app.main._load_env_file` does."""
@@ -55,6 +60,60 @@ def ensure_worktree_mcp() -> Path:
     if root not in path.parents:
         raise guard.GuardError(f"sorento_crm_mcp resolves to {path}, outside the worktree {root}")
     return path
+
+
+def _dump(value: Any, cap: int) -> str:
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    return text if len(text) <= cap else text[:cap] + "...(cut)"
+
+
+def facts_digest(trace: Any) -> str:
+    """What the bot looked up this turn, for the judge: tool calls with their result envelopes first,
+    then the parser output and the looked_up stage. Never raises; capped at FACTS_LIMIT."""
+    tools: list[str] = []
+    parser: list[str] = []
+    looked: list[str] = []
+    try:
+        for e in trace if isinstance(trace, list) else []:
+            if not isinstance(e, dict):
+                continue
+            if e.get("kind") == "tool":
+                tools.append(_dump({"tool": e.get("name"), "args": e.get("args"),
+                                    "result": e.get("envelope")}, _TOOL_CAP))
+            elif e.get("kind") == "pv2_turn" and e.get("parser_out") is not None:
+                parser.append(_dump({"parser_out": e["parser_out"]}, _PARSE_CAP))
+            elif e.get("stage") == "looked_up":
+                looked.append(_dump({"looked_up": e.get("facts")}, _LOOKED_CAP))
+    except Exception:  # noqa: BLE001 - a digest fault must not fail a turn
+        pass
+    return "\n".join(tools + parser + looked)[:FACTS_LIMIT]
+
+
+def ensure_embedding_key(env: Any, fetch_key: Any) -> str:
+    """The retrieval embedding needs OPENAI_API_KEY in the process. Process env only, never written to a
+    file or printed; only the dev key (suffix guard) is accepted. Returns present, set or skipped."""
+    if env.get("OPENAI_API_KEY"):
+        return "present"
+    if fetch_key is None:
+        return "skipped"
+    key = fetch_key()
+    if not key or not str(key).endswith(DEV_KEY_SUFFIX):
+        raise guard.GuardError("the embedding key found is missing or is not the dev key; refusing to use it")
+    env["OPENAI_API_KEY"] = key
+    return "set"
+
+
+def fetch_dev_openai_key() -> str:
+    """The key the app itself resolves for the chatbot (ai_assistant_configs), no hand-rolled decrypt."""
+    from app.database import SessionLocal
+    from app.services.ai_assistant_service import AIAssistantConfigService
+    from app.services.llm_provider import resolve_api_key
+
+    db = SessionLocal()
+    try:
+        return resolve_api_key(AIAssistantConfigService(db).get(), "openai")
+    finally:
+        db.close()
 
 
 def git_sha() -> str:
@@ -157,7 +216,7 @@ def _norm_version(candidates: list[Any], pin: dict[str, Any]) -> str | None:
 
 def run_turn(res: Any, text: str, mode: str, pin: dict[str, Any], prev_reply: str | None,
              expect: dict[str, Any]) -> tuple[checks.TurnRecord, dict[str, Any]]:
-    from scripts.chatbot_eval.trace import build_digest, parse_trace
+    from scripts.chatbot_eval.trace import parse_trace
 
     trace = read_trace(res.turn_id)
     event = pv2_event(trace)
@@ -169,10 +228,8 @@ def run_turn(res: Any, text: str, mode: str, pin: dict[str, Any], prev_reply: st
         text=text, reply=res.reply_text or "", actions=list(res.actions or []), mode=mode,
         pv2_event=event is not None, prompt_version=_norm_version(candidates, pin),
         expected_version=str(pin["id"]), tool_errors=tool_errors)
-    digest = build_digest(trace, res.reply_text or "", res.branch_kind)
     parse = _find(event, "parser_out") if event is not None else None
-    facts = {"resolved": digest["resolved"], "tools": digest["tools"], "branch_kind": res.branch_kind,
-             "parser_out": parse}
+    facts = facts_digest(trace)
     return rec, {"facts": facts, "parse": parse}
 
 
@@ -261,6 +318,11 @@ def read_calibration_agreement() -> float | None:
 def run(args: Any) -> Path:
     bootstrap_env()
     mcp_path = ensure_worktree_mcp()
+    key_state = ensure_embedding_key(os.environ, None if args.no_embedding_key else fetch_dev_openai_key)
+    if key_state == "set":
+        from app.config import settings
+
+        settings.openai_api_key = os.environ["OPENAI_API_KEY"]
     guard.install(os.environ)
     battery_dir = Path(args.battery_dir) if args.battery_dir else schema.BATTERY_DIR
     convs = schema.load_battery(battery_dir)
@@ -300,6 +362,7 @@ def run(args: Any) -> Path:
         print(f"mode {mode} done: {sum(1 for r in all_rows if r['mode'] == mode)} turns", flush=True)
 
     meta = {"v2": pins["v2"], "v1": pins["v1"], "git_sha": git_sha(), "mcp_path": str(mcp_path),
+            "embedding_key": key_state,
             "judge_agreement": read_calibration_agreement() if judge_client else None}
     results = report.build_results(convs, all_rows)
     (out_dir / "table.md").write_text(report.render_table(results, meta), encoding="utf-8")

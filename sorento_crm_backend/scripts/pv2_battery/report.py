@@ -82,6 +82,8 @@ def render_table(results: list[dict[str, Any]], meta: dict[str, Any]) -> str:
     lines.append(f"- git: `{meta.get('git_sha')}`")
     if meta.get("mcp_path"):
         lines.append(f"- MCP package: {meta['mcp_path']}")
+    if meta.get("embedding_key"):
+        lines.append(f"- Embedding key: {meta['embedding_key']}")
     if agreement is None or agreement < PROVISIONAL_BELOW:
         shown = "not calibrated" if agreement is None else f"{agreement:.2f}"
         lines.append(f"- judge agreement: {shown} (PROVISIONAL, below {PROVISIONAL_BELOW})")

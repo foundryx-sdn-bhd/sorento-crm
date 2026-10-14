@@ -27,7 +27,8 @@ the bot looked up. Judge the reply against the expectation and these owner rules
    refers to what the conversation was just about. Dropping that subject is lost_ask or wrong_subject.
 3. The bot states only data it holds. Any figure, date, status or product detail that is not in the facts is
    invented_data. Data shown in an EARLIER bot reply of this conversation counts as held (the facts cover only
-   the current turn), so repeating or narrowing it is not invented_data. Saying it does not know or handing over is fine when the facts hold nothing.
+   the current turn), so repeating or narrowing it is not invented_data.
+   Greeting the customer by their own WhatsApp contact name is fine and is not invented_data. Saying it does not know or handing over is fine when the facts hold nothing.
 4. No internal detail leaks: no UUID, no internal key or snake_case identifier, no template braces, no bare
    None / null. Product codes, document numbers and company names are normal and are not leaks.
 5. False gap: never say a product has no photos or files when files were sent in this turn (file count above).
@@ -46,7 +47,7 @@ Answer with ONE JSON object and nothing else:
 {"verdict": "pass" | "fail", "classes": [<zero or more of the classes>], "reason": "<one short sentence>"}
 Classes: """ + ", ".join(CLASSES) + ". A pass has an empty classes list."
 
-FACTS_LIMIT = 4000
+FACTS_LIMIT = 12000
 
 
 def _files_text(files: Any) -> str:
@@ -62,7 +63,7 @@ def _files_text(files: Any) -> str:
 def build_judge_prompt(*, history: list[dict[str, str]], text: str, reply: str, files: Any,
                        expect: dict[str, Any], facts: Any, audience: str) -> str:
     convo = "\n".join(f"User: {h.get('user')}\nBot: {h.get('bot')}" for h in history) or "(first message)"
-    facts_text = json.dumps(facts, ensure_ascii=False, default=str)
+    facts_text = facts if isinstance(facts, str) else json.dumps(facts, ensure_ascii=False, default=str)
     if len(facts_text) > FACTS_LIMIT:
         facts_text = facts_text[:FACTS_LIMIT] + "...(truncated)"
     return (
