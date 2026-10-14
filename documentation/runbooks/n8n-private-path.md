@@ -90,6 +90,11 @@ sudo nginx -T 2>/dev/null | grep -nE '<N8N_HOST>|limit_req|geo '
 n8n will check the certificate itself now, with nobody in between, so it must be one that a
 normal client trusts:
 
+Already known (crew, 15 Oct): a direct TLS handshake to the origin, around Cloudflare, showed
+`<CRM_DOMAIN>` and the two other Cloudflare-proxied hosts on the CRM box all serving a
+browser-trusted Let's Encrypt certificate (not a Cloudflare Origin CA one), expiring 14 Dec,
+5 Dec and 24 Nov. So this path is feasible; the check below confirms it on the day you run it.
+
 ```bash
 # what nginx actually serves for <CRM_DOMAIN>, read off the wire
 echo | openssl s_client -connect 127.0.0.1:443 -servername <CRM_DOMAIN> 2>/dev/null \
@@ -105,6 +110,10 @@ echo | openssl s_client -connect 127.0.0.1:443 -servername <CRM_DOMAIN> 2>/dev/n
   while n8n uses this path.
 - Check: `sudo certbot renew --dry-run` passes. The tailnet path uses the same file, so renewal
   covers it automatically.
+- Let's Encrypt renewal must keep working for as long as n8n uses this path. The tailnet vhost
+  serves the same certificate files, so a renewal that stops (or a switch to Origin CA) breaks
+  n8n's calls the day the old certificate expires, not before. After each renewal, rerun the
+  `s_client` check above and step 5.1; both must show the new `notAfter`.
 - Later hardening warning: edge runbook "Later" plans Authenticated Origin Pulls
   (`ssl_verify_client on`). n8n sends no client certificate, so that would reject every n8n call
   on this path. When that lands, use `ssl_verify_client optional;` and refuse only requests that
