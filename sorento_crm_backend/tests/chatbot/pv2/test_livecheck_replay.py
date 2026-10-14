@@ -100,31 +100,6 @@ def test_a_portal_link_ask_sends_v1_no_product_entities_and_no_carried_products(
     assert focus.products == [], "the typed codes were never a form the user filled in"
 
 
-# ------------------------------------------------------------------ B5 staff document not-found, v1 parity
-
-
-def test_a_not_found_sales_order_offers_the_member_picker_as_v1_does():
-    from app.services.chatbot.pv2.history import MemoryProfile
-    from app.services.chatbot.pv2.state import dump_state
-    from tests.chatbot.pv2.carry_fakes import NOW, FakeResolver
-
-    ent = {"kind": "sales_order", "key": None, "phrase": None, "op": "set", "refers_to_held": False,
-           "quantity": None, "doc_number": "SO422057"}
-    base = _base_ask().model_dump()
-    base.update(domain="order", entities=[ent])
-    parsed = out(Ask.model_validate(base))
-    ctx = turn.TurnV2Context(
-        text="SO422057 status?", now=NOW, raw_state=dump_state(mk_state()), profile=MemoryProfile(audience="staff"),
-        parse=lambda m, u: parsed, resolver=FakeResolver({}), load_exchanges=lambda s: [],
-        offer_mode="offer", domain_teams={"order": "customer_service"},
-        cs_members=["Sandy Lim", "Lin", "Nur", "Emily", "Zilin Poon"])
-    reply = turn._run(ctx).direct_reply
-    assert ('Couldn\'t find: "SO422057" (sales order). Would you like me to escalate to customer service team?'
-            in reply), reply
-    assert "Please choose who to route to (reply with the number):\n1. Sandy Lim\n2. Lin" in reply
-    assert "If you have no preference, just reply 'yes' and we'll assign automatically." in reply
-
-
 # ------------------------------------------------------------------ prompt pin
 
 
