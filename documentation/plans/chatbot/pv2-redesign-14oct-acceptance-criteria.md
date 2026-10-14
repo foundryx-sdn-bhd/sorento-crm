@@ -15,6 +15,8 @@ R1-5 A sales-order card or SO list writes sales_order entries (label = SO number
 R1-6 Report rows (report_ask drill rows; delivered by-customer/by-product breakdown) write entries of the group_by kind.
 R1-7 A field removed by the reveal filter, and an item's unprinted title, are never recorded; keys (codes, uuids,
      numbers) are stored but no entry label shows a uuid.
+R1-7b Only rows the reply printed are recorded: rows kept in `answers` but hidden from the text (summary mode,
+     needs-quantity stock mode, duplicates skipped on a status-only ask) are not recorded.
 R1-8 The register keeps at most 20 entries and only the last 2 replies; a PV2 direct reply (no lanes) adds nothing and
      keeps the previous reply's entries; a new session clears it.
 R1-9 Stored state from before R1 (no register field) loads unchanged.
