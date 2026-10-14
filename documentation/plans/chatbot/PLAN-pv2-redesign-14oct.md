@@ -1,7 +1,8 @@
 # PLAN: PV2 redesign - typed refs, answer register, subject stack (14 Oct 2026)
 
-Status: Build, R4a (owner GO 15 Oct 00:30; R3 postponed, branch crew/pv2-redesign-r3a kept at 6dcef793d). R1, R2,
-R-GAPS-a, R-GAPS-b merged into crew/pv2 (last 082cc73be); R4a on branch `crew/pv2-redesign-r4a`.
+Status: Build, R4a merge-ready (PR #1691, branch `crew/pv2-redesign-r4a`; dev prompt v9 dc0b3d1c unlabelled). R1, R2,
+R-GAPS-a, R-GAPS-b merged into crew/pv2 (last 082cc73be); R3 postponed (branch crew/pv2-redesign-r3a at 6dcef793d);
+next R4b (size-only answers: schema asked_fields) when crew says go.
 Round order: R1, R2, R-GAPS (crew 14 Oct), R3, R4, R5.
 Earlier: round R1 (owner GO 14 Oct on crew/state/reports/PV2-REDESIGN-design-14oct.md; LEAD lane PV2-FIX;
 branch `crew/pv2-redesign-r1` from crew/pv2 c56a5d34f; PRs into crew/pv2). Owner 14 Oct 18:35: NO CAP on LLM spend for

@@ -121,9 +121,8 @@ RG-8 No LLM calls; v1 turns unchanged.
 
 
 ## R4a The parser sees the printed rows and the held subject (owner GO 15 Oct 00:30)
-R4a-1 MEMORY's LAST ANSWER ROWS (name kept for the published prompt) renders from the register: the latest reply's entries as R1..Rn with kind and the printed
-      label (code or doc number), children indented under their parent, never a key or uuid, capped as the register
-      is; when the reply printed no register rows, PV2's own pick/report rows are shown instead. A row_pick indexes
+R4a-1 MEMORY's LAST ANSWER ROWS (name kept for the published prompt) renders the last answer's printed rows as
+      `n=<kind> <printed label>`, a child ending `(in m)`, never a key or uuid, a cut list ending ` (20 of N)`; when the reply printed no register rows, PV2's own pick/report rows are shown instead. A row_pick indexes
       exactly the shown rows and resolves the picked row's printed label through the scoped resolver (never a stored key).
 R4a-2 HELD shows the held refs' printed codes; a LAST REPLY line states what the bot did last turn without user text.
 R4a-3 A parse that copies shown codes (one row, two rows, "both", numbers, "all") reaches a Lookup holding exactly
@@ -131,3 +130,10 @@ R4a-3 A parse that copies shown codes (one row, two rows, "both", numbers, "all"
 R4a-4 The prompt gains one generic reference rule and no word lists; the parser output schema is unchanged.
 R4a-5 The replay sets stay green; MEMORY byte-identity pins change only by the new LAST ANSWER ROWS / HELD / LAST REPLY
       lines; no LLM calls in tests; v1 turns unchanged.
+R4a-6 (owner product rules 15 Oct + crew answers) A named customer carries beside a newly named product (never widened
+      or dropped, a dealer's own customer included); only a product then a named customer asks "only <product> or all
+      products?". A one-option pick is used only for an exact/unique resolution; a one-option guess (partial name,
+      key-less brand) is a yes/no confirm naming the real name ("no" asks openly for the full name). Promo replies never
+      echo the product code. "When will it be delivered" is outstanding, delivered is past, a named document keeps
+      status null. The reply follows a clearly typed language, else the conversation's, else an ms/zh parse. A
+      mid-session thank-you closes without a recap. Size-only answers are R4b.
