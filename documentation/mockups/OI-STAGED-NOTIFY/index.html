@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Parked reserve requests (mockup v1)</title>
+<title>Parked reserve requests (mockup v2)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set the other lane mockups use */
 :root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;--success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--info:#1d4ed8;--info-soft:#eff6ff;--info-line:#bfdbfe;--page:#f7f7f8}
@@ -135,21 +135,45 @@ label.l.s{font-size:12px;color:var(--muted-fg);font-weight:400}
 .tag{display:inline-block;font-size:10.5px;border-radius:4px;padding:0 5px;background:var(--primary-soft);color:var(--primary);font-weight:600;margin-left:4px}
 .new{outline:2px dashed #f59e0b;outline-offset:2px;border-radius:6px}
 @media (max-width:700px){.doc{padding:16px}.desk .side{display:none}}
+/* v2: summary preview table + the email as the layout renders it (brand header, heading, intro, table, one big button, footer: eml_0002_seed_layouts.py blocks) */
+table.sum{border-collapse:collapse;width:100%;font-size:13px}
+table.sum th{background:#fafafa;color:var(--muted-fg);font-weight:500;font-size:12px;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+table.sum td{padding:9px 10px;border-bottom:1px solid var(--border)}
+table.sum th.r,table.sum td.r{text-align:right}
+table.sum tfoot td{font-weight:600;background:#fafafa;border-bottom:0}
+.mailwrap{background:#f2f2f5;padding:24px 12px;border-radius:12px;max-width:680px}
+.mailcard{background:#fff;border-radius:8px;overflow:hidden;font:14px Arial,sans-serif;color:#111}
+.mailmeta{background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:12.5px;margin-bottom:10px;max-width:680px}
+.mailmeta div{display:flex;gap:8px}.mailmeta div b{width:62px;color:var(--muted-fg);font-weight:500;flex:none}
+.brand{background:#0d0e12;color:#fff;padding:14px 22px;font-weight:600;font-size:14px}
+.mailbody{padding:22px 22px 8px}
+.mailbody h2{font:600 18px Arial,sans-serif;margin:0 0 10px}
+.mailbody p{margin:0 0 12px;line-height:1.5}
+.mailbody table{border-collapse:collapse;width:100%;font-size:13px;margin:0 0 6px}
+.mailbody th{border:1px solid #d0d0d5;padding:5px 8px;background:#f2f2f5;text-align:left;white-space:nowrap}
+.mailbody td{border:1px solid #d0d0d5;padding:5px 8px}
+.mailbody td.r,.mailbody th.r{text-align:right}
+.more{color:#555;font-size:13px;margin:4px 0 16px}
+.bigbtn{display:block;text-align:center;background:#2563eb;color:#fff;font:600 14px Arial,sans-serif;padding:13px 16px;border-radius:6px;text-decoration:none;margin:6px 0 18px}
+.mailfoot{padding:14px 22px;border-top:1px solid #ececee;color:#777;font-size:12px}
+.phone .mailwrap{padding:12px 6px;border-radius:0}
+.phone .mailbody{padding:16px 14px 4px}
+.phone .brand{padding:12px 14px}
 </style>
 </head>
 <body>
 <div class="doc">
-<h1>Park reserve requests, send them in bulk (OI-STAGED-NOTIFY, mockup v1)</h1>
-<p class="intro">Real dev case: Joey (purchasing) parks reserve requests on OI-2609-0612, OI-2609-0614, OI-2609-0592 (PTL SUPPLIES SDN BHD, SG DUA, raised by Eling) and OI-2609-0718, OI-2609-0727 (raised by Niki), then sends them as 2 emails. Eling (CS) reserves on OI-2609-0612 with the purchasing notice parked, then sends 1 notice. Crew answers applied: Q1 to Q5 all (a). Dashed amber outline = new element.</p>
+<h1>Park reserve requests, send them in bulk (OI-STAGED-NOTIFY, mockup v2)</h1>
+<p class="intro">v2 applies the owner's Lavish notes on v1: (1) default SEND, not park: the tickbox opens unticked. (2) ONE preview that only lists the recipients and how many order inquiries each gets; the email no longer lists 100 OIs, it says how many and carries ONE button that opens Order inquiries filtered to exactly the OIs in that email, with the first 5 named. Same for CS to purchasing. Real dev case: Joey (purchasing) parks requests on the 9 OIs raised by Eling and the 8 raised by Niki (17 in all). Dashed amber outline = new element.</p>
 <nav class="nav">
-<a href="#s1">1 Request lightbox</a><a href="#s2">2 Documents list, parked filter</a><a href="#s3">3 Preview to CS</a><a href="#s4">4 CS reserves, notice parked</a><a href="#s5">5 Preview to purchasing</a><a href="#s6">6 Toasts and edge states</a><a href="#s7">7 Phone 375</a><a href="#map">Component map</a>
+<a href="#s1">1 Request lightbox</a><a href="#s2">2 Documents list, parked</a><a href="#s3">3 One summary preview</a><a href="#s4">4 The email CS gets</a><a href="#s5">5 Button lands here</a><a href="#s6">6 CS side: park notice, notify purchasing</a><a href="#s7">7 Toasts, edge states</a><a href="#s8">8 Phone 375</a><a href="#map">Component map</a>
 </nav>
 
 <!-- ============================================================ 1 -->
 <section id="s1">
-<h2><span class="nb">1</span>Request CS to reserve: "Park this first", ticked every time the lightbox opens</h2>
-<p class="why">OI-2609-0612 gear menu &gt; Request CS to reserve. Ticked: the request is saved (CS can already see and answer it on the OI) but no email goes out; the button reads "Park request". Unticked: "Send request", emailed at once exactly as today.</p>
-<div class="row"><div class="desk"><div class="screen stage" style="min-height:700px">
+<h2><span class="nb">1</span>Request CS to reserve: "Park this first" opens UNTICKED (owner: default send)</h2>
+<p class="why">OI-2609-0612 gear menu &gt; Request CS to reserve. Unticked (default): "Send request" emails CS at once, exactly as today. Tick it to hold this one back: the button turns into "Park request" and nothing is emailed until someone presses "Send parked requests to CS". The tickbox is not remembered between opens.</p>
+<div class="row"><div class="desk"><div class="screen stage" style="min-height:640px">
 <div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div class="on">Order inquiries</div><div>Sales orders</div><div>Purchase orders</div><div>Stock</div></div>
 <div class="main">
  <div class="pagehead"><div><div class="t">OI-2609-0612 <span class="pill warning">Outstanding</span></div><div class="s">SO314593 &nbsp; PTL SUPPLIES SDN BHD &nbsp; SG DUA</div></div><div class="tools"><span class="btn pri">Confirm</span><span class="btn icon">&#8942;</span></div></div>
@@ -169,174 +193,204 @@ label.l.s{font-size:12px;color:var(--muted-fg);font-weight:400}
   <div><label class="l">Note (optional)</label><div class="ta"></div></div>
  </div>
  <div class="df">
-  <span class="cb on left new" data-park><span class="box"></span>Park this first</span>
-  <span class="btn">Cancel</span><span class="btn pri" data-park-btn>Park request</span>
+  <span class="cb left new" data-park><span class="box"></span>Park this first</span>
+  <span class="btn">Cancel</span><span class="btn pri" data-park-btn>Send request</span>
  </div>
 </div></div>
 </div></div></div>
-<p class="note">Click the tickbox to see the unticked state (button turns back into today's "Send request"). The tickbox is not remembered: it opens ticked every time (owner: default on).</p>
+<p class="note">Click the tickbox to see the parked state (button reads "Park request").</p>
 </section>
 
 <!-- ============================================================ 2 -->
 <section id="s2">
-<h2><span class="nb">2</span>Order inquiries, Documents (default screen): Parked filter, Parked column, "Send parked requests to CS (5)"</h2>
-<p class="why">Joey's view with the Filters popover open. "Parked" lists everyone's parked items (Q1); the button sends only Joey's own (count = his). The column says what is parked on each OI and by whom.</p>
-<div class="row"><div class="desk"><div class="screen stage" style="min-height:640px">
+<h2><span class="nb">2</span>Order inquiries, Documents: Parked filter, Parked column, "Send parked requests to CS (17)"</h2>
+<p class="why">Joey ticked Park on 17 requests. The Parked filter lists everyone's parked items; the button sends only Joey's own. Unchanged from v1 apart from the real 17-OI case.</p>
+<div class="row"><div class="desk"><div class="screen stage" style="min-height:560px">
 <div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div class="on">Order inquiries</div><div>Sales orders</div><div>Purchase orders</div><div>Stock</div></div>
-<div class="main" style="position:relative">
+<div class="main">
  <div class="pagehead"><div class="t">Order inquiries</div><div class="seg"><span class="on">&#9638; Documents</span><span>&#9776; Lines</span></div></div>
  <div class="card">
   <div class="hd">
-   <div class="tools"><span class="search">Search OI, SO, customer, project or product...</span><div class="seg outline"><span>All</span><span class="on">Outstanding</span><span>Completed</span></div><span class="btn">Filters <span class="cnt">1</span></span><span class="chip new">Parked: requests to CS <span class="x">&#10005;</span></span></div>
-   <div class="tools"><span class="btn new">&#9993; Send parked requests to CS (5)</span><span class="btn icon">&#8635;</span><span class="btn icon">&#9707;</span></div>
+   <div class="tools"><span class="search">Search OI, SO, customer, project or product...</span><div class="seg outline"><span class="on">All</span><span>Outstanding</span><span>Completed</span></div><span class="btn">Filters <span class="cnt">1</span></span><span class="chip new">Parked: requests to CS <span class="x">&#10005;</span></span></div>
+   <div class="tools"><span class="btn new">&#9993; Send parked requests to CS (17)</span><span class="btn icon">&#8635;</span></div>
   </div>
-  <div class="scroll"><table class="dg" style="min-width:990px"><colgroup><col style="width:112px"><col style="width:84px"><col style="width:74px"><col style="width:52px"><col style="width:62px"><col style="width:180px"><col style="width:116px"><col style="width:100px"><col style="width:86px"><col style="width:124px"></colgroup>
-   <thead><tr><th>OI no</th><th>SO</th><th>Raised by</th><th class="r">Lines</th><th class="r">Qty</th><th>Customer</th><th>Project</th><th>Status</th><th>SO date</th><th class="new">Parked</th></tr></thead>
+  <div class="scroll"><table class="dg" style="min-width:990px"><colgroup><col style="width:112px"><col style="width:84px"><col style="width:74px"><col style="width:52px"><col style="width:62px"><col style="width:200px"><col style="width:150px"><col style="width:100px"><col style="width:124px"></colgroup>
+   <thead><tr><th>OI no</th><th>SO</th><th>Raised by</th><th class="r">Lines</th><th class="r">Qty</th><th>Customer</th><th>Project</th><th>Status</th><th class="new">Parked</th></tr></thead>
    <tbody>
-    <tr><td><a class="lk">OI-2609-0612</a></td><td>SO314593</td><td>Eling</td><td class="r num">16</td><td class="r num">3,232</td><td>PTL SUPPLIES SDN BHD</td><td>SG DUA</td><td><span class="pill warning">Outstanding</span></td><td>08/08/2024</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
-    <tr><td><a class="lk">OI-2609-0614</a></td><td>SO314595</td><td>Eling</td><td class="r num">19</td><td class="r num">1,728</td><td>PTL SUPPLIES SDN BHD</td><td>SG DUA</td><td><span class="pill warning">Outstanding</span></td><td>08/08/2024</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
-    <tr><td><a class="lk">OI-2609-0592</a></td><td>SO314592</td><td>Eling</td><td class="r num">16</td><td class="r num">2,874</td><td>PTL SUPPLIES SDN BHD</td><td>SG DUA</td><td><span class="pill warning">Outstanding</span></td><td>08/08/2024</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
-    <tr><td><a class="lk">OI-2609-0718</a></td><td>SO421824</td><td>Niki</td><td class="r num">122</td><td class="r num">258</td><td>MENTARI BERSERI SDN BHD (PROJECT)</td><td>CARE RESIDENCE</td><td><span class="pill warning">Outstanding</span></td><td>17/09/2026</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
-    <tr><td><a class="lk">OI-2609-0727</a></td><td>SO416694</td><td>Niki</td><td class="r num">7</td><td class="r num">84</td><td>SETIA-WOOD INDUSTRIES SDN BHD (PROJECT)</td><td>07-001</td><td><span class="pill warning">Outstanding</span></td><td>13/08/2026</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0001</a></td><td>SO419772</td><td>Eling</td><td class="r num">4</td><td class="r num">914</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>C/O DNC MARKETING SDN BHD , C/O MGB CONSTRUCTION</td><td><span class="pill warning">Outstanding</span></td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0002</a></td><td>SO419595</td><td>Eling</td><td class="r num">10</td><td class="r num">1,297</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>C/O DNC MARKETING SDN BHD , C/O SCIENTEX CONTRACR</td><td><span class="pill warning">Outstanding</span></td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0004</a></td><td>SO419598</td><td>Eling</td><td class="r num">8</td><td class="r num">26</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>C/O DNC MARKETING SDN BHD , C/O SCIENTEX CONTRACR</td><td><span class="pill warning">Outstanding</span></td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0590</a></td><td>SO410406</td><td>Eling</td><td class="r num">21</td><td class="r num">3,948</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>DNC MARKEING / TITAN RITZ / SERI NOVA</td><td><span class="pill warning">Outstanding</span></td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
+    <tr class="dim"><td colspan="9" style="text-align:center">... 13 more rows (page 1 of 1, 25 per page) ...</td></tr>
    </tbody></table></div>
-  <div class="ft"><span>5 order inquiries</span><span>Rows per page 25 &nbsp; 1 of 1</span></div>
- </div>
- <div class="pop" style="left:300px;top:118px">
-  <div><label class="l s">Raised by</label><div class="inp sel mut">Anyone</div></div>
-  <div><label class="l s">Agent</label><div class="inp sel mut">Any agent</div></div>
-  <div><label class="l s">Project</label><div class="inp sel mut">Any project</div></div>
-  <div class="new"><label class="l s">Parked</label><div class="inp sel">Requests to CS (5)</div>
-   <div style="border:1px solid var(--border);border-radius:8px;margin-top:4px;font-size:12.5px;overflow:hidden"><div style="padding:6px 10px;background:var(--muted)">Requests to CS (5)</div><div style="padding:6px 10px">Notices to purchasing (0)</div></div></div>
-  <div style="display:flex;justify-content:flex-end"><span class="btn ghost">Clear filters</span></div>
+  <div class="ft"><span>17 order inquiries</span><span>Rows per page 25 &nbsp; 1 of 1</span></div>
  </div>
 </div>
 </div></div></div>
-<p class="note">A colleague's parked request shows here too (Parked by = their name) but is not counted in Joey's button. With nothing of his own parked the button stays visible but disabled ("Nothing of yours is parked"). CS users (reserve grant) see "Notify purchasing (N)" in the same slot; a user with both grants sees both inside the toolbar's Actions menu.</p>
 </section>
 
 <!-- ============================================================ 3 -->
 <section id="s3">
-<h2><span class="nb">3</span>Preview: one card per email, then "Send 2 emails"</h2>
-<p class="why">Built from the data at the moment of the click: only lines CS has not answered yet, today's remaining. Dev automation has no fixed CS person, so each email goes To the OI raiser, Cc the requester (today's rule). If prod names Eling as the fixed CS person, all 5 ride in 1 email To Eling, Cc Joey and Niki.</p>
-<div class="row"><div class="desk"><div class="screen stage" style="min-height:1120px">
+<h2><span class="nb">3</span>ONE summary preview: who gets an email, and how many order inquiries each</h2>
+<p class="why">No email bodies, no OI lists: one line per email. Dev automation has no fixed CS person, so each email goes To the OI raiser, Cc the requester (today's rule). If prod names a fixed CS person (for example Eling), this collapses to one line: To Eling, Cc Joey, Niki, 17 order inquiries.</p>
+<div class="row"><div class="desk"><div class="screen stage" style="min-height:520px">
 <div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div class="on">Order inquiries</div><div>Sales orders</div><div>Purchase orders</div><div>Stock</div></div>
-<div class="main"><div style="height:500px;background:#fafafa;border-radius:12px"></div></div>
-<div class="overlay"><div class="dlg">
- <div class="dh"><div class="dt">Send parked requests to CS</div><div class="ds">5 order inquiries in 2 emails</div><span class="x">&#10005;</span></div>
+<div class="main"><div style="height:420px;background:#fafafa;border-radius:12px"></div></div>
+<div class="overlay"><div class="dlg" style="max-width:620px">
+ <div class="dh"><div class="dt">Send parked requests to CS</div><div class="ds">17 order inquiries, 2 emails</div><span class="x">&#10005;</span></div>
  <div class="db">
-  <div class="mail">
-   <div class="mh"><span class="chev">&#9662;</span><div class="who"><b>To Eling</b><span>Cc Joey</span></div><span class="pill secondary">3 order inquiries</span></div>
-   <div class="mb"><div class="frame"><div class="em">
-    <div class="subj">Reserve requests: 3 order inquiries (Joey)</div>
-    <p>Joey asks CS to reserve stock for 3 order inquiries.</p>
-    <h3>OI-2609-0612 #1 &nbsp; SO314593 &nbsp; PTL SUPPLIES SDN BHD &nbsp; SG DUA</h3>
-    <table><thead><tr><th>ITEM CODE</th><th>DELIVERY DATE</th><th>QTY</th><th>REMAINING</th><th>REQUESTED</th><th>LOCATION</th></tr></thead><tbody>
-     <tr><td>B2154-NL</td><td>01/03/2027</td><td>220</td><td>220</td><td>220</td><td>BRW</td></tr>
-     <tr><td>CB2805A-DIY</td><td>01/03/2027</td><td>110</td><td>110</td><td>110</td><td>BRW</td></tr>
-     <tr><td>CSA150</td><td>01/03/2027</td><td>220</td><td>220</td><td>220</td><td>BRW</td></tr>
-     <tr><td>SRTWCX8605-S-RL-PJ</td><td>01/03/2027</td><td>280</td><td>98</td><td>98</td><td>BRW</td></tr>
-    </tbody></table>
-    <p><a>Open OI-2609-0612 in Order Inquiries</a></p>
-    <h3>OI-2609-0614 #1 &nbsp; SO314595 &nbsp; PTL SUPPLIES SDN BHD &nbsp; SG DUA</h3>
-    <table><thead><tr><th>ITEM CODE</th><th>DELIVERY DATE</th><th>QTY</th><th>REMAINING</th><th>REQUESTED</th><th>LOCATION</th></tr></thead><tbody>
-     <tr><td>B2154-NL</td><td>04/05/2027</td><td>219</td><td>219</td><td>219</td><td>BRW</td></tr>
-     <tr><td>CSA150</td><td>04/05/2027</td><td>216</td><td>216</td><td>216</td><td>BRW</td></tr>
-     <tr><td>SRTWB245</td><td>04/05/2027</td><td>5</td><td>5</td><td>5</td><td>BRW</td></tr>
-    </tbody></table>
-    <p><a>Open OI-2609-0614 in Order Inquiries</a></p>
-    <h3>OI-2609-0592 #1 &nbsp; SO314592 &nbsp; PTL SUPPLIES SDN BHD &nbsp; SG DUA</h3>
-    <table><thead><tr><th>ITEM CODE</th><th>DELIVERY DATE</th><th>QTY</th><th>REMAINING</th><th>REQUESTED</th><th>LOCATION</th></tr></thead><tbody>
-     <tr><td>SRTWB245</td><td>04/01/2027</td><td>220</td><td>220</td><td>220</td><td>BRW</td></tr>
-     <tr><td>SRTWCX8605-S-RL-PJ</td><td>01/03/2026</td><td>182</td><td>108</td><td>108</td><td>BRW</td></tr>
-    </tbody></table>
-    <p><a>Open OI-2609-0592 in Order Inquiries</a></p>
-    <p>Requested by Joey on 14/10/2026.</p>
-   </div></div></div>
-  </div>
-  <div class="mail">
-   <div class="mh"><span class="chev">&#9656;</span><div class="who"><b>To Niki</b><span>Cc Joey</span></div><span class="pill secondary">2 order inquiries</span></div>
-  </div>
+  <div class="card" style="border-radius:8px;overflow:hidden"><table class="sum new">
+   <thead><tr><th>To</th><th>Cc</th><th class="r">Order inquiries</th><th class="r">Lines</th></tr></thead>
+   <tbody>
+    <tr><td><b>Eling</b></td><td>Joey</td><td class="r num">9</td><td class="r num">180</td></tr>
+    <tr><td><b>Niki</b></td><td>Joey</td><td class="r num">8</td><td class="r num">58</td></tr>
+   </tbody>
+   <tfoot><tr><td colspan="2">2 emails</td><td class="r num">17</td><td class="r num">238</td></tr></tfoot>
+  </table></div>
  </div>
  <div class="df"><span class="btn">Cancel</span><span class="btn pri">Send 2 emails</span></div>
 </div></div>
 </div></div></div>
-<p class="note">Each card expands to the exact email (same table styles as today's reserve mail). Sending stamps every included request in the same save as the emails, so a second click, a second tab or a colleague finds nothing left. A single parked request keeps today's subject ("Reserve request: OI-2609-0612 #1 - SO314593").</p>
 </section>
 
 <!-- ============================================================ 4 -->
 <section id="s4">
-<h2><span class="nb">4</span>CS reserves on the OI: "Park notice" beside "Reserve (2)", ticked by default</h2>
-<p class="why">Eling stages 2 lines on OI-2609-0612 (B2154-NL 200 @ BRW, CSA150 0 "No stock") exactly as today. One press of Reserve (2) saves them. Ticked: the notice to Joey is parked. Unticked: emailed at once, as today. No extra lightbox (Q3).</p>
-<div class="row"><div class="desk"><div class="screen stage" style="min-height:430px">
-<div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div class="on">Order inquiries</div><div>Sales orders</div><div>Purchase orders</div><div>Stock</div></div>
-<div class="main">
- <div class="pagehead"><div><div class="t">OI-2609-0612 <span class="pill warning">Outstanding</span></div><div class="s">SO314593 &nbsp; PTL SUPPLIES SDN BHD &nbsp; SG DUA</div></div>
-  <div class="tools"><span class="cb on new" data-park><span class="box"></span>Park notice</span><span class="btn pri">Reserve (2)</span><span class="btn icon">&#8942;</span></div></div>
- <div class="seg outline" style="margin-bottom:12px"><span>General</span><span class="on">Lines</span><span>Related documents</span></div>
- <div class="card"><div class="scroll"><table class="dg" style="min-width:900px"><colgroup><col style="width:190px"><col style="width:110px"><col style="width:80px"><col style="width:110px"><col style="width:110px"><col style="width:120px"><col style="width:180px"></colgroup>
-  <thead><tr><th>Product</th><th>Delivery date</th><th class="r">Qty</th><th class="r">Requested</th><th class="r">Reserve</th><th>Location</th><th>State</th></tr></thead>
-  <tbody>
-   <tr><td><b>B2154-NL</b></td><td>01/03/2027</td><td class="r num">220</td><td class="r num">220</td><td class="r num"><b>200</b></td><td>BRW</td><td><span class="pill info">Staged</span></td></tr>
-   <tr><td><b>CSA150</b></td><td>01/03/2027</td><td class="r num">220</td><td class="r num">220</td><td class="r num"><b>0</b></td><td>BRW</td><td><span class="pill info">Staged</span> <span class="mut">No stock</span></td></tr>
-   <tr class="dim"><td>CB2805A-DIY</td><td>01/03/2027</td><td class="r num">110</td><td class="r num">110</td><td class="r num">-</td><td>BRW</td><td><span class="pill warning">Requested</span></td></tr>
-   <tr class="dim"><td>SRTWCX8605-S-RL-PJ</td><td>01/03/2027</td><td class="r num">280</td><td class="r num">98</td><td class="r num">-</td><td>BRW</td><td><span class="pill warning">Requested</span></td></tr>
-  </tbody></table></div></div>
-</div></div></div></div>
-<p class="note">Lines grid shown simplified (the real one also carries No., Confirmed, Supplier, PO, SPO, Instruction, Raised via and History; nothing in it changes). The staging and Reserve (N) are today's (OrderInquiryDetail.tsx 846-855, ReserveLineForm.tsx); only the tickbox is new. It re-ticks itself on every page load.</p>
+<h2><span class="nb">4</span>The email Eling gets (proposal): count, first 5 OIs, one button</h2>
+<p class="why">Short: who asks, how many OIs and lines, the first 5 OIs so she knows what it is about, then one big button. An email that carries only ONE order inquiry keeps today's detailed email (rows table) and today's subject.</p>
+<div class="mailmeta"><div><b>Subject</b><span>Reserve requests: 9 order inquiries (Joey)</span></div><div><b>To</b><span>Eling</span></div><div><b>Cc</b><span>Joey</span></div></div>
+<div class="mailwrap new"><div class="mailcard">
+ <div class="brand">Sorento</div>
+ <div class="mailbody">
+  <h2>9 order inquiries waiting for your reserve</h2>
+  <p>Joey asks CS to reserve stock on 9 order inquiries (180 lines).</p>
+  <table>
+   <thead><tr><th>OI NO</th><th>S/O NO</th><th>CUSTOMER</th><th class="r">LINES</th></tr></thead>
+   <tbody>
+    <tr><td>OI-2609-0001</td><td>SO419772</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td class="r">4</td></tr>
+    <tr><td>OI-2609-0002</td><td>SO419595</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td class="r">2</td></tr>
+    <tr><td>OI-2609-0004</td><td>SO419598</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td class="r">1</td></tr>
+    <tr><td>OI-2609-0590</td><td>SO410406</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td class="r">8</td></tr>
+    <tr><td>OI-2609-0592</td><td>SO314592</td><td>PTL SUPPLIES SDN BHD</td><td class="r">5</td></tr>
+   </tbody>
+  </table>
+  <div class="more">and 4 more order inquiries.</div>
+  <a class="bigbtn">View the 9 order inquiries waiting for your reserve</a>
+ </div>
+ <div class="mailfoot">Requested by Joey on 14/10/2026.</div>
+</div></div>
+<p class="note">LINES = the lines Joey asked CS to reserve on that OI (not the whole OI). The button link carries a send id, so it always opens exactly these 9, even after other requests are sent later.</p>
 </section>
 
 <!-- ============================================================ 5 -->
 <section id="s5">
-<h2><span class="nb">5</span>Eling: Documents list "Notify purchasing (1)" and its preview</h2>
-<p class="why">Only lines whose reserved figure differs from what purchasing was last told. One email per To person (the requester), Cc the OI raiser; Eling, who pressed, moves to Cc as today. A single OI keeps today's subject.</p>
-<div class="row"><div class="desk"><div class="screen stage" style="min-height:760px">
+<h2><span class="nb">5</span>The button lands on Order inquiries filtered to exactly that email's 9 OIs</h2>
+<p class="why">Documents list, state toggle on All, a chip naming the email. Clearing the chip goes back to the normal list. Each row opens the OI as today, where Eling reserves line by line.</p>
+<div class="row"><div class="desk"><div class="screen stage" style="min-height:560px">
 <div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div class="on">Order inquiries</div><div>Sales orders</div><div>Purchase orders</div><div>Stock</div></div>
 <div class="main">
  <div class="pagehead"><div class="t">Order inquiries</div><div class="seg"><span class="on">&#9638; Documents</span><span>&#9776; Lines</span></div></div>
- <div class="card"><div class="hd"><div class="tools"><span class="search">Search OI, SO, customer, project or product...</span><div class="seg outline"><span>All</span><span class="on">Outstanding</span><span>Completed</span></div><span class="btn">Filters <span class="cnt">1</span></span><span class="chip">Parked: notices to purchasing <span class="x">&#10005;</span></span></div><div class="tools"><span class="btn new">&#9993; Notify purchasing (1)</span><span class="btn icon">&#8635;</span></div></div>
- <div style="height:120px"></div></div>
-</div>
-<div class="overlay" style="padding-top:150px"><div class="dlg">
- <div class="dh"><div class="dt">Notify purchasing</div><div class="ds">1 order inquiry in 1 email</div><span class="x">&#10005;</span></div>
- <div class="db">
-  <div class="mail">
-   <div class="mh"><span class="chev">&#9662;</span><div class="who"><b>To Joey</b><span>Cc Eling</span></div><span class="pill secondary">1 order inquiry</span></div>
-   <div class="mb"><div class="frame"><div class="em">
-    <div class="subj">Reserved: OI-2609-0612 #1 - SO314593</div>
-    <p>Eling reserved stock for OI-2609-0612 #1 (SO314593).</p>
-    <table><thead><tr><th>ITEM CODE</th><th>QTY</th><th>REQUESTED</th><th>RESERVED</th><th>BALANCE</th><th>LOCATION</th><th>REASON</th></tr></thead><tbody>
-     <tr><td>B2154-NL</td><td>220</td><td>220</td><td>200</td><td>20</td><td>BRW</td><td></td></tr>
-     <tr><td>CSA150</td><td>220</td><td>220</td><td>0</td><td>220</td><td>BRW</td><td>No stock</td></tr>
-    </tbody></table>
-    <p>Reserved by Eling on 14/10/2026.</p>
-    <p><a>Open in Order Inquiries</a></p>
-   </div></div></div>
+ <div class="card">
+  <div class="hd">
+   <div class="tools"><span class="search">Search OI, SO, customer, project or product...</span><div class="seg outline"><span class="on">All</span><span>Outstanding</span><span>Completed</span></div><span class="btn">Filters</span><span class="chip new">From email: Joey's reserve requests, 14/10/2026 (9) <span class="x">&#10005;</span></span></div>
+   <div class="tools"><span class="btn icon">&#8635;</span></div>
   </div>
+  <div class="scroll"><table class="dg" style="min-width:990px"><colgroup><col style="width:112px"><col style="width:84px"><col style="width:74px"><col style="width:52px"><col style="width:62px"><col style="width:220px"><col style="width:200px"><col style="width:90px"><col style="width:100px"></colgroup>
+   <thead><tr><th>OI no</th><th>SO</th><th>Raised by</th><th class="r">Lines</th><th class="r">Qty</th><th>Customer</th><th>Project</th><th>SO date</th><th>Status</th></tr></thead>
+   <tbody>
+    <tr><td><a class="lk">OI-2609-0001</a></td><td>SO419772</td><td>Eling</td><td class="r num">4</td><td class="r num">914</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>C/O DNC MARKETING SDN BHD , C/O MGB CONSTRUCTION</td><td>04/09/2026</td><td><span class="pill warning">Outstanding</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0002</a></td><td>SO419595</td><td>Eling</td><td class="r num">10</td><td class="r num">1,297</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>C/O DNC MARKETING SDN BHD , C/O SCIENTEX CONTRACR</td><td>03/09/2026</td><td><span class="pill warning">Outstanding</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0004</a></td><td>SO419598</td><td>Eling</td><td class="r num">8</td><td class="r num">26</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>C/O DNC MARKETING SDN BHD , C/O SCIENTEX CONTRACR</td><td>03/09/2026</td><td><span class="pill warning">Outstanding</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0590</a></td><td>SO410406</td><td>Eling</td><td class="r num">21</td><td class="r num">3,948</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>DNC MARKEING / TITAN RITZ / SERI NOVA</td><td>02/07/2026</td><td><span class="pill warning">Outstanding</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0592</a></td><td>SO314592</td><td>Eling</td><td class="r num">16</td><td class="r num">2,874</td><td>PTL SUPPLIES SDN BHD</td><td>SG DUA</td><td>08/08/2024</td><td><span class="pill warning">Outstanding</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0612</a></td><td>SO314593</td><td>Eling</td><td class="r num">16</td><td class="r num">3,232</td><td>PTL SUPPLIES SDN BHD</td><td>SG DUA</td><td>08/08/2024</td><td><span class="pill warning">Outstanding</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0614</a></td><td>SO314595</td><td>Eling</td><td class="r num">19</td><td class="r num">1,728</td><td>PTL SUPPLIES SDN BHD</td><td>SG DUA</td><td>08/08/2024</td><td><span class="pill warning">Outstanding</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0730</a></td><td>SO421072</td><td>Eling</td><td class="r num">102</td><td class="r num">4,266</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>C/O DNC MARKETING SDN BHD, C/O MTL CONSTRUCTION</td><td>11/09/2026</td><td><span class="pill warning">Outstanding</span></td></tr>
+    <tr><td><a class="lk">OI-2609-0731</a></td><td>SO419603</td><td>Eling</td><td class="r num">54</td><td class="r num">4,092</td><td>APEX CONNECTION SDN BHD (PROJECT)</td><td>C/O DNC MARKETING SDN BHD , C/O GLOBAL SEASONS</td><td>03/09/2026</td><td><span class="pill warning">Outstanding</span></td></tr>
+   </tbody></table></div>
+  <div class="ft"><span>9 order inquiries</span><span>Rows per page 25 &nbsp; 1 of 1</span></div>
  </div>
- <div class="df"><span class="btn">Cancel</span><span class="btn pri">Send 1 email</span></div>
-</div></div>
+</div>
 </div></div></div>
-<p class="note">After sending, Eling amends B2154-NL to 150: "Notify purchasing (1)" comes back with that one line only. Amending it back to 200 before sending drops it out (Joey already has 200). An unchanged line never goes out again.</p>
+<p class="note">Same list, same columns as today; only the chip is new. Anyone without access to Order inquiries gets the normal "no access" page, as for any OI link today.</p>
 </section>
 
 <!-- ============================================================ 6 -->
 <section id="s6">
-<h2><span class="nb">6</span>Toasts and edge states</h2>
-<div class="row" style="flex-direction:column;gap:12px">
- <span class="toast"><span class="dot"></span>Request #1 parked. Send it from Order inquiries.</span>
- <span class="toast"><span class="dot"></span>Request #1 sent to Eling</span><span class="mut" style="font-size:12px;margin-top:-8px">(unticked: today's toast, unchanged)</span>
- <span class="toast"><span class="dot"></span>2 emails sent (5 order inquiries)</span>
- <span class="toast warn"><span class="dot"></span>Nothing left to send: someone already sent these.</span>
- <div class="mail" style="max-width:720px">
-  <div class="mh"><span class="chev">&#9656;</span><div class="who"><b>No recipient</b><span>Stays parked. Add a CS person to the automation "Order inquiry: request CS to reserve", or the OI raiser needs an email address.</span></div><span class="pill destructive">1 order inquiry</span></div>
+<h2><span class="nb">6</span>CS side, same shape: "Park notice" (unticked by default), "Notify purchasing (3)", one summary, short email, button</h2>
+<p class="why">Scenario on the real OIs: Eling ticks Park notice and reserves on OI-2609-0612, OI-2609-0614 and OI-2609-0592 (Joey's requests), 2 lines each. Then Notify purchasing (3). Only lines whose reserved figure changed since purchasing was last told go out.</p>
+<div class="row"><div class="desk"><div class="screen stage" style="min-height:250px">
+<div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div class="on">Order inquiries</div><div>Sales orders</div><div>Purchase orders</div><div>Stock</div></div>
+<div class="main">
+ <div class="pagehead"><div><div class="t">OI-2609-0612 <span class="pill warning">Outstanding</span></div><div class="s">SO314593 &nbsp; PTL SUPPLIES SDN BHD &nbsp; SG DUA</div></div>
+  <div class="tools"><span class="cb new" data-park2><span class="box"></span>Park notice</span><span class="btn pri">Reserve (2)</span><span class="btn icon">&#8942;</span></div></div>
+ <div class="seg outline" style="margin-bottom:12px"><span>General</span><span class="on">Lines</span><span>Related documents</span></div>
+ <div style="height:90px;background:#fafafa;border-radius:12px"></div>
+</div></div></div></div>
+<p class="note">Unticked (default, same rule as the request side): Reserve (2) emails Joey at once, as today. Ticked: saved, notice parked.</p>
+
+<div class="row" style="margin-top:16px"><div class="desk"><div class="screen stage" style="min-height:470px">
+<div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div class="on">Order inquiries</div><div>Sales orders</div><div>Purchase orders</div><div>Stock</div></div>
+<div class="main">
+ <div class="pagehead"><div class="t">Order inquiries</div><div class="seg"><span class="on">&#9638; Documents</span><span>&#9776; Lines</span></div></div>
+ <div class="card"><div class="hd"><div class="tools"><span class="search">Search OI, SO, customer, project or product...</span><div class="seg outline"><span class="on">All</span><span>Outstanding</span><span>Completed</span></div><span class="btn">Filters <span class="cnt">1</span></span><span class="chip">Parked: notices to purchasing <span class="x">&#10005;</span></span></div><div class="tools"><span class="btn new">&#9993; Notify purchasing (3)</span><span class="btn icon">&#8635;</span></div></div>
+ <div style="height:90px"></div></div>
+</div>
+<div class="overlay" style="padding-top:130px"><div class="dlg" style="max-width:620px">
+ <div class="dh"><div class="dt">Notify purchasing</div><div class="ds">3 order inquiries, 1 email</div><span class="x">&#10005;</span></div>
+ <div class="db">
+  <div class="card" style="border-radius:8px;overflow:hidden"><table class="sum">
+   <thead><tr><th>To</th><th>Cc</th><th class="r">Order inquiries</th><th class="r">Lines</th></tr></thead>
+   <tbody><tr><td><b>Joey</b></td><td>Eling</td><td class="r num">3</td><td class="r num">6</td></tr></tbody>
+  </table></div>
  </div>
- <span class="mut" style="font-size:12px">Edge card shown only when it happens (dev has none: every raiser has an email). The footer then reads "Send 1 email", and the parked item stays in the count.</span>
+ <div class="df"><span class="btn">Cancel</span><span class="btn pri">Send 1 email</span></div>
+</div></div>
+</div></div></div>
+
+<div style="margin-top:16px">
+<div class="mailmeta"><div><b>Subject</b><span>Reserved: 3 order inquiries (Eling)</span></div><div><b>To</b><span>Joey</span></div><div><b>Cc</b><span>Eling</span></div></div>
+<div class="mailwrap new"><div class="mailcard">
+ <div class="brand">Sorento</div>
+ <div class="mailbody">
+  <h2>CS answered your reserve requests on 3 order inquiries</h2>
+  <p>Eling reserved stock on 3 order inquiries (6 lines). Check the balance still to buy.</p>
+  <table>
+   <thead><tr><th>OI NO</th><th>S/O NO</th><th>CUSTOMER</th><th class="r">LINES</th></tr></thead>
+   <tbody>
+    <tr><td>OI-2609-0592</td><td>SO314592</td><td>PTL SUPPLIES SDN BHD</td><td class="r">2</td></tr>
+    <tr><td>OI-2609-0612</td><td>SO314593</td><td>PTL SUPPLIES SDN BHD</td><td class="r">2</td></tr>
+    <tr><td>OI-2609-0614</td><td>SO314595</td><td>PTL SUPPLIES SDN BHD</td><td class="r">2</td></tr>
+   </tbody>
+  </table>
+  <a class="bigbtn" style="margin-top:14px">View the 3 order inquiries CS reserved</a>
+ </div>
+ <div class="mailfoot">Reserved by Eling on 14/10/2026.</div>
+</div></div>
+<p class="note">The button opens Documents filtered to those 3 OIs (chip "From email: Eling's reserve notices, 14/10/2026 (3)"); on each OI the Lines tab shows reserved and balance per line, as today. A notice that carries only one OI keeps today's detailed reserved email.</p>
 </div>
 </section>
 
 <!-- ============================================================ 7 -->
 <section id="s7">
-<h2><span class="nb">7</span>Phone 375: lightbox, list toolbar, preview</h2>
+<h2><span class="nb">7</span>Toasts and edge states</h2>
+<div class="row" style="flex-direction:column;gap:12px">
+ <span class="toast"><span class="dot"></span>Request #1 sent to Eling</span><span class="mut" style="font-size:12px;margin-top:-8px">(default, unticked: today's toast, unchanged)</span>
+ <span class="toast"><span class="dot"></span>Request #1 parked. Send it from Order inquiries.</span>
+ <span class="toast"><span class="dot"></span>2 emails sent (17 order inquiries)</span>
+ <span class="toast warn"><span class="dot"></span>Nothing left to send: someone already sent these.</span>
+ <div class="card" style="border-radius:8px;overflow:hidden;max-width:620px"><table class="sum">
+  <thead><tr><th>To</th><th>Cc</th><th class="r">Order inquiries</th><th class="r">Lines</th></tr></thead>
+  <tbody>
+   <tr><td><b>Eling</b></td><td>Joey</td><td class="r num">9</td><td class="r num">180</td></tr>
+   <tr><td><span class="pill destructive">No recipient</span> <span class="mut">stays parked</span></td><td class="mut">-</td><td class="r num">1</td><td class="r num">3</td></tr>
+  </tbody></table></div>
+ <span class="mut" style="font-size:12px">Shown only when it happens (dev has none: every raiser has an email). Fix: add a CS person to the automation "Order inquiry: request CS to reserve", or give the raiser an email; the parked item stays in the count meanwhile.</span>
+</div>
+</section>
+
+<!-- ============================================================ 8 -->
+<section id="s8">
+<h2><span class="nb">8</span>Phone 375: lightbox, summary preview, the email</h2>
 <div class="row">
  <div class="phone"><div class="screen"><div class="overlay" style="position:static;min-height:780px"><div class="dlg">
   <div class="dh"><div class="dt">Request CS to reserve</div><span class="x">&#10005;</span></div>
@@ -344,40 +398,31 @@ label.l.s{font-size:12px;color:var(--muted-fg);font-weight:400}
    <tr><td><b>B2154-NL</b></td><td>01/03/2027</td><td class="r">220</td><td><div class="inp">220</div></td><td><div class="inp sel">BRW</div></td></tr>
    <tr><td><b>CSA150</b></td><td>01/03/2027</td><td class="r">220</td><td><div class="inp">220</div></td><td><div class="inp sel">BRW</div></td></tr>
   </tbody></table></div></div><div><label class="l">Note (optional)</label><div class="ta"></div></div></div>
-  <div class="df"><span class="cb on left new" data-park><span class="box"></span>Park this first</span><span class="btn">Cancel</span><span class="btn pri" data-park-btn>Park request</span></div>
- </div></div></div><div class="cap">375: grid scrolls sideways inside the lightbox, tickbox wraps above the buttons</div></div>
-
- <div class="phone"><div class="screen"><div class="main">
-  <div class="pagehead"><div class="t">Order inquiries</div><div class="seg"><span class="on">Documents</span><span>Lines</span></div></div>
-  <div class="card"><div class="hd" style="flex-direction:column;align-items:stretch">
-   <span class="search">Search OI, SO, customer...</span>
-   <div class="tools"><div class="seg outline"><span>All</span><span class="on">Outstanding</span><span>Completed</span></div><span class="btn">Filters <span class="cnt">1</span></span></div>
-   <div class="tools"><span class="chip">Parked: requests to CS <span class="x">&#10005;</span></span></div>
-   <div class="tools"><span class="btn new" style="width:100%;justify-content:center">&#9993; Send parked requests to CS (5)</span></div>
-  </div>
-  <div class="scroll"><table class="dg" style="min-width:560px"><colgroup><col style="width:120px"><col style="width:90px"><col style="width:180px"><col style="width:140px"></colgroup><thead><tr><th>OI no</th><th>SO</th><th>Customer</th><th>Parked</th></tr></thead><tbody>
-   <tr><td><a class="lk">OI-2609-0612</a></td><td>SO314593</td><td>PTL SUPPLIES SDN BHD</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
-   <tr><td><a class="lk">OI-2609-0614</a></td><td>SO314595</td><td>PTL SUPPLIES SDN BHD</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
-   <tr><td><a class="lk">OI-2609-0592</a></td><td>SO314592</td><td>PTL SUPPLIES SDN BHD</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
-   <tr><td><a class="lk">OI-2609-0718</a></td><td>SO421824</td><td>MENTARI BERSERI SDN BHD (PROJECT)</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
-   <tr><td><a class="lk">OI-2609-0727</a></td><td>SO416694</td><td>SETIA-WOOD INDUSTRIES SDN BHD (PROJECT)</td><td><span class="pill warning">Request</span> <span class="mut">Joey</span></td></tr>
-  </tbody></table></div></div>
- </div></div><div class="cap">375: toolbar stacks, button full width, grid scrolls</div></div>
+  <div class="df"><span class="cb left new" data-park><span class="box"></span>Park this first</span><span class="btn">Cancel</span><span class="btn pri" data-park-btn>Send request</span></div>
+ </div></div></div><div class="cap">375: grid scrolls sideways inside the lightbox</div></div>
 
  <div class="phone"><div class="screen"><div class="overlay" style="position:static;min-height:780px"><div class="dlg">
-  <div class="dh"><div class="dt">Send parked requests to CS</div><div class="ds">5 order inquiries in 2 emails</div><span class="x">&#10005;</span></div>
-  <div class="db">
-   <div class="mail"><div class="mh"><span class="chev">&#9662;</span><div class="who"><b>To Eling</b><span>Cc Joey</span></div><span class="pill secondary">3 OIs</span></div>
-    <div class="mb" style="padding:8px"><div class="frame" style="padding:8px"><div class="em" style="font-size:12px">
-     <div class="subj">Reserve requests: 3 order inquiries (Joey)</div>
-     <h3>OI-2609-0612 #1 &nbsp; SO314593</h3>
-     <table><thead><tr><th>ITEM CODE</th><th>DELIVERY DATE</th><th>QTY</th><th>REMAINING</th><th>REQUESTED</th><th>LOCATION</th></tr></thead><tbody><tr><td>B2154-NL</td><td>01/03/2027</td><td>220</td><td>220</td><td>220</td><td>BRW</td></tr><tr><td>CSA150</td><td>01/03/2027</td><td>220</td><td>220</td><td>220</td><td>BRW</td></tr></tbody></table>
-     <p class="mut">... 2 more order inquiries</p>
-    </div></div></div></div>
-   <div class="mail"><div class="mh"><span class="chev">&#9656;</span><div class="who"><b>To Niki</b><span>Cc Joey</span></div><span class="pill secondary">2 OIs</span></div></div>
-  </div>
+  <div class="dh"><div class="dt">Send parked requests to CS</div><div class="ds">17 order inquiries, 2 emails</div><span class="x">&#10005;</span></div>
+  <div class="db"><div class="card" style="border-radius:8px;overflow:hidden"><table class="sum">
+   <thead><tr><th>To</th><th>Cc</th><th class="r">OIs</th></tr></thead>
+   <tbody><tr><td><b>Eling</b></td><td>Joey</td><td class="r">9</td></tr><tr><td><b>Niki</b></td><td>Joey</td><td class="r">8</td></tr></tbody>
+  </table></div></div>
   <div class="df"><span class="btn">Cancel</span><span class="btn pri">Send 2 emails</span></div>
- </div></div></div><div class="cap">375: email frame scrolls sideways inside its card</div></div>
+ </div></div></div><div class="cap">375: the summary fits without scrolling (Lines column dropped)</div></div>
+
+ <div class="phone"><div class="screen"><div class="mailwrap"><div class="mailcard">
+  <div class="brand">Sorento</div>
+  <div class="mailbody">
+   <h2>9 order inquiries waiting for your reserve</h2>
+   <p>Joey asks CS to reserve stock on 9 order inquiries (180 lines).</p>
+   <table><thead><tr><th>OI NO</th><th>S/O NO</th><th class="r">LINES</th></tr></thead><tbody>
+    <tr><td>OI-2609-0001</td><td>SO419772</td><td class="r">4</td></tr><tr><td>OI-2609-0002</td><td>SO419595</td><td class="r">2</td></tr><tr><td>OI-2609-0004</td><td>SO419598</td><td class="r">1</td></tr><tr><td>OI-2609-0590</td><td>SO410406</td><td class="r">8</td></tr><tr><td>OI-2609-0592</td><td>SO314592</td><td class="r">5</td></tr>
+   </tbody></table>
+   <div class="more">and 4 more order inquiries.</div>
+   <a class="bigbtn">View the 9 order inquiries waiting for your reserve</a>
+  </div>
+  <div class="mailfoot">Requested by Joey on 14/10/2026.</div>
+ </div></div></div><div class="cap">375 (phone mail app): the button is the whole width</div></div>
 </div>
 </section>
 
@@ -387,16 +432,15 @@ label.l.s{font-size:12px;color:var(--muted-fg);font-weight:400}
 <table class="map">
 <thead><tr><th>Element</th><th>Reuses</th><th>Repo path</th></tr></thead>
 <tbody>
-<tr><td>"Park this first" tickbox <span class="tag">new</span></td><td>Checkbox + Label in the dialog footer</td><td><code>components/ui/checkbox.tsx</code>, <code>app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx</code> (footer, 281-288)</td></tr>
-<tr><td>Request lightbox grid, note</td><td>Unchanged DataGrid dialog</td><td><code>ReserveRequestDialog.tsx</code></td></tr>
-<tr><td>"Park notice" tickbox <span class="tag">new</span></td><td>Checkbox beside the header's Reserve (N)</td><td><code>components/ui/checkbox.tsx</code>, <code>[id]/components/OrderInquiryDetail.tsx</code> (846-855)</td></tr>
-<tr><td>Documents list, toolbar, Filters popover</td><td>DataGridListToolbar (custom filters, chip, refresh)</td><td><code>order-inquiries/components/OrderInquiryHeadersList.tsx</code> (497-580), <code>components/ui/data-grid-list-toolbar.tsx</code></td></tr>
-<tr><td>"Parked" filter <span class="tag">new</span></td><td>SearchableSelect, clearable, counts in labels (same as the Lines view's Confirmed filter)</td><td><code>components/common/SearchableSelect</code>; pattern <code>OrderInquiriesClient.tsx</code> (1258-1272)</td></tr>
-<tr><td>Send parked requests to CS (N) / Notify purchasing (N) <span class="tag">new</span></td><td>Toolbar <code>secondaryActions</code> (one = button, two = Actions menu), with <code>disabledReason</code></td><td><code>components/ui/data-grid-list-toolbar.tsx</code> (556-575)</td></tr>
-<tr><td>"Parked" column <span class="tag">new</span></td><td>Badge light pill + muted name, sized column, truncate + title</td><td><code>components/ui/badge.tsx</code>; column style of <code>OrderInquiryHeadersList.tsx</code> (Raised by)</td></tr>
-<tr><td>Preview dialog <span class="tag">new</span></td><td>Dialog shell (header, body scroll, footer)</td><td><code>components/ui/dialog.tsx</code>, shell of <code>ReserveRequestDialog.tsx</code></td></tr>
-<tr><td>Email card body</td><td>Rendered email in an iframe</td><td><code>app/(protected)/system-management/email-templates/components/EmailPreviewFrame.tsx</code></td></tr>
-<tr><td>Email layout</td><td>Seeded reserve templates' table styles and columns</td><td><code>sorento_crm_backend/alembic/versions/oirs_0001_reserve_requests.py</code> (_TH/_TD/_TABLE, request + reserved bodies)</td></tr>
+<tr><td>"Park this first" tickbox, unticked by default <span class="tag">new</span></td><td>Checkbox + Label in the dialog footer</td><td><code>components/ui/checkbox.tsx</code>, <code>app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx</code> (footer, 281-288)</td></tr>
+<tr><td>"Park notice" tickbox, unticked by default <span class="tag">new</span></td><td>Checkbox beside the header's Reserve (N)</td><td><code>components/ui/checkbox.tsx</code>, <code>[id]/components/OrderInquiryDetail.tsx</code> (846-855)</td></tr>
+<tr><td>Documents list, toolbar, Filters popover, chips</td><td>DataGridListToolbar (custom filters, chip, refresh)</td><td><code>order-inquiries/components/OrderInquiryHeadersList.tsx</code> (497-580), <code>components/ui/data-grid-list-toolbar.tsx</code></td></tr>
+<tr><td>"Parked" filter + column <span class="tag">new</span></td><td>SearchableSelect (clearable, counts), Badge light pill</td><td><code>components/common/SearchableSelect</code>, <code>components/ui/badge.tsx</code>; pattern <code>OrderInquiriesClient.tsx</code> (1258-1272)</td></tr>
+<tr><td>"From email" chip <span class="tag">new</span></td><td>Same active-filter chip, driven by a URL param (like the expiry reminder's <code>?expiry_notify_batch_id=</code>)</td><td><code>sorento_crm_backend/app/services/automation_service.py</code> (608-611, batch link precedent)</td></tr>
+<tr><td>Send parked requests to CS (N) / Notify purchasing (N) <span class="tag">new</span></td><td>Toolbar <code>secondaryActions</code> with <code>disabledReason</code></td><td><code>components/ui/data-grid-list-toolbar.tsx</code> (556-575)</td></tr>
+<tr><td>Summary preview dialog <span class="tag">new</span></td><td>Dialog shell + a plain table (no email bodies)</td><td><code>components/ui/dialog.tsx</code>, shell of <code>ReserveRequestDialog.tsx</code></td></tr>
+<tr><td>Bulk email (heading, intro, first-5 table, one button, footer)</td><td>Email layout blocks the reserve templates already use</td><td><code>sorento_crm_backend/alembic/versions/eml_0002_seed_layouts.py</code> (order_inquiry_reserve_requested / order_inquiry_reserved blocks)</td></tr>
+<tr><td>One-OI email</td><td>Today's request / reserved email, unchanged</td><td><code>oirs_0001_reserve_requests.py</code>, <code>oirs_0003_reserve_commit_tmpl.py</code></td></tr>
 <tr><td>Toasts</td><td>Sonner toast via the mutation hooks</td><td><code>components/ui/sonner.tsx</code>, <code>_shared/hooks/useOrderInquiry.ts</code></td></tr>
 <tr><td>Recipients, To/Cc</td><td>Today's automations (one email, presser moved to Cc)</td><td><code>app/services/automation_recipients.py</code>, <code>app/services/automation_service.py</code> (641-660)</td></tr>
 </tbody></table>
@@ -410,6 +454,7 @@ document.querySelectorAll('[data-park]').forEach(function(cb){
     if(btn){btn.textContent=cb.classList.contains('on')?'Park request':'Send request';}
   });
 });
+document.querySelectorAll('[data-park2]').forEach(function(cb){cb.addEventListener('click',function(){cb.classList.toggle('on');});});
 </script>
 </body>
 </html>
