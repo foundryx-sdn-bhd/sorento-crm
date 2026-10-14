@@ -264,3 +264,41 @@ def test_a_hold_under_no_decision_keeps_todays_cap_at_what_is_owed(api):
     world.db.commit()
 
     assert _held(world.db, world, line) == Decimal("6")
+
+
+def test_a_revision_that_planned_only_the_owed_qty_keeps_its_hold(api):
+    """Guard (dev SO389799 SRT2403-RG shape): a revision decided before the 14 Sep 2026
+    ruling planned only what was then still owed - Reserve 3 for the 3 of 20 left after 17
+    shipped (`open_qty` "3" in its snapshot). Those 17 were never its to consume, so the
+    Reserve still holds 3, as before this rule."""
+    from app.models.project_so import SOSupplyDecision
+    from sqlalchemy.orm.attributes import flag_modified
+
+    client, world, order, line, core_line, _stock_row = _world(
+        api, ordered="20", delivered="0", on_hand=50
+    )
+    _confirm(client, order, _line_payload(
+        line.id, reserve=[{"warehouse_id": world.pool_wh.id, "qty": "3"}],
+        buy_qty="17", buy_reason="ZZT buy the rest", amend_reason="ZZT reserve 3",
+    ))
+    db = world.db
+    db.expire_all()
+    decision = (
+        db.query(SOSupplyDecision)
+        .filter(
+            SOSupplyDecision.project_sales_order_id == order.id,
+            SOSupplyDecision.state == "active",
+        )
+        .one()
+    )
+    snapshots = [dict(s) for s in decision.line_snapshots]
+    for snap in snapshots:
+        if snap["project_line_id"] == str(line.id):
+            snap["open_qty"] = "3"
+            snap["components"] = [c for c in snap["components"] if c["kind"] == "reserve"]
+    decision.line_snapshots = snapshots
+    flag_modified(decision, "line_snapshots")
+    core_line.qty_delivered = Decimal("17")
+    db.commit()
+
+    assert _held(db, world, line) == Decimal("3")

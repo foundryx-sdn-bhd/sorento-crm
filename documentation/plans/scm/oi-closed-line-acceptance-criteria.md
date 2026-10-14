@@ -29,6 +29,9 @@ through CS decisions confirmed in Fulfilment Planning; Confirm sends the purchas
 - AC-8 A line with nothing delivered is rechecked as before, but an over-reserve confirms holding only what is
   free and records the rest short (owner rule 12 Oct).
 - AC-9 No stock hold is written for delivered qty (the hold stays capped at what is still owed).
+  Restated 14 Oct 2026 (owner rule): delivered qty consumes the Reserve/Borrow first, then the
+  Buy, on the write and on the read (`held_qty_expr`), so a Reserve confirmed before the delivery
+  holds its decided qty less what was delivered.
 
 ## AutoCount ingest (regression lock)
 
