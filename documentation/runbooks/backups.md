@@ -81,7 +81,7 @@ Write down, for step 2:
 - `RETENTION_DAYS` and the rclone remote and folder (expected `gdrive:db-backups`).
 - the file name pattern of the newest dumps on Drive. New dumps are named
   `sorento_crm_<YYYYMMDD>T<HHMMSS>Z.sql.gz`, and both prune and restore test only look at
-  `<BACKUP_NAME>_<digits>...Z.sql.gz`. Old files with another name are never pruned by the new script; delete them by
+  `<BACKUP_NAME>_<YYYYMMDD>T<HHMMSS>Z.sql.gz`. Old files with another name are never pruned by the new script; delete them by
   hand once `RETENTION_DAYS` of new dumps exist (step 8).
 - the Postgres image tag (`postgres:17...` or `pgvector/pgvector:pg17`). The restore test reads the
   major version from the dump itself, so this is only a cross-check.
@@ -233,8 +233,9 @@ The weekly restore test then fails with exit 2 ("is encrypted; set AGE_IDENTITY"
 the private key. Pick one:
 
 - (a) keep the key off the box and run the restore test only in the monthly drill, with the key
-  copied to memory for that run only (`scp` it to `/dev/shm/drill.agekey`, run with
-  `AGE_IDENTITY=/dev/shm/drill.agekey`, then `rm /dev/shm/drill.agekey`; `/dev/shm` never hits disk), and
+  held in memory for that run only: on the box `install -d -m 700 /dev/shm/sorento-drill`, `scp` the
+  key into that folder, run with `AGE_IDENTITY=/dev/shm/sorento-drill/drill.agekey`, then
+  `rm -rf /dev/shm/sorento-drill` (`/dev/shm` never hits disk), and
   remove the weekly restore-test cron line and its Healthchecks check; or
 - (b) put the key on the box (`/etc/sorento-backup/restore.agekey`, mode 600) and set
   `AGE_IDENTITY` in the env file. Weaker: the box can then read old dumps, but Drive alone cannot.
@@ -283,7 +284,10 @@ docker exec <pg container> psql -U <user> -Atc "select datname from pg_database 
   `SANITY_LATEST=<table>.<created_at column>` or empty.
 - Several DBs in one Postgres: one env file per DB (`/etc/sorento-backup/<db>.env`, each with its own
   `BACKUP_NAME`, folder and Healthchecks URLs) and one cron line per DB:
-  `20 3 * * * BACKUP_ENV_FILE=/etc/sorento-backup/<db>.env /opt/sorento-backup/backup-db.sh >> /var/log/sorento-backup.log 2>&1`.
+  `20 3 * * * umask 077; BACKUP_ENV_FILE=/etc/sorento-backup/<db>.env /opt/sorento-backup/backup-db.sh >> /var/log/sorento-backup.log 2>&1`.
+  and one restore-test line per DB, each its own time so they do not share the box's disk at once:
+  `30 4 * * 0 umask 077; BACKUP_ENV_FILE=/etc/sorento-backup/<db>.env /opt/sorento-backup/restore-test.sh >> /var/log/sorento-restore-test.log 2>&1`
+  (then `30 5`, `30 6` for the next DBs). Running two at once is safe, only slower.
 - A non-Postgres store (MySQL, Mongo, a SQLite file): not covered here; tell crew which.
 - Healthchecks: one backup and one restore-test check per DB.
 
@@ -293,7 +297,7 @@ Once Drive holds `RETENTION_DAYS` days of `sorento_crm_<stamp>Z.sql.gz` files an
 test has been green twice, delete the old-style files the new prune never matches:
 
 ```bash
-rclone lsf gdrive:db-backups --max-depth 1 --files-only | grep -v '^sorento_crm_[0-9]\{8\}T[0-9]\{6\}Z' 
+rclone lsf gdrive:db-backups --max-depth 1 --files-only | grep -v '^sorento_crm_[0-9]\{8\}T[0-9]\{6\}Z'
 # review that list, then for each:  rclone deletefile "gdrive:db-backups/<name>"
 ```
 

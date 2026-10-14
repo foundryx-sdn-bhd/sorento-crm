@@ -124,7 +124,7 @@ log "uploaded $(basename "$UPLOAD")"
 
 # Prune only this job's dumps (name + stamp, top level only), and only after a good upload.
 # On Google Drive, rclone moves them to the Drive trash; Google empties it after 30 days.
-rclone delete "$RCLONE_DEST" --max-depth 1 --min-age "${RETENTION_DAYS}d" --include "${BACKUP_NAME}_[0-9]*Z.sql.gz*" \
+rclone delete "$RCLONE_DEST" --max-depth 1 --min-age "${RETENTION_DAYS}d" --include "${BACKUP_NAME}_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z.sql.gz*" \
   || die 7 "rclone prune failed (today's upload is on Drive)"
 log "pruned older than ${RETENTION_DAYS}d"
 

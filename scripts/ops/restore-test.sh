@@ -116,19 +116,20 @@ if [ ! -d "$RESTORE_WORK_DIR" ] || [ -L "$RESTORE_WORK_DIR" ] || [ ! -O "$RESTOR
 fi
 chmod 700 "$RESTORE_WORK_DIR"
 
-# A killed run (SIGKILL, OOM, reboot) skips the EXIT trap: clear what it left behind.
-rm -rf -- "$RESTORE_WORK_DIR"/run.*
-docker ps -a --filter "name=restore-test-${BACKUP_NAME}-" --format '{{.Names}}' | while read -r old; do
-  case "$old" in
-    "restore-test-${BACKUP_NAME}-"[0-9]*)
-      log "removing leftover container $old"
-      docker rm -f -v "$old" >/dev/null || log "warn: could not remove $old"
-      ;;
-  esac
+# A killed run (SIGKILL, OOM, reboot) skips the EXIT trap: clear what THIS job left behind.
+# Names cannot contain ".", and the stamp is matched exactly, so another job's run is never hit.
+rm -rf -- "$RESTORE_WORK_DIR/run.${BACKUP_NAME}."*
+LEFTOVERS="$(docker ps -a --filter "name=restore-test-${BACKUP_NAME}-" --format '{{.Names}}')" \
+  || die 4 "docker ps failed (is the docker daemon running?)"
+for old in $LEFTOVERS; do
+  if [[ "$old" =~ ^restore-test-${BACKUP_NAME}-[0-9]{8}T[0-9]{6}Z$ ]]; then
+    log "removing leftover container $old"
+    docker rm -f -v "$old" >/dev/null || log "warn: could not remove $old"
+  fi
 done
 
 # Newest dump: names carry a sortable UTC stamp, so the last one in name order is the newest.
-NEWEST="$(rclone lsf --files-only --max-depth 1 --include "${BACKUP_NAME}_[0-9]*Z.sql.gz" --include "${BACKUP_NAME}_[0-9]*Z.sql.gz.age" "$RCLONE_DEST" | LC_ALL=C sort | tail -n 1)" \
+NEWEST="$(rclone lsf --files-only --max-depth 1 --include "${BACKUP_NAME}_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z.sql.gz" --include "${BACKUP_NAME}_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z.sql.gz.age" "$RCLONE_DEST" | LC_ALL=C sort | tail -n 1)" \
   || die 3 "rclone lsf $RCLONE_DEST failed"
 [ -n "$NEWEST" ] || die 3 "no ${BACKUP_NAME}_*.sql.gz dump found in $RCLONE_DEST"
 case "$NEWEST" in
@@ -136,7 +137,7 @@ case "$NEWEST" in
 esac
 log "newest dump: $NEWEST"
 
-WORK="$(mktemp -d "$RESTORE_WORK_DIR/run.XXXXXX")"
+WORK="$(mktemp -d "$RESTORE_WORK_DIR/run.${BACKUP_NAME}.XXXXXX")"
 rclone copyto "$RCLONE_DEST/$NEWEST" "$WORK/$NEWEST" || die 3 "download of $NEWEST failed"
 
 DUMP="$WORK/$NEWEST"

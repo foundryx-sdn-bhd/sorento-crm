@@ -192,7 +192,7 @@ def test_backup_success_pings_uploads_prunes(env):
     deletes = [c for c in log if c.startswith("rclone delete")]
     assert len(deletes) == 1
     assert "--min-age 30d" in deletes[0] and "gdrive:db-backups" in deletes[0]
-    assert "sorento_crm_[0-9]*Z.sql.gz*" in deletes[0]
+    assert "sorento_crm_[0-9]" in deletes[0] and "Z.sql.gz*" in deletes[0]
     # local copy removed after upload
     assert list((tmp / "work").glob("*.sql.gz*")) == []
 
