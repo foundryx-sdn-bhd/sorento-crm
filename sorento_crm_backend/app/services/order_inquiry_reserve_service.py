@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence
 
-from sqlalchemy import event, func
+from sqlalchemy import and_, event, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -253,6 +253,21 @@ def _checked_answer(
     return qty, reason_clean
 
 
+def reserve_status_predicates() -> Dict[str, Any]:
+    """OI-STAGED-NOTIFY (AC-SN-30): the four statuses of one request row, as SQL predicates
+    over `OrderInquiryReserveRequestRow` joined to its `OrderInquiryReserveRequest`.
+    `needs_reserve` / `parked` = unanswered on an open request, sent / parked;
+    `notice_parked` / `reserved` = answered, notice to purchasing parked / not."""
+    rr, req = OrderInquiryReserveRequestRow, OrderInquiryReserveRequest
+    unanswered = and_(rr.qty_reserved.is_(None), req.state == RESERVE_REQUESTED)
+    return {
+        "parked": and_(unanswered, req.parked_at.isnot(None)),
+        "needs_reserve": and_(unanswered, req.parked_at.is_(None)),
+        "notice_parked": and_(rr.qty_reserved.isnot(None), rr.notice_parked_at.isnot(None)),
+        "reserved": and_(rr.qty_reserved.isnot(None), rr.notice_parked_at.is_(None)),
+    }
+
+
 def _open_request_row_ids(db: Session, row_ids: Sequence[str]) -> set:
     if not row_ids:
         return set()
@@ -426,6 +441,7 @@ class OrderInquiryReserveService:
         rows: Sequence[Dict[str, Any]],
         note: Optional[str],
         actor_user_id: Optional[str],
+        park: bool = False,
     ) -> OrderInquiryReserveRequest:
         inquiry = self.db.query(OrderInquiry).filter(OrderInquiry.id == inquiry_id).first()
         if inquiry is None:
@@ -520,6 +536,8 @@ class OrderInquiryReserveService:
             # insertion order, which is requested-first, never what the reader wants.
             requested_at=datetime.utcnow(),
             note=note,
+            # OI-STAGED-NOTIFY: parked = saved, not mailed to CS until "send all parked".
+            parked_at=datetime.utcnow() if park else None,
         )
         self.db.add(request)
         try:
@@ -554,6 +572,8 @@ class OrderInquiryReserveService:
             pairs.append((rr, row))
         self.db.flush()
 
+        if park:
+            return request
         context = _build_context(self.db, request, pairs, actor_user_id=actor_user_id)
         self.db.info.setdefault(_REQUESTED_PENDING_KEY, []).append(
             {"context": context, "source_id": str(request.id)}
@@ -612,6 +632,7 @@ class OrderInquiryReserveService:
         request.state = RESERVE_CANCELLED
         request.cancelled_by = actor_user_id
         request.cancelled_at = datetime.utcnow()
+        request.parked_at = None
         self.db.flush()
         return request
 
@@ -624,6 +645,7 @@ class OrderInquiryReserveService:
         reserves: Sequence[Dict[str, Any]],
         amendments: Sequence[Dict[str, Any]],
         actor_user_id: Optional[str],
+        park_notice: bool = False,
     ) -> List[OrderInquiryReserveRequest]:
         """CS commits every staged line of ONE order inquiry in ONE call, ONE
         transaction (`PLAN-oi-request-cs-reserve.md` 6e.1, re-keyed by 6e.4). The caller
@@ -948,7 +970,12 @@ class OrderInquiryReserveService:
                 request.state = RESERVE_RESERVED
                 request.reserved_by = actor_user_id
                 request.reserved_at = datetime.utcnow()
+                request.parked_at = None
                 self.db.flush()
+            self._stamp_notice(touched_by_request[request.id], park_notice, actor_user_id)
+            if park_notice:
+                # OI-STAGED-NOTIFY: parked notices are mailed by "send all parked".
+                continue
             total_row_count = (
                 self.db.query(OrderInquiryReserveRequestRow)
                 .filter(OrderInquiryReserveRequestRow.request_id == request.id)
@@ -968,6 +995,348 @@ class OrderInquiryReserveService:
             )
         # Empty when every entry was a no-op: the page reads that as "Nothing to change".
         return touched_requests
+
+    def _stamp_notice(
+        self,
+        touched: Sequence[Dict[str, Any]],
+        park_notice: bool,
+        actor_user_id: Optional[str],
+    ) -> None:
+        """OI-STAGED-NOTIFY: after a commit's writes, per touched request row. Parked: the
+        row is flagged with who parked it, unless the answer now equals what purchasing was
+        last told (an amend back to the sent figure drops out). Not parked: today's
+        dispatch follows, so the row is now "told" this figure and any earlier park is void."""
+        now = datetime.utcnow()
+        for item in touched:
+            rr = item["rr"]
+            if park_notice:
+                if rr.notified_qty is not None and _dec(rr.qty_reserved) == _dec(rr.notified_qty):
+                    rr.notice_parked_at = None
+                    rr.notice_parked_by = None
+                else:
+                    rr.notice_parked_at = now
+                    rr.notice_parked_by = actor_user_id
+            else:
+                rr.notified_qty = rr.qty_reserved
+                rr.notice_parked_at = None
+                rr.notice_parked_by = None
+        self.db.flush()
+
+    # ------------------------------------------- OI-STAGED-NOTIFY: send all parked
+
+    def _request_items(self, actor_user_id: str, *, lock: bool = False):
+        """The caller's own parked requests as `park_send` items, plus the parked requests
+        with nothing left open (cleared without an email). Items carry only unanswered rows."""
+        query = self.db.query(OrderInquiryReserveRequest).filter(
+            OrderInquiryReserveRequest.requested_by == actor_user_id,
+            OrderInquiryReserveRequest.state == RESERVE_REQUESTED,
+            OrderInquiryReserveRequest.parked_at.isnot(None),
+        )
+        if lock:
+            query = query.populate_existing().with_for_update()
+        requests = query.order_by(OrderInquiryReserveRequest.id.asc()).all()
+        items, empty = [], []
+        for request in requests:
+            pairs = (
+                self.db.query(OrderInquiryReserveRequestRow, OrderInquiryRow)
+                .join(OrderInquiryRow, OrderInquiryRow.id == OrderInquiryReserveRequestRow.row_id)
+                .filter(
+                    OrderInquiryReserveRequestRow.request_id == request.id,
+                    OrderInquiryReserveRequestRow.qty_reserved.is_(None),
+                )
+                .order_by(OrderInquiryReserveRequestRow.id.asc())
+                .all()
+            )
+            if not pairs:
+                empty.append(request)
+                continue
+            context = _build_context(self.db, request, pairs, actor_user_id=actor_user_id)
+            items.append(self._item(request, len(pairs), context, [rr for rr, _ in pairs]))
+        return items, empty
+
+    def _notice_items(self, actor_user_id: str, *, lock: bool = False):
+        """The caller's own parked notices: rows whose answer differs from what purchasing
+        was last told, one item per request. `stale` = parked rows no longer actionable."""
+        query = self.db.query(OrderInquiryReserveRequestRow).filter(
+            OrderInquiryReserveRequestRow.notice_parked_by == actor_user_id,
+            OrderInquiryReserveRequestRow.notice_parked_at.isnot(None),
+        )
+        if lock:
+            query = query.populate_existing().with_for_update()
+        parked = query.order_by(OrderInquiryReserveRequestRow.id.asc()).all()
+        actionable = [
+            rr
+            for rr in parked
+            if rr.qty_reserved is not None
+            and (rr.notified_qty is None or _dec(rr.qty_reserved) != _dec(rr.notified_qty))
+        ]
+        stale = [rr for rr in parked if rr not in actionable]
+        by_request: Dict[str, List[OrderInquiryReserveRequestRow]] = {}
+        for rr in actionable:
+            by_request.setdefault(rr.request_id, []).append(rr)
+        items = []
+        for request_id, rrs in by_request.items():
+            request = (
+                self.db.query(OrderInquiryReserveRequest)
+                .filter(OrderInquiryReserveRequest.id == request_id)
+                .first()
+            )
+            if request is None:
+                continue
+            rows = {
+                row.id: row
+                for row in self.db.query(OrderInquiryRow)
+                .filter(OrderInquiryRow.id.in_([rr.row_id for rr in rrs]))
+                .all()
+            }
+            still_open = (
+                self.db.query(OrderInquiryReserveRequestRow)
+                .filter(
+                    OrderInquiryReserveRequestRow.request_id == request.id,
+                    OrderInquiryReserveRequestRow.qty_reserved.is_(None),
+                )
+                .count()
+            )
+            total = (
+                self.db.query(OrderInquiryReserveRequestRow)
+                .filter(OrderInquiryReserveRequestRow.request_id == request.id)
+                .count()
+            )
+            context = _build_commit_context(
+                self.db,
+                request,
+                [{"rr": rr, "row": rows[rr.row_id]} for rr in rrs if rr.row_id in rows],
+                open_row_count=still_open if request.state == RESERVE_REQUESTED else 0,
+                row_count=total,
+                actor_user_id=actor_user_id,
+            )
+            items.append(self._item(request, len(rrs), context, rrs))
+        items.sort(key=lambda item: (item["inquiry_no"] or "", item["ordinal"]))
+        return items, stale
+
+    def _item(self, request, line_count: int, context: Dict[str, Any], rows) -> Dict[str, Any]:
+        reserve = context["reserve"]
+        from app.services.automation_triggers import build_order_inquiry_link
+
+        return {
+            "context": context,
+            "request": request,
+            "rows": list(rows),
+            "line_count": line_count,
+            "inquiry_id": str(request.order_inquiry_id),
+            "inquiry_no": reserve.get("inquiry_no"),
+            "ordinal": request.ordinal,
+            "so_number": reserve.get("so_number"),
+            "customer": reserve.get("customer"),
+            "link": build_order_inquiry_link(request.order_inquiry_id),
+        }
+
+    @staticmethod
+    def _group_context(group: Dict[str, Any], *, status: str) -> Dict[str, Any]:
+        """One item -> today's context exactly. Several -> the bulk context the templates'
+        `{% if reserve.requests %}` branch reads: counts, the first five order inquiries by OI
+        no, and every raiser / requester so `include_raiser` / `include_requester` reach them."""
+        from app.services import park_send
+        from app.services.automation_triggers import build_order_inquiry_link
+
+        items = group["items"]
+        if len(items) == 1:
+            return items[0]["context"]
+        contexts = [item["context"] for item in items]
+        by_inquiry: Dict[str, Dict[str, Any]] = {}
+        for item in items:
+            entry = by_inquiry.setdefault(
+                item["inquiry_id"],
+                {
+                    "inquiry_no": item["inquiry_no"],
+                    "so_number": item["so_number"],
+                    "customer": item["customer"],
+                    "line_count": 0,
+                    "link": item["link"],
+                },
+            )
+            entry["line_count"] += item["line_count"]
+        ordered = sorted(by_inquiry.values(), key=lambda entry: entry["inquiry_no"] or "")
+        base = contexts[0]
+        reserve = {
+            **base["reserve"],
+            "requests": ordered[:5],
+            "oi_count": len(ordered),
+            "line_count": sum(entry["line_count"] for entry in ordered),
+            "more_count": max(len(ordered) - 5, 0),
+            "link": f"{build_order_inquiry_link(None)}?reserve={status}",
+        }
+        return {**base, **park_send.merge_people(contexts), "reserve": reserve}
+
+    def _groups(self, trigger_type: str, items, *, status: str):
+        from app.services import park_send
+
+        groups, unresolved = park_send.group_by_recipient(self.db, trigger_type, items)
+        for group in groups:
+            group["context"] = self._group_context(group, status=status)
+            group["inquiry_count"] = len({item["inquiry_id"] for item in group["items"]})
+            group["line_count"] = sum(item["line_count"] for item in group["items"])
+        return groups, unresolved
+
+    @staticmethod
+    def _unresolved_out(unresolved) -> List[Dict[str, int]]:
+        if not unresolved:
+            return []
+        return [
+            {
+                "inquiry_count": len({item["inquiry_id"] for item in unresolved}),
+                "line_count": sum(item["line_count"] for item in unresolved),
+            }
+        ]
+
+    def _preview(self, trigger_type: str, items, *, status: str) -> Dict[str, Any]:
+        from app.services import park_send
+
+        groups, unresolved = self._groups(trigger_type, items, status=status)
+        emails = []
+        for group in groups:
+            email = park_send.render_preview(
+                self.db, trigger_type, group["context"], group["recipients"]
+            )
+            email["inquiry_count"] = group["inquiry_count"]
+            email["line_count"] = group["line_count"]
+            emails.append(email)
+        return {"emails": emails, "unresolved": self._unresolved_out(unresolved)}
+
+    def parked_requests_preview(self, *, actor_user_id: str) -> Dict[str, Any]:
+        items, _empty = self._request_items(actor_user_id)
+        return self._preview("order_inquiry_reserve_requested", items, status="needs_reserve")
+
+    def parked_notices_preview(self, *, actor_user_id: str) -> Dict[str, Any]:
+        items, _stale = self._notice_items(actor_user_id)
+        return self._preview("order_inquiry_reserved", items, status="reserved")
+
+    def send_parked_requests(self, *, actor_user_id: str) -> Dict[str, Any]:
+        """Stamps and queues under a row lock: a second press blocks here, then finds
+        nothing parked. The queued dispatches fire only when the caller's transaction
+        commits (the existing after_commit drain) and are dropped if it rolls back."""
+        items, empty = self._request_items(actor_user_id, lock=True)
+        groups, unresolved = self._groups(
+            "order_inquiry_reserve_requested", items, status="needs_reserve"
+        )
+        for request in empty:
+            request.parked_at = None
+        sent = 0
+        for group in groups:
+            for item in group["items"]:
+                item["request"].parked_at = None
+                sent += 1
+            self.db.info.setdefault(_REQUESTED_PENDING_KEY, []).append(
+                {
+                    "context": group["context"],
+                    "source_id": str(group["items"][0]["request"].id),
+                }
+            )
+        self.db.flush()
+        return {
+            "emails_sent": len(groups),
+            "items_sent": sent,
+            "unresolved": self._unresolved_out(unresolved),
+        }
+
+    def send_parked_notices(self, *, actor_user_id: str) -> Dict[str, Any]:
+        items, stale = self._notice_items(actor_user_id, lock=True)
+        groups, unresolved = self._groups("order_inquiry_reserved", items, status="reserved")
+        for rr in stale:
+            rr.notice_parked_at = None
+            rr.notice_parked_by = None
+        sent = 0
+        for group in groups:
+            for item in group["items"]:
+                for rr in item["rows"]:
+                    rr.notified_qty = rr.qty_reserved
+                    rr.notice_parked_at = None
+                    rr.notice_parked_by = None
+                sent += 1
+            self.db.info.setdefault(_RESERVED_PENDING_KEY, []).append(
+                {
+                    "context": group["context"],
+                    "source_id": str(group["items"][0]["request"].id),
+                }
+            )
+        self.db.flush()
+        return {
+            "emails_sent": len(groups),
+            "items_sent": sent,
+            "unresolved": self._unresolved_out(unresolved),
+        }
+
+    def reserve_status_summary(self, *, actor_user_id: str) -> Dict[str, int]:
+        """OI count per status (everyone's) and the caller's own parked item counts."""
+        pred = reserve_status_predicates()
+        rr, req = OrderInquiryReserveRequestRow, OrderInquiryReserveRequest
+        counts = (
+            self.db.query(
+                *[
+                    func.count(func.distinct(req.order_inquiry_id)).filter(pred[key])
+                    for key in ("parked", "needs_reserve", "notice_parked", "reserved")
+                ],
+                func.count(rr.id).filter(and_(pred["parked"], req.requested_by == actor_user_id)),
+                func.count(rr.id).filter(
+                    and_(
+                        rr.notice_parked_by == actor_user_id,
+                        rr.notice_parked_at.isnot(None),
+                        rr.qty_reserved.isnot(None),
+                        rr.qty_reserved.is_distinct_from(rr.notified_qty),
+                    )
+                ),
+            )
+            .select_from(rr)
+            .join(req, req.id == rr.request_id)
+            .one()
+        )
+        keys = (
+            "parked",
+            "needs_reserve",
+            "notice_parked",
+            "reserved",
+            "my_parked_requests",
+            "my_parked_notices",
+        )
+        return {key: int(value or 0) for key, value in zip(keys, counts)}
+
+    def notice_recipients(self, *, inquiry_id: str, actor_user_id: str) -> Dict[str, Any]:
+        """AC-SN-27: who the reserved automation would mail for this OI's open request(s):
+        the requester To, the OI raiser Cc, the caller moved to Cc."""
+        from app.services import park_send
+
+        inquiry = self.db.query(OrderInquiry).filter(OrderInquiry.id == inquiry_id).first()
+        if inquiry is None:
+            raise AppException(
+                404, "This order inquiry no longer exists.", code="order_inquiry_not_found"
+            )
+        automation = park_send.first_automation(self.db, "order_inquiry_reserved")
+        requesters = [
+            _person(self.db, user_id)
+            for (user_id,) in self.db.query(OrderInquiryReserveRequest.requested_by)
+            .filter(
+                OrderInquiryReserveRequest.order_inquiry_id == inquiry.id,
+                OrderInquiryReserveRequest.state == RESERVE_REQUESTED,
+            )
+            .order_by(OrderInquiryReserveRequest.ordinal.asc())
+            .all()
+        ]
+        requesters = [person for person in requesters if person]
+        recipients: List[Dict[str, Any]] = []
+        if automation is not None and requesters:
+            context = {
+                "actor": _person(self.db, actor_user_id),
+                "raiser": _person(self.db, inquiry.raised_by),
+                "requester": requesters[0],
+                **park_send.merge_people([{"requester": person} for person in requesters]),
+            }
+            recipients = park_send.resolve_ordered(self.db, automation, context)
+        if not recipients:
+            return {"to": None, "cc": []}
+        return {
+            "to": {"name": recipients[0].get("name") or recipients[0]["email"]},
+            "cc": [{"name": r.get("name") or r["email"]} for r in recipients[1:]],
+        }
 
     def _add_event(
         self,

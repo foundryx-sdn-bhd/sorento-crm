@@ -31,6 +31,10 @@ from app.schemas.project_order_inquiry import (
     AutoPlaceRequest,
     AutoPlaceResult,
     CommitReserveRequestIn,
+    ParkedPreviewOut,
+    ParkedSendOut,
+    ReserveNoticeRecipientsOut,
+    ReserveStatusSummaryOut,
     CreateReserveRequestIn,
     LinkNowRequest,
     MarkInquiryRowsRequest,
@@ -1225,6 +1229,7 @@ async def create_order_inquiry_reserve_request(
             rows=[row.model_dump() for row in payload.rows],
             note=payload.note,
             actor_user_id=current_user["id"],
+            park=payload.park,
         )
         db.commit()
         inquiry = (
@@ -1299,6 +1304,7 @@ async def commit_order_inquiry_reserve(
             reserves=[row.model_dump() for row in payload.reserves],
             amendments=[row.model_dump() for row in payload.amendments],
             actor_user_id=current_user["id"],
+            park_notice=payload.park_notice,
         )
         db.commit()
         return [_serialize_reserve_request(db, request) for request in requests]
@@ -1309,6 +1315,110 @@ async def commit_order_inquiry_reserve(
         # Security re-review: the detail goes to the log, never into the response.
         logger.exception("Reserve commit failed for order inquiry %s", inquiry_id)
         raise handle_internal_error()
+
+
+@router.get(
+    "/order-inquiries/reserve-status/summary", response_model=ReserveStatusSummaryOut
+)
+def order_inquiry_reserve_status_summary(
+    current_user: dict = Depends(require_any_permission([VIEW, ACKNOWLEDGE, RESERVE])),
+    db: Session = Depends(get_db),
+):
+    """OI-STAGED-NOTIFY (AC-SN-31): OIs per reserve status (everyone's) and the caller's
+    own parked requests / notices."""
+    try:
+        return OrderInquiryReserveService(db).reserve_status_summary(
+            actor_user_id=current_user["id"]
+        )
+    except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post(
+    "/order-inquiries/reserve-requests/parked/preview", response_model=ParkedPreviewOut
+)
+def preview_parked_reserve_requests(
+    current_user: dict = Depends(require_permission(ACKNOWLEDGE)),
+    db: Session = Depends(get_db),
+):
+    """The emails "send all parked requests" would send, one per recipient, rendered by
+    the automation's own template (AC-SN-04)."""
+    try:
+        return OrderInquiryReserveService(db).parked_requests_preview(
+            actor_user_id=current_user["id"]
+        )
+    except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post("/order-inquiries/reserve-requests/parked/send", response_model=ParkedSendOut)
+def send_parked_reserve_requests(
+    current_user: dict = Depends(require_permission(ACKNOWLEDGE)),
+    db: Session = Depends(get_db),
+):
+    """Send the caller's parked requests to CS (AC-SN-06). The dispatch queued by the
+    service fires only when this commit lands."""
+    try:
+        result = OrderInquiryReserveService(db).send_parked_requests(
+            actor_user_id=current_user["id"]
+        )
+        db.commit()
+        return result
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post(
+    "/order-inquiries/reserve-notices/parked/preview", response_model=ParkedPreviewOut
+)
+def preview_parked_reserve_notices(
+    current_user: dict = Depends(require_permission(RESERVE)),
+    db: Session = Depends(get_db),
+):
+    """The emails "send all parked reserves" would send to purchasing (AC-SN-22)."""
+    try:
+        return OrderInquiryReserveService(db).parked_notices_preview(
+            actor_user_id=current_user["id"]
+        )
+    except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post("/order-inquiries/reserve-notices/parked/send", response_model=ParkedSendOut)
+def send_parked_reserve_notices(
+    current_user: dict = Depends(require_permission(RESERVE)),
+    db: Session = Depends(get_db),
+):
+    """Send the caller's parked reserve notices to purchasing (AC-SN-22)."""
+    try:
+        result = OrderInquiryReserveService(db).send_parked_notices(
+            actor_user_id=current_user["id"]
+        )
+        db.commit()
+        return result
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.get(
+    "/order-inquiries/{inquiry_id}/reserve-notices/recipients",
+    response_model=ReserveNoticeRecipientsOut,
+)
+def order_inquiry_reserve_notice_recipients(
+    inquiry_id: str,
+    current_user: dict = Depends(require_permission(RESERVE)),
+    db: Session = Depends(get_db),
+):
+    """Who the reserve confirmation's notice would go to (AC-SN-27)."""
+    try:
+        validate_uuid_path(inquiry_id, resource="Order inquiry")
+        return OrderInquiryReserveService(db).notice_recipients(
+            inquiry_id=inquiry_id, actor_user_id=current_user["id"]
+        )
+    except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
 
 
 @router.get(
@@ -1710,6 +1820,9 @@ def list_order_inquiry_headers(
     # `Project` row), so a uuid-pattern filter never matched anything. Same shape
     # `order_inquiry_worklist_service.py`'s own `project` filter already uses.
     project: Optional[str] = Query(None, max_length=200, description="Exact match on the Project column's text."),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(
+        None, description="OIs with a reserve request row in this status (AC-SN-30)."
+    ),
     sort: Optional[HeaderListSort] = Query(None, description="Defaults to raised_at."),
     direction: Optional[Literal["asc", "desc"]] = Query("asc", alias="dir"),
     page: int = Query(1, ge=1),
@@ -1725,6 +1838,7 @@ def list_order_inquiry_headers(
             raised_by=raised_by,
             agent=agent,
             project=project,
+            reserve=reserve,
             sort=sort,
             direction=direction,
             page=page,
