@@ -691,3 +691,20 @@ def test_a_slash_in_the_query_string_does_not_change_the_db_name(box):
     r = _run(box)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "DUMP_DB=sorento_app" in _dump_call(box)
+
+
+# --- hermetic stubs (CI run 38617923894) ------------------------------------------------
+
+
+def test_the_stubs_win_over_any_docker_on_path(box, tmp_path):
+    """CI's runner could not exec the PATH stubs under pytest's tmp dir, so the script reached
+    no `docker` and failed with "Postgres container 'db' not found". A decoy first on PATH
+    stands in for a real docker (or an unusable stub): the run must never reach it."""
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
+    marker = tmp_path / "decoy_called"
+    for name in ("docker", "sudo", "df", "sleep"):
+        _exe(decoy / name, f'#!/bin/sh\necho "{name} $*" >> "{marker}"\nexit 1\n')
+    r = _run(box, PATH=f"{decoy}:{box['bin']}:{os.environ.get('PATH', '/usr/bin:/bin')}")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not marker.exists(), marker.read_text()
