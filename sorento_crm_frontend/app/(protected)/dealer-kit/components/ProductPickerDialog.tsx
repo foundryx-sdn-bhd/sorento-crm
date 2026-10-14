@@ -29,6 +29,7 @@ import {
   listProductThumbnails,
   type PickerProduct,
 } from '../services/productPickerService';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Choosing what goes in a collection.
@@ -122,9 +123,11 @@ function ProductCard({
       <span className="block truncate font-mono text-xs text-foreground" title={product.code}>
         {product.code}
       </span>
-      <span className="block truncate text-xs text-muted-foreground" title={product.name}>
-        {product.name}
-      </span>
+      {distinctName(product.code, product.name) ? (
+        <span className="block truncate text-xs text-muted-foreground" title={product.name}>
+          {product.name}
+        </span>
+      ) : null}
       {product.price && (
         <span className="block truncate text-xs text-muted-foreground">{product.price}</span>
       )}

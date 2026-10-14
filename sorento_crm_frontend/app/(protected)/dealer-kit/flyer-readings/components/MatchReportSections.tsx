@@ -23,6 +23,7 @@ import { DimensionReviewSection } from './DimensionReviewSection';
 import { SpecProposalSection } from './SpecProposalSection';
 import { Empty, Section, printedOn } from './ReportSection';
 import { ReportGrid } from './ReportGrid';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 /** The slug that authorises adopting a code, everywhere on this screen. */
 const MASTER_DATA_EDIT = 'master_data.products.edit';
@@ -246,11 +247,7 @@ export function MatchReportSections({
         header: 'Nearest existing code',
         cell: ({ row }) => {
           if (row.original.kind === 'adopted') {
-            const named =
-              row.original.productName.trim() &&
-              row.original.productName.trim() !== row.original.productCode.trim()
-                ? row.original.productName.trim()
-                : null;
+            const named = distinctName(row.original.productCode, row.original.productName)?.trim() ?? null;
             return (
               <div className="flex min-w-0 items-center gap-2" data-testid="dk-fr-adopted-row">
                 <Badge variant="outline" className="shrink-0 border-green-300 font-normal text-green-700">
@@ -258,7 +255,7 @@ export function MatchReportSections({
                 </Badge>
                 <span
                   className="truncate text-sm"
-                  title={named ? `${row.original.productCode} - ${named}` : row.original.productCode}
+                  title={codeWithName(row.original.productCode, named)}
                 >
                   Adopted as <span className="font-mono">{row.original.productCode}</span>
                   {named && <span className="text-muted-foreground"> {named}</span>}
@@ -278,12 +275,8 @@ export function MatchReportSections({
           // Plenty of products are named after their own code, and printing
           // "SRTWC8066 SRTWC8066" reads as a rendering fault rather than as a
           // product whose name is its code.
-          const named =
-            suggestion.productName.trim() &&
-            suggestion.productName.trim() !== suggestion.productCode.trim()
-              ? suggestion.productName.trim()
-              : null;
-          const label = named ? `${suggestion.productCode} - ${named}` : suggestion.productCode;
+          const named = distinctName(suggestion.productCode, suggestion.productName)?.trim() ?? null;
+          const label = codeWithName(suggestion.productCode, named);
           return (
             <div className="flex min-w-0 items-center gap-2">
               <span className="truncate text-sm" title={label}>
@@ -371,8 +364,11 @@ export function MatchReportSections({
         accessorKey: 'productName',
         header: 'Product',
         cell: ({ row }) => (
-          <div className="truncate text-sm" title={row.original.productName}>
-            {row.original.productName}
+          <div
+            className="truncate text-sm"
+            title={distinctName(row.original.code, row.original.productName) ?? undefined}
+          >
+            {distinctName(row.original.code, row.original.productName)}
           </div>
         ),
         size: 380,

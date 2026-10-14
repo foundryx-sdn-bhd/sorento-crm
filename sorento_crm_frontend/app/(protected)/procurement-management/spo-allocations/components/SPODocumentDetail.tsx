@@ -79,6 +79,7 @@ import { getProducts } from '@/app/(protected)/master-data-management/products/s
 // already reuses the product one across features.
 import { ProductComboboxSearchable } from '../../packing-lists/components/ProductComboboxSearchable';
 import { SupplierCombobox } from '../../packing-lists/components/SupplierCombobox';
+import { distinctName } from '@/lib/product-display';
 
 const DETAIL_PATH = '/procurement-management/spo-allocations';
 
@@ -430,9 +431,7 @@ export function SPODocumentDetail({ spoNumber }: { spoNumber: string }) {
           // view's own Product cell uses (`PurchaseOrderDetail.tsx`). Without this every
           // row printed its own code twice (e.g. "C-FHSS14" over "C-FHSS14").
           const showProductName =
-            !!line.product?.product_name?.trim() &&
-            line.product.product_name.trim().toLowerCase() !==
-              (line.product?.product_code ?? '').trim().toLowerCase();
+            distinctName(line.product?.product_code, line.product?.product_name) !== null;
           return (
             <div className={cn('flex items-start gap-2', removed && 'opacity-50')}>
               {matches ? (

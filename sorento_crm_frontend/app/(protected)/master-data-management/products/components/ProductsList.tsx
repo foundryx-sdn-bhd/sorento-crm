@@ -72,6 +72,7 @@ import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 import { useAutocountPullAction } from '@/app/(protected)/system-management/import-jobs/autocount-pull/hooks/useAutocountPull';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 const PRODUCT_IMPORT_COLUMNS: ColumnOption[] = [
   { key: 'Item Code', label: 'Item Code', selected: true },
@@ -420,7 +421,7 @@ const ProductsList = () => {
         cell: ({ row }) => {
           return (
             <div className="font-medium text-sm">
-              {row.original.product_name}
+              {distinctName(row.original.product_code, row.original.product_name)}
             </div>
           );
         },
@@ -472,7 +473,7 @@ const ProductsList = () => {
           return (
             <div
               className="truncate text-sm"
-              title={`${parent.product_code} - ${parent.product_name}`}
+              title={codeWithName(parent.product_code, parent.product_name)}
             >
               {parent.product_code}
             </div>

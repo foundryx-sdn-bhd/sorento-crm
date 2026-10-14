@@ -30,6 +30,7 @@ import type {
   StockDebtSupplyEvent,
   StockDebtSupplyKind,
 } from '../types/stockDebt.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The two tables behind one cell (R28, AC-S2-11): what is DUE in that month, and what
@@ -674,8 +675,7 @@ export function StockDebtCellDialog({
   // R27: the muted description line under the title repeats nothing - it renders only
   // when the name is SET and actually differs from the code, the same guard the board's
   // own list rows apply server-side (AC-9) but this dialog was never given.
-  const distinctProductName =
-    productName && productName !== productCode ? productName : null;
+  const distinctProductName = distinctName(productCode, productName);
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>

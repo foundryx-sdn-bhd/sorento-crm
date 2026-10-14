@@ -46,6 +46,7 @@ import type {
 import { OrderInquiryBackingDocumentsDialog } from './OrderInquiryBackingDocumentsDialog';
 import { OrderInquiryDocumentLink } from './OrderInquiryDocumentDialog';
 import { OrderInquiryQtyAnnotationDialog } from './OrderInquiryQtyAnnotationDialog';
+import { sameDisplayText } from '@/lib/product-display';
 
 function Muted({ children }: { children: React.ReactNode }) {
   return <span className="text-muted-foreground">{children}</span>;
@@ -739,7 +740,7 @@ export function ItemCodeCell({
           was {row.previous_item_code}
         </span>
       )}
-      {!codeOnly && row.product_name && row.product_name !== row.item_code && (
+      {!codeOnly && row.product_name && !sameDisplayText(row.product_name, row.item_code) && (
         <span className="block truncate text-xs text-muted-foreground" title={row.product_name}>
           {row.product_name}
         </span>

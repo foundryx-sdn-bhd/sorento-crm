@@ -4,6 +4,7 @@ import { AlertTriangle } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import type { ResolvedBundle } from '@/lib/dealer-kit/types';
+import { sameDisplayText } from '@/lib/product-display';
 
 /**
  * A Bundle: ONE priced heading with its components listed beneath (AC-F12).
@@ -60,9 +61,11 @@ export function BundleCard({ bundle }: { bundle: ResolvedBundle }) {
                 )}
                 {component.productName}
               </p>
-              <p className="truncate font-mono text-[10px] text-muted-foreground">
-                {component.productCode}
-              </p>
+              {!sameDisplayText(component.productCode, component.productName) ? (
+                <p className="truncate font-mono text-[10px] text-muted-foreground">
+                  {component.productCode}
+                </p>
+              ) : null}
             </div>
 
             <div className="flex shrink-0 items-center gap-2">

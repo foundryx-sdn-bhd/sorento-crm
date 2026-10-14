@@ -31,6 +31,7 @@ import { getCertificateProductOptions } from '../services/certificateService';
 import { SOURCE_LABELS } from '../lib/certificateDisplay';
 import { useAddCertificateProduct, useRemoveCertificateProduct } from '../hooks/useCertificates';
 import type { CertificateProduct } from '../types/certificate.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Coverage as a standard DataGrid, not bespoke chips: fixed layout, resizable
@@ -100,8 +101,11 @@ export default function CertificateCoveredProducts({
         accessorKey: 'product_name',
         header: ({ column }) => <DataGridColumnHeader title="Product Name" column={column} />,
         cell: ({ row }) => (
-          <div className="truncate" title={row.original.product_name}>
-            {row.original.product_name}
+          <div
+            className="truncate"
+            title={distinctName(row.original.product_code, row.original.product_name) ?? undefined}
+          >
+            {distinctName(row.original.product_code, row.original.product_name)}
           </div>
         ),
         size: 320,

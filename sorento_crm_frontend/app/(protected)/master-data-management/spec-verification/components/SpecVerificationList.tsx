@@ -73,6 +73,7 @@ import type {
   VerificationBlock,
   VerificationState,
 } from '../types/specVerification.types';
+import { distinctName } from '@/lib/product-display';
 
 const DEFAULT_PAGE_SIZE = 25;
 
@@ -481,9 +482,9 @@ export default function SpecVerificationList() {
         cell: ({ row }) => (
           <span
             className="text-sm truncate block"
-            title={row.original.product_name}
+            title={distinctName(row.original.product_code, row.original.product_name) ?? undefined}
           >
-            {row.original.product_name}
+            {distinctName(row.original.product_code, row.original.product_name)}
           </span>
         ),
         size: 165,
