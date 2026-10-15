@@ -68,3 +68,15 @@ Live golden set in `tests/chatbot/test_find_live_parser.py` (opt-in).
 ## Live check
 
 Golden set >= 8 messages on dev parser v94 (mirrors prod v63), DB `sorento_cagent_stack`.
+
+## Known limits and triggers (reviewer rounds 2 to 7)
+
+- A code that is BOTH a host and an accessory (none in the data on 15 Oct): AC-24 reads hosts of
+  every kind it holds as accessory, so a forward ask on it would also answer its own hosts.
+  Trigger: the first such product_compatibility row; then read hosts of every kind only for a code
+  with no accessory link of the parsed kind.
+- kind null and nothing linked on a cabinet answers today's seat cover no-link line (AC-3b).
+- A turn with several domains where one is denied drops the fit line for the whole reply
+  (conservative: no line beside any refusal).
+- zh / ms other-side nouns joined to the code (`马桶盖多少钱`, `cermin untuk ...`) are sometimes
+  read as a category entity, on main too: a parser-side follow-up, not a code guard.
