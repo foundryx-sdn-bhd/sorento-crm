@@ -35,12 +35,17 @@ explicit Revise (section D).
 
 ### A. Status chip (header and list read one function)
 
+Chip = the PR/SF status pill (`STATUS_PILL_BASE` + `statusPillClass`, `lib/status-pill.ts`; crew
+audit 15 Oct: same component and colours as `PurchaseRequestDetail.tsx:1216-1231`, a deliberate
+exception to the `Badge status` line of `PR-CHECKLIST.md:42` for PR/SF alignment). The pill's
+`capitalize` class renders labels in title case, as on PR/SF.
+
 - **A1 [FE]** Given `approval_status_key = pending_approval`, when the header and the list row
-  render, then both read "Pending approval" on a `Badge` variant `warning`.
-- **A2 [FE]** Given `approved`, then "Approved" on `Badge` variant `primary` (blue, as PR/SF).
-- **A3 [FE]** Given `rejected`, then "Rejected" on `Badge` variant `destructive`.
+  render, then both read "Pending approval" on the amber pill (`bg-amber-100 text-amber-800`).
+- **A2 [FE]** Given `approved`, then "Approved" on the blue pill (`bg-blue-100 text-blue-800`).
+- **A3 [FE]** Given `rejected`, then "Rejected" on the red pill (`bg-red-100 text-red-800`).
 - **A4 [FE]** Given no approval rung (NULL), `draft` or `issued`, then the existing reading is kept:
-  Draft (`secondary`) / Issued / Accepted / Changes requested.
+  Draft (muted) / Issued and Accepted (emerald) / Changes requested (amber).
 - **A5 [FE]** Given an issued quotation (customer_decision `changes_requested`) whose next revision
   is `pending_approval`, then the chip reads "Pending approval" (approval rung wins, Q3).
 

@@ -3,7 +3,12 @@
 **Status:** build, track M (FE + BE on existing screens, no migration). Behaviour card answered
 15 Oct 2026: Q1 (a), Q3 (a), Q4 (a), Q5 (a), R1-R8 approved; Q2 corrected by the owner to PR's
 creator-revision rule and ruled (a) by crew: whole quotation locked while Pending / Approved,
-explicit Revise with a reason. Item G added 15 Oct (Back to project).
+explicit Revise with a reason. Item G added 15 Oct (Back to project). Crew audit 15 Oct (bc59cfcc0):
+chip = PR/SF status pill, own WhatsApp use case `quotation_approval`, notify after the route commits,
+reject keeps its reason, Recheck hidden while locked, toolbar search slot; scope won/lost outcome NOT
+locked (it records the customer's answer on a revision they already hold and changes no price).
+Reviewer READY + security clean on e4817037a; browser pass 1280/375 PASS (evidence/quote-approval-ux).
+Deferred: stale-approve token (pre-existing window; approve/reject carry no request id).
 **UAC:** `quote-approval-ux-15oct-acceptance-criteria.md`
 **Mock:** skipped by owner exception (existing components only).
 
