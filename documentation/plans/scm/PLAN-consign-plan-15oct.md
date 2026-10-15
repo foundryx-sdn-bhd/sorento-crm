@@ -1,6 +1,6 @@
 # PLAN: consignment pages get the SO planning buttons (CONSIGN-PLAN)
 
-Status: Review - fix round 1 (reviewer B1: consignment proposal must not be Buy); browser pass PASS. Track: standard (M), no migration, no auth change.
+Status: PR ready - reviewer READY (round 3), browser pass PASS; waiting on CI label and owner hand test (PR #1712). Track: standard (M), no migration, no auth change.
 UAC: `consign-plan-acceptance-criteria.md` (alongside).
 
 ## Owner request (15 Oct, verbatim)
