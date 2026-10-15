@@ -173,6 +173,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         stock_availability_only=ctx.stock_availability_only,
         now=ctx.now,
         language=language,
+        granted_reveals=frozenset(ctx.granted_reveals or ()),
         **extra,
     )
     state_out.last_turn_at = ctx.now
