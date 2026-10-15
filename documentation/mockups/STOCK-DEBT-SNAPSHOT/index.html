@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stock Debt snapshots (mockup v1)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), the same set the other lane mockups use */
+:root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;--success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--page:#f7f7f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:980px}
+.nav{position:sticky;top:0;z-index:50;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:980px}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.desk{width:1280px;max-width:100%;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{display:flex;background:#fff}
+.side{width:200px;flex:none;background:#0d0e12;color:#a1a1aa;font-size:12.5px;padding:18px 14px}
+.side .logo{color:#fff;font-weight:600;margin:0 0 18px}
+.side div{padding:6px 8px;border-radius:6px}
+.side .grp{color:#71717a;font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-top:10px}
+.side .on{background:#1f2128;color:#fff}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:780px;overflow:auto;background:#fff;position:relative}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+.main{flex:1;min-width:0;padding:20px 24px}
+.phone .main{padding:14px 16px}
+.pagehead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+.pagehead .t{font-size:22px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.phone .pagehead .t{font-size:18px}
+.meta{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12.5px;color:var(--muted-fg);margin:0 0 14px}
+.meta b{color:var(--foreground);font-weight:500}
+.btn{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 10px;border-radius:6px;border:1px solid var(--input);background:#fff;font-size:12.5px;font-weight:500;white-space:nowrap;color:var(--foreground);cursor:pointer}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.icon{width:30px;justify-content:center;padding:0}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.sm{height:26px;font-size:12px;padding:0 8px}
+.btn.cd{border-color:var(--destructive-line);background:var(--destructive-soft);color:var(--destructive)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.card{border:1px solid var(--border);border-radius:12px;background:#fff}
+.card>.hd{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.search{height:30px;border:1px solid var(--input);border-radius:6px;padding:0 10px;font-size:12.5px;color:var(--muted-fg);display:flex;align-items:center;width:220px;gap:6px}
+.search.filled{color:var(--foreground)}
+.chip{display:inline-flex;align-items:center;gap:4px;height:26px;border:1px dashed var(--input);border-radius:6px;padding:0 8px;font-size:12px;color:#3f3f46;background:#fff}
+.chip.on{border-style:solid;background:var(--primary-soft);border-color:#bfdbfe;color:#1d4ed8}
+.card>.ft{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;font-size:12px;color:var(--muted-fg);border-top:1px solid var(--border)}
+
+/* DataGrid look: components/ui/data-grid-table.tsx */
+.scroll{overflow-x:auto}
+table.dg{border-collapse:collapse;table-layout:fixed;font-size:12.5px}
+table.dg th{position:relative;height:36px;background:#fafafa;color:var(--muted-fg);font-weight:500;font-size:12px;text-align:left;padding:0 8px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.dg th::after{content:"";position:absolute;right:0;top:9px;bottom:9px;width:1px;background:var(--border)}
+table.dg th.r,table.dg td.r{text-align:right}
+table.dg td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.dg tfoot td{background:#fafafa;font-weight:600;border-bottom:0}
+table.dg .pin{position:sticky;left:0;background:#fff;z-index:1;box-shadow:1px 0 0 var(--border)}
+table.dg th.pin{background:#fafafa}
+table.dg tfoot .pin{background:#fafafa}
+.num{font-variant-numeric:tabular-nums}
+.mut{color:var(--muted-fg)}
+.lk{color:var(--primary);text-decoration:none;cursor:pointer}
+.lk:hover{text-decoration:underline}
+.sku{font-weight:500}
+/* Month cell tones: StockDebtClient.tsx:94-98 TONE_CLASS */
+.c{display:block;text-align:right;padding:2px 6px;border-radius:4px;font-variant-numeric:tabular-nums;cursor:pointer}
+.c.red{background:rgba(220,38,38,.1);color:var(--destructive)}
+.c.green{background:rgba(16,185,129,.1);color:#047857}
+.c:hover{outline:1px solid #93c5fd}
+
+/* Badge light pills: components/ui/badge.tsx */
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:0 8px;font-size:11.5px;line-height:20px;font-weight:500;white-space:nowrap;border:1px solid transparent}
+.pill.dot::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.success{background:var(--success-soft);color:var(--success);border-color:var(--success-line)}
+.pill.secondary{background:var(--muted);color:#3f3f46}
+.pill.primary{background:var(--primary-soft);color:#1d4ed8;border-color:#bfdbfe}
+.pill.warning{background:var(--warning-soft);color:var(--warning);border-color:var(--warning-line)}
+.pill.destructive{background:var(--destructive-soft);color:var(--destructive);border-color:var(--destructive-line)}
+.dec{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+.dec .mut{font-size:11.5px}
+.ghostdec{color:var(--muted-fg);font-size:12px;border:1px dashed var(--input);border-radius:6px;padding:1px 8px;cursor:pointer}
+
+/* Dialog: components/ui/dialog.tsx overlay */
+.stage{position:relative}
+.desk .stage{min-height:760px}
+.overlay{position:absolute;inset:0;background:rgba(9,9,11,.5);display:flex;align-items:flex-start;justify-content:center;padding:48px 24px;z-index:5}
+.phone .overlay{padding:16px 8px}
+.dlg{background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25);width:100%;max-width:1180px;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.dlg.sm{max-width:480px}
+.dlg.md{max-width:896px}
+.dlg .dh{padding:18px 22px 14px;border-bottom:1px solid var(--border)}
+.phone .dlg .dh{padding:14px 14px 12px}
+.dlg .dt{font-size:16px;font-weight:600;padding-right:28px}
+.dlg .ds{font-size:12.5px;color:var(--muted-fg);margin-top:2px}
+.dlg .x{position:absolute;right:18px;top:18px;color:var(--muted-fg);font-size:15px;line-height:1;cursor:pointer}
+.dlg .db{padding:14px 22px 18px;display:flex;flex-direction:column;gap:12px}
+.phone .dlg .db{padding:12px 14px 14px}
+.dlg .df{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 22px;border-top:1px solid var(--border);flex-wrap:wrap}
+.phone .dlg .df{padding:10px 14px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.field label{font-weight:500}
+.inp{height:32px;border:1px solid var(--input);border-radius:6px;padding:0 10px;display:flex;align-items:center;font-size:13px;background:#fff;justify-content:space-between}
+.inp.ta{height:54px;align-items:flex-start;padding-top:6px}
+.inp .x2{color:var(--muted-fg);font-size:11px}
+.sumline{font-size:12.5px;color:var(--muted-fg);border:1px solid var(--border);background:#fafafa;border-radius:8px;padding:8px 10px}
+.sumline b{color:var(--foreground);font-weight:500}
+.radios{display:flex;gap:6px;flex-wrap:wrap}
+.radios span{border:1px solid var(--input);border-radius:6px;padding:4px 12px;font-size:12.5px;cursor:pointer}
+.radios span.on{border-color:var(--primary);background:var(--primary-soft);color:#1d4ed8;font-weight:500}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:12.5px}
+.chk i{width:14px;height:14px;border:1px solid var(--input);border-radius:3px;display:inline-block}
+
+/* Popover: components/ui/popover.tsx */
+.pop{position:absolute;z-index:6;width:300px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.14);padding:12px;display:flex;flex-direction:column;gap:10px}
+.pop .ph{font-size:13px;font-weight:600}
+
+/* Drill: StockDebtCellDialog.tsx demand table + OI groups */
+.ogrp{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.ogrp>.gh{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:#fafafa;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.ogrp>.gh .l{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+.ogrp>.gh .l b{font-weight:600}
+.ogrp .scroll table.dg{width:max-content;min-width:100%}
+.lsum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#fafafa}
+.lsum b{font-weight:600;font-variant-numeric:tabular-nums}
+.toast{position:absolute;right:20px;bottom:20px;z-index:7;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.14);padding:10px 12px;font-size:13px;display:flex;gap:14px;align-items:center}
+.note{font-size:12px;color:var(--muted-fg);max-width:1000px;margin:8px 0 0}
+.empty{padding:40px 16px;text-align:center}
+.empty b{display:block;font-size:14px;margin-bottom:4px}
+.empty span{font-size:12.5px;color:var(--muted-fg)}
+.map{border-collapse:collapse;font-size:12.5px;width:100%;max-width:1280px;background:#fff;border:1px solid var(--border)}
+.map th,.map td{border-bottom:1px solid var(--border);padding:7px 10px;text-align:left;vertical-align:top}
+.map th{background:#fafafa;color:var(--muted-fg);font-weight:500}
+.map code{font-size:11.5px;background:var(--muted);padding:0 4px;border-radius:4px}
+@media (max-width:700px){.desk .side{display:none}}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Stock Debt snapshots <span class="mut" style="font-size:14px;font-weight:400">mockup v1, STOCK-DEBT-SNAPSHOT</span></h1>
+<p class="intro">Built on the owner's card answers (Q1 to Q5 all a). Every figure is real: dev copy <code>sorento_cagent_stack</code>, 15 Oct 2026, read through the real Stock Debt service with the owner's view (Book Project, delivery 01/01/2023 to 31/05/2027, only in debt, stock and PO columns on). BRW-ED and PRJ-ED do not exist in dev, so Location is All. The decisions shown are examples a reader would mark; the snapshot name, time and creator are what saving now would write.</p>
+<div class="nav">
+<a href="#s1">1 Save snapshot</a><a href="#s2">2 Snapshots list</a><a href="#s3">3 Open a snapshot</a><a href="#s4">4 Mark a decision</a><a href="#s5">5 Drill: SO lines + OIs</a><a href="#s6">6 Request CS to reserve</a><a href="#s7">7 Other drill states</a><a href="#s8">8 Export</a><a href="#s9">9 Phone 375</a><a href="#s10">10 Reuse map</a>
+</div>
+
+<!-- ============================================================ 1 -->
+<section id="s1">
+<h2><span class="nb">1</span>Stock Debt: Save snapshot</h2>
+<p class="why">Two buttons join Export in the toolbar's right-hand cluster. Save snapshot asks only for a name; everything else is the board's current filters, frozen as they are.</p>
+<div class="row"><div class="desk"><div class="screen">
+<div class="side"><div class="logo">Sorento CRM</div><div class="grp">Procurement</div><div>Reorder Planning</div><div class="on">Stock Debt</div><div>Loading Plan</div><div class="grp">Project Sales</div><div>Order Inquiries</div></div>
+<div class="main stage" style="min-height:430px">
+<div class="pagehead"><div class="t">Stock debt</div></div>
+<div class="card">
+<div class="hd"><div class="tools"><span class="btn">Saved views &#9662;</span><span class="search">Search product</span><span class="chip on">Book: Project</span><span class="chip on">Delivery 01/01/2023 to 31/05/2027</span><span class="chip on">Only in debt</span><span class="chip on">Stock and PO columns</span></div>
+<div class="tools"><span class="btn">Snapshots</span><span class="btn">Save snapshot</span><span class="btn">Export</span></div></div>
+<div class="scroll"><table class="dg" style="width:1240px">
+<colgroup><col style="width:200px"><col span="4" style="width:84px"><col span="8" style="width:72px"><col style="width:56px"><col style="width:80px"></colgroup>
+<thead><tr><th class="pin">Product</th><th class="r">BRW Retail On Hand Qty</th><th class="r">BRW Retail PO Qty</th><th class="r">BRW Retail Incoming Qty</th><th class="r">Dealer O/standing Qty</th><th class="r">Oct 26</th><th class="r">Nov 26</th><th class="r">Dec 26</th><th class="r">Jan 27</th><th class="r">Feb 27</th><th class="r">Mar 27</th><th class="r">Apr 27</th><th class="r">May 27</th><th class="r">TBA</th><th class="r">Total</th></tr></thead>
+<tbody>
+<tr><td class="pin sku">1/2" ULTRA CIRCULAR</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-4</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-4</td></tr>
+<tr><td class="pin sku">32MM TAIL PIECE COUPLING</td><td class="r num">1,216</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-15</span></td><td><span class="c green">0</span></td><td><span class="c red">-148</span></td><td><span class="c red">-318</span></td><td><span class="c red">-346</span></td><td><span class="c red">-144</span></td><td><span class="c red">-235</span></td><td><span class="c red">-251</span></td><td class="r num">0</td><td class="r num">-1,457</td></tr>
+<tr><td class="pin sku">ACC6001</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-93</span></td><td><span class="c red">-72</span></td><td><span class="c red">-156</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c red">-48</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-369</td></tr>
+</tbody></table></div>
+<div class="ft"><span>550 products</span><span>1 of 11</span></div>
+</div>
+<div class="overlay" style="padding-top:110px"><div class="dlg sm">
+<div class="dh"><div class="dt">Save snapshot</div><span class="x">&#10005;</span></div>
+<div class="db">
+<div class="field"><label>Name</label><div class="inp">Stock Debt 15/10/2026</div></div>
+<div class="sumline"><b>550 products</b> &middot; Book Project &middot; All locations &middot; Delivery 01/01/2023 to 31/05/2027 &middot; Only in debt &middot; Stock and PO columns</div>
+</div>
+<div class="df"><span></span><div class="tools"><span class="btn">Cancel</span><span class="btn pri">Save snapshot</span></div></div>
+</div></div>
+</div></div></div>
+<div class="desk" style="width:620px"><div class="screen"><div class="main stage" style="min-height:150px">
+<div class="mut" style="font-size:12.5px">After Save (about 6 s on dev for this view, the button shows a spinner meanwhile):</div>
+<div class="toast" style="position:static;margin-top:12px;width:max-content">Snapshot saved <span class="lk">Open</span></div>
+<div class="mut" style="font-size:12.5px;margin-top:12px">Over 5,000 products: error toast "Narrow the filters first" (the Export cap) and nothing is saved.</div>
+</div></div></div>
+</div>
+</section>
+
+<!-- ============================================================ 2 -->
+<section id="s2">
+<h2><span class="nb">2</span>Snapshots list</h2>
+<p class="why">Reached from the Snapshots button on Stock Debt (no new sidebar entry). Everyone with Stock Debt access sees every snapshot. Only the creator gets Delete: the button turns into the usual 10 s countdown with Cancel, no confirm dialog.</p>
+<div class="row"><div class="desk"><div class="screen">
+<div class="side"><div class="logo">Sorento CRM</div><div class="grp">Procurement</div><div>Reorder Planning</div><div class="on">Stock Debt</div><div>Loading Plan</div></div>
+<div class="main">
+<div class="pagehead"><div class="t"><span class="mut" style="font-size:16px">&#8592;</span> Stock debt snapshots</div></div>
+<div class="card">
+<div class="hd"><div class="tools"><span class="search">Search name</span></div><div class="tools"></div></div>
+<div class="scroll"><table class="dg" style="width:100%">
+<colgroup><col style="width:220px"><col><col style="width:90px"><col style="width:90px"><col style="width:150px"><col style="width:150px"><col style="width:150px"></colgroup>
+<thead><tr><th>Name</th><th>Filters</th><th class="r">Products</th><th class="r">Decided</th><th>Created by</th><th>Created at</th><th></th></tr></thead>
+<tbody>
+<tr><td><span class="lk">Stock Debt 15/10/2026</span></td><td class="mut" title="Book Project · All locations · Delivery 01/01/2023 to 31/05/2027 · Only in debt · Stock and PO columns">Book Project &middot; All locations &middot; Delivery 01/01/2023 to 31/05/2027 &middot; Only in debt &middot; Stock and PO columns</td><td class="r num">550</td><td class="r num">5</td><td>You</td><td>15/10/2026 11:53</td><td class="r"><span class="btn sm cd">Deleting in 8 s &middot; Cancel</span></td></tr>
+</tbody></table></div>
+<div class="ft"><span>1 snapshot</span><span></span></div>
+</div>
+<p class="note">Row press opens the snapshot (DataGrid <code>rowHref</code>). The countdown shown is the state after pressing Delete; the resting state is a plain Delete button, shown to the creator only.</p>
+<div class="card" style="margin-top:14px"><div class="empty"><b>No snapshots yet</b><span>Saved snapshots of Stock Debt appear here.</span></div></div>
+<p class="note">Empty state (heading + hint, no button: the one CTA lives on Stock Debt).</p>
+</div></div></div></div>
+</section>
+
+<!-- ============================================================ 3 -->
+<section id="s3">
+<h2><span class="nb">3</span>Open a snapshot: the same grid, read-only, as it was</h2>
+<p class="why">Header carries the name and prev/next between snapshots; the read-only facts sit directly under it. The grid is Stock Debt's own columns, figures as stored, plus a Decision column right after Product. Search by product and a Decision filter run over the stored rows only; nothing is recomputed. Pressing a month cell or the product opens the frozen drill (section 5).</p>
+<div class="row"><div class="desk"><div class="screen">
+<div class="side"><div class="logo">Sorento CRM</div><div class="grp">Procurement</div><div>Reorder Planning</div><div class="on">Stock Debt</div><div>Loading Plan</div></div>
+<div class="main">
+<div class="pagehead"><div class="t"><span class="mut" style="font-size:16px">&#8592;</span> Stock Debt 15/10/2026 <span class="pill secondary">Snapshot</span></div><div class="tools"><span class="btn icon">&#8249;</span><span class="btn icon">&#8250;</span></div></div>
+<div class="meta"><span>Taken <b>15/10/2026 11:53</b> by <b>You</b></span><span>Book <b>Project</b></span><span>Location <b>All</b></span><span>Delivery <b>01/01/2023 to 31/05/2027</b></span><span><b>Only in debt</b></span><span><b>550</b> products, <b>0</b> decided</span></div>
+<div class="card">
+<div class="hd"><div class="tools"><span class="search">Search product</span><span class="chip">Decision</span></div><div class="tools"><span class="btn">Export</span></div></div>
+<div class="scroll"><table class="dg" style="width:1360px">
+<colgroup><col style="width:200px"><col style="width:140px"><col span="4" style="width:84px"><col span="8" style="width:72px"><col style="width:56px"><col style="width:80px"></colgroup>
+<thead><tr><th class="pin">Product</th><th>Decision</th><th class="r">BRW Retail On Hand Qty</th><th class="r">BRW Retail PO Qty</th><th class="r">BRW Retail Incoming Qty</th><th class="r">Dealer O/standing Qty</th><th class="r">Oct 26</th><th class="r">Nov 26</th><th class="r">Dec 26</th><th class="r">Jan 27</th><th class="r">Feb 27</th><th class="r">Mar 27</th><th class="r">Apr 27</th><th class="r">May 27</th><th class="r">TBA</th><th class="r">Total</th></tr></thead>
+<tbody>
+<tr><td class="pin sku">1/2" ULTRA CIRCULAR</td><td><span class="ghostdec">Decide</span></td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-4</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-4</td></tr>
+<tr><td class="pin sku">32MM TAIL PIECE COUPLING</td><td><span class="ghostdec">Decide</span></td><td class="r num">1,216</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-15</span></td><td><span class="c green">0</span></td><td><span class="c red">-148</span></td><td><span class="c red">-318</span></td><td><span class="c red">-346</span></td><td><span class="c red">-144</span></td><td><span class="c red">-235</span></td><td><span class="c red">-251</span></td><td class="r num">0</td><td class="r num">-1,457</td></tr>
+<tr><td class="pin sku">ACC6001</td><td><span class="ghostdec">Decide</span></td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-93</span></td><td><span class="c red">-72</span></td><td><span class="c red">-156</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c red">-48</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-369</td></tr>
+<tr><td class="pin sku">ACC6002</td><td><span class="ghostdec">Decide</span></td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-270</span></td><td><span class="c red">-72</span></td><td><span class="c red">-236</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c red">-195</span></td><td><span class="c red">-111</span></td><td class="r num">0</td><td class="r num">-884</td></tr>
+<tr><td class="pin sku">AP4844</td><td><span class="ghostdec">Decide</span></td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-2</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-2</td></tr>
+<tr><td class="pin sku">AP7540B</td><td><span class="ghostdec">Decide</span></td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-1</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-1</td></tr>
+<tr><td class="pin sku">B2155-BLUE-DIY</td><td><span class="ghostdec">Decide</span></td><td class="r num">3,897</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-77</td><td><span class="c red">-4</span></td><td><span class="c red">-144</span></td><td><span class="c red">-216</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-364</td></tr>
+<tr><td class="pin sku">B2155-NL-BLUE</td><td><span class="ghostdec">Decide</span></td><td class="r num">97</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-609</span></td><td><span class="c red">-5,622</span></td><td><span class="c red">-5,813</span></td><td><span class="c red">-7,446</span></td><td><span class="c red">-4,845</span></td><td><span class="c red">-3,082</span></td><td><span class="c red">-4,190</span></td><td><span class="c red">-3,697</span></td><td class="r num">0</td><td class="r num">-35,304</td></tr>
+</tbody>
+<tfoot><tr><td class="pin">Total (550)</td><td></td><td></td><td class="r num">162,636</td><td class="r num">0</td><td class="r num">21,121</td><td class="r num">-7,335</td><td class="r num">-3,692</td><td class="r num">-70,057</td><td class="r num">-109,893</td><td class="r num">-95,008</td><td class="r num">-80,909</td><td class="r num">-45,359</td><td class="r num">-59,595</td><td class="r num">-43,429</td><td class="r num">0</td><td class="r num">-507,942</td></tr></tfoot>
+</table></div>
+<div class="ft"><span>550 products</span><span>1 of 11</span></div>
+</div>
+</div></div></div></div>
+<p class="note">The first 8 stored rows of the real dev view, in the board's own order; the footer is the stored whole-set total, so it reads the same on every page.</p>
+</section>
+
+<!-- ============================================================ 4 -->
+<section id="s4">
+<h2><span class="nb">4</span>Mark a decision per product</h2>
+<p class="why">The Decision column sits right after Product, so it stays in view while the months scroll. Its cell opens a small popover: Reserve (from a pool, with its stock now) / Buy / Ignore, and a note. Saved on the snapshot row with who and when. Below, Decision filter "Decided" after management's marks were entered.</p>
+<div class="row"><div class="desk"><div class="screen">
+<div class="side"><div class="logo">Sorento CRM</div><div class="grp">Procurement</div><div>Reorder Planning</div><div class="on">Stock Debt</div><div>Loading Plan</div></div>
+<div class="main stage" style="min-height:700px">
+<div class="pagehead"><div class="t"><span class="mut" style="font-size:16px">&#8592;</span> Stock Debt 15/10/2026 <span class="pill secondary">Snapshot</span></div><div class="tools"><span class="btn icon">&#8249;</span><span class="btn icon">&#8250;</span></div></div>
+<div class="meta"><span>Taken <b>15/10/2026 11:53</b> by <b>You</b></span><span>Book <b>Project</b></span><span>Location <b>All</b></span><span>Delivery <b>01/01/2023 to 31/05/2027</b></span><span><b>Only in debt</b></span><span><b>550</b> products, <b>5</b> decided</span></div>
+<div class="card">
+<div class="hd"><div class="tools"><span class="search">Search product</span><span class="chip on">Decision: Decided &#10005;</span></div><div class="tools"><span class="btn">Export</span></div></div>
+<div class="scroll"><table class="dg" style="width:1360px">
+<colgroup><col style="width:200px"><col style="width:140px"><col span="4" style="width:84px"><col span="8" style="width:72px"><col style="width:56px"><col style="width:80px"></colgroup>
+<thead><tr><th class="pin">Product</th><th>Decision</th><th class="r">BRW Retail On Hand Qty</th><th class="r">BRW Retail PO Qty</th><th class="r">BRW Retail Incoming Qty</th><th class="r">Dealer O/standing Qty</th><th class="r">Oct 26</th><th class="r">Nov 26</th><th class="r">Dec 26</th><th class="r">Jan 27</th><th class="r">Feb 27</th><th class="r">Mar 27</th><th class="r">Apr 27</th><th class="r">May 27</th><th class="r">TBA</th><th class="r">Total</th></tr></thead>
+<tbody>
+<tr><td class="pin sku">SRT23-CR</td><td><span class="dec" title="Already reserved on OI-2609-0733"><span class="pill secondary">Ignore</span></span></td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-633</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-633</td></tr>
+<tr><td class="pin sku">SRTWT5875</td><td><span class="dec"><span class="pill warning">Buy</span></span></td><td class="r num">24</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-30</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c red">-375</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-405</td></tr>
+<tr><td class="pin sku">SRTWT8203</td><td><span class="dec"><span class="pill primary">Reserve</span><span class="mut">BRW</span></span></td><td class="r num">41</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-1</td><td><span class="c red">-2</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-2</td></tr>
+<tr><td class="pin sku">C-FH14</td><td><span class="dec"><span class="pill warning">Buy</span></span></td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-10</td><td><span class="c green">+776</span></td><td><span class="c red">-2,812</span></td><td><span class="c red">-6,420</span></td><td><span class="c red">-4,187</span></td><td><span class="c red">-3,554</span></td><td><span class="c red">-1,906</span></td><td><span class="c red">-3,448</span></td><td><span class="c red">-2,087</span></td><td class="r num">0</td><td class="r num">-23,638</td></tr>
+<tr><td class="pin sku">SRTWT904-NL</td><td style="outline:2px solid #93c5fd;outline-offset:-2px"><span class="dec"><span class="pill primary">Reserve</span><span class="mut">BRW</span></span></td><td class="r num">972</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c red">-30</span></td><td><span class="c red">-27</span></td><td><span class="c red">-56</span></td><td><span class="c red">-56</span></td><td><span class="c red">-54</span></td><td class="r num">0</td><td class="r num">-223</td></tr>
+</tbody></table></div>
+<div class="ft"><span>5 of 550 products</span><span></span></div>
+</div>
+<div class="pop" style="left:240px;top:372px">
+<div class="ph">SRTWT904-NL</div>
+<div class="field"><label>Decision</label><div class="radios"><span class="on">Reserve</span><span>Buy</span><span>Ignore</span></div></div>
+<div class="field"><label>From</label><div class="inp">BRW &nbsp;<span class="mut">available 972</span><span class="x2">&#10005; &#9662;</span></div></div>
+<div class="field"><label>Note</label><div class="inp ta">Reserve all 223 from BRW</div></div>
+<div class="mut" style="font-size:11.5px">You, 15/10/2026 14:10</div>
+<div class="tools" style="justify-content:space-between"><span class="btn sm ghost">Clear decision</span><span class="btn sm pri">Save</span></div>
+</div>
+</div></div></div></div>
+<p class="note">From lists the site pools with their stock now (BRW available 972, other pools 0 for this product), read by the same hook the OI reserve dialog uses. Buy and Ignore hide From. The row order is the stored order (SRT23-CR is row 100 of 550, SRTWT904-NL row 480).</p>
+</section>
+
+<!-- ============================================================ 5 -->
+<section id="s5">
+<h2><span class="nb">5</span>Drill on a snapshot row: the frozen SO lines, grouped by OI, with Now beside them</h2>
+<p class="why">Pressing the product (all months) or a month cell (that month only) opens the drill's Demand table exactly as frozen, grouped by the OI each line was on. Two columns are added: OI row (frozen) and Now (read live when the drill opens). Each OI group links to the OI on that row and carries Request CS to reserve when the OI has rows that can still be requested.</p>
+<div class="row"><div class="desk"><div class="screen"><div class="main stage" style="min-height:640px;background:#f4f4f5">
+<div class="overlay" style="position:absolute;padding-top:30px"><div class="dlg">
+<div class="dh"><div class="dt">SRTWT904-NL &middot; all months</div><div class="ds">As frozen 15/10/2026 11:53 &middot; Now read 15/10/2026 14:12</div><span class="x">&#10005;</span></div>
+<div class="db">
+<div class="lsum"><span>Total <b>-223</b></span><span>BRW on hand <b>972</b></span><span>Lines <b>6</b></span><span>Short <b>223</b></span><span>Decision <span class="pill primary">Reserve</span> BRW &middot; <span class="mut">Reserve all 223 from BRW</span></span></div>
+<div class="ogrp">
+<div class="gh"><div class="l"><span class="lk"><b>OI-2609-0417</b> &#8599;</span><span class="mut">SO383872 &middot; 6 lines</span><span class="pill secondary dot">Raised</span></div><div class="tools"><span class="btn sm pri">Request CS to reserve</span></div></div>
+<div class="scroll"><table class="dg">
+<colgroup><col style="width:90px"><col style="width:70px"><col style="width:66px"><col style="width:86px"><col style="width:64px"><col style="width:66px"><col style="width:82px"><col style="width:66px"><col style="width:90px"><col style="width:74px"><col style="width:60px"><col style="width:80px"><col style="width:150px"></colgroup>
+<thead><tr><th>Sales order</th><th>Agent</th><th>Bin</th><th>Due</th><th class="r">Ordered</th><th class="r">Delivered</th><th class="r">Outstanding</th><th class="r">Assigned</th><th>Covered by</th><th>Status</th><th class="r">Short</th><th class="r">OI row</th><th>Now</th></tr></thead>
+<tbody>
+<tr><td><span class="lk">SO383872</span></td><td>LEENA</td><td>BRW-BB</td><td>07/01/2027</td><td class="r num">30</td><td class="r num">0</td><td class="r num">30</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">30</td><td class="r num"><span class="lk">30</span></td><td><span class="pill secondary">Open 30</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>LEENA</td><td>BRW-BB</td><td>11/02/2027</td><td class="r num">27</td><td class="r num">0</td><td class="r num">27</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">27</td><td class="r num"><span class="lk">27</span></td><td><span class="pill secondary">Open 27</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>LEENA</td><td>BRW-BB</td><td>01/03/2027</td><td class="r num">56</td><td class="r num">0</td><td class="r num">56</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">56</td><td class="r num"><span class="lk">28</span></td><td><span class="pill secondary">Open 56</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>LEENA</td><td>BRW-BB</td><td>01/04/2027</td><td class="r num">28</td><td class="r num">0</td><td class="r num">28</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">28</td><td class="r num"><span class="lk">28</span></td><td><span class="pill secondary">Open 28</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>LEENA</td><td>BRW-BB</td><td>02/04/2027</td><td class="r num">28</td><td class="r num">0</td><td class="r num">28</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">28</td><td class="r num"><span class="lk">28</span></td><td><span class="pill secondary">Open 28</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>LEENA</td><td>BRW-BB</td><td>03/05/2027</td><td class="r num">54</td><td class="r num">0</td><td class="r num">54</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">54</td><td class="r num"><span class="lk">54</span></td><td><span class="pill secondary">Open 54</span> <span class="pill secondary">Raised</span></td></tr>
+</tbody></table></div>
+</div>
+</div>
+</div></div>
+</div></div></div></div>
+<p class="note">Real case: all 6 frozen lines of SRTWT904-NL are SO383872 (LEENA, BRW-BB) on OI-2609-0417, rows Raised and acknowledged, no reserve yet. The 01/03/2027 line is 56 on the SO but its OI row is 28 (dev data as it stands): both are shown, and the reserve request uses the OI row's own figure. OI-2609-0417 opens the OI page on the first row; an OI row figure opens it on that row (<code>?row=</code>). Sales order opens the SO page, as in today's drill.</p>
+</section>
+
+<!-- ============================================================ 6 -->
+<section id="s6">
+<h2><span class="nb">6</span>Request CS to reserve: the OI page's own dialog, filled from the snapshot</h2>
+<p class="why">Same dialog, same rows, same Send / Park as on the OI page; nothing new is written. Rows are that OI's requestable rows for this product; Location defaults to the decision's pool when that pool is offered. After Send, Now reads "Reserve requested" on those lines.</p>
+<div class="row"><div class="desk"><div class="screen"><div class="main stage" style="min-height:560px;background:#f4f4f5">
+<div class="overlay" style="position:absolute;padding-top:30px"><div class="dlg md">
+<div class="dh"><div class="dt">Request CS to reserve</div><span class="x">&#10005;</span></div>
+<div class="db">
+<div class="scroll" style="border:1px solid var(--border);border-radius:8px"><table class="dg" style="width:100%">
+<colgroup><col style="width:180px"><col style="width:120px"><col style="width:100px"><col style="width:110px"><col></colgroup>
+<thead><tr><th>Product</th><th>Delivery date</th><th class="r">Remaining</th><th class="r">Requested</th><th>Location</th></tr></thead>
+<tbody>
+<tr><td class="sku">SRTWT904-NL</td><td>07/01/2027</td><td class="r num">30</td><td class="r"><span class="inp" style="height:26px;justify-content:flex-end">30</span></td><td><span class="inp" style="height:26px">BRW &nbsp;<span class="mut">available 972</span><span class="x2">&#9662;</span></span></td></tr>
+<tr><td class="sku">SRTWT904-NL</td><td>11/02/2027</td><td class="r num">27</td><td class="r"><span class="inp" style="height:26px;justify-content:flex-end">27</span></td><td><span class="inp" style="height:26px">BRW &nbsp;<span class="mut">available 972</span><span class="x2">&#9662;</span></span></td></tr>
+<tr><td class="sku">SRTWT904-NL</td><td>01/03/2027</td><td class="r num">28</td><td class="r"><span class="inp" style="height:26px;justify-content:flex-end">28</span></td><td><span class="inp" style="height:26px">BRW &nbsp;<span class="mut">available 972</span><span class="x2">&#9662;</span></span></td></tr>
+<tr><td class="sku">SRTWT904-NL</td><td>01/04/2027</td><td class="r num">28</td><td class="r"><span class="inp" style="height:26px;justify-content:flex-end">28</span></td><td><span class="inp" style="height:26px">BRW &nbsp;<span class="mut">available 972</span><span class="x2">&#9662;</span></span></td></tr>
+<tr><td class="sku">SRTWT904-NL</td><td>02/04/2027</td><td class="r num">28</td><td class="r"><span class="inp" style="height:26px;justify-content:flex-end">28</span></td><td><span class="inp" style="height:26px">BRW &nbsp;<span class="mut">available 972</span><span class="x2">&#9662;</span></span></td></tr>
+<tr><td class="sku">SRTWT904-NL</td><td>03/05/2027</td><td class="r num">54</td><td class="r"><span class="inp" style="height:26px;justify-content:flex-end">54</span></td><td><span class="inp" style="height:26px">BRW &nbsp;<span class="mut">available 972</span><span class="x2">&#9662;</span></span></td></tr>
+</tbody></table></div>
+<div class="field"><label>Note (optional)</label><div class="inp ta"></div></div>
+</div>
+<div class="df"><span class="chk"><i></i>Park this first</span><div class="tools"><span class="btn">Cancel</span><span class="btn pri">Send request</span></div></div>
+</div></div>
+</div></div></div></div>
+<p class="note">OI-2609-0417's six rows, remaining 30 / 27 / 28 / 28 / 28 / 54 = 195 (the snapshot's short is 223: the 01/03/2027 row is 28 against an SO line of 56). Remaining, Requested default and the location options are what the OI page's dialog computes today; only the default location comes from the decision.</p>
+</section>
+
+<!-- ============================================================ 7 -->
+<section id="s7">
+<h2><span class="nb">7</span>Other drill states, real dev cases</h2>
+<p class="why">A row that cannot be requested shows why through its Now state; an OI with nothing requestable has no Request button. Lines that were on no OI sit in a "No OI" group with their SO link only.</p>
+<div class="row"><div class="desk"><div class="screen"><div class="main" style="display:flex;flex-direction:column;gap:18px">
+
+<div><div class="mut" style="font-size:12px;margin-bottom:6px">SRTWT5875 &middot; all months (decision: Buy)</div>
+<div class="ogrp" style="margin-bottom:8px">
+<div class="gh"><div class="l"><span class="lk"><b>OI-2609-0271</b> &#8599;</span><span class="mut">SO391092 &middot; 2 lines</span><span class="pill secondary dot">Raised</span></div><div class="tools"><span class="btn sm">Request CS to reserve</span></div></div>
+<div class="scroll"><table class="dg">
+<colgroup><col style="width:90px"><col style="width:76px"><col style="width:70px"><col style="width:86px"><col style="width:64px"><col style="width:66px"><col style="width:82px"><col style="width:66px"><col style="width:120px"><col style="width:74px"><col style="width:60px"><col style="width:70px"><col style="width:170px"></colgroup>
+<thead><tr><th>Sales order</th><th>Agent</th><th>Bin</th><th>Due</th><th class="r">Ordered</th><th class="r">Delivered</th><th class="r">Outstanding</th><th class="r">Assigned</th><th>Covered by</th><th>Status</th><th class="r">Short</th><th class="r">OI row</th><th>Now</th></tr></thead>
+<tbody>
+<tr><td><span class="lk">SO391092</span></td><td>SHAHRUL</td><td>BRW-NTC</td><td>24/08/2026</td><td class="r num">30</td><td class="r num">0</td><td class="r num">30</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">30</td><td class="r num"><span class="lk">30</span></td><td><span class="pill secondary">Open 30</span> <span class="pill success">Placed</span></td></tr>
+<tr><td><span class="lk">SO391092</span></td><td>SHAHRUL</td><td>BRW-NTC</td><td>01/01/2027</td><td class="r num">405</td><td class="r num">30</td><td class="r num">375</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">375</td><td class="r num"><span class="lk">405</span></td><td><span class="pill secondary">Open 375</span> <span class="pill secondary">Raised</span></td></tr>
+</tbody></table></div></div>
+<div class="ogrp">
+<div class="gh"><div class="l"><b>No OI</b><span class="mut">1 line</span></div></div>
+<div class="scroll"><table class="dg">
+<colgroup><col style="width:90px"><col style="width:76px"><col style="width:70px"><col style="width:86px"><col style="width:64px"><col style="width:66px"><col style="width:82px"><col style="width:66px"><col style="width:120px"><col style="width:74px"><col style="width:60px"><col style="width:70px"><col style="width:170px"></colgroup>
+<tbody>
+<tr><td><span class="lk">SO381945</span></td><td>ERIC NG</td><td>BRW-BB</td><td>01/07/2026</td><td class="r num">4</td><td class="r num">0</td><td class="r num">4</td><td class="r num">4</td><td><span class="lk">On hand BRW-BB</span> 4</td><td><span class="pill success">Covered</span></td><td class="r num">0</td><td class="r mut">-</td><td><span class="pill secondary">Open 4</span></td></tr>
+</tbody></table></div></div>
+<p class="note">The Placed row (24/08/2026) is not requestable; Request CS to reserve on this OI offers the Raised row only: remaining 405 (OI row) while the snapshot says short 375 (30 already delivered).</p>
+</div>
+
+<div><div class="mut" style="font-size:12px;margin-bottom:6px">SRT23-CR &middot; Oct 26 (decision: Ignore, "Already reserved on OI-2609-0733")</div>
+<div class="ogrp">
+<div class="gh"><div class="l"><span class="lk"><b>OI-2609-0733</b> &#8599;</span><span class="mut">SO422078 &middot; 1 line</span><span class="pill secondary dot">Raised</span></div><div class="tools"></div></div>
+<div class="scroll"><table class="dg">
+<colgroup><col style="width:90px"><col style="width:76px"><col style="width:70px"><col style="width:86px"><col style="width:64px"><col style="width:66px"><col style="width:82px"><col style="width:66px"><col style="width:120px"><col style="width:74px"><col style="width:60px"><col style="width:70px"><col style="width:170px"></colgroup>
+<tbody>
+<tr><td><span class="lk">SO422078</span></td><td>TERA</td><td>BRW-BB</td><td>01/10/2026</td><td class="r num">633</td><td class="r num">0</td><td class="r num">633</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">633</td><td class="r num"><span class="lk">633</span></td><td><span class="pill secondary">Open 633</span> <span class="pill primary">Reserved</span></td></tr>
+</tbody></table></div></div>
+</div>
+
+<div><div class="mut" style="font-size:12px;margin-bottom:6px">SRTWT8203 &middot; Oct 26 (decision: Reserve, BRW)</div>
+<div class="ogrp" style="margin-bottom:8px">
+<div class="gh"><div class="l"><span class="lk"><b>OI-2609-0637</b> &#8599;</span><span class="mut">SO411132 &middot; 1 line</span><span class="pill secondary dot">Raised</span></div><div class="tools"></div></div>
+<div class="scroll"><table class="dg">
+<colgroup><col style="width:90px"><col style="width:76px"><col style="width:70px"><col style="width:86px"><col style="width:64px"><col style="width:66px"><col style="width:82px"><col style="width:66px"><col style="width:120px"><col style="width:74px"><col style="width:60px"><col style="width:70px"><col style="width:170px"></colgroup>
+<tbody>
+<tr><td><span class="lk">SO411132</span></td><td>JUSTIN</td><td>BRW-IB</td><td>30/09/2026</td><td class="r num">372</td><td class="r num">0</td><td class="r num">372</td><td class="r num">372</td><td><span class="lk" title="PO 202609-S0010 line 8">PO 202609-S0010 line 8</span></td><td><span class="pill secondary">Pinned</span></td><td class="r num">0</td><td class="r num"><span class="lk">372</span></td><td><span class="pill secondary">Open 372</span> <span class="pill success">Placed</span></td></tr>
+</tbody></table></div></div>
+<div class="ogrp">
+<div class="gh"><div class="l"><b>No OI</b><span class="mut">4 lines</span></div></div>
+<div class="scroll"><table class="dg">
+<colgroup><col style="width:90px"><col style="width:76px"><col style="width:70px"><col style="width:86px"><col style="width:64px"><col style="width:66px"><col style="width:82px"><col style="width:66px"><col style="width:120px"><col style="width:74px"><col style="width:60px"><col style="width:70px"><col style="width:170px"></colgroup>
+<tbody>
+<tr><td><span class="lk">SO387599</span></td><td>JUSTIN</td><td>BRW-IB</td><td>20/02/2026</td><td class="r num">2</td><td class="r num">0</td><td class="r num">2</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">2</td><td class="r mut">-</td><td><span class="pill secondary">Open 2</span></td></tr>
+<tr><td><span class="lk">SO414963</span></td><td>JUSTIN</td><td>BRW-IB</td><td>20/08/2026</td><td class="r num">3</td><td class="r num">0</td><td class="r num">3</td><td class="r num">3</td><td><span class="lk">On hand BRW-IB</span> 3</td><td><span class="pill secondary">Pinned</span></td><td class="r num">0</td><td class="r mut">-</td><td><span class="pill secondary">Open 3</span></td></tr>
+<tr><td><span class="lk">SO417263</span></td><td>JOHNSON</td><td>BRW-BB</td><td>10/09/2026</td><td class="r num">1</td><td class="r num">0</td><td class="r num">1</td><td class="r num">1</td><td><span class="lk">On hand BRW-BB</span> 1</td><td><span class="pill success">Covered</span></td><td class="r num">0</td><td class="r mut">-</td><td><span class="pill secondary">Open 1</span></td></tr>
+<tr><td><span class="lk">SO417263</span></td><td>JOHNSON</td><td>BRW-BB</td><td>10/09/2026</td><td class="r num">28</td><td class="r num">0</td><td class="r num">28</td><td class="r num">28</td><td><span class="lk">On hand BRW-BB</span> 28</td><td><span class="pill success">Covered</span></td><td class="r num">0</td><td class="r mut">-</td><td><span class="pill secondary">Open 28</span></td></tr>
+</tbody></table></div></div>
+<p class="note">The short line (SO387599, 2) was on no OI when frozen, so there is nothing to request from here; its SO link opens the order. If an OI is raised for it later, Now names it with "raised after the snapshot" and its link.</p>
+</div>
+
+<div><div class="mut" style="font-size:12px;margin-bottom:6px">Now column, every state (live, beside the frozen line)</div>
+<div class="tools"><span class="pill secondary">Open 30</span><span class="pill secondary">Delivered</span><span class="pill destructive">SO cancelled</span><span class="pill secondary">SO closed</span><span class="pill secondary">Raised</span><span class="pill success">Placed</span><span class="pill warning">Reserve requested</span><span class="pill warning">Reserve parked</span><span class="pill primary">Reserved</span><span class="pill destructive">OI row cancelled</span><span class="pill secondary">OI-2609-xxxx raised after the snapshot</span></div>
+<p class="note">No snapshot exists yet, so the after-the-fact states (SO cancelled, raised after the snapshot) have no real line to show; they print as above.</p>
+</div>
+
+</div></div></div></div>
+</section>
+
+<!-- ============================================================ 8 -->
+<section id="s8">
+<h2><span class="nb">8</span>Export (the paper)</h2>
+<p class="why">Export on the snapshot is today's Export popover (same split choices, My Downloads), built from the stored rows, with three more columns at the end: Decision, From, Note. File name carries the snapshot name.</p>
+<div class="row"><div class="desk"><div class="screen"><div class="main">
+<div class="mut" style="font-size:12px;margin-bottom:6px">stock-debt-snapshot-15102026.xlsx, sheet "Stock Debt", decided rows shown</div>
+<div class="scroll" style="border:1px solid var(--border)"><table class="dg" style="width:1228px">
+<colgroup><col style="width:120px"><col span="4" style="width:66px"><col span="8" style="width:58px"><col style="width:44px"><col style="width:64px"><col style="width:70px"><col style="width:50px"><col style="width:190px"></colgroup>
+<thead><tr><th>Product</th><th class="r">BRW Retail On Hand Qty</th><th class="r">BRW Retail PO Qty</th><th class="r">BRW Retail Incoming Qty</th><th class="r">Dealer O/standing Qty</th><th class="r">Oct 26</th><th class="r">Nov 26</th><th class="r">Dec 26</th><th class="r">Jan 27</th><th class="r">Feb 27</th><th class="r">Mar 27</th><th class="r">Apr 27</th><th class="r">May 27</th><th class="r">TBA</th><th class="r">Total</th><th>Decision</th><th>From</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>SRT23-CR</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-633</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-633</td><td>Ignore</td><td></td><td>Already reserved on OI-2609-0733</td></tr>
+<tr><td>SRTWT5875</td><td class="r num">24</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-30</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-375</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-405</td><td>Buy</td><td></td><td></td></tr>
+<tr><td>SRTWT8203</td><td class="r num">41</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-1</td><td class="r num">-2</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-2</td><td>Reserve</td><td>BRW</td><td></td></tr>
+<tr><td>C-FH14</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-10</td><td class="r num">776</td><td class="r num">-2,812</td><td class="r num">-6,420</td><td class="r num">-4,187</td><td class="r num">-3,554</td><td class="r num">-1,906</td><td class="r num">-3,448</td><td class="r num">-2,087</td><td class="r num">0</td><td class="r num">-23,638</td><td>Buy</td><td></td><td></td></tr>
+<tr><td>SRTWT904-NL</td><td class="r num">972</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-30</td><td class="r num">-27</td><td class="r num">-56</td><td class="r num">-56</td><td class="r num">-54</td><td class="r num">0</td><td class="r num">-223</td><td>Reserve</td><td>BRW</td><td>Reserve all 223 from BRW</td></tr>
+</tbody></table></div>
+<p class="note">The whole stored set is exported (all 550 rows), decided or not; the Decision filter on screen does not narrow the workbook, the same way Stock Debt's own export follows the board's filters only.</p>
+</div></div></div></div>
+</section>
+
+<!-- ============================================================ 9 -->
+<section id="s9">
+<h2><span class="nb">9</span>Phone 375</h2>
+<p class="why">Same page: meta wraps, toolbar wraps, the grid scrolls sideways with Product pinned. The drill dialog is full width; each OI group's table scrolls on its own and the Request button wraps under the OI name.</p>
+<div class="row">
+<div class="phone"><div class="screen"><div class="main">
+<div class="pagehead"><div class="t">Stock Debt 15/10/2026 <span class="pill secondary">Snapshot</span></div></div>
+<div class="meta"><span>Taken <b>15/10/2026 11:53</b> by <b>You</b></span><span>Book <b>Project</b></span><span>Delivery <b>01/01/2023 to 31/05/2027</b></span><span><b>550</b> products, <b>5</b> decided</span></div>
+<div class="card">
+<div class="hd"><div class="tools"><span class="search filled" style="width:190px">SRTWT904</span><span class="chip">Decision</span><span class="btn">Export</span></div></div>
+<div class="scroll"><table class="dg" style="width:700px">
+<colgroup><col style="width:120px"><col style="width:110px"><col span="5" style="width:64px"><col style="width:70px"></colgroup>
+<thead><tr><th class="pin">Product</th><th>Decision</th><th class="r">Jan 27</th><th class="r">Feb 27</th><th class="r">Mar 27</th><th class="r">Apr 27</th><th class="r">May 27</th><th class="r">Total</th></tr></thead>
+<tbody><tr><td class="pin sku">SRTWT904-NL</td><td><span class="pill primary">Reserve</span> <span class="mut">BRW</span></td><td><span class="c red">-30</span></td><td><span class="c red">-27</span></td><td><span class="c red">-56</span></td><td><span class="c red">-56</span></td><td><span class="c red">-54</span></td><td class="r num">-223</td></tr></tbody>
+</table></div>
+<div class="ft"><span>1 of 550 products</span><span></span></div>
+</div>
+<p class="note">Scrolled right past the stock and PO columns and Oct to Dec; Product stays pinned.</p>
+</div></div><div class="cap">375: snapshot, product search</div></div>
+
+<div class="phone"><div class="screen" style="background:#71717a">
+<div class="overlay"><div class="dlg">
+<div class="dh"><div class="dt">SRTWT904-NL &middot; all months</div><div class="ds">As frozen 15/10/2026 11:53</div><span class="x">&#10005;</span></div>
+<div class="db">
+<div class="lsum"><span>Total <b>-223</b></span><span>BRW on hand <b>972</b></span><span>Short <b>223</b></span><span><span class="pill primary">Reserve</span> BRW</span></div>
+<div class="ogrp">
+<div class="gh"><div class="l"><span class="lk"><b>OI-2609-0417</b> &#8599;</span><span class="pill secondary dot">Raised</span><span class="mut">SO383872 &middot; 6 lines</span></div><span class="btn sm pri">Request CS to reserve</span></div>
+<div class="scroll"><table class="dg">
+<colgroup><col style="width:86px"><col style="width:84px"><col style="width:60px"><col style="width:60px"><col style="width:150px"></colgroup>
+<thead><tr><th>Sales order</th><th>Due</th><th class="r">Short</th><th class="r">OI row</th><th>Now</th></tr></thead>
+<tbody>
+<tr><td><span class="lk">SO383872</span></td><td>07/01/2027</td><td class="r num">30</td><td class="r num">30</td><td><span class="pill secondary">Open 30</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>11/02/2027</td><td class="r num">27</td><td class="r num">27</td><td><span class="pill secondary">Open 27</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>01/03/2027</td><td class="r num">56</td><td class="r num">28</td><td><span class="pill secondary">Open 56</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>01/04/2027</td><td class="r num">28</td><td class="r num">28</td><td><span class="pill secondary">Open 28</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>02/04/2027</td><td class="r num">28</td><td class="r num">28</td><td><span class="pill secondary">Open 28</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO383872</span></td><td>03/05/2027</td><td class="r num">54</td><td class="r num">54</td><td><span class="pill secondary">Open 54</span> <span class="pill secondary">Raised</span></td></tr>
+</tbody></table></div></div>
+</div></div></div>
+</div><div class="cap">375: drill, table scrolled to Due, Short, OI row, Now</div></div>
+</div>
+</section>
+
+<!-- ============================================================ 10 -->
+<section id="s10">
+<h2><span class="nb">10</span>What each element reuses</h2>
+<table class="map">
+<thead><tr><th>Element</th><th>Reuses (repo path)</th></tr></thead>
+<tbody>
+<tr><td>Snapshots / Save snapshot buttons</td><td><code>DataGridListToolbar</code> <code>primaryAction</code> slot (<code>components/ui/data-grid-list-toolbar.tsx:609-611</code>), beside <code>StockDebtExportPopover</code> (<code>project-sales/stock-debt/components/StockDebtClient.tsx:897-905</code>)</td></tr>
+<tr><td>Save snapshot dialog</td><td><code>components/ui/dialog.tsx</code> + <code>Input</code>; create = modal (CRUD standard). Filters sent are the board's current state (<code>StockDebtClient.tsx:187-209</code>), the same set Export sends (<code>StockDebtExportIn</code>, <code>app/schemas/stock_debt.py</code>)</td></tr>
+<tr><td>Frozen figures and SO lines</td><td><code>StockDebtService.list()</code> rows (<code>app/services/scm/stock_debt_service.py:349-508</code>) and the drill's demand rows (<code>:653-685</code>) from the same walk; cap <code>MAX_LOW_STOCK_ROWS</code> (<code>app/services/scm/low_stock_report_service.py:69</code>)</td></tr>
+<tr><td>OI rows per SO line</td><td><code>order_inquiry_rows.so_line_id</code> &rarr; <code>projects.sales_order_lines.core_sales_order_line_id</code> (<code>app/models/project_so.py:1011-1014</code>)</td></tr>
+<tr><td>Snapshots list</td><td>DataGrid listing (<code>tableLayout fixed</code>, <code>rowHref</code>), <code>components/common/PageHeader</code>, empty state per <code>DESIGN-LANGUAGE.md</code> section 6</td></tr>
+<tr><td>Delete countdown</td><td>Deferred action registry (<code>app/services/record_actions.py</code>, precedent <code>saved_view.delete</code> at <code>:2096</code>)</td></tr>
+<tr><td>Snapshot page header + prev/next + meta</td><td><code>PageHeader</code>, <code>components/common/RecordNavigation</code>, read-only metadata under the header (ADR-PRODUCT-STANDARDS)</td></tr>
+<tr><td>Snapshot grid</td><td>Stock Debt's own columns (<code>StockDebtClient.tsx:514-622</code>), tones (<code>:94-98</code>), aux headers (<code>:134-139</code>), month labels (<code>:111-128</code>), pinned Product, server paging</td></tr>
+<tr><td>Decision popover</td><td><code>components/ui/popover.tsx</code>, <code>SearchableSelect</code> (clearable), <code>Textarea</code>; pool options + stock from <code>useReserveRowOptions</code> (<code>project-sales/_shared/hooks/useReserveRowOptions.ts:90</code>)</td></tr>
+<tr><td>Decision pills</td><td><code>components/ui/badge.tsx</code> light variants</td></tr>
+<tr><td>Drill dialog, Demand columns</td><td><code>StockDebtCellDialog.tsx:316-455</code> (<code>PanelDataGrid</code>), SO link <code>/scm/sales-orders/&lt;id&gt;</code> (<code>:329-337</code>), Covered by via <code>OrderInquiryDocumentLink</code></td></tr>
+<tr><td>OI links</td><td>OI page deep link <code>/project-sales/order-inquiries/&lt;id&gt;?row=&lt;row&gt;</code> (<code>scm/sales-orders/[id]/components/SalesOrderDetail.tsx:1258</code>, <code>order-inquiries/[id]/components/OrderInquiryDetail.tsx:210-212</code>)</td></tr>
+<tr><td>Request CS to reserve</td><td><code>ReserveRequestDialog</code> (<code>order-inquiries/[id]/components/ReserveRequestDialog.tsx:60-73</code>), <code>useCreateOrderInquiryReserveRequest</code> (<code>_shared/hooks/useOrderInquiry.ts:199</code>) &rarr; <code>POST /order-inquiries/{id}/reserve-requests</code> (<code>app/api/v1/projects/order_inquiries.py:1210</code>); requestable rule <code>order_inquiry_reserve_service.py:65-66, 475-500</code></td></tr>
+<tr><td>Export</td><td><code>StockDebtExportPopover</code> split choices, <code>_render_workbook</code> (<code>stock_debt_service.py:2677</code>) through My Downloads</td></tr>
+</tbody></table>
+</section>
+</div>
+</body>
+</html>
