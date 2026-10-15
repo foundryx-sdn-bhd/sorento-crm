@@ -1,24 +1,21 @@
-"""Chat fix PR-A red tests (AC-A6, A7, A10): grounding says unknown spec words back, the publisher
-puts the live `{{specs}}` block and the category name rule into a new parser version, and a spec
-menu offers only choices that lead to rows.
+"""Chat fix PR-A red tests (AC-A6, A10): grounding says unknown spec words back, and a spec menu
+offers only choices that lead to rows. (AC-A7, the specs-block publisher and the category name
+rule, moved to PR-A2 with the parser vocabulary: crew round 2.)
 
 Plan documentation/plans/chatbot/PLAN-chat-fix-spec-16oct.md. No live LLM call: the parse is a
 hand-built dict. Postgres only (session_factory), every test seeds its own rows.
 """
 from __future__ import annotations
 
-import re
 import uuid
 from typing import Any
 
 import pytest
 
 from app.models.access import ContactAccessType
-from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.models.marketing import PromotionType
 from app.models.product import Brand
 from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
-from app.services.chatbot_parser_prompt import BLOCKS_BEGIN, BLOCKS_END
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._mc_lookup_seed import product
 from tests.chatbot.test_engine import _parser_output
@@ -27,9 +24,6 @@ from tests.chatbot.test_outstanding_lane import _seed_contact
 from tests.chatbot.test_promo_kind_subject import _promo
 from tests.chatbot.test_promo_subject_filter import _class
 from tests.chatbot.test_reverse_asks_owner_phrasings import _class_category
-
-KEY = "chatbot_semantic_parser"
-
 
 def _e(raw: str, hint: str, **extra: Any) -> dict[str, Any]:
     return {"raw": raw, "hint": hint, "canonical_code": extra.pop("canonical_code", None), "current_message": True, "confident": True, **extra}
@@ -77,103 +71,6 @@ def test_a6_the_promotion_path_still_keeps_it(session_factory):
         },
     )
     assert [e for e in verdict["entities"] if e.get("raw") == "zztwonky" and e.get("spec_value") is None]
-
-
-# --------------------------------------------------------------------------- #
-# AC-A7 (with A1/A2): the publisher builds the new parser version
-# --------------------------------------------------------------------------- #
-STATIC_SPEC_BLOCK = (
-    'Specification dim_length ("Length"): a number in mm. Words: length, long.\n'
-    'Specification dim_width ("Width"): a number in mm. Words: width, wide.\n'
-    "Product types (the category entity keeps these, never a specification): wash basin.\n"
-)
-SOURCE = (
-    "ZZT parser text, every line must survive.\n"
-    "== MESSAGE TYPE ==\n"
-    "Brand rule: a brand is one of the listed brands {{domains}}.\n"
-    "Another owner line.\n"
-    f"{BLOCKS_BEGIN}\n"
-    "Domain inventory: stock.\n"
-    f"{STATIC_SPEC_BLOCK}"
-    f"{BLOCKS_END}\n"
-    "Tail line.\n"
-)
-
-
-def _publish_source(db, version: int = 52):
-    row = AIPromptVersion(
-        id=str(uuid.uuid4()), name=KEY, version=version, type="text", template=SOURCE,
-        variables=["domains"], config_json={}, commit_message="zzt source",
-    )
-    db.add(row)
-    db.flush()
-    db.add(AIPromptLabel(id=str(uuid.uuid4()), name=KEY, label="production", version_id=row.id))
-    db.flush()
-    return row
-
-
-def test_a7_publish_specs_block_swaps_the_static_block_and_adds_the_category_rule(session_factory):
-    from app.services import chatbot_prompt_vars as pv
-
-    db = session_factory()
-    _seed_registry(db)
-    source = _publish_source(db)
-    version = pv.publish_specs_block(db, from_version=52)
-    assert version == 53, "a new version is published off the named source"
-    new = db.query(AIPromptVersion).filter_by(name=KEY, version=version).one()
-    old_lines, new_lines = SOURCE.split("\n"), new.template.split("\n")
-    removed = [ln for ln in old_lines if ln not in new_lines]
-    added = [ln for ln in new_lines if ln not in old_lines]
-    assert all(ln.startswith("Specification ") or ln.startswith("Product types (the category entity keeps") for ln in removed), removed
-    assert "{{specs}}" in added and new.template.count("{{specs}}") == 1, new.template
-    rule = [ln for ln in added if ln != "{{specs}}" and ln.strip()]
-    assert len(rule) == 1 and re.search(r"categor", rule[0], re.I) and re.search(r"listed|one of", rule[0], re.I), (
-        f"exactly one added category name rule line expected, got {rule}"
-    )
-    # every other line is byte-identical and keeps its order
-    kept_old = [ln for ln in old_lines if ln in new_lines]
-    kept_new = [ln for ln in new_lines if ln in old_lines]
-    assert kept_old == kept_new
-    assert "specs" in (new.variables or [])
-    label = db.query(AIPromptLabel).filter_by(name=KEY, label="production").one()
-    assert label.version_id == source.id, "the production label never moves"
-
-
-def test_a7_the_published_version_renders_the_live_registry_vocabulary(session_factory):
-    """AC-A1: the new version takes its spec vocabulary from the registry at render time."""
-    from app.services import ai_prompt_registry
-    from app.services import chatbot_prompt_vars as pv
-
-    from app.services.chatbot_parser_prompt import specification_lines
-
-    db = session_factory()
-    _seed_registry(db)
-    product_type = db.query(ProductSpecRegistry).filter_by(spec_key="product_type").one()
-    product_type.user_synonyms = {**(product_type.user_synonyms or {}), "grab_bar": ["zztgrabrail"]}
-    db.flush()
-    _publish_source(db)
-    version = pv.publish_specs_block(db, from_version=52)
-    row = db.query(AIPromptVersion).filter_by(name=KEY, version=version).one()
-    pv.clear_cache()
-    rendered, _ = ai_prompt_registry.render(db, KEY, current_date="TODAY", override_version_id=row.id)
-    live = specification_lines(db)
-    # (a) the block is the live registry's, exactly as `specification_lines` renders it now
-    assert "\n".join(live) in rendered, rendered[-1500:]
-    # (b) a word seeded into the registry reaches the render; the static block's stale line
-    # (one the live registry does not produce) does not
-    assert "zztgrabrail" in rendered, rendered[-1500:]
-    stale = [ln for ln in STATIC_SPEC_BLOCK.splitlines() if ln not in live]
-    assert stale and not [ln for ln in stale if ln in rendered.splitlines()], stale
-
-
-def test_a7_publishing_twice_publishes_nothing_the_second_time(session_factory):
-    from app.services import chatbot_prompt_vars as pv
-
-    db = session_factory()
-    _seed_registry(db)
-    _publish_source(db)
-    assert pv.publish_specs_block(db, from_version=52) == 53
-    assert pv.publish_specs_block(db, from_version=52) is None
 
 
 # --------------------------------------------------------------------------- #

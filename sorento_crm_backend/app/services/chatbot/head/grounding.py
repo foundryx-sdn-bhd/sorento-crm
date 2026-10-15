@@ -520,18 +520,22 @@ def _names_a_type(db: "Session", text: str, vocab: Vocabulary) -> bool:
 
 def names_a_class_label(db: "Session", raw: str) -> bool:
     """Is `raw`, word for word, the name of a class (a class label staff or products carry, or
-    a class the registry's `class` row names), never one of its synonyms?"""
+    a class the seed names), never one of its synonyms?"""
     said = " ".join(_words(raw))
     return any(" ".join(_words(label)) == said for label in class_label_names(db))
 
 
 def class_label_names(db: "Session") -> list[str]:
-    """Every class name: the registry's `class` row's, the ones products carry, and staff's."""
+    """Every class name: the seed's class choices, the ones products carry, and staff's.
+
+    The seed's labels, not the registry row's: this list is printed on the parser's own
+    `Product types:` line (`turn_runtime.product_type_names`), and chat fix PR-A changes no
+    parser input (crew round 2; the registry-read version rides PR-A2)."""
     from app.models.product import ProductCategory
     from app.services.product_class_signal import stored_class_labels
-    from app.services.product_spec_registry import class_synonyms
+    from app.services.product_spec_registry import shipped_class_synonyms
 
-    labels = [*class_synonyms(db), *stored_class_labels(db)]
+    labels = [*shipped_class_synonyms(), *stored_class_labels(db)]
     labels += [r[0] for r in db.query(ProductCategory.class_label).filter(ProductCategory.class_label.isnot(None))]
     return labels
 

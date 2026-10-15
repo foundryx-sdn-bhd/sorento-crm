@@ -1,4 +1,5 @@
-"""Chat fix PR-A red tests (AC-A1..A5, A8, A9): spec matching comes from the registry's data.
+"""Chat fix PR-A red tests (AC-A3..A5, A8, A9): spec matching comes from the registry's data.
+(AC-A1/A2, the parser's rendered spec vocabulary, moved to PR-A2 with the render: crew round 2.)
 
 Plan documentation/plans/chatbot/PLAN-chat-fix-spec-16oct.md, UAC chat-fix-spec-acceptance-criteria.md.
 No live LLM call: the parser is stubbed by handing the search the entities it would emit.
@@ -14,7 +15,6 @@ import pytest
 from app.models.product import Product, ProductCategory, UnitOfMeasure
 from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
 from app.services import chatbot_prompt_vars
-from app.services.chatbot_parser_prompt import specification_lines
 from app.services.product_class_signal import ClassVocabulary, backfill_category_signals
 from app.services.product_predicate_service import resolve_product_set
 from app.services.product_spec_derivation import derive_for_code
@@ -69,56 +69,6 @@ def _codes(result) -> set[str]:
 
 def _registry(db, key) -> ProductSpecRegistry:
     return db.query(ProductSpecRegistry).filter_by(spec_key=key).one()
-
-
-# --------------------------------------------------------------------------- #
-# AC-A1 / AC-A2: the parser's spec vocabulary is rendered from the registry
-# --------------------------------------------------------------------------- #
-def _teach_registry(db):
-    product_type = _registry(db, "product_type")
-    product_type.user_values = [*(product_type.user_values or []), "grab_bar"]
-    product_type.user_synonyms = {**(product_type.user_synonyms or {}), "grab_bar": ["grab bar", "handrail", "safety bar"]}
-    klass = _registry(db, "class")
-    klass.user_values = [*(klass.user_values or []), "Jacuzzi"]
-    klass.user_synonyms = {
-        **(klass.user_synonyms or {}),
-        "Jacuzzi": ["bathtub with massage jets", "whirlpool", "spa bath", "按摩浴缸"],
-    }
-    db.flush()
-
-
-def test_a2_specification_block_lists_product_type_synonyms(db):
-    _teach_registry(db)
-    text = "\n".join(specification_lines(db))
-    line = next((ln for ln in text.splitlines() if "Grab bar" in ln), "")
-    for word in ("grab bar", "handrail", "safety bar"):
-        assert word in line, f"product type synonym {word!r} missing from the specs block:\n{text[-1500:]}"
-
-
-def test_a2_specification_block_lists_class_meanings(db):
-    _teach_registry(db)
-    text = "\n".join(specification_lines(db))
-    line = next((ln for ln in text.splitlines() if "Jacuzzi" in ln), "")
-    for word in ("bathtub with massage jets", "whirlpool", "spa bath", "按摩浴缸"):
-        assert word in line, f"class meaning {word!r} missing from the specs block:\n{text[-1500:]}"
-
-
-def test_a2_the_specs_variable_renders_the_same_vocabulary(db):
-    _teach_registry(db)
-    rendered = chatbot_prompt_vars.render_value(db, "specs")
-    assert "handrail" in rendered and "whirlpool" in rendered, rendered[-1500:]
-
-
-def test_a1_a_registry_synonym_edit_shows_in_the_next_render_with_no_new_version(db):
-    _teach_registry(db)
-    before = chatbot_prompt_vars.render_value(db, "specs")
-    assert "zztgrabrail" not in before
-    product_type = _registry(db, "product_type")
-    product_type.user_synonyms = {**product_type.user_synonyms, "grab_bar": [*product_type.user_synonyms["grab_bar"], "zztgrabrail"]}
-    db.flush()
-    chatbot_prompt_vars.clear_cache()
-    after = chatbot_prompt_vars.render_value(db, "specs")
-    assert "zztgrabrail" in after, "an edited registry synonym must reach the next render"
 
 
 # --------------------------------------------------------------------------- #
