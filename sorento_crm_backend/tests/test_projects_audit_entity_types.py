@@ -89,6 +89,10 @@ BORN_AFTER_THE_MOVE = frozenset({
     # PLAN-oi-request-cs-reserve.md section 6c, migration oirs_0002_reserve_round2: born
     # straight into `projects` the same way.
     "order_inquiry_reserve_events",
+    # PLAN-stock-debt-snapshot-15oct.md, migration sds_0001_stock_debt_snapshots (#1705):
+    # born straight into `projects` the same way.
+    "stock_debt_snapshots",
+    "stock_debt_snapshot_rows",
 })
 
 
@@ -153,6 +157,11 @@ def test_a_model_born_after_the_move_keeps_the_prefix_convention_it_was_born_wit
         _audit_entity_type(OrderInquiryReserveEvent)
         == "project_order_inquiry_reserve_events"
     )
+    # PLAN-stock-debt-snapshot-15oct.md: the same convention, pinned at birth.
+    from app.models.stock_debt_snapshot import StockDebtSnapshot, StockDebtSnapshotRow
+
+    assert _audit_entity_type(StockDebtSnapshot) == "project_stock_debt_snapshots"
+    assert _audit_entity_type(StockDebtSnapshotRow) == "project_stock_debt_snapshot_rows"
 
 
 def test_every_renamed_model_pins_its_pre_move_audit_entity_type():
