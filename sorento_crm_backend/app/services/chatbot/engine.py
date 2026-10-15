@@ -4263,8 +4263,12 @@ def _pv2_scrub_ids(result: TurnResult, media_box: dict[str, Any], session_factor
     rewritten = _rewritten_texts(result, lambda text: pv2_register.scrub_ids(text, labels))
     if rewritten is None:
         return
-    with _session(session_factory) as db:
-        _keep_sent_texts(db, result, *rewritten)
+    result.reply, result.actions = rewritten  # what is sent is scrubbed, whatever the row write below does
+    try:
+        with _session(session_factory) as db:
+            _keep_sent_texts(db, result, *rewritten)
+    except Exception:  # noqa: BLE001 - the reply is already decided; the PV2 state must still be kept
+        logger.warning("pv2: the scrubbed reply could not be written back to the turn row", exc_info=True)
 
 
 def _pv2_write_register(media_box: dict[str, Any], envelopes: Any) -> None:
