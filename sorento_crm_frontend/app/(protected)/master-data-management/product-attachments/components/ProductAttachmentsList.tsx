@@ -24,6 +24,7 @@ import type { ProductAttachment } from '../types/productAttachment.types';
 import { useProductAttachments } from '../hooks/useProductAttachments';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { distinctName } from '@/lib/product-display';
 
 export default function ProductAttachmentsList() {
   const router = useRouter();
@@ -58,7 +59,8 @@ export default function ProductAttachmentsList() {
         accessorKey: 'product.product_name',
         header: ({ column }) => <DataGridColumnHeader title="Product Name" column={column} />,
         size: 250,
-        cell: ({ row }) => row.original.product?.product_name || '-',
+        cell: ({ row }) =>
+          distinctName(row.original.product?.product_code, row.original.product?.product_name) ?? '',
         meta: { headerTitle: 'Product Name', skeleton: <Skeleton className="h-4 w-32" /> },
       },
       {

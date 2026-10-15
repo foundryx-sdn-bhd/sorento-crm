@@ -1,6 +1,9 @@
 'use client';
 
 import * as React from 'react';
+import { getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import { DataGrid } from '@/components/ui/data-grid';
+import { DataGridPagination } from '@/components/ui/data-grid-pagination';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { getProductsForLineSelect } from '@/app/(protected)/master-data-management/products/services/productService';
@@ -15,6 +18,7 @@ import {
   useSeriesProductRows,
 } from '../../../_shared/hooks/useProjects';
 import type { SeriesProductRow } from '../../../_shared/types/project.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The client's sheet, as a table: what this series sells, for how much, and how far it may be
@@ -32,16 +36,38 @@ import type { SeriesProductRow } from '../../../_shared/types/project.types';
 /** Malaysia is the only market this system prices in, and a settings lookup for one value
  *  would be a configuration nobody ever changes standing between the reader and the number. */
 const CURRENCY = 'RM';
+/** The smallest page size the pager offers; a series that fits in it needs no pager. */
+const PAGER_MIN_ROWS = 25;
 
 export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
-  const rows = useSeriesProductRows(seriesId);
-  const { setPricing, remove } = useSeriesProductRowMutations(seriesId);
-  const { importCodes } = useSeriesProductMutations();
   const {
     value: searchInput,
     setValue: setSearchInput,
     debouncedValue: search,
   } = useDebouncedSearch();
+  const query = search.trim();
+  // The page belongs to the search it was chosen under: a new search reads as page 1 without
+  // an extra request for the old page number.
+  const [pager, setPager] = React.useState({ pageIndex: 0, pageSize: 50, query: '' });
+  const pagination = {
+    pageIndex: pager.query === query ? pager.pageIndex : 0,
+    pageSize: pager.pageSize,
+  };
+  const rows = useSeriesProductRows(seriesId, {
+    page: pagination.pageIndex + 1,
+    limit: pagination.pageSize,
+    query: query || undefined,
+  });
+  // The series can shrink under the page being read (rows removed elsewhere): step back to the
+  // last page that exists rather than sit on an empty one.
+  React.useEffect(() => {
+    if (!rows.data || rows.isPlaceholderData || rows.data.total === 0) return;
+    const last = Math.ceil(rows.data.total / pagination.pageSize) - 1;
+    if (pagination.pageIndex > last)
+      setPager((prev) => ({ ...prev, pageIndex: last, query }));
+  }, [rows.data, rows.isPlaceholderData, pagination.pageIndex, pagination.pageSize, query]);
+  const { setPricing, remove } = useSeriesProductRowMutations(seriesId);
+  const { importCodes } = useSeriesProductMutations();
 
   const fetchProducts = React.useCallback(async (query: string) => {
     const products = await getProductsForLineSelect(query || undefined);
@@ -70,8 +96,10 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
               }
             : undefined,
         // Picking the product answers the description too, so nobody retypes the catalogue.
-        onOptionSelected: (option, draft) => ({
-          ...draft,
+        // No `...draft`: the draft handed in is the render-time copy, so spreading it would put
+        // the old (empty) product_id back over the one this pick has just set.
+        onOptionSelected: (option) => ({
+          product_code: option?.label ?? '',
           product_name: option?.description ?? '',
         }),
       },
@@ -80,11 +108,14 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
         header: 'Description',
         width: 280,
         kind: 'derived',
-        derive: (draft) => (
-          <span className="block truncate" title={draft.product_name || ''}>
-            {draft.product_name || '-'}
-          </span>
-        ),
+        derive: (draft) => {
+          const name = distinctName(draft.product_code, draft.product_name);
+          return (
+            <span className="block truncate" title={name || ''}>
+              {name || '-'}
+            </span>
+          );
+        },
       },
       {
         key: 'selling_price',
@@ -129,6 +160,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
   const toDraft = React.useCallback(
     (row: SeriesProductRow): InlineDraft => ({
       product_id: row.product_id ?? '',
+      product_code: row.product_code ?? '',
       product_name: row.product_name ?? '',
       selling_price: row.selling_price ?? '',
       max_discount_pct: row.max_discount_pct ?? '',
@@ -140,6 +172,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
   const emptyDraft = React.useCallback(
     (): InlineDraft => ({
       product_id: '',
+      product_code: '',
       product_name: '',
       selling_price: '',
       max_discount_pct: '',
@@ -151,28 +184,29 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
   /** Blank cell -> null, which CLEARS. On this screen somebody emptied it deliberately. */
   const money = (value: string) => (value.trim() === '' ? null : value.trim());
 
-  const all = React.useMemo(() => rows.data ?? [], [rows.data]);
+  const visible = React.useMemo(() => rows.data?.data ?? [], [rows.data]);
+  const total = rows.data?.total ?? 0;
 
-  /**
-   * Filtered in the browser, over the whole set.
-   *
-   * The series is 92 products today and its ceiling is a sheet somebody types by hand, so
-   * a server round trip per keystroke would buy nothing and cost a spinner. Code AND name,
-   * because the admin arrives from their spreadsheet knowing one or the other.
-   *
-   * The browser's own Ctrl-F is not a substitute: it finds only what is scrolled into the
-   * DOM, so searching a long series for a code the table has not drawn yet answers 0/0 for
-   * a product that is plainly there.
-   */
-  const visible = React.useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return all;
-    return all.filter(
-      (row) =>
-        (row.product_code ?? '').toLowerCase().includes(needle) ||
-        (row.product_name ?? '').toLowerCase().includes(needle),
-    );
-  }, [all, search]);
+  // The whole series' size, for the "N of TOTAL" line while a search narrows the list.
+  const [seriesTotal, setSeriesTotal] = React.useState(0);
+  React.useEffect(() => {
+    if (!query && rows.data) setSeriesTotal(rows.data.total);
+  }, [query, rows.data]);
+
+  const table = useReactTable({
+    data: visible,
+    columns: [],
+    state: { pagination },
+    onPaginationChange: (updater) =>
+      setPager((prev) => {
+        const current = { pageIndex: prev.query === query ? prev.pageIndex : 0, pageSize: prev.pageSize };
+        const next = typeof updater === 'function' ? updater(current) : updater;
+        return { ...next, query };
+      }),
+    getCoreRowModel: getCoreRowModel(),
+    manualPagination: true,
+    pageCount: Math.ceil(total / pagination.pageSize) || 1,
+  });
 
   return (
     <div className="space-y-3">
@@ -180,14 +214,14 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
         <ListSearchInput
           value={searchInput}
           onChange={setSearchInput}
-          placeholder="Search products"
+          placeholder="Code or description"
           aria-label="Search products in this series"
           className="w-full sm:max-w-xs"
         />
         <p className="text-xs text-muted-foreground" role="status">
-          {search.trim()
-            ? `${visible.length} of ${all.length} products`
-            : `${all.length} ${all.length === 1 ? 'product' : 'products'}`}
+          {query
+            ? `${total} of ${seriesTotal} products`
+            : `${total} ${total === 1 ? 'product' : 'products'}`}
         </p>
       </div>
 
@@ -201,8 +235,8 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
         isLoading={rows.isLoading}
         addLabel="Add a product"
         emptyHint={
-          search.trim()
-            ? `No product here matches "${search.trim()}".`
+          query
+            ? `No product here matches "${query}".`
             : 'No products yet. Add one, or load the sheet above.'
         }
         describeRow={(row, index) => row?.product_code || `row ${index + 1}`}
@@ -223,12 +257,9 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
           // Two steps because nominating and pricing are two different writes: the first is
           // the S18 importer (which is also what the sheet upload calls), the second sets the
           // money. Doing it this way keeps ONE way for a product to join a series.
-          const product = await getProductsForLineSelect(undefined).then((options) =>
-            options.find((candidate) => candidate.id === draft.product_id),
-          );
           await importCodes.mutateAsync({
             id: seriesId,
-            body: { codes: [product?.product_code ?? draft.product_id], mode: 'append' },
+            body: { codes: [draft.product_code], mode: 'append' },
           });
           if (draft.selling_price || draft.max_discount_pct) {
             await setPricing.mutateAsync({
@@ -256,6 +287,18 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
           `Remove ${row.product_code ?? 'this product'} from the series? This action cannot be undone.`
         }
       />
+
+      {seriesTotal > PAGER_MIN_ROWS || total > PAGER_MIN_ROWS ? (
+        <DataGrid
+          table={table}
+          listingKey={null}
+          recordCount={total}
+          isLoading={rows.isLoading}
+          isPlaceholderData={rows.isPlaceholderData}
+        >
+          <DataGridPagination />
+        </DataGrid>
+      ) : null}
     </div>
   );
 }

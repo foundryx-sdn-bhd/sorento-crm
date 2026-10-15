@@ -1,25 +1,29 @@
-"""Seat cover <-> WC compatibility: the links and the one lookup.
+"""Accessory <-> host compatibility: the links and the lookups.
 
-A link (`product_compatibility`) says "seat cover X fits WC SKU Y", same company, one SKU
-to one SKU. Owner ruling 12 Oct: match only what the flyer prints, fabricate nothing. So
-there is no model-wide link and no inheritance: a WC SKU has a cover only when a link names
-it, and a WC SKU with no link has no answer.
+A link (`product_compatibility`) says "accessory X fits host SKU Y", same company, one SKU
+to one SKU, of one `kind`: a seat cover on a WC, a mirror on a cabinet, a shelf on a cabinet.
+The accessory is `seat_cover_product_id`, the host `wc_product_id` (columns not renamed).
+Owner ruling 12 Oct: match only what the flyer prints, fabricate nothing. So there is no
+model-wide link and no inheritance: a host SKU has an accessory only when a link names it.
 
 Two writers:
 
-* the one-off flyer script (source `flyer`): `scripts/oneoff/link_seat_cover_flyer.py`;
+* the one-off flyer scripts (source `flyer`): `scripts/oneoff/link_seat_cover_flyer.py` and
+  `link_mirror_shelf_flyer.py`;
 * a person on the product page's Compatible section, Variants tab (source `manual`), which
   is where the links are kept from then on.
 
 A `-SC` SKU (`SRTWC8383-SC`) is a seat cover, never a WC (owner ruling 12 Oct, Q2).
 
-Readers: `covers_for` / `wcs_for` (the later chatbot lane), `list_for_product` (the page).
-Plan: documentation/plans/products/PLAN-wc-seat-compat-12oct.md.
+Readers: `covers_for` / `wcs_for` (seat cover links only, the chatbot's fits filter),
+`accessories_for` / `hosts_for` (any kind), `list_for_product` (the page).
+Plans: documentation/plans/products/PLAN-wc-seat-compat-12oct.md,
+documentation/plans/products/PLAN-mirror-shelf-links-14oct.md.
 """
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Optional
+from typing import Iterable, NamedTuple, Optional
 
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -39,6 +43,29 @@ logger = logging.getLogger(__name__)
 SOURCE_FLYER = "flyer"
 SOURCE_MANUAL = "manual"
 
+KIND_SEAT_COVER = "seat_cover"
+KIND_MIRROR = "mirror"
+KIND_SHELF = "shelf"
+
+
+class Kind(NamedTuple):
+    accessory: str  # noun for the accessory end
+    host: str  # noun for the host end
+    #: The accessory's `product_type` spec value (`product_spec_registry.SPEC_REGISTRY_SEED`:
+    #: towel_shelf, mirror, toilet_seat).
+    product_type: str
+
+
+#: kind -> its nouns and accessory product_type; the dict order is the display order.
+KINDS = {
+    KIND_SEAT_COVER: Kind("seat cover", "WC", "toilet_seat"),
+    KIND_MIRROR: Kind("mirror", "cabinet", "mirror"),
+    KIND_SHELF: Kind("shelf", "cabinet", "towel_shelf"),
+}
+
+ROLE_ACCESSORY = "accessory"
+ROLE_HOST = "host"
+#: Legacy roles, seat cover links only.
 ROLE_SEAT_COVER = "seat_cover"
 ROLE_WC = "wc"
 
@@ -59,24 +86,38 @@ def is_spare_seat_cover(code: Optional[str]) -> bool:
 
 
 def covers_for(db: Session, wc_product_ids: Iterable[str]) -> dict[str, list[Product]]:
-    """``{wc_product_id: [seat cover Product]}``, the SKU's own links only, ordered by
-    code. A SKU with no link is absent. Company-scoped like every product read."""
-    return _linked(db, wc_product_ids, ProductCompatibility.wc_product_id, ProductCompatibility.seat_cover_product_id)
+    """``{wc_product_id: [seat cover Product]}``, the SKU's own seat cover links only,
+    ordered by code. A SKU with no link is absent. Company-scoped like every product read."""
+    return accessories_for(db, wc_product_ids, KIND_SEAT_COVER)
 
 
 def wcs_for(db: Session, seat_cover_product_ids: Iterable[str]) -> dict[str, list[Product]]:
-    """``{seat_cover_product_id: [WC Product]}``, ordered by code."""
-    return _linked(db, seat_cover_product_ids, ProductCompatibility.seat_cover_product_id, ProductCompatibility.wc_product_id)
+    """``{seat_cover_product_id: [WC Product]}``, seat cover links only, ordered by code."""
+    return hosts_for(db, seat_cover_product_ids, KIND_SEAT_COVER)
 
 
-def _linked(db: Session, ids: Iterable[str], key_col, other_col) -> dict[str, list[Product]]:
+def accessories_for(db: Session, host_ids: Iterable[str], kind: str) -> dict[str, list[Product]]:
+    """``{host_id: [accessory Product]}`` for one kind, ordered by code."""
+    return _linked(
+        db, host_ids, kind, ProductCompatibility.wc_product_id, ProductCompatibility.seat_cover_product_id
+    )
+
+
+def hosts_for(db: Session, accessory_ids: Iterable[str], kind: str) -> dict[str, list[Product]]:
+    """``{accessory_id: [host Product]}`` for one kind, ordered by code."""
+    return _linked(
+        db, accessory_ids, kind, ProductCompatibility.seat_cover_product_id, ProductCompatibility.wc_product_id
+    )
+
+
+def _linked(db: Session, ids: Iterable[str], kind: str, key_col, other_col) -> dict[str, list[Product]]:
     wanted = [str(i) for i in ids if i]
     if not wanted:
         return {}
     rows = (
         db.query(key_col, Product)
         .join(Product, Product.id == other_col)
-        .filter(key_col.in_(wanted))
+        .filter(key_col.in_(wanted), ProductCompatibility.kind == kind)
         .order_by(Product.product_code, Product.id)
         .all()
     )
@@ -104,40 +145,56 @@ def _row(link: ProductCompatibility, other: Product) -> dict:
         "product_name": other.product_name,
         "source": link.source,
         "is_discontinued": bool(other.is_discontinued),
+        "kind": link.kind,
     }
 
 
 def list_for_product(db: Session, product_id: str) -> dict:
-    """Both directions: the covers that fit this product (as a WC) and the WCs this
-    product fits (as a seat cover). A product is usually one or the other."""
+    """Both directions, every kind: `covers` are the accessories that fit this product (as
+    the host), `fits` the hosts this product fits (as an accessory). Ordered by kind, then
+    code."""
     product = _product_or_404(db, product_id)
-    covers = (
-        db.query(ProductCompatibility, Product)
-        .join(Product, Product.id == ProductCompatibility.seat_cover_product_id)
-        .filter(ProductCompatibility.wc_product_id == product.id)
-        .order_by(Product.product_code, Product.id)
-        .all()
-    )
-    fits = (
-        db.query(ProductCompatibility, Product)
-        .join(Product, Product.id == ProductCompatibility.wc_product_id)
-        .filter(ProductCompatibility.seat_cover_product_id == product.id)
-        .order_by(Product.product_code, Product.id)
-        .all()
-    )
-    return {
-        "covers": [_row(link, other) for link, other in covers],
-        "fits": [_row(link, other) for link, other in fits],
-    }
+    kind_order = list(KINDS)
+
+    def rows(host_side: bool) -> list[dict]:
+        mine, theirs = (
+            (ProductCompatibility.wc_product_id, ProductCompatibility.seat_cover_product_id)
+            if host_side
+            else (ProductCompatibility.seat_cover_product_id, ProductCompatibility.wc_product_id)
+        )
+        found = (
+            db.query(ProductCompatibility, Product)
+            .join(Product, Product.id == theirs)
+            .filter(mine == product.id)
+            .order_by(Product.product_code, Product.id)
+            .all()
+        )
+        found.sort(key=lambda pair: kind_order.index(pair[0].kind))
+        return [_row(link, other) for link, other in found]
+
+    return {"covers": rows(True), "fits": rows(False)}
 
 
 def add_manual(
-    db: Session, product_id: str, other_product_id: str, other_role: str, user_id: Optional[str]
+    db: Session,
+    product_id: str,
+    other_product_id: str,
+    other_role: str,
+    user_id: Optional[str],
+    kind: str = KIND_SEAT_COVER,
 ) -> dict:
     """Link this product to another, SKU to SKU. `other_role` names what the OTHER product
-    is: `seat_cover` (this page is the WC) or `wc` (this page is the seat cover)."""
-    if other_role not in (ROLE_SEAT_COVER, ROLE_WC):
-        raise handle_validation_error("Pick whether the other product is a seat cover or a WC.")
+    is: `accessory` or `host`. The legacy `seat_cover` (== accessory) and `wc` (== host)
+    only go with kind `seat_cover`."""
+    if kind not in KINDS:
+        raise handle_validation_error("Pick a link type: seat cover, mirror or shelf.")
+    if other_role in (ROLE_SEAT_COVER, ROLE_WC) and kind != KIND_SEAT_COVER:
+        raise handle_validation_error(f"The role {other_role} only fits seat cover links.")
+    if other_role not in (ROLE_ACCESSORY, ROLE_HOST, ROLE_SEAT_COVER, ROLE_WC):
+        nouns = KINDS[kind]
+        raise handle_validation_error(
+            f"Pick whether the other product is a {nouns.accessory} or a {nouns.host}."
+        )
     product = _product_or_404(db, product_id)
     if str(other_product_id) == str(product.id):
         raise handle_validation_error("A product cannot fit itself.")
@@ -148,29 +205,32 @@ def add_manual(
     )
     if other is None:
         raise handle_not_found("Product", other_product_id)
-    cover, wc = (other, product) if other_role == ROLE_SEAT_COVER else (product, other)
-    if is_spare_seat_cover(wc.product_code):
-        raise handle_validation_error(f"{wc.product_code} is a seat cover, not a WC.")
+    other_is_accessory = other_role in (ROLE_ACCESSORY, ROLE_SEAT_COVER)
+    accessory, host = (other, product) if other_is_accessory else (product, other)
+    if kind == KIND_SEAT_COVER and is_spare_seat_cover(host.product_code):
+        raise handle_validation_error(f"{host.product_code} is a seat cover, not a WC.")
     # Either orientation: the same two products linked the other way round would say the
-    # WC is a seat cover that fits the seat cover.
+    # host is an accessory that fits the accessory.
     exists = (
         db.query(ProductCompatibility.id)
         .filter(
+            ProductCompatibility.kind == kind,
             or_(
-                (ProductCompatibility.seat_cover_product_id == cover.id)
-                & (ProductCompatibility.wc_product_id == wc.id),
-                (ProductCompatibility.seat_cover_product_id == wc.id)
-                & (ProductCompatibility.wc_product_id == cover.id),
-            )
+                (ProductCompatibility.seat_cover_product_id == accessory.id)
+                & (ProductCompatibility.wc_product_id == host.id),
+                (ProductCompatibility.seat_cover_product_id == host.id)
+                & (ProductCompatibility.wc_product_id == accessory.id),
+            ),
         )
         .first()
     )
     if exists:
-        raise handle_conflict(f"{cover.product_code} is already linked to {wc.product_code}.")
+        raise handle_conflict(f"{accessory.product_code} is already linked to {host.product_code}.")
     link = ProductCompatibility(
         company_id=product.company_id,
-        seat_cover_product_id=cover.id,
-        wc_product_id=wc.id,
+        seat_cover_product_id=accessory.id,
+        wc_product_id=host.id,
+        kind=kind,
         source=SOURCE_MANUAL,
         created_by=user_id,
     )
@@ -180,7 +240,7 @@ def add_manual(
     except IntegrityError:
         # Two adds of the same pair racing: the unique pair index is the arbiter.
         db.rollback()
-        raise handle_conflict(f"{cover.product_code} is already linked to {wc.product_code}.")
+        raise handle_conflict(f"{accessory.product_code} is already linked to {host.product_code}.")
     db.refresh(link)
     return _row(link, other)
 

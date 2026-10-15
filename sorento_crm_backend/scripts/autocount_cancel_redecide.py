@@ -10,11 +10,11 @@ What: every Cancel SO / Cancel PO line of the company is matched again from what
 the same code the ingest runs (`rematch_lines`, which decides each line's whole group, then
 `recompute_cancelled`), in batches of `MAX_WAITING_LINES`. Consignment documents are stored only
 and are skipped. With `--apply`, each batch commits and then runs the ingest's own post-commit
-hooks (a line that became fully cancelled retires its OI rows; a partial cancel that moved a
-live line's planned qty raises the planning change). OI rows already retired stay retired.
-A hook that fails is logged (`ingest.cancel_oi_hook_failed` or
-`ingest.cancel_planning_change_failed`) and, as on the ingest, is not redone by a re-run: the
-line decision it followed is already committed, so a second run sees no change. Check the log
+hooks (a partial cancel that moved a live line's planned qty raises the planning change; a
+line that became fully cancelled stops at the SO, its OI rows untouched: CANCEL-STOP-AT-SO).
+A hook that fails is logged (`ingest.cancel_planning_change_failed`) and, as on the ingest,
+is not redone by a re-run: the line decision it followed is already committed, so a second
+run sees no change. Check the log
 after `--apply`.
 
 Dry run by default: counts only, never a row, and it ends with a rollback. Re-running after
@@ -116,8 +116,8 @@ def main() -> int:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     # What the API registers at startup and a script does not get for free (review should-fix
-    # 1): audit rows for the line writes, and the OI post-commit dispatch that sends the
-    # handover / changed-with-links notices the OI retire queues.
+    # 1): audit rows for the line writes, and the OI post-commit dispatch (kept wired for any
+    # notice a hook queues; a Cancel SO no longer retires OI rows, CANCEL-STOP-AT-SO).
     from app.services.audit_service import register_audit_listeners
     from app.services.project_order_inquiry_service import (
         register_order_inquiry_post_commit_dispatch,

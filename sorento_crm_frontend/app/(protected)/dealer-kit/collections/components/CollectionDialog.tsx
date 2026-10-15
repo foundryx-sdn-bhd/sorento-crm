@@ -29,6 +29,7 @@ import {
   updateCollection,
 } from '../../services/catalogueService';
 import type { CollectionSummary } from '@/lib/dealer-kit/types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * A collection, as a record you can open.
@@ -177,9 +178,11 @@ export function CollectionDialog({
                             className="flex items-center justify-between gap-2 px-3 py-1.5"
                           >
                             <span className="truncate font-mono text-xs">{tile.productCode}</span>
-                            <span className="truncate text-xs text-muted-foreground">
-                              {tile.productName}
-                            </span>
+                            {distinctName(tile.productCode, tile.productName) ? (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {tile.productName}
+                              </span>
+                            ) : null}
                           </li>
                         ))}
                       </ul>

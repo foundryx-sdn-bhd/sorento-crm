@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/common/SearchableSelect";
 import { searchProjectsForLink } from "../services/purchaseRequestService";
+import { RequestCustomerField } from "./RequestCustomerField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useReactTable, getCoreRowModel } from "@tanstack/react-table";
@@ -124,6 +125,7 @@ export default function PurchaseRequestForm({
       request_number: null,
       request_date: null,
       customer_name: null,
+      customer_id: null,
       pic: null,
       project_title: null,
       project_id: null,
@@ -422,6 +424,7 @@ export default function PurchaseRequestForm({
           ? new Date(request.request_date).toISOString().split("T")[0]
           : null,
         customer_name: request.customer_name ?? null,
+        customer_id: request.customer_id ?? null,
         pic: request.pic ?? null,
         project_title: request.project_title ?? null,
         project_id: request.project_id ?? null,
@@ -457,13 +460,14 @@ export default function PurchaseRequestForm({
     setFormInitialized(false);
   }, [requestId]);
 
-  const onSubmit = async (data: PurchaseRequestSchemaType) => {
-    try {
-      const formData: PurchaseRequestFormData = {
+  // The ONE body Save and Update & Reply both send, so neither can drop a field.
+  const buildFormData = (data: PurchaseRequestSchemaType): PurchaseRequestFormData => {
+    return {
         request_type: data.request_type,
         request_number: data.request_number ?? undefined,
         request_date: data.request_date || undefined,
         customer_name: data.customer_name || undefined,
+        customer_id: data.customer_id || null,
         // Empty string must become undefined, not "" - "not given" is one value.
         pic: data.pic || undefined,
         project_title: data.project_title || undefined,
@@ -516,6 +520,11 @@ export default function PurchaseRequestForm({
               p.total != null && p.total !== "" ? Number(p.total) : undefined,
           })),
       };
+  };
+
+  const onSubmit = async (data: PurchaseRequestSchemaType) => {
+    try {
+      const formData = buildFormData(data);
 
       if (isEditMode && requestId) {
         await updateMutation.mutateAsync({ id: requestId, data: formData });
@@ -618,23 +627,7 @@ export default function PurchaseRequestForm({
                     )}
                   />
                 )}
-                <FormField
-                  control={form.control}
-                  name="customer_name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Customer Name</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Customer name"
-                          {...field}
-                          value={field.value ?? ""}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <RequestCustomerField form={form} isSponsorship={isSponsorship} label="Customer Name" />
                 <FormField
                   control={form.control}
                   name="pic"
@@ -1153,41 +1146,7 @@ export default function PurchaseRequestForm({
                     await updateAndReplyMutation.mutateAsync({
                       id: requestId,
                       data: {
-                        formData: {
-                          request_type: values.request_type,
-                          request_number: values.request_number ?? undefined,
-                          request_date: values.request_date ?? undefined,
-                          customer_name: values.customer_name ?? undefined,
-                          project_title: values.project_title ?? undefined,
-                          purpose: values.purpose ?? undefined,
-                          expected_delivery_date:
-                            values.expected_delivery_date ?? undefined,
-                          expected_po_date:
-                            values.expected_po_date ?? undefined,
-                          expected_po_date_text:
-                            values.expected_po_date_text ?? undefined,
-                          requested_by: values.requested_by ?? undefined,
-                          requested_by_contact_id: values.requested_by_contact_id ?? null,
-                          requested_at: values.requested_at ?? undefined,
-                          products: (values.products ?? []).map((p) => ({
-                            item_code: p.item_code ?? undefined,
-                            quantity:
-                              typeof p.quantity === "number"
-                                ? p.quantity
-                                : p.quantity != null && p.quantity !== ""
-                                  ? Number(p.quantity)
-                                  : undefined,
-                            remark: p.remark ?? undefined,
-                            unit_price:
-                              p.unit_price != null && p.unit_price !== ""
-                                ? Number(p.unit_price)
-                                : undefined,
-                            total:
-                              p.total != null && p.total !== ""
-                                ? Number(p.total)
-                                : undefined,
-                          })),
-                        },
+                        formData: buildFormData(values),
                         reply_message: replyMessage.trim(),
                       },
                     });

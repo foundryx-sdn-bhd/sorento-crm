@@ -33,6 +33,7 @@ import type {
 } from '../services/flyerSpecProposalService';
 import { AddProposalRowDialog } from './AddProposalRowDialog';
 import { ProposalValueEditor, fromDraft, toDraft } from './ProposalValueEditor';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * One product's share of a flyer batch.
@@ -287,9 +288,11 @@ export function ProductProposalGroup({
               </Badge>
             )}
           </div>
-          <p className="min-w-0 break-words text-sm text-muted-foreground">
-            {group.product_name}
-          </p>
+          {distinctName(group.product_code, group.product_name) ? (
+            <p className="min-w-0 break-words text-sm text-muted-foreground">
+              {group.product_name}
+            </p>
+          ) : null}
           <p className="mt-0.5 text-xs text-muted-foreground">
             {printedOn(group.pages)}
           </p>

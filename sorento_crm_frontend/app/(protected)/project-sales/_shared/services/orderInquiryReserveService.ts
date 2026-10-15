@@ -19,6 +19,8 @@ export interface CreateReserveRequestRow {
 export interface CreateReserveRequestPayload {
   rows: CreateReserveRequestRow[];
   note?: string | null;
+  /** Save the request without mailing CS; sent later from Order inquiries > Actions. */
+  park?: boolean;
 }
 
 export interface OrderInquiryReserveRequestRow {
@@ -114,6 +116,8 @@ export interface CommitAmendRow {
 export interface CommitReservePayload {
   reserves: CommitReserveRow[];
   amendments: CommitAmendRow[];
+  /** Write the answers without mailing purchasing; sent later from Order inquiries > Actions. */
+  park_notice?: boolean;
 }
 
 /**
@@ -129,6 +133,7 @@ export async function commitOrderInquiryReserve(
   payload: CommitReservePayload,
 ): Promise<OrderInquiryReserveRequest[]> {
   const requestBody = {
+    park_notice: payload.park_notice ?? false,
     reserves: payload.reserves.map((row) => ({ ...row, qty_reserved: String(row.qty_reserved) })),
     amendments: payload.amendments.map((row) => ({
       ...row,
@@ -197,4 +202,96 @@ export async function getOrderInquiryReserveRequests(
     ...item,
     first_to_name: null,
   }));
+}
+
+// ------------------------------------------------ park / send all parked (OI-STAGED-NOTIFY)
+
+export type ReserveStatus = 'parked' | 'needs_reserve' | 'notice_parked' | 'reserved';
+
+export interface ReserveStatusSummary {
+  parked: number;
+  needs_reserve: number;
+  notice_parked: number;
+  reserved: number;
+  /** The caller's own parked items, counted in order inquiries. */
+  my_parked_requests: number;
+  my_parked_notices: number;
+}
+
+export interface ParkedPerson {
+  name: string;
+}
+
+export interface ParkedEmailPreview {
+  to: ParkedPerson;
+  cc: ParkedPerson[];
+  inquiry_count: number;
+  line_count: number;
+  subject: string;
+  body_html: string;
+}
+
+export interface ParkedUnresolved {
+  inquiry_count: number;
+  line_count: number;
+}
+
+export interface ParkedPreview {
+  emails: ParkedEmailPreview[];
+  inquiry_total?: number;
+  unresolved: ParkedUnresolved[];
+}
+
+export interface ParkedSendResult {
+  emails_sent: number;
+  items_sent: number;
+  unresolved: ParkedUnresolved[];
+}
+
+export interface ReserveNoticeRecipients {
+  to: ParkedPerson | null;
+  cc: ParkedPerson[];
+}
+
+export async function getReserveStatusSummary(): Promise<ReserveStatusSummary> {
+  const response = await apiFetch(`${BASE}/order-inquiries/reserve-status/summary`);
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Failed to load reserve status counts'));
+  return response.json();
+}
+
+async function postParked<T>(path: string, fallback: string): Promise<T> {
+  const response = await apiFetch(`${BASE}/order-inquiries/${path}`, { method: 'POST' });
+  if (!response.ok) throw new Error(await extractApiError(response, fallback));
+  return response.json();
+}
+
+export function previewParkedReserveRequests(): Promise<ParkedPreview> {
+  return postParked('reserve-requests/parked/preview', 'Failed to load the parked requests');
+}
+
+export function sendParkedReserveRequests(): Promise<ParkedSendResult> {
+  return postParked('reserve-requests/parked/send', 'Failed to send the parked requests');
+}
+
+export function previewParkedReserveNotices(): Promise<ParkedPreview> {
+  return postParked('reserve-notices/parked/preview', 'Failed to load the parked reserves');
+}
+
+export function sendParkedReserveNotices(): Promise<ParkedSendResult> {
+  return postParked('reserve-notices/parked/send', 'Failed to send the parked reserves');
+}
+
+/** Who the reserve confirmation's notice would go to (AC-SN-27). */
+export async function getReserveNoticeRecipients(
+  inquiryId: string,
+  rowIds?: string[],
+): Promise<ReserveNoticeRecipients> {
+  const search = rowIds && rowIds.length > 0 ? `?${new URLSearchParams({ row_ids: rowIds.join(',') })}` : '';
+  const response = await apiFetch(
+    `${BASE}/order-inquiries/${inquiryId}/reserve-notices/recipients${search}`,
+  );
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Failed to load the notice recipients'));
+  return response.json();
 }

@@ -8,6 +8,7 @@ pre-July open lines in AutoCount from `SQL-pre-july-open-so-lines-14oct.sql`.** 
 (migration column, ingest behaviour change, external ingest surface flag). PR #1633, branch
 `claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
 Owner card: `DO-HISTORY-card.md`.
+Section 0b.3 gate: lane DO-BACKFILL-CRM, PR #1687, small fix track, built.
 
 Paths: `be/` = `sorento_crm_backend/`. CRM citations are on `main` `64dfd86c`. Shared service (SS)
 citations come from crew's read of SS `main` `812dac2b`.
@@ -82,6 +83,13 @@ Q3 (the SO side): answered 14 Oct, section 0b.
    one row per SO and exports only the ticked rows of a page.
 3. **Pre-cutover relink gate** (Q4 (a), #1623's `_run_cancel_relink_hook`,
    `be/app/api/v1/external/ingest.py:384`): its own follow-up lane, before the SS backfill runs.
+   Built by lane DO-BACKFILL-CRM (PR #1687): a backfill batch (`"backfill": true`) skips the
+   relink hook entirely, and also queues no embedding work (AC-DH44..46).
+   Scope (review, 14 Oct): the gate covers the backfill batch only. A later plain SO push, an
+   hourly DO push naming the same SO, or a Cancel SO push still relinks that SO and reads the
+   backfilled DO qty, so the Q4 (a) wording above ("pre-cutover SO raises no planning change")
+   holds for the backfill itself, not for those later pushes. Trigger for a wider gate: the
+   first planning change or OI retire on a pre-cutover SO after the backfill.
 
 ## 1. Facts
 
@@ -213,10 +221,11 @@ Owner: backfill from 2023-09-01; an untracked DO dated before **2026-07-01** get
 ("they don't have delivered date, but status is delivered"). This overrides crew's earlier Q2
 answer (DocDate as the delivery date).
 
-- **Setting.** `do_assume_delivered_before` (`app/config.py`, env `DO_ASSUME_DELIVERED_BEFORE`).
-  It ships unset (off). For the backfill it is set to `2026-07-01`. `settings` is built once per
-  process, so setting or unsetting it means restarting every process that ingests DOs (both
-  backends, and the worker for the pull apply).
+- **Setting.** `do_assume_delivered_before`: Settings > Integrations > AutoCount, "Assume DOs
+  delivered before" (lane DO-BACKFILL-SETTING, `PLAN-do-backfill-setting-15oct.md`). It ships
+  unset (off). For the backfill it is set to `2026-07-01`. The ingest reads it once per batch, so
+  a save applies with no restart. Env `DO_ASSUME_DELIVERED_BEFORE` (`app/config.py`) is only the
+  fallback while nothing is saved.
 - **On create** of a DO with DocDate before the setting: status `delivered`, `tracking_assumed_at`
   = now. No delivery date, no `delivery_days`, no `kpi_warning`, no transporter.
 - **On adoption** of an Order Tracking row with DocDate before the setting and **no tracking**
@@ -288,12 +297,14 @@ Without the flag nothing changes.
 
 1. Done: crew finding K = no key from the API (1.3b); exact links stay as section 3.
 2. Merge and deploy CRM C1-C3 with `do_assume_delivered_before` unset. Merge SS S1 and S2.
-3. On the prod clone: set the CRM date (restart the backends and worker) and run S3 with `?dry_run=true` for both books. Post the
+3. On the prod clone: set the CRM date (Settings > Integrations > AutoCount) and run S3 with `?dry_run=true` for both books. Post the
    per-month counts (created / adopted / unchanged / failed / retryable; lines linked by key /
    unlinked) and re-run the section 1.1 queries.
 4. The owner approves the numbers.
-5. On prod: set the date (restart) and run S3 for real, off-hours MYT, Sorento then Mocha. Re-run
-   the queries, then unset the date (restart) so no later push assumes anything.
+5. On prod: set the date (Settings > Integrations > AutoCount) and run S3 for real, off-hours
+   MYT, Sorento then Mocha. Re-run the queries, then clear the date so no later push assumes
+   anything (this holds while prod env `DO_ASSUME_DELIVERED_BEFORE` is unset; a set env value is
+   the fallback a cleared date returns to).
 
 ## 8. Asks
 

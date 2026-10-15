@@ -44,6 +44,7 @@ import {
   orderInquiryHeadersPagerQuery,
   useAutoPlaceOrderInquiryRows,
   useCommitOrderInquiryReserve,
+  useReserveNoticeRecipients,
   useCreateOrderInquiryReserveRequest,
   useExportOrderInquiryXlsx,
   useOrderInquiryHandshake,
@@ -76,6 +77,7 @@ import type { CommitReservePayload } from '../../../_shared/services/orderInquir
 import { OrderInquiryLinesTab } from './OrderInquiryLinesTab';
 import { OrderInquiryGeneralTab } from './OrderInquiryGeneralTab';
 import { ReserveRequestDialog } from './ReserveRequestDialog';
+import { ReserveConfirmDialog, type ReserveConfirmLine } from './ReserveConfirmDialog';
 import { ReserveLineForm } from './ReserveLineForm';
 import { OrderInquiryLineHistoryDialog } from './OrderInquiryLineHistoryDialog';
 import type { StagedReserveEntry } from './orderInquiryHeaderLinesColumns';
@@ -106,6 +108,13 @@ function rowRemaining(row: OrderInquiryWorklistRow): number {
   );
 }
 
+/** OI-RESERVE-RECEIVED (AC-RR-5/40): what a request may ask for - the server's own
+ * `reserve_requestable_qty` (links on a fully received PO/SPO do not count against it);
+ * the plain remaining only for a payload that predates the field. */
+function rowRequestable(row: OrderInquiryWorklistRow): number {
+  return row.reserve_requestable_qty ?? rowRemaining(row);
+}
+
 /** AC-RS-23: why a selected row cannot be named on a "Request CS to reserve" ask - the
  * SAME rules the backend's own `create_request` enforces (3.2), read client-side off
  * the worklist row so the menu item can be gated and explained before the request is
@@ -119,11 +128,13 @@ function reserveIneligibleReason(row: OrderInquiryWorklistRow): string | null {
   if (!['ORDER', 'ORDER_BACK'].includes(row.verb)) {
     return `${item}: not an ORDER or ORDER BACK row`;
   }
-  if (!['raised', 'partly_linked'].includes(row.state)) {
+  if (!['raised', 'partly_linked', 'placed'].includes(row.state)) {
     return `${item}: not open for a reserve request`;
   }
-  if (rowRemaining(row) <= 0) {
-    return `${item}: has nothing left to request`;
+  if (rowRequestable(row) <= 0) {
+    return (row.links ?? []).some((link) => link.kind === 'po' || link.kind === 'spo')
+      ? `${item}: on a PO/SPO not received yet, nothing left to request`
+      : `${item}: has nothing left to request`;
   }
   if (row.reserve_state === 'requested') {
     return `${item}: already has an open reserve request`;
@@ -162,6 +173,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
   const [chooseDocumentOpen, setChooseDocumentOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reserveDialogOpen, setReserveDialogOpen] = useState(false);
+  const [reserveConfirmOpen, setReserveConfirmOpen] = useState(false);
   // Round 4 (`PLAN-oi-request-cs-reserve.md` 6e.2): CS's own staged (not yet
   // committed) decisions, keyed by OI row id - cleared on a successful commit or an
   // individual Undo. A page reload loses it by design (plan's own words: "a reload
@@ -313,7 +325,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
     () =>
       selectedLines.map((line) => {
         const own = reserveDialogResolved[line.id];
-        const remaining = rowRemaining(line);
+        const remaining = rowRequestable(line);
         return {
           id: line.id,
           item_code: line.item_code ?? null,
@@ -515,9 +527,37 @@ export function OrderInquiryDetail({ id }: { id: string }) {
   // staged line, whichever request it belongs to. The server resolves each row to its
   // open (reserve) or latest answered (amend) request row; the client names rows only.
   const stagedCount = Object.keys(stagedByRowId).length;
-  function commitStaged() {
+  const noticeRecipientsQuery = useReserveNoticeRecipients(
+    id,
+    reserveConfirmOpen,
+    Object.keys(stagedByRowId),
+  );
+
+  /** The staged lines as the confirmation prints them (AC-SN-41). */
+  const confirmLines: ReserveConfirmLine[] = Object.entries(stagedByRowId).map(([rowId, entry]) => {
+    const line = (linesQuery.data ?? []).find((candidate) => candidate.id === rowId);
+    const open = entry.kind === 'reserve' ? openRequestForRow(rowId) : null;
+    const answered = entry.kind === 'amend' ? answeredRequestRowFor(rowId) : null;
+    // A request that reaches into the received part releases it (AC-RR-43): the balance
+    // is then worked off requestable, not the plain remaining.
+    const reachesReceived =
+      entry.kind === 'reserve' && !!line && Number(open?.qtyRequested || '0') > rowRemaining(line);
+    const remaining = line ? (reachesReceived ? rowRequestable(line) : rowRemaining(line)) : 0;
+    const added = entry.kind === 'amend' ? entry.qty - Number(line?.reserved_qty || '0') : entry.qty;
+    return {
+      row_id: rowId,
+      item_code: line?.item_code ?? null,
+      qty_requested: open?.qtyRequested ?? answered?.qtyRequested ?? null,
+      qty_reserved: entry.qty,
+      balance: Math.max(0, remaining - added),
+      location: entry.kind === 'reserve' ? (entry.locationLabel ?? open?.location ?? null) : (answered?.location ?? null),
+      reason: entry.reason ?? null,
+    };
+  });
+
+  function commitStaged(parkNotice: boolean) {
     const entries = Object.entries(stagedByRowId);
-    if (entries.length === 0) return;
+    if (entries.length === 0) return Promise.resolve();
     const reserves: CommitReservePayload['reserves'] = [];
     const amendments: CommitReservePayload['amendments'] = [];
     let requesterName: string | null = null;
@@ -535,10 +575,20 @@ export function OrderInquiryDetail({ id }: { id: string }) {
         requesterName = requesterName ?? answeredRequestRowFor(rowId)?.requestedByName ?? null;
       }
     }
-    commitReserveMutation.mutate(
-      { payload: { reserves, amendments }, requesterName },
-      { onSuccess: () => setStagedByRowId({}) },
-    );
+    return commitReserveMutation
+      .mutateAsync({
+        payload: { reserves, amendments, park_notice: parkNotice },
+        requesterName,
+        noticeName: noticeRecipientsQuery.data?.to?.name ?? requesterName,
+      })
+      .then(() => {
+        setStagedByRowId({});
+        setReserveConfirmOpen(false);
+      })
+      .catch(() => {
+        // The mutation hook already toasted; the staged lines stay for a retry.
+        setReserveConfirmOpen(false);
+      });
   }
 
   // AC-RS-89: "Cancel request" moves into the Actions menu (deferred countdown, same
@@ -793,7 +843,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
                             </DropdownMenuItem>
                           </span>
                         </TooltipTrigger>
-                        <TooltipContent>{reserveDisabledReason}</TooltipContent>
+                        <TooltipContent className="max-w-xs break-words">{reserveDisabledReason}</TooltipContent>
                       </Tooltip>
                     )
                   ) : null}
@@ -847,7 +897,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
                       <Button
                         size="sm"
                         data-testid="reserve-cta"
-                        onClick={commitStaged}
+                        onClick={() => setReserveConfirmOpen(true)}
                         disabled={stagedCount === 0 || commitReserveMutation.isPending}
                       >
                         {stagedCount > 0 ? `Reserve (${stagedCount})` : 'Reserve'}
@@ -964,6 +1014,16 @@ export function OrderInquiryDetail({ id }: { id: string }) {
           }}
         />
       ) : null}
+
+      <ReserveConfirmDialog
+        open={reserveConfirmOpen}
+        onOpenChange={setReserveConfirmOpen}
+        inquiryNo={headerQuery.data?.inquiry_no ?? ''}
+        lines={confirmLines}
+        recipients={noticeRecipientsQuery.data}
+        onConfirm={commitStaged}
+        isPending={commitReserveMutation.isPending}
+      />
 
       {/* 6e.4 (S2): mounted only once the row's pool options have loaded, so the
           reserve-mode prefill never reads an empty availability map. */}

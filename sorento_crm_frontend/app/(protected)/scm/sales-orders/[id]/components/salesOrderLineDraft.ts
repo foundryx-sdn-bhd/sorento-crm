@@ -1,5 +1,6 @@
 import type { SearchableSelectOption } from '@/components/common/SearchableSelect';
 import type { SalesOrderLine } from '../../../types/scm.types';
+import { codeWithName } from '@/lib/product-display';
 
 /**
  * The line-edit draft, and the one rule that reads it from outside the component.
@@ -64,6 +65,6 @@ export function productFallbackFor(
   if (!row.sku || sku !== row.sku) return undefined;
   return {
     value: row.sku,
-    label: row.product_name ? `${row.sku} · ${row.product_name}` : row.sku,
+    label: codeWithName(row.sku, row.product_name, ' · '),
   };
 }

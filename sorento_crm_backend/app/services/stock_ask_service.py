@@ -22,6 +22,7 @@ from typing import Any, Iterable, Optional
 
 from sqlalchemy.orm import Session
 
+from app.utils.product_display import code_with_name
 from app.services.queue_service import enqueue_job
 from app.services.respond_messaging_service import send_text_or_template
 
@@ -471,7 +472,7 @@ def notify_salesman(db: Session, facts: dict[str, Any]) -> dict[str, Any]:
         ),
         "customer_name": customer.customer_name,
         "contact_name": _contact_label(dealer),
-        "product": f"{code} - {name}" if name and name != code else code,
+        "product": code_with_name(code, name),
         "quantity": str(facts.get("quantity")),
         "asked_at": asked_at_label(moment),
     }

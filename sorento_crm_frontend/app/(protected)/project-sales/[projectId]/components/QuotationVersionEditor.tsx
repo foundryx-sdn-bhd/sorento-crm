@@ -11,12 +11,19 @@ import { useUOMSelectQuery } from '@/app/(protected)/master-data-management/shar
 import { useBrandSelectQuery } from '@/app/(protected)/master-data-management/shared/hooks/use-brand-select-query';
 // The shared products `/select` mapper, keeping the fields a picked product decides.
 import { getProductsForLineSelect } from '@/app/(protected)/master-data-management/products/services/productService';
+import { getProductSetsForLineSelect } from '@/app/(protected)/master-data-management/product-sets/services/productSetService';
+import {
+  SET_OPTION_PREFIX,
+  isSetOption,
+} from '@/app/(protected)/scm/components/productOrSetPicker';
+import type { ProductSetLineRef } from '@/app/(protected)/master-data-management/product-sets/types/productSet.types';
 import type { ProductLineRef } from '@/app/(protected)/master-data-management/products/types/product.types';
 import {
   useQuotationLines,
   useQuotationRecomputeMutation,
   useQuotationVersions,
-  useSeriesProductRows,
+  useSeriesPricedRows,
+  useSeriesSetRows,
 } from '../../_shared/hooks/useProjects';
 import type {
   Project,
@@ -30,6 +37,7 @@ import { ReviseQuotationDialog } from './ReviseQuotationDialog';
 import { QuotationLinesGrid } from './QuotationLinesGrid';
 import { StockAtSelect, useQuotationStockGroup } from './QuotationStockChip';
 import {
+  completeSetText,
   lineErrors,
   serverToDraft,
   toBody,
@@ -102,8 +110,11 @@ export function QuotationVersionEditor({
   quotation,
   seriesId,
   edit,
+  locked = false,
 }: {
   project: Project;
+  /** The quotation is locked for approval: no per-scope revise is offered. */
+  locked?: boolean;
   /**
    * The scope. Null on the form page for a scope added there and not saved yet (#1341): it has no
    * version, so there is nothing to read, and its lines start empty and are staged like any other.
@@ -178,14 +189,36 @@ export function QuotationVersionEditor({
    */
   const productsById = React.useRef(new Map<string, ProductLineRef>());
 
+  /** The sets the picker has shown, by id: a never-saved set line is named after one. */
+  const setsById = React.useRef(new Map<string, ProductSetLineRef>());
+
   const fetchProducts = React.useCallback(async (query: string) => {
     const products = await getProductsForLineSelect(query || undefined);
     products.forEach((product) => productsById.current.set(product.id, product));
-    return products.map((product) => ({
-      value: product.id,
-      label: product.product_code,
-      description: product.product_name,
-    }));
+    // Sets and products in ONE list, sets first (a set code is almost never also a product
+    // code). Best-effort: a reader without the product-set permission still gets the products.
+    let setOptions: SearchableSelectOption[] = [];
+    try {
+      const sets = await getProductSetsForLineSelect({ query: query || undefined });
+      setOptions = sets.map((set) => {
+        setsById.current.set(set.id, set);
+        return {
+          value: `${SET_OPTION_PREFIX}${set.id}`,
+          label: set.set_code,
+          searchText: `${set.set_code} ${set.name}`,
+        };
+      });
+    } catch {
+      setOptions = [];
+    }
+    return [
+      ...setOptions,
+      ...products.map((product) => ({
+        value: product.id,
+        label: product.product_code,
+        description: product.product_name,
+      })),
+    ];
   }, []);
 
   /**
@@ -213,7 +246,7 @@ export function QuotationVersionEditor({
    * Only fetched when the scope is actually quoted from a series; most are not, and an
    * unconditional request would be a round trip for an answer of "nothing".
    */
-  const seriesRows = useSeriesProductRows(
+  const seriesRows = useSeriesPricedRows(
     (seriesId !== undefined ? seriesId : quotation?.series_id) ?? undefined,
   );
   const seriesPriceByProduct = React.useMemo(() => {
@@ -223,6 +256,41 @@ export function QuotationVersionEditor({
     });
     return map;
   }, [seriesRows.data]);
+
+  const setRows = useSeriesSetRows(
+    (seriesId !== undefined ? seriesId : quotation?.series_id) ?? undefined,
+  );
+  const seriesPriceBySet = React.useMemo(() => {
+    const map = new Map<string, string>();
+    (setRows.data ?? []).forEach((row) => {
+      if (row.selling_price) map.set(row.product_set_id, row.selling_price);
+    });
+    return map;
+  }, [setRows.data]);
+
+  /**
+   * What picking a SET decides for the rest of its line: the set name as the description, UOM
+   * SET, the set's resolved list price, the parts as the Complete set text, and the series' price for the
+   * set where it names one. The parts themselves are not shown on the line; the server freezes them when the line is saved.
+   */
+  const fillFromSet = React.useCallback(
+    async (setId: string): Promise<LineDraft> => {
+      const [set] = await getProductSetsForLineSelect({ ids: [setId] });
+      if (!set) return {};
+      const filled: LineDraft = {
+        description: set.name,
+        uom: 'SET',
+        list_price: set.list_price != null ? String(set.list_price) : '',
+        complete_set: completeSetText(set.parts),
+      };
+      // The grid applies the brand only to a line whose brand is blank.
+      if (set.brand_name) filled.brand_snapshot = set.brand_name;
+      const agreed = seriesPriceBySet.get(setId);
+      if (agreed) filled.unit_price = agreed;
+      return filled;
+    },
+    [seriesPriceBySet],
+  );
 
   const fillFromProduct = React.useCallback(
     (option: { value: string }): LineDraft => {
@@ -257,6 +325,17 @@ export function QuotationVersionEditor({
    */
   const resolveProduct = React.useCallback(
     (stored: QuotationLine | null, draft: LineDraft): SearchableSelectOption | undefined => {
+      const setId = draft.product_set_id;
+      if (setId && !draft.product_id) {
+        const picked = setsById.current.get(setId);
+        const storedSet = stored?.product_set_id === setId;
+        return {
+          value: `${SET_OPTION_PREFIX}${setId}`,
+          label: picked?.set_code ?? (storedSet ? (stored?.product_code ?? 'Selected set') : 'Selected set'),
+          description:
+            picked?.name ?? (storedSet ? (stored?.description ?? undefined) : undefined),
+        };
+      }
       const productId = draft.product_id;
       if (!productId) return undefined;
       const picked = productsById.current.get(productId);
@@ -282,7 +361,10 @@ export function QuotationVersionEditor({
 
   /** A product picked in this session, by id: what a never-saved line is named after. */
   const productCodeOf = React.useCallback(
-    (productId: string) => productsById.current.get(productId)?.product_code ?? null,
+    (productId: string) =>
+      (isSetOption(productId)
+        ? setsById.current.get(productId.slice(SET_OPTION_PREFIX.length))?.set_code
+        : productsById.current.get(productId)?.product_code) ?? null,
     [],
   );
 
@@ -406,7 +488,7 @@ export function QuotationVersionEditor({
               Withheld while an edit session is open on this scope. Recompute writes to the
               server, and the staged rows on screen would silently be answering for a state
               the database no longer holds. */}
-          {project.can_edit && editable && selected && (
+          {project.can_edit && editable && selected && !locked && (
             <Button
               type="button"
               size="sm"
@@ -433,7 +515,7 @@ export function QuotationVersionEditor({
           {/* Not on the form page: a revise writes a new version at once, under lines the form
               has staged against the current one and saves by scope. The quotation page's Edit
               quotation already asks to revise before it opens the form. */}
-          {project.can_edit && current && !edit && (
+          {project.can_edit && current && !edit && !locked && (
             <Button
               type="button"
               size="sm"
@@ -513,6 +595,7 @@ export function QuotationVersionEditor({
             ) : null
           }
           fillFromProduct={fillFromProduct}
+          fillFromSet={fillFromSet}
           uomOptions={uomOptions}
           uomError={uoms.error}
           onUomRetry={() => void uoms.refetch()}
@@ -612,7 +695,7 @@ function RecomputeSummary({
             {`${result.unresolved_products} ${
               result.unresolved_products === 1 ? 'line names a product' : 'lines name products'
             } this company's catalogue does not carry, so ${
-              result.unresolved_products === 1 ? 'it reads as a custom item' : 'they read as custom items'
+              result.unresolved_products === 1 ? 'it reads as non-standard' : 'they read as non-standard'
             }. Re-pick the product to clear it.`}
           </p>
         )}

@@ -614,6 +614,28 @@ describe('InlineLineTable', () => {
     expect(onUpdate).not.toHaveBeenCalled();
   });
 
+  it('D1: keeps the picked value when onOptionSelected spreads the whole draft back', async () => {
+    renderTable({
+      columns: columns().map((column) =>
+        column.key === 'code'
+          ? {
+              ...column,
+              onOptionSelected: (option, draft): InlineDraft => ({
+                ...draft,
+                description: `Sold in ${option?.label ?? ''}`,
+              }),
+            }
+          : column,
+      ),
+    });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Unit on pcs' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Sets' }));
+
+    await waitFor(() => expect(cell('Description on pcs')).toHaveValue('Sold in Sets'));
+    expect(screen.getByRole('combobox', { name: 'Unit on pcs' })).toHaveTextContent('Sets');
+  });
+
   it('lets a picked option overwrite what somebody typed, which is the client\'s rule', async () => {
     // The tradeoff was put to the client and chosen: one product means one set of fields, and
     // picking it twice gives the same row both times. An edit made before a re-pick is lost.

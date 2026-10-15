@@ -128,7 +128,7 @@ export function QuotationDialog({
                   .map((row) => ({
                     value: row.id,
                     label: row.name,
-                    description: row.brand_name ?? undefined,
+                    description: row.brand_names?.join(', ') || undefined,
                   }))}
                 placeholder="No series"
                 emptyMessage="No series configured yet"

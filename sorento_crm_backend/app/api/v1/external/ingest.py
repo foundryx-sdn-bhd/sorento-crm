@@ -391,8 +391,9 @@ def _run_document_hooks(
 def _run_cancel_relink_hook(db: Session, service, numbers, *, actor: Optional[str]) -> None:
     """AC-CANCEL-CRM: the orders this push wrote may be what a waiting Cancel SO / Cancel PO
     line names, or their quantities moved what a cancel caps at or how a key-less one is
-    decided. Re-match those lines, derive again, then retire the OI rows of any SO line that
-    became fully cancelled. Best effort, its own commit, like every hook here."""
+    decided. Re-match those lines, derive again, then run the cancel hooks (a partial cancel's
+    planning change; a full cancel stops at the SO, CANCEL-STOP-AT-SO). Best effort, its own
+    commit, like every hook here."""
     if not numbers:
         return
     from types import SimpleNamespace
@@ -868,10 +869,9 @@ def _log_backfill_batch(db: Session, current_user: dict, company_id: Optional[st
     trail. Written in the batch's own transaction, before its commit: a batch never lands
     without it.
 
-    The orders are queued for embedding in one insert, as the Order Tracking import does,
-    so the history reaches semantic search without one queue event per DO and line."""
+    Nothing is queued for embedding (DO-BACKFILL-CRM): about 1.2M events of OpenAI spend
+    for history nobody searches."""
     from app.services.audit_service import log_audit
-    from app.services.embedding_change_listener import bulk_enqueue_embedding_events
 
     written = [r for r in result.records
                if r.outcome in (IngestOutcome.CREATED, IngestOutcome.UPDATED) and r.entity_id]
@@ -900,8 +900,6 @@ def _log_backfill_batch(db: Session, current_user: dict, company_id: Optional[st
         company_id=company_id,
         description=f"AutoCount DO backfill ({book}), {len(records)} rows",
     )
-    bulk_enqueue_embedding_events(db, "order", [r.entity_id for r in written],
-                                  event_type="order.updated")
 
 
 def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, current_user: dict):
@@ -1134,7 +1132,10 @@ def ingest_masters(
             _run_consignment_order_hooks(db, service, actor=current_user.get("id"))
         if entity == GOODS_RECEIVE_NOTES_ENTITY:
             _run_grn_receipt_hook(db, service)
-        if entity in AUTOCOUNT_DOC_ENTITIES:
+        # DO-BACKFILL-CRM (plan section 0b.3, Q4 (a)): old DO quantities must not re-decide
+        # key-less Cancel SO groups, so a backfill batch starts no relink and none of its
+        # reactions (OI retirement, handover, purchasing email, planning change).
+        if entity in AUTOCOUNT_DOC_ENTITIES and not backfill:
             _run_cancel_relink_hook(
                 db, service, getattr(service, "order_numbers", set()), actor=current_user.get("id")
             )

@@ -1,7 +1,8 @@
 """Product categories API routes."""
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import Optional, List
+from typing import Annotated, Optional, List
+from pydantic import StringConstraints
 from app.database import get_db
 from app.dependencies import (
     require_any_permission_with_api_key,
@@ -123,10 +124,9 @@ async def get_categories(
 @router.get("/select", response_model=List[ProductCategorySelectItem])
 async def get_categories_select(
     query: Optional[str] = Query(None),
-    brand_id: Optional[str] = Query(
+    brand_id: Optional[List[Annotated[str, StringConstraints(pattern=UUID_PATTERN)]]] = Query(
         None,
-        pattern=UUID_PATTERN,
-        description="Only categories holding an active product of this brand, plus their ancestors.",
+        description="Repeatable. Only categories holding an active product of any of these brands, plus their ancestors.",
     ),
     # Any signed-in user (owner ruling 1 Oct 2026, never-stuck L10); an API key still
     # needs the slug. The list, detail and write routes keep their slugs.
@@ -143,7 +143,7 @@ async def get_categories_select(
             holding = {
                 row[0]
                 for row in db.query(Product.category_id)
-                .filter(Product.brand_id == brand_id, Product.is_active == True)
+                .filter(Product.brand_id.in_(brand_id), Product.is_active == True)
                 .filter(Product.category_id.isnot(None))
                 .distinct()
                 .all()

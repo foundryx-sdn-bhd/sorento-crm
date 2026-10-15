@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
+import { sameDisplayText } from '@/lib/product-display';
 
 export interface AsyncMultiComboboxProps<T> {
   value: string[];
@@ -234,7 +235,7 @@ export function AsyncMultiCombobox<T>({
                   onClick={() => !isSelected && commitSelection(opt)}
                 >
                   <div className="font-medium truncate">{label}</div>
-                  {meta && (
+                  {meta && !sameDisplayText(label, meta) && (
                     <div className="text-xs text-muted-foreground truncate">{meta}</div>
                   )}
                 </button>

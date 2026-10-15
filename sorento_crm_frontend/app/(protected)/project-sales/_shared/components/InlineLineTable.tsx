@@ -543,7 +543,9 @@ export function InlineLineTable<TRow>({
       if (!decide) return;
       const held = statesRef.current[rowKey];
       if (!held) return;
-      setDraftValues(rowKey, decide(option, held.draft));
+      // The picked column's own value is written last: the select calls onChange and then this,
+      // and a column returning `{...draft}` would otherwise restore the stale (pre-pick) id.
+      setDraftValues(rowKey, { ...decide(option, held.draft), [column.key]: option?.value ?? '' });
     },
     [setDraftValues],
   );

@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from app.services.uuid_path_param import UUID_PATTERN
+
 # A pure, dependency-free lookup table (no DB, no network), so a schema importing it introduces
 # no cycle. It lives in services because the PDF renderer needs the same answer.
 from app.services import geo_places
@@ -843,12 +845,14 @@ class CustomerPortfolioResponse(BaseModel):
 
 class ProjectSeriesBase(BaseModel):
     name: str = Field(min_length=1, max_length=150)
-    brand_id: Optional[str] = None
     description: Optional[str] = None
     is_active: bool = True
 
 
 class ProjectSeriesCreate(ProjectSeriesBase):
+    brand_ids: List[str] = Field(
+        default_factory=list, description="Picked brands. Empty means every brand."
+    )
     category_ids: List[str] = Field(
         default_factory=list,
         description=(
@@ -860,7 +864,9 @@ class ProjectSeriesCreate(ProjectSeriesBase):
 
 class ProjectSeriesUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=150)
-    brand_id: Optional[str] = None
+    brand_ids: Optional[List[str]] = Field(
+        None, description="Sent WHOLE, not as a delta."
+    )
     description: Optional[str] = None
     is_active: Optional[bool] = None
     category_ids: Optional[List[str]] = Field(
@@ -872,7 +878,8 @@ class ProjectSeriesResponse(ProjectSeriesBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    brand_name: Optional[str] = None
+    brand_ids: List[str] = Field(default_factory=list)
+    brand_names: List[str] = Field(default_factory=list)
     category_ids: List[str] = Field(default_factory=list)
     category_names: List[str] = Field(default_factory=list)
     covered_category_count: int = Field(
@@ -991,6 +998,20 @@ class SeriesProductRowResponse(BaseModel):
     derived_floor: Optional[Decimal] = None
     #: True when the product is of the series' brand and under one of its categories.
     in_scope: bool = False
+
+
+class SeriesSetRowResponse(BaseModel):
+    """One product SET priced on a series (SET-QUOTE-LINE), the twin of the product row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    product_set_id: str
+    set_code: Optional[str] = None
+    set_name: Optional[str] = None
+    part_codes: List[str] = Field(default_factory=list)
+    selling_price: Optional[Decimal] = None
+    max_discount_pct: Optional[Decimal] = None
+    derived_floor: Optional[Decimal] = None
 
 
 class SeriesProductPricingUpdate(BaseModel):
@@ -1191,8 +1212,14 @@ class ProjectQuotationLineBase(BaseModel):
     product_id: Optional[str] = Field(
         None, description="Null for an off-catalog line, which always raises the alert."
     )
+    product_set_id: Optional[str] = Field(
+        None,
+        pattern=UUID_PATTERN,
+        description="A product set quoted as ONE line. Never together with product_id (422).",
+    )
     description_snapshot: Optional[str] = Field(
-        None, description="Required when there is no product: it is what the customer reads."
+        None,
+        description="Required when there is no product or set: it is what the customer reads.",
     )
     unit_price: Decimal = Decimal("0")
     quantity: Decimal = Decimal("1")
@@ -1247,6 +1274,7 @@ class ProjectQuotationLineCreate(ProjectQuotationLineBase):
 
 class ProjectQuotationLineUpdate(BaseModel):
     product_id: Optional[str] = None
+    product_set_id: Optional[str] = Field(None, pattern=UUID_PATTERN)
     description_snapshot: Optional[str] = None
     unit_price: Optional[Decimal] = None
     quantity: Optional[Decimal] = None
@@ -1366,6 +1394,10 @@ class ProjectQuotationLineResponse(BaseModel):
     id: str
     version_id: str
     product_id: Optional[str] = None
+    product_set_id: Optional[str] = None
+    #: The parts frozen on a set line ({product_id, product_code, description, quantity,
+    #: is_driver}); empty for a product line.
+    set_parts: List[Dict[str, Any]] = Field(default_factory=list)
     product_code: Optional[str] = None
     description: Optional[str] = None
     list_price: Optional[Decimal] = None
@@ -1974,7 +2006,14 @@ class QuotationRejectRequest(BaseModel):
     something (which is the service's answer, because only it knows a stripped string is empty).
     """
 
-    reason: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class QuotationReviseRequest(BaseModel):
+    """Reopening a pending or approved quotation. The reason is checked by the service, which
+    answers a blank one with a code the screen can render."""
+
+    reason: Optional[str] = Field(default=None, max_length=1000)
 
 
 # ------------------------------------------------ cover letter and terms templates

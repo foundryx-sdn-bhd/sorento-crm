@@ -435,7 +435,7 @@ export function QuotationFormClient({
     <div className="space-y-6">
       <PageHeader
         title={title}
-        crumbs={projectCrumbs(projectId, { title })}
+        crumbs={projectCrumbs(projectId, { tab: 'quotations' }, { title })}
         actions={
           <>
             <Button

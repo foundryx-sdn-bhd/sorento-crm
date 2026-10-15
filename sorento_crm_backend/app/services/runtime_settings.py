@@ -20,6 +20,7 @@ import logging
 import threading
 import time
 import uuid
+from datetime import date
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -40,6 +41,7 @@ FIELDS: tuple[str, ...] = (
     "connector_ss_callback_url",
     "analytics_ro_database_url",
     "respond_webhook_secret",
+    "do_assume_delivered_before",
 )
 SECRET_FIELDS: frozenset[str] = frozenset({
     "connector_ss_to_product_secret",
@@ -48,6 +50,8 @@ SECRET_FIELDS: frozenset[str] = frozenset({
     "respond_webhook_secret",
 })
 BOOL_FIELDS: frozenset[str] = frozenset({"chat_topic_labeller_enabled"})
+# A `date` from ``get``; ISO text (YYYY-MM-DD) in ``describe``, ``update`` and the audit row.
+DATE_FIELDS: frozenset[str] = frozenset({"do_assume_delivered_before"})
 
 AUDIT_EVENT = "RUNTIME_SETTINGS"
 
@@ -167,6 +171,10 @@ def get(name: str, db: Optional[Session] = None) -> Any:
     return get_many((name,), db)[name]
 
 
+def _text(value: Any) -> Any:
+    return value.isoformat() if isinstance(value, date) else value
+
+
 def _mask(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
@@ -183,7 +191,7 @@ def describe(db: Session) -> dict[str, dict[str, Any]]:
         out[name] = {
             "source": source,
             "secret": secret,
-            "value": None if secret else value,
+            "value": None if secret else _text(value),
             "masked": _mask(value) if secret else None,
             "unreadable": unreadable,
         }
@@ -195,7 +203,11 @@ def _normalise(name: str, value: Any) -> Any:
         return None if value is None else bool(value)
     if value is None:
         return None
+    if name in DATE_FIELDS and isinstance(value, date):
+        return value
     value = str(value).strip()
+    if name in DATE_FIELDS:
+        return date.fromisoformat(value) if value else None
     return value or None
 
 
@@ -245,7 +257,7 @@ def update(db: Session, payload: dict[str, Any], actor_user_id: Optional[str]) -
                 if old == new:
                     continue
                 setattr(row, column, new)
-                changes[name] = {"old": old, "new": new}
+                changes[name] = {"old": _text(old), "new": _text(new)}
 
         changed = list(changes) + secrets_set + secrets_cleared
         if changed:

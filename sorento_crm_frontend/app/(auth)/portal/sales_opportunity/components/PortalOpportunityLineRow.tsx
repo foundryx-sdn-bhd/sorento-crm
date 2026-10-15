@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { formatCurrency } from '@/lib/helpers';
 import { getPortalProductOptions, type PortalProductOption } from '../../lib/sales-opportunity-service';
+import { codeWithName } from '@/lib/product-display';
 
 export interface LineDraft {
   key: string;
@@ -56,7 +57,7 @@ async function fetchProductOptions(q: string): Promise<ProductSelectOption[]> {
   const items = await getPortalProductOptions(q);
   return items.map((item: PortalProductOption) => ({
     value: item.id,
-    label: `${item.code} - ${item.name ?? ''}`,
+    label: codeWithName(item.code, item.name),
     listPrice: item.listPrice,
   }));
 }

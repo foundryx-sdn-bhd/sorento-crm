@@ -17,6 +17,7 @@ import {
   safetyStockSummary,
 } from '../lib/labels';
 import type { ReorderPolicyRow, ResolutionChainLink } from '../types/policy.types';
+import { distinctName } from '@/lib/product-display';
 
 const REASON_LABEL: Record<ResolutionChainLink['reason'], string> = {
   'most-specific-active': 'Active policy',
@@ -191,7 +192,9 @@ export function ResolutionPreviewCard() {
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-medium">{result.product.product_code}</span>
-              <span className="text-muted-foreground">{result.product.product_name}</span>
+              {distinctName(result.product.product_code, result.product.product_name) ? (
+                <span className="text-muted-foreground">{result.product.product_name}</span>
+              ) : null}
               {result.abc_xyz_cell ? (
                 <Badge variant="warning" appearance="light" size="sm">
                   {result.abc_xyz_cell.replace('-', '·')}

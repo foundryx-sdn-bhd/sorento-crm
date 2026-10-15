@@ -20,6 +20,7 @@ import { useHasPermission } from '@/hooks/usePermissions';
 import CustomerLinkedContactsSection from './CustomerLinkedContactsSection';
 import CustomerOpportunitiesSection from './CustomerOpportunitiesSection';
 import CustomerGroupLedgersCard from './CustomerGroupLedgersCard';
+import { DEBTOR_TYPE_OPTIONS } from '../types/customer.types';
 
 export type CustomerTab = 'details' | 'branches' | 'asks';
 
@@ -155,6 +156,12 @@ export default function CustomerDetail({ customerId }: CustomerDetailProps) {
                   <p className="text-sm text-muted-foreground">Account level</p>
                   <p className="font-medium">
                     {customer.account_level ? `Account ${customer.account_level}` : 'No account level set'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Debtor type</p>
+                  <p className="font-medium">
+                    {DEBTOR_TYPE_OPTIONS.find((o) => o.value === customer.debtor_type)?.label ?? '-'}
                   </p>
                 </div>
                 <div>

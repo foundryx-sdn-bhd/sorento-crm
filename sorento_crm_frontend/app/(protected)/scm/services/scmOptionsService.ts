@@ -21,6 +21,7 @@
 import { apiFetch } from '@/lib/api';
 import { extractApiError } from '@/lib/api-client';
 import { EMPTY_SCM_FILTERS, getSuppliers, getWarehouseHealth } from './scmDashboardService';
+import { codeWithName } from '@/lib/product-display';
 
 export interface Option {
   value: string;
@@ -170,7 +171,7 @@ export async function searchProductOptions(
   };
   return body.data.map((p) => ({
     value: p.product_code,
-    label: `${p.product_code} · ${p.product_name}`,
+    label: codeWithName(p.product_code, p.product_name, ' · '),
     searchText: `${p.product_code} ${p.product_name}`,
   }));
 }
@@ -183,7 +184,7 @@ export async function getProductOptions(): Promise<Option[]> {
   };
   return body.data.map((p) => ({
     value: p.product_code,
-    label: `${p.product_code} · ${p.product_name}`,
+    label: codeWithName(p.product_code, p.product_name, ' · '),
   }));
 }
 

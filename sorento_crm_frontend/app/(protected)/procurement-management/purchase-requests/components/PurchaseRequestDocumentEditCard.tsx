@@ -27,6 +27,7 @@ import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import type { PurchaseRequestSchemaType } from '../forms/purchase-request-schema';
 import type { PurchaseRequest } from '../types/purchaseRequest.types';
+import { RequestCustomerField } from './RequestCustomerField';
 import { PurchaseRequestSignoffFooter } from './PurchaseRequestSignoffFooter';
 import { purchaseRequestNumberFieldLabel } from '../lib/purchase-request-field-labels';
 
@@ -393,18 +394,7 @@ export function PurchaseRequestDocumentEditCard({
             </DocField>
 
             <DocField label="Customer Name" className="sm:col-span-2">
-              <FormField
-                control={control}
-                name="customer_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Input placeholder="Customer name" {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <RequestCustomerField form={form} isSponsorship={isSponsorship} />
             </DocField>
 
             <DocField label="PIC" className="sm:col-span-2">
@@ -476,6 +466,41 @@ export function PurchaseRequestDocumentEditCard({
                           placeholder="e.g. Showroom, Mock up, Others"
                           {...field}
                           value={field.value ?? ''}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </DocField>
+            )}
+
+            {!isSponsorship && (
+              <DocField label="Sales Type" className="sm:col-span-2">
+                <FormField
+                  control={control}
+                  name="sales_type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <LookupBoundField
+                          table="purchase_requests"
+                          column="sales_type"
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Select sales type"
+                          renderFallback={() => (
+                            <SearchableSelect
+                              key={field.value || 'empty'}
+                              onChange={field.onChange}
+                              value={field.value || ''}
+                              placeholder="Select sales type"
+                              options={[
+                                { value: 'project', label: 'Project' },
+                                { value: 'cash_sales', label: 'Cash Sales' },
+                              ]}
+                            />
+                          )}
                         />
                       </FormControl>
                       <FormMessage />

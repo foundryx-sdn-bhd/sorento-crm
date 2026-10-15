@@ -43,6 +43,7 @@ import type {
   SupplierChoice,
 } from '../types/reorder.types';
 import { ReorderExplanationDialog } from './ReorderExplanationDialog';
+import { distinctName } from '@/lib/product-display';
 
 /** Plain-language header tooltips - spell out every metric for a novice. Keyboard-
  *  accessible (the trigger is focusable) and reused as the aria-label. */
@@ -318,9 +319,11 @@ export function ReorderResultsGrid({
         cell: ({ row }) => (
           <div className="flex min-w-0 flex-col">
             <span className="font-medium">{row.original.sku}</span>
-            <span className="truncate text-xs text-muted-foreground" title={row.original.product_name}>
-              {row.original.product_name}
-            </span>
+            {distinctName(row.original.sku, row.original.product_name) ? (
+              <span className="truncate text-xs text-muted-foreground" title={row.original.product_name}>
+                {row.original.product_name}
+              </span>
+            ) : null}
           </div>
         ),
         size: 220,

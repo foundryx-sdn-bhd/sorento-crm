@@ -206,6 +206,8 @@ export type DataGridListToolbarProps<TData extends object> = {
   primaryAction?: ReactNode | ((api: { openExport: () => void }) => ReactNode);
   /** Secondary actions (Import, attachment links, templates). Overflow `▾` at >=2 (D7). */
   secondaryActions?: ToolbarAction[];
+  /** Keep even ONE secondary action inside the Actions menu (never a top-bar button). */
+  secondaryActionsAsMenu?: boolean;
   /** Bulk actions shown in the bulk strip when rows are selected (H). */
   bulkActions?: ToolbarAction[];
   /**
@@ -283,6 +285,7 @@ export function DataGridListToolbar<TData extends object>({
   showExport = true,
   primaryAction,
   secondaryActions = [],
+  secondaryActionsAsMenu = false,
   bulkActions = [],
   bulkActionsSlot,
   selectAllMatching,
@@ -553,9 +556,9 @@ export function DataGridListToolbar<TData extends object>({
 
           {/* RIGHT cluster - secondary overflow + primary CTA (always present). */}
           <div className={cn('flex flex-wrap items-center gap-2', alignActionsEnd && 'ms-auto justify-end')}>
-            {secondaryActions.length === 1 ? (
+            {secondaryActions.length === 1 && !secondaryActionsAsMenu ? (
               <ActionButton action={secondaryActions[0]} />
-            ) : secondaryActions.length >= 2 ? (
+            ) : secondaryActions.length >= 1 ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1.5">

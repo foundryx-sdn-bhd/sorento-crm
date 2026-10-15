@@ -611,7 +611,9 @@ def test_every_company_id_table_is_registered():
     #   Cancel SO / PO (and stored-only consignment) documents of ONE company's book. The lines are owned
     #   too, not left to their parent: the waiting retry and the order-push relink read them
     #   directly, by company, without the doc = 161.
-    expected_owned = 161
+    # + 1 (OI-RESERVE-RECEIVED): `order_inquiry_released_links`, one company's own released
+    #   received link per reserve = 162.
+    expected_owned = 162
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"
     )

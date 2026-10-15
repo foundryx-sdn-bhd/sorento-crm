@@ -44,8 +44,9 @@
  *                               PLUS the site pools, in one span; `project` is
  *                               today's view; `retail` is pools only (R1, AC-8)
  *
- *      No `group` param - the Ownership group filter left the screen entirely (R16). The
- *      backend still accepts one; this service just never sends it.
+ *      &location=<warehouse id>  REPEATABLE: keep only these bins of the book's span.
+ *      &exclude_location=<id>    REPEATABLE: "all except" mode, sent instead of `location`.
+ *                               Both omitted when none picked (owner, 14 Oct 2026).
  *
  *      -> 200 {
  *           data: [{
@@ -57,7 +58,7 @@
  *           pagination: { total, page, limit },
  *           months:    ['YYYY-MM', ...],   the column axis
  *           tba_month: 'YYYY-MM',          the policy's `tba_date_from`, by month
- *           groups:    ['BB', ...]         what the flag admits, for the select
+ *           locations: [{ id, code, name }]  the book's warehouses, for the Location select
  *           totals:    { months: { 'YYYY-MM': number, ... }, tba, undated,
  *                        unlocated, total }   over the WHOLE filtered set (AC-6)
  *           suppliers: [{ id, name }]      distinct last suppliers of the
@@ -99,8 +100,8 @@
  *          &date_to=<YYYY-MM-DD>    the board's own `date_to`, same reason.
  *          &book=<all|project|retail>  the board's own book, same reason.
  *
- *      No `group` - the toolbar no longer has an Ownership group control to echo (R16);
- *      the backend param itself is untouched.
+ *      &location=<id> / &exclude_location=<id>  REPEATABLE: the board's own Location pick,
+ *                               echoed so the drill foots with the cell that opened it.
  *
  *      -> 200 {
  *           demand: [{ so_number, agent_code, warehouse_code, required_date, open_qty,
@@ -128,8 +129,9 @@
  * 3) Export (AC-12 to AC-18; R14/R15/R16 owner round)
  *
  *      POST /api/v1/project-sales/stock-debt/export
- *          { query?, only_debt?, date_from?, date_to?, supplier_ids?, book?, split }
- *          (never `group`, `cutoff` or `supplier_id` - all three retired, not aliased)
+ *          { query?, only_debt?, date_from?, date_to?, supplier_ids?, location?, exclude_location?, book?, split }
+ *          (`location` / `exclude_location` are lists, sent only when non-empty; `cutoff` and `supplier_id` are
+ *          retired, not aliased)
  *
  *      -> 201 MyDownload (`status: 'pending'`, `kind: 'stock_debt_xlsx'`) - a
  *         `user_downloads` row; `generate_stock_debt_xlsx` runs on the `imports`
@@ -181,11 +183,13 @@ export const USE_STOCK_DEBT_FILTER_MOCKS = false;
  * and the debt-only switch.
  *
  * Owner's hand-test round (R14-R16): the single `cutoff` became a `dateFrom`/`dateTo`
- * range, the single `supplierId` became a repeatable `supplierIds`, and the Ownership
- * group filter left the screen entirely - there is no `group` field here any more, and
- * this service never sends one (the backend's own `group` param and its tests stay,
- * untouched and simply FE-unreachable).
+ * range and the single `supplierId` became a repeatable `supplierIds`. The Ownership group
+ * filter left the screen in R16 and came back as the multi-select `locations` (Location,
+ * owner, 14 Oct 2026).
  */
+/** How `locations` narrows the board: only these locations, or every location except them. */
+export type StockDebtLocationsMode = 'include' | 'exclude';
+
 export interface StockDebtListParams {
   pageIndex: number;
   pageSize: number;
@@ -196,6 +200,10 @@ export interface StockDebtListParams {
   /** Repeatable; `'none'` is one more value among the others, not a sentinel that
    *  excludes them (R15, AC-4). Empty = every supplier. */
   supplierIds: string[];
+  /** Location: repeatable warehouse ids; empty = every location. */
+  locations?: string[];
+  /** `exclude` sends `exclude_location` instead of `location` ("all except X"). Default include. */
+  locationsMode?: StockDebtLocationsMode;
   /** `YYYY-MM-DD`, or '' for no lower bound (R14, AC-1b). */
   dateFrom: string;
   /** `YYYY-MM-DD`, or '' for no upper bound (R14, AC-1). */
@@ -210,6 +218,8 @@ export interface StockDebtExportParams {
   onlyDebt: boolean;
   book: StockDebtBook;
   supplierIds: string[];
+  locations?: string[];
+  locationsMode?: StockDebtLocationsMode;
   dateFrom: string;
   dateTo: string;
   /** Whether the workbook carries the four stock and PO columns (default off on the wire). */
@@ -242,6 +252,9 @@ export async function getStockDebtList(
   for (const id of params.supplierIds ?? []) {
     if (id) search.append('supplier_ids', id);
   }
+  for (const code of params.locations ?? []) {
+    if (code) search.append(params.locationsMode === 'exclude' ? 'exclude_location' : 'location', code);
+  }
   const res = await apiFetch(`/api/v1/project-sales/stock-debt?${search}`);
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to load stock debt'));
   return (await res.json()) as StockDebtListResponse;
@@ -251,7 +264,7 @@ export async function getStockDebtList(
  * The demand and supply behind one cell (AC-S2-7, extended AC-11). `month` is `YYYY-MM`,
  * `tba`, `undated` or `unlocated`; `dateFrom`/`dateTo` (R14) and `book` are the board's
  * own narrowing, passed through so the drill is recomputed over the same span the cell
- * was. Never sends `group` or `cutoff` (R14/R16 - both retired, not aliased).
+ * was. `locations` repeats `location`, the board's Location pick; `cutoff` is retired (R14).
  */
 export async function getStockDebtCell(
   productId: string,
@@ -260,12 +273,17 @@ export async function getStockDebtCell(
   dateTo?: string,
   book?: StockDebtBook,
   projected?: boolean,
+  locations?: string[],
+  locationsMode?: StockDebtLocationsMode,
 ): Promise<StockDebtCell> {
   const search = new URLSearchParams({ month });
   if (dateFrom) search.set('date_from', dateFrom);
   if (dateTo) search.set('date_to', dateTo);
   if (book && book !== 'all') search.set('book', book);
   if (projected) search.set('projected', 'true');
+  for (const code of locations ?? []) {
+    if (code) search.append(locationsMode === 'exclude' ? 'exclude_location' : 'location', code);
+  }
   const res = await apiFetch(
     `/api/v1/project-sales/stock-debt/${encodeURIComponent(productId)}/cell?${search}`,
   );
@@ -288,6 +306,9 @@ export async function exportStockDebt(params: StockDebtExportParams): Promise<My
       only_debt: params.onlyDebt,
       book: params.book,
       supplier_ids: params.supplierIds ?? [],
+      ...(params.locations?.length
+        ? { [params.locationsMode === 'exclude' ? 'exclude_location' : 'location']: params.locations }
+        : {}),
       date_from: params.dateFrom || undefined,
       date_to: params.dateTo || undefined,
       split: params.split,

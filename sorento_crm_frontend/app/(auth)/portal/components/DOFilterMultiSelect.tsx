@@ -19,6 +19,7 @@ import {
   PeriodValue,
   periodToIsoBounds,
 } from './PeriodPicker';
+import { distinctName } from '@/lib/product-display';
 
 interface Props {
   id?: string;
@@ -413,7 +414,7 @@ export function DOFilterMultiSelect({
                               </span>
                             )}
                           </p>
-                          {r.name && (
+                          {distinctName(r.code, r.name) && (
                             <p className="text-xs text-muted-foreground break-words">
                               {r.name}
                             </p>
@@ -534,7 +535,9 @@ function DOResultRow({
             ).map((line, idx) => (
               <li key={`${line.product_code}-${idx}`} className="break-words">
                 <span className="font-medium text-foreground">{line.product_code}</span>
-                {line.product_name ? <span> - {line.product_name}</span> : null}
+                {distinctName(line.product_code, line.product_name) ? (
+                  <span> - {line.product_name}</span>
+                ) : null}
                 {line.quantity != null ? (
                   <span className="ml-1 tabular-nums">× {line.quantity}</span>
                 ) : null}

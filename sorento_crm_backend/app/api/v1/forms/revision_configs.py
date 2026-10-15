@@ -24,8 +24,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import (
-    get_current_user,
     get_current_user_or_api_key,
+    require_permission,
     require_permission_with_api_key,
 )
 from app.models.portal import PortalRevisionConfig
@@ -188,10 +188,14 @@ async def get_portal_revision_enabled_map(
 async def upsert_portal_revision_config(
     payload: PortalRevisionConfigUpdate,
     source_entity_type: str = Path(...),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.settings.edit")),
     db: Session = Depends(get_db),
 ):
-    """Upsert one type's policy. Creates the row when the seed never ran."""
+    """Upsert one type's policy. Creates the row when the seed never ran.
+
+    The settings edit slug, the one the Portal Revisions globals already save under
+    (via `PUT /settings/general`): this checked only that the caller was signed in
+    (SETTINGS-PERM-GATE)."""
     kind = _check_type(source_entity_type)
     row = (
         db.query(PortalRevisionConfig)
