@@ -1,6 +1,6 @@
 # PLAN: PV2 R6 "clarify + references + contract test" (15 Oct 2026, evening)
 
-Status: Plan. Track M (LEAD pattern, red-first, kill-proof). Branch `crew/pv2-redesign-r6` from d08cd98c3 (R5 head,
+Status: Build (code map done; contract test being written). Track M (LEAD pattern, red-first, kill-proof). Branch `crew/pv2-redesign-r6` from d08cd98c3 (R5 head,
 PR #1707 unmerged), worktree sorento_crm-pv2-fix2; draft PR stacked on #1707. Brief crew/state/briefs/PV2-FIX-R6.md +
 train-only brief crew/state/reports/PV2-R6-train-brief.md (root classes A-E; train only, by design).
 No prompt change in R6 (crew option O2 is R7).
@@ -80,7 +80,68 @@ options, and R5's fixtures always started from that shape, which the live parser
   TRAIN r1-r3 only; persons and companies fake, business codes kept; asker not recorded) + r6_train_world.json
   (7 fake customers, 59 product codes, 12 document numbers) to seed the test DB.
 
-(Classes B-E + Q5(a): mapping pass in progress)
+### Class B: follow-up references (behaviour 3; I5)
+- Unclear / flagged asks build options from `_options_for` (apply.py:2042-2046) = `_which_held_options(st.held.refs)`;
+  the held ref is the DO/SO itself, so its NUMBER is offered. `_line_products` (:1505-1517) runs only at :658-677
+  (refine / new_topic with a points-back product entity); a parse with no entity never reaches it; lines None falls to
+  nothing-held (:1284-1288, :1294-1295, :723-724, :753-755).
+- Lines: `register.document_lines` (register.py:153-163) reads envelope `rows[].lines`, sent by SO cards only
+  (lanes/business/__init__.py:645-655, 1500, 1540); DO lines exist only as child rows when `products` is revealed
+  (register.py:72-78).
+- "both" / "the others": the parser flags which_held -> same branch, held refs only; earlier products sit in
+  `st.topics` (pushed :706, :729) and are never read; "the X one" gets held customer refs (one per account, same label;
+  state.py:352-354 via apply.py:1794-1802), not the menu just answered; new_topic starts from an empty Held() (:709);
+  `_carry` (:542-566) never carries quantity.
+- FIX: ONE reference-options function (shown rows + doc_lines, then topics' refs, then the just-answered menu's
+  options) used by `_options_for` and :658; a product reference never gets a document ref.
+
+### Class C: customer group = one customer (behaviour 4)
+- A containing-name search returns one family; group name != phrase (resolve.py:801) -> ambiguous with `guess`,
+  `keys` + `labels` (:803-813); `_confirm` (apply.py:1354-1358, 1608-1619) prints every account (:1612-1615), options
+  stay [yes, no] (:1616-1618) while `_numbered` (:328-329) numbers accounts (I4 mismatch); an exact family match gives one
+  ref per account (resolve.py:802).
+- Follow-up: `_commit` (:815) stores a held with no customer while the confirm is open -> v1 header "Customer: all"
+  (`outstanding_customer_echo` lanes/business/__init__.py:346, 403-405). Owner-rule helper: ledger_family.py:232-255
+  `group_names` / `family_words`. A domain or period on an open confirm goes to `_miss` (:169-174); `answer_is_a_refine`
+  (:475) needs `_is_a_new_ask` (:301-307), which needs a named entity.
+- FIX: a single family whose group name matches is ONE customer labelled by the group name (resolve.py:799-802); the
+  confirm prints the group name only (no account list, no count); keep the guessed customer on held; a domain or period
+  on an open confirm is a new ask.
+
+### Class D: record detail asks re-print the same card (2 train turns; last, if time)
+- A detail ask on the same SO is a refine; `_apply_entities` re-resolves the ref, `_commit` (:799-821) makes the same
+  Lookup -> v1 SO-NUMBER-ASK (lanes/business/__init__.py:1465-1501) -> `so_status._card` (so_status.py:93-102) prints no
+  lines (lines go only to the register, :224). No slot for a detail field (schema.py:112-127; R7 parser work).
+  `_repeat_is_a_miss` (:2129-2159) checks questions only; "Carrying on" opener from `_is_current` (bridge.py:111-116) +
+  engine.py:4114-4123.
+- FIX (narrow): `_card` prints the SO lines; a refine equal to the held answer says plainly the detail is not on record.
+
+### Class E + behaviour 5: ids, both halves
+- E1: `_v1_entity` sends `raw` / `canonical_code` = `ref.key` for every kind except a UUID customer (bridge.py:135-138),
+  incl. product_type keys, attachment_type (:209), brand keys into v1 focus (:335-336); report drill `drill_row` returns
+  live keys (reports.py:236-250), stored as `ResolvedRef.key` (apply.py:791-795), sent as typed text. FIX: send the
+  printed code or label whenever the key is not a code (`clarify_copy.printed_code`, as apply.py:1569).
+- E2: the scrub runs only in `_pv2_direct_reply` (engine.py:4319-4323); v1-rendered replies leave via `_answer_actions`
+  (engine.py:8039, 8370-8386), row closed :8047-8056. FIX: scrub at `_run_stages` (engine.py:4209-4221), which every PV2
+  turn passes (answered-ahead too, :1969), after `_run_stages_body` (:4219), before `_pv2_keep_state` (:4220): result.reply
+  text + send_message actions, re-writing the row like `_localize_result` (:3093-3115); `media_box["pv2_state"]` gives
+  `known_labels`.
+
+### Behaviour 6: owner ruling CA-3 Q5(a)
+- Ruling: PLAN-chat-analytics-ca3-chat-dataset-10oct.md:181-184 (an unclassified contact with the grant sees all, like
+  staff; the owner gives the grant per contact). v1's exemption (#1648, V1-DOC-SCOPE slice 3, commit 6b46f867c8 on
+  `claude/v1-doc-scope-cx3vva`, engine.py:5302-5322; NOT in this HEAD): `granted_report_turn` = every fetch is
+  chat_analytics and the contact holds `chatbot.analytics`, or order_status in SALES_FIGURE_STATUSES and the contact holds
+  `sales_orders.sales_report`; `unlinked_held = customer_docs_hidden and not granted_report_turn` (picker exempt too).
+- R5 refuses at: pv2/hook.py:105-125 (`no_customer_scope` ignores grants), turn.py:571-573, 640-644, 679
+  (`_refused_report` :594-602), chat_report.scope_for (:339-340, no relax), engine.py:5437-5441, fetch
+  `scope_customer_ids=[]` (lanes/business/__init__.py:1444-1446), resolver no customers (resolve.py:740-742).
+- FIX: one granted-report check (grant in `granted_reveals` and the report dataset is chat or sales), applied in
+  `pv2_hook.customer_scope` and at turn.py:644 before `held_to_no_customer`; no grant -> held as R5.
+
+## Slice order (red commit, then fix commit, each)
+0 contract test (red) -> A (clarify first-class, options stored, reask only with an open question, `_without_picked`)
+-> B (reference options) -> C (group = one customer) -> E (bridge codes + scrub at `_run_stages`) -> Q5(a) -> D (if time).
 
 ## Gates
 Touched tests -n 2, contract test green, reviewer READY, security CLEAN; crew report --done; crew runs the battery.
