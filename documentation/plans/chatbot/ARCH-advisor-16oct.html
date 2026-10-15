@@ -35,6 +35,29 @@ th{background:var(--muted);font-weight:600}
 .tag.s{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
 .tag.m{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
 .small{font-size:12.5px;color:var(--muted-fg)}
+.dia{margin:16px 0;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);overflow-x:auto}
+.dia svg{width:100%;height:auto;min-width:600px;display:block}
+.dia figcaption{font-size:12.5px;color:var(--muted-fg);margin-top:6px}
+.dia .b{fill:var(--muted);stroke:var(--border);stroke-width:1.2}
+.dia .hl{fill:var(--primary-soft);stroke:var(--primary)}
+.dia .wn{fill:var(--warn-soft);stroke:var(--warn)}
+.dia .t{fill:var(--fg);font:600 13px system-ui,sans-serif;text-anchor:middle}
+.dia .s{fill:var(--muted-fg);font:11.5px system-ui,sans-serif;text-anchor:middle}
+.dia .a{stroke:var(--muted-fg);stroke-width:1.4;fill:none}
+.dia .ah{fill:var(--muted-fg)}
+.v{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:999px;white-space:nowrap}
+.v.r{background:var(--ok-soft);color:var(--ok)}
+.v.p{background:var(--warn-soft);color:var(--warn)}
+.v.w{background:#fdecea;color:#c4321a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .v.w{background:#3a1310;color:#f87171}}
+:root[data-theme="dark"] .v.w{background:#3a1310;color:#f87171}
+@media (max-width:820px){.tw table.cards{min-width:0}table.cards,table.cards tbody,table.cards tr,table.cards td{display:block;width:100%}
+table.cards tr:first-child{display:none}table.cards tr{border:1px solid var(--border);border-radius:8px;margin:8px 0;padding:6px 10px}
+table.cards td{border:0;padding:2px 0}table.cards td::before{content:attr(data-label) ": ";font-weight:600;color:var(--muted-fg)}}
+details{border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin:8px 0}
+details summary{cursor:pointer;font-weight:600}
+details pre{white-space:pre-wrap;font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:8px;border-radius:6px;margin:6px 0}
+
 .chat{max-width:440px;margin:10px 0 14px;padding:10px;border-radius:12px;background:#efeae2;border:1px solid var(--border)}
 .chat .m{margin:6px 0;padding:7px 11px;border-radius:9px;font:13.5px/1.45 system-ui,sans-serif;white-space:pre-wrap;max-width:88%;color:#111}
 .chat .u{background:#ffffff;margin-right:auto;border-top-left-radius:2px}
@@ -48,6 +71,10 @@ th{background:var(--muted);font-weight:600}
 <body>
 <div class="wrap">
 <nav><b>Contents</b><ol>
+<li><a href="#w0">A. How today's bot works</a></li>
+<li><a href="#w1">B. Your scenarios, live</a></li>
+<li><a href="#w2">C. How many are right</a></li>
+<li><a href="#w3">D. Honest gap</a></li>
 <li><a href="#s0">0. Problem statement</a></li>
 <li><a href="#s1">1. P1 Follow-ups lose context</a></li>
 <li><a href="#s2">2. P2 Spec matching</a></li>
@@ -57,12 +84,152 @@ th{background:var(--muted);font-weight:600}
 <li><a href="#s6">6. What was dropped</a></li>
 </ol></nav>
 <main>
-<h1>Chatbot: problem statement and fixes (16 Oct 2026)</h1>
+<h1>Chatbot: how it works, your scenarios, and the fixes (16 Oct 2026)</h1>
 <p>Status: revision 2 for owner review (lane CHAT-ADVISOR-SPIKE, PR #1711), after the owner's five notes of 16 Oct
 23:09. No fix lane starts before the owner's go. Re-scoped on the owner's feedback: no new
 architecture, today's structured replies stay. Analysis only. Every fix below is a small change inside the live bot
 path, sized S or M, with the expected gain and how it is measured. Code cited at <code>origin/main</code>
 504ce9252a.</p>
+
+<h2 id="w0">A. How today's bot answers a question</h2>
+<div class="box hl">
+<p><b>Is it ReAct?</b> No. ReAct is a loop: the model thinks, calls a tool, reads the result, thinks again, and writes
+the answer. Today's bot is <b>parser-routed</b>: the model runs <b>once</b>, before any data is fetched, and only turns
+the message into structured fields. Code then picks the tool, fetches the data and fills a fixed reply. The model
+never sees the data and never picks the tool.</p>
+</div>
+<figure class="dia">
+<svg viewBox="0 0 900 250" role="img" aria-label="Today's chatbot flow">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
+<rect x="10" y="40" width="120" height="64" rx="8" class="b"/><text x="70" y="68" class="t">Message</text><text x="70" y="86" class="s">WhatsApp</text>
+<rect x="160" y="40" width="150" height="64" rx="8" class="hl"/><text x="235" y="64" class="t">Parser (LLM)</text><text x="235" y="82" class="s">once per message</text><text x="235" y="97" class="s">structured fields</text>
+<rect x="340" y="40" width="150" height="64" rx="8" class="b"/><text x="415" y="64" class="t">Code decides</text><text x="415" y="82" class="s">ask back or answer,</text><text x="415" y="97" class="s">which tool</text>
+<rect x="520" y="40" width="150" height="64" rx="8" class="b"/><text x="595" y="64" class="t">Tool (MCP)</text><text x="595" y="82" class="s">1 per domain, read only</text><text x="595" y="97" class="s">permissions inside</text>
+<rect x="700" y="40" width="190" height="64" rx="8" class="b"/><text x="795" y="64" class="t">Reply</text><text x="795" y="82" class="s">fixed template</text><text x="795" y="97" class="s">filled with the rows</text>
+<path d="M130,72 L158,72" class="a" marker-end="url(#ar)"/>
+<path d="M310,72 L338,72" class="a" marker-end="url(#ar)"/>
+<path d="M490,72 L518,72" class="a" marker-end="url(#ar)"/>
+<path d="M670,72 L698,72" class="a" marker-end="url(#ar)"/>
+<rect x="160" y="150" width="330" height="70" rx="8" class="wn"/><text x="325" y="174" class="t">Carried state (memory)</text><text x="325" y="192" class="s">current subject, open question, last answer;</text><text x="325" y="208" class="s">fed back into the next parse</text>
+<path d="M235,148 L235,106" class="a" marker-end="url(#ar)"/>
+<path d="M795,106 L795,185 L492,185" class="a" marker-end="url(#ar)"/>
+</svg>
+<figcaption>One model call per message; everything after it is code. Two places may call a model inside code: the product-name reader in the resolver and the short "say that again" clarifier; neither picks a tool.</figcaption>
+</figure>
+<div class="tw"><table>
+<tr><th>Step</th><th>Where (code)</th><th>Who decides</th></tr>
+<tr><td>Message arrives</td><td><code>app/api/v1/external/chat.py:171</code> -> <code>services/chatbot/engine.py:3037</code></td><td>-</td></tr>
+<tr><td>Context for the parser (subject, open question, last replies)</td><td><code>engine.py:4537</code>, <code>turn/context.py:496</code></td><td>Code</td></tr>
+<tr><td>Read the message: intent, domain, products named, quantity, period, specs, which option was picked, follow-up or new</td><td><code>engine.py:4549</code>, <code>head/parser.py:33</code> (gpt-5.4-mini, one JSON answer, temperature 0)</td><td><b>LLM</b></td></tr>
+<tr><td>Ask back or answer; turn names into products</td><td><code>turn/apply.py:3288</code>, <code>turn/route.py:65</code>, resolver <code>lanes/business/services.py:140</code></td><td>Code</td></tr>
+<tr><td>Pick the tool: the domain's first tool</td><td><code>lanes/business/fetch.py:156</code></td><td>Code</td></tr>
+<tr><td>Fetch: who may see what (Stock Visibility, company scope)</td><td><code>fetch.py:1423</code>; backend <code>services/stock_visibility.py:229</code></td><td>Code (backend)</td></tr>
+<tr><td>Write the reply</td><td>MCP presenter + <code>turn/compose.py:506</code>, <code>chatbot_reply_copy.py:439</code></td><td>Code (templates)</td></tr>
+</table></div>
+<p>So when an answer is wrong, it is one of three things: the parser misread the message (P1), the code had no way to
+match what was asked (P2, e.g. no spec key for "massage"), or the code asked or fetched the wrong thing (P3). The
+scenarios below show which.</p>
+<h2 id="w1">B. Your scenarios, run live on today's bot</h2>
+<p class="small">Run 16 Oct on dev, today's code (origin/main), parser prompt = dev v94, which is dev's copy of prod v52
+plus the find block, the same edit that made prod v63 (dev's own "production" label is an older v60). Each question is
+a fresh chat (no history). As: salesperson (staff contact, Stock Visibility "detailed") and dealer ("availability",
+no quantities). Dev data is a copy from mid-September. Customer names masked. Cost of the runs: $0.33.</p>
+<div class="tw"><table class="cards">
+<tr><th>#</th><th>Question</th><th>As</th><th>Verdict</th><th>What happened</th><th>Fix</th></tr>
+<tr><td data-label="#">W01</td><td data-label="Question">check stop SRTWC286</td><td data-label="As">both</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">Read as "product info" (10 spec cards of SRTWC286-SH variants), no stock: the typo "stop" is not read as stock</td><td data-label="Fix">Parser misread; no small fix (see D)</td></tr>
+<tr><td data-label="#">W02 (1)</td><td data-label="Question">what's the ETA</td><td data-label="As">both</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">"Could not find incoming.": no product named, the tool ran with nothing to look for</td><td data-label="Fix">NEW-1 ask "ETA for which product?"</td></tr>
+<tr><td data-label="#">W02 (2)</td><td data-label="Question">any delivery to [customer HL] today?</td><td data-label="As">salesperson</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">Asks which of two accounts although both say "no DO"</td><td data-label="Fix">NEW-2 answer directly</td></tr>
+<tr><td data-label="#">W02 (2)</td><td data-label="Question">same</td><td data-label="As">dealer</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">"No order today" is true; the last delivery date (17 Sep) was in the data but not said</td><td data-label="Fix">NEW-2</td></tr>
+<tr><td data-label="#">W03</td><td data-label="Question">What is the stock for Andamal Basin?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">"Andamal" is nowhere in the data; the reply lists every basin by brand under the heading "andamal wash basins"</td><td data-label="Fix">NEW-3 say "not found" first, ask for code or photo</td></tr>
+<tr><td data-label="#">W04</td><td data-label="Question">Do you have any P-trap WC?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">Right shape (count by brand), wrong count: 220 instead of 183 (dealer 200 vs 157), 43 S-trap WCs slip in</td><td data-label="Fix">NEW-4 intersect, not union</td></tr>
+<tr><td data-label="#">W05</td><td data-label="Question">Any promo for GrabBar?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">"could not match grabbar": "grab bar" exists (84 products) but the one-word spelling is not matched</td><td data-label="Fix">P1-F2 (parser sees type names and synonyms)</td></tr>
+<tr><td data-label="#">W06</td><td data-label="Question">Any promo for Sonnet WC?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">"Sonnet" exists nowhere in dev data, so not guessing is right; but it calls it a "product detail"</td><td data-label="Fix">P2-F2 wording</td></tr>
+<tr><td data-label="#">W07</td><td data-label="Question">Any promo for Cabana WC?</td><td data-label="As">salesperson</td><td data-label="Verdict"><span class="v r">RIGHT</span></td><td data-label="What happened">3 Cabana office flyers</td><td data-label="Fix">-</td></tr>
+<tr><td data-label="#">W07</td><td data-label="Question">same</td><td data-label="As">dealer</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened"><b>Security:</b> dealer also gets 3 OFFICE USE flyers (empty access filter = no filter)</td><td data-label="Fix">SEC-PROMO-ACCESS lane (running)</td></tr>
+<tr><td data-label="#">W08</td><td data-label="Question">Any promo for WC with P-trap? 250 mm</td><td data-label="As">salesperson</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">"none matched" is true (P-trap WCs are 180/190 mm; 250 mm is S-trap) but a dead end</td><td data-label="Fix">P2-F4 offer the sizes on record</td></tr>
+<tr><td data-label="#">W08</td><td data-label="Question">same</td><td data-label="As">dealer</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">"I could not fetch promotions just now": false, nothing failed; a leftover question step sends the reply to the error text</td><td data-label="Fix">NEW-5</td></tr>
+<tr><td data-label="#">W09</td><td data-label="Question">Any promo for Sorrento cabinet?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">Asks side / tall / basin cabinet, but none of those has a promotion; about 8 live Sorento bathroom-furniture flyers exist</td><td data-label="Fix">NEW-6 offer only choices with promos</td></tr>
+<tr><td data-label="#">W10</td><td data-label="Question">Any promo for intelligent closet?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">"intelligent" is understood as "smart toilet" (51 products), then dropped because yes/no specs are skipped</td><td data-label="Fix">NEW-7 keep yes/no specs</td></tr>
+<tr><td data-label="#">W11</td><td data-label="Question">Any bathtub with massage jet?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">10 plain bathtubs; "massage jet" dropped without a word</td><td data-label="Fix">P2-F1 + P2-F2</td></tr>
+<tr><td data-label="#">W12</td><td data-label="Question">Do you have any bathtub?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">No jacuzzis (as ruled), but the list holds shower screens and gives no total</td><td data-label="Fix">NEW-8 counted reply + data clean-up</td></tr>
+</table></div>
+<h3>Details</h3>
+<details><summary>W01 "check stop SRTWC286"</summary>
+<p>Parser: intent check_product, domain master_products, product "SRTWC286" (both contacts, no history). Tool:
+<code>crm_master_products_list</code>; "SRTWC286" has no exact code, it matches 10 SRTWC286-SH variants.</p>
+<pre>Here are the matching products.
+1. *Product Code:* SRTWC286-SH
+*Description:* SORENTO ONE PIECE TWISTER FLUSH WC (S-TRAP 250MM)
+*List Price:* MYR 1260.00 ...</pre>
+<p>A salesperson expects the stock (dealer: available or not, then "how many?"). When the parser did read it as stock
+(a run where earlier chat primed it), the reply was a 29-row table of every variant and location: right data, unreadable
+on a phone.</p></details>
+<details><summary>W02 "what's the ETA", then "any delivery to [customer HL] today?"</summary>
+<p>Turn 1: intent check_incoming, no product. <code>crm_incoming_stock_list</code> with nothing to narrow returns
+empty without asking the CRM (<code>sorento_crm_mcp/server.py:63-65</code>), so "Could not find incoming." is a false
+"no". The incoming domain is product-keyed; with no product it should ask which one (clarify, not assume).</p>
+<p>Turn 2: customer "[customer HL]" matches 4 accounts in 2 groups; the order domain needs one, so the salesperson gets
+"Which one do you mean? 1. [customer HL] - no DO 2. [customer HL] TRADING - no DO". Both already say "no DO", so the
+answer is known. The dealer is linked to all 4 accounts (scope checked, <code>_contact_scope.py:33-80</code>, no leak)
+and gets "no order from 16/10/2026", without the last delivery (17 Sep) that the data returned. Note: dev data stops at
+the mid-September copy.</p></details>
+<details><summary>W03 "What is the stock for Andamal Basin?"</summary>
+<p>"Andamal" matches nothing in names, descriptions, specs or aliases on dev (nearest words "santana", "miranda").
+The reply builder for unknown words (<code>answer.py:2868-2895</code>) still lists every wash basin by brand under
+"andamal wash basins", and only the dealer version adds "Couldn't find: andamal". No stock tool ran.</p></details>
+<details><summary>W04 "Do you have any P-trap WC?"</summary>
+<p>The parse is right (trap type = P trap) and the reply shape is right (count by brand, no quantities to the
+dealer). The count is wrong: product ids found by name are OR-ed with the spec filter
+(<code>system/references.py:3429-3438</code> into <code>product_predicate_service.py:1010-1020</code>), which lets 43
+Cabana S-trap WCs in. True totals: 183 (salesperson), 157 (dealer).</p></details>
+<details><summary>W05 to W10 promotions</summary>
+<p>W05: the parser kept "GrabBar" as one word; the registry has product type "grab bar" (synonyms grab bar, handrail,
+safety bar). Expected: one live all-levels A3 flyer to 31 Dec, plus expired standard flyers marked EXPIRED.</p>
+<p>W06: "Sonnet" is not in dev data at all (if it is a new series on prod, dev's copy predates it). Saying so is right;
+"Which product detail do you mean?" is the wrong wording.</p>
+<p>W07: salesperson gets the 3 Cabana office flyers (right). Dealer, holding only the "dealer" access type, gets 6
+including 3 OFFICE USE: the brand gate returns an empty access list (<code>tier_gate.py:270-271</code>), it is sent
+as <code>access_levels=[]</code> (<code>lanes/business/__init__.py:952-954</code>) and the backend reads empty as "no
+filter" (<code>marketing_service.py:479</code>). Confirmed on a clean rerun; a security lane is fixing both layers.</p>
+<p>W08: P-trap WCs on record are 180 mm and 190 mm; 250 mm exists only on S-trap. Salesperson: "But none matched.";
+dealer: "I could not fetch promotions just now", because a question step left in the plan
+(<code>narrow.py:466-468</code>, <code>engine.py:6603-6605</code>) sends the reply to the error text
+(<code>compose.py:623</code>).</p>
+<p>W09: "Which cabinet do you mean? Side cabinet / Tall cabinet / Basin cabinet": every choice leads to no promotion
+(those types are barely filled for Sorento), while "cabinet" as bathroom furniture has about 8 live Sorento flyers per
+tier.</p>
+<p>W10: "intelligent" is matched to "smart toilet = yes" (51 products, 35 live), then the yes/no value is skipped
+when the filter is built (<code>product_spec_search.py:1003-1005</code>), so the reply says it could not match.</p></details>
+<details><summary>W11 / W12 bathtubs (owner ruling 16 Oct 00:10)</summary>
+<p>W11 "Any bathtub with massage jet?": "massage jet" has no registry meaning, is dropped without a word
+(<code>grounding.py:738-749</code>), and the search runs on "bathtub" alone: "1. *Product Code:* BK007A ... LONG
+BATH" (10 plain tubs). Per the ruling the answer is the jacuzzis (176 Jacuzzi-class products, all with massage or
+whirlpool in the description); the registry's class synonyms are empty today, so P2-F1 (meaning in the registry) is
+the route.</p>
+<p>W12 "Do you have any bathtub?": no jacuzzis, as ruled. But "bathtub" also covers a "Bathtub and Jacuzzi" category
+whose synonyms include shower screens (<code>product_class_signal.py:81</code>), so 2 of the 10 are shower screens,
+one shows MYR 0.00, and no total is given (unlike W04).</p></details>
+<h2 id="w2">C. How many are right</h2>
+<div class="tw"><table>
+<tr><th></th><th>Right</th><th>Partial</th><th>Wrong</th></tr>
+<tr><td>Today (26 answers: 12 questions, salesperson and dealer, W02 has 2 turns)</td><td>1</td><td>11</td><td>14</td></tr>
+<tr><td>After P1 to P3 and the security lane</td><td>about 9</td><td>about 8</td><td>about 9</td></tr>
+<tr><td>Plus the 8 new small fixes found here (NEW-1 to NEW-8, all S)</td><td>about 24</td><td>0</td><td>2 (W01)</td></tr>
+</table></div>
+<p class="small">"After" numbers are estimates per row (which fix makes that exact reply right), not a re-run. Each new
+small fix is listed with its file in the details above.</p>
+<h2 id="w3">D. What this still does not cover (honest gap)</h2>
+<ul>
+<li><b>Misreads with no context involved</b> (W01: a typo read as the wrong intent). No small code fix; it needs the
+parser itself to read better, measured on the gold set. Your scenarios should be added to that set.</li>
+<li><b>Names the data does not have</b> (Andamal, Sonnet): the bot can only say "not found". If they exist on prod,
+dev's mid-September copy predates them; a data check on prod is owed.</li>
+<li><b>Data quality</b> drives several answers: shower screens filed as bathtubs, a MYR 0.00 price, cabinet types
+barely filled, promotions not linked to products.</li>
+<li><b>No selling moves</b> (suggest an alternative or a promotion unasked): left out on purpose, per your call for
+structured replies.</li>
+<li><b>One question at a time is still the rule</b> elsewhere (only reports move to one structured question, P3-F1).</li>
+</ul>
 
 <h2 id="s0">0. Problem statement</h2>
 <div class="box hl">
