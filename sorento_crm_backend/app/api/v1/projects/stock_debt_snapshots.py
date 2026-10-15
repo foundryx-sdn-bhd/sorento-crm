@@ -170,6 +170,7 @@ def export_snapshot(
     `export_stock_debt` uses. The guards run before any `user_downloads` row exists."""
     from app.api.v1.projects._common import acting_company_id
     from app.services.download_service import DownloadService
+    from app.services.pdf_render import in_malaysia
     from app.services.queue_service import enqueue_job
     from app.tasks.export_tasks import generate_stock_debt_snapshot_xlsx
 
@@ -183,10 +184,13 @@ def export_snapshot(
                 message="A snapshot export is already being prepared - check My Downloads.",
             )
         company_id = acting_company_id(db)
+        # `created_at` is naive UTC; the filename carries the office's day (AC-16), so a
+        # snapshot taken 00:00-08:00 Malaysia time is not dated the day before.
+        taken_on = in_malaysia(snapshot.created_at).strftime("%d%m%Y")
         download = DownloadService(db).create(
             user_id=user_id,
             kind="stock_debt_snapshot_xlsx",
-            filename=f"stock-debt-snapshot-{snapshot.created_at.strftime('%d%m%Y')}.xlsx",
+            filename=f"stock-debt-snapshot-{taken_on}.xlsx",
         )
         try:
             enqueue_job(
