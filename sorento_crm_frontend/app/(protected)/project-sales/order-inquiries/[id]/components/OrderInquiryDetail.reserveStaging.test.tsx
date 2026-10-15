@@ -442,15 +442,15 @@ describe('AC-RS-85: Edit reserve opens ReserveLineForm; short qty needs a reason
     // 6e.4 (S2): mounted after the pools loaded - prefilled 107, nothing to explain.
     expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('107');
     const dialog = screen.getByRole('dialog', { name: /ZZT-REQUESTED/i });
-    expect(within(dialog).getByRole('button', { name: /^reserve$/i })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeEnabled();
 
     fireEvent.click(screen.getByLabelText('Location'));
     fireEvent.click(await screen.findByText('DC1'));
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '20' } });
     // 6e.4 (S1): short of the request needs a reason, availability notwithstanding.
-    expect(within(dialog).getByRole('button', { name: /^reserve$/i })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'partial stock only' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: /^reserve$/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }));
 
     expect(await screen.findByText('Reserve 20 @ DC1')).toBeInTheDocument();
     expect(commitReserveSpy).not.toHaveBeenCalled();
@@ -470,7 +470,7 @@ describe('AC-RS-86: Amend reserve on a reserved line locks the location and stag
 
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: '20 went back' } });
-    fireEvent.click(screen.getByRole('button', { name: /^amend$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 
     expect(await screen.findByText('Amend to 10')).toBeInTheDocument();
 
@@ -488,7 +488,7 @@ describe('AC-RS-87: header Reserve CTA, disabled while nothing staged, commits t
     await screen.findByText('ZZT-REQUESTED');
 
     // Scoped by testid, not accessible name: the row-level tick icon (AC-RS-83) also
-    // has the accessible name "Reserve", so `getByRole('button', { name: /^reserve$/i })`
+    // has the accessible name "Reserve", so `getByRole('button', { name: /^save$/i })`
     // matches both this CTA and that icon at once.
     const reserveCta = await screen.findByTestId('reserve-cta');
     expect(reserveCta).toHaveAccessibleName(/^reserve$/i);
@@ -504,7 +504,7 @@ describe('AC-RS-87: header Reserve CTA, disabled while nothing staged, commits t
     await screen.findByRole('dialog', { name: /ZZT-RESERVED/i });
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: '20 went back' } });
-    fireEvent.click(screen.getByRole('button', { name: /^amend$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     await screen.findByText('Amend to 10');
 
     const enabledCta = screen.getByRole('button', { name: /^reserve \(2\)$/i });
@@ -760,7 +760,7 @@ describe('6e.4 review round: declined lines, the action column gate, amend prefi
     expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('30');
     // 40 is below the 50 requested in total: a reason is needed.
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '40' } });
-    expect(screen.getByRole('button', { name: /^amend$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
   });
 
   it('AC-RS-85c: a later balance request counts once - 36 asked / 10 got, then 26 asked reads Requested 36', async () => {
@@ -790,7 +790,7 @@ describe('6e.4 review round: declined lines, the action column gate, amend prefi
     expect(within(dialog).getByText('Requested 36 across 2 requests')).toBeInTheDocument();
     // Net 36 = requested 36: nothing to explain.
     expect(within(dialog).queryByLabelText(/reason/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^amend$/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled();
   });
 
   it('a commit whose response touched no request toasts Nothing to change', async () => {
@@ -801,7 +801,7 @@ describe('6e.4 review round: declined lines, the action column gate, amend prefi
     fireEvent.click(within(gridRowFor('ZZT-RESERVED')).getByLabelText('Amend reserve'));
     await screen.findByRole('dialog', { name: /ZZT-RESERVED/i });
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'same' } });
-    fireEvent.click(screen.getByRole('button', { name: /^amend$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     fireEvent.click(await screen.findByRole('button', { name: /^reserve \(1\)$/i }));
     await confirmReserve();
 

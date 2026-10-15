@@ -62,18 +62,18 @@ describe('AC-RS-85: reserve mode - title, Location prefilled, Reserved default, 
     const { onStage } = renderForm();
 
     expect(screen.queryByLabelText(/reason/i)).not.toBeInTheDocument();
-    const stageButton = screen.getByRole('button', { name: /^reserve$/i });
+    const stageButton = screen.getByRole('button', { name: /^save$/i });
     expect(stageButton).toBeEnabled();
 
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '20' } });
 
     const reasonInput = await screen.findByLabelText(/reason/i);
-    expect(screen.getByRole('button', { name: /^reserve$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
 
     fireEvent.change(reasonInput, { target: { value: 'only 20 available' } });
-    await waitFor(() => expect(screen.getByRole('button', { name: /^reserve$/i })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled());
 
-    fireEvent.click(screen.getByRole('button', { name: /^reserve$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     expect(onStage).toHaveBeenCalledWith({
       warehouse_id: 'wh-brw',
       qty_reserved: 20,
@@ -91,7 +91,7 @@ describe('AC-RS-85: reserve mode - title, Location prefilled, Reserved default, 
     // AutoCount may already hold the reservation while CRM stock lags: never capped by it.
     expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('107');
     expect(screen.queryByLabelText(/reason/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /^reserve$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     expect(onStage).toHaveBeenCalledWith({ warehouse_id: 'wh-dc1', qty_reserved: 107, reason: null });
   });
 
@@ -112,7 +112,7 @@ describe('AC-RS-85: reserve mode - title, Location prefilled, Reserved default, 
     const { onStage } = renderForm({ locationOptions: [], availableQtyByLocation: {}, defaultLocationId: null });
 
     expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('107');
-    fireEvent.click(screen.getByRole('button', { name: /^reserve$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     expect(onStage).toHaveBeenCalledWith({ qty_reserved: 107, reason: null });
   });
 });
@@ -138,9 +138,9 @@ describe('AC-RS-86: amend mode - Location is locked read-only text, Reserved pre
     renderForm({ mode: 'amend', lockedLocationLabel: 'BRW', initialQty: '30', requestedQty: '50' });
 
     expect(screen.getByLabelText(/reason/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^amend$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'BRW has 30' } });
-    expect(screen.getByRole('button', { name: /^amend$/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled();
   });
 
   it('6e.4: amend mode edits the line net - may go above one request, up to maxQty; sub-label for several requests', async () => {
@@ -159,7 +159,7 @@ describe('AC-RS-86: amend mode - Location is locked read-only text, Reserved pre
     expect(screen.queryByLabelText(/reason/i)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '90' } });
     expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('60');
-    fireEvent.click(screen.getByRole('button', { name: /^amend$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     expect(onStage).toHaveBeenCalledWith({ qty_reserved: 60, reason: null });
   });
 
@@ -173,7 +173,7 @@ describe('AC-RS-86: amend mode - Location is locked read-only text, Reserved pre
 
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '10' } });
     fireEvent.change(await screen.findByLabelText(/reason/i), { target: { value: 'reduced' } });
-    fireEvent.click(screen.getByRole('button', { name: /^amend$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 
     expect(onStage).toHaveBeenCalledWith(
       expect.objectContaining({ qty_reserved: 10, reason: 'reduced' }),

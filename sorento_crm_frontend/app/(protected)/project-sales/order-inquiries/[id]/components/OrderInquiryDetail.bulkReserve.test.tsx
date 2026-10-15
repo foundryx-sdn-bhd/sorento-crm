@@ -157,7 +157,7 @@ vi.mock('@/services/pendingActionService', () => ({
   getCurrentPendingAction: vi.fn(async () => ({ pending: null, last_outcome: null })),
 }));
 vi.mock('../../../_shared/services/fulfilmentPlanningService', () => ({
-  // CKS1050 (row-2) has only 20 at BRW: the Reserve... popup caps its prefill there.
+  // CKS1050 (row-2) has only 20 at BRW in the CRM: the pen must still offer its 44.
   getStockDetail: vi.fn(async (productId: string) => ({
     locations: [
       {
@@ -245,13 +245,13 @@ describe('AC-BR-01 Decide (N) on the Lines tab selection strip', () => {
 });
 
 describe('AC-BR-02/03 Reserve as requested', () => {
-  it('offers exactly Reserve as requested, Reserve... and Reject...', async () => {
+  it('offers exactly Reserve as requested and Reject...', async () => {
     renderDetail();
     await ready();
     tick('CB313');
     openDecideMenu();
     const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent?.trim());
-    expect(items).toEqual(['Reserve as requested', 'Reserve...', 'Reject...']);
+    expect(items).toEqual(['Reserve as requested', 'Reject...']);
   });
 
   it('stages every counted line like its tick, clears the ticks, opens no dialog', async () => {
@@ -310,7 +310,7 @@ describe('AC-BR-02/03 Reserve as requested', () => {
     fireEvent.click(within(gridRowOf('CB313')).getByLabelText('Reject'));
     const dialog = await screen.findByRole('dialog', { name: 'Reject 1 line' });
     fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: 'No stock' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject 1 line' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save 1 line' }));
     expect(await screen.findByText('Reserve 0')).toBeInTheDocument();
 
     tick('CB313');
@@ -332,7 +332,9 @@ describe('AC-BR-04 Reject...', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Reject...' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Reject 2 lines' });
-    const stage = within(dialog).getByRole('button', { name: 'Reject 2 lines' });
+    // Owner 16 Oct: no "Stage" on screen; Fulfilment Planning's own "Save N lines".
+    expect(within(dialog).queryByText(/stage/i)).not.toBeInTheDocument();
+    const stage = within(dialog).getByRole('button', { name: 'Save 2 lines' });
     expect(stage).toBeDisabled();
     fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: '   ' } });
     expect(stage).toBeDisabled();
@@ -369,7 +371,7 @@ describe('AC-BR-06 commit carries the bulk stages', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Reject...' }));
     const dialog = await screen.findByRole('dialog', { name: 'Reject 1 line' });
     fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: 'No stock' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject 1 line' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save 1 line' }));
     await screen.findByText('Reserve 0');
 
     tick('CB313');
@@ -379,7 +381,7 @@ describe('AC-BR-06 commit carries the bulk stages', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^reserve \(2\)$/i }));
     const confirm = await screen.findByRole('dialog', { name: /reserve 2 lines on OI-2609-0731/i });
-    expect(within(confirm).getByDisplayValue('No stock')).toBeInTheDocument();
+    expect(within(confirm).getByText('No stock')).toBeInTheDocument();
     fireEvent.click(await within(confirm).findByRole('button', { name: 'Reserve and send to Agent J' }));
 
     await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(1));
@@ -419,9 +421,9 @@ describe('AC-BR-09 line-level x Reject', () => {
 
     fireEvent.click(within(gridRowOf('CKS1050')).getByLabelText('Reject'));
     dialog = await screen.findByRole('dialog', { name: 'Reject 1 line' });
-    expect(within(dialog).getByRole('button', { name: 'Reject 1 line' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Save 1 line' })).toBeDisabled();
     fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: 'Damaged stock' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject 1 line' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save 1 line' }));
 
     expect(await within(gridRowOf('CKS1050')).findByText('Reserve 0')).toBeInTheDocument();
     expect(within(gridRowOf('CB313')).queryByText('Reserve 0')).not.toBeInTheDocument();
@@ -434,7 +436,7 @@ describe('AC-BR-09 line-level x Reject', () => {
     fireEvent.click(within(gridRowOf('CKS1050')).getByLabelText('Reject'));
     const dialog = await screen.findByRole('dialog', { name: 'Reject 1 line' });
     fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: 'No stock' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject 1 line' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save 1 line' }));
 
     expect(await screen.findByText('Reserve 0')).toBeInTheDocument();
     expect(decideButton()).toHaveTextContent('Decide (1)');
@@ -457,7 +459,7 @@ describe('AC-BR-09 line-level x Reject', () => {
       fireEvent.click(within(gridRowOf('CKS1050')).getByLabelText('Reject'));
       const dialog = await screen.findByRole('dialog', { name: 'Reject 1 line' });
       fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: 'No stock' } });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Reject 1 line' }));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save 1 line' }));
       expect(await screen.findByText('Reserve 0')).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
@@ -481,87 +483,26 @@ describe('AC-BR-09 line-level x Reject', () => {
   });
 });
 
-// Owner hand test 16 Oct (round 2, 07:00): bulk reserve must REUSE the existing reserve popup
-// (the Reserve (N) confirmation), never say "Stage", and never cap Reserved by CRM stock
-// (AutoCount may already hold it while CRM lags). Decide > Reserve... stages the counted lines
-// as requested and opens that popup, whose Reserve / Location / Reason are now editable.
-describe('AC-BR-10 Reserve... opens the Reserve (N) popup, editable per line', () => {
-  async function openReservePopup(itemCodes: string[]) {
+// Owner hand test 16 Oct 07:00 / 07:35: quantity changes stay on the line's pen, which is never
+// capped by CRM stock (AutoCount may already hold the reservation while CRM lags) and says Save.
+describe('AC-BR-11 the pen: full request above CRM stock, Save', () => {
+  it('prefills the full request on a line whose pool shows less, saves it, commits it', async () => {
     renderDetail();
     await ready();
-    for (const code of itemCodes) tick(code);
-    openDecideMenu();
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reserve...' }));
-    const n = itemCodes.filter((code) => code !== 'C-FH14').length;
-    return screen.findByRole('dialog', {
-      name: `Reserve ${n} ${n === 1 ? 'line' : 'lines'} on OI-2609-0731`,
-    });
-  }
+    fireEvent.click(within(gridRowOf('CKS1050')).getByLabelText('Edit reserve'));
+    const form = await screen.findByRole('dialog', { name: 'CKS1050' });
+    expect(within(form).getByLabelText('Reserved')).toHaveValue(44);
+    expect(within(form).queryByLabelText(/reason/i)).not.toBeInTheDocument();
+    expect(within(form).queryByText(/stage/i)).not.toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
 
-  it('opens the Reserve confirmation with every counted line prefilled at its full request, above CRM stock', async () => {
-    const dialog = await openReservePopup(['CB313', 'CKS1050', 'C-FH14']);
-    expect(within(dialog).getByLabelText('Reserve CB313')).toHaveValue(88);
-    // CKS1050: 44 asked, only 20 in CRM. Never capped, no reason needed.
-    expect(within(dialog).getByLabelText('Reserve CKS1050')).toHaveValue(44);
-    expect(within(dialog).queryByLabelText('Reason CKS1050')).not.toBeInTheDocument();
-    expect(within(dialog).queryByLabelText('Reserve C-FH14')).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Reserve and send to Agent J' })).toBeEnabled();
-    expect(within(dialog).queryByText(/stage/i)).not.toBeInTheDocument();
-    expect(commitSpy).not.toHaveBeenCalled();
-  });
-
-  it('a line lowered below its request needs a reason, then commits each line at its own qty', async () => {
-    const dialog = await openReservePopup(['CB313', 'CKS1050']);
-    fireEvent.change(within(dialog).getByLabelText('Reserve CB313'), { target: { value: '60' } });
-    const confirm = await within(dialog).findByRole('button', { name: 'Reserve and send to Agent J' });
-    expect(confirm).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText('Reason CB313'), { target: { value: 'Partial stock' } });
-    expect(confirm).toBeEnabled();
-    fireEvent.click(confirm);
-
-    await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(1));
-    expect(commitSpy.mock.calls[0][1].reserves).toEqual(
-      expect.arrayContaining([
-        { row_id: 'row-1', warehouse_id: 'wh-brw', qty_reserved: 60, reason: 'Partial stock' },
-        { row_id: 'row-2', warehouse_id: 'wh-brw', qty_reserved: 44, reason: null },
-      ]),
-    );
-    expect(commitSpy.mock.calls[0][1].reserves).toHaveLength(2);
-  });
-
-  it('typed back up to the request needs no reason; never above the request', async () => {
-    const dialog = await openReservePopup(['CB313']);
-    const qty = within(dialog).getByLabelText('Reserve CB313');
-    fireEvent.change(qty, { target: { value: '10' } });
-    expect(within(dialog).getByLabelText('Reason CB313')).toBeInTheDocument();
-    fireEvent.change(within(dialog).getByLabelText('Reason CB313'), { target: { value: 'Partial stock' } });
-    fireEvent.change(qty, { target: { value: '500' } });
-    expect(qty).toHaveValue(88);
-    expect(within(dialog).queryByLabelText('Reason CB313')).not.toBeInTheDocument();
-    // Back at the request, the reason typed while short does not travel (as on the pen).
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Reserve and send to Agent J' }));
+    expect(await screen.findByText('Reserve 44 @ BRW')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
+    const confirm = await screen.findByRole('dialog', { name: /reserve 1 line on OI-2609-0731/i });
+    fireEvent.click(await within(confirm).findByRole('button', { name: 'Reserve and send to Agent J' }));
     await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(1));
     expect(commitSpy.mock.calls[0][1].reserves).toEqual([
-      { row_id: 'row-1', warehouse_id: 'wh-brw', qty_reserved: 88, reason: null },
+      { row_id: 'row-2', warehouse_id: 'wh-brw', qty_reserved: 44, reason: null },
     ]);
-  });
-
-  it('clears the ticks; Cancel commits nothing and keeps the chips at the edited qty', async () => {
-    const dialog = await openReservePopup(['CB313']);
-    fireEvent.change(within(dialog).getByLabelText('Reserve CB313'), { target: { value: '70' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-
-    expect(await screen.findByText('Reserve 70 @ BRW')).toBeInTheDocument();
-    expect(screen.queryByTestId('reserve-decide-button')).not.toBeInTheDocument();
-    expect(commitSpy).not.toHaveBeenCalled();
-  });
-
-  it('the header Reserve (N) opens the same editable popup for a line staged by its own tick', async () => {
-    renderDetail();
-    await ready();
-    fireEvent.click(within(gridRowOf('CKS1050')).getByLabelText('Reserve'));
-    fireEvent.click(await screen.findByRole('button', { name: /^reserve \(1\)$/i }));
-    const dialog = await screen.findByRole('dialog', { name: /reserve 1 line on OI-2609-0731/i });
-    expect(within(dialog).getByLabelText('Reserve CKS1050')).toHaveValue(44);
   });
 });

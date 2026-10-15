@@ -351,7 +351,7 @@ describe('AC-RR-43: the confirm dialog Balance counts the received part', () => 
     const form = await screen.findByRole('dialog', { name: /ZZT-BAL/i });
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '435' } });
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'BRW only has 435' } });
-    fireEvent.click(within(form).getByRole('button', { name: /^reserve$/i }));
+    fireEvent.click(within(form).getByRole('button', { name: /^save$/i }));
     await screen.findByText(/Reserve 435 @/);
     fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
 
