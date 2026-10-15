@@ -33,6 +33,7 @@ import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridTable } from '@/components/ui/data-grid-table';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useSettings } from '../components/settings-context';
 import {
   NotificationSettingsSchema,
@@ -94,6 +95,8 @@ const NOTIFICATION_ROWS: NotificationSettingRow[] = [...notificationSettings];
 const NotificationSettingsPage = () => {
   const queryClient = useQueryClient();
   const { settings, roles } = useSettings();
+  // The save needs the edit slug (SETTINGS-PERM-GATE); without it the tab is read-only.
+  const canEdit = useHasPermission('user_management.settings.edit');
 
   const form = useForm<NotificationSettingsSchemaType>({
     resolver: zodResolver(NotificationSettingsSchema),
@@ -336,23 +339,27 @@ const NotificationSettingsPage = () => {
             <CardTitle>Notification Settings</CardTitle>
           </CardHeader>
           <CardContent className="px-0 py-2.5">
-            <DataGrid
-              table={table}
-              recordCount={notificationSettings.length}
-              tableLayout={{ width: 'fixed', columnsResizable: true }}
-            >
-              <DataGridTable />
-            </DataGrid>
+            <fieldset disabled={!canEdit}>
+              <DataGrid
+                table={table}
+                recordCount={notificationSettings.length}
+                tableLayout={{ width: 'fixed', columnsResizable: true }}
+              >
+                <DataGridTable />
+              </DataGrid>
+            </fieldset>
           </CardContent>
-          <CardFooter className="flex justify-end gap-4 py-5 px-10">
-            <Button type="button" variant="outline" onClick={handleReset}>
-              Reset
-            </Button>
-            <Button type="submit" disabled={isProcessing}>
-              {isProcessing && <LoaderCircleIcon className="animate-spin" />}
-              Save Settings
-            </Button>
-          </CardFooter>
+          {canEdit && (
+            <CardFooter className="flex justify-end gap-4 py-5 px-10">
+              <Button type="button" variant="outline" onClick={handleReset}>
+                Reset
+              </Button>
+              <Button type="submit" disabled={isProcessing}>
+                {isProcessing && <LoaderCircleIcon className="animate-spin" />}
+                Save Settings
+              </Button>
+            </CardFooter>
+          )}
         </Card>
       </Form>
     </form>

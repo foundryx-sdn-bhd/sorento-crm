@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Eye, EyeOff, LoaderCircleIcon } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useSettings } from '../components/settings-context';
 import {
   SmtpSettingsSchema,
@@ -38,6 +39,9 @@ import {
 export default function SmtpSettingsPage() {
   const queryClient = useQueryClient();
   const { settings } = useSettings();
+  // Save and the test send both need the secrets slug, not `.edit`: the SMTP login is a
+  // credential (SETTINGS-PERM-GATE). Without it the tab is read-only.
+  const canManage = useHasPermission('user_management.settings.secrets');
   const smtp = settings?.smtp;
   const [showPassword, setShowPassword] = useState(false);
 
@@ -198,148 +202,152 @@ export default function SmtpSettingsPage() {
             onSubmit={form.handleSubmit(onSubmit)}
             className="space-y-6 lg:max-w-[600px]"
           >
-            <FormField
-              control={form.control}
-              name="smtp_host"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Host</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="smtp.example.com"
-                      {...field}
-                      value={field.value ?? ''}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="smtp_port"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Port</FormLabel>
-                  <FormControl>
-                    <Input placeholder="587" {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  <FormDescription>Usually 587 (TLS) or 465 (SSL)</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="smtp_secure"
-              render={({ field }) => (
-                <FormItem>
-                  <div className="flex items-center space-x-2 rounded-lg bg-accent/60 p-4">
-                    <Switch
-                      id="smtp_secure"
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                    <Label htmlFor="smtp_secure">Use secure connection (SSL/TLS)</Label>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="smtp_username"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Username</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      placeholder="user@example.com"
-                      {...field}
-                      value={field.value ?? ''}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="smtp_password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Password</FormLabel>
-                  <FormControl>
-                    <div className="relative">
+            <fieldset disabled={!canManage} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="smtp_host"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Host</FormLabel>
+                    <FormControl>
                       <Input
-                        type={showPassword ? 'text' : 'password'}
-                        placeholder="••••••••"
-                        autoComplete="new-password"
+                        placeholder="smtp.example.com"
                         {...field}
                         value={field.value ?? ''}
-                        className="pr-10"
                       />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                        onClick={() => setShowPassword((prev) => !prev)}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Eye className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="smtp_port"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Port</FormLabel>
+                    <FormControl>
+                      <Input placeholder="587" {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormDescription>Usually 587 (TLS) or 465 (SSL)</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="smtp_secure"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center space-x-2 rounded-lg bg-accent/60 p-4">
+                      <Switch
+                        id="smtp_secure"
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                      <Label htmlFor="smtp_secure">Use secure connection (SSL/TLS)</Label>
                     </div>
-                  </FormControl>
-                  <FormDescription>Leave blank to keep existing password</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="smtp_from"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>From address</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="noreply@example.com or Name &lt;noreply@example.com&gt;"
-                      {...field}
-                      value={field.value ?? ''}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <div className="flex gap-2.5 justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => testMutation.mutate()}
-                disabled={testMutation.isPending}
-              >
-                {testMutation.isPending && (
-                  <LoaderCircleIcon className="animate-spin mr-2 h-4 w-4" />
+                    <FormMessage />
+                  </FormItem>
                 )}
-                Test connection
-              </Button>
-              <Button
-                type="submit"
-                disabled={saveMutation.isPending}
-              >
-                {saveMutation.isPending && (
-                  <LoaderCircleIcon className="animate-spin mr-2 h-4 w-4" />
+              />
+              <FormField
+                control={form.control}
+                name="smtp_username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Username</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="text"
+                        placeholder="user@example.com"
+                        {...field}
+                        value={field.value ?? ''}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}
-                Save SMTP settings
-              </Button>
-            </div>
+              />
+              <FormField
+                control={form.control}
+                name="smtp_password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="••••••••"
+                          autoComplete="new-password"
+                          {...field}
+                          value={field.value ?? ''}
+                          className="pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowPassword((prev) => !prev)}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </div>
+                    </FormControl>
+                    <FormDescription>Leave blank to keep existing password</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="smtp_from"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>From address</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="noreply@example.com or Name &lt;noreply@example.com&gt;"
+                        {...field}
+                        value={field.value ?? ''}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </fieldset>
+            {canManage && (
+              <div className="flex gap-2.5 justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => testMutation.mutate()}
+                  disabled={testMutation.isPending}
+                >
+                  {testMutation.isPending && (
+                    <LoaderCircleIcon className="animate-spin mr-2 h-4 w-4" />
+                  )}
+                  Test connection
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={saveMutation.isPending}
+                >
+                  {saveMutation.isPending && (
+                    <LoaderCircleIcon className="animate-spin mr-2 h-4 w-4" />
+                  )}
+                  Save SMTP settings
+                </Button>
+              </div>
+            )}
           </form>
         </Form>
       </CardContent>

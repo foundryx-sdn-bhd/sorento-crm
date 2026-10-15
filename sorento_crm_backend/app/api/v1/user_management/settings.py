@@ -1081,10 +1081,11 @@ async def update_general_settings_post(
 @router.put("/social", status_code=status.HTTP_200_OK)
 async def update_social_settings(
     settings_data: SystemSettingUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.settings.edit")),
     db: Session = Depends(get_db)
 ):
-    """Update social media settings."""
+    """Update social media settings. Same gate as `PUT /general` (SETTINGS-PERM-GATE:
+    it checked only that the caller was signed in)."""
     try:
         settings = db.query(SystemSetting).first()
         if not settings:
@@ -1111,10 +1112,11 @@ async def update_social_settings(
 @router.put("/notifications", status_code=status.HTTP_200_OK)
 async def update_notification_settings(
     settings_data: SystemSettingUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.settings.edit")),
     db: Session = Depends(get_db)
 ):
-    """Update notification settings."""
+    """Update notification settings. Same gate as `PUT /general` (SETTINGS-PERM-GATE:
+    it checked only that the caller was signed in)."""
     try:
         settings = db.query(SystemSetting).first()
         if not settings:
@@ -1144,10 +1146,15 @@ async def update_notification_settings(
 @router.put("/smtp", status_code=status.HTTP_200_OK)
 async def update_smtp_settings(
     settings_data: SystemSettingUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(RUNTIME_SETTINGS_PERMISSION)),
     db: Session = Depends(get_db),
 ):
-    """Update SMTP settings. Password is update-only (omit to keep existing)."""
+    """Update SMTP settings. Password is update-only (omit to keep existing).
+
+    On the secrets slug, not `.edit` (SETTINGS-PERM-GATE): the host, login and password
+    decide where every outbound email goes, which is a credential for the same reason the
+    runtime secrets are, and `.edit` is also held by warehouse_manager and the integration
+    API-key roles."""
     try:
         settings = db.query(SystemSetting).first()
         if not settings:
@@ -1173,10 +1180,11 @@ async def update_smtp_settings(
 
 @router.post("/smtp/test", status_code=status.HTTP_200_OK, response_model=SmtpTestResult)
 async def test_smtp_connection(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(RUNTIME_SETTINGS_PERMISSION)),
     db: Session = Depends(get_db),
 ):
-    """Test SMTP connection using current system settings (or env fallback)."""
+    """Test SMTP connection using current system settings (or env fallback). Same gate
+    as `PUT /smtp`: it logs in with the stored password and reports what the server said."""
     try:
         from app.services.notification_email import test_smtp_connection as do_test
         settings = db.query(SystemSetting).first()
