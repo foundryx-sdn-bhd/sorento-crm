@@ -49,6 +49,8 @@ BORN_AFTER_THE_MOVE = frozenset({
     # PLAN-scm-cs-planning-uat.md, migration 421_order_inquiry_links: one inquiry row's
     # quantity placed across several documents.
     "order_inquiry_links",
+    # OI-RESERVE-RECEIVED (migration oirr_0001_released_links): born into `projects`.
+    "order_inquiry_released_links",
     # PLAN-scm-fulfilment-feedback.md: the planning module's own move-stock artifact.
     "stock_transfers",
     # PLAN-scm-fulfilment-feedback-2sep.md S4, migration 461: saved-but-not-yet-confirmed

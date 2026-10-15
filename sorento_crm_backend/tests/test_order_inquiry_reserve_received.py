@@ -697,3 +697,81 @@ def test_rr35_fresh_row_book_names_received_line_still_links(ctx):
     sc.db.commit()
     links = _target_links(sc, r.row)
     assert [lk.spo_allocation_id for lk in links] == [spo.id], links
+
+
+# --------------------------------------------------------------------------- fix round 1
+def test_rr22_parked_notice_context_reason_names_released_document(ctx, monkeypatch):
+    """D1 (AC-RR-22, parked path): a notice parked at commit and sent later through
+    `send_parked_notices` still opens its REASON with `Released {doc} (received).`."""
+    from tests.test_email_layout_migrations import _run, _seed
+
+    sc = _scene(ctx)
+    mods = _seed(sc.db)  # the real reserve automations, so the parked send resolves recipients
+    _run(mods["eml_0002_seed_layouts"], sc.db)
+    sc.db.commit()
+    _register()
+    calls = _captured_dispatches(monkeypatch)
+    r = _row_with(sc, qty=1092)
+    spo = _received_spo(sc, qty=1092, ref=r.ref)
+    _link_spo(sc, r.row, spo, 1092)
+    sc.db.commit()
+    _request(sc, r.inquiry, r.row, 1092)
+    sc.svc.commit_request(
+        inquiry_id=r.inquiry.id,
+        reserves=[{"row_id": r.row.id, "warehouse_id": sc.wh.id,
+                   "qty_reserved": Decimal("435"), "reason": "BRW only has 435"}],
+        amendments=[],
+        actor_user_id=sc.uid,
+        park_notice=True,
+    )
+    sc.db.commit()
+    assert _reserved_calls(calls) == [], "parked: nothing sent at commit"
+    sc.svc.send_parked_notices(actor_user_id=sc.uid)
+    sc.db.commit()
+    matches = _reserved_calls(calls)
+    assert len(matches) == 1, matches
+    reason = matches[0]["context"]["reserve"]["rows"][0]["reason"]
+    assert reason == f"Released {spo.spo_number} (received). BRW only has 435", reason
+
+
+def test_rr33b_displacement_uses_released_as_used_now(ctx):
+    """D3 used_now: SPO 1500 named by SO line B; X's 1092 was released, C (non-book) holds
+    408. Book step for B (needs 500) gets 408 (C displaced), never more than 1500-1092."""
+    sc = _scene(ctx)
+    b = _row_with(sc, qty=500, state=INQUIRY_RAISED)
+    spo = _received_spo(sc, qty=1500, ref=b.ref)
+    x = _row_with(sc, qty=1092, state=INQUIRY_PLACED)
+    c = _row_with(sc, qty=408, state=INQUIRY_PLACED)
+    _link_spo(sc, x.row, spo, 1092)
+    _link_spo(sc, c.row, spo, 408)
+    sc.db.commit()
+    _request(sc, x.inquiry, x.row, 1092)
+    _commit(sc, x.inquiry, x.row, 435, "BRW only has 435")
+    assert len(_released(sc, x.row)) == 1
+    ProjectOrderInquiryService(sc.db).follow_book_for_rows(
+        [str(b.row.id)], trigger="autocount_ingest", company_id=sc.company, actor_user_id=None
+    )
+    sc.db.commit()
+    got = sum(
+        (Decimal(str(lk.qty)) for lk in _links_of(sc.db, b.row.id) if lk.spo_allocation_id == spo.id),
+        Decimal("0"),
+    )
+    assert got == Decimal("408"), got
+    assert [lk for lk in _links_of(sc.db, c.row.id) if lk.spo_allocation_id == spo.id] == []
+
+
+def test_rr31b_releasing_row_never_relinks_partly_free_target(ctx):
+    """Exclusion guard: SPO 1500 named by X's own SO line; X releases 1092 and reserves
+    435; the 408 that stays free on the SPO is still never re-linked to X."""
+    sc = _scene(ctx)
+    r = _row_with(sc, qty=1092, state=INQUIRY_PLACED)
+    spo = _received_spo(sc, qty=1500, ref=r.ref)
+    _link_spo(sc, r.row, spo, 1092)
+    sc.db.commit()
+    _request(sc, r.inquiry, r.row, 1092)
+    _commit(sc, r.inquiry, r.row, 435, "BRW only has 435")
+    ProjectOrderInquiryService(sc.db).follow_book_for_rows(
+        [str(r.row.id)], trigger="autocount_ingest", company_id=sc.company, actor_user_id=None
+    )
+    sc.db.commit()
+    assert _target_links(sc, r.row) == [], _target_links(sc, r.row)

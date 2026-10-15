@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   OrderInquiryHeaderDetail,
@@ -149,7 +149,7 @@ const ACTIONED = reserveRow({
   reserve_requestable_qty: 0,
 } as Partial<OrderInquiryWorklistRow>);
 
-const OPEN_REQUEST = reserveRow({
+const OPEN_REQUEST_ROW = reserveRow({
   id: 'row-requested',
   item_code: 'ZZT-REQUESTED',
   qty: '30',
@@ -157,6 +157,48 @@ const OPEN_REQUEST = reserveRow({
   reserve_state: 'requested',
   reserve_requestable_qty: 30,
 } as Partial<OrderInquiryWorklistRow>);
+
+// AC-RR-43: 1092 on a received SPO, an open request for all 1092, CS stages 435.
+const BALANCE_ROW = reserveRow({
+  id: 'row-balance',
+  item_code: 'ZZT-BAL',
+  qty: '1092',
+  state: 'placed',
+  linked_qty: '1092',
+  links: [{ ...SPO_LINK, id: 'lk-3', qty: '1092' }],
+  reserve_state: 'requested',
+  requested_qty: '1092',
+  reserve_requestable_qty: 1092,
+  location: 'BRW-BB',
+  product_id: 'prod-1',
+} as Partial<OrderInquiryWorklistRow>);
+
+const BALANCE_REQUEST = {
+  id: 'rr-1',
+  order_inquiry_id: 'oi-1',
+  ordinal: 1,
+  state: 'requested',
+  requested_by: 'user-1',
+  requested_by_name: 'Joey',
+  requested_at: '2026-09-22T09:00:00',
+  note: null,
+  reserved_by_name: null,
+  reserved_at: null,
+  cancelled_at: null,
+  first_to_name: null,
+  rows: [
+    {
+      id: 'reqrow-1',
+      row_id: 'row-balance',
+      item_code: 'ZZT-BAL',
+      qty_requested: '1092',
+      warehouse_id: 'wh-brw',
+      location: 'BRW',
+      qty_reserved: null,
+      reason: null,
+    },
+  ],
+};
 
 vi.mock('../../../_shared/services/orderInquiryService', async (importOriginal) => {
   const actual =
@@ -169,7 +211,8 @@ vi.mock('../../../_shared/services/orderInquiryService', async (importOriginal) 
       PLACED_OPEN,
       RESERVED_NO_LINK,
       ACTIONED,
-      OPEN_REQUEST,
+      OPEN_REQUEST_ROW,
+      BALANCE_ROW,
     ]),
     getOrderInquiryHeaderRelatedDocuments: vi.fn(async () => ({ purchase_orders: [], spos: [] })),
     listOrderInquiryHeaders: vi.fn(async () => ({ data: [], total: 0, page: 1, limit: 25 })),
@@ -179,11 +222,29 @@ vi.mock('../../../_shared/services/orderInquiryService', async (importOriginal) 
   };
 });
 
-vi.mock('../../../_shared/services/orderInquiryReserveService', () => ({
-  createOrderInquiryReserveRequest: vi.fn(async () => ({
-    id: 'rr-1', ordinal: 1, first_to_name: 'Eling',
+vi.mock('../../../_shared/services/orderInquiryReserveService', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('../../../_shared/services/orderInquiryReserveService')
+  >();
+  return {
+    ...actual,
+    createOrderInquiryReserveRequest: vi.fn(async () => ({
+      id: 'rr-1', ordinal: 1, first_to_name: 'Eling',
+    })),
+    getOrderInquiryReserveRequests: vi.fn(async () => [BALANCE_REQUEST]),
+    getReserveNoticeRecipients: vi.fn(async () => ({ to: { name: 'Joey' }, cc: [] })),
+  };
+});
+
+vi.mock('@/services/pendingActionService', () => ({
+  createPendingAction: vi.fn(),
+  cancelPendingAction: vi.fn(async () => undefined),
+  getCurrentPendingAction: vi.fn(async () => ({ pending: null, last_outcome: null })),
+}));
+vi.mock('../../../_shared/services/fulfilmentPlanningService', () => ({
+  getStockDetail: vi.fn(async () => ({
+    locations: [{ warehouse_id: 'wh-brw', location: 'BRW', available_qty: '1092' }],
   })),
-  getOrderInquiryReserveRequests: vi.fn(async () => []),
 }));
 
 import { OrderInquiryDetail } from './OrderInquiryDetail';
@@ -258,5 +319,27 @@ describe('AC-RR-42: the other tooltips are unchanged', () => {
     expect(
       screen.getByText('ZZT-REQUESTED: already has an open reserve request'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('AC-RR-43: the confirm dialog Balance counts the received part', () => {
+  it('1092 on a received SPO, requested 1092, CS stages 435: Balance to buy shows 657', async () => {
+    renderDetail();
+    await screen.findByText('ZZT-BAL');
+    const gridRow = screen.getAllByText('ZZT-BAL').map((e) => e.closest('tr')).find(Boolean) as HTMLElement;
+    fireEvent.click(within(gridRow).getByLabelText('Edit reserve'));
+    await screen.findByRole('dialog', { name: /ZZT-BAL/i });
+    fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '435' } });
+    fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'BRW only has 435' } });
+    fireEvent.click(screen.getByRole('button', { name: /^stage$/i }));
+    await screen.findByText(/Reserve 435 @/);
+    fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
+
+    const dialog = await screen.findByRole('dialog', { name: /reserve 1 line/i });
+    const header = within(dialog).getByText('Balance to buy');
+    const index = Array.from(header.parentElement!.children).indexOf(header);
+    const cells = within(dialog).getAllByRole('cell');
+    const balanceCell = cells[index];
+    expect(balanceCell).toHaveTextContent('657');
   });
 });
