@@ -65,6 +65,19 @@ dealer. For document scope it is staff:
   make the core `contact_customer_scope.enforced` exclude a salesperson so the order routes,
   report_ask and complaints agree with the chatbot.
 
+## Slice 3: the customer picker (crew audit at 54740870f, 15 Oct)
+
+`engine._customer_scope_gate` left every unlinked contact untouched, so an unlinked non-staff
+contact typing another customer's partial name reached the generic resolver: its customer
+picker listed other customers' names, and the picker's DO probe (`resolve_gate`
+`CUSTOMER_PROBE_TOOL`, outside `run_fetch`'s guard) stamped which of them have DOs. The gate now
+treats an unlinked contact that is not document staff (`unlinked_held`: not the tier, no office
+access type, not a salesperson) as owning no customer: a customer word it typed this message
+refuses the turn before the resolver, with the existing no-link line, the same path an
+enforced dealer's word outside its links takes. No picker, no probe, no resolver call for the
+word. Document staff are unchanged. AC-CS-03 ("unlinked contact unchanged: the picker") is
+flipped under the owner rule unlinked != customer.
+
 ## Open before merge
 
 The owner runs `crew/state/reports/V1-DOC-SCOPE-salesperson-check.sql` (read-only) on production

@@ -20,3 +20,6 @@
   unlinked. Deactivating the user revokes access; a sales agent link never makes a dealer staff.
 - AC-10: A salesperson never sees another customer's PO ref (lane, resolver and clarifier), as
   today.
+- AC-11 (slice 3): An unlinked non-staff contact typing another customer's (partial) name gets the
+  no-link refusal line: no customer picker, no other customer's name, no DO probe. Document staff
+  (office tier, office access type, salesperson) keep the picker.
