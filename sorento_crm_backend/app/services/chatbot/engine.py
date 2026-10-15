@@ -2101,6 +2101,19 @@ def _reference_kinds(
     return kinds
 
 
+def _granted_report_plan(granted: Any, plan: Any, parsed_output: dict[str, Any]) -> bool:
+    """R6 (owner ruling CA-3 Q5(a)): `pv2_hook.granted_report_turn` over ONE plan: every fetch a chat report, or
+    the turn's `order_status` a sales figure, under the grant that opens it. Read for the first plan and again
+    after the resolver's re-plan, so a scope lifted for a granted report never outlives it."""
+    from app.services.chatbot.contracts import SALES_FIGURE_STATUSES
+
+    return pv2_hook.granted_report_turn(
+        granted,
+        chat=bool(plan.fetch) and all(spec.domain == "chat_analytics" for spec in plan.fetch),
+        sales=jsc.js_string(parsed_output.get("order_status") or "").strip() in SALES_FIGURE_STATUSES,
+    )
+
+
 def _customer_scope_gate(
     scope: dict[str, Any] | None,
     verdict: dict[str, Any],
@@ -5462,22 +5475,18 @@ def _run_stages_body(  # noqa: PLR0915
         # owns every customer-scoped tool; purchase_order is screened for customer words)
         # or one saying "my" pays for the lookup.
         customer_scope = None
+        granted_report = False
         if (
             verdict.get("self_reference") is True
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
         ):
             # R5-8: a PV2 turn holds an unlinked non-staff contact to no customer; a v1 turn reads v1's scope.
-            # R6 (CA-3 Q5(a)): a granted chat or sales report turn is exempt, picker included.
-            from app.services.chatbot.contracts import SALES_FIGURE_STATUSES
-
+            # R6 (CA-3 Q5(a)): a granted chat or sales report plan is exempt, picker included; a re-plan that
+            # is no longer one is held again before the strict re-gate below.
+            granted_report = pv2_result is not None and _granted_report_plan(access.get("attributes"), plan, parsed_output)
             customer_scope = (
                 pv2_hook.customer_scope(
-                    db, contact_respond_id, space_id_for_turn, state_out.profile,
-                    granted_report=pv2_hook.granted_report_turn(
-                        access.get("attributes"),
-                        chat=bool(plan.fetch) and all(spec.domain == "chat_analytics" for spec in plan.fetch),
-                        sales=jsc.js_string(parsed_output.get("order_status") or "").strip() in SALES_FIGURE_STATUSES,
-                    ),
+                    db, contact_respond_id, space_id_for_turn, state_out.profile, granted_report=granted_report,
                 )
                 if pv2_result is not None
                 else business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
@@ -5944,6 +5953,10 @@ def _run_stages_body(  # noqa: PLR0915
                     resolved_candidates,
                     frozenset(unplaced_tokens),
                 )
+            if granted_report and customer_scope is None and not _granted_report_plan(access.get("attributes"), plan, parsed_output):
+                # R6 security: the re-plan is no granted report, so the scope its first plan lifted is held again
+                # (R5-8): the strict re-gate below decides, and the lane reads the held scope.
+                customer_scope = pv2_hook.customer_scope(db, contact_respond_id, space_id_for_turn, state_out.profile)
             if (
                 gate_scope is not customer_scope
                 and gate_input is not None
