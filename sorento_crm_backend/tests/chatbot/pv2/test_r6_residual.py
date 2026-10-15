@@ -121,3 +121,66 @@ def test_guard_naming_one_account_on_the_confirm_still_picks_that_account():  # 
     parsed = out(ask(act="answers_bot_question", entities=[entity("customer", phrase="A/C II")]))
     st, acts = apply_turn(_zebra_confirm(), parsed, resolver=r, now=NOW)
     assert isinstance(acts[0], Lookup) and [x.key for x in st.held.refs["customer"]] == [Z2]
+
+
+# ------------------------------------------------------------------ last residual round (lead rules 1-3)
+
+
+def _doc_offer():
+    """'Couldn't find: "ZQ7781" (product). Would you like me to escalate ...?', its yes / no a hand-over."""
+    from tests.chatbot.pv2.carry_fakes import option, pending
+
+    yes = option("yes", "Yes", {"kind": "handover", "value": True, "team_key": "customer_service"})
+    no = option("no", "No", {"kind": "handover", "value": False, "team_key": "customer_service"})
+    asked = 'Couldn\'t find: "ZQ7781" (product). Would you like me to escalate to customer service team?'
+    return mk_state(mk_held("inventory", {}), pending_=pending("offer_doc_handover", [yes, no], asked=asked))
+
+
+def _v1_offer():
+    """v1's own 'Would you like me to escalate to purchasing team?', mirrored as a yes / no v1 question."""
+    from tests.chatbot.pv2.carry_fakes import option, pending
+
+    opts = [option(k, k.title(), {"kind": "choice", "key": k, "v1_kind": "team_pick"}) for k in ("yes", "no")]
+    q = pending("v1_open_question", opts, asked="Would you like me to escalate to purchasing team?")
+    q.v1_kind = "team_pick"
+    return mk_state(mk_held("purchase_cost", {}), pending_=q)
+
+
+@pytest.mark.parametrize("make", [_doc_offer, _v1_offer], ids=["doc-handover-offer", "v1-escalate-offer"])
+def test_rule1_a_reply_that_answers_no_offer_never_re_prints_the_offer(make):
+    """RED: 'the third listing' (a number naming no option of the yes / no offer). HEAD counts a miss and prints the
+    same offer again; the offer is dropped and the reply is asked about afresh."""
+    st0 = make()
+    st, acts = apply_turn(st0, out(ask(act="answers_bot_question", answer={"option_key": "3", "free_value": None})),
+                          resolver=FakeResolver({}), now=NOW)
+    assert not any(getattr(a, "reask", False) for a in acts), acts
+    assert st.pending is None or st.pending.asked != st0.pending.asked, st.pending
+
+
+def test_rule2_a_what_to_check_question_always_offers_the_domains():
+    """RED: 'ok sure' with nothing open after an order answer printed a delivery order and its lines: HEAD asks
+    'What would you like me to check?' with no options."""
+    rows = [Option(key="1", label="202609-7710", payload={"kind": "row", "row_kind": "delivery_order", "of": 3}),
+            Option(key="2", label="ZQTB4410-GR", payload={"kind": "row", "row_kind": "product", "in": 1, "of": 3}),
+            Option(key="3", label="ZQTB4410-WH", payload={"kind": "row", "row_kind": "product", "in": 1, "of": 3})]
+    st0 = mk_state(mk_held("order", {}), last_rows=rows)
+    st, acts = apply_turn(st0, out(ask(act="answers_bot_question", answer={"option_key": "yes", "free_value": None})),
+                          resolver=FakeResolver({}), now=NOW)
+    assert isinstance(acts[0], ClarifyAct) and acts[0].about in ("domain", "other"), acts
+    assert st.pending is not None and st.pending.options, st.pending
+    assert all(o.payload.get("kind") == "domain" for o in st.pending.options)
+    assert _printed(acts, st) == _stored(st)
+
+
+def test_rule3_a_not_found_with_nothing_to_offer_is_a_statement_with_no_open_question():
+    """RED: 'and ZQ0042?' after a product class was held: the code is on no record and nothing of its kind is on
+    screen, held or saved. HEAD stores an option-less 'which product' question; the not-found line is said and
+    nothing is left open."""
+    st0 = mk_state(mk_held("product_attachment", {"product_class": ["tap"]}))
+    st, acts = apply_turn(st0, out(ask(act="new_topic", domain="product_attachment",
+                                       entities=[entity("product", phrase="ZQ0042")])),
+                          resolver=FakeResolver({}), now=NOW, can_offer_handover=False)
+    assert isinstance(acts[0], ClarifyAct) and acts[0].not_found, acts
+    assert "ZQ0042" in answer.replay_reply(st, acts)
+    assert st.pending is None, st.pending
+    assert acts[0].about not in ("entity", "which_held", "domain", "other") or acts[0].pending.options, acts[0]
