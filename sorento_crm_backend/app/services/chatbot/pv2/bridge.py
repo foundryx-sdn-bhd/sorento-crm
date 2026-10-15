@@ -255,7 +255,10 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date, so_g
             "suppliers": [],
         }
     answer = _open_question_answer(action)
-    if answer is None and action.pending_kind == "v1_open_question" and action.free_value and action.free_kind:
+    if (
+        answer is None and action.pending_kind == "v1_open_question" and action.free_value and action.free_kind
+        and not _is_uuid(action.free_value)  # R5 fix 1: a typed id is never a carried pick (v1 trusts its uuid)
+    ):
         # R5-4: a typed answer to a v1 roster is this message's one entity (the held subject is carried), as
         # v1's parser sends it; v1's own roster matcher (the option's exact label) decides which position it names.
         for e in verdict["entities"]:
