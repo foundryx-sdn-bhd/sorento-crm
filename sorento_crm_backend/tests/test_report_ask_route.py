@@ -288,6 +288,31 @@ def test_ac_re_8_the_body_echoes_the_filters_by_name(client, db):
     assert body["date_from"] == "2026-09-01" and body["date_to"] == "2026-09-30", body
 
 
+def test_prb_s6_a_category_filter_echoes_its_class_label_once_never_the_code(client, db):
+    """Chat fix PR-B S6 (AC-B8): a live category's name copies its code ("SRT-WC"), so the echo
+    names the class label the categories share, once ("Category: BRT-WC, CB-WC, ..." on v94)."""
+    w = _ranking_world(db)
+    w.cat_x.class_label = w.cat_y.class_label = "ZZT Water Closet"
+    db.commit()
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=3, category_ids=[w.cat_x.id, w.cat_y.id])
+    assert {"key": "category", "label": "Category", "values": ["ZZT Water Closet"]} in body["filters"], body["filters"]
+
+
+def test_prb_s6_near_miss_a_category_with_no_class_label_echoes_its_own_name(client, db):
+    w = _ranking_world(db)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=3, category_ids=[w.cat_x.id])
+    assert {"key": "category", "label": "Category", "values": ["ZZT-CAT-X"]} in body["filters"], body["filters"]
+
+
+def test_prb_s6_a_brand_name_two_rows_share_echoes_once(client, db):
+    """Chat fix PR-B S6: "Brand: SORENTO, SORENTO" (two brand rows, one per company) prints once."""
+    w = _ranking_world(db)
+    twin = _brand(db, "ZZT-BRAND-B")
+    db.commit()
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=3, brand_ids=[w.brand_b.id, twin.id])
+    assert {"key": "brand", "label": "Brand", "values": ["ZZT-BRAND-B"]} in body["filters"], body["filters"]
+
+
 # ================================================================ AC-RE-9: every dimension
 
 

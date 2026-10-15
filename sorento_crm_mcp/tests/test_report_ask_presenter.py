@@ -64,7 +64,8 @@ def test_catalog_declares_the_spec_params():
 def test_ranking_reply_lines():
     lines = _report_ask(_body()).split("\n")
     # REPORT-DRILLDOWN: one fact per line, `Label: value` (owner rule).
-    assert lines[:3] == ["Top 3 sales agents by delivered sales", "Brand: SORENTO", "Period: 2026-09-01 to 2026-09-30"], lines
+    # Chat fix PR-B S6 (AC-B8): the head says how many rows exist, the period reads as dates.
+    assert lines[:3] == ["Top 3 of 5 sales agents by delivered sales", "Brand: SORENTO", "Period: 1 Sep 2026 to 30 Sep 2026"], lines
     assert "1. SA01 RM 1,200.00, 30 pcs" in lines, lines
     assert "2. SA02 RM 600.00, 15 pcs" in lines, lines
     assert "and 2 more" in lines, lines
@@ -79,25 +80,29 @@ def test_no_more_line_when_nothing_is_cut():
 
 def test_sort_asc_reads_bottom():
     first = _report_ask(_body(sort="asc")).split("\n")[0]
-    assert first == "Bottom 3 sales agents by delivered sales", first
+    # Chat fix PR-B S6 (AC-B8): the head says how many rows exist, the period reads as dates.
+    assert first == "Bottom 3 of 5 sales agents by delivered sales", first
 
 
 def test_ordered_basis_is_named_in_the_header():
     first = _report_ask(_body(basis="ordered", basis_label="ordered sales")).split("\n")[0]
-    assert first == "Top 3 sales agents by ordered sales", first
+    # Chat fix PR-B S6 (AC-B8): the head says how many rows exist, the period reads as dates.
+    assert first == "Top 3 of 5 sales agents by ordered sales", first
 
 
 def test_number_shape():
     body = _body(group_by=None, group_label=None, rows=[], more=0, total_count=0)
+    # Chat fix PR-B S6 (AC-B8): the head says how many rows exist, the period reads as dates.
     assert _report_ask(body) == (
-        "Sales by delivered sales\nBrand: SORENTO\nPeriod: 2026-09-01 to 2026-09-30\nTotal RM 2,100.00, 55 pcs"
+        "Sales by delivered sales\nBrand: SORENTO\nPeriod: 1 Sep 2026 to 30 Sep 2026\nTotal RM 2,100.00, 55 pcs"
     )
 
 
 def test_no_rows_names_its_scope_one_fact_per_line():
     body = _body(rows=[], more=0, total_count=0)
+    # Chat fix PR-B S6 (AC-B8): the head says how many rows exist, the period reads as dates.
     assert _report_ask(body) == (
-        "No delivered sales found\nBrand: SORENTO\nPeriod: 2026-09-01 to 2026-09-30"
+        "No delivered sales found\nBrand: SORENTO\nPeriod: 1 Sep 2026 to 30 Sep 2026"
     )
 
 
@@ -121,7 +126,8 @@ def test_refused_prints_the_message_only():
 )
 def test_group_label_plurals(group_by, label, plural):
     first = _report_ask(_body(group_by=group_by, group_label=label)).split("\n")[0]
-    assert first.startswith(f"Top 3 {plural} by delivered sales"), first
+    # Chat fix PR-B S6 (AC-B8): the head says how many rows exist, the period reads as dates.
+    assert first.startswith(f"Top 3 of 5 {plural} by delivered sales"), first
 
 
 def test_each_filter_is_its_own_line_values_joined_with_commas():
@@ -130,15 +136,17 @@ def test_each_filter_is_its_own_line_values_joined_with_commas():
         {"key": "category", "label": "Category", "values": ["Chairs"]},
     ]
     lines = _report_ask(_body(filters=filters)).split("\n")
-    assert lines[:4] == ["Top 3 sales agents by delivered sales", "Brand: SORENTO, MOCHA", "Category: Chairs",
-                         "Period: 2026-09-01 to 2026-09-30"], lines
+    # Chat fix PR-B S6 (AC-B8): the head says how many rows exist, the period reads as dates.
+    assert lines[:4] == ["Top 3 of 5 sales agents by delivered sales", "Brand: SORENTO, MOCHA", "Category: Chairs",
+                         "Period: 1 Sep 2026 to 30 Sep 2026"], lines
 
 
 def test_the_card_link_is_named_in_the_header():
     """REPORT-DRILLDOWN: the header names the link a drill used (owner Q1)."""
     filters = [{"key": "customer_agent", "label": "Customers assigned to", "values": ["SA01", "SA02"]}]
     lines = _report_ask(_body(group_by="customer", group_label="Customer", filters=filters)).split("\n")
-    assert lines[:2] == ["Top 3 customers by delivered sales", "Customers assigned to: SA01, SA02"], lines
+    # Chat fix PR-B S6 (AC-B8): the head says how many rows exist, the period reads as dates.
+    assert lines[:2] == ["Top 3 of 5 customers by delivered sales", "Customers assigned to: SA01, SA02"], lines
 
 
 def test_the_envelope_hands_the_shown_rows_and_their_keys_on():

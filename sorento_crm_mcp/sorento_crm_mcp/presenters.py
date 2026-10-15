@@ -3328,10 +3328,48 @@ def _ask_pcs(value: Any) -> str:
         return "0 pcs"
 
 
+def _ask_figures(figures: dict, measure: Any) -> str:
+    """A row's (or the total's) amount and quantity, the measure the ranking sorts by first
+    (chat fix PR-B S6)."""
+    rm, pcs = _ask_rm(figures.get("amount")), _ask_pcs(figures.get("qty"))
+    return f"{pcs}, {rm}" if measure == "qty" else f"{rm}, {pcs}"
+
+
+def _ask_month(value: Any) -> str:
+    """`2026-09` as `Sep 2026`; anything unreadable as it came."""
+    try:
+        d = datetime.strptime(str(value), "%Y-%m")
+    except ValueError:
+        return str(value)
+    return f"{d.strftime('%b')} {d.year}"
+
+
+def _ask_rows(rows: list, group_by: Any) -> list[dict]:
+    """The rows to print: one per name (two rows sharing a name, one brand per company, are
+    one row with their figures summed), and a month breakdown in date order (chat fix PR-B S6)."""
+    merged: dict[str, dict] = {}
+    for row in rows:
+        name = str(row.get("name"))
+        if name in merged:
+            seen = merged[name]
+            seen["qty"] = (seen.get("qty") or 0) + (row.get("qty") or 0)
+            seen["amount"] = (seen.get("amount") or 0) + (row.get("amount") or 0)
+        else:
+            merged[name] = dict(row)
+    out = list(merged.values())
+    if group_by == "month":
+        out.sort(key=lambda r: str(r.get("name")))
+    return out
+
+
 def _report_ask(body: dict) -> str:
     """The whole reply for `crm_report_ask`: a head line, then one fact per line (`Label: value`
     per filter, then the period; owner rule, REPORT-DRILLDOWN), the ranked rows, `and N more`,
-    the whole set's total; for the number shape the total alone."""
+    the whole set's total; for the number shape the total alone.
+
+    Chat fix PR-B S6 (AC-B8): the head says how many rows exist ("Top 10 of 37"), every
+    figure names the sort measure first, each name prints once, dates read as dates, and a
+    month breakdown lists its months in date order."""
     if body.get("status") in ("refused", "busy"):
         return str(body.get("message") or "")
     if body.get("dataset") == "chat":
@@ -3340,14 +3378,14 @@ def _report_ask(body: dict) -> str:
         f"{f.get('label')}: {', '.join(str(v) for v in f.get('values') or [])}"
         for f in body.get("filters") or []
     ]
-    facts.append(f"Period: {body.get('date_from')} to {body.get('date_to')}")
-    total = body.get("total") or {}
-    figures = f"{_ask_rm(total.get('amount'))}, {_ask_pcs(total.get('qty'))}"
+    facts.append(f"Period: {_chat_date(body.get('date_from'))} to {_chat_date(body.get('date_to'))}")
+    measure = body.get("measure")
+    figures = _ask_figures(body.get("total") or {}, measure)
     basis = body.get("basis_label")
     group_by = body.get("group_by")
     if not group_by:
         return "\n".join([f"Sales by {basis}", *facts, f"Total {figures}"])
-    rows = body.get("rows") or []
+    rows = _ask_rows(body.get("rows") or [], group_by)
     if not rows:
         return "\n".join([f"No {basis} found", *facts])
     plural = _REPORT_ASK_PLURALS.get(group_by, str(body.get("group_label") or group_by).lower())
@@ -3355,12 +3393,16 @@ def _report_ask(body: dict) -> str:
         # One row printed reads singular: "Top 1 product", never "Top 1 products".
         plural = str(body.get("group_label") or group_by).lower()
     lead = "Bottom" if body.get("sort") == "asc" else "Top"
-    lines = [f"{lead} {len(rows)} {plural} by {basis}", *facts]
-    for row in rows:
-        lines.append(
-            f"{row.get('rank')}. {row.get('name')} {_ask_rm(row.get('amount'))}, {_ask_pcs(row.get('qty'))}"
-        )
     more = int(body.get("more") or 0)
+    count = int(body.get("total_count") or (len(body.get("rows") or []) + more))
+    of = f" of {count:,}" if count > len(rows) else ""
+    lines = [f"{lead} {len(rows)}{of} {plural} by {basis}", *facts]
+    for row in rows:
+        if group_by == "month":
+            # A trend, not a ranking: its months in date order, no rank number.
+            lines.append(f"{_ask_month(row.get('name'))} {_ask_figures(row, measure)}")
+        else:
+            lines.append(f"{row.get('rank')}. {row.get('name')} {_ask_figures(row, measure)}")
     if more > 0:
         lines.append(f"and {more} more")
     lines.append(f"Total {figures}")
