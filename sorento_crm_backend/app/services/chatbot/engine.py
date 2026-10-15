@@ -5018,7 +5018,8 @@ def _run_stages_body(  # noqa: PLR0915
 
         linked_verdict, seat_link_lines = find_lane.as_linked_products(
             db,
-            verdict,
+            # Only the resolution sets the link fields (AC-18): a parser entity's own are dropped.
+            find_lane.without_link_fields(verdict),
             [
                 str(c)
                 for p in state_in.focus.products
@@ -7706,9 +7707,16 @@ def _run_answer(
     # the entities), never from the message; nothing linked, no line.
     from app.services.chatbot.lanes.business import find as find_lane
 
-    fit_lines = find_lane.fit_lines(verdict.get("entities") or []) if isinstance(verdict, dict) else []
-    if fit_lines and (getattr(answer, "text", "") or "").strip():
-        answer = dataclasses_replace(answer, text="\n".join(fit_lines) + f"\n\n{answer.text}")
+    if isinstance(verdict, dict) and (getattr(answer, "text", "") or "").strip():
+        lang = item.get("reply_language") if isinstance(item, dict) else None
+        localizer = None
+        if lang not in (None, "en") and find_lane.fit_lines(verdict.get("entities") or []):
+            with _session(session_factory) as db:
+                localizer = label_catalog.resolve(db, lang, dry_run=dry_run)
+            localizer = None if localizer is label_catalog.IDENTITY else localizer
+        fit_lines = find_lane.fit_lines(verdict.get("entities") or [], localizer)
+        if fit_lines:
+            answer = dataclasses_replace(answer, text="\n".join(fit_lines) + f"\n\n{answer.text}")
     stage[0] = "replied"
     # Review S2: the A/B readout counts the files the turn delivered, before link mode
     # empties the list.

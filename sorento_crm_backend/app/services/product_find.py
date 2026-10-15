@@ -39,9 +39,8 @@ from typing import Any, Callable, Collection, Optional, Union
 
 from sqlalchemy.orm import Session
 
-from app.services.product_compatibility_service import KIND_SEAT_COVER, KINDS
-
 from app.services.error_handler import AppException
+from app.services.product_compatibility_service import KIND_SEAT_COVER, KINDS
 
 TYPE_PRODUCT_REF = "product_ref"
 TYPE_VALUE = "value"
@@ -172,6 +171,15 @@ def fit_many_reverse(kind: str) -> str:
     return f"{{code}} fits these {KINDS[kind].host}s: {{codes}}"
 
 
+def fit_keys() -> frozenset[str]:
+    """Every fit-line sentence: `label_catalog.DIRECT_ONLY`, so running text is never matched
+    against them (the engine fills them where it builds the line)."""
+    keys = {FIT_ONE_REVERSE}
+    for kind in KINDS:
+        keys |= {fit_one_forward(kind), fit_many_forward(kind), fit_many_reverse(kind)}
+    return frozenset(keys)
+
+
 def _kind_labels() -> dict[str, dict[str, str]]:
     """Every per-kind sentence with its ms / zh, from `KINDS` and `_NOUNS_I18N`. The seat cover
     none lines keep the wording above."""
@@ -266,8 +274,7 @@ FILTERS: dict[str, FindFilter] = {
                 "\"mirror for SRTBF11413\", "
                 "\"stock seat cover for SRTWC8122\"): emit fits and keep that word out of the "
                 "entities. Its kind is the link kind the other side names "
-                f"({_FITS_KEYS}), null when THIS message names no particular kind (\"what goes with "
-                "SRTBF11413\"). The other side is only one of those words, never a file word "
+                f"({_FITS_KEYS}), else null. The other side is only one of those words, never a file word "
                 "(photo, drawing, files), a fact (stock, price) or the code itself: \"send me "
                 "SRTWC8383-RL-MBL drawing\" names no other side, so it is no find. Its value is the "
                 "other-side word copied character for character from THIS message's text (\"seat "

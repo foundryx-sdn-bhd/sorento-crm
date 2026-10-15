@@ -57,6 +57,25 @@ def filter_keys(parse_output: dict[str, Any]) -> list[str]:
     return list(filter_items(parse_output))
 
 
+#: The entity keys only `as_linked_products` sets (the fit line reads them).
+LINK_FIELDS = ("linked_from", "linked_as", "linked_kind")
+
+
+def without_link_fields(verdict: dict[str, Any]) -> dict[str, Any]:
+    """`verdict` with the link fields dropped from every entity: a parser that echoes (or a message
+    that crafts) them must never print a fit line, so only the resolution sets them (AC-18)."""
+    entities = verdict.get("entities") if isinstance(verdict, dict) else None
+    if not any(isinstance(e, dict) and any(k in e for k in LINK_FIELDS) for e in jsc.array(entities)):
+        return verdict
+    return {
+        **verdict,
+        "entities": [
+            {k: v for k, v in e.items() if k not in LINK_FIELDS} if isinstance(e, dict) else e
+            for e in jsc.array(entities)
+        ],
+    }
+
+
 def fit_kinds(parse_output: dict[str, Any]) -> list[str | None]:
     """The link kind of every `fits` filter the parse carries, in order, one per kind: a key of
     `KINDS`, or None (the message names no particular kind; an unknown word is none). The parse
@@ -166,7 +185,7 @@ def as_linked_products(
 
     `carried_codes` are the conversation's product codes (`focus.products`): the subject of
     "which seat cover fits it?", whose parse names no code. With neither, the reply asks for
-    the code (#1601 card rule 6). `carried_relation` (`focus.relation`, "covers" or "wcs")
+    the code (#1601 card rule 6). `carried_relation` (`focus.relation`, "covers" or "wcs", or "<kind>:<side>" for a kind other than seat cover)
     says those codes answered a fit ask, and which side they are (crew v94 check and carry
     ruling, 13 Oct; the #1626 pattern):
 
@@ -277,22 +296,35 @@ def as_linked_products(
         for kind in kinds
     }
 
+    # AC-19: a linked product the chatbot may not answer with is never named (the same rule every
+    # resolver tier applies, `chat_searchable_products()` and the contact's brand scope).
+    from app.services.entity_resolver import _chat_visible_product_ids
+
+    visible = _chat_visible_product_ids(
+        db, {str(o.id) for by_side in reads.values() for found in by_side.values() for others in found.values() for o in others}
+    )
+
     replaced: dict[int, list[tuple[str, str, str]]] = {}  # (code, kind, side) per anchor
     unlinked: list[Any] = []  # the products named, on no link
     unknown: list[str] = []  # the codes named that are no product's, as typed
     for i in anchors:
         products = by_code.get(normalize_code(entity_code(entities[i])), [])
         linked: list[tuple[str, str, str]] = []
+        hidden = False
         for p in products:
             for kind in kinds:
                 for side, found in reads[kind].items():
                     for other in found.get(str(p.id), []):
-                        if other.product_code and all(other.product_code != c for c, _k, _s in linked):
+                        if str(other.id) not in visible:
+                            hidden = True
+                        elif other.product_code and all(other.product_code != c for c, _k, _s in linked):
                             linked.append((other.product_code, kind, side))
         if linked:
             # Code order, the same on every database: `accessories_for` orders by the column's
             # collation, and en_US puts SRTSCBD333A-UF before SRTSCBD333-UF where C does not.
             replaced[i] = sorted(linked, key=lambda t: normalize_code(t[0]))
+        elif hidden:
+            unknown.append(entity_code(entities[i]))  # links that are all hidden: as typed
         elif products:
             unlinked.append(products[0])
         else:
@@ -362,12 +394,18 @@ def as_linked_products(
     return linked, []
 
 
-def fit_lines(entities: list[Any]) -> list[str]:
+def fit_lines(entities: list[Any], localizer: Any = None) -> list[str]:
     """CHAT-FIT-LINE: the lines that open a reply reached through a link, one per anchor and kind,
     in the order the answer lists the codes. Read from the resolution (`linked_from` /
     `linked_as` / `linked_kind` on the entities `as_linked_products` made), never from the
     message. Forward (the accessory side listed): `Mirror for <host> is <code>.` or `Mirror for
-    <host>: <a>, <b>`; reverse: `<code> fits <host>.` or `<code> fits these cabinets: <a>, <b>`."""
+    <host>: <a>, <b>`; reverse: `<code> fits <host>.` or `<code> fits these cabinets: <a>, <b>`.
+    With a `localizer` each line is its catalogued sentence filled directly (the templates are
+    `DIRECT_ONLY`: running text is never matched against them)."""
+
+    def say(template: str, **values: str) -> str:
+        return localizer.fill(template, **values) if localizer is not None else template.format(**values)
+
     groups: dict[tuple[str, str, str], list[str]] = {}
     for e in entities:
         if not isinstance(e, dict) or not e.get("linked_from") or e.get("linked_kind") not in KINDS:
@@ -382,15 +420,15 @@ def fit_lines(entities: list[Any]) -> list[str]:
             continue
         if side == "wcs":
             line = (
-                product_find.FIT_ONE_REVERSE.format(code=anchor, host=codes[0])
+                say(product_find.FIT_ONE_REVERSE, code=anchor, host=codes[0])
                 if len(codes) == 1
-                else product_find.fit_many_reverse(kind).format(code=anchor, codes=", ".join(codes))
+                else say(product_find.fit_many_reverse(kind), code=anchor, codes=", ".join(codes))
             )
         else:
             line = (
-                product_find.fit_one_forward(kind).format(code=anchor, linked=codes[0])
+                say(product_find.fit_one_forward(kind), code=anchor, linked=codes[0])
                 if len(codes) == 1
-                else product_find.fit_many_forward(kind).format(code=anchor, codes=", ".join(codes))
+                else say(product_find.fit_many_forward(kind), code=anchor, codes=", ".join(codes))
             )
         lines.append(line)
     return lines
