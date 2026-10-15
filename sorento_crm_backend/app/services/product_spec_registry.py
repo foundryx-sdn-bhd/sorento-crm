@@ -165,8 +165,11 @@ def _rule_identity(rule: dict) -> str:
 compile_builder = _compile_builder
 
 
+# The tub classes, as the class choices store them, the category's broader "Bathtub and
+# Jacuzzi" included.
+_TUB_CLASSES = ("Bathtub", "Jacuzzi", "Bathtub and Jacuzzi")
 # Classes a hose length is never read on (#1286): their "1.75M" is the product itself.
-_NO_HOSE_CLASSES = ("Bathtub", "Jacuzzi", "Bathtub and Jacuzzi")
+_NO_HOSE_CLASSES = _TUB_CLASSES
 
 
 def _rules_from_shipped_tables() -> dict[str, list[dict]]:
@@ -257,6 +260,17 @@ def _rules_from_shipped_tables() -> dict[str, list[dict]]:
             only_when={"spec": "class", "is": False, "values": list(_NO_HOSE_CLASSES)},
         ),
         "is_frameless": flag("FRAMELESS"),
+        # Chat fix PR-A (AC-A5): a tub whose catalogue text names its jets. Only on a tub
+        # class, read off this derivation's class (the category's included): "WHIRLPOOL
+        # FLUSHING WC" is a flush, and two such WCs are classed by their category alone,
+        # which the key's `applies_when` gate never overrules.
+        "has_massage": flag(
+            "MASSAGE",
+            "WHIRLPOOL",
+            "JACUZZI",
+            "AIR BUBBLE",
+            only_when={"spec": "class", "is": True, "values": list(_TUB_CLASSES)},
+        ),
         "has_led": flag("LED"),
         "is_honeycomb": flag("HONEYCOMB"),
         "is_soft_close": flag("SOFT CLOSE", "SOFT CLOSING"),
@@ -1046,6 +1060,19 @@ SPEC_REGISTRY_SEED: list[dict] = [
         "synonyms": {"true": ["frameless", "frame less", "no frame", "borderless"]},
         "measured_coverage": 16,
         "rank_weight": 2.0,
+    },
+    {
+        "spec_key": "has_massage",
+        "label": "Massage jets",
+        "data_type": "boolean",
+        # Chat fix PR-A (owner ruling 16 Oct 2026: "Jacuzzi is like bathtub with massage
+        # jet"): "any bathtub with massage jet" finds every jetted tub, a Jacuzzi-class one
+        # or a bathtub whose text says MASSAGE / AIR BUBBLE, and a plain bathtub ask stays
+        # plain bathtubs. 191 tub codes on the dev copy (16 Oct 2026) name the jets.
+        "applies_when": {"class": list(_TUB_CLASSES)},
+        "synonyms": {"true": ["massage", "massage jet", "massage jets", "with massage", "jetted", "air bubble"]},
+        "measured_coverage": 191,
+        "rank_weight": 2.5,
     },
     {
         "spec_key": "has_led",
