@@ -21,10 +21,11 @@ const FLOOR_LEVEL_LABELS: Record<string, string> = {
 /**
  * What is true about the line, ON THE SPOT (the client: "cannot wait until I save").
  *
- * **Custom item** is a fact about the row on screen - no product is linked - read off the LIVE
- * draft. **Non-standard** and **below floor** are the server's: while the draft matches the saved
- * row the saved verdicts show, and the moment it diverges the server is asked (debounced, via
- * `useLineVerdict`) with the same functions the save runs.
+ * **Non-standard** is one word for two facts: no product and no set is linked (a fact about the
+ * row on screen, read off the LIVE draft), or the linked product or set is outside the series
+ * (the server's). A line never shows two pills. **Below floor** is the server's too: while the
+ * draft matches the saved row the saved verdicts show, and the moment it diverges the server is
+ * asked (debounced, via `useLineVerdict`) with the same functions the save runs.
  */
 export function LineFlags({
   quotationId,
@@ -37,14 +38,20 @@ export function LineFlags({
   draft: LineDraft;
 }) {
   const productId = (draft.product_id ?? '').trim();
+  const setId = (draft.product_set_id ?? '').trim();
   const price = (draft.unit_price ?? '').trim();
   const pristine =
     line != null &&
     (line.product_id ?? '') === productId &&
+    (line.product_set_id ?? '') === setId &&
     (price || '') === (line.unit_price ?? '');
   const verdict = useLineVerdict(
     quotationId ?? '',
-    { product_id: productId || undefined, unit_price: price || undefined },
+    {
+      product_id: productId || undefined,
+      product_set_id: setId || undefined,
+      unit_price: price || undefined,
+    },
     !pristine && quotationId !== null,
   );
 
@@ -60,16 +67,12 @@ export function LineFlags({
       : ''
     : describeVerdictFloor(verdict.data ?? null);
 
-  if (productId && !belowFloor && !nonStandard) return null;
+  const noTarget = !productId && !setId;
+  if (!noTarget && !belowFloor && !nonStandard) return null;
 
   return (
     <div className="space-y-0.5">
       <div className="flex flex-wrap items-center gap-1">
-        {!productId && (
-          <Badge variant="outline" className="text-2xs">
-            Custom item
-          </Badge>
-        )}
         {belowFloor && (
           <Badge
             variant="destructive"
@@ -80,11 +83,13 @@ export function LineFlags({
             Below floor
           </Badge>
         )}
-        {nonStandard && (
+        {(noTarget || nonStandard) && (
           <Badge
             variant="secondary"
             className="gap-1 text-2xs"
-            title="Outside the series this scope is quoted from"
+            title={
+              noTarget ? 'Not a catalogue product' : 'Outside the series this scope is quoted from'
+            }
           >
             <TriangleAlert className="size-3" aria-hidden />
             Non-standard
@@ -92,7 +97,7 @@ export function LineFlags({
         )}
       </div>
       {belowFloor && floorText && (
-        <p className="text-xs text-destructive">{floorText}</p>
+        <p className="whitespace-normal break-words text-xs text-destructive">{floorText}</p>
       )}
     </div>
   );

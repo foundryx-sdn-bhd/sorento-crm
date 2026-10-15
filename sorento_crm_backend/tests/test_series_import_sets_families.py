@@ -179,7 +179,7 @@ def test_d4_report_lists_resolved_with_via_and_sorted_members():
         _set(w, "ZSF8-SET", [p1])  # family hitting a set
         report = _apply(w, ["ZSF6SET", "ZSF7", "ZSF8", "ZSF-NOTHING"])
         by_code = {r["code"]: r for r in report["resolved"]}
-        assert by_code["ZSF6SET"] == {"code": "ZSF6SET", "via": "set", "members": ["ZSF6-CIS", "ZSF6-PED"]}
+        assert by_code["ZSF6SET"] == {"code": "ZSF6SET", "via": "set", "members": ["ZSF6-CIS", "ZSF6-PED"], "sets": ["ZSF6SET"]}
         assert by_code["ZSF7"] == {"code": "ZSF7", "via": "family", "members": ["ZSF7-A", "ZSF7-B"]}
         assert by_code["ZSF8"]["via"] == "family"
         assert by_code["ZSF8"]["members"] == ["ZSF6-PED", "ZSF8-X"]
