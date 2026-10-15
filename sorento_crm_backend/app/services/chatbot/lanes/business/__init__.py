@@ -2035,6 +2035,21 @@ def run_fetch(
         or bool(carried_customer_ids)
     )
     if (
+        order_status_raw == "sales_report"
+        and domain in contracts.ORDER_OR_SALES_DOMAINS
+        and not has_own_accounts
+        and not (has_product or has_customer or carried_subject)
+        and (has_brand or typed_brand_words(parse_output))
+        and _office_staff(db, contact_id, space_id)
+    ):
+        # Chat fix PR-B S10 (review): a staff sales total naming only a brand has no subject
+        # for `crm_sales_report` (422, "could not fetch"); the report engine totals a brand's
+        # sales (`crm_report_ask`, no axis), so it is that ask, with its words and questions.
+        parse_output = report_ask.take_words(
+            {**parse_output, "order_status": report_ask.ASK_NAME, "group_by": None}, ""
+        )
+        order_status_raw = report_ask.ASK_NAME
+    if (
         domain == "order"
         and not (has_product or has_customer or has_brand or carried_subject)
         and carried_customer_unusable
