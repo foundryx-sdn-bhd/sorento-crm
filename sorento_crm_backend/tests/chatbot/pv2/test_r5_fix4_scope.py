@@ -16,7 +16,7 @@ from tests.chatbot.pv2 import _resolve_seed as S
 from tests.chatbot.pv2.carry_fakes import NOW, FakeResolver, ask, out
 from tests.chatbot.pv2.test_r5_fix2_picks import _products, _which_line_menu
 from tests.chatbot.pv2.test_r5_d_doc_lines import _resolver
-from tests.chatbot.pv2.test_r5_g2_no_reach import REPORT_TOOLS, _report_turn  # noqa: F401
+from tests.chatbot.pv2.test_r5_g2_no_reach import REPORT_TOOLS, _chat_report, _report_turn  # noqa: F401
 from tests.chatbot.pv2.test_redesign_r1_engine import _go_v2  # noqa: F401
 from tests.chatbot.pv2.test_core_engine_hook import fake_turn  # noqa: F401 - fixture
 from tests.chatbot.test_top_selling_round5 import cat, route  # noqa: F401 - fixtures
@@ -36,9 +36,11 @@ def test_f4_3_a_scope_read_error_for_a_non_staff_contact_on_a_pv2_report_turn_ge
         raise RuntimeError("scope read failed")
 
     monkeypatch.setattr(pv2_hook, "customer_scope", boom)
-    res, called = _report_turn(session_factory, monkeypatch, grants=())  # R6 Q5(a): the hold is for a contact without the grant
+    # a CHAT report with no grant: no sales-grant refusal fires first, so the scope's own refusal line is what is said
+    res, called = _report_turn(session_factory, monkeypatch, grants=(), spec=_chat_report())
     assert not ({n for n, _ in called} & REPORT_TOOLS), called
     assert (res.direct_reply or "").strip(), "an empty reply is sent"
+    assert "own account" in res.direct_reply, res.direct_reply
 
 
 # ------------------------------------------------------------------ 4 carried SO-list ids under an enforced empty scope
@@ -156,16 +158,20 @@ def _who_turn(session_factory, monkeypatch, fake_turn, *, v2):
     verdict = _ask(top_n=100, rank_by="amount", entities=[_e("water closet", "category"), _e("contactz", "customer")])
     if v2:
         _go_v2(session_factory)
-        verdict = {**verdict, "asks": None, "topic_reset": None}
         state = mk_state(Held(domain="order", sid="s1"))
         state.next_sid = 2
-        fake_turn(FakeResult(verdict=verdict, state=state))
-        # R6 Q5(a): a contact holding the sales-report grant is exempt, so the PV2 case pins the hold without it.
+        # R6 Q5(a): a contact holding the sales-report grant is exempt. This pins the R5-8 HOLD: a DOCUMENT ask
+        # (an orders list) naming the word, no report grant at all, so the customer-scope gate is what refuses.
+        from tests.chatbot.test_engine import _parser_output
         from tests.chatbot.test_outstanding_lane import _resolve_services, _run_turn
 
+        verdict = {**_parser_output(domain_hint="order", intent_hint="check_order", order_status=None,
+                                    entities=[_e("contactz", "customer")]), "asks": None, "topic_reset": None}
+        fake_turn(FakeResult(verdict=verdict, state=state))
+
         result, captured = _run_turn(
-            session_factory, monkeypatch, qf=verdict, text_body="top 100 hot selling water closet by contactz",
-            msg_id=f"ZZT-f4-2-{uuid.uuid4().hex[:8]}", attributes=["sales_orders.outstanding"],
+            session_factory, monkeypatch, qf=verdict, text_body="my orders for contactz in september",
+            msg_id=f"ZZT-f4-2-{uuid.uuid4().hex[:8]}", attributes=list(__import__('tests.chatbot.pv2._register_envelopes', fromlist=['ALL_REVEALS']).ALL_REVEALS),
             resolve_services=_resolve_services({}))
         return str((result.reply or {}).get("text") or ""), list(captured)
     return _turn(session_factory, monkeypatch, verdict, "top 100 hot selling water closet by contactz")
@@ -175,6 +181,7 @@ def test_f4_2_the_who_question_for_an_unlinked_contact_on_a_pv2_turn_prints_no_c
         session_factory, monkeypatch, fake_turn, cat, route):
     text, _captured = _who_turn(session_factory, monkeypatch, fake_turn, v2=True)
     assert "CONTACTZ X" not in text and "Do you mean customer" not in text, text
+    assert "isn't under your account" in text or "own account" in text, text
 
 
 def test_f4_2_guard_the_same_turn_on_v1_keeps_its_who_question(session_factory, monkeypatch, fake_turn, cat, route):  # guard: passes today
