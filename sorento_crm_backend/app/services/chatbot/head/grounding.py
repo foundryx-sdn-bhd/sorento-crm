@@ -742,9 +742,10 @@ def ground(
                 if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() not in _SPEC_HINTS
             ]
             grounded = _as_typed(_validate(entity, vocab), entity, message, vocab, others)
-            if not grounded and raw and str(verdict.get("domain_hint") or "").strip().lower() == "promotion":
-                # PROMO-SUBJECT-FILTER AC-38: on a promotion ask a qualifier no listed key
-                # holds is an unknown descriptor, asked back as typed, never dropped.
+            if not grounded and raw:
+                # PROMO-SUBJECT-FILTER AC-38, on every domain since chat fix PR-A (AC-A6): a
+                # qualifier no listed key holds is an unknown descriptor, said back as typed
+                # ("Couldn't find: <word>"), never dropped to answer the ask unfiltered.
                 grounded = [Grounded("", "", raw)]
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})
