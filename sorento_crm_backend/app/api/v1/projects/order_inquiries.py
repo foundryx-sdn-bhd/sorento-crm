@@ -1351,7 +1351,7 @@ def preview_handover_resend(
 
     try:
         return OrderInquiryHandoverResend(db).preview(
-            payload.inquiry_ids, actor_user_id=current_user["id"]
+            payload.inquiry_ids, actor_user_id=current_user["id"], row_ids=payload.row_ids
         )
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
@@ -1369,7 +1369,7 @@ def send_handover_resend(
 
     try:
         return OrderInquiryHandoverResend(db).send(
-            payload.inquiry_ids, actor_user_id=current_user["id"]
+            payload.inquiry_ids, actor_user_id=current_user["id"], row_ids=payload.row_ids
         )
     except Exception as exc:
         db.rollback()

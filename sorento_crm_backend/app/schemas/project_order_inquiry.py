@@ -1620,6 +1620,21 @@ class HandoverResendIn(BaseModel):
     inquiry_ids: List[Annotated[str, StringConstraints(pattern=UUID_PATTERN)]] = Field(
         ..., min_length=1, max_length=50
     )
+    #: The ticked lines of ONE order inquiry; omitted means every open line.
+    row_ids: Optional[List[Annotated[str, StringConstraints(pattern=UUID_PATTERN)]]] = Field(
+        None, max_length=500
+    )
+
+
+class HandoverResendLineOut(BaseModel):
+    row_id: str
+    item_code: Optional[str] = None
+    qty: str
+    location: Optional[str] = None
+    delivery_date: Optional[date] = None
+    selected: bool
+    #: The newest earlier handover email of this OI that names the line's item code.
+    sent_at: Optional[datetime] = None
 
 
 class HandoverLastSentOut(BaseModel):
@@ -1634,6 +1649,8 @@ class HandoverResendEmailOut(ParkedEmailOut):
     last_sent: Optional[HandoverLastSentOut] = None
     #: The OI Excel the send attaches (names only; a preview stores nothing).
     attachments: List[str] = []
+    #: Single-OI preview only: every open line, for the per-line ticks.
+    lines: List[HandoverResendLineOut] = []
 
 
 class HandoverResendSkipOut(BaseModel):

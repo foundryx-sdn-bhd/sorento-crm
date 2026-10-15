@@ -49,6 +49,7 @@ export function ParkedSendDialog({
   notice,
   emailNote,
   tabLabel,
+  sendDisabled = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -63,6 +64,8 @@ export function ParkedSendDialog({
   emailNote?: (index: number) => React.ReactNode;
   /** Overrides the default "Email to <name> (<count>)" tab label. */
   tabLabel?: (email: ParkedEmail, index: number) => string;
+  /** Holds Send back for a caller-side reason (e.g. no line ticked). */
+  sendDisabled?: boolean;
 }) {
   const [selected, setSelected] = React.useState(0);
   React.useEffect(() => {
@@ -190,7 +193,7 @@ export function ParkedSendDialog({
             Cancel
           </Button>
           {ready ? (
-            <Button onClick={handleSend} disabled={isSending || emails.length === 0}>
+            <Button onClick={handleSend} disabled={isSending || sendDisabled || emails.length === 0}>
               {sendLabel}
             </Button>
           ) : null}

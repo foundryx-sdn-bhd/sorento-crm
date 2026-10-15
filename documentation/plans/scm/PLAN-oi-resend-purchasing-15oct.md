@@ -40,12 +40,25 @@ automation_run / notification row, and there was no way to send the handover aga
    out; the email still goes. The preview names the file ("Attached: ...") and stores nothing. The
    dispatch differs only where it must: a confirm fires enabled automations (`dispatch_event`); Send
    to purchasing runs the handover automation even when it is switched off (`send_match`).
+10. Pick the lines (owner hand test, 16 Oct 00:33: "the first 2 lines is sent in the previous
+    confirm, and then the third line is sent in the morning confirm ... I actually want to just
+    resend for the third line only"): a SINGLE-OI preview lists every open line with a tick, all
+    ticked to start. The email AND its Excel (`export_xlsx(row_ids=...)`) carry only the ticked
+    lines; Send waits for at least one. A line that an earlier handover email of this OI names
+    (its item code in that email's body) reads "sent DD/MM": a hint, still tickable. A bulk send
+    takes every open line. `row_ids` with more than one OI, an empty list, or a line that is not
+    an open line of that OI is 422.
+11. Review hardening (Excel slice): the workbook render runs in a SAVEPOINT so a DB error in it
+    never poisons the session the email goes on (B1); a confirm stores the workbook only when an
+    enabled automation will send it, and a resend only for an OI that has recipients (S2).
 
 ## Contract
 - `POST /api/v1/project-sales/order-inquiries/handover-resend/preview` `{inquiry_ids}` ->
   `{emails[{inquiry_id, inquiry_no, to, cc, subject, body_html, inquiry_count, line_count, last_sent}],
   inquiry_total, unresolved, skipped[{inquiry_id, inquiry_no, reason}], automation_enabled}`.
-- `POST .../handover-resend/send` `{inquiry_ids}` -> `{emails_sent, items_sent, skipped}`.
+- `POST .../handover-resend/send` `{inquiry_ids, row_ids?}` -> `{emails_sent, items_sent, skipped}`; preview takes the
+  same body and each single-OI email adds `lines[{row_id, item_code, qty, location, delivery_date,
+  selected, sent_at}]` and `attachments` (workbook names).
 - skip reasons: `nothing_open`, `no_recipient`, `failed`. Unknown OI 404; empty / bad id / >50 is 422.
 
 ## Known limits

@@ -111,8 +111,10 @@ vi.mock(
 const previewResendSpy = vi.fn();
 const sendResendSpy = vi.fn();
 vi.mock('../../_shared/services/orderInquiryHandoverResendService', () => ({
-  previewHandoverResend: (ids: string[]) => previewResendSpy(ids),
-  sendHandoverResend: (ids: string[]) => sendResendSpy(ids),
+  previewHandoverResend: (ids: string[], rowIds?: string[]) =>
+    rowIds ? previewResendSpy(ids, rowIds) : previewResendSpy(ids),
+  sendHandoverResend: (ids: string[], rowIds?: string[]) =>
+    rowIds ? sendResendSpy(ids, rowIds) : sendResendSpy(ids),
 }));
 
 import { OrderInquiryHeadersList } from './OrderInquiryHeadersList';
@@ -144,6 +146,7 @@ function email(id: string, no: string, lastSent: unknown = null) {
     body_html: `<p>body-${no}</p>`,
     last_sent: lastSent,
     attachments: [`${no}.xlsx`],
+    lines: [] as unknown[],
   };
 }
 
@@ -273,6 +276,107 @@ describe('Send to purchasing from the Documents list', () => {
     expect(
       screen.queryByRole('checkbox', { name: 'Select OI-0001' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('Send to purchasing for ONE order inquiry: pick the lines (owner, 16 Oct)', () => {
+  function line(rowId: string, item: string, sentAt: string | null = null) {
+    return {
+      row_id: rowId,
+      item_code: item,
+      qty: '5',
+      location: 'BRW-BB',
+      delivery_date: '2026-10-30',
+      selected: true,
+      sent_at: sentAt,
+    };
+  }
+
+  beforeEach(() => {
+    previewResendSpy.mockImplementation(async () => ({
+      emails: [
+        {
+          ...email('h-1', 'OI-0001'),
+          lines: [
+            line('r-a', 'ITEM-A', '2026-10-13T02:41:00Z'),
+            line('r-b', 'ITEM-B', '2026-10-13T02:41:00Z'),
+            line('r-c', 'ITEM-C'),
+          ],
+        },
+      ],
+      inquiry_total: 1,
+      unresolved: [],
+      skipped: [],
+      automation_enabled: true,
+    }));
+    sendResendSpy.mockImplementation(async () => ({
+      emails_sent: 1,
+      items_sent: 1,
+      skipped: [],
+    }));
+  });
+
+  it('lists the open lines ticked, marks the ones already sent, and sends only the ticked one', async () => {
+    renderList();
+    const dialog = await tickAndOpen(['OI-0001']);
+    const tickA = await within(dialog).findByRole('checkbox', {
+      name: 'Send ITEM-A',
+    });
+    expect(tickA).toBeChecked();
+    expect(
+      within(dialog).getByRole('checkbox', { name: 'Send ITEM-C' }),
+    ).toBeChecked();
+    expect(within(dialog).getAllByText('sent 13/10')).toHaveLength(2);
+
+    fireEvent.click(tickA);
+    fireEvent.click(
+      within(dialog).getByRole('checkbox', { name: 'Send ITEM-B' }),
+    );
+    await waitFor(() =>
+      expect(previewResendSpy).toHaveBeenLastCalledWith(['h-1'], ['r-c']),
+    );
+
+    const sendButton = within(dialog).getByRole('button', {
+      name: 'Send 1 email',
+    });
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    fireEvent.click(sendButton);
+    await waitFor(() =>
+      expect(sendResendSpy).toHaveBeenCalledWith(['h-1'], ['r-c']),
+    );
+  });
+
+  it('with no line ticked, Send waits and says why', async () => {
+    renderList();
+    const dialog = await tickAndOpen(['OI-0001']);
+    for (const item of ['ITEM-A', 'ITEM-B', 'ITEM-C']) {
+      fireEvent.click(
+        await within(dialog).findByRole('checkbox', { name: `Send ${item}` }),
+      );
+    }
+    expect(
+      within(dialog).getByText('Tick at least one line to send.'),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('button', { name: 'Send 1 email' }),
+    ).toBeDisabled();
+    fireEvent.click(
+      within(dialog).getByRole('checkbox', { name: 'Send ITEM-C' }),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: 'Send 1 email' }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it('a bulk preview offers no line ticks', async () => {
+    renderList();
+    const dialog = await tickAndOpen(['OI-0001', 'OI-0002']);
+    await waitFor(() =>
+      expect(previewResendSpy).toHaveBeenCalledWith(['h-1', 'h-2']),
+    );
+    expect(within(dialog).queryByText('Lines to send')).not.toBeInTheDocument();
   });
 });
 

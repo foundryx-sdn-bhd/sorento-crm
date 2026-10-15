@@ -12593,31 +12593,44 @@ def _build_handover_context(
 _XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-def _handover_excel_attachments(
-    db: Session, inquiry_ids: Sequence[str], *, store: bool
-) -> List[Dict[str, Any]]:
-    """The OI's own Excel export (the workbook the detail page's Export Excel makes) for each
-    order inquiry the handover names, as email attachments (owner ruling, 16 Oct: the
-    handover carries the OI Excel). `store=False` (a preview) names the files and stores
-    nothing. An OI whose workbook cannot be rendered or stored is logged and left out: the
-    email still goes, the same rule as the per-line files."""
+def _handover_excel_names(db: Session, inquiry_ids: Sequence[str]) -> List[Tuple[str, Any]]:
+    """`(inquiry_id, header)` for each named OI that has a company, read unscoped: the ids
+    only ever come from rows the caller already wrote or was allowed to read."""
+    out: List[Tuple[str, Any]] = []
+    with company_scope(db, None):
+        for inquiry_id in inquiry_ids:
+            header = db.get(OrderInquiry, inquiry_id)
+            if header is not None and header.company_id:
+                out.append((str(inquiry_id), header))
+    return out
+
+
+def store_handover_excel(
+    db: Session,
+    context: Dict[str, Any],
+    inquiry_ids: Sequence[str],
+    *,
+    row_ids: Optional[Sequence[str]] = None,
+) -> None:
+    """Render and store each named OI's own Excel export (the workbook the detail page's
+    Export Excel makes) and put it first in the context's `email_attachments` (owner ruling,
+    16 Oct: the handover carries the OI Excel). `row_ids` limits the workbook to those rows
+    (Send to purchasing with lines ticked); `None` is the whole OI, as Export Excel prints it.
+
+    The render runs in a SAVEPOINT: a database error inside it is rolled back to there, so
+    the session the email is then sent on stays usable (review B1). Any failure is logged and
+    that workbook left out: the email still goes, the same rule as the per-line files."""
     from app.services import storage_router
     from app.services.order_inquiry_worklist_service import OrderInquiryWorklistService
 
-    out: List[Dict[str, Any]] = []
-    for inquiry_id in inquiry_ids:
+    stored: List[Dict[str, Any]] = []
+    for inquiry_id, header in _handover_excel_names(db, inquiry_ids):
+        filename = f"{header.inquiry_no}.xlsx"
         try:
-            with company_scope(db, None):
-                header = db.get(OrderInquiry, inquiry_id)
-            if header is None or not header.company_id:
-                continue
-            filename = f"{header.inquiry_no}.xlsx"
-            if not store:
-                out.append({"filename": filename})
-                continue
-            with company_scope(db, frozenset({str(header.company_id)})):
+            with company_scope(db, frozenset({str(header.company_id)})), db.begin_nested():
                 _name, file_bytes = OrderInquiryWorklistService(db).export_xlsx(
-                    inquiry_id=str(inquiry_id)
+                    inquiry_id=inquiry_id,
+                    **({"row_ids": list(row_ids)} if row_ids is not None else {}),
                 )
             provider = storage_router.default_provider()
             stored_key, _signed = storage_router.get_backend(provider).upload_file(
@@ -12625,7 +12638,7 @@ def _handover_excel_attachments(
                 file_path=f"exports/order-inquiry/handover/{uuid.uuid4()}/{filename}",
                 content_type=_XLSX_CONTENT_TYPE,
             )
-            out.append(
+            stored.append(
                 {
                     "filename": filename,
                     "storage_provider": provider,
@@ -12638,7 +12651,8 @@ def _handover_excel_attachments(
                 "order_inquiry_handover: could not attach the Excel of %s; sending without it",
                 inquiry_id,
             )
-    return out
+    if stored:
+        context["email_attachments"] = stored + list(context.get("email_attachments") or [])
 
 
 def build_handover_email(
@@ -12649,8 +12663,10 @@ def build_handover_email(
     carry the same lines, the same per-line SO files and the same OI Excel.
 
     `items` are `ProjectOrderInquiryService.handover_item` dicts. Returns `_build_handover_
-    context`'s `(context, source_id)`, plus `handover.excel_files` (the workbook names) and
-    the stored workbooks first in `email_attachments`; `None` on no items."""
+    context`'s `(context, source_id)` plus `handover.excel_files` (the workbook names);
+    `None` on no items. `store_excel=False` names the workbooks without rendering or storing
+    them: a preview, a confirm with no enabled automation to send it, or a resend that stores
+    later (`store_handover_excel`) only for an OI that has someone to send to."""
     # #1312: whatever files the lines hold. A failure here never stops the email itself:
     # on any error the handover still sends, just without those files.
     attachments_by_line: Dict[str, List[Dict[str, Any]]] = {}
@@ -12671,12 +12687,13 @@ def build_handover_email(
     inquiry_ids = list(
         dict.fromkeys(item["order_inquiry_id"] for item in items if item.get("order_inquiry_id"))
     )
-    excel = _handover_excel_attachments(db, inquiry_ids, store=store_excel)
-    context["handover"]["excel_files"] = [entry["filename"] for entry in excel]
-    stored = [entry for entry in excel if entry.get("storage_key")]
-    if stored:
-        context["email_attachments"] = stored + list(context.get("email_attachments") or [])
+    context["handover"]["excel_files"] = [
+        f"{header.inquiry_no}.xlsx" for _id, header in _handover_excel_names(db, inquiry_ids)
+    ]
+    if store_excel:
+        store_handover_excel(db, context, inquiry_ids)
     return context, source_id
+
 
 def _build_undo_context(
     pending: Sequence[Dict[str, Any]]
@@ -12939,7 +12956,15 @@ def register_order_inquiry_post_commit_dispatch() -> None:
             # #1312 + OI Excel (owner, 16 Oct): read on the FRESH session (the root has
             # committed, so a concurrent upload's files are visible here); the one build
             # "Send to purchasing" uses too.
-            built = build_handover_email(fresh, concluded)
+            # The workbook is stored only when an enabled automation will send it (S2).
+            from app.services import park_send
+
+            built = build_handover_email(
+                fresh,
+                concluded,
+                store_excel=park_send.first_automation(fresh, "order_inquiry_handover")
+                is not None,
+            )
             if built is None:
                 return
             context, source_id = built

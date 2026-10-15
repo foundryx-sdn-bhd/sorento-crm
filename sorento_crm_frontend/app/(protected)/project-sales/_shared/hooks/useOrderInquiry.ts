@@ -843,11 +843,13 @@ export function useSendParked(kind: ParkedKind) {
 }
 
 /** Send to purchasing: the preview for these order inquiries, loaded while `ids` is set. */
-export function useHandoverResendPreview(ids: string[] | null) {
+export function useHandoverResendPreview(ids: string[] | null, rowIds?: string[] | null) {
   return useQuery({
-    queryKey: [ORDER_INQUIRY_HANDOVER_RESEND_PREVIEW_KEY, ids],
-    queryFn: () => previewHandoverResend(ids ?? []),
+    queryKey: [ORDER_INQUIRY_HANDOVER_RESEND_PREVIEW_KEY, ids, rowIds ?? null],
+    queryFn: () => previewHandoverResend(ids ?? [], rowIds ?? undefined),
     enabled: ids !== null && ids.length > 0,
+    // Re-ticking a line keeps the last email on screen while the new one loads.
+    placeholderData: (previous) => previous,
     gcTime: 0,
     staleTime: 0,
   });
@@ -857,7 +859,8 @@ export function useHandoverResendPreview(ids: string[] | null) {
 export function useSendHandoverResend() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (ids: string[]) => sendHandoverResend(ids),
+    mutationFn: ({ ids, rowIds }: { ids: string[]; rowIds?: string[] | null }) =>
+      sendHandoverResend(ids, rowIds ?? undefined),
     onSuccess: (result) => {
       const failed = result.skipped.filter((skip) => skip.reason === 'failed');
       if (result.emails_sent > 0) {
