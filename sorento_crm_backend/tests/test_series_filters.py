@@ -13,6 +13,7 @@ from decimal import Decimal
 import pytest
 
 from app.models.product import Product
+from app.schemas.common import MAX_PAGE_LIMIT
 from app.services import project_seed_service
 
 from ._pg_fixture import blank_session
@@ -351,10 +352,14 @@ def test_d3_server_search_over_whole_series_case_insensitive_code_or_name(big):
 
 
 def test_d4_limit_bounds(big):
-    r = big.client.get(f"{BASE}/config/series/{big.sid}/products/rows", params={"limit": 101})
+    # Capped at the shared MAX_PAGE_LIMIT like every ListResponse endpoint
+    # (tests/test_list_pagination_limit.py); the series page itself sends 50.
+    url = f"{BASE}/config/series/{big.sid}/products/rows"
+    r = big.client.get(url, params={"limit": MAX_PAGE_LIMIT + 1})
     assert r.status_code == 422, r.text
-    ok = big.client.get(f"{BASE}/config/series/{big.sid}/products/rows", params={"limit": 100})
-    assert ok.status_code == 200 and len(ok.json()["data"]) == 100
+    ok = big.client.get(url, params={"limit": MAX_PAGE_LIMIT})
+    assert ok.status_code == 200, ok.text
+    assert len(ok.json()["data"]) == big.expected
 
 
 def test_d5_patch_a_derived_row_on_page_two_and_total_counts_named_plus_scope(big):
