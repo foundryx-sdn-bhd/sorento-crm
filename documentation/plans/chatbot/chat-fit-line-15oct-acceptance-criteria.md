@@ -77,6 +77,10 @@ their own `ZZT*` products and links (CI's DB is empty).
   is sent exactly as on main. A no-link line ("No seat cover is on record ...") never replaces a
   refusal either. A field-level partial denial inside a real answer ("I can't share the List
   Price ...") keeps the line: the answer still carries the product's facts.
+- AC-24 (crew audit baseline 15 Oct) Reverse asks: when the named code sits on the ACCESSORY end
+  of links, its own link kind(s) decide which hosts answer, whatever kind the parse guessed from a
+  host word ("which cabinet fits SRTMR11413" parsed kind=shelf still answers the mirror's
+  cabinets). The parsed kind picks the links for a host code only (forward asks).
 - AC-21 Several-code and model-family lines are asserted exactly (no `startswith`).
 
 ## Live (opt-in, `CHATBOT_LIVE_LLM=1`, dev parser v94 = prod v63 shape)
