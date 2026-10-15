@@ -29,7 +29,7 @@ from dataclasses import replace as dataclass_replace
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -377,6 +377,44 @@ class StockDebtService:
         filtered set rather than the page, for the same reason the axis already does:
         derived per page, they would change under the reader as they page (AC-6/AC-7/AC-7b).
         """
+        board = self._board(
+            query=query, group=group, location=location, exclude_location=exclude_location,
+            only_debt=only_debt, date_from=date_from, date_to=date_to,
+            supplier_ids=supplier_ids, book=book, projected=projected,
+        )
+        data_rows = board["rows"]
+        start = max(page - 1, 0) * limit
+        page_rows = data_rows[start : start + limit]
+        return {
+            "data": page_rows,
+            "pagination": {"total": len(data_rows), "page": page, "limit": limit},
+            "months": board["months"],
+            "tba_month": month_key(self._tba_from()),
+            "groups": self._groups(),
+            "locations": self._locations(board["span"]),
+            "totals": board["totals"],
+            "suppliers": board["suppliers"],
+            "sheet_counts": board["sheet_counts"],
+        }
+
+    def _board(
+        self,
+        *,
+        query: Optional[str] = None,
+        group: Optional[str] = None,
+        location: Optional[Sequence[str]] = None,
+        exclude_location: Optional[Sequence[str]] = None,
+        only_debt: bool = True,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        supplier_ids: Optional[Sequence[str]] = None,
+        book: str = "all",
+        projected: bool = False,
+    ) -> Dict[str, Any]:
+        """The whole filtered board, unpaged: `list()` pages it and the snapshot service
+        stores it, so the two cannot read the book differently. Returns the rows, the axis
+        (`months`), `totals`, `suppliers`, `sheet_counts`, the `span` and the per-product
+        assignment results (`assignments`, keyed by product id) the rows were built from."""
         span = self._warehouses(group, book)
         warehouses = self._narrow_locations(span, location, exclude_location)
         products = self._products(warehouses, query)
@@ -490,21 +528,14 @@ class StockDebtService:
                 }
             )
 
-        totals = self._totals(data_rows, axis)
-        sheet_counts = self._sheet_counts(data_rows)
-
-        start = max(page - 1, 0) * limit
-        page_rows = data_rows[start : start + limit]
         return {
-            "data": page_rows,
-            "pagination": {"total": len(data_rows), "page": page, "limit": limit},
+            "rows": data_rows,
             "months": axis,
-            "tba_month": month_key(self._tba_from()),
-            "groups": self._groups(),
-            "locations": self._locations(span),
-            "totals": totals,
+            "totals": self._totals(data_rows, axis),
             "suppliers": suppliers,
-            "sheet_counts": sheet_counts,
+            "sheet_counts": self._sheet_counts(data_rows),
+            "span": span,
+            "assignments": assignments,
         }
 
     def _aux_maps(
@@ -542,6 +573,40 @@ class StockDebtService:
                 k: (-float(v["dealer_qty"]) if v["dealer_qty"] else 0.0)
                 for k, v in demand.items()
             },
+        }
+
+    def _demand_row(
+        self, line, order_ids: Dict[str, Optional[str]]
+    ) -> Dict[str, Any]:
+        """One drill demand row off an assignment line: the shape `cell()` serves and the
+        snapshot stores, so the two cannot differ."""
+        return {
+            "so_number": line.line.so_number,
+            "agent_code": line.line.agent_code,
+            "warehouse_code": line.line.warehouse,
+            "required_date": line.line.required_date,
+            "open_qty": line.line.open_qty,
+            # R22: Ordered/Delivered beside the existing Outstanding (`open_qty`,
+            # unchanged) - `qty_ordered` is `plan_qty()` (CS's own `qty_required`
+            # when stated, else the book's `qty_ordered`).
+            "qty_ordered": line.line.qty_ordered,
+            "qty_delivered": line.line.qty_delivered,
+            "assigned_qty": round(sum(item.qty for item in line.assigned), 4),
+            "assigned_source": self._source_text(line),
+            "status": line.status,
+            # What this line booked into the month it sits in (R37): what it was short
+            # of ON ITS OWN DATE. A `late` line ends covered and still carries one,
+            # which is why the drill states it rather than leaving the reader to
+            # subtract Assigned from Open and get a different number from the cell.
+            "short_qty": line.short_at_date,
+            # R29: the Sales order cell's own link target.
+            "sales_order_id": line.line.sales_order_id,
+            # R29 + addendum: one LINKED entry per source, replacing `assigned_source`.
+            # STOCK-DEBT-LENDABLE: plus one "Lent to" entry per receiver on a line that
+            # lent its landed goods, and the receiver's on-hand entry names the lender.
+            "assigned_from": self._assigned_from(line, order_ids=order_ids),
+            # STOCK-DEBT-LENDABLE: what nearer lines took of this line's landed goods.
+            "lent_qty": line.lent_qty,
         }
 
     def cell(
@@ -651,34 +716,7 @@ class StockDebtService:
         }
 
         demand = [
-            {
-                "so_number": line.line.so_number,
-                "agent_code": line.line.agent_code,
-                "warehouse_code": line.line.warehouse,
-                "required_date": line.line.required_date,
-                "open_qty": line.line.open_qty,
-                # R22: Ordered/Delivered beside the existing Outstanding (`open_qty`,
-                # unchanged) - `qty_ordered` is `plan_qty()` (CS's own `qty_required`
-                # when stated, else the book's `qty_ordered`).
-                "qty_ordered": line.line.qty_ordered,
-                "qty_delivered": line.line.qty_delivered,
-                "assigned_qty": round(sum(item.qty for item in line.assigned), 4),
-                "assigned_source": self._source_text(line),
-                "status": line.status,
-                # What this line booked into the month it sits in (R37): what it was short
-                # of ON ITS OWN DATE. A `late` line ends covered and still carries one,
-                # which is why the drill states it rather than leaving the reader to
-                # subtract Assigned from Open and get a different number from the cell.
-                "short_qty": line.short_at_date,
-                # R29: the Sales order cell's own link target.
-                "sales_order_id": line.line.sales_order_id,
-                # R29 + addendum: one LINKED entry per source, replacing `assigned_source`.
-                # STOCK-DEBT-LENDABLE: plus one "Lent to" entry per receiver on a line that
-                # lent its landed goods, and the receiver's on-hand entry names the lender.
-                "assigned_from": self._assigned_from(line, order_ids=order_ids),
-                # STOCK-DEBT-LENDABLE: what nearer lines took of this line's landed goods.
-                "lent_qty": line.lent_qty,
-            }
+            self._demand_row(line, order_ids)
             for line in result.lines
             if line.bucket == month
         ]
@@ -2675,8 +2713,16 @@ class StockDebtService:
         return self._render_workbook(listing, split=split, show_aux=show_aux)
 
     def _render_workbook(
-        self, listing: Dict[str, Any], *, split: str, show_aux: bool = False
+        self,
+        listing: Dict[str, Any],
+        *,
+        split: str,
+        show_aux: bool = False,
+        extra_columns: Sequence[Tuple[str, int, Callable[[dict], Any]]] = (),
     ) -> Tuple[bytes, str, str, Dict[str, int]]:
+        """`extra_columns` are `(header, width, value_of_row)` triples appended after
+        `Total` (the snapshot export's Decision / From / Note); the footer prints blanks
+        under them."""
         from openpyxl import Workbook
         from openpyxl.utils import get_column_letter
 
@@ -2693,8 +2739,12 @@ class StockDebtService:
             + (AUX_EXPORT_HEADERS if show_aux else [])
             + [_export_month_label(key) for key in axis]
             + ["TBA", "Total"]
+            + [header for header, _width, _value in extra_columns]
         )
-        widths = [16, 30, 14, 24] + ([12] * 4 if show_aux else []) + [10] * len(axis) + [10, 12]
+        widths = (
+            [16, 30, 14, 24] + ([12] * 4 if show_aux else []) + [10] * len(axis) + [10, 12]
+            + [width for _header, width, _value in extra_columns]
+        )
         width_map = {
             get_column_letter(index + 1): width for index, width in enumerate(widths)
         }
@@ -2720,8 +2770,15 @@ class StockDebtService:
             ws = wb.active if index == 0 else wb.create_sheet()
             ws.title = key if split == "none" else unique_sheet_title(key, used_titles)
             sheet_count += 1
-            data = [self._export_row(row, axis, show_aux) for row in group_rows]
-            data.append(self._export_total_row(group_rows, axis, show_aux))
+            data = [
+                self._export_row(row, axis, show_aux)
+                + tuple(value(row) for _header, _width, value in extra_columns)
+                for row in group_rows
+            ]
+            data.append(
+                self._export_total_row(group_rows, axis, show_aux)
+                + ("",) * len(extra_columns)
+            )
             write_sheet(ws, columns, data, width_map)
 
         buf = BytesIO()
