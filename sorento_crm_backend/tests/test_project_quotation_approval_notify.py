@@ -556,3 +556,96 @@ def test_requester_fallback_skips_an_integration_project_owner(api, sent):
     assert client.post(f"{_root(project, document)}/approve").status_code == 200
 
     assert _of_type(sent, APPROVED) == []
+
+
+# ------------------------------------------------------------------ round 3
+
+
+def test_company_scope_an_approver_granted_only_another_company_is_not_told(api, sent):
+    from app.models.company import Company
+
+    client, db, company_id, _, project, product = api
+    document = _quotation(client, project.id, product.id, BELOW_FLOOR)
+    seller = _user(db, f"{MARKER} Seller")
+    granted = _approver(db, f"{MARKER} Granted", company_id)
+    other = Company(id=str(uuid.uuid4()), name=f"{MARKER} Other Co", code=f"ZZ{uuid.uuid4().hex[:6]}")
+    db.add(other)
+    db.flush()
+    elsewhere = _approver(db, f"{MARKER} Elsewhere", other.id, with_company=True)
+    db.commit()
+    root = _root(project, document)
+    _act_as(seller)
+
+    assert _send(client, db, root).status_code == 200
+    assert [c["user_id"] for c in _of_type(sent, REQUESTED)] == [granted]
+    assert client.post(f"{root}/approval-revise", json={"reason": "Changed"}).status_code == 200
+    assert [c["user_id"] for c in _of_type(sent, WITHDRAWN)] == [granted]
+    assert elsewhere not in [c["user_id"] for c in sent]
+
+
+def test_whatsapp_portal_url_is_absolute_while_the_in_app_link_stays_relative(
+    api, sent, monkeypatch
+):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "frontend_base_url", "https://crm.example.test/", raising=False)
+    client, db, company_id, _, project, product = api
+    document = _quotation(client, project.id, product.id, BELOW_FLOOR)
+    seller = _user(db, f"{MARKER} Seller")
+    _approver(db, f"{MARKER} A", company_id)
+    db.commit()
+    _act_as(seller)
+
+    assert _send(client, db, _root(project, document)).status_code == 200
+
+    call = _of_type(sent, REQUESTED)[0]
+    link = f"/project-sales/{project.id}/quotation-documents/{document['id']}"
+    assert call["data"]["link"] == link
+    assert call["data"]["whatsapp_context_vars"]["portal_url"] == "https://crm.example.test" + link
+
+
+def test_commit_time_recheck_losing_edit_rights_before_the_commit_keeps_the_document(
+    api, monkeypatch
+):
+    from app.models.projects import ProjectQuotationDocument
+    from app.models.sla import SlaFormAction
+    from app.services.user_service import UserPermissionService
+
+    client, db, _, _, project, product = api
+    document = _quotation(client, project.id, product.id, ABOVE_FLOOR)
+    parked = client.post(
+        PENDING,
+        json={
+            "action_key": "quotation_document.delete",
+            "entity_type": "quotation_document",
+            "entity_id": document["id"],
+            "payload": {},
+        },
+    )
+    assert parked.status_code == 202, parked.text
+
+    # The requester is no longer the owner, a collaborator or a manager.
+    project.owner_user_id = _user(db, f"{MARKER} New owner")
+    monkeypatch.setattr(
+        UserPermissionService,
+        "get_user_permission_slugs",
+        lambda self, uid: ["projects.projects.view", "projects.projects.edit",
+                           "projects.projects.delete"],
+    )
+    db.query(SlaFormAction).filter(SlaFormAction.id == parked.json()["id"]).update(
+        {"commit_at": datetime.utcnow() - timedelta(seconds=1)}, synchronize_session=False
+    )
+    db.commit()
+    current = client.get(
+        f"{PENDING}/current",
+        params={"entity_type": "quotation_document", "entity_id": document["id"]},
+    )
+    assert current.status_code == 200, current.text
+    assert (current.json().get("last_outcome") or {}).get("status") != "committed", current.text
+    db.expire_all()
+    assert (
+        db.query(ProjectQuotationDocument)
+        .filter(ProjectQuotationDocument.id == document["id"])
+        .first()
+        is not None
+    )

@@ -593,3 +593,26 @@ describe('QuotationsPanel: fix round 2', () => {
     expect((await screen.findAllByText(/cannot be deleted/i)).length).toBeGreaterThan(0);
   });
 });
+
+describe('QuotationsPanel: search with no match (round 3)', () => {
+  it('a search matching nothing says "Nothing matches that search", not "Nothing quoted yet"', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument()]);
+    renderPanel();
+
+    await screen.findByText('SRT/Q/2026/0141 (R2)');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search quotations' }), {
+      target: { value: 'zzz-no-such-quotation' },
+    });
+
+    expect(await screen.findByText('Nothing matches that search')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing quoted yet')).toBeNull();
+  });
+
+  it('with zero quotations the empty title stays "Nothing quoted yet"', async () => {
+    listQuotationDocuments.mockResolvedValue([]);
+    renderPanel();
+
+    expect(await screen.findByText('Nothing quoted yet')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing matches that search')).toBeNull();
+  });
+});
