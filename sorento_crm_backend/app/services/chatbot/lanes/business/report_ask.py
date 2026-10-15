@@ -627,6 +627,15 @@ def settle(
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME:
         extras = _dict(slot.get("extras"))
         args = _dict(extras.get("args"))
+        axis = GROUP_BY.get(jsc.js_string(parse_output.get("group_by") or "").strip().lower())
+        if axis and axis != args.get("group_by"):
+            # Chat fix PR-B S2d (live R25): an answer that names another axis re-targets the
+            # held ask to it, every settled field carried; a held filter on that axis goes
+            # (a ranking across an axis never filters it, the 8 Oct drill rule).
+            args = {k: v for k, v in args.items() if k not in _AXIS_FILTERS.get(axis, ())}
+            args["group_by"] = axis
+            extras = {**extras, "args": args}
+            slot = {**slot, "extras": extras}
         held = {**_given_choices(args), **_given_top_n(args, extras.get("top_n"))}
         filled = _reply_fills(parse_output, _dict(slot.get("values")), held)
         if filled:
