@@ -88,3 +88,8 @@ The live check reruns seat cover asks beside the new mirror / shelf ones to catc
 No split recommended. The line reads the kind stamped on the linked entity, which the
 generalised find creates; split, the seat cover line would be written twice. One PR, slices as
 commits: (1) generalise the find to `KINDS`, (2) the fit line. Size M+.
+
+## Crew answers (15 Oct)
+
+Q1 (a), Q2 (a), Q3 (a); ms / zh nouns as proposed; no split, one PR, two slices. DB for tests and
+the live check: `sorento_cagent_stack` (the copy's testenv DB).

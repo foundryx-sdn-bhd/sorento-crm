@@ -1,8 +1,11 @@
 # PLAN: v1 chatbot states the linked fit before the usual answer (CHAT-FIT-LINE)
 
-Status: Plan (lane CHAT-FIT-LINE, branch `crew/chat-fit-line`; behaviour card pending crew answers).
-Track: standard, size M (new reply line customers see; no migration, no FE change, no auth/RBAC
-change, no parser prompt change unless the card proves one is required).
+Status: Build (lane CHAT-FIT-LINE, branch `crew/chat-fit-line`; card answered by crew 15 Oct:
+Q1 a, Q2 a, Q3 a, no split). Track: standard, size M+ (new reply line customers see + mirror /
+shelf fit resolution; no migration, no FE change, no auth/RBAC change, no prompt republish: the
+live `{{find_filters}}` text and the strict parse schema change in code).
+Card `CARD-chat-fit-line-15oct.md`; UAC `chat-fit-line-15oct-acceptance-criteria.md`.
+Crew scope addition 15 Oct: mirror / shelf answering (#1690 "Part 2") is in this lane.
 
 Owner-directed 15 Oct ~18:45; the v1 chatbot is otherwise frozen, so the diff touches only what the
 line needs.
@@ -30,12 +33,38 @@ to see the linkage), then followed by the usual answer (unchanged)."
 
 ## Design
 
-TBD after the code map and the card (section filled before any code).
+Paths under `sorento_crm_backend/`.
+
+Slice 1, every link kind resolves:
+- Parse schema: the find filter item gains `kind` (`["string","null"]`, enum = `list(KINDS)` +
+  null, required; strict mode) at `app/services/chatbot/head/parser.py:543-569`. The reader
+  (`lanes/business/find.py:43-56`) passes it on.
+- Vocabulary (`app/services/product_find.py:184-275`): the `fits` line's first sentences list the
+  `KINDS` pairs generated from the registry and ask for `kind`; the rest of today's seat cover text
+  stays. `FIND_RULE`'s seat-cover-only asides read "the other side of a listed relation".
+- Resolution (`lanes/business/find.py:120-304`): the seat-cover-only reads
+  (`:94,103,224-225`, `_linked_codes_holding`) take the parsed kind and use the kind-aware
+  `accessories_for` / `hosts_for` (`product_compatibility_service.py:99-110`); the data decides
+  the direction as today. A carried fit ask keeps its kind (focus relation stores it; a stored
+  relation without one reads as seat cover). No-link lines per kind from `KINDS` nouns, the seat
+  cover lines unchanged (`product_find.py:126-130`).
+
+Slice 2, the fit line:
+- Linked entities already carry `linked_from` / `linked_as` (`find.py:271-276`); they also carry
+  the kind. `_run_answer` (`app/services/chatbot/engine.py:7664`) prepends the line before the
+  answer, outside the `_carried_line` prepend (`:7697-7701`), with a blank line between.
+- Line text per kind and direction from `KINDS` nouns; catalogue entries with ms / zh
+  (`label_catalog.py`, templated match at :811) so `_localize_result` (`engine.py:3045`) says it in
+  the turn's language.
 
 ## Tests
 
-TBD (red first, from fresh parser-output paraphrases).
+Tester first (red), from the UAC and fresh parser-output paraphrases; new file
+`tests/chatbot/test_chat_fit_line.py` reusing the `_turn` / `_parity` / `_seed` harness of
+`tests/chatbot/test_seat_as_product.py`; that file's parity asserts become line + blank + control.
+Parser contract (`tests/chatbot/test_find_parser_contract.py`) for the schema and vocabulary.
+Live golden set in `tests/chatbot/test_find_live_parser.py` (opt-in).
 
 ## Live check
 
-Golden set >= 8 messages on dev parser v94 (mirrors prod v63).
+Golden set >= 8 messages on dev parser v94 (mirrors prod v63), DB `sorento_cagent_stack`.
