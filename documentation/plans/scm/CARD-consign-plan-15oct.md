@@ -1,6 +1,7 @@
 # CARD: planning a consignment from its own pages (CONSIGN-PLAN)
 
-Status: filed as a crew-ask on PR #1712 (15 Oct). No code until the owner answers.
+Status: filed as a crew-ask on PR #1712 (15 Oct). Crew answered Q4 = (a) and Q5 = (a) (15 Oct);
+Q1-Q3 with the owner. No code until the owner answers.
 
 Owner request (15 Oct, verbatim): "Our consignment page don't have a plan like sales order,
 right? Our consignment page supposed to look exactly like sales order page in terms of the
@@ -118,6 +119,8 @@ Exact line quantities and CON on-hand per product: pending the `crew-data-reques
 4. **List buttons.** (a) Plan selected (N) + Actions with Reset planning (N) and Refresh, no Upload
    or Add; (b) also an Upload / Add for consignments. **Recommend (a)**: consignments only come
    from AutoCount (AC-CONSIGN-CRM ruling 1), so Upload / Add would create records nobody can sync.
+   **Answered (crew, 15 Oct): (a).**
 5. **Demand class.** (a) Plan only for project-class consignments, exactly like sales orders;
    (b) let the board take consignments of any class. **Recommend (a)**: the board is built for
    project demand; a retail CG has no ownership group to plan against.
+   **Answered (crew, 15 Oct): (a).**
