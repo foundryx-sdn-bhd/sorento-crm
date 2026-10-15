@@ -307,3 +307,61 @@ def test_revision_config_put_still_succeeds_for_admin(client, db, caller, monkey
 
     assert resp.status_code == 200, resp.text
     assert _complaint_config(db).is_enabled is True
+
+
+# --------------------------------------------------------------------------- /general bypass
+
+# `PUT`/`POST /general` copy every `SystemSettingUpdate` field onto the row, and that model
+# carries the SMTP fields. On `.edit` alone that was a way around the `.secrets` gate on
+# `PUT /smtp` (security review, PR #1703). SMTP now has one write path: `/smtp`.
+
+
+@pytest.mark.parametrize("method", ["put", "post"])
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"smtp_host": "zzt-attacker.example.test", "smtp_from": "ceo@zzt-evil.example.test"},
+        {"smtp_password": "zzt-stolen-pass"},
+        {"name": "zzt-renamed", "smtp_username": "zzt-attacker"},
+    ],
+    ids=["host-from", "password", "mixed-with-a-plain-field"],
+)
+def test_general_refuses_smtp_fields_for_a_settings_editor(client, allow, db, settings_row, method, body):
+    allow.update({EDIT, VIEW})
+
+    resp = getattr(client, method)(f"{BASE}/general", json=body)
+
+    assert resp.status_code == 422, resp.text
+    assert "/smtp" in resp.text
+    assert "zzt-stolen-pass" not in resp.text
+    assert _column(db, "smtp_host") == ORIGINAL_SMTP_HOST
+    assert _column(db, "smtp_username") == "zzt-smtp-user"
+    assert _column(db, "smtp_password") == "zzt-smtp-original-pass"
+    assert _column(db, "smtp_from") == "zzt-noreply@example.test"
+    assert _column(db, "name") == f"{TEST_PREFIX} Co", "the refusal must not half-apply the body"
+
+
+def test_general_refuses_smtp_fields_for_admin_too(client, db, caller, settings_row, monkeypatch):
+    """One path for SMTP, whoever calls: admin saves it through `/smtp` like everyone else."""
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(
+        UserPermissionService,
+        "get_user_role_slugs",
+        lambda self, uid: {"admin"} if str(uid) == str(caller.id) else set(),
+    )
+
+    resp = client.put(f"{BASE}/general", json={"smtp_host": "zzt-attacker.example.test"})
+
+    assert resp.status_code == 422, resp.text
+    assert _column(db, "smtp_host") == ORIGINAL_SMTP_HOST
+
+
+def test_general_still_saves_plain_fields_for_a_settings_editor(client, allow, db, settings_row):
+    allow.update({EDIT, VIEW})
+
+    resp = client.put(f"{BASE}/general", json={"name": "zzt-renamed"})
+
+    assert resp.status_code == 200, resp.text
+    assert _column(db, "name") == "zzt-renamed"
+    assert _column(db, "smtp_host") == ORIGINAL_SMTP_HOST
