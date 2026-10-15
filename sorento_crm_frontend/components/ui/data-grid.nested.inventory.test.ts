@@ -62,10 +62,6 @@ const EXPANDED_CONTENT_SITES = new Map<string, string>([
     'BoardLineDecisionPanel - same as above',
   ],
   [
-    'app/(protected)/project-sales/[projectId]/components/QuotationLinesGrid.tsx',
-    'LineDetails - a form (Complete set, Priced per, Notes), no grid',
-  ],
-  [
     'app/(protected)/scm/components/PlanRowDialog.tsx',
     'NESTED GRID: StockDocumentsPanel (PanelDataGrid) inside OnHandTable rows. Covered by the context default AND by its own scrollerMaxHeight={false}',
   ],
