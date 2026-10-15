@@ -183,7 +183,7 @@ def apply_turn(
         else:
             # R6 A: a domain or open question offers the domains that take what is held.
             options = _options_for(st, about) or (
-                _domain_options(st, granted_reveals) if about in ("domain", "other") else []
+                _domain_options(st, granted_reveals, dealer=stock_availability_only) if about in ("domain", "other") else []
             )
             # An entity question without options never quotes a phrase (no list to pick from).
             phrase = out.clarify.phrase if options or about != "which_held" else None
@@ -223,7 +223,10 @@ def apply_turn(
                 # R6 rule 1: a reply that answers none of an offer never prints it again: the offer is dropped and
                 # the reply is asked about afresh.
                 reask, miss = None, _Miss("domain")
-            action = _miss(st, i, reask, miss, language, can_offer_handover, mode, granted=granted_reveals)
+            action = _miss(
+                st, i, reask, miss, language, can_offer_handover, mode, granted=granted_reveals,
+                dealer=stock_availability_only,
+            )
             if reask is None and pending_in is not None and isinstance(action, ClarifyAct):
                 action.reask = False  # its own question, not a retry of the open one
             if isinstance(action, ClarifyAct) and reask is None:
@@ -235,7 +238,9 @@ def apply_turn(
         else:
             answered_pending = answered_pending or answered
             if flag_about is not None and isinstance(action, Lookup):
-                action = _flag_question(st, i, action, ask, flag_about, language, granted_reveals)
+                action = _flag_question(
+                    st, i, action, ask, flag_about, language, granted_reveals, dealer=stock_availability_only
+                )
             action = _repeat_is_a_miss(st, action, pending_in, held_in, language, can_offer_handover, mode)
             _keep_origin(action, ask, st.held, pending_in, answered)
             if (
@@ -2169,10 +2174,16 @@ def _options_for(st: ConversationState, about: str) -> list[Option]:
     return []
 
 
-def _domain_options(st: ConversationState, granted: frozenset[str] | None = None) -> list[Option]:
+#: The domains an availability-only dealer is never offered in a menu (staff figures: cost, sales, purchase orders).
+STAFF_ONLY_DOMAINS = frozenset({"purchase_cost", "sales", "purchase_order"})
+
+
+def _domain_options(
+    st: ConversationState, granted: frozenset[str] | None = None, *, dealer: bool = False
+) -> list[Option]:
     """R6 A: the domains that take every kind held (else every kind of the rows the last answer printed), in v1's
     domain-label order and labelled by v1's own words (`DOMAIN_LABELS`); a pick sets the domain. Never a domain
-    whose grant (`DOMAIN_GRANT_REQUIRED`) the contact lacks. R6 rule 2: never none: with nothing held or shown, or no
+    whose grant (`DOMAIN_GRANT_REQUIRED`) the contact lacks, nor a staff-only one to an availability-only `dealer`. R6 rule 2: never none: with nothing held or shown, or no
     domain taking all of it, every domain the contact may ask is offered."""
     from app.services.chatbot.lanes.business.answer import DOMAIN_GRANT_REQUIRED, DOMAIN_LABELS
     from app.services.chatbot.lanes.business.gate import ALLOWED
@@ -2184,6 +2195,7 @@ def _domain_options(st: ConversationState, granted: frozenset[str] | None = None
         d for d in DOMAIN_LABELS
         if d in ALLOWED and d != "portal_link"  # a portal form is no domain to pick
         and (granted is None or d not in DOMAIN_GRANT_REQUIRED or DOMAIN_GRANT_REQUIRED[d] in granted)
+        and not (dealer and d in STAFF_ONLY_DOMAINS)
     ]
     fit = [d for d in every if kinds and kinds <= set(ALLOWED[d])]
     return [Option(key=d, label=DOMAIN_LABELS[d], payload={"kind": "domain", "key": d}) for d in fit or every]
@@ -2218,12 +2230,12 @@ def _carries(ask: Ask) -> bool:
 
 def _flag_question(
     st: ConversationState, i: int, lookup: Lookup, ask: Ask, about: str, language: str,
-    granted: frozenset[str] | None = None,
+    granted: frozenset[str] | None = None, *, dealer: bool = False,
 ) -> Action:
     """R6 A: a flagged turn whose ask ran keeps what the ask settled in held and asks the parser's question with
     options from what is held and shown: what to check (the domains that take what is held; with none to offer,
     only when no domain is known), or for a which question naming nothing, which one. Else the Lookup stands."""
-    options = _domain_options(st, granted) if about in ("domain", "other") else []
+    options = _domain_options(st, granted, dealer=dealer) if about in ("domain", "other") else []
     if about in ("domain", "other") and (options or lookup.held.domain is None):
         q = _clarify(st, i, about, None, language, options=options)
     elif about in ("entity", "which_held") and not any(e.key or e.phrase or e.doc_number for e in ask.entities):
@@ -2281,6 +2293,7 @@ def _miss(
     mode: str = "none",
     *,
     granted: frozenset[str] | None = None,
+    dealer: bool = False,
 ) -> Action:
     """One MISS: re-ask the pending question with its real options; the second miss on
     the same question offers a hand-over instead, or, to a contact who cannot be offered
@@ -2291,7 +2304,7 @@ def _miss(
         question = PendingQuestion(
             kind=f"clarify_{about}",
             asked=asked,
-            options=_options_for(st, about) or (_domain_options(st, granted) if about == "domain" else []),
+            options=_options_for(st, about) or (_domain_options(st, granted, dealer=dealer) if about == "domain" else []),
             asked_turn=st.turn_no,
             misses=1,
         )
