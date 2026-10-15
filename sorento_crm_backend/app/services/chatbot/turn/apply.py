@@ -1273,11 +1273,13 @@ TOP_SELLING_ONE_SHOT = ("detail_code",)
 #: and the parser key that answers each. The how-many question is not here: its answer
 #: is a bare count, which never names the ranking, so a message that does name it is a
 #: new ask (reviewer B2 (b), PR #1273).
-TOP_SELLING_CLARIFY_AXES = {
+TOP_SELLING_CLARIFY_AXES: dict[str, str | tuple[str, ...]] = {
     "group": "rank_group",
     "metric": "rank_by",
     "basis": "basis",
     "category": "category_words",
+    # Chat fix PR-B S1b: one numbered reply asked the metric and the basis; either answers it.
+    "metric_basis": ("rank_by", "basis"),
 }
 
 
@@ -1340,7 +1342,8 @@ def _top_selling_waiting(asked: Any, own: dict[str, Any]) -> bool:
     that restates the ranking while answering the clarify ("top 5 by amount" under "By
     quantity or by amount?") completes the asked ask."""
     axis = TOP_SELLING_CLARIFY_AXES.get(asked) if isinstance(asked, str) else None
-    return axis is not None and own.get(axis) not in (None, "unclear")
+    axes = axis if isinstance(axis, tuple) else (axis,)
+    return axis is not None and any(own.get(a) not in (None, "unclear") for a in axes)
 
 
 def record_top_selling_asked(focus: Focus, envelopes: list[dict[str, Any]]) -> None:

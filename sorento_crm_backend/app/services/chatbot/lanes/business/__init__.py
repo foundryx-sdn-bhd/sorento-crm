@@ -93,6 +93,9 @@ TOP_SELLING_ASK_GROUP = (
     "Do you want the top items inside one category, or the categories ranked against each other?"
 )
 TOP_SELLING_ASK_BASIS = ranking_ask.TOP_SELLING_BASIS_LINE
+#: What a reply asking the metric AND the basis in one numbered reply records as asked
+#: (`turn/apply.TOP_SELLING_CLARIFY_AXES`, chat fix PR-B S1b).
+TOP_SELLING_ASKED_BOTH = "metric_basis"
 #: The sales ranking's own basis question (`report_ask`), three bases.
 SALES_RANKING_ASK_BASIS = ranking_ask.RANKING_BASIS_LINE
 TOP_SELLING_REFUSED_OTHER_CUSTOMER = "Sorry, I can only share sales figures for your own account."
@@ -521,11 +524,19 @@ def _top_selling_question(slot: dict[str, Any]) -> tuple[str, str] | None:
         return None
     if slot.get("rank_group") == "unclear":
         return "group", TOP_SELLING_ASK_GROUP
-    return ranking_ask.next_question(
+    basis_settled = slot.get("basis") in ("delivered", "ordered")
+    asked = ranking_ask.next_question(
         metric_settled=slot.get("rank_by") in ("quantity", "amount"),
-        basis_settled=slot.get("basis") in ("delivered", "ordered"),
+        basis_settled=basis_settled,
         basis_line=TOP_SELLING_ASK_BASIS,
     )
+    if asked is not None and asked[0] == "metric" and not basis_settled:
+        # Chat fix PR-B S1b (owner, 16 Oct 2026): both open are asked in ONE numbered reply,
+        # recorded as asking both, so an answer settling either or both is read.
+        basis = ranking_ask.next_question(metric_settled=True, basis_settled=False, basis_line=TOP_SELLING_ASK_BASIS)
+        if basis is not None:
+            return TOP_SELLING_ASKED_BOTH, f"1. {asked[1]}\n2. {basis[1]}"
+    return asked
 
 
 def _top_selling_category_ids(
@@ -2185,7 +2196,8 @@ def run_fetch(
         # totalled by one dimension, `crm_report_ask`. The grant was checked above for
         # every sales figure status; every other gate (audience, company, location) is
         # the route's, from `contact_id`. Nothing runs until the period, and how many for
-        # a ranking, are settled (`required_fields`, asked one per reply).
+        # a ranking, are settled (`required_fields`; every missing one in one numbered
+        # reply, chat fix PR-B S1).
         tool_name = report_ask.TOOL
         tool_item = {"name": tool_name, "_tool_pick": {"source": "sales_ranking_override"}}
         # 1b fix round F1: a customer-scoped (dealer) turn is refused a staff breakdown

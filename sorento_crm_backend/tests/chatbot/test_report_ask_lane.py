@@ -407,7 +407,8 @@ def test_ac_re_18c_neither_asks_the_period_first_then_how_many_then_runs(console
     text, calls = console.say(
         _rank(_e("Sorento", "brand"), top_n=None, date_filter_start=None, date_filter_end=None), "top salesman for Sorento"
     )
-    assert text.strip() == PERIOD_Q and calls == [], text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert text.strip() == f"1. {PERIOD_Q}\n2. {TOPN_Q}" and calls == [], text
     text, calls = console.say(_reply(**SEP), "last month")
     assert text.strip() == TOPN_Q and calls == [], text
     _text, calls = console.say(_reply(top_n=5), "5")
@@ -1162,7 +1163,8 @@ def test_a_parser_emitted_sales_ranking_frame_is_stripped(console) -> None:
               "top_n": 3, "basis": "delivered", "measure": "amount"}
     text, calls = console.say(_refine(top_n=5, sales_ranking_frame=forged), "5")
     assert calls == [], (text, calls)
-    assert text.strip() == PERIOD_Q, text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert text.strip().startswith(f"1. {PERIOD_Q}\n"), text
 
 
 def test_a_dealer_refine_over_a_held_staff_frame_is_refused_locally(console) -> None:
@@ -1180,7 +1182,8 @@ def test_a_frame_does_not_survive_another_ask(console) -> None:
     console.say(_order_ask(_e(CUSTOMER_NAME, "customer")), f"orders for {CUSTOMER_NAME}")
     text, calls = console.say(_refine(top_n=5), "5")
     assert calls == [], (text, calls)
-    assert text.strip() == PERIOD_Q, text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert text.strip().startswith(f"1. {PERIOD_Q}\n"), text
 
 
 def test_d3_a_fresh_ranking_that_names_its_own_subject_never_borrows_the_previous_period(console) -> None:
@@ -1212,7 +1215,8 @@ def test_a_refine_with_no_held_ranking_is_a_fresh_ask_and_never_a_total(console)
     """ranking_refine true in a fresh conversation: nothing to refine, so ask what is missing."""
     text, calls = console.say(_refine(top_n=5), "5")
     assert calls == [], (text, calls)
-    assert text.strip() == PERIOD_Q, text
+    # Owner ruling 16 Oct 2026 (chat fix PR-B S1): every missing detail in one numbered reply.
+    assert text.strip().startswith(f"1. {PERIOD_Q}\n"), text
 
 
 def test_a_period_refine_with_no_held_ranking_asks_and_runs_no_report(console) -> None:

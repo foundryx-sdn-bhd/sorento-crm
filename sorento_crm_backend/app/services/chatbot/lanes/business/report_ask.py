@@ -240,6 +240,8 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
     cancelled=CANCELLED,
     give_up=GIVE_UP,
     answer_drops=("sales_channel", "report_ask_words"),
+    # Chat fix PR-B S1 (owner, 16 Oct 2026): every missing detail in ONE numbered reply.
+    ask_all=True,
 ))
 
 
@@ -549,16 +551,29 @@ def _given_choices(args: dict[str, Any]) -> dict[str, Any]:
     return given
 
 
-def _reply_choices(args: dict[str, Any], parse_output: dict[str, Any]) -> dict[str, Any]:
-    """An answering turn that carries the OTHER choice too ("qty delivered"): taken from the
-    parser's keys when the first message left it open. The asked field is read by the helper."""
-    given: dict[str, Any] = {}
-    metric, basis = metric_from(parse_output), basis_from(parse_output)
-    if metric and args.get("group_by") not in (None, "month") and not args.get("measure"):
-        given["metric"] = rf.Resolved("ok", value=metric, label=metric)
-    if basis and not args.get("basis"):
-        given["basis"] = rf.Resolved("ok", value=basis, label=basis)
-    return given
+def _choice(value: str | None) -> rf.Resolved | None:
+    return rf.Resolved("ok", value=value, label=value) if value else None
+
+
+def _reply_fills(
+    parse_output: dict[str, Any], values: dict[str, Any], held: dict[str, Any]
+) -> dict[str, rf.Resolved]:
+    """Chat fix PR-B S1 (owner, 16 Oct 2026): every OPEN field an answering turn's parse
+    settles, off the parser's own fields (dates, `top_n`, `measure` / `rank_by`, `basis`),
+    never the reply's words ("2026, top 10, by quantity delivered" settles all four). A field
+    the slot already holds, or the first message settled (`held`), is not open."""
+
+    def is_open(name: str) -> bool:
+        got = held.get(name)
+        return name not in values and not (isinstance(got, rf.Resolved) and got.status == "ok")
+
+    reading = {
+        "period": period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")),
+        "top_n": top_n_from(parse_output.get("top_n")),
+        "metric": _choice(metric_from(parse_output)),
+        "basis": _choice(basis_from(parse_output)),
+    }
+    return {name: got for name, got in reading.items() if got is not None and got.status == "ok" and is_open(name)}
 
 
 def settle(
@@ -569,20 +584,31 @@ def settle(
     `(None, line)` for a word or a dimension the ask cannot run with.
 
     The slot's extras carry the first message's args and its number (`top_n`), so an
-    answering turn runs the first message's ask; the period question is asked first."""
+    answering turn runs the first message's ask; every field still missing is asked in one
+    numbered reply (chat fix PR-B S1), and an answer settling any of them is read whole."""
     slot = parse_output.get("required_ask")
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME and slot.get("asking") == "scope":
         return _scope_answer(db, parse_output, slot), None
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME:
         extras = _dict(slot.get("extras"))
         args = _dict(extras.get("args"))
+        held = {**_given_choices(args), **_given_top_n(args, extras.get("top_n"))}
+        filled = _reply_fills(parse_output, _dict(slot.get("values")), held)
+        if filled:
+            # A partial answer is not a miss: what it settled is kept, and only what is
+            # still open is asked again (in one reply), or the ask runs.
+            values = {
+                **_dict(slot.get("values")),
+                **{name: {"value": got.value, "label": got.label} for name, got in filled.items()},
+            }
+            return rf.collect(db, SALES_RANKING_ASK, slot={**slot, "values": values}, given=held), None
         reply_dates = {"start": parse_output.get("date_filter_start"), "end": parse_output.get("date_filter_end")}
         outcome = rf.collect(
             db,
             SALES_RANKING_ASK,
             slot=slot,
             reply=jsc.js_string(parse_output.get("required_ask_reply") or ""),
-            given={**_given_choices(args), **_given_top_n(args, extras.get("top_n")), **_reply_choices(args, parse_output)},
+            given=held,
             extras={
                 "reply_dates": reply_dates,
                 "reply_top_n": parse_output.get("top_n"),
