@@ -1,7 +1,9 @@
 # PLAN: chat fix, FIND rule text follows ruling R9 (lane CHAT-ADVISOR-SPIKE, chat-fix LEAD)
 
-Status: Text change MEASURED AND FAILED (16 Oct); a contract-enforcement replacement is proposed to crew (see
-"Measured" below). Crew ruling 16 Oct: R9 stands, own PR, no gold relabel. Track: small fix (text only, under 50 lines, no
+Status: abandoned (16 Oct): the text change failed its gate (G125); crew NO-GO on the field-based override (a
+post-parser domain rewrite is harness, the class section E promised to retire). Branch never merged. The fit
+misreads G001/G006/G007/G009/G014 move to PR-C (parser context), fixed at the parser input. Evidence:
+crew/state/eval/advisor-spike/find-rule/EVIDENCE.md. Spend $2.24. Crew ruling 16 Oct: R9 stands, own PR, no gold relabel. Track: small fix (text only, under 50 lines, no
 migration, no auth change). Branch `crew/chat-fix-find` off origin/main ccb1ce9820, worktree
 `sorento_crm-chat-fix-find`. Ships as its own PR before PR-A2 (rec) or folds into PR-A2 (crew to say).
 
@@ -64,7 +66,7 @@ label of G005 and its siblings changes rather than the text.
   domain_hint product_attachment: 17 parses (G001 G006 G007 G009 G014), gold product_info 17/17. With a file_word:
   5 parses (G012 G019), gold attachments 5/5.
 
-## Proposed replacement (crew go pending)
+## Proposed replacement (crew NO-GO 16 Oct, kept for the record)
 
 No prompt change: enforce the FIND rule's own contract on the parser's output. A parse with a find filter, no
 file_word, no attachment_type and domain_hint product_attachment, whose previous turn was not a file answer, is
