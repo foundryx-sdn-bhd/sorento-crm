@@ -63,11 +63,12 @@ def test_the_which_product_question_offers_the_products_the_last_answer_printed(
     assert _printed(acts, st) == _stored(st)
 
 
-def test_guard_with_nothing_to_offer_the_not_found_line_stays_option_less():  # guard: passes today
+def test_guard_with_nothing_to_offer_the_not_found_is_a_statement():  # R6 rule 3 (lead sign-off)
     st, acts = apply_turn(mk_state(mk_held("inventory", {})),
                           out(ask(act="refines_held", entities=[entity("product", phrase="ZQTB9999")])),
                           resolver=FakeResolver({}), now=NOW, can_offer_handover=False)
-    assert isinstance(acts[0], ClarifyAct) and acts[0].not_found and not st.pending.options
+    assert isinstance(acts[0], ClarifyAct) and acts[0].not_found and st.pending is None
+    assert "ZQTB9999" in answer.replay_reply(st, acts)
 
 
 def test_guard_a_contact_offered_the_hand_over_keeps_its_yes_no_offer():  # guard: passes today

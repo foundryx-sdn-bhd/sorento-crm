@@ -237,11 +237,11 @@ def test_r4a_2_last_reply_says_asked_with_the_question_kind_when_a_question_is_p
 
 
 def test_r4a_2_last_reply_says_not_found_with_the_missed_phrase_after_a_miss():
-    """RED: HEAD has no LAST REPLY line. A staff contact (no hand-over offer) gets a bare not-found question; the
-    phrase is the parsed entity's, not the message."""
+    """RED: HEAD has no LAST REPLY line. A staff contact (no hand-over offer) gets a bare not-found line (R6 rule 3:
+    a statement, no question stored); MEMORY still says not found, the phrase the parsed entity's, not the message."""
     parsed = out(ask(act="new_topic", domain="inventory", entities=[entity("product", phrase="zzq7781")]))
     st, acts = apply_turn(new_state(NOW), parsed, resolver=FakeResolver({}), now=NOW, can_offer_handover=False)
-    assert isinstance(acts[0], ClarifyAct) and acts[0].not_found and not st.pending.options
+    assert isinstance(acts[0], ClarifyAct) and acts[0].not_found and st.pending is None
     assert _line(_memory(st), "LAST REPLY:") == "LAST REPLY: not found zzq7781"
 
 
