@@ -162,14 +162,14 @@ describe('AC-F2 columns and rows', () => {
     expect(parseFloat(heads[heads.length - 1].style.width)).toBeGreaterThanOrEqual(66);
   });
 
-  it('the Created at column is at least 150 px', async () => {
+  it('the Created at column is at least 165 px', async () => {
     renderList();
     await screen.findByText('Stock Debt 15/10/2026');
     const heads = Array.from(document.querySelectorAll('thead th')) as HTMLElement[];
     const widthOf = (th: HTMLElement | undefined) => parseFloat(th?.style.width ?? '0');
     const created = heads.find((th) => th.textContent?.includes('Created at'));
     expect(created).toBeDefined();
-    expect(widthOf(created)).toBeGreaterThanOrEqual(150);
+    expect(widthOf(created)).toBeGreaterThanOrEqual(165);
   });
 
   it('pressing a row opens that snapshot', async () => {
