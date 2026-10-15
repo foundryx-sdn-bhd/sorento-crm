@@ -1255,3 +1255,30 @@ class TestConsoleShowsTheParts:
 
         body = {"reply": {"text": "one"}, "actions": [{"kind": "send_message", "text": "one"}, {"kind": "send_message", "text": "two"}]}
         assert _customer_texts(body) == ("one", ["two"])
+
+
+# --------------------------------------------------------------------------- #
+# V1-DOC-SCOPE slice 3 (security review): top selling is no exemption
+# --------------------------------------------------------------------------- #
+
+
+class TestV1DocScopeUnlinkedTopSelling:
+    """Owner rule (unlinked != customer), every domain: an unlinked contact that is not
+    document staff naming another customer on a top selling ask gets the no-link line, not
+    the customer picker (the route refuses it anyway, `_top_selling_dealer_scope`)."""
+
+    def test_unlinked_non_staff_gets_no_customer_picker(self, session_factory, monkeypatch, route) -> None:
+        _seed_contact(session_factory, variables={})
+        reply, captured = _turn(
+            session_factory, monkeypatch,
+            _ts(
+                rank_by="amount", top_n=4, sales_channel="dealer",
+                entities=[{"raw": "hanlim", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True}],
+            ),
+            "top 4 for hanlim dealer by amount",
+            resolve_services=_ambiguous_hanlim_resolve_services(lambda **_: {"items": [], "has_result": False}),
+        )
+        assert _calls(captured) == []
+        assert "Which one do you mean?" not in reply, reply
+        assert "HANLIM" not in reply.upper(), reply
+        assert reply.strip() == "Sorry, that isn't under your account. I can only check on your own account.", reply

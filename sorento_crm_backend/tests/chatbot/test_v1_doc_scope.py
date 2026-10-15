@@ -854,9 +854,12 @@ class TestPoRefKeepsTheTierRule:
 # (tier, office access type, salesperson) are unchanged.
 
 
-def _picker_turn(session_factory, monkeypatch):
+def _picker_turn(session_factory, monkeypatch, hint: str | None = "customer"):
     """"deliveries this month for hanlim": a DO ask whose customer word matches two other
-    customers (the R18 HANLIM book), so the generic resolver would offer a picker."""
+    customers (the R18 HANLIM book), so the generic resolver would offer a picker. `hint` is
+    the parser's tag on the word: under `order` the resolver reads a brand or category word as
+    the customer it names (`entity_resolver._DOMAIN_HINT_EXPANSIONS`), and the fake resolver
+    here answers customers whatever the tag."""
     from tests.chatbot.test_customer_scope_lane import _ent
     from tests.chatbot.test_outstanding_lane import _ambiguous_hanlim_resolve_services
 
@@ -879,7 +882,7 @@ def _picker_turn(session_factory, monkeypatch):
         domain_hint="order",
         intent_hint="check_order",
         order_status=None,
-        entities=[_ent("hanlim")],
+        entities=[{**_ent("hanlim"), "hint": hint}],
         date_filter_start="2026-10-01",
         date_filter_end="2026-10-31",
     )
@@ -926,3 +929,28 @@ class TestCustomerPickerUnlinked:
         assert "Which one do you mean?" in reply, reply
         assert "HANLIM TRADING" in reply.upper() and "HANLIM HARDWARE" in reply.upper(), reply
         assert NO_LINK_REFUSAL not in reply, reply
+
+    @pytest.mark.parametrize("hint", ["brand", "category", "product", "order", None])
+    def test_a_word_the_resolver_reads_as_a_customer_gets_no_picker_and_no_probe(
+        self, session_factory, monkeypatch, hint
+    ) -> None:
+        """Security review (slice 3): a word the parser did not tag `customer` still reaches
+        the resolver, which answers it with other customers; those rows are dropped before
+        the picker is built, so no name and no DO probe, and the turn gets the no-link line."""
+        _seed_contact(session_factory, variables={})
+
+        reply, captured, probes, _asked = _picker_turn(session_factory, monkeypatch, hint=hint)
+
+        assert "HANLIM" not in reply.upper(), reply
+        assert reply.strip() == NO_LINK_REFUSAL, reply
+        assert probes == [], probes
+        assert _calls(captured, ORDERS) == [], captured
+
+    def test_document_staff_keep_the_picker_for_a_word_read_as_a_customer(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        make_office_access_type(session_factory, CONTACT_ID)
+
+        reply, _captured, _probes, _asked = _picker_turn(session_factory, monkeypatch, hint="brand")
+
+        assert "Which one do you mean?" in reply, reply
+        assert "HANLIM TRADING" in reply.upper() and "HANLIM HARDWARE" in reply.upper(), reply
