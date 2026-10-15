@@ -3520,6 +3520,11 @@ def _report_ask_envelope(body: dict) -> dict:
 def _sales_analysis_envelope(payload: dict) -> dict:
     status = payload.get("status")
     envelope = {"result_type": "sales_analysis", "attachments": [], "has_result": True}
+    if status == "clarify" and isinstance(payload.get("options"), list):
+        # Chat fix PR-B S7: the company question's options, so the chatbot registers it.
+        options = [str(o) for o in payload["options"] if str(o).strip()]
+        return {**envelope, "response": str(payload.get("message") or _SALES_ANALYSIS_ERROR),
+                "company_options": options}
     if status in ("clarify", "refused", "busy"):
         return {**envelope, "response": str(payload.get("message") or _SALES_ANALYSIS_ERROR)}
     if status not in ("ready", "pending", "error") or not isinstance(payload.get("rows"), list):

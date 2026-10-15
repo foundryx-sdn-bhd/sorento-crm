@@ -2607,6 +2607,31 @@ _SALES_ANALYSIS_ERROR_TEXT = "Could not run the sales report right now."
 SALES_REPORT_MISS_MESSAGE = "No sales found."
 
 
+#: Chat fix PR-B S7 (AC-B9): the sales analysis's "Sorento or Mocha?" as an open question
+#: (`compose._lane_question` arms it; `lanes.business.sales_analysis_company_reply` reads the
+#: answer), and the parser fields the asked analysis re-runs with.
+SALES_ANALYSIS_COMPANY_KIND = "sales_analysis_company"
+SALES_ANALYSIS_HELD_KEYS = (
+    "date_filter_start", "date_filter_end", "group_by", "sales_channel", "sales_basis", "top_n",
+)
+
+
+def _sales_analysis_company_ask(result: Any, ctx: dict[str, Any]) -> dict[str, Any] | None:
+    """The route's company question (`status: clarify` with its `options`), as the lane's own
+    question: one option per company, and the analysis it was asked about held to re-run.
+    None for every other answer."""
+    names = result.get("company_options") if isinstance(result, dict) else None
+    names = [jsc.js_string(n).strip() for n in jsc.array(names) if jsc.js_string(n).strip()]
+    if len(names) < 2:
+        return None
+    semantic_input = ctx.get("semantic_input") if isinstance(ctx.get("semantic_input"), dict) else {}
+    return {
+        "kind": SALES_ANALYSIS_COMPANY_KIND,
+        "last_result_set": [{"idx": i, "label": name} for i, name in enumerate(names, start=1)],
+        "filters": {key: semantic_input.get(key) for key in SALES_ANALYSIS_HELD_KEYS},
+    }
+
+
 def _low_stock_report_output(result: Any, *, fallback: str = _LOW_STOCK_ERROR_TEXT) -> dict[str, Any]:
     """PLAN-low-stock-report S6 (AC-66): `crm_low_stock_report`'s own envelope.
 
@@ -2961,6 +2986,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         return {
             **_low_stock_report_output(result, fallback=_SALES_ANALYSIS_ERROR_TEXT),
             "own_header": True,
+            "outstanding_ask": _sales_analysis_company_ask(result, ctx),
         }
     e = _file_rows(_extract_envelope(result), links=bool(ctx.get("files_as_links")))
     if ctx.get("portal_intro") and any(isinstance(a, dict) and a.get("type") == "portal_link" for a in e.get("action_links") or []):

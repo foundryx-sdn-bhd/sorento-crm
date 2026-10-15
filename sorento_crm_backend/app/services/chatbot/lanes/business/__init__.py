@@ -736,6 +736,57 @@ def _which_customer_ask() -> dict[str, Any]:
     }
 
 
+def sales_analysis_company_reply(verdict: Any, pending: Any) -> dict[str, Any] | None:
+    """Engine seam, chat fix PR-B S7 (AC-B9): the reply to the sales analysis's company
+    question ("Sorento or Mocha?") re-runs the asked analysis for the company it picked. The
+    pick is the PARSER's: its `open_question_answer` (one position, or one item naming a
+    position or an option) or one `reference_positions`; nothing else answers it, so a new
+    ask is read as itself. None when the turn is not that reply."""
+    if getattr(pending, "kind", None) != fetch_mod.SALES_ANALYSIS_COMPANY_KIND or not isinstance(verdict, dict):
+        return None
+    options = {
+        o["position"]: jsc.js_string(o.get("label") or "").strip()
+        for o in getattr(pending, "options", None) or []
+        if isinstance(o, dict) and isinstance(o.get("position"), int)
+    }
+    position: Any = None
+    reply = verdict.get("open_question_answer")
+    if isinstance(reply, dict) and reply.get("mode") not in (None, "cancel", "no"):
+        picked = [p for p in jsc.array(reply.get("picked")) if isinstance(p, int) and not isinstance(p, bool)]
+        items = [i for i in jsc.array(reply.get("items")) if isinstance(i, dict)]
+        if len(picked) == 1:
+            position = picked[0]
+        elif len(items) == 1:
+            item = items[0]
+            named = jsc.js_string(item.get("code") or item.get("label") or "").strip().casefold()
+            position = item.get("position") if item.get("position") in options else next(
+                (p for p, label in options.items() if named and label.casefold() == named), None
+            )
+    if position is None:
+        positions = [p for p in jsc.array(verdict.get("reference_positions")) if isinstance(p, int) and not isinstance(p, bool)]
+        position = positions[0] if len(positions) == 1 else None
+    if not options.get(position):
+        return None
+    payload = dict(getattr(pending, "payload", None) or {})
+    held = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+    return {
+        **verdict,
+        **{key: held.get(key) for key in fetch_mod.SALES_ANALYSIS_HELD_KEYS},
+        "message_type": "business_query",
+        "domain_hint": payload.get("domain") or "sales",
+        "intent_hint": "check_order",
+        "order_status": "sales_analysis",
+        "sales_company": options[position],
+        "status": None,
+        "document": None,
+        "entities": [],
+        "reference_positions": [],
+        "open_question_answer": None,
+        "is_affirmative": None,
+        "topic_reset": False,
+    }
+
+
 def _sales_analysis_axis_unsupported(group_by: str) -> dict[str, Any]:
     """A sales analysis asked by an axis it cannot draw (customer, product, ...): ONE line
     naming the axes it can, no figure and no fetch (`_sales_report_not_enabled`'s shape)."""

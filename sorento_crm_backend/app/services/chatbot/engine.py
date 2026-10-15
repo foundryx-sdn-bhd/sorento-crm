@@ -4886,6 +4886,13 @@ def _run_stages_body(  # noqa: PLR0915
             turn_trace.add("sub_asks", {"scope_answered": scope_verdict.get("family")})
             verdict = scope_verdict
             state_in = dataclasses_replace(state_in, pending=None)
+        # Chat fix PR-B S7: the reply to the sales analysis's company question re-runs the
+        # asked analysis for the company it picked, the same way.
+        company_verdict = business.sales_analysis_company_reply(verdict, state_in.pending)
+        if company_verdict is not None:
+            turn_trace.add("sales_analysis", {"company_answered": company_verdict.get("sales_company")})
+            verdict = company_verdict
+            state_in = dataclasses_replace(state_in, pending=None)
         # What the scope question stores to re-run, taken at the same point.
         scope_replay = copy.deepcopy(verdict)
         # REPORT-ENGINE slice 1b: a fresh sales ranking's brand / sales agent / category
