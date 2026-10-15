@@ -265,3 +265,55 @@ class TestChatbotFailsClosedOnAnUnheldBrand:
         assert set(served) == {"ZZT CABANA WC DEALER"}, served
         calls = [a for n, a in captured if n == PROMO_TOOL]
         assert calls and all(a.get("access_levels") == ["Cabana Dealer"] for a in calls), captured
+
+
+class TestChatbotFailsClosedWithNoAccessTypeAtAll:
+    def test_contact_holding_no_access_type_reads_no_promotion(self, session_factory, monkeypatch):
+        """No access type at all: the tier gate recomposes to `[]` without a brand gate. The
+        fetch must not go out empty (the generic miss answers instead)."""
+        ids = _seed(session_factory)
+        reply, captured, served = _ask(session_factory, monkeypatch, ids, [], "zzt-sec-promo-none")
+        assert not served, served
+        unfiltered = [a for n, a in captured if n == PROMO_TOOL and not a.get("access_levels")]
+        assert not unfiltered, f"a promotion read went out with no access level: {unfiltered}"
+
+
+class TestPromotionAccessClosed:
+    def test_contract(self):
+        from app.services.chatbot.turn_runtime import promotion_access_closed
+
+        assert promotion_access_closed("promotion", {"brand_gate_empty": True, "access_levels_recomposed": ["End User"]})
+        assert promotion_access_closed("promotion", {"brand_gate_empty": False, "access_levels_recomposed": []})
+        assert not promotion_access_closed("promotion", {"access_levels_recomposed": ["Cabana Dealer"]})
+        assert not promotion_access_closed("promotion", None)
+        # Another domain's fetch never reads promotion levels; a mixed order turn is untouched.
+        assert not promotion_access_closed("order", {"brand_gate_empty": True, "access_levels_recomposed": []})
+
+
+class TestNoLiveKindReplyNeverListsWithoutALevel:
+    def test_no_held_level_makes_no_promotion_call(self, monkeypatch):
+        from app.services.chatbot import turn_runtime
+        from app.services.chatbot.answer_bridge import no_live_kind_reply
+
+        class _Row:
+            type_name = "A3 Flyer"
+
+        class _Query:
+            def filter(self, *_a):
+                return self
+
+            def first(self):
+                return _Row()
+
+        class _Db:
+            def query(self, *_a):
+                return _Query()
+
+        monkeypatch.setattr(turn_runtime, "active_brands", lambda db: [{"id": "b1", "brand_name": "Cabana"}])
+        calls: list[Any] = []
+        text = no_live_kind_reply(
+            _Db(), {"promotion_types": ["a3_flyer"], "brand_ids": ["b1"]}, {"name": []},
+            lambda name, args: calls.append((name, args)) or {"data": [{"description": "LEAK"}]},
+        )
+        assert calls == [], calls
+        assert text == "There is no Cabana A3 flyer right now.", text

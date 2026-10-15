@@ -3986,11 +3986,24 @@ def make_tool_runner(
             or (page_predicate is not None and not page_ids)
             or would_be_unfiltered
             or no_subject_gate is not None
+            or promotion_access_closed(domain, tier_gate_value)
         ):
             fragment = {
                 "fetch": {"has_result": False, "response": business_fetch.NO_RESULT_INTRO},
                 "outcome": "not_found",
             }
+            # SEC-PROMO-ACCESS: a closed brand gate is a refusal, not a miss. Its words are
+            # the gate's own brand notice ("You don't have access to <brand> promotions.",
+            # `gate.py`), which the miss composer here would never print. Only that notice:
+            # a stated-tier one ends "Here's what you do have:" and there is nothing to show.
+            access_notice = jsc.js_string(gate.get("access_notice") or "").strip()
+            if (
+                promotion_access_closed(domain, tier_gate_value)
+                and gate.get("brand_gate_empty") is True
+                and not gate.get("access_denied_levels")
+                and access_notice
+            ):
+                fragment = business._fixed_reply(access_notice, refused=True)
             if no_subject_gate is not None:
                 # The refusal's OWN reason, for `answer_bridge.answer_for`'s miss
                 # composer - which otherwise reads the RESOLVER's gate, and the
@@ -4510,6 +4523,23 @@ def page_the_set(
     next_key = {**key, "total": total, "shown": min(offset + len(page_ids), total) if page_ids else offset}
     predicate["next_carry"] = {"set_key": next_key} if total else None
     return predicate, page_ids
+
+
+def promotion_access_closed(domain: str, tier_gate: Any) -> bool:
+    """SEC-PROMO-ACCESS: a promotion fetch the contact's own entitlement leaves EMPTY.
+
+    Security B1 above covers a tier-FILTERED fetch only. The forced fetch for a single
+    entitled tier (`engine.py`, `tier_proceed`) carries no tier filter, so a closed brand
+    gate ("Any promo for Cabana WC?" from a Sorento-only dealer: `brand_gate_empty`, an
+    empty `access_levels_recomposed`) reached the tool with `access_levels: []` - which the
+    MCP server drops from the query, and the route reads as "no access filter". An empty
+    recomposed list is also a contact holding no access type at all. Either way nothing
+    may be read; the caller answers the turn as a miss, and the gate's own
+    `access_notice` ("You don't have access to <brand> promotions.") leads that reply.
+    """
+    if domain != "promotion" or not isinstance(tier_gate, dict):
+        return False
+    return tier_gate.get("brand_gate_empty") is True or not tier_gate.get("access_levels_recomposed")
 
 
 def _tier_gate(
