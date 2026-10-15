@@ -72,7 +72,7 @@ def _contributions(board, so_number):
 
 def _board_world(db, *, doc_type="consignment", demand_class="project", status="closed",
                  qty="10", delivered="10", returned="0", con_stock=10,
-                 planned_stock=10):
+                 planned_stock=10, con_active=True):
     """A product, the flagged-off CON bin, a planned -BB bin, and one order of one line at CON.
 
     Mirrors AutoCount's consignment location: CON is not one of the -BB/-IB/-IR/-NTC/-AM
@@ -82,6 +82,7 @@ def _board_world(db, *, doc_type="consignment", demand_class="project", status="
     product = _product(db, f"ZZT-{sfx}")
     con = _board_warehouse(db, f"CON-{sfx}")
     con.fulfilment_planning = False
+    con.is_active = con_active
     planned = _board_warehouse(db, f"{sfx}-BB")
     db.flush()
     _board_stock(db, product, con, on_hand=con_stock)
@@ -106,7 +107,8 @@ def _build(db, world, extra=()):
     return _service(db).build(numbers, granularity="week", as_of=TODAY)
 
 
-def _consign_world(db, *, qty="10", returned="0", con_stock=10, planned_bin=False):
+def _consign_world(db, *, qty="10", returned="0", con_stock=10, planned_bin=False,
+                   con_active=True):
     """The confirm chain: a core consignment (closed, delivered, project class) at CON, its
     project mirror order, and CON stock."""
     company_id, eling, project, product = _world(db)
@@ -114,7 +116,9 @@ def _consign_world(db, *, qty="10", returned="0", con_stock=10, planned_bin=Fals
     con = _warehouse(
         db, f"{sfx}-BB" if planned_bin else f"CON-{sfx}", fulfilment_planning=planned_bin
     )
-    _stock(db, product, con, on_hand=con_stock)
+    con.is_active = con_active
+    if con_stock:
+        _stock(db, product, con, on_hand=con_stock)
     order, line, core_so, core_line = _seed_line(
         db, company_id, project, product, con, qty_ordered=qty, line_no=1,
     )
@@ -652,3 +656,95 @@ def test_n6_the_consignment_trail_is_one_step_that_agrees_with_its_borrow():
     assert len(row["trail"]) == 1, row["trail"]
     assert con_code in row["trail"][0]["why"]
     assert "consignment" in row["trail"][0]["why"].lower()
+
+
+# --------------------------------------------------------------------------- CON, whatever its flags
+# Dev has CON inactive AND flagged off: a consignment is planned at its own bin regardless.
+
+import pytest  # noqa: E402
+
+CON_FLAGS = pytest.mark.parametrize("con_active", [True, False], ids=["active", "inactive"])
+
+
+@CON_FLAGS
+def test_con_board_admits_and_proposes_one_borrow_at_con_no_buy(con_active):
+    with blank_session() as db:
+        world = _board_world(db, con_active=con_active)
+        board = _build(db, world)
+        row = _contributions(board, world["order"].so_number)[0]
+        con_id = str(world["con"].id)
+        con_code = world["con"].warehouse_code
+
+    assert row["unplannable"] is False, row.get("sources")
+    assert [s["kind"] for s in row["sources"]] == ["borrow"], row["sources"]
+    assert row["sources"][0]["location"] == con_code
+    assert row["sources"][0]["warehouse_id"] == con_id
+    assert Decimal(row["sources"][0]["qty"]) == Decimal("10")
+    assert [c for c in row["borrow_candidates"] if c.get("warehouse_id") == con_id]
+
+
+@CON_FLAGS
+def test_con_confirming_the_boards_own_proposal_has_no_buy_and_no_purchasing_row(con_active):
+    with blank_session() as db:
+        world = _consign_world(db, con_active=con_active)
+        proposal = ProjectSupplyService(db).proposal_for(world["order"])
+        components = proposal["lines"][0]["components"]
+        assert [c["kind"] for c in components] == ["borrow"], components
+        body = _confirm(db, world, borrow=[{
+            "source": "other_location", "warehouse_id": str(world["own"].id),
+            "qty": str(components[0]["qty"]), "reason": components[0]["reason"],
+        }])
+        inquiry_rows = db.query(OrderInquiryRow).filter(
+            OrderInquiryRow.so_line_id == world["line"].id).count()
+        planned, plannable = _planned_state(db, world["core_so"])
+
+    assert body["lines_decided"] == 1
+    assert inquiry_rows == 0
+    assert (planned, plannable) == (1, 1)
+
+
+@CON_FLAGS
+def test_con_holding_none_still_proposes_and_confirms_the_borrow(con_active):
+    """Dev: CG-202606-062 line qty 1, CON holds none. The borrow is still the plan."""
+    with blank_session() as db:
+        world = _board_world(db, qty="1", delivered="1", con_stock=0, con_active=con_active)
+        board = _build(db, world)
+        row = _contributions(board, world["order"].so_number)[0]
+        kinds = [s["kind"] for s in row["sources"]]
+        trail = [t["why"] for t in row["trail"]]
+
+        confirm_world = _consign_world(db, qty="1", con_stock=0, con_active=con_active)
+        body = _confirm(db, confirm_world, borrow=[
+            _own_borrow(confirm_world, "1", "Goods are the CON stock.")])
+        inquiry_rows = db.query(OrderInquiryRow).filter(
+            OrderInquiryRow.so_line_id == confirm_world["line"].id).count()
+        held = ProjectSupplyService(db).held_stock_by_location(
+            [str(confirm_world["product"].id)]
+        ).get((str(confirm_world["product"].id), str(confirm_world["own"].id)))
+        planned, plannable = _planned_state(db, confirm_world["core_so"])
+        print("CON0", con_active, kinds, trail, "short:", body.get("stock_short_notices"),
+              "held:", held)
+
+    assert kinds == ["borrow"]
+    assert body["lines_decided"] == 1
+    assert inquiry_rows == 0
+    assert (planned, plannable) == (1, 1)
+
+
+@CON_FLAGS
+def test_con_never_reaches_a_sales_order_line(con_active):
+    with blank_session() as db:
+        world = _board_world(db, planned_stock=0, con_active=con_active)
+        so = _order(
+            db, so_number=f"SO-{world['sfx']}-{_uid()[:4]}", order_date=date(2026, 1, 1),
+            status="open",
+        )
+        _line(db, so, world["product"], qty="10", required_date=REQUIRED,
+              warehouse=world["planned"])
+        board = _build(db, world, extra=[so.so_number])
+        row = _contributions(board, so.so_number)[0]
+        con_id = str(world["con"].id)
+        con_code = world["con"].warehouse_code
+
+    assert con_id not in [c.get("warehouse_id") for c in row["borrow_candidates"]]
+    assert con_code not in [s.get("location") for s in row["sources"]]
