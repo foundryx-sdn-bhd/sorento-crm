@@ -723,11 +723,15 @@ def ground(
             and canonical
             and _words(canonical) != _words(raw)
             and not _names_a_type(db, raw, vocab)
+            and not _covered_by_class(_words(raw), vocab)
             and _names_a_type(db, canonical, vocab)
         ):
             # The parser hinted a class and named the catalogue's own name for what the
             # customer typed ("seat cover" -> "toilet seat"): when the typed words name no type
-            # themselves, that name grounds, read like any typed one. Otherwise the raw grounds.
+            # themselves, that name grounds, read like any typed one. Otherwise the raw grounds:
+            # typed words holding a class or type phrase ("Andamal Basin" -> "Wash Basin", W03)
+            # are read as typed, so the word nothing holds ("andamal") is said back, never
+            # swapped away for the class name.
             notes.append({"from": hint, "raw": raw, "to": canonical})
             entity = {**entity, "raw": canonical, "canonical_code": None}
             raw = canonical
