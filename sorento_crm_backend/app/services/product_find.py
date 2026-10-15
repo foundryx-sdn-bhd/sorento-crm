@@ -255,7 +255,26 @@ def _run_fits(db: Session, arg: FilterArg) -> list[Group]:
     return groups
 
 
-_FITS_PAIRS = ", ".join(f"{k.accessory} / {k.host}" for k in KINDS.values())
+
+
+def _fits_opening() -> str:
+    """Main's seat cover opening for the first kind (its WC gloss), then the other kinds grouped by
+    host: "likewise the mirror or shelf for a cabinet, or the cabinets a mirror or shelf fits"."""
+    first, *rest = KINDS.values()
+    text = (
+        f"fits: the products that fit or go with the named product: the {first.accessory}(s) for a "
+        f"{first.host} (water closet / toilet), or the {first.host}(s) a {first.accessory} fits"
+    )
+    hosts: dict[str, list[str]] = {}
+    for k in rest:
+        hosts.setdefault(k.host, []).append(k.accessory)
+    for host, accessories in hosts.items():
+        either = " or ".join(accessories)
+        text += f"; likewise the {either} for a {host}, or the {host}s a {either} fits"
+    return text
+
+
+_FITS_OPENING = _fits_opening()
 _FITS_KEYS = ", ".join(KINDS)
 
 FILTERS: dict[str, FindFilter] = {
@@ -266,9 +285,7 @@ FILTERS: dict[str, FindFilter] = {
             products=True,
             ask=ASK_PRODUCT_LINE,
             vocabulary=(
-                "fits: the products that fit or go with the named product, one pair per kind: "
-                f"{_FITS_PAIRS} (the accessory for its host, or the hosts an accessory fits; WC = "
-                "water closet / toilet). The other "
+                f"{_FITS_OPENING}. The other "
                 "side named beside a code, in any language or order, is this filter (\"seat "
                 "cover SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\", \"WC for SRTSCBD330-UF\", "
                 "\"mirror for SRTBF11413\", "
