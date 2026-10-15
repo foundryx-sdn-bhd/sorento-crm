@@ -155,6 +155,23 @@ describe('AC-F2 columns and rows', () => {
     expect(sum).toBeLessThanOrEqual(840);
   });
 
+  it('the Actions column is at least 66 px (34 px button plus 16 + 16 padding)', async () => {
+    renderList();
+    await screen.findByText('Stock Debt 15/10/2026');
+    const heads = Array.from(document.querySelectorAll('thead th')) as HTMLElement[];
+    expect(parseFloat(heads[heads.length - 1].style.width)).toBeGreaterThanOrEqual(66);
+  });
+
+  it('the Created at column is at least 150 px', async () => {
+    renderList();
+    await screen.findByText('Stock Debt 15/10/2026');
+    const heads = Array.from(document.querySelectorAll('thead th')) as HTMLElement[];
+    const widthOf = (th: HTMLElement | undefined) => parseFloat(th?.style.width ?? '0');
+    const created = heads.find((th) => th.textContent?.includes('Created at'));
+    expect(created).toBeDefined();
+    expect(widthOf(created)).toBeGreaterThanOrEqual(150);
+  });
+
   it('pressing a row opens that snapshot', async () => {
     renderList();
     fireEvent.click(await screen.findByText('Month end'));
