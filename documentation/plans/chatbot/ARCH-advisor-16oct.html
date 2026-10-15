@@ -212,7 +212,65 @@ template-filled, so the fact guard has nothing to catch. Tested in the spike as 
 </table></div>
 
 <h2 id="s6">6. Mock conversations (real dev cases)</h2>
-<p class="small">MOCKS_PENDING: filled from real dev conversations (names masked) once the scenario set lands.</p>
+<p>Each mock is a REAL dev message (chatbot.turns or the Respond.io log, read 15 Oct) with the facts the dev data
+holds today. Product codes are real; no customer names appear. Stock wording follows the asker's Stock Visibility:
+staff and (on dev) walk-in customers see numbers, dealers see availability words only. Dev incoming dates come from a
+mid-September snapshot, so they read as past dates against today.</p>
+<h3>6.1 Out of stock: the stored alternative</h3>
+<p class="small">Walk-in customer (detailed view). Real message, 9 Sep (scenario S01).</p>
+<div class="chat">
+<div class="m u">SRTBF11831 stock</div>
+<div class="m bot">SRTBF11831: 0 on hand, and it is discontinued.
+A stored alternative, SRTBF11831-NEW, has 14 on hand. Would you like that one?</div>
+</div>
+<p class="small"><b>Today (v1):</b> a stock table of zeros.<br><b>Tools the advisor calls:</b> stock balance (the alternative rides inside the stock answer).<br><b>Note:</b> A dealer asking the same gets "No stock for SRTBF11831. SRTBF11831-NEW is available." with no number.</p>
+<h3>6.2 Promotion plus the matching seat cover</h3>
+<p class="small">Staff. Real message, 11 Sep (scenario S08).</p>
+<div class="chat">
+<div class="m u">srtwc286 promotion</div>
+<div class="m bot">UPDATED SORENTO WATER CLOSET PROMO, 27 Aug to 27 Nov: MYR 599 (list MYR 1260). Flyer below.
+Matching seat cover: SRTSCBD407, 228 on hand.</div>
+<div class="note">[flyer image]</div>
+</div>
+<p class="small"><b>Today (v1):</b> asked the access tier first.<br><b>Tools the advisor calls:</b> promotion products, find (fits).<br><b>Note:</b> The promotion is office-only on dev, so a dealer asking the same is told no promotion is on record and never sees MYR 599. The promo line does not name the WC code (owner rule); the seat cover is the one move.</p>
+<h3>6.3 Matching accessory</h3>
+<p class="small">Dealer (availability view). Real message, 11 Sep (scenario S13).</p>
+<div class="chat">
+<div class="m u">WHICH BIDET SEAT COVER THAT MATCH WITH SRTWC6030-SH</div>
+<div class="m bot">Seat cover for SRTWC6030-SH-UF is SRTSCBD339-UF.
+SRTSCBD339-UF: got stock. How many do you need?</div>
+</div>
+<p class="small"><b>Today (v1):</b> listed bidet taps and WCs, never the seat cover.<br><b>Tools the advisor calls:</b> find (fits), stock balance.<br><b>Note:</b> Fit line first in the approved wording; the dealer quantity ask is correct in availability mode.</p>
+<h3>6.4 Quantity counter-proposal</h3>
+<p class="small">Walk-in customer (detailed view). Real message from the Respond.io log, 14 Jul (scenario S18).</p>
+<div class="chat">
+<div class="m u">SRTKS2425-BL , this item got stock ? Need 226nos</div>
+<div class="m bot">SRTKS2425-BL: only 3 on hand (discontinued).
+Incoming on record: 84 (ETA 21 Sep), 48 and 87 (ETA 22 Sep). Even with all of them it is still short of 226.
+Shall I pass this to our sales team to confirm dates and the balance?</div>
+</div>
+<p class="small"><b>Today (v1):</b> a stock table.<br><b>Tools the advisor calls:</b> stock balance, incoming by product.<br><b>Note:</b> No totals: "3 + 219 = 222, 4 short" would be numbers no tool returned, and the fact guard would stop them. Sums belong to code (variant C3), not to the model.</p>
+<h3>6.5 Out of stock, ETA instead</h3>
+<p class="small">Dealer (availability view). Real message, 9 Sep (scenario S25).</p>
+<div class="chat">
+<div class="m u">Check stock SRTWB1513</div>
+<div class="m bot">No stock for SRTWB1513 now. Next arrival on record: 23 Sep.
+How many do you need?</div>
+</div>
+<p class="small"><b>Today (v1):</b> no stock.<br><b>Tools the advisor calls:</b> stock balance, incoming by product.<br><b>Note:</b> No alternative is stored for this product, so none is offered. Staff would also see "58 coming".</p>
+<h3>6.6 Project enquiry</h3>
+<p class="small">Walk-in customer. Real message from the Respond.io log, 3 Sep (scenarios S28, S29).</p>
+<div class="chat">
+<div class="m u">i want to ask if the faucets for bath tub srtjc8037 can b in chrome instead of gunmetal ? what will b the price. for 85 unit hse.</div>
+<div class="m bot">No chrome version of SRTJC8037 is on record. Its list price is MYR 5000; it is out of stock with no incoming on record.
+For 85 units and a project price, I will pass this to our sales team with your request. OK?</div>
+</div>
+<p class="small"><b>Today (v1):</b> an unrelated product list; the customer then asked for purchasing.<br><b>Tools the advisor calls:</b> product, stock balance, incoming by product.<br><b>Note:</b> No project price exists in the tools, so the advisor does not invent one: it hands over with a summary (a fixed exit).</p>
+<h3>Real human replies, for tone</h3>
+<p class="small">From the purchasing responses and a handover chat on dev (masked): "Estimated ETA mid of August and
+FOC for this time only."; "Don't have 170mm dia x 110mm H, only have 147mm, 160mm, 200mm, 220mm. This is the nearest
+size supplier have."; "No orders and no stock (will change new model)." Short, honest, one useful move: the tone the
+advisor prompt asks for.</p>
 
 <h2 id="s7">7. The spike: what we measure</h2>
 <ul>
