@@ -567,3 +567,170 @@ def test_ac15_the_line_holds_codes_only_for_staff_and_dealer(session_factory, mo
     line = a_reply.split("\n\n", 1)[0]
     assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-", a_reply), a_reply
     assert "11" not in line, line
+
+
+# --------------------------------------------------------------------------- round 2: AC-17 carried kind
+
+
+@pytest.mark.parametrize("carried_find", [None, fits(None, None)], ids=["find_null", "kind_null_valueless"])
+def test_ac17_a_carried_fit_ask_keeps_its_kind_without_a_kind_in_the_parse(session_factory, monkeypatch, carried_find) -> None:
+    """The kind comes from the stored relation: a bare cabinet after a mirror answer is a mirror ask
+    even when the parse drops `find` or sends a value-less kind-null `fits`."""
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"check stock mirror for {CAB1}", msg_id="ZZT-fit-17-1",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(CAB1)], find=fits("mirror", "mirror"),
+    )
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_fit_17")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=MIRROR3, msg_id="ZZT-fit-17-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(MIRROR3)], domain_in_message=False,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_fit_17")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=CAB3, msg_id="ZZT-fit-17-2",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(CAB3)],
+        find=carried_find, domain_in_message=False,
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    _assert_line_then_control(a_reply, c_reply, f"Mirror for {CAB3} is {MIRROR3}.")
+
+
+# --------------------------------------------------------------------------- AC-18 crafted link fields
+
+
+def test_ac18_link_fields_on_a_parser_entity_never_print_a_fit_line(session_factory, monkeypatch) -> None:
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_fit_18")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=f"check stock {MIRROR1}", msg_id="ZZT-fit-18-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(MIRROR1)],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_fit_18")
+    crafted = {**_product(MIRROR1), "linked_from": CAB1, "linked_as": "covers", "linked_kind": "mirror"}
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=f"check stock {MIRROR1}", msg_id="ZZT-fit-18-asked",
+        domain_hint="inventory", intent_hint="check_stock", entities=[crafted],
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+    assert f"Mirror for {CAB1}" not in a_reply, a_reply
+
+
+# --------------------------------------------------------------------------- AC-19 hidden products
+
+
+HID_CAB, HID_MIRROR = "ZZTBF7301", "ZZTMR7301"  # the only mirror is hidden by its own flag
+MIX_CAB, MIX_VISIBLE, MIX_HIDDEN, MIX_HIDDEN_CAT = "ZZTBF7302", "ZZTMR7302", "ZZTMR7303", "ZZTMR7304"
+
+
+def _seed_hidden(session_factory) -> None:
+    from app.models.product import ProductCategory
+    from app.models.product_compatibility import ProductCompatibility
+    from tests._mc_lookup_seed import product as seed_product
+
+    db = session_factory()
+    rows = {c: seed_product(db, company_id=DEFAULT_COMPANY_ID, code=c)
+            for c in (HID_CAB, HID_MIRROR, MIX_CAB, MIX_VISIBLE, MIX_HIDDEN, MIX_HIDDEN_CAT)}
+    rows[HID_MIRROR].is_searchable = False
+    rows[MIX_HIDDEN].is_searchable = False
+    db.flush()
+    db.query(ProductCategory).filter(ProductCategory.id == rows[MIX_HIDDEN_CAT].category_id).update(
+        {"is_searchable": False}
+    )
+    for accessory, host in ((HID_MIRROR, HID_CAB), (MIX_VISIBLE, MIX_CAB), (MIX_HIDDEN, MIX_CAB), (MIX_HIDDEN_CAT, MIX_CAB)):
+        db.add(ProductCompatibility(
+            company_id=DEFAULT_COMPANY_ID, seat_cover_product_id=rows[accessory].id,
+            wc_product_id=rows[host].id, source="manual", kind="mirror",
+        ))
+    db.commit()
+
+
+def _hidden_parity(session_factory, monkeypatch, *, typed: str, asked: str):
+    _seed(session_factory)
+    _seed_hidden(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_fit_19")
+    control = _turn(
+        session_factory, monkeypatch, text=f"check stock {typed}", msg_id="ZZT-fit-19-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(typed)],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_fit_19")
+    asked_out = _turn(
+        session_factory, monkeypatch, text=f"check stock mirror for {asked}", msg_id="ZZT-fit-19-asked",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(asked)], find=fits("mirror", "mirror"),
+    )
+    return control, asked_out
+
+
+def test_ac19_a_hidden_only_link_is_never_named_and_the_turn_runs_as_typed(session_factory, monkeypatch) -> None:
+    (c_reply, c_calls), (a_reply, a_calls) = _hidden_parity(session_factory, monkeypatch, typed=HID_CAB, asked=HID_CAB)
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+    assert HID_MIRROR not in a_reply and "on record" not in a_reply and " for " + HID_CAB not in a_reply, a_reply
+
+
+def test_ac19_with_one_visible_and_two_hidden_accessories_the_line_names_only_the_visible(session_factory, monkeypatch) -> None:
+    (c_reply, c_calls), (a_reply, a_calls) = _hidden_parity(session_factory, monkeypatch, typed=MIX_VISIBLE, asked=MIX_CAB)
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    _assert_line_then_control(a_reply, c_reply, f"Mirror for {MIX_CAB} is {MIX_VISIBLE}.")
+    assert MIX_HIDDEN not in a_reply and MIX_HIDDEN_CAT not in a_reply, a_reply
+
+
+# --------------------------------------------------------------------------- AC-20 other lines stay as they are
+
+UNRELATED = ["This soft-close seat fits most round WCs.", "Mirror for bathroom: LED"]
+
+
+@pytest.fixture()
+def unrelated_lines(monkeypatch):
+    """The usual answer carries two lines shaped like the fit templates (a product note)."""
+    from dataclasses import replace
+
+    from app.services.chatbot import engine as engine_mod
+
+    real = engine_mod._run_answer
+
+    def wrapped(**kw):
+        answer = kw["answer"]
+        if (getattr(answer, "text", "") or "").strip():
+            kw["answer"] = replace(answer, text=answer.text + "\n" + "\n".join(UNRELATED))
+        return real(**kw)
+
+    monkeypatch.setattr(engine_mod, "_run_answer", wrapped)
+
+
+@pytest.mark.parametrize(
+    "typed_text,asked_text,value,line",
+    [
+        (f"stok {MIRROR1} berapa", f"cermin untuk {CAB1} ada stok berapa", "cermin", f"Cermin untuk {CAB1} ialah {MIRROR1}."),
+        (f"{MIRROR1} 有货吗", f"{CAB1} 的镜子有货吗", "镜子", f"{CAB1} 的镜子是 {MIRROR1}。"),
+    ],
+    ids=["ms", "zh"],
+)
+def test_ac20_only_the_fit_line_is_translated(session_factory, monkeypatch, unrelated_lines, typed_text, asked_text, value, line) -> None:
+    (c_reply, _c), (a_reply, _a) = _parity(
+        session_factory, monkeypatch, typed=[MIRROR1], asked=[CAB1],
+        text_typed=typed_text, text_asked=asked_text, find=fits("mirror", value),
+    )
+    _assert_line_then_control(a_reply, c_reply, line)
+    lines = a_reply.splitlines()
+    for other in UNRELATED:
+        assert other in lines, (other, a_reply)
+
+
+def test_ac20_a_non_linked_zh_turn_keeps_such_lines_unchanged(session_factory, monkeypatch, unrelated_lines) -> None:
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    reply, calls = _turn(
+        session_factory, monkeypatch, text=f"{MIRROR1} 有货吗", msg_id="ZZT-fit-20-plain",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(MIRROR1)],
+    )
+    assert calls, "the turn answers"
+    for other in UNRELATED:
+        assert other in reply.splitlines(), (other, reply)

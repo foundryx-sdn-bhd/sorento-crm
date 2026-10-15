@@ -1099,8 +1099,7 @@ def test_g3_the_partial_code_through_the_engine_answers_the_covers_stock(session
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
     # CHAT-FIT-LINE: the model code resolves through links, so the reply opens with a fit line
     # for the code the customer typed; the answer after it is the control's.
-    assert a_reply.startswith("Seat cover for 9152"), a_reply
-    assert a_reply.endswith("\n\n" + c_reply), (a_reply, c_reply)
+    assert a_reply == _with_line(_line_many("9152", ["ZZTSCBD920", "ZZTSCBD924-BL"]), c_reply), (a_reply, c_reply)
 
 
 # --------------------------------------------------------------------------- crew audit @ ec84f482 (14 Oct)
@@ -1154,8 +1153,7 @@ def test_a2_the_model_code_through_the_engine_answers_the_two_covers(session_fac
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
     # CHAT-FIT-LINE: the model code resolves through links, so the reply opens with a fit line
     # for the code the customer typed; the answer after it is the control's.
-    assert a_reply.startswith("Seat cover for 9152"), a_reply
-    assert a_reply.endswith("\n\n" + c_reply), (a_reply, c_reply)
+    assert a_reply == _with_line(_line_many("9152", ["ZZTSCBD920", "ZZTSCBD924-BL"]), c_reply), (a_reply, c_reply)
 
 
 def test_a3_the_relation_word_double_booked_as_a_file_type_is_dropped_beside_a_real_file_word(session_factory, monkeypatch) -> None:
