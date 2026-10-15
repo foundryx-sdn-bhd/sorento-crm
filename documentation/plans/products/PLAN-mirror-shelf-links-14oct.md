@@ -67,7 +67,7 @@ check, unique index on head. UI: groups by kind with labels, kind picker posts k
 
 ## 5. Contract (binding for tester and coder)
 
-### Migration `wc_compat_0002_kind` (down_revision = main's head at build time, `ac_consign_0001_doc_type`)
+### Migration `wc_compat_0002_kind` (down_revision = main's head at merge time, `frc_0001_debtor_type_no_cs`)
 
 Idempotent SQL, same style as `wc_compat_0001_table.py`:
 

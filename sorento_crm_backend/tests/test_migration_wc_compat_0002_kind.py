@@ -41,7 +41,7 @@ def test_revision_id_and_parent():
     module = _load()
     assert module.revision == REVISION
     assert len(module.revision) <= 32
-    assert module.down_revision == "ac_consign_0001_doc_type"
+    assert module.down_revision == "frc_0001_debtor_type_no_cs"
 
 
 def test_upgrade_sql_is_idempotent_by_construction():

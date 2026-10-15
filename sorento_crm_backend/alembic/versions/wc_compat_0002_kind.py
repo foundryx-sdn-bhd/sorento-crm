@@ -7,14 +7,14 @@ it in any order.
 Plan: documentation/plans/products/PLAN-mirror-shelf-links-14oct.md.
 
 Revision ID: wc_compat_0002_kind
-Revises: ac_consign_0001_doc_type
+Revises: frc_0001_debtor_type_no_cs
 """
 import sqlalchemy as sa
 from alembic import op
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "wc_compat_0002_kind"
-down_revision = "ac_consign_0001_doc_type"
+down_revision = "frc_0001_debtor_type_no_cs"
 branch_labels = None
 depends_on = None
 
