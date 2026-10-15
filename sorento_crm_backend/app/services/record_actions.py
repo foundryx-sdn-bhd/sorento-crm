@@ -2107,6 +2107,30 @@ register(
 )
 
 
+def _delete_stock_debt_snapshot(db: Session, payload: dict):
+    from app.services.scm.stock_debt_snapshot_service import StockDebtSnapshotService
+
+    # `delete` answers 404 for a snapshot that is not the requester's own, so ownership IS
+    # the check - the same shape `saved_view.delete` above uses.
+    StockDebtSnapshotService(db).delete(
+        _entity_id(payload), str(payload.get("requested_by_id") or "")
+    )
+    return {"message": "Deleted"}
+
+
+register(
+    FormAction(
+        key="stock_debt_snapshot.delete",
+        entity_types=("stock_debt_snapshot",),
+        execute=_delete_stock_debt_snapshot,
+        # Destructive: the snapshot carries other people's decisions on its rows.
+        window=WINDOW_DESTRUCTIVE,
+        permission=OWN_RECORD,
+        label="Delete snapshot",
+    )
+)
+
+
 def _void_price_tag_request(db: Session, payload: dict):
     from app.services.price_tag_request_service import (
         PriceTagRequestService,
