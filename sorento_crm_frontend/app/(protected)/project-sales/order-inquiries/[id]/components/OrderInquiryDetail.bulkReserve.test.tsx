@@ -157,8 +157,15 @@ vi.mock('@/services/pendingActionService', () => ({
   getCurrentPendingAction: vi.fn(async () => ({ pending: null, last_outcome: null })),
 }));
 vi.mock('../../../_shared/services/fulfilmentPlanningService', () => ({
-  getStockDetail: vi.fn(async () => ({
-    locations: [{ warehouse_id: 'wh-brw', location: 'BRW', available_qty: '200' }],
+  // CKS1050 (row-2) has only 20 at BRW: the Reserve... popup caps its prefill there.
+  getStockDetail: vi.fn(async (productId: string) => ({
+    locations: [
+      {
+        warehouse_id: 'wh-brw',
+        location: 'BRW',
+        available_qty: productId === 'prod-row-2' ? '20' : '200',
+      },
+    ],
   })),
 }));
 
@@ -238,13 +245,13 @@ describe('AC-BR-01 Decide (N) on the Lines tab selection strip', () => {
 });
 
 describe('AC-BR-02/03 Reserve as requested', () => {
-  it('offers exactly Reserve as requested and Reject...', async () => {
+  it('offers exactly Reserve as requested, Reserve... and Reject...', async () => {
     renderDetail();
     await ready();
     tick('CB313');
     openDecideMenu();
     const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent?.trim());
-    expect(items).toEqual(['Reserve as requested', 'Reject...']);
+    expect(items).toEqual(['Reserve as requested', 'Reserve...', 'Reject...']);
   });
 
   it('stages every counted line like its tick, clears the ticks, opens no dialog', async () => {
@@ -471,5 +478,94 @@ describe('AC-BR-09 line-level x Reject', () => {
     renderDetail();
     await screen.findByText('CB313');
     expect(within(gridRowOf('CB313')).queryByLabelText('Reject')).not.toBeInTheDocument();
+  });
+});
+
+// Owner hand test 16 Oct: "choose multiple, click reserve, then open a pop up like we have been
+// using for them to amend the quantity". Decide > Reserve... opens ONE popup with the pen's
+// own fields per ticked line (Location, Reserved, Reason when below the request).
+describe('AC-BR-10 Reserve... (one popup, the pen fields per line)', () => {
+  async function openReservePopup(itemCodes: string[]) {
+    renderDetail();
+    await ready();
+    for (const code of itemCodes) tick(code);
+    openDecideMenu();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reserve...' }));
+    const n = itemCodes.filter((code) => code !== 'C-FH14').length;
+    return screen.findByRole('dialog', { name: `Reserve ${n} line${n === 1 ? '' : 's'}` });
+  }
+
+  function lineGroup(dialog: HTMLElement, itemCode: string) {
+    return within(dialog).getByRole('group', { name: itemCode });
+  }
+
+  it('lists every counted line, prefilled at min(requested, stock at the location)', async () => {
+    const dialog = await openReservePopup(['CB313', 'CKS1050', 'C-FH14']);
+    const cb313 = await within(dialog).findByRole('group', { name: 'CB313' });
+    expect(within(cb313).getByLabelText('Reserved')).toHaveValue(88);
+    const cks = lineGroup(dialog, 'CKS1050');
+    await waitFor(() => expect(within(cks).getByLabelText('Reserved')).toHaveValue(20));
+    // Short of the request: the reason shows and is required, like the pen's form.
+    expect(within(cks).getByLabelText('Reason')).toBeInTheDocument();
+    expect(within(cb313).queryByLabelText('Reason')).not.toBeInTheDocument();
+    // The answered line is not offered.
+    expect(within(dialog).queryByRole('group', { name: 'C-FH14' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Stage 2 lines' })).toBeDisabled();
+  });
+
+  it('stages each line at its own qty, location and reason, then commits them', async () => {
+    const dialog = await openReservePopup(['CB313', 'CKS1050']);
+    const cb313 = await within(dialog).findByRole('group', { name: 'CB313' });
+    fireEvent.change(within(cb313).getByLabelText('Reserved'), { target: { value: '60' } });
+    fireEvent.change(within(cb313).getByLabelText('Reason'), { target: { value: 'Partial stock' } });
+    const cks = lineGroup(dialog, 'CKS1050');
+    await waitFor(() => expect(within(cks).getByLabelText('Reserved')).toHaveValue(20));
+    const stage = within(dialog).getByRole('button', { name: 'Stage 2 lines' });
+    expect(stage).toBeDisabled();
+    fireEvent.change(within(cks).getByLabelText('Reason'), { target: { value: 'Only 20 at BRW' } });
+    expect(stage).toBeEnabled();
+    fireEvent.click(stage);
+
+    expect(await screen.findByText('Reserve 60 @ BRW')).toBeInTheDocument();
+    expect(screen.getByText('Reserve 20 @ BRW')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^reserve \(2\)$/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId('reserve-decide-button')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /^reserve \(2\)$/i }));
+    const confirm = await screen.findByRole('dialog', { name: /reserve 2 lines on OI-2609-0731/i });
+    fireEvent.click(await within(confirm).findByRole('button', { name: 'Reserve and send to Agent J' }));
+    await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(1));
+    expect(commitSpy.mock.calls[0][1].reserves).toEqual(
+      expect.arrayContaining([
+        { row_id: 'row-1', warehouse_id: 'wh-brw', qty_reserved: 60, reason: 'Partial stock' },
+        { row_id: 'row-2', warehouse_id: 'wh-brw', qty_reserved: 20, reason: 'Only 20 at BRW' },
+      ]),
+    );
+  });
+
+  it('a line typed back up to its request needs no reason', async () => {
+    const dialog = await openReservePopup(['CB313']);
+    const cb313 = await within(dialog).findByRole('group', { name: 'CB313' });
+    fireEvent.change(within(cb313).getByLabelText('Reserved'), { target: { value: '10' } });
+    expect(within(dialog).getByRole('button', { name: 'Stage 1 line' })).toBeDisabled();
+    fireEvent.change(within(cb313).getByLabelText('Reserved'), { target: { value: '88' } });
+    expect(within(cb313).queryByLabelText('Reason')).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Stage 1 line' })).toBeEnabled();
+  });
+
+  it('Reserved never goes above the request', async () => {
+    const dialog = await openReservePopup(['CB313']);
+    const cb313 = await within(dialog).findByRole('group', { name: 'CB313' });
+    fireEvent.change(within(cb313).getByLabelText('Reserved'), { target: { value: '500' } });
+    expect(within(cb313).getByLabelText('Reserved')).toHaveValue(88);
+  });
+
+  it('Cancel stages nothing and keeps the ticks', async () => {
+    const dialog = await openReservePopup(['CB313']);
+    await within(dialog).findByRole('group', { name: 'CB313' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Reserve 1 line' })).not.toBeInTheDocument());
+    expect(screen.queryByText(/Reserve \d+ @ BRW/)).not.toBeInTheDocument();
+    expect(decideButton()).toHaveTextContent('Decide (1)');
   });
 });
