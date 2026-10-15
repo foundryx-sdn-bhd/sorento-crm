@@ -1572,7 +1572,12 @@ class PromotionProductService:
             _default_type_labels(self.db) if any(not t for t in parent_type_ids) else (None, None)
         )
         for line in products:
-            line.promotion_attachments = attachments_map.get(line.promotion_id, [])
+            # SEC-PROMO-ACCESS (security review B1): the same per-file filter the promotions
+            # list and get apply - a contact allowed to see the promotion still sees only
+            # the files at its own levels, never an OFFICE USE one beside them.
+            line.promotion_attachments = PromotionService._filter_attachments_by_codes(
+                attachments_map.get(line.promotion_id, []), contact_access_codes
+            )
             # Row-level expiry of the PARENT promotion, mirroring the promotions
             # list - lets MCP/n8n say "found but expired" for fallback/historical
             # lines instead of presenting them as live.

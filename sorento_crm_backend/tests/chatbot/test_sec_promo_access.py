@@ -33,7 +33,7 @@ from app.services.chatbot.lanes.business.services import ResolveGateServices
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._mc_lookup_seed import product
 from tests.chatbot import test_outstanding_lane as lane_harness
-from tests.chatbot.test_engine import _parser_output
+from tests.chatbot.test_engine import _parser_output, stub_access, stub_parser  # noqa: F401 (fixtures)
 from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact
 from tests.chatbot.test_promo_kind_subject import PROMO_TOOL, _brand, _promo
 
@@ -391,3 +391,38 @@ class TestPromotionFetchWithNoTierGateFailsClosed:
 
         assert promotion_access_closed("promotion", None)
         assert not promotion_access_closed("order", None)
+
+    def test_a_claimed_level_never_widens_an_entity_less_promotion_ask(
+        self, session_factory, stub_parser, stub_access, monkeypatch
+    ):
+        """"what's on promotion" with no entity reaches the fetch with no resolver tier gate
+        (the real-resolver harness of `test_rearch_r12_handpass12_c`). The parser read
+        "Cabana Office" off the message; the contact holds only Sorento Dealer. The read goes
+        out at the contact's own level, never the claimed one."""
+        from sqlalchemy import text
+
+        from app.services.contact_access_type_service import ContactAccessTypeService
+        from tests.chatbot.test_engine import CONTACT_ID, _envelope
+        from tests.chatbot.test_rearch_r12_handpass12_c import _capturing_call_tool
+
+        _seed(session_factory)
+        db = session_factory()
+        contact_pk = db.execute(
+            text("SELECT id FROM respond_contacts WHERE respond_io_id = :rid"), {"rid": str(CONTACT_ID)}
+        ).scalar_one()
+        ContactAccessTypeService(db).set_contact_access_codes(str(contact_pk), ["sorento_dealer"])
+        db.commit()
+        calls = _capturing_call_tool(monkeypatch)
+        stub_parser(
+            _parser_output(
+                domain_hint="promotion", intent_hint=None, entities=[], access_levels=["Cabana Office"],
+                requested_attributes=["promotion"], user_goal="what's on promotion",
+            )
+        )
+        stub_access(attributes=["promotion.view"])
+        from app.services.chatbot import engine as engine_mod
+
+        engine_mod.run_turn(_envelope(), session_factory=session_factory)
+        promo = [a for n, a in calls if n == PROMO_TOOL]
+        assert promo, calls
+        assert all(a.get("access_levels") == ["Sorento Dealer"] for a in promo), promo
