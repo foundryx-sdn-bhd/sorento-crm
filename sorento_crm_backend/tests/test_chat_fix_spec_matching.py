@@ -255,3 +255,10 @@ def test_f1_a_flag_never_widens_to_a_class_the_asked_one_shares_no_word_with(db)
     assert _values(db, urinal).get("is_rimless", {}).get("value") is True
     out = resolve_product_set(db, require={}, specs=[{"key": "is_rimless", "value": True}], scope_terms=["water closet"])
     assert _codes(out) == {wc.product_code}, out
+
+
+def test_r2_a_key_holding_a_yes_and_the_word_true_never_crashes_the_membership(db):
+    """Reviewer R2 on PR-A: one key can arrive as the boolean and as its word (a grounded
+    `True` beside a scope term's "true"); the membership echo sorts them as text."""
+    found = filter_specs(db, specs=[{"key": "is_smart", "value": True}, {"key": "is_smart", "value": "true"}])
+    assert found["membership"]["is_smart"], found

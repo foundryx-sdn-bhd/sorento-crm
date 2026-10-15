@@ -395,3 +395,25 @@ def test_answering_the_which_question_closes_it_and_a_later_digit_never_merges_s
     assert not question or question.get("kind") != "category_pick", question
     after = _turn(session_factory, monkeypatch, services, pick(2), "2", "zzt-md-close-2")
     assert "tall cabinet" not in after.lower(), after
+
+
+def test_a_dealer_who_lacks_the_asked_brand_is_offered_no_choice(session_factory, monkeypatch):
+    """Reviewer R1 on PR-A (fails closed): a dealer of another brand has no access level the
+    Sorento promotions are at (the tier gate's recomposed list is empty), so the which-question
+    offers no Sorento cabinet type, however many have a promotion at some level."""
+    from app.services.chatbot.lanes.business.services import _resolve_entity
+
+    _world(session_factory, basin_promo=True)
+    db = session_factory()
+    db.add(ContactAccessType(code="mocha_dealer", name="Mocha Dealer"))
+    db.commit()
+    _mcp(monkeypatch, session_factory)
+    names = ["Mocha Dealer"]
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": n} for n in names],
+        resolve_entity=_resolve_entity(session_factory()), probe=lambda **_: None,
+    )
+    reply = _turn(session_factory, monkeypatch, services, _ask_qf("cabinet", brand="Sorento"), "Pls send sorento cabinet promotion", "zzt-md-nobrand-ask")
+    assert "Which cabinet do you mean?" not in reply, reply
+    for choice in ("basin cabinet", "side cabinet", "tall cabinet"):
+        assert choice not in reply.lower(), reply
