@@ -76,3 +76,17 @@ order at BRW-BB). CON holds 6 of each product, flagged out of fulfilment plannin
    board's own suggestion is now Borrow 8, Buy 0. `Save line N as suggested` on the 3 lines, then
    Confirm (3): "CG-SBX/06-062: confirmed as revision 1 (0 purchase rows handed over)";
    `projects.order_inquiry_rows` 0.
+
+## Review decisions
+
+- Round 1 B1: a consignment line at an off bin (CON) is proposed Borrow at that bin for the whole
+  plan qty, never Buy, so Approve all writes nothing to purchasing (`compose_lines`).
+- Round 2 B2: that proposal and the no-order-back skip apply only when the line's own bin is
+  outside fulfilment planning; a consignment line at a planned bin runs the ladder like a sales
+  order line (card R6).
+- Not built (lead, round 2 S6): capping the CON proposal at CON's free qty. BORROW-OWN-LOC already
+  confirms what is free at the own bin and records the rest short, and the owner ruled no Buy for
+  consignments. Trigger to revisit: a planner reports a consignment marked planned while CON's
+  on-hand for that product is below the consignment's open qty.
+- Not built (round 2 N9): plan moves lost if `_finish_batch`'s savepoint rolls back. Rare; the
+  next planning change or a manual re-plan covers it.
