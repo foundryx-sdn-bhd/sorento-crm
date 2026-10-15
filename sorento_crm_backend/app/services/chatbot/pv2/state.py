@@ -146,6 +146,9 @@ class ConversationState(BaseModel):
     # R4a: what the last reply did (MEMORY's LAST REPLY): "answered <domain>", "asked <question kind>",
     # "refused <what>" or "not found <words>"; None for small talk, a hand-over and state saved before it.
     last_reply: str | None = None
+    # R6 B: the records the question the last pick answered offered, so "the 150 one" can name another of them;
+    # empty when the last turn answered no question.
+    last_menu: list[ResolvedRef] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -259,6 +262,7 @@ def roll_session(state: ConversationState, now: datetime) -> ConversationState:
     rolled.register = []
     rolled.last_lookup_ask = None
     rolled.last_reply = None
+    rolled.last_menu = []
     rolled.session_started_at = now
     return rolled
 

@@ -33,6 +33,7 @@ from app.services.chatbot.pv2.schema import Ask, Entity, Filter, ParserV2Output,
 from app.services.chatbot.pv2.state import (
     MISSES_BEFORE_HANDOVER,
     LAST_ROWS_CAP,
+    SCALAR_PAYLOAD_KINDS,
     Action,
     ClarifyAct,
     ConversationState,
@@ -256,6 +257,7 @@ def apply_turn(
     elif answered_pending or closed or any(isinstance(a, (Lookup, HandOver)) for a in actions):
         st.pending = None
     st.last_lookup_ask = _last_lookup_ask(actions, pending_in if answered_pending else None)
+    st.last_menu = _menu_refs(pending_in) if answered_pending else []
     if not st.held.is_empty() and st.held.sid is None:
         st.held.sid = new_sid(st)  # a pick answered without `_commit` (a pre-R2 held, a v1 or "all" pick)
     st.last_reply = _outcome(actions)
@@ -671,23 +673,23 @@ def _one_ask(
         ask = ask.model_copy(update={"entities": [picked, *ask.entities], "row_pick": None, "act": act})
 
     if ask.act in ("refines_held", "new_topic") and not st.held.refs.get("product"):
-        # R5-2: "this product" with no product held, after an answer that showed one document: its line.
-        lines = _line_products(st) if any(_points_back(e) for e in ask.entities if e.kind == "product") else None
-        if lines == []:
+        # R5-2 / R6 B: "this product" with no product held: what it can refer to (a shown document's lines first).
+        refs = _referents(st, "product") if any(_points_back(e) for e in ask.entities if e.kind == "product") else None
+        if refs == []:
             # Lines the contact may not see (dropped by the reveal filter) are never named: ask which product.
             act = _which_product(st, i, language)
             act.pending.origin = _origin_of(ask)
             return act, False
-        if lines and len(lines) == 1:
-            # As a shown row is: the line named by its code, so it routes as a copied code does.
+        if refs and len(refs) == 1:
+            # As a shown row is: the product named by its code, so it routes as a copied code does.
+            code = clarify_copy.printed_code(refs[0].key, refs[0].label, language)
             ask = ask.model_copy(update={"entities": [
-                e.model_copy(update={"phrase": lines[0], "refers_to_held": False})
+                e.model_copy(update={"phrase": code, "refers_to_held": False})
                 if e.kind == "product" and _points_back(e) else e
                 for e in ask.entities
             ]})
-        elif lines:
-            options = [Option(key=c, label=c, payload={"kind": "product", "key": c, "label": c, "op": "set"}) for c in lines]
-            act = _clarify(st, i, "entity", None, language, options=options, kind="product")
+        elif refs:
+            act = _clarify(st, i, "entity", None, language, options=_which_held_options(refs), kind="product")
             act.pending.origin = _origin_of(ask)  # the pick completes this ask
             return act, False
 
@@ -699,12 +701,7 @@ def _one_ask(
     if counted is not None:
         ask = counted  # a bare count: a refine (or a new topic) on the held subject
     elif ask.act == "answers_bot_question" and not answer_is_a_refine(ask, pending):
-        row = _row_answer(ask, pending)
-        if row is None:
-            return _answer(st, i, ask, pending, resolver, policy, language, today, can_offer)
-        # R6 A: a shown row the question offered is looked up again by its printed label, as a row_pick is.
-        act = "new_topic" if st.held.is_empty() else "refines_held"
-        ask = ask.model_copy(update={"act": act, "answer": None, "row_pick": None, "entities": [row]})
+        return _answer(st, i, ask, pending, resolver, policy, language, today, can_offer)
 
     if ask.act == "switch_back":
         printed = topic_index(ask.switch_back_to, printed_topics)
@@ -1542,6 +1539,39 @@ def _line_products(st: ConversationState) -> list[str] | None:
     return list(dict.fromkeys([*st.doc_lines.get(key or "", []), *children]))
 
 
+def _referents(st: ConversationState, kind: str | None = None) -> list[ResolvedRef] | None:
+    """R6 B: what a follow-up reference naming nothing ("this product", "both", "the others", "that one") can mean,
+    in order: the lines of the one document the last answer showed (`_line_products`: only lines the contact may
+    see) and the product rows it printed, the held refs (no document once those lines are known: the reference
+    reads the lines, not the number), the products of the saved topics, then the records of the question the last
+    pick answered. `kind` keeps that kind only (a product reference is never offered a document). None when the last
+    answer showed no single document and nothing else is there."""
+    lines = _line_products(st)
+    rows = [r.label for r in shown(st) if r.payload.get("row_kind") == "product"]
+    keys = {e.label: e.key for e in reversed(st.register) if e.kind == "product"}  # the newest entry per label
+    documents = DOCUMENT_KINDS - {"product"} if lines else frozenset()
+    held = [r for refs in st.held.refs.values() for r in refs if r.kind not in documents]
+    out: dict[tuple[str, str], ResolvedRef] = {}
+    for r in [
+        *(ResolvedRef(kind="product", key=keys.get(c, c), label=c) for c in dict.fromkeys([*(lines or []), *rows])),
+        *held,
+        *(r for t in st.topics for r in t.refs.get("product", [])),
+        *st.last_menu,
+    ]:
+        if kind is None or r.kind == kind:
+            out.setdefault((r.kind, r.key), r)
+    return list(out.values()) if out or lines is not None else None
+
+
+def _menu_refs(pending: PendingQuestion | None) -> list[ResolvedRef]:
+    """R6 B: the records a question offered (as printed), for `ConversationState.last_menu`."""
+    return [
+        ResolvedRef(kind=str(o.payload["kind"]), key=str(o.payload["key"]), label=o.label)
+        for o in _numbered(pending)
+        if o.payload.get("kind") not in (None, *SCALAR_PAYLOAD_KINDS) and o.payload.get("key")
+    ]
+
+
 def _lists_all(domain: str | None) -> bool:
     """v1's narrowing rule for the domain's product kind is `list_all` (policy rows)."""
     from app.services.chatbot.turn.policy import default_policy
@@ -2068,11 +2098,10 @@ def _entity_about(st: ConversationState, about: str) -> str:
 
 
 def _options_for(st: ConversationState, about: str) -> list[Option]:
-    """Real options for a model-raised clarify: for which_held the rows the last answer printed (R6 A), else the
-    held subjects; else none (an open question; never a guessed list)."""
+    """Real options for a model-raised clarify: what a reference can mean for which_held (`_referents`), else
+    none (an open question; never a guessed list)."""
     if about == "which_held":
-        rows = [r for r in shown(st) if r.payload.get("row_kind") in LABEL_KINDS]
-        return rows or _which_held_options([r for refs in st.held.refs.values() for r in refs])
+        return _which_held_options(_referents(st) or [])
     return []
 
 
@@ -2119,19 +2148,6 @@ def _flag_question(st: ConversationState, i: int, lookup: Lookup, ask: Ask, abou
         return lookup
     q.pending.origin = _waiting(ask, st.held)
     return q
-
-
-def _row_answer(ask: Ask, pending: PendingQuestion | None) -> Entity | None:
-    """R6 A: an answer picking a printed row a question offered (`_options_for`): that row as the entity a row_pick
-    makes of it (its printed label, its kind), never the stored key. None for any other answer."""
-    if pending is None or not pending.options or any(o.payload.get("kind") != "row" for o in pending.options):
-        return None
-    number = _number(ask)
-    picked = _keyed_pick(ask, pending) or (_nth(_numbered(pending), number) if number is not None else None)
-    kind = picked.payload.get("row_kind") if picked is not None else None
-    if kind not in LABEL_KINDS:
-        return None
-    return Entity(kind=kind, key=None, phrase=picked.label, op="set", refers_to_held=False)
 
 
 def _clarify(
