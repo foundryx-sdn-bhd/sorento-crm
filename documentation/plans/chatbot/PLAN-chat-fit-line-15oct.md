@@ -1,7 +1,8 @@
 # PLAN: v1 chatbot states the linked fit before the usual answer (CHAT-FIT-LINE)
 
-Status: Build (lane CHAT-FIT-LINE, branch `crew/chat-fit-line`; card answered by crew 15 Oct:
-Q1 a, Q2 a, Q3 a, no split). Track: standard, size M+ (new reply line customers see + mirror /
+Status: Review, merge-ready pending CI and the owner hand test (lane CHAT-FIT-LINE, PR #1710;
+reviewer READY + security CLEAN at 1bfd663178; card answered by crew 15 Oct: Q1 a, Q2 a, Q3 a,
+no split). Track: standard, size M+ (new reply line customers see + mirror /
 shelf fit resolution; no migration, no FE change, no auth/RBAC change, no prompt republish: the
 live `{{find_filters}}` text and the strict parse schema change in code).
 Card `CARD-chat-fit-line-15oct.md`; UAC `chat-fit-line-15oct-acceptance-criteria.md`.
