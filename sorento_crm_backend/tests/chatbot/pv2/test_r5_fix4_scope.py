@@ -36,7 +36,7 @@ def test_f4_3_a_scope_read_error_for_a_non_staff_contact_on_a_pv2_report_turn_ge
         raise RuntimeError("scope read failed")
 
     monkeypatch.setattr(pv2_hook, "customer_scope", boom)
-    res, called = _report_turn(session_factory, monkeypatch)
+    res, called = _report_turn(session_factory, monkeypatch, grants=())  # R6 Q5(a): the hold is for a contact without the grant
     assert not ({n for n, _ in called} & REPORT_TOOLS), called
     assert (res.direct_reply or "").strip(), "an empty reply is sent"
 
@@ -101,7 +101,7 @@ def test_f4_5_a_number_on_the_stock_menu_tagged_with_an_ungranted_domain_runs_th
 CHAT_TOOL = "crm_report_ask"
 
 
-def _chat_engine_turn(session_factory, monkeypatch, fake_turn, *, salesperson=False):
+def _chat_engine_turn(session_factory, monkeypatch, fake_turn, *, salesperson=False, attributes=("chatbot.analytics",)):
     from app.services.chatbot.pv2.state import Held
     from tests.chatbot.pv2.carry_fakes import mk_state
     from tests.chatbot.pv2.test_core_engine_hook import FakeResult
@@ -126,13 +126,14 @@ def _chat_engine_turn(session_factory, monkeypatch, fake_turn, *, salesperson=Fa
     body = {"result_type": "report_ask", "response": "Top customers by questions\n1. ABC SDN BHD 12\n2. XYZ TRADING 7",
             "has_result": True}
     result, captured = _run_turn(session_factory, monkeypatch, qf=verdict, text_body="which customers ask us the most in september",
-                                 msg_id=f"ZZT-f4-{uuid.uuid4().hex[:8]}", attributes=["chatbot.analytics"], matches={},
+                                 msg_id=f"ZZT-f4-{uuid.uuid4().hex[:8]}", attributes=list(attributes), matches={},
                                  mcp_response=json.dumps(body))
     return result, captured
 
 
 def test_f4_1_an_unlinked_contact_with_the_chat_grant_gets_no_customer_grouped_chat_report(session_factory, monkeypatch, fake_turn):
-    result, captured = _chat_engine_turn(session_factory, monkeypatch, fake_turn)
+    # R6 Q5(a): a contact holding the grant is exempt, so this pins the hold for one WITHOUT it.
+    result, captured = _chat_engine_turn(session_factory, monkeypatch, fake_turn, attributes=())
     text = (result.reply or {}).get("text") or ""
     assert not [a for n, a in captured if n == CHAT_TOOL and not a.get("scope_customer_ids")], captured
     assert "ABC SDN BHD" not in text and "XYZ TRADING" not in text, text
@@ -159,6 +160,14 @@ def _who_turn(session_factory, monkeypatch, fake_turn, *, v2):
         state = mk_state(Held(domain="order", sid="s1"))
         state.next_sid = 2
         fake_turn(FakeResult(verdict=verdict, state=state))
+        # R6 Q5(a): a contact holding the sales-report grant is exempt, so the PV2 case pins the hold without it.
+        from tests.chatbot.test_outstanding_lane import _resolve_services, _run_turn
+
+        result, captured = _run_turn(
+            session_factory, monkeypatch, qf=verdict, text_body="top 100 hot selling water closet by contactz",
+            msg_id=f"ZZT-f4-2-{uuid.uuid4().hex[:8]}", attributes=["sales_orders.outstanding"],
+            resolve_services=_resolve_services({}))
+        return str((result.reply or {}).get("text") or ""), list(captured)
     return _turn(session_factory, monkeypatch, verdict, "top 100 hot selling water closet by contactz")
 
 

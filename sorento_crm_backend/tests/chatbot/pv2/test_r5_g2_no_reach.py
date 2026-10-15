@@ -95,7 +95,7 @@ def _report() -> ReportSpec:
                       compare_period=None, grain=None, threshold=None, sort=None, top_n=10, basis="delivered")
 
 
-def _report_turn(session_factory, monkeypatch, *, tier=None, link=None):
+def _report_turn(session_factory, monkeypatch, *, tier=None, link=None, grants=(turn.SALES_REPORT_GRANT,)):
     _seed_contact(session_factory, variables={})
     if link:
         _link_customers(session_factory, link)
@@ -117,7 +117,7 @@ def _report_turn(session_factory, monkeypatch, *, tier=None, link=None):
     monkeypatch.setattr(pv2_pkg, "call", call, raising=False)
     monkeypatch.setattr("app.services.chatbot.head.access.default_space_id", lambda db: None)
     monkeypatch.setattr("app.services.chatbot.head.access._granted_field_reveal_keys",
-                        lambda db, contact_id, space_id: [turn.SALES_REPORT_GRANT])
+                        lambda db, contact_id, space_id: list(grants))
     monkeypatch.setattr("app.services.chatbot.lanes.business.services._mcp_call", lambda db=None: mcp)
     monkeypatch.setattr(turn, "load_exchanges", lambda db, **kw: [])
     hctx = SimpleNamespace(
@@ -128,7 +128,8 @@ def _report_turn(session_factory, monkeypatch, *, tier=None, link=None):
 
 
 def test_g7_an_unlinked_contact_with_the_sales_report_grant_runs_no_report_and_sees_no_names(session_factory, monkeypatch):
-    res, called = _report_turn(session_factory, monkeypatch)
+    # R6 Q5(a): a contact holding the grant is exempt, so this pins the hold for one WITHOUT it.
+    res, called = _report_turn(session_factory, monkeypatch, grants=())
     assert not ({n for n, _ in called} & REPORT_TOOLS), called
     text = res.direct_reply or ""
     assert "ABC SDN BHD" not in text and "XYZ" not in text and "RM 15" not in text, text
