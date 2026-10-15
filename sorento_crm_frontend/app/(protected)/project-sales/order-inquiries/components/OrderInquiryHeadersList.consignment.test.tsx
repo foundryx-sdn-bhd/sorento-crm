@@ -36,6 +36,8 @@ vi.mock('@/services/userSelectService', () => ({
   getUserLookup: vi.fn(async () => []),
 }));
 
+vi.mock('@/hooks/usePermissions', () => ({ useHasPermission: () => false }));
+
 let headers: Array<Record<string, unknown>> = [];
 vi.mock('../../_shared/hooks/useOrderInquiry', () => ({
   useOrderInquiryHeaders: () => ({
@@ -47,6 +49,10 @@ vi.mock('../../_shared/hooks/useOrderInquiry', () => ({
     error: null,
   }),
   useOrderInquiryWorklistSummary: () => ({ data: { agents: [], projects: [] } }),
+  // OI-STAGED-NOTIFY: harness only, the list now reads these (no assertion changed).
+  useReserveStatusSummary: () => ({ data: undefined }),
+  useParkedPreview: () => ({ data: undefined, isLoading: false }),
+  useSendParked: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 import { OrderInquiryHeadersList } from './OrderInquiryHeadersList';
