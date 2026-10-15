@@ -78,7 +78,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
         {row.original.filters_label}
       </span>
     ),
-    size: 170,
+    size: 155,
     enableSorting: false,
     meta: { headerTitle: 'Filters', skeleton: <Skeleton className="h-4 w-56" /> },
   },
@@ -124,7 +124,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
     id: 'created_at',
     header: ({ column }) => <DataGridColumnHeader title="Created at" column={column} />,
     cell: ({ row }) => <span>{formatDateTimeInMalaysia(row.original.created_at)}</span>,
-    size: 150,
+    size: 165,
     enableSorting: false,
     meta: { headerTitle: 'Created at', skeleton: <Skeleton className="h-4 w-28" /> },
   },
