@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.models.inventory import Warehouse
 from app.models.order import Customer
 from app.services.error_handler import handle_not_found
-from app.services.outstanding_report_service import _customer_echo
+from app.services.outstanding_report_service import _brand_echo, _customer_echo
 from app.services.sales_report_service import (
     _LIKE_ESCAPE,
     _escape_like,
@@ -277,6 +277,9 @@ def delivered_sales_report(
         "customer_count": len(scoped_ids) if scoped_ids is not None else 0,
         "product_code": code.upper() if code else None,
         "product_codes": sorted(p.product_code for p in products),
+        # Chat fix PR-B S5b (AC-B7): the brand filter applied, so the reply names it (the
+        # outstanding report's own echo); None when no brand was named.
+        "brand_name": _brand_echo(db, list(brand_ids or [])),
         "channel": None,
         "channel_shown": False,
         "location_token": token,

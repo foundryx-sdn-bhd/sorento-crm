@@ -225,6 +225,8 @@ class SalesReportResponse(BaseModel):
     product_code: Optional[str] = None
     #: Every code the `product_code` prefix covers, sorted. `[]` without a product filter.
     product_codes: List[str] = []
+    #: The brand(s) `brand_ids` narrowed to, by name (chat fix PR-B S5b); None without one.
+    brand_name: Optional[str] = None
     channel: Optional[str] = None
     channel_shown: bool
     #: Echo only: the location word the caller resolved into `warehouse_codes`.

@@ -2796,6 +2796,10 @@ def _sales_report_header(report: dict) -> list[str]:
         f"*Customer:* {customer if _filled(customer) else 'all'}",
         f"*Product:* {_sales_product_header(report.get('product_code'), report.get('product_codes'))}",
     ]
+    if _filled(report.get("brand_name")):
+        # Chat fix PR-B S5b (AC-B7): a brand filter is named, so a brand's total (or its
+        # empty one) never reads as every brand's. No line without one.
+        lines.append(f"*Brand:* {report['brand_name']}")
     if report.get("channel_shown"):
         lines.append(f"*Channel:* {_sales_report_channel(report.get('channel'))}")
     if _filled(report.get("location_token")):
