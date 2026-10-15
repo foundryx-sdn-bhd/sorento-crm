@@ -359,15 +359,21 @@ def _number(ask: Ask) -> int | None:
 
 def _numbered(pending: PendingQuestion | None) -> list[Option]:
     """R5-1: the options a printed number names, in printed order: those keyed by their number (an entity
-    question, a did-you-mean, a v1 menu), else every option of a PV2 question by position; a confirm's one
-    guess, or the guessed family's accounts (R5-3). None for a hand-over offer or a question that takes a number
-    as its value."""
+    question, a did-you-mean, a v1 menu), else every option of a PV2 question by position (a confirm too: it prints
+    the group name only, so a number is its stored option as MEMORY numbers it, 1 yes and 2 no; R6 lead ruling).
+    None for a hand-over offer or a question that takes a number as its value."""
     if pending is None or pending.kind in NO_NUMBER_PENDING:
         return []
-    if pending.kind == CONFIRM:
-        return _accounts(pending.options[0]) or pending.options[:1]
     keyed = [o for o in pending.options if o.key.isdigit()]
     return keyed if keyed or pending.kind == "v1_open_question" else list(pending.options)
+
+
+def _records(pending: PendingQuestion | None) -> list[Option]:
+    """The records a question offers: a confirm's guessed family as its accounts (R5-3: a reply naming one account
+    picks it), else its numbered options."""
+    if pending is not None and pending.kind == CONFIRM and pending.options:
+        return _accounts(pending.options[0]) or pending.options[:1]
+    return _numbered(pending)
 
 
 def _nth(options: list[Option], n: int) -> Option | None:
@@ -401,7 +407,7 @@ def _scoped_pick(ask: Ask, pending: PendingQuestion, held: Held, resolver: Resol
     """R5-3: a reply naming an entity of the question's kind (no key, no number): the resolver reads it, and the
     one option whose keys hold what it found is picked, narrowed to those keys (one account of a family), so the
     family is never guessed again. The named entity is consumed. (None, ask) when it finds no single option."""
-    options = _numbered(pending)
+    options = _records(pending)
     kinds = {o.payload.get("kind") for o in options}
     ent = next((e for e in ask.entities if e.kind in kinds and (e.key or e.phrase) and e.op != "clear"), None)
     if ent is None:
@@ -467,6 +473,8 @@ def _keyed_pick(ask: Ask, pending: PendingQuestion) -> Option | None:
         picked = pending.options[-1]  # "all <kind>s": the parser's "all" drops the carried kind (v1 carry_scope_keeps)
     if picked is None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
+    if picked is None and key.isdecimal() and not any(o.key.isdigit() for o in pending.options):
+        picked = _nth(_numbered(pending), int(key))  # R6: MEMORY's printed position echoed as the key
     return picked
 
 
@@ -1613,7 +1621,7 @@ def _menu_refs(pending: PendingQuestion | None) -> list[ResolvedRef]:
     """R6 B: the records a question offered (as printed), for `ConversationState.last_menu`."""
     return [
         ResolvedRef(kind=str(o.payload["kind"]), key=str(o.payload["key"]), label=o.label)
-        for o in _numbered(pending)
+        for o in _records(pending)
         if o.payload.get("kind") not in (None, *SCALAR_PAYLOAD_KINDS) and o.payload.get("key")
     ]
 
