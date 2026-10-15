@@ -2166,20 +2166,17 @@ def _options_for(st: ConversationState, about: str) -> list[Option]:
 
 def _domain_options(st: ConversationState) -> list[Option]:
     """R6 A: the domains that take every kind held (else every kind of the rows the last answer printed), in v1's
-    domain-label order and labelled by v1's own words (`DOMAIN_LABELS`); a pick sets the domain."""
+    domain-label order and labelled by v1's own words (`DOMAIN_LABELS`); a pick sets the domain. R6 rule 2: never
+    none: with nothing held or shown, or no domain taking all of it, every domain is offered."""
     from app.services.chatbot.lanes.business.answer import DOMAIN_LABELS
     from app.services.chatbot.lanes.business.gate import ALLOWED
 
     kinds = {k for k, refs in st.held.refs.items() if refs} or {
         r.payload.get("row_kind") for r in shown(st) if r.payload.get("row_kind")
     }
-    if not kinds:
-        return []
-    return [
-        Option(key=d, label=label, payload={"kind": "domain", "key": d})
-        for d, label in DOMAIN_LABELS.items()
-        if d in ALLOWED and kinds <= set(ALLOWED[d])
-    ]
+    every = [d for d in DOMAIN_LABELS if d in ALLOWED and d != "portal_link"]  # a portal form is no domain to pick
+    fit = [d for d in every if kinds and kinds <= set(ALLOWED[d])]
+    return [Option(key=d, label=DOMAIN_LABELS[d], payload={"kind": "domain", "key": d}) for d in fit or every]
 
 
 def _is_offer(pending: PendingQuestion) -> bool:
