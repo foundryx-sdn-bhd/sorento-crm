@@ -527,6 +527,9 @@ export interface OrderInquiryWorklistRow extends OrderInquiryAckFields {
    * The Lines grid's `Request to reserve N` pill and the tick's default stage both
    * read N off this. */
   requested_qty?: string;
+  /** OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for - the
+   * server's own figure, so the screen never re-derives "received". A number. */
+  reserve_requestable_qty?: number;
   /** Who sold it (`sales_orders.sales_agent_id` -> `sales_agents`), off the same core
    * sales order the S/O no column reaches. Null when the row reaches no core order, or
    * that order carries no agent. */

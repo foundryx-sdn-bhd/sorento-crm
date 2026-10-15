@@ -1330,6 +1330,68 @@ class OrderInquirySuggestedLink(Base, CompanyScopedMixin):
     )
 
 
+class OrderInquiryReleasedLink(Base, CompanyScopedMixin):
+    """A received PO/SPO link given up when CS reserved the row's stock instead
+    (`PLAN-oi-reserve-received.md` item 1).
+
+    The link itself is deleted (the row's own sums never read this table); this is the
+    memory that the target's quantity was used by other orders, so `_linked_by_target`
+    keeps counting it and nothing re-links it. CASCADE on both targets: a row of a document
+    line that no longer exists means nothing.
+    """
+
+    __tablename__ = "order_inquiry_released_links"
+    __audit_skip__ = "link history table, one row per released received link"
+    __audit_entity_type__ = "project_order_inquiry_released_links"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    row_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.order_inquiry_rows.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    reserve_request_row_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey(
+            "projects.order_inquiry_reserve_request_rows.id",
+            ondelete="SET NULL",
+            name="fk_order_inquiry_released_links_reserve_request_row",
+        ),
+        nullable=True,
+    )
+    po_line_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("purchase_order_lines.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    spo_allocation_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey(
+            "spo_allocations.id",
+            ondelete="CASCADE",
+            name="fk_order_inquiry_released_links_spo_allocation",
+        ),
+        nullable=True,
+    )
+    document = Column(String(80), nullable=True)
+    qty = Column(Numeric(15, 4), nullable=False)
+    released_by = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    released_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "(po_line_id IS NOT NULL)::int + (spo_allocation_id IS NOT NULL)::int = 1",
+            name="ck_order_inquiry_released_links_one_target",
+        ),
+        CheckConstraint("qty > 0", name="ck_order_inquiry_released_links_qty_positive"),
+        Index("ix_order_inquiry_released_links_row", "row_id"),
+        Index("ix_order_inquiry_released_links_po_line", "po_line_id"),
+        Index("ix_order_inquiry_released_links_spo_allocation", "spo_allocation_id"),
+        {"schema": "projects"},
+    )
+
+
 #: PLAN-oi-request-cs-reserve.md (R1-R11): purchasing asks CS to cover part of a row from
 #: own or pool stock before buying the balance. Two tables: the REQUEST (one per ask,
 #: `OI-2609-0678 request #2`, addressed by ordinal within the inquiry rather than its own

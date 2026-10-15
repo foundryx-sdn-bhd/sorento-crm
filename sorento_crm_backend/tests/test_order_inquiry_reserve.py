@@ -877,6 +877,24 @@ def _load_round2_migration():
     return module
 
 
+def _load_released_links_migration():
+    """`oirr_0001_released_links` FKs `order_inquiry_reserve_request_rows`; dropped first so
+    oirs_0001's downgrade needs no CASCADE."""
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "oirr_0001_released_links.py"
+    )
+    assert path.exists(), "oirr_0001_released_links.py is missing from this branch"
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("zzt_released_links_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_seed_migration_idempotent():
     module = _load_reserve_seed_migration()
     from alembic.migration import MigrationContext
@@ -918,6 +936,7 @@ def test_seed_migration_idempotent():
             # see `_load_round2_migration`'s own docstring); running its downgrade needs
             # no prior upgrade() call since `DROP TABLE IF EXISTS` / `DROP COLUMN IF
             # EXISTS` are both safe against a table `blank_session()` already built.
+            _load_released_links_migration().downgrade()
             _load_round2_migration().downgrade()
             module.downgrade()
 

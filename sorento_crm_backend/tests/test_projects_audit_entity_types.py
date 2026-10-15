@@ -62,6 +62,14 @@ BORN_AFTER_THE_MOVE = frozenset({
     # PLAN-scm-cs-planning-uat.md (migration 421_order_inquiry_links): one inquiry row's
     # quantity placed across several documents.
     "order_inquiry_links",
+    # OI-RESERVE-RECEIVED (migration oirr_0001_released_links): born into `projects`.
+    "order_inquiry_released_links",
+    # PLAN-set-quote-line-14oct.md, migration sql_0001_set_quote_line (#1682): one product
+    # set priced into a series, born straight into `projects` beside `series_products`.
+    "series_sets",
+    # PLAN-series-filters-15oct.md, migration sf_0001_series_brands (#1697): the brands a
+    # series picks, born straight into `projects` beside `series_categories`.
+    "series_brands",
     # PLAN-oi-links-autocount-truth-24sep.md (migration oisl_0001_suggested_links, issue
     # #1215): a guess the cascade walk made, never a placement - born straight into
     # `projects` the same way its sibling `order_inquiry_links` was.

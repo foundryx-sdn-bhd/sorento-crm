@@ -108,6 +108,13 @@ function rowRemaining(row: OrderInquiryWorklistRow): number {
   );
 }
 
+/** OI-RESERVE-RECEIVED (AC-RR-5/40): what a request may ask for - the server's own
+ * `reserve_requestable_qty` (links on a fully received PO/SPO do not count against it);
+ * the plain remaining only for a payload that predates the field. */
+function rowRequestable(row: OrderInquiryWorklistRow): number {
+  return row.reserve_requestable_qty ?? rowRemaining(row);
+}
+
 /** AC-RS-23: why a selected row cannot be named on a "Request CS to reserve" ask - the
  * SAME rules the backend's own `create_request` enforces (3.2), read client-side off
  * the worklist row so the menu item can be gated and explained before the request is
@@ -121,11 +128,13 @@ function reserveIneligibleReason(row: OrderInquiryWorklistRow): string | null {
   if (!['ORDER', 'ORDER_BACK'].includes(row.verb)) {
     return `${item}: not an ORDER or ORDER BACK row`;
   }
-  if (!['raised', 'partly_linked'].includes(row.state)) {
+  if (!['raised', 'partly_linked', 'placed'].includes(row.state)) {
     return `${item}: not open for a reserve request`;
   }
-  if (rowRemaining(row) <= 0) {
-    return `${item}: has nothing left to request`;
+  if (rowRequestable(row) <= 0) {
+    return (row.links ?? []).some((link) => link.kind === 'po' || link.kind === 'spo')
+      ? `${item}: on a PO/SPO not received yet, nothing left to request`
+      : `${item}: has nothing left to request`;
   }
   if (row.reserve_state === 'requested') {
     return `${item}: already has an open reserve request`;
@@ -316,7 +325,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
     () =>
       selectedLines.map((line) => {
         const own = reserveDialogResolved[line.id];
-        const remaining = rowRemaining(line);
+        const remaining = rowRequestable(line);
         return {
           id: line.id,
           item_code: line.item_code ?? null,
@@ -529,7 +538,11 @@ export function OrderInquiryDetail({ id }: { id: string }) {
     const line = (linesQuery.data ?? []).find((candidate) => candidate.id === rowId);
     const open = entry.kind === 'reserve' ? openRequestForRow(rowId) : null;
     const answered = entry.kind === 'amend' ? answeredRequestRowFor(rowId) : null;
-    const remaining = line ? rowRemaining(line) : 0;
+    // A request that reaches into the received part releases it (AC-RR-43): the balance
+    // is then worked off requestable, not the plain remaining.
+    const reachesReceived =
+      entry.kind === 'reserve' && !!line && Number(open?.qtyRequested || '0') > rowRemaining(line);
+    const remaining = line ? (reachesReceived ? rowRequestable(line) : rowRemaining(line)) : 0;
     const added = entry.kind === 'amend' ? entry.qty - Number(line?.reserved_qty || '0') : entry.qty;
     return {
       row_id: rowId,
@@ -830,7 +843,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
                             </DropdownMenuItem>
                           </span>
                         </TooltipTrigger>
-                        <TooltipContent>{reserveDisabledReason}</TooltipContent>
+                        <TooltipContent className="max-w-xs break-words">{reserveDisabledReason}</TooltipContent>
                       </Tooltip>
                     )
                   ) : null}
