@@ -136,6 +136,9 @@ class ConversationState(BaseModel):
     run_id: str | None = None
     # What the last two replies printed, newest reply first (`pv2/register.py`); empty for old state.
     register: list[RegisterEntry] = Field(default_factory=list)
+    # R5-2: the line product codes of a register document whose card printed none (a sales order), by its key:
+    # beside the register, never numbered and never rendered.
+    doc_lines: dict[str, list[str]] = Field(default_factory=dict)
     # Next subject id to hand out ("s<next_sid>").
     next_sid: int = 1
     # The ask the last PV2 Lookup answered (an `Ask` dump); a v1 picker that Lookup raised keeps it as origin.

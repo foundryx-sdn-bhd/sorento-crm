@@ -50,6 +50,11 @@ def _row(so: SalesOrder, debtor: str | None) -> dict[str, Any]:
     return {"id": str(so.id), "number": so.so_number, "debtor": debtor}
 
 
+def _line_codes(lines: list[tuple[Any, ...]]) -> list[str]:
+    """R5-2: the product codes of an SO's lines (`_lines_by_so`), once each, in line order."""
+    return list(dict.fromkeys(str(line[2]) for line in lines if line[2]))
+
+
 @dataclass
 class SoLookup:
     """`cards` in the order the numbers were typed; `refused` when any SO exists outside the
@@ -60,6 +65,8 @@ class SoLookup:
     missing: list[str] = field(default_factory=list)
     # One {id, number, debtor} per card, in card order (the answer register reads these, never the text).
     rows: list[dict[str, Any]] = field(default_factory=list)
+    # R5-2: each card's line product codes by SO id (the card prints none), for the answer register.
+    lines: dict[str, list[str]] = field(default_factory=dict)
 
 
 def _status_words(status: str | None) -> str:
@@ -69,18 +76,18 @@ def _status_words(status: str | None) -> str:
     return s.capitalize() if s else "Unknown"
 
 
-def _delivery_words(lines: list[tuple[Any, Any]]) -> str | None:
+def _delivery_words(lines: list[tuple[Any, ...]]) -> str | None:
     """Over the lines that are not cancelled: none delivered, every line in full, or between."""
     if not lines:
         return None
-    if all((delivered or 0) <= 0 for _ordered, delivered in lines):
+    if all((delivered or 0) <= 0 for _ordered, delivered, *_ in lines):
         return "not delivered yet"
-    if all((delivered or 0) >= (ordered or 0) for ordered, delivered in lines):
+    if all((delivered or 0) >= (ordered or 0) for ordered, delivered, *_ in lines):
         return "fully delivered"
     return "partly delivered"
 
 
-def _card(so: SalesOrder, name: str | None, lines: list[tuple[Any, Any]]) -> str:
+def _card(so: SalesOrder, name: str | None, lines: list[tuple[Any, ...]]) -> str:
     head = f"*{so.so_number}*" + (f" - {name}" if name else "")
     status = _status_words(so.status)
     second = f"Ordered {so.order_date.day} {so.order_date:%b %Y} - {status}" if so.order_date else status
@@ -112,13 +119,17 @@ def _in_scope_so_ids(db: Session, so_ids: list[str]) -> set[str] | None:
     }
 
 
-def _lines_by_so(db: Session, so_ids: list[Any]) -> dict[str, list[tuple[Any, Any]]]:
-    """`(qty_ordered, qty_delivered)` over each SO's live, in-brand-scope lines."""
-    out: dict[str, list[tuple[Any, Any]]] = {}
+def _lines_by_so(db: Session, so_ids: list[Any]) -> dict[str, list[tuple[Any, Any, Any]]]:
+    """`(qty_ordered, qty_delivered, product_code)` over each SO's live, in-brand-scope lines."""
+    from app.models.product import Product
+
+    out: dict[str, list[tuple[Any, Any, Any]]] = {}
     if not so_ids:
         return out
-    for so_id, ordered, delivered in (
-        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered)
+    for so_id, ordered, delivered, code in (
+        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered,
+                 Product.product_code)
+        .outerjoin(Product, Product.id == SalesOrderLine.product_id)
         .filter(
             SalesOrderLine.sales_order_id.in_(so_ids),
             func.coalesce(SalesOrderLine.line_status, "") != "cancelled",
@@ -126,7 +137,7 @@ def _lines_by_so(db: Session, so_ids: list[Any]) -> dict[str, list[tuple[Any, An
         )
         .all()
     ):
-        out.setdefault(str(so_id), []).append((ordered, delivered))
+        out.setdefault(str(so_id), []).append((ordered, delivered, code))
     return out
 
 
@@ -207,6 +218,7 @@ def lookup(
         for so, master_name in visible:
             out.cards.append(_card(so, so.debtor_name or master_name, lines_by_so.get(str(so.id), [])))
             out.rows.append(_row(so, so.debtor_name or master_name))
+            out.lines[str(so.id)] = _line_codes(lines_by_so.get(str(so.id), []))
     return out
 
 
@@ -221,6 +233,7 @@ class PoRefLookup:
     missing: list[str] = field(default_factory=list)
     refused: bool = False
     rows: list[dict[str, Any]] = field(default_factory=list)  # {id, number, debtor} per card, card order
+    lines: dict[str, list[str]] = field(default_factory=dict)  # R5-2: each card's line product codes by SO id
     _group_rows: dict[str, list[dict[str, Any]]] = field(default_factory=dict, repr=False)
 
 
@@ -257,6 +270,7 @@ def lookup_po_refs(
             _card(so, so.debtor_name or master_name, lines_by_so.get(str(so.id), []))
         )
         out._group_rows.setdefault(so.po_ref_key, []).append(_row(so, so.debtor_name or master_name))
+        out.lines[str(so.id)] = _line_codes(lines_by_so.get(str(so.id), []))
     seen: set[str] = set()
     for ref in typed:
         key = po_ref_key(ref)

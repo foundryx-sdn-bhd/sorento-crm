@@ -4241,6 +4241,7 @@ def _pv2_write_register(media_box: dict[str, Any], envelopes: Any) -> None:
 
         fresh = pv2_register.entries_from_envelopes(envelopes, int(getattr(state, "turn_no", 0) or 0), printing_subject)
         state.register = pv2_register.roll(getattr(state, "register", None) or [], fresh)
+        state.doc_lines = pv2_register.document_lines(envelopes, getattr(state, "doc_lines", None) or {}, state.register)
         # R4a: the rows of this answer are what MEMORY shows and a row_pick indexes; an answer that printed none
         # clears them.
         state.last_rows = pv2_register.shown_rows(state.register, state.turn_no, len(fresh)) if fresh else []

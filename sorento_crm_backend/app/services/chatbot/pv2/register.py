@@ -142,6 +142,19 @@ def entries_from_envelopes(
     return out
 
 
+def document_lines(envelopes: Sequence[dict[str, Any]], previous: dict[str, list[str]],
+                   register: Sequence[RegisterEntry]) -> dict[str, list[str]]:
+    """R5-2: the line product codes of each card the reply printed with `lines` (a sales order card prints none),
+    by the card's key, over the previous ones; only documents still in the register are kept."""
+    fresh = {
+        str(row.get("key") or row.get("label")): [c for c in (_clean(x) for x in row["lines"]) if c]
+        for env in envelopes or [] if isinstance(env, dict)
+        for row in env.get("rows") or [] if isinstance(row, dict) and isinstance(row.get("lines"), list)
+    }
+    keys = {e.key for e in register}
+    return {k: v for k, v in {**previous, **fresh}.items() if k in keys and v}
+
+
 def entries_from_report_rows(rows: Sequence[Any], turn: int, subject: str | None = None) -> list[RegisterEntry]:
     """The ranked rows a report direct reply printed (`reports.ROW_PAYLOAD` on each option): one entry per row,
     its kind the row's dimension, its key the first key the row stands for."""
