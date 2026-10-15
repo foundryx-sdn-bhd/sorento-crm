@@ -3405,7 +3405,9 @@ def _report_ask(body: dict) -> str:
         plural = str(body.get("group_label") or group_by).lower()
     lead = "Bottom" if body.get("sort") == "asc" else "Top"
     more = int(body.get("more") or 0)
-    count = int(body.get("total_count") or (len(body.get("rows") or []) + more))
+    raw_rows = len(body.get("rows") or [])
+    # The twins folded above are one name each, so the count of every name drops by as many.
+    count = int(body.get("total_count") or (raw_rows + more)) - (raw_rows - len(rows))
     of = f" of {count:,}" if count > len(rows) else ""
     lines = [f"{lead} {len(rows)}{of} {plural} by {basis}", *facts]
     for row in rows:
