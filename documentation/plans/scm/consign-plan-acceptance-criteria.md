@@ -19,6 +19,9 @@ on a doc-type set, not on the code `CON` and not on `consignment` spelled inline
   drawn by its proposal, even when CON holds on-hand stock of the product.
 - **UAC-05 [BE][T]** A sales order line whose own bin is flagged off still reads "Outside
   fulfilment planning" (the lift is doc-type scoped).
+- **UAC-06a [BE][T]** The board's own proposal for a consignment line is a Borrow from its own bin
+  for the whole plan qty, never a Buy, so Approve all / confirm-all writes nothing to purchasing
+  (reviewer B1, round 1).
 - **UAC-06 [BE][T]** Confirming Borrow from CON on a consignment line succeeds, writes no Buy and
   no purchasing (Order Inquiry) row, and the line then counts as planned
   (`planned_lines == plannable_lines` on the order read).
@@ -26,8 +29,10 @@ on a doc-type set, not on the code `CON` and not on `consignment` spelled inline
   in both the SQL `plan_qty()` and the Python `plan_qty_of`. A fully returned line is not admitted
   and is not counted in `plannable_lines`. Sales order lines (returned 0) are unchanged.
 - **UAC-08 [BE][T]** A retail-class consignment is not admitted (existing rule, regression).
-- **UAC-09 [BE][T]** Reset planning on a consignment removes its decision and puts it back to
-  never planned.
+- **UAC-09 [FE]** Reset planning on a consignment removes its decision and puts it back to
+  never planned. Browser-verified only (PLAN evidence run, step 7): `reset_planning`'s raw SQL
+  names the real `projects` schema, which the scratch-schema test fixture cannot redirect, and the
+  service has no doc-type filter.
 
 ## Consignment list (frontend)
 
