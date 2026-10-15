@@ -43,7 +43,7 @@ from app.services.scm.demand import demand_qty
 from app.services.scm.low_stock_report_service import MAX_LOW_STOCK_ROWS
 from app.services.scm.stock_debt_service import StockDebtService
 from app.services.scm.supply_assignment import month_key
-from app.services.user_service import UserPermissionService, invalidate_rbac_cache
+from app.services.user_service import UserPermissionService
 
 #: The order inquiry rows on a line are project data: serving them needs this on top of Stock Debt.
 OI_PERMISSION = "projects.projects.view"
@@ -425,9 +425,7 @@ class StockDebtSnapshotService:
 
         now = self._line_now(core_ids)
         # Security L1: without `projects.projects.view` no order inquiry row is served,
-        # frozen or live. Read fresh, not from the 30 s role cache: a grant or revoke applies
-        # at once, as it does for a session.
-        invalidate_rbac_cache(user_id)
+        # frozen or live.
         if not UserPermissionService(self.db).check_user_has_permission(user_id, OI_PERMISSION):
             for line in lines:
                 line["oi_rows"] = []

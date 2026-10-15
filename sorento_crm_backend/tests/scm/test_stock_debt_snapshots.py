@@ -284,6 +284,11 @@ def _grant(db, user_id: str, slug: str) -> None:
     )
     db.add(UserRoleAssignment(user_id=user_id, role_id=role_id))
     db.flush()
+    # An RBAC write drops the user's cached permission lookups, as the app's own RBAC
+    # writes do (`invalidate_rbac_cache` docstring, app/services/user_service.py).
+    from app.services.user_service import invalidate_rbac_cache
+
+    invalidate_rbac_cache(user_id)
 
 
 PROJECTS_VIEW = "projects.projects.view"
