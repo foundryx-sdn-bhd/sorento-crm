@@ -111,7 +111,8 @@ AC-F1..F4 and AC-X1..X4: the board no longer sends `group` or `exclude_group`. `
   the export, and both the picks and the mode are in their query keys. Changing either resets
   to page 1.
 - AC-R9 Chip: `Location: BRW-IB`, `Locations: BRW-IB, MWH-IB`, `Location: all except BRW-IB`,
-  `Locations: all except BRW-IB, MWH-IB`, using the same labels as the select. A picked id not in
+  `Locations: all except BRW-IB, MWH-IB`, by warehouse code (the chip stays short; the select
+  carries the name). A picked id not in
   the current facet reads `Unknown location` (no id is ever shown). Clearing the chip clears the
   picks and returns to `Only`. Counts as one active filter under every Book.
 - AC-R10 Saved views store `locations` (comma-joined ids) and `locations_mode`
