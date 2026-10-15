@@ -20,61 +20,73 @@ branch_labels = None
 depends_on = None
 
 
-UPGRADE_SQL = (
-    "CREATE SCHEMA IF NOT EXISTS projects",
-    """
-    CREATE TABLE IF NOT EXISTS projects.stock_debt_snapshots (
-        id UUID PRIMARY KEY,
-        company_id UUID NOT NULL REFERENCES companies(id),
-        name VARCHAR(120) NOT NULL,
-        filters JSONB NOT NULL,
-        months JSONB NOT NULL,
-        tba_month VARCHAR(10),
-        totals JSONB NOT NULL,
-        row_count INTEGER NOT NULL DEFAULT 0,
-        created_by VARCHAR(100) REFERENCES users(id) ON DELETE SET NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT now()
+def _schema(bind, module: str) -> str:
+    """Where a module's tables live, for RAW SQL, under BOTH substrates - the helper
+    `oirs_0001_reserve_requests` carries (`schema_translate_map` rewrites ORM constructs
+    only, and the test suite builds its scratch schema as `<default>_projects`)."""
+    current = bind.exec_driver_sql("SELECT current_schema()").scalar()
+    return module if current in (None, "public") else f"{current}_{module}"
+
+
+def _upgrade_sql(projects: str) -> tuple:
+    return (
+        f'CREATE SCHEMA IF NOT EXISTS "{projects}"',
+        f"""
+        CREATE TABLE IF NOT EXISTS "{projects}".stock_debt_snapshots (
+            id UUID PRIMARY KEY,
+            company_id UUID NOT NULL REFERENCES public.companies(id),
+            name VARCHAR(120) NOT NULL,
+            filters JSONB NOT NULL,
+            months JSONB NOT NULL,
+            tba_month VARCHAR(10),
+            totals JSONB NOT NULL,
+            row_count INTEGER NOT NULL DEFAULT 0,
+            created_by VARCHAR(100) REFERENCES public.users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT now()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshots_company_created "
+        f'ON "{projects}".stock_debt_snapshots (company_id, created_at DESC)',
+        "CREATE INDEX IF NOT EXISTS ix_projects_stock_debt_snapshots_company_id "
+        f'ON "{projects}".stock_debt_snapshots (company_id)',
+        f"""
+        CREATE TABLE IF NOT EXISTS "{projects}".stock_debt_snapshot_rows (
+            id UUID PRIMARY KEY,
+            company_id UUID NOT NULL REFERENCES public.companies(id),
+            snapshot_id UUID NOT NULL
+                REFERENCES "{projects}".stock_debt_snapshots(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL,
+            product_id UUID REFERENCES public.products(id) ON DELETE SET NULL,
+            product_code VARCHAR(180) NOT NULL,
+            product_name TEXT,
+            "row" JSONB NOT NULL,
+            lines JSONB NOT NULL,
+            decision VARCHAR(16),
+            decision_warehouse_id UUID REFERENCES public.warehouses(id) ON DELETE SET NULL,
+            decision_note TEXT,
+            decided_by VARCHAR(100) REFERENCES public.users(id) ON DELETE SET NULL,
+            decided_at TIMESTAMP,
+            CONSTRAINT ck_stock_debt_snapshot_rows_decision
+                CHECK (decision IS NULL OR decision IN ('reserve', 'buy', 'ignore'))
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshot_rows_snapshot_position "
+        f'ON "{projects}".stock_debt_snapshot_rows (snapshot_id, position)',
+        "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshot_rows_snapshot_decision "
+        f'ON "{projects}".stock_debt_snapshot_rows (snapshot_id, decision)',
+        "CREATE INDEX IF NOT EXISTS ix_projects_stock_debt_snapshot_rows_company_id "
+        f'ON "{projects}".stock_debt_snapshot_rows (company_id)',
     )
-    """,
-    "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshots_company_created "
-    "ON projects.stock_debt_snapshots (company_id, created_at DESC)",
-    "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshots_company_id "
-    "ON projects.stock_debt_snapshots (company_id)",
-    """
-    CREATE TABLE IF NOT EXISTS projects.stock_debt_snapshot_rows (
-        id UUID PRIMARY KEY,
-        company_id UUID NOT NULL REFERENCES companies(id),
-        snapshot_id UUID NOT NULL REFERENCES projects.stock_debt_snapshots(id) ON DELETE CASCADE,
-        position INTEGER NOT NULL,
-        product_id UUID REFERENCES products(id) ON DELETE SET NULL,
-        product_code VARCHAR(180) NOT NULL,
-        product_name TEXT,
-        "row" JSONB NOT NULL,
-        lines JSONB NOT NULL,
-        decision VARCHAR(16),
-        decision_warehouse_id UUID REFERENCES warehouses(id) ON DELETE SET NULL,
-        decision_note TEXT,
-        decided_by VARCHAR(100) REFERENCES users(id) ON DELETE SET NULL,
-        decided_at TIMESTAMP,
-        CONSTRAINT ck_stock_debt_snapshot_rows_decision
-            CHECK (decision IS NULL OR decision IN ('reserve', 'buy', 'ignore'))
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshot_rows_snapshot_position "
-    "ON projects.stock_debt_snapshot_rows (snapshot_id, position)",
-    "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshot_rows_snapshot_decision "
-    "ON projects.stock_debt_snapshot_rows (snapshot_id, decision)",
-    "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshot_rows_company_id "
-    "ON projects.stock_debt_snapshot_rows (company_id)",
-)
 
 
 def upgrade() -> None:
     bind = op.get_bind()
-    for statement in UPGRADE_SQL:
+    for statement in _upgrade_sql(_schema(bind, "projects")):
         bind.execute(sa.text(statement))
 
 
 def downgrade() -> None:
-    op.execute("DROP TABLE IF EXISTS projects.stock_debt_snapshot_rows")
-    op.execute("DROP TABLE IF EXISTS projects.stock_debt_snapshots")
+    bind = op.get_bind()
+    projects = _schema(bind, "projects")
+    bind.execute(sa.text(f'DROP TABLE IF EXISTS "{projects}".stock_debt_snapshot_rows'))
+    bind.execute(sa.text(f'DROP TABLE IF EXISTS "{projects}".stock_debt_snapshots'))

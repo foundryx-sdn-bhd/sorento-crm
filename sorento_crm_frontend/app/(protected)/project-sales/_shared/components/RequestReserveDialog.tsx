@@ -74,15 +74,24 @@ export function RequestReserveDialog({
   onSent?: () => void;
 }) {
   const createMutation = useCreateOrderInquiryReserveRequest(inquiryId);
-  const resolved = useReserveRowOptions(
-    open
-      ? worklistRows.map((line) => ({
-          key: line.id,
-          productId: line.product_id ?? null,
-          location: line.location ?? null,
-        }))
-      : [],
+  // Memoised on what the options depend on: the hook below registers queries from this
+  // array, so a fresh one on every dialog state change (the Park tickbox) kept it notifying.
+  const entriesSignature = worklistRows
+    .map((line) => `${line.id}~${line.product_id ?? ''}~${line.location ?? ''}`)
+    .join('|');
+  const entries = React.useMemo(
+    () =>
+      open
+        ? worklistRows.map((line) => ({
+            key: line.id,
+            productId: line.product_id ?? null,
+            location: line.location ?? null,
+          }))
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [open, entriesSignature],
   );
+  const resolved = useReserveRowOptions(entries);
   const rows = React.useMemo<RequestReserveDialogRow[]>(
     () =>
       worklistRows.map((line) => {

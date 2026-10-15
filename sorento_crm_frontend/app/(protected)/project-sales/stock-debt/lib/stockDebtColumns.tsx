@@ -84,6 +84,8 @@ export interface StockDebtColumnsInput<R extends StockDebtRow> {
   afterProduct?: ColumnDef<R>[];
   /** Replaces the plain Product cell body (the snapshot makes it a press target). */
   renderProduct?: (row: R, content: React.ReactNode) => React.ReactNode;
+  /** Extra classes on the pinned Product cell. */
+  productCellClassName?: string;
 }
 
 export function buildStockDebtColumns<R extends StockDebtRow>({
@@ -95,6 +97,7 @@ export function buildStockDebtColumns<R extends StockDebtRow>({
   renderColumnHeader,
   afterProduct = [],
   renderProduct,
+  productCellClassName,
 }: StockDebtColumnsInput<R>): ColumnDef<R>[] {
   return [
     {
@@ -110,6 +113,7 @@ export function buildStockDebtColumns<R extends StockDebtRow>({
       // `position: relative` in the browser while reading as sticky in the source.
       meta: {
         headerTitle: 'Product',
+        cellClassName: productCellClassName,
         skeleton: <Skeleton className="h-4 w-40" />,
       },
       size: 240,

@@ -168,6 +168,8 @@ export function SnapshotClient({ snapshotId }: { snapshotId: string }) {
           {label}
         </span>
       ),
+      // Opaque, so a month cell scrolling under the pinned Product cell never shows through.
+      productCellClassName: 'data-pinned:bg-background!',
       renderProduct: (row, content) => (
         <button
           type="button"

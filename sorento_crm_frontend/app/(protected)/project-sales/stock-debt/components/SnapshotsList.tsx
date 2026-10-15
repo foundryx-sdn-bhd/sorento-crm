@@ -63,7 +63,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
         {row.original.name}
       </span>
     ),
-    size: 220,
+    size: 200,
     enableSorting: false,
     meta: { headerTitle: 'Name', skeleton: <Skeleton className="h-4 w-40" /> },
   },
@@ -78,7 +78,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
         {row.original.filters_label}
       </span>
     ),
-    size: 280,
+    size: 240,
     enableSorting: false,
     meta: { headerTitle: 'Filters', skeleton: <Skeleton className="h-4 w-56" /> },
   },
@@ -86,7 +86,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
     id: 'row_count',
     header: ({ column }) => <DataGridColumnHeader title="Products" column={column} />,
     cell: ({ row }) => <span className="tabular-nums">{row.original.row_count}</span>,
-    size: 90,
+    size: 80,
     enableSorting: false,
     meta: {
       headerTitle: 'Products',
@@ -99,7 +99,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
     id: 'decided_count',
     header: ({ column }) => <DataGridColumnHeader title="Decided" column={column} />,
     cell: ({ row }) => <span className="tabular-nums">{row.original.decided_count}</span>,
-    size: 90,
+    size: 80,
     enableSorting: false,
     meta: {
       headerTitle: 'Decided',
@@ -116,7 +116,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
         {row.original.created_by_name ?? '-'}
       </span>
     ),
-    size: 130,
+    size: 120,
     enableSorting: false,
     meta: { headerTitle: 'Created by', skeleton: <Skeleton className="h-4 w-24" /> },
   },
@@ -124,7 +124,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
     id: 'created_at',
     header: ({ column }) => <DataGridColumnHeader title="Created at" column={column} />,
     cell: ({ row }) => <span>{formatDateTimeInMalaysia(row.original.created_at)}</span>,
-    size: 150,
+    size: 140,
     enableSorting: false,
     meta: { headerTitle: 'Created at', skeleton: <Skeleton className="h-4 w-28" /> },
   },

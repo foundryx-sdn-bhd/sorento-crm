@@ -23,6 +23,8 @@ def _uuid_str() -> str:
 
 class StockDebtSnapshot(Base, CompanyScopedMixin):
     __tablename__ = "stock_debt_snapshots"
+    # Audit entity type with the `project_` prefix every table born in `projects` carries.
+    __audit_entity_type__ = "project_stock_debt_snapshots"
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
     name = Column(String(120), nullable=False)
@@ -43,6 +45,7 @@ class StockDebtSnapshot(Base, CompanyScopedMixin):
 
 class StockDebtSnapshotRow(Base, CompanyScopedMixin):
     __tablename__ = "stock_debt_snapshot_rows"
+    __audit_entity_type__ = "project_stock_debt_snapshot_rows"
     __audit_skip__ = (
         "bulk insert of up to 5,000 rows per save; the decision fields carry their own who/when"
     )

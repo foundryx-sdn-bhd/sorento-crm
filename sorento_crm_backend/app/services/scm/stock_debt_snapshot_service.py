@@ -576,7 +576,7 @@ class StockDebtSnapshotService:
             row.decided_at = datetime.utcnow()
         log_audit(
             self.db,
-            "stock_debt_snapshot_row",
+            "project_stock_debt_snapshot_rows",
             str(row.id),
             "UPDATE",
             old_values=before,
@@ -590,7 +590,7 @@ class StockDebtSnapshotService:
                 f"Stock debt snapshot decision {'cleared' if decision is None else decision}"
                 f" on {row.product_code}"
             ),
-            root_entity_type="stock_debt_snapshot",
+            root_entity_type="project_stock_debt_snapshots",
             root_entity_id=str(snapshot_id),
         )
         self.db.commit()
