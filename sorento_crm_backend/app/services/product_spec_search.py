@@ -1015,7 +1015,7 @@ def filter_specs(
     scoping = {t for t in scope_terms}
     terms = free_terms + [t for t in scope_terms if t not in set(free_terms)]
 
-    membership: dict[str, set[str]] = {}
+    membership: dict[str, set] = {}
 
     def _join(key: Any, value: Any) -> None:
         # A yes-or-no value defines membership like a named choice (chat fix PR-A,

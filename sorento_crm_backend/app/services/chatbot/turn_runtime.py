@@ -723,7 +723,7 @@ def promo_subject_ask_back(
     return f'I could not match "{", ".join(unknown)}" to a product type.\nWhich product or brand do you mean?', []
 
 
-def _promotions_hold(db: Session, term: str, narrowing: dict[str, list[str]]) -> bool:
+def _promotions_hold(db: Any, term: str, narrowing: dict[str, list[str]]) -> bool:
     """Does the promotions read this turn would make, with `term` as its subject, hold a
     row? The route's own subject filter and serving policy, the kind and brand the ask
     named (`promo_filter`), so a menu choice is one that leads to a promotion."""
