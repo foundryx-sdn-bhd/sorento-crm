@@ -443,6 +443,35 @@ def test_stored_rows_equal_the_live_list(scm_app, case):
     assert header["row_count"] == live["pagination"]["total"]
 
 
+def test_a_projected_snapshot_stores_the_projected_board(scm_app):
+    """AC-3 with `projected=true` on a book where it MATTERS: a project reserve (HQ, segment
+    project) holds an unlinked 1,000 PO, so the projected board differs from the plain one
+    (900, 900, 700, 400 against 920, 0, -200, -300). A save that drops `projected` stores
+    the plain board and fails here."""
+    from tests.scm.test_stock_debt_projection_routes import _seed
+
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True, reserve=True)
+    marker = seed["marker"]
+    code = seed["product"].product_code
+
+    with TestClient(app) as c:
+        plain = c.get(BASE, params={**_filters(marker), "limit": 200}).json()
+        live = c.get(BASE, params={**_filters(marker), "projected": True, "limit": 200}).json()
+        resp = c.post(
+            SNAP,
+            json={"name": f"{marker} proj", "filters": _filters(marker, projected=True)},
+        )
+        assert resp.status_code == 201, resp.text
+        stored = _rows(c, resp.json()["id"])
+        got_header = c.get(f"{SNAP}/{resp.json()['id']}").json()
+
+    assert live["data"] != plain["data"], "the seed must make projection matter"
+    assert [_strip(r, ROW_EXTRAS) for r in stored["data"]] == live["data"]
+    assert [r["product_code"] for r in stored["data"]] == [code]
+    assert got_header["totals"] == live["totals"]
+
+
 def test_stored_lines_equal_the_live_drill_per_bucket(scm_app):
     """AC-4: for every bucket of the row the stored lines equal `cell()` demand, field for
     field, each also carrying `bucket` and `sales_order_line_id` (the core line id)."""

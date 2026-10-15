@@ -562,6 +562,9 @@ describe('AC-F4 Decision popover', () => {
   it('the Note textarea is w-full with no fixed width, so it cannot overflow the popover', async () => {
     renderPage();
     const popover = await openPopover('ACC6001');
+    // Rendered outside the grid: inside a truncate cell it would be clipped and overflow.
+    expect(popover.closest('td')).toBeNull();
+    expect(popover.closest('table')).toBeNull();
     const note = within(popover).getByLabelText(/note/i) as HTMLTextAreaElement;
     expect(note.className).toMatch(/(^|\s)w-full(\s|$)/);
     expect(note.style.width).toBe('');

@@ -76,6 +76,10 @@ BORN_AFTER_THE_MOVE = frozenset({
     # PLAN-series-filters-15oct.md, migration sf_0001_series_brands (#1697): the brands a
     # series picks, born straight into `projects` beside `series_categories`.
     "series_brands",
+    # PLAN-stock-debt-snapshot-15oct.md, migration sds_0001_stock_debt_snapshots (#1705): a
+    # frozen Stock Debt view and its rows, born straight into `projects` (ADR-0011).
+    "stock_debt_snapshots",
+    "stock_debt_snapshot_rows",
 })
 
 MIGRATION = (
