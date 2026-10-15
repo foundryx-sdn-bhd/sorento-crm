@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 if (!window.matchMedia) {
@@ -51,9 +51,9 @@ vi.mock('@/lib/listing-column-preferences/listColumnPreferencesService', () => (
   resetUserListColumnConfig: vi.fn(async () => undefined),
 }));
 
-let hasPermission = true;
+let granted = new Set<string>(['projects.projects.view', 'scm.reorder.run']);
 vi.mock('@/hooks/usePermissions', () => ({
-  useHasPermission: () => hasPermission,
+  useHasPermission: (slug: string) => granted.has(slug),
   usePermissions: () => ({ permissions: [], permissionSet: new Set(), isLoading: false }),
 }));
 
@@ -69,8 +69,10 @@ vi.mock('../../hooks/useScmOptions', () => ({
 }));
 
 const useSalesOrders = vi.fn();
+const resetPlanning = vi.fn(async () => ({ so_number: 'ZZT-CG-0001', planned: true, removed: {} }));
 vi.mock('../../hooks/useSalesOrders', () => ({
   useSalesOrders: (...a: unknown[]) => useSalesOrders(...a),
+  useResetSalesOrderPlanning: () => ({ mutateAsync: resetPlanning, isPending: false }),
   consignmentsPagerQuery: {
     listQueryKey: () => ['scm-consignments'],
     fetchPage: async () => ({ data: [], pagination: { total: 0 } }),
@@ -129,7 +131,12 @@ function renderList() {
   );
 }
 
-beforeEach(() => useSalesOrders.mockReset());
+beforeEach(() => {
+  useSalesOrders.mockReset();
+  push.mockReset();
+  resetPlanning.mockClear();
+  granted = new Set<string>(['projects.projects.view', 'scm.reorder.run']);
+});
 
 describe('UAC-20: ConsignmentsList', () => {
   it('asks the hook for consignments only', async () => {
@@ -217,5 +224,72 @@ describe('UAC-20: ConsignmentsList', () => {
     renderList();
     await screen.findByText('ZZT-CG-0001');
     expect(screen.queryByRole('button', { name: /^add/i })).toBeNull();
+  });
+});
+
+// CONSIGN-PLAN UAC-10: the list gets the sales order list's planning buttons.
+describe('CONSIGN-PLAN UAC-10: Plan selected', () => {
+  it('rows have a select checkbox and Plan selected (0) is offered disabled', async () => {
+    renderList();
+    expect(await screen.findByLabelText('Select ZZT-CG-0001')).toBeInTheDocument();
+    expect(screen.getByLabelText('Select ZZT-CG-0002')).toBeInTheDocument();
+    const button = await screen.findByRole('button', { name: /^Plan selected \(0\)$/ });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('opens the board on the ticked consignments, by document number', async () => {
+    renderList();
+    fireEvent.click(await screen.findByLabelText('Select ZZT-CG-0001'));
+    fireEvent.click(await screen.findByLabelText('Select ZZT-CG-0002'));
+    fireEvent.click(await screen.findByRole('button', { name: /^Plan selected \(2\)$/ }));
+    expect(push).toHaveBeenCalledWith(
+      '/project-sales/fulfilment-planning?orders=' +
+        encodeURIComponent('ZZT-CG-0001,ZZT-CG-0002'),
+    );
+  });
+
+  it('offers no Plan selected without projects.projects.view', async () => {
+    granted = new Set<string>(['scm.reorder.run']);
+    renderList();
+    await screen.findByText('ZZT-CG-0001');
+    expect(screen.queryByRole('button', { name: /^Plan selected/ })).toBeNull();
+  });
+});
+
+// CONSIGN-PLAN UAC-11: the Actions menu is housekeeping only.
+describe('CONSIGN-PLAN UAC-11: Actions menu', () => {
+  async function openActions() {
+    const trigger = await screen.findByRole('button', { name: 'Actions' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+  }
+
+  it('holds Reset planning (N) and Refresh, and never Upload or Add', async () => {
+    renderList();
+    await openActions();
+    const reset = await screen.findByRole('menuitem', { name: /^Reset planning \(0\)$/ });
+    expect(reset).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Refresh' })).toBeInTheDocument();
+    const names = screen.getAllByRole('menuitem').map((m) => m.textContent ?? '');
+    expect(names.filter((n) => /upload|add/i.test(n))).toEqual([]);
+  });
+
+  it('Reset planning (1) confirms and resets the ticked consignment', async () => {
+    renderList();
+    fireEvent.click(await screen.findByLabelText('Select ZZT-CG-0001'));
+    await openActions();
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Reset planning \(1\)$/ }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('ZZT-CG-0001');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset planning' }));
+    await waitFor(() => expect(resetPlanning).toHaveBeenCalledWith({ id: 'cg-1', rewindBook: false }));
+  });
+
+  it('has no Reset planning without scm.reorder.run, but keeps Refresh', async () => {
+    granted = new Set<string>(['projects.projects.view']);
+    renderList();
+    await openActions();
+    expect(await screen.findByRole('menuitem', { name: 'Refresh' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /Reset planning/ })).toBeNull();
   });
 });

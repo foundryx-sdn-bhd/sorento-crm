@@ -215,11 +215,31 @@ describe('CONSIGN-DELIVERED-FIX: a consignment header reads where the goods are'
     expect(screen.queryByText('Completed')).toBeNull();
   });
 
-  it('a consignment carries no planned chip and no Plan button', () => {
+  // CONSIGN-PLAN UAC-13 flips the CONSIGN-DELIVERED-FIX rule "a consignment carries no planned
+  // chip and no Plan button": a project-class consignment now plans like a sales order.
+  it('a project-class consignment shows the planned chip and a Plan link to the board', () => {
     hasPermission = true;
     stub({ doc_type: 'consignment', status: 'closed', demand_class: 'project', planned_lines: 0, plannable_lines: 1, lines: lines(3) });
     renderDetail();
+    expect(screen.getByText('Not planned')).toBeInTheDocument();
+    const plan = screen.getByRole('link', { name: /^plan$/i });
+    expect(plan.getAttribute('href')).toBe(
+      `/project-sales/fulfilment-planning?orders=${encodeURIComponent('SO-2026/07-0042')}`,
+    );
+  });
+
+  it('a retail-class consignment shows no Plan link and no planned chip, like a retail sales order', () => {
+    hasPermission = true;
+    stub({ doc_type: 'consignment', status: 'closed', demand_class: 'retail', planned_lines: 0, plannable_lines: 0, lines: lines(3) });
+    renderDetail();
+    expect(screen.queryByRole('link', { name: /^plan$/i })).toBeNull();
     expect(screen.queryByText('Not planned')).toBeNull();
+  });
+
+  it('a project-class consignment shows no Plan link without projects.projects.view', () => {
+    hasPermission = false;
+    stub({ doc_type: 'consignment', status: 'closed', demand_class: 'project', planned_lines: 0, plannable_lines: 1, lines: lines(3) });
+    renderDetail();
     expect(screen.queryByRole('link', { name: /^plan$/i })).toBeNull();
   });
 
