@@ -85,8 +85,12 @@ def test_q5_guard_without_the_chat_grant_the_contact_stays_held(session_factory,
 
 # ------------------------------------------------------------------ sales reports
 
-def _pv2_report_turn(session_factory, monkeypatch, grants, *, tier=None):
+def _pv2_report_turn(session_factory, monkeypatch, grants, *, tier=None, spec=None, link=None):
     _seed_contact(session_factory, variables={})
+    if link:
+        from tests.chatbot.test_customer_scope_lane import _link_customers
+
+        _link_customers(session_factory, link)
     called: list = []
 
     def mcp(name, args):
@@ -97,7 +101,7 @@ def _pv2_report_turn(session_factory, monkeypatch, grants, *, tier=None):
                           prompt_version=1, version_id="v", cache_key="k")
     call = types.ModuleType("app.services.chatbot.pv2.call")
     call.resolve_v2_config = lambda db, override_version_id=None: cfg
-    parsed = out(ask(act="new_topic", domain="sales", report=_report()))
+    parsed = out(ask(act="new_topic", domain="sales", report=spec or _report()))
     call.parse_v2 = lambda config, history, memory_block, text: SimpleNamespace(output=parsed, usage={}, dropped=[])
     import app.services.chatbot.pv2 as pv2_pkg
 
@@ -152,3 +156,27 @@ def test_q5_guard_a_granted_contact_asking_for_documents_is_still_held(session_f
     assert not ({n for n, _ in captured} & CUSTOMER_SCOPED_TOOLS), captured
     text = (result.reply or {}).get("text") or ""
     assert "DELUXE HOME CENTRE" not in text and "HANLIM TRADING" not in text, text
+
+
+# ------------------------------------------------------------------ the picker on the PV2 report path itself
+
+def _named_customer_report():
+    from app.services.chatbot.pv2.schema import Filter
+
+    return _report().model_copy(update={"group_by": [], "filters": [
+        Filter(dimension="customer", op="in", keys=["ZZT Q5 BORNEO SDN BHD"], values=[])]})
+
+
+def test_q5_the_pv2_report_resolves_a_named_customer_for_a_granted_unlinked_contact_and_runs_scoped_to_it(session_factory, monkeypatch):
+    cid = _other_customer(session_factory, "ZZT Q5 BORNEO SDN BHD")
+    res, called = _pv2_report_turn(session_factory, monkeypatch, [SALES_GRANT], spec=_named_customer_report())
+    ran = [a for n, a in called if n in REPORT_TOOLS]
+    assert ran, (called, res.direct_reply)
+    assert cid in json.dumps(ran, default=str), ran
+
+
+def test_q5_guard_the_same_named_customer_report_without_the_grant_stays_held(session_factory, monkeypatch):  # guard: passes today
+    cid = _other_customer(session_factory, "ZZT Q5 BORNEO SDN BHD")
+    res, called = _pv2_report_turn(session_factory, monkeypatch, [], spec=_named_customer_report())
+    assert not ({n for n, _ in called} & REPORT_TOOLS), called
+    assert "BORNEO" not in (res.direct_reply or "").upper()
