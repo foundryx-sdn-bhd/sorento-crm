@@ -530,3 +530,54 @@ def test_rows_endpoint_bounds_page_and_query_length(world):
     assert world.client.get(url, params={"page": 1000001}).status_code == 422
     assert world.client.get(url, params={"query": "x" * 201}).status_code == 422
     assert world.client.get(url, params={"query": "x" * 200}).status_code == 200
+
+
+# --------------------------------------------------------------- round 2: priced, scope
+
+
+def test_priced_filter_returns_only_rows_with_a_selling_price(world):
+    s = _series(world, [world.a], [world.x])
+    world.client.post(
+        f"{BASE}/config/series/{s['id']}/products",
+        json={"codes": [world.c_y.product_code], "mode": "append"},  # named, out of scope
+    )
+    for pid in (world.c_y.id, world.a_x.id):
+        r = world.client.patch(
+            f"{BASE}/config/series/{s['id']}/products/{pid}",
+            json={"selling_price": "500.00", "max_discount_pct": None},
+        )
+        assert r.status_code == 200, r.text
+    body = _page(world, s["id"], priced="true", limit=100)
+    codes = [r["product_code"] for r in body["data"]]
+    assert codes == ["ZZF-A-X", "ZZF-C-Y"]
+    assert body["pagination"]["total"] == 2
+    assert all(r["selling_price"] is not None for r in body["data"])
+    assert "ZZF-A-XC" not in codes  # in scope but unpriced
+
+
+def test_rows_and_is_in_series_stay_in_the_series_company_when_the_session_spans_two(world):
+    from sqlalchemy import text
+
+    from app.models.base import company_scope
+
+    other_id = _uid()
+    world.db.execute(
+        text("insert into companies (id, code, name) values (:id, :code, :name)"),
+        {"id": other_id, "code": f"ZZ{_uid()[:4]}", "name": f"{MARK} Other"},
+    )
+    with company_scope(world.db, frozenset({other_id})):
+        theirs = _product(world.db, "ZZF-THEIRS-2", world.x.id, world.uom, None)
+        assert theirs.company_id == other_id
+    world.db.commit()
+    s = _series(world, [], [])
+    with company_scope(world.db, frozenset({world.company_id, other_id})):
+        body = _page(world, s["id"], limit=100)
+        codes = {r["product_code"] for r in body["data"]}
+        total = body["pagination"]["total"]
+        mine = _in(world, s["id"], world.n_x)
+        foreign = _in(world, s["id"], theirs)
+        searched = _page(world, s["id"], query="ZZF-THEIRS-2")["pagination"]["total"]
+    assert "ZZF-THEIRS-2" not in codes
+    assert total == len(codes)
+    assert searched == 0
+    assert mine is True and foreign is False

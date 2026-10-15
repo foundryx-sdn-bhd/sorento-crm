@@ -261,4 +261,16 @@ describe('SeriesDetailClient save on an existing series', () => {
     expect(body.brand_ids).toEqual([]);
     expect('brand_id' in body).toBe(false);
   });
+
+  it('Brand and Categories multi-selects are clearable', async () => {
+    seriesState.rows = [{ ...stale, brand_ids: [BRAND_X], brand_names: ['Brand X'] }];
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SeriesDetailClient seriesId="ser-1" />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(chipsText()).toContain('Basins'));
+    await waitFor(() => expect(screen.getByText('Brand X')).toBeInTheDocument());
+    expect(screen.getAllByLabelText('Clear selection')).toHaveLength(2);
+  });
 });

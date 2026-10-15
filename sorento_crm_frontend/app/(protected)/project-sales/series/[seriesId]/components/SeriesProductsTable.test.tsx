@@ -59,6 +59,11 @@ vi.mock(
   },
 );
 
+const listingPrefs = vi.fn((_args: unknown) => ({ resetToDefaults: async () => {}, isLoading: false }));
+vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
+  useListingColumnPreferences: (args: unknown) => listingPrefs(args),
+}));
+
 import { SeriesProductsTable } from './SeriesProductsTable';
 
 function row(overrides: Partial<SeriesProductRow> = {}): SeriesProductRow {
@@ -383,5 +388,43 @@ describe('SeriesProductsTable', () => {
     await screen.findByText("Inside item");
     expect(screen.queryByRole("button", { name: "Remove IN-SCOPE" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove OUT-SCOPE" })).toBeInTheDocument();
+  });
+
+  it('moves to the last existing page when the total shrinks under the current page', async () => {
+    const item = (page: number) =>
+      Array.from({ length: 50 }, (_, i) =>
+        row({ product_id: `q${page}-${i}`, product_code: `D${page}-${i}`, product_name: `Thing ${page}-${i}` }),
+      );
+    getSeriesProductRows.mockImplementation(async (_id: string, opts?: { page?: number }) => {
+      const page = opts?.page ?? 1;
+      if (page >= 3) return serverPage([], 60); // the series shrank to 60 rows: 2 pages
+      return serverPage(item(page), 120);
+    });
+    renderTable();
+    await screen.findByText('Thing 1-0');
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }));
+    await screen.findByText('Thing 2-0');
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }));
+    await waitFor(() =>
+      expect(getSeriesProductRows.mock.calls.filter((c) => c[1]?.page === 3).length).toBeGreaterThan(0),
+    );
+    // never stranded on the empty page: it asks for page 2 again and shows its rows
+    await waitFor(() => expect(getSeriesProductRows).toHaveBeenLastCalledWith('s1', expect.objectContaining({ page: 2 })));
+    expect(await screen.findByText('Thing 2-0')).toBeInTheDocument();
+  });
+
+  it('the pager grid opts out of column-config persistence (listingKey null)', async () => {
+    getSeriesProductRows.mockResolvedValue(
+      serverPage(
+        Array.from({ length: 50 }, (_, i) => row({ product_id: `z${i}`, product_code: `Z${i}`, product_name: `Zed ${i}` })),
+        120,
+      ),
+    );
+    renderTable();
+    await screen.findByText('Zed 0');
+    expect(listingPrefs).toHaveBeenCalled();
+    for (const call of listingPrefs.mock.calls) {
+      expect((call[0] as { listingKey: unknown }).listingKey).toBeNull();
+    }
   });
 });
