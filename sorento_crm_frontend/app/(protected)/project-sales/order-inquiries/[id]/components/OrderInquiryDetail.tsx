@@ -1043,7 +1043,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
       />
 
       {/* 6e.4 (S2): mounted only once the row's pool options have loaded, so the
-          reserve-mode prefill never reads an empty availability map. */}
+          reserve-mode default location and options are real. */}
       {editingRow && (editingRow.mode === 'amend' || (editingRowOptions && !editingRowOptions.isLoading)) ? (
         <ReserveLineForm
           open

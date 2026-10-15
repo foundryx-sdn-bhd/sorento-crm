@@ -430,8 +430,8 @@ describe('AC-RS-84: the tick stages the full requested qty at the default pool, 
   });
 });
 
-describe('AC-RS-85: Edit reserve opens ReserveLineForm; short qty needs a reason; Stage shows the chip', () => {
-  it('opens a dialog titled by the item code with a Stage button; stages a short qty at DC1', async () => {
+describe('AC-RS-85: Edit reserve opens ReserveLineForm; short qty needs a reason; Save shows the chip', () => {
+  it('opens a dialog titled by the item code with a Save button; saves a short qty at DC1', async () => {
     renderDetail();
     await screen.findByText('ZZT-REQUESTED');
 
@@ -458,7 +458,7 @@ describe('AC-RS-85: Edit reserve opens ReserveLineForm; short qty needs a reason
 });
 
 describe('AC-RS-86: Amend reserve on a reserved line locks the location and stages an amend chip', () => {
-  it('Location renders as read-only text; Stage shows "Amend to 10"; Undo drops it', async () => {
+  it('Location renders as read-only text; Save shows "Amend to 10"; Undo drops it', async () => {
     renderDetail();
     await screen.findByText('ZZT-RESERVED');
 
@@ -488,7 +488,7 @@ describe('AC-RS-87: header Reserve CTA, disabled while nothing staged, commits t
     await screen.findByText('ZZT-REQUESTED');
 
     // Scoped by testid, not accessible name: the row-level tick icon (AC-RS-83) also
-    // has the accessible name "Reserve", so `getByRole('button', { name: /^save$/i })`
+    // has the accessible name "Reserve", so `getByRole('button', { name: /^reserve$/i })`
     // matches both this CTA and that icon at once.
     const reserveCta = await screen.findByTestId('reserve-cta');
     expect(reserveCta).toHaveAccessibleName(/^reserve$/i);

@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('AC-RS-85: reserve mode - title, Location prefilled, Reserved default, Reason gated, Reserve', () => {
+describe('AC-RS-85: reserve mode - title, Location prefilled, Reserved default, Reason gated, Save', () => {
   it('titles the dialog by the item code and prefills Location + Reserved from the default pool', async () => {
     renderForm();
 

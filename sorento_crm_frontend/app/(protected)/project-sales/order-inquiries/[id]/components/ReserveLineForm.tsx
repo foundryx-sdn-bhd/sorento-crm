@@ -22,10 +22,11 @@ import { bareLocationCode } from '../../../_shared/lib/orderInquiryReserve';
  * own header `Reserve (N)` CTA does the one batched commit, `OrderInquiryDetail.tsx`
  * owns the staged map). Replaces `ReserveRowDialog`'s per-row `ReserveRowSection`.
  *
- * Reserve mode: Location is a `SearchableSelect` (options = the row's own pools with
+ * Reserve mode: Location is a `SearchableSelect` (options = the row's own pools, their
  * availability shown as information), Reserved defaults to the request. Owner, 16 Oct: never
- * capped by CRM stock - AutoCount may already hold the reservation while CRM stock lags, so
- * any qty up to the request is allowed whatever the pool shows. Amend mode: Location is
+ * capped or recomputed by CRM stock - AutoCount may already hold the reservation while CRM
+ * stock lags - so any qty up to the request is allowed whatever the pool shows. Amend mode:
+ * Location is
  * locked read-only text (the row's own answered location never changes on an amend),
  * Reserved starts at the row's own net reserved.
  *
@@ -33,35 +34,12 @@ import { bareLocationCode } from '../../../_shared/lib/orderInquiryReserve';
  * both modes (6e.4, S1): availability never waives it - "only 20 at DC1" is exactly the
  * explanation the requester reads in the mail.
  *
- * The caller mounts this only once the row's pool options have loaded (6e.4, S2), so
- * the reserve-mode prefill is read off real availability, never an empty map.
+ * The caller mounts this only once the row's pool options have loaded (6e.4, S2), so the
+ * default location and the option list are real, never empty.
+ *
+ * Its button reads "Save" (owner 16 Oct: no "Stage"), Fulfilment Planning's own word for a
+ * decision kept until Confirm (`BoardDecideControl.tsx` "Save N lines").
  */
-/** A typed Reserved, kept within 0..max. */
-function clampReservedQty(raw: string, max: number): number {
-  const value = Number(raw);
-  return Math.min(Math.max(Number.isFinite(value) ? value : 0, 0), max);
-}
-
-/** AC-RS-85 / 6e.4: a reason is required whenever Reserved is short of the request. */
-function reserveReasonNeeded(qty: number, requested: number): boolean {
-  return qty < requested;
-}
-
-/** Location options with the availability as the description line, never in the label. */
-function reserveLocationOptions(
-  locationOptions: SearchableSelectOption[],
-  availableQtyByLocation: Record<string, number>,
-): SearchableSelectOption[] {
-  return locationOptions.map((option) => {
-    const available = availableQtyByLocation[option.value];
-    return {
-      ...option,
-      label: bareLocationCode(option.label),
-      description: available != null ? `available ${available}` : option.description,
-    };
-  });
-}
-
 export interface ReserveLineFormStagePayload {
   /** Absent when no location is chosen: the server defaults it (6e.4, S8). */
   warehouse_id?: string;
@@ -124,16 +102,13 @@ export function ReserveLineForm({
   );
   const [reason, setReason] = React.useState('');
 
-  function handleLocationChange(value: string) {
-    setLocation(value);
-  }
-
   function handleQtyChange(event: React.ChangeEvent<HTMLInputElement>) {
-    setQty(clampReservedQty(event.target.value, max));
+    const raw = Number(event.target.value);
+    setQty(Math.min(Math.max(Number.isFinite(raw) ? raw : 0, 0), max));
   }
 
   // AC-RS-85 / 6e.4: Reason appears, and is required, whenever Reserved < Requested.
-  const showReason = reserveReasonNeeded(qty, requested);
+  const showReason = qty < requested;
   const canStage = !showReason || reason.trim().length > 0;
 
   // AC-RS-85: "options = the row's pools with availability" - the availability reads
@@ -143,7 +118,15 @@ export function ReserveLineForm({
   // value's own trigger text (no UUID in the UI is the letter of the rule; a
   // duplicated "available N" clause on the CLOSED control is the same spirit of it).
   const displayLocationOptions = React.useMemo(
-    () => reserveLocationOptions(locationOptions, availableQtyByLocation),
+    () =>
+      locationOptions.map((option) => {
+        const available = availableQtyByLocation[option.value];
+        return {
+          ...option,
+          label: bareLocationCode(option.label),
+          description: available != null ? `available ${available}` : option.description,
+        };
+      }),
     [locationOptions, availableQtyByLocation],
   );
 
@@ -174,7 +157,7 @@ export function ReserveLineForm({
               <SearchableSelect
                 id="reserve-line-location"
                 value={location}
-                onChange={handleLocationChange}
+                onChange={setLocation}
                 options={displayLocationOptions}
               />
             </div>
@@ -217,8 +200,6 @@ export function ReserveLineForm({
             Cancel
           </Button>
           <Button type="button" onClick={handleStage} disabled={!canStage}>
-            {/* Owner 16 Oct: no "Stage"; Fulfilment Planning's own word for keeping a
-                decision until Confirm (`BoardDecideControl.tsx` "Save N lines"). */}
             Save
           </Button>
         </DialogFooter>

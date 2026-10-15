@@ -492,6 +492,9 @@ describe('AC-BR-11 the pen: full request above CRM stock, Save', () => {
     fireEvent.click(within(gridRowOf('CKS1050')).getByLabelText('Edit reserve'));
     const form = await screen.findByRole('dialog', { name: 'CKS1050' });
     expect(within(form).getByLabelText('Reserved')).toHaveValue(44);
+    // Typing the full request back in holds: nothing on this path caps it at the 20 in CRM.
+    fireEvent.change(within(form).getByLabelText('Reserved'), { target: { value: '44' } });
+    expect(within(form).getByLabelText('Reserved')).toHaveValue(44);
     expect(within(form).queryByLabelText(/reason/i)).not.toBeInTheDocument();
     expect(within(form).queryByText(/stage/i)).not.toBeInTheDocument();
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
