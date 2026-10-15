@@ -687,7 +687,7 @@ async def sync_contact(
 
 
 class CsRoutingPinRequest(BaseModel):
-    cs_pic_user_id: str
+    cs_pic_user_id: Optional[str] = None  # None = No CS (finish at approval)
     # Predicate set [{field, operator, value}], AND-combined, matched against the
     # form header fields. Empty/omitted = wildcard. Lower `priority` wins among
     # matching rows for a form (pure admin order).

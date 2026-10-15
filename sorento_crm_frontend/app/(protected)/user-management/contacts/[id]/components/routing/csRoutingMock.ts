@@ -30,8 +30,18 @@ export interface RoutingRule {
   use_case: string;
   cs_pic_user_id: string | null;
   cs_pic_name: string | null;
+  // No CS: the form finishes at approval. The server stores it as a null PIC, which a new
+  // rule with nothing chosen yet also has, so the editor keeps the choice in this flag.
+  no_cs?: boolean;
   match_conditions: Predicate[];
   priority: number;
+}
+
+/** Server rules come back with a null PIC for No CS. */
+function fromServer(pins: RoutingRule[]): RoutingRule[] {
+  return pins
+    .map((p) => ({ ...p, no_cs: p.cs_pic_user_id == null }))
+    .sort((a, b) => a.priority - b.priority);
 }
 
 export const CS_USE_CASES: { key: string; label: string }[] = [
@@ -43,8 +53,7 @@ export async function getRoutingRules(contactId: string): Promise<RoutingRule[]>
   const r = await apiFetch(`${BASE}/${contactId}/cs-routing`);
   if (!r.ok) throw new Error(await extractApiError(r, 'Failed to load routing rules'));
   const data = await r.json();
-  const pins = (data?.pins ?? []) as RoutingRule[];
-  return pins.slice().sort((a, b) => a.priority - b.priority);
+  return fromServer((data?.pins ?? []) as RoutingRule[]);
 }
 
 export async function getCsCandidates(): Promise<CsCandidate[]> {
@@ -63,7 +72,7 @@ export async function getRoutableFields(useCase: string): Promise<RoutableField[
 
 /**
  * Replace this contact's routing config with `rules` in one request, priority = each
- * rule's position in the list. Rules without a selected CS PIC are skipped
+ * rule's position in the list. Rules with neither a CS PIC nor No CS chosen are skipped
  * (incomplete). A refused rule throws the server's message ("Rule 2: ...") and
  * nothing is saved. Returns the freshly-persisted rules (with server-assigned ids).
  */
@@ -72,11 +81,11 @@ export async function saveRoutingRules(
   rules: RoutingRule[],
 ): Promise<RoutingRule[]> {
   const payload = rules.flatMap((rule, i) =>
-    rule.cs_pic_user_id
+    rule.cs_pic_user_id || rule.no_cs
       ? [
           {
             use_case: rule.use_case,
-            cs_pic_user_id: rule.cs_pic_user_id,
+            cs_pic_user_id: rule.no_cs ? null : rule.cs_pic_user_id,
             match_conditions: rule.match_conditions ?? [],
             priority: i,
           },
@@ -90,6 +99,5 @@ export async function saveRoutingRules(
   });
   if (!r.ok) throw new Error(await extractApiError(r, 'Failed to save routing rules'));
   const data = await r.json();
-  const pins = (data?.pins ?? []) as RoutingRule[];
-  return pins.slice().sort((a, b) => a.priority - b.priority);
+  return fromServer((data?.pins ?? []) as RoutingRule[]);
 }

@@ -110,6 +110,19 @@ async def get_purchase_request_by_number(
     return await get_purchase_request(str(row.id), current_user=current_user, db=db)
 
 
+@router.get("/lookups/customers")
+async def lookup_customers_for_request(
+    q: str = Query(""),
+    limit: int = Query(20, ge=1, le=50),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Customer picker for the PR / SF form (same item shape as the portal lookup)."""
+    from app.services.debtor_type import lookup_customers
+
+    return lookup_customers(db, q, limit)
+
+
 @router.get("/{request_id}", response_model=PurchaseRequestHeaderResponse)
 async def get_purchase_request(
     request_id: str,

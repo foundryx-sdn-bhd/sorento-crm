@@ -377,7 +377,7 @@ class RespondContactCsRouting(Base):
     cs_pic_user_id = Column(
         String,
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,  # NULL = No CS (the form finishes at approval)
     )
     use_case = Column(String(50), nullable=False)  # purchase_request | sponsorship_form | complaint | stock_inquiry
     is_active = Column(Boolean, default=True, nullable=False)
