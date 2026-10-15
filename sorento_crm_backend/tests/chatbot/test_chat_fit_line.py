@@ -915,3 +915,57 @@ def test_ac23_a_sales_report_not_granted_gets_its_fixed_refusal_and_no_fit_line(
     )
     assert "not enabled" in c_reply.casefold(), c_reply
     _assert_refusal(a_reply, c_reply)
+
+
+# --------------------------------------------------------------------------- AC-24 reverse ask, wrong kind guessed
+
+MIRROR_X, CAB_X1, CAB_X2 = "ZZTMR7601", "ZZTBF7601", "ZZTBF7602"
+
+
+def _seed_mirror_on_two_cabinets(session_factory) -> None:
+    from app.models.product_compatibility import ProductCompatibility
+    from tests._mc_lookup_seed import product as seed_product
+
+    db = session_factory()
+    rows = {c: seed_product(db, company_id=DEFAULT_COMPANY_ID, code=c) for c in (MIRROR_X, CAB_X1, CAB_X2)}
+    for cab in (CAB_X1, CAB_X2):
+        db.add(ProductCompatibility(
+            company_id=DEFAULT_COMPANY_ID, seat_cover_product_id=rows[MIRROR_X].id,
+            wc_product_id=rows[cab].id, source="manual", kind="mirror",
+        ))
+    db.commit()
+
+
+@pytest.mark.parametrize(
+    "accessory,wrong_kind,hosts,seed_more",
+    [
+        (MIRROR_X, "shelf", [CAB_X1, CAB_X2], True),
+        (SHELF1, "seat_cover", [CAB1, CAB2], False),
+    ],
+    ids=["mirror_parsed_as_shelf", "shelf_parsed_as_seat_cover"],
+)
+def test_ac24_a_reverse_ask_follows_the_data_not_a_wrong_kind_guess(
+    session_factory, monkeypatch, accessory, wrong_kind, hosts, seed_more
+) -> None:
+    """"which cabinet fits <mirror>" parsed kind shelf (live): the accessory's own links decide."""
+    if seed_more:
+        _seed(session_factory)
+        _seed_mirror_on_two_cabinets(session_factory)
+    else:
+        _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_fit_24")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=f"check stock {' '.join(hosts)}", msg_id="ZZT-fit-24-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(c) for c in hosts],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_fit_24")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=f"check stock which cabinet fits {accessory}", msg_id="ZZT-fit-24-asked",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(accessory)],
+        find=fits(wrong_kind, "cabinet"),
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert "is on record" not in a_reply, a_reply
+    _assert_line_then_control(a_reply, c_reply, f"{accessory} fits these cabinets: {', '.join(hosts)}")
