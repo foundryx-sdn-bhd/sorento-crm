@@ -9,8 +9,10 @@ prints.
 """
 from __future__ import annotations
 
+import contextlib
 import csv
 import io
+import os
 import re
 from pathlib import Path
 
@@ -90,6 +92,9 @@ def _xlsx(tmp_path, rows, *, headers=("No.", "Product Code", "Description", "Fly
     ws.append(list(headers))
     for i, (code, desc) in enumerate(rows, start=1):
         ws.append([i, code, desc, "1"])
+        for cell in ws[ws.max_row]:  # openpyxl would store "=..." as a formula; keep it text
+            if isinstance(cell.value, str) and cell.value.startswith("="):
+                cell.data_type = "s"
     if extra_sheet:
         ws2 = wb.create_sheet("Other")
         ws2.append(list(headers))
@@ -376,24 +381,36 @@ def test_variant_of_a_skipped_sheet_code_is_skipped(db, tmp_path):
 # --------------------------------------------------------------------------- AC-9 company
 
 
-def test_other_companys_product_with_the_same_code_is_untouched(db, tmp_path):
+def _prod_like_scope(db, monkeypatch):
+    """Production conditions: a script never installs the app's company-scope listener, so the
+    session is unscoped and the script's own `company_scope` does nothing. Only the explicit
+    `Product.company_id == ...` filter can keep the companies apart."""
+    set_company_scope(db, None)
+    monkeypatch.setattr(_script(), "company_scope", lambda *a, **k: contextlib.nullcontext())
+
+
+def test_other_companys_product_with_the_same_code_is_untouched(db, tmp_path, monkeypatch):
     seed_mocha(db)
+    other = _prod(db, "SRTDUP1", company_id=MOCHA_ID)  # seeded first: it wins if nothing filters
     srt = _prod(db, "SRTDUP1")
-    other = _prod(db, "SRTDUP1", company_id=MOCHA_ID)
-    _run(db, tmp_path, [("SRTDUP1", "SRT text")], apply=True)
+    _prod_like_scope(db, monkeypatch)
+    run = _run(db, tmp_path, [("SRTDUP1", "SRT text")], apply=True)
+    assert run.code == 0
     assert _desc(db, srt) == "SRT text"
     assert _desc(db, other) is None
+    assert [r["product_code"] for r in run.changes] == ["SRTDUP1"]
 
 
-def test_company_flag_targets_that_companys_products(db, tmp_path):
+def test_company_flag_targets_that_companys_products(db, tmp_path, monkeypatch):
     mocha = seed_mocha(db)
     srt = _prod(db, "SRTDUP2")
     other = _prod(db, "SRTDUP2", company_id=MOCHA_ID)
-    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    _prod_like_scope(db, monkeypatch)
     run = _run(db, tmp_path, [("SRTDUP2", "Mocha text")], "--company", mocha.code, apply=True)
     assert run.code == 0
     assert _desc(db, other) == "Mocha text"
     assert _desc(db, srt) is None
+    assert [r["product_code"] for r in run.changes] == ["SRTDUP2"]
 
 
 def test_unknown_company_exits_1_and_writes_nothing(db, tmp_path):
@@ -667,3 +684,140 @@ def test_changes_csv_lists_unchanged_rows_too_and_empty_reports_still_have_heade
     run = _run(db, tmp_path, [("SRTCS3", "same")])
     assert run.change("SRTCS3")["status"] == "unchanged"
     assert _read_csv(run.path("skipped")) == (SKIPPED_COLUMNS, [])
+
+
+# --------------------------------------------------------------------------- fix round 1: AC-10 format-equal pairs
+
+
+@pytest.mark.parametrize(
+    "first, second",
+    [
+        ("Washdown\nFlushing Technology", "Washdown Flushing Technology"),
+        ("Washdown Flushing", "WASHDOWN flushing"),
+        ("Head\nD: L700xW400xH760mm", "Head\nL700xW400xH760mm"),
+        ("Head\nSize :  L700", "Head\nSize: L700"),
+        ("STANLEY 30oz TUMBLER", ":\nSTANLEY 30oz TUMBLER"),
+        ("STANLEY 30oz TUMBLER", "  STANLEY 30oz TUMBLER :"),
+    ],
+)
+def test_format_equal_pairs_are_one_row_and_the_first_text_is_written(db, tmp_path, first, second):
+    p = _prod(db, "SRTFE1")
+    run = _run(db, tmp_path, [("SRTFE1", first), ("SRTFE1", second)], apply=True)
+    assert _desc(db, p) == first.strip()
+    assert run.skipped == []
+
+
+# --------------------------------------------------------------------------- fix round 1: AC-8 printed anywhere / skipped bases
+
+
+def test_a_code_printed_only_on_a_no_description_row_is_never_a_variant(db, tmp_path):
+    _prod(db, "SRTWC8318-RL")
+    bl = _prod(db, "SRTWC8318-RL-BL")
+    run = _run(db, tmp_path, [("SRTWC8318-RL", "Some text"), ("SRTWC8318-RL-BL", None)], apply=True)
+    assert _desc(db, bl) is None
+    assert [r for r in run.changes if r["product_code"] == "SRTWC8318-RL-BL"] == []
+
+
+def test_variant_of_a_base_printed_only_on_fragment_rows_is_listed_as_base_skipped(db, tmp_path):
+    base = _prod(db, "SRTBF11827")
+    var = _prod(db, "SRTBF11827-BL")
+    run = _run(db, tmp_path, [("SRTBF11827", "+SRTMCB8082-BL\nCabinet")], apply=True)
+    assert _desc(db, base) is None and _desc(db, var) is None
+    assert "variant of SRTBF11827, which was skipped" in run.skip_reasons(product_code="SRTBF11827-BL")
+
+
+def test_product_whose_longest_base_is_only_a_combo_second_code_is_left_alone_and_unlisted(db, tmp_path):
+    _prod(db, "SRTBF9")
+    _prod(db, "SRTMCB9")
+    new = _prod(db, "SRTMCB9-NEW")
+    run = _run(db, tmp_path, [("SRTBF9 + SRTMCB9", "Cabinet and mirror")], apply=True)
+    assert _desc(db, new) is None
+    assert [r for r in run.changes if r["product_code"] == "SRTMCB9-NEW"] == []
+    assert [r for r in run.skipped if r["product_code"] == "SRTMCB9-NEW"] == []
+
+
+# --------------------------------------------------------------------------- fix round 1: AC-4 formula / template text
+
+
+@pytest.mark.parametrize(
+    "text, reason",
+    [
+        ("=SUM(1+1)", "text starts with = or @"),
+        ("@mention\nmore", "text starts with = or @"),
+        ("Head\nuses {{price_tag_description}} inside", "text contains {{"),
+    ],
+)
+def test_formula_or_template_text_is_skipped_and_listed(db, tmp_path, text, reason):
+    p = _prod(db, "SRTFX1", text="keep")
+    run = _run(db, tmp_path, [("SRTFX1", text)], apply=True)
+    assert reason in run.skip_reasons()
+    assert _desc(db, p) == "keep"
+    assert run.changes == []
+
+
+# --------------------------------------------------------------------------- fix round 1: AC-25b CSV escaping
+
+
+def test_changes_csv_escapes_a_leading_formula_char_but_the_database_keeps_it(db, tmp_path):
+    p = _prod(db, "SRTEC1", text="-old")
+    run = _run(db, tmp_path, [("SRTEC1", "new words")], apply=True)
+    assert run.change("SRTEC1")["old_description"] == "'-old"
+    assert _desc(db, p) == "new words"
+    # the escape never reaches the database: the old text was "-old", not "'-old"
+    audit = _audit_updates(db, p)
+    assert audit[0].old_values["price_tag_description"] == "-old"
+
+
+@pytest.mark.parametrize("code", ["=SRTX", "@SRTX"])
+def test_skipped_csv_escapes_a_leading_formula_char_in_the_code_cell(db, tmp_path, code):
+    run = _run(db, tmp_path, [(code, "some text")])
+    assert [r["sheet_code"] for r in run.skipped] == ["'" + code]
+    assert run.skipped[0]["reason"] == "code not found in the CRM"
+
+
+# --------------------------------------------------------------------------- fix round 1: AC-23 names, report-before-commit
+
+
+def test_a_file_name_with_a_percent_sign_works(db, tmp_path):
+    _prod(db, "SRTPC1")
+    run = _run(db, tmp_path, [("SRTPC1", "text")], name="Flyer 50% off.xlsx")
+    assert run.code == 0
+    assert run.path("changes").name.startswith("Flyer 50% off-price-tag-changes-dryrun-")
+    assert run.path("skipped").name.startswith("Flyer 50% off-price-tag-skipped-dryrun-")
+    assert run.path("changes").exists() and run.path("skipped").exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_a_report_write_failure_on_apply_exits_1_and_changes_no_product(db, tmp_path):
+    p = _prod(db, "SRTRW1", text="old")
+    xlsx = _xlsx(tmp_path, [("SRTRW1", "new")])
+    tmp_path.chmod(0o500)
+    try:
+        out = io.StringIO()
+        code = _script().main(["--file", str(xlsx), "--apply"], db=db, out=out)
+    finally:
+        tmp_path.chmod(0o700)
+    assert code == 1, out.getvalue()
+    assert _desc(db, p) == "old"
+
+
+# --------------------------------------------------------------------------- fix round 1: AC-1 caps
+
+
+def test_more_rows_than_the_cap_exits_1_and_writes_nothing(db, tmp_path, monkeypatch):
+    rows = [(f"SRTCAP{i}", "t") for i in range(4)]
+    ps = [_prod(db, c) for c, _ in rows]
+    monkeypatch.setattr(_script(), "MAX_ROWS", 3)
+    run = _run(db, tmp_path, rows, apply=True)
+    assert run.code == 1
+    assert all(_desc(db, p) is None for p in ps)
+    assert list(tmp_path.glob("*.csv")) == []
+
+
+def test_a_file_over_the_byte_cap_exits_1_and_writes_nothing(db, tmp_path, monkeypatch):
+    p = _prod(db, "SRTCAP9")
+    monkeypatch.setattr(_script(), "MAX_FILE_BYTES", 10)
+    run = _run(db, tmp_path, [("SRTCAP9", "t")], apply=True)
+    assert run.code == 1
+    assert _desc(db, p) is None
+    assert list(tmp_path.glob("*.csv")) == []
