@@ -310,26 +310,28 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     Chat fix PR-B S2c: a verdict of ANOTHER report type (`OTHER_REPORTS`) is a new ask too when it
     fills none of the slot's open fields and names something of its own (an axis, a current
     entity, or the ask itself): "i want to see the top customer" under the basis question is
-    never read as a failed basis answer."""
+    never read as a failed basis answer. And a parse that FILLS an open field is the answer: its
+    `group_by` is not the slot's axis changing (the parser's axis on an answering turn was noise
+    12 of 14 live turns, PR-B replay 16 Oct: "top 5" read as sales_agent under a customer ask)."""
     status = jsc.js_string(verdict.get("order_status") or "").strip()
     named = any(
         isinstance(e, dict) and e.get("current_message") is not False and jsc.js_string(e.get("hint") or "").strip()
         for e in jsc.array(verdict.get("entities"))
     )
+    slot = _dict(open_slot)
+    extras = _dict(slot.get("extras"))
+    held = {**_given_choices(_dict(extras.get("args"))), **_given_top_n(_dict(extras.get("args")), extras.get("top_n"))}
+    fills = bool(_reply_fills(verdict, _dict(slot.get("values")), held))
     if status in OTHER_REPORTS:
-        slot = _dict(open_slot)
-        extras = _dict(slot.get("extras"))
-        held = {**_given_choices(_dict(extras.get("args"))), **_given_top_n(_dict(extras.get("args")), extras.get("top_n"))}
         own = named or bool(verdict.get("group_by")) or verdict.get("domain_in_message") is True
-        return own and not _reply_fills(verdict, _dict(slot.get("values")), held)
+        return own and not fills
     if status != ASK_NAME or verdict.get("ranking_refine") is True:
         return False
     if named:
         return True
     raw_group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
-    if not raw_group:
+    if not raw_group or fills:
         return False
-    extras = _dict(_dict(open_slot).get("extras"))
     scope = _dict(extras.get("scope"))
     if scope:
         # The scope question names two axes ("customers of the sales agents above"): a reply
