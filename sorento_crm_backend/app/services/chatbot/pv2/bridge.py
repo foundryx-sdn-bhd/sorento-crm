@@ -184,7 +184,7 @@ def _open_question_answer(action: Lookup) -> dict[str, Any] | None:
     return answer
 
 
-def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> dict[str, Any]:
+def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date, so_granted: bool = False) -> dict[str, Any]:
     """The 59-key v1 verdict for one Lookup: the held subject's resolved codes named as
     this message's entities, its domain and intent, its period as dates."""
     held = action.held
@@ -225,8 +225,10 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
     verdict["status"] = held.status or (ask.status if ask is not None else None)
     if verdict["status"] == "outstanding" and domain == "order" and not verdict.get("document"):
         # R5-5: the question kind is known (an arrival / delivery-date ask): it is never asked which document.
+        # With none held, sales orders join only for a contact holding their grant (`so_granted`): else v1's both
+        # bucket would answer with its SO refusal line (R5 fix 1).
         named = {OUTSTANDING_DOCUMENT[k] for k, refs in held.refs.items() if refs and k in OUTSTANDING_DOCUMENT}
-        verdict["document"] = sorted(named) or ["DO", "SO"]
+        verdict["document"] = sorted(named) or (["DO", "SO"] if so_granted else ["DO"])
     # A portal form is this turn's subject only while the turn's domain is portal_link; a
     # form held from an earlier turn never strips the product of a later "stock?".
     on_portal = domain == "portal_link"

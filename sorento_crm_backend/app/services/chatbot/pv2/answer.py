@@ -191,18 +191,21 @@ def build_result(
     base_focus: Focus | None = None,
     message: str | None = None,
     language: str | None = None,
+    so_granted: bool = False,
 ) -> TurnV2Result:
     """One turn's actions as the engine's next step (see the module docstring). `message`
     is the customer's own text: every verdict carries it as `user_goal`, as v1's casual
     lane does, so a v1 template that prints it never prints null."""
-    result = _build_result(state, actions, out, today, pending_in, report_answer, idea_answer, base_focus, language)
+    result = _build_result(
+        state, actions, out, today, pending_in, report_answer, idea_answer, base_focus, language, so_granted
+    )
     if message and result.verdict is not None and not result.verdict.get("user_goal"):
         result.verdict["user_goal"] = message
     return result
 
 
 def _build_result(
-    state, actions, out, today, pending_in, report_answer, idea_answer, base_focus, language=None
+    state, actions, out, today, pending_in, report_answer, idea_answer, base_focus, language=None, so_granted=False
 ) -> TurnV2Result:
     # R5-6: the turn's language (`turn.turn_language`), else the parse's reading of the message.
     language = clarify_copy.lang(language or out.language)
@@ -278,7 +281,7 @@ def _build_result(
                 st.last_rows = []  # R4a: an answer that printed no rows leaves none to pick
             trace["route_detail"] = _attr(plan, "status") if plan is not None else None
             return TurnV2Result(None, None, text, st, actions, "report", language, trace)
-        verdict = bridge.to_v1_verdict(state, last, today=today)
+        verdict = bridge.to_v1_verdict(state, last, today=today, so_granted=so_granted)
         if len(lookups) > 1:
             verdict["asks"] = [
                 {"domain": d, "intent": bridge.INTENT_BY_DOMAIN.get(d or "")}

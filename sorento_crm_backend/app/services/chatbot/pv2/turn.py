@@ -192,6 +192,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         base_focus=ctx.base_focus,
         message=ctx.text,
         language=language,
+        so_granted=SO_GRANT in (ctx.granted_reveals or frozenset()),
     )
     result.trace.update(
         {
