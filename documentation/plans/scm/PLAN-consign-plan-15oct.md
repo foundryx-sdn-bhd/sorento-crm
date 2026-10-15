@@ -44,3 +44,31 @@ cheap: the Sample Request flow will borrow through the same path.
 Backend `tests/scm/test_consign_plan.py`: UAC-01..09. Frontend: `ConsignmentsList.test.tsx`
 (UAC-10, 11), `SalesOrderDetail.consignment.test.tsx` (UAC-13; the old "never planned"
 assertions flip).
+
+## Browser evidence run (cloud sandbox, 16 Oct, head df97c383)
+
+agent-browser 0.27.0, headless, against the lane's own stack (uvicorn + `next dev`, bootstrapped
+sandbox DB, every module enabled). Seed: masked copy of CG-202606-062's shape, `CG-SBX/06-062`
+(dealer 300-X096, project class, closed, 3 lines at CON: SAMPLE-SBX 2, CB-SBX-2516 4 with 1
+returned, WT-SBX-165 3), `CG-SBX/08-072` (1 line, fully returned), `SO-SBX-0001` (open sales
+order at BRW-BB). CON holds 6 of each product, flagged out of fulfilment planning.
+
+1. `/` > sidebar Project Sales Admin > Consignment: row ticks, Plan selected (0) disabled,
+   Actions. Tick CG-SBX/06-062: Plan selected (1); Actions = Reset planning (1), Refresh (no
+   Upload, no Add).
+2. Plan selected (1) opens `/project-sales/fulfilment-planning?orders=CG-SBX%2F06-062`. Three
+   lines, none "Outside fulfilment planning"; planned total 8 (2 + (4 - 1) + 3: returns netted).
+   The ladder's own suggestion is Buy 8 (CON is never drawn).
+3. Tick the 3 lines > Decide > Borrow: dialog "Decide 3 lines: Borrow", Location offers BRW-BB and
+   CON. CON + reason > Save 3 lines: Borrow decided 8, Buy 0 (3 draft PUTs 200).
+4. Confirm (3): `POST .../adopt` 200 (unadopted consignment adopted at confirm), `confirm-all` 200,
+   "CG-SBX/06-062: confirmed as revision 1 (0 purchase rows handed over)". DB:
+   `projects.order_inquiry_rows` 0, one active `so_supply_decisions` revision, CON stock unchanged.
+5. Sidebar > Consignment > CG-SBX/06-062: header "At customer", "Consignment", "Planned", Plan
+   button linking `?orders=CG-SBX%2F06-062`.
+6. 375px: list has no page-level horizontal scroll (scrollWidth 375); the grid scrolls inside its
+   card. Detail renders.
+7. UAC-09: tick CG-SBX/06-062 > Actions > Reset planning (1) > Reset planning: `POST
+   .../reset-planning` 200, decision removed, order reads 0 of 3 planned.
+8. API: board for `CG-SBX/08-072,SO-SBX-0001` admits only the sales order line (fully returned CG
+   has nothing to plan); its Borrow candidates are BRW-BB only, never CON.
