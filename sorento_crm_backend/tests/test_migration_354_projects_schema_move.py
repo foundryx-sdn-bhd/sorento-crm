@@ -70,6 +70,12 @@ BORN_AFTER_THE_MOVE = frozenset({
     # #1215): a guess the cascade walk made, never a placement, born straight into
     # `projects` the same way as its sibling `order_inquiry_links`.
     "order_inquiry_suggested_links",
+    # PLAN-set-quote-line-14oct.md, migration sql_0001_set_quote_line (#1682): one product
+    # set priced into a series, born straight into `projects` beside `series_products`.
+    "series_sets",
+    # PLAN-series-filters-15oct.md, migration sf_0001_series_brands (#1697): the brands a
+    # series picks, born straight into `projects` beside `series_categories`.
+    "series_brands",
 })
 
 MIGRATION = (
