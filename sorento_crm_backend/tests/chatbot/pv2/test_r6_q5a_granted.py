@@ -101,7 +101,7 @@ def _pv2_report_turn(session_factory, monkeypatch, grants, *, tier=None, spec=No
                           prompt_version=1, version_id="v", cache_key="k")
     call = types.ModuleType("app.services.chatbot.pv2.call")
     call.resolve_v2_config = lambda db, override_version_id=None: cfg
-    parsed = out(ask(act="new_topic", domain="sales", report=spec or _report()))
+    parsed = out(ask(act="new_topic", domain="chat_analytics" if spec is not None and spec.dataset == "chat" else "sales", report=spec or _report()))
     call.parse_v2 = lambda config, history, memory_block, text: SimpleNamespace(output=parsed, usage={}, dropped=[])
     import app.services.chatbot.pv2 as pv2_pkg
 
@@ -180,3 +180,38 @@ def test_q5_guard_the_same_named_customer_report_without_the_grant_stays_held(se
     res, called = _pv2_report_turn(session_factory, monkeypatch, [], spec=_named_customer_report())
     assert not ({n for n, _ in called} & REPORT_TOOLS), called
     assert "BORNEO" not in (res.direct_reply or "").upper()
+
+
+# ------------------------------------------------------------------ the hold on the PV2 report path, and each grant opens only its own dataset
+
+def _chat_spec():
+    from tests.chatbot.pv2.test_r5_g2_no_reach import _chat_report
+
+    return _chat_report()
+
+
+def test_q5_k39_an_ungranted_unlinked_contact_asking_a_pv2_chat_report_is_refused_by_the_hold(session_factory, monkeypatch):
+    """No grant at all: no sales-grant refusal fires first for a chat report, so only `_refused_report`'s own grant
+    check stops it. Remove that check and the report runs."""
+    res, called = _pv2_report_turn(session_factory, monkeypatch, [], spec=_chat_spec())
+    assert not ({n for n, _ in called} & REPORT_TOOLS), called
+    text = res.direct_reply or ""
+    assert "own account" in text, text
+    assert "ABC SDN BHD" not in text and "XYZ" not in text, text
+
+
+def test_q5_k40_the_sales_report_grant_does_not_open_a_chat_report(session_factory, monkeypatch):
+    res, called = _pv2_report_turn(session_factory, monkeypatch, [SALES_GRANT], spec=_chat_spec())
+    assert not ({n for n, _ in called} & REPORT_TOOLS), called
+    assert "own account" in (res.direct_reply or ""), res.direct_reply
+
+
+def test_q5_k40_the_chat_grant_does_not_open_a_sales_report(session_factory, monkeypatch):  # guard: passes today (the sales grant check fires)
+    res, called = _pv2_report_turn(session_factory, monkeypatch, [CHAT_GRANT])
+    assert not ({n for n, _ in called} & REPORT_TOOLS), called
+    assert (res.direct_reply or "").strip()
+
+
+def test_q5_k40_guard_the_chat_grant_opens_a_chat_report(session_factory, monkeypatch):  # guard: passes today
+    res, called = _pv2_report_turn(session_factory, monkeypatch, [CHAT_GRANT], spec=_chat_spec())
+    assert {n for n, _ in called} & REPORT_TOOLS, (called, res.direct_reply)

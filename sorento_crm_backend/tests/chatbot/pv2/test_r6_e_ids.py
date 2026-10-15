@@ -133,3 +133,35 @@ def test_e2_a_known_id_prints_its_label_an_unknown_one_goes_and_a_product_code_s
 def test_e2_guard_a_v1_only_turn_is_unchanged(session_factory, monkeypatch, fake_turn):  # guard: passes today
     result = _engine_turn(session_factory, monkeypatch, fake_turn, v2=False)
     assert KNOWN in ((result.reply or {}).get("text") or "")
+
+
+# ------------------------------------------------------------------ E2: the stored turn row is the scrubbed text; a failed row rewrite never fails the turn
+
+def test_e2_k30_the_stored_turn_row_holds_the_scrubbed_text_the_customer_was_sent(session_factory, monkeypatch, fake_turn):
+    from tests.chatbot.test_engine import _turn_row
+
+    result = _engine_turn(session_factory, monkeypatch, fake_turn, v2=True)
+    sent = (result.reply or {}).get("text") or ""
+    assert sent and not UUID_RE.search(sent), sent
+    row = _turn_row(session_factory, result.turn_id)
+    stored = (row.response.get("reply") or {}).get("text") or ""
+    assert stored == sent, (stored, sent)
+    actions = [a.get("text") for a in (row.response.get("actions") or []) if a.get("kind") == "send_message"]
+    assert actions and all(t == sent for t in actions), (actions, sent)
+
+
+def test_e2_a_failed_row_rewrite_still_answers_scrubbed_and_keeps_the_pv2_state(session_factory, monkeypatch, fake_turn):
+    from app.services.chatbot import engine as engine_mod
+    from tests.chatbot.pv2.test_core_engine_hook import _session_vars
+
+    def boom(*a, **k):
+        raise RuntimeError("db error while rewriting the turn row")
+
+    monkeypatch.setattr(engine_mod, "_keep_sent_texts", boom)
+    result = _engine_turn(session_factory, monkeypatch, fake_turn, v2=True)
+    text = (result.reply or {}).get("text") or ""
+    assert text.strip() and not UUID_RE.search(text), text
+    for a in result.actions:
+        if a.get("kind") == "send_message":
+            assert not UUID_RE.search(a.get("text") or ""), a
+    assert (_session_vars(session_factory) or {}).get("pv2"), "the PV2 state was still kept"
