@@ -9,7 +9,7 @@
  */
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QuotationDocument } from '../../_shared/services/quotationDocumentService';
 import type { Project, ProjectQuotation } from '../../_shared/types/project.types';
@@ -28,6 +28,36 @@ const listQuotationDocuments = vi.fn();
 const createQuotationDocument = vi.fn();
 const listQuotations = vi.fn();
 const push = vi.fn();
+const createPendingAction = vi.fn();
+
+// The deferred Delete (F6/F7): the row menu and the bulk strip park a server-side action.
+vi.mock('@/services/pendingActionService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/pendingActionService')>();
+  return {
+    ...actual,
+    createPendingAction: (...args: unknown[]) => createPendingAction(...args),
+    cancelPendingAction: vi.fn(),
+    getCurrentPendingAction: vi.fn(async () => ({ pending: null, last_outcome: null })),
+  };
+});
+vi.mock('@/components/common/deferredToast', () => ({
+  deferredToast: (input: { id?: string }) => input.id ?? 'toast',
+  dismissDeferredToast: vi.fn(),
+}));
+const toastCalls: unknown[][] = [];
+vi.mock('@/lib/toast', () => {
+  const record = (...args: unknown[]) => {
+    toastCalls.push(args);
+    return 'toast';
+  };
+  return { toast: { success: record, error: record, warning: record, custom: record, dismiss: vi.fn() } };
+});
+// The list gates Delete on the caller's grants; this suite is about the list, not the grants.
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: () => true,
+  useHasAnyPermission: () => true,
+  usePermissions: () => ({ permissions: [], permissionSet: new Set(), isLoading: false }),
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: vi.fn() }),
@@ -141,8 +171,17 @@ function renderPanel(overrides: Partial<Project> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  toastCalls.length = 0;
   listQuotationDocuments.mockResolvedValue([]);
   listQuotations.mockResolvedValue([]);
+  createPendingAction.mockImplementation(async (input: { entityId: string }) => ({
+    id: `pa-${input.entityId}`,
+    action_key: 'quotation_document.delete',
+    entity_type: 'quotation_document',
+    entity_id: input.entityId,
+    commit_at: new Date(Date.now() + 10_000).toISOString().replace(/\.\d+Z$/, ''),
+    window_seconds: 10,
+  }));
 });
 
 describe('QuotationsPanel', () => {
@@ -258,7 +297,7 @@ describe('QuotationsPanel', () => {
     expect(screen.getByText('RM 698,173.50')).toBeInTheDocument();
   });
 
-  it('surfaces the price-floor guardrail across the project rather than per document', async () => {
+  it('F1: renders no below-the-price-floor or non-standard chips in the tab', async () => {
     listQuotationDocuments.mockResolvedValue([quotationDocument()]);
     listQuotations.mockResolvedValue([
       scope({ id: 'q1', below_floor_count: 2, non_standard_count: 1 }),
@@ -267,8 +306,9 @@ describe('QuotationsPanel', () => {
 
     renderPanel();
 
-    expect(await screen.findByText('3 below the price floor')).toBeInTheDocument();
-    expect(screen.getByText('4 non-standard')).toBeInTheDocument();
+    expect(await screen.findByText('SRT/Q/2026/0141 (R2)')).toBeInTheDocument();
+    expect(screen.queryByText(/below the price floor/i)).toBeNull();
+    expect(screen.queryByText(/non-standard/i)).toBeNull();
   });
 
   it('opens the document when the row is clicked', async () => {
@@ -301,5 +341,179 @@ describe('QuotationsPanel', () => {
     // satisfied". The press is a navigation, never a write.
     expect(push).toHaveBeenCalledWith('/project-sales/p1/quotation-documents/new');
     expect(createQuotationDocument).not.toHaveBeenCalled();
+  });
+});
+
+
+/** The row "..." menu. Radix opens on pointerdown, which jsdom does not synthesize from click. */
+async function openRowMenu() {
+  const trigger = await screen.findByRole('button', { name: /quotation actions/i });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: 'ArrowDown', code: 'ArrowDown' });
+  return screen.findByRole('menu');
+}
+
+function draftDocument(overrides: Partial<QuotationDocument> = {}) {
+  return quotationDocument({
+    id: 'd-draft',
+    our_ref: 'SRT/Q/2026/0150',
+    document_no: 'SRT/Q/2026/0150',
+    issue_count: 0,
+    current_issue_no: null,
+    is_issued: false,
+    ...overrides,
+  });
+}
+
+describe('QuotationsPanel: the standard list (QUOTE-APPROVAL-UX F2-F8)', () => {
+  it('F2: the app list toolbar - search box first, then Columns, then Add a quotation on the right', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument()]);
+    const { container } = renderPanel();
+
+    const search = await screen.findByRole('searchbox', { name: 'Search quotations' });
+    const columns = screen.getByRole('button', { name: /Columns/i });
+    const add = screen.getByRole('button', { name: /Add a quotation/i });
+
+    expect(container.querySelector('[data-slot="data-grid-list-toolbar"]')).not.toBeNull();
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(search, columns)).toBe(true);
+    expect(follows(columns, add)).toBe(true);
+  });
+
+  it('F3: every row carries a tickbox; ticking shows "1 selected" with Delete and Export', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument(), draftDocument()]);
+    renderPanel();
+
+    const row = (await screen.findByText('SRT/Q/2026/0150')).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('checkbox'));
+
+    expect(await screen.findByText('1 selected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeEnabled();
+  });
+
+  it('F4: the row "..." menu carries the record gear action set', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument()]);
+    renderPanel();
+
+    const menu = await openRowMenu();
+
+    for (const name of [
+      'Edit quotation',
+      'Sign quotation',
+      'Download PDF',
+      'Download Excel',
+      'Copy counter-sign link',
+      'Delete quotation',
+    ]) {
+      expect(within(menu).getByRole('menuitem', { name: new RegExp(name) })).toBeInTheDocument();
+    }
+  });
+
+  it('F4: items the record disables are disabled here too (a draft has nothing to download or copy)', async () => {
+    listQuotationDocuments.mockResolvedValue([draftDocument()]);
+    renderPanel();
+
+    const menu = await openRowMenu();
+
+    expect(within(menu).getByRole('menuitem', { name: /Download PDF/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(within(menu).getByRole('menuitem', { name: /Download Excel/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(
+      within(menu).getByRole('menuitem', { name: /Copy counter-sign link/ }),
+    ).toHaveAttribute('aria-disabled', 'true');
+    expect(within(menu).getByRole('menuitem', { name: /Edit quotation/ })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('F5: the row body opens the quotation; the tickbox and the menu do not', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument()]);
+    renderPanel();
+
+    const row = (await screen.findByText('Nadi Cergas Sdn Bhd')).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('checkbox'));
+    fireEvent.click(within(row).getByRole('button', { name: /quotation actions/i }));
+    expect(push).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Nadi Cergas Sdn Bhd'));
+    expect(push).toHaveBeenCalledWith('/project-sales/p1/quotation-documents/d1');
+  });
+
+  it('F7: row-menu Delete parks the deferred action and opens no confirmation dialog', async () => {
+    listQuotationDocuments.mockResolvedValue([draftDocument()]);
+    renderPanel();
+
+    const menu = await openRowMenu();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: /Delete quotation/ }));
+
+    await waitFor(() => expect(createPendingAction).toHaveBeenCalledTimes(1));
+    expect(createPendingAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKey: 'quotation_document.delete',
+        entityType: 'quotation_document',
+        entityId: 'd-draft',
+      }),
+    );
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('F7: bulk-strip Delete parks one deferred action per ticked row, with no dialog', async () => {
+    listQuotationDocuments.mockResolvedValue([
+      draftDocument({ id: 'd-a', our_ref: 'SRT/Q/2026/0151', document_no: 'SRT/Q/2026/0151' }),
+      draftDocument({ id: 'd-b', our_ref: 'SRT/Q/2026/0152', document_no: 'SRT/Q/2026/0152' }),
+    ]);
+    renderPanel();
+
+    await screen.findByText('SRT/Q/2026/0151');
+    fireEvent.click(screen.getByRole('checkbox', { name: /Select all rows/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(createPendingAction).toHaveBeenCalledTimes(2));
+    const ids = createPendingAction.mock.calls.map((call) => (call[0] as { entityId: string }).entityId);
+    expect(ids.sort()).toEqual(['d-a', 'd-b']);
+    expect(createPendingAction.mock.calls[0][0]).toMatchObject({
+      actionKey: 'quotation_document.delete',
+      entityType: 'quotation_document',
+    });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('F8: bulk Delete is disabled when every ticked row is issued', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument()]);
+    renderPanel();
+
+    const row = (await screen.findByText('Nadi Cergas Sdn Bhd')).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('checkbox'));
+
+    expect(await screen.findByRole('button', { name: 'Delete' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(createPendingAction).not.toHaveBeenCalled();
+  });
+
+  it('F8: a mixed selection deletes only the draft and says one was skipped', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument(), draftDocument()]);
+    renderPanel();
+
+    await screen.findByText('SRT/Q/2026/0150');
+    fireEvent.click(screen.getByRole('checkbox', { name: /Select all rows/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(createPendingAction).toHaveBeenCalledTimes(1));
+    expect(createPendingAction).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'd-draft' }),
+    );
+    await waitFor(() =>
+      expect(JSON.stringify(toastCalls)).toMatch(/1[^"]*skipped|skipped[^"]*1/i),
+    );
   });
 });
