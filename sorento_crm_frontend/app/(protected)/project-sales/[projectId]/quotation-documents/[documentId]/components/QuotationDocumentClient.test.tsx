@@ -1355,6 +1355,20 @@ describe('QuotationDocumentClient: one primary CTA (E1-E9)', () => {
     expect(screen.queryByRole('button', { name: /^Send to Customer/ })).toBeNull();
   });
 
+  it('E1: an UNSIGNED below-floor draft leads with Send for approval; Sign is not a primary button', async () => {
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(belowFloor('draft'));
+    renderScreen();
+
+    const send = await screen.findByRole('button', { name: 'Send for approval' });
+    expect(primaryButtons()).toEqual([send]);
+    expect(
+      screen.queryAllByRole('button', { name: 'Sign' }).filter((b) => b.classList.contains('bg-primary')),
+    ).toHaveLength(0);
+    const menu = await openGear();
+    expect(within(menu).getByRole('menuitem', { name: /Sign quotation/ })).toBeInTheDocument();
+  });
+
   it('E1: the label comes off the graph edge, and falls back to Send for approval with no graph', async () => {
     graphData = approvalGraph('Ask a manager');
     getQuotationDocument.mockResolvedValue(belowFloor('draft', { signatory_signature: signature() }));

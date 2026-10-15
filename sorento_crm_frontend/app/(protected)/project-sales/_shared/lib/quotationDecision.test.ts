@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { QuotationDocument } from '../services/quotationDocumentService';
-import { hasOpenChangeRequest, quotationStanding } from './quotationDecision';
+import { hasOpenChangeRequest, nextAction, quotationStanding } from './quotationDecision';
 
 function document(overrides: Partial<QuotationDocument> = {}): QuotationDocument {
   return {
@@ -162,5 +162,29 @@ describe('hasOpenChangeRequest', () => {
         }),
       ),
     ).toBe(false);
+  });
+});
+
+describe('nextAction: Send for approval comes before Sign (E1, owner order)', () => {
+  const editor = { canEdit: true, canApprove: false, isSigned: false };
+
+  it('E1: below floor, no rung, unsigned -> send_for_approval', () => {
+    expect(
+      nextAction(document({ requires_approval: true, approval_status_key: null }), editor).kind,
+    ).toBe('send_for_approval');
+  });
+
+  it('E1: below floor, rejected, unsigned -> send_for_approval', () => {
+    expect(
+      nextAction(document({ requires_approval: true, approval_status_key: 'rejected' }), editor)
+        .kind,
+    ).toBe('send_for_approval');
+  });
+
+  it('E4: below floor but approved, unsigned -> sign', () => {
+    expect(
+      nextAction(document({ requires_approval: true, approval_status_key: 'approved' }), editor)
+        .kind,
+    ).toBe('sign');
   });
 });

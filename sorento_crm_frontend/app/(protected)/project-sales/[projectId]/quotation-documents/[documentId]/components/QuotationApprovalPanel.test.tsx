@@ -129,14 +129,7 @@ function renderPanel(
   canEdit = true,
 ) {
   return render(
-    <QuotationApprovalPanel
-      document={document}
-      graph={graph()}
-      canEdit={canEdit}
-      onMove={handlers.onMove ?? vi.fn()}
-      onApprove={handlers.onApprove ?? vi.fn()}
-      onReject={handlers.onReject ?? vi.fn()}
-    />,
+    <QuotationApprovalPanel document={document} />,
   );
 }
 
