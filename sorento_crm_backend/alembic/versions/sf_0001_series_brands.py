@@ -7,13 +7,13 @@ showed one brand before shows the same brand after. `brand_id` stays, no longer 
 until a later cleanup. Additive only; downgrade drops the table.
 
 Revision ID: sf_0001_series_brands
-Revises: frc_0001_debtor_type_no_cs
+Revises: wc_compat_0002_kind
 Create Date: 2026-10-15
 """
 from alembic import op
 
 revision = "sf_0001_series_brands"
-down_revision = "frc_0001_debtor_type_no_cs"
+down_revision = "wc_compat_0002_kind"
 branch_labels = None
 depends_on = None
 
