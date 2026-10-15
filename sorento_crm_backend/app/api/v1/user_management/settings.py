@@ -552,6 +552,29 @@ _RUNTIME_MAX_LENGTH = {
 _RO_DSN_SCHEMES = ("postgresql://", "postgresql+psycopg2://", "postgres://")
 
 
+def _refused_date(name: str, value: str) -> Optional[str]:
+    """Why a date setting is refused, or None. ISO text only (the box sends YYYY-MM-DD), and
+    never after today in Malaysia time: the DO cutover marks every DO dated before it delivered,
+    so a future date would land today's live DOs delivered with no tracking."""
+    import re
+    from datetime import date
+
+    from app.services.incoming_stock_service import today_myt
+
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        day = date.fromisoformat(text) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text) else None
+    except ValueError:
+        day = None
+    if day is None:
+        return f"{name} must be a date (YYYY-MM-DD) or null."
+    if day > today_myt():
+        return f"{name} cannot be a future date."
+    return None
+
+
 def _row_without_secrets(settings: SystemSetting) -> dict:
     """The settings row for a PUT's echo, minus every stored secret: the runtime secrets'
     ciphertext (SETTINGS-IN-DB-SORENTO review) and the SMTP password. Returning the ORM row
@@ -588,6 +611,12 @@ def _validate_runtime_payload(payload: Any) -> dict:
             if not isinstance(value, bool):
                 raise _refuse(f"{name} must be true, false or null.")
             continue
+        if name in runtime_settings.DATE_FIELDS:
+            refused = (_refused_date(name, value) if isinstance(value, str)
+                       else f"{name} must be a date (YYYY-MM-DD) or null.")
+            if refused:
+                raise _refuse(refused)
+            continue
         if not isinstance(value, str):
             raise _refuse(f"{name} must be text or null.")
         if len(value) > _RUNTIME_MAX_LENGTH[name]:
@@ -613,10 +642,16 @@ def _validate_runtime_payload(payload: Any) -> dict:
 
 def _runtime_settings_body(db: Session) -> dict:
     from app.api.v1.public.respond_webhook import SIGNATURE_HEADERS
+    from app.models.order import OrderStatus
     from app.services import runtime_settings
 
     return {
         "fields": runtime_settings.describe(db),
+        # The DO ingest's own lookup (`AutocountDocIngestService._delivered_status_id`): without
+        # this status "Assume DOs delivered before" only logs a warning and DOs land new.
+        "delivered_order_status_exists": db.query(OrderStatus.id)
+        .filter(OrderStatus.status_code.ilike("delivered"))
+        .first() is not None,
         "respond_webhook_path": "/api/v1/public/respond/webhook",
         "respond_signature_headers": list(SIGNATURE_HEADERS),
         # `respond_webhook.SHARED_SECRET_HEADER`, in the casing Respond.io's form is given.
