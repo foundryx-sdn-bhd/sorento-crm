@@ -12,11 +12,11 @@ stored, so there is one source of truth for it.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,7 @@ from app.models.projects import (
     FLOOR_MODES,
     PriceFloorRule,
     ProjectSeries,
+    ProjectSeriesBrand,
     ProjectSeriesCategory,
     ProjectSeriesProduct,
     ProjectSeriesSet,
@@ -97,8 +98,10 @@ class SeriesMembership:
 
     categories: Set[str]
     products: Set[str]
-    #: The series' brand. When set, a category match also needs the product to be of it.
-    brand_id: Optional[str] = None
+    #: The series' picked brands. Empty means every brand.
+    brand_ids: Set[str] = field(default_factory=set)
+    #: The series' company: scope products are the company's own, never another's.
+    company_id: Optional[str] = None
 
 
 # --------------------------------------------------------------- category walk
@@ -653,26 +656,43 @@ def series_pricing_map(db: Session, series_id: Optional[str]) -> Dict[str, tuple
     }
 
 
-def series_scope_product_ids(db: Session, series: ProjectSeries) -> Set[str]:
-    """Active products of the series' brand that sit under its categories, in one query.
-
-    Empty when the series has no brand or no categories: scope needs both.
-    """
-    if not series.brand_id:
-        return set()
-    covered = series_category_ids(db, series.id)
-    if not covered:
+def series_brand_ids(db: Session, series_id: Optional[str]) -> Set[str]:
+    """The brands picked on the series. Empty means every brand."""
+    if not series_id:
         return set()
     return {
         row[0]
-        for row in db.query(Product.id)
-        .filter(
-            Product.is_active == True,  # noqa: E712
-            Product.brand_id == series.brand_id,
-            Product.category_id.in_(covered),
-        )
+        for row in db.query(ProjectSeriesBrand.brand_id)
+        .filter(ProjectSeriesBrand.series_id == str(series_id))
         .all()
     }
+
+
+def _scope_conditions(db: Session, series_id: str) -> List[Any]:
+    """SQL conditions for "an active product of the picked brands under the picked
+    categories". An empty brand or category pick adds no condition (empty means all).
+
+    The one definition of the scope for every query that reads it; the company scope comes
+    from querying ``Product`` through the ORM.
+    """
+    conditions: List[Any] = [Product.is_active == True]  # noqa: E712
+    brand_ids = series_brand_ids(db, series_id)
+    if brand_ids:
+        conditions.append(Product.brand_id.in_(brand_ids))
+    covered = series_category_ids(db, series_id)
+    if covered:
+        conditions.append(Product.category_id.in_(covered))
+    return conditions
+
+
+def product_in_series_scope(db: Session, series: ProjectSeries, product_id: str) -> bool:
+    """One product against the scope rule: a single indexed lookup, never the whole scope."""
+    return (
+        db.query(Product.id)
+        .filter(Product.id == str(product_id), *_scope_conditions(db, series.id))
+        .first()
+        is not None
+    )
 
 
 def _series_row(link: Optional[ProjectSeriesProduct], product: Product, in_scope: bool) -> Dict[str, Any]:
@@ -689,15 +709,22 @@ def _series_row(link: Optional[ProjectSeriesProduct], product: Product, in_scope
     }
 
 
-def series_product_rows(db: Session, series_id: str) -> List[Dict[str, Any]]:
-    """The series' products as the screen reads them: code, name, price, percentage, floor.
+def series_product_rows(
+    db: Session,
+    series_id: str,
+    *,
+    page: int = 1,
+    limit: int = 50,
+    query: Optional[str] = None,
+) -> tuple[List[Dict[str, Any]], int]:
+    """One page of the series' products and the total: code, name, price, percentage, floor.
 
-    Stored rows plus a blank derived row for every in-scope product (the series' brand,
-    under its categories) that has no stored row, so the table opens preloaded. Each row says
-    whether it is ``in_scope``; a stored row outside the scope stays listed, only removable.
+    The series is its named products plus every in-scope product (picked brands under picked
+    categories, empty meaning all), so the table opens preloaded. Each row says whether it
+    is ``in_scope``; a named row outside the scope stays listed, only removable.
 
-    ONE join for the stored set and one query for the scope, not a lookup per row - the
-    client's own series runs to 92 products and this is drawn on every visit to the page.
+    One count and one page query, both in SQL: a series can hold the whole catalogue and the
+    page must not load it. ``query`` matches code or name, case-insensitively.
 
     ``derived_floor`` is computed HERE rather than in the browser. It is the number a refusal
     is argued from, and the same function the pricing engine enforces with, so the figure on
@@ -706,21 +733,32 @@ def series_product_rows(db: Session, series_id: str) -> List[Dict[str, Any]]:
     Ordered by product code, because a list somebody checks against a spreadsheet has to be
     in an order they can follow; insertion order is meaningless to them.
     """
-    series = db.query(ProjectSeries).filter(ProjectSeries.id == str(series_id)).first()
-    stored = (
-        db.query(ProjectSeriesProduct, Product)
-        .join(Product, Product.id == ProjectSeriesProduct.product_id)
-        .filter(ProjectSeriesProduct.series_id == str(series_id))
+    in_scope = and_(*_scope_conditions(db, series_id))
+    base = (
+        db.query(Product, ProjectSeriesProduct, in_scope.label("in_scope"))
+        .outerjoin(
+            ProjectSeriesProduct,
+            and_(
+                ProjectSeriesProduct.product_id == Product.id,
+                ProjectSeriesProduct.series_id == str(series_id),
+            ),
+        )
+        .filter(or_(ProjectSeriesProduct.product_id.isnot(None), in_scope))
+    )
+    term = (query or "").strip()
+    if term:
+        like = f"%{term}%"
+        base = base.filter(
+            or_(Product.product_code.ilike(like), Product.product_name.ilike(like))
+        )
+    total = base.order_by(None).with_entities(func.count(Product.id)).scalar() or 0
+    found = (
+        base.order_by(Product.product_code.asc(), Product.id.asc())
+        .offset((max(page, 1) - 1) * limit)
+        .limit(limit)
         .all()
     )
-    scope = series_scope_product_ids(db, series) if series is not None else set()
-    rows = [_series_row(link, product, product.id in scope) for link, product in stored]
-    derived_ids = scope - {product.id for _, product in stored}
-    if derived_ids:
-        for product in db.query(Product).filter(Product.id.in_(derived_ids)).all():
-            rows.append(_series_row(None, product, True))
-    rows.sort(key=lambda r: r["product_code"] or "")
-    return rows
+    return [_series_row(link, product, bool(flag)) for product, link, flag in found], total
 
 
 def set_series_product_pricing(
@@ -749,7 +787,7 @@ def set_series_product_pricing(
         .first()
     )
     if link is None:
-        if str(product_id) not in series_scope_product_ids(db, series):
+        if not product_in_series_scope(db, series, product_id):
             raise AppException(
                 status_code=404,
                 message="That product is not in this series.",
@@ -762,7 +800,7 @@ def set_series_product_pricing(
     db.flush()
 
     product = db.query(Product).filter(Product.id == link.product_id).first()
-    in_scope = str(product_id) in series_scope_product_ids(db, series)
+    in_scope = product_in_series_scope(db, series, product_id)
     return _series_row(link, product, in_scope)
 
 
@@ -934,15 +972,16 @@ def series_membership(db: Session, series_id: Optional[str]) -> SeriesMembership
     fifty-two. Without this a version's guardrail pass costs a walk per line, which is the
     shape that makes a long quotation slow for no reason at all.
     """
-    brand_id = (
-        db.query(ProjectSeries.brand_id).filter(ProjectSeries.id == series_id).scalar()
+    company_id = (
+        db.query(ProjectSeries.company_id).filter(ProjectSeries.id == series_id).scalar()
         if series_id
         else None
     )
     return SeriesMembership(
+        company_id=company_id,
         categories=series_category_ids(db, series_id),
         products=series_product_ids(db, series_id),
-        brand_id=brand_id,
+        brand_ids=series_brand_ids(db, series_id),
     )
 
 
@@ -961,8 +1000,8 @@ def is_in_series(
     game" and "these exact 142 codes are the standard range" - and a series may want
     either, both or neither.
 
-    A series with a brand narrows the category match to that brand: another brand's product
-    (or one with no brand) under a nominated category is non-standard unless named.
+    Otherwise BOTH must hold: the product is active, its brand is one of the picked brands
+    (none picked = any) and its category is under a picked category (none picked = any).
 
     Direct membership is checked FIRST and needs no category at all, which also makes a
     product with a null ``category_id`` nominatable. Under category-only membership such a
@@ -983,9 +1022,32 @@ def is_in_series(
     resolved = membership if membership is not None else series_membership(db, series_id)
     if product.id in resolved.products:
         return True
-    if product.category_id not in resolved.categories:
+    if not product.is_active:
         return False
-    return resolved.brand_id is None or product.brand_id == resolved.brand_id
+    if resolved.company_id and product.company_id != resolved.company_id:
+        return False
+    if resolved.brand_ids and product.brand_id not in resolved.brand_ids:
+        return False
+    return not resolved.categories or product.category_id in resolved.categories
+
+
+def set_series_brands(
+    db: Session, *, series: ProjectSeries, brand_ids: Sequence[str]
+) -> None:
+    """Replace the picked brands. Sent whole, reconciled like ``set_series_categories``."""
+    wanted = {bid for bid in brand_ids if bid}
+    existing = {
+        row.brand_id: row
+        for row in db.query(ProjectSeriesBrand)
+        .filter(ProjectSeriesBrand.series_id == series.id)
+        .all()
+    }
+
+    for brand_id in wanted - set(existing):
+        db.add(ProjectSeriesBrand(series_id=series.id, brand_id=brand_id))
+    for brand_id in set(existing) - wanted:
+        db.delete(existing[brand_id])
+    db.flush()
 
 
 def set_series_categories(
