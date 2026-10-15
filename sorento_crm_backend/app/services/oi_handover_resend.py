@@ -166,7 +166,7 @@ class OrderInquiryHandoverResend:
         return out
 
     @staticmethod
-    def _lines(rows, selected_ids, notes) -> List[Dict[str, Any]]:
+    def _lines(rows, selected_ids, notes, linked) -> List[Dict[str, Any]]:
         """Every open row of a single OI for the preview's ticks. `sent_at`: the newest
         earlier handover email of this OI whose body names the row's item code (owner, 16
         Oct: "the first 2 lines were sent in the previous confirm"). A hint, not a lock."""
@@ -188,7 +188,8 @@ class OrderInquiryHandoverResend:
                 {
                     "row_id": str(row.id),
                     "item_code": row.item_code,
-                    "qty": str(row.qty),
+                    # The open remainder, the same quantity the email asks for (SF3).
+                    "qty": str(Decimal(str(row.qty)) - linked.get(str(row.id), Decimal("0"))),
                     "location": row.stock_location,
                     "delivery_date": row.delivery_date,
                     "selected": str(row.id) in selected_ids,
@@ -196,6 +197,11 @@ class OrderInquiryHandoverResend:
                 }
             )
         return out
+
+    def _linked(self, rows) -> Dict[str, Decimal]:
+        from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+        return ProjectOrderInquiryService(self.db)._linked_qty_by_row([str(r.id) for r in rows])
 
     def _plan(
         self,
@@ -268,7 +274,11 @@ class OrderInquiryHandoverResend:
                 last_sent=last_sent.get(str(inquiry.id)),
                 attachments=list(context["handover"].get("excel_files") or []),
                 # The ticks are offered for one OI only; a bulk send takes every open row.
-                lines=self._lines(open_rows, selected, inquiry_notes) if single else [],
+                lines=(
+                    self._lines(open_rows, selected, inquiry_notes, self._linked(open_rows))
+                    if single
+                    else []
+                ),
             )
             emails.append(email)
         return {
@@ -294,11 +304,14 @@ class OrderInquiryHandoverResend:
 
         automation, sendable, skipped = self._plan(inquiry_ids, actor_user_id, row_ids)
         sent = 0
-        for inquiry, context, _line_count, _recipients, _open_rows, picked in sendable:
+        for inquiry, context, _line_count, _recipients, open_rows, picked in sendable:
             try:
-                # Stored only now, for an OI that has someone to send to (review S2); with
-                # lines ticked the workbook carries just those lines.
-                store_handover_excel(self.db, context, [str(inquiry.id)], row_ids=picked)
+                # Stored only now, for an OI that has someone to send to (review S2). The
+                # workbook carries exactly the open lines this email names, ticked or all
+                # (crew ruling (b), 16 Oct): never a cancelled or placed row purchasing could
+                # read as something to order. The confirm email keeps the whole-OI workbook.
+                emailed = picked if picked is not None else [str(r.id) for r in open_rows]
+                store_handover_excel(self.db, context, [str(inquiry.id)], row_ids=emailed)
                 match = automation_triggers.TriggerMatch(
                     context=context, source_kind=SOURCE_KIND, source_id=str(inquiry.id)
                 )

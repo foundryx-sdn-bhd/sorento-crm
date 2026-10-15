@@ -47,7 +47,10 @@ automation_run / notification row, and there was no way to send the handover aga
     lines; Send waits for at least one. A line that an earlier handover email of this OI names
     (its item code in that email's body) reads "sent DD/MM": a hint, still tickable. A bulk send
     takes every open line. `row_ids` with more than one OI, an empty list, or a line that is not
-    an open line of that OI is 422.
+    an open line of that OI is 422. Crew ruling (b), 16 Oct: the resend's workbook ALWAYS holds
+    exactly the open lines its email names (all ticked, some ticked, or a bulk send), never a
+    cancelled or placed row; the automatic confirm email keeps the whole-OI workbook. The tick
+    list shows a partly linked line's open remainder, the quantity the email asks for.
 11. Review hardening (Excel slice): the workbook render runs in a SAVEPOINT so a DB error in it
     never poisons the session the email goes on (B1); a confirm stores the workbook only when an
     enabled automation will send it, and a resend only for an OI that has recipients (S2).
