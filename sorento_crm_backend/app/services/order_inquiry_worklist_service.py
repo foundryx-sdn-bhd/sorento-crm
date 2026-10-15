@@ -1584,6 +1584,15 @@ class OrderInquiryWorklistService:
         anchor_headline_by_id = self._anchor_headline_by_id(rows, links)
         host_changes_by_row_id = self._host_changes_for_rows(rows, bundle_map)
         raise_events_by_row = self._raise_events_by_row(rows)
+        # AC-RR-6: one query for every PO line on the page that has an open SPO chained from it.
+        blocked = ProjectOrderInquiryService(self.db).po_lines_with_open_chained_spo(
+            [
+                link.get("po_line_id")
+                for row_links in links.values()
+                for link in row_links
+                if link.get("received") and link.get("po_line_id")
+            ]
+        )
         return {
             "data": [
                 self._serialize(
@@ -1597,6 +1606,7 @@ class OrderInquiryWorklistService:
                     host_changes_by_row_id,
                     suggested_links,
                     raise_events_by_row,
+                    blocked,
                 )
                 for row in rows
             ],
@@ -2218,6 +2228,7 @@ class OrderInquiryWorklistService:
         host_changes_by_row_id: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         suggested_links: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         raise_events_by_row: Optional[Dict[str, Dict[str, Any]]] = None,
+        blocked: Optional[set] = None,
     ) -> Dict[str, Any]:
         line_flow = (flow or {}).get(row.so_line_id, {})
         row_links = (links or {}).get(row.id, [])
@@ -2229,8 +2240,28 @@ class OrderInquiryWorklistService:
         linked_qty = sum(
             (_dec(link["qty"]) for link in row_links if not link.get("derived")), _ZERO
         )
+        # OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for -
+        # `order_inquiry_reserve_service._requestable`, worked off the links already
+        # loaded: qty less the OPEN links, the reserve links and the bundle (a link on a
+        # fully received document does not count against it).
+        open_linked = sum(
+            (
+                _dec(link["qty"])
+                for link in row_links
+                if not link.get("derived")
+                and (not link.get("received") or link.get("po_line_id") in (blocked or ()))
+            ),
+            _ZERO,
+        )
+        requestable = (
+            _dec(row.qty)
+            - open_linked
+            - _dec(getattr(row, "reserved_qty", None))
+            - _dec(row.bundled_qty)
+        )
         return {
             "id": row.id,
+            "reserve_requestable_qty": float(max(requestable, _ZERO)),
             "inquiry_no": row.inquiry_no,
             "so_date": row.so_date,
             "so_number": row.so_number,

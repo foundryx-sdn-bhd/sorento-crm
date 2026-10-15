@@ -5,6 +5,7 @@
     "projects.so_divergences",
     "projects.order_inquiry_links",
     "projects.order_inquiry_suggested_links",
+    "projects.order_inquiry_released_links",
     "projects.order_inquiry_reserve_events",
     "projects.order_inquiry_reserve_request_rows",
     "projects.order_inquiry_reserve_requests",

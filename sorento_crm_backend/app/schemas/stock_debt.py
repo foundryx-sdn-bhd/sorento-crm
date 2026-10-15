@@ -334,17 +334,10 @@ class StockDebtCell(BaseModel):
     projection: Optional[StockDebtProjection] = None
 
 
-class StockDebtExportIn(BaseModel):
-    """The export route's body (AC-12): every list filter except `page`/`limit`, plus the
-    workbook `split`. Every field optional/defaulted so `{"split": "none"}` alone is a
-    valid request - the same shape `list_stock_debt`'s own query params default to.
-
-    `date_from`/`date_to` replace `cutoff` and `supplier_ids` replaces `supplier_id`
-    (R14/R15): both are REMOVED, not aliased - a caller still sending the old names sends
-    them into nothing, exactly as `group` sends into a param the export never reads (R16
-    leaves `group` itself alone on the BACKEND; the export body's own field is unaffected
-    by that ruling and stays for parity with `list()`'s own signature).
-    """
+class StockDebtFilters(BaseModel):
+    """Every list filter except `page`/`limit`: the board's own current filters. The export
+    body adds `split` to it; a snapshot stores it as taken. Every field
+    optional/defaulted, the same shape `list_stock_debt`'s own query params default to."""
 
     query: Optional[str] = None
     group: Optional[str] = None
@@ -355,10 +348,11 @@ class StockDebtExportIn(BaseModel):
     date_to: Optional[DateType] = None
     supplier_ids: List[str] = []
     book: Book = "all"
-    split: ExportSplit = "none"
-    show_aux: bool = False
     #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
     projected: bool = False
+    #: The workbook's auxiliary columns (the board's "Show more" toggle). Not a filter, but
+    #: a snapshot keeps it so its page shows the columns the board was showing.
+    show_aux: bool = False
 
     @field_validator("location", "exclude_location", mode="before")
     @classmethod
@@ -369,3 +363,17 @@ class StockDebtExportIn(BaseModel):
         if isinstance(value, str):
             return [value]
         return value
+
+
+class StockDebtExportIn(StockDebtFilters):
+    """The export route's body (AC-12): the list filters plus the workbook `split`, so
+    `{"split": "none"}` alone is a valid request.
+
+    `date_from`/`date_to` replace `cutoff` and `supplier_ids` replaces `supplier_id`
+    (R14/R15): both are REMOVED, not aliased - a caller still sending the old names sends
+    them into nothing, exactly as `group` sends into a param the export never reads (R16
+    leaves `group` itself alone on the BACKEND; the export body's own field is unaffected
+    by that ruling and stays for parity with `list()`'s own signature).
+    """
+
+    split: ExportSplit = "none"

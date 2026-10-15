@@ -47,10 +47,10 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import event, func, or_, tuple_
+from sqlalchemy import and_, event, func, or_, tuple_
 from sqlalchemy.orm import Session
 
 from app.models.base import company_scope, get_company_scope
@@ -98,6 +98,7 @@ from app.models.project_so import (
     OrderInquiry,
     OrderInquiryLink,
     OrderInquiryRaise,
+    OrderInquiryReleasedLink,
     OrderInquiryRow,
     OrderInquirySuggestedLink,
     ProjectSalesOrder,
@@ -3595,8 +3596,20 @@ class ProjectOrderInquiryService:
                 # what `pair_needs` read, never a second, re-derived capacity
                 # query (`_book_targets_map` is retired).
                 book_targets_by_line: Dict[str, List[Tuple[str, dict]]] = {}
+                # OI-RESERVE-RECEIVED: targets a row released to a CS reserve are never
+                # re-paired nor displaced onto.
+                excluded: Dict[str, set] = {}
+                for row_id_, po_id_, spo_id_ in self.db.query(
+                    OrderInquiryReleasedLink.row_id,
+                    OrderInquiryReleasedLink.po_line_id,
+                    OrderInquiryReleasedLink.spo_allocation_id,
+                ).filter(OrderInquiryReleasedLink.row_id.in_([n.key for n in needs])):
+                    excluded.setdefault(str(row_id_), set()).update(
+                        str(t) for t in (po_id_, spo_id_) if t
+                    )
                 links_by_key, _not_linkable = pair_needs(
                     self.db, needs, bought_rows, book_targets_out=book_targets_by_line,
+                    excluded_targets=excluded,
                 )
 
                 # D3: a need `pair_needs` could not fully satisfy might be blocked
@@ -3631,7 +3644,9 @@ class ProjectOrderInquiryService:
                     # Capacity has moved - the SAME needs, re-paired, is the only way
                     # the freed quantity actually reaches the book row (never a
                     # hand-written write here, which would be a second pairing rule).
-                    links_by_key, _not_linkable = pair_needs(self.db, needs, bought_rows)
+                    links_by_key, _not_linkable = pair_needs(
+                        self.db, needs, bought_rows, excluded_targets=excluded
+                    )
 
                 touched: List[OrderInquiryRow] = []
                 for row_id, held in links_by_key.items():
@@ -3851,7 +3866,18 @@ class ProjectOrderInquiryService:
                 .scalar()
             )
 
-        used_now = _ZERO
+        # OI-RESERVE-RECEIVED: quantity released to a CS reserve stays used up.
+        released_qty = _dec(
+            self.db.query(func.coalesce(func.sum(OrderInquiryReleasedLink.qty), 0))
+            .filter(
+                or_(
+                    OrderInquiryReleasedLink.po_line_id == target_id,
+                    OrderInquiryReleasedLink.spo_allocation_id == target_id,
+                )
+            )
+            .scalar()
+        )
+        used_now = released_qty
         protected_qty = _ZERO
         displaceable: List[Tuple[OrderInquiryLink, OrderInquiryRow]] = []
         for link in links:
@@ -3881,7 +3907,7 @@ class ProjectOrderInquiryService:
                 continue
             displaceable.append((link, row))
 
-        max_gain = min(amount_needed, capacity - protected_qty)
+        max_gain = min(amount_needed, capacity - protected_qty - released_qty)
         if max_gain <= _ZERO:
             return _ZERO, []
         to_free = max_gain - (capacity - used_now)
@@ -8394,6 +8420,28 @@ class ProjectOrderInquiryService:
             .group_by(OrderInquiryLink.spo_allocation_id)
             .all()
         }
+        # OI-RESERVE-RECEIVED (AC-RR-30): a received link released to a CS reserve keeps
+        # its quantity used up on the target - the stock went to other orders. The row's
+        # own sums never read this table; only the per-target tally does.
+        for target_id, qty in (
+            self.db.query(
+                OrderInquiryReleasedLink.po_line_id, func.sum(OrderInquiryReleasedLink.qty)
+            )
+            .filter(OrderInquiryReleasedLink.po_line_id.isnot(None))
+            .group_by(OrderInquiryReleasedLink.po_line_id)
+            .all()
+        ):
+            by_po[str(target_id)] = by_po.get(str(target_id), _ZERO) + _dec(qty)
+        for target_id, qty in (
+            self.db.query(
+                OrderInquiryReleasedLink.spo_allocation_id,
+                func.sum(OrderInquiryReleasedLink.qty),
+            )
+            .filter(OrderInquiryReleasedLink.spo_allocation_id.isnot(None))
+            .group_by(OrderInquiryReleasedLink.spo_allocation_id)
+            .all()
+        ):
+            by_spo[str(target_id)] = by_spo.get(str(target_id), _ZERO) + _dec(qty)
         self._linked_by_target_cache = (by_po, by_spo)
         return by_po, by_spo
 
@@ -11634,6 +11682,16 @@ class ProjectOrderInquiryService:
         for link, _row, _line in links:
             key = str(link.po_line_id)
             claimed[key] = claimed.get(key, _ZERO) + _dec(link.qty)
+        # AC-RR-34: a line whose received link was released to a CS reserve stays claimed.
+        for line_id, qty in (
+            self.db.query(
+                OrderInquiryReleasedLink.po_line_id, func.sum(OrderInquiryReleasedLink.qty)
+            )
+            .filter(OrderInquiryReleasedLink.po_line_id.in_(list(location_of)))
+            .group_by(OrderInquiryReleasedLink.po_line_id)
+            .all()
+        ):
+            claimed[str(line_id)] = claimed.get(str(line_id), _ZERO) + _dec(qty)
 
         moved = 0
         touched: List[OrderInquiryRow] = []
@@ -11788,8 +11846,115 @@ class ProjectOrderInquiryService:
             self._refresh_inquiry_states({row.order_inquiry_id for row in rows})
         return len(rows)
 
+    def po_lines_with_open_chained_spo(self, po_line_ids: Sequence[str]) -> set:
+        """OI-RESERVE-RECEIVED (AC-RR-6, lane-local): of these PO lines, the ids that still
+        have an OPEN shipping order chaining from them (`from_po_number` AND
+        `from_po_line_ref` name the line): the line reads closed but its goods have not
+        landed. One query for the whole set."""
+        wanted = [str(i) for i in po_line_ids if i]
+        if not wanted:
+            return set()
+        rows = (
+            self.db.query(PurchaseOrderLine.id)
+            .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+            .join(
+                SPOAllocation,
+                and_(
+                    SPOAllocation.from_po_number == PurchaseOrder.po_number,
+                    SPOAllocation.from_po_line_ref == PurchaseOrderLine.source_ref,
+                    SPOAllocation.company_id == PurchaseOrderLine.company_id,
+                ),
+            )
+            .outerjoin(
+                InboundShipment, InboundShipment.id == SPOAllocation.inbound_shipment_id
+            )
+            .filter(
+                PurchaseOrderLine.id.in_(wanted),
+                PurchaseOrderLine.source_ref.isnot(None),
+                PurchaseOrderLine.source_ref != "",
+                *spo_supply.open_incoming_clauses(),
+                *spo_supply.visible_line_clauses(),
+            )
+            .distinct()
+            .all()
+        )
+        return {str(line_id) for (line_id,) in rows}
+
+    def received_links_of(self, row_id: str) -> List[OrderInquiryLink]:
+        """The row's PO/SPO links that name a FULLY RECEIVED document - the one "received"
+        test (`_received_documents_for`) the worklist's received pill also states."""
+        links = [
+            link
+            for link in self._links_of(row_id)
+            if link.reserve_request_row_id is None
+        ]
+        received = self._received_documents_for(links)
+        blocked = self.po_lines_with_open_chained_spo(
+            [link.po_line_id for link in links if link.po_line_id]
+        )
+        return [
+            link
+            for link in links
+            if str(link.id) in received and str(link.po_line_id or "") not in blocked
+        ]
+
+    def release_received_links(
+        self,
+        row: OrderInquiryRow,
+        *,
+        reserve_request_row_id: str,
+        reserved_qty: Decimal,
+        location: str,
+        actor_user_id: Optional[str],
+    ) -> List[OrderInquiryReleasedLink]:
+        """OI-RESERVE-RECEIVED: give up EVERY received link on the row for a CS reserve.
+
+        Each link is recorded in `order_inquiry_released_links` (so the target stays used
+        up), then deleted the way an unlink does, with its own note. Open links stay."""
+        # Locked, so a concurrent unlink cannot leave a released row for a link that is gone.
+        # Row first, then its links: the same order an unlink takes.
+        self.db.query(OrderInquiryRow.id).filter(
+            OrderInquiryRow.id == row.id
+        ).with_for_update().all()
+        self.db.query(OrderInquiryLink.id).filter(
+            OrderInquiryLink.row_id == row.id
+        ).with_for_update().all()
+        links = self.received_links_of(row.id)
+        if not links:
+            return []
+        released: List[OrderInquiryReleasedLink] = []
+        for link in links:
+            entry = OrderInquiryReleasedLink(
+                id=str(uuid.uuid4()),
+                company_id=row.company_id,
+                row_id=row.id,
+                reserve_request_row_id=reserve_request_row_id,
+                po_line_id=link.po_line_id,
+                spo_allocation_id=link.spo_allocation_id,
+                document=link.document,
+                qty=link.qty,
+                released_by=actor_user_id,
+            )
+            self.db.add(entry)
+            released.append(entry)
+        self.db.flush()
+
+        def _stamp(link: OrderInquiryLink) -> str:
+            doc = link.document or "document"
+            return (
+                f"Released {doc} (received, stock used by other orders) "
+                f"for CS reserve {_qty_str(reserved_qty)} @ {location}"
+            )
+
+        self._remove_links(row, links, stamp_for=_stamp)
+        return released
+
     def _remove_links(
-        self, row: OrderInquiryRow, links: Sequence[OrderInquiryLink]
+        self,
+        row: OrderInquiryRow,
+        links: Sequence[OrderInquiryLink],
+        *,
+        stamp_for: Optional[Callable[[OrderInquiryLink], str]] = None,
     ) -> None:
         """Delete these links and the audit claim each one put up.
 
@@ -11802,6 +11967,8 @@ class ProjectOrderInquiryService:
         for link in links:
             document = link.document
             stamp = f"Unlinked from {document}" if document else "Unlinked"
+            if stamp_for is not None:
+                stamp = stamp_for(link)
             row.note = f"{row.note}; {stamp}" if row.note else stamp
             # By ID, not by identity. `delete_own_claim` matches on (SO number, PO number,
             # item) and would have taken down the claim behind a SIBLING link on the same
