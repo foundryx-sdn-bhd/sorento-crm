@@ -11862,6 +11862,7 @@ class ProjectOrderInquiryService:
                 and_(
                     SPOAllocation.from_po_number == PurchaseOrder.po_number,
                     SPOAllocation.from_po_line_ref == PurchaseOrderLine.source_ref,
+                    SPOAllocation.company_id == PurchaseOrderLine.company_id,
                 ),
             )
             .outerjoin(
