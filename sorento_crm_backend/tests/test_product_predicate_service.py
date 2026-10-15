@@ -683,9 +683,11 @@ def test_resolve_product_set_never_returns_a_silent_zero(db):
     `resolve_product_set` must carry that honesty through rather than answering a
     silent, indistinguishable-from-real zero.
     """
-    out = _totals(db, {"certificate": True}, ["water tap"])
+    # "water tap" names the Tap class since chat fix PR-A moved the class words into the
+    # registry, so the probe is a phrase no class, type or brand holds.
+    out = _totals(db, {"certificate": True}, ["zorbex gizmo"])
     assert out["qualifying_total"] == 0
-    assert "water tap" in out["unrecognized_terms"]
+    assert "zorbex gizmo" in out["unrecognized_terms"]
 
 
 def test_filter_specs_membership_accepts_product_type_and_brand(db):

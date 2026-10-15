@@ -112,7 +112,7 @@ def test_ac_s1_1_product_kind_compiles():
 
 def test_ac_s1_1_every_shipped_rule_compiles_from_its_builder():
     """The rewritten `_rules_from_shipped_tables()` returns builder-only rules,
-    203 over 49 keys, no brand - and every one of them compiles. (202 in the appendix
+    204 over 50 keys, no brand - and every one of them compiles. (202 in the appendix
     as first written; fix round 1 added Length rule 4, "the number between LENGTH and
     MM".)"""
     from app.services.product_spec_registry import _rules_from_shipped_tables
@@ -121,8 +121,8 @@ def test_ac_s1_1_every_shipped_rule_compiles_from_its_builder():
     shipped = _rules_from_shipped_tables()
     assert "brand" not in shipped
     total = sum(len(rules) for rules in shipped.values())
-    assert len(shipped) == 49
-    assert total == 203
+    assert len(shipped) == 50
+    assert total == 204
 
     for spec_key, rules in shipped.items():
         for rule in rules:
@@ -981,12 +981,19 @@ def _fix_no_hose_on_a_tub(diff):
     )
 
 
+def _pr_a_has_massage_is_a_new_key(diff):
+    """Chat fix PR-A S3: `has_massage` is a key the legacy rules never had. It appears, true,
+    where a tub's catalogue text names massage, whirlpool, jacuzzi or air bubble; nothing else."""
+    return diff["key"] == "has_massage" and diff["before"] is None and diff["after"] is True
+
+
 _D5_GROUPS = (
     ("D5 1: two-digit ways and spray functions", _group_two_digit_counts),
     ("D5 2: power needs a number standing on its own", _group_power_stands_alone),
     ("D5 3: a hyphen, a double space or nothing between a phrase's words", _group_phrase_gap),
     ("D5 4: the flyer's labelled L, W, H", _group_flyer_labelled_size),
     ("Fix round 1: no hose length on a bathtub or jacuzzi (the old value was wrong)", _fix_no_hose_on_a_tub),
+    ("Chat fix PR-A S3: has_massage, a new yes/no key", _pr_a_has_massage_is_a_new_key),
 )
 
 

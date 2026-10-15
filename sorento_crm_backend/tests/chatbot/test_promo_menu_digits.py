@@ -330,6 +330,17 @@ def test_answering_the_which_question_closes_it_and_a_later_digit_never_merges_s
     from app.services.chatbot.lanes.business.services import _resolve_entity
 
     _world(session_factory, basin_promo=False)
+    # Chat fix PR-A (AC-A10): the menu offers only a choice a promotion holds, so basin cabinet
+    # holds one that no level this contact has can see: the menu still offers it, and the pick
+    # still finds "No current promotion" for the contact.
+    db = session_factory()
+    std = db.query(PromotionType).filter_by(type_code="standard").one()
+    basin = product(db, company_id=DEFAULT_COMPANY_ID, code="ZZTBASINOTHER")
+    basin.brand_id = db.query(Brand).filter_by(brand_name="Sorento").first().id
+    db.add(ProductSpecifications(id=str(uuid.uuid4()), product_id=basin.id, values={"class": {"value": "Bathroom Furniture"}, "furniture_type": {"value": "basin_cabinet"}}))
+    db.flush()
+    _promo(db, "ZZT PROMO BASIN OTHER LEVEL", std, basin, levels=["zzt_other_level"])
+    db.commit()
     _mcp(monkeypatch, session_factory)
     names = ["Sorento Office", "Sorento Dealer", "End User"]
     services = ResolveGateServices(
