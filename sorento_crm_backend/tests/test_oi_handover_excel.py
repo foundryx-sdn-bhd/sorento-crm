@@ -33,9 +33,43 @@ def _drain_on_test_connection(monkeypatch, world) -> None:
     )
 
 
-@pytest.fixture()
+def _enabled_handover(world) -> None:
+    """An enabled handover automation: the workbook is stored only when one will send it."""
+    import uuid
+
+    from app.models.automation import Automation
+    from app.models.email_template import EmailTemplate
+
+    template = EmailTemplate(
+        id=str(uuid.uuid4()), code=f"zzt-oix-{uuid.uuid4().hex[:6]}", name="ZZT OIX",
+        subject="OI: {{ handover.subject_scope }}", body_html="<p>x</p>", is_active=True,
+    )
+    world.db.add(template)
+    world.db.flush()
+    world.db.add(
+        Automation(
+            id=str(uuid.uuid4()), name="ZZT OIX handover", enabled=True,
+            trigger_type="order_inquiry_handover", trigger_config={}, action_type="send_email",
+            email_template_id=str(template.id), recipient_config={"include_actor": True},
+            group_matches=False, schedule_type="manual", timezone="Asia/Kuala_Lumpur",
+        )
+    )
+    world.db.commit()
+
+
+def _cells(data: bytes) -> set:
+    import io
+
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(io.BytesIO(data))
+    return {str(v) for ws in workbook for row in ws.iter_rows(values_only=True) for v in row if v}
+
+
+@pytest.fixture(autouse=True)
 def stored(monkeypatch):
-    """Every upload the handover makes, kept in memory instead of S3/R2."""
+    """Every upload the handover makes, kept in memory instead of S3/R2 (autouse: no test
+    here may reach a real bucket, whatever `.env` it runs against)."""
     uploads: list[dict] = []
 
     class _Backend:
@@ -52,6 +86,7 @@ def test_confirm_handover_attaches_the_oi_excel(api, monkeypatch, stored):
     _register(world)
     calls = _captured_dispatches(monkeypatch)
     _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
 
     fixture = _raise_one_row(api, qty="10")
 
@@ -64,7 +99,7 @@ def test_confirm_handover_attaches_the_oi_excel(api, monkeypatch, stored):
     assert len(excel) == 1, call["context"].get("email_attachments")
     assert excel[0]["optional"] is True
     [upload] = [u for u in stored if u["key"] == excel[0]["storage_key"]]
-    assert upload["bytes"][:2] == b"PK"  # an xlsx is a zip
+    assert fixture["row"].item_code in _cells(upload["bytes"])  # this OI's own rows (B2)
 
 
 def test_confirm_handover_still_sends_when_the_excel_cannot_be_stored(api, monkeypatch):
@@ -78,10 +113,46 @@ def test_confirm_handover_still_sends_when_the_excel_cannot_be_stored(api, monke
 
     monkeypatch.setattr("app.services.storage_router.get_backend", lambda provider=None: _Down())
     _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
 
     _raise_one_row(api, qty="10")
 
     [call] = _handover_calls(calls)
     assert not any(
         a["filename"].endswith(".xlsx") for a in call["context"].get("email_attachments", [])
+    )
+
+
+def test_a_database_error_in_the_excel_still_sends_the_email(api, monkeypatch):
+    """Review B1: the render runs in a savepoint, so an SQL error inside it leaves the drain
+    session usable and the email still dispatches (and can still query)."""
+    import sqlalchemy as sa
+
+    _client, world = api
+    _register(world)
+    _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
+    dispatched: list = []
+
+    def _export_fails(self, **_kw):
+        self.db.execute(sa.text("SELECT 1/0"))
+
+    def _dispatch_queries(self, trigger_type, *, context, source_kind, source_id):
+        self.db.execute(sa.text("SELECT 1"))  # the real dispatch reads the automations
+        dispatched.append(context)
+        return {"trigger_type": trigger_type, "fired": 0, "results": []}
+
+    monkeypatch.setattr(
+        "app.services.order_inquiry_worklist_service.OrderInquiryWorklistService.export_xlsx",
+        _export_fails,
+    )
+    monkeypatch.setattr(
+        "app.services.automation_service.AutomationService.dispatch_event", _dispatch_queries
+    )
+
+    _raise_one_row(api, qty="10")
+
+    assert len(dispatched) == 1
+    assert not any(
+        a["filename"].endswith(".xlsx") for a in dispatched[0].get("email_attachments", [])
     )

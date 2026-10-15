@@ -383,8 +383,10 @@ def test_partly_linked_row_asks_only_for_its_open_remainder(rs, monkeypatch):
 # ------------------------------------------------------------------------- OI Excel
 
 
-@pytest.fixture()
+@pytest.fixture(autouse=True)
 def stored(monkeypatch):
+    """Autouse (review S1): no test here may reach a real bucket, whatever `.env` it runs
+    against."""
     uploads: list[dict] = []
 
     class _Backend:
@@ -400,7 +402,7 @@ def test_resend_attaches_the_oi_excel_and_preview_names_it_without_storing(rs, s
     client, world = rs
     _automation(world)
     inquiry = _oi(world)
-    _line(world, inquiry)
+    row = _line(world, inquiry)
     world.db.refresh(inquiry)
     name = f"{inquiry.inquiry_no}.xlsx"
 
@@ -412,4 +414,119 @@ def test_resend_attaches_the_oi_excel_and_preview_names_it_without_storing(rs, s
     [note] = _notifications(world, inquiry.id)
     [excel] = [a for a in note.data["extra_attachments"] if a["filename"] == name]
     [upload] = [u for u in stored if u["key"] == excel["storage_key"]]
-    assert upload["bytes"][:2] == b"PK"
+    import io
+
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(io.BytesIO(upload["bytes"]))
+    cells = {str(v) for ws in workbook for r in ws.iter_rows(values_only=True) for v in r if v}
+    assert row.item_code in cells  # this OI's own rows (review B2)
+
+
+# ------------------------------------------------------------------------- pick lines (owner, 16 Oct)
+
+
+def _three_lines(world):
+    inquiry = _oi(world)
+    a = _line(world, inquiry, item="ZZT-PICK-A")
+    b = _line(world, inquiry, item="ZZT-PICK-B")
+    c = _line(world, inquiry, item="ZZT-PICK-C")
+    return inquiry, a, b, c
+
+
+def test_single_preview_lists_every_open_line_and_honours_the_ticks(rs):
+    client, world = rs
+    _automation(world)
+    inquiry, a, b, c = _three_lines(world)
+
+    full = _ok(client.post(PREVIEW, json={"inquiry_ids": [inquiry.id]}))["emails"][0]
+    assert {line["row_id"] for line in full["lines"]} == {a.id, b.id, c.id}
+    assert all(line["selected"] for line in full["lines"])
+    [line_c] = [line for line in full["lines"] if line["row_id"] == c.id]
+    assert line_c["item_code"] == "ZZT-PICK-C" and line_c["sent_at"] is None
+
+    picked = _ok(
+        client.post(PREVIEW, json={"inquiry_ids": [inquiry.id], "row_ids": [c.id]})
+    )["emails"][0]
+    assert picked["line_count"] == 1
+    assert "ZZT-PICK-C" in picked["body_html"]
+    assert "ZZT-PICK-A" not in picked["body_html"] and "ZZT-PICK-B" not in picked["body_html"]
+    assert {line["row_id"] for line in picked["lines"]} == {a.id, b.id, c.id}
+    assert [line["row_id"] for line in picked["lines"] if line["selected"]] == [c.id]
+
+
+def test_send_with_ticks_mails_and_attaches_only_the_ticked_line(rs, stored):
+    client, world = rs
+    _automation(world)
+    inquiry, a, b, c = _three_lines(world)
+
+    result = _ok(client.post(SEND, json={"inquiry_ids": [inquiry.id], "row_ids": [c.id]}))
+    assert result["emails_sent"] == 1
+    [note] = _notifications(world, inquiry.id)
+    assert "ZZT-PICK-C" in note.data["body_html"]
+    assert "ZZT-PICK-A" not in note.data["body_html"]
+
+    import io
+
+    import openpyxl
+
+    [upload] = stored
+    workbook = openpyxl.load_workbook(io.BytesIO(upload["bytes"]))
+    cells = {str(v) for ws in workbook for row in ws.iter_rows(values_only=True) for v in row if v}
+    assert "ZZT-PICK-C" in cells
+    assert "ZZT-PICK-A" not in cells and "ZZT-PICK-B" not in cells
+
+
+def test_ticks_are_refused_outside_one_open_oi(rs):
+    client, world = rs
+    _automation(world)
+    inquiry, a, _b, c = _three_lines(world)
+    other = _oi(world)
+    other_row = _line(world, other)
+    closed = _line(world, inquiry, state=INQUIRY_CANCELLED)
+
+    for body in (
+        {"inquiry_ids": [inquiry.id, other.id], "row_ids": [c.id]},  # ticks need one OI
+        {"inquiry_ids": [inquiry.id], "row_ids": []},  # at least one line
+        {"inquiry_ids": [inquiry.id], "row_ids": [other_row.id]},  # another OI's line
+        {"inquiry_ids": [inquiry.id], "row_ids": [closed.id]},  # not open
+    ):
+        for url in (PREVIEW, SEND):
+            response = client.post(url, json=body)
+            assert response.status_code == 422, (url, body, response.text)
+    assert _notifications(world, inquiry.id) == []
+
+
+def test_lines_already_in_an_earlier_handover_are_marked_sent(rs):
+    client, world = rs
+    _automation(world)
+    inquiry, a, b, c = _three_lines(world)
+
+    from app.services.automation_service import AutomationService
+
+    AutomationService(world.db).dispatch_event(
+        "order_inquiry_handover",
+        context={
+            "handover": {
+                "subject_scope": "X",
+                "headline": "ORDER",
+                "orders": [],
+                "lines": [{"item_code": "ZZT-PICK-A"}, {"item_code": "ZZT-PICK-B"}],
+            },
+            "actor": None,
+            "today": "13/10/2026",
+        },
+        source_kind="order_inquiry_handover",
+        source_id=inquiry.id,
+    )
+    world.db.commit()
+
+    lines = {
+        line["row_id"]: line
+        for line in _ok(client.post(PREVIEW, json={"inquiry_ids": [inquiry.id]}))["emails"][0][
+            "lines"
+        ]
+    }
+    assert lines[a.id]["sent_at"] and lines[b.id]["sent_at"]
+    assert lines[c.id]["sent_at"] is None
+    assert all(line["selected"] for line in lines.values())  # marked, still ticked
