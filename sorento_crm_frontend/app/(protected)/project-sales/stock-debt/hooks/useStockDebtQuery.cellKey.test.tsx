@@ -66,6 +66,7 @@ describe('Location mode is part of the query keys (AC-R8)', () => {
   });
 
   it('the list fetches again when only the mode flips', async () => {
+    getStockDebtList.mockClear();
     getStockDebtList.mockResolvedValue({ data: [] });
     const { rerender } = renderHook(
       ({ mode }: { mode: 'include' | 'exclude' }) =>
