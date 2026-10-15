@@ -58,7 +58,7 @@
  *           pagination: { total, page, limit },
  *           months:    ['YYYY-MM', ...],   the column axis
  *           tba_month: 'YYYY-MM',          the policy's `tba_date_from`, by month
- *           locations:    ['BB', ...]         what the flag admits, for the select
+ *           locations: [{ id, code, name }]  the book's warehouses, for the Location select
  *           totals:    { months: { 'YYYY-MM': number, ... }, tba, undated,
  *                        unlocated, total }   over the WHOLE filtered set (AC-6)
  *           suppliers: [{ id, name }]      distinct last suppliers of the
@@ -202,7 +202,7 @@ export interface StockDebtListParams {
   supplierIds: string[];
   /** Location: repeatable warehouse ids; empty = every location. */
   locations?: string[];
-  /** `exclude` sends `exclude_location` instead of `group` ("all except ED"). Default include. */
+  /** `exclude` sends `exclude_location` instead of `location` ("all except X"). Default include. */
   locationsMode?: StockDebtLocationsMode;
   /** `YYYY-MM-DD`, or '' for no lower bound (R14, AC-1b). */
   dateFrom: string;

@@ -397,7 +397,8 @@ class StockDebtService:
         # off the SAME assignment, so the month figures it starts from are the page's.
         pool = (
             self._projection_series(
-                product_ids, warehouses, assignments, date_to=date_to
+                product_ids, warehouses, assignments, date_to=date_to,
+                location=location, exclude_location=exclude_location,
             )
             if projected
             else {}
@@ -601,7 +602,7 @@ class StockDebtService:
         pool = (
             self._projection_series(
                 [str(product.id)], warehouses, assignments, date_to=date_to,
-                keep_events=True,
+                keep_events=True, location=location, exclude_location=exclude_location,
             )[str(product.id)]
             if projected
             else None
@@ -2008,6 +2009,8 @@ class StockDebtService:
         *,
         date_to: Optional[date] = None,
         keep_events: bool = False,
+        location: Optional[Sequence[str]] = None,
+        exclude_location: Optional[Sequence[str]] = None,
     ) -> Dict[str, dict]:
         """STOCK-DEBT-PROJECTION: per product, the two month series `project_months` takes
         (`stock_debt_projection` states the rule; owner, 12 Oct 2026, option D).
@@ -2034,7 +2037,9 @@ class StockDebtService:
         Nothing here is written and nothing is assigned (R45).
         """
         as_of = date.today()
-        reserves = self._project_reserves()
+        reserves = self._narrow_locations(
+            self._project_reserves(), location, exclude_location
+        )
         outside = {wid: row for wid, row in reserves.items() if wid not in warehouses}
         walked = assignments
         pools = {

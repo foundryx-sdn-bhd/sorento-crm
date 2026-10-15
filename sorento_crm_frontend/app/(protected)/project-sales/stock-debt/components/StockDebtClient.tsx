@@ -274,16 +274,22 @@ export function StockDebtClient() {
   const tbaMonth = list.data?.tba_month ?? null;
   const suppliers = React.useMemo(() => list.data?.suppliers ?? [], [list.data]);
   const totals = list.data?.totals;
-  const locationOptions = React.useMemo(
-    () =>
-      (list.data?.locations ?? []).map((loc) => {
-        const name = (loc.name ?? '').trim();
-        const label =
-          name && name.toLowerCase() !== loc.code.toLowerCase() ? `${loc.code} (${name})` : loc.code;
-        return { value: loc.id, label };
-      }),
-    [list.data],
-  );
+  const facetLocations = React.useMemo(() => list.data?.locations ?? [], [list.data]);
+  const locationOptions = React.useMemo(() => {
+    const facet = facetLocations;
+    const options = facet.map((loc) => {
+      const name = (loc.name ?? '').trim();
+      const label =
+        name && name.toLowerCase() !== loc.code.toLowerCase() ? `${loc.code} (${name})` : loc.code;
+      return { value: loc.id, label };
+    });
+    // A pick the facet lacks (another book's warehouse) is labelled, never shown as its id.
+    const known = new Set(facet.map((loc) => loc.id));
+    for (const id of locations) {
+      if (!known.has(id)) options.push({ value: id, label: 'Unknown location' });
+    }
+    return options;
+  }, [facetLocations, locations]);
 
   // Saved views: the filters as one object, so a view applies them at once. The search box
   // is reset (no debounce) so the board does not flash the unfiltered list first.
