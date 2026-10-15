@@ -77,12 +77,14 @@ class OrderInquiryHandoverResend:
         return ordered
 
     def _context(
-        self, inquiry: OrderInquiry, actor_user_id: str
+        self, inquiry: OrderInquiry, actor_user_id: str, *, store_excel: bool
     ) -> Optional[Tuple[Dict[str, Any], int]]:
-        """`(context, line_count)` for one OI, or `None` when nothing is open."""
+        """`(context, line_count)` for one OI, or `None` when nothing is open. Built by the
+        same `build_handover_email` the automatic send uses; `store_excel=False` (preview)
+        names the OI Excel without rendering or storing it."""
         from app.services.project_order_inquiry_service import (
             ProjectOrderInquiryService,
-            _build_handover_context,
+            build_handover_email,
         )
 
         rows = (
@@ -115,16 +117,7 @@ class OrderInquiryHandoverResend:
             )
             for row in rows
         ]
-        attachments: Dict[str, List[Dict[str, Any]]] = {}
-        core_line_ids = [item["core_line_id"] for item in items if item.get("core_line_id")]
-        if core_line_ids:
-            try:
-                from app.services import so_line_attachments
-
-                attachments = so_line_attachments.handover_attachments(self.db, core_line_ids)
-            except Exception:  # noqa: BLE001 - files never stop the email, as on the automatic send
-                logger.exception("handover resend: could not load line attachments")
-        context, _source_id = _build_handover_context(items, attachments)
+        context, _source_id = build_handover_email(self.db, items, store_excel=store_excel)
         handover = context["handover"]
         handover["subject_scope"] = f"{handover['subject_scope']} (Resent)"
         handover["headline"] = (
@@ -168,7 +161,7 @@ class OrderInquiryHandoverResend:
             }
         return out
 
-    def _plan(self, inquiry_ids: Sequence[str], actor_user_id: str):
+    def _plan(self, inquiry_ids: Sequence[str], actor_user_id: str, *, store_excel: bool):
         """`(automation, sendable, skipped)`; sendable = `[(inquiry, context, line_count,
         recipients)]` in the order asked."""
         if not inquiry_ids:
@@ -179,7 +172,7 @@ class OrderInquiryHandoverResend:
         automation = handover_automation(self.db)
         sendable, skipped = [], []
         for inquiry in inquiries:
-            built = self._context(inquiry, actor_user_id)
+            built = self._context(inquiry, actor_user_id, store_excel=store_excel)
             if built is None:
                 skipped.append(_skip(inquiry, "nothing_open"))
                 continue
@@ -194,7 +187,7 @@ class OrderInquiryHandoverResend:
         return automation, sendable, skipped
 
     def preview(self, inquiry_ids: Sequence[str], *, actor_user_id: str) -> Dict[str, Any]:
-        automation, sendable, skipped = self._plan(inquiry_ids, actor_user_id)
+        automation, sendable, skipped = self._plan(inquiry_ids, actor_user_id, store_excel=False)
         last_sent = self._last_sent([str(inquiry.id) for inquiry, *_rest in sendable])
         emails = []
         for inquiry, context, line_count, recipients in sendable:
@@ -207,6 +200,7 @@ class OrderInquiryHandoverResend:
                 inquiry_count=1,
                 line_count=line_count,
                 last_sent=last_sent.get(str(inquiry.id)),
+                attachments=list(context["handover"].get("excel_files") or []),
             )
             emails.append(email)
         return {
@@ -223,7 +217,7 @@ class OrderInquiryHandoverResend:
         from app.services import automation_triggers
         from app.services.automation_service import AutomationService
 
-        automation, sendable, skipped = self._plan(inquiry_ids, actor_user_id)
+        automation, sendable, skipped = self._plan(inquiry_ids, actor_user_id, store_excel=True)
         sent = 0
         for inquiry, context, _line_count, _recipients in sendable:
             match = automation_triggers.TriggerMatch(

@@ -19,6 +19,8 @@ export interface HandoverResendEmail extends ParkedEmailPreview {
   inquiry_id: string;
   inquiry_no: string | null;
   last_sent: HandoverLastSent | null;
+  /** The OI Excel the send attaches (names only). */
+  attachments: string[];
 }
 
 export type HandoverResendSkipReason =

@@ -20,6 +20,19 @@ from .test_order_inquiry_handshake import _raise_one_row, api, world  # noqa: F4
 __all__ = ["api", "world"]
 
 
+def _drain_on_test_connection(monkeypatch, world) -> None:
+    """The post-commit drain opens its own `SessionLocal()`, which in production sees the
+    committed write. Here the write lives in the test's never-committed transaction, so the
+    drain's session is bound to that same connection (a savepoint) to read it."""
+    from sqlalchemy.orm import Session
+
+    connection = world.db.connection()
+    monkeypatch.setattr(
+        "app.database.SessionLocal",
+        lambda: Session(bind=connection, join_transaction_mode="create_savepoint"),
+    )
+
+
 @pytest.fixture()
 def stored(monkeypatch):
     """Every upload the handover makes, kept in memory instead of S3/R2."""
@@ -38,6 +51,7 @@ def test_confirm_handover_attaches_the_oi_excel(api, monkeypatch, stored):
     _client, world = api
     _register(world)
     calls = _captured_dispatches(monkeypatch)
+    _drain_on_test_connection(monkeypatch, world)
 
     fixture = _raise_one_row(api, qty="10")
 
@@ -63,6 +77,7 @@ def test_confirm_handover_still_sends_when_the_excel_cannot_be_stored(api, monke
             raise RuntimeError("storage down")
 
     monkeypatch.setattr("app.services.storage_router.get_backend", lambda provider=None: _Down())
+    _drain_on_test_connection(monkeypatch, world)
 
     _raise_one_row(api, qty="10")
 

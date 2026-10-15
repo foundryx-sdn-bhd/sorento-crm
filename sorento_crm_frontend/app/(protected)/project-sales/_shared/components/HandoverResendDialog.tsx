@@ -104,13 +104,20 @@ export function HandoverResendDialog({
       tabLabel={(email, index) =>
         emails[index]?.inquiry_no ?? `Email to ${email.to.name}`
       }
-      emailNote={(index) =>
-        emails[index] ? (
-          <p className="text-muted-foreground">
-            {lastSentText(emails[index].last_sent)}
-          </p>
-        ) : null
-      }
+      emailNote={(index) => {
+        const current = emails[index];
+        if (!current) return null;
+        return (
+          <>
+            <p className="text-muted-foreground">
+              {lastSentText(current.last_sent)}
+            </p>
+            {current.attachments?.length ? (
+              <p className="text-muted-foreground">{`Attached: ${current.attachments.join(', ')}`}</p>
+            ) : null}
+          </>
+        );
+      }}
     />
   );
 }

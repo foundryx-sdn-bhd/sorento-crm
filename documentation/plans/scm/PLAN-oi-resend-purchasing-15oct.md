@@ -1,7 +1,8 @@
 # PLAN: OI-RESEND-PURCHASING - "Send to purchasing" for an Order Inquiry (15 Oct)
 
-Status: Built, review fix round 1 done (PR #1714). Track: LEAD, cloud lane. Behaviour card answered by crew 15 Oct
-(Q2-Q4 as recommended); Q1 (attach the OI Excel) is with the owner, built as (a) no attachment.
+Status: Built, review fix round 1 done, Q1 (OI Excel) built (PR #1714). Track: LEAD, cloud lane. Behaviour
+card answered by crew 15 Oct (Q2-Q4 as recommended). Q1 owner ruling 16 Oct 00:10: "should attach the OI
+Excel just like a normal confirm action ... It should be the same function." (rule 9).
 
 ## Problem
 The "Order inquiry to purchasing" automation (trigger `order_inquiry_handover`) was disabled on prod
@@ -30,6 +31,15 @@ automation_run / notification row, and there was no way to send the handover aga
    `notification_deliveries` (source_kind `order_inquiry_handover_resend`, `sent_by` in data).
 8. Never stuck: a preview error toasts and closes; a send with a per-OI failure toasts and keeps the
    dialog open on the OIs that did not go.
+9. OI Excel (owner, 16 Oct): ONE build, `build_handover_email` (project_order_inquiry_service), serves
+   BOTH the automatic send after a confirm and Send to purchasing. It attaches each named OI's own
+   workbook (`OrderInquiryWorklistService.export_xlsx(inquiry_id=...)`, the Export Excel workbook,
+   file `<OI no>.xlsx`), stored under `exports/order-inquiry/handover/`, as an optional extra
+   attachment ahead of the SO-line files. Before this the automatic email did NOT carry the Excel
+   (SO-line files only); now it does. A workbook that cannot be rendered or stored is logged and left
+   out; the email still goes. The preview names the file ("Attached: ...") and stores nothing. The
+   dispatch differs only where it must: a confirm fires enabled automations (`dispatch_event`); Send
+   to purchasing runs the handover automation even when it is switched off (`send_match`).
 
 ## Contract
 - `POST /api/v1/project-sales/order-inquiries/handover-resend/preview` `{inquiry_ids}` ->
@@ -41,10 +51,12 @@ automation_run / notification row, and there was no way to send the handover aga
 ## Known limits
 - "Last sent" only finds an automatic email whose `source_id` is this OI; a write that touched several
   OIs files its one email under the first OI.
-- Q1 pending: attaching the OI Excel would render the workbook inside the send (follow-up switch).
+- The workbook is rendered and stored inside a confirm's post-commit drain (one per OI the write
+  touched), so a confirm takes that much longer; there is no worker hop.
 
 ## Evidence
-- Backend: `tests/test_oi_handover_resend.py` (11; 9 red first in cea18b69, 2 added in review), plus 7 handover suites
+- Backend: `tests/test_oi_handover_resend.py` (12; 9 red first in cea18b69, 3 added later) and
+  `tests/test_oi_handover_excel.py` (2, red first in 6f301737), plus the handover suites
   (164 passed) after the `_record_handover` split.
 - Frontend: `OrderInquiryHeadersList.handoverResend.test.tsx` (6); order-inquiries + _shared hooks +
   ParkedSendDialog vitest green.

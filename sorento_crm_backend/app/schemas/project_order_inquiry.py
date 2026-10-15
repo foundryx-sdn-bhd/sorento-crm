@@ -1632,6 +1632,8 @@ class HandoverResendEmailOut(ParkedEmailOut):
     inquiry_id: str
     inquiry_no: Optional[str] = None
     last_sent: Optional[HandoverLastSentOut] = None
+    #: The OI Excel the send attaches (names only; a preview stores nothing).
+    attachments: List[str] = []
 
 
 class HandoverResendSkipOut(BaseModel):

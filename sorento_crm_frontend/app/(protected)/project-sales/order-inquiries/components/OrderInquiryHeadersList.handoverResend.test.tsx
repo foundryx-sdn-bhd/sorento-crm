@@ -143,6 +143,7 @@ function email(id: string, no: string, lastSent: unknown = null) {
     subject: `OI: BRW-BB @ SO416690 (Resent) ${no}`,
     body_html: `<p>body-${no}</p>`,
     last_sent: lastSent,
+    attachments: [`${no}.xlsx`],
   };
 }
 
@@ -212,6 +213,9 @@ describe('Send to purchasing from the Documents list', () => {
       within(dialog).getByText('No handover email on record'),
     ).toBeInTheDocument();
     expect(
+      within(dialog).getByText('Attached: OI-0001.xlsx'),
+    ).toBeInTheDocument();
+    expect(
       within(dialog).getByRole('tab', { name: 'OI-0002' }),
     ).toBeInTheDocument();
   });
@@ -229,7 +233,9 @@ describe('Send to purchasing from the Documents list', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
     );
     // A clean send clears the ticks.
-    expect(screen.getByRole('checkbox', { name: 'Select OI-0001' })).not.toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: 'Select OI-0001' }),
+    ).not.toBeChecked();
   });
 
   it('a partial failure keeps the dialog open on the OI that did not go', async () => {
