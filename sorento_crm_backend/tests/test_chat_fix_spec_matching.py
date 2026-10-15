@@ -1,0 +1,252 @@
+"""Chat fix PR-A red tests (AC-A1..A5, A8, A9): spec matching comes from the registry's data.
+
+Plan documentation/plans/chatbot/PLAN-chat-fix-spec-16oct.md, UAC chat-fix-spec-acceptance-criteria.md.
+No live LLM call: the parser is stubbed by handing the search the entities it would emit.
+Postgres only (blank_session); every test seeds its own rows.
+"""
+from __future__ import annotations
+
+import uuid
+from decimal import Decimal
+
+import pytest
+
+from app.models.product import Product, ProductCategory, UnitOfMeasure
+from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
+from app.services import chatbot_prompt_vars
+from app.services.chatbot_parser_prompt import specification_lines
+from app.services.product_class_signal import ClassVocabulary, backfill_category_signals
+from app.services.product_predicate_service import resolve_product_set
+from app.services.product_spec_derivation import derive_for_code
+from app.services.product_spec_registry import seed_spec_registry
+from app.services.product_spec_search import filter_specs
+from tests._pg_fixture import blank_session
+
+_REFS: dict = {}
+
+
+@pytest.fixture
+def db():
+    with blank_session() as s:
+        cats = {
+            key: ProductCategory(id=str(uuid.uuid4()), category_code=code, category_name=code)
+            for key, code in (("tub", "SRT-ZZTUB"), ("wc", "SRT-WC"), ("sh", "SRT-SH"))
+        }
+        uom = UnitOfMeasure(id=str(uuid.uuid4()), uom_code="ZZT-PCS", uom_name="Piece")
+        s.add_all([*cats.values(), uom])
+        s.flush()
+        backfill_category_signals(s)
+        seed_spec_registry(s)
+        _REFS.update({k: v.id for k, v in cats.items()} | {"uom": uom.id})
+        chatbot_prompt_vars.clear_cache()
+        yield s
+        chatbot_prompt_vars.clear_cache()
+
+
+def _product(db, code, name, description, *, category="tub"):
+    row = Product(
+        id=str(uuid.uuid4()),
+        product_code=code,
+        product_name=name,
+        description=description,
+        category_id=_REFS[category],
+        base_uom_id=_REFS["uom"],
+        list_price=Decimal("1.00"),
+    )
+    db.add(row)
+    db.flush()
+    derive_for_code(db, code)
+    return row
+
+
+def _values(db, product) -> dict:
+    return db.query(ProductSpecifications).filter_by(product_id=product.id).one().values
+
+
+def _codes(result) -> set[str]:
+    return {c["product_code"] for c in result["candidates"]}
+
+
+def _registry(db, key) -> ProductSpecRegistry:
+    return db.query(ProductSpecRegistry).filter_by(spec_key=key).one()
+
+
+# --------------------------------------------------------------------------- #
+# AC-A1 / AC-A2: the parser's spec vocabulary is rendered from the registry
+# --------------------------------------------------------------------------- #
+def _teach_registry(db):
+    product_type = _registry(db, "product_type")
+    product_type.user_values = [*(product_type.user_values or []), "grab_bar"]
+    product_type.user_synonyms = {**(product_type.user_synonyms or {}), "grab_bar": ["grab bar", "handrail", "safety bar"]}
+    klass = _registry(db, "class")
+    klass.user_values = [*(klass.user_values or []), "Jacuzzi"]
+    klass.user_synonyms = {
+        **(klass.user_synonyms or {}),
+        "Jacuzzi": ["bathtub with massage jets", "whirlpool", "spa bath", "按摩浴缸"],
+    }
+    db.flush()
+
+
+def test_a2_specification_block_lists_product_type_synonyms(db):
+    _teach_registry(db)
+    text = "\n".join(specification_lines(db))
+    line = next((ln for ln in text.splitlines() if "Grab bar" in ln), "")
+    for word in ("grab bar", "handrail", "safety bar"):
+        assert word in line, f"product type synonym {word!r} missing from the specs block:\n{text[-1500:]}"
+
+
+def test_a2_specification_block_lists_class_meanings(db):
+    _teach_registry(db)
+    text = "\n".join(specification_lines(db))
+    line = next((ln for ln in text.splitlines() if "Jacuzzi" in ln), "")
+    for word in ("bathtub with massage jets", "whirlpool", "spa bath", "按摩浴缸"):
+        assert word in line, f"class meaning {word!r} missing from the specs block:\n{text[-1500:]}"
+
+
+def test_a2_the_specs_variable_renders_the_same_vocabulary(db):
+    _teach_registry(db)
+    rendered = chatbot_prompt_vars.render_value(db, "specs")
+    assert "handrail" in rendered and "whirlpool" in rendered, rendered[-1500:]
+
+
+def test_a1_a_registry_synonym_edit_shows_in_the_next_render_with_no_new_version(db):
+    _teach_registry(db)
+    before = chatbot_prompt_vars.render_value(db, "specs")
+    assert "zztgrabrail" not in before
+    product_type = _registry(db, "product_type")
+    product_type.user_synonyms = {**product_type.user_synonyms, "grab_bar": [*product_type.user_synonyms["grab_bar"], "zztgrabrail"]}
+    db.flush()
+    chatbot_prompt_vars.clear_cache()
+    after = chatbot_prompt_vars.render_value(db, "specs")
+    assert "zztgrabrail" in after, "an edited registry synonym must reach the next render"
+
+
+# --------------------------------------------------------------------------- #
+# AC-A3: no class word list in code; every word it held is served from data
+# --------------------------------------------------------------------------- #
+#: Frozen from `product_class_signal.CLASS_SYNONYMS` at origin/main ccb1ce9820 (word -> class).
+FROZEN_CLASS_WORDS: dict[str, list[str]] = {
+    "Kitchen Sink": ["kitchen sink", "sink", "sinki", "dapur"],
+    "Tap": ["tap", "faucet", "mixer", "paip", "kepala paip", "water tap"],
+    "Wash Basin": ["wash basin", "basin", "washbasin", "sink basin", "besen", "water basin"],
+    "Water Closet": ["water closet", "wc", "toilet", "toilet bowl", "closet", "tandas"],
+    "Shower": ["shower", "shower head", "rain shower", "hand shower", "pancuran"],
+    "Bathroom Furniture": ["cabinet", "mirror", "vanity", "bathroom cabinet", "kabinet"],
+    "Bathtub": ["bathtub", "bath tub", "tub"],
+    "Jacuzzi": ["jacuzzi", "whirlpool", "spa bath"],
+    "Bathtub and Jacuzzi": ["bathtub", "bath tub", "jacuzzi", "tub", "shower screen"],
+    "Bathroom Accessory": [
+        "bathroom accessory", "towel rail", "towel bar", "soap holder", "paper holder", "robe hook",
+    ],
+    "Cloth Hanger": ["cloth hanger", "clothes hanger", "hanger", "penyidai"],
+    "Urinal": ["urinal", "urinary"],
+    "Flexible Hose": ["flexible hose", "hose", "shower tube", "hos"],
+}
+_FROZEN_PAIRS = [(word, label) for label, words in FROZEN_CLASS_WORDS.items() for word in words]
+
+
+def test_a3_class_synonyms_constant_is_gone():
+    from app.services import product_class_signal
+
+    assert not hasattr(product_class_signal, "CLASS_SYNONYMS"), "the class word list must live in the registry, not in code"
+
+
+@pytest.mark.parametrize("word,label", _FROZEN_PAIRS, ids=[f"{w}->{l}" for w, l in _FROZEN_PAIRS])
+def test_a3_every_word_the_code_list_held_is_served_from_data(db, word, label):
+    """The test DB holds no categories at all, so the only data that can serve the word is the
+    registry's `class` row as `seed_spec_registry` (the migration's mirror) ships it."""
+    for row in db.query(ProductCategory).all():
+        db.delete(row)
+    db.flush()
+    assert label in ClassVocabulary(db).resolve(word), f"{word!r} no longer resolves to {label!r}"
+
+
+# --------------------------------------------------------------------------- #
+# AC-A5: has_massage, a registry yes/no key read off the catalogue description
+# --------------------------------------------------------------------------- #
+def test_a5_has_massage_is_a_boolean_registry_key(db):
+    assert _registry(db, "has_massage").data_type == "boolean"
+
+
+@pytest.mark.parametrize("phrase", ["MASSAGE", "WHIRLPOOL", "JACUZZI", "AIR BUBBLE"])
+def test_a5_a_tub_description_naming_massage_carries_the_flag(db, phrase):
+    tub = _product(db, f"ZZT-TUB-{phrase[:3]}", "ZZT SORENTO BATHTUB", f"ZZT SORENTO BATHTUB WITH {phrase}")
+    assert _values(db, tub).get("has_massage", {}).get("value") is True
+
+
+def test_a5_a_plain_tub_does_not_carry_the_flag(db):
+    tub = _product(db, "ZZT-TUB-PLAIN", "ZZT SORENTO BATHTUB", "ZZT SORENTO BATHTUB 1700X800X600MM")
+    assert _values(db, tub).get("has_massage", {}).get("value") is not True
+
+
+def test_a5_a_water_closet_or_shower_set_naming_those_words_never_carries_it(db):
+    wc = _product(db, "ZZT-WC-JET", "ZZT SORENTO WATER CLOSET", "ZZT SORENTO WATER CLOSET WITH WHIRLPOOL FLUSH AIR BUBBLE", category="wc")
+    shower = _product(db, "ZZT-SH-JET", "ZZT SORENTO SHOWER SET", "ZZT SORENTO SHOWER SET WITH MASSAGE JACUZZI STYLE", category="sh")
+    assert _registry(db, "has_massage") is not None
+    assert _values(db, wc).get("has_massage", {}).get("value") is not True
+    assert _values(db, shower).get("has_massage", {}).get("value") is not True
+
+
+# --------------------------------------------------------------------------- #
+# AC-A4: bathtub is not jacuzzi; "bathtub with massage jet" is
+# --------------------------------------------------------------------------- #
+def _tub_world(db):
+    return {
+        "plain": _product(db, "ZZT-T-PLAIN", "ZZT SORENTO BATHTUB", "ZZT SORENTO BATHTUB 1700X800X600MM"),
+        "jetted": _product(db, "ZZT-T-JETTED", "ZZT SORENTO MASSAGE BATHTUB", "ZZT SORENTO BATHTUB WITH MASSAGE JETS"),
+        "jac1": _product(db, "ZZT-J-ONE", "ZZT SORENTO WHIRLPOOL JACUZZI", "ZZT SORENTO JACUZZI WITH MASSAGE JETS"),
+        "jac2": _product(db, "ZZT-J-TWO", "ZZT SORENTO BUBBLE JACUZZI", "ZZT SORENTO JACUZZI WITH AIR BUBBLE"),
+    }
+
+
+def test_a4_a_plain_bathtub_ask_returns_bathtubs_and_no_jacuzzi_class_product(db):
+    world = _tub_world(db)
+    out = resolve_product_set(db, require={}, scope_terms=["bathtub"])
+    codes = _codes(out)
+    assert world["plain"].product_code in codes, out
+    assert not codes & {world["jac1"].product_code, world["jac2"].product_code}, f"a Jacuzzi-class product answered 'bathtub': {codes}"
+
+
+def test_a4_massage_jet_bathtub_as_the_has_massage_flag_returns_only_jetted_tubs(db):
+    """The parse of "Any bathtub with massage jet?" as the registry-fed parser emits it: the yes/no key."""
+    world = _tub_world(db)
+    out = resolve_product_set(db, require={}, specs=[{"key": "has_massage", "value": True}])
+    assert _codes(out) == {world[k].product_code for k in ("jetted", "jac1", "jac2")}, out
+
+
+def test_a4_massage_jet_bathtub_as_the_jacuzzi_class_returns_only_jacuzzi_class_tubs(db):
+    """The same ask parsed to the Jacuzzi class word (the registry says jacuzzi means a tub with jets)."""
+    world = _tub_world(db)
+    out = resolve_product_set(db, require={}, scope_terms=["jacuzzi"])
+    assert _codes(out) == {world["jac1"].product_code, world["jac2"].product_code}, out
+
+
+# --------------------------------------------------------------------------- #
+# AC-A8: name-matched ids and the spec clause combine with AND
+# --------------------------------------------------------------------------- #
+def test_a8_name_matched_ids_are_intersected_with_the_spec_clause(db):
+    p_trap = _product(db, "ZZT-WC-P", "ZZT SORENTO WATER CLOSET", "ZZT SORENTO CERAMIC WATER CLOSET P-TRAP", category="wc")
+    s_trap = _product(db, "ZZT-WC-S", "ZZT SORENTO WATER CLOSET", "ZZT SORENTO CERAMIC WATER CLOSET S-TRAP", category="wc")
+    out = resolve_product_set(
+        db,
+        require={},
+        specs=[{"key": "trap_type", "value": "p_trap"}],
+        product_ids=[p_trap.id, s_trap.id],
+    )
+    assert _codes(out) == {"ZZT-WC-P"}, out
+    assert out["qualifying_total"] == 1, out
+
+
+# --------------------------------------------------------------------------- #
+# AC-A9: a yes/no spec value filters
+# --------------------------------------------------------------------------- #
+def test_a9_a_boolean_spec_value_produces_a_filter_clause(db):
+    found = filter_specs(db, specs=[{"key": "is_smart", "value": True}])
+    assert found["clause"] is not None, "is_smart=true was dropped, so the ask answered unfiltered"
+
+
+def test_a9_a_boolean_spec_value_narrows_the_set(db):
+    smart = _product(db, "ZZT-WC-SMART", "ZZT SORENTO WATER CLOSET", "ZZT SORENTO INTELLIGENT WATER CLOSET", category="wc")
+    _product(db, "ZZT-WC-PLAIN", "ZZT SORENTO WATER CLOSET", "ZZT SORENTO CERAMIC WATER CLOSET", category="wc")
+    out = resolve_product_set(db, require={}, specs=[{"key": "is_smart", "value": True}], scope_terms=["water closet"])
+    assert _codes(out) == {smart.product_code}, out
