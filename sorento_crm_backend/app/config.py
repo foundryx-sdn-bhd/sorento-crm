@@ -385,8 +385,9 @@ class Settings(BaseSettings):
     # DO-HISTORY (owner 13 Oct 2026): an AutoCount DO that lands (created, or an untracked Order
     # Tracking row adopted) with a DocDate before this date has no tracking to come, so it lands
     # DELIVERED with `orders.tracking_assumed_at` set and no delivery date. Unset = off. Set to
-    # 2026-07-01 for the 2023-09-01 history backfill. Read once per process: a change needs a
-    # restart of every backend and worker that ingests DOs.
+    # 2026-07-01 for the 2023-09-01 history backfill. Fallback only (DO-BACKFILL-SETTING): the
+    # date saved on Settings > Integrations > AutoCount wins and needs no restart; this env
+    # value applies while none is saved (`app/services/runtime_settings.py`).
     do_assume_delivered_before: Optional[_date] = None  # DO_ASSUME_DELIVERED_BEFORE
 
     model_config = SettingsConfigDict(
