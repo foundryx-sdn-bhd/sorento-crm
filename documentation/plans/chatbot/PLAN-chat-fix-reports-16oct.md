@@ -95,8 +95,8 @@ guessed (`report_ask.py:604-606`); the parser decides follow-up vs new, the engi
    parser's `reference_positions`), so the next "sorento" answers it and re-runs the held analysis for that company
    (R20 t6, R24 t6). Per-turn context only while that question is open; the system prompt is unchanged.
 8. S8 P3-F8 limit: NO CODE. A client-sent "do not count this call" flag would let any API-key caller skip the
-   limit. The limit is already a setting (`report_ask.py` route `_rate_limit_setting` :95); the owner picks the
-   value (asked on the crew board). With S1 an ask uses fewer calls anyway.
+   limit. The limit is already a setting (`report_ask.py` route `_rate_limit_setting` :95). Crew ruling 16 Oct:
+   keep the default 10 asks per 10 minutes, the owner may raise it himself. With S1 an ask uses fewer calls anyway.
 9. S9 NEW-2 a customer picker whose options all carry the same stamp answers directly instead of asking
    (`turn_runtime.py:3104-3140`).
 10. S10 a sales report with no product and no customer subject is never sent to `crm_sales_report` (422): for a
