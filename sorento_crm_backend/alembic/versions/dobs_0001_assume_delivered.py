@@ -6,12 +6,12 @@ env var of the same name, so an install that sets the env keeps working unchange
 Idempotent: `create_all` may already have added the column on a bootstrapped database.
 
 Revision ID: dobs_0001_assume_delivered
-Revises: r2g_0001_series_sets_uuid_id
+Revises: sf_0001_series_brands
 """
 from alembic import op
 
 revision = "dobs_0001_assume_delivered"
-down_revision = "r2g_0001_series_sets_uuid_id"
+down_revision = "sf_0001_series_brands"
 branch_labels = None
 depends_on = None
 
