@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 from app.models.inventory import Warehouse
 from app.models.project_so import (
     INQUIRY_PARTLY_LINKED,
+    INQUIRY_PLACED,
     INQUIRY_RAISED,
     IV_ORDER,
     IV_ORDER_BACK,
@@ -63,7 +64,7 @@ logger = logging.getLogger(__name__)
 
 _ZERO = Decimal("0")
 _REQUESTABLE_VERBS = (IV_ORDER, IV_ORDER_BACK)
-_REQUESTABLE_STATES = (INQUIRY_RAISED, INQUIRY_PARTLY_LINKED)
+_REQUESTABLE_STATES = (INQUIRY_RAISED, INQUIRY_PARTLY_LINKED, INQUIRY_PLACED)
 
 
 def _dec(value: Any) -> Decimal:
@@ -128,6 +129,20 @@ def _remaining(db: Session, row: OrderInquiryRow) -> Decimal:
         OrderInquiryLink.row_id == row.id
     ).scalar()
     return _dec(row.qty) - _dec(linked) - _dec(row.bundled_qty)
+
+
+def _requestable(db: Session, row: OrderInquiryRow) -> Decimal:
+    """OI-RESERVE-RECEIVED: `row.qty - open links - reserve links - bundled_qty` - what
+    `_remaining` leaves PLUS the links on a FULLY RECEIVED PO/SPO line, whose stock went to
+    other orders and which a reserve may therefore take over. "Received" is the one
+    existing test (`ProjectOrderInquiryService._received_documents_for`)."""
+    from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+    received = sum(
+        (_dec(link.qty) for link in ProjectOrderInquiryService(db).received_links_of(row.id)),
+        _ZERO,
+    )
+    return _remaining(db, row) + received
 
 
 def _default_warehouse_id(db: Session, stock_location: Optional[str]) -> Optional[str]:
@@ -355,6 +370,15 @@ def _build_context(
     }
 
 
+def _context_reason(reason: Optional[str], released: Optional[Sequence[str]]) -> Optional[str]:
+    """AC-RR-22: a row that released received documents says so first in the email's REASON
+    cell, CS's own reason (if any) after one space."""
+    if not released:
+        return reason
+    head = f"Released {', '.join(released)} (received)."
+    return f"{head} {reason}" if reason else head
+
+
 def _build_commit_context(
     db: Session,
     request: OrderInquiryReserveRequest,
@@ -399,7 +423,7 @@ def _build_commit_context(
                 "qty_reserved": _qty_str(rr.qty_reserved) if rr.qty_reserved is not None else None,
                 "balance": balance,
                 "remaining": balance,
-                "reason": rr.reason,
+                "reason": _context_reason(rr.reason, item.get("released")),
             }
         )
 
@@ -491,7 +515,7 @@ class OrderInquiryReserveService:
                     f"{_row_label(row)} already has an open reserve request.",
                     code="reserve_request_already_open",
                 )
-            remaining = _remaining(self.db, row)
+            remaining = _requestable(self.db, row)
             if remaining <= _ZERO:
                 raise AppException(
                     409,
@@ -803,7 +827,9 @@ class OrderInquiryReserveService:
                     f"{_row_label(row)} has no open reserve request to answer.",
                     code="reserve_commit_no_open_request",
                 )
-            cap = min(_dec(rr.qty_requested), _remaining(self.db, row))
+            cap = min(_dec(rr.qty_requested), _requestable(self.db, row))
+            # AC-RR-11: the request reaches into the received part of the row.
+            release_mode = _dec(rr.qty_requested) > _remaining(self.db, row)
             qty, reason_clean = _checked_answer(
                 row,
                 entry,
@@ -814,7 +840,7 @@ class OrderInquiryReserveService:
             )
             warehouse_id = entry.get("warehouse_id") or rr.warehouse_id
             warehouse_id = _validated_warehouse_id(self.db, warehouse_id, _row_label(row))
-            prepared_reserves.append((rr, row, qty, reason_clean, warehouse_id))
+            prepared_reserves.append((rr, row, qty, reason_clean, warehouse_id, release_mode))
 
         prepared_amendments: List[tuple] = []
         for entry in amendments:
@@ -869,13 +895,26 @@ class OrderInquiryReserveService:
         prepared_amendments.sort(key=lambda item: str(item[0].id))
         refresher = ProjectOrderInquiryService(self.db)
         touched_by_request: Dict[str, List[Dict[str, Any]]] = {}
+        released_docs: Dict[str, List[str]] = {}
 
-        for rr, row, qty, reason_clean, warehouse_id in prepared_reserves:
+        for rr, row, qty, reason_clean, warehouse_id, release_mode in prepared_reserves:
             rr.qty_reserved = qty
             rr.reason = reason_clean
             rr.warehouse_id = warehouse_id
             if qty > _ZERO:
                 code = _warehouse_code(self.db, warehouse_id) or ""
+                if release_mode:
+                    released = refresher.release_received_links(
+                        row,
+                        reserve_request_row_id=rr.id,
+                        reserved_qty=qty,
+                        location=code,
+                        actor_user_id=actor_user_id,
+                    )
+                    if released:
+                        released_docs[rr.id] = [
+                            entry.document for entry in released if entry.document
+                        ]
                 self.db.add(
                     OrderInquiryLink(
                         id=str(uuid.uuid4()),
@@ -892,7 +931,9 @@ class OrderInquiryReserveService:
             self._add_event(row, rr, RESERVE_EVENT_RESERVED, qty, warehouse_id, reason_clean, actor_user_id)
             self._flush_link()
             refresher.refresh_link_state([row])
-            touched_by_request.setdefault(rr.request_id, []).append({"rr": rr, "row": row})
+            touched_by_request.setdefault(rr.request_id, []).append(
+                {"rr": rr, "row": row, "released": released_docs.get(rr.id, [])}
+            )
 
         for row, answered, links_by_rr, current_net, new_net, reason_clean in prepared_amendments:
             touched_rrs: List[OrderInquiryReserveRequestRow] = []

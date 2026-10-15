@@ -449,7 +449,8 @@ def downgrade() -> None:
         )
     )
     bind.execute(
-        sa.text(f'DROP TABLE IF EXISTS "{projects}".order_inquiry_reserve_request_rows')
+        # CASCADE: `order_inquiry_released_links` (oirr_0001) carries an FK to this table.
+        sa.text(f'DROP TABLE IF EXISTS "{projects}".order_inquiry_reserve_request_rows CASCADE')
     )
     bind.execute(
         sa.text(f'DROP TABLE IF EXISTS "{projects}".order_inquiry_reserve_requests')

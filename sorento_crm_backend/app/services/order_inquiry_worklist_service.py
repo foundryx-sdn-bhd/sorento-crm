@@ -2229,8 +2229,27 @@ class OrderInquiryWorklistService:
         linked_qty = sum(
             (_dec(link["qty"]) for link in row_links if not link.get("derived")), _ZERO
         )
+        # OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for -
+        # `order_inquiry_reserve_service._requestable`, worked off the links already
+        # loaded: qty less the OPEN links, the reserve links and the bundle (a link on a
+        # fully received document does not count against it).
+        open_linked = sum(
+            (
+                _dec(link["qty"])
+                for link in row_links
+                if not link.get("derived") and not link.get("received")
+            ),
+            _ZERO,
+        )
+        requestable = (
+            _dec(row.qty)
+            - open_linked
+            - _dec(getattr(row, "reserved_qty", None))
+            - _dec(row.bundled_qty)
+        )
         return {
             "id": row.id,
+            "reserve_requestable_qty": float(max(requestable, _ZERO)),
             "inquiry_no": row.inquiry_no,
             "so_date": row.so_date,
             "so_number": row.so_number,
