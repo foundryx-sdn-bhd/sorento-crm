@@ -1,8 +1,8 @@
 # PLAN: Stock Debt snapshots (STOCK-DEBT-SNAPSHOT)
 
-Status: card answered (Q1 to Q5 all a, 15 Oct); mock v2 filed (owner v1 note: one shared request component + the #1684 park / send-all path from both perspectives), awaiting owner approval. Track: L
-(migration, new screens, new routes). UAC: `stock-debt-snapshot-acceptance-criteria.md`.
-Card: `CARD-stock-debt-snapshot-15oct.md`. Mock: `documentation/mockups/STOCK-DEBT-SNAPSHOT/index.html`.
+Status: built (PR #1705). Owner approved mock v2 (15 Oct). Track L. Review rounds closed four sets of findings:
+security L1 to L4, reviewer blockers, the projects-schema move per ADR-0011, and a Park tickbox render loop
+the browser pass found in the shared reserve dialog. Hand test pending on the crew copy.
 
 ## Discovery (main 01e275d4c)
 
@@ -35,7 +35,7 @@ Card: `CARD-stock-debt-snapshot-15oct.md`. Mock: `documentation/mockups/STOCK-DE
 
 ## Design
 
-### Tables (one migration, `sds_0001_stock_debt_snapshots`, idempotent `IF NOT EXISTS`)
+### Tables (one migration, `sds_0001_stock_debt_snapshots`, idempotent `IF NOT EXISTS`, in the `projects` schema per ADR-0011: Stock Debt is the `projects` module)
 
 `stock_debt_snapshots` (CompanyScopedMixin, audited):
 `id uuid pk, company_id, name varchar(120) not null, filters jsonb not null, months jsonb not null,

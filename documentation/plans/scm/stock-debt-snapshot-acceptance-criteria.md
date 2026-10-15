@@ -92,8 +92,15 @@ API-key variant, the same rule the export route follows (`app/api/v1/projects/st
 
 - AC-17 Both tables are company-scoped (`CompanyScopedMixin`): another company's snapshot or row
   answers 404 on every route.
-- AC-18 Without `projects.stock_debt.view`: 403 on every route. An API-key principal cannot call
-  POST / PUT / export.
+- AC-18 Without `projects.stock_debt.view`: 403 on every route. Every route is session-only (security
+  review L2): an API-key principal is refused on reads and writes alike.
+- AC-18b `oi_rows` (frozen and live) are served only when the caller also holds
+  `projects.projects.view`, the OI pages' own read gate (security review L1); otherwise `[]`.
+- AC-18c Each decision PUT (set or clear) writes exactly one audit entry; a refused PUT writes none
+  (security review L3). `filters.query` is at most 200 characters; `location`, `exclude_location`
+  and `supplier_ids` are UUIDs (`supplier_ids` also takes "none"); malformed values are 422 (L4,
+  reviewer NIT).
+- AC-18d Both tables live in the `projects` schema (ADR-0011).
 - AC-19 The OI reserve request and its batch send are unchanged on the backend: the snapshot page
   calls the existing `POST /order-inquiries/{id}/reserve-requests` (with `park`), and the
   existing parked preview / send routes (`order_inquiries.py:1337-1370`, `park_send.py`), each
