@@ -31,6 +31,9 @@ from app.schemas.project_order_inquiry import (
     AutoPlaceRequest,
     AutoPlaceResult,
     CommitReserveRequestIn,
+    HandoverResendIn,
+    HandoverResendPreviewOut,
+    HandoverResendSendOut,
     ParkedPreviewOut,
     ParkedSendOut,
     ReserveNoticeRecipientsOut,
@@ -1331,6 +1334,45 @@ def order_inquiry_reserve_status_summary(
             actor_user_id=current_user["id"]
         )
     except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post(
+    "/order-inquiries/handover-resend/preview", response_model=HandoverResendPreviewOut
+)
+def preview_handover_resend(
+    payload: HandoverResendIn,
+    current_user: dict = Depends(require_permission(ACTION)),
+    db: Session = Depends(get_db),
+):
+    """OI-RESEND-PURCHASING: the handover email "Send to purchasing" would send, one per
+    order inquiry, rendered by the handover automation's own template. Writes nothing."""
+    from app.services.oi_handover_resend import OrderInquiryHandoverResend
+
+    try:
+        return OrderInquiryHandoverResend(db).preview(
+            payload.inquiry_ids, actor_user_id=current_user["id"], row_ids=payload.row_ids
+        )
+    except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post("/order-inquiries/handover-resend/send", response_model=HandoverResendSendOut)
+def send_handover_resend(
+    payload: HandoverResendIn,
+    current_user: dict = Depends(require_permission(ACTION)),
+    db: Session = Depends(get_db),
+):
+    """OI-RESEND-PURCHASING: send each order inquiry's open rows to purchasing again, even
+    while the automatic handover is switched off. Each email is its own recorded run."""
+    from app.services.oi_handover_resend import OrderInquiryHandoverResend
+
+    try:
+        return OrderInquiryHandoverResend(db).send(
+            payload.inquiry_ids, actor_user_id=current_user["id"], row_ids=payload.row_ids
+        )
+    except Exception as exc:
+        db.rollback()
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
 
 

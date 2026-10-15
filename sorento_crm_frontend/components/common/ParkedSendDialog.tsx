@@ -46,6 +46,10 @@ export function ParkedSendDialog({
   isLoading = false,
   onSend,
   isSending = false,
+  notice,
+  emailNote,
+  tabLabel,
+  sendDisabled = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -54,6 +58,14 @@ export function ParkedSendDialog({
   isLoading?: boolean;
   onSend: () => Promise<unknown> | void;
   isSending?: boolean;
+  /** Shown above the recipient table once the preview has loaded. */
+  notice?: React.ReactNode;
+  /** A line under the selected email's To/Cc (e.g. when it was last sent). */
+  emailNote?: (index: number) => React.ReactNode;
+  /** Overrides the default "Email to <name> (<count>)" tab label. */
+  tabLabel?: (email: ParkedEmail, index: number) => string;
+  /** Holds Send back for a caller-side reason (e.g. no line ticked). */
+  sendDisabled?: boolean;
 }) {
   const [selected, setSelected] = React.useState(0);
   React.useEffect(() => {
@@ -98,6 +110,7 @@ export function ParkedSendDialog({
             </div>
           ) : (
             <>
+              {notice}
               <div className="overflow-x-auto">
                 <Table className="table-fixed min-w-[34rem]">
                   <TableHeader>
@@ -155,7 +168,9 @@ export function ParkedSendDialog({
                             value={String(index)}
                             onClick={() => setSelected(index)}
                           >
-                            {`Email to ${email.to.name} (${email.inquiry_count})`}
+                            {tabLabel
+                              ? tabLabel(email, index)
+                              : `Email to ${email.to.name} (${email.inquiry_count})`}
                           </TabsTrigger>
                         ))}
                       </TabsList>
@@ -165,6 +180,7 @@ export function ParkedSendDialog({
                     <p className="truncate text-muted-foreground">
                       {`To ${current.to.name}${current.cc.length ? `, Cc ${current.cc.map((person) => person.name).join(', ')}` : ''}`}
                     </p>
+                    {emailNote ? emailNote(Math.min(selected, emails.length - 1)) : null}
                   </div>
                   <EmailPreviewFrame html={current.body_html} subject={current.subject} />
                 </div>
@@ -177,7 +193,7 @@ export function ParkedSendDialog({
             Cancel
           </Button>
           {ready ? (
-            <Button onClick={handleSend} disabled={isSending || emails.length === 0}>
+            <Button onClick={handleSend} disabled={isSending || sendDisabled || emails.length === 0}>
               {sendLabel}
             </Button>
           ) : null}
