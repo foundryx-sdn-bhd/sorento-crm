@@ -133,8 +133,7 @@ def test_ac2_the_seat_cover_wording_that_ships_today_stays() -> None:
     from app.services import product_find
 
     text = product_find.parser_vocabulary()
-    # crew ruling 16 Oct (R9 + owner 15 Oct fit-line ruling): the negated file-word list is now a positive file_word rule
-    assert "attachment_type and a file domain come only from file_word" in text
+    assert 'The other-side word never IMPLIES an attachment type' in text
     assert "SRTWC8383-RL-MBL technical drawing" in text
     assert "no other side, so it is no find" in text
 
