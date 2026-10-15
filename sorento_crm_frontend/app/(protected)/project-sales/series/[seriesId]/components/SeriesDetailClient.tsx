@@ -13,7 +13,6 @@ import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
 import RecordNavigation from '@/components/common/RecordNavigation';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -57,8 +56,8 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
   );
 
   const [name, setName] = React.useState('');
-  const [brandId, setBrandId] = React.useState('');
-  const categories = useProductCategorySelectQuery(brandId || undefined);
+  const [brandIds, setBrandIds] = React.useState<string[]>([]);
+  const categories = useProductCategorySelectQuery(brandIds);
   const [description, setDescription] = React.useState('');
   const [isActive, setIsActive] = React.useState(true);
   const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
@@ -73,7 +72,7 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
   // overwrite what somebody is halfway through typing - the same trap the line table avoids.
   const seedFrom = React.useCallback((source: ProjectSeries) => {
     setName(source.name);
-    setBrandId(source.brand_id ?? '');
+    setBrandIds(source.brand_ids ?? []);
     setDescription(source.description ?? '');
     setIsActive(source.is_active);
     setCategoryIds(source.category_ids ?? []);
@@ -92,7 +91,7 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
     : Boolean(
         base &&
           (name !== base.name ||
-            brandId !== (base.brand_id ?? '') ||
+            [...brandIds].sort().join(',') !== [...(base.brand_ids ?? [])].sort().join(',') ||
             description !== (base.description ?? '') ||
             isActive !== base.is_active ||
             categoryIds.join(',') !== (base.category_ids ?? []).join(',')),
@@ -105,7 +104,7 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
     }
     const body = {
       name: name.trim(),
-      brand_id: brandId || null,
+      brand_ids: brandIds,
       description: description.trim() || null,
       is_active: isActive,
       category_ids: categoryIds,
@@ -125,13 +124,13 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
   const brandOptions = React.useMemo(
     () =>
       (brands.data ?? [])
-        .filter((brand) => brand.is_active || brand.id === brandId)
+        .filter((brand) => brand.is_active || brandIds.includes(brand.id))
         .map((brand) => ({
           value: brand.id,
           label: brand.brand_name,
           description: brand.brand_code,
         })),
-    [brandId, brands.data],
+    [brandIds, brands.data],
   );
 
   // Every category name seen so far, from any brand's list and from the saved row, so a
@@ -236,14 +235,14 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="series-brand">Brand</Label>
-                    <SearchableSelect
+                    <SearchableMultiSelect
                       id="series-brand"
-                      value={brandId}
-                      onChange={setBrandId}
+                      value={brandIds}
+                      onChange={setBrandIds}
                       loadError={brands.error}
                       onRetry={() => void brands.refetch()}
                       options={brandOptions}
-                      placeholder="Any brand"
+                      placeholder="All brands"
                       emptyMessage="No brands found"
                     />
                   </div>
@@ -257,7 +256,7 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
                     loadError={categories.error}
                     onRetry={() => void categories.refetch()}
                     options={categoryOptions}
-                    placeholder="No categories"
+                    placeholder="All categories"
                     emptyMessage="No categories found"
                   />
                 </div>

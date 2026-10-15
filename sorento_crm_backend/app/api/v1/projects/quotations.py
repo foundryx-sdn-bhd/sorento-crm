@@ -879,6 +879,7 @@ async def list_series_product_rows(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     query: Optional[str] = Query(None),
+    priced: bool = Query(False),
     _user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -892,7 +893,7 @@ async def list_series_product_rows(
         validate_uuid_path(series_id, resource="Series")
         _series_or_404(db, series_id)
         rows, total = pricing.series_product_rows(
-            db, series_id, page=page, limit=limit, query=query
+            db, series_id, page=page, limit=limit, query=query, priced_only=priced
         )
         return _envelope(rows, total=total, page=page, limit=limit)
     except Exception as exc:

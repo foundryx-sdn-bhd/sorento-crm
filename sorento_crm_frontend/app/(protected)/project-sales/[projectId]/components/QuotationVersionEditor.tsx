@@ -22,7 +22,7 @@ import {
   useQuotationLines,
   useQuotationRecomputeMutation,
   useQuotationVersions,
-  useSeriesProductRows,
+  useSeriesPricedRows,
   useSeriesSetRows,
 } from '../../_shared/hooks/useProjects';
 import type {
@@ -243,7 +243,7 @@ export function QuotationVersionEditor({
    * Only fetched when the scope is actually quoted from a series; most are not, and an
    * unconditional request would be a round trip for an answer of "nothing".
    */
-  const seriesRows = useSeriesProductRows(
+  const seriesRows = useSeriesPricedRows(
     (seriesId !== undefined ? seriesId : quotation?.series_id) ?? undefined,
   );
   const seriesPriceByProduct = React.useMemo(() => {

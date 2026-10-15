@@ -716,12 +716,15 @@ def series_product_rows(
     page: int = 1,
     limit: int = 50,
     query: Optional[str] = None,
+    priced_only: bool = False,
 ) -> tuple[List[Dict[str, Any]], int]:
     """One page of the series' products and the total: code, name, price, percentage, floor.
 
     The series is its named products plus every in-scope product (picked brands under picked
     categories, empty meaning all), so the table opens preloaded. Each row says whether it
     is ``in_scope``; a named row outside the scope stays listed, only removable.
+    ``priced_only`` keeps just the rows that carry a selling price (what a quotation line
+    opens at).
 
     One count and one page query, both in SQL: a series can hold the whole catalogue and the
     page must not load it. ``query`` matches code or name, case-insensitively.
@@ -745,6 +748,8 @@ def series_product_rows(
         )
         .filter(or_(ProjectSeriesProduct.product_id.isnot(None), in_scope))
     )
+    if priced_only:
+        base = base.filter(ProjectSeriesProduct.selling_price.isnot(None))
     term = (query or "").strip()
     if term:
         like = f"%{term}%"
