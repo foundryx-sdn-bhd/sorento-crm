@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import date as DateType
 from typing import Annotated, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.export_split import ExportSplit as ExportSplit
 
@@ -123,6 +123,14 @@ class StockDebtSheetCounts(BaseModel):
     supplier_category: int
 
 
+class StockDebtLocation(BaseModel):
+    """One warehouse of the book's span, for the toolbar's Location select."""
+
+    id: str
+    code: Optional[str] = None
+    name: Optional[str] = None
+
+
 class StockDebtList(BaseModel):
     """The list envelope: the repo's `{data, pagination}` plus the column axis.
 
@@ -136,6 +144,7 @@ class StockDebtList(BaseModel):
     months: List[str]
     tba_month: str
     groups: List[str]
+    locations: List[StockDebtLocation]
     totals: StockDebtTotals
     suppliers: List[StockDebtSupplier]
     sheet_counts: StockDebtSheetCounts
@@ -339,6 +348,8 @@ class StockDebtExportIn(BaseModel):
 
     query: Optional[str] = None
     group: Optional[str] = None
+    location: List[str] = []
+    exclude_location: List[str] = []
     only_debt: bool = True
     date_from: Optional[DateType] = None
     date_to: Optional[DateType] = None
@@ -348,3 +359,13 @@ class StockDebtExportIn(BaseModel):
     show_aux: bool = False
     #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
     projected: bool = False
+
+    @field_validator("location", "exclude_location", mode="before")
+    @classmethod
+    def _location_as_list(cls, value):
+        """A bare string wraps and None is empty."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        return value

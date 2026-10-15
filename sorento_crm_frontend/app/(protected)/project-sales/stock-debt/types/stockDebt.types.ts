@@ -119,6 +119,8 @@ export interface StockDebtListResponse {
   tba_month: string;
   /** Ownership groups the flag currently admits, for the toolbar's select. */
   groups: string[];
+  /** The book's warehouses (before any Location pick), for the toolbar's Location select. */
+  locations: { id: string; code: string; name: string | null }[];
   /** The whole filtered set's totals (AC-6), for the footer row. */
   totals: StockDebtTotals;
   /** Distinct last suppliers of the filtered set, sorted by name, for the toolbar's select (AC-7). */

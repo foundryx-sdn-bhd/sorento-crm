@@ -220,6 +220,43 @@ def test_f1_fits_on_wc_lists_covers(db, monkeypatch):
     assert group["more"] == 0
 
 
+def _link_kind(db, accessory, host, kind):
+    link = ProductCompatibility(
+        company_id=accessory.company_id,
+        seat_cover_product_id=accessory.id,
+        wc_product_id=host.id,
+        source="flyer",
+        kind=kind,
+    )
+    db.add(link)
+    db.flush()
+    return link
+
+
+def test_f1_mirror_and_shelf_links_never_read_as_seat_covers(db, monkeypatch):
+    """MIRROR-LINKS regression: one seed with a WC + cover and a cabinet + mirror + shelf.
+    The v1 seat cover answers do not change."""
+    module = pf()
+    stem = _stem()
+    cover, wc = _p(db, f"{stem}SEAT-MBL"), _p(db, f"{stem}-RL-MBL")
+    cabinet, mirror, shelf = _p(db, f"{stem}BF"), _p(db, f"{stem}MR-BL"), _p(db, f"{stem}SV-BL")
+    _link_kind(db, cover, wc, "seat_cover")
+    _link_kind(db, mirror, cabinet, "mirror")
+    _link_kind(db, shelf, cabinet, "shelf")
+    client = _client(db, {VIEW}, monkeypatch)
+
+    [on_wc] = _groups(_find(client, _filters(wc.id)))
+    assert on_wc["relation"] == "covers"
+    assert on_wc["head"] == f"Seat cover for {wc.product_code}:"
+    assert _row_codes(on_wc) == [cover.product_code]
+
+    for anchor in (cabinet, mirror, shelf):
+        [group] = _groups(_find(client, _filters(anchor.id)))
+        assert group["relation"] is None, anchor.product_code
+        assert group["head"] == module.FITS_NONE_LINE.format(code=anchor.product_code)
+        assert group["rows"] == []
+
+
 def test_f1_fits_on_cover_lists_wcs(db, monkeypatch):
     cover, wc = _cover_and_wc(db)
     _link(db, cover, wc)

@@ -25,8 +25,17 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { SavedViewsMenu } from '@/components/list/SavedViewsMenu';
+import type { SavedView } from '@/services/savedViewsService';
+import {
+  STOCK_DEBT_LISTING_KEY,
+  fromSavedView,
+  toSavedViewConfig,
+  type StockDebtFilters,
+} from '../lib/stockDebtSavedView';
 import { useCellSelection } from '../hooks/useCellSelection';
 import { useStockDebtQuery } from '../hooks/useStockDebtQuery';
+import type { StockDebtLocationsMode } from '../services/stockDebtService';
 import type { StockDebtBook, StockDebtRow, StockDebtTone } from '../types/stockDebt.types';
 import { StockDebtCellDialog } from './StockDebtCellDialog';
 import { StockDebtExportPopover } from './StockDebtExportPopover';
@@ -75,6 +84,10 @@ import { codeWithName, distinctName } from '@/lib/product-display';
  * has a typeable `DD/MM/YYYY - DD/MM/YYYY` trigger (own file, own tests), so the AC-29 fix
  * is what actually made it usable, not the two-field detour. Chip reads `Delivery:
  * 1 Nov 26 to 30 Nov 26`.
+ *
+ * R16 is superseded (owner, 14 Oct 2026): Location is back as a multi-select (`locations`),
+ * its options the envelope's `locations` facet (the book's real warehouses). The
+ * filters also save as views through `SavedViewsMenu` (`lib/stockDebtSavedView`).
  */
 
 /** Cell tone as a CLASS, not a component (plan 3.4): three lines, no new file. */
@@ -119,9 +132,9 @@ const SHOW_AUX_KEY = 'stock-debt.show-aux';
 
 /** The four read-only columns between Product and the months. */
 const AUX_COLUMNS = [
-  { key: 'pool_on_hand', header: 'BRW On Hand Qty' },
-  { key: 'pool_po_qty', header: 'BRW PO Qty' },
-  { key: 'pool_incoming_qty', header: 'BRW Incoming Qty' },
+  { key: 'pool_on_hand', header: 'BRW Retail On Hand Qty' },
+  { key: 'pool_po_qty', header: 'BRW Retail PO Qty' },
+  { key: 'pool_incoming_qty', header: 'BRW Retail Incoming Qty' },
   { key: 'dealer_outstanding', header: 'Dealer O/standing Qty' },
 ] as const;
 
@@ -188,10 +201,15 @@ export function StockDebtClient() {
   const {
     value: search,
     setValue: setSearch,
+    reset: resetSearch,
     debouncedValue: debounced,
     isSettling: debouncedSettling,
   } = useDebouncedSearch();
   const [book, setBook] = React.useState<StockDebtBook>('all');
+  // Location: a MULTI select of warehouse ids; empty = every location.
+  const [locations, setLocations] = React.useState<string[]>([]);
+  // `Only` keeps the picked locations; `All except` keeps every other one.
+  const [locationsMode, setLocationsMode] = React.useState<StockDebtLocationsMode>('include');
   // R15: a MULTI select - a product matches when its last supplier is ANY of these.
   const [supplierIds, setSupplierIds] = React.useState<string[]>([]);
   // R14: the single Cutoff date became a Due date RANGE. '' is "no bound", matching the
@@ -223,6 +241,7 @@ export function StockDebtClient() {
       // Storage denied: the choice lasts for this visit only.
     }
   };
+  const [viewId, setViewId] = React.useState<string | null>(null);
   const [openCell, setOpenCell] = React.useState<OpenCell | null>(null);
   const [pagination, setPagination] = React.useState<PaginationState>({
     pageIndex: 0,
@@ -233,7 +252,7 @@ export function StockDebtClient() {
   // (AC-24).
   React.useEffect(() => {
     setPagination((previous) => ({ ...previous, pageIndex: 0 }));
-  }, [debounced, onlyDebt, book, supplierIds, dateFrom, dateTo, projected]);
+  }, [debounced, onlyDebt, book, supplierIds, locations, locationsMode, dateFrom, dateTo, projected]);
 
   const list = useStockDebtQuery({
     pageIndex: pagination.pageIndex,
@@ -242,6 +261,8 @@ export function StockDebtClient() {
     onlyDebt,
     book,
     supplierIds,
+    locations,
+    locationsMode,
     dateFrom,
     dateTo,
     projected,
@@ -253,6 +274,57 @@ export function StockDebtClient() {
   const tbaMonth = list.data?.tba_month ?? null;
   const suppliers = React.useMemo(() => list.data?.suppliers ?? [], [list.data]);
   const totals = list.data?.totals;
+  const facetLocations = React.useMemo(() => list.data?.locations ?? [], [list.data]);
+  const locationOptions = React.useMemo(() => {
+    const facet = facetLocations;
+    const options = facet.map((loc) => {
+      const name = (loc.name ?? '').trim();
+      const label =
+        name && name.toLowerCase() !== loc.code.toLowerCase() ? `${loc.code} (${name})` : loc.code;
+      return { value: loc.id, label };
+    });
+    // A pick the facet lacks (another book's warehouse) is labelled, never shown as its id.
+    const known = new Set(facet.map((loc) => loc.id));
+    for (const id of locations) {
+      if (!known.has(id)) options.push({ value: id, label: 'Unknown location' });
+    }
+    return options;
+  }, [facetLocations, locations]);
+
+  // Saved views: the filters as one object, so a view applies them at once. The search box
+  // is reset (no debounce) so the board does not flash the unfiltered list first.
+  const currentFilters: StockDebtFilters = {
+    query: search.trim(), book, supplierIds, locations, locationsMode, dateFrom, dateTo, onlyDebt,
+    projected,
+  };
+  const savedViewConfig = React.useMemo(
+    () => toSavedViewConfig(currentFilters, new Date()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [search, book, supplierIds, locations, locationsMode, dateFrom, dateTo, onlyDebt, projected],
+  );
+  const applyView = (view: SavedView | null) => {
+    const next = fromSavedView(view, new Date());
+    resetSearch(next.query);
+    setBook(next.book);
+    setSupplierIds(next.supplierIds);
+    setLocations(next.locations);
+    setLocationsMode(next.locationsMode);
+    setDateFrom(next.dateFrom);
+    setDateTo(next.dateTo);
+    setOnlyDebt(next.onlyDebt);
+    setProjected(next.projected);
+    setViewId(view?.id ?? null);
+  };
+
+  // A picked id missing from the facet (another book's warehouse) never prints as an id.
+  const locationsActive = locations.length > 0;
+  const locationChipLabel = locationsActive
+    ? `${locations.length > 1 ? 'Locations' : 'Location'}: ${
+        locationsMode === 'exclude' ? 'all except ' : ''
+      }${locations
+        .map((id) => (list.data?.locations ?? []).find((loc) => loc.id === id)?.code ?? 'Unknown location')
+        .join(', ')}`
+    : null;
 
   // R15: two or more picked suppliers render as ONE chip "Suppliers: N" (AC-19c); one
   // picked supplier prints its own name, resolved from the envelope's `suppliers` facet -
@@ -572,15 +644,16 @@ export function StockDebtClient() {
   });
 
   const filtered = Boolean(
-    debounced || book !== 'all' || supplierIds.length > 0 || dateFrom || dateTo,
+    debounced || book !== 'all' || supplierIds.length > 0 || locationsActive || dateFrom || dateTo,
   );
 
   // AC-19b: what the Filters button's badge counts. "Only in debt" is the SCREEN's
-  // default, so it counts only when the reader has turned it OFF (AC-19c). R16: no more
-  // Ownership group to count.
+  // default, so it counts only when the reader has turned it OFF (AC-19c). Location counts
+  // as one, and not under Retail.
   const activeFilterCount =
     (book !== 'all' ? 1 : 0) +
     (supplierIds.length > 0 ? 1 : 0) +
+    (locationsActive ? 1 : 0) +
     (dateFrom || dateTo ? 1 : 0) +
     (onlyDebt ? 0 : 1) +
     (projected ? 1 : 0);
@@ -603,6 +676,13 @@ export function StockDebtClient() {
     supplierChipLabel
       ? { label: supplierChipLabel, onClear: () => setSupplierIds([]) }
       : null,
+    locationChipLabel ? {
+          label: locationChipLabel,
+          onClear: () => {
+            setLocations([]);
+            setLocationsMode('include');
+          },
+        } : null,
     deliveryChipLabel
       ? {
           label: deliveryChipLabel,
@@ -672,6 +752,14 @@ export function StockDebtClient() {
               // Nothing to personalise while the axis is the calendar (see above), and
               // no selection to export: this table is a reading, not a worklist.
               showColumns={false}
+              leftActions={
+                <SavedViewsMenu
+                  listingKey={STOCK_DEBT_LISTING_KEY}
+                  currentViewId={viewId}
+                  currentConfig={savedViewConfig}
+                  onApply={applyView}
+                />
+              }
               exportConfig={false}
               searchSlot={
                 <ListSearchInput
@@ -717,7 +805,39 @@ export function StockDebtClient() {
                           ...suppliers.map((entry) => ({ value: entry.id, label: entry.name })),
                         ]}
                         placeholder="Every supplier"
+                        clearable
                       />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Location</Label>
+                      <SearchableMultiSelect
+                        value={locations}
+                        onChange={setLocations}
+                        options={locationOptions}
+                        placeholder="Every location"
+                        clearable
+                      />
+                      <RadioGroup
+                        className="flex flex-wrap gap-3"
+                        value={locationsMode}
+                        onValueChange={(value) => setLocationsMode(value as StockDebtLocationsMode)}
+                      >
+                        {(
+                          [
+                            ['include', 'Only'],
+                            ['exclude', 'All except'],
+                          ] as [StockDebtLocationsMode, string][]
+                        ).map(([value, label]) => (
+                          <label key={value} className="flex items-center gap-1.5 text-sm">
+                            <RadioGroupItem
+                              value={value}
+                              id={`locations-mode-${value}`}
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </RadioGroup>
                     </div>
 
                     <div className="space-y-1.5">
@@ -778,7 +898,7 @@ export function StockDebtClient() {
                 <StockDebtExportPopover
                   envelope={list.data}
                   filters={{
-                    query: debounced, onlyDebt, book, supplierIds, dateFrom, dateTo, showAux,
+                    query: debounced, onlyDebt, book, supplierIds, locations, locationsMode, dateFrom, dateTo, showAux,
                     projected,
                   }}
                 />
@@ -862,14 +982,15 @@ export function StockDebtClient() {
           monthLabel={openCell.label}
           balance={openCell.balance}
           // AC-11b: the board's own due date range and book travel straight through to
-          // the drill - R16 already dropped the Ownership group this dialog used to take
-          // instead, so there is nothing else to echo. `dateFrom` passes RAW (its own
+          // the drill, with the Location pick. `dateFrom` passes RAW (its own
           // default is already ''); `dateTo`'s `|| undefined` is a no-op once it is set,
           // it only clears the default.
           dateFrom={dateFrom}
           dateTo={dateTo || undefined}
           book={book}
           projected={projected}
+          locations={locations}
+          locationsMode={locationsMode}
           onClose={() => setOpenCell(null)}
         />
       )}

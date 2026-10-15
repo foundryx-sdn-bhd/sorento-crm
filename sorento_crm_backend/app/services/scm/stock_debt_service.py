@@ -323,7 +323,8 @@ def book_so_pins(
 
 AUX_KEYS = ("pool_on_hand", "pool_po_qty", "pool_incoming_qty", "dealer_outstanding")
 AUX_EXPORT_HEADERS = [
-    "BRW On Hand Qty", "BRW PO Qty", "BRW Incoming Qty", "Dealer O/standing Qty",
+    "BRW Retail On Hand Qty", "BRW Retail PO Qty", "BRW Retail Incoming Qty",
+    "Dealer O/standing Qty",
 ]
 
 
@@ -350,6 +351,8 @@ class StockDebtService:
         *,
         query: Optional[str] = None,
         group: Optional[str] = None,
+        location: Optional[Sequence[str]] = None,
+        exclude_location: Optional[Sequence[str]] = None,
         only_debt: bool = True,
         page: int = 1,
         limit: int = 50,
@@ -374,7 +377,8 @@ class StockDebtService:
         filtered set rather than the page, for the same reason the axis already does:
         derived per page, they would change under the reader as they page (AC-6/AC-7/AC-7b).
         """
-        warehouses = self._warehouses(group, book)
+        span = self._warehouses(group, book)
+        warehouses = self._narrow_locations(span, location, exclude_location)
         products = self._products(warehouses, query)
         product_ids = [product_id for product_id, _code, _name, _cat in products]
         assignments = self._assignments(
@@ -393,7 +397,8 @@ class StockDebtService:
         # off the SAME assignment, so the month figures it starts from are the page's.
         pool = (
             self._projection_series(
-                product_ids, warehouses, assignments, date_to=date_to
+                product_ids, warehouses, assignments, date_to=date_to,
+                location=location, exclude_location=exclude_location,
             )
             if projected
             else {}
@@ -496,6 +501,7 @@ class StockDebtService:
             "months": axis,
             "tba_month": month_key(self._tba_from()),
             "groups": self._groups(),
+            "locations": self._locations(span),
             "totals": totals,
             "suppliers": suppliers,
             "sheet_counts": sheet_counts,
@@ -544,6 +550,8 @@ class StockDebtService:
         month: str,
         group: Optional[str] = None,
         *,
+        location: Optional[Sequence[str]] = None,
+        exclude_location: Optional[Sequence[str]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
         book: str = "all",
@@ -568,7 +576,9 @@ class StockDebtService:
                 message="month must be YYYY-MM, 'tba', 'undated' or 'unlocated'.",
                 code="stock_debt_bad_month",
             )
-        warehouses = self._warehouses(group, book)
+        warehouses = self._narrow_locations(
+            self._warehouses(group, book), location, exclude_location
+        )
         product = (
             self.db.query(Product.id, Product.product_code, Product.product_name)
             .filter(Product.id == product_id)
@@ -592,7 +602,7 @@ class StockDebtService:
         pool = (
             self._projection_series(
                 [str(product.id)], warehouses, assignments, date_to=date_to,
-                keep_events=True,
+                keep_events=True, location=location, exclude_location=exclude_location,
             )[str(product.id)]
             if projected
             else None
@@ -902,6 +912,41 @@ class StockDebtService:
                 == wanted
             ]
         return {str(row.id): row for row in rows}
+
+    @staticmethod
+    def _location_ids(values: Optional[Sequence[str]]) -> Set[str]:
+        """Warehouse ids asked for: stripped, non-empty. A bare str is one id."""
+        if not values:
+            return set()
+        items = [values] if isinstance(values, str) else values
+        return {str(v).strip() for v in items if v is not None and str(v).strip()}
+
+    def _narrow_locations(
+        self,
+        span: Dict[str, Warehouse],
+        location: Optional[Sequence[str]],
+        exclude_location: Optional[Sequence[str]],
+    ) -> Dict[str, Warehouse]:
+        """The span narrowed to the picked warehouses, then minus the excluded ones. An id
+        outside the span matches nothing, so an all-unknown pick is an empty span."""
+        keep = self._location_ids(location)
+        drop = self._location_ids(exclude_location)
+        return {
+            wid: row
+            for wid, row in span.items()
+            if (not keep or wid in keep) and wid not in drop
+        }
+
+    @staticmethod
+    def _locations(span: Dict[str, Warehouse]) -> List[Dict[str, Any]]:
+        """Every warehouse of the book's span, for the toolbar's Location select."""
+        return sorted(
+            (
+                {"id": wid, "code": row.warehouse_code, "name": row.warehouse_name}
+                for wid, row in span.items()
+            ),
+            key=lambda w: (w["code"] or "", w["id"]),
+        )
 
     def _groups(self) -> List[str]:
         """The ownership groups the flag currently admits, for the toolbar's select."""
@@ -1964,6 +2009,8 @@ class StockDebtService:
         *,
         date_to: Optional[date] = None,
         keep_events: bool = False,
+        location: Optional[Sequence[str]] = None,
+        exclude_location: Optional[Sequence[str]] = None,
     ) -> Dict[str, dict]:
         """STOCK-DEBT-PROJECTION: per product, the two month series `project_months` takes
         (`stock_debt_projection` states the rule; owner, 12 Oct 2026, option D).
@@ -1990,7 +2037,9 @@ class StockDebtService:
         Nothing here is written and nothing is assigned (R45).
         """
         as_of = date.today()
-        reserves = self._project_reserves()
+        reserves = self._narrow_locations(
+            self._project_reserves(), location, exclude_location
+        )
         outside = {wid: row for wid, row in reserves.items() if wid not in warehouses}
         walked = assignments
         pools = {
@@ -2593,6 +2642,8 @@ class StockDebtService:
         *,
         query: Optional[str] = None,
         group: Optional[str] = None,
+        location: Optional[Sequence[str]] = None,
+        exclude_location: Optional[Sequence[str]] = None,
         only_debt: bool = True,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -2614,7 +2665,8 @@ class StockDebtService:
         that does not is refused before `data` is ever trusted to be complete.
         """
         listing = self.list(
-            query=query, group=group, only_debt=only_debt, date_from=date_from,
+            query=query, group=group, location=location,
+            exclude_location=exclude_location, only_debt=only_debt, date_from=date_from,
             date_to=date_to, supplier_ids=supplier_ids, book=book, page=1,
             limit=MAX_LOW_STOCK_ROWS + 1, projected=projected,
         )
