@@ -658,7 +658,8 @@ def promo_subject_ask_back(
     about), and a message that answers an open numbered question is never asked back.
     `access_levels` are the access level names the promotions read is made at
     (`tier_gate.access_levels_recomposed`): a choice is offered only when a promotion at
-    one of them holds it (fix round 1 F4)."""
+    one of them holds it (fix round 1 F4). None is no level filter (a contact the tier gate
+    holds no tier for); an empty list is a contact who can see none (reviewer R1)."""
     if jsc.array(parse_output.get("reference_positions")):
         return None
     own = {
@@ -737,6 +738,10 @@ def _promotions_hold(
     from app.services.contact_access_type_service import ContactAccessTypeService
     from app.services.marketing_service import PromotionService
 
+    if access_levels is not None and not access_levels:
+        # Reviewer R1: a contact whose levels the tier gate emptied (a dealer lacking the
+        # asked brand) sees no promotion; None alone means no level filter (staff).
+        return False
     result = PromotionService(db).list_promotions(
         page=1,
         limit=1,

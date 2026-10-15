@@ -1076,7 +1076,8 @@ def filter_specs(
         "unrecognized_terms": unrecognized,
         # What defined the set, key by key, so a caller can say it back in plain words
         # (owner brief W2 on PR #833). Additive; the clause above is the truth.
-        "membership": {key: sorted(values) for key, values in membership.items() if values},
+        # Sorted as text: one key can hold the boolean and its word ("true") at once.
+        "membership": {key: sorted(values, key=str) for key, values in membership.items() if values},
     }
 
 

@@ -1156,7 +1156,13 @@ def resolve_product_set(
                             _bound_spec_matches(
                                 values,
                                 list(specs or [])
-                                + [{"key": "class", "value": label} for label in verdict["class_labels"]],
+                                # The class filter as counted: a yes-or-no spec may have
+                                # widened it past the class the header names (F1).
+                                + [
+                                    {"key": "class", "value": label}
+                                    for label in (verdict.get("membership") or {}).get("class")
+                                    or verdict["class_labels"]
+                                ],
                             )
                         ),
                         # No customer words were scored here, so nothing was

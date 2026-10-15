@@ -480,7 +480,7 @@ SPEC_REGISTRY_SEED: list[dict] = [
         # the class label itself (`product_class_signal.ClassVocabulary`). Chat fix PR-A
         # (AC-A3) moved these words here from the code list `CLASS_SYNONYMS`, word for
         # word, so the parser's `{{specs}}` block and staff on Product Specifications see
-        # them; migration `cfs_0001_class_meanings` writes them onto an installed database.
+        # them; migration `cfs_0001_spec_registry_seed` writes them onto an installed database.
         # Malay terms included because the corpus is bilingual.
         "synonyms": {
             "Kitchen Sink": ["kitchen sink", "sink", "sinki", "dapur"],
