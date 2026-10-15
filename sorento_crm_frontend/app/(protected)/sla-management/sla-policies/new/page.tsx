@@ -6,13 +6,14 @@ import { MoveLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
+import RequireAccess from '@/app/components/common/RequireAccess';
 import SLAPolicyForm from '../components/SLAPolicyForm';
 
 export default function NewSLAPolicyPage() {
   const router = useRouter();
 
   return (
-    <>
+    <RequireAccess permission="sla_management.sla_policies.add">
       <Container>
         <PageHeader
           title="Create SLA Policy"
@@ -32,6 +33,6 @@ export default function NewSLAPolicyPage() {
           }}
         />
       </Container>
-    </>
+    </RequireAccess>
   );
 }
