@@ -340,7 +340,7 @@ describe('AC-BR-06 commit carries the bulk stages', () => {
     fireEvent.click(screen.getByRole('button', { name: /^reserve \(2\)$/i }));
     const confirm = await screen.findByRole('dialog', { name: /reserve 2 lines on OI-2609-0731/i });
     expect(within(confirm).getByText('No stock')).toBeInTheDocument();
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Reserve and send to Agent J' }));
+    fireEvent.click(await within(confirm).findByRole('button', { name: 'Reserve and send to Agent J' }));
 
     await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(1));
     const [inquiryId, payload] = commitSpy.mock.calls[0];

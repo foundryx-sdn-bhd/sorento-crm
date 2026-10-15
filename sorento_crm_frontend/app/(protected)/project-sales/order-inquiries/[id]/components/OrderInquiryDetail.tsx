@@ -67,10 +67,12 @@ import {
 } from '../../../_shared/lib/orderInquiryReserve';
 import type { OrderInquiryWorklistRow } from '../../../_shared/types/orderInquiry.types';
 import {
+  foldInquiryLines,
   foldKeyOf,
   isLiveInquiryRow,
   isWaitingUsedRow,
   reserveHistoryRowOf,
+  tickRowsOf,
   type OrderInquiryLine,
 } from '../../../_shared/lib/orderInquiryLineFold';
 import type { CommitReservePayload } from '../../../_shared/services/orderInquiryReserveService';
@@ -79,6 +81,8 @@ import { OrderInquiryGeneralTab } from './OrderInquiryGeneralTab';
 import { ReserveRequestDialog } from './ReserveRequestDialog';
 import { ReserveConfirmDialog, type ReserveConfirmLine } from './ReserveConfirmDialog';
 import { ReserveLineForm } from './ReserveLineForm';
+import { ReserveDecideControl } from './ReserveDecideControl';
+import { BulkRejectReserveDialog } from './BulkRejectReserveDialog';
 import { OrderInquiryLineHistoryDialog } from './OrderInquiryLineHistoryDialog';
 import type { StagedReserveEntry } from './orderInquiryHeaderLinesColumns';
 import {
@@ -181,6 +185,13 @@ export function OrderInquiryDetail({ id }: { id: string }) {
   const [stagedByRowId, setStagedByRowId] = useState<Record<string, StagedReserveEntry>>({});
   // Which row `ReserveLineForm` is open for, and in which mode - the tick (AC-RS-84)
   // never opens this at all, it stages directly.
+  // OI-BULK-RESERVE (AC-BR-04/09): the rows "Reject N lines" is open for - the strip's
+  // counted lines (ticks clear on Stage) or one line's own x (ticks untouched). Kept after
+  // close so the title does not read "Reject 0 lines" while the dialog animates out.
+  const [rejectTarget, setRejectTarget] = useState<{ rowIds: string[]; fromStrip: boolean } | null>(
+    null,
+  );
+  const [reserveRejectOpen, setReserveRejectOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<{
     row: OrderInquiryWorklistRow;
     mode: 'reserve' | 'amend';
@@ -405,23 +416,70 @@ export function OrderInquiryDetail({ id }: { id: string }) {
   // AC-RS-84: the tick - stages the FULL requested qty at the default pool the
   // request itself already named, no dialog, nothing posted. A request row naming no
   // pool still stages: the commit then omits `warehouse_id` and the server defaults it.
-  const handleTickReserve = useCallback(
-    (row: OrderInquiryWorklistRow) => {
-      const open = openRequestForRow(row.id);
-      if (!open) return;
-      setStagedByRowId((prev) => ({
-        ...prev,
-        [row.id]: {
+  // OI-BULK-RESERVE: `reason` set = the x Reject (Reserve 0 + reason at the same pool).
+  // One builder for the line's tick and x and the strip's Decide, so they never differ.
+  const stageAnswers = useCallback(
+    (rowIds: string[], reason: string | null) => {
+      const entries: Record<string, StagedReserveEntry> = {};
+      for (const rowId of rowIds) {
+        const open = openRequestForRow(rowId);
+        if (!open) continue;
+        entries[rowId] = {
           kind: 'reserve',
-          qty: Number(open.qtyRequested || '0'),
+          qty: reason == null ? Number(open.qtyRequested || '0') : 0,
           warehouseId: open.warehouseId ?? null,
           locationLabel: open.location,
-          reason: null,
-        },
-      }));
+          reason,
+        };
+      }
+      if (Object.keys(entries).length === 0) return;
+      setStagedByRowId((prev) => ({ ...prev, ...entries }));
     },
     [openRequestForRow],
   );
+
+  const handleTickReserve = useCallback(
+    (row: OrderInquiryWorklistRow) => stageAnswers([row.id], null),
+    [stageAnswers],
+  );
+
+  const handleRejectReserve = useCallback((row: OrderInquiryWorklistRow) => {
+    setRejectTarget({ rowIds: [row.id], fromStrip: false });
+    setReserveRejectOpen(true);
+  }, []);
+
+  // OI-BULK-RESERVE (AC-BR-01/05): the grid ticks LINES and the line's own icons act on
+  // its primary row, so Decide counts the ticked lines whose primary row still has an
+  // open request - exactly the lines that show the tick.
+  const tickedPrimaryRows = useMemo(
+    () =>
+      foldInquiryLines(lines)
+        .filter((line) => {
+          const rows = tickRowsOf(line);
+          return rows.length > 0 && rows.every((row) => rowSelection[row.id]);
+        })
+        .map((line) => line.primary),
+    [lines, rowSelection],
+  );
+  const decideRowIds = useMemo(
+    () =>
+      tickedPrimaryRows
+        .filter((row) => row.reserve_state === 'requested' && openRequestForRow(row.id))
+        .map((row) => row.id),
+    [tickedPrimaryRows, openRequestForRow],
+  );
+
+  function reserveTickedAsRequested() {
+    stageAnswers(decideRowIds, null);
+    setRowSelection({});
+  }
+
+  function stageReject(reason: string) {
+    if (!reserveRejectOpen || !rejectTarget) return;
+    stageAnswers(rejectTarget.rowIds, reason);
+    if (rejectTarget.fromStrip) setRowSelection({});
+    setReserveRejectOpen(false);
+  }
 
   const handleEditReserve = useCallback((row: OrderInquiryWorklistRow) => {
     setEditingRow({ row, mode: 'reserve' });
@@ -948,11 +1006,25 @@ export function OrderInquiryDetail({ id }: { id: string }) {
             canReserve={canReserve}
             stagedByRowId={stagedByRowId}
             onTickReserve={handleTickReserve}
+            onRejectReserve={handleRejectReserve}
             onEditReserve={handleEditReserve}
             onAmendReserve={handleAmendReserve}
             onLineHistoryClick={handleLineHistoryClick}
             onUndoStaged={handleUndoStaged}
             canEditAttachments={canEditAttachments}
+            decideSlot={
+              canReserve ? (
+                <ReserveDecideControl
+                  count={decideRowIds.length}
+                  anyTicked={tickedPrimaryRows.length > 0}
+                  onReserveAsRequested={reserveTickedAsRequested}
+                  onReject={() => {
+                    setRejectTarget({ rowIds: decideRowIds, fromStrip: true });
+                    setReserveRejectOpen(true);
+                  }}
+                />
+              ) : undefined
+            }
           />
         </TabsContent>
 
@@ -1014,6 +1086,13 @@ export function OrderInquiryDetail({ id }: { id: string }) {
           }}
         />
       ) : null}
+
+      <BulkRejectReserveDialog
+        open={reserveRejectOpen}
+        count={rejectTarget?.rowIds.length ?? 0}
+        onOpenChange={setReserveRejectOpen}
+        onConfirm={stageReject}
+      />
 
       <ReserveConfirmDialog
         open={reserveConfirmOpen}
