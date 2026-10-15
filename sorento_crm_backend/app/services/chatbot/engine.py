@@ -3081,39 +3081,55 @@ def _localize_result(result: TurnResult, session_factory: SessionFactory, dry_ru
         localizer = label_catalog.resolve(db, lang, dry_run=dry_run)
         if localizer is label_catalog.IDENTITY:
             return
-        reply = dict(result.reply)
-        if isinstance(reply.get("text"), str):
-            reply["text"] = localizer.reply(reply["text"])
-        actions = [
-            {**a, "text": localizer.reply(a["text"])}
-            if isinstance(a, dict) and a.get("kind") == "send_message" and isinstance(a.get("text"), str)
-            else a
-            for a in (result.actions or [])
-        ]
-        if reply == result.reply and actions == (result.actions or []):
-            return
-        row = db.query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
-        if row is not None and isinstance(row.response, dict):
-            stored = row.response
-            row.response = {
-                **stored,
-                **({"reply": {**(stored.get("reply") or {}), **reply}} if "reply" in stored else {}),
-                **({"actions": actions} if "actions" in stored else {}),
-            }
-            trace = [dict(r) if isinstance(r, dict) else r for r in (row.trace or [])]
-            for record in trace:
-                if not isinstance(record, dict) or record.get("stage") not in ("sent", "replied"):
-                    continue
-                raw = record.get("raw")
-                if not isinstance(raw, dict):
-                    continue
-                if isinstance(raw.get("reply"), dict):
-                    record["raw"] = raw = {**raw, "reply": {**raw["reply"], "text": reply.get("text")}}
-                if isinstance(raw.get("actions"), list):
-                    record["raw"] = {**raw, "actions": actions}
-            row.trace = trace
-            db.commit()
-        result.reply, result.actions = reply, actions
+        rewritten = _rewritten_texts(result, localizer.reply)
+        if rewritten is not None:
+            _keep_sent_texts(db, result, *rewritten)
+
+
+def _rewritten_texts(
+    result: TurnResult, rewrite: Callable[[str], str]
+) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+    """The reply and actions with `rewrite` applied to the reply text and every `send_message` text; None
+    when nothing changed."""
+    reply = dict(result.reply)
+    if isinstance(reply.get("text"), str):
+        reply["text"] = rewrite(reply["text"])
+    actions = [
+        {**a, "text": rewrite(a["text"])}
+        if isinstance(a, dict) and a.get("kind") == "send_message" and isinstance(a.get("text"), str)
+        else a
+        for a in (result.actions or [])
+    ]
+    if reply == result.reply and actions == (result.actions or []):
+        return None
+    return reply, actions
+
+
+def _keep_sent_texts(db: Session, result: TurnResult, reply: dict[str, Any], actions: list[dict[str, Any]]) -> None:
+    """The turn row and its `sent` / `replied` trace records brought in line with the reply and actions the
+    turn now sends (so the parser reads next turn the reply the customer was sent), and the result too."""
+    row = db.query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
+    if row is not None and isinstance(row.response, dict):
+        stored = row.response
+        row.response = {
+            **stored,
+            **({"reply": {**(stored.get("reply") or {}), **reply}} if "reply" in stored else {}),
+            **({"actions": actions} if "actions" in stored else {}),
+        }
+        trace = [dict(r) if isinstance(r, dict) else r for r in (row.trace or [])]
+        for record in trace:
+            if not isinstance(record, dict) or record.get("stage") not in ("sent", "replied"):
+                continue
+            raw = record.get("raw")
+            if not isinstance(raw, dict):
+                continue
+            if isinstance(raw.get("reply"), dict):
+                record["raw"] = raw = {**raw, "reply": {**raw["reply"], "text": reply.get("text")}}
+            if isinstance(raw.get("actions"), list):
+                record["raw"] = {**raw, "actions": actions}
+        row.trace = trace
+        db.commit()
+    result.reply, result.actions = reply, actions
 
 
 def _ai_allowed(session_factory: SessionFactory, contact_respond_id: str) -> bool:
@@ -4217,8 +4233,25 @@ def _run_stages(envelope: Envelope, *, session_factory: SessionFactory, **kwargs
         groups = family_overrides(db)
     with customer_groups(groups):
         result = _run_stages_body(envelope, session_factory=session_factory, **kwargs)
+    _pv2_scrub_ids(result, kwargs.get("media_box") or {}, session_factory)
     _pv2_keep_state(result, envelope, session_factory=session_factory, **kwargs)
     return result
+
+
+def _pv2_scrub_ids(result: TurnResult, media_box: dict[str, Any], session_factory: SessionFactory) -> None:
+    """R6 E2: on a PV2 turn (its state in the media box) every id in the reply and the sent texts, v1-rendered
+    ones included, becomes its known label, else goes (`register.scrub_ids`), and the turn row is brought in
+    line. A v1 turn is untouched."""
+    if "pv2_state" not in media_box or result.duplicate or not isinstance(result.reply, dict):
+        return
+    from app.services.chatbot.pv2 import register as pv2_register
+
+    labels = pv2_register.known_labels(media_box.get("pv2_state"))
+    rewritten = _rewritten_texts(result, lambda text: pv2_register.scrub_ids(text, labels))
+    if rewritten is None:
+        return
+    with _session(session_factory) as db:
+        _keep_sent_texts(db, result, *rewritten)
 
 
 def _pv2_write_register(media_box: dict[str, Any], envelopes: Any) -> None:

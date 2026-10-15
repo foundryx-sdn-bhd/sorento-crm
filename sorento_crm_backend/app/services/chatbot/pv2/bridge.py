@@ -16,6 +16,7 @@ from datetime import date
 from typing import Any
 
 from app.services.chatbot.head.parser import PARSE_OUTPUT_JSON_SCHEMA
+from app.services.chatbot.pv2 import clarify_copy
 from app.services.chatbot.pv2.state import ConversationState, Held, Lookup, ResolvedRef
 from app.services.chatbot.turn.policy_rows import DEFAULT_DOMAIN_ROWS
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS
@@ -116,6 +117,18 @@ def _is_current(action: Lookup, ref: ResolvedRef) -> bool:
     return ref.kind in {e.kind for e in action.ask.entities}
 
 
+#: Index kinds keyed by a slug (`resolve.INDEX_KINDS`), never a code anyone types: v1 reads their label.
+LABEL_KEYED_KINDS: frozenset[str] = frozenset({"product_type", "product_class"})
+
+
+def v1_text(ref: ResolvedRef) -> str:
+    """R6 E1: the words v1 reads for a held ref, as if typed: its code (the key), or its printed label when the
+    key is not a code (an id, or a slug-keyed kind), as a reply prints it (`clarify_copy.printed_code`)."""
+    if ref.kind in LABEL_KEYED_KINDS:
+        return clarify_copy.safe_label(ref.label, None)
+    return clarify_copy.printed_code(ref.key, ref.label, None)
+
+
 def _v1_entity(ref: ResolvedRef, *, current: bool = True) -> dict[str, Any]:
     if ref.kind == "customer" and _is_uuid(ref.key):
         # v1's carried-pick shape: the label as the typed words, the customer id beside it.
@@ -132,10 +145,12 @@ def _v1_entity(ref: ResolvedRef, *, current: bool = True) -> dict[str, Any]:
             "spec_value": None,
             "account": None,
         }
+    text = v1_text(ref)
     return {
-        "raw": ref.key,
+        "raw": text,
         "hint": V1_HINT.get(ref.kind, ref.kind),
-        "canonical_code": ref.key,
+        # A label is typed words, not a code: v1's resolver reads it as the parser's own `raw`.
+        "canonical_code": ref.key if text == ref.key else None,
         "current_message": current,
         "confident": True,
         "hint_confident": True,
@@ -251,7 +266,7 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date, so_g
             "group_by": low_stock.group_by,
             "categories": [r.label for r in held.refs.get("product_type", [])],
             "all_categories": low_stock.all_categories,
-            "brands": [r.key for r in held.refs.get("brand", [])],
+            "brands": [v1_text(r) for r in held.refs.get("brand", [])],
             "suppliers": [],
         }
     answer = _open_question_answer(action)
@@ -333,7 +348,7 @@ def focus_from_v2(held: Held, base: Focus | None = None) -> Focus:
         if held.domain == "portal_link" and held.portal_form and kind in ("product", "customer", "brand"):
             continue  # the form is the subject; the typed codes were never a form the user filled in
         if kind == "brand":
-            focus.brands = [r.key for r in refs]
+            focus.brands = [v1_text(r) for r in refs]
             continue
         field_name = KIND_FIELD_MAP.get(kind)
         rows = [_focus_row(r) for r in refs]
