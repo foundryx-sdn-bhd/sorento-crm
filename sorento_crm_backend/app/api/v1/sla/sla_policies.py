@@ -5,7 +5,6 @@ from typing import Optional
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
 from app.dependencies import (
-    get_current_user_or_api_key,
     require_permission_with_api_key,
     require_session_or_api_key_permission,
 )
@@ -18,6 +17,13 @@ from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.services.error_handler import handle_internal_error
 
 router = APIRouter()
+
+# Writes carry the registry's policy slugs (`_crud("sla_management", "sla_policies", ...)`).
+# A tier is part of its policy, so the tier writes take `.edit`. An X-API-Key caller is
+# held to the same slug through its act-as user, as the reads already are.
+ADD = "sla_management.sla_policies.add"
+EDIT = "sla_management.sla_policies.edit"
+DELETE = "sla_management.sla_policies.delete"
 
 
 @router.get("/", response_model=ListResponse[SLAPolicyResponse])
@@ -68,7 +74,7 @@ async def get_sla_policy(
 @router.post("/", response_model=SLAPolicyResponse, status_code=status.HTTP_201_CREATED)
 async def create_sla_policy(
     policy_data: SLAPolicyCreate,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key(ADD)),
     db: Session = Depends(get_db)
 ):
     """Create a new SLA policy with tiers."""
@@ -86,7 +92,7 @@ async def create_sla_policy(
 async def update_sla_policy(
     policy_id: str,
     policy_data: SLAPolicyUpdate,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Update an SLA policy."""
@@ -104,7 +110,7 @@ async def update_sla_policy(
 @router.delete("/{policy_id}", status_code=status.HTTP_200_OK)
 async def delete_sla_policy(
     policy_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key(DELETE)),
     db: Session = Depends(get_db)
 ):
     """Delete an SLA policy."""
@@ -138,7 +144,7 @@ async def get_sla_policy_tiers(
 async def create_sla_policy_tier(
     policy_id: str,
     tier_data: SLAPolicyTierCreate,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Create a tier for an SLA policy."""
@@ -160,7 +166,7 @@ async def update_sla_policy_tier(
     policy_id: str,
     tier_id: str,
     tier_data: SLAPolicyTierUpdate,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Update an SLA policy tier."""
@@ -179,7 +185,7 @@ async def update_sla_policy_tier(
 async def delete_sla_policy_tier(
     policy_id: str,
     tier_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Delete an SLA policy tier."""
