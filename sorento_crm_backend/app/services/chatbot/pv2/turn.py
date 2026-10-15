@@ -30,6 +30,7 @@ from app.services.chatbot.pv2.apply import (
     ClarifyPolicy,
     ResolverLike,
     apply_turn,
+    reads_as_answer,
     shown_row,
     valid_origin,
 )
@@ -240,9 +241,13 @@ def _judged_asks(out: Any, pending_in: Any, held: Any = None, rows: list[Any] | 
     subject (its domain and report) and the question's original ask: a pick continues both, so a grant
     removed since either was asked still binds, however many questions deep. A pick of a printed row (`rows`,
     the shown rows) is judged as the entity apply makes of it (R4a), so a grant removed since it was printed
-    binds too."""
+    binds too. R5 fix 1: an ask apply reads as the answer to the open question (`reads_as_answer`) is judged as
+    that answer, so the question's original ask binds before any lookup."""
     asks = []
     for ask in getattr(out, "asks", None) or []:
+        if pending_in is not None and reads_as_answer(ask, pending_in, held):
+            asks.append(ask.model_copy(update={"act": "answers_bot_question"}))  # the open list owns the pick
+            continue
         picked = shown_row(rows or [], ask)
         asks.append(ask if picked is None else ask.model_copy(update={"entities": [picked, *ask.entities]}))
     if pending_in is None or not any(getattr(a, "act", None) == "answers_bot_question" for a in asks):
