@@ -58,6 +58,14 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
     limit: pagination.pageSize,
     query: query || undefined,
   });
+  // The series can shrink under the page being read (rows removed elsewhere): step back to the
+  // last page that exists rather than sit on an empty one.
+  React.useEffect(() => {
+    if (!rows.data || rows.isPlaceholderData || rows.data.total === 0) return;
+    const last = Math.ceil(rows.data.total / pagination.pageSize) - 1;
+    if (pagination.pageIndex > last)
+      setPager((prev) => ({ ...prev, pageIndex: last, query }));
+  }, [rows.data, rows.isPlaceholderData, pagination.pageIndex, pagination.pageSize, query]);
   const { setPricing, remove } = useSeriesProductRowMutations(seriesId);
   const { importCodes } = useSeriesProductMutations();
 
@@ -283,6 +291,7 @@ export function SeriesProductsTable({ seriesId }: { seriesId: string }) {
       {seriesTotal > PAGER_MIN_ROWS || total > PAGER_MIN_ROWS ? (
         <DataGrid
           table={table}
+          listingKey={null}
           recordCount={total}
           isLoading={rows.isLoading}
           isPlaceholderData={rows.isPlaceholderData}

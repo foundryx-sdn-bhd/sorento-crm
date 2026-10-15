@@ -237,6 +237,7 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
                     <Label htmlFor="series-brand">Brand</Label>
                     <SearchableMultiSelect
                       id="series-brand"
+                      clearable
                       value={brandIds}
                       onChange={setBrandIds}
                       loadError={brands.error}
@@ -252,6 +253,7 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
                   <Label>Categories</Label>
                   <SearchableMultiSelect
                     value={categoryIds}
+                    clearable
                     onChange={setCategoryIds}
                     loadError={categories.error}
                     onRetry={() => void categories.refetch()}

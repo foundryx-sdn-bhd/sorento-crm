@@ -677,6 +677,10 @@ def _scope_conditions(db: Session, series_id: str) -> List[Any]:
     from querying ``Product`` through the ORM.
     """
     conditions: List[Any] = [Product.is_active == True]  # noqa: E712
+    # The series' own company, explicitly: a session spanning two companies must not widen it.
+    company_id = db.query(ProjectSeries.company_id).filter(ProjectSeries.id == str(series_id)).scalar()
+    if company_id:
+        conditions.append(Product.company_id == company_id)
     brand_ids = series_brand_ids(db, series_id)
     if brand_ids:
         conditions.append(Product.brand_id.in_(brand_ids))
