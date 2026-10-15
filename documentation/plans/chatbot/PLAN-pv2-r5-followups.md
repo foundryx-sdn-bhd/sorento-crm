@@ -162,3 +162,23 @@ All tests/chatbot/pv2/test_redesign_r*_*.py + test_rgaps_* + test_r4a_* + the th
 Touched tests green, reviewer READY, security CLEAN. Prompt changes only if a behaviour needs one: then ONE dev-only
 unlabelled version via pv2/index.publish_v2(label=None) on sorento_cagent_stack, id + md5 posted. Then
 `crew report --done`; crew runs the 3x battery.
+
+## Fix round 1 (reviewer NOT READY + security FINDINGS on ef8ea3023)
+
+Red files: tests/chatbot/pv2/test_r5_fix1_picks.py, test_r5_fix1_lines.py (+ test_r5_b nothing-held param, lead
+sign-off).
+- Blocking: bridge.py:229 nothing held -> DO+SO made a dealer without `sales_orders.outstanding` see the SO refusal
+  line (v1 outstanding_both, so_refused). Fix: both only with the SO grant, else DO.
+- Blocking: the SO half of R5-2 had no real-path test (test_d2 used a register shape the SO card never produces).
+- Should-fix: a new_topic in another domain carrying option_key "no" was swallowed as the answer (apply.py:392-403);
+  the confirm repeat guard (apply.py:2102) and the promo copy pick reaching v1 were untested or weakly tested.
+- Security should-fix: turn.py:247 `_judged_asks` read the parser's act, but apply converts a numbered refine into an
+  answer, so the first grant check skipped it (the second check still refused before any fetch).
+- Security nits taken: a UUID-shaped free_value on a v1 customer roster rode the carried-pick uuid branch
+  (bridge.py:120-134, 263); SO doc_lines included fully delivered lines the SO card never prints; register.py:22
+  `[ \t]*\(` quadratic and stripped every "()".
+- Reviewer notes taken: stale doc_lines after a later answer with no rows; the real containing-name resolver matches
+  "A/C I" to both A/C I and A/C II.
+- Not taken (pre-existing, ticket owed): a non-staff contact with no customer links gets an unscoped customer search
+  (resolve.py:740); R5-3 now also prints each account's name in the confirm. Numeric code typed exactly as printed
+  misses on a numbered list (apply.py:864; not a regression).
