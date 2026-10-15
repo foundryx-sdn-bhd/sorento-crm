@@ -1,6 +1,6 @@
 # PLAN - Series filters (SERIES-FILTERS)
 
-**Status:** building, track L (additive migration). Mock skipped (owner exception: existing
+**Status:** built, awaiting owner hand test and CI (PR #1697), track L (additive migration). Mock skipped (owner exception: existing
 components only). Card answered 15 Oct: Q1 = (a), R1-R6 approved.
 **UAC:** `series-filters-15oct-acceptance-criteria.md`
 
