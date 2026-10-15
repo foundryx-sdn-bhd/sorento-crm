@@ -67,7 +67,7 @@ def _dt(db, cid):
 def test_revision_ids_chain_onto_the_current_head():
     mod = _migration_module()
     assert mod.revision == "frc_0001_debtor_type_no_cs"
-    assert mod.down_revision == "ac_consign_0001_doc_type"
+    assert mod.down_revision == "sql_0001_set_quote_line"
     assert len(mod.revision) <= 32
 
 

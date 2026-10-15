@@ -13,14 +13,14 @@ Plan: documentation/plans/forms/PLAN-form-routing-conditions.md.
 DDL is idempotent: the shared dev DB converges by create_all.
 
 Revision ID: frc_0001_debtor_type_no_cs
-Revises: ac_consign_0001_doc_type
+Revises: sql_0001_set_quote_line
 Create Date: 2026-10-14
 """
 from alembic import op
 from sqlalchemy import text
 
 revision = "frc_0001_debtor_type_no_cs"
-down_revision = "ac_consign_0001_doc_type"
+down_revision = "sql_0001_set_quote_line"
 branch_labels = None
 depends_on = None
 
