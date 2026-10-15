@@ -30,11 +30,11 @@ COVERS_TWO = ["ZZTSCBD333-UF", "ZZTSCBD333A-UF"]
 WC_NONE = "ZZTWC8999"
 OTHER = "ZZTWT5608"
 #: The parse of a fit ask: `value` is the word of THIS message naming the other side.
-FITS = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": None}]}
+FITS = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": None, "kind": "seat_cover"}]}
 #: A fit ask whose message also asks for a file ("<WC> seat cover photo").
-FITS_PHOTO = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "photo"}]}
+FITS_PHOTO = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "photo", "kind": "seat_cover"}]}
 #: The same filter with no other-side word in the message (a carried fit ask, or a leak).
-FITS_UNSAID = {"filters": [{"key": "fits", "value": None, "unit": None, "file_word": None}]}
+FITS_UNSAID = {"filters": [{"key": "fits", "value": None, "unit": None, "file_word": None, "kind": None}]}
 
 #: One envelope for every tool: what differs between two turns is then only what the lane
 #: sent and how the existing structurer printed the same rows.
@@ -45,6 +45,21 @@ ENVELOPE = json.dumps(
         "items": [{"product_code": COVER_ONE, "quantity_on_hand": 11}],
     }
 )
+
+
+def _line_one(wc: str, cover: str) -> str:
+    """CHAT-FIT-LINE AC-9: the fit line of one linked seat cover."""
+    return f"Seat cover for {wc} is {cover}."
+
+
+def _line_many(wc: str, covers: list[str]) -> str:
+    """CHAT-FIT-LINE AC-10 (crew Q1 a): several linked seat covers."""
+    return f"Seat cover for {wc}: {', '.join(covers)}"
+
+
+def _with_line(line: str, c_reply: str) -> str:
+    """CHAT-FIT-LINE AC-8: the fit line, a blank line, then the control's reply."""
+    return f"{line}\n\n{c_reply}"
 
 
 def _seed_ids(session_factory) -> dict[str, str]:
@@ -129,7 +144,7 @@ def test_case2_stock_seat_cover_answers_exactly_as_stock_of_the_cover_codes(sess
     assert "crm_find" not in _names(a_calls), a_calls
     assert c_calls, "the control must fetch"
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_many(WC_TWO, COVERS_TWO), c_reply), (a_reply, c_reply)
 
 
 def test_case3_eta_seat_cover_answers_eta_not_stock(session_factory, monkeypatch) -> None:
@@ -141,7 +156,7 @@ def test_case3_eta_seat_cover_answers_eta_not_stock(session_factory, monkeypatch
     )
     assert "crm_find" not in _names(a_calls), a_calls
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def test_case1_no_domain_answers_as_the_bare_cover_code(session_factory, monkeypatch) -> None:
@@ -153,7 +168,7 @@ def test_case1_no_domain_answers_as_the_bare_cover_code(session_factory, monkeyp
     )
     assert "crm_find" not in _names(a_calls), a_calls
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def test_q4_a_file_ask_runs_the_attachment_path_on_the_cover_codes(session_factory, monkeypatch) -> None:
@@ -165,7 +180,7 @@ def test_q4_a_file_ask_runs_the_attachment_path_on_the_cover_codes(session_facto
     )
     assert "crm_find" not in _names(a_calls), a_calls
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def test_q2_a_product_with_no_link_beside_a_wc_answers_as_typed(session_factory, monkeypatch) -> None:
@@ -175,7 +190,7 @@ def test_q2_a_product_with_no_link_beside_a_wc_answers_as_typed(session_factory,
         text_typed=f"stock {COVER_ONE} {OTHER}", text_asked=f"stock seat cover for {WC_ONE} and {OTHER}",
     )
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def test_the_reverse_wc_for_a_seat_cover_resolves_its_wc(session_factory, monkeypatch) -> None:
@@ -183,10 +198,10 @@ def test_the_reverse_wc_for_a_seat_cover_resolves_its_wc(session_factory, monkey
         session_factory, monkeypatch, domain="inventory", intent="check_stock",
         typed=[WC_ONE], asked=[COVER_ONE],
         text_typed=f"stock {WC_ONE}", text_asked=f"stock WC for {COVER_ONE}",
-        find={"filters": [{"key": "fits", "value": "WC", "unit": None, "file_word": None}]},
+        find={"filters": [{"key": "fits", "value": "WC", "unit": None, "file_word": None, "kind": "seat_cover"}]},
     )
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(f"{COVER_ONE} fits {WC_ONE}.", c_reply), (a_reply, c_reply)
 
 
 @pytest.mark.parametrize("domain,intent", [("inventory", "check_stock"), (None, None), ("master_products", "check_product")])
@@ -259,7 +274,7 @@ def test_which_seat_cover_fits_it_resolves_the_carried_wc(session_factory, monke
     )
     assert c_calls, "the control must fetch"
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 # --------------------------------------------------------------------------- the resolution step
@@ -462,7 +477,7 @@ def test_e6_the_type_word_beside_the_wc_is_no_miss_and_no_narrowing(session_fact
     reply, calls = _turn(
         session_factory, monkeypatch, text=f"{WC_ONE} 配什么马桶盖", msg_id="ZZT-seat-word-asked",
         domain_hint="master_products", intent_hint="check_product", entities=[_product(WC_ONE), word],
-        find={"filters": [{"key": "fits", "value": "马桶盖", "unit": None, "file_word": None}]},
+        find={"filters": [{"key": "fits", "value": "马桶盖", "unit": None, "file_word": None, "kind": "seat_cover"}]},
     )
     assert "找不到" not in reply and "could not find" not in reply.lower(), reply
     assert calls == control[1], (calls, control[1])
@@ -520,7 +535,7 @@ def test_step7_a_bare_seat_cover_ask_continues_a_file_ask_like_the_bare_cover_co
         find=FITS,
     )
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def _focus_codes(session_factory) -> list[str]:
@@ -623,7 +638,7 @@ def test_x5_the_carry_through_the_engine_answers_the_new_wcs_cover(session_facto
         find=FITS_UNSAID, domain_in_message=False,
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def test_x6_narrowing_through_the_engine_keeps_the_answered_cover(session_factory, monkeypatch) -> None:
@@ -732,7 +747,7 @@ def test_y7_the_carry_through_the_engine_when_the_parse_dropped_find(session_fac
         domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_ONE)], domain_in_message=False,
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def test_y8_narrowing_with_a_made_up_value_keeps_the_answered_cover(session_factory, monkeypatch) -> None:
@@ -766,7 +781,7 @@ def test_a_value_less_fits_on_a_wc_file_ask_answers_the_wc_itself(session_factor
     """The live shape end to end: the WC's own drawing ask with a noise `fits` is the plain turn."""
     drawing = {"raw": "drawing", "hint": "attachment_type", "canonical_code": "technical drawing",
                "current_message": True, "confident": True}
-    noise = {"filters": [{"key": "fits", "value": None, "unit": None, "file_word": "drawing"}]}
+    noise = {"filters": [{"key": "fits", "value": None, "unit": None, "file_word": "drawing", "kind": None}]}
     _seed(session_factory)
     _seed_contact(session_factory, variables={})
     conn = session_factory().get_bind()
@@ -920,7 +935,7 @@ def test_f4_cold_seat_cover_misread_as_a_file_ask_answers_as_the_bare_cover(sess
     )
     assert "Installation Guide" not in a_reply and "kind of file" not in a_reply, a_reply
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def test_f5_narrowing_on_a_partial_code_is_the_plain_turn(session_factory, monkeypatch) -> None:
@@ -940,7 +955,7 @@ def test_f6_photo_answering_the_file_question_stays_on_the_cover(session_factory
     resolves to the cover, exactly as when the cover code itself is echoed."""
     photo = {"raw": "photo", "hint": "attachment_type", "canonical_code": "photo", "current_message": True,
              "confident": True}
-    files = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "files"}]}
+    files = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "files", "kind": "seat_cover"}]}
     _seed(session_factory)
     _seed_contact(session_factory, variables={})
     _turn(
@@ -962,7 +977,7 @@ def test_f6_photo_answering_the_file_question_stays_on_the_cover(session_factory
         entities=[{**_product(WC_ONE), "current_message": False}, photo], domain_in_message=True,
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def test_y10_a_value_that_is_the_file_word_is_no_fit_ask(session_factory) -> None:
@@ -970,7 +985,7 @@ def test_y10_a_value_that_is_the_file_word_is_no_fit_ask(session_factory) -> Non
     from app.services.chatbot.lanes.business import find as find_lane
 
     _seed(session_factory)
-    noise = {"filters": [{"key": "fits", "value": "drawing", "unit": None, "file_word": "Drawing"}]}
+    noise = {"filters": [{"key": "fits", "value": "drawing", "unit": None, "file_word": "Drawing", "kind": None}]}
     verdict = _verdict(WC_ONE, find=noise, domain_in_message=True)
     out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict)
     assert out == {**verdict, "find": None} and lines == []
@@ -1008,7 +1023,7 @@ def test_y12_no_code_with_a_domain_word_of_its_own_is_no_fit_question(session_fa
 def test_y13_the_engine_checks_the_value_against_the_message(session_factory, monkeypatch) -> None:
     drawing = {"raw": "drawing", "hint": "attachment_type", "canonical_code": "technical drawing",
                "current_message": True, "confident": True}
-    noise = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "drawing"}]}
+    noise = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "drawing", "kind": "seat_cover"}]}
     _seed(session_factory)
     _seed_contact(session_factory, variables={})
     conn = session_factory().get_bind()
@@ -1082,7 +1097,10 @@ def test_g3_the_partial_code_through_the_engine_answers_the_covers_stock(session
         domain_hint="inventory", intent_hint="check_stock", entities=[_product("9152")], find=FITS,
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    # CHAT-FIT-LINE: the model code resolves through links, so the reply opens with a fit line
+    # for the code the customer typed; the answer after it is the control's.
+    assert a_reply.startswith("Seat cover for 9152"), a_reply
+    assert a_reply.endswith("\n\n" + c_reply), (a_reply, c_reply)
 
 
 # --------------------------------------------------------------------------- crew audit @ ec84f482 (14 Oct)
@@ -1134,7 +1152,10 @@ def test_a2_the_model_code_through_the_engine_answers_the_two_covers(session_fac
         domain_hint="inventory", intent_hint="check_stock", entities=[_product("9152")], find=FITS,
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    # CHAT-FIT-LINE: the model code resolves through links, so the reply opens with a fit line
+    # for the code the customer typed; the answer after it is the control's.
+    assert a_reply.startswith("Seat cover for 9152"), a_reply
+    assert a_reply.endswith("\n\n" + c_reply), (a_reply, c_reply)
 
 
 def test_a3_the_relation_word_double_booked_as_a_file_type_is_dropped_beside_a_real_file_word(session_factory, monkeypatch) -> None:
@@ -1144,7 +1165,7 @@ def test_a3_the_relation_word_double_booked_as_a_file_type_is_dropped_beside_a_r
     "<cover> files" does."""
     as_type = {"raw": "seat cover", "hint": "attachment_type", "canonical_code": "installation guide",
                "current_message": True, "confident": True}
-    files = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "files"}]}
+    files = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "files", "kind": "seat_cover"}]}
     _seed(session_factory)
     _seed_contact(session_factory, variables={})
     conn = session_factory().get_bind()
@@ -1162,7 +1183,7 @@ def test_a3_the_relation_word_double_booked_as_a_file_type_is_dropped_beside_a_r
     )
     assert "Installation Guide" not in a_reply and "installation guide" not in a_reply.lower(), a_reply
     assert a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_one(WC_ONE, COVER_ONE), c_reply), (a_reply, c_reply)
 
 
 def test_y14_a_fit_ask_over_several_lines_is_checked_against_all_of_it(session_factory, monkeypatch) -> None:
@@ -1174,4 +1195,4 @@ def test_y14_a_fit_ask_over_several_lines_is_checked_against_all_of_it(session_f
         text_typed=f"stock {' '.join(COVERS_TWO)}", text_asked=f"{WC_TWO}\nseat cover\nstock?",
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
-    assert a_reply == c_reply, (a_reply, c_reply)
+    assert a_reply == _with_line(_line_many(WC_TWO, COVERS_TWO), c_reply), (a_reply, c_reply)
