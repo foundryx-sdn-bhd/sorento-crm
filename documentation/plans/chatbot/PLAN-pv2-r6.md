@@ -1,6 +1,6 @@
 # PLAN: PV2 R6 "clarify + references + contract test" (15 Oct 2026, evening)
 
-Status: Build (code map done; contract test being written). Track M (LEAD pattern, red-first, kill-proof). Branch `crew/pv2-redesign-r6` from d08cd98c3 (R5 head,
+Status: Merge-ready (contract 17/17, touched 3941/0, reviewer READY + security CLEAN at 8dd2878075; no prompt change; awaiting crew 3x battery and merge). Track M (LEAD pattern, red-first, kill-proof). Branch `crew/pv2-redesign-r6` from d08cd98c3 (R5 head,
 PR #1707 unmerged), worktree sorento_crm-pv2-fix2; draft PR stacked on #1707. Brief crew/state/briefs/PV2-FIX-R6.md +
 train-only brief crew/state/reports/PV2-R6-train-brief.md (root classes A-E; train only, by design).
 No prompt change in R6 (crew option O2 is R7).
@@ -144,6 +144,22 @@ options, and R5's fixtures always started from that shape, which the live parser
   count) with options yes / no, so MEMORY's numbering equals the print (I4). An account is picked only when the user
   names one (R5-3). test_r6_a passes either way; test_r6_c pins the group-name-only print.
 - Q5(a): R5 hold tests g7, f4_1, f4_2, f4_3 re-scoped (setup only, 9cbbb40441) to an unlinked contact WITHOUT the grant.
+
+- Contract bookkeeping (c68e8a40e4): a customer kept as an open confirm's candidate counts as kept (owner rule: nothing
+  applied before "yes"); I2 counts only when something of the asked kind was offerable; escalation seed; strict KNOWN list
+  of R7 parser-slot turns (currently 3: report measure arrives as a free value), failing on new or stale entries.
+- R5-8 guards re-pointed (2d50a71b07): g7 / f4_3 / f4_2 exercise the hold itself (no report grant), not the sales refusal.
+- Rule 3 (f04e85c1da): a not-found with nothing offerable is a statement (no pending), MEMORY still says not found.
+- A number on any confirm is its stored option (5877f054c4); accounts are picked by name only.
+- Parallel coders per owner (speed); batch kill-proof per slice at the end. Class D deferred to R7 (needs a parser
+  detail slot, schema.py:112-127).
+
+## Follow-ups (not blocking; reviewer / security final pass)
+- apply.py:~2255: a flagged domain/other turn with a parsed domain and nothing held or shown gets the domain menu, not the
+  lookup (accepted with 0dd096c997; 0 of 808 contract turns); revisit with R7 parser slots.
+- apply.py:~1494: the referent offer on the non-document not-found path has no pin test.
+- engine.py:~4268: if the turn-row rewrite fails, the stored row / trace keep the pre-scrub text (the user never sees it).
+- Staff without the PO grant still see purchase_order in the menu (the pick is refused).
 
 ## Slice order (red commit, then fix commit, each)
 0 contract test (red) -> A (clarify first-class, options stored, reask only with an open question, `_without_picked`)
