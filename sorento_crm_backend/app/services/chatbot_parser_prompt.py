@@ -1277,7 +1277,10 @@ def specification_lines(db: "Session") -> list[str]:
     it; a numeric key's unit and its own words; a yes-or-no key's words. Staff editing a
     choice or a word on Product Specifications reaches the parser at the next publish,
     with no prompt edit. Keys in `(spec_key)` order so the hash is stable. The product
-    types close the block as the words the category entity keeps."""
+    classes and the product types close the block as the words the category entity keeps,
+    each with the words customers use for it (chat fix PR-A, AC-A2: "Grab bar (grab bar,
+    handrail, safety bar)", "Jacuzzi (bathtub with massage jets, whirlpool, ...)"). The class
+    key is open (no closed value list): its choices are the values it holds words for."""
     from app.services.product_spec_registry import (
         active_registry,
         display_spec_value,
@@ -1285,13 +1288,27 @@ def specification_lines(db: "Session") -> list[str]:
         merged_synonyms,
     )
 
+    def named_with_words(row, values) -> list[str]:
+        synonyms = merged_synonyms(row)
+        labels = dict(getattr(row, "value_labels", None) or {})
+        out = []
+        for value in dict.fromkeys(values):
+            words = [w for w in synonyms.get(value) or [] if w]
+            shown = display_spec_value(value, labels)
+            out.append(f"{shown} ({', '.join(words)})" if words else shown)
+        return out
+
     lines: list[str] = []
     types: list[str] = []
+    classes: list[str] = []
     for row in active_registry(db):
         synonyms = merged_synonyms(row)
         labels = dict(getattr(row, "value_labels", None) or {})
         if row.spec_key == "product_type":
-            types = [display_spec_value(v, labels) for v in dict.fromkeys(merged_allowed_values(row))]
+            types = named_with_words(row, merged_allowed_values(row))
+            continue
+        if row.spec_key == "class":
+            classes = named_with_words(row, [*merged_allowed_values(row), *synonyms])
             continue
         if row.spec_key in SPECIFICATION_BLOCK_SKIP:
             continue
@@ -1323,8 +1340,10 @@ def specification_lines(db: "Session") -> list[str]:
             choices.append(f"{shown} = {value}" + (f" ({', '.join(words)})" if words else ""))
         if choices:
             lines.append(f"{head}: choices {'; '.join(choices)}.")
+    if classes:
+        lines.append(f"Product classes (the category entity keeps these, never a specification): {'; '.join(classes)}.")
     if types:
-        lines.append(f"Product types (the category entity keeps these, never a specification): {', '.join(types)}.")
+        lines.append(f"Product types (the category entity keeps these, never a specification): {'; '.join(types)}.")
     return lines
 
 

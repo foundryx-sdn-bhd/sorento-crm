@@ -785,6 +785,105 @@ def publish_wording_edit(session: Session, *, old: str, new: str, message: str) 
     return version
 
 
+#: The first words of the lines a static, publish-time render of `specification_lines` holds:
+#: the lines `{{specs}}` renders live.
+_STATIC_SPEC_LINE_STARTS = (
+    "Specification ",
+    "Product classes (the category entity keeps",
+    "Product types (the category entity keeps",
+)
+
+
+def _with_specs_block(text: str) -> str:
+    """`text` carrying the live `{{specs}}` block, every word outside it kept (taken from
+    #1582, SPEC-PROMO-PARAMS, for chat fix PR-A).
+
+    Three shapes: `{{specs}}` already present -> left alone; policy markers holding STATIC
+    rendered `Specification ...` lines and the `Product types (...)` line that closes them
+    (prod v52/v63, dev v94, rendered at publish time) -> those lines become `{{specs}}`,
+    rendered live from the registry; markers without such lines -> `{{specs}}` goes in
+    before the end marker; no markers -> a marker pair holding `{{specs}}` is appended."""
+    from app.services.chatbot_parser_prompt import BLOCKS_BEGIN, BLOCKS_END
+
+    if _re.search(r"\{\{\s*specs\s*\}\}", text or ""):
+        return text
+    if BLOCKS_BEGIN in text and BLOCKS_END in text and text.index(BLOCKS_BEGIN) < text.index(BLOCKS_END):
+        head, rest = text.split(BLOCKS_BEGIN, 1)
+        inside, tail = rest.split(BLOCKS_END, 1)
+        lines = inside.split("\n")
+        static = [i for i, ln in enumerate(lines) if ln.startswith(_STATIC_SPEC_LINE_STARTS)]
+        if static:
+            kept = [ln for i, ln in enumerate(lines) if i not in static]
+            kept.insert(static[0], "{{specs}}")
+            inside = "\n".join(kept)
+        else:
+            inside = f"{inside.rstrip(chr(10))}\n\n{{{{specs}}}}\n"
+        return f"{head}{BLOCKS_BEGIN}{inside}{BLOCKS_END}{tail}"
+    return f"{text.rstrip(chr(10))}\n\n{BLOCKS_BEGIN}\n{{{{specs}}}}\n{BLOCKS_END}\n"
+
+
+def publish_specs_block(session: Session, *, from_version: int | None = None) -> int | None:
+    """A parser version whose specification vocabulary is rendered live from the registry
+    (`{{specs}}`), published as a new UNLABELLED version (chat fix PR-A, AC-A1: a registry
+    edit reaches the parser with no new version). The source is `from_version` when given,
+    else the version labelled production; every word of its text is kept
+    (`_with_specs_block`). Returns the version number; None when the source already carries
+    the block, or a version with exactly the new text exists. The label moves only when the
+    owner moves it."""
+    import uuid
+
+    if from_version is not None:
+        row = session.execute(
+            sql("SELECT template, variables FROM ai_prompt_versions WHERE name = :n AND version = :v"),
+            {"n": PROMPT_KEY, "v": int(from_version)},
+        ).first()
+    else:
+        row = session.execute(
+            sql(
+                "SELECT v.template, v.variables FROM ai_prompt_versions v "
+                "JOIN ai_prompt_labels l ON l.version_id = v.id "
+                "WHERE l.name = :n AND l.label = 'production'"
+            ),
+            {"n": PROMPT_KEY},
+        ).first()
+    if row is None:
+        return None
+    new_text = _with_specs_block(row[0] or "")
+    if new_text == row[0]:
+        return None
+    exists = session.execute(
+        sql("SELECT 1 FROM ai_prompt_versions WHERE name = :n AND template = :t"),
+        {"n": PROMPT_KEY, "t": new_text},
+    ).first()
+    if exists is not None:
+        return None
+    from app.models.ai_prompt import AIPromptVersion
+
+    top = session.execute(
+        sql("SELECT coalesce(max(version), 0) FROM ai_prompt_versions WHERE name = :n"),
+        {"n": PROMPT_KEY},
+    ).scalar()
+    version = int(top) + 1
+    variables = list(row[1] or [])
+    session.add(
+        AIPromptVersion(
+            id=str(uuid.uuid4()),
+            name=PROMPT_KEY,
+            version=version,
+            type="text",
+            template=new_text,
+            variables=variables if "specs" in variables else [*variables, "specs"],
+            config_json={"wording_edit": True},
+            commit_message=(
+                f"CHAT-FIX-SPEC: v{from_version if from_version is not None else 'production'}"
+                " with the live {{specs}} block"
+            ),
+        )
+    )
+    session.flush()
+    return version
+
+
 # Literal registry lists the drift test (R4) refuses in any version published after the
 # wording layer: the shapes the hand lists had.
 LITERAL_LIST_PATTERNS: dict[str, str] = {
