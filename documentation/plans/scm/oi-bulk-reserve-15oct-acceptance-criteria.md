@@ -3,11 +3,11 @@
 Plan: `PLAN-oi-bulk-reserve-15oct.md`. Card: `oi-bulk-reserve-behaviour-card.md` (final rules v3).
 
 - AC-BR-01 With the reserve grant and lines ticked, the Lines tab selection strip shows one button
-  "Decide (N)" at its right end; N counts only ticked lines with an open (unanswered) request row;
-  disabled at 0; not shown without the reserve grant.
+  "Decide (N)" at its right end; N counts only ticked LINES (not rows) with an open (unanswered)
+  request row; disabled at 0; not shown with nothing ticked or without the reserve grant.
 - AC-BR-02 Its menu has exactly "Reserve as requested" and "Reject...".
 - AC-BR-03 "Reserve as requested" stages each counted line exactly as the line's tick does
-  (min(qty requested, remaining) at the request row's location; chip "Reserve <qty> @ <loc>"),
+  (the requested qty at the request row's location, no cap at remaining; chip "Reserve <qty> @ <loc>"),
   replaces an existing staged entry, clears the ticks, opens no dialog.
 - AC-BR-04 "Reject..." opens "Reject N lines" with one Reason; "Stage N lines" is disabled until a
   reason is typed; staging writes Reserve 0 + that reason on each counted line (chip "Reserve 0")
@@ -21,7 +21,8 @@ Plan: `PLAN-oi-bulk-reserve-15oct.md`. Card: `oi-bulk-reserve-behaviour-card.md`
 - AC-BR-07 Single-line tick / pen / Undo behave as before.
 - AC-BR-09 A requested line shows an x "Reject" button between the tick and the pen (reserve grant
   only); it opens "Reject 1 line" with a required Reason; Stage stages Reserve 0 + reason on that line
-  (chip "Reserve 0"); Cancel stages nothing. Answered lines show no x (pen = Amend only).
+  (chip "Reserve 0") and leaves other ticked lines ticked; Cancel stages nothing. Answered lines show
+  no x (pen = Amend only).
 - AC-BR-08 Usable at 375 and 1280 (strip wraps, Decide button stays reachable at the right).
 
 ## Part 2: cross-OI Lines page (mock v4)

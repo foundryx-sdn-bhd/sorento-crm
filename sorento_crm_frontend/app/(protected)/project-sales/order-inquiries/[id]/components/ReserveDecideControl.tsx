@@ -13,17 +13,15 @@ import {
  * OI-BULK-RESERVE (AC-BR-01/02): the selection strip's "Decide (N)", Fulfilment Planning's
  * Decide pattern (`BoardDecideControl.tsx`) cut down to the two answers a reserve request
  * has: the line's tick for every counted line, or its Reserve 0 with one reason. N is
- * counted by the caller (ticked lines with an open request); greyed at 0. `anyTicked`
- * keeps "(0)" on the label while answered lines alone are ticked, so the reader sees why.
+ * counted by the caller (ticked lines with an open request); greyed at 0. The caller
+ * renders it only while lines are ticked (the selection strip's own button, mock v3).
  */
 export function ReserveDecideControl({
   count,
-  anyTicked,
   onReserveAsRequested,
   onReject,
 }: {
   count: number;
-  anyTicked: boolean;
   onReserveAsRequested: () => void;
   onReject: () => void;
 }) {
@@ -38,7 +36,7 @@ export function ReserveDecideControl({
           title={enabled ? undefined : 'Tick lines that still need a reserve.'}
           data-testid="reserve-decide-button"
         >
-          {anyTicked ? `Decide (${count})` : 'Decide'}
+          {`Decide (${count})`}
           <ChevronDown className="size-4" aria-hidden />
         </Button>
       </DropdownMenuTrigger>

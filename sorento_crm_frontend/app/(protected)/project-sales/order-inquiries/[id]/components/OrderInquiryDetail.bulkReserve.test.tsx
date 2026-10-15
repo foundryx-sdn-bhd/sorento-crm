@@ -163,6 +163,8 @@ vi.mock('../../../_shared/services/fulfilmentPlanningService', () => ({
 }));
 
 import { OrderInquiryDetail } from './OrderInquiryDetail';
+import { getOrderInquiryHeaderLines } from '../../../_shared/services/orderInquiryService';
+import { getOrderInquiryReserveRequests } from '../../../_shared/services/orderInquiryReserveService';
 
 function renderDetail() {
   const client = new QueryClient({
@@ -205,10 +207,10 @@ beforeEach(() => {
 });
 
 describe('AC-BR-01 Decide (N) on the Lines tab selection strip', () => {
-  it('is disabled with nothing ticked and counts only ticked lines with an open request', async () => {
+  it('shows only while lines are ticked and counts only ticked lines with an open request', async () => {
     renderDetail();
     await ready();
-    expect(decideButton()).toBeDisabled();
+    expect(screen.queryByTestId('reserve-decide-button')).not.toBeInTheDocument();
 
     tick('CB313');
     tick('C-FH14');
@@ -260,8 +262,39 @@ describe('AC-BR-02/03 Reserve as requested', () => {
     expect(within(gridRowOf('C-FH14')).getByLabelText('Amend reserve')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^reserve \(2\)$/i })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    await waitFor(() => expect(decideButton()).toBeDisabled());
+    await waitFor(() => expect(screen.queryByTestId('reserve-decide-button')).not.toBeInTheDocument());
     expect(commitSpy).not.toHaveBeenCalled();
+  });
+
+  it('counts a line, not its rows: a line of two requested rows is one, staged on its primary row', async () => {
+    const first = row('row-4', 'CSA150', '20', { so_line_id: 'sol-d' });
+    const second = row('row-5', 'CSA150', '12', { so_line_id: 'sol-d' });
+    vi.mocked(getOrderInquiryHeaderLines).mockResolvedValue([ROW_A, first, second]);
+    vi.mocked(getOrderInquiryReserveRequests).mockResolvedValue([
+      {
+        ...OPEN_REQUEST,
+        rows: [
+          ...OPEN_REQUEST.rows,
+          { id: 'rq-4', row_id: 'row-4', item_code: 'CSA150', qty_requested: '20', warehouse_id: 'wh-brw', location: 'BRW', qty_reserved: null, reason: null },
+          { id: 'rq-5', row_id: 'row-5', item_code: 'CSA150', qty_requested: '12', warehouse_id: 'wh-brw', location: 'BRW', qty_reserved: null, reason: null },
+        ],
+      },
+    ]);
+    try {
+      renderDetail();
+      await ready();
+      tick('CSA150');
+      await waitFor(() => expect(decideButton()).toHaveTextContent('Decide (1)'));
+      openDecideMenu();
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Reserve as requested' }));
+
+      expect(await screen.findByText('Reserve 20 @ BRW')).toBeInTheDocument();
+      expect(screen.queryByText('Reserve 12 @ BRW')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^reserve \(1\)$/i })).toBeInTheDocument();
+    } finally {
+      vi.mocked(getOrderInquiryHeaderLines).mockResolvedValue([ROW_A, ROW_B, ROW_C]);
+      vi.mocked(getOrderInquiryReserveRequests).mockResolvedValue([OPEN_REQUEST, ANSWERED_REQUEST]);
+    }
   });
 
   it('replaces a line already staged', async () => {
@@ -302,7 +335,7 @@ describe('AC-BR-04 Reject...', () => {
 
     await waitFor(() => expect(screen.getAllByText('Reserve 0')).toHaveLength(2));
     expect(screen.getByRole('button', { name: /^reserve \(2\)$/i })).toBeInTheDocument();
-    await waitFor(() => expect(decideButton()).toBeDisabled());
+    await waitFor(() => expect(screen.queryByTestId('reserve-decide-button')).not.toBeInTheDocument());
   });
 
   it('Cancel stages nothing and keeps the ticks', async () => {
@@ -385,6 +418,52 @@ describe('AC-BR-09 line-level x Reject', () => {
 
     expect(await within(gridRowOf('CKS1050')).findByText('Reserve 0')).toBeInTheDocument();
     expect(within(gridRowOf('CB313')).queryByText('Reserve 0')).not.toBeInTheDocument();
+  });
+
+  it('leaves the other ticked lines ticked', async () => {
+    renderDetail();
+    await ready();
+    tick('CB313');
+    fireEvent.click(within(gridRowOf('CKS1050')).getByLabelText('Reject'));
+    const dialog = await screen.findByRole('dialog', { name: 'Reject 1 line' });
+    fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: 'No stock' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Stage 1 line' }));
+
+    expect(await screen.findByText('Reserve 0')).toBeInTheDocument();
+    expect(decideButton()).toHaveTextContent('Decide (1)');
+    expect(decideButton()).toBeEnabled();
+  });
+
+  it('a request naming no pool commits Reserve 0 without a warehouse', async () => {
+    vi.mocked(getOrderInquiryReserveRequests).mockResolvedValue([
+      {
+        ...OPEN_REQUEST,
+        rows: [{ ...OPEN_REQUEST.rows[1], warehouse_id: null, location: null }],
+      },
+      ANSWERED_REQUEST,
+    ] as OrderInquiryReserveRequest[]);
+    try {
+      renderDetail();
+      await waitFor(() =>
+        expect(within(gridRowOf('CKS1050')).getByLabelText('Reject')).toBeInTheDocument(),
+      );
+      fireEvent.click(within(gridRowOf('CKS1050')).getByLabelText('Reject'));
+      const dialog = await screen.findByRole('dialog', { name: 'Reject 1 line' });
+      fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: 'No stock' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Stage 1 line' }));
+      expect(await screen.findByText('Reserve 0')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
+      const confirm = await screen.findByRole('dialog', { name: /reserve 1 line/i });
+      fireEvent.click(await within(confirm).findByRole('button', { name: 'Reserve and send to Agent J' }));
+
+      await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(1));
+      expect(commitSpy.mock.calls[0][1].reserves).toEqual([
+        { row_id: 'row-2', qty_reserved: 0, reason: 'No stock' },
+      ]);
+    } finally {
+      vi.mocked(getOrderInquiryReserveRequests).mockResolvedValue([OPEN_REQUEST, ANSWERED_REQUEST]);
+    }
   });
 
   it('is not shown without the reserve grant', async () => {

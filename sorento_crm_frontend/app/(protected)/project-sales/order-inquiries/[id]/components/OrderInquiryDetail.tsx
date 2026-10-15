@@ -1013,10 +1013,9 @@ export function OrderInquiryDetail({ id }: { id: string }) {
             onUndoStaged={handleUndoStaged}
             canEditAttachments={canEditAttachments}
             decideSlot={
-              canReserve ? (
+              canReserve && tickedPrimaryRows.length > 0 ? (
                 <ReserveDecideControl
                   count={decideRowIds.length}
-                  anyTicked={tickedPrimaryRows.length > 0}
                   onReserveAsRequested={reserveTickedAsRequested}
                   onReject={() => {
                     setRejectTarget({ rowIds: decideRowIds, fromStrip: true });

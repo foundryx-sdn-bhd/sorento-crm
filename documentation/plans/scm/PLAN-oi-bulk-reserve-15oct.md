@@ -16,32 +16,35 @@ Reserve button, confirm.
 
 ## Rules (card final v3)
 
-1. Selection strip: ONE "Decide (N)" button at its right end, reserve grant only; N = ticked lines
-   with an open request row; greyed at 0.
-2. Menu "Reserve as requested": stage each counted line exactly as its tick does (min(requested,
-   remaining) at the request row's location), replace any staged entry, clear the ticks.
+1. Selection strip: ONE "Decide (N)" button at its right end, reserve grant only, shown while
+   lines are ticked; N = ticked lines (not rows) whose primary row has an open request row;
+   greyed at 0.
+2. Menu "Reserve as requested": stage each counted line exactly as its tick does (the requested qty
+   at the request row's location; no cap at remaining, since a request may reach into the received
+   part, AC-RR-11), replace any staged entry, clear the ticks.
 3. Menu "Reject...": lightbox "Reject N lines", one required Reason, "Stage N lines" stages
    Reserve 0 + reason on each counted line, clears the ticks.
 4. A requested line gets an x "Reject" beside tick and pen: same one-reason prompt, stages Reserve 0 +
-   reason (crew decision, mirrors bulk Reject).
+   reason (crew decision, mirrors bulk Reject); it leaves other ticked lines ticked.
 5. Amend and partial reserve stay per line (pen). Header "Reserve (N)" + #1684 confirmation commit
    as today. Purchasing hears a reject as today's Reserve 0 notice (sent or parked).
 
 ## Code
 
 - `app/(protected)/project-sales/order-inquiries/[id]/components/OrderInquiryLinesTab.tsx`: the
-  toolbar's selection strip gets the right-aligned "Decide (N)" button + DropdownMenu (via
-  `DataGridListToolbar`'s `bulkActionsSlot`, pattern `BoardDecideControl.tsx`), reserve grant only;
-  it calls new props `onBulkReserveAsRequested(lineIds)` / `onBulkReject(lineIds, reason)`.
+  new `decideSlot` prop renders the caller's "Decide (N)" as `DataGridListToolbar`'s
+  `primaryAction` with `alignActionsEnd`, so it sits at the right end at 375 and 1280.
+- New `[id]/components/ReserveDecideControl.tsx`: the button + DropdownMenu (pattern
+  `BoardDecideControl.tsx`).
 - New `[id]/components/BulkRejectReserveDialog.tsx`: "Reject N lines" (N = 1 from the line x), one
   required Reason; used by both the strip menu and the line x.
 - `[id]/components/orderInquiryHeaderLinesColumns.tsx` `ReserveActionsCell` (~253-281): add the x
   "Reject" button (`onRejectReserve(row)`) between the tick and the pen for `reserve_state ===
   'requested'`.
-- `[id]/components/OrderInquiryDetail.tsx`: `bulkStage(lineIds, mode)` builds the staged entries
-  from the same source the per-line tick uses (`onTickReserve` path: open request row, qty capped at
-  remaining, location) or Reserve 0 + reason, merges into `stagedByRowId`, clears `rowSelection`.
-  The eligible count comes from the same helper so the label and the stage never disagree.
+- `[id]/components/OrderInquiryDetail.tsx`: `stageAnswers(rowIds, reason)` is the one builder for
+  the line tick, the line x and Decide (open request row's qty and location, or Reserve 0 +
+  reason), merged into `stagedByRowId`. Decide counts `decideRowIds`: the ticked lines' primary
+  rows that are requested with an open request row, the same rows whose tick is shown.
 - No backend change: `commitOrderInquiryReserve` already takes many lines; recipients read already
   takes the staged row ids (#1684).
 

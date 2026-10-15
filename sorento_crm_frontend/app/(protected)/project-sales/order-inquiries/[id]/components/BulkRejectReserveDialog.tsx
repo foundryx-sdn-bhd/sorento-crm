@@ -17,21 +17,18 @@ import { Textarea } from '@/components/ui/textarea';
  * OI-BULK-RESERVE (AC-BR-04/09): "Reject N lines", one required Reason. Rejecting is a
  * Reserve 0 + reason on each line, the same answer the pen's Edit reserve gives at 0
  * (`ReserveLineForm.tsx` 125-126). Used by the strip's Decide > Reject... and by the
- * line's own x (N = 1). `confirmLabel` lets the cross-OI Lines page say "Next" instead
- * of staging.
+ * line's own x (N = 1).
  */
 export function BulkRejectReserveDialog({
   open,
   count,
   onOpenChange,
   onConfirm,
-  confirmLabel,
 }: {
   open: boolean;
   count: number;
   onOpenChange: (open: boolean) => void;
   onConfirm: (reason: string) => void;
-  confirmLabel?: string;
 }) {
   const [reason, setReason] = React.useState('');
   const noun = `${count} line${count === 1 ? '' : 's'}`;
@@ -56,7 +53,6 @@ export function BulkRejectReserveDialog({
             id="bulk-reject-reserve-reason"
             rows={3}
             value={reason}
-            placeholder="In your own words"
             onChange={(event) => setReason(event.target.value)}
           />
         </DialogBody>
@@ -65,7 +61,7 @@ export function BulkRejectReserveDialog({
             Cancel
           </Button>
           <Button type="button" disabled={!trimmed} onClick={() => onConfirm(trimmed)}>
-            {confirmLabel ?? `Stage ${noun}`}
+            {`Stage ${noun}`}
           </Button>
         </DialogFooter>
       </DialogContent>
