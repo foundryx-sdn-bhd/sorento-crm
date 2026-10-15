@@ -59,7 +59,12 @@ def _embedding_company_filter(db: Session):
       frozenset({ids})  -> company_id IN (ids) OR company_id IS NULL
                            (shared / company-less knowledge stays visible),
                            except a company-less ``debtor:`` seed: a debtor is never
-                           shared knowledge (a legacy row an old worker wrote)
+                           shared knowledge (a legacy row an old worker wrote);
+                           and minus every ``conversation_frame`` row: a frame
+                           is one contact's private conversation, so a scoped
+                           caller reads frames only through the contact-bound
+                           /external/memory/frames/search, never here (not
+                           even its own company's: that is other contacts')
       UNSET / empty     -> false()  (fail-closed: 0 rows)
 
     Embedding rows are NOT CompanyScopedMixin (the ORM auto-filter never touches
@@ -69,12 +74,15 @@ def _embedding_company_filter(db: Session):
     if scope is None:
         return None
     if isinstance(scope, frozenset) and scope:
-        return or_(
-            EmbeddingChunk.company_id.in_(list(scope)),
-            and_(
-                EmbeddingChunk.company_id.is_(None),
-                ~EmbeddingChunk.source_id.startswith(DEBTOR_SEED_PREFIX),
+        return and_(
+            or_(
+                EmbeddingChunk.company_id.in_(list(scope)),
+                and_(
+                    EmbeddingChunk.company_id.is_(None),
+                    ~EmbeddingChunk.source_id.startswith(DEBTOR_SEED_PREFIX),
+                ),
             ),
+            EmbeddingChunk.source_type != "conversation_frame",
         )
     return sa_false()  # UNSET / empty frozenset -> fail-closed
 

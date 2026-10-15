@@ -8,11 +8,13 @@ import logging
 from typing import Any
 
 import httpx
+from sqlalchemy import String, cast, exists
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models.base import set_company_scope
+from app.models.base import company_scope, set_company_scope
 from app.models.certificate import Certificate, CertificateProduct
 from app.models.embeddings import EmbeddingQueue, EmbeddingDocument, EmbeddingChunk
 from app.models.product import Product, ProductCategory, Brand
@@ -25,16 +27,17 @@ from app.models.procurement import InboundShipment, InboundShipmentLine, SPOAllo
 from app.models.order import Order, OrderStatus, OrderLine, Customer, Transporter
 from app.models.product import ProductAttachment
 from app.models.conversation_frame import ConversationFrame
-from app.services.embedding_service import EmbeddingReadService, parse_debtor_seed_id
+from app.services.embedding_service import DEBTOR_SEED_PREFIX, EmbeddingReadService, parse_debtor_seed_id
 
 logger = logging.getLogger(__name__)
 
 
 # source_type -> owned model carrying company_id (multi-company isolation). Types
 # absent here are synthetic / company-less (mcp_tool, form, schema_doc,
-# order_status, conversation_frame) and stay company-less - shared knowledge
-# visible under every scope. A ``debtor:<company>:<code>`` customer seed carries its
-# company in the id.
+# order_status) and stay company-less - shared knowledge visible under every
+# scope. A ``debtor:<company>:<code>`` customer seed carries its company in the id.
+# ``conversation_frame`` has no company column: its company is the frame
+# contact's, resolved in ``_company_id_for_source``.
 _SOURCE_MODEL_FOR_COMPANY = {
     "product": Product,
     # product_spec is keyed on product_id, so the product row carries its company.
@@ -56,11 +59,39 @@ _SOURCE_MODEL_FOR_COMPANY = {
     "certificate": Certificate,
 }
 
+# source_type -> the row an embedding is built from, for every type that has one.
+# A document whose row is gone is an orphan (``purge_orphan_embeddings``).
+_SOURCE_MODEL = {**_SOURCE_MODEL_FOR_COMPANY, "conversation_frame": ConversationFrame}
+
+
+def _frame_company_id(db: Session, frame_id: str):
+    """The company of a frame's contact, when the contact belongs to exactly one.
+
+    A frame is one contact's conversation. A contact in several companies (or in
+    none, or unknown) has no single company to stamp, so the frame stays NULL.
+    Defence in depth: a company-scoped RAG search returns no frame at all
+    (``embedding_service._embedding_company_filter``). Same contact resolution
+    as the request-entry scope resolver, so the two cannot disagree."""
+    from app.services.contact_access_type_service import ContactAccessTypeService
+
+    frame = db.query(ConversationFrame).filter(ConversationFrame.id == str(frame_id)).first()
+    if frame is None:
+        return None
+    company_ids = ContactAccessTypeService(db).resolve_contact_company_ids(
+        frame.contact_id, frame.space_id
+    )
+    return company_ids[0] if len(company_ids) == 1 else None
+
 
 def _company_id_for_source(db: Session, source_type: str, source_id: str):
     """company_id of an owned source entity, or None for synthetic / company-less
     sources. The worker runs system-scoped (``set_company_scope(None)``) so this
     read is not company-filtered and can resolve any company's row."""
+    if source_type == "conversation_frame":
+        try:
+            return _frame_company_id(db, source_id)
+        except Exception:
+            return None
     model = _SOURCE_MODEL_FOR_COMPANY.get(source_type)
     if model is None:
         return None
@@ -230,6 +261,15 @@ def _canonical_for_source(db: Session, source_type: str, source_id: str, payload
         certificate = db.query(Certificate).filter(Certificate.id == source_id).first()
         if not certificate:
             raise ValueError(f"Certificate not found: {source_id}")
+        # Only the certificate's own company's products: the embedding carries ONE
+        # company_id, so another company's code in it would be readable under this
+        # certificate's scope. A shared (NULL-company) certificate is visible to
+        # every scope, so it may carry company-less products only.
+        product_company = (
+            Product.company_id.is_(None)
+            if certificate.company_id is None
+            else Product.company_id == certificate.company_id
+        )
         product_codes = [
             code
             for (code,) in (
@@ -238,7 +278,7 @@ def _canonical_for_source(db: Session, source_type: str, source_id: str, payload
                     CertificateProduct,
                     CertificateProduct.product_id == Product.id,
                 )
-                .filter(CertificateProduct.certificate_id == str(certificate.id))
+                .filter(CertificateProduct.certificate_id == str(certificate.id), product_company)
                 .order_by(Product.product_code)
                 .all()
             )
@@ -716,6 +756,92 @@ def _spo_allocation_hidden(db: Session, source_id: str) -> bool:
     return visible is None
 
 
+def _source_row_exists(db: Session, source_type: str, source_id: str) -> bool:
+    """False only when ``source_type`` has a row model and that row is gone. A type
+    with no row (mcp_tool, schema_doc, ...) and a ``debtor:`` seed read as present,
+    so nothing synthetic is ever removed as "deleted"."""
+    model = _SOURCE_MODEL.get(source_type)
+    if model is None or str(source_id).startswith(DEBTOR_SEED_PREFIX):
+        return True
+    try:
+        # SAVEPOINT: a malformed id fails the statement (invalid uuid) and would
+        # otherwise abort the worker's transaction. Read as present: not removed.
+        with db.begin_nested():
+            return db.query(model.id).filter(model.id == str(source_id)).first() is not None
+    except DBAPIError:
+        return True
+
+
+def _delete_documents(db: Session, doc_ids_query) -> int:
+    """Delete the documents ``doc_ids_query`` selects, chunks first."""
+    ids = [str(r[0]) for r in doc_ids_query.all()]
+    if not ids:
+        return 0
+    db.query(EmbeddingChunk).filter(EmbeddingChunk.document_id.in_(ids)).delete(synchronize_session=False)
+    db.query(EmbeddingDocument).filter(EmbeddingDocument.id.in_(ids)).delete(synchronize_session=False)
+    return len(ids)
+
+
+def purge_orphan_embeddings(db: Session) -> dict[str, Any]:
+    """Embedding documents whose source row no longer exists, per source_type: counts,
+    source ids and document ids. Counts only, never deletes: deleting is
+    ``scripts/purge_orphan_embeddings.py --apply --expect N``, which commits in batches
+    (a one-transaction global delete is what a test ran against the shared dev DB on
+    13 Oct).
+
+    Covers rows deleted before the worker handled `.deleted` events, and deletes that
+    bypass the ORM listeners (bulk ``query.delete()``, frame trims, FK cascades, order
+    rows replaced by imports). Runs unscoped on purpose: under a company scope another
+    company's live rows would read as missing.
+    """
+    counts: dict[str, int] = {}
+    source_ids: list[str] = []
+    doc_ids: list[str] = []
+    with company_scope(db, None):
+        for source_type, model in _SOURCE_MODEL.items():
+            orphans = db.query(EmbeddingDocument.id, EmbeddingDocument.source_id).filter(
+                EmbeddingDocument.source_type == source_type,
+                ~EmbeddingDocument.source_id.startswith(DEBTOR_SEED_PREFIX),
+                ~exists().where(cast(model.id, String) == EmbeddingDocument.source_id),
+            )
+            rows = orphans.all()
+            if not rows:
+                continue
+            counts[source_type] = len(rows)
+            source_ids.extend(r.source_id for r in rows)
+            doc_ids.extend(str(r.id) for r in rows)
+    return {"counts": counts, "source_ids": source_ids, "doc_ids": doc_ids}
+
+
+def backfill_frame_embedding_companies(db: Session) -> int:
+    """Stamp company-less ``conversation_frame`` embeddings with the frame contact's
+    company (``_frame_company_id``); returns how many documents were stamped.
+
+    Frames whose contact is in several companies, in none, or gone stay NULL.
+    The caller commits."""
+    stamped = 0
+    with company_scope(db, None):
+        docs = (
+            db.query(EmbeddingDocument)
+            .filter(
+                EmbeddingDocument.source_type == "conversation_frame",
+                EmbeddingDocument.company_id.is_(None),
+            )
+            .all()
+        )
+        for doc in docs:
+            company_id = _frame_company_id(db, doc.source_id)
+            if company_id is None:
+                continue
+            doc.company_id = company_id
+            db.query(EmbeddingChunk).filter(EmbeddingChunk.document_id == doc.id).update(
+                {EmbeddingChunk.company_id: company_id}, synchronize_session=False
+            )
+            stamped += 1
+        db.flush()
+    return stamped
+
+
 def process_embedding_queue_item(queue_id: str) -> dict[str, Any]:
     db = SessionLocal()
     # The embedding pipeline is a system process that materializes embeddings for
@@ -733,6 +859,30 @@ def process_embedding_queue_item(queue_id: str) -> dict[str, Any]:
 
         queue_item.status = "processing"
         db.commit()
+
+        # A hard-deleted source takes its embedding with it. Without this the
+        # `.deleted` event failed in `_canonical_for_source` ("not found") and
+        # dead-lettered, leaving the row retrievable - under every scope when its
+        # company was NULL. Checked against the table, not the event name alone,
+        # so a stale delete event for a row that still exists removes nothing.
+        if (queue_item.event_type or "").endswith(".deleted") and not _source_row_exists(
+            db, queue_item.source_type, queue_item.source_id
+        ):
+            # product_spec is keyed on the product's id, so it goes with the product.
+            source_types = [queue_item.source_type]
+            if queue_item.source_type == "product":
+                source_types.append("product_spec")
+            removed = _delete_documents(
+                db,
+                db.query(EmbeddingDocument.id).filter(
+                    EmbeddingDocument.source_type.in_(source_types),
+                    EmbeddingDocument.source_id == queue_item.source_id,
+                ),
+            )
+            queue_item.status = "completed"
+            queue_item.processed_at = datetime.utcnow()
+            db.commit()
+            return {"status": "removed", "queue_id": queue_id, "documents": removed}
 
         # R9: a retired-and-hidden SPO line deactivates its document instead of
         # being re-embedded - checked before `_canonical_for_source` builds any
