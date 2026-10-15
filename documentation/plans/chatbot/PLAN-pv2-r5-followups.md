@@ -1,6 +1,6 @@
 # PLAN: PV2 R5 "follow-ups" - the code acts on what the parser read (15 Oct 2026)
 
-Status: Plan. Track M (LEAD pattern, red-first, kill-proof). Branch `crew/pv2-redesign-r5` from 380b6cdf4 (R4a head,
+Status: Build (code map done, red tests next). Track M (LEAD pattern, red-first, kill-proof). Branch `crew/pv2-redesign-r5` from 380b6cdf4 (R4a head,
 PR #1691 unmerged), worktree sorento_crm-pv2-fix2. PR stacked on #1691 (base `crew/pv2-redesign-r4a`) so the diff
 shows R5 only; it retargets to crew/pv2 once #1691 merges. Owner TOP priority 15 Oct (brief
 crew/state/briefs/PV2-FIX-R5.md). Restarted after a context overflow: nothing of the first attempt was committed.
@@ -53,6 +53,37 @@ size ask -> size or 'none on record'; one exact option is used, a guess is a yes
   `open_question_answer`); with no pending, a row_pick on shown rows acts whatever the act; the pick is read before a
   `clarify.needed` re-ask; out of range re-asks once. No new text matching (carry-safety guard).
 
+### 2 'this product' after a one-item SO / DO
+- Parse: product entity, `refers_to_held=true`, key / phrase null (pv2/schema.py:39-46, field :44; rule
+  pv2/prompt_v2.txt:78).
+- State: the line's product is never held; after a DO answer held is the DO + customer only (pv2/apply.py:1255-1258).
+  DO lines reach the register (engine.py:4228-4246 -> pv2/register.py:66-70, row_kind product "in" the doc row) only
+  when the "products" field is revealed; lanes/business/fetch.py:3084-3085 strips them otherwise. SO: nothing
+  recorded (so_status.py:83-92 prints no product; `_lines_by_so` so_status.py:115-131 reads quantities only;
+  `_register_rows` lanes/business/__init__.py:645-648 stores the SO number).
+- DROP: `_apply_entities` pv2/apply.py:1088-1119 reads held products only; :1096-1097 (new topic) and :1103-1104
+  (refine) raise `_Miss("which_held", nothing_held=True)`, `_miss` (apply.py:1873-1883) says "nothing is selected yet"
+  listing the DO and customer (apply.py:1819-1824), not the line products.
+- FIX: at answer time keep the single shown document's line product codes (printed or not) beside the document, NOT in
+  the numbered shown rows (row_pick indexes printed rows only; R4a invariant). Before those raises: one line -> that
+  product (resolved as `shown_row` does); several -> clarify kind product with the line codes as options. SO answers
+  record their line product codes too.
+
+### 5 Question kind survives a pick
+- Copies: "Outstanding for which document? 1. Sales orders 2. Delivery orders 3. Both" lanes/business/__init__.py:414-418
+  (armed :2019-2025) when turn_runtime.py:1891-1911 maps status outstanding + empty `document` to ("", "outstanding");
+  "I need at least one filter" lanes/business/answer.py:3227-3234 (needs_scope), text :3310-3336.
+- Parse: arrival = domain order + status outstanding (pv2/schema.py:126; prompt_v2.txt:45, 101); no document-type
+  field. Kind held in `Held.status` (pv2/state.py:72, set apply.py:873-874) and `PendingQuestion.origin` (state.py:104;
+  PV2 apply.py:208, 1686-1719; v1 turn.py:440-442 from last_lookup_ask apply.py:243, 1722-1729).
+- DROPS: (1) bridge.py:220 passes status outstanding but never sets `verdict["document"]`, so v1 asks SO/DO once the
+  pick supplies a customer. (2) v1_open_question free_value pick -> Lookup picked=None (apply.py:736-752), bridge.py:170-171
+  sends no open_question_answer, v1 re-runs the held ask without the customer -> needs_scope (same seam as 1 and 4).
+  (3) apply.py:517-522: a pick parsed new_topic restarts from an empty Held(), losing status and domain.
+- FIX: the bridge sets the document for an outstanding ask (held DO -> DO, held SO -> SO, else both) so v1 never asks
+  SO/DO; drop (2) is the shared pick fix; a new_topic parse that carries an answer for the open question is read as
+  that answer (the parser's answer field wins over its act when they disagree, held kind kept).
+
 ### 3 Account pick after a confirm / account menu
 - No account field: `Entity` (pv2/schema.py:39-46); bridge.py:128, :140 hard-code `"account": None` though v1 reads it
   (lanes/business/resolve_gate.py:1188-1202, engine.py:2202-2227).
@@ -102,6 +133,16 @@ size ask -> size or 'none on record'; one exact option is used, a guess is a yes
 - Choke point: `_pv2_direct_reply` engine.py:4303, `reply_text = str(pv2_result.direct_reply or "")` engine.py:4318,
   sent ~4362. FIX: one scrub there (a UUID-shaped token is replaced by its label when known, else removed) plus the
   label fallback to the printed code at the two unguarded builders.
+
+## Slice order (one red commit + one fix commit each)
+
+A. Shared pick resolver: behaviours 1, 4 and drop (2) of 5 (pending numbered options win, v1 roster free_value passes
+   through, roster with unanswered positions mirrors, pick read before a clarify re-ask).
+B. Behaviour 5 rest: bridge document for outstanding; new_topic carrying an answer.
+C. Behaviour 3: account pick + repeat guard.
+D. Behaviour 2: document line products.
+E. Behaviour 6: one turn language into PV2 copy.
+F. Behaviour 7: reply scrub at `_pv2_direct_reply` + unguarded builders.
 
 ## Work split
 
