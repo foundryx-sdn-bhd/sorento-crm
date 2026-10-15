@@ -76,3 +76,21 @@ def test_b9_near_miss_a_new_ask_naming_a_product_is_a_new_ask_not_the_answer(ses
         mcp_response=_rendered(),
     )
     assert not [a for n, a in captured if n == TOOL and a.get("company")], captured
+
+
+def test_b9_a_reply_picking_both_companies_reasks_and_never_falls_to_the_roster(session_factory, monkeypatch):
+    """Review: 'both' is not a single pick. The company question is asked again (or the reply says
+    to pick one); never the generic roster path (crm_sales_report + 'Couldn't find Sorento ...')."""
+    _first_turn(session_factory, monkeypatch, "both")
+    qf = _qf(
+        order_status=None, entities=[], domain_hint=None, intent_hint=None, reference_positions=[1, 2],
+        open_question_answer={"mode": "all", "picked": [1, 2], "items": [], "qty_for_all": None},
+    )
+    result, captured = _run_turn(
+        session_factory, monkeypatch, qf=qf, text_body="both", msg_id="ZZT-b9-both-2",
+        attributes=[GRANT], mcp_response=_rendered(),
+    )
+    text = (result.reply or {}).get("text") or ""
+    assert not [n for n, _a in captured if n == "crm_sales_report"], captured
+    assert "escalate" not in text.lower() and "couldn't find" not in text.lower() and "could not find" not in text.lower(), text
+    assert "Sorento" in text and "Mocha" in text, text

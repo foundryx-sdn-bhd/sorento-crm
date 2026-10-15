@@ -17,7 +17,7 @@ TRADING = "HANLIM TRADING SDN BHD"
 HARDWARE = "HANLIM HARDWARE SDN BHD"
 
 
-def _turn(session_factory, monkeypatch, *, with_do: tuple[str, ...], tag: str):
+def _turn(session_factory, monkeypatch, *, with_do: tuple[str, ...], tag: str, document=None, body="DO for hanlim trading and hanlim hardware"):
     from app.services.chatbot.lanes.business.services import ResolveGateServices
     from tests.chatbot.conftest import validating_resolve_entity
     from tests.chatbot.test_engine import _parser_output
@@ -48,7 +48,7 @@ def _turn(session_factory, monkeypatch, *, with_do: tuple[str, ...], tag: str):
         session_factory,
         monkeypatch,
         qf=_parser_output(
-            domain_hint="order", intent_hint="check_order", order_status=None,
+            domain_hint="order", intent_hint="check_order", order_status=None, document=document,
             entities=[
                 {"raw": "hanlim trading", "hint": "customer", "canonical_code": None,
                  "current_message": True, "confident": True},
@@ -56,28 +56,37 @@ def _turn(session_factory, monkeypatch, *, with_do: tuple[str, ...], tag: str):
                  "current_message": True, "confident": True},
             ],
         ),
-        text_body="DO for hanlim trading and hanlim hardware",
+        text_body=body,
         msg_id=f"zzt-picker-same-stamp-{tag}",
         resolve_services=services,
     )
     return (result.reply or {}).get("text") or "", probes, captured
 
 
-def test_b11_every_account_with_no_do_answers_directly_instead_of_asking(session_factory, monkeypatch) -> None:
-    reply, probes, _c = _turn(session_factory, monkeypatch, with_do=(), tag="nodo")
+def test_b11_a_do_ask_where_every_account_has_no_do_answers_directly(session_factory, monkeypatch) -> None:
+    reply, probes, _c = _turn(session_factory, monkeypatch, with_do=(), tag="nodo", document=["DO"])
     assert probes, "the roster was never measured"
     assert ASK_HEAD not in reply, reply
-    assert reply.strip(), reply
+    assert "no DO" in reply or "no do" in reply.lower(), reply
 
 
-def test_b11_every_account_with_a_do_answers_directly_too(session_factory, monkeypatch) -> None:
-    reply, probes, _c = _turn(session_factory, monkeypatch, with_do=(TRADING, HARDWARE), tag="alldo")
+def test_b11_near_miss_a_do_ask_where_every_account_has_a_do_still_asks(session_factory, monkeypatch) -> None:
+    reply, probes, _c = _turn(session_factory, monkeypatch, with_do=(TRADING, HARDWARE), tag="alldo", document=["DO"])
     assert probes, "the roster was never measured"
-    assert ASK_HEAD not in reply, reply
+    assert ASK_HEAD in reply, reply
+
+
+def test_b11_near_miss_an_so_ask_is_never_answered_with_the_do_stamp(session_factory, monkeypatch) -> None:
+    """M1 (review): the DO stamp answers a DO question only; an SO ask over the same roster asks."""
+    reply, _p, _c = _turn(
+        session_factory, monkeypatch, with_do=(), tag="so", document=["SO"],
+        body="SO for hanlim trading and hanlim hardware",
+    )
+    assert ASK_HEAD in reply, reply
 
 
 def test_b11_near_miss_mixed_stamps_still_ask_which_account(session_factory, monkeypatch) -> None:
-    reply, _p, _c = _turn(session_factory, monkeypatch, with_do=(TRADING,), tag="mixed")
+    reply, _p, _c = _turn(session_factory, monkeypatch, with_do=(TRADING,), tag="mixed", document=["DO"])
     assert reply == f"{ASK_HEAD}\n1. hanlim trading - has DO\n2. hanlim hardware - no DO", reply
 
 

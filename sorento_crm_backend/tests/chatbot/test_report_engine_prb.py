@@ -797,3 +797,122 @@ def test_b6d_guard_a_noisy_group_by_on_a_basis_answer_keeps_the_top_selling_item
     calls = ts_calls(captured)
     assert len(calls) == 1 and calls[0]["basis"] == "delivered" and calls[0].get("group") in (None, "item"), (reply, captured)
     assert not [a for n, a in captured if n == "crm_report_ask"], captured
+
+
+# --------------------------------------------------------------------------- #
+# M3 (review round): the OTHER_REPORTS branch of `names_its_own_ask`
+# --------------------------------------------------------------------------- #
+
+OCT_MONTH = {"date_filter_start": "2026-10-01", "date_filter_end": "2026-10-31"}
+
+
+def _open_period_question(console) -> None:
+    text, calls = console.say(_bare(top_n=5, measure="qty", basis="delivered"), "top 5 customers by qty delivered")
+    assert text.strip() == PERIOD_Q and calls == [], (text, calls)
+
+
+def _other(status: str, **keys) -> dict[str, Any]:
+    base = dict(
+        message_type="business_query", domain_hint="order", intent_hint="check_order", order_status=status,
+        entities=[], group_by=None, top_n=None, measure=None, basis=None, rank_by=None, ranking_refine=None,
+    )
+    base.update(keys)
+    return _parser_output(**base)
+
+
+def _report_calls(calls) -> list:
+    return [c for c in calls]
+
+
+def test_m3_a_sales_analysis_parse_naming_an_axis_under_the_period_question_is_a_new_ask(console) -> None:
+    _open_period_question(console)
+    text, calls = console.say(
+        _other("sales_analysis", group_by="month", **OCT_MONTH), "sales by month this month"
+    )
+    assert calls == [], f"taken as the period answer, the axis was dropped: {calls}"
+
+
+def test_m3_a_top_selling_parse_naming_a_brand_under_the_period_question_is_a_new_ask(console) -> None:
+    _open_period_question(console)
+    text, calls = console.say(
+        _other("top_selling", entities=[_e("Sorento", "brand")], **OCT_MONTH), "top selling Sorento this month"
+    )
+    assert calls == [], f"taken as the period answer, the brand was dropped: {calls}"
+
+
+def test_m3_another_report_type_that_fills_only_the_period_is_a_new_ask(console) -> None:
+    _open_period_question(console)
+    text, calls = console.say(_other("top_selling", **OCT_MONTH), "top selling this month")
+    assert calls == [], calls
+
+
+def test_m3_near_miss_another_report_type_filling_count_metric_or_basis_is_the_answer(console) -> None:
+    text, calls = console.say(_bare(measure="qty", basis="delivered", **THIS_YEAR), "top customers 2026 qty delivered")
+    assert text.strip() == TOPN_Q and calls == [], (text, calls)
+    text, calls = console.say(_other("top_selling", top_n=5), "top 5")
+    assert len(calls) == 1 and calls[0]["top_n"] == 5 and calls[0]["group_by"] == "customer", (text, calls)
+
+
+def test_m3_near_miss_a_sales_ranking_parse_filling_only_the_period_is_still_the_answer(console) -> None:
+    _open_period_question(console)
+    text, calls = console.say(_answer(**OCT_MONTH), "this month")
+    assert len(calls) == 1 and calls[0]["date_from"] == "2026-10-01", (text, calls)
+
+
+@pytest.mark.parametrize("group_by", ["customer", "sales_agent"])
+@pytest.mark.parametrize("order_status", ["sales_ranking", "top_selling"])
+def test_s2b_veto_a_basis_answer_carrying_a_customer_or_agent_group_by_is_still_the_answer(
+    session_factory, monkeypatch, route, group_by, order_status
+) -> None:
+    """Review: group_by on an answer is noise (12 of 14 live turns, PR-B replay 16 Oct); the slot's
+    axis wins, so the open top selling basis question is answered and the items list runs."""
+    _open_ts_basis(session_factory, monkeypatch)
+    reply, captured = ts_turn(
+        session_factory, monkeypatch,
+        _parser_output(
+            message_type="business_query", domain_hint="order", intent_hint="check_order", entities=[],
+            order_status=order_status, group_by=group_by, basis="delivered", rank_by=None, top_n=None,
+            measure=None, ranking_refine=None,
+        ),
+        "delivered",
+    )
+    calls = ts_calls(captured)
+    assert len(calls) == 1 and calls[0]["basis"] == "delivered" and calls[0]["rank_by"] == "quantity", (reply, captured)
+    assert not [a for n, a in captured if n == "crm_report_ask"], captured
+
+
+def test_b1b_an_answer_that_restates_the_ranking_under_the_combined_question_completes_it(
+    session_factory, monkeypatch, route
+) -> None:
+    """The code that needs the 'metric_basis' axis (apply.TOP_SELLING_CLARIFY_AXES + the tuple read in
+    `_top_selling_waiting`): a reply that NAMES the ranking again (`domain_in_message` true, as
+    'top 5 by amount' does) while answering the combined metric+basis question. Read as a fresh ask
+    it would drop the carried count (100) and ask both questions again; read as the answer it
+    keeps the count and asks only the basis."""
+    _seed_contact(session_factory, variables={})
+    ts_turn(session_factory, monkeypatch, _ts_bare(), "top 100 hot selling item")
+    reply, captured = ts_turn(
+        session_factory, monkeypatch, _ts(rank_by="amount", basis=None, top_n=None, domain_in_message=True),
+        "top selling by amount",
+    )
+    assert ts_calls(captured) == [], captured
+    assert reply.strip() == TS_BASIS_Q, reply
+    reply, captured = ts_turn(
+        session_factory, monkeypatch, _ts(rank_by=None, basis="delivered", top_n=None), "delivered"
+    )
+    calls = ts_calls(captured)
+    assert len(calls) == 1 and calls[0]["n"] == 100 and calls[0]["rank_by"] == "amount", (reply, calls)
+
+
+def test_b1b_near_miss_a_fresh_top_selling_ask_over_the_combined_question_starts_over(
+    session_factory, monkeypatch, route
+) -> None:
+    """A restated ranking that fills NEITHER the metric nor the basis is a new ask (the count is its own)."""
+    _seed_contact(session_factory, variables={})
+    ts_turn(session_factory, monkeypatch, _ts_bare(), "top 100 hot selling item")
+    reply, captured = ts_turn(
+        session_factory, monkeypatch, _ts(rank_by=None, basis=None, top_n=7, domain_in_message=True),
+        "top 7 selling items",
+    )
+    assert ts_calls(captured) == [], captured
+    assert _numbered(reply) == [1, 2], reply

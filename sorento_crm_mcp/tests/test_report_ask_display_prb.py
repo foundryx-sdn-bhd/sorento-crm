@@ -103,3 +103,51 @@ def test_b8_near_miss_a_non_month_ranking_keeps_its_rank_order() -> None:
     ]
     text = _report_ask(_body(rows=rows, more=0, total_count=2))
     assert text.index("ZED") < text.index("ALPHA")
+
+
+# Review round: rows merged by name must be re-sorted, renumbered and recounted.
+
+
+def _twin_rows():
+    return [
+        {"rank": 1, "name": "A", "qty": 10, "amount": 100.0, "keys": ["a"]},
+        {"rank": 2, "name": "B", "qty": 9, "amount": 90.0, "keys": ["b1"]},
+        {"rank": 3, "name": "C", "qty": 8, "amount": 80.0, "keys": ["c"]},
+        {"rank": 4, "name": "B", "qty": 5, "amount": 50.0, "keys": ["b2"]},
+    ]
+
+
+def _lines(text):
+    return [l for l in text.splitlines() if re.match(r"^\d+\. ", l)]
+
+
+def test_b8_merged_twin_rows_are_resorted_by_the_sort_measure() -> None:
+    text = _report_ask(_body(group_by="brand", group_label="Brand", rows=_twin_rows(), more=6, total_count=10))
+    names = [re.match(r"^\d+\. (\S+)", l).group(1) for l in _lines(text)]
+    assert names == ["B", "A", "C"], text  # B is 140 after the merge
+
+
+def test_b8_merged_rows_are_renumbered_one_to_n() -> None:
+    text = _report_ask(_body(group_by="brand", group_label="Brand", rows=_twin_rows(), more=6, total_count=10))
+    assert [int(re.match(r"^(\d+)\.", l).group(1)) for l in _lines(text)] == [1, 2, 3], text
+
+
+def test_b8_the_header_counts_the_merged_distinct_rows() -> None:
+    head = _report_ask(_body(group_by="brand", group_label="Brand", rows=_twin_rows(), more=6, total_count=10)).splitlines()[0]
+    assert head.startswith("Top 3"), head
+
+
+def test_b8_merged_rows_resort_by_quantity_when_the_measure_is_qty() -> None:
+    rows = [
+        {"rank": 1, "name": "A", "qty": 10, "amount": 1.0, "keys": []},
+        {"rank": 2, "name": "B", "qty": 9, "amount": 1.0, "keys": []},
+        {"rank": 3, "name": "B", "qty": 5, "amount": 1.0, "keys": []},
+    ]
+    text = _report_ask(_body(measure="qty", group_by="brand", group_label="Brand", rows=rows, more=0, total_count=2))
+    assert [re.match(r"^\d+\. (\S+)", l).group(1) for l in _lines(text)] == ["B", "A"], text
+
+
+def test_b8_near_miss_no_twins_keeps_the_route_order() -> None:
+    rows = [{"rank": i, "name": n, "qty": 1, "amount": a, "keys": []} for i, (n, a) in enumerate([("X", 5.0), ("Y", 9.0)], 1)]
+    text = _report_ask(_body(group_by="brand", group_label="Brand", rows=rows, more=0, total_count=2))
+    assert [re.match(r"^\d+\. (\S+)", l).group(1) for l in _lines(text)] == ["X", "Y"], text

@@ -87,3 +87,60 @@ def test_b7_a_whole_turn_with_a_confident_brand_entity_calls_the_report_with_the
     calls = [a for n, a in captured if n == "crm_sales_report"]
     assert len(calls) == 1, captured
     assert calls[0].get("brand_ids") == [BRAND_UUID], calls
+
+
+# M2 (review): production-shaped. Under order/sales the brand word is kept OFF the shared resolver
+# (it is NOT in `matches`); the lane resolves it against the LIVE brand rows
+# (`_resolve_outstanding_brand_ids` -> `outstanding_brand_ids` -> fetch.py crm_sales_report arm).
+# Removing that arm must turn these red.
+
+
+def _live_brand(session_factory, name: str) -> str:
+    import uuid
+
+    from app.models.product import Brand
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    db = session_factory()
+    try:
+        row = Brand(id=str(uuid.uuid4()), brand_code=f"ZZT{name.upper()}", brand_name=name, company_id=DEFAULT_COMPANY_ID)
+        db.add(row)
+        db.commit()
+        return str(row.id)
+    finally:
+        db.close()
+
+
+def _brand_turn(session_factory, monkeypatch, *, brand_entities, tag):
+    entities = [
+        {"raw": "ZZT Customer", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True},
+        *brand_entities,
+    ]
+    _seed_contact(session_factory, variables={})
+    _result, captured = _run_turn(
+        session_factory, monkeypatch,
+        qf=_qf(order_status="sales_report", entities=entities, domain_hint="order"),
+        text_body="delivered sales for mocha september", msg_id=f"ZZT-b7-live-{tag}", attributes=[GRANT],
+        matches={"ZZT Customer": {"uuid": CUSTOMER_UUID, "entity_type": "customer", "canonical_code": CUSTOMER_NAME}},
+        mcp_response=SALES_REPORT_HIT,
+    )
+    return [a for n, a in captured if n == "crm_sales_report"]
+
+
+def test_b7_live_brand_word_not_in_resolver_matches_still_filters_the_total(session_factory, monkeypatch) -> None:
+    brand_id = _live_brand(session_factory, "Mocha")
+    calls = _brand_turn(
+        session_factory, monkeypatch, tag="live",
+        brand_entities=[{"raw": "Mocha", "hint": "brand", "canonical_code": "MOCHA", "current_message": True, "confident": True}],
+    )
+    assert len(calls) == 1, calls
+    assert calls[0].get("brand_ids") == [brand_id], calls
+
+
+def test_b7_live_near_miss_a_brand_word_matching_no_live_brand_adds_no_filter(session_factory, monkeypatch) -> None:
+    _live_brand(session_factory, "Sorento")
+    calls = _brand_turn(
+        session_factory, monkeypatch, tag="nomatch",
+        brand_entities=[{"raw": "Zzzunknown", "hint": "brand", "canonical_code": None, "current_message": True, "confident": True}],
+    )
+    assert calls and not calls[0].get("brand_ids"), calls

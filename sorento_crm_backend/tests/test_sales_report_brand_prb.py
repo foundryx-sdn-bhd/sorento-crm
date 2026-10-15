@@ -70,3 +70,18 @@ def test_b7b_near_miss_no_brand_filter_echoes_none(client, db):
     cust, _m, _s = _seed(db)
     body = client.get(BASE, params={"customer_ids": cust.id}).json()
     assert not body.get("brand_name"), body
+
+
+def test_b7_more_than_fifty_brand_ids_is_422(client, db):
+    cust, _m, _s = _seed(db)
+    ids = ",".join(str(uuid.uuid4()) for _ in range(51))
+    resp = client.get(BASE, params={"customer_ids": cust.id, "brand_ids": ids})
+    assert resp.status_code == 422, resp.text
+
+
+def test_b7_brand_ids_also_narrow_a_product_subject(client, db):
+    """The brand filter is not tied to a customer subject: a product subject of another brand totals 0."""
+    cust, mocha, sorento = _seed(db)
+    mine = client.get(BASE, params={"product_code": "ZZT-BRM1", "brand_ids": mocha.id}).json()
+    other = client.get(BASE, params={"product_code": "ZZT-BRM1", "brand_ids": sorento.id}).json()
+    assert mine["total"]["qty"] == 10 and other["total"]["qty"] == 0, (mine, other)
