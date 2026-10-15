@@ -441,15 +441,16 @@ describe('AC-RS-85: Edit reserve opens ReserveLineForm; short qty needs a reason
     expect(await screen.findByRole('dialog', { name: /ZZT-REQUESTED/i })).toBeInTheDocument();
     // 6e.4 (S2): mounted after the pools loaded - prefilled 107, nothing to explain.
     expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('107');
-    expect(screen.getByRole('button', { name: /^stage$/i })).toBeEnabled();
+    const dialog = screen.getByRole('dialog', { name: /ZZT-REQUESTED/i });
+    expect(within(dialog).getByRole('button', { name: /^reserve$/i })).toBeEnabled();
 
     fireEvent.click(screen.getByLabelText('Location'));
     fireEvent.click(await screen.findByText('DC1'));
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '20' } });
     // 6e.4 (S1): short of the request needs a reason, availability notwithstanding.
-    expect(screen.getByRole('button', { name: /^stage$/i })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: /^reserve$/i })).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'partial stock only' } });
-    fireEvent.click(screen.getByRole('button', { name: /^stage$/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /^reserve$/i }));
 
     expect(await screen.findByText('Reserve 20 @ DC1')).toBeInTheDocument();
     expect(commitReserveSpy).not.toHaveBeenCalled();
@@ -469,7 +470,7 @@ describe('AC-RS-86: Amend reserve on a reserved line locks the location and stag
 
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: '20 went back' } });
-    fireEvent.click(screen.getByRole('button', { name: /^stage$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^amend$/i }));
 
     expect(await screen.findByText('Amend to 10')).toBeInTheDocument();
 
@@ -503,7 +504,7 @@ describe('AC-RS-87: header Reserve CTA, disabled while nothing staged, commits t
     await screen.findByRole('dialog', { name: /ZZT-RESERVED/i });
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: '20 went back' } });
-    fireEvent.click(screen.getByRole('button', { name: /^stage$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^amend$/i }));
     await screen.findByText('Amend to 10');
 
     const enabledCta = screen.getByRole('button', { name: /^reserve \(2\)$/i });

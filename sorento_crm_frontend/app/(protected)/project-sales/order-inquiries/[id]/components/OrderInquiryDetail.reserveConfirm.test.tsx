@@ -280,7 +280,7 @@ describe('AC-SN-41 reserve confirmation', () => {
     await screen.findByRole('dialog', { name: /ZZT-RESERVED/i });
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: '20 went back' } });
-    fireEvent.click(screen.getByRole('button', { name: /^stage$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^amend$/i }));
     await screen.findByText('Amend to 10');
     fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
 
