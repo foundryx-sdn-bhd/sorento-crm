@@ -5,7 +5,8 @@ Plan: `PLAN-oi-bulk-reserve-15oct.md`. Card: `oi-bulk-reserve-behaviour-card.md`
 - AC-BR-01 With the reserve grant and lines ticked, the Lines tab selection strip shows one button
   "Decide (N)" at its right end; N counts only ticked LINES (not rows) with an open (unanswered)
   request row; disabled at 0; not shown with nothing ticked or without the reserve grant.
-- AC-BR-02 Its menu has exactly "Reserve as requested" and "Reject...".
+- AC-BR-02 Its menu has exactly "Reserve as requested", "Reserve..." and "Reject..." (Reserve...
+  added after the owner's hand test, 16 Oct).
 - AC-BR-03 "Reserve as requested" stages each counted line exactly as the line's tick does
   (the requested qty at the request row's location, no cap at remaining; chip "Reserve <qty> @ <loc>"),
   replaces an existing staged entry, clears the ticks, opens no dialog.
@@ -24,6 +25,17 @@ Plan: `PLAN-oi-bulk-reserve-15oct.md`. Card: `oi-bulk-reserve-behaviour-card.md`
   (chip "Reserve 0") and leaves other ticked lines ticked; Cancel stages nothing. Answered lines show
   no x (pen = Amend only).
 - AC-BR-08 Usable at 375 and 1280 (strip wraps, Decide button stays reachable at the right).
+
+- AC-BR-10 (owner hand test 16 Oct: "choose multiple, click reserve, then open a pop up ... to
+  amend the quantity") "Reserve..." opens ONE dialog "Reserve N lines" with, per counted line, the
+  pen's Edit reserve fields and rules (`ReserveLineForm`'s exported helpers): Location (the line's
+  pools with availability, default = the request's location), Reserved prefilled at
+  min(requested, available at that location) and never above the request, recomputed on a
+  location change, and a Reason shown and required when Reserved is below the request. "Stage N
+  lines" is disabled until every short line has a reason; staging writes each line's own qty,
+  location and reason (chips as the pen gives), clears the ticks, and the header Reserve (N) +
+  confirmation commit as today. Cancel stages nothing and keeps the ticks. Same popup on the v4
+  Lines page later.
 
 ## Part 2: cross-OI Lines page (mock v4)
 

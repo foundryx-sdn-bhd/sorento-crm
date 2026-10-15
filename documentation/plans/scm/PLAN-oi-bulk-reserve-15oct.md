@@ -26,7 +26,10 @@ Reserve button, confirm.
    Reserve 0 + reason on each counted line, clears the ticks.
 4. A requested line gets an x "Reject" beside tick and pen: same one-reason prompt, stages Reserve 0 +
    reason (crew decision, mirrors bulk Reject); it leaves other ticked lines ticked.
-5. Amend and partial reserve stay per line (pen). Header "Reserve (N)" + #1684 confirmation commit
+5. Owner hand test 16 Oct: Decide also offers "Reserve...", ONE popup with the pen's fields for
+   every counted line (Location, Reserved prefilled at min(requested, stock), Reason when short;
+   `BulkReserveLinesDialog.tsx` over `ReserveLineForm`'s exported rules), AC-BR-10.
+6. Amend stays per line (pen). Header "Reserve (N)" + #1684 confirmation commit
    as today. Purchasing hears a reject as today's Reserve 0 notice (sent or parked).
 
 ## Code
