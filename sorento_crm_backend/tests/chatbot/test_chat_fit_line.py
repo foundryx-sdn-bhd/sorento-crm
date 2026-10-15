@@ -1022,3 +1022,91 @@ def test_ac23_a_bare_fit_ask_by_a_contact_refused_the_agent_gets_the_refusal_and
     assert a_reply == c_reply, (a_reply, c_reply)
     assert "Mirror for" not in a_reply, a_reply
 
+
+
+# --------------------------------------------------------------------------- AC-23 round 7: in-lane refusals, barred, non-refusals
+
+
+def _turn_attrs(session_factory, monkeypatch, *, text: str, msg_id: str, attributes: list[str], **qf: Any):
+    from tests.chatbot.test_outstanding_lane import _qf, _run_turn
+    from tests.chatbot.test_seat_as_product import ENVELOPE
+
+    result, captured = _run_turn(
+        session_factory, monkeypatch, qf=_qf(**qf), text_body=text, msg_id=msg_id,
+        mcp_response=ENVELOPE, real_resolver=True, attributes=attributes,
+    )
+    return (result.reply or {}).get("text") or "", captured
+
+
+def _attr_parity(session_factory, monkeypatch, *, attributes: list[str], domain: str, intent: str | None,
+                 typed: list[str], asked: list[str], find: Any, setup=None, **qf: Any):
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    if setup:
+        setup(session_factory)
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_fit_23r7")
+    control = _turn_attrs(
+        session_factory, monkeypatch, text=f"{typed[0]} please", msg_id="ZZT-fit-23r7-control", attributes=attributes,
+        domain_hint=domain, intent_hint=intent, entities=[_product(c) for c in typed], **qf,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_fit_23r7")
+    asked_out = _turn_attrs(
+        session_factory, monkeypatch, text=f"seat cover for {asked[0]} please", msg_id="ZZT-fit-23r7-asked",
+        attributes=attributes, domain_hint=domain, intent_hint=intent,
+        entities=[_product(c) for c in asked], find=find, **qf,
+    )
+    return control, asked_out
+
+
+def test_ac23_an_so_lookup_not_granted_is_its_fixed_refusal_with_no_fit_line(session_factory, monkeypatch) -> None:
+    (c_reply, _c), (a_reply, _a) = _attr_parity(
+        session_factory, monkeypatch, attributes=[], domain="order", intent="check_order",
+        typed=[COVER_A], asked=[WC_A], find=fits("seat_cover", "seat cover"), so_numbers=["ZZTSO0001"],
+    )
+    assert "not enabled" in c_reply.casefold(), c_reply
+    _assert_refusal(a_reply, c_reply)
+
+
+def test_ac23_chat_analytics_not_granted_is_its_fixed_refusal_with_no_fit_line(session_factory, monkeypatch) -> None:
+    (c_reply, _c), (a_reply, _a) = _attr_parity(
+        session_factory, monkeypatch, attributes=[], domain="chat_analytics", intent="check_chat_analytics",
+        typed=[COVER_A], asked=[WC_A], find=fits("seat_cover", "seat cover"),
+    )
+    assert c_reply.strip(), c_reply
+    _assert_refusal(a_reply, c_reply)
+
+
+def _bar_escalation(session_factory) -> None:
+    from sqlalchemy import text
+
+    db = session_factory()
+    db.execute(text("UPDATE respond_contacts SET escalation_allowed = false"))
+    db.commit()
+
+
+def test_ac23_a_barred_contact_asking_for_a_person_gets_the_salesman_line_and_no_fit_line(session_factory, monkeypatch) -> None:
+    from app.services.chatbot.turn.task import REFER_TO_SALESMAN
+
+    (c_reply, _c), (a_reply, _a) = _refusal_parity(
+        session_factory, monkeypatch, typed=[COVER_A], asked=[WC_A], find=fits("seat_cover", "seat cover"),
+        domain="inventory", intent="check_stock", setup=_bar_escalation,
+        message_type="request_for_help", user_goal="wants to talk to a human",
+        routing={"suggested_team": "customer_service", "suggested_agent": "general_enquiries"},
+    )
+    assert REFER_TO_SALESMAN in c_reply, c_reply
+    _assert_refusal(a_reply, c_reply)
+
+
+def test_ac23_a_non_refusal_report_line_keeps_the_fit_line(session_factory, monkeypatch) -> None:
+    """The report ask's catalogue line says what can be ranked: it is no refusal, so the fit
+    line still opens it (only DEALER_REFUSAL is one)."""
+    from app.services.chatbot.lanes.business import report_ask
+
+    (c_reply, _c), (a_reply, _a) = _attr_parity(
+        session_factory, monkeypatch, attributes=["sales_orders.sales_report"], domain="order",
+        intent="check_order", typed=[COVER_A], asked=[WC_A], find=fits("seat_cover", "seat cover"),
+        order_status="sales_ranking", group_by="date",
+    )
+    assert c_reply == report_ask.CATALOGUE_LINE, c_reply
+    _assert_line_then_control(a_reply, c_reply, f"Seat cover for {WC_A} is {COVER_A}.")
