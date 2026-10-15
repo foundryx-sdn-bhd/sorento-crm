@@ -144,7 +144,9 @@ def test_a_customer_family_of_three_reaches_v1_without_a_customer_question(
     from app.services.company_scope import DEFAULT_COMPANY_ID
     from tests.chatbot.pv2.test_core_engine_hook import FakeResult, _set_contact_mode
     from tests.chatbot.pv2.test_fix_r3 import _patch_contact  # noqa: F401
-    from tests.chatbot.test_engine import _envelope, _parser_output
+    from sqlalchemy import text
+
+    from tests.chatbot.test_engine import CONTACT_ID, _envelope, _parser_output
     from tests.chatbot.test_outstanding_lane import _capturing_mcp, _enable_business_lane
     from tests.chatbot.test_rearch_r5_production_decides import _real_resolve_with_safe_probe
     from app.services.chatbot import engine as engine_mod
@@ -181,6 +183,12 @@ def test_a_customer_family_of_three_reaches_v1_without_a_customer_question(
                         lambda sf: AnswerServices(mcp_probe=lambda n, a: {"data": []}, family_fetch=lambda q: {"data": []}))
     monkeypatch.setattr(engine_mod.business_services, "production_answer_services",
                         lambda d: AnswerServices(mcp_probe=lambda n, a: {"data": []}, family_fetch=lambda q: {"data": []}))
+    # UAC R5-8: a PV2 turn gives an unlinked non-staff contact no rows; this contact is a salesperson (staff scope).
+    db.execute(text(
+        "INSERT INTO sales_agents (id, sales_agent, contact_id, company_id, is_active) "
+        "SELECT gen_random_uuid(), :n, id, :company, true FROM respond_contacts WHERE respond_io_id = :c"),
+        {"n": f"ZZTAG{_uuid.uuid4().hex[:6]}", "company": DEFAULT_COMPANY_ID, "c": str(CONTACT_ID)})
+    db.commit()
     _set_contact_mode(session_factory, "v2")
     result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
     text = ((result.reply or {}).get("text") or "")
