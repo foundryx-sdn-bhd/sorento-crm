@@ -5,12 +5,12 @@ Plan: `PLAN-oi-bulk-reserve-15oct.md`. Card: `oi-bulk-reserve-behaviour-card.md`
 - AC-BR-01 With the reserve grant and lines ticked, the Lines tab selection strip shows one button
   "Decide (N)" at its right end; N counts only ticked LINES (not rows) with an open (unanswered)
   request row; disabled at 0; not shown with nothing ticked or without the reserve grant.
-- AC-BR-02 Its menu has exactly "Reserve as requested", "Reserve..." and "Reject..." (Reserve...
-  added after the owner's hand test, 16 Oct).
+- AC-BR-02 Its menu has exactly "Reserve as requested" and "Reject..." (owner 16 Oct 07:35: the
+  bulk "Reserve..." tried after the 07:00 hand test is withdrawn).
 - AC-BR-03 "Reserve as requested" stages each counted line exactly as the line's tick does
   (the requested qty at the request row's location, no cap at remaining; chip "Reserve <qty> @ <loc>"),
   replaces an existing staged entry, clears the ticks, opens no dialog.
-- AC-BR-04 "Reject..." opens "Reject N lines" with one Reason; "Stage N lines" is disabled until a
+- AC-BR-04 "Reject..." opens "Reject N lines" with one Reason; "Save N lines" is disabled until a
   reason is typed; staging writes Reserve 0 + that reason on each counted line (chip "Reserve 0")
   and clears the ticks. Cancel stages nothing.
 - AC-BR-05 Ticked lines without an open request (answered or never requested) are neither counted
@@ -26,16 +26,17 @@ Plan: `PLAN-oi-bulk-reserve-15oct.md`. Card: `oi-bulk-reserve-behaviour-card.md`
   no x (pen = Amend only).
 - AC-BR-08 Usable at 375 and 1280 (strip wraps, Decide button stays reachable at the right).
 
-- AC-BR-10 (owner hand test 16 Oct: "choose multiple, click reserve, then open a pop up ... to
-  amend the quantity") "Reserve..." opens ONE dialog "Reserve N lines" with, per counted line, the
-  pen's Edit reserve fields and rules (`ReserveLineForm`'s exported helpers): Location (the line's
-  pools with availability, default = the request's location), Reserved prefilled at
-  min(requested, available at that location) and never above the request, recomputed on a
-  location change, and a Reason shown and required when Reserved is below the request. "Stage N
-  lines" is disabled until every short line has a reason; staging writes each line's own qty,
-  location and reason (chips as the pen gives), clears the ticks, and the header Reserve (N) +
-  confirmation commit as today. Cancel stages nothing and keeps the ticks. Same popup on the v4
-  Lines page later.
+- AC-BR-10 (retired 16 Oct 07:35) The bulk "Reserve..." popup built after the 07:00 hand test is
+  removed: owner "the first version is correct ... if they want to change the quantity, they can go
+  line by line" - the experience stays Fulfilment Planning's (Decide saves, Reserve (N) confirms).
+- AC-BR-11 (owner 16 Oct 07:00, kept at 07:35) The pen's Edit reserve prefills Reserved with the
+  full request and never caps or recomputes it by the location's CRM stock (AutoCount may already
+  hold the reservation while CRM stock lags); stock shows as information ("available N") on each
+  location option; any qty 0..requested; Reason only when below the request. The backend accepts it
+  (commit cap = min(qty_requested, requestable), no stock check).
+- AC-BR-12 No "Stage" anywhere on the OI screens: the pen's button and the reject dialog read
+  "Save" / "Save N lines", Fulfilment Planning's own word (`BoardDecideControl.tsx` "Save N lines",
+  `BoardDecisionPill.tsx` "Saved").
 
 ## Part 2: cross-OI Lines page (mock v4)
 

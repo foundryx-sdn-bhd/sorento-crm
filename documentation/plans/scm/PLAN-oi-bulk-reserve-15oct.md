@@ -22,13 +22,13 @@ Reserve button, confirm.
 2. Menu "Reserve as requested": stage each counted line exactly as its tick does (the requested qty
    at the request row's location; no cap at remaining, since a request may reach into the received
    part, AC-RR-11), replace any staged entry, clear the ticks.
-3. Menu "Reject...": lightbox "Reject N lines", one required Reason, "Stage N lines" stages
+3. Menu "Reject...": lightbox "Reject N lines", one required Reason, "Save N lines" saves
    Reserve 0 + reason on each counted line, clears the ticks.
 4. A requested line gets an x "Reject" beside tick and pen: same one-reason prompt, stages Reserve 0 +
    reason (crew decision, mirrors bulk Reject); it leaves other ticked lines ticked.
-5. Owner hand test 16 Oct: Decide also offers "Reserve...", ONE popup with the pen's fields for
-   every counted line (Location, Reserved prefilled at min(requested, stock), Reason when short;
-   `BulkReserveLinesDialog.tsx` over `ReserveLineForm`'s exported rules), AC-BR-10.
+5. Owner hand test 16 Oct: a bulk "Reserve..." was tried (07:00) and withdrawn (07:35, "the first
+   version is correct"): quantity changes stay on the line's pen, which now prefills the full
+   request, is never capped by CRM stock and says Save (AC-BR-11/12). No "Stage" on screen.
 6. Amend stays per line (pen). Header "Reserve (N)" + #1684 confirmation commit
    as today. Purchasing hears a reject as today's Reserve 0 notice (sent or parked).
 
