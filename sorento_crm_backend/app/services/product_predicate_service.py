@@ -1179,7 +1179,9 @@ def resolve_product_set(
     # CODE, never through `filter_specs`' own membership binding) still has a
     # real class the header should say, and the candidates already carry it.
     class_labels = set(verdict["class_labels"])
-    for row in candidates:
+    for row in candidates if not verdict.get("named_classes") else ():
+        # A class filter a yes-or-no spec widened names the asked class (F1), never the
+        # family its candidates span.
         value = row.get("class")
         if value:
             class_labels.add(str(value))

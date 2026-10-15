@@ -1064,16 +1064,73 @@ def filter_specs(
             if word not in unrecognized:
                 unrecognized.append(word)
 
+    named_classes = _widen_classes_for_flags(db, membership, scope_terms)
     clause = membership_clause(membership)
 
     return {
         "clause": clause,
-        "class_labels": sorted(membership.get("class", set())),
+        "class_labels": sorted(named_classes or membership.get("class", set())),
+        # The class the header names when a yes-or-no spec widened the class filter
+        # (`_widen_classes_for_flags`): the asked one, never the family it reached.
+        **({"named_classes": sorted(named_classes)} if named_classes else {}),
         "unrecognized_terms": unrecognized,
         # What defined the set, key by key, so a caller can say it back in plain words
         # (owner brief W2 on PR #833). Additive; the clause above is the truth.
         "membership": {key: sorted(values) for key, values in membership.items() if values},
     }
+
+
+def _widen_classes_for_flags(db: Session, membership: dict[str, set], scope_terms: list[str]) -> set[str] | None:
+    """Fix round 1 F1 (AC-A4, W11 "Any bathtub with massage jet?"): a yes-or-no spec asked
+    with a class reaches the class family its own scope holds.
+
+    The parser reads that ask as category "bathtub" + `has_massage`, and "bathtub" names
+    Bathtub and Bathtub and Jacuzzi, so the Jacuzzi class (most jetted tubs) was cut. When a
+    yes-or-no key held true has a class scope (`applies_when`) that covers every asked class,
+    the class filter widens to the scope's classes the registry ties to the asked ones by a
+    shared word (Bathtub and Bathtub and Jacuzzi share "bathtub", Bathtub and Jacuzzi and
+    Jacuzzi share "jacuzzi"); a scope class sharing no word stays out ("rimless water
+    closet" never reaches urinals). A plain class ask, with no such key, never moves.
+
+    Returns the classes the header names (the asked classes a scope term names by their
+    own label, else every asked class) when the filter widened, else None."""
+    from app.services.product_spec_registry import class_synonyms, configured_scopes
+
+    asked = set(membership.get("class") or ())
+    flags = [
+        key
+        for key, values in membership.items()
+        if key != CLASS_KEY and values and all(isinstance(v, bool) for v in values) and True in values
+    ]
+    if not asked or not flags:
+        return None
+    scopes = configured_scopes(db)
+    words = {
+        str(label).strip().lower(): {str(w).strip().lower() for w in [label, *phrases]}
+        for label, phrases in class_synonyms(db).items()
+    }
+
+    def said(label: str) -> set[str]:
+        return words.get(label.strip().lower(), {label.strip().lower()})
+
+    family = set(asked)
+    for key in flags:
+        scope = {str(c) for c in (scopes.get(key) or {}).get(CLASS_KEY) or []}
+        if not scope or not asked <= scope:
+            continue
+        grew = True
+        while grew:
+            grew = False
+            for label in scope - family:
+                if any(said(label) & said(member) for member in family):
+                    family.add(label)
+                    grew = True
+    if family == asked:
+        return None
+    membership[CLASS_KEY] = family
+    terms = {" ".join(str(t).lower().split()) for t in scope_terms}
+    named = {label for label in asked if " ".join(label.lower().split()) in terms}
+    return named or asked
 
 
 def _is_excluded(values: dict, exclusions: list[dict]) -> bool:
