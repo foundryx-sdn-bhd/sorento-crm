@@ -647,7 +647,7 @@ def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dic
 
 
 def promo_subject_ask_back(
-    parse_output: dict[str, Any], db: Any, gate: Any = None
+    parse_output: dict[str, Any], db: Any, gate: Any = None, *, access_levels: list[str] | None = None
 ) -> tuple[str, list[str]] | None:
     """PROMO-SUBJECT-FILTER AC-7, AC-23, AC-25: the ask-back for a promotion subject the
     catalogue cannot hold as one thing, as `(text, options)`, else None. A product type the
@@ -655,7 +655,10 @@ def promo_subject_ask_back(
     the promotions route filters by) binds to nothing, is said back as typed (no options);
     one word that heads several values of a registry key ("cabinet") asks which, the values
     its options. Only what THIS message named counts (a carried subject was already asked
-    about), and a message that answers an open numbered question is never asked back."""
+    about), and a message that answers an open numbered question is never asked back.
+    `access_levels` are the access level names the promotions read is made at
+    (`tier_gate.access_levels_recomposed`): a choice is offered only when a promotion at
+    one of them holds it (fix round 1 F4)."""
     if jsc.array(parse_output.get("reference_positions")):
         return None
     own = {
@@ -711,7 +714,7 @@ def promo_subject_ask_back(
             options = [] if grounding.names_a_class_label(db, term) else grounding.several_values(term, vocab)
             # Chat fix PR-A (AC-A10): only a choice a promotion holds is offered; with fewer
             # than two left there is nothing to choose between, and the class answers.
-            options = [o for o in options if _promotions_hold(db, o.lower(), narrowing)]
+            options = [o for o in options if _promotions_hold(db, o.lower(), narrowing, access_levels)]
             if len(options) >= 2:
                 return "\n".join([f"Which {term} do you mean?", *options]), options
         for term in terms:
@@ -723,16 +726,22 @@ def promo_subject_ask_back(
     return f'I could not match "{", ".join(unknown)}" to a product type.\nWhich product or brand do you mean?', []
 
 
-def _promotions_hold(db: Any, term: str, narrowing: dict[str, list[str]]) -> bool:
+def _promotions_hold(
+    db: Any, term: str, narrowing: dict[str, list[str]], access_levels: list[str] | None = None
+) -> bool:
     """Does the promotions read this turn would make, with `term` as its subject, hold a
-    row? The route's own subject filter and serving policy, the kind and brand the ask
-    named (`promo_filter`), so a menu choice is one that leads to a promotion."""
+    row? The route's own subject filter, serving policy and access-level filter (the
+    names translated to codes exactly as the promotions route does), the kind and brand
+    the ask named (`promo_filter`), so a menu choice is one that leads to a promotion the
+    contact can see."""
+    from app.services.contact_access_type_service import ContactAccessTypeService
     from app.services.marketing_service import PromotionService
 
     result = PromotionService(db).list_promotions(
         page=1,
         limit=1,
         serving_policy=True,
+        contact_access_codes=ContactAccessTypeService(db).translate_names_to_codes(access_levels),
         scope_terms=[term],
         promotion_types=narrowing.get("promotion_types"),
         brand_ids=narrowing.get("brand_ids"),

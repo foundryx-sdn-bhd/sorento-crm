@@ -6210,8 +6210,12 @@ def _run_stages_body(  # noqa: PLR0915
             and isinstance(resolver_payload, dict)
             and (answer_parse_output or {}).get("domain_hint") == "promotion"
         ):
+            tier = resolver_payload.get("tier_gate")
             ask_back = turn_runtime.promo_subject_ask_back(
-                answer_parse_output or {}, db, resolver_payload.get("gate")
+                answer_parse_output or {},
+                db,
+                resolver_payload.get("gate"),
+                access_levels=tier.get("access_levels_recomposed") if isinstance(tier, dict) else None,
             )
             if ask_back:
                 from app.services.chatbot.turn import pending as pending_mod
