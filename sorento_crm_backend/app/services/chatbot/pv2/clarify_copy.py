@@ -302,14 +302,24 @@ def handover_options(language: str | None) -> list[Option]:
     ]
 
 
+def is_id(value: Any) -> bool:
+    """An id-shaped value (a bare UUID): never printed."""
+    try:
+        uuid.UUID(str(value or "").strip())
+    except ValueError:
+        return False
+    return True
+
+
 def safe_label(label: str, language: str | None) -> str:
     """The label as printed: an id-shaped label (a bare UUID) is never printed."""
     candidate = (label or "").strip()
-    try:
-        uuid.UUID(candidate)
-    except ValueError:
-        return candidate or text("unnamed", language)
-    return text("unnamed", language)
+    return text("unnamed", language) if is_id(candidate) else candidate or text("unnamed", language)
+
+
+def printed_code(key: str, label: str, language: str | None) -> str:
+    """R5-7: what a reply prints for a record: its code (the key), or its label when the key is an id."""
+    return safe_label(label, language) if is_id(key) else key
 
 
 def render(pending: PendingQuestion, language: str | None, *, reask: bool = False) -> str:

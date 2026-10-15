@@ -1513,16 +1513,18 @@ def _did_you_mean(
     """v1's did-you-mean sentence (lanes/business/answer.py build_suggest_offer): the typed
     token, the suggested codes, and its escalation clause per the contact's offer mode."""
     options = options[:DYM_CAP]  # v1's `_DYM_CAP_DEFAULT`
-    codes = [str(o.payload.get("key") or o.key) for o in options]
+    keys = [str(o.payload.get("key") or o.key) for o in options]
+    # R5-7: the printed code is the key, or the label when the key is an id (never printed).
+    codes = [clarify_copy.printed_code(k, o.label, language) for k, o in zip(keys, options)]
     tags = _dym_tags(offer, held, codes)
     lines = "\n".join(f"{n}. {c}{tags.get(c, '')}" for n, c in enumerate(codes, start=1))
     head = clarify_copy.did_you_mean_head(f'"{ent.phrase}" (product)', language)
     asked = f"{head}\n{lines}\nReply with a code to continue"
     picks = [
         Option(key=str(n), label=o.label, payload={
-            "kind": "product", "key": c, "label": o.label, "op": "add" if ent.op == "add" else "set",
+            "kind": "product", "key": k, "label": o.label, "op": "add" if ent.op == "add" else "set",
             "phrase": ent.phrase, **_qty_payload(ent)})
-        for n, (o, c) in enumerate(zip(options, codes), start=1)
+        for n, (o, k) in enumerate(zip(options, keys), start=1)
     ]
     extra: list[Option] = []
     if offer.mode == "offer":
@@ -1724,7 +1726,9 @@ def _size_miss(
     on, unless an earlier size of the same ask narrowed them (then those variants are what was searched)."""
     size = " ".join(x for x in (f"{spec.number:g}", spec.unit) if x)
     refs = held.refs.get("product", [])
-    subject = ", ".join(dict.fromkeys(r.key if narrowed else r.family_code or r.key for r in refs))
+    subject = ", ".join(dict.fromkeys(  # R5-7: a key that is an id prints the ref's label
+        clarify_copy.printed_code(r.key if narrowed else r.family_code or r.key, r.label, language) for r in refs
+    ))
     asked = clarify_copy.text("size_miss", language, size=size, subject=subject, sizes="; ".join(sizes))
     return _clarify(
         st, i, "spec_attribute", spec.phrase, language, options=[], kind="spec", not_found=True, asked=asked

@@ -16,7 +16,10 @@ from app.services.chatbot.pv2.state import ConversationState, Option, RegisterEn
 REGISTER_CAP = 20
 REGISTER_REPLIES = 2
 
-_UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+_UUID_HEX = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+_UUID = re.compile(rf"^{_UUID_HEX}$")
+_UUID_TOKEN = re.compile(rf"(?<![0-9A-Za-z-]){_UUID_HEX}(?![0-9A-Za-z-])")
+_EMPTY_BRACKETS = re.compile(r"[ \t]*\([ \t]*\)")
 
 # R3: move to chatbot_entity_kinds. A printed field (its `key`, else its label) -> the entity kind it names.
 _FIELD_KIND: dict[str, str] = {
@@ -153,6 +156,30 @@ def document_lines(envelopes: Sequence[dict[str, Any]], previous: dict[str, list
     }
     keys = {e.key for e in register}
     return {k: v for k, v in {**previous, **fresh}.items() if k in keys and v}
+
+
+def scrub_ids(text: str, labels: dict[str, str] | None = None) -> str:
+    """R5-7: a reply's text with every UUID-shaped token replaced by its known label (`labels`, id -> printed
+    name), else removed, and the empty brackets and trailing spaces a removal leaves. A product code is never
+    UUID-shaped, so it is untouched. The bot's own reply text only; never the user's message."""
+    if not text or not _UUID_TOKEN.search(text):
+        return text
+    known = {k.lower(): v for k, v in (labels or {}).items() if v and not _UUID.match(v.strip())}
+    out = _UUID_TOKEN.sub(lambda m: known.get(m.group(0).lower(), ""), text)
+    out = _EMPTY_BRACKETS.sub("", out)
+    return "\n".join(line.rstrip() for line in out.split("\n"))
+
+
+def known_labels(state: Any) -> dict[str, str]:
+    """R5-7: id -> printed label for what the state holds: the register's entries and the held / saved subjects."""
+    out: dict[str, str] = {}
+    for e in getattr(state, "register", None) or []:
+        out.setdefault(str(e.key), str(e.label))
+    for subject in [getattr(state, "held", None), *(getattr(state, "topics", None) or [])]:
+        for refs in (getattr(subject, "refs", None) or {}).values():
+            for r in refs:
+                out.setdefault(str(r.key), str(r.label))
+    return out
 
 
 def entries_from_report_rows(rows: Sequence[Any], turn: int, subject: str | None = None) -> list[RegisterEntry]:

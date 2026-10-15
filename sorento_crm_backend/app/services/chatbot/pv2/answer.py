@@ -262,6 +262,13 @@ def _build_result(
             if st.pending is not None:
                 st.last_reply = f"asked {st.pending.kind}"  # R4a: the lane asked, not answered
             rows = _rows_from(_attr(rep, "rows"))
+            # R5-7: a row's id in the report text prints as the row's name, else nothing; a row named by an id
+            # is "(unnamed)" in the pick list, so numbers still match the printed rows.
+            from app.services.chatbot.pv2.reports import ROW_PAYLOAD
+
+            names = {str(k): r.label for r in rows for k in ((r.payload.get(ROW_PAYLOAD) or {}).get("keys") or [])}
+            text = register.scrub_ids(str(_attr(rep, "text") or ""), names)
+            rows = [r.model_copy(update={"label": clarify_copy.safe_label(r.label, language)}) for r in rows]
             if rows:
                 # R4a: a list cut to the cap says how long it was (MEMORY's LAST ANSWER ROWS).
                 st.last_rows = [r.model_copy(update={"payload": {**r.payload, "of": len(rows)}}) for r in rows[:20]]
@@ -270,7 +277,7 @@ def _build_result(
             elif st.pending is None:
                 st.last_rows = []  # R4a: an answer that printed no rows leaves none to pick
             trace["route_detail"] = _attr(plan, "status") if plan is not None else None
-            return TurnV2Result(None, None, str(_attr(rep, "text") or ""), st, actions, "report", language, trace)
+            return TurnV2Result(None, None, text, st, actions, "report", language, trace)
         verdict = bridge.to_v1_verdict(state, last, today=today)
         if len(lookups) > 1:
             verdict["asks"] = [

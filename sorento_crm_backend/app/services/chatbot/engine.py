@@ -4316,7 +4316,11 @@ def _pv2_direct_reply(
     a report, an idea step). Same close as every other arm: the understood/replied/
     remembered records, the usage row, the turn row with its reply (which is what the
     next turn's last-3-exchanges history reads), and a `send_message` action."""
-    reply_text = str(pv2_result.direct_reply or "")
+    from app.services.chatbot.pv2 import register as pv2_register
+
+    # R5-7: the one choke point every PV2 direct reply passes: an id becomes its known label, else it is removed.
+    state = getattr(pv2_result, "state", None)
+    reply_text = pv2_register.scrub_ids(str(pv2_result.direct_reply or ""), pv2_register.known_labels(state))
     branch_kind = getattr(pv2_result, "branch_kind", None) or "low_signal"
     from app.services.chatbot.contracts import BRANCH_KINDS
 
