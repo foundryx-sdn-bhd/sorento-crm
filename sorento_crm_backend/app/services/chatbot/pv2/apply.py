@@ -654,7 +654,19 @@ def _no_subject(held: Held, ask: Ask) -> bool:
 
 def _which_product(st: ConversationState, i: int, language: str) -> ClarifyAct:
     asked = clarify_copy.text("which_product", language)
-    return _clarify(st, i, "entity", None, language, options=[], kind="product", asked=asked)
+    return _clarify(st, i, "entity", None, language, options=_referent_options(st, "product"), kind="product", asked=asked)
+
+
+def _referent_options(st: ConversationState, kind: str) -> list[Option]:
+    """R6 residual (I2): an entity question with no options of its own offers what a reference of its kind can mean
+    (`_referents`: the rows the last answer printed, held, saved topics, the menu just answered); none: none. Only
+    when its numbering keeps every printed row's number (a number on an open question is that question's, R5-1), so
+    a number never names one record on the answer and another on the question."""
+    refs = _referents(st, kind) or []
+    rows = [r.label for r in shown(st)]
+    if rows and [r.label for r in refs[: len(rows)]] != rows:
+        return []
+    return _which_held_options(refs)
 
 
 def _one_ask(
@@ -1454,7 +1466,8 @@ def _apply_entities(
             qs.append(
                 _clarify(
                     st, i, "entity", ent.phrase or ent.doc_number, language,
-                    options=_stamped(ent, options), kind=ent.kind, not_found=not options,
+                    options=_stamped(ent, options or _referent_options(st, ent.kind)), kind=ent.kind,
+                    not_found=not options,
                 )
             )
             asked.append((qs[-1], ent))
@@ -1743,8 +1756,11 @@ def _doc_not_found(
             Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
             for o in clarify_copy.handover_options(language)
         ]
+    offered = bool(options)
+    if not offered:
+        options = _stamped(ent, _referent_options(st, ent.kind))  # R6 residual: what the words may have meant
     pending = PendingQuestion(
-        kind="offer_doc_handover" if options else "clarify_entity",
+        kind="offer_doc_handover" if offered else "clarify_entity",
         asked=asked, options=options, asked_turn=st.turn_no, misses=0,
     )
     return ClarifyAct(ask_index=i, about="entity", phrase=words, pending=pending, not_found=True)
