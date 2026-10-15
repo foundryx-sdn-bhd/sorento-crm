@@ -876,9 +876,9 @@ def _series_or_404(db: Session, series_id: str):
 )
 async def list_series_product_rows(
     series_id: str,
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=1000000),
     limit: int = Query(50, ge=1, le=100),
-    query: Optional[str] = Query(None),
+    query: Optional[str] = Query(None, max_length=200),
     priced: bool = Query(False),
     _user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),

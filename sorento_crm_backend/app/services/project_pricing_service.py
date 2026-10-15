@@ -12,6 +12,7 @@ stored, so there is one source of truth for it.
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
@@ -20,7 +21,7 @@ from sqlalchemy import and_, func, or_, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
-from app.models.product import Product, ProductCategory
+from app.models.product import Brand, Product, ProductCategory
 from app.models.product_set import ProductSet, ProductSetMember
 from app.models.projects import (
     FLOOR_MODE_ABSOLUTE,
@@ -1036,11 +1037,36 @@ def is_in_series(
     return not resolved.categories or product.category_id in resolved.categories
 
 
+def _checked_ids(db: Session, model: Any, ids: Sequence[str], *, code: str, noun: str) -> Set[str]:
+    """The ids as a set, each a real row the acting company can see; else a 422.
+
+    Looked up through the company-scoped session, so another company's row reads as unknown
+    and its name never reaches the message. Runs before any write.
+    """
+    wanted = {str(i) for i in ids if i}
+    try:
+        for i in wanted:
+            uuid.UUID(i)
+        found = (
+            {row[0] for row in db.query(model.id).filter(model.id.in_(wanted)).all()}
+            if wanted
+            else set()
+        )
+    except ValueError:
+        found = set()
+        wanted = wanted | {""}
+    if found != wanted:
+        raise AppException(
+            status_code=422, message=f"One of the {noun} is not available.", code=code
+        )
+    return wanted
+
+
 def set_series_brands(
     db: Session, *, series: ProjectSeries, brand_ids: Sequence[str]
 ) -> None:
     """Replace the picked brands. Sent whole, reconciled like ``set_series_categories``."""
-    wanted = {bid for bid in brand_ids if bid}
+    wanted = _checked_ids(db, Brand, brand_ids, code="series_brand_invalid", noun="brands")
     existing = {
         row.brand_id: row
         for row in db.query(ProjectSeriesBrand)
@@ -1063,7 +1089,9 @@ def set_series_categories(
     Reconciled rather than deleted-and-reinserted so an unchanged nomination keeps its
     row, which keeps the audit trail readable.
     """
-    wanted = {cid for cid in category_ids if cid}
+    wanted = _checked_ids(
+        db, ProductCategory, category_ids, code="series_category_invalid", noun="categories"
+    )
     existing = {
         row.category_id: row
         for row in db.query(ProjectSeriesCategory)
