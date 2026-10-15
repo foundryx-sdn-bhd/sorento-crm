@@ -321,7 +321,8 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     slot = _dict(open_slot)
     extras = _dict(slot.get("extras"))
     held = {**_given_choices(_dict(extras.get("args"))), **_given_top_n(_dict(extras.get("args")), extras.get("top_n"))}
-    fills = bool(_reply_fills(verdict, _dict(slot.get("values")), held))
+    filled = _reply_fills(verdict, _dict(slot.get("values")), held)
+    fills = bool(filled)
     if status in OTHER_REPORTS:
         own = named or bool(verdict.get("group_by")) or verdict.get("domain_in_message") is True
         return own and not fills
@@ -330,7 +331,9 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     if named:
         return True
     raw_group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
-    if not raw_group or fills:
+    # A reply filling only the period and naming another axis is a new ask (review round 8);
+    # one filling the count, metric or basis is the answer (16 Oct: its axis is parser noise).
+    if not raw_group or set(filled) - {"period"}:
         return False
     scope = _dict(extras.get("scope"))
     if scope:
