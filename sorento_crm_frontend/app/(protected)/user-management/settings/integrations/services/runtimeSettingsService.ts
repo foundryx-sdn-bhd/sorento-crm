@@ -14,6 +14,8 @@ import { extractApiError } from '@/lib/api-client';
  *
  * A saved value wins over the server env value; `source` says which one is live.
  * Secrets never come back in full: `masked` is "****" plus the last 4 characters.
+ * `do_assume_delivered_before` (DO-BACKFILL-SETTING) is a date: `value` and the PUT value are
+ * `YYYY-MM-DD`, never after today.
  */
 
 export const RUNTIME_SETTINGS_PERMISSION = 'user_management.settings.secrets';
@@ -25,7 +27,8 @@ export type RuntimeSettingName =
   | 'connector_connection_id'
   | 'connector_ss_callback_url'
   | 'analytics_ro_database_url'
-  | 'respond_webhook_secret';
+  | 'respond_webhook_secret'
+  | 'do_assume_delivered_before';
 
 export type RuntimeSettingSource = 'db' | 'env' | 'unset';
 
@@ -45,6 +48,8 @@ export interface RuntimeSettings {
   respond_webhook_path: string;
   respond_signature_headers: string[];
   respond_shared_secret_header: string;
+  /** False when no order status has code `delivered`: the DO cutover then does nothing. */
+  delivered_order_status_exists: boolean;
 }
 
 export type RuntimeSettingsUpdate = Partial<
