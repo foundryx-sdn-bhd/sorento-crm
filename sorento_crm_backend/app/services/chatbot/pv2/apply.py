@@ -166,6 +166,7 @@ def apply_turn(
         or any(a.act == "new_topic" for a in out.asks) and st.pending is not None
         or any(a.act == "switch_back" and a.switch_back_to is None for a in out.asks) and len(st.topics) == 1
         or any(_picks_open_question(a, st.pending) for a in out.asks)  # R5-1: the pick is read before the flag
+        or any(_moves_on_from_a_confirm(a, st.pending) for a in out.asks)  # R6 C: a new ask on the open confirm
     )
     # R6 A: a flagged turn whose asks carry something (an entity, a domain, a period, ...) runs them, so held keeps
     # what the parse settled; the flag's own question is asked only for what they leave open (`_flag_question`).
@@ -208,9 +209,7 @@ def apply_turn(
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
             if ask.act == "unclear" and _carries(ask):
-                # R6 A: the domain and period the unclear ask named stay held while its question is asked.
-                frame = {k: v for k, v in (("domain", ask.domain), ("period", ask.period)) if v is not None}
-                st.held = st.held.model_copy(update=frame)
+                st.held = _unclear_frame(st.held, ask)  # R6 A: kept while its question is asked
             # Only an answer (or an unclear reply) re-asks the open question; a new
             # question that missed asks its own and replaces it.
             answering = ask.act in _ANSWER_ACTS and not (ask.act == "unclear" and _carries(ask))
@@ -318,6 +317,33 @@ def _is_a_new_ask(ask: Ask) -> bool:
         not e.refers_to_held and (e.key or e.phrase or e.doc_number) and e.op != "clear" for e in ask.entities
     )
     return named or bool(ask.attachment_type)
+
+
+def _moves_on_from_a_confirm(ask: Ask, pending: PendingQuestion | None) -> bool:
+    """R6 C: a reply to an open confirm that picks nothing (no option key, value, number or entity) but names a
+    domain or a period ("and last month?") is a new ask, never a miss on the confirm, whatever answer act the
+    parser gave it (a new topic stays one): `_carried_by_the_confirm` says what it runs."""
+    if pending is None or pending.kind != CONFIRM or ask.act not in ("answers_bot_question", "unclear", "refines_held"):
+        return False
+    answer = ask.answer
+    picks = ask.row_pick is not None or answer is not None and bool(answer.option_key or answer.free_value)
+    return not (picks or ask.entities) and bool(ask.domain or ask.period)
+
+
+def _carried_by_the_confirm(i: int, ask: Ask, held: Held, pending: PendingQuestion) -> ClarifyAct | None:
+    """R6 C (lead ruling 15 Oct): nothing is applied until a confirm is confirmed, and v1 is never handed a Lookup
+    that drops its candidate ("Customer: all"). A new ask on an open confirm runs on held only when held already
+    has the candidate (None: the caller refines); else the same yes/no confirm stays open, its original ask
+    taking this one's domain, period and status, so a "yes" runs it on the candidate."""
+    guess = pending.options[0].payload
+    keys = {str(k) for k in guess.get("keys") or [guess.get("key")]}
+    if keys <= {r.key for r in held.refs.get(str(guess.get("kind")), [])}:
+        return None
+    origin = valid_origin(pending.origin) or ask
+    update = {"domain": ask.domain or origin.domain, "period": ask.period or origin.period,
+              "status": ask.status or origin.status}
+    kept = pending.model_copy(deep=True, update={"origin": _origin_of(origin.model_copy(update=update))})
+    return ClarifyAct(ask_index=i, about="confirm", pending=kept)
 
 
 #: Pending kinds a bare number never answers: a hand-over is accepted only by an explicit yes or a typed
@@ -645,6 +671,13 @@ def _one_ask(
     can_offer: Any = None,
 ) -> tuple[Action, bool]:
     """(action, answered_pending). Mutates `st` (held/topics) only on success."""
+    if pending is not None and _moves_on_from_a_confirm(ask, pending):
+        kept = _carried_by_the_confirm(i, ask, st.held, pending)
+        if kept is not None:
+            if ask.act == "unclear":
+                st.held = _unclear_frame(st.held, ask)  # R6 A: the confirm stays open, held keeps the parsed frame
+            return kept, False
+        ask = ask.model_copy(update={"act": "refines_held"})  # R6 C: held has the candidate: a refine on it
     if ask.act == "unclear" and _carries(ask):
         # R6 A: an unclear ask that carries something runs as a refine of held (a new topic when nothing is held),
         # so held keeps its entities, domain and period.
@@ -1663,11 +1696,9 @@ CONFIRM = "clarify_confirm"
 def _confirm(st: ConversationState, i: int, ent: Entity, option: Option, language: str) -> ClarifyAct:
     """The yes/no confirm ("Did you mean <name>?") of the one option a partial word suggests: nothing numbered,
     no code. "yes" picks it as a pick on an entity question does; "no" asks openly (`_answer`)."""
+    # R6 C (owner rule, ledger_family.group_names): a family is named by its group name only, never an account
+    # list or a count. "yes" is every account; a reply naming one account still narrows to it (R5-3).
     asked = clarify_copy.text("confirm", language, label=clarify_copy.safe_label(option.label, language))
-    accounts = _accounts(option) if option.payload.get("labels") else []
-    if accounts:
-        # R5-3: a family of several accounts offers its accounts: "yes" is every one, a number is that one.
-        asked += "\n" + "\n".join(f"{o.key}. {clarify_copy.safe_label(o.label, language)}" for o in accounts)
     pick = option.model_copy(update={"key": "yes"})
     no = Option(key="no", label=clarify_copy.text("no", language), payload={"value": False})
     pending = PendingQuestion(kind=CONFIRM, asked=asked, options=[pick, no], asked_turn=st.turn_no, misses=0)
@@ -2121,6 +2152,12 @@ def _domain_options(st: ConversationState) -> list[Option]:
         for d, label in DOMAIN_LABELS.items()
         if d in ALLOWED and kinds <= set(ALLOWED[d])
     ]
+
+
+def _unclear_frame(held: Held, ask: Ask) -> Held:
+    """R6 A: `held` with the domain and period an unclear ask named, kept while a question is asked instead."""
+    frame = {k: v for k, v in (("domain", ask.domain), ("period", ask.period)) if v is not None}
+    return held.model_copy(update=frame)
 
 
 def _carries(ask: Ask) -> bool:

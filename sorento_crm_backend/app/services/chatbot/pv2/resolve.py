@@ -782,7 +782,7 @@ class DbResolver:
         """Accounts of one trading family are one customer (v1 `gate._cust_base`): one family
         is exact with a ref per account; several families are asked once per family. The cap
         counts families, never accounts, so a family is not cut in half."""
-        from app.services.ledger_family import group_names, ledger_family_key
+        from app.services.ledger_family import group_key, group_names, ledger_family_key
 
         buckets: dict[str, list] = {}
         for row in rows:
@@ -794,12 +794,19 @@ class DbResolver:
             names = [str(n) for _c, _k, n in members]
             label = (group_names(names) or [names[0]])[0].strip()
             families.setdefault(label, []).extend(members)
-        # Exact rows resolve directly. From the containing-name search only an exact family
-        # NAME does; a partial name always asks (candidates never resolve on their own).
+        # Exact rows resolve directly. From the containing-name search only the family's GROUP
+        # name does, compared as a group is (`group_key`: case, punctuation, SDN / BHD); a partial
+        # name always asks (candidates never resolve on their own).
         if len(families) == 1:
             shown, members = next(iter(families.items()))
-            if not candidates_only or norm(shown) == norm(phrase or ""):
-                return Resolution(status="exact", refs=[self._customer_ref(c, k, n, phrase) for c, k, n in members])
+            key = group_key(phrase or "")
+            if not candidates_only or key and key == group_key(shown):
+                refs = [self._customer_ref(c, k, n, phrase) for c, k, n in members]
+                if len(refs) > 1:
+                    # R6 C (owner rule, ledger_family.group_names): several accounts are ONE customer, named
+                    # by the group name only; every account key rides along, never an account list or count.
+                    refs = [r.model_copy(update={"label": shown}) for r in refs]
+                return Resolution(status="exact", refs=refs)
         options = []
         for label, members in list(families.items())[:CUSTOMER_CANDIDATE_CAP]:
             keys = [self._customer_ref(c, k, n, phrase).key for c, k, n in members]
