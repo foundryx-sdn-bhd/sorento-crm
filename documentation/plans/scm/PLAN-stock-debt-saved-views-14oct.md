@@ -1,6 +1,6 @@
 # PLAN: saved views (preset filters) on Stock Debt
 
-Status: round 3 in build (owner hand test 15 Oct: Location lists the real warehouses, not groups; UAC AC-R1..R10). Rounds 1-2 reviewed READY at d57e0af2, security PASS ecaae202. PR #1683. Track: M fix round (no migration, no RBAC change).
+Status: round 3 built and reviewed (Location = real warehouses; reviewer READY + security PASS at d76c086c4, kill 14/14, browser PASS 1280/375 on the crew copy), waiting on the owner hand test (PR #1683). Track: M fix round (no migration, no RBAC change).
 
 Owner ask (14 Oct 21:10): save the Stock Debt filters (date range, project, project location)
 as a named view, like the sponsorship form report's saved views, and apply them in one pick.
