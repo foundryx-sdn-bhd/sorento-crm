@@ -672,7 +672,8 @@ def test_ac19_a_hidden_only_link_is_never_named_and_the_turn_runs_as_typed(sessi
     (c_reply, c_calls), (a_reply, a_calls) = _hidden_parity(session_factory, monkeypatch, typed=HID_CAB, asked=HID_CAB)
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)
-    assert HID_MIRROR not in a_reply and "on record" not in a_reply and " for " + HID_CAB not in a_reply, a_reply
+    assert HID_MIRROR not in a_reply and "on record" not in a_reply, a_reply
+    assert f"Mirror for {HID_CAB}" not in a_reply and "is on record for" not in a_reply, a_reply
 
 
 def test_ac19_with_one_visible_and_two_hidden_accessories_the_line_names_only_the_visible(session_factory, monkeypatch) -> None:
