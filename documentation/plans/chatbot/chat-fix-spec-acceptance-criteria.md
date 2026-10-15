@@ -11,12 +11,13 @@ Plan: `PLAN-chat-fix-spec-16oct.md`. Examples are real dev data (sorento_cagent_
 - AC-A4 "Any bathtub with massage jet?" (staff and dealer) answers jacuzzi / jetted tubs only; "Do you have any
   bathtub?" answers bathtubs and no Jacuzzi-class product (owner ruling 16 Oct 00:10).
 - AC-A5 `has_massage` is a registry yes/no key; products whose catalogue description names massage, whirlpool,
-  jacuzzi or air bubble on a tub class carry it; no WC or shower set carries it.
+  air bubble or a jet on a tub class carry it, and so does every product whose own class is Jacuzzi; an accessory
+  filed with the tubs ("JACUZZI PILLOW") and a WC or shower set never carry it.
 - AC-A6 A spec word the registry cannot bind is said back on every domain ("Couldn't find: <word>") instead of being
   dropped and answered unfiltered.
 - AC-A7 A category the parser names is one of the listed types: "Any promo for GrabBar?" is read as Grab bar.
 - AC-A8 Name-matched products and the spec filter combine with AND: "Do you have any P-trap WC?" counts only P-trap
-  WCs (dev: 183 staff, 157 dealer, not 220 / 200).
+  WCs (dev: 177 families (staff), 157 (dealer); the count is of code families, not 220 / 200).
 - AC-A9 A yes/no spec filters: "Any promo for intelligent closet?" is read as smart toilet and filters on it.
 - AC-A10 A spec menu only offers choices that lead to rows for the asked domain (W09 "Sorrento cabinet" promo); with
   no such choice it answers at class level.
