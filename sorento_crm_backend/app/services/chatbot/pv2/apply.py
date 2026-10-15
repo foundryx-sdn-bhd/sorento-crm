@@ -886,6 +886,8 @@ def _answer(
         picked = _nth(_numbered(pending), number)
         if picked is None:
             raise _Miss("other")
+        # R5 fix 3: the number answers THIS question, so its own ask runs (R5-5); the parser's domain is ignored.
+        ask = ask.model_copy(update={"domain": None})
     if picked is None and free is not None and pending.kind != "v1_open_question":
         # R5-3 (captain ruling 15 Oct): the PARSER's free_value equal, exactly, to one option label the bot itself
         # printed picks that option, as its key does. It never reads the raw user message, does no fuzzy or partial
