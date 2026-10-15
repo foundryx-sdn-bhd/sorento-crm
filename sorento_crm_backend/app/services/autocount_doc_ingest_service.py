@@ -612,6 +612,8 @@ class AutocountDocIngestService(MasterRefResolver):
         # route re-matches the cancel lines naming them after the commit.
         self.order_numbers: set[str] = set()
         self.order_numbers_capped = False
+        # (the batch's DO-HISTORY cutover,), read on first use by `_assume_delivered_before`.
+        self._cutover: Optional[tuple[Optional[date]]] = None
 
     #: How often `on_progress` fires mid-batch - the same cadence `MasterIngestService`
     #: uses (B3): a pull snapshot can run to thousands of documents.
@@ -871,14 +873,21 @@ class AutocountDocIngestService(MasterRefResolver):
             self._memo[key] = str(row[0]) if row else None
         return self._memo[key]
 
+    def _assume_delivered_before(self):
+        """The DO-HISTORY cutover for this batch: Settings > Integrations > AutoCount, else env
+        `DO_ASSUME_DELIVERED_BEFORE` (DO-BACKFILL-SETTING, owner 15 Oct 2026). Read once per
+        batch on the batch's own session, so a save applies to the next push or pull apply in
+        every process with no restart."""
+        if self._cutover is None:
+            from app.services import runtime_settings
+
+            self._cutover = (runtime_settings.get("do_assume_delivered_before", self.db),)
+        return self._cutover[0]
+
     def _assumed_delivered_status(self, doc_date) -> Optional[str]:
         """DO-HISTORY: the delivered status when a DO dated `doc_date` has no tracking to come
-        (`settings.do_assume_delivered_before`, owner 13 Oct 2026), else None. `settings` is
-        built once per process, so changing the env value needs a restart of every process
-        that ingests DOs (both backends, and the worker for the pull apply)."""
-        from app.config import settings
-
-        cutover = getattr(settings, "do_assume_delivered_before", None)
+        (before `_assume_delivered_before`, owner 13 Oct 2026), else None."""
+        cutover = self._assume_delivered_before()
         if cutover is None or doc_date is None or doc_date >= cutover:
             return None
         status_id = self._delivered_status_id()

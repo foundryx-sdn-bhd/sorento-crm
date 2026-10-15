@@ -41,6 +41,7 @@ function data(
   overrides: Partial<
     Record<RuntimeSettingName, Partial<RuntimeSettingField>>
   > = {},
+  extra: Partial<RuntimeSettings> = {},
 ) {
   const secret = { ...unset, secret: true };
   const fields: Record<RuntimeSettingName, RuntimeSettingField> = {
@@ -51,6 +52,7 @@ function data(
     connector_ss_callback_url: unset,
     analytics_ro_database_url: secret,
     respond_webhook_secret: secret,
+    do_assume_delivered_before: unset,
   };
   for (const [k, v] of Object.entries(overrides)) {
     fields[k as RuntimeSettingName] = {
@@ -63,6 +65,8 @@ function data(
     respond_webhook_path: '/api/v1/public/respond/webhook',
     respond_signature_headers: ['x-respond-signature', 'x-webhook-signature'],
     respond_shared_secret_header: 'X-Respond-Webhook-Secret',
+    delivered_order_status_exists: true,
+    ...extra,
   };
   return result;
 }
@@ -249,5 +253,98 @@ describe('RuntimeSettingsCards', () => {
       { respond_webhook_secret: typed },
       expect.anything(),
     );
+  });
+
+  describe('AutoCount: Assume DOs delivered before (DO-BACKFILL-SETTING)', () => {
+    const LABEL = 'Assume DOs delivered before';
+    // Cards in order: Chat analytics, Claude connector, Respond.io webhook, AutoCount.
+    const autocountSave = () =>
+      screen.getAllByRole('button', { name: 'Save' })[3] as HTMLButtonElement;
+
+    it('shows the AutoCount card with the saved date in DD/MM/YYYY', () => {
+      mockQuery.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: data({
+          do_assume_delivered_before: { source: 'db', value: '2026-07-01' },
+        }),
+      });
+      render(<RuntimeSettingsCards />);
+      expect(screen.getByText('AutoCount')).toBeTruthy();
+      const input = screen.getByLabelText(LABEL) as HTMLInputElement;
+      expect(input.value).toBe('01/07/2026');
+    });
+
+    it('saves a typed date as YYYY-MM-DD', () => {
+      mockQuery.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: data(),
+      });
+      render(<RuntimeSettingsCards />);
+      expect(autocountSave().disabled).toBe(true);
+      fireEvent.change(screen.getByLabelText(LABEL), {
+        target: { value: '01/07/2026' },
+      });
+      fireEvent.click(autocountSave());
+      expect(mockMutate).toHaveBeenCalledWith(
+        { do_assume_delivered_before: '2026-07-01' },
+        expect.anything(),
+      );
+    });
+
+    it('shows the env date as the placeholder while nothing is saved', () => {
+      mockQuery.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: data({
+          do_assume_delivered_before: { source: 'env', value: '2026-07-01' },
+        }),
+      });
+      render(<RuntimeSettingsCards />);
+      const input = screen.getByLabelText(LABEL) as HTMLInputElement;
+      expect(input.value).toBe('');
+      expect(input.placeholder).toBe('01/07/2026');
+      expect(screen.getByText('Server env')).toBeTruthy();
+    });
+
+    it('clears the saved date', () => {
+      mockQuery.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: data({
+          do_assume_delivered_before: { source: 'db', value: '2026-07-01' },
+        }),
+      });
+      render(<RuntimeSettingsCards />);
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Clear saved value' }),
+      );
+      expect(mockMutate).toHaveBeenCalledWith({
+        do_assume_delivered_before: null,
+      });
+    });
+
+    it('warns when no delivered order status exists', () => {
+      mockQuery.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: data({}, { delivered_order_status_exists: false }),
+      });
+      render(<RuntimeSettingsCards />);
+      expect(screen.getByRole('alert').textContent).toContain(
+        'No order status with code delivered',
+      );
+    });
+
+    it('shows no warning when a delivered order status exists', () => {
+      mockQuery.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: data(),
+      });
+      render(<RuntimeSettingsCards />);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
 });
