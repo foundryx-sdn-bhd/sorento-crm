@@ -810,8 +810,9 @@ export interface QuotationOutcomeBody {
 export interface ProjectSeries {
   id: string;
   name: string;
-  brand_id?: string | null;
-  brand_name?: string | null;
+  /** Picked brands, in brand-name order. Empty means every brand. */
+  brand_ids: string[];
+  brand_names: string[];
   description?: string | null;
   is_active: boolean;
   category_ids: string[];
