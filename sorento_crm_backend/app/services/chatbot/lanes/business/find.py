@@ -273,7 +273,15 @@ def as_linked_products(
     wanted = {normalize_code(entity_code(entities[i])) for i in anchors}
     # The typed code against the catalogue's codes, both normalised (dashes, spaces, case):
     # data against data. Read on the turn's company-scoped session, as every product read is.
-    rows = db.query(Product).filter(_norm_sql(Product.product_code).in_(wanted)).all()
+    # AC-22: a product the chatbot may not answer with is no anchor either (the rule every resolver
+    # tier applies); a hidden code is read as typed, never as a link, a line or a claim.
+    from app.services.entity_resolver import _chat_visible_product_ids
+
+    def _visible(found: list[Any]) -> list[Any]:
+        ok = _chat_visible_product_ids(db, {str(r.id) for r in found})
+        return [r for r in found if str(r.id) in ok]
+
+    rows = _visible(db.query(Product).filter(_norm_sql(Product.product_code).in_(wanted)).all())
     by_code: dict[str, list[Any]] = {}
     for row in rows:
         by_code.setdefault(normalize_code(row.product_code), []).append(row)
@@ -282,7 +290,7 @@ def as_linked_products(
         # the linked SKUs whose code holds it, codes against codes and links only (the
         # containment fallback #1601's find lane used). More than a model's SKUs is no reading.
         for token in wanted - set(by_code):
-            family = _linked_codes_holding(db, token, kinds)
+            family = _visible(_linked_codes_holding(db, token, kinds))
             if family:
                 by_code[token] = family
     rows = [r for group in by_code.values() for r in group]
@@ -298,8 +306,6 @@ def as_linked_products(
 
     # AC-19: a linked product the chatbot may not answer with is never named (the same rule every
     # resolver tier applies, `chat_searchable_products()` and the contact's brand scope).
-    from app.services.entity_resolver import _chat_visible_product_ids
-
     visible = _chat_visible_product_ids(
         db, {str(o.id) for by_side in reads.values() for found in by_side.values() for others in found.values() for o in others}
     )

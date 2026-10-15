@@ -255,8 +255,6 @@ def _run_fits(db: Session, arg: FilterArg) -> list[Group]:
     return groups
 
 
-
-
 def _fits_opening() -> str:
     """Main's seat cover opening for the first kind (its WC gloss), then the other kinds grouped by
     host: "likewise the mirror or shelf for a cabinet, or the cabinets a mirror or shelf fits"."""

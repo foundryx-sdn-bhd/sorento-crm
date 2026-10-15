@@ -199,8 +199,8 @@ class Focus:
     extra: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # SEAT-AS-PRODUCT (crew ruling 13 Oct, the #1626 pattern): while `products` are the
     # answer to a fit ask, which side they are ("covers" for "seat cover for <WC>", "wcs" for
-    # "WC for <cover>"; "<kind>:<side>" for a mirror / shelf ask, `find.relation_of`), so a bare next code the parser marks as a continuation repeats that
-    # ask in the same direction and a pointer at one of these codes narrows it.
+    # "WC for <cover>"; "<kind>:<side>" for a mirror / shelf ask, `find.relation_of`), so a bare
+    # next code the parser marks as a continuation repeats that ask in the same direction and a pointer at one of these codes narrows it.
     # Written by `engine._run_turn` around `find.as_linked_products`; a topic reset drops it.
     relation: str | None = None
 
