@@ -71,6 +71,7 @@ details pre{white-space:pre-wrap;font:12.5px/1.45 ui-monospace,SFMono-Regular,Me
 <body>
 <div class="wrap">
 <nav><b>Contents</b><ol>
+<li><a href="#e0">E. Are the fixes general?</a></li>
 <li><a href="#w0">A. How today's bot works</a></li>
 <li><a href="#w1">B. Your scenarios, live</a></li>
 <li><a href="#w2">C. How many are right</a></li>
@@ -90,6 +91,85 @@ details pre{white-space:pre-wrap;font:12.5px/1.45 ui-monospace,SFMono-Regular,Me
 architecture, today's structured replies stay. Analysis only. Every fix below is a small change inside the live bot
 path, sized S or M, with the expected gain and how it is measured. Code cited at <code>origin/main</code>
 504ce9252a.</p>
+
+<h2 id="e0">E. Are the fixes general?</h2>
+<div class="box hl">
+<p><b>Short answer.</b> No new model calls, no new harness, no scenario branches. The fixes mostly <b>remove</b>
+things: about 8 prompt lines deleted and 1 added (net about -7), one hard-coded word list deleted, two hard-coded
+domain lists replaced by data. The only growth is vocabulary the parser already gets for every other spec: product
+type synonyms and class meanings (about +710 cached tokens, +1% cost per message). Two earlier proposals failed this
+check and are changed: <b>P2-F3 is dropped</b> (it matched your words in code over the parser's reading) and
+<b>P2-F4 is not small</b> (an existing 6,000-line branch, a separate decision).</p>
+</div>
+<h3>Every fix, by type</h3>
+<div class="tw"><table class="cards">
+<tr><th>Fix</th><th>Type</th><th>Prompt lines</th><th>General?</th></tr>
+<tr><td data-label="Fix">P1-F1 Subject back</td><td data-label="Type">Code, general (context budget)</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v r">general, evidence</span> 72 of 81 follow-ups have a subject that never reaches the parser</td></tr>
+<tr><td data-label="Fix">P1-F2 Seat cover is a product</td><td data-label="Type">Parser schema (move one field) + code, general (show type synonyms) + prompt (delete a catch-all) + data (domain words, kept in the DB so only the parser reads them)</td><td data-label="Prompt lines">-5</td><td data-label="General?"><span class="v r">general, evidence</span> 5 parser-gold items + W05; 44 product types have synonyms, none shown today</td></tr>
+<tr><td data-label="Fix">P1-F3 Answered list</td><td data-label="Type">Code, general</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v r">general, evidence</span> 2 other items</td></tr>
+<tr><td data-label="Fix">P1-F4 Short replies</td><td data-label="Type">Prompt (delete 2 contradicting sentences)</td><td data-label="Prompt lines">-2</td><td data-label="General?"><span class="v r">general, evidence</span> 6 other short follow-ups</td></tr>
+<tr><td data-label="Fix">P2-F1 Jacuzzi = bathtub with massage jets</td><td data-label="Type">Data (registry meaning) + the same code change as P1-F2; deletes the class word list now hard-coded in <code>product_class_signal.py:66-92</code></td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v p">general by design, 1 case so far</span> 186 jacuzzi products; the registry class row has 0 synonyms</td></tr>
+<tr><td data-label="Fix">Category name rule (W05 "GrabBar")</td><td data-label="Type">Prompt: one rule like the existing brand rule (v94 lines 1486-1499): a category is one of the listed types</td><td data-label="Prompt lines">+1</td><td data-label="General?">general: 14 of 14 categories came back unnamed in the walkthrough</td></tr>
+<tr><td data-label="Fix">P2-F2 Say back unknown words</td><td data-label="Type">Code, general (removes a promotion-only special case)</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v p">general by design, 1 case so far</span></td></tr>
+<tr><td data-label="Fix">P2-F3 Raw words first</td><td data-label="Type">Was code matching the user's words over the parser's reading. Against your rule, and the prompt already lists "gold"; it is a parser misread for the gold set</td><td data-label="Prompt lines">-</td><td data-label="General?"><span class="v w">dropped</span></td></tr>
+<tr><td data-label="Fix">P2-F4 Size axis</td><td data-label="Type">Code + schema, driven by the registry, adds prompt text. Not small: an existing branch of 118 commits, +6,125 lines</td><td data-label="Prompt lines">+</td><td data-label="General?">general (5 of 12 spec asks + W08); a separate decision, not part of this batch</td></tr>
+<tr><td data-label="Fix">P3-F1 One structured question</td><td data-label="Type">Code, general; reads the parser's fields, no word matching</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v r">general, evidence</span> 8 other report chains of 25</td></tr>
+<tr><td data-label="Fix">P3-F2 Engine applies the parser's refine</td><td data-label="Type">Code, general</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v r">general, evidence</span> 1 other case</td></tr>
+<tr><td data-label="Fix">P3-F3 Parser conflicts</td><td data-label="Type">Prompt (remove a conflict) + schema (channel names from data, no "retail" word map in code)</td><td data-label="Prompt lines">-1</td><td data-label="General?"><span class="v r">general, evidence</span> 1 other case</td></tr>
+<tr><td data-label="Fix">P3-F4 to P3-F7</td><td data-label="Type">Code, general (brand from the brand table, not names typed in code)</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v p">general by design, 1 case so far</span></td></tr>
+<tr><td data-label="Fix">P3-F8 Limit</td><td data-label="Type">Config</td><td data-label="Prompt lines">0</td><td data-label="General?">-</td></tr>
+<tr><td data-label="Fix">NEW-1 Ask which product</td><td data-label="Type">Code, general: driven by each domain's "needs a product" setting; replaces two hard-coded domain lists (<code>apply.py:2185</code>, <code>gate.py:175</code>)</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v p">general by design, 1 case so far</span> (4 domains need a product)</td></tr>
+<tr><td data-label="Fix">NEW-2, 3, 5, 6</td><td data-label="Type">Code, general</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v p">general by design, 1 case so far</span></td></tr>
+<tr><td data-label="Fix">NEW-4 Intersect, not union</td><td data-label="Type">Code, general bug</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v r">general, evidence</span> 62 other type/spec pairs affected</td></tr>
+<tr><td data-label="Fix">NEW-7 Keep yes/no specs</td><td data-label="Type">Code, general bug</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v r">general, evidence</span> 18 other yes/no specs, 1,328 products</td></tr>
+<tr><td data-label="Fix">NEW-8 Counted reply + clean-up</td><td data-label="Type">Code, general + data clean-up</td><td data-label="Prompt lines">0</td><td data-label="General?">general: 2,497 products have no type, 5,217 have list price 0</td></tr>
+<tr><td data-label="Fix">SEC Promo access</td><td data-label="Type">Code, general (fail closed, both layers)</td><td data-label="Prompt lines">0</td><td data-label="General?"><span class="v r">general, evidence</span> 111 of 346 promotions are office-only and reachable this way</td></tr>
+</table></div>
+
+<h3>How matching works today</h3>
+<ol>
+<li><b>The catalogue is not in the prompt.</b> Dev has 15,339 products; the parser sees none of them. It gets the
+spec registry instead (50 specs with every choice and its synonyms, about 2,400 tokens, cached) plus short lists of
+brands, product types and promotion kinds. One model call per message: 38,862 tokens in (38,656 cached), 440 out,
+$0.005 (prompt v94 lines 1767-1847; <code>engine.py:4549</code>).</li>
+<li><b>The parser extracts</b> the words it found and what they are: product, category, brand, spec key and value
+(<code>head/parser.py:139-197</code>).</li>
+<li><b>Code checks</b> each spec against the registry and drops what does not exist
+(<code>head/grounding.py:594-749</code>).</li>
+<li><b>Product names and codes are matched by code</b>, not by the model: exact code, prefix, a small model call for a
+missed code, then similarity search over product names (<code>entity_resolver.py:849</code> to
+<code>:5767</code>).</li>
+<li><b>The search</b> filters products by type and spec values (<code>product_spec_search.py:1103-1141</code>,
+<code>product_predicate_service.py:1072</code>).</li>
+</ol>
+<p><b>Is it the right way?</b> Yes for names: 15k products are too many for a prompt, and similarity search in code is
+right. For specs it is right but incomplete: product type synonyms and class meanings ("jacuzzi = bathtub with
+massage jets") are the two parts of the registry the parser never sees, which is exactly where W05, W10 and W11 fail.
+Recommendation: show the whole registry, including those two, in the cached prompt and keep it live from the registry
+(today a registry edit reaches the parser only when a new prompt version is published). Cost about +$0.00005 per
+message, no added latency. Fetching candidates per message instead would cost about the same, add about 0.3 s, and add
+a way to miss.</p>
+<h3>Is the routing general?</h3>
+<p><b>The core is.</b> The parser fills generic fields (message type, intent, domain, entities;
+<code>head/parser.py:113-115</code>); code picks the lane from those fields only (<code>turn/apply.py:2076-2156</code>,
+<code>turn/route.py:65-109</code>), and the tool is the domain's first tool
+(<code>lanes/business/fetch.py:156-216</code>). No product, brand or customer is named there.</p>
+<p><b>But a layer of word rules sits in front of it.</b> Past fixes added <b>30 places</b> where code reads the
+message's own words (28 hard-coded, 2 from data). 8 of them rewrite the parser's domain or intent before routing, for
+example ranking words (<code>engine.py:2674-2682</code>), sales-order words (<code>so_status.py:442-662</code>),
+order-list words (<code>order_list.py:38-110</code>), dealer ETA words (<code>engine.py:483</code>) and Malay
+attribute words (<code>predicate.py:115-139</code>). Brand names are also typed into code in 3 places
+(<code>gate.py:181</code>, <code>tier_gate.py:27</code>, <code>escalation_services.py:247</code>). This is the
+scenario-shaped part. None of our fixes adds to it; NEW-1 and P2-F1 remove three of them. Proposal: retire the rest
+one at a time, each only when the parser gold set shows the parser already reads those messages right.</p>
+<h3>Overfit check</h3>
+<ul>
+<li><b>General, with evidence</b> (the cause also hits cases it was not written for): P1-F1, P1-F2, P1-F3, P1-F4,
+P3-F1, P3-F2, P3-F3, NEW-4, NEW-7, SEC.</li>
+<li><b>General by design, one case so far</b>: P2-F1, P2-F2, P3-F4 to P3-F8, NEW-1, NEW-2, NEW-3, NEW-5, NEW-6.</li>
+<li><b>Proven by a re-run</b>: none yet. Every fix lane must pass on the parser gold TRAIN items and on the walkthrough
+rows it was NOT written for, before your hand test.</li>
+</ul>
 
 <h2 id="w0">A. How today's bot answers a question</h2>
 <div class="box hl">
@@ -122,7 +202,7 @@ never sees the data and never picks the tool.</p>
 <tr><td>Context for the parser (subject, open question, last replies)</td><td><code>engine.py:4537</code>, <code>turn/context.py:496</code></td><td>Code</td></tr>
 <tr><td>Read the message: intent, domain, products named, quantity, period, specs, which option was picked, follow-up or new</td><td><code>engine.py:4549</code>, <code>head/parser.py:33</code> (gpt-5.4-mini, one JSON answer, temperature 0)</td><td><b>LLM</b></td></tr>
 <tr><td>Ask back or answer; turn names into products</td><td><code>turn/apply.py:3288</code>, <code>turn/route.py:65</code>, resolver <code>lanes/business/services.py:140</code></td><td>Code</td></tr>
-<tr><td>Pick the tool: the domain's first tool</td><td><code>lanes/business/fetch.py:156</code></td><td>Code</td></tr>
+<tr><td>Pick the tool: the domain's first tool</td><td><code>lanes/business/fetch.py:156</code> (domain list in <code>policy_rows.py:55</code>)</td><td>Code</td></tr>
 <tr><td>Fetch: who may see what (Stock Visibility, company scope)</td><td><code>fetch.py:1423</code>; backend <code>services/stock_visibility.py:229</code></td><td>Code (backend)</td></tr>
 <tr><td>Write the reply</td><td>MCP presenter + <code>turn/compose.py:506</code>, <code>chatbot_reply_copy.py:439</code></td><td>Code (templates)</td></tr>
 </table></div>
@@ -142,7 +222,7 @@ no quantities). Dev data is a copy from mid-September. Customer names masked. Co
 <tr><td data-label="#">W02 (2)</td><td data-label="Question">same</td><td data-label="As">dealer</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">"No order today" is true; the last delivery date (17 Sep) was in the data but not said</td><td data-label="Fix">NEW-2</td></tr>
 <tr><td data-label="#">W03</td><td data-label="Question">What is the stock for Andamal Basin?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">"Andamal" is nowhere in the data; the reply lists every basin by brand under the heading "andamal wash basins"</td><td data-label="Fix">NEW-3 say "not found" first, ask for code or photo</td></tr>
 <tr><td data-label="#">W04</td><td data-label="Question">Do you have any P-trap WC?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">Right shape (count by brand), wrong count: 220 instead of 183 (dealer 200 vs 157), 43 S-trap WCs slip in</td><td data-label="Fix">NEW-4 intersect, not union</td></tr>
-<tr><td data-label="#">W05</td><td data-label="Question">Any promo for GrabBar?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">"could not match grabbar": "grab bar" exists (84 products) but the one-word spelling is not matched</td><td data-label="Fix">P1-F2 (parser sees type names and synonyms)</td></tr>
+<tr><td data-label="#">W05</td><td data-label="Question">Any promo for GrabBar?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened">"could not match grabbar": "grab bar" exists (84 products) but the one-word spelling is not matched</td><td data-label="Fix">P1-F2 + category name rule (section E)</td></tr>
 <tr><td data-label="#">W06</td><td data-label="Question">Any promo for Sonnet WC?</td><td data-label="As">both</td><td data-label="Verdict"><span class="v p">PARTIAL</span></td><td data-label="What happened">"Sonnet" exists nowhere in dev data, so not guessing is right; but it calls it a "product detail"</td><td data-label="Fix">P2-F2 wording</td></tr>
 <tr><td data-label="#">W07</td><td data-label="Question">Any promo for Cabana WC?</td><td data-label="As">salesperson</td><td data-label="Verdict"><span class="v r">RIGHT</span></td><td data-label="What happened">3 Cabana office flyers</td><td data-label="Fix">-</td></tr>
 <tr><td data-label="#">W07</td><td data-label="Question">same</td><td data-label="As">dealer</td><td data-label="Verdict"><span class="v w">WRONG</span></td><td data-label="What happened"><b>Security:</b> dealer also gets 3 OFFICE USE flyers (empty access filter = no filter)</td><td data-label="Fix">SEC-PROMO-ACCESS lane (running)</td></tr>
@@ -213,8 +293,8 @@ one shows MYR 0.00, and no total is given (unlike W04).</p></details>
 <div class="tw"><table>
 <tr><th></th><th>Right</th><th>Partial</th><th>Wrong</th></tr>
 <tr><td>Today (26 answers: 12 questions, salesperson and dealer, W02 has 2 turns)</td><td>1</td><td>11</td><td>14</td></tr>
-<tr><td>After P1 to P3 and the security lane</td><td>about 9</td><td>about 8</td><td>about 9</td></tr>
-<tr><td>Plus the 8 new small fixes found here (NEW-1 to NEW-8, all S)</td><td>about 24</td><td>0</td><td>2 (W01)</td></tr>
+<tr><td>After P1 to P3 and the security lane (size branch not included)</td><td>about 8</td><td>about 9</td><td>about 9</td></tr>
+<tr><td>Plus the 8 new small fixes found here (NEW-1 to NEW-8, all S)</td><td>about 23</td><td>1 (W08 salesperson: needs the size branch)</td><td>2 (W01)</td></tr>
 </table></div>
 <p class="small">"After" numbers are estimates per row (which fix makes that exact reply right), not a re-run. Each new
 small fix is listed with its file in the details above.</p>
@@ -241,7 +321,7 @@ and dynamic".</p>
 <div class="tw"><table>
 <tr><th>Problem</th><th>Measured today</th><th>Main cause</th><th>Fixes</th></tr>
 <tr><td><b>P1</b> Follow-up messages</td><td>Parser right on about 92% of first asks, but 49-51 of 81 follow-ups (about 62%)</td><td>The "current subject" line never reaches the parser: a list block added on 9 Oct fills its space</td><td>4 (S, M, S, S); none adds a prompt line</td></tr>
-<tr><td><b>P2</b> Spec matching</td><td>"bathtub with massage jet": 10 of 10 suggestions are plain tubs (owner: that means jacuzzi). 9 of 12 other real spec asks wrong</td><td>"massage jet" has no spec key, so it is dropped without a word and only "bathtub" is searched</td><td>3 (all S) + land one existing branch</td></tr>
+<tr><td><b>P2</b> Spec matching</td><td>"bathtub with massage jet": 10 of 10 suggestions are plain tubs (owner: that means jacuzzi). 9 of 12 other real spec asks wrong</td><td>"massage jet" has no spec key, so it is dropped without a word and only "bathtub" is searched</td><td>2 (S) + a category name rule; the size branch is a separate decision</td></tr>
 <tr><td><b>P3</b> Report engine</td><td>7 of 25 real report asks right with at most one question; 11 fail</td><td>Missing details asked one per turn and answers not read back; the parser's follow-up flag lost by the engine</td><td>8 (S to S/M)</td></tr>
 </table></div>
 
@@ -316,8 +396,8 @@ searched as width; trap length has 51 matches), one lets the parser's colour wor
 <tr><th>Fix</th><th>Size</th><th>Change</th><th>Expected gain</th><th>Risk</th></tr>
 <tr><td>P2-F1 Jacuzzi means "bathtub with massage jets"</td><td><span class="tag s">S</span></td><td>Owner ruling 16 Oct 00:10: "bathtub is not jacuzzi... Jacuzzi is like bathtub with massage jet". So the meaning lives in the spec registry, not in code: the Jacuzzi class carries its description and synonyms ("bathtub with massage jets", whirlpool, spa bath, 按摩浴缸; today the class synonyms are empty, read at <code>product_class_signal.py:282-287</code>), shown to the parser like the other product types, so the parser picks the Jacuzzi class for that meaning. A plain "bathtub" stays bathtubs (the split at <code>:74-81</code> stays). Data only, editable from the Spec Registry screen, no deploy, no keyword rule</td><td>"bathtub with massage jet": 10 of 10 plain tubs today to the Jacuzzi-class tubs</td><td>Low: data only; the parser still decides</td></tr>
 <tr><td>P2-F2 Say what was not matched</td><td><span class="tag s">S</span></td><td>An unknown spec word is said back on every domain ("Couldn't find: massage jet"), not dropped (<code>grounding.py:744-749</code>)</td><td>No more silent wrong lists for any unknown feature</td><td>More "couldn't find" if filler words are filed as specs</td></tr>
-<tr><td>P2-F3 Raw words first</td><td><span class="tag s">S</span></td><td>Match the user's own word to the registry before the parser's paraphrase (<code>grounding.py:601-618</code>)</td><td>"gold" tap (1 of 12)</td><td>Low; typo path unchanged</td></tr>
-<tr><td>P2-F4 Size axis</td><td><span class="tag s">S</span></td><td>Land the existing branch <code>origin/claude/spec-promo-params-nlw1cq</code> (one size key, no axis guess)</td><td>5 of 12</td><td>Needs review; unmerged</td></tr>
+<tr><td>P2-F3 Raw words first</td><td>-</td><td><b>Dropped 16 Oct</b>: it matched the user's words in code over the parser's reading (against the rule "the parser decides meaning"). The prompt already lists "gold" under French gold, so the "gold tap" miss is a parser misread for the gold set</td><td>-</td><td>-</td></tr>
+<tr><td>P2-F4 Size axis</td><td><span class="tag m">M</span>+</td><td>An existing branch <code>origin/claude/spec-promo-params-nlw1cq</code> (one size spec, no axis guess, driven by the registry). Not small: 118 commits, +6,125 lines, adds prompt text. A separate decision</td><td>5 of 12</td><td>Size and review effort</td></tr>
 </table></div>
 <p><b>Measured how, without model calls:</b> the massage and size asks go into
 <code>scripts/eval_spec_search.baseline.json</code>, which <code>tests/test_product_spec_search.py:445-474</code>
@@ -381,10 +461,10 @@ questions before data: today 7 of 25, target about 21-23 of 25 (#21 and #25 are 
 <h2 id="s4">4. All fixes, in order</h2>
 <div class="tw"><table>
 <tr><th>Order</th><th>Lane</th><th>Fixes</th><th>Size</th><th>Expected result</th><th>Gate</th></tr>
-<tr><td>1</td><td>Spec meaning</td><td>P2-F1, P2-F2, P2-F3</td><td><span class="tag s">S</span></td><td>"bathtub with massage jet" answers jacuzzis, plain "bathtub" stays bathtubs; unknown features said back, never a silent wrong list</td><td>Spec search baseline + recorded turns; 1 live check</td></tr>
+<tr><td>1</td><td>Spec meaning</td><td>P2-F1, P2-F2, category name rule</td><td><span class="tag s">S</span></td><td>"bathtub with massage jet" answers jacuzzis, plain "bathtub" stays bathtubs; unknown features said back, never a silent wrong list</td><td>Spec search baseline + recorded turns; 1 live check</td></tr>
 <tr><td>2</td><td>Report ask fixes</td><td>P3-F1 to P3-F8 (F3 is one prompt version)</td><td><span class="tag s">S</span> to <span class="tag m">M</span> together</td><td>Report asks 7 to about 21-23 of 25 right, one structured question at most</td><td>New report slice + reports gate + 172 unit tests</td></tr>
 <tr><td>3</td><td>Parser context</td><td>P1-F1 + P1-F3 (code), then P1-F4 and P1-F2 (one prompt version each)</td><td><span class="tag m">M</span></td><td>Follow-ups about 62% to 72-76%</td><td>Parser gold TRAIN, 2 runs per fix, no new breaks</td></tr>
-<tr><td>4</td><td>Size axis</td><td>P2-F4 (existing branch)</td><td><span class="tag s">S</span></td><td>5 more of the 12 real spec asks right</td><td>Review + spec search baseline</td></tr>
+<tr><td>4</td><td>Size axis</td><td>P2-F4 (existing branch)</td><td><span class="tag m">M</span>+, separate decision</td><td>5 more of the 12 real spec asks right</td><td>Review + spec search baseline</td></tr>
 </table></div>
 <p>Spec first: smallest change, no deploy needed for the key itself, and it is the owner's named case.</p>
 
