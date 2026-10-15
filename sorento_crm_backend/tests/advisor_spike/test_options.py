@@ -19,8 +19,11 @@ def test_alternative_none_when_not_in_stock():
 def test_incoming_staff_and_dealer_dates():
     staff = json.dumps({"data": [{"product_code": "P", "nearest_estimated_arrival_date": "2026-08-25"}]})
     dealer = json.dumps({"data": [{"product_code": "P", "etas": ["25/08/2026"]}]})
-    assert o.incoming_options(staff, False)[0].sentence == "Next arrival: 2026-08-25."
-    assert o.incoming_options(dealer, True)[0].sentence == "Next arrival for P: 25/08/2026."
+    from datetime import date
+
+    assert o.incoming_options(staff, False, today=date(2026, 8, 1))[0].sentence == "Next arrival: 2026-08-25."
+    assert o.incoming_options(dealer, True, today=date(2026, 8, 1))[0].sentence == "Next arrival for P: 25/08/2026."
+    assert o.incoming_options(staff, False, today=date(2026, 10, 15))[0].sentence == "ETA on record: 2026-08-25."
 
 
 def test_promo_live_only_and_end_date():
@@ -32,7 +35,7 @@ def test_promo_live_only_and_end_date():
 
 
 def test_accessory_uses_tool_head_only_with_rows():
-    yes = json.dumps({"groups": [{"rows": [{"product_code": "SC1"}], "head": "Seat cover for WC1 is SC1."}]})
+    yes = json.dumps({"groups": [{"rows": [{"product_code": "SC1"}], "head": "Seat cover for WC1:"}]})
     no = json.dumps({"groups": [{"rows": [], "head": "No seat cover is on record for WC1."}]})
     assert o.accessory_options(yes)[0].sentence == "Seat cover for WC1 is SC1."
     assert o.accessory_options(no) == []
