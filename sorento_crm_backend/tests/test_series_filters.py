@@ -67,7 +67,11 @@ def world():
         w.n_x = _product(db, "ZZF-N-X", w.x.id, uom, None)
         w.dead = _product(db, "ZZF-DEAD", w.x.id, uom, w.a.id, active=False)
         db.commit()
-        client, originals = _client(db, user_id, slugs=SLUGS)
+        client, originals = _client(
+            db,
+            user_id,
+            slugs=SLUGS + ["master_data.brands.delete", "master_data.product_categories.delete"],
+        )
         w.client = client
         try:
             with company_scope(db, frozenset({company_id})):
@@ -396,3 +400,133 @@ def test_b7_empty_filters_never_list_another_companys_products(world):
     assert _page(world, s["id"], query="ZZF-THEIRS")["pagination"]["total"] == 0
     assert _in(world, s["id"], world.n_x) is True
     assert _in(world, s["id"], theirs) is False
+
+
+# ------------------------------------------------- bad brand / category ids are a 422
+
+
+def _foreign(world):
+    """A brand and a category that exist only in a second company."""
+    from sqlalchemy import text
+
+    from app.models.base import company_scope
+
+    other_id = _uid()
+    world.db.execute(
+        text("insert into companies (id, code, name) values (:id, :code, :name)"),
+        {"id": other_id, "code": f"ZZ{_uid()[:4]}", "name": f"{MARK} Other"},
+    )
+    with company_scope(world.db, frozenset({other_id})):
+        brand = _brand(world.db, "FOREIGN")
+        cat = _category(world.db, "ForeignCat")
+        assert brand.company_id == other_id and cat.company_id == other_id
+    world.db.commit()
+    return brand, cat
+
+
+def _bad_values(world, kind, case):
+    brand, cat = _foreign(world)
+    foreign = brand.id if kind == "brand_ids" else cat.id
+    return [{"malformed": ["not-a-uuid"], "random": [_uid()], "foreign": [foreign]}[case]], brand
+
+
+@pytest.mark.parametrize("case", ["malformed", "random", "foreign"])
+@pytest.mark.parametrize("kind", ["brand_ids", "category_ids"])
+def test_bad_ids_on_create_are_a_422_and_write_nothing(world, kind, case):
+    from app.models.projects import ProjectSeries
+
+    bad, foreign_brand = _bad_values(world, kind, case)
+    before = world.db.query(ProjectSeries).count()
+    for value in bad:
+        r = world.client.post(
+            f"{BASE}/config/series",
+            json={"name": f"{MARK} bad {_uid()[:6]}", kind: value},
+        )
+        assert r.status_code == 422, (value, r.status_code, r.text)
+        assert foreign_brand.brand_name not in r.text
+    world.db.rollback()
+    assert world.db.query(ProjectSeries).count() == before
+
+
+@pytest.mark.parametrize("case", ["malformed", "random", "foreign"])
+@pytest.mark.parametrize("kind", ["brand_ids", "category_ids"])
+def test_bad_ids_on_update_are_a_422_and_leave_the_series_unchanged(world, kind, case):
+    bad, foreign_brand = _bad_values(world, kind, case)
+    s = _series(world, [world.a], [world.x])
+    for value in bad:
+        r = world.client.put(f"{BASE}/config/series/{s['id']}", json={kind: value})
+        assert r.status_code == 422, (value, r.status_code, r.text)
+        assert foreign_brand.brand_name not in r.text
+        world.db.rollback()
+    listed = next(
+        x for x in world.client.get(f"{BASE}/config/series").json()["data"] if x["id"] == s["id"]
+    )
+    assert listed["brand_ids"] == [world.a.id]
+    assert listed["category_ids"] == [world.x.id]
+    assert foreign_brand.brand_name not in str(listed)
+
+
+# ------------------------------------- deleting what a series picks (empty would mean all)
+
+MD = "/api/v1/master-data"
+
+
+def _series_view(w, sid):
+    return next(x for x in w.client.get(f"{BASE}/config/series").json()["data"] if x["id"] == sid)
+
+
+def test_deleting_a_brand_a_series_picks_is_a_409_and_changes_nothing(world):
+    from app.models.product import Brand
+
+    lone = _brand(world.db, "LONE")
+    world.db.commit()
+    s = _series(world, [lone], [])
+    r = world.client.delete(f"{MD}/brands/{lone.id}")
+    assert r.status_code == 409, r.text
+    world.db.rollback()
+    assert world.db.query(Brand).filter(Brand.id == lone.id).count() == 1
+    view = _series_view(world, s["id"])
+    assert view["brand_ids"] == [lone.id] and view["brand_names"] == [lone.brand_name]
+
+
+def test_guard_a_brand_no_series_picks_still_deletes(world):
+    from app.models.product import Brand
+
+    free = _brand(world.db, "FREE")
+    world.db.commit()
+    r = world.client.delete(f"{MD}/brands/{free.id}")
+    assert r.status_code == 200, r.text
+    world.db.rollback()
+    assert world.db.query(Brand).filter(Brand.id == free.id).count() == 0
+
+
+def test_deleting_an_empty_category_a_series_nominates_is_a_409_and_changes_nothing(world):
+    from app.models.product import ProductCategory
+
+    empty = _category(world.db, "NominatedEmpty")
+    world.db.commit()
+    s = _series(world, [], [empty])
+    r = world.client.delete(f"{MD}/product-categories/{empty.id}")
+    assert r.status_code == 409, r.text
+    world.db.rollback()
+    assert world.db.query(ProductCategory).filter(ProductCategory.id == empty.id).count() == 1
+    assert _series_view(world, s["id"])["category_ids"] == [empty.id]
+
+
+def test_guard_an_unused_empty_category_still_deletes(world):
+    from app.models.product import ProductCategory
+
+    free = _category(world.db, "FreeEmpty")
+    world.db.commit()
+    r = world.client.delete(f"{MD}/product-categories/{free.id}")
+    assert r.status_code == 200, r.text
+    world.db.rollback()
+    assert world.db.query(ProductCategory).filter(ProductCategory.id == free.id).count() == 0
+
+
+def test_rows_endpoint_bounds_page_and_query_length(world):
+    s = _series(world, [], [])
+    url = f"{BASE}/config/series/{s['id']}/products/rows"
+    assert world.client.get(url, params={"page": 1000001}).status_code == 422
+    assert world.client.get(url, params={"query": "x" * 201}).status_code == 422
+    assert world.client.get(url, params={"query": "x" * 200}).status_code == 200
