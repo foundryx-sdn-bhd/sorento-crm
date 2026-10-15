@@ -591,26 +591,51 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
     }
 
 
+def _granted_report(spec: Any, granted: Any) -> bool:
+    """R6 (owner ruling CA-3 Q5(a)): a chat or sales report spec whose grant the contact holds
+    (`hook.granted_report_turn`) is answered like staff. An unreadable spec: the closed side."""
+    from app.services.chatbot.pv2 import hook as pv2_hook
+    from app.services.chatbot.pv2 import reports
+
+    try:
+        ds = reports._dataset_for(spec)
+    except Exception:  # noqa: BLE001 - unreadable spec: the closed side
+        ds = None
+    key = getattr(ds, "key", None)
+    return pv2_hook.granted_report_turn(granted, chat=key == "chat", sales=key == "sales")
+
+
 def _refused_report(line: str | None, granted: Any, granted_run: answer_mod.ReportAnswer) -> answer_mod.ReportAnswer:
     """R5-8: the report answer of a contact held to no customer: its scope's refusal line, no report query.
-    R6 (owner ruling CA-3 Q5(a)): a granted chat or sales report (`hook.granted_report_turn`) runs like staff."""
+    R6 (owner ruling CA-3 Q5(a)): a granted chat or sales report (`_granted_report`) runs like staff."""
 
     def run(spec: Any, refs: Any, today: date, row: Any, incoming: Any) -> Any:
         from types import SimpleNamespace
 
-        from app.services.chatbot.pv2 import hook as pv2_hook
-        from app.services.chatbot.pv2 import reports
-
-        try:
-            ds = reports._dataset_for(spec)
-        except Exception:  # noqa: BLE001 - unreadable spec: the closed side
-            ds = None
-        key = getattr(ds, "key", None)
-        if pv2_hook.granted_report_turn(granted, chat=key == "chat", sales=key == "sales"):
+        if _granted_report(spec, granted):
             return granted_run(spec, refs, today, row, incoming)
         return SimpleNamespace(text=str(line or ""), plan=None, rows=[], pending=None, frame=None)
 
     return run
+
+
+class _GrantedReportResolver:
+    """R6 (owner ruling CA-3 Q5(a)): the resolver of a contact held to no customer, except that a granted
+    chat or sales report (`_granted_report`) resolves its filters under v1's own scope, like staff (the
+    customer picker included). Every other read (entities, documents, any other report) stays held."""
+
+    def __init__(self, held: Any, granted: Any, build_granted: Callable[[], Any]):
+        self._held = held
+        self._granted_reveals = granted
+        self._unheld = _LazyResolver(build_granted)
+
+    def resolve_report_spec(self, spec: Any, **kw: Any) -> Any:
+        if _granted_report(spec, self._granted_reveals):
+            return self._unheld.resolve_report_spec(spec, **kw)
+        return self._held.resolve_report_spec(spec, **kw)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._held, name)
 
 
 def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
@@ -659,7 +684,8 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     )
     # R5-8: a contact held to no customer runs no report (its route would read no links as no restriction),
     # but a granted chat or sales report (R6, CA-3 Q5(a)).
-    if pv2_hook.held_to_no_customer(scope.get("customer_scope")):
+    held_to_none = pv2_hook.held_to_no_customer(scope.get("customer_scope"))
+    if held_to_none:
         report_answer = _refused_report((scope.get("customer_scope") or {}).get("refusal"), granted, report_answer)
 
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
@@ -676,6 +702,18 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     # resolver on first use, the idea handler runs after apply), and a lazily-connecting
     # SQLAlchemy session checks out no connection before its first query.
     with _session(factory) as db:
+        resolver: Any = _LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **scope))
+        if held_to_none:
+
+            def granted_resolver() -> Any:
+                # R6 (CA-3 Q5(a)): v1's own scope for a granted report; an unreadable one stays held.
+                try:
+                    own = pv2_hook.customer_scope(db, contact, space_id, profile, granted_report=True)
+                except Exception:  # noqa: BLE001 - unknown scope: the closed side
+                    own = scope.get("customer_scope")
+                return DbResolver(db, pinned=_pinned(config.keys), **{**scope, "customer_scope": own})
+
+            resolver = _GrantedReportResolver(resolver, granted, granted_resolver)
         ctx = TurnV2Context(
             text=hctx.text,
             now=hctx.now,
@@ -683,7 +721,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             profile=memory_profile(profile, getattr(hctx, "memory_intake", None), staff=staff),
             parse=None,
             parse_parts=parse_parts,
-            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **scope)),
+            resolver=resolver,
             load_exchanges=exchanges,
             can_offer_handover=offers_escalation(profile) and not staff,
             granted_reveals=granted,
