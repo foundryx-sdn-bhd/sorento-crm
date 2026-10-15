@@ -35,7 +35,7 @@ seat_cover 174 rows, mirror 21, shelf 20).
 | 5 | what is the mirror for SRTBF11413 (prod today: `Product: SRTBF11413. Which kind of file do you need?`) | cabinet -> SRTMR11413 (mirror, flyer) | `Mirror for SRTBF11413 is SRTMR11413.` then `I have SRTMR11413. What would you like me to know?` |
 | 6 | SRTBF11413 shelf ada stok? | cabinet -> SRTSV11413 (shelf) | ms: `Rak untuk SRTBF11413 ialah SRTSV11413.` then the ms stock reply |
 | 7 | SRTWC287 马桶盖多少钱 | WC -> SRTSCBD315 | zh: `SRTWC287 的马桶盖是 SRTSCBD315。` then the zh price reply |
-| 8 | which cabinet fits SRTSV11404-BL | shelf -> SRTBF11404, SRTBF11405 | `SRTSV11404-BL fits these cabinets: SRTBF11404, SRTBF11405` (Q2) then the usual reply |
+| 8 | which cabinet fits SRTMR11413 | mirror -> SRTBF11413, SRTBF11713 | `SRTMR11413 fits these cabinets: SRTBF11413, SRTBF11713` (Q2) then the usual reply (corrected 15 Oct: SRTSV11404-BL fits 7 cabinets, not 2) |
 | 9 | seat cover for SRTWC13017 (real WC, no link, has stock) | none | `No seat cover is on record for SRTWC13017.` only (today's #1613 reply, unchanged) |
 
 ms / zh nouns (proposed, crew to correct): mirror `cermin` / `镜子`, shelf `rak` / `置物架`,
