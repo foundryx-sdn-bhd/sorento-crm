@@ -96,6 +96,19 @@ class TurnV2Context:
     last_reply: str | None = None
     # An availability-only stock dealer: v1 asks which one for a partial, never lists them.
     stock_availability_only: bool = False
+    # R5-6: the conversation's reply language (session_vars.reply_language, what the engine carries).
+    conversation_language: str | None = None
+
+
+def turn_language(ctx: TurnV2Context, out: Any) -> str:
+    """R5-6: this turn's reply language by the engine's one rule (`engine._turn_language`): the language typed this
+    turn, else the parse when it reads ms or zh off a line that reads as none, else the conversation's. The words
+    the parse holds as data (codes, names) never decide it."""
+    from app.services.chatbot.engine import _turn_language
+
+    strip = [str(v) for a in out.asks for e in a.entities for v in (e.phrase, e.key, e.doc_number) if v]
+    carried = {"reply_language": ctx.conversation_language}
+    return _turn_language(ctx.text, carried, ctx.profile, strip=strip, parsed=out.language)
 
 
 def local_today(now: datetime) -> date:
@@ -136,11 +149,11 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         ctx.trace["dropped_keys"] = [getattr(d, "__dict__", d) for d in dropped]
     else:
         out = ctx.parse(messages, user_message)
+    language = turn_language(ctx, out)
 
     early = _pre_grant_refusal(ctx, out, state_in.pending, state_in.held, register.shown(state_in))
     if early is not None:
         # Nothing was looked up and nothing is kept: the turn changes no state but the last reply (R4a).
-        language = clarify_copy.lang(out.language)
         trace = {"acts": [a.act for a in out.asks], "actions": [], "grant_refused": True}
         refused = state_in.model_copy(update={"last_reply": f"refused {early[2]}"})
         return answer_mod.TurnV2Result(None, None, early[0], refused, [], early[1], language, trace)
@@ -156,13 +169,13 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         roster_for=ctx.roster_for,
         stock_availability_only=ctx.stock_availability_only,
         now=ctx.now,
+        language=language,
         **extra,
     )
     state_out.last_turn_at = ctx.now
     state_out.run_id = ctx.test_run_id
     refusal = _grant_refusal(ctx, actions, out, state_in.held, state_in.pending)
     if refusal is not None:
-        language = clarify_copy.lang(out.language)
         trace = {"acts": [a.act for a in out.asks], "actions": [a.type for a in actions], "grant_refused": True}
         # A refused ask leaves no pending, origin or held behind; only the session clock moves, so repeated
         # refusals never roll the session.
@@ -178,6 +191,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         idea_answer=ctx.idea_answer,
         base_focus=ctx.base_focus,
         message=ctx.text,
+        language=language,
     )
     result.trace.update(
         {
@@ -631,6 +645,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             dym_tags=dym_tags_for(factory, contact, space_id),
             test_run_id=run_id,
             last_reply=session_vars.get("user_response") if isinstance(session_vars.get("user_response"), str) else None,
+            conversation_language=session_vars.get("reply_language") if isinstance(session_vars.get("reply_language"), str) else None,
             stock_availability_only=bool(getattr(profile, "stock_availability_only", False)),
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),

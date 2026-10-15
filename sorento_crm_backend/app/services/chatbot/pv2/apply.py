@@ -130,6 +130,7 @@ def apply_turn(
     roster_for: Any = None,
     dym_tags: Any = None,
     stock_availability_only: bool = False,
+    language: str | None = None,
 ) -> tuple[ConversationState, list[Action]]:
     """Apply one parser output to the state; one Action per ask (section 3).
 
@@ -142,7 +143,7 @@ def apply_turn(
     mode = offer_mode if offer_mode != "offer" else ("offer" if can_offer_handover else "none")
     doc_offer = _DocOffer(mode, domain_teams, roster_for, dym_tags)
     doc_offer.availability_only = stock_availability_only
-    language = out.language
+    language = language or out.language  # R5-6: the turn's language when the caller computed it
     today = local_date(now) if now is not None else None
     actions: list[Action] = []
 
