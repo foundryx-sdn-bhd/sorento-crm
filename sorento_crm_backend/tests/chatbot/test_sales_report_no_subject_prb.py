@@ -112,6 +112,11 @@ def test_b16_a_staff_brand_only_sales_never_ends_in_could_not_fetch(session_fact
             f"a subject-less crm_sales_report the route will 422: {args}"
         )
     assert "could not fetch" not in reply.lower() and "just now" not in reply.lower(), reply
+    asks = _calls(captured, "crm_report_ask")
+    brand_ids = [a.get("brand_ids") for a in asks]
+    assert (asks and all(b for b in brand_ids)) or "delivered" in reply.lower() or "?" in reply, (
+        f"neither a brand-filtered crm_report_ask nor a question for it: {captured} / {reply}"
+    )
 
 
 def test_r23_guard_a_carried_product_subject_rides_in_the_args_of_a_dealer_only_refinement(session_factory, monkeypatch) -> None:
@@ -133,3 +138,25 @@ def test_r23_guard_a_carried_product_subject_rides_in_the_args_of_a_dealer_only_
     assert calls[0].get("channel") == "dealer", calls
     assert calls[0].get("product_code") == PRODUCT_CODE, calls
 
+
+
+def test_b16_guard_a_non_staff_contact_with_no_links_naming_only_a_brand_never_runs_a_company_report(
+    session_factory, monkeypatch
+) -> None:
+    import uuid
+
+    from app.models.product import Brand
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    _seed_contact(session_factory, variables={})  # no office access type, no links
+    db = session_factory()
+    db.add(Brand(id=str(uuid.uuid4()), brand_code="ZZTMOCHA2", brand_name="Mocha", company_id=DEFAULT_COMPANY_ID))
+    db.commit()
+    db.close()
+    qf = _no_subject(entities=[{"raw": "Mocha", "hint": "brand", "canonical_code": "MOCHA",
+                                "current_message": True, "confident": True}])
+    _res, _reply, captured = _run(
+        session_factory, monkeypatch, qf, "sales for mocha this month", mcp_response=_rendered(ROUTE_HIT)
+    )
+    assert _calls(captured, "crm_report_ask") == [], captured
+    assert _calls(captured, "crm_sales_analysis") == [], captured

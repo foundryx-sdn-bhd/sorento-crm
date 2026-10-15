@@ -151,3 +151,16 @@ def test_b8_near_miss_no_twins_keeps_the_route_order() -> None:
     rows = [{"rank": i, "name": n, "qty": 1, "amount": a, "keys": []} for i, (n, a) in enumerate([("X", 5.0), ("Y", 9.0)], 1)]
     text = _report_ask(_body(group_by="brand", group_label="Brand", rows=rows, more=0, total_count=2))
     assert [re.match(r"^\d+\. (\S+)", l).group(1) for l in _lines(text)] == ["X", "Y"], text
+
+
+def test_b8_the_of_count_is_the_merged_distinct_total_not_the_raw_row_count() -> None:
+    """Route rows A, B, B(twin), C with 1 more raw row beyond them (total_count 5 counts the twin):
+    3 distinct names are printed, 4 exist in all -> "Top 3 of 4", not "of 5"."""
+    rows = [
+        {"rank": 1, "name": "A", "qty": 1, "amount": 100.0, "keys": []},
+        {"rank": 2, "name": "B", "qty": 1, "amount": 90.0, "keys": []},
+        {"rank": 3, "name": "B", "qty": 1, "amount": 50.0, "keys": []},
+        {"rank": 4, "name": "C", "qty": 1, "amount": 80.0, "keys": []},
+    ]
+    head = _report_ask(_body(group_by="brand", group_label="Brand", rows=rows, more=1, total_count=5)).splitlines()[0]
+    assert re.search(r"Top 3 of 4\b", head), head
