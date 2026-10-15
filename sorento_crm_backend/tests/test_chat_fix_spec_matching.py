@@ -279,3 +279,29 @@ def test_a9_a_boolean_spec_value_narrows_the_set(db):
     _product(db, "ZZT-WC-PLAIN", "ZZT SORENTO WATER CLOSET", "ZZT SORENTO CERAMIC WATER CLOSET", category="wc")
     out = resolve_product_set(db, require={}, specs=[{"key": "is_smart", "value": True}], scope_terms=["water closet"])
     assert _codes(out) == {smart.product_code}, out
+
+
+# --------------------------------------------------------------------------- #
+# Fix round 1 F1 (AC-A4, W11): a yes/no spec asked with a class reaches the class
+# family the spec's own scope holds; a plain class ask does not move
+# --------------------------------------------------------------------------- #
+def test_f1_a_bathtub_ask_with_the_massage_flag_reaches_every_jetted_tub(db):
+    """The parse the live gate saw for "Any bathtub with massage jet?": category bathtub +
+    has_massage. The Jacuzzi class (most jetted tubs) is in the answer."""
+    from app.services.chatbot.lanes.business.answer import set_noun_for
+
+    world = _tub_world(db)
+    out = resolve_product_set(db, require={}, specs=[{"key": "has_massage", "value": True}], scope_terms=["bathtub"])
+    assert _codes(out) == {world[k].product_code for k in ("jetted", "jac1", "jac2")}, out
+    # the header names the asked class, never "massage jets products"
+    assert set_noun_for(out["class_labels"]) == "bathtubs", out["class_labels"]
+
+
+def test_f1_a_flag_never_widens_to_a_class_the_asked_one_shares_no_word_with(db):
+    """is_rimless is scoped to Water Closet, Urinal and Squatting Pan; "rimless water
+    closet" is still water closets only."""
+    wc = _product(db, "ZZT-WC-RIM", "ZZT SORENTO RIMLESS WATER CLOSET", "ZZT SORENTO RIMLESS WATER CLOSET", category="wc")
+    urinal = _product(db, "ZZT-UR-RIM", "ZZT SORENTO RIMLESS URINAL", "ZZT SORENTO RIMLESS URINAL", category="wc")
+    assert _values(db, urinal).get("is_rimless", {}).get("value") is True
+    out = resolve_product_set(db, require={}, specs=[{"key": "is_rimless", "value": True}], scope_terms=["water closet"])
+    assert _codes(out) == {wc.product_code}, out
