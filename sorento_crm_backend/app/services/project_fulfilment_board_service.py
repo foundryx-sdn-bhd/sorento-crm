@@ -2787,6 +2787,9 @@ class FulfilmentBoardService:
                     "sales_order_id": row.sales_order_id,
                     "source_ref": row.source_ref,
                     "company_id": row.company_id,
+                    # CONSIGN-PLAN: lets the fact carry its doc type, so the proposal for a
+                    # consignment is its own bin (`ProjectSupplyService.compose_lines`).
+                    "so_doc_type": row.so_doc_type,
                 }
                 for row in plannable
             ],

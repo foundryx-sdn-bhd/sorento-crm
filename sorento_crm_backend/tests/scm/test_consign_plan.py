@@ -378,3 +378,69 @@ def test_a_never_adopted_consignment_adopts_then_confirms_a_con_borrow_with_no_b
     assert buys == [Decimal("0")]
     assert inquiry_rows == 0, "nothing goes to purchasing"
     assert (planned, plannable) == (1, 1)
+
+
+# --------------------------------------------------------------------------- B1: the proposal
+
+
+def test_b1_the_boards_proposal_for_a_consignment_is_a_borrow_at_its_own_bin_never_a_buy():
+    with blank_session() as db:
+        world = _board_world(db, qty="10", delivered="10", returned="4")
+        board = _build(db, world)
+        row = _contributions(board, world["order"].so_number)[0]
+        sources = row["sources"]
+        con_code = world["con"].warehouse_code
+
+    assert [s["kind"] for s in sources] == ["borrow"], sources
+    assert sources[0]["location"] == con_code
+    assert Decimal(sources[0]["qty"]) == Decimal("6")
+    assert sources[0]["warehouse_id"] == str(world["con"].id)
+    assert "consignment" in sources[0]["reason"].lower()
+
+
+def test_b1_a_sales_order_lines_proposal_is_unchanged_by_the_consignment_rule():
+    with blank_session() as db:
+        world = _board_world(db, doc_type="sales_order", status="open", delivered="0")
+        so = _order(
+            db, so_number=f"SO-{world['sfx']}-{_uid()[:4]}", order_date=date(2026, 1, 1),
+            status="open",
+        )
+        _line(db, so, world["product"], qty="10", required_date=REQUIRED,
+              warehouse=world["planned"])
+        board = _build(db, world, extra=[so.so_number])
+        row = _contributions(board, so.so_number)[0]
+        kinds = {s["kind"] for s in row["sources"]}
+
+    assert kinds <= {"reserve", "buy", "timely_spo", "incoming"}
+    assert "borrow" not in kinds or all(
+        s.get("location") != world["con"].warehouse_code for s in row["sources"]
+    )
+
+
+def test_b1_confirming_the_consignments_own_proposal_writes_no_buy_and_no_purchasing_row():
+    with blank_session() as db:
+        world = _consign_world(db)
+        proposal = ProjectSupplyService(db).proposal_for(world["order"])
+        components = proposal["lines"][0]["components"]
+        borrows = [c for c in components if c["kind"] == "borrow"]
+        assert [c["kind"] for c in components] == ["borrow"], components
+        assert borrows[0]["source_location"] == world["own"].warehouse_code
+        assert Decimal(str(borrows[0]["qty"])) == Decimal("10")
+        body = _confirm(
+            db, world,
+            borrow=[{
+                "source": "other_location",
+                "warehouse_id": str(world["own"].id),
+                "qty": str(borrows[0]["qty"]),
+                "reason": borrows[0]["reason"],
+            }],
+        )
+        inquiry_rows = (
+            db.query(OrderInquiryRow)
+            .filter(OrderInquiryRow.so_line_id == world["line"].id).count()
+        )
+        planned, plannable = _planned_state(db, world["core_so"])
+
+    assert body["lines_decided"] == 1
+    assert inquiry_rows == 0
+    assert (planned, plannable) == (1, 1)

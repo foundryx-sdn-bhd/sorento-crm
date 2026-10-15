@@ -1886,6 +1886,27 @@ class ProjectSupplyService:
             if fact.unplannable_reason:
                 out[key] = ((), None, {}, None, (), {}, {}, {}, {})
                 continue
+            if (
+                fact.doc_type in PLANNED_AT_OWN_BIN_DOC_TYPES
+                and fact.warehouse is not None
+                and fact.open_qty > _ZERO
+            ):
+                # CONSIGN-PLAN (owner Q1): the goods are already at the own bin, so the
+                # proposal is a plain Borrow of the whole plan quantity from it - never a
+                # Buy, nothing to purchasing - and it draws on no shared pile.
+                own = fact.own_code
+                out[key] = (
+                    (
+                        Component(
+                            kind=BORROW,
+                            qty=fact.open_qty,
+                            reason=f"Consignment: the goods are at {own}",
+                            source_location=own,
+                        ),
+                    ),
+                    None, {}, None, (), {}, {}, {}, {},
+                )
+                continue
             if unit_key not in units:
                 units[unit_key] = []
                 walk.append(unit_key)
