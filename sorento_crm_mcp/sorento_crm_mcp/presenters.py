@@ -3348,9 +3348,10 @@ def _ask_month(value: Any) -> str:
     return f"{d.strftime('%b')} {d.year}"
 
 
-def _ask_rows(rows: list, group_by: Any) -> list[dict]:
+def _ask_rows(rows: list, group_by: Any, measure: Any = None, sort: Any = None) -> list[dict]:
     """The rows to print: one per name (two rows sharing a name, one brand per company, are
-    one row with their figures summed), and a month breakdown in date order (chat fix PR-B S6)."""
+    one row with their figures summed, then re-ranked by the sort measure and renumbered),
+    and a month breakdown in date order (chat fix PR-B S6). No twins: the route's order."""
     merged: dict[str, dict] = {}
     for row in rows:
         name = str(row.get("name"))
@@ -3363,6 +3364,12 @@ def _ask_rows(rows: list, group_by: Any) -> list[dict]:
     out = list(merged.values())
     if group_by == "month":
         out.sort(key=lambda r: str(r.get("name")))
+    elif len(out) < len(rows):
+        first, second = ("qty", "amount") if measure == "qty" else ("amount", "qty")
+        sign = 1 if sort == "asc" else -1
+        out.sort(key=lambda r: (sign * float(r.get(first) or 0), sign * float(r.get(second) or 0)))
+        for i, row in enumerate(out, start=1):
+            row["rank"] = i
     return out
 
 
@@ -3389,7 +3396,7 @@ def _report_ask(body: dict) -> str:
     group_by = body.get("group_by")
     if not group_by:
         return "\n".join([f"Sales by {basis}", *facts, f"Total {figures}"])
-    rows = _ask_rows(body.get("rows") or [], group_by)
+    rows = _ask_rows(body.get("rows") or [], group_by, measure, body.get("sort"))
     if not rows:
         return "\n".join([f"No {basis} found", *facts])
     plural = _REPORT_ASK_PLURALS.get(group_by, str(body.get("group_label") or group_by).lower())
