@@ -1488,13 +1488,13 @@ def _apply_entities(
                     continue
                 qs.append(_doc_not_found(st, i, ent, held, language, qs.can_offer))
                 continue
-            qs.append(
+            qs.append(_statement(
                 _clarify(
                     st, i, "entity", ent.phrase or ent.doc_number, language,
                     options=_stamped(ent, options or _referent_options(st, ent.kind)), kind=ent.kind,
                     not_found=not options,
                 )
-            )
+            ))
             asked.append((qs[-1], ent))
             continue
         if ent.op == "remove":
@@ -1788,7 +1788,14 @@ def _doc_not_found(
         kind="offer_doc_handover" if offered else "clarify_entity",
         asked=asked, options=options, asked_turn=st.turn_no, misses=0,
     )
-    return ClarifyAct(ask_index=i, about="entity", phrase=words, pending=pending, not_found=True)
+    return _statement(ClarifyAct(ask_index=i, about="entity", phrase=words, pending=pending, not_found=True))
+
+
+def _statement(act: ClarifyAct) -> ClarifyAct:
+    """R6 rule 3: a not-found with nothing to offer is said, not asked: no option-less question is left open."""
+    if not act.not_found or act.pending.options:
+        return act
+    return act.model_copy(update={"about": "not_found", "closes": True})
 
 
 def _fold_quantity_only(ents: list[Entity]) -> list[Entity]:
