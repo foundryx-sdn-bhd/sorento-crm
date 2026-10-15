@@ -25,7 +25,6 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
-import { useHasPermission } from '@/hooks/usePermissions';
 import { useResetPageOnFilterChange } from '@/hooks/useResetPageOnFilterChange';
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
@@ -33,12 +32,9 @@ import { getUserLookup } from '@/services/userSelectService';
 import {
   useOrderInquiryHeaders,
   useOrderInquiryWorklistSummary,
-  useParkedPreview,
   useReserveStatusSummary,
-  useSendParked,
-  type ParkedKind,
 } from '../../_shared/hooks/useOrderInquiry';
-import { ParkedSendDialog } from '@/components/common/ParkedSendDialog';
+import { useParkedSendActions } from '../../_shared/hooks/useParkedSendActions';
 import { formatInquiryQty } from '../../_shared/lib/orderInquiryWorklist';
 import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import {
@@ -61,8 +57,6 @@ const LISTING_KEY = 'projects.projects.view::order-inquiry-headers';
 
 type StateFilter = 'all' | 'outstanding' | 'completed';
 
-const ACKNOWLEDGE_PERMISSION = 'projects.order_inquiries.acknowledge';
-const RESERVE_PERMISSION = 'projects.order_inquiries.reserve';
 
 function reserveFrom(value: string | null): OrderInquiryReserveStatus | '' {
   return (ORDER_INQUIRY_RESERVE_STATUSES as string[]).includes(value ?? '')
@@ -221,41 +215,8 @@ export function OrderInquiryHeadersList() {
   });
   const worklistSummary = useOrderInquiryWorklistSummary({});
 
-  const canAcknowledge = useHasPermission(ACKNOWLEDGE_PERMISSION);
-  const canReserve = useHasPermission(RESERVE_PERMISSION);
   const reserveSummary = useReserveStatusSummary();
-  const [parkedKind, setParkedKind] = useState<ParkedKind | null>(null);
-  const parkedPreview = useParkedPreview(parkedKind);
-  const sendParked = useSendParked(parkedKind ?? 'requests');
-  const myParkedRequests = reserveSummary.data?.my_parked_requests ?? 0;
-  const myParkedNotices = reserveSummary.data?.my_parked_notices ?? 0;
-  const sendActions = useMemo(
-    () => [
-      ...(canAcknowledge
-        ? [
-            {
-              key: 'send-parked-requests',
-              label: `Send all parked requests to CS (${myParkedRequests})`,
-              disabled: myParkedRequests === 0,
-              disabledReason: 'Nothing of yours is parked',
-              onClick: () => setParkedKind('requests'),
-            },
-          ]
-        : []),
-      ...(canReserve
-        ? [
-            {
-              key: 'send-parked-notices',
-              label: `Send all parked reserves to purchasing (${myParkedNotices})`,
-              disabled: myParkedNotices === 0,
-              disabledReason: 'Nothing of yours is parked',
-              onClick: () => setParkedKind('notices'),
-            },
-          ]
-        : []),
-    ],
-    [canAcknowledge, canReserve, myParkedRequests, myParkedNotices],
-  );
+  const { actions: sendActions, dialog: parkedSendDialog } = useParkedSendActions();
 
   const filterOptions = useMemo(
     () => ({
@@ -718,21 +679,7 @@ export function OrderInquiryHeadersList() {
           <DataGridPagination />
         </CardFooter>
       </Card>
-      <ParkedSendDialog
-        open={parkedKind !== null}
-        onOpenChange={(next) => {
-          if (!next) setParkedKind(null);
-        }}
-        title={
-          parkedKind === 'notices'
-            ? 'Send all parked reserves to purchasing'
-            : 'Send all parked requests to CS'
-        }
-        preview={parkedPreview.data}
-        isLoading={parkedPreview.isLoading}
-        onSend={() => sendParked.mutateAsync()}
-        isSending={sendParked.isPending}
-      />
+      {parkedSendDialog}
     </DataGrid>
   );
 }

@@ -297,25 +297,30 @@ export async function getStockDebtCell(
  * (`exportLowStockReport` in `scm/low-stock-report/services/lowStockReportService.ts`) so the same drawer / toast plumbing
  * serves both.
  */
+/** The board's filters as the snake_case `StockDebtExportIn` fields, minus `split`: what Export
+ *  sends and what a snapshot is taken under, so the two cannot drift apart. */
+export function stockDebtFilterBody(params: Omit<StockDebtExportParams, 'split'>) {
+  return {
+    query: params.query || undefined,
+    only_debt: params.onlyDebt,
+    book: params.book,
+    supplier_ids: params.supplierIds ?? [],
+    ...(params.locations?.length
+      ? { [params.locationsMode === 'exclude' ? 'exclude_location' : 'location']: params.locations }
+      : {}),
+    date_from: params.dateFrom || undefined,
+    date_to: params.dateTo || undefined,
+    show_aux: params.showAux,
+    // Only while the switch is on: the month view's body is what it was before.
+    ...(params.projected ? { projected: true } : {}),
+  };
+}
+
 export async function exportStockDebt(params: StockDebtExportParams): Promise<MyDownload> {
   const res = await apiFetch('/api/v1/project-sales/stock-debt/export', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: params.query || undefined,
-      only_debt: params.onlyDebt,
-      book: params.book,
-      supplier_ids: params.supplierIds ?? [],
-      ...(params.locations?.length
-        ? { [params.locationsMode === 'exclude' ? 'exclude_location' : 'location']: params.locations }
-        : {}),
-      date_from: params.dateFrom || undefined,
-      date_to: params.dateTo || undefined,
-      split: params.split,
-      show_aux: params.showAux,
-      // Only while the switch is on: the month view's body is what it was before.
-      ...(params.projected ? { projected: true } : {}),
-    }),
+    body: JSON.stringify({ ...stockDebtFilterBody(params), split: params.split }),
   });
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to start the stock debt export'));
   return (await res.json()) as MyDownload;
