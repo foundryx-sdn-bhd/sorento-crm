@@ -83,6 +83,7 @@ import { ReserveConfirmDialog, type ReserveConfirmLine } from './ReserveConfirmD
 import { ReserveLineForm } from './ReserveLineForm';
 import { ReserveDecideControl } from './ReserveDecideControl';
 import { BulkRejectReserveDialog } from './BulkRejectReserveDialog';
+import { BulkReserveLinesDialog, type BulkReserveStage } from './BulkReserveLinesDialog';
 import { OrderInquiryLineHistoryDialog } from './OrderInquiryLineHistoryDialog';
 import type { StagedReserveEntry } from './orderInquiryHeaderLinesColumns';
 import {
@@ -192,6 +193,8 @@ export function OrderInquiryDetail({ id }: { id: string }) {
     null,
   );
   const [reserveRejectOpen, setReserveRejectOpen] = useState(false);
+  // AC-BR-10: the rows Decide > Reserve... is open for (the pen's fields, one popup).
+  const [bulkReserveRowIds, setBulkReserveRowIds] = useState<string[] | null>(null);
   const [editingRow, setEditingRow] = useState<{
     row: OrderInquiryWorklistRow;
     mode: 'reserve' | 'amend';
@@ -471,6 +474,58 @@ export function OrderInquiryDetail({ id }: { id: string }) {
 
   function reserveTickedAsRequested() {
     stageAnswers(decideRowIds, null);
+    setRowSelection({});
+  }
+
+  // AC-BR-10: each line's pools, resolved only while Reserve... is open (the pen's own
+  // lazy pattern); the popup mounts once every line has loaded.
+  const bulkReserveEntries = useMemo(
+    () =>
+      (bulkReserveRowIds ?? []).flatMap((rowId) => {
+        const row = lines.find((candidate) => candidate.id === rowId);
+        return row
+          ? [{ key: row.id, productId: row.product_id ?? null, location: row.location ?? null }]
+          : [];
+      }),
+    [bulkReserveRowIds, lines],
+  );
+  const bulkReserveOptions = useReserveRowOptions(bulkReserveEntries);
+  const bulkReserveLines =
+    bulkReserveRowIds &&
+    bulkReserveEntries.every((entry) => bulkReserveOptions[entry.key] && !bulkReserveOptions[entry.key].isLoading)
+      ? bulkReserveEntries.flatMap((entry) => {
+          const open = openRequestForRow(entry.key);
+          const own = bulkReserveOptions[entry.key];
+          if (!open) return [];
+          const row = lines.find((candidate) => candidate.id === entry.key);
+          return [
+            {
+              rowId: entry.key,
+              itemCode: row?.item_code ?? null,
+              requested: Number(open.qtyRequested || '0'),
+              locationOptions: own.options,
+              availableQtyByLocation: own.availableQtyByWarehouseId,
+              defaultLocationId: open.warehouseId ?? own.defaultWarehouseId ?? null,
+            },
+          ];
+        })
+      : null;
+
+  function stageBulkReserve(entries: BulkReserveStage[]) {
+    setStagedByRowId((prev) => {
+      const next = { ...prev };
+      for (const entry of entries) {
+        next[entry.rowId] = {
+          kind: 'reserve',
+          qty: entry.qty,
+          warehouseId: entry.warehouseId,
+          locationLabel: entry.locationLabel,
+          reason: entry.reason,
+        };
+      }
+      return next;
+    });
+    setBulkReserveRowIds(null);
     setRowSelection({});
   }
 
@@ -1017,6 +1072,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
                 <ReserveDecideControl
                   count={decideRowIds.length}
                   onReserveAsRequested={reserveTickedAsRequested}
+                  onReserve={() => setBulkReserveRowIds(decideRowIds)}
                   onReject={() => {
                     setRejectTarget({ rowIds: decideRowIds, fromStrip: true });
                     setReserveRejectOpen(true);
@@ -1092,6 +1148,16 @@ export function OrderInquiryDetail({ id }: { id: string }) {
         onOpenChange={setReserveRejectOpen}
         onConfirm={stageReject}
       />
+
+      {bulkReserveLines ? (
+        <BulkReserveLinesDialog
+          lines={bulkReserveLines}
+          onOpenChange={(next) => {
+            if (!next) setBulkReserveRowIds(null);
+          }}
+          onStage={stageBulkReserve}
+        />
+      ) : null}
 
       <ReserveConfirmDialog
         open={reserveConfirmOpen}

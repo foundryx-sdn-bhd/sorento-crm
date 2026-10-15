@@ -35,6 +35,47 @@ import { bareLocationCode } from '../../../_shared/lib/orderInquiryReserve';
  * The caller mounts this only once the row's pool options have loaded (6e.4, S2), so
  * the reserve-mode prefill is read off real availability, never an empty map.
  */
+/** OI-BULK-RESERVE (AC-BR-10): the form's reserve rules, shared with Decide > Reserve...
+ * (`BulkReserveLinesDialog.tsx`) so one line and many lines can never disagree. */
+
+/** What Reserved auto-sets to for a location: the request, capped at what that pool has
+ * (0 when it reports nothing). No location (the server defaults it) is the request itself. */
+export function reserveCeiling(
+  requested: number,
+  availableQtyByLocation: Record<string, number>,
+  locationId: string,
+): number {
+  if (!locationId) return requested;
+  const available = availableQtyByLocation[locationId];
+  return Math.max(0, available != null ? Math.min(requested, available) : 0);
+}
+
+/** A typed Reserved, kept within 0..max. */
+export function clampReservedQty(raw: string, max: number): number {
+  const value = Number(raw);
+  return Math.min(Math.max(Number.isFinite(value) ? value : 0, 0), max);
+}
+
+/** AC-RS-85 / 6e.4: a reason is required whenever Reserved is short of the request. */
+export function reserveReasonNeeded(qty: number, requested: number): boolean {
+  return qty < requested;
+}
+
+/** Location options with the availability as the description line, never in the label. */
+export function reserveLocationOptions(
+  locationOptions: SearchableSelectOption[],
+  availableQtyByLocation: Record<string, number>,
+): SearchableSelectOption[] {
+  return locationOptions.map((option) => {
+    const available = availableQtyByLocation[option.value];
+    return {
+      ...option,
+      label: bareLocationCode(option.label),
+      description: available != null ? `available ${available}` : option.description,
+    };
+  });
+}
+
 export interface ReserveLineFormStagePayload {
   /** Absent when no location is chosen: the server defaults it (6e.4, S8). */
   warehouse_id?: string;
@@ -95,11 +136,8 @@ export function ReserveLineForm({
   // capped at what the chosen pool actually has (0 when that pool reports nothing). No
   // location at all (the server defaults it) prefills the request itself.
   const ceilingFor = React.useCallback(
-    (locationId: string): number => {
-      if (mode === 'amend' || !locationId) return requested;
-      const available = availableQtyByLocation[locationId];
-      return available != null ? Math.min(requested, available) : 0;
-    },
+    (locationId: string): number =>
+      mode === 'amend' ? requested : reserveCeiling(requested, availableQtyByLocation, locationId),
     [mode, requested, availableQtyByLocation],
   );
 
@@ -117,12 +155,11 @@ export function ReserveLineForm({
   }
 
   function handleQtyChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const raw = Number(event.target.value);
-    setQty(Math.min(Math.max(Number.isFinite(raw) ? raw : 0, 0), max));
+    setQty(clampReservedQty(event.target.value, max));
   }
 
   // AC-RS-85 / 6e.4: Reason appears, and is required, whenever Reserved < Requested.
-  const showReason = qty < requested;
+  const showReason = reserveReasonNeeded(qty, requested);
   const canStage = !showReason || reason.trim().length > 0;
 
   // AC-RS-85: "options = the row's pools with availability" - the availability reads
@@ -132,15 +169,7 @@ export function ReserveLineForm({
   // value's own trigger text (no UUID in the UI is the letter of the rule; a
   // duplicated "available N" clause on the CLOSED control is the same spirit of it).
   const displayLocationOptions = React.useMemo(
-    () =>
-      locationOptions.map((option) => {
-        const available = availableQtyByLocation[option.value];
-        return {
-          ...option,
-          label: bareLocationCode(option.label),
-          description: available != null ? `available ${available}` : option.description,
-        };
-      }),
+    () => reserveLocationOptions(locationOptions, availableQtyByLocation),
     [locationOptions, availableQtyByLocation],
   );
 
