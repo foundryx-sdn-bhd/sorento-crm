@@ -10,7 +10,8 @@ It writes `products.price_tag_description` (`app/models/product.py:279`) and not
 
 - AC-1 The first worksheet is read. The header row (row 1) is found by name, case-insensitive:
   `Product Code` and `Description`. A sheet without both headers stops the script with a message
-  and exit code 1, and writes nothing.
+  and exit code 1, and writes nothing. So does a file over 20 MB or with more than 20,000 data
+  rows (fix round 1, security nit: the prod host is shared with the API).
 - AC-2 Row numbers in every output are the Excel row numbers (header = row 1).
 - AC-3 A cell's text is used as printed: `\r\n` becomes `\n`, trailing spaces on each line and
   blank space around the whole cell are removed. Line breaks inside the text are kept (Q5 a).
@@ -18,7 +19,12 @@ It writes `products.price_tag_description` (`app/models/product.py:279`) and not
   - a row with no code ("no code");
   - a row with no description ("no description");
   - a row whose description starts with `+` or `-` (part of a code spilled into the text,
-    e.g. row 764 `SRTKT71SS` / `-BL...`) ("text starts with part of a code").
+    e.g. row 764 `SRTKT71SS` / `-BL...`) ("text starts with part of a code");
+  - a row whose description starts with `=` or `@` ("text starts with = or @"; fix round 1,
+    security: a spreadsheet would read it as a formula);
+  - a row whose description contains `{{` ("text contains {{"; fix round 1, security: the tag
+    renders the description as a template, and a self-referencing field token loops the renderer).
+    No row of the 15 Oct sheet hits either.
 
 ## Which product a row reaches
 
@@ -39,7 +45,12 @@ It writes `products.price_tag_description` (`app/models/product.py:279`) and not
     the sheet product's (both empty counts as equal); otherwise skipped and listed ("variant has
     a different finish" / "variant has a different seat material" / both);
   - the sheet code's rows were usable; otherwise skipped and listed ("variant of <code>, which
-    was skipped").
+    was skipped"). This includes a base printed only on row-level-skipped rows (no description,
+    `+`/`-` fragment, ...), e.g. dev `SRTBF11827-BL` (base only on rows 161-162).
+  - A product whose longest printed base appears ONLY as the second code of combos (a mirror the
+    owner said stays untouched) is left alone and not listed (dev: `SRTMCB21701-NEW`).
+  - "Printed anywhere" includes rows that were skipped: dev `SRTWC8318-RL-BL` is printed only on
+    a no-description row, so it is never a variant of `SRTWC8318-RL`.
 - AC-9 Only products of `--company` (default `SRT`) are read or written. An unknown company code
   stops the script with exit code 1.
 
@@ -47,7 +58,8 @@ It writes `products.price_tag_description` (`app/models/product.py:279`) and not
 
 - AC-10 Rows reaching the same sheet code whose texts are equal after formatting (all spacing and
   line breaks collapsed to one space, spacing around `:` made `: `, a `D: ` prefix dropped, case
-  ignored) are one row; the FIRST of them (sheet order) is written.
+  ignored, spaces and colons at either end dropped) are one row (dev: FG-CW13 row 185
+  `":\nSTANLEY 30oz TUMBLER"` equals row 59, so row 59's clean text is written); the FIRST of them (sheet order) is written.
 - AC-11 Otherwise, when every shorter text (formatted as in AC-10) is contained in the longest,
   the longest row's text is written (e.g. `SRTMRL707`: row 3 "Frameless LED Mirror" and row 223
   the full spec -> row 223's text).
@@ -88,7 +100,8 @@ It writes `products.price_tag_description` (`app/models/product.py:279`) and not
 ## Reports (for the owner and for marketing)
 
 - AC-23 Every run (dry run and apply) writes two CSV files next to the xlsx and prints their
-  paths: `<stem>-price-tag-changes-<dryrun|apply>-<YYYYMMDD-HHMMSS>.csv` and
+  paths. They are written BEFORE the commit: if writing fails, nothing is committed and the exit
+  code is 1. Any file name works (e.g. one containing `%`). Paths: `<stem>-price-tag-changes-<dryrun|apply>-<YYYYMMDD-HHMMSS>.csv` and
   `<stem>-price-tag-skipped-<dryrun|apply>-<YYYYMMDD-HHMMSS>.csv`.
 - AC-24 Changes CSV columns: `product_code, sheet_code, sheet_rows, rule, status (update|unchanged),
   active, old_description, new_description`. Full texts, real line breaks inside quoted cells.
@@ -96,6 +109,11 @@ It writes `products.price_tag_description` (`app/models/product.py:279`) and not
   product_code (empty when the whole row is skipped), reason (plain words, as above),
   sheet_texts` where `sheet_texts` holds each competing text as `row N:` + the text, separated
   by a blank line. Sorted by first sheet row.
+- AC-25b Every CSV cell (both files) that starts with `=`, `+`, `-`, `@`, a tab or a carriage
+  return is written with a leading `'`, so a spreadsheet shows it as text and never runs it
+  (fix round 1, security). The database text is never changed by this.
+- AC-9b Company scoping does not depend on the app's company-scope session listener (a script
+  never installs it): the query itself filters by the chosen company.
 
 ## Rendering check (crew, Q5)
 

@@ -1,6 +1,6 @@
 # PLAN: price tag descriptions from the flyer product-code sheet
 
-Status: Build (card answered 15 Oct). Track: full L (bulk prod data write, owner runs it). Lane: PRICETAG-DESC-IMPORT.
+Status: Build, fix round 1 (reviewer NOT READY: 3 untested rules; security: 2 should-fix, 2 nits). Track: full L (bulk prod data write, owner runs it). Lane: PRICETAG-DESC-IMPORT.
 UAC: `pricetag-desc-import-15oct-acceptance-criteria.md` (alongside).
 
 ## 1. Journey
@@ -63,9 +63,12 @@ Lead decision: a product whose stored trap type is not printed in a one-trap tex
   `same code on several rows with different text`, `variant of a sheet code that is not a product`,
   `variant has a different finish`, `variant has a different seat material`,
   `variant has a different finish and seat material`, `variant of <CODE>, which was skipped`,
+  `text starts with = or @`, `text contains {{`,
   `both traps printed, product has no trap type`, `product's trap type is not printed`.
 - Rules (exact strings): `exact`, `combo`, `variant`, each optionally suffixed `+trap`.
 - CSVs: UAC AC-23 to AC-25 (names, columns, order).
+- Caps: module constants `MAX_FILE_BYTES = 20 * 1024 * 1024`, `MAX_ROWS = 20_000` (tests may
+  monkeypatch them); over either -> exit 1, nothing written.
 - No other module changes. No migration. No FE change.
 
 ## 5. Test list (red first, `sorento_crm_backend/tests/test_import_price_tag_descriptions.py`)
