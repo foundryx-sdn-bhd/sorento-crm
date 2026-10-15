@@ -744,6 +744,12 @@ async def get_chatbot_lanes(
         raise handle_internal_error(str(e))
 
 
+# The SMTP login on `SystemSettingUpdate`. Written ONLY through `PUT /smtp`, which carries
+# the secrets slug; `/general` refuses them (SETTINGS-PERM-GATE security review: its
+# setattr loop below took them on `.edit` alone, which went around that gate).
+_SMTP_FIELDS = ("smtp_host", "smtp_port", "smtp_secure", "smtp_username", "smtp_password", "smtp_from")
+
+
 def _update_general_settings_impl(settings_data: SystemSettingUpdate, db: Session):
     """Shared implementation for PUT/POST general settings."""
     from app.models.procurement import Supplier
@@ -752,6 +758,14 @@ def _update_general_settings_impl(settings_data: SystemSettingUpdate, db: Sessio
     if not settings:
         raise HTTPException(status_code=404, detail="Settings not found")
     update_data = settings_data.model_dump(exclude_unset=True)
+
+    smtp_keys = sorted(k for k in update_data if k in _SMTP_FIELDS)
+    if smtp_keys:
+        # Names the fields, never a value: one of them may be the password.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"SMTP settings are saved through PUT /settings/smtp, not here: {', '.join(smtp_keys)}",
+        )
 
     if "default_product_supplier_id" in update_data:
         sid = update_data["default_product_supplier_id"]
@@ -1116,10 +1130,11 @@ async def update_general_settings_post(
 @router.put("/social", status_code=status.HTTP_200_OK)
 async def update_social_settings(
     settings_data: SystemSettingUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.settings.edit")),
     db: Session = Depends(get_db)
 ):
-    """Update social media settings."""
+    """Update social media settings. Same gate as `PUT /general` (SETTINGS-PERM-GATE:
+    it checked only that the caller was signed in)."""
     try:
         settings = db.query(SystemSetting).first()
         if not settings:
@@ -1146,10 +1161,11 @@ async def update_social_settings(
 @router.put("/notifications", status_code=status.HTTP_200_OK)
 async def update_notification_settings(
     settings_data: SystemSettingUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("user_management.settings.edit")),
     db: Session = Depends(get_db)
 ):
-    """Update notification settings."""
+    """Update notification settings. Same gate as `PUT /general` (SETTINGS-PERM-GATE:
+    it checked only that the caller was signed in)."""
     try:
         settings = db.query(SystemSetting).first()
         if not settings:
@@ -1179,16 +1195,20 @@ async def update_notification_settings(
 @router.put("/smtp", status_code=status.HTTP_200_OK)
 async def update_smtp_settings(
     settings_data: SystemSettingUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(RUNTIME_SETTINGS_PERMISSION)),
     db: Session = Depends(get_db),
 ):
-    """Update SMTP settings. Password is update-only (omit to keep existing)."""
+    """Update SMTP settings. Password is update-only (omit to keep existing).
+
+    On the secrets slug, not `.edit` (SETTINGS-PERM-GATE): the host, login and password
+    decide where every outbound email goes, which is a credential for the same reason the
+    runtime secrets are, and `.edit` is also held by warehouse_manager and the integration
+    API-key roles."""
     try:
         settings = db.query(SystemSetting).first()
         if not settings:
             raise HTTPException(status_code=404, detail="Settings not found")
-        smtp_fields = ["smtp_host", "smtp_port", "smtp_secure", "smtp_username", "smtp_password", "smtp_from"]
-        update_data = {k: v for k, v in settings_data.model_dump(exclude_unset=True).items() if k in smtp_fields}
+        update_data = {k: v for k, v in settings_data.model_dump(exclude_unset=True).items() if k in _SMTP_FIELDS}
         for key, value in update_data.items():
             if key == "smtp_secure":
                 setattr(settings, key, bool(value) if value is not None else True)
@@ -1208,10 +1228,11 @@ async def update_smtp_settings(
 
 @router.post("/smtp/test", status_code=status.HTTP_200_OK, response_model=SmtpTestResult)
 async def test_smtp_connection(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(RUNTIME_SETTINGS_PERMISSION)),
     db: Session = Depends(get_db),
 ):
-    """Test SMTP connection using current system settings (or env fallback)."""
+    """Test SMTP connection using current system settings (or env fallback). Same gate
+    as `PUT /smtp`: it logs in with the stored password and reports what the server said."""
     try:
         from app.services.notification_email import test_smtp_connection as do_test
         settings = db.query(SystemSetting).first()
