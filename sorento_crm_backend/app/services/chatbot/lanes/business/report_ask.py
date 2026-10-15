@@ -324,8 +324,12 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     filled = _reply_fills(verdict, _dict(slot.get("values")), held)
     fills = bool(filled)
     if status in OTHER_REPORTS:
-        own = named or bool(verdict.get("group_by")) or verdict.get("domain_in_message") is True
-        return own and not fills
+        # Review M3: a named entity, or a period as all it fills, is a new ask; filling the
+        # count, metric or basis is the answer; filling nothing, a new ask if it names its own.
+        if named or set(filled) == {"period"}:
+            return True
+        own = bool(verdict.get("group_by")) or verdict.get("domain_in_message") is True
+        return own and not filled
     if status != ASK_NAME or verdict.get("ranking_refine") is True:
         return False
     if named:
