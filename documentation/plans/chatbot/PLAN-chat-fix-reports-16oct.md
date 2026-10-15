@@ -1,6 +1,6 @@
 # PLAN: chat fix PR-B, report engine (lane CHAT-ADVISOR-SPIKE, chat-fix LEAD)
 
-Status: Build, all slices green 5efe7ff01e (16 Oct ~08:00), review next; red tests 913265d3a1; S0 baseline on main 12/25 right, 5/25 right with at most
+Status: Review READY (reviewer + security-reviewer, 16 Oct), owner hand test + ci owed; Track L; red tests 913265d3a1; S0 baseline on main 12/25 right, 5/25 right with at most
 one question. Track: L (expected diff over 300 lines; no migration, no auth/RBAC change, no new
 ingest). Branch `crew/chat-fix-reports` off origin/main ccb1ce9820, worktree `sorento_crm-chat-fix-reports` (the PR-A
 worktree stays on PR-A: the crew hand-test copy :8109/:3109 runs from it).
