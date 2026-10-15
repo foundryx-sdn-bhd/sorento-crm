@@ -96,6 +96,7 @@ from app.services.scm.supply_origin import buy_origin_by_product
 from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     outside_fulfilment_planning,
+    planned_at_own_bin,
 )
 from app.services.scm.demand import (
     demand_qty,
@@ -3407,6 +3408,21 @@ class FulfilmentBoardService:
                     "pool": pool,
                 }
             )
+
+        # CONSIGN-PLAN: a consignment planned at its own bin skipped the ladder
+        # (`compose_lines`), so the five questions would describe a walk that never happened
+        # and contradict its Borrow. One step states what was decided.
+        if planned_at_own_bin(fact.warehouse, getattr(fact, "doc_type", None)) and components:
+            add(
+                "own",
+                "Are the goods already at the line's own bin?",
+                taken=_dec(row.qty),
+                sources=[own_code] if own_code else None,
+                location=own_code,
+                warehouse_id=str(fact.warehouse.id),
+                why=lambda _outcome: f"Consignment: the goods are at {own_code}.",
+            )
+            return steps, []
 
         # The ATP reserve window verdict, read once and answered the same way by all four
         # questions. Under v5 NOTHING runs beyond it, incoming included, so every question

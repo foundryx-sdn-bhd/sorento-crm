@@ -574,3 +574,85 @@ def test_s2_a_consignment_push_stating_transfered_qty_raises_a_plan_move_too(env
                              modified="2026-10-03T10:00:00.000")])
 
     assert seen == [[(str(line.id), Decimal("10"), Decimal("7"))]]
+
+
+def test_s5_re_pushing_an_unchanged_consignment_with_returns_raises_no_planning_change(
+    env, monkeypatch
+):
+    from app.services import planning_change_service
+
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, qty=10.0)])])
+    env.post(CR_INGEST, [_cr(details=[_cr_line(991001, 4, from_dtl=981001)])])
+    assert _ingested_line(env, "db1:CSGN:980001:981001").qty_returned == Decimal("4")
+    diffs = []
+    monkeypatch.setattr(
+        planning_change_service, "build_batch",
+        lambda db, diff, **kw: diffs.append([c for c in diff.changes if c.kind != "unchanged"]),
+    )
+
+    res = env.post(CG_INGEST, [_cg(details=[_cg_line(981001, qty=10.0)],
+                                   modified="2026-10-04T10:00:00.000")])
+
+    assert res.status_code == 200, res.text
+    assert all(changes == [] for changes in diffs), diffs
+
+
+def test_s7_a_return_landing_after_a_con_borrow_confirm_raises_a_pending_planning_change(env):
+    """End to end on the real ingest path: a consignment decided by a Borrow at its flagged-off
+    bin, then a return lands. `build_batch`'s held-or-inquired gate must admit the line."""
+    from sqlalchemy import select
+
+    from app.models.order import SalesOrder, SalesOrderLine
+    from app.models.inventory import Stock, Warehouse
+    from app.models.planning_change import PlanningChangeRow
+    from app.schemas.project_supply import ConfirmLine, ConfirmSupplyBody
+    from tests.test_ingest_autocount_do_grn import _USER_ID
+
+    wh = env.db.get(Warehouse, env.wh1)
+    wh.fulfilment_planning = False
+    env.db.add(Stock(product_id=env.p1, warehouse_id=env.wh1, quantity_on_hand=10,
+                     quantity_reserved=0))
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, qty=10.0)])])
+    core = env.db.execute(select(SalesOrder).where(SalesOrder.so_number == "ZZCG-0001")
+                          ).scalars().one()
+    core.demand_class = "project"
+    core.status = "closed"
+    env.db.commit()
+
+    adopted = ProjectSOAdoptionService(env.db).adopt(str(core.id), actor_user_id=_USER_ID)
+    env.db.commit()
+    order = env.db.get(ProjectSalesOrder, adopted["project_sales_order_id"])
+    mirror = env.db.query(ProjectSalesOrderLine).filter(
+        ProjectSalesOrderLine.project_sales_order_id == order.id).one()
+    ProjectSupplyService(env.db).confirm(
+        order,
+        ConfirmSupplyBody(lines=[ConfirmLine(
+            project_line_id=mirror.id,
+            borrow=[{"source": "other_location", "warehouse_id": env.wh1, "qty": "10",
+                     "reason": "Goods are the CON stock."}],
+        )]),
+        actor_user_id=_USER_ID,
+    )
+    env.db.commit()
+
+    env.post(CR_INGEST, [_cr(details=[_cr_line(991001, 4, from_dtl=981001)])])
+
+    env.db.expire_all()
+    core_line = env.db.execute(select(SalesOrderLine).where(
+        SalesOrderLine.sales_order_id == core.id)).scalars().one()
+    rows = env.db.query(PlanningChangeRow).filter(
+        PlanningChangeRow.project_sales_order_id == str(order.id)).all()
+    assert core_line.qty_returned == Decimal("4")
+    assert [str(r.core_line_id) for r in rows] == [str(core_line.id)], rows
+
+
+def test_n6_the_consignment_trail_is_one_step_that_agrees_with_its_borrow():
+    with blank_session() as db:
+        world = _board_world(db)
+        board = _build(db, world)
+        row = _contributions(board, world["order"].so_number)[0]
+        con_code = world["con"].warehouse_code
+
+    assert len(row["trail"]) == 1, row["trail"]
+    assert con_code in row["trail"][0]["why"]
+    assert "consignment" in row["trail"][0]["why"].lower()

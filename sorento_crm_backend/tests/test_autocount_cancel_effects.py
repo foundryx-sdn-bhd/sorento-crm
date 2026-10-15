@@ -346,3 +346,50 @@ def test_so_detail_lists_the_cancel_documents_oldest_first(env):
     so_id = str(_line(env, "ZZ-CX-SQ3").sales_order_id)
     line = SalesOrderService(env.db).get(so_id)["lines"][0]
     assert [c["doc_no"] for c in line["cancels"]] == ["ZZXS-950002", "ZZXS-950009"]
+
+
+# ======================================================================= CONSIGN-PLAN
+def test_one_batch_moving_cancelled_and_returned_on_a_line_raises_one_change(env, monkeypatch):
+    """CONSIGN-PLAN S4: two plan moves for one line (cancelled 0->2, returned 0->3) are merged
+    into one: first `was`, last `now`, so the diff pairs them as ONE change 10 -> 5."""
+    from app.services import planning_change_service
+    from app.services.autocount_cancel_ingest_service import _raise_planning_change
+
+    seen = []
+    monkeypatch.setattr(planning_change_service, "build_batch",
+                        lambda db, diff, **kw: seen.append(diff) or None)
+    _push_so(env, "ZZ-CX-SO20", ordered=10, delivered=0)
+    line_id = str(_line(env, "ZZ-CX-SO20").id)
+    seen.clear()
+    _raise_planning_change(
+        env.db,
+        [(line_id, Decimal("10"), Decimal("8")), (line_id, Decimal("8"), Decimal("5"))],
+        actor=None,
+    )
+    changes = [c for d in seen for c in d.changes if c.kind != "unchanged"]
+    assert len(changes) == 1, changes
+    assert (changes[0].before.qty, changes[0].after.qty) == (10.0, 5.0)
+    assert changes[0].qty_delta == -5.0
+
+
+def test_a_partial_cancel_on_a_line_with_returns_moves_the_plan_net_of_returned(env, monkeypatch):
+    """CONSIGN-PLAN S5(b): ordered 10, 3 returned, 4 cancelled: the plan moves 7 -> 3."""
+    from app.services import planning_change_service
+
+    seen = []
+    monkeypatch.setattr(planning_change_service, "build_batch",
+                        lambda db, diff, **kw: seen.append(diff) or None)
+    import app.services.autocount_cancel_ingest_service as cancel_ingest
+
+    # No return document backs the 3 here, so the returns recompute (which would zero it) is
+    # held still: this test is about the cancel's own basis only.
+    monkeypatch.setattr(cancel_ingest, "recompute_returned", lambda *a, **k: [])
+    _push_so(env, "ZZ-CX-SO21", ordered=10, delivered=4)
+    row = _line(env, "ZZ-CX-SO21")
+    row.qty_returned = Decimal("3")
+    env.db.commit()
+    seen.clear()
+    _push_xs(env, "ZZ-CX-SO21", 4)
+    changes = [c for d in seen for c in d.changes if c.kind != "unchanged"]
+    assert len(changes) == 1, changes
+    assert (changes[0].before.qty, changes[0].after.qty) == (7.0, 3.0)

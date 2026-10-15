@@ -947,6 +947,7 @@ class AutocountCancelIngestService:
         touched = Touched()
         to_match: list[AutocountCancelLine] = []
         self._removed_groups: set = set()
+        self.consignment_moves = []  # a reused service carries nothing over (CONSIGN-PLAN)
         try:
             for raw in records:
                 result.records.append(self._ingest_one(entity_type, raw, touched, to_match))
@@ -1232,6 +1233,7 @@ class AutocountCancelIngestService:
             raise UnsupportedIngestEntity(f"Unsupported AutoCount entity {entity!r}")
         result = DeletionResult(dry_run=dry_run)
         touched = Touched()
+        self.consignment_moves = []
         try:
             with company_scope(self.db, frozenset({self.company_id})):
                 for value in doc_keys:
@@ -1239,6 +1241,8 @@ class AutocountCancelIngestService:
                         self._delete_one(entity, value, date_from, date_to, touched))
                 self.db.flush()
                 self.derived = recompute_cancelled(self.db, touched, self.company_id)
+                self.derived.plan_moves.extend(self.consignment_moves)
+                self.consignment_moves = []
         finally:
             if dry_run:
                 self.db.rollback()
@@ -1411,7 +1415,12 @@ def _raise_planning_change(db: Session, moves: list[tuple[str, Decimal, Decimal]
     )
     by_id = {str(r[0].id): r for r in rows}
     before, after, order_ids = [], [], {}
+    # One move per line: a batch that cancelled AND returned units on a line reports two, and
+    # a diff fed both would pair them as two changes. First `was`, last `now`.
+    merged: dict[str, list[Decimal]] = {}
     for line_id, was, now in moves:
+        merged.setdefault(line_id, [was, now])[1] = now
+    for line_id, (was, now) in merged.items():
         found = by_id.get(line_id)
         if found is None:
             continue
