@@ -27,7 +27,6 @@ import pytest
 
 from app.services.chatbot import engine as engine_mod
 from app.services.company_scope import DEFAULT_COMPANY_ID
-from tests.chatbot._turn_helpers import make_office_access_type
 from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_outstanding_lane import (
     AnswerServices,
@@ -290,8 +289,6 @@ def test_a_product_entity_becomes_product_ids(console) -> None:
 
 
 def test_a_customer_entity_becomes_customer_ids(console) -> None:
-    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-    make_office_access_type(console.session_factory, CONTACT_ID)
     _text, calls = console.say(
         _rank(_e(CUSTOMER_NAME, "customer"), group_by="product"), f"top 3 products for {CUSTOMER_NAME}"
     )
@@ -1178,9 +1175,12 @@ def test_a_dealer_refine_over_a_held_staff_frame_is_refused_locally(console) -> 
 
 
 def test_a_frame_does_not_survive_another_ask(console) -> None:
-    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-    make_office_access_type(console.session_factory, CONTACT_ID)
     """ranking, then an order ask, then a refine: the old ranking is gone, so it is a fresh ask."""
+    # V1-DOC-SCOPE slice 3: the middle turn is an ORDER ask naming a customer, which an
+    # unlinked contact holding only the report grant may not make; this one plays office.
+    from tests.chatbot._turn_helpers import make_office_access_type
+
+    make_office_access_type(console.session_factory, CONTACT_ID)
     _t1(console)
     console.say(_order_ask(_e(CUSTOMER_NAME, "customer")), f"orders for {CUSTOMER_NAME}")
     text, calls = console.say(_refine(top_n=5), "5")

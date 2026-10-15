@@ -363,8 +363,6 @@ class TestParamMapping:
         )
         db.commit()
         _seed_contact(session_factory, variables={})
-        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-        make_office_access_type(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -908,8 +906,6 @@ class TestPickerNoDoHintAndPickContinues:
             }
 
         _seed_contact(session_factory, variables={})
-        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory, monkeypatch,
             qf=_parser_output(
@@ -958,8 +954,6 @@ class TestPickerNoDoHintAndPickContinues:
         mapping exists for `crm_sales_report`. Re-pinned to what production actually,
         correctly does."""
         _seed_contact(session_factory, variables={})
-        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-        make_office_access_type(session_factory, CONTACT_ID)
         _run_turn(
             session_factory, monkeypatch,
             qf=_parser_output(
@@ -1011,8 +1005,6 @@ class TestPickerNoDoHintAndPickContinues:
         its docstring, including the `date_from`/`date_to`/`channel` re-pin to S18's own
         documented "customer ask stays all dates" rule."""
         _seed_contact(session_factory, variables={})
-        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-        make_office_access_type(session_factory, CONTACT_ID)
         _run_turn(
             session_factory, monkeypatch,
             qf=_parser_output(
@@ -1563,8 +1555,6 @@ class TestProductOnlyDefaultsToCurrentYear:
 
     def test_customer_ask_without_dates_stays_all_dates(self, session_factory, monkeypatch) -> None:
         _seed_contact(session_factory, variables={})
-        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-        make_office_access_type(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory, monkeypatch,
             qf=_qf(
@@ -1587,8 +1577,6 @@ class TestProductOnlyDefaultsToCurrentYear:
 
     def test_customer_and_product_without_dates_stays_all_dates(self, session_factory, monkeypatch) -> None:
         _seed_contact(session_factory, variables={})
-        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-        make_office_access_type(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory, monkeypatch,
             qf=_qf(

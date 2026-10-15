@@ -854,7 +854,10 @@ class TestPoRefKeepsTheTierRule:
 # (tier, office access type, salesperson) are unchanged.
 
 
-def _picker_turn(session_factory, monkeypatch, hint: str | None = "customer"):
+def _picker_turn(
+    session_factory, monkeypatch, hint: str | None = "customer", *, qf: dict[str, Any] | None = None,
+    attributes: tuple[str, ...] = (OUTSTANDING_KEY,), current_message: bool = True,
+):
     """"deliveries this month for hanlim": a DO ask whose customer word matches two other
     customers (the R18 HANLIM book), so the generic resolver would offer a picker. `hint` is
     the parser's tag on the word: under `order` the resolver reads a brand or category word as
@@ -878,11 +881,12 @@ def _picker_turn(session_factory, monkeypatch, hint: str | None = "customer"):
         return inner(body)
 
     services = services.__class__(access_types=services.access_types, resolve_entity=resolve_entity, probe=services.probe)
-    qf = _parser_output(
+    word = {**_ent("hanlim"), "hint": hint, "current_message": current_message}
+    qf = {**qf, "entities": [word]} if qf is not None else _parser_output(
         domain_hint="order",
         intent_hint="check_order",
         order_status=None,
-        entities=[{**_ent("hanlim"), "hint": hint}],
+        entities=[word],
         date_filter_start="2026-10-01",
         date_filter_end="2026-10-31",
     )
@@ -892,7 +896,7 @@ def _picker_turn(session_factory, monkeypatch, hint: str | None = "customer"):
         qf=qf,
         text_body="deliveries this month for hanlim",
         msg_id=f"ZZT-docscope-picker-{uuid.uuid4().hex[:10]}",
-        attributes=[OUTSTANDING_KEY],
+        attributes=list(attributes),
         resolve_services=services,
         mcp_response=FOREIGN_DO_LIST,
     )
@@ -954,3 +958,108 @@ class TestCustomerPickerUnlinked:
 
         assert "Which one do you mean?" in reply, reply
         assert "HANLIM TRADING" in reply.upper() and "HANLIM HARDWARE" in reply.upper(), reply
+
+
+# --------------------------------------------------------------------------- #
+# Slice 3 crew ruling (b), 15 Oct: the owner's CA-3 Q5(a) stands
+# --------------------------------------------------------------------------- #
+#
+# PLAN-chat-analytics-ca3-chat-dataset-10oct.md:181-184: an unlinked contact the owner GRANTED
+# the chat report (`chatbot.analytics`) or the sales report (`sales_orders.sales_report`) sees
+# those reports' customers like staff, picker included. Without the grant the slice-3 rule
+# holds: no customer names, no DO probe. The CA-3 / report_ask / sales-report suites prove the
+# granted side (unclassified askers, unmarked); these prove the ungranted side and the edges.
+
+CHAT_GRANT = "chatbot.analytics"
+SALES_GRANT = "sales_orders.sales_report"
+
+
+def _sales_ask() -> dict[str, Any]:
+    return _parser_output(
+        domain_hint="order", intent_hint="check_order", order_status="sales_report",
+        entities=[], date_filter_start="2026-10-01", date_filter_end="2026-10-31",
+    )
+
+
+class TestGrantedReportsKeepQ5a:
+    """The chat report's side runs on its own console harness:
+    tests/chatbot/test_chat_report_lane.py::test_v1_doc_scope_*."""
+
+    @pytest.mark.parametrize("hint", ["customer", "brand"])
+    def test_an_ungranted_unlinked_contact_gets_no_names_on_the_sales_report(
+        self, session_factory, monkeypatch, hint
+    ) -> None:
+        _seed_contact(session_factory, variables={})
+
+        reply, _captured, probes, _asked = _picker_turn(
+            session_factory, monkeypatch, hint=hint, qf=_sales_ask(), attributes=(OUTSTANDING_KEY,)
+        )
+
+        assert "HANLIM" not in reply.upper(), reply
+        assert probes == [], probes
+
+    def test_a_granted_unlinked_contact_keeps_the_sales_report_picker(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+
+        reply, _captured, _probes, _asked = _picker_turn(
+            session_factory, monkeypatch, qf=_sales_ask(), attributes=(OUTSTANDING_KEY, SALES_GRANT)
+        )
+
+        assert "Which one do you mean?" in reply, reply
+        assert "HANLIM TRADING" in reply.upper(), reply
+
+    def test_a_report_grant_does_not_open_the_order_domain(self, session_factory, monkeypatch) -> None:
+        """Both report grants held, but this is a DO ask: the slice-3 rule holds."""
+        _seed_contact(session_factory, variables={})
+
+        reply, captured, probes, _asked = _picker_turn(
+            session_factory, monkeypatch, attributes=(OUTSTANDING_KEY, CHAT_GRANT, SALES_GRANT)
+        )
+
+        assert "HANLIM" not in reply.upper(), reply
+        assert reply.strip() == NO_LINK_REFUSAL, reply
+        assert probes == [] and _calls(captured, ORDERS) == [], (probes, captured)
+
+
+class TestSlice3Edges:
+    def test_a_carried_customer_word_is_dropped_not_refused(self) -> None:
+        """A word carried from an earlier turn never refuses (a refusal must not lock the turns
+        after it); for a held contact it is dropped from the resolver's input all the same."""
+        from types import SimpleNamespace
+
+        from app.services.chatbot import engine
+
+        carried = {"raw": "hanlim", "hint": "customer", "canonical_code": None, "current_message": False}
+        product = {"raw": "SRTWT7445", "hint": "product", "canonical_code": None, "current_message": True}
+        parse_output = {"entities": [carried, product]}
+
+        out, ids, refused, line = engine._customer_scope_gate(
+            None, {}, SimpleNamespace(status=None), parse_output, ["order"], unlinked_held=True
+        )
+
+        assert refused is False and line is None and ids is None
+        assert out["entities"] == [product], out
+
+    def test_a_carried_word_the_resolver_reads_as_a_customer_is_not_refused(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+
+        reply, _captured, probes, _asked = _picker_turn(
+            session_factory, monkeypatch, hint="brand", current_message=False,
+            qf=_parser_output(domain_hint="inventory", intent_hint="check_stock", order_status=None, entities=[]),
+        )
+
+        assert reply.strip() != NO_LINK_REFUSAL, reply
+        assert "HANLIM TRADING" not in reply.upper() and probes == [], (reply, probes)
+
+    def test_a_linked_dealer_on_a_domain_with_no_customer_scope_is_not_held(self, session_factory, monkeypatch) -> None:
+        """Only an UNLINKED contact is held: a linked dealer on a domain whose turn applies no
+        customer scope (inventory) never gets the no-link line."""
+        _seed_contact(session_factory, variables={})
+        _link_customers(session_factory, OWN)
+
+        reply, _captured, _probes, _asked = _picker_turn(
+            session_factory, monkeypatch,
+            qf=_parser_output(domain_hint="inventory", intent_hint="check_stock", order_status=None, entities=[]),
+        )
+
+        assert reply.strip() != NO_LINK_REFUSAL, reply

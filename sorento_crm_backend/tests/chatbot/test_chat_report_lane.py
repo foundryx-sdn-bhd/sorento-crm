@@ -24,7 +24,6 @@ from typing import Any
 import pytest
 
 from app.services.chatbot import engine as engine_mod
-from tests.chatbot._turn_helpers import make_office_access_type
 from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_outstanding_lane import (
     AnswerServices,
@@ -276,8 +275,6 @@ def test_a_subject_filter_goes_as_subjects(console) -> None:
 
 
 def test_a_customer_name_resolves_to_its_id(console) -> None:
-    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-    make_office_access_type(console.session_factory, CONTACT_ID)
     _text, calls = console.say(_chat(_e(CUSTOMER_NAME, "customer")), "top 5 questions from that customer this week")
     (args,) = calls
     assert args["customer_ids"] == [console.ids["customer"]], args
@@ -290,8 +287,6 @@ def test_a_product_code_resolves_to_its_id(console) -> None:
 
 
 def test_a_name_that_resolves_to_nothing_ends_in_i_couldnt_find(console) -> None:
-    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-    make_office_access_type(console.session_factory, CONTACT_ID)
     text, calls = console.say(_chat(_e("Nonexistent Trading Sdn Bhd", "customer")), "top 5 questions from nobody")
     assert calls == [], "never an empty ranking that looks like data"
     assert "I couldn't find" in text, text
@@ -396,8 +391,6 @@ def test_the_dealer_refusal_is_said_as_its_message(console) -> None:
 
 
 def test_a_404_is_i_couldnt_find(console) -> None:
-    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-    make_office_access_type(console.session_factory, CONTACT_ID)
     console.refuse_status = 404
     console.refuse = {"message": "Customer not found", "detail": None, "code": "not_found"}
     text, _calls = console.say(_chat(_e(CUSTOMER_NAME, "customer")), "top 5 questions this week")
@@ -777,3 +770,36 @@ def test_extractor_parser_product_entities_add_no_product_line_to_a_chat_report(
     lowered = text.lower()
     assert not any(m in lowered for m in MISS_LINES), text
     assert calls == []
+
+
+# --------------------------------------------------------------------------- V1-DOC-SCOPE slice 3
+
+
+def _hanlim_book(monkeypatch) -> list[dict[str, Any]]:
+    """The resolver answers "hanlim" with TWO other customers (the R18 HANLIM book), so the
+    gate would build a customer picker; returns the picker's DO probe calls."""
+    from tests.chatbot.test_outstanding_lane import _ambiguous_hanlim_resolve_services
+
+    probes: list[dict[str, Any]] = []
+
+    def probe(**kwargs):
+        probes.append(kwargs)
+        return {"items": [], "has_result": False}
+
+    services = _ambiguous_hanlim_resolve_services(probe)
+    monkeypatch.setattr(engine_mod.business_services, "production_services", lambda db, *, space_id=None: services)
+    return probes
+
+
+@pytest.mark.parametrize("hint", ["customer", "brand"])
+def test_v1_doc_scope_an_ungranted_unlinked_contact_gets_no_customer_names(console_no_grant, monkeypatch, hint) -> None:
+    """V1-DOC-SCOPE slice 3 (crew ruling (b), 15 Oct): without `chatbot.analytics` an unlinked
+    contact that is not document staff gets no other customer's name on a chat report ask,
+    however the parser tagged the word, and no DO probe runs. (With the grant the owner's CA-3
+    Q5(a) stands: the unmarked `test_a_customer_name_resolves_to_its_id` above.)"""
+    probes = _hanlim_book(monkeypatch)
+    text, calls = console_no_grant.say(_chat(_e("hanlim", hint)), "top 5 questions from hanlim this week")
+    assert "HANLIM" not in text.upper(), text
+    assert "Which one do you mean?" not in text, text
+    assert probes == [] and calls == [], (probes, calls)
+

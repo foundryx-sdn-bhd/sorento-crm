@@ -16,8 +16,6 @@ from typing import Any
 
 import pytest
 
-from tests.chatbot._turn_helpers import make_office_access_type
-from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.test_customer_scope_lane import _link_customers
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact, _session_of
@@ -183,8 +181,6 @@ class TestF7ANewReportReplacesTheOffer:
 class TestF4OutOfRangeSaysWhichNumbers:
     def test_a_number_past_the_end_names_the_range_above_the_options(self, session_factory, monkeypatch) -> None:
         _seed_contact(session_factory, variables={})
-        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-        make_office_access_type(session_factory, CONTACT_ID)
         _turn(
             session_factory, monkeypatch,
             _parser_output(domain_hint="order", intent_hint="check_order", order_status="sales_report",

@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import pytest
 
-from tests.chatbot._turn_helpers import make_office_access_type
-from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.test_chat_report_lane import (  # noqa: F401  (fixtures and helpers by name)
     COUNT_Q,
     CUSTOMER_NAME,
@@ -39,8 +37,6 @@ def _brand(monkeypatch):
 
 
 def test_e1_parser_customer_and_product_tags_on_a_word_do_not_filter_or_miss(console, monkeypatch) -> None:
-    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-    make_office_access_type(console.session_factory, CONTACT_ID)
     _brand(monkeypatch)
     _fake_extractor(monkeypatch, lambda t, o: {**READING, "brand_words": ["sorento"]})
     verdict = _chat(_e("salesperson", "customer"), _e("salesperson", "product"), group_by="category")
@@ -52,8 +48,6 @@ def test_e1_parser_customer_and_product_tags_on_a_word_do_not_filter_or_miss(con
 
 
 def test_e1_a_real_parser_customer_entity_is_not_a_filter_unless_the_extractor_names_it(console, monkeypatch) -> None:
-    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-    make_office_access_type(console.session_factory, CONTACT_ID)
     _fake_extractor(monkeypatch, lambda t, o: {**READING, "group_by": "topic", "askers": []})
     _text, calls = console.say(_chat(_e(CUSTOMER_NAME, "customer")), "top topics in 2026")
     (args,) = _chat_calls(calls)

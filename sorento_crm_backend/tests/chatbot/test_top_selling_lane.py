@@ -1263,11 +1263,11 @@ class TestConsoleShowsTheParts:
 
 
 class TestV1DocScopeUnlinkedTopSelling:
-    """Owner rule (unlinked != customer), every domain: an unlinked contact that is not
-    document staff naming another customer on a top selling ask gets the no-link line, not
-    the customer picker (the route refuses it anyway, `_top_selling_dealer_scope`)."""
+    """V1-DOC-SCOPE slice 3, crew ruling (b) 15 Oct (owner CA-3 Q5(a)): top selling is a sales
+    report ask, so an unlinked contact holding `sales_orders.sales_report` keeps the customer
+    picker (`TestCustomerPicker`, unmarked). WITHOUT the grant no customer name is shown."""
 
-    def test_unlinked_non_staff_gets_no_customer_picker(self, session_factory, monkeypatch, route) -> None:
+    def test_an_ungranted_unlinked_contact_gets_no_customer_names(self, session_factory, monkeypatch, route) -> None:
         _seed_contact(session_factory, variables={})
         reply, captured = _turn(
             session_factory, monkeypatch,
@@ -1276,9 +1276,9 @@ class TestV1DocScopeUnlinkedTopSelling:
                 entities=[{"raw": "hanlim", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True}],
             ),
             "top 4 for hanlim dealer by amount",
+            attributes=(),
             resolve_services=_ambiguous_hanlim_resolve_services(lambda **_: {"items": [], "has_result": False}),
         )
         assert _calls(captured) == []
         assert "Which one do you mean?" not in reply, reply
         assert "HANLIM" not in reply.upper(), reply
-        assert reply.strip() == "Sorry, that isn't under your account. I can only check on your own account.", reply
