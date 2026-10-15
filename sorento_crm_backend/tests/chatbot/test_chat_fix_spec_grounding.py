@@ -227,3 +227,26 @@ def test_a10_the_menu_offers_only_the_cabinet_types_that_have_a_promotion(sessio
 def test_a10_with_no_choice_that_has_a_promotion_it_answers_at_class_level(session_factory):
     _cabinet_world(session_factory, promoted=())
     assert _ask_back(session_factory) is None, "no cabinet type has a promotion: no menu, the class-level answer"
+
+
+def test_f4_a_choice_whose_only_promotion_is_at_another_level_is_not_offered(session_factory):
+    """Fix round 1 F4 (AC-A10): the menu check reads promotions at the contact's own access
+    levels, the way the promotions read does; tall cabinet's only promotion is at a level the
+    contact lacks, so it is not offered."""
+    from app.models.product import Product
+    from app.services.chatbot import turn_runtime
+
+    _cabinet_world(session_factory, promoted=("basin_cabinet", "side_cabinet"))
+    db = session_factory()
+    std = db.query(PromotionType).filter_by(type_code="standard").one()
+    tall = db.query(Product).filter_by(product_code="ZZTTALL8").one()
+    _promo(db, "ZZT PROMO TALL OTHER LEVEL", std, tall, levels=["zzt_other_level"])
+    db.commit()
+    parse = _parser_output(
+        domain_hint="promotion", intent_hint="check_promotion",
+        entities=[_e("cabinet", "category")],
+    )
+    result = turn_runtime.promo_subject_ask_back(parse, session_factory(), access_levels=["Sorento Dealer"])
+    assert result is not None
+    _text, options = result
+    assert sorted(o.lower() for o in options) == ["basin cabinet", "side cabinet"], options
