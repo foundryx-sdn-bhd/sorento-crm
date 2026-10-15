@@ -320,11 +320,12 @@ def _number(ask: Ask) -> int | None:
 def _numbered(pending: PendingQuestion | None) -> list[Option]:
     """R5-1: the options a printed number names, in printed order: those keyed by their number (an entity
     question, a did-you-mean, a v1 menu), else every option of a PV2 question by position; a confirm's one
-    guess. None for a hand-over offer or a question that takes a number as its value."""
+    guess, or the guessed family's accounts (R5-3). None for a hand-over offer or a question that takes a number
+    as its value."""
     if pending is None or pending.kind in NO_NUMBER_PENDING:
         return []
     if pending.kind == CONFIRM:
-        return pending.options[:1]
+        return _accounts(pending.options[0]) or pending.options[:1]
     keyed = [o for o in pending.options if o.key.isdigit()]
     return keyed if keyed or pending.kind == "v1_open_question" else list(pending.options)
 
@@ -334,6 +335,57 @@ def _nth(options: list[Option], n: int) -> Option | None:
     if any(o.key.isdigit() for o in options):
         return next((o for o in options if o.key == str(n)), None)
     return options[n - 1] if 1 <= n <= len(options) else None
+
+
+def _accounts(option: Option) -> list[Option]:
+    """R5-3: a family option's accounts, one option per key keyed by its printed number and labelled by the
+    account's own name when the resolver gave them (else the family's); [] for one account."""
+    keys = [str(k) for k in option.payload.get("keys") or []]
+    if len(keys) < 2:
+        return []
+    names = [str(n) for n in option.payload.get("labels") or []]
+    names = names if len(names) == len(keys) else [option.label] * len(keys)
+    base = {k: v for k, v in option.payload.items() if k not in ("keys", "labels")}
+    return [
+        Option(key=str(n), label=name, payload={**base, "key": key, "label": name})
+        for n, (key, name) in enumerate(zip(keys, names), start=1)
+    ]
+
+
+#: R5-3: the questions whose options are records a reply may name instead of picking (a family confirm, an
+#: account menu): the resolver reads the named entity and only what it finds among the options is picked.
+SCOPED_PICK_PENDING = frozenset({"clarify_confirm", "clarify_entity"})
+
+
+def _scoped_pick(ask: Ask, pending: PendingQuestion, held: Held, resolver: ResolverLike) -> tuple[Option | None, Ask]:
+    """R5-3: a reply naming an entity of the question's kind (no key, no number): the resolver reads it, and the
+    one option whose keys hold what it found is picked, narrowed to those keys (one account of a family), so the
+    family is never guessed again. The named entity is consumed. (None, ask) when it finds no single option."""
+    options = _numbered(pending)
+    kinds = {o.payload.get("kind") for o in options}
+    ent = next((e for e in ask.entities if e.kind in kinds and (e.key or e.phrase) and e.op != "clear"), None)
+    if ent is None:
+        return None, ask
+    res = resolver.resolve_entities([ent], held=held)[0]
+    labels = {r.key: r.label for r in getattr(res, "refs", None) or []}
+    found = list(labels) or [
+        str(k) for o in getattr(res, "options", None) or [] for k in o.payload.get("keys") or [o.payload.get("key")]
+    ]
+    hits = []
+    for o in options:
+        covered = [str(k) for k in o.payload.get("keys") or [o.payload.get("key")]]
+        mine = [k for k in covered if k in found]
+        if mine:
+            hits.append((o, mine))
+    if len(hits) != 1:
+        return None, ask
+    option, keys = hits[0]
+    payload = {k: v for k, v in option.payload.items() if k not in ("keys", "labels")}
+    payload.update(key=keys[0], label=labels.get(keys[0], option.label) if len(keys) == 1 else option.label)
+    if len(keys) > 1:
+        payload["keys"] = keys
+    rest = ask.model_copy(update={"entities": [e for e in ask.entities if e is not ent]})
+    return option.model_copy(update={"payload": payload}), rest
 
 
 def _picks_open_question(ask: Ask, pending: PendingQuestion | None) -> bool:
@@ -790,6 +842,12 @@ def _answer(
         picked = _nth(_numbered(pending), number)
         if picked is None:
             raise _Miss("other")
+    if picked is None and free is not None and pending.kind != "v1_open_question":
+        # R5-3: a free value that is exactly one printed option's label picks it, as its key does (v1 matches its own).
+        same = [o for o in _numbered(pending) if o.label == free]
+        picked = same[0] if len(same) == 1 else None
+    if picked is None and key is None and free is None and number is None and pending.kind in SCOPED_PICK_PENDING:
+        picked, ask = _scoped_pick(ask, pending, st.held, resolver)
     if picked is None:
         if free is not None and free == "all" and pending.kind == "v1_open_question":
             raise _Miss("other")  # "all" is the option key's token, never a free value
@@ -1453,6 +1511,10 @@ def _confirm(st: ConversationState, i: int, ent: Entity, option: Option, languag
     """The yes/no confirm ("Did you mean <name>?") of the one option a partial word suggests: nothing numbered,
     no code. "yes" picks it as a pick on an entity question does; "no" asks openly (`_answer`)."""
     asked = clarify_copy.text("confirm", language, label=clarify_copy.safe_label(option.label, language))
+    accounts = _accounts(option) if option.payload.get("labels") else []
+    if accounts:
+        # R5-3: a family of several accounts offers its accounts: "yes" is every one, a number is that one.
+        asked += "\n" + "\n".join(f"{o.key}. {clarify_copy.safe_label(o.label, language)}" for o in accounts)
     pick = option.model_copy(update={"key": "yes"})
     no = Option(key="no", label=clarify_copy.text("no", language), payload={"value": False})
     pending = PendingQuestion(kind=CONFIRM, asked=asked, options=[pick, no], asked_turn=st.turn_no, misses=0)
@@ -1988,7 +2050,7 @@ def _repeat_is_a_miss(
         or pending_in.kind != q.kind
         or q.asked != pending_in.asked
         or [(o.key, o.label) for o in q.options] != [(o.key, o.label) for o in pending_in.options]
-        or _subject(held_in) != _subject(st.held)
+        or q.kind != CONFIRM and _subject(held_in) != _subject(st.held)  # R5-3: a confirm's subject is its guess
     ):
         return action
     again = _miss(st, action.ask_index, pending_in, _Miss(action.about), language, can_offer_handover, mode)

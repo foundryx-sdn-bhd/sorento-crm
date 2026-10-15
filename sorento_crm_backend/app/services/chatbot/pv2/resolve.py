@@ -806,6 +806,7 @@ class DbResolver:
             payload: dict[str, Any] = {"kind": "customer", "key": keys[0], "label": label}
             if len(keys) > 1:
                 payload["keys"] = keys
+                payload["labels"] = [str(n or "").strip() for _c, _k, n in members]  # R5-3: each account's own name
             options.append(Option(key=keys[0], label=label, payload=payload))
         # Crew 15 Oct: candidates are a guess, unless the contact is held to one customer (only it can be meant).
         own = self.customer_scope.get("enforced") and len(self.customer_scope.get("ids") or []) == 1
