@@ -48,6 +48,7 @@ vi.mock('@/lib/toast', () => ({
     error: vi.fn(),
     success: vi.fn(),
     warning: vi.fn(),
+    dismiss: vi.fn(),
   },
 }));
 
