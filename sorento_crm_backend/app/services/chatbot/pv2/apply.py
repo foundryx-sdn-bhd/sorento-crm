@@ -412,9 +412,32 @@ def _picks_open_question(ask: Ask, pending: PendingQuestion | None) -> bool:
 
 
 def answers_by_number(ask: Ask, pending: PendingQuestion | None) -> bool:
-    """R5 fix 3 / 4: a printed number on a question that numbers its options: that question's answer, whose own
-    ask runs (the parser's domain on it is ignored by apply and by the grant pre-check alike)."""
+    """R5-1: a printed number on a question that numbers its options: it picks that question's option
+    (`number_runs_question` says when its own ask then runs)."""
     return _number(ask) is not None and bool(_numbered(pending))
+
+
+def _keyed_pick(ask: Ask, pending: PendingQuestion) -> Option | None:
+    """The option an answer's option key picks: its key, the carry question's "all" (its last option), or on a
+    candidate question (keyed by position) the code its payload holds."""
+    key = ask.answer.option_key if ask.answer is not None else None
+    if key is None:
+        return None
+    picked = next((o for o in pending.options if o.key == key), None)
+    if key == "all" and pending.kind == CARRY_SCOPE:
+        picked = pending.options[-1]  # "all <kind>s": the parser's "all" drops the carried kind (v1 carry_scope_keeps)
+    if picked is None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
+        picked = next((o for o in pending.options if o.payload.get("key") == key), None)
+    return picked
+
+
+def number_runs_question(ask: Ask, pending: PendingQuestion | None) -> bool:
+    """R5 fix 5: the ONE condition under which an answer's number runs the open question's own ask (`_answer`'s
+    number branch, where the parser's domain is dropped); the grant pre-check judges by it too. Not when the
+    answer is a refine (`_answer_is_a_refine`: it runs in the parser's domain) or an option key picks."""
+    if pending is None or ask.act != "answers_bot_question" or _answer_is_a_refine(ask, pending):
+        return False
+    return _keyed_pick(ask, pending) is None and answers_by_number(ask, pending)
 
 
 def reads_as_answer(ask: Ask, pending: PendingQuestion | None, held: Any) -> bool:
@@ -845,9 +868,7 @@ def _answer(
         raise _Miss("other")
     key = ask.answer.option_key if ask.answer is not None else None
     free = ask.answer.free_value if ask.answer is not None else None
-    picked = next((o for o in pending.options if o.key == key), None) if key is not None else None
-    if key == "all" and pending.kind == CARRY_SCOPE:
-        picked = pending.options[-1]  # "all <kind>s": the parser's "all" drops the carried kind (v1 carry_scope_keeps)
+    picked = _keyed_pick(ask, pending)
     if key == "all" and picked is None:
         # Every option of the question (the contract token for "all of them").
         every = [o for o in pending.options if o.payload.get("kind") != "handover"]
@@ -882,11 +903,8 @@ def _answer(
                 return _commit(st, i, held, ask, [owed]), True
             st.held = held
             return Lookup(ask_index=i, domain=held.domain, held=held.model_copy(deep=True), ask=ask), True
-    if picked is None and key is not None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
-        # A candidate question is keyed by position; its code (the payload key) still picks.
-        picked = next((o for o in pending.options if o.payload.get("key") == key), None)
     number = _number(ask)
-    if picked is None and number is not None and _numbered(pending):
+    if picked is None and number_runs_question(ask, pending):
         # R5-1: a bare number (the reply's free value or a row pick) names the printed position; past the end it
         # is asked again, never a wrong row and never a typed value.
         picked = _nth(_numbered(pending), number)
