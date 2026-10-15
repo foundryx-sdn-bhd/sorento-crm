@@ -179,7 +179,7 @@ def _frozen_line(line: dict) -> dict:
 
 def _stamp(db, snapshot_id: str, minutes_ago: int) -> None:
     db.execute(
-        text("UPDATE stock_debt_snapshots SET created_at = :t WHERE id = :i"),
+        text("UPDATE projects.stock_debt_snapshots SET created_at = :t WHERE id = :i"),
         {"t": datetime.utcnow() - timedelta(minutes=minutes_ago), "i": snapshot_id},
     )
     db.flush()
@@ -258,6 +258,68 @@ def _switch_user(scm_app):
     return app, db, uid
 
 
+def _grant(db, user_id: str, slug: str) -> None:
+    """Give `user_id` one more permission slug through a role of its own."""
+    from app.models.user import UserRoleAssignment
+    from tests.scm.conftest import _ensure_permission_row_committed
+
+    _ensure_permission_row_committed(slug)
+    role_id = _u()
+    db.execute(
+        text(
+            "INSERT INTO user_roles (id, slug, name, is_trashed, is_protected, "
+            "is_default, created_at) VALUES (:id, :slug, :name, false, false, false, now())"
+        ),
+        {"id": role_id, "slug": f"zzt-grant-{role_id[:8]}", "name": f"ZZT grant {role_id[:8]}"},
+    )
+    permission_id = db.execute(
+        text("SELECT id FROM user_permissions WHERE slug = :s"), {"s": slug}
+    ).scalar()
+    db.execute(
+        text(
+            "INSERT INTO user_role_permissions (id, role_id, permission_id, assigned_at) "
+            "VALUES (:id, :r, :p, now())"
+        ),
+        {"id": _u(), "r": role_id, "p": permission_id},
+    )
+    db.add(UserRoleAssignment(user_id=user_id, role_id=role_id))
+    db.flush()
+
+
+PROJECTS_VIEW = "projects.projects.view"
+
+
+def _client_oi(scm_app):
+    """`_client` plus `projects.projects.view`: the OI rows on a line are project data and
+    are only served to a caller who holds it (security L1)."""
+    app, db = _client(scm_app)
+    _grant(db, _uid_of(app, scm_app), PROJECTS_VIEW)
+    return app, db
+
+
+def _issue_key(db) -> str:
+    """An API key whose act-as user holds the Stock Debt view permission."""
+    from app.models.integration import Integration
+    from app.models.user import User, UserRoleAssignment
+    from app.services.integration_key_service import IntegrationKeyService
+
+    user = User(
+        id=_u(), email=f"{_u()}@integrations.local", name="ZZTSN key user",
+        status="ACTIVE", is_integration=True,
+    )
+    db.add(user)
+    db.flush()
+    _grant(db, user.id, VIEW)
+    integration = Integration(
+        name=f"ZZTSN-{_u()[:8]}", type="autocount_esb", act_as_user_id=user.id, is_active=True,
+    )
+    db.add(integration)
+    db.flush()
+    key = IntegrationKeyService(db).issue_key(integration)
+    db.flush()
+    return key
+
+
 # --------------------------------------------------------------------------- AC-1 / AC-2
 
 
@@ -319,9 +381,30 @@ def test_a_120_character_name_is_accepted(scm_app):
 # --------------------------------------------------------------------------- AC-3 / AC-4 / AC-5
 
 
-def test_stored_rows_equal_the_live_list(scm_app):
+def _case_extra(name: str, bin_, product_ids=None) -> dict:
+    return {
+        "book_project": {"book": "project"},
+        "book_retail": {"book": "retail"},
+        "projected": {"projected": True},
+        "only_debt_false": {"only_debt": False},
+        "supplier_none": {"supplier_ids": ["none"]},
+        "date_range": {
+            "date_from": _months_ahead(1).replace(day=1).isoformat(),
+            "date_to": _months_ahead(3).isoformat(),
+        },
+        "location": {"location": [str(bin_.id)]},
+        "exclude_location": {"exclude_location": [str(bin_.id)]},
+    }[name]
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["book_project", "book_retail", "projected", "only_debt_false", "supplier_none",
+     "date_range", "location", "exclude_location"],
+)
+def test_stored_rows_equal_the_live_list(scm_app, case):
     """AC-3: every StockDebtRow field, the order, the months axis, tba_month and totals match
-    the live list for the same filters."""
+    the live list for the same filters, under each filter family."""
     app, db = _client(scm_app)
     marker = _marker()
     pool, bin_ = _pool_world(db, marker)
@@ -337,19 +420,22 @@ def test_stored_rows_equal_the_live_list(scm_app):
             so_number=f"{marker}-SOT-{stem}",
         )
     db.flush()
+    filters = {**_filters(marker), **_case_extra(case, bin_)}
 
     with TestClient(app) as c:
-        header = _taken(c, marker)
-        live = c.get(BASE, params={**_filters(marker), "limit": 200}).json()
+        resp = c.post(SNAP, json={"name": f"{marker} {case}", "filters": filters})
+        assert resp.status_code == 201, resp.text
+        header = resp.json()
+        live = c.get(BASE, params={**filters, "limit": 200}).json()
         stored = _rows(c, header["id"])
         got_header = c.get(f"{SNAP}/{header['id']}").json()
 
-    assert len(live["data"]) == 3
     assert [_strip(r, ROW_EXTRAS) for r in stored["data"]] == live["data"]
     assert got_header["months"] == live["months"]
     assert got_header["tba_month"] == live["tba_month"]
     assert got_header["totals"] == live["totals"]
-    assert stored["pagination"]["total"] == 3
+    assert stored["pagination"]["total"] == live["pagination"]["total"]
+    assert header["row_count"] == live["pagination"]["total"]
 
 
 def test_stored_lines_equal_the_live_drill_per_bucket(scm_app):
@@ -385,7 +471,7 @@ def test_stored_lines_equal_the_live_drill_per_bucket(scm_app):
 def test_each_line_stores_its_order_inquiry_rows(scm_app):
     """AC-5: a line with two OI rows stores both with the frozen shape; a line with none
     stores []."""
-    app, db = _client(scm_app)
+    app, db = _client_oi(scm_app)
     marker = _marker()
     product, _bin, _pool, lines = _book(db, marker)
     near = lines["near"][1]
@@ -484,7 +570,7 @@ def test_more_rows_than_the_cap_is_refused_and_nothing_is_stored(scm_app, monkey
     assert resp.status_code == 422, resp.text
     assert "Narrow the filters first" in resp.text, resp.text
     stored = db.execute(
-        text("SELECT count(*) FROM stock_debt_snapshots WHERE name = :n"),
+        text("SELECT count(*) FROM projects.stock_debt_snapshots WHERE name = :n"),
         {"n": f"{marker} too big"},
     ).scalar()
     assert stored == 0
@@ -690,7 +776,7 @@ def test_now_reads_the_cancelled_order_and_zero_open_qty(scm_app):
 def test_requestable_turns_false_once_a_reserve_request_is_open(scm_app):
     """AC-12: an ORDER row in a raised inquiry with quantity left is requestable; after a
     reserve request is created on it the live read says not requestable, `requested`."""
-    app, db = _client(scm_app)
+    app, db = _client_oi(scm_app)
     marker = _marker()
     product, _bin, _pool, lines = _book(db, marker)
     inquiry, row, _so_line = _oi_on(db, lines["near"][1], qty="20")
@@ -719,7 +805,7 @@ def test_requestable_turns_false_once_a_reserve_request_is_open(scm_app):
 def test_a_parked_request_reads_parked_and_a_later_row_is_after_snapshot(scm_app):
     """AC-12: a parked request is `parked`; an OI row linked to the line after the snapshot
     is appended with `after_snapshot: true` and the frozen rows do not carry the flag."""
-    app, db = _client(scm_app)
+    app, db = _client_oi(scm_app)
     marker = _marker()
     product, _bin, _pool, lines = _book(db, marker)
     inquiry, row, so_line = _oi_on(db, lines["near"][1], qty="20")
@@ -881,20 +967,16 @@ def test_delete_is_a_destructive_creator_only_deferred_action(scm_app):
         assert outcome["last_outcome"]["status"] == "committed", outcome["last_outcome"]
         gone = c.get(f"{SNAP}/{mine}")
         header_rows = db.execute(
-            text("SELECT count(*) FROM stock_debt_snapshots WHERE id = :i"), {"i": mine},
+            text("SELECT count(*) FROM projects.stock_debt_snapshots WHERE id = :i"), {"i": mine},
         ).scalar()
         stray_rows = db.execute(
-            text("SELECT count(*) FROM stock_debt_snapshot_rows WHERE snapshot_id = :i"),
+            text("SELECT count(*) FROM projects.stock_debt_snapshot_rows WHERE snapshot_id = :i"),
             {"i": mine},
         ).scalar()
 
         _switch_user(scm_app)
         attempt = _park_delete(c, theirs)
-        if attempt.status_code == 202:
-            outcome = _lapse_and_poll(c, db, theirs, attempt.json()["id"]).json()
-            assert outcome["last_outcome"]["status"] == "failed", outcome["last_outcome"]
-        else:
-            assert attempt.status_code == 404, attempt.text
+        assert attempt.status_code == 404, attempt.text
         still = c.get(f"{SNAP}/{theirs}")
 
     assert gone.status_code == 404
@@ -1192,3 +1274,229 @@ def test_an_api_key_principal_cannot_write(scm_app, monkeypatch):
     for name, resp in (("create", posted), ("decision", put), ("export", exported)):
         assert resp.status_code in (401, 403), (name, resp.status_code, resp.text)
     assert db.execute(text("SELECT count(*) FROM user_downloads")).scalar() == downloads_before
+
+
+# =========================================================================== #
+# Round 2: review and security findings
+# =========================================================================== #
+
+
+def test_both_tables_live_in_the_projects_schema():
+    """R1 (ADR-0011)."""
+    from app.models.stock_debt_snapshot import StockDebtSnapshot, StockDebtSnapshotRow
+
+    assert StockDebtSnapshot.__table__.schema == "projects"
+    assert StockDebtSnapshotRow.__table__.schema == "projects"
+
+
+def test_oi_rows_need_projects_view_as_well(scm_app):
+    """R2 (security L1): holding only Stock Debt view gets `oi_rows: []` on every line; the
+    same snapshot read by a caller who also holds `projects.projects.view` shows them."""
+    app, db = _client(scm_app)
+    marker = _marker()
+    product, _bin, _pool, lines = _book(db, marker)
+    _oi_on(db, lines["near"][1], qty="20")
+
+    with TestClient(app) as c:
+        sid = _taken(c, marker)["id"]
+        row_id = _row_id(c, sid, product.product_code)
+        without = _lines(c, sid, row_id)
+        _grant(db, _uid_of(app, scm_app), PROJECTS_VIEW)
+        with_grant = _lines(c, sid, row_id)
+
+    assert without, "the lines themselves are still served"
+    assert all(line["oi_rows"] == [] for line in without), without
+    near = next(l for l in with_grant if l["so_number"] == f"{marker}-SO-near")
+    assert len(near["oi_rows"]) == 1
+
+
+def test_an_api_key_principal_cannot_read_snapshots(scm_app):
+    """R3 (security L2): the four reads are session only."""
+    app, db = _client(scm_app)
+    marker = _marker()
+    product, *_ = _book(db, marker)
+    with TestClient(app) as c:
+        sid = _taken(c, marker)["id"]
+        row_id = _row_id(c, sid, product.product_code)
+    key = _issue_key(db)
+    _app, _db, gcu, gcuak = scm_app
+    app.dependency_overrides.pop(gcu, None)
+    app.dependency_overrides.pop(gcuak, None)
+    headers = {"X-API-Key": key}
+
+    with TestClient(app) as c:
+        got = {
+            "list": c.get(SNAP, headers=headers),
+            "header": c.get(f"{SNAP}/{sid}", headers=headers),
+            "rows": c.get(f"{SNAP}/{sid}/rows", headers=headers),
+            "lines": c.get(f"{SNAP}/{sid}/rows/{row_id}/lines", headers=headers),
+        }
+
+    for name, resp in got.items():
+        assert resp.status_code in (401, 403), (name, resp.status_code, resp.text)
+
+
+def _audit_entries(db, row_id: str, sid: str) -> list:
+    return db.execute(
+        text(
+            "SELECT action, entity_type, entity_id, root_entity_id, description, "
+            "CAST(new_values AS text) AS new_values FROM audit_logs "
+            "WHERE entity_id = :r OR root_entity_id = :s OR entity_id = :s"
+        ),
+        {"r": row_id, "s": sid},
+    ).mappings().all()
+
+
+def test_each_decision_and_each_clear_writes_one_audit_entry(scm_app):
+    """R4 (security L3): one audit entry per successful PUT, naming the snapshot row and the
+    snapshot; clearing is audited too."""
+    app, db = _client(scm_app)
+    marker = _marker()
+    product, _bin, pool, _lines_ = _book(db, marker)
+
+    with TestClient(app) as c:
+        sid = _taken(c, marker)["id"]
+        row_id = _row_id(c, sid, product.product_code)
+        before = _audit_entries(db, row_id, sid)
+        base = len(before)
+        assert _decide(c, sid, row_id, decision="buy", note="why").status_code == 200
+        after_set = _audit_entries(db, row_id, sid)
+        assert _decide(c, sid, row_id).status_code == 200
+        after_clear = _audit_entries(db, row_id, sid)
+        refused = _decide(c, sid, row_id, decision="maybe")
+        after_refused = _audit_entries(db, row_id, sid)
+
+    assert len(after_set) == base + 1, [dict(e) for e in after_set]
+    assert len(after_clear) == base + 2, [dict(e) for e in after_clear]
+    assert refused.status_code == 422
+    assert len(after_refused) == base + 2, "a refused decision must not be audited"
+    newest = [e for e in after_set if e not in before]
+    printed = json.dumps([dict(e) for e in newest], default=str)
+    assert row_id in printed, printed
+    assert sid in printed, printed
+
+
+def test_a_query_over_200_characters_is_refused_and_nothing_is_stored(scm_app):
+    """R5 (security L4)."""
+    app, db = _client(scm_app)
+    marker = _marker()
+    _book(db, marker)
+
+    with TestClient(app) as c:
+        resp = c.post(
+            SNAP,
+            json={"name": f"{marker} long", "filters": {"query": "q" * 201, "only_debt": False}},
+        )
+
+    assert resp.status_code == 422, resp.text
+    stored = db.execute(
+        text("SELECT count(*) FROM projects.stock_debt_snapshots WHERE name = :n"),
+        {"n": f"{marker} long"},
+    ).scalar()
+    assert stored == 0
+
+
+@pytest.mark.parametrize("field", ["location", "exclude_location", "supplier_ids"])
+def test_a_malformed_id_in_the_filters_is_422_not_500(scm_app, field):
+    """R6: a non-UUID in any id list is 422, and nothing is stored."""
+    app, db = _client(scm_app)
+    marker = _marker()
+    _book(db, marker)
+
+    with TestClient(app, raise_server_exceptions=False) as c:
+        resp = c.post(
+            SNAP,
+            json={"name": f"{marker} bad", "filters": {**_filters(marker), field: ["not-a-uuid"]}},
+        )
+
+    assert resp.status_code == 422, resp.text
+    stored = db.execute(
+        text("SELECT count(*) FROM projects.stock_debt_snapshots WHERE name = :n"),
+        {"n": f"{marker} bad"},
+    ).scalar()
+    assert stored == 0
+
+
+def test_supplier_none_stays_a_valid_filter_value(scm_app):
+    """R6: `none` means 'no supplier' and is not an id."""
+    app, db = _client(scm_app)
+    marker = _marker()
+    _book(db, marker)
+
+    with TestClient(app) as c:
+        resp = _take(c, marker, supplier_ids=["none"])
+
+    assert resp.status_code == 201, resp.text
+
+
+def test_parking_a_delete_with_a_malformed_id_is_a_4xx(scm_app):
+    """R6: `stock_debt_snapshot.delete` on a non-UUID entity id never reaches a 500."""
+    app, db = _client(scm_app)
+
+    with TestClient(app, raise_server_exceptions=False) as c:
+        resp = _park_delete(c, "not-a-uuid")
+
+    assert 400 <= resp.status_code < 500, (resp.status_code, resp.text)
+
+
+def test_a_row_of_one_snapshot_is_not_reachable_under_another(scm_app):
+    """S2: snapshot A's row id addressed under snapshot B is 404 on lines and decision."""
+    app, db = _client(scm_app)
+    marker = _marker()
+    product, *_ = _book(db, marker)
+
+    with TestClient(app) as c:
+        a = _taken(c, marker, name=f"{marker} a")["id"]
+        b = _taken(c, marker, name=f"{marker} b")["id"]
+        a_row = _row_id(c, a, product.product_code)
+        lines = c.get(f"{SNAP}/{b}/rows/{a_row}/lines")
+        decision = _decide(c, b, a_row, decision="buy")
+        own = c.get(f"{SNAP}/{a}/rows/{a_row}/lines")
+        untouched = c.get(f"{SNAP}/{a}").json()
+
+    assert lines.status_code == 404, lines.text
+    assert decision.status_code == 404, decision.text
+    assert own.status_code == 200
+    assert untouched["decided_count"] == 0
+
+
+def test_parking_a_delete_on_another_companys_snapshot_is_refused(scm_app):
+    """S2: the same creator, scoped to another company, cannot park the delete."""
+    app, db = _client(scm_app)
+    marker = _marker()
+    _book(db, marker)
+
+    with TestClient(app) as c:
+        sid = _taken(c, marker)["id"]
+        other = str(uuid.uuid4())
+        db.execute(
+            text(
+                "INSERT INTO companies (id, name, code, is_active, created_at) "
+                "VALUES (:i, :n, :c, true, now())"
+            ),
+            {"i": other, "n": f"{marker} other co", "c": f"{marker}-OC-{other[:8]}"},
+        )
+        db.flush()
+        from app.models.base import set_company_scope
+        from app.services.company_scope_resolver import apply_company_scope
+
+        scope = frozenset({other})
+        set_company_scope(db, scope)
+
+        async def _scope():
+            set_company_scope(db, scope)
+            return scope
+
+        app.dependency_overrides[apply_company_scope] = _scope
+        attempt = _park_delete(c, sid)
+        set_company_scope(db, frozenset({SORENTO_COMPANY_ID}))
+
+        async def _back():
+            set_company_scope(db, frozenset({SORENTO_COMPANY_ID}))
+            return frozenset({SORENTO_COMPANY_ID})
+
+        app.dependency_overrides[apply_company_scope] = _back
+        still = c.get(f"{SNAP}/{sid}")
+
+    assert 400 <= attempt.status_code < 500, (attempt.status_code, attempt.text)
+    assert still.status_code == 200
