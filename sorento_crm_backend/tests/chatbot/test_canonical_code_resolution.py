@@ -577,7 +577,13 @@ def test_the_entities_only_arm_sends_dry_run_through_to_the_resolver(session_fac
 
 
 def test_the_entities_only_arm_places_the_canonical_code_on_the_typed_row(session_factory, seeded, monkeypatch):
+    """Owner Q5 / AC-130: with `entities_only` = default (seed) a bare resolved code is answered for
+    its default domain, so the entities-only arm this test guards no longer runs. The row is set to
+    `ask` here to keep exercising the arm (the canonical code landing on the typed row)."""
+    from tests.chatbot.test_clarify_policy_table import _write_all_rows
     from tests.chatbot.test_entities_only_arm import MATCHES, PRODUCT_A_CODE, PRODUCT_A_UUID
+
+    _write_all_rows(session_factory(), entities_only={"mode": "ask"})
 
     qf = _parser_output(domain_hint=None, intent_hint=None, asks=[], entities=[_entity(f"TAP {PRODUCT_A_CODE}", PRODUCT_A_CODE)])
     result, _captured = _run_turn(

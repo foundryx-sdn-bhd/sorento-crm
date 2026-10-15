@@ -260,6 +260,12 @@ def _assert_reading(n: int, text_body: str, expected: str, reply: str, calls, pr
 
 
 def test_owner_hand_test_replayed_in_order(session_factory, monkeypatch) -> None:
+    # CLARIFY-POLICY R2 (owner 11 Oct 2026): turn 7 names a new customer over the carried
+    # product, which by default now gets the carried-subject question first; this replay pins
+    # the DO list reading, so the row is set to `carry` (today's combine).
+    from tests.chatbot.test_clarify_policy_table import _write_all_rows
+
+    _write_all_rows(session_factory(), carry_combine={"mode": "carry"})
     chat = _Replay(session_factory, monkeypatch)
     for n, (text_body, qf, expected) in enumerate(OWNER_TURNS, start=1):
         reply, calls, projected = chat.turn(text_body, qf)

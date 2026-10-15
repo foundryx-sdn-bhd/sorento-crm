@@ -24,7 +24,7 @@ import copy
 from dataclasses import replace
 from typing import Any
 
-from app.services.chatbot import contracts
+from app.services.chatbot import clarify_policy, contracts
 from app.services.chatbot.turn import refer
 from app.services.chatbot.turn import task as task_mod
 from app.services.chatbot.turn.decide import (
@@ -729,6 +729,58 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
 
     if pending is None:
         return focus, None, None, False
+
+    if pending.kind == clarify_policy.CARRY_SCOPE:
+        # CLARIFY-POLICY AC-143: 1 keeps the carried subject, 2 or the parser's `all` drops it
+        # from this ask; either way the asked question runs in its own domain.
+        keeps = clarify_policy.carry_scope_keeps(
+            pending, verdict or {}, list(decision.positions) if decision.answers else []
+        )
+        if keeps is not None:
+            if not keeps:
+                _set_kind_field(focus, str(pending.payload.get("kind") or ""), [])
+            focus.domains = list(pending.payload.get("domains") or focus.domains)
+            trace.rules_fired.append("carry_scope_kept" if keeps else "carry_scope_dropped")
+            return focus, None, None, True
+        v = verdict or {}
+        if v.get("topic_reset") is True or v.get("message_type") in ("escalation", "request_for_help"):
+            # A reset or a hand-off request closes the open carry question; the turn runs as
+            # itself (the reset empties the focus, the escalation lane takes the request).
+            trace.rules_fired.append("carry_scope_closed")
+            return focus, None, None, False
+        names_own = any(isinstance(e, dict) and e.get("current_message") is True for e in v.get("entities") or [])
+        answer_shaped = any(
+            v.get(key) for key in ("date_filter_start", "date_filter_end", "date_mode", "demand_qty")
+        )
+        asked_domains = {str(d) for d in pending.payload.get("domains") or ()}
+        same_domain = v.get("domain_in_message") is not True or not v.get("domain_hint") or (
+            str(v.get("domain_hint")) in asked_domains
+        )
+        if not names_own and answer_shaped and same_domain:
+            # CLARIFY-POLICY AC-146: a message that only adds a value to the held ask (a bare
+            # month, or "delivery in october" naming the asked domain again) without answering
+            # the open carry question gets the SAME question again, never a fetch over both
+            # subjects; the value is kept for the ask it belongs to (round 6), and the repeat
+            # counts for the loop breaker.
+            if decision.window:
+                focus.date_window = dict(decision.window)
+            trace.rules_fired.append("carry_scope_asked_again")
+            trace.rules_fired.append(f"{clarify_policy.CARRY_KIND_RULE}{pending.payload.get('kind') or ''}")
+            return (
+                focus,
+                pending,
+                Plan(domains=[], fetch=[], ask=pending, denied=[], trace=trace),
+                False,
+            )
+        if not names_own and not same_domain:
+            # A new ask in another domain naming no subject of its own: the held subject was put
+            # back on the focus only for the carry question, so it leaves with that question and
+            # the turn runs on the focus today's rules would have given it.
+            _set_kind_field(focus, str(pending.payload.get("kind") or ""), [])
+            trace.rules_fired.append("carry_scope_closed")
+            return focus, None, None, False
+        # Anything else ("thanks"): the turn runs as itself and the question stays open.
+        return focus, pending, None, False
 
     if pending.kind in OUTSTANDING_KINDS:
         # BEFORE the generic roster path: these options are a SCOPE, not an entity to
@@ -2155,6 +2207,44 @@ def _lane_of(verdict: dict[str, Any], domains: list[str], policy: Policy) -> str
     return None
 
 
+#: CLARIFY-POLICY AC-130: the rule a generic menu answered for its subject records.
+SUBJECT_DEFAULT_RULE = "generic_menu_answers_the_subject"
+
+#: The lane each generic menu row governs (AC-130, AC-132).
+_MENU_LANE_ROWS = {"entities_only": "entities_only", "clarification": "generic_menu"}
+
+
+def _subject_default_domain(verdict: dict[str, Any], lane: str | None, policy: Policy) -> str | None:
+    """The domain a generic menu turn is answered in instead (AC-130), or None to keep the menu:
+    the lane is a generic menu, its row is `default`, and the message named a RESOLVED subject
+    (a `canonical_code`) whose kind narrows a domain. Parsed fields only."""
+    row = _MENU_LANE_ROWS.get(lane or "")
+    # Live check 13 Oct: the parser types a bare code `unknown`, which lands on the casual
+    # lane (the LLM clarifier, which cannot place a code); a resolved PRODUCT there is the same
+    # bare-subject turn as `entities_only`. A bare customer name stays casual (main's B1(b)).
+    products_only = lane == "casual" and verdict.get("message_type") == "unknown"  # reviewer B1
+    if products_only:
+        row = "entities_only"
+    if row is None or policy.clarify_mode(row) != "default":
+        return None
+    for e in verdict.get("entities") or []:
+        if (
+            isinstance(e, dict)
+            and e.get("current_message") is True
+            and e.get("canonical_code")
+            and e.get("confident") is not False  # an unsure read is no resolved subject
+            and (not products_only or is_product_shaped_entity(e))
+        ):
+            # The kind's own resolver domain when it is one (a product's is master_products,
+            # the product card), else the first domain that narrows on the kind.
+            kind = policy.kind(str(e.get("hint") or ""))
+            source = kind.resolver_source if kind is not None else ""
+            domain = source if policy.domain(source) is not None else _domain_of_kind(policy, e.get("hint"))
+            if domain:
+                return domain
+    return None
+
+
 def is_product_shaped_entity(entity: dict[str, Any]) -> bool:
     """A current-message entity this arm should resolve: `hint == "product"`, or no
     hint at all but a raw token SHAPED like a product code - letters and digits both
@@ -3499,6 +3589,21 @@ def _apply(
     # PR #1401 fix round 4: the word that settled a sales report drill pick is not a
     # subject, so it never reaches the focus to be carried into the next turn.
     entities = without_the_drill_pick_words(entities, state.pending, trace)
+    # CLARIFY-POLICY S4 (R2, Q9; AC-140..AC-145): decided on the subject the contact HELD
+    # before this message (`state.focus`), before the focus rules below decide what to keep:
+    # a held subject the new ask could use, that the message neither restated nor clearly
+    # referred to, is asked about before anything is fetched (rows `carry_combine` /
+    # `carry_unclear`). `carry` mode leaves today's rules to decide, byte for byte.
+    carry = clarify_policy.carry_conflict(
+        state.focus,
+        verdict,
+        decision,
+        policy,
+        turn_no=state.turn_no,
+        candidates=candidates,
+        answers_task=task_outcome.fetch is not None or bool(task_outcome.closed_kinds),
+        own_customer_ids=getattr(state.profile, "own_customer_ids", None),
+    )
     focus = _focus_rules(
         focus_after_pending,
         verdict,
@@ -3508,6 +3613,21 @@ def _apply(
         domain_override=domain_override,
         trace=trace,
     )
+    # CLARIFY-POLICY (reviewer S1): the held order ask's own delivery reading (parser fields).
+    focus.delivery_ask = clarify_policy.delivery_reading(verdict, focus.delivery_ask)
+    if carry is not None:
+        trace.rules_fired.append(f"carry_{carry.action}")
+        if carry.action == "drop":
+            _set_kind_field(focus, carry.kind, [])
+        elif carry.action == "ask":
+            trace.rules_fired.append(f"{clarify_policy.CARRY_KIND_RULE}{carry.kind}")
+            # The held subject stays on the focus beside the new one (today's rules may have
+            # dropped it), so the answer can keep it (1) or drop it (2).
+            if not getattr(focus, carry.field, None):
+                _set_kind_field(focus, carry.kind, copy.deepcopy(getattr(state.focus, carry.field, None) or []))
+            return replace(state, focus=focus, pending=None), Plan(
+                domains=[], fetch=[], ask=carry.pending, denied=[], trace=trace
+            )
     # Ported from PR #1118 (not merged). AFTER the focus rules, never before: a topic
     # reset rebuilds the focus from `RESET_KEEPS` alone, and the tasks it KEEPS (the
     # ones aimed elsewhere, parked by D23) are what the task step above already
@@ -3631,6 +3751,17 @@ def _apply(
         ideation=state.ideation,
     )
     trace.lane = _lane(verdict, domains, policy, barred=escalation_barred(state.profile))
+    # Not while a question is open: an entity-bearing reply to it keeps today's handling.
+    subject_domain = _subject_default_domain(verdict, trace.lane, policy) if pending_after is None else None
+    if subject_domain is not None:
+        # CLARIFY-POLICY AC-130 (Q5, rows `entities_only` / `generic_menu` = default): a
+        # resolved subject and no domain is answered in the subject kind's own domain, not a
+        # menu; the reply's "Something else?" line is added at the reply choke point
+        # (`clarify_policy.apply_loop_breaker`), which reads this rule.
+        domains = [subject_domain]
+        focus.domains = [subject_domain]
+        trace.lane = None
+        trace.rules_fired.append(SUBJECT_DEFAULT_RULE)
 
     if _continues_open_draft(state.ideation, verdict, decision, focus, trace.lane, policy):
         # Issue #1178: a question about the intake's own question ("what do you mean

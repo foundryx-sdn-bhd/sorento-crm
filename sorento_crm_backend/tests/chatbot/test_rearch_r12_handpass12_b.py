@@ -355,7 +355,15 @@ class TestGroupCRerunOnMissForTypedRecordKey:
     ) -> None:
         """A typed PRODUCT over a carried customer is a FILTER, never a RECORD KEY -
         exactly ONE orders tool call on a miss, no rerun. Expected green today; it
-        is the guard."""
+        is the guard.
+
+        CLARIFY-POLICY (owner rule 13 Oct 2026, "always ask when we are unclear"): by default
+        this shape now gets the carried-subject question first (`carry_combine` = ask); the
+        guard here is the rerun rule, so the row is pinned to `carry` (combine, today's
+        filter)."""
+        from tests.chatbot.test_clarify_policy_table import _write_all_rows
+
+        _write_all_rows(session_factory(), carry_combine={"mode": "carry"})
         _seed_contact_and_get(session_factory)
         customer_id = _seed_customer(session_factory, name="ZZT C3 CUSTOMER")
         code = unique_code("C3PROD")

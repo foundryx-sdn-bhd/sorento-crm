@@ -146,6 +146,11 @@ class Focus:
     domains: list[str] = field(default_factory=list)
     document: list[str] = field(default_factory=list)
     status: str | None = None
+    # CLARIFY-POLICY (reviewer S1): the parser's own reading of the held order ask as a
+    # DELIVERY ask (its `requested_attributes` / `document` / `order_status`), so a refine that
+    # names only a new subject ("how about <code>") words the carried-subject question the
+    # same way. None = never read (a focus stored before this slot, or no order ask yet).
+    delivery_ask: bool | None = None
     # PLAN-chatbot-sales-report.md S4 wiring point 2: the sales report's own channel
     # filter ("dealer" / "project" / None), an axis of the same kind as `status` and
     # carried the same way. A sales report ask that stopped at the customer picker, or
@@ -240,6 +245,11 @@ class Profile:
     # PHOTO-SEND-CAP round 2 (owner, 9 Oct 2026): `respond_contacts.chatbot_files_as_links`,
     # the A/B switch. Default OFF: an unresolved contact gets files as attachments (today).
     files_as_links: bool = False
+    # CLARIFY-POLICY S4: the customers this contact's own customer scope pins it to (the
+    # enforced links, `lanes/business/services.customer_scope`), set by `engine.py` once the
+    # scope is read; () for a contact with none enforced, None while not yet read. Such a
+    # customer is the contact's own account, never a subject carried from an earlier question.
+    own_customer_ids: tuple[str, ...] | None = None
 
 
 def offers_escalation(profile: "Profile | None") -> bool:
@@ -309,6 +319,7 @@ FOCUS_LIST_FIELDS = (
 def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire: dict[str, Any] = {name: list(getattr(focus, name)) for name in FOCUS_LIST_FIELDS}
     wire["status"] = focus.status
+    wire["delivery_ask"] = focus.delivery_ask
     wire["sales_channel"] = focus.sales_channel
     wire["date_window"] = focus.date_window
     wire["sort"] = dict(focus.sort) if focus.sort else None
@@ -366,6 +377,8 @@ def focus_from_wire(raw: Any) -> Focus:
     if not isinstance(status, str):
         status = raw.get("order_status")
     focus.status = status if isinstance(status, str) else None
+    delivery_ask = raw.get("delivery_ask")
+    focus.delivery_ask = delivery_ask if isinstance(delivery_ask, bool) else None
     channel = raw.get("sales_channel")
     focus.sales_channel = channel if isinstance(channel, str) else None
     window = raw.get("date_window")

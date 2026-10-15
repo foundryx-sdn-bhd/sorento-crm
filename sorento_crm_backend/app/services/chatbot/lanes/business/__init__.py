@@ -29,6 +29,7 @@ from app.services.chatbot import contracts
 from app.services.chatbot import copy as reply_copy
 from app.services.chatbot import jsc
 from app.services.chatbot.lanes.business import brand_guard
+from app.services.chatbot import clarify_policy
 from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
@@ -1575,7 +1576,8 @@ def run_fetch(
         names_by_id = so_status.customer_names(db, customer_ids)
         start = do_ask._parse(parse_output.get("date_filter_start"))
         end = do_ask._parse(parse_output.get("date_filter_end"))
-        skip_period = do_ask.skips_period_questions(ctx)
+        # CLARIFY-POLICY AC-114: `so_period` set to `default` takes the skip switch's path.
+        skip_period = do_ask.skips_period_questions(ctx) or clarify_policy.mode_of(ctx, "so_period") == "default"
         asked = None if skip_period else so_status.period_reply(start, end, family_words(list(names_by_id.values())))
         if skip_period:
             if start is not None and end is None:
@@ -1654,7 +1656,8 @@ def run_fetch(
         access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
         granted_raw = access_ctx.get("attributes")
         granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
-        if _OUTSTANDING_SO_GRANT in granted:
+        # CLARIFY-POLICY AC-115: `outstanding_scope` set to `default` never asks (scope both).
+        if _OUTSTANDING_SO_GRANT in granted and clarify_policy.mode_of(ctx, "outstanding_scope") != "default":
             return _outstanding_scope_ask_from_filters(reask_filters, db=db)
 
     # ── the tier ask, with its per-tier probe ────────────────────────────────
@@ -1997,6 +2000,8 @@ def run_fetch(
             order_status_raw == "outstanding"
             and jsc.truthy(parse_output.get("outstanding_scope_ask_candidate"))
             and has_so_grant
+            # CLARIFY-POLICY AC-115: `default` asks nothing; the scope below is both.
+            and clarify_policy.mode_of(ctx, "outstanding_scope") != "default"
         ):
             return _outstanding_scope_ask(entities, semantic_input, db=db)
 
@@ -2282,7 +2287,9 @@ def run_fetch(
     # range, or a range over 31 days, is answered with one line and fetches nothing.
     # After the customer-scope backstop above (security S2), so the question never
     # names a customer outside the contact's links.
-    range_line = do_ask.range_reply(
+    # CLARIFY-POLICY AC-114: `do_period` set to `default` is the skip switch's path (no ask, no
+    # window) for every contact; the seed `ask` is today's question.
+    range_line = None if clarify_policy.mode_of(ctx, "do_period") == "default" else do_ask.range_reply(
         ctx=ctx,
         tool_name=tool_name,
         order_tools=fetch_mod.ORDER_TOOLS,

@@ -69,7 +69,7 @@ from app.services.chatbot.usage import CLARIFIER_FEATURE, record_parser_usage, r
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
 # is everything that has to touch a database or a tool on its behalf.
 from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
-from app.services.chatbot import quick_reply_guard
+from app.services.chatbot import clarify_policy, quick_reply_guard
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import question as turn_question
 from app.services.chatbot.turn import sub_asks as turn_sub_asks
@@ -3432,6 +3432,7 @@ def _run_turn(
                     switches=switches,
                 )
             media_box: dict[str, Any] = {"send_order": send_order_facts} if send_order_facts else {}
+            clarify_policy.remember_turn_limits(None)  # this turn's own policy read sets it
             result = _run_stages(
                 envelope,
                 session_factory=session_factory,
@@ -3460,6 +3461,11 @@ def _run_turn(
             # offload above rebuilds its result from a job that came through here, so it is
             # stamped too, and a duplicate reads `is_test` off the row it replays.
             result.is_test = dry_run
+            # CLARIFY-POLICY S1 (AC-1..AC-6): every arm has composed and stored its reply, so
+            # this is the one place that sees the turn's final ask: its fingerprint is stored
+            # with the reply, and a third identical clarification becomes the handover line.
+            # Before the language pass, so the replacement line is localized like any other.
+            clarify_policy.apply_loop_breaker(result, session_factory, turn_id=turn_id, dry_run=dry_run)
             try:
                 _localize_result(result, session_factory, dry_run)
             except Exception:  # noqa: BLE001 - a language pass never fails a turn that answered
@@ -4252,6 +4258,8 @@ def _run_stages_body(  # noqa: PLR0915
         latest_user_message = build_latest_user_message(envelope, session_block)
         # -- stage A's three shelves (PLAN "State: three shelves, one writer each") --- #
         policy = load_policy(db)
+        # CLARIFY-POLICY AC-113: the loop breaker reads this turn's limits, not the table.
+        clarify_policy.remember_turn_limits(dict(policy.clarify_limits))
         # Roster cap (PLAN-chatbot-answer-half-reattach.md, owner ruling 20 Sep 2026):
         # `{entity kind: chatbot_entity_kinds.roster_cap}`, read off the SAME policy
         # object every other per-kind fact (`did_you_mean`, `default_narrowing`) comes
@@ -5175,6 +5183,25 @@ def _run_stages_body(  # noqa: PLR0915
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
+        # CLARIFY-POLICY S4: the contact's own enforced links are known now, so the
+        # carried-subject check can read a held customer at all (never the contact's own
+        # account). The first plan was made before the scope was read; when the turn holds
+        # a customer it is made again, so a turn the resolver never re-enters is covered too.
+        state_in = dataclasses_replace(
+            state_in,
+            profile=dataclasses_replace(
+                state_in.profile,
+                own_customer_ids=tuple(str(i) for i in ((customer_scope or {}).get("ids") or ()))
+                if (customer_scope or {}).get("enforced")
+                else (),
+            ),
+        )
+        if state_in.focus.customers:
+            replanned_state, replanned = turn_apply(state_in, verdict, policy)
+            if any(str(r).startswith("carry_") for r in replanned.trace.rules_fired):
+                # Adopted only when the held customer changes the plan (an ask, a keep or a
+                # drop); any other turn keeps the plan the context above was built from.
+                state_out, plan = replanned_state, replanned
         # A turn whose only fetch is a GRANTED chat report is scoped by the asker rule (dealer only),
         # not by customer links, at the gate below; the turn's own `customer_scope` stays strict for
         # every other use (the lane applies `chat_report.scope_for` to its own fetch).
@@ -5417,6 +5444,9 @@ def _run_stages_body(  # noqa: PLR0915
                             if isinstance(e, dict)
                         )
                         and not _roster_is_outstanding(verdict, state_out.focus)
+                        # CLARIFY-POLICY AC-140: the carried-subject ask prints no customer
+                        # roster and fetches nothing, so nothing is probed for one.
+                        and getattr(plan.ask, "kind", None) != clarify_policy.CARRY_SCOPE
                     ),
                     # Rows 1 and 7: the promotion and purchase-order product rosters carry
                     # has promo / no promo and has PO / no PO, read the same way
@@ -6649,7 +6679,14 @@ def _run_stages_body(  # noqa: PLR0915
                             else {}
                         ),
                         envelope=envelopes[0],
-                        parser=answer_parse_output,
+                        # The window the fetch ran over (`_spec_window`, as the hit's scope
+                        # block reads it), so the miss header's Dates line never says "all
+                        # dates" above a fetch a carried window narrowed (live check 13 Oct).
+                        parser=(
+                            turn_runtime._spec_window(answer_parse_output, fetch_plan.fetch[0])
+                            if len(fetch_plan.fetch) == 1 and isinstance(answer_parse_output, dict)
+                            else answer_parse_output
+                        ),
                         ctx=ctx,
                         canned=copy_mod.resolve(db),
                         services=business_services.production_answer_services(db),

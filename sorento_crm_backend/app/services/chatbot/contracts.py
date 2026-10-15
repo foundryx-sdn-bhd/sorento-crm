@@ -703,6 +703,9 @@ class Focus(BaseModel):
     domains: list[str] = Field(default_factory=list)
     document: list[str] = Field(default_factory=list)
     status: str | None = None
+    # CLARIFY-POLICY (reviewer S1): `turn/state.py::Focus.delivery_ask`, the held order ask's
+    # own delivery reading (parser fields), None when never read.
+    delivery_ask: bool | None = None
     # PLAN-chatbot-sales-report.md S4 wiring point 2: the sales report's channel filter,
     # an axis beside `status` - `turn/state.py::Focus` carries the same field and
     # `focus_to_wire` writes it, one shape, not two.
