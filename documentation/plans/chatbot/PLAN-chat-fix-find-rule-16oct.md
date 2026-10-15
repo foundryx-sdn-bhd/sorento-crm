@@ -1,6 +1,7 @@
 # PLAN: chat fix, FIND rule text follows ruling R9 (lane CHAT-ADVISOR-SPIKE, chat-fix LEAD)
 
-Status: Proposed, waiting for a crew/owner ruling (16 Oct). Track: small fix (text only, under 50 lines, no
+Status: Text change MEASURED AND FAILED (16 Oct); a contract-enforcement replacement is proposed to crew (see
+"Measured" below). Crew ruling 16 Oct: R9 stands, own PR, no gold relabel. Track: small fix (text only, under 50 lines, no
 migration, no auth change). Branch `crew/chat-fix-find` off origin/main ccb1ce9820, worktree
 `sorento_crm-chat-fix-find`. Ships as its own PR before PR-A2 (rec) or folds into PR-A2 (crew to say).
 
@@ -48,3 +49,24 @@ v94 TRAIN 101/137 -> about 104-106.
 Two earlier decisions disagree: #1613's FIND text (relation never sets master_products) and crew's parser-gold
 ruling R9 (bare fit ask = product information). This plan follows R9. If #1613's choice stands instead, the gold
 label of G005 and its siblings changes rather than the text.
+
+## Measured (16 Oct, prompt v94, dev DB, dev key; spend $2.24)
+
+- Ablation, 6 fit items x 4 reps: A (R9 sentence) and B (A + no negated file-word list) tie: right 11/24 each, file
+  readings 13/24 each (main 10/12). B dropped (crew: remove the list only if the outputs show it causes the docs
+  reading; they do not).
+- TRAIN x2 on A: 102/137 both runs (main 101/137 both). Stable fixes G001, G008. Stable break G125 "MWC7625 cost"
+  (a code with its own fact word, gold purchase_cost): main right 3/4, A wrong 6/6. The explicit "domain_hint
+  master_products, intent_hint check_product" wording primes code + fact asks. Gate rule fails.
+- A2 (same meaning, no domain tokens), 5 items x 3 reps: fixes gone (G001 file reading 3/3), G125 1/3 wrong. Text
+  alone trades fit asks against code + fact asks. No second TRAIN run.
+- The file readings share one shape on the 4 main TRAIN runs: a find filter with NO file_word, no attachment_type,
+  domain_hint product_attachment: 17 parses (G001 G006 G007 G009 G014), gold product_info 17/17. With a file_word:
+  5 parses (G012 G019), gold attachments 5/5.
+
+## Proposed replacement (crew go pending)
+
+No prompt change: enforce the FIND rule's own contract on the parser's output. A parse with a find filter, no
+file_word, no attachment_type and domain_hint product_attachment, whose previous turn was not a file answer, is
+the fit's product information (R9). Reads parser fields only. Gate: unit tests, a replay over the recorded TRAIN
+outputs (17 wrong to right, 0 right to wrong offline), walkthrough fit rows. Parser input byte-identical.
