@@ -168,7 +168,8 @@ def test_a5_has_massage_is_a_boolean_registry_key(db):
     assert _registry(db, "has_massage").data_type == "boolean"
 
 
-@pytest.mark.parametrize("phrase", ["MASSAGE", "WHIRLPOOL", "JACUZZI", "AIR BUBBLE"])
+# Fix round 1 F2 (lead): the jet words carry the flag, the bare class name JACUZZI does not.
+@pytest.mark.parametrize("phrase", ["MASSAGE", "WHIRLPOOL", "AIR BUBBLE", "JETS"])
 def test_a5_a_tub_description_naming_massage_carries_the_flag(db, phrase):
     tub = _product(db, f"ZZT-TUB-{phrase[:3]}", "ZZT SORENTO BATHTUB", f"ZZT SORENTO BATHTUB WITH {phrase}")
     assert _values(db, tub).get("has_massage", {}).get("value") is True
@@ -177,6 +178,34 @@ def test_a5_a_tub_description_naming_massage_carries_the_flag(db, phrase):
 def test_a5_a_plain_tub_does_not_carry_the_flag(db):
     tub = _product(db, "ZZT-TUB-PLAIN", "ZZT SORENTO BATHTUB", "ZZT SORENTO BATHTUB 1700X800X600MM")
     assert _values(db, tub).get("has_massage", {}).get("value") is not True
+
+
+def _jacuzzi_category(db) -> None:
+    """A category coded like the catalogue's tub filing (`-JC`): its class is the broad
+    "Bathtub and Jacuzzi", as on the live catalogue."""
+    cat = ProductCategory(id=str(uuid.uuid4()), category_code="SRT-JC", category_name="SRT-JC")
+    db.add(cat)
+    db.flush()
+    backfill_category_signals(db)
+    _REFS["jc"] = cat.id
+
+
+def test_f2_an_accessory_filed_with_the_tubs_never_carries_the_flag(db):
+    """Fix round 1 F2 (live gate: SRTJC-PILLOW "JACUZZI PILLOW", SRTJC102-PARTS): the word
+    JACUZZI in an accessory's name is not a massage jet."""
+    _jacuzzi_category(db)
+    pillow = _product(db, "ZZT-JC-PILLOW", "ZZT SORENTO JACUZZI PILLOW", "ZZT SORENTO JACUZZI PILLOW", category="jc")
+    parts = _product(db, "ZZT-JC102-PARTS", "ZZT SORENTO JACUZZI PARTS", "ZZT SORENTO JACUZZI PARTS", category="jc")
+    assert _values(db, pillow).get("has_massage", {}).get("value") is not True
+    assert _values(db, parts).get("has_massage", {}).get("value") is not True
+
+
+def test_f2_a_jacuzzi_is_a_tub_with_massage_jets(db):
+    """A product whose own class is Jacuzzi carries the flag: the registry's class meaning
+    is "bathtub with massage jets" (owner ruling 16 Oct)."""
+    _jacuzzi_category(db)
+    jacuzzi = _product(db, "ZZT-JC-TUB", "ZZT SORENTO JACUZZI", "ZZT SORENTO JACUZZI 1700X800X650MM", category="jc")
+    assert _values(db, jacuzzi).get("has_massage", {}).get("value") is True
 
 
 def test_a5_a_water_closet_or_shower_set_naming_those_words_never_carries_it(db):
