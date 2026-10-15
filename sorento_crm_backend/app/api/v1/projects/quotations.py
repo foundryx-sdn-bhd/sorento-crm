@@ -68,10 +68,14 @@ CONFIG_VIEW = "projects.types.view"
 CONFIG_EDIT = "projects.types.edit"
 
 
-def _envelope(data: List[dict]):
+def _envelope(data: List[dict], *, total: Optional[int] = None, page: int = 1, limit: Optional[int] = None):
     return {
         "data": data,
-        "pagination": {"total": len(data), "page": 1, "limit": max(len(data), 1)},
+        "pagination": {
+            "total": len(data) if total is None else total,
+            "page": page,
+            "limit": limit if limit is not None else max(len(data), 1),
+        },
         "empty": not data,
     }
 
@@ -762,9 +766,11 @@ async def create_series(
 
         body = payload.model_dump(exclude_unset=True)
         category_ids = body.pop("category_ids", []) or []
+        brand_ids = body.pop("brand_ids", []) or []
         series = ProjectSeries(company_id=acting_company_id(db), **body)
         db.add(series)
         db.flush()
+        pricing.set_series_brands(db, series=series, brand_ids=brand_ids)
         pricing.set_series_categories(db, series=series, category_ids=category_ids)
         db.commit()
         db.refresh(series)
@@ -795,8 +801,11 @@ async def update_series(
 
         body = payload.model_dump(exclude_unset=True)
         category_ids = body.pop("category_ids", None)
+        brand_ids = body.pop("brand_ids", None)
         for field, value in body.items():
             setattr(series, field, value)
+        if brand_ids is not None:
+            pricing.set_series_brands(db, series=series, brand_ids=brand_ids)
         if category_ids is not None:
             pricing.set_series_categories(db, series=series, category_ids=category_ids)
         db.commit()
@@ -867,10 +876,14 @@ def _series_or_404(db: Session, series_id: str):
 )
 async def list_series_product_rows(
     series_id: str,
+    page: int = Query(1, ge=1, le=1000000),
+    limit: int = Query(50, ge=1, le=100),
+    query: Optional[str] = Query(None, max_length=200),
+    priced: bool = Query(False),
     _user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),
 ):
-    """The series' products with their price, percentage and derived floor (T2).
+    """One page of the series' products with their price, percentage and derived floor (T2).
 
     `/rows` rather than replacing the POST on `/products`: that path already means "load a
     list of codes onto this series" and quietly giving the same path a second meaning by
@@ -879,7 +892,10 @@ async def list_series_product_rows(
     try:
         validate_uuid_path(series_id, resource="Series")
         _series_or_404(db, series_id)
-        return _envelope(pricing.series_product_rows(db, series_id))
+        rows, total = pricing.series_product_rows(
+            db, series_id, page=page, limit=limit, query=query, priced_only=priced
+        )
+        return _envelope(rows, total=total, page=page, limit=limit)
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
 
@@ -1173,6 +1189,7 @@ def _serialize_series(
     from app.models.projects import (
         ProjectQuotation,
         ProjectSeries,
+        ProjectSeriesBrand,
         ProjectSeriesCategory,
         ProjectSeriesProduct,
     )
@@ -1220,15 +1237,18 @@ def _serialize_series(
     for link_series_id, product_code in product_links:
         nominated_products.setdefault(link_series_id, []).append(product_code)
 
-    brand_ids = {row.brand_id for row in rows if row.brand_id}
-    brand_names = {}
-    if brand_ids:
-        from app.models.product import Brand
+    # Picked brands, in brand-name order, for every series on the page in one query.
+    from app.models.product import Brand
 
-        brand_names = {
-            row.id: row.brand_name
-            for row in db.query(Brand).filter(Brand.id.in_(brand_ids)).all()
-        }
+    picked_brands: dict = {}
+    for link_series_id, brand_id, brand_name in (
+        db.query(ProjectSeriesBrand.series_id, Brand.id, Brand.brand_name)
+        .join(Brand, Brand.id == ProjectSeriesBrand.brand_id)
+        .filter(ProjectSeriesBrand.series_id.in_(ids))
+        .order_by(Brand.brand_name.asc(), Brand.id.asc())
+        .all()
+    ):
+        picked_brands.setdefault(link_series_id, []).append((brand_id, brand_name))
 
     from sqlalchemy import func
 
@@ -1247,8 +1267,8 @@ def _serialize_series(
             {
                 "id": row.id,
                 "name": row.name,
-                "brand_id": row.brand_id,
-                "brand_name": brand_names.get(row.brand_id or ""),
+                "brand_ids": [b[0] for b in picked_brands.get(row.id, [])],
+                "brand_names": [b[1] for b in picked_brands.get(row.id, [])],
                 "description": row.description,
                 "is_active": row.is_active,
                 "category_ids": mine,

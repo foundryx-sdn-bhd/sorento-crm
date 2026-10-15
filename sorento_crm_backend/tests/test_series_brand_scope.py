@@ -137,7 +137,7 @@ def _series(w, brand_id=None, category_ids=(), name="S"):
         f"{BASE}/config/series",
         json={
             "name": f"{MARKER} {name} {_uid()[:6]}",
-            "brand_id": brand_id,
+            "brand_ids": [brand_id] if brand_id else [],
             "category_ids": list(category_ids),
         },
     )
@@ -236,11 +236,9 @@ def test_b4_a_named_other_brand_product_stays_standard(world):
     assert _in(world, s["id"], world.nobrand) is False
 
 
-def test_b2_series_membership_carries_the_brand_id(world):
-    from app.services import project_pricing_service as pricing
-
+def test_b2_series_api_carries_the_brand_ids(world):
     s = _series(world, world.a.id, [world.parent.id])
-    assert pricing.series_membership(world.db, s["id"]).brand_id == world.a.id
+    assert s["brand_ids"] == [world.a.id]
 
 
 def test_b2_quotation_save_and_live_check_flag_the_other_brand(world):
@@ -335,17 +333,24 @@ def test_c1_c2_stored_rows_keep_numbers_inactive_stored_still_listed_and_out_of_
     assert rows["ZZT-A-2"]["in_scope"] is True
 
 
-def test_c7_no_brand_or_no_categories_shows_stored_rows_only(world):
-    no_brand = _series(world, None, [world.parent.id], name="NB")
+def test_c7_brand_only_is_every_product_of_the_brand_and_no_filters_is_every_active_product(world):
+    """SERIES-FILTERS B4/B5 replace the old 'no brand or no categories = stored rows only'."""
     no_cats = _series(world, world.a.id, [], name="NC")
-    assert _rows(world, no_brand["id"]) == {}
-    assert _rows(world, no_cats["id"]) == {}
+    assert set(_rows(world, no_cats["id"])) == {"ZZT-A-1", "ZZT-A-2"}  # active brand-A, any category
+    nothing = _series(world, None, [], name="NOTHING")
+    codes = set(_rows(world, nothing["id"]))
+    assert {"ZZT-A-1", "ZZT-A-2", "ZZT-B-1", "ZZT-N-1"} <= codes
+    assert "ZZT-A-DEAD" not in codes and "ZZT-A-X" not in codes
+    # no brand + categories: every brand under the category, brandless included
+    no_brand = _series(world, None, [world.parent.id], name="NB")
+    assert set(_rows(world, no_brand["id"])) == {"ZZT-A-1", "ZZT-A-2", "ZZT-B-1", "ZZT-N-1"}
+    # a stored product outside scope still lists, flagged out of scope
     world.client.post(
         f"{BASE}/config/series/{no_cats['id']}/products",
-        json={"codes": [world.a1.product_code], "mode": "append"},
+        json={"codes": [world.b1.product_code], "mode": "append"},
     )
     rows = _rows(world, no_cats["id"])
-    assert set(rows) == {"ZZT-A-1"} and rows["ZZT-A-1"]["in_scope"] is False
+    assert rows["ZZT-B-1"]["in_scope"] is False
 
 
 def test_c3_typing_on_a_derived_row_stores_it_and_floor_appears(world):

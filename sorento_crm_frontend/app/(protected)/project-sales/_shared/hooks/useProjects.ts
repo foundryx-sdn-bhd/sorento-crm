@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { ListPagerPage, ListPagerParams } from '@/hooks/useListPager';
 import { toast } from '@/lib/toast';
@@ -30,6 +30,7 @@ import {
   deleteQuotationLine,
   deleteSeries,
   getEffectivePriceFloor,
+  getSeriesPricedRows,
   getSeriesProductRows,
   getSeriesSetRows,
   removeSeriesSet,
@@ -1211,10 +1212,23 @@ export function useSeriesMutations() {
  * changes both the membership and the prices - refetches this table without each mutation
  * having to remember it exists.
  */
-export function useSeriesProductRows(seriesId?: string) {
+export function useSeriesProductRows(
+  seriesId: string | undefined,
+  params: { page: number; limit: number; query?: string },
+) {
   return useQuery({
-    queryKey: [...SERIES_KEY, 'rows', seriesId],
-    queryFn: () => getSeriesProductRows(seriesId as string),
+    queryKey: [...SERIES_KEY, 'rows', seriesId, params],
+    queryFn: () => getSeriesProductRows(seriesId as string, params),
+    enabled: Boolean(seriesId),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Every priced row of the series, for the quotation line's opening price. */
+export function useSeriesPricedRows(seriesId?: string) {
+  return useQuery({
+    queryKey: [...SERIES_KEY, 'priced', seriesId],
+    queryFn: () => getSeriesPricedRows(seriesId as string),
     enabled: Boolean(seriesId),
   });
 }

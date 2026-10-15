@@ -96,6 +96,11 @@ def test_a_product_nominated_by_name_is_in_the_series():
         listed = _product(db, "ZZT-CWB-242", category.id, uom)
         sibling = _product(db, "ZZT-CWB-243", category.id, uom)
         series = _series(db, company_id)
+        # A category the products are NOT under: with no filters at all a series covers every
+        # active product, so the sibling is only "outside" once the series has a scope.
+        pricing.set_series_categories(
+            db, series=series, category_ids=[_category(db, "Elsewhere").id]
+        )
 
         pricing.set_series_products(db, series=series, product_ids=[listed.id])
 
