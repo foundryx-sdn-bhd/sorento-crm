@@ -400,6 +400,9 @@ def _add_periods(db: Session, target: SalesTarget, bounds, values: Sequence[Deci
                 target_value=_money(value),
             )
         )
+    # `SessionLocal` does not autoflush: the tier checks and `_derive_figures` read the periods
+    # back in this same request.
+    db.flush()
 
 
 def _kept_value(old: List[SalesTargetPeriod], new_start: date) -> Decimal:
@@ -507,6 +510,7 @@ def _write_commission(db: Session, target: SalesTarget, commission: dict) -> Non
     that does not start one; the same threshold twice in one period; points on a quantity
     target; rates per account on anything but a dealer, on an account the target does not
     count, or with the marginal method."""
+    db.flush()  # what this request added (accounts, periods) is read back below
     if not commission:
         _derive_figures(db, target)
         return

@@ -2,8 +2,10 @@
 
 For crew, on the owner's Mac: the real Sorento and Mocha files never leave it. This runs the
 same import the screen's Test runs, in a transaction that is always rolled back, and prints the
-per-row report. `--masked` prints only the rows that are not representable, with every digit
-replaced by 9 and the code and names left out, so the output can be pasted on the PR.
+per-row report. `--masked` prints only the rows that are not representable, as a reason
+category plus the SHAPE of any quoted cell: digits become 9, and every word that is not a
+layout keyword (RM, Additional, A/C, POINT, Q1, a month...) becomes x's, so no code, dealer or
+account name survives and the output can be pasted on the PR.
 
     venv/bin/python -m scripts.dealer_targets_dry_run "Sorento targets.xlsx" --company SRT --year 2026
     venv/bin/python -m scripts.dealer_targets_dry_run "Mocha targets.xlsx" --company MCH --masked
@@ -17,8 +19,57 @@ import sys
 from sqlalchemy import text
 
 
-def _mask(value) -> str:
-    return re.sub(r"\d", "9", str(value or ""))
+#: Words a masked cell keeps, because they are the layout, not the data.
+_KEEP = {
+    "rm", "k", "m", "additional", "add", "addl", "a", "c", "ac", "i", "ii", "iii", "iv", "v",
+    "point", "points", "pts", "q", "yearly", "year", "annual", "to", "nil", "na", "n", "and",
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+    "quarterly", "monthly", "rate", "target", "incentive", "threshold",
+}
+
+_CATEGORIES = (
+    ("shares a target with row", "SHARES_A_BROKEN_TARGET"),
+    ("PAY TO: no customer", "UNKNOWN_PAY_TO_CODE"),
+    ("no customer with code", "UNKNOWN_CODE"),
+    ("no customer code on this row", "NO_CODE"),
+    ("cannot read the rate", "RATE_UNREADABLE"),
+    ("cannot read", "CELL_UNREADABLE"),
+    ("which is not an account of this target", "RATE_NAMES_UNKNOWN_ACCOUNT"),
+    ("has no rate", "THRESHOLD_WITHOUT_RATE"),
+    ("a rate with no threshold", "RATE_WITHOUT_THRESHOLD"),
+    ("repeats in one period", "THRESHOLD_REPEATED"),
+    ("give different", "ACCOUNTS_DIFFER_IN_ONE_TARGET"),
+    ("characters", "CELL_TOO_LONG"),
+    ("same threshold in one period", "THRESHOLD_REPEATED"),
+    ("names a period this target does not have", "UNKNOWN_PERIOD"),
+    ("out of range", "DATES_OUT_OF_RANGE"),
+    ("end before they start", "DATES_BACKWARDS"),
+)
+
+
+def _shape(text: str, digits: bool = True) -> str:
+    if digits:
+        text = re.sub(r"\d", "9", text)
+    return re.sub(r"[A-Za-z]+", lambda m: m.group(0) if m.group(0).lower() in _KEEP else "x" * len(m.group(0)), text)
+
+
+def _mask(reason: str) -> str:
+    """`CATEGORY` plus the shape of a quoted cell, and nothing else from the file."""
+    reason = reason or ""
+    category = next((name for needle, name in _CATEGORIES if needle in reason), "OTHER")
+    quoted = re.findall(r'"([^"]*)"', reason)
+    # The column (a header such as "Q1" or "JAN-DEC'26") before the first colon is layout too.
+    column = reason.split(":", 1)[0] if ":" in reason and category not in {"UNKNOWN_CODE", "NO_CODE", "SHARES_A_BROKEN_TARGET", "UNKNOWN_PAY_TO_CODE"} else ""
+    parts = [category]
+    if column:
+        # A header ("Q1 POINT (4%)") is layout: its digits stay, other words are x'd.
+        parts.append(f"column {_shape(column, digits=False)}")
+    if quoted and category not in {"UNKNOWN_CODE", "UNKNOWN_PAY_TO_CODE", "SHARES_A_BROKEN_TARGET"}:
+        parts.append(f'cell "{_shape(quoted[0])}"')
+    if category == "OTHER" and '"' not in reason:
+        # The target service's own words (no file content in them), digits masked.
+        parts.append(re.sub(r"\d", "9", reason.split(":", 1)[-1].strip()))
+    return ", ".join(parts)
 
 
 def main(argv=None) -> int:

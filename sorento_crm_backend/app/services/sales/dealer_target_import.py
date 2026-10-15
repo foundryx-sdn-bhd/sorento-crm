@@ -142,6 +142,8 @@ def parse_tier_cell(value, *, default_rate: Optional[Decimal] = None) -> List[Ce
     text = _norm(str(value))
     if text.lower() in _BLANK:
         return []
+    if len(text) > MAX_CELL_TEXT:
+        raise CellError(f"a cell of more than {MAX_CELL_TEXT} characters")
     tiers: List[CellTier] = []
     for raw_line in re.split(r"[\n;|]+", str(value)):
         line = _WINDOW.sub(" ", _norm(raw_line)).strip(" :")
@@ -189,8 +191,12 @@ def _window(text: str, year: int) -> Optional[Tuple[date, date]]:
     end_year = yr(m.group(4), year)
     start_month, end_month = _MONTHS[m.group(1).upper()], _MONTHS[m.group(3).upper()]
     start_year = yr(m.group(2), end_year if start_month <= end_month else end_year - 1)
+    if not (2000 <= start_year <= 2100 and 2000 <= end_year <= 2100):
+        raise CellError(f'the dates "{m.group(0)}" are out of range')
     start = date(start_year, start_month, 1)
     end = add_months(date(end_year, end_month, 1), 1).replace(day=1)
+    if end <= start:
+        raise CellError(f'the dates "{m.group(0)}" end before they start')
     return start, date.fromordinal(end.toordinal() - 1)
 
 
@@ -302,34 +308,82 @@ def _classify(header: str, year: int) -> Optional[_Column]:
     return None
 
 
+#: Bounds on what one upload may make the reader do (security review B1): a sheet's declared
+#: size is not trusted, only the cells that hold a value are visited, and a sheet past these is
+#: skipped with a note. The real files are a few hundred rows wide of a few dozen columns.
+MAX_SHEETS = 30
+MAX_SHEET_CELLS = 100_000
+MAX_SHEET_ROWS = 5_000
+MAX_SHEET_COLS = 300
+MAX_MERGE_AREA = 2_000
+MAX_CELL_TEXT = 500
+#: The workbook's XML once unzipped; a 10 MB upload that inflates past this is refused.
+MAX_UNZIPPED_BYTES = 150 * 1024 * 1024
+
+
+class SheetTooLarge(ValueError):
+    pass
+
+
 class _Grid:
-    """Cell values with merged ranges resolved: every cell of a merge reads the top-left value
-    and knows the range's rows."""
+    """The cells that hold a value, with merged ranges resolved: every cell of a merge reads the
+    top-left value and knows the range's rows. Sparse: nothing is visited by the sheet's declared
+    size, which one stray cell far away can make a billion cells (security review B1)."""
 
     def __init__(self, ws):
         self.ws = ws
-        self.max_row = ws.max_row or 0
-        self.max_col = ws.max_column or 0
+        self.values: Dict[Tuple[int, int], object] = {}
+        for (r, c), cell in getattr(ws, "_cells", {}).items():
+            value = cell.value
+            if value is None or (isinstance(value, str) and not value.strip()):
+                continue
+            self.values[(r, c)] = value
+            if len(self.values) > MAX_SHEET_CELLS:
+                raise SheetTooLarge(f"more than {MAX_SHEET_CELLS:,} filled cells")
         self.merge: Dict[Tuple[int, int], Tuple[int, int, int, int]] = {}
         for rng in ws.merged_cells.ranges:
+            area = (rng.max_row - rng.min_row + 1) * (rng.max_col - rng.min_col + 1)
+            if area > MAX_MERGE_AREA:
+                # A title banner merged across the sheet, never a threshold over a few rows.
+                continue
             box = (rng.min_row, rng.min_col, rng.max_row, rng.max_col)
+            if len(self.merge) + area > MAX_SHEET_CELLS:
+                raise SheetTooLarge(f"more than {MAX_SHEET_CELLS:,} merged cells")
             for r in range(rng.min_row, rng.max_row + 1):
                 for c in range(rng.min_col, rng.max_col + 1):
                     self.merge[(r, c)] = box
+        cells = set(self.values) | {
+            key for key, box in self.merge.items() if (box[0], box[1]) in self.values
+        }
+        self.rows = sorted({r for r, _ in cells})
+        self.cols = sorted({c for _, c in cells})
+        if len(self.rows) > MAX_SHEET_ROWS:
+            raise SheetTooLarge(f"more than {MAX_SHEET_ROWS:,} rows")
+        if len(self.cols) > MAX_SHEET_COLS:
+            raise SheetTooLarge(f"more than {MAX_SHEET_COLS} columns")
+        self.row_cols: Dict[int, List[int]] = {}
+        for r, c in sorted(cells):
+            self.row_cols.setdefault(r, []).append(c)
 
     def value(self, r: int, c: int):
         box = self.merge.get((r, c))
         if box:
             r, c = box[0], box[1]
-        return self.ws.cell(row=r, column=c).value
+        return self.values.get((r, c))
+
+    def own(self, r: int, c: int):
+        """The cell's own value, not its merge's."""
+        return self.values.get((r, c))
 
     def box(self, r: int, c: int) -> Optional[Tuple[int, int, int, int]]:
         return self.merge.get((r, c))
 
 
 def _header_row(grid: _Grid) -> Optional[int]:
-    for r in range(1, min(grid.max_row, 20) + 1):
-        for c in range(1, grid.max_col + 1):
+    for r in grid.rows:
+        if r > 20:
+            break
+        for c in grid.row_cols.get(r, []):
             if "CODE" in _text(grid.value(r, c)).upper():
                 return r
     return None
@@ -338,7 +392,7 @@ def _header_row(grid: _Grid) -> Optional[int]:
 def _columns(grid: _Grid, header: int, year: int) -> Tuple[List[_Column], int]:
     """The classified columns and the first data row (after an optional sub-header row)."""
     cols: List[_Column] = []
-    for c in range(1, grid.max_col + 1):
+    for c in grid.row_cols.get(header, []):
         col = _classify(_text(grid.value(header, c)), year)
         if col is not None:
             col.index = c
@@ -346,7 +400,7 @@ def _columns(grid: _Grid, header: int, year: int) -> Tuple[List[_Column], int]:
     first = header + 1
     code_col = next((col.index for col in cols if col.role == "code"), None)
     periods = [col for col in cols if col.role == "period"]
-    if code_col and periods and first <= grid.max_row:
+    if code_col and periods and first in grid.row_cols:
         subs = {col.index: _text(grid.value(first, col.index)).upper() for col in periods}
         is_sub = not _text(grid.value(first, code_col)) and any(
             re.search(r"TARGET|POINT|PTS|%|RM|RATE|INCENTIVE|THRESHOLD", s) for s in subs.values()
@@ -392,24 +446,40 @@ def _rounding(text: str) -> Optional[str]:
 
 
 def parse_workbook(data: bytes, *, year: int) -> ParsedWorkbook:
+    import zipfile
+
     from openpyxl import load_workbook
 
+    not_a_workbook = AppException(
+        status_code=422, message="That file is not an Excel workbook (.xlsx).", code="NOT_A_WORKBOOK"
+    )
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            unzipped = sum(info.file_size for info in archive.infolist())
+    except zipfile.BadZipFile as exc:
+        raise not_a_workbook from exc
+    if unzipped > MAX_UNZIPPED_BYTES:
+        raise AppException(status_code=422, message="That workbook is too large.", code="FILE_TOO_LARGE")
     try:
         wb = load_workbook(io.BytesIO(data), data_only=True)
-    except Exception as exc:  # zipfile.BadZipFile, InvalidFileException, KeyError, ...
+    except Exception as exc:  # InvalidFileException, KeyError, ...
+        raise not_a_workbook from exc
+    if len(wb.worksheets) > MAX_SHEETS:
         raise AppException(
-            status_code=422, message="That file is not an Excel workbook (.xlsx).", code="NOT_A_WORKBOOK"
-        ) from exc
+            status_code=422, message=f"That workbook has more than {MAX_SHEETS} sheets.", code="FILE_TOO_LARGE"
+        )
     rows: List[RowResult] = []
     schemes: List[Scheme] = []
     notes: List[str] = []
     for ws in wb.worksheets:
-        grid = _Grid(ws)
+        try:
+            grid = _Grid(ws)
+        except SheetTooLarge as exc:
+            notes.append(f'Sheet "{ws.title}": {exc}; skipped.')
+            continue
         header = _header_row(grid)
         if header is None:
-            if grid.max_row and any(
-                _text(grid.value(r, c)) for r in range(1, grid.max_row + 1) for c in range(1, grid.max_col + 1)
-            ):
+            if grid.values:
                 notes.append(f'Sheet "{ws.title}": no header row with CODE in the first 20 rows; skipped.')
             continue
         sheet_rows, sheet_schemes = _parse_sheet(grid, ws.title, header, year, notes)
@@ -431,14 +501,12 @@ def _parse_sheet(grid: _Grid, sheet: str, header: int, year: int, notes: List[st
     code_col = by_role["code"]
 
     results: Dict[int, RowResult] = {}
-    for r in range(first, grid.max_row + 1):
-        cells = [_text(grid.value(r, c)) for c in range(1, grid.max_col + 1)]
-        own = [
-            _text(grid.ws.cell(row=r, column=c).value) for c in range(1, grid.max_col + 1)
-        ]
-        if not any(own) and not any(grid.box(r, c) and grid.box(r, c)[0] < r for c in range(1, grid.max_col + 1)):
+    for r in grid.rows:
+        if r < first:
             continue
-        if not any(cells):
+        # A row only a merge from above reaches (no value of its own) is still a data row: it is
+        # one of the accounts that merged threshold covers.
+        if not any(_text(grid.value(r, c)) for c in grid.row_cols.get(r, [])):
             continue
         code = _text(grid.value(r, code_col.index)) if code_col else ""
         res = RowResult(
@@ -498,7 +566,7 @@ def _group_schemes(grid, sheet, group_rows, results, periods, by_role, year) -> 
     stated: Optional[Tuple[date, date]] = None
     for col in periods:
         for r in group_rows:
-            win = _window(_text(grid.value(r, col.index)), year)
+            win = _window(_text(grid.value(r, col.index))[:MAX_CELL_TEXT], year)
             if win:
                 stated = win
     rounding = "sen"
@@ -784,9 +852,11 @@ def run(db: Session, data: bytes, *, year: int, dry_run: bool, user_id: Optional
             for r in scheme_rows:
                 r.status, r.reason = "not_representable", f"{scheme.kind}: {exc.message}"
             continue
-        except ValueError as exc:  # a payload the schema refuses
+        except ValueError as exc:  # a payload the schema refuses (pydantic's ValidationError)
+            errors = getattr(exc, "errors", None)
+            message = errors()[0].get("msg", "not valid") if callable(errors) and errors() else str(exc)
             for r in scheme_rows:
-                r.status, r.reason = "not_representable", f"{scheme.kind}: {exc}"
+                r.status, r.reason = "not_representable", f"{scheme.kind}: {message}"
             continue
         if match is not None:
             updated += 1

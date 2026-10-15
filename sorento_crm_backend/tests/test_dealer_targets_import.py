@@ -182,10 +182,17 @@ def _seed(db, company_id):
     return customers
 
 
-def _upload(client, data, *, dry_run):
+def _upload(client, data, *, dry_run, db=None):
     files = {"file": ("dealer targets.xlsx", data,
                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
-    return client.post(IMPORT, params={"dry_run": str(dry_run).lower(), "year": 2026}, files=files)
+    # `SessionLocal` runs with autoflush off; so does the import here, as in production.
+    if db is not None:
+        db.autoflush = False
+    try:
+        return client.post(IMPORT, params={"dry_run": str(dry_run).lower(), "year": 2026}, files=files)
+    finally:
+        if db is not None:
+            db.autoflush = True
 
 
 def _dealer_target_count(db):
@@ -199,7 +206,7 @@ def test_import_dry_run_writes_nothing_and_reports_every_row(api):
     customers = _seed(db, company_id)
     data = fx.build({k: c.customer_code for k, c in customers.items()})
     before = _dealer_target_count(db)
-    res = _upload(client, data, dry_run=True)
+    res = _upload(client, data, dry_run=True, db=db)
     assert res.status_code == 200, res.text
     body = res.json()
     assert _dealer_target_count(db) == before
@@ -244,7 +251,7 @@ def test_import_every_pattern_applies_and_computes(api):
     assert ratio.status_code in (200, 201), ratio.text
 
     data = fx.build({k: c.customer_code for k, c in customers.items()})
-    res = _upload(client, data, dry_run=False)
+    res = _upload(client, data, dry_run=False, db=db)
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["summary"]["targets_new"] == 12
@@ -284,13 +291,13 @@ def test_import_reimport_updates_never_duplicates(api):
     client, db, company_id = api
     customers = _seed(db, company_id)
     data = fx.build({k: c.customer_code for k, c in customers.items()})
-    first = _upload(client, data, dry_run=False)
+    first = _upload(client, data, dry_run=False, db=db)
     assert first.status_code == 200, first.text
     count = _dealer_target_count(db)
-    again = _upload(client, data, dry_run=True)
+    again = _upload(client, data, dry_run=True, db=db)
     assert again.json()["summary"]["targets_new"] == 0
     assert again.json()["summary"]["targets_updated"] == 12
-    second = _upload(client, data, dry_run=False)
+    second = _upload(client, data, dry_run=False, db=db)
     assert second.status_code == 200, second.text
     assert _dealer_target_count(db) == count
 
@@ -299,3 +306,82 @@ def test_import_rejects_a_file_that_is_not_a_workbook(api):
     client, db, company_id = api
     res = _upload(client, b"not a workbook", dry_run=True)
     assert res.status_code == 422
+
+
+# --------------------------------------------------------------------------------------- #
+# bounds (security review B1): a crafted file cannot make the reader walk a billion cells
+# --------------------------------------------------------------------------------------- #
+
+
+def _workbook(fill) -> bytes:
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    fill(wb.active)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_parse_far_cell_finishes_fast():
+    import time
+
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"] = "CODE", "Q1", "NAME"
+        ws["A2"], ws["B2"] = "C-1", "100,000 - 1%"
+        ws["XFD1048576"] = "far away"
+
+    started = time.monotonic()
+    parsed = parse_workbook(_workbook(fill), year=2026)
+    assert time.monotonic() - started < 5
+    assert [r.code for r in parsed.rows] == ["C-1", None]  # the far cell is a row with no code
+    assert parsed.rows[1].status == "not_representable"
+
+
+def test_parse_refuses_an_overlong_cell_and_a_sheet_past_the_bounds():
+    from app.services.sales import dealer_target_import as imp
+
+    def long_cell(ws):
+        ws["A1"], ws["B1"] = "CODE", "Q1"
+        ws["A2"], ws["B2"] = "C-1", "1," * 2000 + "1%"
+
+    parsed = imp.parse_workbook(_workbook(long_cell), year=2026)
+    assert parsed.rows[0].status == "not_representable"
+    assert "characters" in parsed.rows[0].reason
+
+    def wide(ws):
+        ws["A1"] = "CODE"
+        for c in range(2, imp.MAX_SHEET_COLS + 10):
+            ws.cell(row=1, column=c, value="Q1")
+
+    parsed = imp.parse_workbook(_workbook(wide), year=2026)
+    assert parsed.rows == []
+    assert any("columns" in note for note in parsed.notes)
+
+
+def test_import_code_of_another_company_is_not_representable(api):
+    client, db, company_id = api
+    from sqlalchemy import text
+
+    from app.models.base import company_scope
+    from app.models.order import Customer
+
+    other = db.execute(
+        text("select id from companies where id <> :c order by code limit 1"), {"c": company_id}
+    ).scalar()
+    with company_scope(db, frozenset({other})):
+        theirs = Customer(id=_uid(), company_id=other, customer_code=_code(), customer_name="ZZT THEIRS")
+        db.add(theirs)
+        db.flush()
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "CODE", "Q1"
+        ws["A2"], ws["B2"] = theirs.customer_code, "100,000 - 1%"
+
+    body = _upload(client, _workbook(fill), dry_run=True, db=db).json()
+    assert body["rows"][0]["status"] == "not_representable"
+    assert "no customer with code" in body["rows"][0]["reason"]

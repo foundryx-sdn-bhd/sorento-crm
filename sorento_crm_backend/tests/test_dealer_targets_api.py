@@ -441,3 +441,44 @@ def test_dealer_routes_403(world):
         assert client.post(f"{BASE}/import", params={"dry_run": "true"}, files=files).status_code == 403
     finally:
         _restore(originals)
+
+
+def test_per_period_tiers_save_without_autoflush(api):
+    """`SessionLocal` runs with autoflush off: periods added in the same request must be
+    flushed before the tiers are checked against them (found by the import's local dry run)."""
+    client, db, company_id = api
+    a1 = _customer(db, company_id, "ZZT A1")
+    db.autoflush = False
+    try:
+        res = client.post(BASE, json=_dealer_body([a1], tiers=[
+            {"period_start": "2026-04-01", "threshold": 1000, "rate": 2},
+        ]))
+        assert res.status_code == 201, res.text
+        agent = _agent(db, "A")
+        res = client.post(BASE, json={
+            "subject_kind": "agent", "sales_agent_id": agent.id, "name": "ZZT agent q",
+            "metric": "amount", "basis": "ordered", "product_scope": "all",
+            "start_date": "2026-01-01", "end_date": "2026-12-31", "split_every": 3, "split_unit": "month",
+            "commission_method": "retroactive", "threshold_unit": "amount", "tiers_per_period": True,
+            "tiers": [{"period_start": "2026-07-01", "threshold": 10, "rate": 1}],
+        })
+        assert res.status_code == 201, res.text
+        assert res.json()["periods"][2]["target_value"] == 10
+    finally:
+        db.autoflush = True
+
+
+def test_removing_an_account_drops_its_tier_rates(api):
+    client, db, company_id = api
+    a1 = _customer(db, company_id, "ZZT A1", level=1)
+    a3 = _customer(db, company_id, "ZZT A3", level=3)
+    created = client.post(BASE, json=_dealer_body([a1, a3], tiers=[
+        {"period_start": "2026-01-01", "threshold": 10, "account_rates": [
+            {"customer_id": a1.id, "rate": 2}, {"customer_id": a3.id, "rate": 3}]},
+    ])).json()
+    res = client.patch(f"{BASE}/{created['id']}", json={"customer_ids": [a1.id]})
+    assert res.status_code == 200, res.text
+    assert res.json()["tiers"][0]["account_rates"] == [{"customer_id": a1.id, "rate": 2}]
+    from app.models.sales import SalesTargetTierRate
+
+    assert db.query(SalesTargetTierRate).filter(SalesTargetTierRate.customer_id == a3.id).count() == 0
