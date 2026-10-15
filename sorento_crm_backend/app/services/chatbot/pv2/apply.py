@@ -338,8 +338,16 @@ def _nth(options: list[Option], n: int) -> Option | None:
 
 def _picks_open_question(ask: Ask, pending: PendingQuestion | None) -> bool:
     """R5-1: the ask names a printed number while the open question numbers its options: the number is that
-    question's (in range or not), never a row of the last answer, whatever act the parser gave it."""
-    return _number(ask) is not None and bool(_numbered(pending))
+    question's (in range or not), never a row of the last answer, whatever act the parser gave it. R5-5: an
+    option key the open question offered, with no new subject beside it, answers it whatever the act (the
+    parser's answer wins over its act, so the held question kind is kept)."""
+    if _number(ask) is not None and _numbered(pending):
+        return True
+    key = ask.answer.option_key if ask.answer is not None else None
+    return (
+        pending is not None and key is not None and any(o.key == key for o in pending.options)
+        and not _is_a_new_ask(ask)
+    )
 
 
 def _roster_kind(pending: PendingQuestion) -> str | None:

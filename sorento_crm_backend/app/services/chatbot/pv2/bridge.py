@@ -42,6 +42,11 @@ V1_HINT: dict[str, str] = {
     "inbound_shipment": "inbound_shipment",
 }
 
+#: R5-5: a held document kind -> v1's document axis code. v1 asks "Sales orders or delivery orders?" for an
+#: outstanding ask that names no document (turn_runtime contract 38); PV2 reads no document type, so the held
+#: document names it, else both.
+OUTSTANDING_DOCUMENT: dict[str, str] = {"delivery_order": "DO", "sales_order": "SO"}
+
 
 # --------------------------------------------------------------------------- #
 # The blank v1 verdict
@@ -218,6 +223,10 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
         })
     ask = action.ask
     verdict["status"] = held.status or (ask.status if ask is not None else None)
+    if verdict["status"] == "outstanding" and domain == "order" and not verdict.get("document"):
+        # R5-5: the question kind is known (an arrival / delivery-date ask): it is never asked which document.
+        named = {OUTSTANDING_DOCUMENT[k] for k, refs in held.refs.items() if refs and k in OUTSTANDING_DOCUMENT}
+        verdict["document"] = sorted(named) or ["DO", "SO"]
     # A portal form is this turn's subject only while the turn's domain is portal_link; a
     # form held from an earlier turn never strips the product of a later "stock?".
     on_portal = domain == "portal_link"
