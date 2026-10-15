@@ -5,10 +5,14 @@
 session could repoint outbound SMTP (host, login, password, From) or rewrite who is
 notified of what. Found by the DO-BACKFILL-SETTING security review (PR #1700).
 
+`PUT /forms-management/revision-configs/{type}` (Settings > Portal Revisions) had the
+same hole in another router; its own list read already carries `.view`.
+
 The gates follow the slugs the same file already uses:
 
-- social + notifications: `user_management.settings.edit`, the slug `PUT /general`,
-  `POST /general` and `POST /signin-background` carry.
+- social, notifications, portal revision configs: `user_management.settings.edit`, the
+  slug `PUT /general`, `POST /general` and `POST /signin-background` carry (and the one
+  the Portal Revisions globals already save through, via `/general`).
 - smtp + smtp/test: `user_management.settings.secrets`, the slug the runtime secrets
   carry (`RUNTIME_SETTINGS_PERMISSION`): `.edit` is also held by warehouse_manager and
   the three integration API-key roles, and the SMTP password is a credential.
@@ -127,19 +131,23 @@ def client(db, caller):
     from fastapi.testclient import TestClient
 
     from app.database import get_db
-    from app.dependencies import get_current_user
+    from app.dependencies import get_current_user, get_current_user_or_api_key
     from app.main import app
 
     def _override_db():
         yield db
 
+    who = {"id": caller.id, "email": caller.email}
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[get_current_user] = lambda: {"id": caller.id, "email": caller.email}
+    app.dependency_overrides[get_current_user] = lambda: who
+    # The forms router's module guard resolves the caller through this one.
+    app.dependency_overrides[get_current_user_or_api_key] = lambda: who
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_current_user_or_api_key, None)
 
 
 @pytest.fixture
@@ -241,3 +249,61 @@ def test_admin_still_succeeds_through_the_real_bypass(
         assert _column(db, column) == written
     else:
         assert len(no_smtp_network) == 1
+
+
+# --------------------------------------------------------------------------- portal revisions
+
+REVISION_CONFIG_PATH = "/api/v1/forms-management/revision-configs/complaint"
+REVISION_CONFIG_BODY = {
+    "is_enabled": True,
+    "max_revisions": 3,
+    "allowed_statuses": ["open"],
+    "restart_stage_code": None,
+}
+
+
+def _complaint_config(db):
+    from app.models.portal import PortalRevisionConfig
+
+    db.expire_all()
+    return (
+        db.query(PortalRevisionConfig)
+        .filter(PortalRevisionConfig.source_entity_type == "complaint")
+        .first()
+    )
+
+
+@pytest.mark.parametrize("held", [set(), {VIEW}], ids=["nothing", "view-only"])
+def test_revision_config_put_is_refused_without_the_edit_slug(client, allow, db, held):
+    allow.update(held)
+
+    resp = client.put(REVISION_CONFIG_PATH, json=REVISION_CONFIG_BODY)
+
+    assert resp.status_code == 403, resp.text
+    assert EDIT in resp.json()["detail"]
+    assert _complaint_config(db) is None
+
+
+def test_revision_config_put_succeeds_for_the_edit_slug_holder(client, allow, db):
+    allow.add(EDIT)
+
+    resp = client.put(REVISION_CONFIG_PATH, json=REVISION_CONFIG_BODY)
+
+    assert resp.status_code == 200, resp.text
+    row = _complaint_config(db)
+    assert row is not None and row.is_enabled is True and row.max_revisions == 3
+
+
+def test_revision_config_put_still_succeeds_for_admin(client, db, caller, monkeypatch):
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(
+        UserPermissionService,
+        "get_user_role_slugs",
+        lambda self, uid: {"admin"} if str(uid) == str(caller.id) else set(),
+    )
+
+    resp = client.put(REVISION_CONFIG_PATH, json=REVISION_CONFIG_BODY)
+
+    assert resp.status_code == 200, resp.text
+    assert _complaint_config(db).is_enabled is True
