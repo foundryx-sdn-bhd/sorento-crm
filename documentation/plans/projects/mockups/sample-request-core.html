@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample request mockup</title>
+<!-- SR-CORE annotated mockup, not shipped code. Card: documentation/plans/projects/CARD-sample-request-core-15oct.md. Shell CSS copied from project-listing-start.html. -->
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --fg:#111827; --muted:#6b7280; --line:#e5e7eb; --line-soft:#f1f2f4;
+  --primary:#1b84ff; --primary-soft:#e9f3ff;
+  --red:#dc2626; --red-soft:#fef2f2; --red-line:#fecaca;
+  --amber:#b45309; --amber-soft:#fffbeb; --amber-line:#fde68a;
+  --green:#15803d; --green-soft:#f0fdf4;
+  --grey-soft:#f3f4f6; --violet:#6d28d9;
+  --callout:#e11d74; --radius:8px;
+  --font:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--font)}
+.doc{max-width:1760px;margin:0 auto;padding:24px 16px 64px}
+.doc>h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+.doc>.sub{color:var(--muted);margin:0 0 20px;max-width:900px}
+.doc h2.frame-title{font-size:15px;margin:28px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.layout{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.scroll{overflow-x:auto;max-width:100%;border-radius:12px}
+.frame{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);position:relative;overflow:hidden}
+.w1280{width:1280px}
+.w375{width:375px;flex:none}
+.notes{flex:1 1 360px;min-width:300px;max-width:560px}
+.notes ol{margin:0;padding:0;list-style:none}
+.notes li{display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px}
+.notes li b{display:block;margin-bottom:2px}
+.notes .ref{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+.co{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border-radius:50%;background:var(--callout);color:#fff;font-size:12px;font-weight:700;box-shadow:0 0 0 2px #fff}
+.pin{position:absolute;z-index:5}
+/* app shell */
+.shell{display:flex;min-height:100%}
+.side{width:232px;flex:none;border-right:1px solid var(--line);padding:16px 12px;background:#fcfcfd;font-size:13px}
+.side .brand{font-weight:700;font-size:16px;margin:0 8px 18px}
+.side .grp{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:14px 8px 6px}
+.side .it{padding:6px 8px;border-radius:6px;color:#374151;position:relative}
+.side .it.sub{padding-left:26px}
+.side .it.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.topbar{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:0 20px;color:var(--muted);font-size:13px}
+.main{flex:1;min-width:0}
+.content{padding:20px 28px 28px}
+.ph h1{font-size:20px;margin:0;letter-spacing:-.01em}
+.crumbs{color:var(--muted);font-size:13px;margin-top:2px}
+.phrow{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start;margin-bottom:16px;position:relative}
+.meta{color:var(--muted);font-size:13px;margin-top:4px}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;font:500 13px var(--font);color:var(--fg);white-space:nowrap}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.sm{padding:3px 9px;font-size:12px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--primary)}
+.btn.icon{padding:6px 8px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;position:relative}
+.card>.hd{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line-soft);font-weight:600}
+.card>.bd{padding:12px 16px}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 16px}
+.facts .k{color:var(--muted);font-size:12px}
+.facts .v{font-weight:500}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 9px 1px 7px;font-size:12px;font-weight:500;white-space:nowrap;background:var(--grey-soft);color:#374151}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.8}
+.pill.red{background:var(--red-soft);color:var(--red)}
+.pill.amber{background:var(--amber-soft);color:var(--amber)}
+.pill.green{background:var(--green-soft);color:var(--green)}
+.pill.blue{background:var(--primary-soft);color:var(--primary)}
+.pill.violet{background:#f5f3ff;color:var(--violet)}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:0 0 14px;overflow-x:auto;white-space:nowrap;position:relative}
+.tabs span{padding:8px 0;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs span.on{color:var(--fg);border-bottom-color:var(--primary)}
+.tabs .n{display:inline-block;margin-left:4px;font-size:11px;background:var(--grey-soft);border-radius:999px;padding:0 6px;color:var(--muted)}
+.tabs .n.red{background:var(--red-soft);color:var(--red)}
+.toggle{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:12px}
+.toggle span{padding:4px 10px;background:#fff}
+.toggle span.on{background:var(--grey-soft);font-weight:600}
+/* DataGrid look */
+.grid{border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:13px}
+.grid .scroller{overflow-x:auto}
+.grid table{border-collapse:collapse;width:100%;table-layout:fixed}
+.grid th{background:#fafafa;color:var(--muted);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grid td{padding:8px 10px;border-bottom:1px solid var(--line-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.grid tr.hl td{background:var(--primary-soft)}
+.grid td.num,.grid th.num{text-align:right;font-variant-numeric:tabular-nums}
+.grid .second{display:block;color:var(--muted);font-size:11px}
+.pager{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;color:var(--muted);font-size:12px;background:#fff;flex-wrap:wrap;gap:6px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.search{border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:var(--muted);min-width:220px;background:#fff}
+.chip{border:1px dashed var(--line);border-radius:6px;padding:5px 10px;color:#374151;font-size:12px;background:#fff}
+.chip.on{border-style:solid;background:var(--primary-soft);border-color:#bfdbfe;color:var(--primary)}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+/* phone */
+.phone .top{height:48px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-weight:700}
+.phone .content{padding:14px 16px 20px}
+.rcard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff;position:relative}
+.rcard .row1{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.dialog{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:6}
+.dialog .panel{background:#fff;border-radius:12px;width:480px;max-width:calc(100% - 32px);box-shadow:0 20px 40px rgba(0,0,0,.2)}
+.dialog .panel .hd{padding:14px 18px;border-bottom:1px solid var(--line-soft);font-weight:600;display:flex;justify-content:space-between}
+.dialog .panel .bd{padding:14px 18px}
+.dialog .panel .ft{padding:12px 18px;border-top:1px solid var(--line-soft);display:flex;justify-content:flex-end;gap:8px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;font-weight:500;margin-bottom:4px}
+.select{border:1px solid var(--line);border-radius:6px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--fg);background:#fff}
+.select .clr{color:var(--muted);font-size:14px;line-height:1}
+.drop{border:1.5px dashed #cbd5e1;border-radius:8px;padding:22px;text-align:center;color:var(--muted);background:#fafafa}
+/* start menu */
+.menu{position:absolute;z-index:5;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:210px;padding:4px}
+.menu .mi{padding:8px 10px;border-radius:6px;font-size:13px;color:var(--fg)}
+.menu .mi:hover{background:var(--grey-soft)}
+</style>
+<style>
+.f2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}
+.f3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 14px}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg span{border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:12px;background:#fff}
+.seg span.on{background:var(--primary-soft);border-color:#bfdbfe;color:var(--primary);font-weight:600}
+.sw{display:inline-block;width:30px;height:17px;border-radius:999px;background:var(--primary);position:relative;vertical-align:middle;margin-right:6px}
+.sw::after{content:"";position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff}
+.sw.off{background:#d1d5db}.sw.off::after{right:auto;left:2px}
+.input{border:1px solid var(--line);border-radius:6px;padding:7px 10px;background:#fff;color:var(--fg);min-height:34px}
+.input.ph{color:var(--muted)}
+.lineitem{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;background:#fff;font-size:13px}
+.lineitem .r{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.opt{border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.12);font-size:12px;margin-top:4px}
+.opt div{padding:6px 10px;border-bottom:1px solid var(--line-soft)}
+.opt div.hit{background:var(--primary-soft)}
+.timeline{display:flex;gap:0;align-items:center;flex-wrap:wrap;font-size:12px}
+.timeline .st{padding:4px 10px;border-radius:999px;background:var(--grey-soft);color:var(--muted)}
+.timeline .st.done{background:var(--green-soft);color:var(--green)}
+.timeline .st.now{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.timeline .ar{color:var(--muted);padding:0 4px}
+.stock{background:#fbfcfe;border-top:1px dashed var(--line);padding:10px 12px}
+.paper{width:794px;background:#fff;border:1px solid var(--line);padding:36px 40px;font:12px/1.4 Arial,sans-serif;color:#000}
+.paper h3{text-align:center;margin:6px 0 14px;font-size:15px;letter-spacing:.04em}
+.paper table{border-collapse:collapse;width:100%}
+.paper td,.paper th{border:1px solid #000;padding:4px 6px;text-align:left}
+.paper .box{border:1px solid #000;padding:6px 8px}
+.tick{display:inline-block;width:11px;height:11px;border:1px solid #000;margin:0 4px -1px 10px;text-align:center;line-height:10px;font-size:10px}
+</style>
+<div class="doc">
+<h1>SR-CORE mockups: Sample Request (consignment requisition)</h1>
+<p class="sub">Annotated mockup, not shipped code. Card: <span class="mono">documentation/plans/projects/CARD-sample-request-core-15oct.md</span>.
+Shaped on paper Form C (10 Oct): Salesperson A for <b>JV PERKASA SDN BHD</b>, 52 double-storey terraces, Taman Nusa Duta Fasa 10
+(developer TARIKAN ABADI SDN BHD), shipped to CHENXIN PLUMBING SDN BHD, Johor Bahru. People are roles; phone numbers and street
+addresses are placeholders. Five frames: 1 portal form (375), 2 project tab (1280), 3 request page (1280), 4 coordinator queue (1280), 5 print (A4).
+Pink numbers point at the notes on the right of each frame.</p>
+
+<!-- ============ FRAME 1: PORTAL ============ -->
+<h2 class="frame-title">1. Portal, salesperson, new sample request (375 wide)</h2>
+<div class="layout">
+<div class="frame w375 phone">
+  <div class="top">Sorento portal <span class="muted" style="font-weight:400">&#9776;</span></div>
+  <div class="content">
+    <div class="ph"><h1>New sample request</h1></div>
+    <div style="height:10px"></div>
+    <div class="field" style="position:relative"><label>Customer</label><div class="select"><span>300-J099 JV PERKASA SDN BHD (PROJECT)</span><span class="clr">&times;</span></div><span class="pin co" style="right:-8px;top:-6px">1</span></div>
+    <div class="field" style="position:relative"><label>Project</label><div class="select"><span class="muted">Pick a registered project</span><span class="clr">&times;</span></div>
+      <div class="small muted" style="margin-top:4px">Not registered? <u>Type the project title</u></div>
+      <div class="input" style="margin-top:6px">52 double-storey terraces, Taman Nusa Duta Fasa 10 (TARIKAN ABADI)</div>
+      <span class="pin co" style="right:-8px;top:-6px">2</span></div>
+    <div class="field"><label>Quotation (optional)</label><div class="select"><span class="muted">Pick a project first</span></div></div>
+    <div class="field"><label>For (scope)</label><div class="input ph">e.g. Tower A &amp; B</div></div>
+    <div class="field"><label>Delivery date</label><div class="seg"><span>Pick a date</span><span class="on">Immediate arrangement</span></div></div>
+    <div class="field" style="position:relative"><label>Delivery mode</label><div class="seg"><span class="on">By driver</span><span>Self-deliver</span><span>Customer collects</span></div><span class="pin co" style="right:-8px;top:-6px">3</span></div>
+    <div class="field"><label>Ship to</label><div class="input">CHENXIN PLUMBING SDN BHD</div><div class="input" style="margin-top:6px">Johor Bahru (address)</div></div>
+    <div class="field"><label>Site contact</label><div class="f2"><div class="input">Site supervisor</div><div class="input">01x-xxx xxxx</div></div><div class="input" style="margin-top:6px">Call 1 day before</div></div>
+    <div class="field" style="position:relative"><label><span class="sw"></span>Mount &amp; label sample board</label><div class="input">Label: NUSA DUTA FASA 10</div><span class="pin co" style="right:-8px;top:-6px">4</span></div>
+    <div class="field" style="position:relative"><label>Items (21)</label>
+      <div class="lineitem"><div class="r"><b>1 &middot; SRT73-CR</b><span class="muted">qty 1 &times;</span></div><div class="small muted">Sorento &middot; product name</div></div>
+      <div class="lineitem"><div class="r"><b>2 &middot; CB313</b><span class="muted">qty 1 &times;</span></div><div class="small muted">Cabana &middot; product name</div></div>
+      <div class="lineitem"><div class="r"><b>3 &middot; CB2829</b><span class="muted">qty 1 &times;</span></div><div class="small muted">or <b>CB2805A</b> &nbsp;<span class="pill">alternative</span></div></div>
+      <div class="lineitem"><div class="r"><span class="muted">Add item: </span><span class="mono">tpe9101</span></div>
+        <div class="opt"><div class="hit"><b>TPE-9101</b> &middot; product name</div><div>TPE-9101-W &middot; product name</div></div></div>
+      <span class="pin co" style="right:-8px;top:-6px">5</span>
+    </div>
+    <div class="field"><label>Loan period</label><div class="f2"><div class="input">2</div><div class="seg"><span>days</span><span class="on">months</span></div></div></div>
+    <div class="field"><label>Goods from</label><div class="seg"><span>Demo set</span><span>New goods</span><span class="on">Either</span></div></div>
+    <div class="field"><label>Purpose (optional)</label><div class="input ph">e.g. developer show unit</div></div>
+    <div class="actions"><span class="btn">Save draft</span><span class="btn primary" style="flex:1;justify-content:center">Submit</span></div>
+  </div>
+</div>
+<div class="notes"><ol>
+  <li><span class="co">1</span><div><b>Customer = debtor picker; typed name when there is no debtor.</b> Shows code + name. Form B's PINNACLE HOME has no debtor, so it is typed and the coordinator sees "No debtor code".<span class="ref">Portal <span class="mono">LookupSelect</span>/<span class="mono">AsyncCombobox</span> FE app/(auth)/portal/components/AsyncCombobox.tsx on GET /public/portal/lookups/debtors (BE api/v1/public/portal.py:498)</span></div></li>
+  <li><span class="co">2</span><div><b>Project: registered pick, or typed title (soft transition).</b> With the switch "Sample requests need a registered project" OFF (default) the typed title is accepted; ON hides "Type the project title". Quotation unlocks once a project is picked.<span class="ref">Project lookup reused from the sponsorship form: SubmissionForm.tsx:3029-3045, GET /lookups/projects (portal.py:524) scoped by sponsorship_link_service.projects_for_contact :46-85. Card rules 2, 3.</span></div></li>
+  <li><span class="co">3</span><div><b>Delivery mode is one tap and required on submit</b> (Q2). Paper left it blank on 2 of 3 forms.<span class="ref">New radio group, FE components/ui/radio-group.tsx</span></div></li>
+  <li><span class="co">4</span><div><b>Board mounting is a switch + label, never a line.</b> Prints as row 1 of the requisition.<span class="ref">components/ui/switch.tsx. Card rule 6.</span></div></li>
+  <li><span class="co">5</span><div><b>Items are picked products.</b> The search ignores dashes and case, so "tpe9101" offers TPE-9101; prefix still works (B2155-BLUE-NL offers B2155-BLUE-DIY). "X OR Y" = an alternative product on the line. On a phone each line is a card; on desktop the same data is the existing line table.<span class="ref">Line table: SubmissionForm.tsx:1795-1990 (HAS_LINES :370), product search GET /lookups/products (portal.py:459-495) gains the dash-blind match from services/product_code_family.py:79.</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 2: PROJECT TAB ============ -->
+<h2 class="frame-title">2. Staff, project detail, new "Sample requests" tab (1280 wide)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento</div><div class="grp">Sales</div><div class="it on">Project Sales</div><div class="it sub on">Pipeline</div><div class="it sub">Sample Requests</div><div class="it sub">Stock Claims</div></div>
+  <div class="main"><div class="topbar">Sorento SRT</div><div class="content">
+    <div class="phrow"><div class="ph"><h1>Taman Nusa Duta Fasa 10</h1><div class="crumbs">Project Sales &rsaquo; Pipeline &rsaquo; PRJ-0000xx</div></div><div class="actions"><span class="btn">Edit</span></div></div>
+    <div class="tabs" style="position:relative"><span>Overview</span><span>Stakeholders</span><span>Tasks</span><span>Quotations</span><span class="on">Sample requests <span class="n">2</span></span><span>Samples</span><span>Sponsorships</span><span>POs</span><span>Delivery schedules</span><span>Sales orders</span><span>Activity</span><span>Documents</span><span class="pin co" style="left:330px;top:-14px">6</span></div>
+    <div class="toolbar"><span class="search">Search SR no, item</span><span class="chip">Status</span><span style="flex:1"></span><span class="btn primary">New sample request</span></div>
+    <div class="grid"><div class="scroller"><table>
+      <colgroup><col style="width:120px"><col style="width:110px"><col style="width:240px"><col style="width:90px"><col style="width:130px"><col style="width:160px"><col></colgroup>
+      <thead><tr><th>SR no</th><th>Requested</th><th>Customer</th><th class="num">Items</th><th>Delivery</th><th>Status</th><th>Salesperson</th></tr></thead>
+      <tbody>
+        <tr><td>SR-000003</td><td>10 Oct 2026</td><td>300-J099 JV PERKASA SDN BHD</td><td class="num">21 + board</td><td>By driver</td><td><span class="pill blue">Processing</span></td><td>Salesperson A</td></tr>
+        <tr><td>SR-000001</td><td>02 Oct 2026</td><td>300-J099 JV PERKASA SDN BHD</td><td class="num">4</td><td>Self-deliver</td><td><span class="pill green">Delivered</span></td><td>Salesperson A</td></tr>
+      </tbody></table></div>
+      <div class="pager"><span>1 - 2 of 2</span><span>Rows per page 25</span></div></div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">6</span><div><b>New tab, just before the existing Samples (feedback) tab</b> (Q4). Row click opens the request page (frame 3). "New sample request" opens the same page empty, with this project and its customer prefilled. Empty state: heading + hint, no button in the body.<span class="ref">TABS ProjectDetailClient.tsx:76-88, panel wiring :313-406 (`&lt;XPanel project={project}/&gt;`), list shape copies SamplesPanel.tsx with PanelDataGrid. DataGrid tableLayout fixed + columnsResizable. Status = Badge pill.</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 3: DETAIL ============ -->
+<h2 class="frame-title">3. Staff, request page (coordinator view, 1280 wide). View and Edit are the same layout</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento</div><div class="grp">Sales</div><div class="it on">Project Sales</div><div class="it sub">Pipeline</div><div class="it sub on">Sample Requests</div></div>
+  <div class="main"><div class="topbar">Sorento SRT</div><div class="content">
+    <div class="phrow"><div class="ph"><h1>SR-000003</h1><div class="crumbs">Project Sales &rsaquo; Sample Requests &rsaquo; SR-000003</div>
+      <div class="meta">Salesperson A &middot; requested 10 Oct 2026 &middot; submitted 10 Oct 2026 16:42 &middot; from portal</div></div>
+      <div class="actions" style="position:relative"><span class="btn icon">&lsaquo;</span><span class="btn icon">&rsaquo;</span><span class="btn">Print requisition</span><span class="btn">Edit</span><span class="btn primary">Mark customer confirmed</span><span class="pin co" style="right:-10px;top:-12px">7</span></div></div>
+    <div class="card"><div class="bd" style="position:relative"><div class="timeline"><span class="st done">Submitted</span><span class="ar">&rsaquo;</span><span class="st now">Processing</span><span class="ar">&rsaquo;</span><span class="st">Customer confirmed</span><span class="ar">&rsaquo;</span><span class="st">Delivered</span></div><span class="pin co" style="right:-10px;top:-10px">8</span></div></div>
+    <div class="card"><div class="hd">Request</div><div class="bd"><div class="facts">
+      <div><div class="k">Customer</div><div class="v">300-J099 JV PERKASA SDN BHD (PROJECT)</div></div>
+      <div><div class="k">Project</div><div class="v">Taman Nusa Duta Fasa 10 <span class="pill">typed, not linked</span></div></div>
+      <div><div class="k">Quotation</div><div class="v muted">None</div></div>
+      <div><div class="k">Delivery</div><div class="v">By driver &middot; Immediate</div></div>
+      <div><div class="k">Ship to</div><div class="v">CHENXIN PLUMBING SDN BHD, Johor Bahru</div></div>
+      <div><div class="k">Site contact</div><div class="v">Site supervisor &middot; 01x-xxx xxxx<br><span class="small muted">Call 1 day before</span></div></div>
+      <div><div class="k">Loan</div><div class="v">2 months &middot; Either goods</div></div>
+      <div><div class="k">Board</div><div class="v">Mount &amp; label: NUSA DUTA FASA 10</div></div>
+    </div></div></div>
+    <div class="card" style="position:relative"><div class="hd">Internal (coordinator)</div><div class="bd"><div class="facts">
+      <div><div class="k">Consignment No</div><div class="input">CSGN-xxxxx</div></div>
+      <div><div class="k">PO No</div><div class="input ph">-</div></div>
+      <div><div class="k">Customer confirmed</div><div class="v muted">-</div></div>
+      <div><div class="k">Delivered</div><div class="v muted">-</div></div>
+    </div></div><span class="pin co" style="right:-10px;top:-10px">9</span></div>
+    <div class="card" style="position:relative"><div class="hd">Items (21) <span class="small muted" style="font-weight:400">tap a row for its stock</span></div>
+      <div class="grid" style="border:0;border-radius:0"><div class="scroller"><table>
+        <colgroup><col style="width:50px"><col style="width:170px"><col style="width:300px"><col style="width:170px"><col style="width:70px"><col></colgroup>
+        <thead><tr><th>#</th><th>Item</th><th>Name</th><th>Or</th><th class="num">Qty</th><th>Remark</th></tr></thead>
+        <tbody>
+          <tr><td>B</td><td colspan="5"><b>MOUNT &amp; LABEL SAMPLE BOARD</b> &middot; NUSA DUTA FASA 10</td></tr>
+          <tr><td>1</td><td>SRT73-CR</td><td>product name</td><td class="muted">-</td><td class="num">1</td><td></td></tr>
+          <tr class="hl"><td>2</td><td>CB313</td><td>product name</td><td class="muted">-</td><td class="num">1</td><td></td></tr>
+        </tbody></table></div></div>
+      <div class="stock"><div class="small" style="margin-bottom:6px"><b>CB313 stock</b> <span class="muted">(existing Order Inquiry stock grid, location BRW, read-only)</span></div>
+        <div class="grid"><table><colgroup><col style="width:160px"><col style="width:90px"><col style="width:110px"><col></colgroup>
+          <thead><tr><th>Location</th><th>Tag</th><th class="num">On hand</th><th></th></tr></thead>
+          <tbody><tr><td>BRW</td><td><span class="pill blue">Own</span></td><td class="num">2,129</td><td></td></tr>
+          <tr><td>BRW-BB</td><td><span class="pill">Group</span></td><td class="num">2,066</td><td></td></tr>
+          <tr><td>BRW-IB</td><td><span class="pill">Group</span></td><td class="num">560</td><td></td></tr>
+          <tr><td>BRW-IR</td><td><span class="pill">Group</span></td><td class="num">226</td><td></td></tr></tbody></table></div>
+      </div>
+      <div class="grid" style="border:0;border-radius:0"><table><colgroup><col style="width:50px"><col style="width:170px"><col style="width:300px"><col style="width:170px"><col style="width:70px"><col></colgroup><tbody>
+          <tr><td>3</td><td>CB2829</td><td>product name</td><td>CB2805A</td><td class="num">1</td><td>paper: CB2829SS-CR</td></tr>
+          <tr><td>4</td><td>CB2157SS</td><td>product name</td><td class="muted">-</td><td class="num">1</td><td></td></tr>
+          <tr><td colspan="6" class="muted">... 17 more</td></tr></tbody></table></div>
+      <span class="pin co" style="right:-10px;top:-10px">10</span></div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">7</span><div><b>One primary action = the next status for this viewer.</b> Coordinator sees "Mark customer confirmed" (asks for the date), then "Mark delivered" (date). Salesperson sees only "Cancel request" until Processing, as a deferred action (countdown + Cancel, no confirm dialog). Print requisition is a plain button. Prev/next walks the queue's order.<span class="ref">PageHeader components/common/PageHeader.tsx, RecordNavigation components/common/RecordNavigation.tsx, DeferredActionButton components/common/DeferredActionButton.tsx. Status moves: status_service.assert_transition_allowed (BE services/status_service.py:169) as in project_quotation_approval_service.py:363.</span></div></li>
+  <li><span class="co">8</span><div><b>Status strip from the status engine.</b> SR-STOCK inserts its stock / borrow / transfer steps between Processing and Customer confirmed; Cancelled shows as a red pill instead of the strip.<span class="ref">Entity "sample_request" registered in BE modules/projects/status_entities.py:51-55, graph seeded like services/project_seed_service.py:737. Labels editable at System Management &rsaquo; Status graphs.</span></div></li>
+  <li><span class="co">9</span><div><b>Internal box = the paper's "For internal purpose".</b> Only the coordinator (projects.sample_requests.process) edits it; the salesperson sees it read-only. Consignment No is plain text here; SR-STOCK links it to the pulled AutoCount CG.<span class="ref">Card rule 10, Q5.</span></div></li>
+  <li><span class="co">10</span><div><b>Lines + per-line stock, reused as is.</b> The board is row B, never a product. A row click expands the existing OrderInquiryStockGrid for that product (it renders CellStockTable). Figures above are dev's CB313 spread. No allocation in this slice.<span class="ref">OrderInquiryStockGrid FE app/(protected)/project-sales/_shared/components/OrderInquiryStockGrid.tsx:31-141 (props productId, location), CellStockTable fulfilment-planning/components/CellStockTable.tsx:136, feed GET /fulfilment-planning/stock-detail (BE api/v1/projects/fulfilment_planning.py:919, projects.projects.view). Known gap for SR-STOCK: group mode skips BRW-DISP (services/scm/group_netting.py:301-305).</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 4: QUEUE ============ -->
+<h2 class="frame-title">4. Coordinator queue, all projects (1280 wide)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento</div><div class="grp">Sales</div><div class="it on">Project Sales</div><div class="it sub">Pipeline</div><div class="it sub on">Sample Requests</div><div class="it sub">Stock Claims</div></div>
+  <div class="main"><div class="topbar">Sorento SRT</div><div class="content">
+    <div class="phrow"><div class="ph"><h1>Sample Requests</h1><div class="crumbs">Project Sales &rsaquo; Sample Requests</div></div><div class="actions"><span class="btn primary">New sample request</span></div></div>
+    <div class="toolbar" style="position:relative"><span class="search">Search SR no, customer, project, item</span><span class="chip on">Submitted 1</span><span class="chip on">Processing 1</span><span class="chip">Customer confirmed</span><span class="chip">Delivered</span><span class="chip">Cancelled</span><span class="chip">Salesperson</span><span class="pin co" style="left:300px;top:-12px">11</span></div>
+    <div class="grid"><div class="scroller"><table>
+      <colgroup><col style="width:110px"><col style="width:110px"><col style="width:230px"><col style="width:250px"><col style="width:120px"><col style="width:110px"><col style="width:120px"><col></colgroup>
+      <thead><tr><th>SR no</th><th>Needed</th><th>Customer</th><th>Project</th><th class="num">Items</th><th>Delivery</th><th>Status</th><th>Salesperson</th></tr></thead>
+      <tbody>
+        <tr><td>SR-000004</td><td><span class="pill amber">Immediate</span></td><td>300-J099 JV PERKASA SDN BHD</td><td title="3-tower service apartments, Bukit Senibong">3-tower service apartments, Bukit Senibong</td><td class="num">21 + board</td><td>-</td><td><span class="pill">Submitted</span></td><td>Salesperson A</td></tr>
+        <tr><td>SR-000003</td><td><span class="pill amber">Immediate</span></td><td>300-J099 JV PERKASA SDN BHD</td><td>Taman Nusa Duta Fasa 10</td><td class="num">21 + board</td><td>By driver</td><td><span class="pill blue">Processing</span></td><td>Salesperson A</td></tr>
+        <tr><td>SR-000002</td><td>13 Oct 2026</td><td>PINNACLE HOME <span class="pill red">No debtor code</span></td><td>EDUCITY DEVELOPMENT</td><td class="num">17</td><td>By driver</td><td><span class="pill violet">Customer confirmed</span></td><td>Salesperson B</td></tr>
+      </tbody></table></div>
+      <div class="pager"><span>1 - 3 of 3</span><span>Rows per page 25</span></div></div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">11</span><div><b>One cross-project list, open work first.</b> Defaults to Submitted + Processing + Customer confirmed, sorted by needed date (Immediate first). Shows typed project titles too, so nothing waits on the project switch. Phone and address never appear in the list. New sidebar item "Sample Requests" under Project Sales, gated by projects.sample_requests.view.<span class="ref">Precedent app/(protected)/project-sales/stock-claims/ (StockClaimsClient: DataGrid, DataGridListToolbar, ListSearchInput, PageHeader). Nav config/menu.config.tsx:140-175 and the compact copy ~:2025-2095.</span></div></li>
+</ol></div>
+</div>
+
+<!-- ============ FRAME 5: PRINT ============ -->
+<h2 class="frame-title">5. Printed requisition (A4, the paper's layout)</h2>
+<div class="layout">
+<div class="scroll"><div class="paper">
+  <div style="font-weight:700;font-size:14px">SORENTO SDN BHD</div><div class="small">letterhead</div>
+  <h3 style="position:relative"><span class="co" style="position:absolute;right:0;top:-4px">12</span>CONSIGNMENT REQUISITION FORM &nbsp; SR-000003</h3>
+  <table style="margin-bottom:8px"><tr><td style="width:50%">Sales Person: Salesperson A</td><td>Date: 10/10/2026</td></tr>
+    <tr><td>Customer Name: JV PERKASA SDN BHD (PROJECT) (300-J099)</td><td>Request Delivery Date: IMMEDIATE ARRANGEMENT</td></tr>
+    <tr><td colspan="2">PROJECT: 52 double-storey terraces, Taman Nusa Duta Fasa 10 (TARIKAN ABADI SDN BHD)</td></tr>
+    <tr><td>Shipping Address: CHENXIN PLUMBING SDN BHD, Johor Bahru</td><td>Contact Person: Site supervisor, 01x-xxx xxxx, call 1 day before</td></tr></table>
+  <div class="box" style="margin-bottom:8px;width:50%">For Internal Purpose: Consignment No: CSGN-xxxxx &nbsp; PO No: ______</div>
+  <table><thead><tr><th style="width:36px">No</th><th style="width:90px">Brand</th><th>Model</th><th style="width:50px">Qty</th></tr></thead><tbody>
+    <tr><td>1</td><td></td><td>MOUNT &amp; LABEL SAMPLE BOARD - NUSA DUTA FASA 10</td><td></td></tr>
+    <tr><td>2</td><td>SORENTO</td><td>SRT73-CR</td><td>1</td></tr>
+    <tr><td>3</td><td>CABANA</td><td>CB313</td><td>1</td></tr>
+    <tr><td>4</td><td>CABANA</td><td>CB2829 OR CB2805A</td><td>1</td></tr>
+    <tr><td colspan="4">... remaining lines</td></tr></tbody></table>
+  <div style="margin-top:10px">Delivery: <span class="tick">&#10003;</span>Deliver-Van <span class="tick"></span>Self-Deliver <span class="tick"></span>Self-Collection</div>
+  <div style="margin-top:6px">Loan Period: 2 months &nbsp; Goods Taken From: <span class="tick"></span>Demo Sets <span class="tick"></span>New Goods &nbsp; Purpose: -</div>
+</div>
+<div class="notes"><ol>
+  <li><span class="co">12</span><div><b>Same columns and ticks as the paper</b>, so Inventory and logistics read it as today. The per-line "Approved by" columns are dropped (blank on all 3 forms; approval is borrow-only, SR-STOCK). Brand comes from the product. Contact phone prints because the driver needs it.<span class="ref">WeasyPrint via BE services/pdf_render.py:153 render_html, same as purchase_request_pdf_service.py:47 and stock_inquiry_pdf_service.py:37; served inline like api/v1/projects/quotation_documents.py:687.</span></div></li>
+</ol></div>
+</div>
+</div>
+</body>
+</html>
