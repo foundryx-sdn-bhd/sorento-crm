@@ -6,14 +6,14 @@ Additive only, idempotent (`IF NOT EXISTS`) so the shared dev DB, which converge
 Plan: documentation/plans/scm/PLAN-stock-debt-snapshot-15oct.md.
 
 Revision ID: sds_0001_stock_debt_snapshots
-Revises: sf_0001_series_brands
+Revises: dobs_0001_assume_delivered
 """
 import sqlalchemy as sa
 from alembic import op
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "sds_0001_stock_debt_snapshots"
-down_revision = "sf_0001_series_brands"
+down_revision = "dobs_0001_assume_delivered"
 branch_labels = None
 depends_on = None
 
