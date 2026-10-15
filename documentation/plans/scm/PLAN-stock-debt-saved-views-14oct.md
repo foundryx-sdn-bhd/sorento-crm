@@ -1,6 +1,6 @@
 # PLAN: saved views (preset filters) on Stock Debt
 
-Status: built and reviewed (READY at 495a6c73, browser pass PASS 1280/375), waiting on the owner hand test (PR #1683). Track: small fix (no migration, no RBAC change).
+Status: round 3 in build (owner hand test 15 Oct: Location lists the real warehouses, not groups; UAC AC-R1..R10). Rounds 1-2 reviewed READY at d57e0af2, security PASS ecaae202. PR #1683. Track: M fix round (no migration, no RBAC change).
 
 Owner ask (14 Oct 21:10): save the Stock Debt filters (date range, project, project location)
 as a named view, like the sponsorship form report's saved views, and apply them in one pick.
@@ -119,3 +119,21 @@ Total: whole book -681 / -5,622 / -5,813 / -23,668 / -68,154; Only IB -940 / -1,
 -3,576 / -10,115; All except IB 355 / -4,538 / -4,980 / -20,092 / -57,943; Only IR -335 / -1,236 /
 -916 / -912 / -5,691; All except IR -250 / -4,386 / -4,897 / -22,756 / -62,367. Only X plus All
 except X is not the whole book (HQ reserve left out under Only; pools sealed).
+
+## Round 3: the real warehouse (owner hand test, 15 Oct)
+
+Owner: "the location use the true location, don't do grouping like that". Crew answer to the
+behaviour card: (a), every warehouse in the current Book's span, site pools and HQ included.
+
+- Backend: `location` / `exclude_location` (repeatable warehouse ids) on list, cell and export.
+  `_warehouses(group, book)` keeps main's rule and is then intersected with `location` and
+  minus `exclude_location`, so a pick only ever narrows the span and the recompute is the same
+  walk over fewer warehouses. HQ reserve and site pools need no rule of their own. `group`,
+  `exclude_group` and the multi-group `_group_set` go back to main (not on screen).
+- Envelope gains `locations` = `[{id, code, name}]` over the Book's span before the pick.
+- Frontend: the Location select lists those (id value, code label, name in brackets when it
+  differs); state, query keys, cell drill, export and the saved-view keys move from
+  `groups` / `groups_mode` to `locations` / `locations_mode`.
+- Dev data (read-only, sorento_cagent_stack): 26 flagged bins (BRW-, DC1-, MWH-, RSW-, WH3- x
+  AM/BB/IB/IR/NTC/ACT, plus DC1) and the site pools (BRW, MWH, RSW, WH3, DC1, HQ, DEFECT, ...).
+  B2155-NL-BLUE on hand: BRW-IB 1,360, MWH-IB 3,165, WH3-IB 3,381, BRW 97.

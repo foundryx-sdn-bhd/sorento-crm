@@ -71,3 +71,50 @@ Location filter), Q2 yes (rolling date range).
 - AC-L1 The three BRW columns are a fixed site-pool (retail) reference, not scoped by Location
   or Book: their headers read `BRW Retail On Hand Qty`, `BRW Retail PO Qty`,
   `BRW Retail Incoming Qty`, on screen and in the workbook. `Dealer O/standing Qty` unchanged.
+
+## Round 3 (owner hand test, 15 Oct): Location is the real warehouse
+
+Owner: "the location use the true location, don't do grouping like that". Crew answer to the
+behaviour card (15 Oct): option (a). This round SUPERSEDES the group-based Location of AC-B1..B5,
+AC-F1..F4 and AC-X1..X4: the board no longer sends `group` or `exclude_group`. `group` and the
+`groups` facet go back to exactly what origin/main has (single string, not on screen);
+`exclude_group` is removed.
+
+### Backend
+- AC-R1 `GET /stock-debt` and `GET /stock-debt/{product_id}/cell` take `location` and
+  `exclude_location`, each a REPEATABLE warehouse id. The span is the current Book's span
+  (main's `_warehouses(group, book)`), then, when `location` is given, only those of its
+  warehouses whose id is listed, then minus every id in `exclude_location`. The balance is
+  recomputed over that span (supply and demand of those warehouses only), not a row filter.
+- AC-R2 A location never widens the read: an id outside the Book's span (another Book, an
+  unflagged or inactive bin, another company's warehouse, a made-up value) matches nothing.
+  `location` listing only such ids gives an EMPTY span (no rows), never the whole book.
+- AC-R3 No special cases: a site pool (e.g. `BRW`, `MWH`) and an HQ project reserve are
+  locations like any other. Under `Only` each is in only when picked; under `All except` each is
+  in unless picked. `book=retail` honours both params over the pools.
+- AC-R4 `POST /stock-debt/export` body takes `location` and `exclude_location` (lists; a bare
+  string is accepted as one id; null is empty). The workbook spans the same warehouses as the
+  board.
+- AC-R5 The list envelope carries a `locations` facet: `[{id, code, name}]`, one per warehouse
+  in the current Book's span (after `group`, before any `location` / `exclude_location`
+  narrowing, so the list does not shrink as the reader picks), sorted by code. Generic: a newly
+  flagged bin (e.g. `PRJ-ED`) appears with no code change.
+- AC-R6 No migration. The three BRW Retail columns stay a fixed retail-pool reference (AC-L1).
+
+### Frontend
+- AC-R7 The Location `SearchableMultiSelect` (after Supplier, clearable, with its built-in
+  Select all) lists the `locations` facet: value = the id, label = the code, or
+  `CODE (Name)` when the name is non-empty and differs from the code ignoring case (e.g.
+  `HQ (HEADQUARTER)`, but `BRW-IB`). Enabled under every Book.
+- AC-R8 The `Only` / `All except` switch stays. Under `Only` the picks go out as repeated
+  `location`, under `All except` as repeated `exclude_location`, on the list, the cell drill and
+  the export, and both the picks and the mode are in their query keys. Changing either resets
+  to page 1.
+- AC-R9 Chip: `Location: BRW-IB`, `Locations: BRW-IB, MWH-IB`, `Location: all except BRW-IB`,
+  `Locations: all except BRW-IB, MWH-IB`, using the same labels as the select. A picked id not in
+  the current facet reads `Unknown location` (no id is ever shown). Clearing the chip clears the
+  picks and returns to `Only`. Counts as one active filter under every Book.
+- AC-R10 Saved views store `locations` (comma-joined ids) and `locations_mode`
+  (`include` | `exclude`) in place of `groups` / `groups_mode`. A view with no `locations` key
+  (including any view saved with the old `groups` key, which only ever existed on dev copies)
+  applies as Every location with `Only`. "No segment" resets to Every location, `Only`.
