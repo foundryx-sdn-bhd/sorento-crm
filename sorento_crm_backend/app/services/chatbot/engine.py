@@ -7144,11 +7144,16 @@ def _run_stages_body(  # noqa: PLR0915
                     focus=dataclasses_replace(state_out.focus, customers=focus_customers_named),
                 )
             ask = plan.ask
-            if ask.kind == "customer_pick" and not _roster_is_outstanding(verdict, state_out.focus):
+            if (
+                ask.kind == "customer_pick"
+                and not _roster_is_outstanding(verdict, state_out.focus)
+                and not customer_docs_hidden
+            ):
                 # PICKER-ONE (owner, 13 Oct 2026): a customer roster the narrower raised
                 # off the focus or off typed words carries the same has DO / no DO stamp
                 # every other customer picker does, through the one helper. R20 stands:
-                # an outstanding ask's roster is stamped with nothing.
+                # an outstanding ask's roster is stamped with nothing. V1-DOC-SCOPE slice 3:
+                # nor is the roster of a contact that sees no delivery order.
                 ask = turn_runtime.stamp_customer_ask(
                     db, ask, ctx=ctx, payload=resolver_payload, space_id=space_id_for_turn
                 )
