@@ -175,7 +175,7 @@ Pink numbers point at the notes on the right of each frame.</p>
       <div class="lineitem"><div class="r"><b>2 &middot; CB313</b><span class="muted">qty 1 &times;</span></div><div class="small muted">Cabana &middot; product name</div></div>
       <div class="lineitem"><div class="r"><b>3 &middot; CB2829</b><span class="muted">qty 1 &times;</span></div><div class="small muted">or <b>CB2805A</b> &nbsp;<span class="pill">alternative</span></div></div>
       <div class="lineitem"><div class="r"><span class="muted">Add item: </span><span class="mono">tpe9101</span></div>
-        <div class="opt"><div class="hit"><b>TPE-9101</b> &middot; product name</div><div>TPE-9101-W &middot; product name</div></div></div>
+        <div class="opt"><div><b>TPE-9101</b> &middot; product name</div><div>TPE-9101-W &middot; product name</div></div></div>
       <span class="pin co" style="right:-8px;top:-6px">5</span>
     </div>
     <div class="field"><label>Loan period</label><div class="f2"><div class="input">2</div><div class="seg"><span>days</span><span class="on">months</span></div></div></div>
@@ -189,7 +189,7 @@ Pink numbers point at the notes on the right of each frame.</p>
   <li><span class="co">2</span><div><b>Project: registered pick, or typed title (soft transition).</b> With the switch "Sample requests need a registered project" OFF (default) the typed title is accepted; ON hides "Type the project title". Quotation unlocks once a project is picked.<span class="ref">Project lookup reused from the sponsorship form: SubmissionForm.tsx:3029-3045, GET /lookups/projects (portal.py:524) scoped by sponsorship_link_service.projects_for_contact :46-85. Card rules 2, 3.</span></div></li>
   <li><span class="co">3</span><div><b>Delivery mode is one tap and required on submit</b> (Q2). Paper left it blank on 2 of 3 forms.<span class="ref">New radio group, FE components/ui/radio-group.tsx</span></div></li>
   <li><span class="co">4</span><div><b>Board mounting is a switch + label, never a line.</b> Prints as row 1 of the requisition.<span class="ref">components/ui/switch.tsx. Card rule 6.</span></div></li>
-  <li><span class="co">5</span><div><b>Items are picked products.</b> The search ignores dashes and case, so "tpe9101" offers TPE-9101; prefix still works (B2155-BLUE-NL offers B2155-BLUE-DIY). "X OR Y" = an alternative product on the line. On a phone each line is a card; on desktop the same data is the existing line table.<span class="ref">Line table: SubmissionForm.tsx:1795-1990 (HAS_LINES :370), product search GET /lookups/products (portal.py:459-495) gains the dash-blind match from services/product_code_family.py:79.</span></div></li>
+  <li><span class="co">5</span><div><b>Items are picked products.</b> The search ignores dashes and case, so "tpe9101" lists TPE-9101. It only lists: the salesperson taps the product; nothing is preselected or auto-matched. "X OR Y" = an alternative product on the line, also picked. On a phone each line is a card; on desktop the same data is the existing line table.<span class="ref">Line table: SubmissionForm.tsx:1795-1990 (HAS_LINES :370), product search GET /lookups/products (portal.py:459-495) gains the dash-blind match from services/product_code_family.py:79.</span></div></li>
 </ol></div>
 </div>
 

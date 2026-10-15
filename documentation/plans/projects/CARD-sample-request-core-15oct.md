@@ -1,6 +1,6 @@
 # Behaviour card: Sample Request (consignment requisition) in project management (SR-CORE)
 
-Status: card filed for owner approval (15 Oct 2026). Size L, slice 1 of 3 (SR-STOCK, SR-RETURN follow).
+Status: card + mock filed for owner approval (15 Oct 2026); crew answered Q2-Q5 = (a); Q1 with the owner. Size L, slice 1 of 3 (SR-STOCK, SR-RETURN follow).
 Mock: `mockups/sample-request-core.html` (open the file in a browser; every element names its component + path).
 Sources: crew discovery `state/reports/SAMPLE-REQUEST-DISCOVERY-15oct.md` sections 1-4, owner rulings 16 Oct 00:10.
 Paths: BE = `sorento_crm_backend/app/`, FE = `sorento_crm_frontend/`.
@@ -30,7 +30,9 @@ and returns are NOT in this slice; the record leaves a column or a status slot f
 5. **Lines are products, picked, never typed.** Each line = product (required) + optional "or" alternative product
    + qty (default 1) + remark. The picker search ignores dashes, spaces and case (`TPE9101` finds `TPE-9101`; the
    same `regexp_replace(product_code,'[^A-Za-z0-9]','','g')` already used at `services/product_code_family.py:79`),
-   and still matches by prefix so `B2155-BLUE-NL` offers `B2155-BLUE-DIY`. A "X OR Y" line = product X + alternative Y.
+   so a typed "B2155-BLUE" lists `B2155-BLUE-DIY` among the hits. The search only LISTS products; a human always picks
+   one. Nothing is auto-matched, nothing is chosen for the user, and no name or nearest-code matching runs anywhere
+   (owner rule). A "X OR Y" line = product X + alternative Y, both picked.
    A "X / Y" set = two lines. No per-line approval columns (paper has two, blank on all 3 forms; ruling 4 makes
    approval borrow-only, which belongs to SR-STOCK).
 6. **Board mounting is a header flag, not a line** (it has no SKU): toggle "Mount & label sample board" + label text
@@ -61,7 +63,7 @@ and returns are NOT in this slice; the record leaves a column or a status slot f
 |---|---|---|
 | A | Salesperson A, portal. Customer `300-J099 JV PERKASA SDN BHD (PROJECT)`. Project switch OFF, typed title "3-tower service apartments, Bukit Senibong". Scope "FOR UNIT - TOWER A & B". Immediate. Ships to the site in Masai, site contact role "Site supervisor", "call 1 day before". Board ON, label "TOWER A & B". 21 product lines, loan 2 months, no mode ticked | Submit refused: "Choose a delivery mode" (rule 7). After choosing Deliver by driver: SR-000001, Submitted, no project link, shows in the coordinator queue. Print row 1 = "MOUNT & LABEL SAMPLE BOARD - TOWER A & B" |
 | A2 | Same form, line `TPE9101` | Picker typed "TPE9101" offers `TPE-9101`; line saved as that product |
-| A3 | Same form, line `B2155-BLUE-NL` | Picker offers `B2155-BLUE-DIY` (prefix); salesperson picks it or writes "NL version" in remark (Q1) |
+| A3 | Same form, line `B2155-BLUE-NL` (no such product) | Typing "B2155-BLUE" lists `B2155-BLUE-DIY`; the salesperson decides whether that is the item. Nothing is preselected. If it is not the item: Q1 |
 | B | Salesperson B, staff, from project "EDUCITY DEVELOPMENT" tab (if registered). Customer PINNACLE HOME has no debtor: typed. Date 13 Oct. "CB2829SS-CR OR CB2829": `CB2829SS-CR` not in products | Line = `CB2829` with no alternative (Q1). Request shows "No debtor code" badge. Deliver by driver. Loan 2 months |
 | B2 | Same, "CSA150 / CSH2072" | Two lines, `CSA150` qty 1 and `CSH2072` qty 1 |
 | C | Salesperson A, Form C, project "52 double-storey terraces, Taman Nusa Duta Fasa 10" for developer TARIKAN ABADI. Ships to CHENXIN PLUMBING SDN BHD (third party) | Ship-to name = the plumber, customer stays JV PERKASA. Board ON. Coordinator: Submitted -> Processing, types Consignment No + PO No, Customer confirmed (date), Delivered (date). Return due = delivered + 2 months |
@@ -108,18 +110,20 @@ Nothing existing is altered.
 
 ## Questions (recommendation first)
 
-1. **A product that is not in the product list at all** (`CB2829SS-CR`). (a) Pick the nearest product and say the
-   difference in the line remark; (b) allow an unmatched typed line that the coordinator must resolve before
-   Processing. **Rec (a)**: one rule (lines are products), and the dash-blind + prefix picker resolves the other
-   mismatches seen on the 3 forms; (b) adds a resolve step for one line in 60.
-2. **Delivery mode required on submit?** (a) required; (b) optional, coordinator asks. **Rec (a)**: 2 of 3 paper forms
+1. **A product that is not in the product list at all** (`CB2829SS-CR`). (a) The salesperson searches and picks the
+   product they mean themselves (e.g. `CB2829`) and notes the difference in the line remark; if none fits, the line is
+   left out and they ask the coordinator; (b) allow an unmatched typed line that the coordinator must resolve by
+   picking a product before Processing. Either way a human picks; the code never matches. **Rec (a)**: one rule
+   (lines are products); the dash-blind search already lists the right product for the other mismatches on the
+   3 forms; (b) adds a resolve step for about one line in 60. OPEN, with the owner.
+2. **ANSWERED (a), crew 15 Oct.** **Delivery mode required on submit?** (a) required; (b) optional, coordinator asks. **Rec (a)**: 2 of 3 paper forms
    left it blank and the coordinator has to chase it; one tap fixes that.
-3. **Portal visibility.** (a) Opt-in per contact, like price tag requests (`GRANTABLE_PORTAL_FORM_TYPES`,
+3. **ANSWERED (a), crew 15 Oct.** **Portal visibility.** (a) Opt-in per contact, like price tag requests (`GRANTABLE_PORTAL_FORM_TYPES`,
    `services/portal_service.py:95`); (b) every contact (`SUPPORTED_TYPES`, `:81`, which includes dealers).
    **Rec (a)**: only salespeople request samples; (b) would show the form to every dealer contact.
-4. **Separate "Sample requests" tab** next to the existing "Samples" (feedback) tab, or one merged tab?
+4. **ANSWERED (a) separate, crew 15 Oct.** **Separate "Sample requests" tab** next to the existing "Samples" (feedback) tab, or one merged tab?
    **Rec separate**: Samples is the developer-feedback log per quotation version (`models/projects.py:1558`) and
    rule 13 already feeds it; merging would mix a workflow list with a feedback list.
-5. **Who may move statuses.** (a) A new `projects.sample_requests.process` permission granted to the coordinator role;
+5. **ANSWERED (a), crew 15 Oct.** **Who may move statuses.** (a) A new `projects.sample_requests.process` permission granted to the coordinator role;
    (b) anyone with `projects.projects.edit`. **Rec (a)**: edit is held by every salesperson, which would let them
    mark their own request delivered.
