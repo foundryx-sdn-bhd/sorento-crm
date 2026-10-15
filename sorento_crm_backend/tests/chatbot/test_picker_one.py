@@ -322,7 +322,9 @@ class TestOneStampHelper:
 # --------------------------------------------------------------------------- #
 
 
-def _typed_names_turn(session_factory, monkeypatch, *, order_status: str | None):
+def _typed_names_turn(
+    session_factory, monkeypatch, *, order_status: str | None, office: bool = True, attributes: list[str] | None = None
+):
     from app.services.chatbot.lanes.business.services import ResolveGateServices
     from tests.chatbot.conftest import validating_resolve_entity
     from tests.chatbot._turn_helpers import make_office_access_type
@@ -354,8 +356,9 @@ def _typed_names_turn(session_factory, monkeypatch, *, order_status: str | None)
         probe=probe,
     )
     _seed_contact(session_factory, variables={})
-    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
-    make_office_access_type(session_factory, CONTACT_ID)
+    if office:
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
     result, _captured = _run_turn(
         session_factory,
         monkeypatch,
@@ -373,6 +376,7 @@ def _typed_names_turn(session_factory, monkeypatch, *, order_status: str | None)
         text_body="DO for hanlim trading and hanlim hardware",
         msg_id=f"zzt-picker-one-typed-{order_status}",
         resolve_services=services,
+        **({"attributes": attributes} if attributes is not None else {}),
     )
     return (result.reply or {}).get("text") or "", probes
 

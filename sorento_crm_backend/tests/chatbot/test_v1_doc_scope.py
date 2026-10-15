@@ -1200,3 +1200,32 @@ class TestHiddenCustomerRowsEverywhere:
         assert HANLIM_CODE_1 not in reply and HANLIM_CODE_2 not in reply, reply
         assert "HANLIM TRADING" not in reply.upper() and "HANLIM HARDWARE" not in reply.upper(), reply
 
+
+class TestTypedNamesRosterOnAGrantedReport:
+    """Security review on 87f642391: the narrower's own customer pick list (PICKER-ONE, typed
+    names the resolver placed nowhere) is stamped through `turn_runtime.stamp_customer_ask`,
+    a third DO probe site. A granted unlinked contact gets the names (crew ruling (b)) but no
+    DO probe and no has / no DO stamp."""
+
+    def test_a_granted_unlinked_contact_gets_the_names_without_do_stamps(self, session_factory, monkeypatch) -> None:
+        from tests.chatbot.test_picker_one import _typed_names_turn
+
+        reply, probes = _typed_names_turn(
+            session_factory, monkeypatch, order_status="sales_analysis", office=False,
+            attributes=[OUTSTANDING_KEY, SALES_GRANT],
+        )
+
+        assert probes == [], probes
+        assert " - has DO" not in reply and " - no DO" not in reply, reply
+        assert "Which one do you mean?" in reply, reply
+
+    def test_document_staff_keep_the_stamps(self, session_factory, monkeypatch) -> None:
+        from tests.chatbot.test_picker_one import _typed_names_turn
+
+        reply, probes = _typed_names_turn(
+            session_factory, monkeypatch, order_status="sales_analysis", office=True,
+            attributes=[OUTSTANDING_KEY, SALES_GRANT],
+        )
+
+        assert len(probes) == 1 and " - has DO" in reply, (reply, probes)
+
