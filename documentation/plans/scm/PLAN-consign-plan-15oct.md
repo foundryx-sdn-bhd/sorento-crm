@@ -90,3 +90,8 @@ order at BRW-BB). CON holds 6 of each product, flagged out of fulfilment plannin
   on-hand for that product is below the consignment's open qty.
 - Not built (round 2 N9): plan moves lost if `_finish_batch`'s savepoint rolls back. Rare; the
   next planning change or a manual re-plan covers it.
+
+Browser evidence, fix round 2 (head b1abbae7): after an API reset of CG-SBX/06-062, the board's
+List view reads `Borrow 2 (CON)` / `Borrow 3 (CON)` per line (summary Borrow suggested 8, Buy 0);
+the Grid cell breakdown for SAMPLE-SBX shows the one-step reason "Consignment: the goods are at
+CON." and the stock table lists CON as `Own location` (on hand 6, taken 2) beside the BB group.
