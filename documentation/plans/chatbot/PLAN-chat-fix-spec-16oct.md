@@ -33,8 +33,11 @@ parser and the spec registry.
 ## Changes (each its own red-first slice)
 
 1. S1 `{{specs}}` complete: `specification_lines` also prints product type synonyms and class meanings (class
-   choices with their synonyms from the registry). New parser prompt version = v94 with the baked spec block replaced
-   by `{{specs}}` (dev only; published on owner PASS only).
+   choices with their synonyms from the registry). New parser prompt version = prod's chain (prod v63 = v52 + the
+   `{{find_filters}}` line; dev copy v94) with the static spec block replaced by `{{specs}}`. Prod v52/v63 holds a
+   static block, so PR-A takes `_with_specs_block` / `publish_specs_block` (`chatbot_prompt_vars.py`) and the
+   `publish_parser_specs_block --from-version` script from #1582 (parked; only these pieces). Dev only; published on
+   owner PASS only.
 2. S2 class meanings as data: seed the registry `class` choices + synonyms (idempotent migration), moving every word
    from `CLASS_SYNONYMS` into data (nothing lost), Jacuzzi = "bathtub with massage jets", whirlpool, spa bath,
    按摩浴缸; then delete `CLASS_SYNONYMS` and read the registry instead.
@@ -49,7 +52,10 @@ parser and the spec registry.
 9. S9 NEW-8 a class-level product list states its total ("Bathtubs (84)"), like the W04 count reply. The shower
    screen data clean-up is an owner-run SQL (UPDATE), not in the PR.
 
-Out: P2-F3 (dropped, word rule), P2-F4 size branch (parked).
+Out: P2-F3 (dropped, word rule), P2-F4 size branch (#1582, parked except the specs publisher above).
+
+Overlap: #1582 edits the same `grounding.ground()` block (~714-741) and `specification_lines`; #1582 stays parked, so
+PR-A owns these lines now. No other open PR touches `product_class_signal.py`.
 
 ## Gates (owner/crew 16 Oct, no exceptions)
 
