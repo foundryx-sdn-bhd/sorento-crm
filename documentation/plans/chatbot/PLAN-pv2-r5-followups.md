@@ -197,3 +197,18 @@ Blocker: apply.py:414-420 compares a new topic's domain with held.domain, not th
 FIX: a number pick stays the open question's answer whatever its domain; the domain rule applies to option-key
 answers and compares with the open question's origin domain. Also: pre-check and apply judge with the same held
 (security nit + reviewer note); ledger_family.py:266 docstring; sharper confirm repeat-guard test.
+
+## Fix round 4 (reviewer READY at 9a11e8069 with 2 should-fix; security 4th pass FINDINGS, no blocker)
+Security confirmed the G blocker closed on all 8 CUSTOMER_SCOPED_TOOLS (fetch.py:1265-1267, lanes/business/__init__.py
+1444-1446) and v1 unchanged (v1 never builds an enforced scope with no ids). Remaining, all fail closed or narrow:
+- Security SF1: `chat_report.scope_for` (chat_report.py:331-339) relaxes a held-to-no-customer scope for an
+  `unclassified` asker, so a bridged chat_analytics lookup runs crm_report_ask unscoped. Fix: never relax that scope.
+- Security SF2: top selling `dealer` comes from v1's ledger list (None unlinked), so the "who" question can name a
+  customer (engine.py:5599-5605, 2452-2465). Fix: an enforced scope counts as dealer.
+- Reviewer SF1: the grant pre-check (turn.py:248-249, `_grant_refusal`) judges a numbered answer by the parser's
+  domain, which apply now ignores (wrong refusal, fails closed).
+- Reviewer SF2 = security nit 2: the turn.py:563-564 fallback scope has no refusal line (empty reply on a scope-read
+  error).
+- Security nit 1: lanes/business/__init__.py ~1586 filters carried SO-list ids only when `scoped_to_links`.
+- Owner note (reviewer): an unlinked "unclassified" contact holding the chat-report grant is refused chat-dataset
+  reports on PV2, where v1 runs them; consistent with "unlinked = dealer view" (owner ruling 15 Oct).
