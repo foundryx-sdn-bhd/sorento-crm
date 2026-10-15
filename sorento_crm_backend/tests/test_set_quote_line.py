@@ -870,6 +870,22 @@ def test_b7_recompute_re_evaluates_set_lines():
 # ------------------------------------------------------------------ C1 series sets (service)
 
 
+def test_c1_a_series_set_row_has_a_uuid_id_and_the_pair_stays_unique():
+    """The row carries prices of its own, so it gets a uuid `id` (test_schema_uuid_id_principle);
+    one price per (series, set) is then held by a unique pair instead of the old composite PK."""
+    with blank_session() as db:
+        env = _env(db)
+        product_set = _set(db, env["company_id"], env["category"], env["uom"])
+        series = _series(db, env["company_id"])
+
+        first = _series_row(db, series, product_set, price="100.00")
+        assert uuid.UUID(str(first.id))
+
+        with pytest.raises(IntegrityError):
+            with db.begin_nested():
+                _series_row(db, series, product_set, price="200.00")
+
+
 def test_c1_a_series_set_is_added_priced_listed_and_removed():
     from app.services import project_pricing_service as pricing
 
