@@ -1264,6 +1264,17 @@ def render_prompt_blocks(db: "Session") -> str:
 #: product IS (the category entity carries them), and the brand is its own entity kind.
 SPECIFICATION_BLOCK_SKIP = frozenset({"class", "brand", "product_type"})
 
+#: Chat fix PR-A (AC-A7): the category entity's name is one the `{{specs}}` block lists, the
+#: way the KNOWN BRANDS rule holds a brand to the Known brands line. One line, published
+#: right after `{{specs}}` (`chatbot_prompt_vars.publish_specs_block`), never appended to
+#: the code constant (`test_parser_prompt_budget`).
+CATEGORY_NAME_RULE = (
+    "Category rule: a category entity names one of the product classes or product types listed"
+    " above, said in any language or spelling, and its canonical_code is that name exactly AS"
+    ' LISTED, never the customer\'s own spelling ("PaperHolder", "paper-holder" -> canonical_code'
+    ' "Paper holder"); raw stays the customer\'s own words.'
+)
+
 
 def specification_lines(db: "Session") -> list[str]:
     """The `specification` entity kind's vocabulary, one line per registry key (fix

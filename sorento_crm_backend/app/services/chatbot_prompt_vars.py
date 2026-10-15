@@ -822,14 +822,30 @@ def _with_specs_block(text: str) -> str:
     return f"{text.rstrip(chr(10))}\n\n{BLOCKS_BEGIN}\n{{{{specs}}}}\n{BLOCKS_END}\n"
 
 
+def _with_category_rule(text: str) -> str:
+    """`text` carrying `CATEGORY_NAME_RULE` once, on the line after `{{specs}}` (the classes
+    and types it holds the category to close that block), else at the end."""
+    from app.services.chatbot_parser_prompt import CATEGORY_NAME_RULE
+
+    if CATEGORY_NAME_RULE in text:
+        return text
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if _re.fullmatch(r"\s*\{\{\s*specs\s*\}\}\s*", line):
+            lines.insert(i + 1, CATEGORY_NAME_RULE)
+            return "\n".join(lines)
+    return f"{text.rstrip(chr(10))}\n{CATEGORY_NAME_RULE}\n"
+
+
 def publish_specs_block(session: Session, *, from_version: int | None = None) -> int | None:
     """A parser version whose specification vocabulary is rendered live from the registry
-    (`{{specs}}`), published as a new UNLABELLED version (chat fix PR-A, AC-A1: a registry
-    edit reaches the parser with no new version). The source is `from_version` when given,
-    else the version labelled production; every word of its text is kept
-    (`_with_specs_block`). Returns the version number; None when the source already carries
-    the block, or a version with exactly the new text exists. The label moves only when the
-    owner moves it."""
+    (`{{specs}}`), with the category name rule after it, published as a new UNLABELLED
+    version (chat fix PR-A, AC-A1, AC-A7: a registry edit reaches the parser with no new
+    version, and a category is one of the listed classes or types). The source is
+    `from_version` when given, else the version labelled production; every word of its text
+    is kept (`_with_specs_block`, `_with_category_rule`). Returns the version number; None
+    when the source already carries both, or a version with exactly the new text exists.
+    The label moves only when the owner moves it."""
     import uuid
 
     if from_version is not None:
@@ -848,7 +864,7 @@ def publish_specs_block(session: Session, *, from_version: int | None = None) ->
         ).first()
     if row is None:
         return None
-    new_text = _with_specs_block(row[0] or "")
+    new_text = _with_category_rule(_with_specs_block(row[0] or ""))
     if new_text == row[0]:
         return None
     exists = session.execute(
@@ -876,7 +892,7 @@ def publish_specs_block(session: Session, *, from_version: int | None = None) ->
             config_json={"wording_edit": True},
             commit_message=(
                 f"CHAT-FIX-SPEC: v{from_version if from_version is not None else 'production'}"
-                " with the live {{specs}} block"
+                " with the live {{specs}} block and the category name rule"
             ),
         )
     )
