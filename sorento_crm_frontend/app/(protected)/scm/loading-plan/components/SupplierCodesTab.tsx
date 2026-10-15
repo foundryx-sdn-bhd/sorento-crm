@@ -34,6 +34,7 @@ import { RefreshMatchingButton } from './RefreshMatchingButton';
 import type { PlanDocumentKind } from '../../services/fulfilmentService';
 import { EM_DASH, fmtInt } from '../../lib/format';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The Supplier codes tab (S3): what this supplier's file names that our catalogue does not
@@ -74,7 +75,7 @@ function matchedToLabel(alias: SupplierCodeAlias): string {
  *  which names no separate \u578b\u53f7 at all) - repeating the code back at itself says nothing. */
 function saysText(row: UnmatchedSupplierCode): string {
   const modelNo = row.model_no && row.model_no !== row.item_code ? row.model_no : null;
-  return [modelNo, row.product_name, row.brand, row.spec].filter(Boolean).join(' \u00b7 ');
+  return [modelNo, distinctName(row.item_code, row.product_name), row.brand, row.spec].filter(Boolean).join(' \u00b7 ');
 }
 
 /** Whitespace-split, lower-cased, empties dropped - every token has to hit something. */

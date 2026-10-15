@@ -1,3 +1,11 @@
+export type DebtorType = 'project' | 'project_cash' | 'cash_sales';
+
+export const DEBTOR_TYPE_OPTIONS: { value: DebtorType; label: string }[] = [
+  { value: 'project', label: 'Project' },
+  { value: 'project_cash', label: 'Project cash' },
+  { value: 'cash_sales', label: 'Cash sales' },
+];
+
 export interface Customer {
   id: string;
   customer_code: string;
@@ -19,6 +27,8 @@ export interface Customer {
   // The customer group this ledger belongs to; the name is read-only (no UUID in the UI).
   customer_group_id?: string | null;
   customer_group_name?: string | null;
+  // Routing and Sales type default; null = not set.
+  debtor_type?: DebtorType | null;
   // Extended profile (added by commercial_core)
   registered_name?: string | null;
   trading_name?: string | null;
@@ -49,6 +59,8 @@ export interface CustomerFormData {
   account_level?: number | null;
   // `null` clears the group; `undefined` leaves it alone (PUT reads `exclude_unset`).
   customer_group_id?: string | null;
+  // `null` clears the type; `undefined` leaves it alone (PUT reads `exclude_unset`).
+  debtor_type?: DebtorType | null;
   // Extended profile fields
   registered_name?: string;
   trading_name?: string;

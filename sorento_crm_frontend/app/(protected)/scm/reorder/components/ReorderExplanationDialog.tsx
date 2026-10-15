@@ -58,6 +58,7 @@ import type {
   ReorderRecommendation,
   SupplierChoice,
 } from '../types/reorder.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Row-click explanation popup - the headline "make it fool-proof" surface.
@@ -982,7 +983,7 @@ export function ReorderExplanationDialog({
               <span className="flex flex-wrap items-center gap-2">
                 <TypeChip rec={rec} />
                 <span className="font-medium text-foreground">{rec.sku}</span>
-                {rec.product_name ? <span>- {rec.product_name}</span> : null}
+                {distinctName(rec.sku, rec.product_name) ? <span>- {rec.product_name}</span> : null}
                 {/* View PO (M8-F8): once the line is confirmed into a draft PO, jump
                     straight to that PO's detail page. */}
                 {poLink?.po_id ? (

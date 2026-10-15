@@ -739,15 +739,20 @@ def _settled_status(ordered: Any, transferred: Any) -> str:
 
 @dataclass
 class Derived:
-    """What a recompute moved, for the post-commit hooks: SO lines that BECAME fully cancelled
-    (`(line id, cancel doc no)`, R5) and SO lines whose planned qty moved while they stayed
+    """What a recompute moved, for the post-commit hooks and the redecide summary: SO lines
+    that BECAME fully cancelled (`(line id, cancel doc no)`, R5: counted, no hook acts on them
+    since CANCEL-STOP-AT-SO) and SO lines whose planned qty moved while they stayed
     live (`(line id, planned before, planned after)`, Q4 a)."""
     newly_cancelled: list[tuple[str, str]] = field(default_factory=list)
     plan_moves: list[tuple[str, Decimal, Decimal]] = field(default_factory=list)
+    #: SO lines a cancel no longer covers in full that this rule had cancelled (R6), whose
+    #: pending Transfer to Cancel SO the hook withdraws.
+    reopened: list[str] = field(default_factory=list)
 
     def extend(self, other: "Derived") -> None:
         self.newly_cancelled.extend(other.newly_cancelled)
         self.plan_moves.extend(other.plan_moves)
+        self.reopened.extend(other.reopened)
 
 
 def recompute_cancelled(db: Session, touched: Touched,
@@ -768,9 +773,15 @@ def recompute_cancelled(db: Session, touched: Touched,
         )
         for row, header_status in rows:
             before_c, before_status = Decimal(row.qty_cancelled or 0), row.line_status
+            before_flag = bool(row.cancelled_by_cancel_doc)
             total = (as_decimal(row.qty_delivered) if str(row.id) in whole
                      else sums.get(str(row.id), _ZERO))
-            if _apply(row, total, row.qty_delivered, header_status):
+            newly = _apply(row, total, row.qty_delivered, header_status)
+            if before_flag and not row.cancelled_by_cancel_doc:
+                # Independent of the planned-qty move below (review nit): a reopened line can
+                # need both its proposal withdrawn and a planning change.
+                derived.reopened.append(str(row.id))
+            if newly:
                 newly_cancelled.append((str(row.id), _latest_doc_no(db, str(row.id))))
             elif (row.qty_cancelled != before_c and before_status != CANCELLED
                   and row.line_status != CANCELLED):
@@ -820,8 +831,8 @@ def _apply(row, total: Decimal, transferred: Any, header_status: Optional[str]) 
     if now_full:
         if row.line_status != CANCELLED:
             # A flag left set on a line something reopened (an SO push raising ordered, a
-            # relink that failed) is re-cancelled here, but it is not a NEW cancellation: its
-            # OI rows were retired the first time (review N1).
+            # relink that failed) is re-cancelled here, but it is not a NEW cancellation
+            # (review N1).
             newly = not row.cancelled_by_cancel_doc
             row.line_status = CANCELLED
             row.cancelled_by_cancel_doc = True
@@ -1323,31 +1334,29 @@ def run_cancel_hooks(db: Session, service: Any, *, actor: Optional[str]) -> None
     """After the batch's own commit, each reaction best effort with its own commit (a failure
     costs that reaction only, logged, never the ingest):
 
-    - R5: the order inquiry rows of every SO line that just became fully cancelled are retired
-      the way a board Cancel SO retires them (#1530: rows cancelled, links removed, handover
-      queued, "Transferred to Cancel SO: <XS no>") and the acknowledged ones flagged. Rows
-      already retired stay retired (owner, 13 Oct).
+    - R5 (owner rulings 14 Oct, CANCEL-STOP-AT-SO): the effects stop at the SO. A line that
+      just became fully cancelled and still has a live order inquiry row gets the board's own
+      Transfer to Cancel SO saved as its pending decision ("we trigger the transfer to cancel
+      SO action in fulfilment planning and let the CS confirm themselves"): no OI row is
+      retired or flagged, nothing is queued or emailed until CS confirms it on the board
+      (`ProjectSupplyService.cancel_lines`). A line the cancel no longer covers in full loses
+      the proposal the sync made.
     - Q4 a: a partial cancel moved a live line's planned qty, so the AutoCount planning change
       is raised for CS on the board exactly as an SO push's qty edit raises it (#1599 flow;
       `planning_change_service.build_batch` keeps its own gate: held or inquired lines only).
     """
     derived = getattr(service, "derived", None) or Derived()
-    if derived.newly_cancelled:
+    if derived.newly_cancelled or derived.reopened:
         try:
-            from app.services.project_order_inquiry_service import (
-                ProjectOrderInquiryService,
-                flag_rows_for_cancelled_lines,
-            )
+            from app.services import project_line_draft_service as drafts
 
-            ProjectOrderInquiryService(db).retire_rows_for_cancelled_lines(
-                [(line_id, doc_no or "AutoCount") for line_id, doc_no in derived.newly_cancelled],
-                actor_user_id=actor,
-            )
-            flag_rows_for_cancelled_lines(db, [line_id for line_id, _ in derived.newly_cancelled])
+            for line_id, doc_no in derived.newly_cancelled:
+                drafts.propose_autocount_cancel(db, line_id, doc_no or "", actor_user_id=actor)
+            drafts.withdraw_autocount_cancel(db, derived.reopened)
             db.commit()
         except Exception as exc:  # noqa: BLE001 - the ingest itself already committed
             db.rollback()
-            logger.warning("ingest.cancel_oi_hook_failed error=%s", _safe_error(exc))
+            logger.warning("ingest.cancel_proposal_failed error=%s", _safe_error(exc))
     if derived.plan_moves:
         try:
             _raise_planning_change(db, derived.plan_moves, actor=actor)

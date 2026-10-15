@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatDateInMalaysia } from '@/lib/helpers';
 import type { AutocountChangeListRow } from '../../_shared/types/projectSalesOrder.types';
 import { formatQty } from './SalesOrderMoney';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The AutoCount change list (section 9.4): the accepted rows of an amendment, in the export's
@@ -66,8 +67,11 @@ export function AmendmentAutocountChangeList({
         id: 'product_name',
         header: ({ column }) => <DataGridColumnHeader title="PRODUCT" column={column} />,
         cell: ({ row }) => (
-          <span className="block truncate" title={row.original.product_name ?? ''}>
-            {row.original.product_name ?? '-'}
+          <span
+            className="block truncate"
+            title={distinctName(row.original.item_code, row.original.product_name) ?? ''}
+          >
+            {distinctName(row.original.item_code, row.original.product_name) ?? '-'}
           </span>
         ),
         size: 220,

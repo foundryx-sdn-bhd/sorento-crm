@@ -158,6 +158,7 @@ import {
   useTagSizesQuery,
 } from '../../../../tag-sizes/hooks/useTagSizes';
 import { SaveAsSizeDialog } from './SaveAsSizeDialog';
+import { distinctName } from '@/lib/product-display';
 
 let idSeq = 0;
 function newTagId(): string {
@@ -2005,8 +2006,7 @@ function LinesRail({
               const name = row?.name ?? '';
               // Sorento's product name IS its code (S2): a name that only
               // repeats the code is redundant on the rail as it is on the tag.
-              const showName =
-                name !== '' && name.trim().toLowerCase() !== code.trim().toLowerCase();
+              const showName = distinctName(code, name) !== null;
               const family = familyLabel(lineFamily(line, code));
               // D8: a line with exactly ONE tag, NO parts and NO open group
               // renders as ONE selectable block - the line block IS the tag

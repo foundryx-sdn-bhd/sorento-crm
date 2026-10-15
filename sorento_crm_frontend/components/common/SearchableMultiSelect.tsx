@@ -18,6 +18,7 @@ import {
   type SelectTriggerSize,
 } from '@/components/common/select-trigger-variants';
 import { isInsideOpenDialog } from '@/components/common/floatingAncestry';
+import { sameDisplayText } from '@/lib/product-display';
 import { PopoverScrollLock } from '@/components/common/PopoverScrollLock';
 import {
   SelectLoadFailure,
@@ -511,7 +512,7 @@ export function SearchableMultiSelect({
                             </span>
                           ) : null}
                         </div>
-                        {opt.description ? (
+                        {opt.description && !sameDisplayText(opt.label, opt.description) ? (
                           <span
                             className="text-xs text-muted-foreground break-words"
                             title={opt.description}

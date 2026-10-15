@@ -20,6 +20,7 @@ import type {
   ProductCompatibilityRow,
 } from '../../types/productCompatibility.types';
 import ProductVariantPickerDialog from './ProductVariantPickerDialog';
+import { distinctName } from '@/lib/product-display';
 
 const PRODUCT_BASE_PATH = '/master-data-management/products';
 
@@ -75,12 +76,14 @@ function LinkRows({
               >
                 {row.product_code}
               </Link>
-              <div
-                className="truncate text-xs text-muted-foreground"
-                title={row.product_name}
-              >
-                {row.product_name}
-              </div>
+              {distinctName(row.product_code, row.product_name) ? (
+                <div
+                  className="truncate text-xs text-muted-foreground"
+                  title={row.product_name}
+                >
+                  {row.product_name}
+                </div>
+              ) : null}
             </div>
             {row.is_discontinued && (
               <Badge variant="destructive" appearance="light" size="sm">

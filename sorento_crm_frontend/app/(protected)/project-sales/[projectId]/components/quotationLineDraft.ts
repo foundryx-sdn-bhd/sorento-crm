@@ -37,6 +37,7 @@ const PICKS = ['image_attachment_id', 'drawing_attachment_id'] as const;
 export function serverToDraft(line: QuotationLine): LineDraft {
   return {
     product_id: line.product_id ?? '',
+    product_set_id: line.product_set_id ?? '',
     description: line.description ?? '',
     // No cell any more: carried through the save untouched, and printed under the description.
     technical_spec: line.technical_spec ?? '',
@@ -62,6 +63,7 @@ export function serverToDraft(line: QuotationLine): LineDraft {
 export function emptyDraft(): LineDraft {
   return {
     product_id: '',
+    product_set_id: '',
     description: '',
     technical_spec: '',
     brand_snapshot: '',
@@ -91,12 +93,12 @@ export function isUntouched(draft: LineDraft): boolean {
 
 /**
  * The one rule a quotation line has to satisfy before it can be stored, keyed by the field at
- * fault: a custom item (no product) carries the description the customer reads. Used to mark the
+ * fault: a non-standard item (no product, no set) carries the description the customer reads. Used to mark the
  * cell and to stop a Save that would only come back as the server's 422.
  */
 export function lineErrors(draft: LineDraft): Record<string, string> {
-  return !draft.product_id && !(draft.description ?? '').trim()
-    ? { description: 'A custom item needs a description' }
+  return !draft.product_id && !draft.product_set_id && !(draft.description ?? '').trim()
+    ? { description: 'A non-standard item needs a description' }
     : {};
 }
 
@@ -139,11 +141,35 @@ export function toBody(
     band_label: (draft.band_label ?? '').trim() || null,
     is_rate_only: isInlineChecked(draft.is_rate_only),
   };
+  // Sent only when it says something: a set, a product pick (which moves the line off a set),
+  // or a line that had a set and no longer does. A plain custom line keeps the body it had.
+  if (draft.product_set_id || draft.product_id || stored?.product_set_id) {
+    body.product_set_id = draft.product_set_id || null;
+  }
   PICKS.forEach((key) => {
     const value = (draft[key] ?? '').trim() || null;
     if (value || stored?.[key]) body[key] = value;
   });
   return body;
+}
+
+/**
+ * The Complete set text for a set's parts: codes joined by " + ", "2 x CODE" when the quantity is
+ * not 1, cut to the 100 characters the column holds. The server builds the same text when a set
+ * line is saved with this field blank, so the two read alike.
+ */
+export function completeSetText(
+  parts: { product_code: string; quantity: string | number }[],
+): string {
+  return parts
+    .map((part) => {
+      const quantity = Number(part.quantity);
+      return Number.isNaN(quantity) || quantity === 1
+        ? part.product_code
+        : `${quantity} x ${part.product_code}`;
+    })
+    .join(' + ')
+    .slice(0, 100);
 }
 
 /** Quantities come back as "2.00"; nobody writes two bathrooms as 2.00. */

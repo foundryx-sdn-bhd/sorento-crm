@@ -28,6 +28,7 @@ import {
   type DraftLine,
 } from '../[id]/components/packing-list-context';
 import type { InboundShipmentLine } from '../types/packingList.types';
+import { distinctName } from '@/lib/product-display';
 
 /** Keyed off the read permission plus a stable id, matching the DataGrid convention for a
  *  detail-page line grid (`scm.dashboard.view::proforma-invoice-lines` is the same shape). */
@@ -411,7 +412,7 @@ export function PackingListLinesTab() {
           // The supplier's own wording carried off the PI (S9); the product's name when
           // the line has none - a container drafted before this field existed, or one
           // read off the n8n PDF path, which states no description at all.
-          const value = line.description || line.product_name;
+          const value = line.description || distinctName(line.product_code, line.product_name);
           return (
             <span className="block truncate" title={value ?? undefined}>
               {value || EM_DASH}

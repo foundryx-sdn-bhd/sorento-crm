@@ -19,6 +19,7 @@ import type {
 } from '../../services/fulfilmentService';
 import { ContainerRequestHistoryBars } from './ContainerRequestHistory';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { distinctName } from '@/lib/product-display';
 
 function dateLabel(iso: string | null): string {
   return iso ? formatDateInMalaysia(iso) : EM_DASH;
@@ -92,9 +93,13 @@ export function ContainerRequestRowDialog({
                 // ordered - its members are - so every figure below belongs to one member,
                 // and a reader who is not told which one cannot check any of them (R19).
                 `Set of members. Figures from ${row.driver_item_code ?? 'its driver member'}${
-                  row.driver_product_name ? ` - ${row.driver_product_name}` : ''
+                  distinctName(row.driver_item_code, row.driver_product_name)
+                    ? ` - ${row.driver_product_name}`
+                    : ''
                 }`
-              : (row.product_name ?? 'No product name on file')}
+              : row.product_name
+                ? (distinctName(row.item_code, row.product_name) ?? '')
+                : 'No product name on file'}
           </DialogDescription>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

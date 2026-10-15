@@ -32,6 +32,7 @@ import type {
 import { ALLOCATION_CLAIM_STATE_LABEL } from '../../_shared/types/projectAllocation.types';
 import { formatQty } from '../../[projectId]/components/SalesOrderMoney';
 import { PageHeader } from '@/components/common/PageHeader';
+import { distinctName } from '@/lib/product-display';
 
 const STATE_BADGE: Record<AllocationClaimState, 'warning' | 'success' | 'destructive'> = {
   requested: 'warning',
@@ -134,7 +135,7 @@ export function StockClaimsClient() {
         cell: ({ row }) => {
           const text = row.original.product_code || 'Not resolved';
           return (
-            <span className="block truncate" title={row.original.product_name || text}>
+            <span className="block truncate" title={distinctName(row.original.product_code, row.original.product_name) || text}>
               {text}
             </span>
           );

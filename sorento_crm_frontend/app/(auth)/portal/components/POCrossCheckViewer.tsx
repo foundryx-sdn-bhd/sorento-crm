@@ -19,6 +19,7 @@ import {
   portalAttachmentDownloadUrl,
   type PortalAttachment,
 } from '../lib/portal-client';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * A PDF's bytes through the portal token route. The signed `url` is cross-origin with no
@@ -173,9 +174,9 @@ export default function POCrossCheckViewer({
                           <td className="py-2 px-3">
                             <span
                               className="truncate block max-w-[150px]"
-                              title={line.name}
+                              title={distinctName(line.code, line.name) ?? undefined}
                             >
-                              {line.name}
+                              {distinctName(line.code, line.name)}
                             </span>
                           </td>
                           <td className="py-2 px-3 text-right">

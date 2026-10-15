@@ -1282,8 +1282,14 @@ class ProjectSupplyService:
         Refused before anything is written: a blank reason (422), a line that is not on this
         order (422), an already cancelled line (409, audit columns never rewritten) and a line
         an active decision still covers (409, reject it first).
+
+        CANCEL-STOP-AT-SO (owner, 14 Oct 23:20): a line an AutoCount Cancel SO cancelled, that
+        CS has not transferred yet (`awaits_cancel_so`), is the one cancelled line this takes:
+        the sync proposed the transfer and CS confirming it is this same cancel. Its active
+        decision, if any, holds nothing (owed qty 0), so it does not stand in the way.
         """
         from app.services import project_line_draft_service
+        from app.services.project_line_draft_service import awaits_cancel_so
         from app.services.project_order_inquiry_service import (
             ProjectOrderInquiryService,
             flag_rows_for_cancelled_lines,
@@ -1330,6 +1336,8 @@ class ProjectSupplyService:
             for snap in (active.line_snapshots or [] if active is not None else [])
         }
         for mirror, core, _reason in picked:
+            if awaits_cancel_so(core):
+                continue
             if core.line_status == "cancelled":
                 raise AppException(
                     status_code=409,
@@ -3092,6 +3100,67 @@ class ProjectSupplyService:
             by_ref,
             self._oi_linked_landed_by_ref(refs, product_id=product_id, company_id=company_id),
         )
+
+    def _po_received_by_product(
+        self, refs_by_product: Mapping[str, Iterable[str]]
+    ) -> Dict[str, Dict[str, Tuple[Decimal, Optional[str]]]]:
+        """`product_id -> _po_received_by_so_line_ref(refs, product_id=..., company_id=None)`
+        for many products in two reads, not two per product (STOCK-DEBT-PERF: the Stock
+        Debt board asked once per product, 1,258 of its 1,288 statements on the dev DB).
+
+        The same two joins over every product and ref at once. A row is kept only for the
+        product it is for AND a ref asked about for that product, so each product's answer
+        is the single-key read's own: the receipt JOIN pairs the SPO row with the PO line's
+        product (the single-key read gets that by comparing both to one literal), and no
+        company is stated, as `company_id=None` states none.
+        """
+        wanted = {
+            str(product_id): {ref for ref in {str(r).strip() for r in refs if r} if ref}
+            for product_id, refs in refs_by_product.items()
+            if product_id
+        }
+        wanted = {product_id: refs for product_id, refs in wanted.items() if refs}
+        if not wanted:
+            return {}
+        all_refs = sorted(set().union(*wanted.values()))
+        product_ids = sorted(wanted)
+        received: Dict[str, Dict[str, Dict[str, Decimal]]] = {}
+        rows = (
+            self.db.query(
+                PurchaseOrderLine.from_so_line_ref,
+                SPOAllocation.quantity_received,
+                SPOAllocation.spo_number,
+                PurchaseOrderLine.product_id,
+            )
+            .join(
+                SPOAllocation,
+                (SPOAllocation.from_po_line_ref == PurchaseOrderLine.source_ref)
+                & (SPOAllocation.product_id == PurchaseOrderLine.product_id),
+            )
+            .filter(
+                PurchaseOrderLine.from_so_line_ref.in_(all_refs),
+                PurchaseOrderLine.product_id.in_(product_ids),
+            )
+            .all()
+        )
+        for ref, qty, spo_number, product_id in rows:
+            if str(ref) in wanted.get(str(product_id), ()):
+                _add_landed(received.setdefault(str(product_id), {}), str(ref), spo_number, qty)
+        linked: Dict[str, Dict[str, Dict[str, Decimal]]] = {}
+        for ref, product_id, _company, spo_number, placed, got in self._oi_placements(
+            all_refs, product_ids
+        ):
+            if str(ref) in wanted.get(str(product_id), ()):
+                _add_landed(
+                    linked.setdefault(str(product_id), {}), str(ref).strip(), spo_number,
+                    min(_dec(placed), _dec(got)),
+                )
+        return {
+            product_id: _landed_for_refs(
+                received.get(product_id, {}), linked.get(product_id, {})
+            )
+            for product_id in wanted
+        }
 
     def _oi_linked_landed_by_ref(
         self,

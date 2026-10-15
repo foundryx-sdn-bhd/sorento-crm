@@ -18,6 +18,7 @@ import {
   poProductOptions,
   productSearchSeed,
   productShortName,
+  renderProductOption,
 } from './DeliveryScheduleProductPicker';
 
 if (!window.matchMedia) {
@@ -272,5 +273,33 @@ describe('DeliveryScheduleProductPicker', () => {
 
     await waitFor(() => expect(screen.queryByText('SRTFV1001')).toBeNull());
     expect(screen.getByText('SRTWC8613-RL')).toBeInTheDocument();
+  });
+});
+
+describe('renderProductOption (name equals code)', () => {
+  it('prints the code once for a catalogue option whose name is the code', () => {
+    const { container, unmount } = render(
+      <>{renderProductOption({ value: 'a', label: '1861', description: '1861' })}</>,
+    );
+    expect(container.textContent).toBe('1861');
+    unmount();
+    const second = render(
+      <>{renderProductOption({ value: 'b', label: 'SRTW8613-RL', description: 'SRTW8613-RL' })}</>,
+    );
+    expect(second.container.textContent).toBe('SRTW8613-RL');
+  });
+
+  it('still shows the short name of a PO option with a real description', () => {
+    const { container } = render(
+      <>
+        {renderProductOption({
+          value: 'c',
+          label: 'SRT6641',
+          description: 'SORENTO ANTI-ODOR FLOOR TRAP (150x150MM) SRT6641',
+        })}
+      </>,
+    );
+    expect(container.textContent).toContain('SRT6641');
+    expect(container.textContent?.length).toBeGreaterThan('SRT6641'.length);
   });
 });

@@ -4,14 +4,15 @@ import * as React from 'react';
 import {
   type CellContext,
   type ColumnDef,
-  type ExpandedState,
   type VisibilityState,
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
-import { Columns3, MoreHorizontal, Plus, Trash2, Undo2 } from 'lucide-react';
+import { Columns3, MoreHorizontal, Plus, StickyNote, Trash2, Undo2 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverPortal, PopoverTrigger } from '@/components/ui/popover';
+import { toast } from '@/lib/toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -53,7 +54,10 @@ import {
   isDecimalString,
   multiplyMoney,
 } from '../../_shared/lib/money';
-import { useQuotationLineImages } from '../../_shared/hooks/useProjects';
+import {
+  useProductSetLineRef,
+  useQuotationLineImages,
+} from '../../_shared/hooks/useProjects';
 import { formatMyr } from './QuotationsPanel';
 import {
   emptyDraft,
@@ -61,7 +65,6 @@ import {
   isInlineChecked,
   isUntouched,
   lineErrors,
-  PRICED_PER_OPTIONS,
   totalFromDrafts,
   trimAmount,
   type LineDraft,
@@ -72,7 +75,8 @@ import {
   type LineFileKind,
   type LineFileShown,
 } from './QuotationLineFileCell';
-import { QuotationStockChip } from './QuotationStockChip';
+import { QuotationStockChip, SetStockChip } from './QuotationStockChip';
+import { SET_OPTION_PREFIX, isSetOption } from '@/app/(protected)/scm/components/productOrSetPicker';
 import { LineFlags } from './QuotationLineFlags';
 
 /** One line of the grid: the staged (or stored) line, and its true position in the scope. */
@@ -83,7 +87,7 @@ interface GridRow {
   staged: StagedQuotationLine;
 }
 
-type MenuAction = 'details' | 'below' | 'section' | 'remove';
+type MenuAction = 'below' | 'section' | 'remove';
 
 /**
  * Everything a cell needs beyond its own row, handed down by context rather than closed over.
@@ -150,7 +154,10 @@ export function describeLine(
 function resolvedLine(row: GridRow): QuotationLine | null {
   const { line, draft } = row.staged;
   if (!line) return null;
-  return (line.product_id ?? '') === (draft.product_id ?? '') ? line : null;
+  return (line.product_id ?? '') === (draft.product_id ?? '') &&
+    (line.product_set_id ?? '') === (draft.product_set_id ?? '')
+    ? line
+    : null;
 }
 
 const PICK_FIELD: Record<
@@ -261,6 +268,52 @@ function CellSelect({
   );
 }
 
+function SetBadge() {
+  return (
+    <Badge variant="secondary" appearance="light" size="sm" className="shrink-0">
+      Set
+    </Badge>
+  );
+}
+
+/** A picker option: a set wears the Set badge, a product keeps its name beside the code. */
+function renderLineOption(option: SearchableSelectOption): React.ReactNode {
+  // A set is its code on one line: the Set badge shows on the picked value, not in the list.
+  if (isSetOption(option.value)) {
+    return <span className="block min-w-0 truncate">{option.label}</span>;
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="min-w-0 break-words">{option.label}</span>
+      {isSetOption(option.value) ? <SetBadge /> : null}
+      {option.description ? (
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
+          {option.description}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** A set line's stock pill: the parts frozen on the line, else the picked set's own parts. */
+function SetStock({ row, quantity }: { row: GridRow; quantity: string }) {
+  const grid = useGrid();
+  const { staged } = row;
+  const setId = staged.draft.product_set_id ?? '';
+  const stored =
+    staged.line?.product_set_id === setId ? (staged.line?.set_parts ?? []) : [];
+  const ref = useProductSetLineRef(stored.length === 0 ? setId : null);
+  const parts = stored.length > 0 ? stored : (ref.data?.parts ?? []);
+  return (
+    <SetStockChip
+      parts={parts.filter((part): part is typeof part & { product_id: string } => Boolean(part.product_id))}
+      group={grid.stockGroup}
+      quantity={quantity}
+      label={grid.labelOf(row)}
+    />
+  );
+}
+
 function ProductCell({ row: tableRow }: CellContext<GridRow, unknown>) {
   const grid = useGrid();
   const row = tableRow.original;
@@ -274,23 +327,34 @@ function ProductCell({ row: tableRow }: CellContext<GridRow, unknown>) {
         <CellSelect
           label={`Product on ${label}`}
           clearable
-          value={staged.draft.product_id ?? ''}
+          value={
+            staged.draft.product_set_id
+              ? `${SET_OPTION_PREFIX}${staged.draft.product_set_id}`
+              : (staged.draft.product_id ?? '')
+          }
           // The pick and its fill are one write, made in `onOptionChange`.
           onChange={() => undefined}
           onOptionChange={(option) => grid.selectProduct(row.key, option)}
           fetchOptions={grid.fetchProducts}
           selectedOption={grid.resolveProduct(staged.line, staged.draft)}
+          renderOption={renderLineOption}
           placeholder="Pick a product"
           emptyMessage="No matches"
         />
       ) : (
-        <span
-          className="block truncate text-sm font-medium"
-          title={staged.line?.product_code ?? undefined}
-        >
-          {staged.draft.product_id ? (staged.line?.product_code ?? '-') : ''}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span
+            className="block truncate text-sm font-medium"
+            title={staged.line?.product_code ?? undefined}
+          >
+            {staged.draft.product_id || staged.draft.product_set_id
+              ? (staged.line?.product_code ?? '-')
+              : ''}
+          </span>
+          {staged.draft.product_set_id ? <SetBadge /> : null}
         </span>
       )}
+      {editable && staged.draft.product_set_id ? <SetBadge /> : null}
       <LineFlags
         quotationId={grid.quotationId}
         line={staged.line}
@@ -386,7 +450,10 @@ function QtyCell({ row: tableRow }: CellContext<GridRow, unknown>) {
   const quantity = staged.draft.quantity ?? '';
   const uom = staged.draft.uom ?? '';
   const productId = staged.draft.product_id ?? '';
-  const chip = productId ? (
+  const setId = staged.draft.product_set_id ?? '';
+  const chip = setId ? (
+    <SetStock row={row} quantity={quantity} />
+  ) : productId ? (
     <QuotationStockChip
       productId={productId}
       group={grid.stockGroup}
@@ -626,6 +693,7 @@ function ActionsCell({ row: tableRow }: CellContext<GridRow, unknown>) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <NotesButton row={row} />
       <Button
         type="button"
         mode="icon"
@@ -641,57 +709,44 @@ function ActionsCell({ row: tableRow }: CellContext<GridRow, unknown>) {
   );
 }
 
-/** Line details, opened from the row menu: the fields that need no column (AC-QLG18). */
-function LineDetails({ row }: { row: GridRow }) {
+/** The line's note: an icon on the row (filled when a note exists) opening a small popover. */
+function NotesButton({ row }: { row: GridRow }) {
   const grid = useGrid();
   const { staged } = row;
   const label = grid.labelOf(row);
-  const unitType = staged.draft.unit_type ?? '';
+  const note = staged.draft.notes ?? '';
+  const has = note.trim() !== '';
   return (
-    <div className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,16rem)_minmax(0,1fr)]">
-      <div className="min-w-0 space-y-1">
-        <p className="text-xs font-medium">Complete set</p>
-        <Input
-          variant="sm"
-          value={staged.draft.complete_set ?? ''}
-          maxLength={100}
-          placeholder="c/w seat cover, flush valve"
-          aria-label={`Complete set on ${label}`}
-          onChange={(event) =>
-            grid.update(row.key, { complete_set: event.target.value })
-          }
-        />
-      </div>
-      <div className="min-w-0 space-y-1">
-        <p className="text-xs font-medium">Priced per</p>
-        <CellSelect
-          label={`Priced per on ${label}`}
-          clearable
-          value={unitType}
-          onChange={(next) => grid.update(row.key, { unit_type: next })}
-          options={PRICED_PER_OPTIONS}
-          selectedOption={PRICED_PER_OPTIONS.find(
-            (option) => option.value === unitType,
-          )}
-          placeholder="Not set"
-          emptyMessage="No matches"
-        />
-      </div>
-      <div className="min-w-0 space-y-1">
-        <p className="text-xs font-medium">Notes</p>
-        <Textarea
-          variant="sm"
-          rows={2}
-          value={staged.draft.notes ?? ''}
-          placeholder="Why this price, what was agreed, what it replaces"
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          mode="icon"
+          variant="ghost"
+          size="sm"
           aria-label={`Notes on ${label}`}
-          className="field-sizing-content min-h-14 resize-none"
-          onChange={(event) =>
-            grid.update(row.key, { notes: event.target.value })
-          }
-        />
-      </div>
-    </div>
+          title="Notes"
+          data-has-note={has ? 'true' : 'false'}
+        >
+          <StickyNote
+            className={`size-3.5 ${has ? 'fill-primary/30 text-primary' : 'text-muted-foreground'}`}
+          />
+        </Button>
+      </PopoverTrigger>
+      <PopoverPortal>
+        <PopoverContent align="end" collisionPadding={8} className="w-[min(20rem,calc(100vw-2rem))] p-3">
+          <Textarea
+            variant="sm"
+            rows={3}
+            value={note}
+            placeholder="Why this price, what was agreed, what it replaces"
+            aria-label={`Note text on ${label}`}
+            className="field-sizing-content min-h-16 resize-none"
+            onChange={(event) => grid.update(row.key, { notes: event.target.value })}
+          />
+        </PopoverContent>
+      </PopoverPortal>
+    </Popover>
   );
 }
 
@@ -905,7 +960,6 @@ const COLUMNS: ColumnDef<GridRow>[] = [
       draggable: false,
       headerClassName: FLUSH,
       cellClassName: `${FLUSH} align-top`,
-      expandedContent: (row: GridRow) => <LineDetails row={row} />,
     },
   },
 ];
@@ -927,6 +981,8 @@ export interface QuotationLinesGridProps {
   productCodeOf: (productId: string) => string | null;
   /** What picking a product decides for the rest of its line (null for a cleared pick). */
   fillFromProduct: (option: SearchableSelectOption) => LineDraft;
+  /** The rest of a line's fields once a SET is picked (loads the set's parts). */
+  fillFromSet?: (setId: string) => Promise<LineDraft>;
   uomOptions: SearchableSelectOption[];
   uomError: unknown;
   onUomRetry: () => void;
@@ -958,6 +1014,7 @@ export function QuotationLinesGrid({
   resolveProduct,
   productCodeOf,
   fillFromProduct,
+  fillFromSet,
   uomOptions,
   uomError,
   onUomRetry,
@@ -967,7 +1024,6 @@ export function QuotationLinesGrid({
   onToggleRemoved,
   toolbar,
 }: QuotationLinesGridProps) {
-  const [expanded, setExpanded] = React.useState<ExpandedState>({});
   const [bandOpen, setBandOpen] = React.useState<Set<string>>(() => new Set());
   const [preview, setPreview] = React.useState<{
     items: AttachmentPreviewItem[];
@@ -1015,22 +1071,55 @@ export function QuotationLinesGrid({
     (key: string, option: SearchableSelectOption | null) => {
       const held = linesRef.current.find((line) => line.key === key);
       if (!held) return;
-      // A different product's photo or drawing cannot be this one's, so a change clears both.
+      // A different product's (or set's) photo or drawing cannot be this one's, so a change
+      // clears both.
+      const heldValue = held.draft.product_set_id
+        ? `${SET_OPTION_PREFIX}${held.draft.product_set_id}`
+        : (held.draft.product_id ?? '');
       const clearPicks: LineDraft =
-        (option?.value ?? '') !== (held.draft.product_id ?? '')
+        (option?.value ?? '') !== heldValue
           ? { image_attachment_id: '', drawing_attachment_id: '' }
           : {};
       if (!option) {
-        update(key, { product_id: '', ...clearPicks });
+        update(key, {
+          product_id: '',
+          product_set_id: '',
+          ...(held.draft.product_set_id ? { complete_set: '' } : {}),
+          ...clearPicks,
+        });
+        return;
+      }
+      if (isSetOption(option.value)) {
+        const setId = option.value.slice(SET_OPTION_PREFIX.length);
+        update(key, {
+          product_id: '',
+          product_set_id: setId,
+          uom: 'SET',
+          ...clearPicks,
+        });
+        // The parts, brand, price and Complete set need the set's detail; applied only if the
+        // row still names this set when it arrives.
+        void fillFromSet?.(setId)
+          .then((filled) => {
+            const now = linesRef.current.find((line) => line.key === key);
+            if (now?.draft.product_set_id !== setId) return;
+            // A typed brand is never overwritten by the set's.
+            const { brand_snapshot: brand, ...rest } = filled;
+            update(key, (now.draft.brand_snapshot ?? '').trim() ? rest : { ...rest, brand_snapshot: brand ?? '' });
+          })
+          .catch(() => toast.error('Could not load that set'));
         return;
       }
       update(key, {
         product_id: option.value,
+        product_set_id: '',
+        // Off a set, its parts text no longer describes the line.
+        ...(held.draft.product_set_id ? { complete_set: '' } : {}),
         ...fillFromProduct(option),
         ...clearPicks,
       });
     },
-    [fillFromProduct, update],
+    [fillFromProduct, fillFromSet, update],
   );
 
   const focusSoon = React.useCallback((selector: string) => {
@@ -1085,12 +1174,6 @@ export function QuotationLinesGrid({
       const index = current.findIndex((line) => line.key === key);
       if (index < 0) return;
       switch (action) {
-        case 'details':
-          setExpanded((previous) => {
-            const map = previous === true ? {} : previous;
-            return { ...map, [key]: !map[key] };
-          });
-          return;
         case 'below': {
           const added = newLine();
           commit([
@@ -1199,7 +1282,10 @@ export function QuotationLinesGrid({
 
   const labelOf = React.useCallback(
     (row: GridRow) => {
-      const productId = row.staged.draft.product_id ?? '';
+      const setId = row.staged.draft.product_set_id ?? '';
+      const productId = setId
+        ? `${SET_OPTION_PREFIX}${setId}`
+        : (row.staged.draft.product_id ?? '');
       return describeLine(
         row.staged.line,
         row.index,
@@ -1265,7 +1351,6 @@ export function QuotationLinesGrid({
     data: visibleRows,
     getRowId: (row) => row.key,
     getCoreRowModel: getCoreRowModel(),
-    getRowCanExpand: () => true,
     state: {
       // The handle and the menu are edit-only; hidden rather than removed, so a saved column
       // order holds in both views. They cannot be hidden by the reader either.
@@ -1274,10 +1359,8 @@ export function QuotationLinesGrid({
         drag_handle: editing,
         row_actions: editing,
       },
-      expanded: editing ? expanded : {},
     },
     onColumnVisibilityChange: setColumnVisibility,
-    onExpandedChange: setExpanded,
     enableSorting: false,
     columnResizeMode: 'onChange',
   });
@@ -1364,11 +1447,6 @@ export function QuotationLinesGrid({
               : undefined
           }
           rowAttributes={(row: GridRow) => ({ 'data-line-key': row.key })}
-          // A click on the row, away from its inputs and buttons, opens or closes Line details
-          // (the grid leaves every control's own click alone). Reorder is the handle only.
-          onRowClick={
-            editing ? (row: GridRow) => act(row.key, 'details') : undefined
-          }
         >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             {toolbar}

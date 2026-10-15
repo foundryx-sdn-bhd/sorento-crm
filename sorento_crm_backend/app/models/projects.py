@@ -44,6 +44,7 @@ import uuid
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -56,7 +57,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -907,6 +908,33 @@ class ProjectSeriesProduct(Base):
     #: discounted a cent. See PLAN-series-catalogue-and-pricing-pages.md.
 
 
+class ProjectSeriesSet(Base):
+    """One product SET priced into a series, same shape as ``ProjectSeriesProduct``.
+
+    A set is quoted as ONE line, so the series prices the set itself (not its parts). Reached
+    only through the company-scoped series, like the product link above.
+    """
+
+    __tablename__ = "series_sets"
+    # Audit entity type follows the sibling series_products naming.
+    __audit_entity_type__ = "project_series_sets"
+    __table_args__ = {"schema": "projects"}
+
+    series_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.series.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    product_set_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("product_sets.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    selling_price = Column(Numeric(12, 2), nullable=True)
+    #: A PERCENT, ``6`` means 6%. NULL is silence, never zero (see ``ProjectSeriesProduct``).
+    max_discount_pct = Column(Numeric(5, 2), nullable=True)
+
+
 class PriceFloorRule(Base, CompanyScopedMixin):
     """The lowest price a line may carry, per level (AC-E6).
 
@@ -1416,6 +1444,14 @@ class ProjectQuotationLine(Base, CompanyScopedMixin):
     product_id = Column(
         UUID(as_uuid=False), ForeignKey("products.id", ondelete="SET NULL"), nullable=True
     )
+    # A line names a product OR a product set, never both (CHECK below). A set is ONE line to the
+    # customer; its parts are FROZEN in `set_parts_snapshot` at pick time as a list of
+    # {product_id, product_code, description, quantity (string), is_driver}, so a later edit of
+    # the set master never rewrites what was quoted and the SO draft splits from the copy.
+    product_set_id = Column(
+        UUID(as_uuid=False), ForeignKey("product_sets.id", ondelete="SET NULL"), nullable=True
+    )
+    set_parts_snapshot = Column(JSONB(none_as_null=True), nullable=True)
     product_code_snapshot = Column(String(100), nullable=True)
     description_snapshot = Column(Text, nullable=True)
     list_price_snapshot = Column(Numeric(12, 2), nullable=True)
@@ -1467,6 +1503,11 @@ class ProjectQuotationLine(Base, CompanyScopedMixin):
     __table_args__ = (
         Index("ix_project_quotation_lines_version", "version_id", "sort_order"),
         Index("ix_project_quotation_lines_flags", "version_id", "is_below_floor"),
+        Index("ix_project_quotation_lines_product_set", "product_set_id"),
+        CheckConstraint(
+            "NOT (product_id IS NOT NULL AND product_set_id IS NOT NULL)",
+            name="ck_quotation_lines_one_target",
+        ),
         {"schema": "projects"},
     )
 

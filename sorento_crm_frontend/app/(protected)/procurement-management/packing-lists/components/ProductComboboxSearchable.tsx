@@ -2,6 +2,7 @@
 
 import { useRef } from 'react';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { codeWithName } from '@/lib/product-display';
 
 const PAGE_SIZE = 50;
 
@@ -35,8 +36,7 @@ export interface ProductComboboxSearchableProps {
   truncateTriggerLabel?: boolean;
 }
 
-const itemLabel = (p: ProductOption) =>
-  `${p.product_code}${p.product_name ? ` - ${p.product_name}` : ''}`;
+const itemLabel = (p: ProductOption) => codeWithName(p.product_code, p.product_name);
 
 /**
  * Server-searched, paginated product picker. Now a thin wrapper over the standard
@@ -94,7 +94,7 @@ export function ProductComboboxSearchable({
       renderTriggerLabel={(opt) => {
         const p = productFallback && productFallback.id === opt.value ? productFallback : null;
         if (!p) return opt.label;
-        return `${p.product_code}${p.product_name && p.product_name !== p.product_code ? ` - ${p.product_name}` : ''}`;
+        return itemLabel(p);
       }}
     />
   );

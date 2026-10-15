@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Check, ChevronLeft, ChevronRight, ImageOff } from 'lucide-react';
 
 import type { BrochureImageRow } from '../../services/brochureImageService';
+import { distinctName } from '@/lib/product-display';
 
 export interface BrochureImageDialogProps {
   /** The rows the list is showing, in list order. */
@@ -61,9 +62,11 @@ export function BrochureImageDialog({
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2 text-sm">
             <span className="font-mono">{row?.productCode}</span>
-            <span className="min-w-0 truncate font-normal text-muted-foreground">
-              {row?.productName}
-            </span>
+            {distinctName(row?.productCode, row?.productName) ? (
+              <span className="min-w-0 truncate font-normal text-muted-foreground">
+                {row?.productName}
+              </span>
+            ) : null}
             {row?.chosenAttachmentId && (
               <Badge variant="success" appearance="light" size="sm">
                 chosen

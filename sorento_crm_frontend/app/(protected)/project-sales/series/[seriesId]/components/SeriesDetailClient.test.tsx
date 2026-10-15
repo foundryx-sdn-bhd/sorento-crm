@@ -72,6 +72,7 @@ vi.mock('../../../_shared/hooks/useProjects', () => ({
 }));
 vi.mock('./SeriesProductsTable', () => ({ SeriesProductsTable: () => null }));
 vi.mock('./SeriesSheetLoader', () => ({ SeriesSheetLoader: () => null }));
+vi.mock('./SeriesSetsTable', () => ({ SeriesSetsTable: () => null }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   usePathname: () => '/project-sales/series/new',

@@ -30,6 +30,7 @@ import { useStockDebtQuery } from '../hooks/useStockDebtQuery';
 import type { StockDebtBook, StockDebtRow, StockDebtTone } from '../types/stockDebt.types';
 import { StockDebtCellDialog } from './StockDebtCellDialog';
 import { StockDebtExportPopover } from './StockDebtExportPopover';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 /**
  * Stock Debt: one row per product, one column per month, and the cell is that MONTH's own
@@ -457,15 +458,13 @@ export function StockDebtClient() {
         size: 240,
         footer: () => 'Total',
         cell: ({ row }) => {
-          const label = row.original.product_name
-            ? `${row.original.product_code} - ${row.original.product_name}`
-            : row.original.product_code;
+          const label = codeWithName(row.original.product_code, row.original.product_name);
           return (
             <div className="min-w-0" title={label}>
               <div className="truncate text-sm font-medium">
                 {row.original.product_code}
               </div>
-              {row.original.product_name && (
+              {distinctName(row.original.product_code, row.original.product_name) && (
                 <div className="truncate text-xs text-muted-foreground">
                   {row.original.product_name}
                 </div>

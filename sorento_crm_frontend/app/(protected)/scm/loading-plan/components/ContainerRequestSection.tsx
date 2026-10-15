@@ -62,6 +62,7 @@ import {
   type ContainerRequestMatrixAxis,
   type ContainerRequestMatrixGranularity,
 } from './containerRequestMatrix';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Stage 1 of Ms Tee's journey (PLAN-scm-loading-plan-demand-first.md, amended section 4/6b -
@@ -148,10 +149,7 @@ function engineQtyFormulaTitle(row: ContainerRequestRow): string {
  * that differ only by spacing or case are still the same word to a reader scanning the grid.
  */
 export function productNameDiffersFromCode(row: ContainerRequestRow): boolean {
-  if (!row.product_name) return false;
-  const name = row.product_name.trim().toLowerCase();
-  const code = (row.item_code ?? '').trim().toLowerCase();
-  return name !== code;
+  return distinctName(row.item_code, row.product_name) !== null;
 }
 
 /**
