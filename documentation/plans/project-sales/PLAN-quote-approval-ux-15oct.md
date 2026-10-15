@@ -70,8 +70,9 @@ Quotation side:
 3. **Lock (D1, D2).** `approvals.assert_unlocked(db, document)` raises 422
    `quotation_locked_for_approval` when the rung is `pending_approval` or `approved`.
    `assert_editable(version)` resolves the version's document and calls it, which covers every
-   line path; the scope paths (`add_scope`, `apply_form_scopes`, `remove_form_scopes`,
-   `update_quotation`, `revise`, `delete_quotation`) and `update_document` call it directly.
+   line path; the scope paths (`add_scope`, `update_scope` (PATCH `.../scopes/{id}`,
+   `quotation_documents.py:304`), `apply_form_scopes`, `remove_form_scopes`, `update_quotation`,
+   `revise`, `delete_quotation`) and `update_document` call it directly.
    Sign, issue, approve, reject, move and delete are not edits and are not locked.
 4. **Revise (D3-D5).** `approvals.revise_approval(db, document, actor_user_id, reason)`: refuses
    empty reason (422 `quotation_revise_reason_required`) and rungs other than pending / approved
