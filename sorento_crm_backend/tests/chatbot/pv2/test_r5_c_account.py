@@ -77,11 +77,17 @@ def test_confirm_reply_naming_one_account_applies_only_that_account(phrase, expe
 
 
 @pytest.mark.parametrize("make,n,expected", [
-    (_ordinal, 2, [K2]), (_free, 2, [K2]), (_ordinal, 1, [K1]),
+    (_ordinal, 2, None), (_free, 2, None), (_ordinal, 1, [K1, K2]),
 ], ids=["row-pick-second", "free-value-second", "row-pick-first"])
-def test_confirm_reply_the_nth_one_applies_the_nth_account(make, n, expected):
-    """RED: 'the second one' to a confirm of a two-account family; HEAD refuses a bare number on a confirm."""
+def test_confirm_reply_the_nth_one_is_its_stored_option(make, n, expected):
+    """R6 lead ruling (re-scoped from R5-3): the confirm prints the group name only, so a number is its stored option
+    as MEMORY numbers it: 1 is yes (the whole family), 2 is no (asks for the full name). An account is picked only
+    by naming it (the tests above)."""
     st, acts = apply_turn(_confirm_state(), make(n), resolver=FakeResolver(RESOLVER), now=NOW)
+    if expected is None:
+        assert isinstance(acts[0], ClarifyAct) and acts[0].pending.kind == "clarify_entity", type(acts[0]).__name__
+        assert _customers(st) == [], _customers(st)
+        return
     _runs_the_held_question(st, acts)
     assert _customers(st) == expected, _customers(st)
 
