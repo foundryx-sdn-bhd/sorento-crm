@@ -106,12 +106,14 @@ def _build(db, world, extra=()):
     return _service(db).build(numbers, granularity="week", as_of=TODAY)
 
 
-def _consign_world(db, *, qty="10", returned="0", con_stock=10):
+def _consign_world(db, *, qty="10", returned="0", con_stock=10, planned_bin=False):
     """The confirm chain: a core consignment (closed, delivered, project class) at CON, its
     project mirror order, and CON stock."""
     company_id, eling, project, product = _world(db)
     sfx = _uid()[:6]
-    con = _warehouse(db, f"CON-{sfx}", fulfilment_planning=False)
+    con = _warehouse(
+        db, f"{sfx}-BB" if planned_bin else f"CON-{sfx}", fulfilment_planning=planned_bin
+    )
     _stock(db, product, con, on_hand=con_stock)
     order, line, core_so, core_line = _seed_line(
         db, company_id, project, product, con, qty_ordered=qty, line_no=1,
@@ -399,22 +401,71 @@ def test_b1_the_boards_proposal_for_a_consignment_is_a_borrow_at_its_own_bin_nev
 
 
 def test_b1_a_sales_order_lines_proposal_is_unchanged_by_the_consignment_rule():
+    """The same world, one order of each doc type at the flagged-off bin: the sales order line
+    still reads the verdict and proposes nothing from CON; only the consignment borrows."""
     with blank_session() as db:
-        world = _board_world(db, doc_type="sales_order", status="open", delivered="0")
+        world = _board_world(db, planned_stock=0)
         so = _order(
             db, so_number=f"SO-{world['sfx']}-{_uid()[:4]}", order_date=date(2026, 1, 1),
             status="open",
         )
         _line(db, so, world["product"], qty="10", required_date=REQUIRED,
-              warehouse=world["planned"])
+              warehouse=world["con"])
         board = _build(db, world, extra=[so.so_number])
-        row = _contributions(board, so.so_number)[0]
-        kinds = {s["kind"] for s in row["sources"]}
+        so_row = _contributions(board, so.so_number)[0]
+        cg_row = _contributions(board, world["order"].so_number)[0]
 
-    assert kinds <= {"reserve", "buy", "timely_spo", "incoming"}
-    assert "borrow" not in kinds or all(
-        s.get("location") != world["con"].warehouse_code for s in row["sources"]
-    )
+    assert so_row["unplannable"] is True
+    assert [s["kind"] for s in so_row["sources"]] == ["unplannable"] or all(
+        s["kind"] != "borrow" for s in so_row["sources"]
+    ), so_row["sources"]
+    assert [s["kind"] for s in cg_row["sources"]] == ["borrow"]
+
+
+def _ladder_shape(row):
+    return [(s["kind"], s["location"], s["qty"]) for s in row["sources"]]
+
+
+def test_b2_a_consignment_at_a_planned_bin_gets_the_ladders_proposal_like_a_sales_order():
+    with blank_session() as db:
+        shapes = []
+        for doc_type in ("consignment", "sales_order"):
+            sfx = _uid()[:6]
+            product = _product(db, f"ZZT-{sfx}")
+            planned = _board_warehouse(db, f"{sfx}-BB")
+            db.flush()
+            _board_stock(db, product, planned, on_hand=4)
+            order = _order(
+                db, so_number=f"CG-{sfx}", order_date=date(2026, 1, 1),
+                demand_class="project", status="open",
+            )
+            order.doc_type = doc_type
+            _line(db, order, product, qty="10", required_date=REQUIRED, warehouse=planned)
+            db.flush()
+            board = _service(db).build([order.so_number], granularity="week", as_of=TODAY)
+            row = _contributions(board, order.so_number)[0]
+            shapes.append(([(s["kind"], s["qty"]) for s in row["sources"]], row["unplannable"]))
+
+    assert shapes[0] == shapes[1], shapes
+    assert ("borrow", "10") not in shapes[0][0]
+
+
+def test_b2_an_own_bin_borrow_on_a_consignment_at_a_planned_bin_raises_its_order_back():
+    from app.models.project_so import INQUIRY_CANCELLED
+
+    with blank_session() as db:
+        world = _consign_world(db, planned_bin=True)
+        _confirm(db, world, borrow=[_own_borrow(world, "10", "Own bin.")])
+        rows = (
+            db.query(OrderInquiryRow)
+            .filter(OrderInquiryRow.verb == "ORDER_BACK",
+                    OrderInquiryRow.state != INQUIRY_CANCELLED)
+            .all()
+        )
+        own_code = world["own"].warehouse_code
+        found = [(r.stock_location, r.qty) for r in rows]
+
+    assert found == [(own_code, Decimal("10"))]
 
 
 def test_b1_confirming_the_consignments_own_proposal_writes_no_buy_and_no_purchasing_row():

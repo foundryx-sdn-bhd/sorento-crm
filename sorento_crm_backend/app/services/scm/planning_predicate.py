@@ -76,6 +76,14 @@ def in_fulfilment_planning(warehouse: Any) -> bool:
 PLANNED_AT_OWN_BIN_DOC_TYPES = frozenset({"consignment"})
 
 
+def planned_at_own_bin(warehouse: Any, doc_type: Optional[str]) -> bool:
+    """Whether this line is planned AT its own bin: its doc type is in
+    `PLANNED_AT_OWN_BIN_DOC_TYPES` AND the bin is ACTIVE and flagged out of fulfilment
+    planning. A consignment line at an ordinary planned bin is planned like a sales order line
+    (CONSIGN-PLAN card R6), so the doc type alone is never enough."""
+    return doc_type in PLANNED_AT_OWN_BIN_DOC_TYPES and outside_fulfilment_planning(warehouse)
+
+
 def outside_fulfilment_planning(warehouse: Any, doc_type: Optional[str] = None) -> bool:
     """Whether this bin earns the `OUTSIDE_FULFILMENT_PLANNING` verdict: ACTIVE, flag off.
 
@@ -98,5 +106,6 @@ __all__ = [
     "PLANNED_AT_OWN_BIN_DOC_TYPES",
     "fulfilment_planning_predicate",
     "in_fulfilment_planning",
+    "planned_at_own_bin",
     "outside_fulfilment_planning",
 ]

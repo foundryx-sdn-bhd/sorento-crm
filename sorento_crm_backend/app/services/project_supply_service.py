@@ -133,8 +133,8 @@ from app.services.scm.pool_predicate import is_project_reserve
 from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     fulfilment_planning_predicate,
-    PLANNED_AT_OWN_BIN_DOC_TYPES,
     outside_fulfilment_planning,
+    planned_at_own_bin,
 )
 from app.services.scm.front_planning_engine import (
     BORROW,
@@ -1886,11 +1886,7 @@ class ProjectSupplyService:
             if fact.unplannable_reason:
                 out[key] = ((), None, {}, None, (), {}, {}, {}, {})
                 continue
-            if (
-                fact.doc_type in PLANNED_AT_OWN_BIN_DOC_TYPES
-                and fact.warehouse is not None
-                and fact.open_qty > _ZERO
-            ):
+            if planned_at_own_bin(fact.warehouse, fact.doc_type) and fact.open_qty > _ZERO:
                 # CONSIGN-PLAN (owner Q1): the goods are already at the own bin, so the
                 # proposal is a plain Borrow of the whole plan quantity from it - never a
                 # Buy, nothing to purchasing - and it draws on no shared pile.
@@ -8254,11 +8250,9 @@ class ProjectSupplyService:
                     continue
                 if getattr(item, "supply_key", None):
                     continue
-                if (
-                    fact.doc_type in PLANNED_AT_OWN_BIN_DOC_TYPES
-                    and fact.warehouse is not None
-                    and str(item.warehouse_id) == str(fact.warehouse.id)
-                ):
+                if planned_at_own_bin(fact.warehouse, fact.doc_type) and str(
+                    item.warehouse_id
+                ) == str(fact.warehouse.id):
                     # CONSIGN-PLAN: the goods ARE the consignment's own bin; nothing was
                     # lent, so nothing is owed back and purchasing hears nothing.
                     continue
