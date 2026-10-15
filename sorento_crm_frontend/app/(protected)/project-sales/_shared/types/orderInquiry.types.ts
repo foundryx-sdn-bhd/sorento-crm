@@ -1323,6 +1323,10 @@ export interface OrderInquiryHeader {
   qty_total: string;
   /** Derived, never stored (plan S2): `lines_to_confirm > 0` is outstanding. */
   status: OrderInquiryHeaderStatus;
+  /** The OI's earliest reserve status (AC-SN-30); null when it has no reserve requests. */
+  reserve_status?: 'parked' | 'needs_reserve' | 'notice_parked' | 'reserved' | null;
+  /** Who parked it, while it is parked. */
+  parked_by_name?: string | null;
 }
 
 /** One entry of the detail page's Raise history card (AC-DP-07). Newest first. */
@@ -1348,6 +1352,8 @@ export interface OrderInquiryHeaderListParams {
    * 2026) - never a `projects.id`: 0 of 738 headers on the prod copy carry a
    * registered project. */
   project?: string;
+  /** OIs with a reserve request row in this status (AC-SN-30). */
+  reserve?: 'parked' | 'needs_reserve' | 'notice_parked' | 'reserved';
   page?: number;
   limit?: number;
   sort?: string;

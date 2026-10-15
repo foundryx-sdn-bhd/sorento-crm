@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from app.services.uuid_path_param import UUID_PATTERN
+
 # A pure, dependency-free lookup table (no DB, no network), so a schema importing it introduces
 # no cycle. It lives in services because the PDF renderer needs the same answer.
 from app.services import geo_places
@@ -993,6 +995,20 @@ class SeriesProductRowResponse(BaseModel):
     in_scope: bool = False
 
 
+class SeriesSetRowResponse(BaseModel):
+    """One product SET priced on a series (SET-QUOTE-LINE), the twin of the product row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    product_set_id: str
+    set_code: Optional[str] = None
+    set_name: Optional[str] = None
+    part_codes: List[str] = Field(default_factory=list)
+    selling_price: Optional[Decimal] = None
+    max_discount_pct: Optional[Decimal] = None
+    derived_floor: Optional[Decimal] = None
+
+
 class SeriesProductPricingUpdate(BaseModel):
     """Set (or clear) one product's price and percentage from the series page.
 
@@ -1191,8 +1207,14 @@ class ProjectQuotationLineBase(BaseModel):
     product_id: Optional[str] = Field(
         None, description="Null for an off-catalog line, which always raises the alert."
     )
+    product_set_id: Optional[str] = Field(
+        None,
+        pattern=UUID_PATTERN,
+        description="A product set quoted as ONE line. Never together with product_id (422).",
+    )
     description_snapshot: Optional[str] = Field(
-        None, description="Required when there is no product: it is what the customer reads."
+        None,
+        description="Required when there is no product or set: it is what the customer reads.",
     )
     unit_price: Decimal = Decimal("0")
     quantity: Decimal = Decimal("1")
@@ -1247,6 +1269,7 @@ class ProjectQuotationLineCreate(ProjectQuotationLineBase):
 
 class ProjectQuotationLineUpdate(BaseModel):
     product_id: Optional[str] = None
+    product_set_id: Optional[str] = Field(None, pattern=UUID_PATTERN)
     description_snapshot: Optional[str] = None
     unit_price: Optional[Decimal] = None
     quantity: Optional[Decimal] = None
@@ -1366,6 +1389,10 @@ class ProjectQuotationLineResponse(BaseModel):
     id: str
     version_id: str
     product_id: Optional[str] = None
+    product_set_id: Optional[str] = None
+    #: The parts frozen on a set line ({product_id, product_code, description, quantity,
+    #: is_driver}); empty for a product line.
+    set_parts: List[Dict[str, Any]] = Field(default_factory=list)
     product_code: Optional[str] = None
     description: Optional[str] = None
     list_price: Optional[Decimal] = None
