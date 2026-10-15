@@ -60,6 +60,10 @@ GROUP_BY = {
     "month": "month",
 }
 
+#: The parser's other report types (`order_status`): one that fills no open field of the sales
+#: ranking question is a new ask, not its answer (chat fix PR-B S2c, `names_its_own_ask`).
+OTHER_REPORTS = frozenset({"top_selling", "sales_report", "sales_analysis"})
+
 #: The entity hints `take_words` moves, and the noun each is said with when it names nothing.
 WORD_HINTS = {"brand": "brand", "sales_agent": "sales agent", "category": "category"}
 
@@ -239,7 +243,10 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
     },
     cancelled=CANCELLED,
     give_up=GIVE_UP,
-    answer_drops=("sales_channel", "report_ask_words"),
+    # Chat fix PR-B S2: an answer holds the report type. A "delivered" / "ordered" answer the
+    # parser also read as a document status fills the basis; its `status` / `document` never
+    # re-route the turn to the order list (`turn_runtime._DOCUMENT_STATUS_TO_ORDER_STATUS`).
+    answer_drops=("sales_channel", "report_ask_words", "status", "document"),
     # Chat fix PR-B S1 (owner, 16 Oct 2026): every missing detail in ONE numbered reply.
     ask_all=True,
 ))
@@ -298,13 +305,26 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     """Engine seam before `required_fields.reply_verdict`: a `sales_ranking` verdict that is not a
     refine is a NEW ask, so an open period / how many question is dropped, not answered by it, when
     it names a current-message filter entity or a `group_by` DIFFERENT from the one the open slot
-    holds (the same axis echoed is an answer). Parser fields only."""
-    if jsc.js_string(verdict.get("order_status") or "").strip() != ASK_NAME or verdict.get("ranking_refine") is True:
-        return False
-    if any(
+    holds (the same axis echoed is an answer). Parser fields only.
+
+    Chat fix PR-B S2c: a verdict of ANOTHER report type (`OTHER_REPORTS`) is a new ask too when it
+    fills none of the slot's open fields and names something of its own (an axis, a current
+    entity, or the ask itself): "i want to see the top customer" under the basis question is
+    never read as a failed basis answer."""
+    status = jsc.js_string(verdict.get("order_status") or "").strip()
+    named = any(
         isinstance(e, dict) and e.get("current_message") is not False and jsc.js_string(e.get("hint") or "").strip()
         for e in jsc.array(verdict.get("entities"))
-    ):
+    )
+    if status in OTHER_REPORTS:
+        slot = _dict(open_slot)
+        extras = _dict(slot.get("extras"))
+        held = {**_given_choices(_dict(extras.get("args"))), **_given_top_n(_dict(extras.get("args")), extras.get("top_n"))}
+        own = named or bool(verdict.get("group_by")) or verdict.get("domain_in_message") is True
+        return own and not _reply_fills(verdict, _dict(slot.get("values")), held)
+    if status != ASK_NAME or verdict.get("ranking_refine") is True:
+        return False
+    if named:
         return True
     raw_group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
     if not raw_group:

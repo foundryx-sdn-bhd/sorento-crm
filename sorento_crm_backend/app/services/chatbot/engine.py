@@ -2627,6 +2627,42 @@ def _top_selling_question_answer(text: str, verdict: dict[str, Any], asked: Any)
     return None
 
 
+#: The parser keys that answer each open top selling question (`focus.top_selling.asked`), and
+#: the values each takes: the metric off `rank_by`, or the sales ranking's `measure` key.
+_TOP_SELLING_FILLS = {"metric": ("rank_by",), "basis": ("basis",), "metric_basis": ("rank_by", "basis")}
+_MEASURE_TO_RANK_BY = {"qty": "quantity", "amount": "amount"}
+
+
+def _fills_open_top_selling_question(focus: Any, verdict: dict[str, Any]) -> dict[str, Any]:
+    """Chat fix PR-B S2b: the top selling keys a NON top selling parse fills for the metric or
+    basis question the last reply asked, or {} when it fills none or names something of its own
+    (then it is a new ask): an entity (or a sales ranking's own words, `report_ask_words`), or an
+    axis the top selling list does not rank (it ranks items or categories). Parser fields only,
+    never the words."""
+    slot = focus.top_selling if isinstance(focus.top_selling, dict) else None
+    asked = slot.get("asked") if slot else None
+    if focus.status != "top_selling" or asked not in _TOP_SELLING_FILLS:
+        return {}
+    if jsc.js_string(verdict.get("order_status") or "").strip() == "top_selling":
+        return {}  # the ranking's own reading: `turn/apply._top_selling_rules` reads it
+    if any(
+        isinstance(e, dict) and e.get("current_message") is not False and jsc.js_string(e.get("hint") or "").strip()
+        for e in verdict.get("entities") or []
+    ):
+        return {}
+    words = verdict.get("report_ask_words")
+    if isinstance(words, dict) and any(jsc.array(v) for v in words.values()):
+        return {}
+    if verdict.get("group_by") not in (None, "", "product", "category"):
+        return {}
+    reading = {
+        "rank_by": verdict.get("rank_by") if verdict.get("rank_by") in ("quantity", "amount")
+        else _MEASURE_TO_RANK_BY.get(verdict.get("measure")),
+        "basis": verdict.get("basis") if verdict.get("basis") in ("delivered", "ordered") else None,
+    }
+    return {key: reading[key] for key in _TOP_SELLING_FILLS[asked] if reading[key]}
+
+
 def _as_ranking_answer(verdict: dict[str, Any], **keys: Any) -> dict[str, Any]:
     """`verdict` re-read as a refinement of the ranking on screen: the top selling ask,
     no ask of its own, only its category and brand words kept."""
@@ -2891,6 +2927,11 @@ def _top_selling_verdict(
     the ranking whatever the parser's status; an echoed word from an earlier turn is
     dropped; basis words switch the basis; a period alone re-runs the ranking for it.
     """
+    filled = _fills_open_top_selling_question(state.focus, verdict)
+    if filled:
+        # Chat fix PR-B S2b (R12, R17): a parse that fills the field the open question asked,
+        # naming nothing of its own, is its answer whatever report type the parser put on it.
+        return _as_ranking_answer(verdict, group_by=None, **filled), state, "top_selling_question_filled"
     if jsc.js_string(verdict.get("order_status") or "").strip() == "sales_ranking":
         # A new ask the parser named (owner held-state rule: a new intent always wins): never
         # captured by an open top selling question.
