@@ -5267,11 +5267,10 @@ def _run_stages_body(  # noqa: PLR0915
             jsc.js_string(parsed_output.get("order_status") or "").strip() in SALES_FIGURE_STATUSES
             and _SALES_REPORT_GRANT in _granted
         )
-        unlinked_held = (
-            doc_scope is None
-            and not (doc_staff or is_staff_profile(state_out.profile))
-            and not granted_report_turn
-        )
+        # The grant opens the report's customers, never their delivery orders: the picker's DO
+        # probe stays off for any unlinked contact that is not document staff.
+        customer_docs_hidden = doc_scope is None and not (doc_staff or is_staff_profile(state_out.profile))
+        unlinked_held = customer_docs_hidden and not granted_report_turn
 
         top_selling_updates: dict[str, Any] = {}
         customer_scope_refused = False
@@ -5458,6 +5457,7 @@ def _run_stages_body(  # noqa: PLR0915
                             if isinstance(e, dict)
                         )
                         and not _roster_is_outstanding(verdict, state_out.focus)
+                        and not customer_docs_hidden
                     ),
                     # Rows 1 and 7: the promotion and purchase-order product rosters carry
                     # has promo / no promo and has PO / no PO, read the same way
@@ -5470,6 +5470,7 @@ def _run_stages_body(  # noqa: PLR0915
                     roster_caps=roster_caps,
                     enforced_scope=bool((gate_scope or {}).get("enforced")),
                     hide_customers=unlinked_held,
+                    skip_customer_probe=customer_docs_hidden,
                     scope_linked=_reference_scope(doc_scope, state_out.profile, doc_staff=doc_staff),
                     po_ref_scope_linked=_reference_scope(doc_scope, state_out.profile),
                 )
@@ -6026,6 +6027,10 @@ def _run_stages_body(  # noqa: PLR0915
                     resolved_for_prompt = turn_runtime._without_foreign_sales_orders(
                         db, {"resolved": resolved_for_prompt}, clarifier_scope
                     )["resolved"]
+                if unlinked_held and isinstance(resolved_for_prompt, dict):
+                    # V1-DOC-SCOPE slice 3: the clarifier asks the resolver itself, so a held
+                    # contact's customer rows are dropped here too.
+                    resolve_gate._without_customer_rows(resolved_for_prompt)
                 clarifier_prompt = casual.construct_user_prompt(ctx, resolved_for_prompt)
                 clarifier_config = casual.resolve_clarifier_config(
                     db,

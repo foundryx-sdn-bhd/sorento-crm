@@ -1367,6 +1367,7 @@ def run(
     account_levels: Callable[[list[str]], dict[str, int | None]] | None = None,
     account_exact_names: bool = True,
     hide_customers: bool = False,
+    skip_customer_probe: bool = False,
 ) -> dict[str, Any]:
     """One pass through `sub-resolve-and-gate`. Returns the exit arm's item.
 
@@ -1374,7 +1375,9 @@ def run(
     document staff, so every customer row the resolver answers is another customer's. They
     are dropped before the gate (`_without_customer_rows`), so no customer picker is built
     and its DO probe never runs; the tokens left with nothing are named on
-    `resolved["hidden_customer_tokens"]` for the engine's refusal.
+    `resolved["hidden_customer_tokens"]` for the engine's refusal. `skip_customer_probe`: the
+    asker sees no delivery order, so the customer picker (a granted report's, crew ruling (b))
+    is never measured with `CUSTOMER_PROBE_TOOL` and carries no has / no DO stamp.
 
     `brand_entities` (CLASS-HINT-KIND-PICK) is `turn_runtime.resolve_kinds`'s own
     `{id(entity): brand name}` for the entities that name a live brand; `resolve_entity_body`
@@ -1562,7 +1565,7 @@ def run(
         )
         probe = (
             None
-            if outstanding_ask
+            if outstanding_ask or skip_customer_probe
             else _run_probe(
                 services,
                 ctx=ctx,
@@ -1574,6 +1577,8 @@ def run(
             )
         )
         annotated = measure_customer_picker(_snapshot(picker_gate), probe=probe, parser=parser)
+        if skip_customer_probe and not outstanding_ask:
+            annotated["customer_probe_skip_reason"] = "no_document_access"
         if outstanding_ask:
             # NOT MEASURED is exactly what R20 wants - no stamp on any line. Only the
             # reason differs, because "probe_unavailable" would tell the operator a probe
