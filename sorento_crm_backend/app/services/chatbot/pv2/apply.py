@@ -154,6 +154,7 @@ def apply_turn(
     if out.escalation is not None and out.escalation.requested:
         st.pending = None
         st.last_lookup_ask = st.last_reply = None
+        st.last_menu = []  # R6 B: this turn answered no question
         return st, [HandOver(ask_index=0, team_key=out.escalation.team_key)]
 
     # A clarify flag beside a new_topic ask does not re-ask an OPEN question as a miss: the new
@@ -192,6 +193,7 @@ def apply_turn(
             act.pending.origin = _origin_of(out.asks[0]) if out.asks else None
         st.pending = None if getattr(act, "closes", False) else act.pending
         st.last_lookup_ask = None
+        st.last_menu = []  # R6 B: this turn answered no question
         st.last_reply = _outcome([act])
         return st, [act]
 
