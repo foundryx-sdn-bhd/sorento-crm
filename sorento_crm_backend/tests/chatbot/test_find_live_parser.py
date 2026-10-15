@@ -236,3 +236,39 @@ def test_a_fact_question_emits_no_find(db, message: str) -> None:
     # The model sometimes fills a value-less `fits` here; the engine rejects it, so what is held
     # is that no fit ask the engine would act on comes out.
     assert not _effective_fit(out, message), out
+
+
+#: CHAT-FIT-LINE AC-16: the parse names the link `kind`. (message, kind or None for a control,
+#: the anchor code, the domain a stock ask gets, or the control message whose domain a price ask
+#: must share, or None for no domain check). The seat cover rows are the asks that pass today.
+KIND_GOLDEN = [
+    ("what is the seat cover for SRTWC286-SH-NEW-150", "seat_cover", "SRTWC286-SH-NEW-150", None),
+    ("please recommend seat cover for SRTWC287", "seat_cover", "SRTWC287", None),
+    ("seat cover recommendation for SRTWC8383-RL-MBL", "seat_cover", "SRTWC8383-RL-MBL", None),
+    ("SRTWC8122 seat cover got stock?", "seat_cover", "SRTWC8122", "inventory"),
+    ("SRTWC287 马桶盖多少钱", "seat_cover", "SRTWC287", "control:SRTSCBD315 多少钱"),
+    ("what is the mirror for SRTBF11413", "mirror", "SRTBF11413", None),
+    ("SRTBF11413 shelf ada stok?", "shelf", "SRTBF11413", "inventory"),
+    ("SRTBF11404 的镜子有货吗", "mirror", "SRTBF11404", "inventory"),
+    ("cermin untuk SRTBF11403 harga berapa", "mirror", "SRTBF11403", "control:SRTMR11403 harga berapa"),
+    ("which cabinet fits SRTSV11404-BL", "shelf", "SRTSV11404-BL", None),
+    ("SRTBF11413 technical drawing", None, "SRTBF11413", None),
+    ("SRTMR11413 stock", None, "SRTBF11413", None),
+]
+
+
+@pytest.mark.parametrize("message,kind,code,domain", KIND_GOLDEN)
+def test_ac16_the_parse_names_the_kind_of_the_link(db, message: str, kind: str | None, code: str, domain: str | None) -> None:
+    system = _system(db)
+    out = _parse(system, message)
+    if kind is None:
+        assert not _effective_fit(out, message), out
+        return
+    filters = [f for f in (out.get("find") or {}).get("filters") or [] if isinstance(f, dict)]
+    assert _keys(out) == ["fits"], out
+    assert filters[0].get("kind") == kind, out
+    assert code.replace("-", "") in {c.replace("-", "") for c in _product_codes(out)}, out
+    if domain and domain.startswith("control:"):
+        assert out.get("domain_hint") == _parse(system, domain.split(":", 1)[1]).get("domain_hint"), out
+    elif domain:
+        assert out.get("domain_hint") == domain, out

@@ -735,8 +735,9 @@ class Focus(BaseModel):
     # policy narrows on but the Focus never declared still has somewhere safe to sit
     # rather than being dropped on the way to the session.
     extra: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
-    # SEAT-AS-PRODUCT: which side of a fit answer `products` are ("covers" / "wcs"),
-    # `turn/state.py::Focus.relation`. Optional, so a stored focus without it still reads.
+    # SEAT-AS-PRODUCT: which side of a fit answer `products` are ("covers" / "wcs", or
+    # "<kind>:<side>" for mirror / shelf), `turn/state.py::Focus.relation`. Optional, so a stored
+    # focus without it still reads.
     relation: str | None = None
 
 
