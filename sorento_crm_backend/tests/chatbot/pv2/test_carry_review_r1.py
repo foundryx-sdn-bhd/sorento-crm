@@ -358,7 +358,7 @@ def test_s7_nothing_of_that_kind_held_is_a_miss():
     state = mk_state(held("inventory", {"customer": ["C1"]}))
     o = out(ask(act="new_topic", domain="product_attachment", entities=[entity("product", refers_to_held=True)]))
     new, actions = apply_turn(state, o, resolver=FakeResolver())
-    assert isinstance(actions[0], ClarifyAct) and actions[0].reask is True
+    assert isinstance(actions[0], ClarifyAct) and actions[0].reask is False  # R6 I1: no question was open
     assert new.held.domain == "inventory" and "customer" in new.held.refs  # unchanged
 
 
