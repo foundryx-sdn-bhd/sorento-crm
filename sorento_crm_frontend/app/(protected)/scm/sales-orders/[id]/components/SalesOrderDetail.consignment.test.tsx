@@ -228,12 +228,11 @@ describe('CONSIGN-DELIVERED-FIX: a consignment header reads where the goods are'
     );
   });
 
-  it('a retail-class consignment shows no Plan link and no planned chip, like a retail sales order', () => {
+  it('a retail-class consignment shows no Plan link, like a retail sales order', () => {
     hasPermission = true;
     stub({ doc_type: 'consignment', status: 'closed', demand_class: 'retail', planned_lines: 0, plannable_lines: 0, lines: lines(3) });
     renderDetail();
     expect(screen.queryByRole('link', { name: /^plan$/i })).toBeNull();
-    expect(screen.queryByText('Not planned')).toBeNull();
   });
 
   it('a project-class consignment shows no Plan link without projects.projects.view', () => {

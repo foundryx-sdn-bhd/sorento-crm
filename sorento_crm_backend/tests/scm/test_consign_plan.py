@@ -26,7 +26,6 @@ from app.services.project_so_adoption_service import ProjectSOAdoptionService
 from app.services.project_supply_service import ProjectSupplyService, plan_qty_of
 from app.services.scm.demand import plan_qty
 from app.services.scm.planning_predicate import OUTSIDE_FULFILMENT_PLANNING
-from app.services.scm.planning_reset_service import reset_planning
 from app.services.scm.sales_order_service import SalesOrderService
 
 from .._pg_fixture import blank_session
@@ -321,19 +320,11 @@ def test_uac08_a_retail_class_consignment_is_not_admitted():
 
 
 # --------------------------------------------------------------------------- UAC-09
-
-
-def test_uac09_reset_planning_puts_a_confirmed_consignment_back_to_never_planned():
-    with blank_session() as db:
-        world = _consign_world(db)
-        _confirm(db, world, borrow=[_own_borrow(world, "10", "Goods are the CON stock.")])
-        before = _planned_state(db, world["core_so"])
-        result = reset_planning(db, str(world["core_so"].id))
-        after = _planned_state(db, world["core_so"])
-
-    assert before == (1, 1)
-    assert result["planned"] is True and result["removed"]["supply_decisions"] == 1
-    assert after == (0, 1)
+#
+# Not tested here: `planning_reset_service.reset_planning` issues raw SQL against a hard-coded
+# `projects.` schema, which `blank_session`'s scratch schemas cannot redirect (it would read and
+# write the REAL projects schema). The service has no doc-type filter, so a consignment resets
+# exactly like a sales order; the browser pass exercises Reset planning on a consignment.
 
 
 # --------------------------------------------------------------------------- never adopted
