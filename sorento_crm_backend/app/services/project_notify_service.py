@@ -259,6 +259,11 @@ def _whatsapp_for(db: Session, project: Project, document, text: str):
     from app.models.user import User
 
     link = _approval_link(project, document)
+    from app.config import settings
+
+    base = (getattr(settings, "frontend_base_url", None) or "").strip().rstrip("/")
+    # A WhatsApp template button needs an absolute URL; the in-app link stays relative.
+    portal_url = f"{base}{link}" if base else link
 
     def build(user_id: str) -> Dict[str, Any]:
         user = db.query(User).filter(User.id == user_id).first()
@@ -269,7 +274,7 @@ def _whatsapp_for(db: Session, project: Project, document, text: str):
                 "contact_name": (user.name if user and user.name else "") or "",
                 "entity_number": document.document_no,
                 "message": text,
-                "portal_url": link,
+                "portal_url": portal_url,
             },
         }
 

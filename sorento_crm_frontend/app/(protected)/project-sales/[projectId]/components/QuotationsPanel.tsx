@@ -251,6 +251,7 @@ export function QuotationsPanel({ project }: { project: Project }) {
           searchSlot={
             <ListSearchInput
               type="search"
+              inputClassName="[&::-webkit-search-cancel-button]:appearance-none"
               value={search}
               onChange={setSearch}
               placeholder="Search quotations"
@@ -306,7 +307,11 @@ export function QuotationsPanel({ project }: { project: Project }) {
       listingKey="projects.projects.view::project-quotation-documents"
       isLoading={documents.isLoading}
       error={documents.isError ? documents.error : undefined}
-      emptyTitle="Nothing quoted yet"
+      emptyTitle={
+        search.trim() && (documents.data ?? []).length > 0
+          ? 'Nothing matches that search'
+          : 'Nothing quoted yet'
+      }
       pageResetKey={search}
       pageSize={15}
       // The row is the way in, and it goes to the document's own page: a list answers "what do
