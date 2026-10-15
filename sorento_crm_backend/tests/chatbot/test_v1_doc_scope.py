@@ -410,6 +410,50 @@ class TestDidYouMeanAlternatives:
         assert resolution["alternatives"] == [], resolution
 
 
+class TestCasualClarifierPromptCustomers:
+    """Security review on 70bd1c303: the low_signal clarifier asks the resolver itself
+    (`casual.resolve_for_prompt`), so for a held contact its customer rows are dropped from the
+    prompt the same way, or the LLM is handed other customers' codes."""
+
+    @staticmethod
+    def _turn(session_factory, monkeypatch):
+        _other_customer(session_factory, "ZZT HANLIMX TRADING SDN BHD", "300-ZZTHX1")
+        _other_customer(session_factory, "ZZT HANLIMX HARDWARE SDN BHD", "300-ZZTHX2")
+        qf = _parser_output(
+            message_type="casual",
+            domain_hint=None,
+            intent_hint=None,
+            user_goal="zzt hanlimx",
+            entities=[{"raw": "zzt hanlimx", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True}],
+        )
+        _run_turn(
+            session_factory, monkeypatch, qf=qf, text_body="zzt hanlimx",
+            msg_id=f"ZZT-docscope-casual-cust-{uuid.uuid4().hex[:10]}",
+            attributes=[OUTSTANDING_KEY], real_resolver=True,
+            extra_completed_lanes=["low_signal"],
+        )
+
+    def test_unlinked_non_staff_prompt_has_no_customer_rows(self, session_factory, monkeypatch, _stub_casual_llm) -> None:
+        _seed_contact(session_factory, variables={})
+
+        self._turn(session_factory, monkeypatch)
+
+        assert _stub_casual_llm, "the low_signal clarifier was never called"
+        prompt = str(_stub_casual_llm[-1]["user_prompt"])
+        assert "300-ZZTHX1" not in prompt and "300-ZZTHX2" not in prompt, prompt
+        assert "HANLIMX TRADING" not in prompt.upper() and "HANLIMX HARDWARE" not in prompt.upper(), prompt
+
+    def test_staff_prompt_keeps_the_customer_rows(self, session_factory, monkeypatch, _stub_casual_llm) -> None:
+        _seed_contact(session_factory, variables={})
+        make_office_access_type(session_factory, CONTACT_ID)
+
+        self._turn(session_factory, monkeypatch)
+
+        assert _stub_casual_llm, "the low_signal clarifier was never called"
+        prompt = str(_stub_casual_llm[-1]["user_prompt"])
+        assert "300-ZZTHX1" in prompt or "HANLIMX TRADING" in prompt.upper(), prompt
+
+
 class TestPerMatchDropOnDeliveryOrders:
     """Fix 1 on its own (the turn tests above are also held by the orders refusal): a DO match
     is kept only inside the links, by `so_status`'s scope rule."""
@@ -1063,3 +1107,39 @@ class TestSlice3Edges:
         )
 
         assert reply.strip() != NO_LINK_REFUSAL, reply
+
+
+
+class TestGrantedReportsRunNoDoProbe:
+    """Security review on 70bd1c303: the report grant opens the report's customers, never their
+    delivery orders, so a granted unlinked contact's picker carries no has / no DO stamp and the
+    DO probe never runs (the sales report already skipped it; the sales analysis did not)."""
+
+    @pytest.mark.parametrize("status", ["sales_report", "sales_analysis"])
+    def test_a_granted_unlinked_contact_gets_names_but_no_do_probe(self, session_factory, monkeypatch, status) -> None:
+        _seed_contact(session_factory, variables={})
+        qf = _parser_output(
+            domain_hint="order", intent_hint="check_order", order_status=status,
+            entities=[], date_filter_start="2026-10-01", date_filter_end="2026-10-31",
+        )
+
+        reply, _captured, probes, _asked = _picker_turn(
+            session_factory, monkeypatch, qf=qf, attributes=(OUTSTANDING_KEY, SALES_GRANT)
+        )
+
+        assert probes == [], probes
+        assert " - no DO" not in reply and " - has DO" not in reply, reply
+
+    def test_document_staff_keep_the_do_stamps(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        make_office_access_type(session_factory, CONTACT_ID)
+        qf = _parser_output(
+            domain_hint="order", intent_hint="check_order", order_status="sales_analysis",
+            entities=[], date_filter_start="2026-10-01", date_filter_end="2026-10-31",
+        )
+
+        _reply, _captured, probes, _asked = _picker_turn(
+            session_factory, monkeypatch, qf=qf, attributes=(OUTSTANDING_KEY, SALES_GRANT)
+        )
+
+        assert probes, "staff keep the picker's DO probe as today"

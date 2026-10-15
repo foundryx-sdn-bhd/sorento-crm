@@ -803,3 +803,12 @@ def test_v1_doc_scope_an_ungranted_unlinked_contact_gets_no_customer_names(conso
     assert "Which one do you mean?" not in text, text
     assert probes == [] and calls == [], (probes, calls)
 
+
+
+
+def test_v1_doc_scope_a_granted_unlinked_contact_runs_no_do_probe(console, monkeypatch) -> None:
+    """The chat grant opens the chat report's customers, never their delivery orders: no DO
+    probe runs for a granted unlinked contact (security review on 70bd1c303)."""
+    probes = _hanlim_book(monkeypatch)
+    console.say(_chat(_e("hanlim", "customer")), "top 5 questions from hanlim this week")
+    assert probes == [], probes
