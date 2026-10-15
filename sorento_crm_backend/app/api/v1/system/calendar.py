@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_permission
 from app.models.calendar import PublicHoliday
 from app.schemas.calendar import (
     PublicHolidayCreate,
@@ -18,6 +18,13 @@ from app.services.calendar_service import CalendarService
 from app.services.error_handler import handle_internal_error, handle_not_found, handle_conflict
 
 router = APIRouter()
+
+# The writes carry the registry's work-calendar slugs (`permission_registry.py`,
+# `_crud("system", "work_calendar", ...)`); every SLA deadline is computed from this
+# calendar. The reads stay open to any signed-in caller.
+ADD = "system.work_calendar.add"
+EDIT = "system.work_calendar.edit"
+DELETE = "system.work_calendar.delete"
 
 
 def _validate_working_hours(start: time, end: time) -> None:
@@ -46,7 +53,7 @@ async def get_work_calendar_config(
 @router.put("/work-calendar-config", response_model=WorkCalendarConfigResponse)
 async def update_work_calendar_config(
     payload: WorkCalendarConfigUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
     """Update the default work calendar configuration."""
@@ -106,7 +113,7 @@ async def list_public_holidays(
 @router.post("/public-holidays", response_model=PublicHolidayResponse, status_code=status.HTTP_201_CREATED)
 async def create_public_holiday(
     payload: PublicHolidayCreate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(ADD)),
     db: Session = Depends(get_db),
 ):
     """Create a public holiday."""
@@ -134,7 +141,7 @@ async def create_public_holiday(
 async def update_public_holiday(
     holiday_id: str,
     payload: PublicHolidayUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
     """Update a public holiday."""
@@ -164,7 +171,7 @@ async def update_public_holiday(
 @router.delete("/public-holidays/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_public_holiday(
     holiday_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(DELETE)),
     db: Session = Depends(get_db),
 ):
     """Delete a public holiday."""

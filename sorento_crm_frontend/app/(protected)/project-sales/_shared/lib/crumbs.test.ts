@@ -11,3 +11,25 @@ describe('project crumbs', () => {
     });
   });
 });
+
+// QUOTE-APPROVAL-UX G2: a quotation page's "Project" crumb lands on the Quotations tab; every
+// other project sub-page keeps the plain project path.
+describe('project crumbs: quotations tab (G2)', () => {
+  // The option is the new, documented shape `projectCrumbs(id, { tab: 'quotations' }, ...below)`.
+  const withOptions = projectCrumbs as unknown as (
+    ...args: unknown[]
+  ) => ReturnType<typeof projectCrumbs>;
+
+  it('G2: the Project crumb links to the Quotations tab when asked', () => {
+    const crumbs = withOptions('p1', { tab: 'quotations' }, { title: 'SRT/Q/2026/0141' });
+    expect(crumbs[2]).toEqual({ title: 'Project', path: '/project-sales/p1?tab=quotations' });
+    expect(crumbs[3]).toEqual({ title: 'SRT/Q/2026/0141' });
+    expect(crumbs).toHaveLength(4);
+  });
+
+  it('G2: by default the Project crumb still links /project-sales/<id>', () => {
+    const crumbs = projectCrumbs('p1', { title: 'Purchase orders' });
+    expect(crumbs[2]).toEqual({ title: 'Project', path: '/project-sales/p1' });
+    expect(crumbs[3]).toEqual({ title: 'Purchase orders' });
+  });
+});

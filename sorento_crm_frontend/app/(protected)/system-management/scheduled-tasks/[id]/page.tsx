@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import { toast } from '@/lib/toast';
+import RequireAccess from '@/app/components/common/RequireAccess';
 import {
   useScheduledTask,
   useUpdateScheduledTask,
@@ -28,6 +29,16 @@ type DetailPageProps = {
 
 export default function ScheduledTaskDetailPage({ params }: DetailPageProps) {
   const { id } = use(params);
+  // Admin only, like the list page: the server takes the admin role for the edit and
+  // for Run now (ROUTE-PERM-GATES).
+  return (
+    <RequireAccess superadmin>
+      <ScheduledTaskDetail id={id} />
+    </RequireAccess>
+  );
+}
+
+function ScheduledTaskDetail({ id }: { id: string }) {
   const router = useRouter();
 
   const { data: task, isLoading } = useScheduledTask(id);

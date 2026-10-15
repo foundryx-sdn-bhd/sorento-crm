@@ -14,6 +14,7 @@ from app.schemas.scheduled_task import (
     ScheduledTaskRunResponse,
 )
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT, PaginationResponse
+from app.services.user_service import UserPermissionService
 from app.services.scheduled_task_service import (
     DEFAULT_GRACE_PERCENT,
     compute_due_at,
@@ -27,6 +28,21 @@ from app.services.scheduled_task_service import (
 )
 
 router = APIRouter()
+
+
+def require_admin(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Admin / superadmin only, judged on the effective user (an admin viewing as someone
+    else is that someone). The registry has no scheduled-tasks slug; the screen is
+    `<RequireAccess superadmin>` and `superadminOnly` in the menu, so the writes take the
+    same role gate. Turning a cron job off, rescheduling it or running it now is not for
+    every signed-in caller."""
+    roles = UserPermissionService(db).get_user_role_slugs(current_user["id"])
+    if not roles & {UserPermissionService.SUPERADMIN_ROLE_SLUG, "admin"}:
+        raise HTTPException(status_code=403, detail="Admin access is required to manage scheduled tasks.")
+    return current_user
 
 
 def _task_to_response(task: ScheduledTask, grace_percent: Optional[int] = None) -> ScheduledTaskResponse:
@@ -92,7 +108,7 @@ async def get_scheduled_task(
 async def update_scheduled_task(
   task_id: str,
   body: ScheduledTaskUpdate,
-  current_user: dict = Depends(get_current_user),
+  current_user: dict = Depends(require_admin),
   db: Session = Depends(get_db),
 ):
     """Update task config (enabled, frequency, start_at, etc.)."""
@@ -140,7 +156,7 @@ async def list_task_runs(
 @router.post("/scheduled-tasks/{task_id}/run-now")
 async def trigger_run_now(
     task_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_admin),
   db: Session = Depends(get_db),
 ):
     """Manually trigger a scheduled task run now."""

@@ -20,6 +20,10 @@ const STATUS_PILL_CLASS: Record<string, string> = {
   processing: 'bg-amber-100 text-amber-800',
   responded: 'bg-indigo-100 text-indigo-800',
   approved: 'bg-blue-100 text-blue-800',
+  // A quotation the customer holds, and what they answered (QUOTE-APPROVAL-UX).
+  issued: 'bg-emerald-100 text-emerald-800',
+  accepted: 'bg-emerald-100 text-emerald-800',
+  changes_requested: 'bg-amber-100 text-amber-800',
   rejected: 'bg-red-100 text-red-800',
   processed_by_cs: 'bg-emerald-100 text-emerald-800',
   resolved: 'bg-emerald-100 text-emerald-800',

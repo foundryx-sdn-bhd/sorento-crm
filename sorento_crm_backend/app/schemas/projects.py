@@ -2006,7 +2006,14 @@ class QuotationRejectRequest(BaseModel):
     something (which is the service's answer, because only it knows a stripped string is empty).
     """
 
-    reason: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class QuotationReviseRequest(BaseModel):
+    """Reopening a pending or approved quotation. The reason is checked by the service, which
+    answers a blank one with a code the screen can render."""
+
+    reason: Optional[str] = Field(default=None, max_length=1000)
 
 
 # ------------------------------------------------ cover letter and terms templates

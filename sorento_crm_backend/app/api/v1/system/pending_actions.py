@@ -145,6 +145,7 @@ _UUID_ENTITY_ACTIONS = (
     "product_alternative.unlink",
     "product_alternatives.reset_auto",
     "product_compatibility.unlink",
+    "quotation_document.delete",
     "stock_debt_snapshot.delete",
 )
 
@@ -191,6 +192,10 @@ def _assert_entity_visible(db: Session, action_key: str, entity_id: str, actor_i
         from app.services.customer_group_service import CustomerGroupService
 
         CustomerGroupService(db).get_group(entity_id)
+    elif action_key == "quotation_document.delete":
+        from app.services.record_actions import assert_quotation_deletable
+
+        assert_quotation_deletable(db, entity_id, actor_id)
     elif action_key == "form_comment.delete":
         from app.services.form_comment_service import FormCommentService
 
