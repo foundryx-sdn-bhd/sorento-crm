@@ -166,14 +166,18 @@ def apply_turn(
         or any(a.act == "switch_back" and a.switch_back_to is None for a in out.asks) and len(st.topics) == 1
         or any(_picks_open_question(a, st.pending) for a in out.asks)  # R5-1: the pick is read before the flag
     )
-    if flagged or not out.asks:
+    # R6 A: a flagged turn whose asks carry something (an entity, a domain, a period, ...) runs them, so held keeps
+    # what the parse settled; the flag's own question is asked only for what they leave open (`_flag_question`).
+    flag_about = (out.clarify.about or "other") if flagged and any(_carries(a) for a in out.asks) else None
+    if (flagged or not out.asks) and flag_about is None:
         about = _entity_about(st, out.clarify.about or "other")
         if st.pending is not None:
             # A garbled answer to the open question re-asks it with its real options and
             # counts a MISS (two -> the hand-over offer), never an option-less new question.
             act = _miss(st, 0, st.pending, _Miss(about), language, can_offer_handover, mode)
         else:
-            options = _options_for(st, about)
+            # R6 A: a domain or open question offers the domains that take what is held.
+            options = _options_for(st, about) or (_domain_options(st) if about in ("domain", "other") else [])
             # An entity question without options never quotes a phrase (no list to pick from).
             phrase = out.clarify.phrase if options or about != "which_held" else None
             act = _clarify(st, 0, about, phrase, language, options=options)
@@ -202,9 +206,14 @@ def apply_turn(
             )
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
+            if ask.act == "unclear" and _carries(ask):
+                # R6 A: the domain and period the unclear ask named stay held while its question is asked.
+                frame = {k: v for k, v in (("domain", ask.domain), ("period", ask.period)) if v is not None}
+                st.held = st.held.model_copy(update=frame)
             # Only an answer (or an unclear reply) re-asks the open question; a new
             # question that missed asks its own and replaces it.
-            reask = pending_in if ask.act in _ANSWER_ACTS or miss.origin is not None else None
+            answering = ask.act in _ANSWER_ACTS and not (ask.act == "unclear" and _carries(ask))
+            reask = pending_in if answering or miss.origin is not None else None
             action = _miss(st, i, reask, miss, language, can_offer_handover, mode)
             if reask is None and pending_in is not None and isinstance(action, ClarifyAct):
                 action.reask = False  # its own question, not a retry of the open one
@@ -216,6 +225,8 @@ def apply_turn(
                 action.pending.origin = miss.origin
         else:
             answered_pending = answered_pending or answered
+            if flag_about is not None and isinstance(action, Lookup):
+                action = _flag_question(st, i, action, ask, flag_about, language)
             action = _repeat_is_a_miss(st, action, pending_in, held_in, language, can_offer_handover, mode)
             _keep_origin(action, ask, st.held, pending_in, answered)
             if (
@@ -632,6 +643,10 @@ def _one_ask(
     can_offer: Any = None,
 ) -> tuple[Action, bool]:
     """(action, answered_pending). Mutates `st` (held/topics) only on success."""
+    if ask.act == "unclear" and _carries(ask):
+        # R6 A: an unclear ask that carries something runs as a refine of held (a new topic when nothing is held),
+        # so held keeps its entities, domain and period.
+        ask = ask.model_copy(update={"act": "new_topic" if st.held.is_empty() else "refines_held"})
     if ask.act == "unclear":
         about = out.clarify.about or "other"
         if pending is not None:
@@ -684,7 +699,12 @@ def _one_ask(
     if counted is not None:
         ask = counted  # a bare count: a refine (or a new topic) on the held subject
     elif ask.act == "answers_bot_question" and not answer_is_a_refine(ask, pending):
-        return _answer(st, i, ask, pending, resolver, policy, language, today, can_offer)
+        row = _row_answer(ask, pending)
+        if row is None:
+            return _answer(st, i, ask, pending, resolver, policy, language, today, can_offer)
+        # R6 A: a shown row the question offered is looked up again by its printed label, as a row_pick is.
+        act = "new_topic" if st.held.is_empty() else "refines_held"
+        ask = ask.model_copy(update={"act": act, "answer": None, "row_pick": None, "entities": [row]})
 
     if ask.act == "switch_back":
         printed = topic_index(ask.switch_back_to, printed_topics)
@@ -865,7 +885,7 @@ def _answer(
     can_offer: Any = None,
 ) -> tuple[Action, bool]:
     if pending is None:
-        raise _Miss("other")
+        raise _Miss("domain")  # R6 A: an answer to no question: what to check, with what is held as its options
     key = ask.answer.option_key if ask.answer is not None else None
     free = ask.answer.free_value if ask.answer is not None else None
     picked = _keyed_pick(ask, pending)
@@ -1486,9 +1506,14 @@ LABEL_KINDS = DOCUMENT_KINDS | {"customer", "warehouse"}
 def shown_row(rows: list[Option], ask: Ask) -> Entity | None:
     """R4a: the printed register row an ask's row_pick names, as the entity a copied code would be (its printed
     label as its kind; the stored key is never acted on). None when the pick names no register row."""
-    if ask.row_pick is None or not (1 <= ask.row_pick <= len(rows)):
+    n = ask.row_pick
+    if n is None and ask.act == "answers_bot_question" and ask.answer is not None:
+        # R6 A: an answer's bare number (its option key or free value) names the printed row too.
+        word = ask.answer.option_key or ask.answer.free_value
+        n = int(word) if isinstance(word, str) and word.isdecimal() else None
+    if n is None or not (1 <= n <= len(rows)):
         return None
-    row = rows[ask.row_pick - 1]
+    row = rows[n - 1]
     kind = row.payload.get("row_kind")
     return Entity(kind=kind, key=None, phrase=row.label, op="set", refers_to_held=False) if kind else None
 
@@ -1571,11 +1596,11 @@ def _did_you_mean(
     lines = "\n".join(f"{n}. {c}{tags.get(c, '')}" for n, c in enumerate(codes, start=1))
     head = clarify_copy.did_you_mean_head(f'"{ent.phrase}" (product)', language)
     asked = f"{head}\n{lines}\nReply with a code to continue"
-    picks = [
-        Option(key=str(n), label=o.label, payload={
+    picks = [  # R6 A: each option is labelled by the code it printed
+        Option(key=str(n), label=c, payload={
             "kind": "product", "key": k, "label": o.label, "op": "add" if ent.op == "add" else "set",
             "phrase": ent.phrase, **_qty_payload(ent)})
-        for n, (o, k) in enumerate(zip(options, keys), start=1)
+        for n, (o, k, c) in enumerate(zip(options, keys, codes), start=1)
     ]
     extra: list[Option] = []
     if offer.mode == "offer":
@@ -1978,7 +2003,10 @@ def _without_picked(
 
     def answered(e: Entity) -> bool:
         if not which_held:
-            return e.kind == kind and (phrase is None or e.phrase == phrase)
+            # R6 A: the entity the option was stamped with (its phrase), whatever kind the resolver found it as.
+            if raised_by is not None and _is_raiser(e, raised_by):
+                return True
+            return e.phrase == phrase if phrase is not None else e.kind == kind
         if raised_by is None:
             return e.kind == kind or e.refers_to_held or e.op == "remove"
         return _is_raiser(e, raised_by) or e.refers_to_held or (e.kind == kind and e.op != "remove")
@@ -2040,11 +2068,69 @@ def _entity_about(st: ConversationState, about: str) -> str:
 
 
 def _options_for(st: ConversationState, about: str) -> list[Option]:
-    """Real options for a model-raised clarify: the held subjects for which_held, else
-    none (an open question; never a guessed list)."""
+    """Real options for a model-raised clarify: for which_held the rows the last answer printed (R6 A), else the
+    held subjects; else none (an open question; never a guessed list)."""
     if about == "which_held":
-        return _which_held_options([r for refs in st.held.refs.values() for r in refs])
+        rows = [r for r in shown(st) if r.payload.get("row_kind") in LABEL_KINDS]
+        return rows or _which_held_options([r for refs in st.held.refs.values() for r in refs])
     return []
+
+
+def _domain_options(st: ConversationState) -> list[Option]:
+    """R6 A: the domains that take every kind held (else every kind of the rows the last answer printed), in v1's
+    domain-label order and labelled by v1's own words (`DOMAIN_LABELS`); a pick sets the domain."""
+    from app.services.chatbot.lanes.business.answer import DOMAIN_LABELS
+    from app.services.chatbot.lanes.business.gate import ALLOWED
+
+    kinds = {k for k, refs in st.held.refs.items() if refs} or {
+        r.payload.get("row_kind") for r in shown(st) if r.payload.get("row_kind")
+    }
+    if not kinds:
+        return []
+    return [
+        Option(key=d, label=label, payload={"kind": "domain", "key": d})
+        for d, label in DOMAIN_LABELS.items()
+        if d in ALLOWED and kinds <= set(ALLOWED[d])
+    ]
+
+
+def _carries(ask: Ask) -> bool:
+    """R6 A: the ask names something to look up or a frame for it (an entity, a spec, a domain, a period, a report,
+    an attachment kind, a low stock ask or a form), not only a pick."""
+    return bool(
+        ask.entities or ask.specs or ask.domain or ask.period or ask.report or ask.attachment_type
+        or ask.low_stock or ask.portal_form
+    )
+
+
+def _flag_question(st: ConversationState, i: int, lookup: Lookup, ask: Ask, about: str, language: str) -> Action:
+    """R6 A: a flagged turn whose ask ran: the parser's question is asked only for what the ask left open (no
+    domain to check; no entity named for a which question), with options from what is held and shown; held keeps
+    what the ask settled. Else the Lookup stands."""
+    if about in ("domain", "other") and lookup.held.domain is None:
+        q = _clarify(st, i, "domain", None, language, options=_domain_options(st))
+    elif about in ("entity", "which_held") and not any(e.key or e.phrase or e.doc_number for e in ask.entities):
+        options = _options_for(st, "which_held")
+        if not options:
+            return lookup
+        q = _clarify(st, i, "which_held", None, language, options=options)
+    else:
+        return lookup
+    q.pending.origin = _waiting(ask, st.held)
+    return q
+
+
+def _row_answer(ask: Ask, pending: PendingQuestion | None) -> Entity | None:
+    """R6 A: an answer picking a printed row a question offered (`_options_for`): that row as the entity a row_pick
+    makes of it (its printed label, its kind), never the stored key. None for any other answer."""
+    if pending is None or not pending.options or any(o.payload.get("kind") != "row" for o in pending.options):
+        return None
+    number = _number(ask)
+    picked = _keyed_pick(ask, pending) or (_nth(_numbered(pending), number) if number is not None else None)
+    kind = picked.payload.get("row_kind") if picked is not None else None
+    if kind not in LABEL_KINDS:
+        return None
+    return Entity(kind=kind, key=None, phrase=picked.label, op="set", refers_to_held=False)
 
 
 def _clarify(
@@ -2099,11 +2185,12 @@ def _miss(
         question = PendingQuestion(
             kind=f"clarify_{about}",
             asked=asked,
-            options=_options_for(st, about),
+            options=_options_for(st, about) or (_domain_options(st) if about == "domain" else []),
             asked_turn=st.turn_no,
             misses=1,
         )
-        return ClarifyAct(ask_index=i, about=about, pending=question, reask=True)
+        # R6 A: no question was open, so this is a fresh question, never "didn't catch your choice".
+        return ClarifyAct(ask_index=i, about=about, pending=question)
     misses = pending.misses + 1
     if not can_offer_handover and misses >= MISSES_BEFORE_HANDOVER and pending.kind != "offer_handover":
         return _still_need(st, i, pending, language, mode)
