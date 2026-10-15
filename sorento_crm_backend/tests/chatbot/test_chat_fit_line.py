@@ -735,3 +735,105 @@ def test_ac20_a_non_linked_zh_turn_keeps_such_lines_unchanged(session_factory, m
     assert calls, "the turn answers"
     for other in UNRELATED:
         assert other in reply.splitlines(), (other, reply)
+
+
+# --------------------------------------------------------------------------- AC-22 hidden ANCHOR
+
+
+H_CAB, H_CAB_MIRROR = "ZZTBF7401", "ZZTMR7401"  # hidden cabinet (flag), visible mirror linked
+H_WC = "ZZTWC7402"  # hidden WC (category), no link
+FAM_A, FAM_B, FAM_COVER = "ZZTWC7503-A", "ZZTWC7503-B", "ZZTSCBD7503"  # hidden SKUs of one model, one visible cover
+
+
+def _seed_hidden_anchors(session_factory) -> None:
+    from app.models.product import ProductCategory
+    from app.models.product_compatibility import ProductCompatibility
+    from tests._mc_lookup_seed import product as seed_product
+
+    db = session_factory()
+    rows = {c: seed_product(db, company_id=DEFAULT_COMPANY_ID, code=c)
+            for c in (H_CAB, H_CAB_MIRROR, H_WC, FAM_A, FAM_B, FAM_COVER)}
+    rows[H_CAB].is_searchable = False
+    rows[FAM_A].is_searchable = False
+    rows[FAM_B].is_searchable = False
+    db.flush()
+    db.query(ProductCategory).filter(ProductCategory.id == rows[H_WC].category_id).update({"is_searchable": False})
+    for accessory, host, kind in ((H_CAB_MIRROR, H_CAB, "mirror"), (FAM_COVER, FAM_A, "seat_cover"), (FAM_COVER, FAM_B, "seat_cover")):
+        db.add(ProductCompatibility(
+            company_id=DEFAULT_COMPANY_ID, seat_cover_product_id=rows[accessory].id,
+            wc_product_id=rows[host].id, source="manual", kind=kind,
+        ))
+    db.commit()
+
+
+def _anchor_parity(session_factory, monkeypatch, *, code: str, find: Any):
+    """The fit ask on `code` against the same code typed with no find."""
+    _seed(session_factory)
+    _seed_hidden_anchors(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_fit_22")
+    control = _turn(
+        session_factory, monkeypatch, text=f"check stock {code}", msg_id="ZZT-fit-22-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(code)],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_fit_22")
+    asked = _turn(
+        session_factory, monkeypatch, text=f"check stock {find['filters'][0]['value']} for {code}",
+        msg_id="ZZT-fit-22-asked", domain_hint="inventory", intent_hint="check_stock",
+        entities=[_product(code)], find=find,
+    )
+    return control, asked
+
+
+def test_ac22_a_hidden_cabinet_with_a_visible_mirror_runs_as_typed(session_factory, monkeypatch) -> None:
+    (c_reply, c_calls), (a_reply, a_calls) = _anchor_parity(
+        session_factory, monkeypatch, code=H_CAB, find=fits("mirror", "mirror"),
+    )
+    assert a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+    assert f"Mirror for {H_CAB}" not in a_reply and H_CAB_MIRROR not in a_reply, a_reply
+
+
+def test_ac22_a_hidden_wc_with_no_link_gets_no_no_record_claim(session_factory, monkeypatch) -> None:
+    (c_reply, c_calls), (a_reply, a_calls) = _anchor_parity(
+        session_factory, monkeypatch, code=H_WC, find=fits("seat_cover", "seat cover"),
+    )
+    assert a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+    assert "on record" not in a_reply, a_reply
+
+
+def test_ac22_a_model_token_whose_host_skus_are_all_hidden_runs_as_typed(session_factory, monkeypatch) -> None:
+    (c_reply, c_calls), (a_reply, a_calls) = _anchor_parity(
+        session_factory, monkeypatch, code="7503", find=fits("seat_cover", "seat cover"),
+    )
+    assert a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+    assert "on record" not in a_reply and FAM_COVER not in a_reply, a_reply
+
+
+def test_ac22_the_carry_path_never_names_a_hidden_linked_product(session_factory, monkeypatch) -> None:
+    """A bare cabinet after a mirror answer whose only mirror link is hidden: no line, code absent."""
+    _seed(session_factory)
+    _seed_hidden(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"check stock mirror for {CAB1}", msg_id="ZZT-fit-22c-1",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(CAB1)], find=fits("mirror", "mirror"),
+    )
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_fit_22c")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=HID_CAB, msg_id="ZZT-fit-22c-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(HID_CAB)], domain_in_message=False,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_fit_22c")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=HID_CAB, msg_id="ZZT-fit-22c-2",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(HID_CAB)],
+        find=None, domain_in_message=False,
+    )
+    assert a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+    assert HID_MIRROR not in a_reply and f"Mirror for {HID_CAB}" not in a_reply, a_reply
