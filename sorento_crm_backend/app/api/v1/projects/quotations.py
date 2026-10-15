@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.projects._common import acting_company_id, permission_slugs
 from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
-from app.schemas.common import ListResponse
+from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.schemas.projects import (
     PriceFloorEffectiveResponse,
     PriceFloorRuleResponse,
@@ -877,7 +877,7 @@ def _series_or_404(db: Session, series_id: str):
 async def list_series_product_rows(
     series_id: str,
     page: int = Query(1, ge=1, le=1000000),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     query: Optional[str] = Query(None, max_length=200),
     priced: bool = Query(False),
     _user: dict = Depends(require_permission(VIEW)),

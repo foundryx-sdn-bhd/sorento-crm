@@ -70,7 +70,7 @@ Same DDL, idempotent, in `crew/state/migrations/SERIES-FILTERS.sql` for `crew mi
      by `query` (code or name, ILIKE), ordered by product code, OFFSET/LIMIT in SQL.
 2. Routes: create/update pop `brand_ids` and call `set_series_brands`; `_serialize_series`
    returns `brand_ids` + `brand_names` (by name) in one query for the page; rows route takes
-   `page` (default 1), `limit` (default 50, max 100), `query`, and returns real pagination.
+   `page` (default 1), `limit` (default 50, max `MAX_PAGE_LIMIT` 1000, RELEASE3-GUARDS), `query`, and returns real pagination.
 3. Schemas: `ProjectSeriesCreate/Update.brand_ids: List[str]` (Update optional, sent whole);
    `ProjectSeriesResponse.brand_ids/brand_names`; `brand_id`/`brand_name` leave the API.
 4. Category select: `brand_id` becomes a repeatable list param (`?brand_id=a&brand_id=b`), each
@@ -94,7 +94,7 @@ Same DDL, idempotent, in `crew/state/migrations/SERIES-FILTERS.sql` for `crew mi
 - pytest `tests/test_series_filters.py` (`_pg_fixture.blank_session`, own seeded chain): A2-A4
   (round trip, backfill shape via the model), B1-B9 (rows + `is_in_series` + live verdict + line
   save), C1 (two brands), D1-D5 (page 1/2 of a 120-row series, total, server search across
-  pages, limit cap 100, price edit on a derived row of page 2), E1 at API level is FE only.
+  pages, limit cap `MAX_PAGE_LIMIT`, price edit on a derived row of page 2), E1 at API level is FE only.
 - Existing tests that encode the old rule are UPDATED in the red commit, not deleted:
   `test_series_brand_scope.py:338` (C7 "no brand or no categories shows stored rows only" ->
   now all-of-brand / every product), any test seeding `ProjectSeries(brand_id=...)` moves to
