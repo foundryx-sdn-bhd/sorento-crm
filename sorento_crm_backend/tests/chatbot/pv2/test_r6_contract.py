@@ -202,7 +202,7 @@ def _seed_world(factory) -> World:
     cats = {}
     for key, label in CLASSES.items():
         cats[key] = ProductCategory(id=str(uuid.uuid4()), category_code=f"ZZTC-{key}"[:50],
-                                    category_name=label.title(), class_label=key, search_synonyms=[label],
+                                    category_name=label.title(), class_label=label.title(), search_synonyms=[label],
                                     is_searchable=True, company_id=DEFAULT_COMPANY_ID)
     plain = ProductCategory(id=str(uuid.uuid4()), category_code="ZZTC-r6", category_name="ZZT R6",
                             is_searchable=True, company_id=DEFAULT_COMPANY_ID)
