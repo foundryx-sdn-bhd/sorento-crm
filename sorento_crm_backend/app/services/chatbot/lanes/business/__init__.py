@@ -2030,7 +2030,16 @@ def run_fetch(
             so_refused = order_status_raw != "outstanding"
         semantic_input["outstanding_scope"] = scope
         semantic_input["outstanding_so_refused"] = so_refused
-    elif order_status_raw == "sales_analysis" and not has_own_accounts:
+    elif (order_status_raw == "sales_analysis" and not has_own_accounts) or (
+        # Chat fix PR-B S10 (AC-B16, R03/R23): a staff sales report naming no product, no
+        # customer and no brand has no subject for `crm_sales_report` (422
+        # `subject_required`, "I could not fetch sales"): it is the company's sales for
+        # the period, the sales analysis. A customer-scoped contact keeps its links.
+        order_status_raw == "sales_report"
+        and domain in contracts.ORDER_OR_SALES_DOMAINS
+        and not has_own_accounts
+        and not (has_product or has_customer or has_brand or carried_subject or typed_brand_words(parse_output))
+    ):
         # PLAN-retail-sales-reports-26sep S1: a sales ANALYSIS (a company's sales by
         # month, by year, by channel) is the reports kernel's own query, answered as the
         # whole table in text and the same query as an Excel (Owner ruling 26 Sep 07:16
