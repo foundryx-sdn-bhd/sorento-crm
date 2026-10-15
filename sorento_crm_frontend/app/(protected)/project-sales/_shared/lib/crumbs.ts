@@ -15,15 +15,26 @@ import type { PageHeaderCrumb } from '@/components/common/PageHeader';
  */
 export function projectCrumbs(
   projectId: string,
-  ...below: PageHeaderCrumb[]
+  ...rest: [ProjectCrumbOptions | PageHeaderCrumb, ...PageHeaderCrumb[]] | PageHeaderCrumb[]
 ): PageHeaderCrumb[] {
+  // An optional leading options object picks the project tab the "Project" crumb lands on.
+  const first = rest[0];
+  const options: ProjectCrumbOptions =
+    first && !('title' in first) ? (first as ProjectCrumbOptions) : {};
+  const below = (options === first ? rest.slice(1) : rest) as PageHeaderCrumb[];
+  const projectPath = `/project-sales/${projectId}`;
   return [
     { title: 'Project Sales' },
     { title: 'Projects', path: '/project-sales/pipeline' },
-    { title: 'Project', path: `/project-sales/${projectId}` },
+    {
+      title: 'Project',
+      path: options.tab ? `${projectPath}?tab=${options.tab}` : projectPath,
+    },
     ...below,
   ];
 }
+
+export type ProjectCrumbOptions = { tab?: string };
 
 /** The trail for `/project-sales/new`, off the pipeline rather than a project record. */
 export function registerProjectCrumbs(): PageHeaderCrumb[] {

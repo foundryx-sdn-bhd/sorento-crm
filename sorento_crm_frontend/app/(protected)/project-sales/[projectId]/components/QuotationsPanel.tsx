@@ -2,19 +2,52 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import type { ColumnDef, Table } from '@tanstack/react-table';
-import { AlertTriangle, Plus, TriangleAlert } from 'lucide-react';
+import type { ColumnDef, RowSelectionState, Table } from '@tanstack/react-table';
+import { Plus, Trash2 } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
+import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
+import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
+import { RowActionsMenu } from '@/components/common/RowActionsMenu';
+import { useDeferredBulkAction } from '@/hooks/useDeferredBulkAction';
 import { formatDateInMalaysia } from '@/lib/helpers';
 import { quotationStanding } from '../../_shared/lib/quotationDecision';
-import { useQuotations } from '../../_shared/hooks/useProjects';
-import { useQuotationDocuments } from '../../_shared/hooks/useQuotationDocuments';
+import {
+  quotationDocumentsKey,
+  useQuotationDocuments,
+} from '../../_shared/hooks/useQuotationDocuments';
+import { useQuotationDocumentActions } from '../quotation-documents/actions';
 import type { QuotationDocument } from '../../_shared/services/quotationDocumentService';
 import type { Project } from '../../_shared/types/project.types';
 import { formatMyrExact, sumMoney } from '../../_shared/lib/money';
+
+/**
+ * The row "..." cell: the record's own action set, in the same order as its gear.
+ *
+ * A component of its own because the set is a hook (it owns the sign dialog and the deferred
+ * delete). The wrapper stops clicks, including those bubbling out of the dialogs, so nothing
+ * inside it opens the row.
+ */
+function QuotationRowActions({
+  projectId,
+  document,
+  canEdit,
+}: {
+  projectId: string;
+  document: QuotationDocument;
+  canEdit: boolean;
+}) {
+  const { actions, dialogs } = useQuotationDocumentActions({ projectId, document, canEdit });
+  return (
+    <div onClick={(event) => event.stopPropagation()}>
+      <RowActionsMenu actions={actions} ariaLabel="quotation" />
+      {dialogs}
+    </div>
+  );
+}
 
 /**
  * Every quotation DOCUMENT on this project: one row per letterhead the customer receives.
@@ -24,23 +57,40 @@ import { formatMyrExact, sumMoney } from '../../_shared/lib/money';
  * (R2)", not "House Units v2". So the row is the document, the scopes are a count, and the
  * revision history lives on the document's own page.
  *
- * The two alert badges stay in the toolbar. They are the guardrail management asked for, they
- * are counted across the project's scopes rather than per document, and a number is not a
- * second call to action competing with the button beside it.
+ * It is the standard list: search, Columns and Add in the app toolbar, a tickbox column with
+ * Delete in the bulk strip, and the record's own action set in the row "..." menu.
  */
 export function QuotationsPanel({ project }: { project: Project }) {
   const router = useRouter();
   const documents = useQuotationDocuments(project.id);
-  const scopes = useQuotations(project.id);
-
   const rows = React.useMemo(() => documents.data ?? [], [documents.data]);
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
-  const scopeRows = React.useMemo(() => scopes.data ?? [], [scopes.data]);
-  const totalBelowFloor = scopeRows.reduce((sum, row) => sum + row.below_floor_count, 0);
-  const totalNonStandard = scopeRows.reduce((sum, row) => sum + row.non_standard_count, 0);
+  // One countdown over the ticked drafts. An issued quotation is refused by the server, so it is
+  // left out and counted in a closing sentence rather than swallowed.
+  const bulkDelete = useDeferredBulkAction({
+    actionKey: 'quotation_document.delete',
+    entityType: 'quotation_document',
+    describe: (count) => `${count} quotation${count === 1 ? '' : 's'}`,
+    invalidateKeys: [quotationDocumentsKey(project.id)],
+    onStarted: () => setRowSelection({}),
+  });
+
+  const deleteTicked = () => {
+    const ticked = rows.filter((row) => rowSelection[row.id]);
+    const deletable = ticked.filter((row) => !row.is_issued);
+    const skipped = ticked.length - deletable.length;
+    if (skipped > 0) {
+      toast.warning(`${skipped} issued quotation${skipped === 1 ? '' : 's'} skipped`);
+    }
+    bulkDelete.run(deletable.map((row) => ({ id: row.id })));
+  };
 
   const columns = React.useMemo<ColumnDef<QuotationDocument>[]>(
     () => [
+      buildSelectColumn<QuotationDocument>({
+        rowLabel: (row) => `Select ${row.original.our_ref ?? row.original.document_no}`,
+      }),
       {
         id: 'our_ref',
         accessorFn: (row) => row.our_ref ?? row.document_no,
@@ -156,44 +206,69 @@ export function QuotationsPanel({ project }: { project: Project }) {
         size: 130,
         meta: { headerTitle: 'Dated' },
       },
+      {
+        id: 'actions',
+        header: '',
+        size: 56,
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => (
+          <QuotationRowActions
+            projectId={project.id}
+            document={row.original}
+            canEdit={project.can_edit}
+          />
+        ),
+      },
     ],
-    [],
+    [project.id, project.can_edit],
   );
+
+  const ticked = rows.filter((row) => rowSelection[row.id]);
+  const deletableTicked = ticked.filter((row) => !row.is_issued);
 
   return (
     <PanelDataGrid
       title="Quotations"
-      toolbar={
-        <>
-          {totalBelowFloor > 0 && (
-            <Badge variant="destructive" appearance="light" className="gap-1">
-              <AlertTriangle className="size-3" aria-hidden />
-              {`${totalBelowFloor} below the price floor`}
-            </Badge>
-          )}
-          {totalNonStandard > 0 && (
-            <Badge variant="warning" appearance="light" className="gap-1">
-              <TriangleAlert className="size-3" aria-hidden />
-              {`${totalNonStandard} non-standard`}
-            </Badge>
-          )}
-          {project.can_edit && (
-            <Button
-              type="button"
-              size="sm"
-              // A navigation, never a write (#1341). The owner: "I should be able to add product
-              // straight away and save when I am satisfied". The form page holds the letterhead
-              // and the scopes with their lines, and nothing exists until its Save.
-              onClick={() =>
-                router.push(`/project-sales/${project.id}/quotation-documents/new`)
-              }
-            >
-              <Plus className="size-4" aria-hidden />
-              Add a quotation
-            </Button>
-          )}
-        </>
-      }
+      toolbar={({ table }) => (
+        <DataGridListToolbar
+          table={table}
+          exportConfig={{ filename: 'quotations' }}
+          bulkActions={
+            project.can_edit
+              ? [
+                  {
+                    key: 'delete',
+                    label: 'Delete',
+                    icon: Trash2,
+                    destructive: true,
+                    disabled: deletableTicked.length === 0 || bulkDelete.isStarting,
+                    onClick: deleteTicked,
+                  },
+                ]
+              : []
+          }
+          primaryAction={
+            project.can_edit ? (
+              <Button
+                type="button"
+                size="sm"
+                // A navigation, never a write (#1341). The owner: "I should be able to add
+                // product straight away and save when I am satisfied". The form page holds the
+                // letterhead and the scopes with their lines, and nothing exists until its Save.
+                onClick={() =>
+                  router.push(`/project-sales/${project.id}/quotation-documents/new`)
+                }
+              >
+                <Plus className="size-4" aria-hidden />
+                Add a quotation
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
+      rowSelection={rowSelection}
+      onRowSelectionChange={setRowSelection}
       columns={columns}
       rows={rows}
       getRowId={(row) => row.id}

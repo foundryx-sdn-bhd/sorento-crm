@@ -3,12 +3,12 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Check, Download, Link2, PenLine, SquarePen, Trash2 } from 'lucide-react';
+import { PenLine } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
-import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import DetailActions from '@/components/common/DetailActions';
 import { EntityDownloadsButton } from '@/components/my-downloads/EntityDownloadsButton';
@@ -26,16 +26,18 @@ import {
   useQuotationMutations,
   useQuotations,
 } from '../../../../_shared/hooks/useProjects';
-import { quotationStanding } from '../../../../_shared/lib/quotationDecision';
 import {
-  QuotationApprovalPanel,
-  isBlockedByApproval,
-} from './QuotationApprovalPanel';
+  isLockedForApproval,
+  nextAction,
+  quotationStanding,
+} from '../../../../_shared/lib/quotationDecision';
+import { useQuotationDocumentActions } from '../../actions';
+import { APPROVE_PERMISSION, QuotationApprovalPanel } from './QuotationApprovalPanel';
+import { QuotationRejectDialog } from './QuotationRejectDialog';
+import { ReviseApprovalDialog } from './ReviseApprovalDialog';
 import { QuotationChangesRequestedPanel } from './QuotationChangesRequestedPanel';
 import { QuotationDocumentProvider } from './QuotationDocumentContext';
 import { QuotationDocumentTabs } from './QuotationDocumentTabs';
-import { QuotationSignDialog } from './QuotationSignDialog';
-import { QuotationSignLinkDialog } from './QuotationSignLinkDialog';
 import { ReviseToEditDialog } from './ReviseToEditDialog';
 
 /**
@@ -98,12 +100,10 @@ export function QuotationDocumentClient({
   const editPath = `/project-sales/${projectId}/quotation-documents/${documentId}/edit`;
 
   const [activeScopeId, setActiveScopeId] = React.useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = React.useState(false);
-  const [signing, setSigning] = React.useState(false);
-  const [linkToShow, setLinkToShow] = React.useState<string | null>(null);
-  // The item ticks in place and the menu stays open to be read (S7-05).
-  const [signLinkCopied, setSignLinkCopied] = React.useState(false);
   const [revisePrompt, setRevisePrompt] = React.useState(false);
+  const [approvalRevisePrompt, setApprovalRevisePrompt] = React.useState(false);
+  const [rejecting, setRejecting] = React.useState(false);
+  const canApprove = useHasPermission(APPROVE_PERMISSION);
 
   const selectScope = React.useCallback((scopeId: string) => setActiveScopeId(scopeId), []);
 
@@ -135,6 +135,16 @@ export function QuotationDocumentClient({
       }))
       .filter((pair) => pair.current && !(pair.current.is_editable ?? pair.current.is_current));
   }, [quotations.data, scopeVersions.rows, scopes]);
+
+  const canEditProject = project.data?.can_edit ?? false;
+  const gear = useQuotationDocumentActions({
+    projectId,
+    document: document.data,
+    canEdit: canEditProject,
+    latestIssue: issues.data?.[0] ?? null,
+    onEdit: startEditing,
+    onDeleted: () => router.push(`/project-sales/${projectId}?tab=quotations`),
+  });
 
   if (document.isLoading || project.isLoading) {
     return (
@@ -181,15 +191,20 @@ export function QuotationDocumentClient({
    * server refuses it.
    */
   const isSigned = Boolean(sorentoSignature);
+  const action = nextAction(record, { canEdit, canApprove, isSigned });
+  const locked = isLockedForApproval(record);
   /**
-   * S15: a line priced below its floor cannot go to the customer until a manager says so.
-   *
-   * The server refuses it with 422 `quotation_below_floor_pending_approval`, and the CTA says
-   * so up front rather than letting somebody press it and read an error - exactly how the
-   * signature gate above already behaves. The reason and the way to ask for approval are in
-   * the panel under the header, because a disabled button with no way forward is a dead end.
+   * The "Send for approval" label comes off the graph's own draft -> pending edge, so a renamed
+   * edge reads the way the admin named it; with no graph it falls back to the plain words. The
+   * target is the pending rung itself: the server walks Rejected -> Draft -> Pending on its own.
    */
-  const needsApproval = isBlockedByApproval(record);
+  const pendingStatus = approvalGraph.data?.statuses.find((row) => row.key === 'pending_approval');
+  const draftStatus = approvalGraph.data?.statuses.find((row) => row.key === 'draft');
+  const sendEdge = approvalGraph.data?.transitions.find(
+    (edge) =>
+      edge.to_status_id === pendingStatus?.id && edge.from_status_id === draftStatus?.id,
+  );
+  const sendForApprovalLabel = sendEdge?.label || 'Send for approval';
 
   /** What the next copy of a single frozen scope will be called, e.g. "v3". */
   const nextVersionLabel =
@@ -223,18 +238,32 @@ export function QuotationDocumentClient({
   } else if (lockedScopes.length > 0) {
     headerHints.push('The customer holds this version. Edit opens the next one.');
   }
-  if (canEdit && !isSigned) headerHints.push('Sign it first');
+  if (action.hint) headerHints.push(action.hint);
 
   /**
    * Edit quotation: the whole quotation in the form page (#1341). On a quotation the customer
    * holds it asks first, because the answer is a revision; the form opens once that is made.
    */
   function startEditing() {
+    if (locked) {
+      setApprovalRevisePrompt(true);
+      return;
+    }
     if (lockedScopes.length > 0) {
       setRevisePrompt(true);
       return;
     }
     router.push(editPath);
+  }
+
+  async function reviseApprovalThenEdit(reason: string) {
+    try {
+      await mutations.reviseApproval.mutateAsync({ id: documentId, reason });
+      setApprovalRevisePrompt(false);
+      router.push(editPath);
+    } catch {
+      // The mutation toasted the reason. The dialog stays open so it can be tried again.
+    }
   }
 
   async function reviseThenEdit() {
@@ -248,57 +277,6 @@ export function QuotationDocumentClient({
       router.push(editPath);
     } catch {
       // The mutation toasted the reason. The dialog stays open so it can be tried again.
-    }
-  }
-
-  /**
-   * Both exports are QUEUED, and neither of them puts a file in front of the user here.
-   *
-   * They used to render inline and hand the browser a blob: on a long quotation that held the
-   * page for as long as WeasyPrint took, which reads as a broken button and was what the client
-   * complained about. Now the click leaves a job behind and says so; the file is collected from
-   * the printer chip in this header (or the My Downloads drawer) once it is ready, and it can be
-   * previewed there rather than downloaded blind.
-   */
-  async function queueIssuePdf() {
-    if (!latestIssue) return;
-    try {
-      await mutations.issuePdf.mutateAsync({ id: documentId, issueId: latestIssue.id });
-    } catch {
-      // The mutation already toasted the reason.
-    }
-  }
-
-  async function queueIssueXlsx() {
-    if (!latestIssue) return;
-    try {
-      await mutations.issueXlsx.mutateAsync({ id: documentId, issueId: latestIssue.id });
-    } catch {
-      // Already toasted by the mutation.
-    }
-  }
-
-  async function copyCounterSignLink() {
-    if (!latestIssue) return;
-    try {
-      const link = await mutations.signLink.mutateAsync({
-        id: documentId,
-        issueId: latestIssue.id,
-      });
-      // The server returns a relative path on purpose; the origin the customer must land on is
-      // whichever one this screen is being used from.
-      const url = `${window.location.origin}${link.path}`;
-      try {
-        await navigator.clipboard.writeText(url);
-        setSignLinkCopied(true);
-        window.setTimeout(() => setSignLinkCopied(false), 2000);
-      } catch {
-        // Clipboard access refused (plain HTTP, or a browser policy). Show the link instead of
-        // stranding the user with a failure and no way to get at it.
-        setLinkToShow(url);
-      }
-    } catch {
-      // Already toasted by the mutation.
     }
   }
 
@@ -366,107 +344,61 @@ export function QuotationDocumentClient({
               )
             }
             gear={
-              <DetailActionsMenu ariaLabel="Quotation actions">
-                {/* Edit lives here, not in the header: one primary CTA, everything else behind
-                    the gear. It opens the form page with the whole quotation (#1341). */}
-                {canEdit && (
-                  <DropdownMenuItem onSelect={startEditing}>
-                    <SquarePen className="size-4" aria-hidden />
-                    Edit quotation
-                  </DropdownMenuItem>
-                )}
-                {canEdit && (
-                  <DropdownMenuItem onSelect={() => setSigning(true)}>
-                    <PenLine className="size-4" aria-hidden />
-                    {isSigned ? 'Sign again' : 'Sign quotation'}
-                  </DropdownMenuItem>
-                )}
-                {/* Disabled rather than absent: the client asked for both exports, and a menu that
-                    simply lacks them reads as "this system cannot do it". The subtext names where
-                    the file lands, because the click itself no longer produces one. */}
-                <DropdownMenuItem
-                  disabled={!record.is_issued || mutations.issuePdf.isPending}
-                  onSelect={() => void queueIssuePdf()}
-                >
-                  <Download className="size-4" aria-hidden />
-                  <span className="min-w-0">
-                    Download PDF
-                    <span className="block text-xs text-muted-foreground">
-                      {record.is_issued ? 'Prepared in My Downloads' : 'Send it to the customer first'}
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!record.is_issued || mutations.issueXlsx.isPending}
-                  onSelect={() => void queueIssueXlsx()}
-                >
-                  <Download className="size-4" aria-hidden />
-                  <span className="min-w-0">
-                    Download Excel
-                    <span className="block text-xs text-muted-foreground">
-                      {record.is_issued ? 'Prepared in My Downloads' : 'Send it to the customer first'}
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-                {canEdit && (
-                  <DropdownMenuItem
-                    disabled={!record.is_issued || mutations.signLink.isPending}
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      void copyCounterSignLink();
-                    }}
-                  >
-                    {signLinkCopied ? (
-                      <Check className="size-4" aria-hidden />
-                    ) : (
-                      <Link2 className="size-4" aria-hidden />
-                    )}
-                    <span className="min-w-0">
-                      {signLinkCopied ? 'Copied' : 'Copy counter-sign link'}
-                      {!record.is_issued && (
-                        <span className="block text-xs text-muted-foreground">
-                          Send it to the customer first
-                        </span>
-                      )}
-                    </span>
-                  </DropdownMenuItem>
-                )}
-                {canEdit && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDelete(true)}>
-                      <Trash2 className="size-4" aria-hidden />
-                      Delete quotation
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DetailActionsMenu>
+              <DetailActionsMenu actions={gear.actions} ariaLabel="Quotation actions" />
             }
             primary={
               <>
-              {canEdit && !isSigned && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setSigning(true)}
-                >
+              {action.kind === 'sign' && (
+                <Button type="button" size="sm" onClick={gear.openSign}>
                   <PenLine className="size-4" aria-hidden />
                   Sign
                 </Button>
               )}
-              {canEdit && (
+              {action.kind === 'send_for_approval' && (
                 <Button
                   type="button"
                   size="sm"
-                  disabled={mutations.issue.isPending || !isSigned || needsApproval}
-                  title={
-                    needsApproval
-                      ? 'A manager has to approve the below-floor pricing first'
-                      : isSigned
-                        ? undefined
-                        : 'Sign it first'
-                  }
+                  disabled={mutations.submitForApproval.isPending}
+                  onClick={() => {
+                    if (!pendingStatus) {
+                      toast.error('The approval steps are still loading. Try again in a moment.');
+                      return;
+                    }
+                    mutations.submitForApproval.mutate({
+                      id: documentId,
+                      toStatusId: pendingStatus.id,
+                    });
+                  }}
+                >
+                  {sendForApprovalLabel}
+                </Button>
+              )}
+              {action.kind === 'approve' && (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={mutations.reject.isPending}
+                    onClick={() => setRejecting(true)}
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={mutations.approve.isPending}
+                    onClick={() => mutations.approve.mutate(documentId)}
+                  >
+                    Approve
+                  </Button>
+                </>
+              )}
+              {action.kind === 'send' && (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={mutations.issue.isPending}
                   onClick={() => mutations.issue.mutate(documentId)}
                 >
                   {/* The owner on "Issue R1": "call this Send to Customer" (#1341). The revision
@@ -528,25 +460,7 @@ export function QuotationDocumentClient({
 
       {/* The price-floor gate. Renders nothing at all unless a line on this quotation is
           priced below its floor, so the ordinary quotation gains no chrome and no extra step. */}
-      <QuotationApprovalPanel
-        document={record}
-        graph={approvalGraph.data}
-        canEdit={canEdit}
-        isMoving={mutations.submitForApproval.isPending}
-        isDeciding={mutations.approve.isPending || mutations.reject.isPending}
-        onMove={(toStatusId) =>
-          mutations.submitForApproval.mutate({ id: documentId, toStatusId })
-        }
-        onApprove={() => mutations.approve.mutate(documentId)}
-        onReject={async (reason) => {
-          try {
-            await mutations.reject.mutateAsync({ id: documentId, reason });
-          } catch {
-            // The mutation toasted the reason; the dialog closes either way so the manager
-            // is not left staring at a form they have already read the failure for.
-          }
-        }}
-      />
+      <QuotationApprovalPanel document={record} />
 
       {/* The letterhead card lives in the Header tab now, first of the tabs (#1341): "i need this
           to be under 'Header' tab to align with our system design". */}
@@ -568,23 +482,7 @@ export function QuotationDocumentClient({
         {children}
       </QuotationDocumentProvider>
 
-      <QuotationSignDialog
-        open={signing}
-        onOpenChange={setSigning}
-        signatoryName={record.signatory_name}
-        isSaving={mutations.sign.isPending}
-        onSign={async (body) => {
-          try {
-            await mutations.sign.mutateAsync({ id: documentId, body });
-            setSigning(false);
-          } catch {
-            // The mutation toasted the reason. The dialog stays open so the signature can be
-            // re-applied without reopening it.
-          }
-        }}
-      />
-
-      <QuotationSignLinkDialog url={linkToShow} onOpenChange={() => setLinkToShow(null)} />
+      {gear.dialogs}
 
       <ReviseToEditDialog
         open={revisePrompt}
@@ -595,16 +493,24 @@ export function QuotationDocumentClient({
         onConfirm={reviseThenEdit}
       />
 
-      <ConfirmDeleteDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title="Confirm delete"
-        description={`Delete quotation ${record.document_no} and all ${scopes.length} of its scopes? This action cannot be undone.`}
-        onDelete={async () => {
-          await mutations.remove.mutateAsync(documentId);
+      <ReviseApprovalDialog
+        open={approvalRevisePrompt}
+        onOpenChange={setApprovalRevisePrompt}
+        isRevising={mutations.reviseApproval.isPending}
+        onConfirm={reviseApprovalThenEdit}
+      />
+
+      <QuotationRejectDialog
+        open={rejecting}
+        onOpenChange={setRejecting}
+        isDeciding={mutations.reject.isPending}
+        onReject={async (reason) => {
+          try {
+            await mutations.reject.mutateAsync({ id: documentId, reason });
+          } catch {
+            // The mutation toasted the reason; the dialog closes either way.
+          }
         }}
-        onSuccess={() => router.push(`/project-sales/${projectId}?tab=quotations`)}
-        successMessage="Quotation deleted"
       />
     </div>
   );
