@@ -1,6 +1,6 @@
 # PLAN: PV2 R5 "follow-ups" - the code acts on what the parser read (15 Oct 2026)
 
-Status: Review (slices A-F green + kill-proven, reviewer + security running; no prompt change). Track M (LEAD pattern, red-first, kill-proof). Branch `crew/pv2-redesign-r5` from 380b6cdf4 (R4a head,
+Status: Merge-ready (R5-1..R5-8 green, kill-proven, reviewer READY + security CLEAN at 2d8c248cf; no prompt change; awaiting crew 3x battery and merge). Track M (LEAD pattern, red-first, kill-proof). Branch `crew/pv2-redesign-r5` from 380b6cdf4 (R4a head,
 PR #1691 unmerged), worktree sorento_crm-pv2-fix2. PR stacked on #1691 (base `crew/pv2-redesign-r4a`) so the diff
 shows R5 only; it retargets to crew/pv2 once #1691 merges. Owner TOP priority 15 Oct (brief
 crew/state/briefs/PV2-FIX-R5.md). Restarted after a context overflow: nothing of the first attempt was committed.
