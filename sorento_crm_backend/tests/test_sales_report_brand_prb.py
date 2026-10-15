@@ -53,3 +53,20 @@ def test_b7_near_miss_a_brand_of_no_sale_gives_an_empty_total_not_the_whole(clie
     db.commit()
     body = client.get(BASE, params={"customer_ids": cust.id, "brand_ids": other.id}).json()
     assert body["total"]["qty"] == 0, body
+
+
+# S5b (AC-B7): the reply must name the brand filter, so an empty brand-filtered total does not
+# read as "no sales at all". Pinned (tester's choice, mirrors the outstanding report's echo):
+# the body carries `brand_name`, the brand name(s) applied, absent/None when no brand filter.
+
+
+def test_b7b_the_body_echoes_the_applied_brand(client, db):
+    cust, mocha, _s = _seed(db)
+    body = client.get(BASE, params={"customer_ids": cust.id, "brand_ids": mocha.id}).json()
+    assert "ZZT Mocha" in str(body.get("brand_name")), body
+
+
+def test_b7b_near_miss_no_brand_filter_echoes_none(client, db):
+    cust, _m, _s = _seed(db)
+    body = client.get(BASE, params={"customer_ids": cust.id}).json()
+    assert not body.get("brand_name"), body
