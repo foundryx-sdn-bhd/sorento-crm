@@ -66,9 +66,15 @@ from app.services.product_alternative_service import normalize_code  # noqa: E40
 
 JOB_ID = "import_price_tag_descriptions"
 
+# The prod host is shared with the API: refuse a bigger sheet than marketing's (~1,100 rows).
+MAX_FILE_BYTES = 20 * 1024 * 1024
+MAX_ROWS = 20_000
+
 R_NO_CODE = "no code"
 R_NO_TEXT = "no description"
 R_FRAGMENT = "text starts with part of a code"
+R_FORMULA = "text starts with = or @"
+R_TOKEN = "text contains {{"
 R_COMBO = "combo is not two codes"
 R_NOT_FOUND = "code not found in the CRM"
 R_CONFLICT = "same code on several rows with different text"
@@ -102,6 +108,8 @@ def read_sheet(path: str) -> Optional[list[tuple[int, str, str]]]:
     the header row lacks `Product Code` or `Description`. Raises on an unreadable file."""
     import openpyxl
 
+    if os.path.getsize(path) > MAX_FILE_BYTES:
+        raise ValueError(f"file is over {MAX_FILE_BYTES} bytes")
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
         ws = wb.worksheets[0]
@@ -117,6 +125,8 @@ def read_sheet(path: str) -> Optional[list[tuple[int, str, str]]]:
         ci, di = names["product code"], names["description"]
         out = []
         for n, row in enumerate(rows, start=2):
+            if n - 1 > MAX_ROWS:
+                raise ValueError(f"more than {MAX_ROWS} data rows")
             code = row[ci] if ci < len(row) else None
             desc = row[di] if di < len(row) else None
             out.append((n, "" if code is None else str(code).strip(), clean_text(desc)))
@@ -132,7 +142,7 @@ def format_key(text: str) -> str:
     """Text compared for duplicates: spacing collapsed, `:` spaced as `: `, `D: ` dropped, no case."""
     t = re.sub(r"\s+", " ", text)
     t = re.sub(r"\s*:\s*", ": ", t).lower()
-    return re.sub(r"(?:(?<=\s)|^)d: ", "", t).strip()
+    return re.sub(r"(?:(?<=\s)|^)d: ", "", t).strip(" :")
 
 
 def dedupe(entries: list[tuple[int, str, str]]):
@@ -188,10 +198,11 @@ def cut_trap(text: str, trap_type: Optional[str]):
 def build_groups(rows):
     """Split sheet rows into row-level skips and per-sheet-code groups.
 
-    Returns (skips, groups, printed): skips are dicts for the skipped CSV, groups maps the
-    normalised first code to {code, rows, entries}, printed is every normalised code printed
-    in the code column (either side of a combo)."""
-    skips, groups, printed = [], {}, set()
+    Returns (skips, groups, printed, skipped_first): skips are dicts for the skipped CSV,
+    groups maps the normalised first code to {code, rows, entries}, printed is every normalised
+    code printed in the code column (either side of a combo), skipped_first maps a first code
+    seen only on skipped rows to {rows, texts}."""
+    skips, groups, printed, skipped_first = [], {}, set(), {}
 
     def skip(n, code, text, reason):
         skips.append({"sheet_code": code, "rows": [n], "product_code": "", "reason": reason,
@@ -200,20 +211,27 @@ def build_groups(rows):
     for n, code, text in rows:
         parts = [p.strip() for p in code.split("+") if p.strip()]
         printed.update(normalize_code(p) for p in parts)
-        if not parts:
-            skip(n, code, text, R_NO_CODE)
-        elif not text:
-            skip(n, code, text, R_NO_TEXT)
-        elif text[0] in "+-":
-            skip(n, code, text, R_FRAGMENT)
-        elif len(parts) > 2:
-            skip(n, code, text, R_COMBO)
+        reason = (
+            R_NO_CODE if not parts
+            else R_NO_TEXT if not text
+            else R_FRAGMENT if text[0] in "+-"
+            else R_FORMULA if text[0] in "=@"
+            else R_TOKEN if "{{" in text
+            else R_COMBO if len(parts) > 2
+            else None
+        )
+        if reason:
+            skip(n, code, text, reason)
+            if parts:
+                s = skipped_first.setdefault(normalize_code(parts[0]), {"rows": [], "texts": []})
+                s["rows"].append(n)
+                s["texts"].append((n, text)) if text else None
         else:
             key = normalize_code(parts[0])
             g = groups.setdefault(key, {"code": key, "rows": [], "entries": []})
             g["rows"].append(n)
             g["entries"].append((n, text, "combo" if len(parts) == 2 else "exact"))
-    return skips, groups, printed
+    return skips, groups, printed, skipped_first
 
 
 def _spec_value(specs, product_id, key):
@@ -223,7 +241,7 @@ def _spec_value(specs, product_id, key):
 
 def make_plan(db, rows, company_id):
     """Everything the sheet says, laid over the company's products. Writes nothing."""
-    skips, groups, printed = build_groups(rows)
+    skips, groups, printed, skipped_first = build_groups(rows)
     changes = []
 
     with company_scope(db, frozenset({company_id})):
@@ -282,6 +300,13 @@ def make_plan(db, rows, company_id):
             continue
         bases = [c for c in printed if norm.startswith(c + "-")]
         base = max(bases, key=len) if bases else None
+        if base in skipped_first and base not in groups:
+            # The base is printed only on skipped rows; a base printed only as a combo
+            # partner is in neither dict and its variants are left alone.
+            sf = skipped_first[base]
+            skips.append({"sheet_code": base, "rows": sf["rows"], "product_code": prod["code"],
+                          "reason": f"variant of {base}, which was skipped", "texts": sf["texts"]})
+            continue
         if base not in groups:
             continue
         g = groups[base]
@@ -333,24 +358,31 @@ def _rows_cell(rows) -> str:
     return ", ".join(str(n) for n in rows)
 
 
+def _safe(cell):
+    """A cell a spreadsheet would run as a formula gets a leading quote (CSV only)."""
+    if isinstance(cell, str) and cell[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + cell
+    return cell
+
+
 def write_reports(xlsx: Path, the_plan, mode: str):
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    base = f"{xlsx.stem}-price-tag-%s-{mode}-{stamp}.csv"
-    changes_path = xlsx.with_name(base % "changes")
-    skipped_path = xlsx.with_name(base % "skipped")
+    changes_path = xlsx.with_name(f"{xlsx.stem}-price-tag-changes-{mode}-{stamp}.csv")
+    skipped_path = xlsx.with_name(f"{xlsx.stem}-price-tag-skipped-{mode}-{stamp}.csv")
     with open(changes_path, "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
         w.writerow(CHANGES_COLUMNS)
         for c in the_plan["changes"]:
             p = c["product"]
-            w.writerow([p["code"], c["sheet_code"], _rows_cell(c["rows"]), c["rule"], c["status"],
-                        p["active"], p["desc"], c["new"]])
+            w.writerow(_safe(v) for v in [p["code"], c["sheet_code"], _rows_cell(c["rows"]),
+                       c["rule"], c["status"], p["active"], p["desc"], c["new"]])
     with open(skipped_path, "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
         w.writerow(SKIPPED_COLUMNS)
         for s in the_plan["skips"]:
             texts = "\n\n".join(f"row {n}: {t}" for n, t in s["texts"])
-            w.writerow([s["sheet_code"], _rows_cell(s["rows"]), s["product_code"], s["reason"], texts])
+            w.writerow(_safe(v) for v in [s["sheet_code"], _rows_cell(s["rows"]),
+                       s["product_code"], s["reason"], texts])
     return changes_path, skipped_path
 
 
@@ -406,6 +438,11 @@ def main(argv: Optional[Sequence[str]] = None, db=None, out: Optional[TextIO] = 
         try:
             if args.apply:
                 apply_updates(db, the_plan, company_id)
+            # Reports first: a report that cannot be written must not leave a commit behind.
+            changes_path, skipped_path = write_reports(
+                Path(args.file), the_plan, "apply" if args.apply else "dryrun"
+            )
+            if args.apply:
                 db.commit()
             else:
                 db.rollback()
@@ -415,9 +452,6 @@ def main(argv: Optional[Sequence[str]] = None, db=None, out: Optional[TextIO] = 
             return 1
         finally:
             clear_actor(db)
-        changes_path, skipped_path = write_reports(
-            Path(args.file), the_plan, "apply" if args.apply else "dryrun"
-        )
         out.write(f"changes report: {changes_path}\n")
         out.write(f"skipped report: {skipped_path}\n")
         if args.apply:
