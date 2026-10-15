@@ -839,3 +839,90 @@ class TestPoRefKeepsTheTierRule:
 
         assert seen and seen[0] == {"linked": None, "po_ref_linked": []}, seen
         assert FOREIGN not in reply and PO_REF_SO not in reply, reply
+
+
+# --------------------------------------------------------------------------- #
+# V1-DOC-SCOPE slice 3 (crew audit at 54740870f): the customer picker
+# --------------------------------------------------------------------------- #
+#
+# An unlinked non-staff contact typing another customer's partial name reached the generic
+# resolver: its customer picker listed other customers' names, and the picker's DO probe
+# (`resolve_gate.CUSTOMER_PROBE_TOOL`, outside `run_fetch`'s guard) told it which of them have
+# delivery orders. Owner rule (unlinked != customer): such a word is another customer's, so
+# the turn is refused before the resolver, exactly as an enforced dealer's word outside its
+# links is (`engine._customer_scope_gate`), with the existing no-link line. Document staff
+# (tier, office access type, salesperson) are unchanged.
+
+
+def _picker_turn(session_factory, monkeypatch):
+    """"deliveries this month for hanlim": a DO ask whose customer word matches two other
+    customers (the R18 HANLIM book), so the generic resolver would offer a picker."""
+    from tests.chatbot.test_customer_scope_lane import _ent
+    from tests.chatbot.test_outstanding_lane import _ambiguous_hanlim_resolve_services
+
+    probes: list[dict[str, Any]] = []
+    asked: list[list[str]] = []
+
+    def probe(**kwargs):
+        probes.append(kwargs)
+        return {"items": [], "has_result": False}
+
+    services = _ambiguous_hanlim_resolve_services(probe)
+    inner = services.resolve_entity
+
+    def resolve_entity(body):
+        asked.append([str(t) for t in (body.get("tokens") or [])])
+        return inner(body)
+
+    services = services.__class__(access_types=services.access_types, resolve_entity=resolve_entity, probe=services.probe)
+    qf = _parser_output(
+        domain_hint="order",
+        intent_hint="check_order",
+        order_status=None,
+        entities=[_ent("hanlim")],
+        date_filter_start="2026-10-01",
+        date_filter_end="2026-10-31",
+    )
+    result, captured = _run_turn(
+        session_factory,
+        monkeypatch,
+        qf=qf,
+        text_body="deliveries this month for hanlim",
+        msg_id=f"ZZT-docscope-picker-{uuid.uuid4().hex[:10]}",
+        attributes=[OUTSTANDING_KEY],
+        resolve_services=services,
+        mcp_response=FOREIGN_DO_LIST,
+    )
+    return ((result.reply or {}).get("text") or ""), captured, probes, asked
+
+
+class TestCustomerPickerUnlinked:
+    def test_unlinked_non_staff_gets_no_picker_names_and_no_probe(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+
+        reply, captured, probes, asked = _picker_turn(session_factory, monkeypatch)
+
+        assert "HANLIM" not in reply.upper(), reply
+        assert reply.strip() == NO_LINK_REFUSAL, reply
+        assert probes == [], probes
+        assert _calls(captured, ORDERS) == [], captured
+        assert not any("hanlim" in t.lower() for tokens in asked for t in tokens), asked
+
+    @pytest.mark.parametrize(
+        "make_staff",
+        [
+            lambda sf: make_office_access_type(sf, CONTACT_ID),
+            lambda sf: _make_salesperson(sf),
+            lambda sf: _make_staff(sf),
+        ],
+        ids=["office_access_type", "salesperson", "office_tier"],
+    )
+    def test_document_staff_keep_the_picker(self, session_factory, monkeypatch, make_staff) -> None:
+        _seed_contact(session_factory, variables={})
+        make_staff(session_factory)
+
+        reply, _captured, _probes, _asked = _picker_turn(session_factory, monkeypatch)
+
+        assert "Which one do you mean?" in reply, reply
+        assert "HANLIM TRADING" in reply.upper() and "HANLIM HARDWARE" in reply.upper(), reply
+        assert NO_LINK_REFUSAL not in reply, reply

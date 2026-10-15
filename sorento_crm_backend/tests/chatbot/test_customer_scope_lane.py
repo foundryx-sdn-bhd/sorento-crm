@@ -229,14 +229,16 @@ class TestWhoIsScoped:
         assert captured == []
 
     def test_unlinked_contact_is_unchanged(self, session_factory, monkeypatch) -> None:
-        """AC-CS-03: no link, no office type -> today's behaviour: the picker, no refusal,
-        no forced customer ids."""
+        """AC-CS-03, flipped by V1-DOC-SCOPE slice 3 (owner rule: unlinked != customer): no
+        link, no office type, not a salesperson or office tier -> another customer's word is
+        refused before the resolver with the no-link line; no picker names other customers."""
         _seed_contact(session_factory, variables={})
         reply, captured = _turn(
             session_factory, monkeypatch, _ask([_ent("hanlim")]), resolve_services=_hanlim_services(),
         )
-        assert "Which one do you mean?" in reply, reply
-        assert "under your account" not in reply
+        assert "Which one do you mean?" not in reply, reply
+        assert "HANLIM" not in reply.upper(), reply
+        assert reply.strip() == "Sorry, that isn't under your account. I can only check on your own account.", reply
         assert captured == []
 
     def test_inactive_office_type_does_not_make_staff(self, session_factory, monkeypatch) -> None:
