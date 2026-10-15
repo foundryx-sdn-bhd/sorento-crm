@@ -202,6 +202,7 @@ questions before data: today 7 of 25, target 23 of 25 (the other two are P1 cont
 <p>Spec first: smallest change, no deploy needed for the key itself, and it is the owner's named case.</p>
 
 <h2 id="s5">5. Decisions for the owner</h2>
+<p class="small">Open: 1 and 2. No fix lane starts until they are answered.</p>
 <ol>
 <li><b>Report defaults (P3-F2).</b> The 4 Oct ruling says never default amount/quantity or delivered/ordered. (a) Keep
 it: 3-4 questions before a ranking. (b) Default to amount and delivered, ask only the period, show the choice in the
@@ -210,8 +211,9 @@ both shown on every row anyway)</i>.</li>
 <li><b>Should "bathtub" also list jacuzzis?</b> (a) No, keep the split; jetted tubs come back only when a massage or
 whirlpool word is used (P2-F1) <i>(recommended)</i>. (b) Yes, "bathtub" always includes jacuzzis (adds 151, reverses
 the split made on purpose).</li>
-<li><b>Prompt changes (P1-F2, P1-F4)</b> need a new parser prompt version on the live bot. OK to ship them behind the
-gold-set gate above? <i>(recommended: yes, one version per fix so a regression is traceable)</i></li>
+<li><b>Prompt changes (P1-F2, P1-F4)</b> need a new parser prompt version on the live bot. <b>Answered 16 Oct
+(crew): yes</b>, each prompt fix ships as its own prompt version behind the parser gold gate (the main chatbot gate,
+owner 15 Oct), and each still needs the owner's hand test before merge.</li>
 </ol>
 
 <h2 id="s6">6. What was dropped</h2>
