@@ -456,7 +456,42 @@ SPEC_REGISTRY_SEED: list[dict] = [
         "data_type": "enum",
         # Open vocabulary: sourced from product_categories.class_label, which grows.
         "allowed_values": [],
-        "synonyms": {},
+        # What each class means in customer language, matched case-insensitively alongside
+        # the class label itself (`product_class_signal.ClassVocabulary`). Chat fix PR-A
+        # (AC-A3) moved these words here from the code list `CLASS_SYNONYMS`, word for
+        # word, so the parser's `{{specs}}` block and staff on Product Specifications see
+        # them; migration `cfs_0001_class_meanings` writes them onto an installed database.
+        # Malay terms included because the corpus is bilingual.
+        "synonyms": {
+            "Kitchen Sink": ["kitchen sink", "sink", "sinki", "dapur"],
+            # "water tap" / "water basin": the owner's own words for the two (26 Sep 2026,
+            # "which water tap got stock").
+            "Tap": ["tap", "faucet", "mixer", "paip", "kepala paip", "water tap"],
+            "Wash Basin": ["wash basin", "basin", "washbasin", "sink basin", "besen", "water basin"],
+            "Water Closet": ["water closet", "wc", "toilet", "toilet bowl", "closet", "tandas"],
+            "Shower": ["shower", "shower head", "rain shower", "hand shower", "pancuran"],
+            "Bathroom Furniture": ["cabinet", "mirror", "vanity", "bathroom cabinet", "kabinet"],
+            # The two the catalog used to file together. Each answers only to its own
+            # words, so "bathtub" stops returning jacuzzis (owner ruling 16 Oct 2026:
+            # "Jacuzzi is like bathtub with massage jet").
+            "Bathtub": ["bathtub", "bath tub", "tub"],
+            "Jacuzzi": ["jacuzzi", "bathtub with massage jets", "whirlpool", "spa bath", "按摩浴缸"],
+            # Kept: 182 products are classed from their CATEGORY alone, which names both.
+            # They genuinely could be either, and answering to both words is the truthful
+            # reading.
+            "Bathtub and Jacuzzi": ["bathtub", "bath tub", "jacuzzi", "tub", "shower screen"],
+            "Bathroom Accessory": [
+                "bathroom accessory",
+                "towel rail",
+                "towel bar",
+                "soap holder",
+                "paper holder",
+                "robe hook",
+            ],
+            "Cloth Hanger": ["cloth hanger", "clothes hanger", "hanger", "penyidai"],
+            "Urinal": ["urinal", "urinary"],
+            "Flexible Hose": ["flexible hose", "hose", "shower tube", "hos"],
+        },
         # Total coverage (every product has a category) and the highest-precision
         # signal available, so it carries the largest weight in the ranker.
         "measured_coverage": 11584,
@@ -1655,6 +1690,26 @@ def merged_synonyms(row: ProductSpecRegistry) -> dict:
         merged[value] = [w for w in merged[value] if str(w).strip().lower() not in dropped]
     silenced = {str(v).strip() for v in (row.suppressed_values or [])}
     return {value: words for value, words in merged.items() if str(value).strip() not in silenced}
+
+
+CLASS_KEY = "class"
+
+
+def shipped_class_synonyms() -> dict[str, list[str]]:
+    """The `class` key's words per class as the seed ships them, for a caller with no
+    registry row (`class_synonyms`)."""
+    entry = next(e for e in SPEC_REGISTRY_SEED if e["spec_key"] == CLASS_KEY)
+    return {label: list(words) for label, words in entry["synonyms"].items()}
+
+
+def class_synonyms(db: Session) -> dict[str, list[str]]:
+    """The words each class answers to, as configured: the registry's `class` row (seed
+    words, staff's added, suppressed ones taken away). A database with no `class` row yet
+    takes the shipped seed, the same bargain `configured_scopes` strikes."""
+    row = db.query(ProductSpecRegistry).filter_by(spec_key=CLASS_KEY).first()
+    if row is None:
+        return shipped_class_synonyms()
+    return merged_synonyms(row)
 
 
 def shipped_scopes() -> dict[str, dict]:

@@ -123,9 +123,10 @@ def load_vocabulary(db: "Session") -> Vocabulary:
     `merged_synonyms`, `merged_allowed_values`, `display_spec_value`)."""
     from app.models.product import ProductCategory
     from app.models.resources import AttachmentType
-    from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
+    from app.services.product_class_signal import stored_class_labels
     from app.services.product_spec_registry import (
         active_registry,
+        class_synonyms,
         display_spec_value,
         merged_allowed_values,
         merged_synonyms,
@@ -136,7 +137,7 @@ def load_vocabulary(db: "Session") -> Vocabulary:
     type_phrases: set[str] = set()
     class_words: set[str] = set()
     class_phrases: set[str] = set()
-    for label, synonyms in CLASS_SYNONYMS.items():
+    for label, synonyms in class_synonyms(db).items():
         class_phrases.update(" ".join(_words(p)) for p in [label, *synonyms])
     class_phrases.update(" ".join(_words(label)) for label in stored_class_labels(db))
     for label, synonyms in db.query(ProductCategory.class_label, ProductCategory.search_synonyms).filter(
@@ -147,8 +148,6 @@ def load_vocabulary(db: "Session") -> Vocabulary:
     for row in active_registry(db):
         synonyms = merged_synonyms(row)
         if row.spec_key == "class":
-            for value, phrases in synonyms.items():
-                class_phrases.update(" ".join(_words(p)) for p in [value, *phrases])
             continue
         if row.spec_key == "product_type":
             for value, phrases in synonyms.items():
@@ -521,17 +520,18 @@ def _names_a_type(db: "Session", text: str, vocab: Vocabulary) -> bool:
 
 def names_a_class_label(db: "Session", raw: str) -> bool:
     """Is `raw`, word for word, the name of a class (a class label staff or products carry, or
-    a class of the built-in vocabulary), never one of its synonyms?"""
+    a class the registry's `class` row names), never one of its synonyms?"""
     said = " ".join(_words(raw))
     return any(" ".join(_words(label)) == said for label in class_label_names(db))
 
 
 def class_label_names(db: "Session") -> list[str]:
-    """Every class name: the built-in vocabulary's, the ones products carry, and staff's."""
+    """Every class name: the registry's `class` row's, the ones products carry, and staff's."""
     from app.models.product import ProductCategory
-    from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
+    from app.services.product_class_signal import stored_class_labels
+    from app.services.product_spec_registry import class_synonyms
 
-    labels = [*CLASS_SYNONYMS, *stored_class_labels(db)]
+    labels = [*class_synonyms(db), *stored_class_labels(db)]
     labels += [r[0] for r in db.query(ProductCategory.class_label).filter(ProductCategory.class_label.isnot(None))]
     return labels
 

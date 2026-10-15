@@ -37,6 +37,7 @@ from app.services.product_class_signal import (
     stored_class_labels,
 )
 from app.services.product_spec_registry import (
+    CLASS_KEY,
     active_registry,
     merged_allowed_values,
     merged_synonyms,
@@ -451,6 +452,11 @@ def resolve_terms_to_specs_with_spans(
     # free to be read as a measurement.
     spoken_spans: dict[tuple[str, str], list[tuple[int, int]]] = {}
     for row in rows:
+        if row.spec_key == CLASS_KEY:
+            # A class word is read by the class vocabulary (`ClassVocabulary`), which keeps
+            # every class a word names ("bathtub": Bathtub, and Bathtub and Jacuzzi). Read
+            # here it would bind ONE of them, by the one-value-per-key rule below.
+            continue
         for value, synonyms in merged_synonyms(row).items():
             # `_self` names the key, not a value. Reading it as one would resolve
             # `thickness = "_self"`.
@@ -817,14 +823,13 @@ def unknown_spec_values(db: Session, text: str, *, registry_rows=None) -> list[d
     must be no product's name or description (`_names_a_product`). Without that, every
     unknown word before a head word ("deck mounted", "long spout", "grease trap", "click
     clack waste") was said back and nothing was searched."""
-    from app.services.product_class_signal import CLASS_SYNONYMS
-    from app.services.product_spec_registry import display_spec_value
+    from app.services.product_spec_registry import class_synonyms, display_spec_value
 
     tokens = _words_of(text)
     if len(tokens) < 2:
         return []
     rows = active_registry(db) if registry_rows is None else registry_rows
-    class_words = {w for label, syns in CLASS_SYNONYMS.items() for phrase in [label, *syns] for w in _words_of(phrase)}
+    class_words = {w for label, syns in class_synonyms(db).items() for phrase in [label, *syns] for w in _words_of(phrase)}
     known_words = set(class_words) | set(_PHRASE_STOPWORDS)
     shapes: list[tuple[Any, dict[str, list[str]]]] = []
     for row in rows:
