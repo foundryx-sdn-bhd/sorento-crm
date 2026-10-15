@@ -171,6 +171,7 @@ class Lookup(BaseModel):
     picked: Option | None = None
     pending_kind: str | None = None
     free_value: str | None = None
+    free_kind: str | None = None  # R5-4: the v1 roster's entity kind a free value answers (bridged as typed)
     row: Option | None = None
     misses: list[Miss] = Field(default_factory=list)
     requantify: bool = False

@@ -163,6 +163,7 @@ def apply_turn(
         carried
         or any(a.act == "new_topic" for a in out.asks) and st.pending is not None
         or any(a.act == "switch_back" and a.switch_back_to is None for a in out.asks) and len(st.topics) == 1
+        or any(_picks_open_question(a, st.pending) for a in out.asks)  # R5-1: the pick is read before the flag
     )
     if flagged or not out.asks:
         about = _entity_about(st, out.clarify.about or "other")
@@ -190,6 +191,8 @@ def apply_turn(
     for i, ask in enumerate(out.asks):
         if _bare_switch_back_beside_a_new_ask(out.asks, i, printed_topics):
             continue  # it adds nothing: the other ask carries the subject in that same domain
+        if ask.act in ("refines_held", "new_topic") and _picks_open_question(ask, pending_in):
+            ask = ask.model_copy(update={"act": "answers_bot_question"})  # R5-1: the open list owns the number
         held_before, topics_before = st.held.model_copy(deep=True), list(st.topics)
         try:
             action, answered = _one_ask(
@@ -301,6 +304,54 @@ def _is_a_new_ask(ask: Ask) -> bool:
         not e.refers_to_held and (e.key or e.phrase or e.doc_number) and e.op != "clear" for e in ask.entities
     )
     return named or bool(ask.attachment_type)
+
+
+#: Pending kinds a bare number never answers: a hand-over is accepted only by an explicit yes or a typed
+#: option, and an idea's missing field takes the number as its value.
+NO_NUMBER_PENDING = frozenset({"offer_handover", "offer_doc_handover", "idea_missing_field"})
+
+
+def _number(ask: Ask) -> int | None:
+    """The printed position an ask names: a free value that is a bare number, else its row pick."""
+    free = ask.answer.free_value if ask.answer is not None else None
+    return int(free) if isinstance(free, str) and free.isdecimal() else ask.row_pick
+
+
+def _numbered(pending: PendingQuestion | None) -> list[Option]:
+    """R5-1: the options a printed number names, in printed order: those keyed by their number (an entity
+    question, a did-you-mean, a v1 menu), else every option of a PV2 question by position; a confirm's one
+    guess. None for a hand-over offer or a question that takes a number as its value."""
+    if pending is None or pending.kind in NO_NUMBER_PENDING:
+        return []
+    if pending.kind == CONFIRM:
+        return pending.options[:1]
+    keyed = [o for o in pending.options if o.key.isdigit()]
+    return keyed if keyed or pending.kind == "v1_open_question" else list(pending.options)
+
+
+def _nth(options: list[Option], n: int) -> Option | None:
+    """The option printed as number `n` (its key when options are keyed by number, else its position)."""
+    if any(o.key.isdigit() for o in options):
+        return next((o for o in options if o.key == str(n)), None)
+    return options[n - 1] if 1 <= n <= len(options) else None
+
+
+def _picks_open_question(ask: Ask, pending: PendingQuestion | None) -> bool:
+    """R5-1: the ask names a printed number while the open question numbers its options: the number is that
+    question's (in range or not), never a row of the last answer, whatever act the parser gave it."""
+    return _number(ask) is not None and bool(_numbered(pending))
+
+
+def _roster_kind(pending: PendingQuestion) -> str | None:
+    """R5-4: the entity kind of a v1 roster (its options' `entity_type`, as v1 recorded them): a free value
+    answering it goes to v1 as a typed value of that kind and v1's own roster matcher decides. None for any
+    other question."""
+    from app.services.chatbot.turn.pending import is_roster
+
+    if pending.kind != "v1_open_question" or not pending.v1_kind or not is_roster(pending.v1_kind):
+        return None
+    kinds = {o.payload.get("entity_type") for o in pending.options} - {None}
+    return kinds.pop() if len(kinds) == 1 else None
 
 
 def _answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
@@ -480,14 +531,17 @@ def _one_ask(
     if ask.act == "small_talk":
         return SmallTalk(ask_index=i), False
 
-    picked = shown_row(shown(st), ask) if ask.act == "refines_held" else None
+    # R5-1: a row pick no open question owns names a shown row whatever the act (an answer to no question refines).
+    on_rows = ask.act in ("refines_held", "new_topic") or ask.act == "answers_bot_question" and pending is None
+    picked = shown_row(shown(st), ask) if on_rows else None
     if picked is not None:
         # R4a: a pick of a printed row is that row named by its printed code, before the act is decided, so it
         # routes as a copied code does. A row the resolver cannot look up by label (a report breakdown's month,
         # brand, category) is no record to look up: the pick misses, as before.
         if picked.kind not in LABEL_KINDS:
             raise _Miss("other")
-        ask = ask.model_copy(update={"entities": [picked, *ask.entities], "row_pick": None})
+        act = "refines_held" if ask.act == "answers_bot_question" else ask.act
+        ask = ask.model_copy(update={"entities": [picked, *ask.entities], "row_pick": None, "act": act})
 
     reply = _carry_reply(ask, pending)
     if reply is not None:
@@ -721,15 +775,13 @@ def _answer(
     if picked is None and key is not None and pending.kind in ("clarify_entity", "clarify_did_you_mean"):
         # A candidate question is keyed by position; its code (the payload key) still picks.
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
-    if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in (
-        "offer_handover", "offer_doc_handover", "clarify_did_you_mean", CONFIRM
-    ):
-        # A bare number (the reply's free value or a row pick) names the printed position (a confirm prints none).
-        n = int(free) if isinstance(free, str) and free.isdecimal() else ask.row_pick
-        if isinstance(n, int) and n >= 1:
-            picked = next((o for o in pending.options if o.key == str(n)), None)
-            if picked is None and 1 <= n <= len(pending.options) and not any(o.key.isdigit() for o in pending.options):
-                picked = pending.options[n - 1]
+    number = _number(ask)
+    if picked is None and number is not None and _numbered(pending):
+        # R5-1: a bare number (the reply's free value or a row pick) names the printed position; past the end it
+        # is asked again, never a wrong row and never a typed value.
+        picked = _nth(_numbered(pending), number)
+        if picked is None:
+            raise _Miss("other")
     if picked is None:
         if free is not None and free == "all" and pending.kind == "v1_open_question":
             raise _Miss("other")  # "all" is the option key's token, never a free value
@@ -747,6 +799,7 @@ def _answer(
                     ask=ask,
                     pending_kind=pending.kind,
                     free_value=free,
+                    free_kind=_roster_kind(pending),
                 ),
                 True,
             )

@@ -405,6 +405,11 @@ def _offer_sentence(v1_pending: Any, yes_no: bool) -> str:
     return f"Would you like me to escalate to {team} team?"
 
 
+#: R5-4: v1 rosters whose every position is another copy of the same answer (the promotion's dealer and end-user
+#: copy): a pick leaves the other copies pickable, so the roster is mirrored while a position is unanswered.
+COPY_ROSTER_KINDS = frozenset({"tier_pick"})
+
+
 def mirror_v1_pending(
     state: ConversationState, v1_pending: Any, last_reply: str | None = None
 ) -> ConversationState:
@@ -417,10 +422,11 @@ def mirror_v1_pending(
     kind = getattr(v1_pending, "kind", None)
     if not kind:
         return state
-    if (getattr(v1_pending, "payload", None) or {}).get("answered_positions"):
-        return state  # a picker a pick already answered is not asked again
     # Keyed by v1's own `position` (what v1 `_answer_pending` accepts), legacy `idx` else.
     opts = [o for o in (getattr(v1_pending, "options", None) or []) if isinstance(o, dict) and o.get("label")]
+    answered = set((getattr(v1_pending, "payload", None) or {}).get("answered_positions") or [])
+    if answered and (kind not in COPY_ROSTER_KINDS or {o.get("position") for o in opts} <= answered):
+        return state  # a picker a pick already answered is not asked again (a copy roster: once every copy went)
     yes_no = getattr(v1_pending, "expects", None) == "yes_no"
     if yes_no:
         opts = []  # a yes / no question mirrors only yes and no
@@ -440,6 +446,10 @@ def mirror_v1_pending(
     if mirrored.pending is not None and mirrored.pending.origin is None:
         # The ask the Lookup behind this picker answered (an unreadable one is not adopted).
         mirrored.pending.origin = state.last_lookup_ask if valid_origin(state.last_lookup_ask) else None
+    if mirrored.pending is not None:
+        for option, source in zip(mirrored.pending.options, opts):
+            if source.get("entity_type"):
+                option.payload["entity_type"] = source["entity_type"]  # R5-4: what a typed answer to it is
     return mirrored
 
 

@@ -244,6 +244,16 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
             "suppliers": [],
         }
     answer = _open_question_answer(action)
+    if answer is None and action.pending_kind == "v1_open_question" and action.free_value and action.free_kind:
+        # R5-4: a typed answer to a v1 roster is this message's one entity (the held subject is carried), as
+        # v1's parser sends it; v1's own roster matcher (the option's exact label) decides which position it names.
+        for e in verdict["entities"]:
+            e["current_message"] = False
+        free = action.free_value
+        verdict["entities"].append({
+            **_v1_entity(ResolvedRef(kind=action.free_kind, key=free, label=free)),
+            "canonical_code": None, "confident": False, "hint_confident": False,
+        })
     if action.requantify:
         # A bare quantity under an open v1 stock pick: v1's requantify rule reads it as the
         # turn's demand and asks the pick again; the carried products state no quantity.
