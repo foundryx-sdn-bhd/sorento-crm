@@ -2,20 +2,13 @@
 
 import * as React from 'react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
+import { isBlockedByApproval } from '../../../../_shared/lib/quotationDecision';
 import type { QuotationDocument } from '../../../../_shared/services/quotationDocumentService';
 
 /** The grant a manager needs to decide a below-floor quotation. */
 export const APPROVE_PERMISSION = 'projects.quotations.approve';
 
-/**
- * Whether this quotation is currently blocked from being issued.
- *
- * Exported because the header's Issue CTA is gated on the same answer, and two expressions
- * for one rule is how a disabled button ends up disagreeing with the sentence beside it.
- */
-export function isBlockedByApproval(document: QuotationDocument): boolean {
-  return Boolean(document.requires_approval) && document.approval_status_key !== 'approved';
-}
+export { isBlockedByApproval };
 
 function BlockLine({ children }: { children: React.ReactNode }) {
   return <p className="min-w-0 text-sm text-foreground">{children}</p>;

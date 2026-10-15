@@ -13,7 +13,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Download, Link2, PenLine, SquarePen, Trash2 } from 'lucide-react';
 import type { RecordAction } from '@/components/common/recordActions';
-import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
+import { useDeferredAction } from '@/hooks/useDeferredAction';
 import {
   quotationDocumentsKey,
   useQuotationDocumentMutations,
@@ -31,6 +31,8 @@ export interface QuotationDocumentActionSet {
   actions: RecordAction[];
   /** Mount wherever the actions are rendered. */
   dialogs: React.ReactNode;
+  /** The delete countdown, for the record page's primary slot. Null on a list row. */
+  pending: React.ReactNode;
   openSign: () => void;
   isSigned: boolean;
 }
@@ -42,6 +44,7 @@ export function useQuotationDocumentActions({
   latestIssue,
   onEdit,
   onDeleted,
+  surface = 'toast',
 }: {
   projectId: string;
   /** Undefined while the record is still loading: no actions yet. */
@@ -52,6 +55,8 @@ export function useQuotationDocumentActions({
   /** The record page asks before revising; a row opens the quotation instead. */
   onEdit?: () => void;
   onDeleted?: () => void;
+  /** `inline` on the record page (countdown in the header, watched from mount); `toast` in a row. */
+  surface?: 'inline' | 'toast';
 }): QuotationDocumentActionSet {
   const router = useRouter();
   const documentId = document?.id ?? '';
@@ -63,9 +68,14 @@ export function useQuotationDocumentActions({
   const isSigned = Boolean(document?.signatory_signature);
   const issued = Boolean(document?.is_issued);
 
-  const remove = useDeferredRowAction({
+  const remove = useDeferredAction({
     actionKey: 'quotation_document.delete',
     entityType: 'quotation_document',
+    entityId: document?.id,
+    verb: 'Deleting',
+    subject: document?.our_ref ?? document?.document_no ?? '',
+    surface,
+    watchFromMount: surface === 'inline',
     successMessage: 'Quotation deleted',
     invalidateKeys: [quotationDocumentsKey(projectId)],
     onCommitted: onDeleted,
@@ -81,7 +91,7 @@ export function useQuotationDocumentActions({
   }, [latestIssue, projectId, documentId]);
 
   const actions: RecordAction[] = [];
-  if (!document) return { actions, dialogs: null, openSign: () => {}, isSigned };
+  if (!document) return { actions, dialogs: null, pending: null, openSign: () => {}, isSigned };
 
   if (canEdit) {
     actions.push({
@@ -180,11 +190,7 @@ export function useQuotationDocumentActions({
       kind: 'destructive',
       disabled: issued || remove.isPending,
       disabledReason: issued ? 'Sent to the customer, so it cannot be deleted' : undefined,
-      run: () =>
-        remove.run({
-          id: document.id,
-          subject: document.our_ref ?? document.document_no,
-        }),
+      run: () => remove.start(),
     });
   }
 
@@ -208,5 +214,5 @@ export function useQuotationDocumentActions({
     </>
   );
 
-  return { actions, dialogs, openSign: () => setSigning(true), isSigned };
+  return { actions, dialogs, pending: remove.countdown, openSign: () => setSigning(true), isSigned };
 }

@@ -2420,7 +2420,8 @@ register(
 
 def assert_quotation_deletable(db: Session, document_id: str, user_id) -> None:
     """The DELETE route's checks (edit rights on the project, not issued), run at park time and
-    again when the window lapses. Returns the document through the 404 it raises when absent."""
+    again when the window lapses. Raises 404 when the quotation is gone, 403 without edit rights
+    and 422 `quotation_document_issued` once anything has been sent."""
     from app.models.projects import Project
     from app.services import project_quotation_document_service as qdocs
     from app.services import project_service

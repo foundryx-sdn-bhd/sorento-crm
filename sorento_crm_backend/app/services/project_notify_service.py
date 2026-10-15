@@ -20,7 +20,7 @@ import hashlib
 import logging
 import uuid
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -67,8 +67,15 @@ def management_user_ids(db: Session) -> List[str]:
     return [str(r[0]) for r in rows]
 
 
-def approver_user_ids(db: Session) -> List[str]:
-    """Active, non-bot users who hold the quotation approve grant."""
+def approver_user_ids(
+    db: Session, company_id: Optional[str] = None, exclude: Optional[set] = None
+) -> List[str]:
+    """Active, non-bot users who hold the quotation approve grant AND the quotation's company.
+
+    The company grant is the same shape `cs_routing_service.eligible_pics_query` uses: a role
+    that carries the slug says nothing about which company's quotations its holder may see.
+    """
+    from app.models.company import UserCompany
     from app.models.user import (
         User,
         UserPermission,
@@ -76,6 +83,7 @@ def approver_user_ids(db: Session) -> List[str]:
         UserRolePermission,
         UserStatus,
     )
+    from app.services.company_routing_service import DEFAULT_COMPANY_ID
     from app.services.project_quotation_approval_service import APPROVE_PERMISSION
 
     rows = (
@@ -83,8 +91,10 @@ def approver_user_ids(db: Session) -> List[str]:
         .join(UserRolePermission, UserRolePermission.role_id == UserRoleAssignment.role_id)
         .join(UserPermission, UserPermission.id == UserRolePermission.permission_id)
         .join(User, User.id == UserRoleAssignment.user_id)
+        .join(UserCompany, UserCompany.user_id == User.id)
         .filter(
             UserPermission.slug == APPROVE_PERMISSION,
+            UserCompany.company_id == str(company_id or DEFAULT_COMPANY_ID),
             User.status == UserStatus.ACTIVE.value,
             User.is_trashed.is_(False),
             User.is_integration.is_(False),
@@ -92,7 +102,8 @@ def approver_user_ids(db: Session) -> List[str]:
         .distinct()
         .all()
     )
-    return [str(r[0]) for r in rows]
+    skip = {str(x) for x in (exclude or set()) if x}
+    return [str(r[0]) for r in rows if str(r[0]) not in skip]
 
 
 def _send(
@@ -108,6 +119,7 @@ def _send(
     send_email: bool = True,
     send_whatsapp: bool = False,
     send_web_push: bool = False,
+    data_for: Optional[Callable[[str], Dict[str, Any]]] = None,
 ) -> int:
     """Fan out to a de-duplicated recipient set. Returns how many were notified.
 
@@ -138,7 +150,7 @@ def _send(
                 type=notif_type,
                 title=title,
                 body=body,
-                data=data,
+                data={**data, **data_for(str(user_id))} if data_for else data,
                 source_entity_type="project",
                 source_entity_id=str(project_id),
                 dedup_key=dedup_key,
@@ -227,13 +239,41 @@ def notify_floor_breach(
     )
 
 
+def _approval_link(project: Project, document) -> str:
+    return f"/project-sales/{project.id}/quotation-documents/{document.id}"
+
+
 def _approval_data(project: Project, document) -> Dict[str, Any]:
     return {
         "project_id": str(project.id),
         "project_code": project.project_code,
         "document_id": str(document.id),
         "document_no": document.document_no,
+        # The bell and the email button both read `link`.
+        "link": _approval_link(project, document),
     }
+
+
+def _whatsapp_for(db: Session, project: Project, document, text: str):
+    """The per-recipient WhatsApp payload of the `quotation_approval` use case."""
+    from app.models.user import User
+
+    link = _approval_link(project, document)
+
+    def build(user_id: str) -> Dict[str, Any]:
+        user = db.query(User).filter(User.id == user_id).first()
+        return {
+            "whatsapp_use_case": "quotation_approval",
+            "whatsapp_text": text,
+            "whatsapp_context_vars": {
+                "contact_name": (user.name if user and user.name else "") or "",
+                "entity_number": document.document_no,
+                "message": text,
+                "portal_url": link,
+            },
+        }
+
+    return build
 
 
 def notify_quotation_approval_requested(
@@ -243,22 +283,26 @@ def notify_quotation_approval_requested(
     document,
     press: Optional[str],
     below: int,
+    requester_id: Optional[str],
     requester_name: str,
 ) -> int:
-    """A quotation was sent for approval: tell every approver. One per press (dedup on `press`)."""
+    """A quotation was sent for approval: tell every approver but the sender. One per press."""
+    lines = f"{below} line{'' if below == 1 else 's'} below the price floor"
+    text = (
+        f"{requester_name} sent quotation {document.document_no} ({project.project_code}) "
+        f"for approval: {lines}."
+    )
     return _send(
         db,
-        user_ids=approver_user_ids(db),
+        user_ids=approver_user_ids(db, document.company_id, {requester_id}),
         notif_type="project_quotation_approval_requested",
         title=f"{project.project_code}: approval needed on {document.document_no}",
-        body=(
-            f"{requester_name} asked for approval on {document.document_no} "
-            f"({below} line{'' if below == 1 else 's'} below floor)."
-        ),
+        body=text,
         data=_approval_data(project, document),
         project_id=str(project.id),
         dedup_key=f"{document.id}:approval_requested:{press or uuid.uuid4()}",
         send_whatsapp=True,
+        data_for=_whatsapp_for(db, project, document, text),
     )
 
 
@@ -269,11 +313,12 @@ def notify_quotation_approval_decided(
     document,
     approved: bool,
     recipient_id: Optional[str],
+    decider_id: Optional[str],
     decider_name: str,
     reason: Optional[str] = None,
 ) -> int:
-    """Approved or sent back: tell whoever asked for it."""
-    if not recipient_id:
+    """Approved or sent back: tell whoever asked for it (not the decider)."""
+    if not recipient_id or str(recipient_id) == str(decider_id or ""):
         return 0
     verb = "approved" if approved else "sent back"
     body = f"{decider_name} {verb} {document.document_no}."
@@ -301,19 +346,26 @@ def notify_quotation_approval_withdrawn(
     *,
     project: Project,
     document,
+    actor_id: Optional[str],
     actor_name: str,
     reason: Optional[str],
 ) -> int:
     """The creator pulled a pending quotation back to change it: tell the approvers."""
+    text = (
+        f"{actor_name} took quotation {document.document_no} ({project.project_code}) back "
+        f"for changes: {reason or ''}"
+    ).strip()
     return _send(
         db,
-        user_ids=approver_user_ids(db),
+        user_ids=approver_user_ids(db, document.company_id, {actor_id}),
         notif_type="project_quotation_approval_withdrawn",
         title=f"{project.project_code}: {document.document_no} withdrawn",
-        body=f"{actor_name} took {document.document_no} back for changes. {reason or ''}".strip(),
+        body=text,
         data=_approval_data(project, document),
         project_id=str(project.id),
         dedup_key=f"{document.id}:approval_withdrawn:{uuid.uuid4()}",
+        send_whatsapp=True,
+        data_for=_whatsapp_for(db, project, document, text),
     )
 
 

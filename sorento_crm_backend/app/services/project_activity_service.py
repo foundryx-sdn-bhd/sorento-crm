@@ -106,7 +106,7 @@ def record_project_event(
     payload: Optional[Dict[str, Any]] = None,
     actor_id: Optional[str] = None,
     body_text: Optional[str] = None,
-) -> Optional[Any]:
+) -> None:
     """Append a system activity row for a project, advancing the clock when it earns it.
 
     Best-effort on the FEED, strict on the CLOCK. The activity row is a narrative aid: if
@@ -120,7 +120,7 @@ def record_project_event(
     try:
         from app.services import activities_service
 
-        return activities_service.record_system_event(
+        activities_service.record_system_event(
             db,
             ENTITY_TYPE,
             str(project.id),
@@ -136,7 +136,6 @@ def record_project_event(
             template,
             exc,
         )
-        return None
 
 
 def note_user_activity(db: Session, *, project_id: str, actor_id: Optional[str] = None) -> None:

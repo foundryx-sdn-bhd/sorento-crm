@@ -24,16 +24,21 @@ export function QuotationRejectDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   isDeciding: boolean;
-  onReject: (reason: string) => Promise<void> | void;
+  /** Rejects when the server refuses: the dialog then stays open with the reason kept. */
+  onReject: (reason: string) => Promise<unknown>;
 }) {
   const [reason, setReason] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
-        if (!next) setReason('');
+        if (!next) {
+          setReason('');
+          setError(null);
+        }
       }}
     >
       <DialogContent className="max-h-[92vh] w-full max-w-md overflow-hidden">
@@ -46,7 +51,13 @@ export function QuotationRejectDialog({
         <form
           onSubmit={async (event) => {
             event.preventDefault();
-            await onReject(reason.trim());
+            setError(null);
+            try {
+              await onReject(reason.trim());
+            } catch (failure) {
+              setError(failure instanceof Error ? failure.message : 'Could not send it back.');
+              return;
+            }
             onOpenChange(false);
             setReason('');
           }}
@@ -62,6 +73,11 @@ export function QuotationRejectDialog({
               onChange={(event) => setReason(event.target.value)}
               placeholder="e.g. the WC suite has to come back to at least RM 240"
             />
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
           </DialogBody>
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

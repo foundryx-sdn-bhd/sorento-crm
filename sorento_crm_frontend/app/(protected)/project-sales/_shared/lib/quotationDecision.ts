@@ -50,6 +50,14 @@ export function hasOpenChangeRequest(document: QuotationDocument): boolean {
   return document.customer_decision === 'changes_requested';
 }
 
+/**
+ * Whether this quotation is currently blocked from being sent: a line is below its floor and no
+ * manager has approved it. One expression, read by the next-action choice and the banner.
+ */
+export function isBlockedByApproval(document: QuotationDocument): boolean {
+  return Boolean(document.requires_approval) && document.approval_status_key !== 'approved';
+}
+
 /** Pending or approved: nobody edits the quotation until the creator revises it (D1, D2). */
 export function isLockedForApproval(document: QuotationDocument): boolean {
   return (
@@ -79,7 +87,6 @@ export function nextAction(
     return { kind: 'none', hint: 'With a manager for approval' };
   }
   if (!canEdit) return { kind: 'none' };
-  const blocked = Boolean(document.requires_approval) && document.approval_status_key !== 'approved';
-  if (blocked) return { kind: 'send_for_approval' };
+  if (isBlockedByApproval(document)) return { kind: 'send_for_approval' };
   return { kind: isSigned ? 'send' : 'sign' };
 }

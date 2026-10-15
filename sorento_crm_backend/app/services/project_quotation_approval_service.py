@@ -272,7 +272,7 @@ def _record(
     body_text: str,
     actor_user_id: Optional[str],
     payload: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
+) -> None:
     """One activity row per decision, on the PROJECT's feed.
 
     A discount below the floor is exactly the decision somebody asks about six months later, so
@@ -285,10 +285,10 @@ def _record(
     """
     project = _project_of(db, document)
     if project is None:
-        return None
+        return
     from app.services import project_activity_service as activity
 
-    event = activity.record_project_event(
+    activity.record_project_event(
         db,
         project=project,
         template=template,
@@ -300,31 +300,64 @@ def _record(
         actor_id=actor_user_id,
         body_text=body_text,
     )
-    return str(event.id) if event is not None else None
 
 
-def requester_id(db: Session, document: ProjectQuotationDocument) -> Optional[str]:
-    """Who pressed Send for approval last; the project owner when no such row exists."""
+def _requested_event(db: Session, document: ProjectQuotationDocument):
+    """The newest `quotation_approval_requested` row naming THIS document, or None."""
+    from app.models.activities import ActivityEvent
+
     project = _project_of(db, document)
     if project is None:
         return None
-    from app.models.activities import ActivityEvent
-
-    rows = (
+    return (
         db.query(ActivityEvent)
         .filter(
             ActivityEvent.entity_type == "project",
             ActivityEvent.entity_id == str(project.id),
             ActivityEvent.system_template == "quotation_approval_requested",
+            ActivityEvent.system_payload["document_id"].astext == str(document.id),
         )
-        .order_by(ActivityEvent.created_at.desc())
-        .limit(50)
-        .all()
+        .order_by(ActivityEvent.created_at.desc(), ActivityEvent.id.desc())
+        .first()
     )
-    for row in rows:
-        if (row.system_payload or {}).get("document_id") == str(document.id) and row.actor_id:
-            return str(row.actor_id)
-    return str(project.owner_user_id) if project.owner_user_id else None
+
+
+def _press_count(db: Session, document: ProjectQuotationDocument) -> int:
+    """How many times this document has been sent for approval: the per-press dedup key."""
+    from app.models.activities import ActivityEvent
+
+    project = _project_of(db, document)
+    if project is None:
+        return 0
+    return (
+        db.query(ActivityEvent)
+        .filter(
+            ActivityEvent.entity_type == "project",
+            ActivityEvent.entity_id == str(project.id),
+            ActivityEvent.system_template == "quotation_approval_requested",
+            ActivityEvent.system_payload["document_id"].astext == str(document.id),
+        )
+        .count()
+    )
+
+
+def requester_id(db: Session, document: ProjectQuotationDocument) -> Optional[str]:
+    """Who pressed Send for approval last; the project owner when no such row exists.
+
+    The owner fallback skips an integration user: a bot has nobody to read the message.
+    """
+    event = _requested_event(db, document)
+    if event is not None and event.actor_id:
+        return str(event.actor_id)
+    project = _project_of(db, document)
+    if project is None or not project.owner_user_id:
+        return None
+    from app.models.user import User
+
+    owner = db.query(User).filter(User.id == project.owner_user_id).first()
+    if owner is None or owner.is_integration:
+        return None
+    return str(project.owner_user_id)
 
 
 def move(
@@ -334,12 +367,12 @@ def move(
     to_status_id: str,
     actor_user_id: str,
 ) -> ProjectQuotationDocument:
-    """The salesperson's own moves: ask for approval, or take a rejected quotation back to draft.
+    """The salesperson's one self-serve move: ask for approval.
 
-    Taking a rejected quotation back to draft is just "edit and re-price", so it carries no grant
-    beyond the edit rights needed to change the quotation at all. The route's own
-    ``assert_can_edit_project`` is that check; adding a second one here would be a different rule
-    wearing the same name.
+    From Rejected the same press resubmits: the graph has no rejected -> pending edge, so both
+    edges it does have (rejected -> draft -> pending) are checked and the document lands on
+    pending in one step, with one `quotation_approval_requested` row. There is no back-to-draft
+    move. The edit rights the route checks are the only grant needed.
     """
     target = graph(db).by_id(to_status_id)
     if target is None:
@@ -374,7 +407,7 @@ def move(
 
     if target.key == STATUS_PENDING:
         below = below_floor_line_count(db, document)
-        press = _record(
+        _record(
             db,
             document,
             template="quotation_approval_requested",
@@ -385,7 +418,6 @@ def move(
             actor_user_id=actor_user_id,
             payload={"below_floor_line_count": below},
         )
-        _notify(db, "requested", document, press=press)
     return document
 
 
@@ -425,7 +457,6 @@ def approve(
         ),
         actor_user_id=actor_user_id,
     )
-    _notify(db, "approved", document, actor_user_id=actor_user_id)
     return document
 
 
@@ -470,7 +501,6 @@ def reject(
         actor_user_id=actor_user_id,
         payload={"reason": cleaned},
     )
-    _notify(db, "rejected", document, actor_user_id=actor_user_id, reason=cleaned)
     return document
 
 
@@ -511,56 +541,104 @@ def revise_approval(
         actor_user_id=actor_user_id,
         payload={"reason": cleaned},
     )
-    if was == STATUS_PENDING:
-        _notify(db, "withdrawn", document, actor_user_id=actor_user_id, reason=cleaned)
     return document
 
 
-def _notify(
-    db: Session,
-    kind: str,
-    document: ProjectQuotationDocument,
-    *,
-    press: Optional[str] = None,
-    actor_user_id: Optional[str] = None,
-    reason: Optional[str] = None,
-) -> None:
-    """Best effort: the rung has moved, so a notification fault never fails the action."""
+# ---------------------------------------------------------------- notifications
+#
+# Called by the ROUTES after they commit the status. Best effort, each with its own try/except:
+# a notification fault never fails the action and never undoes the committed rung. A fault that
+# poisons the session is rolled back here, which is harmless because the status is already
+# committed.
+
+
+def _best_effort(kind: str, db: Session, send) -> None:
     try:
+        send()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("quotation approval notification failed: kind=%s (%s)", kind, exc)
+    finally:
+        # A statement that failed inside the sender (swallowed per recipient) leaves the
+        # transaction aborted; the status is committed already, so rolling back loses nothing
+        # and lets the route go on to read the document.
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def notify_requested(
+    db: Session, document: ProjectQuotationDocument, actor_user_id: Optional[str]
+) -> None:
+    def send() -> None:
         project = _project_of(db, document)
         if project is None:
             return
         from app.services import project_notify_service as notify
 
-        if kind == "requested":
-            notify.notify_quotation_approval_requested(
-                db,
-                project=project,
-                document=document,
-                press=press,
-                below=below_floor_line_count(db, document),
-                requester_name=_actor_name(db, requester_id(db, document)),
-            )
-        elif kind == "withdrawn":
-            notify.notify_quotation_approval_withdrawn(
-                db,
-                project=project,
-                document=document,
-                actor_name=_actor_name(db, actor_user_id),
-                reason=reason,
-            )
-        else:
-            notify.notify_quotation_approval_decided(
-                db,
-                project=project,
-                document=document,
-                approved=kind == "approved",
-                recipient_id=requester_id(db, document),
-                decider_name=_actor_name(db, actor_user_id),
-                reason=reason,
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("quotation approval notification failed: kind=%s (%s)", kind, exc)
+        notify.notify_quotation_approval_requested(
+            db,
+            project=project,
+            document=document,
+            press=str(_press_count(db, document)),
+            below=below_floor_line_count(db, document),
+            requester_id=actor_user_id,
+            requester_name=_actor_name(db, actor_user_id),
+        )
+
+    _best_effort("requested", db, send)
+
+
+def notify_decided(
+    db: Session,
+    document: ProjectQuotationDocument,
+    actor_user_id: Optional[str],
+    *,
+    approved: bool,
+    reason: Optional[str] = None,
+) -> None:
+    def send() -> None:
+        project = _project_of(db, document)
+        if project is None:
+            return
+        from app.services import project_notify_service as notify
+
+        notify.notify_quotation_approval_decided(
+            db,
+            project=project,
+            document=document,
+            approved=approved,
+            recipient_id=requester_id(db, document),
+            decider_id=actor_user_id,
+            decider_name=_actor_name(db, actor_user_id),
+            reason=reason,
+        )
+
+    _best_effort("approved" if approved else "rejected", db, send)
+
+
+def notify_withdrawn(
+    db: Session,
+    document: ProjectQuotationDocument,
+    actor_user_id: Optional[str],
+    reason: Optional[str],
+) -> None:
+    def send() -> None:
+        project = _project_of(db, document)
+        if project is None:
+            return
+        from app.services import project_notify_service as notify
+
+        notify.notify_quotation_approval_withdrawn(
+            db,
+            project=project,
+            document=document,
+            actor_id=actor_user_id,
+            actor_name=_actor_name(db, actor_user_id),
+            reason=reason,
+        )
+
+    _best_effort("withdrawn", db, send)
 
 
 # ------------------------------------------------------------------ serialize

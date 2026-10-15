@@ -145,6 +145,7 @@ _UUID_ENTITY_ACTIONS = (
     "product_alternative.unlink",
     "product_alternatives.reset_auto",
     "product_compatibility.unlink",
+    "quotation_document.delete",
 )
 
 

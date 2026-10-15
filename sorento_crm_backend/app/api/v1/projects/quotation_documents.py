@@ -446,6 +446,8 @@ async def move_quotation_approval(
             actor_user_id=current_user["id"],
         )
         db.commit()
+        # After the commit, best effort: a notification fault never undoes the status.
+        approvals.notify_requested(db, document, current_user["id"])
         db.refresh(document)
         return svc.serialize_document(db, document)
     except Exception as exc:
@@ -482,6 +484,7 @@ async def approve_quotation_document(
             permissions=permission_slugs(db, current_user["id"]),
         )
         db.commit()
+        approvals.notify_decided(db, document, current_user["id"], approved=True)
         db.refresh(document)
         return svc.serialize_document(db, document)
     except Exception as exc:
@@ -519,6 +522,9 @@ async def reject_quotation_document(
             permissions=permission_slugs(db, current_user["id"]),
         )
         db.commit()
+        approvals.notify_decided(
+            db, document, current_user["id"], approved=False, reason=document.approval_rejected_reason
+        )
         db.refresh(document)
         return svc.serialize_document(db, document)
     except Exception as exc:
@@ -542,8 +548,12 @@ async def revise_quotation_approval(
         validate_uuid_path(document_id, resource="Quotation")
         _editable_project(db, project_id, current_user)
         document = svc.get_document_or_404(db, project_id, document_id)
+        was_pending = approvals.current_key(db, document) == approvals.STATUS_PENDING
         approvals.revise_approval(db, document, current_user["id"], payload.reason)
+        reason = " ".join((payload.reason or "").split())
         db.commit()
+        if was_pending:
+            approvals.notify_withdrawn(db, document, current_user["id"], reason)
         db.refresh(document)
         return svc.serialize_document(db, document)
     except Exception as exc:

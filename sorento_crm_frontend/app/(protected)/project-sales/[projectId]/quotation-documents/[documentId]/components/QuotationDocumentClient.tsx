@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PenLine } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { STATUS_PILL_BASE, statusPillClass } from '@/lib/status-pill';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -144,6 +144,7 @@ export function QuotationDocumentClient({
     latestIssue: issues.data?.[0] ?? null,
     onEdit: startEditing,
     onDeleted: () => router.push(`/project-sales/${projectId}?tab=quotations`),
+    surface: 'inline',
   });
 
   if (document.isLoading || project.isLoading) {
@@ -291,9 +292,9 @@ export function QuotationDocumentClient({
                 `is_issued ? Issued : Draft`, which is why a quotation the customer had accepted
                 read "Accepted" in the list and "Issued" here - the two surfaces answered the same
                 question differently, which is exactly what `quotationStanding` exists to stop. */}
-            <Badge variant={standing.variant} appearance="light">
+            <span className={`${STATUS_PILL_BASE} ${statusPillClass(standing.label)}`}>
               {standing.label}
-            </Badge>
+            </span>
           </div>
           <h2 className="mt-1 break-words text-xl font-semibold">
             {record.subject_title ?? '-'}
@@ -343,6 +344,7 @@ export function QuotationDocumentClient({
                 />
               )
             }
+            pendingAction={gear.pending}
             gear={
               <DetailActionsMenu actions={gear.actions} ariaLabel="Quotation actions" />
             }
@@ -504,13 +506,7 @@ export function QuotationDocumentClient({
         open={rejecting}
         onOpenChange={setRejecting}
         isDeciding={mutations.reject.isPending}
-        onReject={async (reason) => {
-          try {
-            await mutations.reject.mutateAsync({ id: documentId, reason });
-          } catch {
-            // The mutation toasted the reason; the dialog closes either way.
-          }
-        }}
+        onReject={(reason) => mutations.reject.mutateAsync({ id: documentId, reason })}
       />
     </div>
   );

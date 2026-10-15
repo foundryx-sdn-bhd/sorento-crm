@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation';
 import type { ColumnDef, RowSelectionState, Table } from '@tanstack/react-table';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
-import { Badge } from '@/components/ui/badge';
+import { STATUS_PILL_BASE, statusPillClass } from '@/lib/status-pill';
 import { Button } from '@/components/ui/button';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
 import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
+import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { RowActionsMenu } from '@/components/common/RowActionsMenu';
 import { useDeferredBulkAction } from '@/hooks/useDeferredBulkAction';
 import { formatDateInMalaysia } from '@/lib/helpers';
@@ -63,7 +64,20 @@ function QuotationRowActions({
 export function QuotationsPanel({ project }: { project: Project }) {
   const router = useRouter();
   const documents = useQuotationDocuments(project.id);
-  const rows = React.useMemo(() => documents.data ?? [], [documents.data]);
+  const [search, setSearch] = React.useState('');
+  // Client-side on purpose: a project's quotations are all in memory and unpaged.
+  const rows = React.useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const all = documents.data ?? [];
+    if (!needle) return all;
+    return all.filter((row) =>
+      [row.our_ref, row.document_no, row.subject_title, row.recipient_name_snapshot]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [documents.data, search]);
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
   // One countdown over the ticked drafts. An issued quotation is refused by the server, so it is
@@ -157,9 +171,9 @@ export function QuotationsPanel({ project }: { project: Project }) {
         cell: ({ row }) => {
           const standing = quotationStanding(row.original);
           return (
-            <Badge variant={standing.variant} appearance="light" className="text-[11px]">
+            <span className={`${STATUS_PILL_BASE} ${statusPillClass(standing.label)}`}>
               {standing.label}
-            </Badge>
+            </span>
           );
         },
         size: 150,
@@ -234,6 +248,16 @@ export function QuotationsPanel({ project }: { project: Project }) {
         <DataGridListToolbar
           table={table}
           exportConfig={{ filename: 'quotations' }}
+          searchSlot={
+            <ListSearchInput
+              type="search"
+              value={search}
+              onChange={setSearch}
+              placeholder="Search quotations"
+              aria-label="Search quotations"
+              className="w-full sm:w-64"
+            />
+          }
           bulkActions={
             project.can_edit
               ? [
@@ -243,6 +267,10 @@ export function QuotationsPanel({ project }: { project: Project }) {
                     icon: Trash2,
                     destructive: true,
                     disabled: deletableTicked.length === 0 || bulkDelete.isStarting,
+                    disabledReason:
+                      ticked.length > 0 && deletableTicked.length === 0
+                        ? 'Sent to the customer, so it cannot be deleted'
+                        : undefined,
                     onClick: deleteTicked,
                   },
                 ]
@@ -279,12 +307,7 @@ export function QuotationsPanel({ project }: { project: Project }) {
       isLoading={documents.isLoading}
       error={documents.isError ? documents.error : undefined}
       emptyTitle="Nothing quoted yet"
-      searchPlaceholder="Search quotations"
-      searchOf={(row) =>
-        [row.our_ref, row.document_no, row.subject_title, row.recipient_name_snapshot]
-          .filter(Boolean)
-          .join(' ')
-      }
+      pageResetKey={search}
       pageSize={15}
       // The row is the way in, and it goes to the document's own page: a list answers "what do
       // we have", a document answers "what is in this one", and stacking them cramps both.

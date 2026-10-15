@@ -488,7 +488,7 @@ export function QuotationVersionEditor({
               Withheld while an edit session is open on this scope. Recompute writes to the
               server, and the staged rows on screen would silently be answering for a state
               the database no longer holds. */}
-          {project.can_edit && editable && selected && (
+          {project.can_edit && editable && selected && !locked && (
             <Button
               type="button"
               size="sm"
