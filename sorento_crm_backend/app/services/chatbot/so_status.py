@@ -51,8 +51,11 @@ def _row(so: SalesOrder, debtor: str | None) -> dict[str, Any]:
 
 
 def _line_codes(lines: list[tuple[Any, ...]]) -> list[str]:
-    """R5-2: the product codes of an SO's lines (`_lines_by_so`), once each, in line order."""
-    return list(dict.fromkeys(str(line[2]) for line in lines if line[2]))
+    """R5-2: the product codes of an SO's lines still outstanding (`_lines_by_so`; ordered over delivered, the SO
+    outstanding rule), once each, in line order. A fully delivered line is never one of them."""
+    return list(dict.fromkeys(
+        str(code) for ordered, delivered, code in lines if code and (ordered or 0) > (delivered or 0)
+    ))
 
 
 @dataclass
