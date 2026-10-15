@@ -79,7 +79,7 @@ export function nextAction(
     return { kind: 'none', hint: 'With a manager for approval' };
   }
   if (!canEdit) return { kind: 'none' };
-  if (!isSigned) return { kind: 'sign' };
   const blocked = Boolean(document.requires_approval) && document.approval_status_key !== 'approved';
-  return { kind: blocked ? 'send_for_approval' : 'send' };
+  if (blocked) return { kind: 'send_for_approval' };
+  return { kind: isSigned ? 'send' : 'sign' };
 }
