@@ -63,7 +63,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
         {row.original.name}
       </span>
     ),
-    size: 190,
+    size: 180,
     enableSorting: false,
     meta: { headerTitle: 'Name', skeleton: <Skeleton className="h-4 w-40" /> },
   },
@@ -78,7 +78,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
         {row.original.filters_label}
       </span>
     ),
-    size: 220,
+    size: 170,
     enableSorting: false,
     meta: { headerTitle: 'Filters', skeleton: <Skeleton className="h-4 w-56" /> },
   },
@@ -86,7 +86,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
     id: 'row_count',
     header: ({ column }) => <DataGridColumnHeader title="Products" column={column} />,
     cell: ({ row }) => <span className="tabular-nums">{row.original.row_count}</span>,
-    size: 80,
+    size: 70,
     enableSorting: false,
     meta: {
       headerTitle: 'Products',
@@ -99,7 +99,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
     id: 'decided_count',
     header: ({ column }) => <DataGridColumnHeader title="Decided" column={column} />,
     cell: ({ row }) => <span className="tabular-nums">{row.original.decided_count}</span>,
-    size: 80,
+    size: 70,
     enableSorting: false,
     meta: {
       headerTitle: 'Decided',
@@ -124,7 +124,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
     id: 'created_at',
     header: ({ column }) => <DataGridColumnHeader title="Created at" column={column} />,
     cell: ({ row }) => <span>{formatDateTimeInMalaysia(row.original.created_at)}</span>,
-    size: 120,
+    size: 150,
     enableSorting: false,
     meta: { headerTitle: 'Created at', skeleton: <Skeleton className="h-4 w-28" /> },
   },
@@ -133,7 +133,7 @@ const COLUMNS: ColumnDef<SnapshotSummary>[] = [
     header: () => <span className="sr-only">Actions</span>,
     cell: ({ row }) =>
       row.original.can_delete ? <SnapshotDeleteButton snapshot={row.original} /> : null,
-    size: 40,
+    size: 70,
     enableSorting: false,
     enableResizing: false,
     meta: { headerTitle: 'Actions', skeleton: <Skeleton className="size-6" /> },
