@@ -295,13 +295,15 @@ def as_linked_products(
                 by_code[token] = family
     rows = [r for group in by_code.values() for r in group]
     ids = [str(r.id) for r in rows]
-    # kind -> side ("covers": the accessories of a host, "wcs": the hosts of an accessory) -> reads
+    # kind -> side ("covers": the accessories of a host, "wcs": the hosts of an accessory) -> reads.
+    # AC-24: the parsed kind picks the links of a HOST (a forward ask); a code on the ACCESSORY end
+    # follows its own links, whichever kind the parse guessed ("which cabinet fits <mirror>").
     reads = {
         kind: {
-            "covers": accessories_for(db, ids, kind) if side_ok["covers"] else {},
+            "covers": accessories_for(db, ids, kind) if side_ok["covers"] and kind in kinds else {},
             "wcs": hosts_for(db, ids, kind) if side_ok["wcs"] else {},
         }
-        for kind in kinds
+        for kind in KINDS
     }
 
     # AC-19: a linked product the chatbot may not answer with is never named (the same rule every
@@ -318,7 +320,7 @@ def as_linked_products(
         linked: list[tuple[str, str, str]] = []
         hidden = False
         for p in products:
-            for kind in kinds:
+            for kind in KINDS:
                 for side, found in reads[kind].items():
                     for other in found.get(str(p.id), []):
                         if str(other.id) not in visible:
