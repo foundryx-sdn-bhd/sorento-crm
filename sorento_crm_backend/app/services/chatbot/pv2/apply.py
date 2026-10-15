@@ -214,6 +214,10 @@ def apply_turn(
             # question that missed asks its own and replaces it.
             answering = ask.act in _ANSWER_ACTS and not (ask.act == "unclear" and _carries(ask))
             reask = pending_in if answering or miss.origin is not None else None
+            if reask is not None and _is_offer(reask) and miss.origin is None:
+                # R6 rule 1: a reply that answers none of an offer never prints it again: the offer is dropped and
+                # the reply is asked about afresh.
+                reask, miss = None, _Miss("domain")
             action = _miss(st, i, reask, miss, language, can_offer_handover, mode)
             if reask is None and pending_in is not None and isinstance(action, ClarifyAct):
                 action.reask = False  # its own question, not a retry of the open one
@@ -2176,6 +2180,18 @@ def _domain_options(st: ConversationState) -> list[Option]:
         for d, label in DOMAIN_LABELS.items()
         if d in ALLOWED and kinds <= set(ALLOWED[d])
     ]
+
+
+def _is_offer(pending: PendingQuestion) -> bool:
+    """R6 rule 1: an offer, not a question about the subject: PV2's hand-over offers, and a mirrored v1 escalation
+    offer (its team, member or company roster) or yes / no offer. A v1 picker of records is no offer."""
+    if pending.kind in ("offer_handover", "offer_doc_handover"):
+        return True
+    if pending.kind != "v1_open_question":
+        return False
+    from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS
+
+    return (pending.v1_kind or "") in ESCALATION_OFFER_KINDS or {"yes", "no"} <= {o.key for o in pending.options}
 
 
 def _unclear_frame(held: Held, ask: Ask) -> Held:
