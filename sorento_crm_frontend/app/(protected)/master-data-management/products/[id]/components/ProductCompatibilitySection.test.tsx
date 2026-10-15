@@ -70,6 +70,7 @@ const COVER = {
   product_name: 'Seat cover matt black',
   source: 'flyer',
   is_discontinued: false,
+  kind: 'seat_cover',
 };
 const WC = {
   id: 'link-2',
@@ -78,6 +79,34 @@ const WC = {
   product_name: 'WC matt black',
   source: 'manual',
   is_discontinued: true,
+  kind: 'seat_cover',
+};
+const MIRROR = {
+  id: 'link-3',
+  product_id: 'mirror-1',
+  product_code: 'SRTMR11404-BL',
+  product_name: 'Mirror black',
+  source: 'flyer',
+  is_discontinued: false,
+  kind: 'mirror',
+};
+const SHELF = {
+  id: 'link-4',
+  product_id: 'shelf-1',
+  product_code: 'SRTSV11404-BL',
+  product_name: 'Shelf black',
+  source: 'flyer',
+  is_discontinued: false,
+  kind: 'shelf',
+};
+const CABINET = {
+  id: 'link-5',
+  product_id: 'cab-1',
+  product_code: 'SRTBF11404',
+  product_name: 'Basin cabinet',
+  source: 'flyer',
+  is_discontinued: false,
+  kind: 'mirror',
 };
 
 describe('ProductCompatibilitySection', () => {
@@ -150,7 +179,7 @@ describe('ProductCompatibilitySection', () => {
     ).toBe('checked');
     fireEvent.click(screen.getByText('Confirm pick'));
     expect(addMutate).toHaveBeenCalledWith(
-      { otherProductId: 'picked-id', otherRole: 'seat_cover' },
+      { otherProductId: 'picked-id', otherRole: 'accessory', kind: 'seat_cover' },
       expect.any(Object),
     );
   });
@@ -166,7 +195,7 @@ describe('ProductCompatibilitySection', () => {
     ).toBe('checked');
     fireEvent.click(screen.getByText('Confirm pick'));
     expect(addMutate).toHaveBeenCalledWith(
-      { otherProductId: 'picked-id', otherRole: 'wc' },
+      { otherProductId: 'picked-id', otherRole: 'host', kind: 'seat_cover' },
       expect.any(Object),
     );
   });
@@ -196,5 +225,104 @@ describe('ProductCompatibilitySection', () => {
     );
     expect(screen.queryByRole('button', { name: /Add compatible/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Unlink/ })).toBeNull();
+  });
+});
+
+describe('ProductCompatibilitySection mirror and shelf links', () => {
+  beforeEach(() => {
+    canEdit = true;
+    queryData = { covers: [MIRROR, SHELF], fits: [] };
+    vi.clearAllMocks();
+  });
+  afterEach(cleanup);
+
+  it('a cabinet with a mirror and a shelf shows those groups, not seat covers', () => {
+    render(
+      <ProductCompatibilitySection productId="me" productCode="SRTBF11404" />,
+    );
+    expect(screen.getByText('Compatible (2)')).toBeTruthy();
+    expect(screen.getByText('Mirrors that fit')).toBeTruthy();
+    expect(screen.getByText('Shelves that fit')).toBeTruthy();
+    expect(screen.getByText('SRTMR11404-BL')).toBeTruthy();
+    expect(screen.getByText('SRTSV11404-BL')).toBeTruthy();
+    expect(screen.queryByText('No seat covers')).toBeNull();
+    expect(screen.queryByText('Seat covers that fit')).toBeNull();
+    expect(screen.queryByText('No WCs')).toBeNull();
+  });
+
+  it('a mirror product lists the cabinets it fits', () => {
+    queryData = { covers: [], fits: [CABINET] };
+    render(
+      <ProductCompatibilitySection productId="me" productCode="SRTMR11404-BL" />,
+    );
+    expect(screen.getByText('Fits these cabinets')).toBeTruthy();
+    expect(screen.getByText('SRTBF11404')).toBeTruthy();
+    expect(screen.queryByText('Fits these WCs')).toBeNull();
+    expect(screen.queryByText('No seat covers')).toBeNull();
+  });
+
+  it('the add dialog has a Link type picker defaulting to seat cover', () => {
+    queryData = { covers: [], fits: [] };
+    render(
+      <ProductCompatibilitySection productId="me" productCode="SRTBF11404" />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Add compatible/ }));
+    expect(screen.getByText('Link type')).toBeTruthy();
+    expect(
+      screen
+        .getByRole('radio', { name: 'Seat cover / WC' })
+        .getAttribute('data-state'),
+    ).toBe('checked');
+    expect(screen.getByRole('radio', { name: 'Mirror / cabinet' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Shelf / cabinet' })).toBeTruthy();
+  });
+
+  it('choosing the Mirror link type posts kind mirror', () => {
+    queryData = { covers: [], fits: [] };
+    render(
+      <ProductCompatibilitySection productId="me" productCode="SRTBF11404" />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Add compatible/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Mirror / cabinet' }));
+    expect(screen.getByRole('radio', { name: 'Mirror' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Cabinet' })).toBeTruthy();
+    fireEvent.click(screen.getByText('Confirm pick'));
+    expect(addMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ otherProductId: 'picked-id', kind: 'mirror' }),
+      expect.any(Object),
+    );
+  });
+
+  it('a cabinet with a mirror link defaults the dialog to mirror, accessory', () => {
+    render(
+      <ProductCompatibilitySection productId="me" productCode="SRTBF11404" />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Add compatible/ }));
+    expect(
+      screen
+        .getByRole('radio', { name: 'Mirror / cabinet' })
+        .getAttribute('data-state'),
+    ).toBe('checked');
+    expect(
+      screen.getByRole('radio', { name: 'Mirror' }).getAttribute('data-state'),
+    ).toBe('checked');
+    fireEvent.click(screen.getByText('Confirm pick'));
+    expect(addMutate).toHaveBeenCalledWith(
+      { otherProductId: 'picked-id', otherRole: 'accessory', kind: 'mirror' },
+      expect.any(Object),
+    );
+  });
+
+  it('a mirror product defaults the dialog to mirror, host', () => {
+    queryData = { covers: [], fits: [CABINET] };
+    render(
+      <ProductCompatibilitySection productId="me" productCode="SRTMR11404-BL" />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Add compatible/ }));
+    fireEvent.click(screen.getByText('Confirm pick'));
+    expect(addMutate).toHaveBeenCalledWith(
+      { otherProductId: 'picked-id', otherRole: 'host', kind: 'mirror' },
+      expect.any(Object),
+    );
   });
 });

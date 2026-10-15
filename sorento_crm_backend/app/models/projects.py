@@ -819,7 +819,8 @@ class ProjectSeries(Base, CompanyScopedMixin):
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
     name = Column(String(150), nullable=False)
-    # CORE `public.brands`, not the module's `projects.brands` link table. Unqualified on
+    # Superseded by ``projects.series_brands`` (many brands, none = every brand). Not read or
+    # written any more; dropped in a later cleanup. CORE `public.brands`, unqualified on
     # purpose: see the note on ``ProjectBrand.brand_id``.
     brand_id = Column(
         UUID(as_uuid=False), ForeignKey("brands.id", ondelete="SET NULL"), nullable=True
@@ -834,6 +835,25 @@ class ProjectSeries(Base, CompanyScopedMixin):
     __table_args__ = (
         UniqueConstraint("company_id", "name", name="uq_project_series_company_name"),
         {"schema": "projects"},
+    )
+
+
+class ProjectSeriesBrand(Base):
+    """One picked brand. No row at all means every brand."""
+
+    __tablename__ = "series_brands"
+    __audit_entity_type__ = "project_series_brands"
+    __table_args__ = {"schema": "projects"}
+
+    series_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("projects.series.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    brand_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("brands.id", ondelete="CASCADE"),
+        primary_key=True,
     )
 
 
@@ -909,26 +929,39 @@ class ProjectSeriesProduct(Base):
 
 
 class ProjectSeriesSet(Base):
-    """One product SET priced into a series, same shape as ``ProjectSeriesProduct``.
+    """One product SET priced into a series, the set counterpart of ``ProjectSeriesProduct``.
 
     A set is quoted as ONE line, so the series prices the set itself (not its parts). Reached
     only through the company-scoped series, like the product link above.
+
+    The row carries prices of its own, so it is not a pure junction: it has a uuid ``id``
+    (tests/test_schema_uuid_id_principle.py) and one price per (series, set) is held by the
+    unique pair index instead of a composite key.
     """
 
     __tablename__ = "series_sets"
     # Audit entity type follows the sibling series_products naming.
     __audit_entity_type__ = "project_series_sets"
-    __table_args__ = {"schema": "projects"}
+    __table_args__ = (
+        Index("uq_project_series_sets_pair", "series_id", "product_set_id", unique=True),
+        {"schema": "projects"},
+    )
 
+    id = Column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=_uuid_str,
+        server_default=text("gen_random_uuid()"),
+    )
     series_id = Column(
         UUID(as_uuid=False),
         ForeignKey("projects.series.id", ondelete="CASCADE"),
-        primary_key=True,
+        nullable=False,
     )
     product_set_id = Column(
         UUID(as_uuid=False),
         ForeignKey("product_sets.id", ondelete="CASCADE"),
-        primary_key=True,
+        nullable=False,
     )
     selling_price = Column(Numeric(12, 2), nullable=True)
     #: A PERCENT, ``6`` means 6%. NULL is silence, never zero (see ``ProjectSeriesProduct``).

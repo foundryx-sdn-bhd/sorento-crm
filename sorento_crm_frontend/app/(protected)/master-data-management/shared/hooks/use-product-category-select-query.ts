@@ -3,11 +3,15 @@ import { apiFetch } from '@/lib/api';
 import { extractApiError } from '@/lib/api-client';
 import type { ProductCategory } from '@/app/(protected)/master-data-management/products/types/product.types';
 
-export const useProductCategorySelectQuery = (brandId?: string) => {
+export const useProductCategorySelectQuery = (brandIds?: string | string[]) => {
+  const brands = (Array.isArray(brandIds) ? brandIds : brandIds ? [brandIds] : []).filter(Boolean);
+  const brandKey = brands.join(',');
   const fetchCategoryList = async (): Promise<ProductCategory[]> => {
+    const search = new URLSearchParams();
+    brands.forEach((id) => search.append('brand_id', id));
     const response = await apiFetch(
-      brandId
-        ? `/api/v1/master-data/product-categories/select?brand_id=${encodeURIComponent(brandId)}`
+      brands.length
+        ? `/api/v1/master-data/product-categories/select?${search.toString()}`
         : '/api/v1/master-data/product-categories/select',
     );
 
@@ -20,7 +24,7 @@ export const useProductCategorySelectQuery = (brandId?: string) => {
   };
 
   return useQuery({
-    queryKey: ['product-category-select', brandId ?? null],
+    queryKey: ['product-category-select', brandKey || null],
     queryFn: fetchCategoryList,
     staleTime: Infinity,
     gcTime: 1000 * 60 * 60, // 60 minutes

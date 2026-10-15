@@ -94,6 +94,7 @@ from app.models.projects import (
     ProjectSalesProfile,
     ProjectSample,
     ProjectSeries,
+    ProjectSeriesBrand,
     ProjectSeriesCategory,
     ProjectSeriesProduct,
     ProjectSeriesSet,
@@ -192,6 +193,7 @@ PURGE_ORDER: List[Type] = [
     # --- catalogue the quotations priced from -------------------------------------------
     ProjectSeriesProduct,
     ProjectSeriesSet,
+    ProjectSeriesBrand,
     ProjectSeriesCategory,
     ProjectSeries,
     # --- everything hanging directly off a project --------------------------------------

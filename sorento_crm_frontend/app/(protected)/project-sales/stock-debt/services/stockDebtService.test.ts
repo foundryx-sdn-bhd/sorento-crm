@@ -118,3 +118,89 @@ describe('exportStockDebt show_aux (STOCKDEBT-AUX-COLS AC-12)', () => {
     expect((await sentBody({ showAux: false })).show_aux).toBe(false);
   });
 });
+
+describe('Location (repeatable warehouse id) on the wire (AC-R8)', () => {
+  const listBase = {
+    pageIndex: 0, pageSize: 25, query: '', onlyDebt: true, book: 'all' as const,
+    supplierIds: [], dateFrom: '', dateTo: '',
+  };
+  const exportBase = {
+    query: '', onlyDebt: true, book: 'all' as const, supplierIds: [], dateFrom: '',
+    dateTo: '', split: 'none' as const, showAux: false,
+  };
+
+  async function exportBody(extra: Record<string, unknown>) {
+    mockedFetch.mockResolvedValue(okResponse({ id: 'd1' }));
+    const { exportStockDebt } = await import('./stockDebtService');
+    await exportStockDebt({ ...exportBase, ...extra } as Parameters<typeof exportStockDebt>[0]);
+    return JSON.parse((mockedFetch.mock.calls[0][1] as RequestInit).body as string);
+  }
+
+  it('list sends one location per id under Only and never group', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
+    const { getStockDebtList } = await import('./stockDebtService');
+
+    await getStockDebtList({ ...listBase, locations: ['w-1', 'w-2'], locationsMode: 'include' });
+
+    const url = calledUrl();
+    expect(url.searchParams.getAll('location')).toEqual(['w-1', 'w-2']);
+    expect(url.searchParams.has('exclude_location')).toBe(false);
+    expect(url.searchParams.has('group')).toBe(false);
+    expect(url.searchParams.has('exclude_group')).toBe(false);
+  });
+
+  it('list sends exclude_location per id under All except', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
+    const { getStockDebtList } = await import('./stockDebtService');
+
+    await getStockDebtList({ ...listBase, locations: ['w-1', 'w-2'], locationsMode: 'exclude' });
+
+    const url = calledUrl();
+    expect(url.searchParams.getAll('exclude_location')).toEqual(['w-1', 'w-2']);
+    expect(url.searchParams.has('location')).toBe(false);
+    expect(url.searchParams.has('exclude_group')).toBe(false);
+  });
+
+  it('list sends neither when none is picked', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
+    const { getStockDebtList } = await import('./stockDebtService');
+
+    await getStockDebtList({ ...listBase, locations: [], locationsMode: 'include' });
+
+    const url = calledUrl();
+    expect(url.searchParams.has('location')).toBe(false);
+    expect(url.searchParams.has('exclude_location')).toBe(false);
+  });
+
+  it('cell takes locations and the mode as trailing params', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ demand: [], supply: [] }));
+    await getStockDebtCell('p1', '2026-10', '', '', 'all', false, ['w-1', 'w-2'], 'include');
+    let url = calledUrl();
+    expect(url.searchParams.getAll('location')).toEqual(['w-1', 'w-2']);
+    expect(url.searchParams.has('group')).toBe(false);
+
+    mockedFetch.mockClear();
+    mockedFetch.mockResolvedValue(okResponse({ demand: [], supply: [] }));
+    await getStockDebtCell('p1', '2026-10', '', '', 'all', false, ['w-1'], 'exclude');
+    url = calledUrl();
+    expect(url.searchParams.getAll('exclude_location')).toEqual(['w-1']);
+    expect(url.searchParams.has('location')).toBe(false);
+    expect(url.searchParams.has('exclude_group')).toBe(false);
+  });
+
+  it('export body carries location under Only', async () => {
+    const body = await exportBody({ locations: ['w-1', 'w-2'], locationsMode: 'include' });
+    expect(body.location).toEqual(['w-1', 'w-2']);
+    expect(body.exclude_location === undefined || body.exclude_location.length === 0).toBe(true);
+    expect(body.group).toBeUndefined();
+    expect(body.exclude_group).toBeUndefined();
+  });
+
+  it('export body carries exclude_location under All except', async () => {
+    const body = await exportBody({ locations: ['w-1'], locationsMode: 'exclude' });
+    expect(body.exclude_location).toEqual(['w-1']);
+    expect(body.location === undefined || body.location.length === 0).toBe(true);
+    expect(body.group).toBeUndefined();
+    expect(body.exclude_group).toBeUndefined();
+  });
+});

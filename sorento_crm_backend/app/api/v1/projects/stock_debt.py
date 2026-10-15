@@ -54,6 +54,17 @@ def list_stock_debt(
             "Ignored under `book=retail` - a site pool is nobody's ownership group."
         ),
     ),
+    location: List[str] = Query(
+        [],
+        description=(
+            "Warehouse ids to keep, repeatable: the read spans only these bins of the "
+            "book's span. An id outside the span matches nothing."
+        ),
+    ),
+    exclude_location: List[str] = Query(
+        [],
+        description="Warehouse ids to leave OUT, repeatable (\"all except X\"). Applied after `location`.",
+    ),
     only_debt: bool = Query(
         True, description="Drop products that owe nothing in any month."
     ),
@@ -114,6 +125,8 @@ def list_stock_debt(
         return StockDebtService(db).list(
             query=query,
             group=group,
+            location=location,
+            exclude_location=exclude_location,
             only_debt=only_debt,
             date_from=date_from,
             date_to=date_to,
@@ -143,6 +156,17 @@ def stock_debt_cell(
             "narrows the span the balance is recomputed from, so the drill foots with the "
             "cell that opened it."
         ),
+    ),
+    location: List[str] = Query(
+        [],
+        description=(
+            "Warehouse ids to keep, repeatable: the read spans only these bins of the "
+            "book's span. An id outside the span matches nothing."
+        ),
+    ),
+    exclude_location: List[str] = Query(
+        [],
+        description="Warehouse ids to leave OUT, repeatable (\"all except X\"). Applied after `location`.",
     ),
     date_from: Optional[date] = Query(
         None,
@@ -179,7 +203,7 @@ def stock_debt_cell(
         validate_uuid_path(product_id, resource="Product")
         return StockDebtService(db).cell(
             product_id, month, group, date_from=date_from, date_to=date_to, book=book,
-            projected=projected,
+            projected=projected, location=location, exclude_location=exclude_location,
         )
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
@@ -232,6 +256,8 @@ def export_stock_debt(
         guard = StockDebtService(db).list(
             query=payload.query,
             group=payload.group,
+            location=payload.location,
+            exclude_location=payload.exclude_location,
             only_debt=payload.only_debt,
             date_from=payload.date_from,
             date_to=payload.date_to,
