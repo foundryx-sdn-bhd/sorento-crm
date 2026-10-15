@@ -119,114 +119,88 @@ describe('exportStockDebt show_aux (STOCKDEBT-AUX-COLS AC-12)', () => {
   });
 });
 
-describe('Location (repeatable group) on the wire (STOCK-DEBT-SAVED-VIEWS AC-F2)', () => {
+describe('Location (repeatable warehouse id) on the wire (AC-R8)', () => {
   const listBase = {
     pageIndex: 0, pageSize: 25, query: '', onlyDebt: true, book: 'all' as const,
     supplierIds: [], dateFrom: '', dateTo: '',
   };
-
-  it('getStockDebtList appends one group per picked location', async () => {
-    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
-    const { getStockDebtList } = await import('./stockDebtService');
-
-    await getStockDebtList({ ...listBase, groups: ['BB', 'ED'] });
-
-    expect(calledUrl().searchParams.getAll('group')).toEqual(['BB', 'ED']);
-  });
-
-  it('getStockDebtList sends no group when none is picked', async () => {
-    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
-    const { getStockDebtList } = await import('./stockDebtService');
-
-    await getStockDebtList({ ...listBase, groups: [] });
-
-    expect(calledUrl().searchParams.has('group')).toBe(false);
-  });
-
-  it('getStockDebtCell takes groups as a trailing param and repeats group', async () => {
-    mockedFetch.mockResolvedValue(okResponse({ demand: [], supply: [] }));
-
-    await getStockDebtCell('p1', '2026-10', '', '', 'all', false, ['BB', 'ED']);
-
-    expect(calledUrl().searchParams.getAll('group')).toEqual(['BB', 'ED']);
-  });
-
-  it('exportStockDebt sends group as a list in the JSON body', async () => {
-    mockedFetch.mockResolvedValue(okResponse({ id: 'd1' }));
-    const { exportStockDebt } = await import('./stockDebtService');
-
-    await exportStockDebt({
-      query: '', onlyDebt: true, book: 'all', supplierIds: [], dateFrom: '', dateTo: '',
-      split: 'none', showAux: false, groups: ['BB', 'ED'],
-    } as Parameters<typeof exportStockDebt>[0]);
-
-    const body = JSON.parse((mockedFetch.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.group).toEqual(['BB', 'ED']);
-  });
-
-  it('exportStockDebt omits group when none is picked', async () => {
-    mockedFetch.mockResolvedValue(okResponse({ id: 'd1' }));
-    const { exportStockDebt } = await import('./stockDebtService');
-
-    await exportStockDebt({
-      query: '', onlyDebt: true, book: 'all', supplierIds: [], dateFrom: '', dateTo: '',
-      split: 'none', showAux: false, groups: [],
-    } as Parameters<typeof exportStockDebt>[0]);
-
-    const body = JSON.parse((mockedFetch.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.group === undefined || body.group.length === 0).toBe(true);
-  });
-});
-
-describe('Location exclude mode on the wire (AC-X2)', () => {
-  const listBase = {
-    pageIndex: 0, pageSize: 25, query: '', onlyDebt: true, book: 'all' as const,
-    supplierIds: [], dateFrom: '', dateTo: '',
+  const exportBase = {
+    query: '', onlyDebt: true, book: 'all' as const, supplierIds: [], dateFrom: '',
+    dateTo: '', split: 'none' as const, showAux: false,
   };
 
-  it('getStockDebtList sends exclude_group per value and no group', async () => {
+  async function exportBody(extra: Record<string, unknown>) {
+    mockedFetch.mockResolvedValue(okResponse({ id: 'd1' }));
+    const { exportStockDebt } = await import('./stockDebtService');
+    await exportStockDebt({ ...exportBase, ...extra } as Parameters<typeof exportStockDebt>[0]);
+    return JSON.parse((mockedFetch.mock.calls[0][1] as RequestInit).body as string);
+  }
+
+  it('list sends one location per id under Only and never group', async () => {
     mockedFetch.mockResolvedValue(okResponse({ data: [] }));
     const { getStockDebtList } = await import('./stockDebtService');
 
-    await getStockDebtList({ ...listBase, groups: ['BB', 'ED'], groupsMode: 'exclude' });
+    await getStockDebtList({ ...listBase, locations: ['w-1', 'w-2'], locationsMode: 'include' });
 
     const url = calledUrl();
-    expect(url.searchParams.getAll('exclude_group')).toEqual(['BB', 'ED']);
+    expect(url.searchParams.getAll('location')).toEqual(['w-1', 'w-2']);
+    expect(url.searchParams.has('exclude_location')).toBe(false);
     expect(url.searchParams.has('group')).toBe(false);
-  });
-
-  it('getStockDebtList include mode is unchanged', async () => {
-    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
-    const { getStockDebtList } = await import('./stockDebtService');
-
-    await getStockDebtList({ ...listBase, groups: ['ED'], groupsMode: 'include' });
-
-    const url = calledUrl();
-    expect(url.searchParams.getAll('group')).toEqual(['ED']);
     expect(url.searchParams.has('exclude_group')).toBe(false);
   });
 
-  it('getStockDebtCell takes a trailing groupsMode', async () => {
-    mockedFetch.mockResolvedValue(okResponse({ demand: [], supply: [] }));
+  it('list sends exclude_location per id under All except', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
+    const { getStockDebtList } = await import('./stockDebtService');
 
-    await getStockDebtCell('p1', '2026-10', '', '', 'all', false, ['ED'], 'exclude');
+    await getStockDebtList({ ...listBase, locations: ['w-1', 'w-2'], locationsMode: 'exclude' });
 
     const url = calledUrl();
-    expect(url.searchParams.getAll('exclude_group')).toEqual(['ED']);
-    expect(url.searchParams.has('group')).toBe(false);
+    expect(url.searchParams.getAll('exclude_location')).toEqual(['w-1', 'w-2']);
+    expect(url.searchParams.has('location')).toBe(false);
+    expect(url.searchParams.has('exclude_group')).toBe(false);
   });
 
-  it('exportStockDebt sends exclude_group instead of group in exclude mode', async () => {
-    mockedFetch.mockResolvedValue(okResponse({ id: 'd1' }));
-    const { exportStockDebt } = await import('./stockDebtService');
+  it('list sends neither when none is picked', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ data: [] }));
+    const { getStockDebtList } = await import('./stockDebtService');
 
-    await exportStockDebt({
-      query: '', onlyDebt: true, book: 'all', supplierIds: [], dateFrom: '', dateTo: '',
-      split: 'none', showAux: false, groups: ['ED'], groupsMode: 'exclude',
-    } as Parameters<typeof exportStockDebt>[0]);
+    await getStockDebtList({ ...listBase, locations: [], locationsMode: 'include' });
 
-    const body = JSON.parse((mockedFetch.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.exclude_group).toEqual(['ED']);
-    expect(body.group === undefined || body.group.length === 0).toBe(true);
+    const url = calledUrl();
+    expect(url.searchParams.has('location')).toBe(false);
+    expect(url.searchParams.has('exclude_location')).toBe(false);
+  });
+
+  it('cell takes locations and the mode as trailing params', async () => {
+    mockedFetch.mockResolvedValue(okResponse({ demand: [], supply: [] }));
+    await getStockDebtCell('p1', '2026-10', '', '', 'all', false, ['w-1', 'w-2'], 'include');
+    let url = calledUrl();
+    expect(url.searchParams.getAll('location')).toEqual(['w-1', 'w-2']);
+    expect(url.searchParams.has('group')).toBe(false);
+
+    mockedFetch.mockClear();
+    mockedFetch.mockResolvedValue(okResponse({ demand: [], supply: [] }));
+    await getStockDebtCell('p1', '2026-10', '', '', 'all', false, ['w-1'], 'exclude');
+    url = calledUrl();
+    expect(url.searchParams.getAll('exclude_location')).toEqual(['w-1']);
+    expect(url.searchParams.has('location')).toBe(false);
+    expect(url.searchParams.has('exclude_group')).toBe(false);
+  });
+
+  it('export body carries location under Only', async () => {
+    const body = await exportBody({ locations: ['w-1', 'w-2'], locationsMode: 'include' });
+    expect(body.location).toEqual(['w-1', 'w-2']);
+    expect(body.exclude_location === undefined || body.exclude_location.length === 0).toBe(true);
+    expect(body.group).toBeUndefined();
+    expect(body.exclude_group).toBeUndefined();
+  });
+
+  it('export body carries exclude_location under All except', async () => {
+    const body = await exportBody({ locations: ['w-1'], locationsMode: 'exclude' });
+    expect(body.exclude_location).toEqual(['w-1']);
+    expect(body.location === undefined || body.location.length === 0).toBe(true);
+    expect(body.group).toBeUndefined();
+    expect(body.exclude_group).toBeUndefined();
   });
 });

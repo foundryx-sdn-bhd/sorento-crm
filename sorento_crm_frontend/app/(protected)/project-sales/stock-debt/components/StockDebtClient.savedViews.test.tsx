@@ -1,5 +1,5 @@
 /**
- * STOCK-DEBT-SAVED-VIEWS: the Location multi-select (AC-F1..F5) and the saved-views menu
+ * STOCK-DEBT-SAVED-VIEWS: the Location multi-select (AC-R7..R10) and the saved-views menu
  * wiring (AC-V1..V4) on the Stock Debt board. `SavedViewsMenu` is mocked to capture the
  * props the board hands it; its own behaviour has its own tests.
  */
@@ -61,6 +61,13 @@ vi.mock('../services/stockDebtService', () => ({
 
 import { StockDebtClient } from './StockDebtClient';
 
+const LOCATIONS = [
+  { id: 'w-brw-ib', code: 'BRW-IB', name: 'BRW-IB' },
+  { id: 'w-hq', code: 'HQ', name: 'HEADQUARTER' },
+  { id: 'w-mwh-ib', code: 'MWH-IB', name: 'MWH-IB' },
+  { id: 'w-brw', code: 'BRW', name: 'BRW' },
+];
+
 function envelope(total = 1): StockDebtListResponse {
   return {
     data: [
@@ -86,6 +93,7 @@ function envelope(total = 1): StockDebtListResponse {
     months: ['2026-10'],
     tba_month: '2030-01',
     groups: ['BB', 'ED', 'FG'],
+    locations: LOCATIONS,
     totals: {
       months: { '2026-10': -5 },
       tba: 0,
@@ -146,7 +154,8 @@ function applyView(quick_filters: Record<string, string>) {
 
 const FULL_VIEW = {
   book: 'project',
-  groups: 'ED',
+  locations: 'w-brw-ib',
+  locations_mode: 'include',
   date_from_days: '0',
   date_to_days: '30',
   only_debt: 'true',
@@ -154,6 +163,8 @@ const FULL_VIEW = {
   suppliers: '',
   query: '',
 };
+
+const lastList = () => getStockDebtList.mock.calls.at(-1)![0];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -167,64 +178,107 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('Location filter (AC-F1..F4)', () => {
-  it('offers exactly the envelope groups as options', async () => {
+describe('Location filter on the real warehouses (AC-R7, AC-R9)', () => {
+  it('offers exactly the envelope locations, labelled by code and name', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
     await openFilters();
 
     fireEvent.click(locationTrigger());
     const options = screen.getAllByRole('option').map((o) => o.textContent?.trim());
-    expect(options).toEqual(['BB', 'ED', 'FG']);
+    expect(options).toEqual(['BRW-IB', 'HQ (HEADQUARTER)', 'MWH-IB', 'BRW']);
   });
 
-  it('one pick reaches the list query and reads "Location: ED"', async () => {
+  it('is enabled under Book = Retail', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    fireEvent.click(screen.getByRole('radio', { name: 'Retail' }));
+
+    expect(locationTrigger()).toBeEnabled();
+    expect(locationTrigger()).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('one pick sends its warehouse id and reads "Location: BRW-IB"', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
     await openFilters();
 
-    pick('ED');
+    pick('BRW-IB');
 
     await waitFor(() =>
       expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groups: ['ED'] }),
+        expect.objectContaining({ locations: ['w-brw-ib'], locationsMode: 'include' }),
       ),
     );
-    expect(screen.getByText('Location: ED')).toBeInTheDocument();
+    expect(screen.getByText('Location: BRW-IB')).toBeInTheDocument();
   });
 
-  it('two picks read "Locations: BB, ED"', async () => {
+  it('two picks read "Locations: BRW-IB, MWH-IB"', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
     await openFilters();
 
-    pick('BB', 'ED');
+    pick('BRW-IB', 'MWH-IB');
 
-    expect(screen.getByText('Locations: BB, ED')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groups: ['BB', 'ED'] }),
-      ),
-    );
+    expect(screen.getByText('Locations: BRW-IB, MWH-IB')).toBeInTheDocument();
   });
 
-  it('shows no Location chip under Book = Retail', async () => {
+  it('keeps the Location chip under Book = Retail and counts it as a filter', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
     await openFilters();
 
-    pick('ED');
-    expect(screen.getByText('Location: ED')).toBeInTheDocument();
-    // The Filters panel stays open behind the closed select, so Book is right there.
+    pick('BRW-IB');
     fireEvent.keyDown(document.body, { key: 'Escape' });
     if (!screen.queryByRole('radio', { name: 'Retail' })) await openFilters();
     fireEvent.click(screen.getByRole('radio', { name: 'Retail' }));
 
-    expect(screen.queryByText('Location: ED')).not.toBeInTheDocument();
+    expect(screen.getByText('Location: BRW-IB')).toBeInTheDocument();
+    await screen.findByText('Book: Retail');
+    const trigger = screen.getByRole('button', { name: /^Filters/, hidden: true });
+    expect(trigger.textContent?.trim()).toBe('Filters2');
+  });
+
+  it('a picked id missing from the facet reads "Unknown location" and shows no id', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    applyView({ ...FULL_VIEW, locations: 'w-gone-0000', date_from_days: '', date_to_days: '' });
+
+    expect(await screen.findByText(/Unknown location/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('w-gone-0000');
+  });
+
+  it('clearing the chip clears the picks and returns to Only', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    fireEvent.click(screen.getByRole('radio', { name: 'All except' }));
+    pick('BRW-IB');
+    await waitFor(() =>
+      expect(lastList()).toMatchObject({ locations: ['w-brw-ib'], locationsMode: 'exclude' }),
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Clear filter: Location: all except BRW-IB' }),
+    );
+
+    await waitFor(() =>
+      expect(lastList()).toMatchObject({ locations: [], locationsMode: 'include' }),
+    );
+    expect(screen.queryByText(/all except/)).not.toBeInTheDocument();
+  });
+
+  it('no raw warehouse id appears on the board', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    pick('BRW-IB', 'MWH-IB');
+    expect(document.body.textContent).not.toMatch(/w-brw-ib|w-mwh-ib|w-hq/);
   });
 });
 
-describe('Saved views menu (AC-V1..V4)', () => {
+describe('Saved views menu (AC-V1..V4, AC-R10)', () => {
   it('renders the menu with the stock debt listing key', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
@@ -233,20 +287,23 @@ describe('Saved views menu (AC-V1..V4)', () => {
     expect(menuProps?.listingKey).toBe('projects.stock_debt.view::stock-debt');
   });
 
-  it('currentConfig reflects the picked book and locations', async () => {
+  it('currentConfig stores locations as ids with the mode, never groups', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
     await openFilters();
 
     fireEvent.click(screen.getByRole('radio', { name: 'Project' }));
-    pick('BB', 'ED');
+    pick('BRW-IB', 'MWH-IB');
 
     await waitFor(() =>
       expect(menuProps?.currentConfig.quick_filters).toMatchObject({
         book: 'project',
-        groups: 'BB,ED',
+        locations: 'w-brw-ib,w-mwh-ib',
+        locations_mode: 'include',
       }),
     );
+    expect(menuProps?.currentConfig.quick_filters).not.toHaveProperty('groups');
+    expect(menuProps?.currentConfig.quick_filters).not.toHaveProperty('groups_mode');
   });
 
   it('applying a view sets book, location and a delivery range from today', async () => {
@@ -258,13 +315,14 @@ describe('Saved views menu (AC-V1..V4)', () => {
     applyView(FULL_VIEW);
 
     expect(await screen.findByText('Book: Project')).toBeInTheDocument();
-    expect(screen.getByText('Location: ED')).toBeInTheDocument();
+    expect(screen.getByText('Location: BRW-IB')).toBeInTheDocument();
     expect(screen.getByText('Delivery: 14 Oct 26 to 13 Nov 26')).toBeInTheDocument();
     await waitFor(() =>
       expect(getStockDebtList).toHaveBeenLastCalledWith(
         expect.objectContaining({
           book: 'project',
-          groups: ['ED'],
+          locations: ['w-brw-ib'],
+          locationsMode: 'include',
           dateFrom: '2026-10-14',
           dateTo: '2026-11-13',
           onlyDebt: true,
@@ -273,35 +331,48 @@ describe('Saved views menu (AC-V1..V4)', () => {
     );
   });
 
-  it('recomputes the range from the day the view is applied', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date(2026, 9, 20, 10));
+  it('applying a view with locations_mode exclude restores it', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
-
-    applyView(FULL_VIEW);
-
-    expect(await screen.findByText('Delivery: 20 Oct 26 to 19 Nov 26')).toBeInTheDocument();
+    applyView({ ...FULL_VIEW, book: 'all', locations_mode: 'exclude',
+      date_from_days: '', date_to_days: '' });
+    expect(await screen.findByText('Location: all except BRW-IB')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(lastList()).toMatchObject({ locations: ['w-brw-ib'], locationsMode: 'exclude' }),
+    );
   });
 
-  it('"No view" resets every filter to the screen default', async () => {
+  it('a view with only the old groups key applies as Every location, Only', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
-    applyView(FULL_VIEW);
-    expect(await screen.findByText('Book: Project')).toBeInTheDocument();
+    applyView({ book: 'project', groups: 'ED', groups_mode: 'exclude', date_from_days: '',
+      date_to_days: '' });
+    await screen.findByText('Book: Project');
+    expect(screen.queryByText(/^Locations?:/)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(lastList()).toMatchObject({ locations: [], locationsMode: 'include' }),
+    );
+  });
+
+  it('"No view" resets every filter, Location and its mode included', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    applyView({ ...FULL_VIEW, locations_mode: 'exclude' });
+    expect(await screen.findByText('Location: all except BRW-IB')).toBeInTheDocument();
 
     act(() => menuProps!.onApply(null));
 
     await waitFor(() => {
       expect(screen.queryByText('Book: Project')).not.toBeInTheDocument();
-      expect(screen.queryByText('Location: ED')).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Locations?:/)).not.toBeInTheDocument();
       expect(screen.queryByText(/^Delivery:/)).not.toBeInTheDocument();
     });
     await waitFor(() =>
       expect(getStockDebtList).toHaveBeenLastCalledWith(
         expect.objectContaining({
           book: 'all',
-          groups: [],
+          locations: [],
+          locationsMode: 'include',
           dateFrom: '',
           dateTo: '',
           onlyDebt: true,
@@ -312,12 +383,12 @@ describe('Saved views menu (AC-V1..V4)', () => {
   });
 });
 
-describe('Location and saved views reach every consumer (kill-test survivors)', () => {
-  it('AC-F2: the cell drill is fetched under the picked locations', async () => {
+describe('Location reaches every consumer (AC-R8)', () => {
+  it('the cell drill is fetched under the picked ids', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
     await openFilters();
-    pick('ED');
+    pick('BRW-IB');
     fireEvent.keyDown(document.body, { key: 'Escape' });
 
     fireEvent.click(
@@ -327,38 +398,43 @@ describe('Location and saved views reach every consumer (kill-test survivors)', 
     await waitFor(() => expect(getStockDebtCell).toHaveBeenCalled());
     const call = getStockDebtCell.mock.calls.at(-1)!;
     expect(call[0]).toBe('p1');
-    expect(call[6]).toEqual(['ED']);
+    expect(call[6]).toEqual(['w-brw-ib']);
+    expect(call[7]).toBe('include');
   });
 
-  it('AC-F2: the export is started under the picked locations', async () => {
+  it('the cell drill carries All except', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
     await openFilters();
-    pick('ED');
+    fireEvent.click(screen.getByRole('radio', { name: 'All except' }));
+    pick('BRW-IB');
     fireEvent.keyDown(document.body, { key: 'Escape' });
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'SRTWB242, Oct 26, balance -5' }),
+    );
+    await waitFor(() => expect(getStockDebtCell).toHaveBeenCalled());
+    const call = getStockDebtCell.mock.calls.at(-1)!;
+    expect(call[6]).toEqual(['w-brw-ib']);
+    expect(call[7]).toBe('exclude');
+  });
 
+  it('the export carries the ids and the mode', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    fireEvent.click(screen.getByRole('radio', { name: 'All except' }));
+    pick('BRW-IB');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
     const buttons = await screen.findAllByRole('button', { name: 'Export' });
     fireEvent.click(buttons[buttons.length - 1]);
-
     await waitFor(() => expect(exportStockDebt).toHaveBeenCalled());
-    expect(exportStockDebt.mock.calls[0][0]).toMatchObject({ groups: ['ED'] });
+    expect(exportStockDebt.mock.calls[0][0]).toMatchObject({
+      locations: ['w-brw-ib'], locationsMode: 'exclude',
+    });
   });
 
-  it('AC-F4: under Retail the Filters badge does not count Location', async () => {
-    renderBoard();
-    await screen.findByText('SRTWB242');
-    await openFilters();
-    pick('ED');
-    fireEvent.click(await screen.findByRole('radio', { name: 'Retail' }));
-
-    // Book = Retail is the only active filter; ED is picked but ignored by the backend.
-    await screen.findByText('Book: Retail');
-    const trigger = screen.getByRole('button', { name: /^Filters/, hidden: true });
-    expect(trigger.textContent?.trim()).toBe('Filters1');
-  });
-
-  it('AC-V3: applying a view sets search, supplier, only-debt and projected', async () => {
+  it('applying a view sets search, supplier, only-debt and projected', async () => {
     renderBoard();
     await screen.findByText('SRTWB242');
 
@@ -368,7 +444,7 @@ describe('Location and saved views reach every consumer (kill-test survivors)', 
       only_debt: 'false',
       projected: 'true',
       book: 'all',
-      groups: '',
+      locations: '',
       date_from_days: '',
       date_to_days: '',
     });
@@ -385,31 +461,9 @@ describe('Location and saved views reach every consumer (kill-test survivors)', 
       ),
     );
   });
-
-  it('AC-F5: picking a location returns to page 1', async () => {
-    getStockDebtList.mockResolvedValue(envelope(60));
-    renderBoard();
-    await screen.findByText('SRTWB242');
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Go to next page' }));
-    await waitFor(() =>
-      expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ pageIndex: 1 }),
-      ),
-    );
-
-    await openFilters();
-    pick('ED');
-
-    await waitFor(() =>
-      expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groups: ['ED'], pageIndex: 0 }),
-      ),
-    );
-  });
 });
 
-describe('Location mode: Only / All except (AC-X2..X4)', () => {
+describe('Location mode: Only / All except (AC-R8, AC-R9)', () => {
   async function pickExcept(...codes: string[]) {
     await screen.findByText('SRTWB242');
     await openFilters();
@@ -425,124 +479,66 @@ describe('Location mode: Only / All except (AC-X2..X4)', () => {
     expect(screen.getByRole('radio', { name: 'All except' })).not.toBeChecked();
   });
 
-  it('All except ED sends mode exclude and reads "Location: all except ED"', async () => {
+  it('All except BRW-IB sends mode exclude and reads "Location: all except BRW-IB"', async () => {
     renderBoard();
-    await pickExcept('ED');
+    await pickExcept('BRW-IB');
 
     await waitFor(() =>
-      expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groupsMode: 'exclude', groups: ['ED'] }),
-      ),
+      expect(lastList()).toMatchObject({ locationsMode: 'exclude', locations: ['w-brw-ib'] }),
     );
-    expect(screen.getByText('Location: all except ED')).toBeInTheDocument();
+    expect(screen.getByText('Location: all except BRW-IB')).toBeInTheDocument();
   });
 
-  it('two picks read "Locations: all except BB, ED"', async () => {
+  it('two picks read "Locations: all except BRW-IB, MWH-IB"', async () => {
     renderBoard();
-    await pickExcept('BB', 'ED');
-    expect(screen.getByText('Locations: all except BB, ED')).toBeInTheDocument();
-  });
-
-  it('clearing the chip clears the pick and returns to Only', async () => {
-    renderBoard();
-    await pickExcept('ED');
-    // Let the exclude read land first, so the include key is no longer the cached one.
-    await waitFor(() =>
-      expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groupsMode: 'exclude', groups: ['ED'] }),
-      ),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filter: Location: all except ED' }));
-
-    await waitFor(() =>
-      expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groupsMode: 'include', groups: [] }),
-      ),
-    );
-    expect(screen.queryByText(/all except/)).not.toBeInTheDocument();
-  });
-
-  it('the cell drill carries the mode', async () => {
-    renderBoard();
-    await pickExcept('ED');
-    fireEvent.keyDown(document.body, { key: 'Escape' });
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'SRTWB242, Oct 26, balance -5' }),
-    );
-    await waitFor(() => expect(getStockDebtCell).toHaveBeenCalled());
-    const call = getStockDebtCell.mock.calls.at(-1)!;
-    expect(call[6]).toEqual(['ED']);
-    expect(call[7]).toBe('exclude');
-  });
-
-  it('the export carries the mode', async () => {
-    renderBoard();
-    await pickExcept('ED');
-    fireEvent.keyDown(document.body, { key: 'Escape' });
-    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
-    const buttons = await screen.findAllByRole('button', { name: 'Export' });
-    fireEvent.click(buttons[buttons.length - 1]);
-    await waitFor(() => expect(exportStockDebt).toHaveBeenCalled());
-    expect(exportStockDebt.mock.calls[0][0]).toMatchObject({
-      groups: ['ED'], groupsMode: 'exclude',
-    });
-  });
-
-  it('applying a view with groups_mode exclude restores it', async () => {
-    renderBoard();
-    await screen.findByText('SRTWB242');
-    applyView({ ...FULL_VIEW, book: 'all', groups: 'ED', groups_mode: 'exclude',
-      date_from_days: '', date_to_days: '' });
-    expect(await screen.findByText('Location: all except ED')).toBeInTheDocument();
-  });
-
-  it('"No view" resets the mode to Only', async () => {
-    renderBoard();
-    await screen.findByText('SRTWB242');
-    applyView({ ...FULL_VIEW, groups: 'ED', groups_mode: 'exclude' });
-    await screen.findByText('Location: all except ED');
-    act(() => menuProps!.onApply(null));
-    await waitFor(() =>
-      expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groupsMode: 'include', groups: [] }),
-      ),
-    );
+    await pickExcept('BRW-IB', 'MWH-IB');
+    expect(screen.getByText('Locations: all except BRW-IB, MWH-IB')).toBeInTheDocument();
   });
 
   it('currentConfig reflects the mode', async () => {
     renderBoard();
-    await pickExcept('ED');
+    await pickExcept('BRW-IB');
     await waitFor(() =>
       expect(menuProps?.currentConfig.quick_filters).toMatchObject({
-        groups: 'ED', groups_mode: 'exclude',
+        locations: 'w-brw-ib', locations_mode: 'exclude',
       }),
     );
   });
 });
 
-describe('AC-F5 for the mode', () => {
+describe('Page 1 on a Location change (AC-R8)', () => {
+  it('picking a location returns to page 1', async () => {
+    getStockDebtList.mockResolvedValue(envelope(60));
+    renderBoard();
+    await screen.findByText('SRTWB242');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Go to next page' }));
+    await waitFor(() => expect(lastList()).toMatchObject({ pageIndex: 1 }));
+
+    await openFilters();
+    pick('BRW-IB');
+
+    await waitFor(() =>
+      expect(lastList()).toMatchObject({ locations: ['w-brw-ib'], pageIndex: 0 }),
+    );
+  });
+
   it('switching Only to All except on page 2 returns to page 1', async () => {
     getStockDebtList.mockResolvedValue(envelope(60));
     renderBoard();
     await screen.findByText('SRTWB242');
     await openFilters();
-    pick('ED');
+    pick('BRW-IB');
 
-    // The panel stays open (it hides the grid from the accessibility tree), so reach the
-    // pager with hidden: true.
     fireEvent.click(screen.getByRole('button', { name: 'Go to next page', hidden: true }));
     await waitFor(() =>
-      expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groups: ['ED'], pageIndex: 1 }),
-      ),
+      expect(lastList()).toMatchObject({ locations: ['w-brw-ib'], pageIndex: 1 }),
     );
 
     fireEvent.click(await screen.findByRole('radio', { name: 'All except' }));
 
     await waitFor(() =>
-      expect(getStockDebtList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groupsMode: 'exclude', groups: ['ED'], pageIndex: 0 }),
-      ),
+      expect(lastList()).toMatchObject({ locationsMode: 'exclude', pageIndex: 0 }),
     );
   });
 });

@@ -113,6 +113,7 @@ function envelope(rows: StockDebtRow[] = [row()]): StockDebtListResponse {
     months: ['2026-08', '2026-09', '2026-10'],
     tba_month: '2030-01',
     groups: ['BB', 'IB'],
+    locations: [],
     totals: {
       months: totalsMonths,
       tba: rows.reduce((sum, r) => sum + r.tba, 0),

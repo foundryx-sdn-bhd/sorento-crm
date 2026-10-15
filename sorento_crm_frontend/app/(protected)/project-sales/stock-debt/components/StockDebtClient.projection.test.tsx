@@ -75,6 +75,7 @@ function envelope(): StockDebtListResponse {
     months: ['2026-12'],
     tba_month: '2029-01',
     groups: [],
+    locations: [],
     totals: {
       months: { '2026-12': -1436 },
       tba: 0,

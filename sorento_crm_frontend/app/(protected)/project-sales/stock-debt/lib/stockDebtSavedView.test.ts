@@ -52,8 +52,8 @@ describe('constants', () => {
       query: '',
       book: 'all',
       supplierIds: [],
-      groups: [],
-      groupsMode: 'include',
+      locations: [],
+      locationsMode: 'include',
       dateFrom: '',
       dateTo: '',
       onlyDebt: true,
@@ -107,7 +107,7 @@ describe('toSavedViewConfig', () => {
         query: 'basin',
         book: 'project',
         supplierIds: ['s1', 'none'],
-        groups: ['BB', 'ED'],
+        locations: ['w-1', 'w-2'],
         onlyDebt: false,
         projected: true,
       }),
@@ -117,7 +117,7 @@ describe('toSavedViewConfig', () => {
       query: 'basin',
       book: 'project',
       suppliers: 's1,none',
-      groups: 'BB,ED',
+      locations: 'w-1,w-2',
       only_debt: 'false',
       projected: 'true',
     });
@@ -171,7 +171,7 @@ describe('fromSavedView', () => {
       query: 'basin',
       book: 'retail',
       supplierIds: ['s1', 'none'],
-      groups: ['BB', 'ED'],
+      locations: ['w-1', 'w-2'],
       onlyDebt: false,
       projected: true,
       dateFrom: '2026-10-14',
@@ -182,9 +182,9 @@ describe('fromSavedView', () => {
   });
 
   it('turns empty list strings into empty arrays', () => {
-    const applied = fromSavedView(view({ suppliers: '', groups: '' }), OCT_14);
+    const applied = fromSavedView(view({ suppliers: '', locations: '' }), OCT_14);
     expect(applied.supplierIds).toEqual([]);
-    expect(applied.groups).toEqual([]);
+    expect(applied.locations).toEqual([]);
   });
 
   it('falls back to the screen default for a missing key', () => {
@@ -223,22 +223,39 @@ describe('local dates, not UTC dates', () => {
   });
 });
 
-describe('groups_mode (AC-X4)', () => {
-  it('saves the mode beside groups', () => {
-    const config = toSavedViewConfig(filters({ groups: ['ED'], groupsMode: 'exclude' }), OCT_14);
-    expect(config.quick_filters).toMatchObject({ groups: 'ED', groups_mode: 'exclude' });
-    expect(toSavedViewConfig(filters(), OCT_14).quick_filters?.groups_mode).toBe('include');
+describe('locations_mode (AC-R10)', () => {
+  it('saves the mode beside locations', () => {
+    const config = toSavedViewConfig(
+      filters({ locations: ['w-9'], locationsMode: 'exclude' }),
+      OCT_14,
+    );
+    expect(config.quick_filters).toMatchObject({ locations: 'w-9', locations_mode: 'exclude' });
+    expect(toSavedViewConfig(filters(), OCT_14).quick_filters?.locations_mode).toBe('include');
+  });
+
+  it('never writes the retired group keys', () => {
+    const keys = Object.keys(toSavedViewConfig(filters(), OCT_14).quick_filters ?? {});
+    expect(keys).not.toContain('groups');
+    expect(keys).not.toContain('groups_mode');
   });
 
   it('round-trips exclude', () => {
-    const original = filters({ groups: ['BB', 'ED'], groupsMode: 'exclude' });
+    const original = filters({ locations: ['w-1', 'w-2'], locationsMode: 'exclude' });
     const back = fromSavedView(view(toSavedViewConfig(original, OCT_14).quick_filters), OCT_14);
-    expect(back.groupsMode).toBe('exclude');
-    expect(back.groups).toEqual(['BB', 'ED']);
+    expect(back.locationsMode).toBe('exclude');
+    expect(back.locations).toEqual(['w-1', 'w-2']);
   });
 
-  it('a view saved before this round (no key) applies as include', () => {
-    expect(fromSavedView(view({ groups: 'ED' }), OCT_14).groupsMode).toBe('include');
-    expect(fromSavedView(null, OCT_14).groupsMode).toBe('include');
+  it('a view with no locations key applies as Every location, Only', () => {
+    const applied = fromSavedView(view({ book: 'all' }), OCT_14);
+    expect(applied.locations).toEqual([]);
+    expect(applied.locationsMode).toBe('include');
+    expect(fromSavedView(null, OCT_14).locationsMode).toBe('include');
+  });
+
+  it('a view saved with only the old groups keys applies as Every location, Only', () => {
+    const applied = fromSavedView(view({ groups: 'ED', groups_mode: 'exclude' }), OCT_14);
+    expect(applied.locations).toEqual([]);
+    expect(applied.locationsMode).toBe('include');
   });
 });

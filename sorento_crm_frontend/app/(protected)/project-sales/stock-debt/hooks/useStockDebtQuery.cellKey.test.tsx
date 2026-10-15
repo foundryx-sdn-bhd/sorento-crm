@@ -26,19 +26,19 @@ describe('useStockDebtCellQuery', () => {
     );
 
     const { rerender } = renderHook(
-      ({ groups }: { groups: string[] }) =>
-        useStockDebtCellQuery('p1', '2026-10', '', '', 'all', false, groups),
-      { wrapper, initialProps: { groups: ['BB'] } },
+      ({ locations }: { locations: string[] }) =>
+        useStockDebtCellQuery('p1', '2026-10', '', '', 'all', false, locations),
+      { wrapper, initialProps: { locations: ['w-1'] } },
     );
     await waitFor(() => expect(getStockDebtCell).toHaveBeenCalledTimes(1));
 
-    rerender({ groups: ['ED'] });
+    rerender({ locations: ['w-2'] });
     await waitFor(() => expect(getStockDebtCell).toHaveBeenCalledTimes(2));
-    expect(getStockDebtCell.mock.calls[1][6]).toEqual(['ED']);
+    expect(getStockDebtCell.mock.calls[1][6]).toEqual(['w-2']);
   });
 });
 
-describe('Location mode is part of the query keys (AC-X2)', () => {
+describe('Location mode is part of the query keys (AC-R8)', () => {
   function setup() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -47,13 +47,31 @@ describe('Location mode is part of the query keys (AC-X2)', () => {
     return wrapper;
   }
 
+  it('the list fetches again when only the picked locations change', async () => {
+    getStockDebtList.mockClear();
+    getStockDebtList.mockResolvedValue({ data: [] });
+    const { rerender } = renderHook(
+      ({ locations }: { locations: string[] }) =>
+        useStockDebtQuery({
+          pageIndex: 0, pageSize: 25, query: '', onlyDebt: true, book: 'all',
+          supplierIds: [], dateFrom: '', dateTo: '', locations, locationsMode: 'include',
+        }),
+      { wrapper: setup(), initialProps: { locations: ['w-1'] } },
+    );
+    await waitFor(() => expect(getStockDebtList).toHaveBeenCalledTimes(1));
+
+    rerender({ locations: ['w-2'] });
+    await waitFor(() => expect(getStockDebtList).toHaveBeenCalledTimes(2));
+    expect(getStockDebtList.mock.calls[1][0]).toMatchObject({ locations: ['w-2'] });
+  });
+
   it('the list fetches again when only the mode flips', async () => {
     getStockDebtList.mockResolvedValue({ data: [] });
     const { rerender } = renderHook(
       ({ mode }: { mode: 'include' | 'exclude' }) =>
         useStockDebtQuery({
           pageIndex: 0, pageSize: 25, query: '', onlyDebt: true, book: 'all',
-          supplierIds: [], dateFrom: '', dateTo: '', groups: ['ED'], groupsMode: mode,
+          supplierIds: [], dateFrom: '', dateTo: '', locations: ['w-2'], locationsMode: mode,
         }),
       { wrapper: setup(), initialProps: { mode: 'include' as 'include' | 'exclude' } },
     );
@@ -62,7 +80,7 @@ describe('Location mode is part of the query keys (AC-X2)', () => {
     rerender({ mode: 'exclude' });
     await waitFor(() => expect(getStockDebtList).toHaveBeenCalledTimes(2));
     expect(getStockDebtList.mock.calls[1][0]).toMatchObject({
-      groups: ['ED'], groupsMode: 'exclude',
+      locations: ['w-2'], locationsMode: 'exclude',
     });
   });
 
@@ -71,14 +89,14 @@ describe('Location mode is part of the query keys (AC-X2)', () => {
     getStockDebtCell.mockResolvedValue({ demand: [], supply: [] });
     const { rerender } = renderHook(
       ({ mode }: { mode: 'include' | 'exclude' }) =>
-        useStockDebtCellQuery('p1', '2026-10', '', '', 'all', false, ['ED'], mode),
+        useStockDebtCellQuery('p1', '2026-10', '', '', 'all', false, ['w-2'], mode),
       { wrapper: setup(), initialProps: { mode: 'include' as 'include' | 'exclude' } },
     );
     await waitFor(() => expect(getStockDebtCell).toHaveBeenCalledTimes(1));
 
     rerender({ mode: 'exclude' });
     await waitFor(() => expect(getStockDebtCell).toHaveBeenCalledTimes(2));
-    expect(getStockDebtCell.mock.calls[1][6]).toEqual(['ED']);
+    expect(getStockDebtCell.mock.calls[1][6]).toEqual(['w-2']);
     expect(getStockDebtCell.mock.calls[1][7]).toBe('exclude');
   });
 });
