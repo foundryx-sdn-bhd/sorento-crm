@@ -95,3 +95,35 @@ Browser evidence, fix round 2 (head b1abbae7): after an API reset of CG-SBX/06-0
 List view reads `Borrow 2 (CON)` / `Borrow 3 (CON)` per line (summary Borrow suggested 8, Buy 0);
 the Grid cell breakdown for SAMPLE-SBX shows the one-step reason "Consignment: the goods are at
 CON." and the stock table lists CON as `Own location` (on hand 6, taken 2) beside the BB group.
+
+## Crew audit round (16 Oct): CON inactive on dev
+
+Crew: on the shared dev DB CON is `is_active = false` and `fulfilment_planning = false`; the
+round-2 helper only fired for an ACTIVE bin, so dev would have proposed Buy. Crew decision: a
+consignment line at its own bin is planned there whatever that bin's active / planning flags, as
+long as the bin is not IN fulfilment planning (a consignment at a planned bin still runs the
+ladder, R6); CON stays invisible to every sales order. `planning_predicate.planned_at_own_bin` =
+doc type in the set, warehouse present, `not in_fulfilment_planning(warehouse)` (87836e6a).
+
+CON holding 0 of the product: the board still proposes Borrow <plan qty> at CON; confirm decides
+the line with no Buy, no Order Inquiry row, no stock-short notice and no hold. The owner rule (no
+Buy, nothing to purchasing) holds.
+
+Browser evidence (head 87836e6a, seed mirroring dev: CON inactive and off, CG-SBX/06-062 with two
+fully returned lines and one line WT-SBX-165 qty 1 with CON holding 0, CG-SBX/08-072 fully
+returned). Before the fix (4caef32e) the same seed proposed `Buy 1`.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Consignment list: ticks, Plan selected (0) disabled, Actions | PASS |
+| 2 | CG-SBX/08-072 > Plan selected: "No lines to plan on these sales orders" | PASS |
+| 3 | CG-SBX/06-062 > board: one row (WT-SBX-165), `Borrow 1 (CON)`, Buy suggested 0 | PASS |
+| 4 | Decide > Borrow: "Decide 1 lines: Borrow", Location offers BRW-BB and CON | PASS |
+| 5 | CON + reason > Save 1 line > Confirm (1): "confirmed as revision 1 (0 purchase rows handed over)" | PASS |
+| 6 | DB: 0 `order_inquiry_rows`, 1 active decision, CON on-hand still 0 | PASS |
+| 7 | Detail: At customer, Consignment, Planned, Plan button | PASS |
+| 8 | Sales order SO-SBX-0001 Decide > Borrow: Location offers BRW-BB only (no CON) | PASS |
+| 9 | Reset planning (1) on the consignment: 0 of 1 planned | PASS |
+
+The board's empty-state hint now reads "Every line is cancelled, fully returned or marked no
+purchase needed." (a fully returned consignment lands there).

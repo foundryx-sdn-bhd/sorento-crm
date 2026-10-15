@@ -1563,7 +1563,7 @@ describe('FulfilmentBoardPanel: states', () => {
       await screen.findByText('No lines to plan on these sales orders'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('Every line is cancelled or marked no purchase needed.'),
+      screen.getByText('Every line is cancelled, fully returned or marked no purchase needed.'),
     ).toBeInTheDocument();
     // The retired wording is gone from the component AND from this file.
     expect(screen.queryByText(/Nothing is outstanding/)).not.toBeInTheDocument();
