@@ -263,14 +263,20 @@ def _rules_from_shipped_tables() -> dict[str, list[dict]]:
         # Chat fix PR-A (AC-A5): a tub whose catalogue text names its jets. Only on a tub
         # class, read off this derivation's class (the category's included): "WHIRLPOOL
         # FLUSHING WC" is a flush, and two such WCs are classed by their category alone,
-        # which the key's `applies_when` gate never overrules.
+        # which the key's `applies_when` gate never overrules. The bare word JACUZZI counts
+        # only on a product whose own class is Jacuzzi (the class means "bathtub with
+        # massage jets"): "JACUZZI PILLOW" and "JACUZZI PARTS" are filed with the tubs and
+        # are no jet (fix round 1, F2).
         "has_massage": flag(
             "MASSAGE",
             "WHIRLPOOL",
-            "JACUZZI",
             "AIR BUBBLE",
+            "JET",
+            "JETS",
+            "JETTED",
             only_when={"spec": "class", "is": True, "values": list(_TUB_CLASSES)},
-        ),
+        )
+        + flag("JACUZZI", only_when={"spec": "class", "is": True, "values": ["Jacuzzi"]}),
         "has_led": flag("LED"),
         "is_honeycomb": flag("HONEYCOMB"),
         "is_soft_close": flag("SOFT CLOSE", "SOFT CLOSING"),

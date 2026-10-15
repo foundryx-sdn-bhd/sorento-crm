@@ -112,7 +112,7 @@ def test_ac_s1_1_product_kind_compiles():
 
 def test_ac_s1_1_every_shipped_rule_compiles_from_its_builder():
     """The rewritten `_rules_from_shipped_tables()` returns builder-only rules,
-    204 over 50 keys, no brand - and every one of them compiles. (202 in the appendix
+    205 over 50 keys, no brand - and every one of them compiles. (202 in the appendix
     as first written; fix round 1 added Length rule 4, "the number between LENGTH and
     MM".)"""
     from app.services.product_spec_registry import _rules_from_shipped_tables
@@ -122,7 +122,7 @@ def test_ac_s1_1_every_shipped_rule_compiles_from_its_builder():
     assert "brand" not in shipped
     total = sum(len(rules) for rules in shipped.values())
     assert len(shipped) == 50
-    assert total == 204
+    assert total == 205
 
     for spec_key, rules in shipped.items():
         for rule in rules:
