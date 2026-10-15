@@ -80,7 +80,7 @@ def test_b7_a_whole_turn_with_a_confident_brand_entity_calls_the_report_with_the
         attributes=[GRANT],
         matches={
             "ZZT Customer": {"uuid": CUSTOMER_UUID, "entity_type": "customer", "canonical_code": CUSTOMER_NAME},
-            "Mocha": BRAND,
+            "MOCHA": BRAND,
         },
         mcp_response=SALES_REPORT_HIT,
     )

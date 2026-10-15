@@ -19,7 +19,7 @@ def _first_turn(session_factory, monkeypatch, tag: str):
         session_factory, monkeypatch,
         qf=_qf(order_status="sales_analysis", entities=[], date_filter_start="2026-01-01", date_filter_end="2026-10-15"),
         text_body="sales this year", msg_id=f"ZZT-b9-{tag}-1", attributes=[GRANT],
-        mcp_response=_rendered({"status": "clarify", "message": "Sorento or Mocha?"}),
+        mcp_response=_rendered({"status": "clarify", "message": "Sorento or Mocha?", "options": ["Sorento", "Mocha"]}),
     )
     assert "Sorento or Mocha?" in ((result.reply or {}).get("text") or "")
     return captured
