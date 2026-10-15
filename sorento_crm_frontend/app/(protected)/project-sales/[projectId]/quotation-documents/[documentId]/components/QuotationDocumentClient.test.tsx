@@ -102,13 +102,14 @@ vi.mock('@/hooks/usePermissions', () => ({
 let graphData: StatusGraph | null = null;
 
 const createPendingAction = vi.fn();
+const getCurrentPendingAction = vi.fn();
 vi.mock('@/services/pendingActionService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/pendingActionService')>();
   return {
     ...actual,
     createPendingAction: (...args: unknown[]) => createPendingAction(...args),
     cancelPendingAction: vi.fn(),
-    getCurrentPendingAction: vi.fn(async () => ({ pending: null, last_outcome: null })),
+    getCurrentPendingAction: (...args: unknown[]) => getCurrentPendingAction(...args),
   };
 });
 vi.mock('@/components/common/deferredToast', () => ({
@@ -403,6 +404,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   granted = new Set();
   graphData = null;
+  getCurrentPendingAction.mockResolvedValue({ pending: null, last_outcome: null });
   createPendingAction.mockImplementation(async (input: { entityId: string }) => ({
     id: `pa-${input.entityId}`,
     action_key: 'quotation_document.delete',
@@ -1583,17 +1585,43 @@ describe('QuotationDocumentClient: one primary CTA (E1-E9)', () => {
   });
 });
 
-describe('QuotationDocumentClient: status chip (A1-A3)', () => {
+/** The header chip: the PR/SF pill (rounded-full, font-semibold) carrying the given words. */
+async function headerPill(label: string) {
+  await screenReady();
+  return await waitFor(() => {
+    const hit = screen
+      .getAllByText(label)
+      .find((el) => el.classList.contains('rounded-full') && el.classList.contains('font-semibold'));
+    if (!hit) throw new Error(`no pill reading ${label}`);
+    return hit;
+  });
+}
+
+describe('QuotationDocumentClient: status chip is the shared PR/SF pill (A1-A5)', () => {
   it.each([
-    ['pending_approval', 'Pending approval'],
-    ['approved', 'Approved'],
-    ['rejected', 'Rejected'],
-  ])('A1-A3: the header chip reads the %s rung as "%s"', async (rung, label) => {
+    ['pending_approval', 'Pending approval', ['bg-amber-100', 'text-amber-800']],
+    ['approved', 'Approved', ['bg-blue-100', 'text-blue-800']],
+    ['rejected', 'Rejected', ['bg-red-100', 'text-red-800']],
+    ['draft', 'Draft', ['bg-muted', 'text-muted-foreground']],
+  ])('chip: the %s rung reads "%s" on the pill palette', async (rung, label, classes) => {
     getQuotationDocument.mockResolvedValue(belowFloor(rung));
     renderScreen();
 
-    const chip = await screen.findByText(label, { selector: '[data-slot="badge"]' });
-    expect(chip).toBeInTheDocument();
+    const pill = await headerPill(label);
+    for (const cls of classes) expect(pill.classList.contains(cls)).toBe(true);
+  });
+
+  it.each([
+    ['Issued', { is_issued: true, current_issue_no: 1, issue_count: 1 }, 'bg-emerald-100', 'text-emerald-800'],
+    ['Accepted', { is_issued: true, current_issue_no: 1, issue_count: 1, customer_decision: 'accepted' as const }, 'bg-emerald-100', 'text-emerald-800'],
+    ['Changes requested', { is_issued: true, current_issue_no: 1, issue_count: 1, customer_decision: 'changes_requested' as const }, 'bg-amber-100', 'text-amber-800'],
+  ])('chip: %s uses the shared pill colours', async (label, overrides, bg, text) => {
+    getQuotationDocument.mockResolvedValue(quotationDocument(overrides));
+    renderScreen();
+
+    const pill = await headerPill(label);
+    expect(pill.classList.contains(bg)).toBe(true);
+    expect(pill.classList.contains(text)).toBe(true);
   });
 });
 
@@ -1697,9 +1725,7 @@ describe('QuotationDocumentClient: locked while Pending or Approved, explicit Re
     fireEvent.click(screen.getByRole('button', { name: 'Revise' }));
 
     await waitFor(() => expect(reviseQuotationApproval).toHaveBeenCalled());
-    expect(
-      await screen.findByText('Draft', { selector: '[data-slot="badge"]' }),
-    ).toBeInTheDocument();
+    await waitFor(async () => expect(await headerPill('Draft')).toBeInTheDocument());
     expect(await screen.findByRole('button', { name: 'Send for approval' })).toBeEnabled();
   });
 });
@@ -1731,5 +1757,78 @@ describe('QuotationDocumentClient: Delete is the deferred countdown (F7)', () =>
     const panel = readFileSync(resolve(here, '../../../components/QuotationsPanel.tsx'), 'utf8');
     expect(page).not.toContain('ConfirmDeleteDialog');
     expect(panel).not.toContain('ConfirmDeleteDialog');
+  });
+});
+
+
+describe('QuotationDocumentClient: fix round 2', () => {
+  it('2: a failed Reject keeps the dialog open, the reason typed, and shows the error in the dialog', async () => {
+    granted = new Set(['projects.quotations.approve']);
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(belowFloor('pending_approval'));
+    rejectQuotationDocument.mockRejectedValue(new Error('Server says no'));
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    fireEvent.change(screen.getByLabelText(/Why/i), { target: { value: 'Bring it back.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send it back' }));
+
+    await waitFor(() => expect(rejectQuotationDocument).toHaveBeenCalled());
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText(/Why/i)).toHaveValue('Bring it back.');
+    expect(await within(dialog).findByText(/Server says no/)).toBeInTheDocument();
+  });
+
+  it.each(['pending_approval', 'approved'])(
+    '3: no Recheck alerts button on the Lines tab while %s',
+    async (rung) => {
+      seedOneScope();
+      getQuotationDocument.mockResolvedValue(
+        belowFloor(rung, { grand_total: '9000.00', scopes: [scope()] }),
+      );
+      renderScreen();
+
+      expect(await screen.findByText('Wall-hung WC')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Recheck alerts/i })).toBeNull();
+    },
+  );
+
+  it('3: a draft still offers Recheck alerts', async () => {
+    seedOneScope();
+    getQuotationDocument.mockResolvedValue(
+      belowFloor('draft', { grand_total: '9000.00', scopes: [scope()] }),
+    );
+    renderScreen();
+
+    expect(await screen.findByRole('button', { name: /Recheck alerts/i })).toBeInTheDocument();
+  });
+
+  it('6: gear Delete shows the countdown INLINE in the header, not only a toast', async () => {
+    getQuotationDocument.mockResolvedValue(quotationDocument());
+    renderScreen();
+
+    const menu = await openGear();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: /Delete quotation/ }));
+
+    expect(await screen.findByTestId('deferred-countdown')).toBeInTheDocument();
+  });
+
+  it('6: a delete already running for this document shows its countdown on mount', async () => {
+    getCurrentPendingAction.mockResolvedValue({
+      pending: {
+        id: 'pa-running',
+        action_key: 'quotation_document.delete',
+        entity_type: 'quotation_document',
+        entity_id: 'd1',
+        commit_at: new Date(Date.now() + 8_000).toISOString().replace(/\.\d+Z$/, ''),
+        window_seconds: 10,
+      },
+      last_outcome: null,
+    });
+    getQuotationDocument.mockResolvedValue(quotationDocument());
+    renderScreen();
+
+    expect(await screen.findByTestId('deferred-countdown')).toBeInTheDocument();
+    expect(createPendingAction).not.toHaveBeenCalled();
   });
 });

@@ -517,3 +517,79 @@ describe('QuotationsPanel: the standard list (QUOTE-APPROVAL-UX F2-F8)', () => {
     );
   });
 });
+
+
+describe('QuotationsPanel: fix round 2', () => {
+  it('chip: the Status column renders the shared pill palette', async () => {
+    listQuotationDocuments.mockResolvedValue([
+      quotationDocument({ id: 'a', our_ref: 'REF-A', approval_status_key: 'pending_approval' }),
+      quotationDocument({ id: 'b', our_ref: 'REF-B', approval_status_key: 'approved' }),
+      quotationDocument({ id: 'c', our_ref: 'REF-C', approval_status_key: 'rejected' }),
+      draftDocument({ id: 'd', our_ref: 'REF-D' }),
+      quotationDocument({ id: 'e', our_ref: 'REF-E' }),
+      quotationDocument({ id: 'f', our_ref: 'REF-F', customer_decision: 'changes_requested' }),
+    ]);
+    renderPanel();
+
+    await screen.findByText('REF-A');
+    const pill = (label: string) =>
+      screen
+        .getAllByText(label)
+        .find((el) => el.classList.contains('rounded-full') && el.classList.contains('font-semibold'));
+    const expectPill = (label: string, ...classes: string[]) => {
+      const el = pill(label);
+      expect(el, `pill for ${label}`).toBeDefined();
+      for (const cls of classes) expect(el!.classList.contains(cls)).toBe(true);
+    };
+    expectPill('Pending approval', 'bg-amber-100', 'text-amber-800');
+    expectPill('Approved', 'bg-blue-100', 'text-blue-800');
+    expectPill('Rejected', 'bg-red-100', 'text-red-800');
+    expectPill('Draft', 'bg-muted', 'text-muted-foreground');
+    expectPill('Issued', 'bg-emerald-100', 'text-emerald-800');
+    expectPill('Changes requested', 'bg-amber-100', 'text-amber-800');
+  });
+
+  it('4: the search box lives in the toolbar search slot - a ticked row swaps it for the bulk strip, unticking brings it back', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument(), draftDocument()]);
+    renderPanel();
+
+    const row = (await screen.findByText('SRT/Q/2026/0150')).closest('tr') as HTMLElement;
+    expect(screen.getByRole('searchbox', { name: 'Search quotations' })).toBeInTheDocument();
+
+    fireEvent.click(within(row).getByRole('checkbox'));
+    expect(await screen.findByText('1 selected')).toBeInTheDocument();
+    expect(screen.queryByRole('searchbox', { name: 'Search quotations' })).toBeNull();
+
+    fireEvent.click(within(row).getByRole('checkbox'));
+    expect(await screen.findByRole('searchbox', { name: 'Search quotations' })).toBeInTheDocument();
+  });
+
+  it('4: typing in the search box still filters the rows', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument(), draftDocument()]);
+    renderPanel();
+
+    await screen.findByText('SRT/Q/2026/0150');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search quotations' }), {
+      target: { value: '0150' },
+    });
+
+    expect(screen.getByText('SRT/Q/2026/0150')).toBeInTheDocument();
+    expect(screen.queryByText('SRT/Q/2026/0141 (R2)')).toBeNull();
+  });
+
+  it('5: bulk Delete on issued rows only is disabled and carries a reason', async () => {
+    listQuotationDocuments.mockResolvedValue([quotationDocument()]);
+    renderPanel();
+
+    const row = (await screen.findByText('Nadi Cergas Sdn Bhd')).closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('checkbox'));
+
+    const del = await screen.findByRole('button', { name: 'Delete' });
+    expect(del).toBeDisabled();
+    // The toolbar shows a disabledReason as a tooltip on the wrapper (reachable by focus).
+    const wrapper = del.closest('span[tabindex]') as HTMLElement | null;
+    expect(wrapper, 'the disabled button sits in the toolbar tooltip wrapper').not.toBeNull();
+    fireEvent.focus(wrapper!);
+    expect((await screen.findAllByText(/cannot be deleted/i)).length).toBeGreaterThan(0);
+  });
+});
