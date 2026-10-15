@@ -2636,9 +2636,8 @@ _MEASURE_TO_RANK_BY = {"qty": "quantity", "amount": "amount"}
 def _fills_open_top_selling_question(focus: Any, verdict: dict[str, Any]) -> dict[str, Any]:
     """Chat fix PR-B S2b: the top selling keys a NON top selling parse fills for the metric or
     basis question the last reply asked, or {} when it fills none or names something of its own
-    (then it is a new ask): an entity (or a sales ranking's own words, `report_ask_words`), or an
-    axis the top selling list does not rank (it ranks items or categories). Parser fields only,
-    never the words."""
+    (then it is a new ask): an entity (or a sales ranking's own words, `report_ask_words`).
+    Parser fields only, never the words."""
     slot = focus.top_selling if isinstance(focus.top_selling, dict) else None
     asked = slot.get("asked") if slot else None
     if focus.status != "top_selling" or asked not in _TOP_SELLING_FILLS:
@@ -2653,8 +2652,8 @@ def _fills_open_top_selling_question(focus: Any, verdict: dict[str, Any]) -> dic
     words = verdict.get("report_ask_words")
     if isinstance(words, dict) and any(jsc.array(v) for v in words.values()):
         return {}
-    if verdict.get("group_by") not in (None, "", "product", "category"):
-        return {}
+    # The parse's `group_by` is not read: on an answering turn it is noise (12 of 14 live
+    # turns, PR-B replay 16 Oct), and the open question's axis wins (review S2b).
     reading = {
         "rank_by": verdict.get("rank_by") if verdict.get("rank_by") in ("quantity", "amount")
         else _MEASURE_TO_RANK_BY.get(verdict.get("measure")),
