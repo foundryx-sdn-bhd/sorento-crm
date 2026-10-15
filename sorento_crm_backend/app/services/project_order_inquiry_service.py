@@ -50,7 +50,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import event, func, or_, tuple_
+from sqlalchemy import and_, event, func, or_, tuple_
 from sqlalchemy.orm import Session
 
 from app.models.base import company_scope, get_company_scope
@@ -11846,6 +11846,39 @@ class ProjectOrderInquiryService:
             self._refresh_inquiry_states({row.order_inquiry_id for row in rows})
         return len(rows)
 
+    def po_lines_with_open_chained_spo(self, po_line_ids: Sequence[str]) -> set:
+        """OI-RESERVE-RECEIVED (AC-RR-6, lane-local): of these PO lines, the ids that still
+        have an OPEN shipping order chaining from them (`from_po_number` AND
+        `from_po_line_ref` name the line): the line reads closed but its goods have not
+        landed. One query for the whole set."""
+        wanted = [str(i) for i in po_line_ids if i]
+        if not wanted:
+            return set()
+        rows = (
+            self.db.query(PurchaseOrderLine.id)
+            .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+            .join(
+                SPOAllocation,
+                and_(
+                    SPOAllocation.from_po_number == PurchaseOrder.po_number,
+                    SPOAllocation.from_po_line_ref == PurchaseOrderLine.source_ref,
+                ),
+            )
+            .outerjoin(
+                InboundShipment, InboundShipment.id == SPOAllocation.inbound_shipment_id
+            )
+            .filter(
+                PurchaseOrderLine.id.in_(wanted),
+                PurchaseOrderLine.source_ref.isnot(None),
+                PurchaseOrderLine.source_ref != "",
+                *spo_supply.open_incoming_clauses(),
+                *spo_supply.visible_line_clauses(),
+            )
+            .distinct()
+            .all()
+        )
+        return {str(line_id) for (line_id,) in rows}
+
     def received_links_of(self, row_id: str) -> List[OrderInquiryLink]:
         """The row's PO/SPO links that name a FULLY RECEIVED document - the one "received"
         test (`_received_documents_for`) the worklist's received pill also states."""
@@ -11855,7 +11888,14 @@ class ProjectOrderInquiryService:
             if link.reserve_request_row_id is None
         ]
         received = self._received_documents_for(links)
-        return [link for link in links if str(link.id) in received]
+        blocked = self.po_lines_with_open_chained_spo(
+            [link.po_line_id for link in links if link.po_line_id]
+        )
+        return [
+            link
+            for link in links
+            if str(link.id) in received and str(link.po_line_id or "") not in blocked
+        ]
 
     def release_received_links(
         self,

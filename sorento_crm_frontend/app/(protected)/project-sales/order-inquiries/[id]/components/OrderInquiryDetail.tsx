@@ -843,7 +843,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
                             </DropdownMenuItem>
                           </span>
                         </TooltipTrigger>
-                        <TooltipContent>{reserveDisabledReason}</TooltipContent>
+                        <TooltipContent className="max-w-xs break-words">{reserveDisabledReason}</TooltipContent>
                       </Tooltip>
                     )
                   ) : null}
