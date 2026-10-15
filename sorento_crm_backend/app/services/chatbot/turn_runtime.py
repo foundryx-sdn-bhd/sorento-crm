@@ -5473,8 +5473,7 @@ def envelope_of(
     # `*last purchase cost* for M218:` header and contract 7's refusal sentence was
     # never said - the tool was still never called, so nothing leaked, but the customer
     # was told nothing either.
-    # A fixed refusal (`_fixed_reply(refused=True)`) is denied too: no fit line opens it.
-    refused = fragment.get("outcome") == "access_denied" or bool(fragment.get("refused"))
+    refused = fragment.get("outcome") == "access_denied"
     codes = [name for name in (_answer_subject(e) for e in entities) if name]
     rows = fetched.get("answers")
     figures = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
@@ -5483,6 +5482,9 @@ def envelope_of(
     envelope: dict[str, Any] = {
         "domain": spec.domain,
         "denied": refused,
+        # A fixed refusal (`_fixed_reply(refused=True)`) keeps its own text: not `denied` (the
+        # composer's generic line), only read by `engine._run_answer` to open no fit line.
+        "refused": bool(fragment.get("refused")),
         "entities": codes,
         # The PRODUCT subjects alone, for the composer's "No stock found for X" line: a
         # customer pinned from an earlier turn is a subject too, and is not a stock code.

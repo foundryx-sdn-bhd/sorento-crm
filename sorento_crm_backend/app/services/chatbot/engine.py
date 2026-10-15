@@ -7206,7 +7206,7 @@ def _run_stages_body(  # noqa: PLR0915
             refused=branch_kind == "stock_denied"
             or sales_report_grant_refused
             or customer_scope_refused
-            or any(isinstance(e, dict) and e.get("denied") for e in envelopes or []),
+            or any(isinstance(e, dict) and (e.get("denied") or e.get("refused")) for e in envelopes or []),
         )
 
     with _session(session_factory) as db:
