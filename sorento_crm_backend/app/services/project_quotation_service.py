@@ -40,6 +40,7 @@ from app.models.projects import (
     UNIT_TYPES,
     Project,
     ProjectQuotation,
+    ProjectQuotationDocument,
     ProjectQuotationIssueScope,
     ProjectQuotationLine,
     ProjectQuotationVersion,
@@ -202,7 +203,28 @@ def is_issued(db: Session, version: ProjectQuotationVersion) -> bool:
     )
 
 
+def assert_scope_unlocked(db: Session, quotation: ProjectQuotation) -> None:
+    """The approval lock (D1) for a scope: its document may be pending or approved."""
+    if not getattr(quotation, "document_id", None):
+        return
+    from app.services import project_quotation_approval_service as approvals
+
+    document = (
+        db.query(ProjectQuotationDocument)
+        .filter(ProjectQuotationDocument.id == quotation.document_id)
+        .first()
+    )
+    approvals.assert_unlocked(db, document)
+
+
 def assert_editable(db: Session, version: ProjectQuotationVersion) -> None:
+    quotation = (
+        db.query(ProjectQuotation)
+        .filter(ProjectQuotation.id == version.quotation_id)
+        .first()
+    )
+    if quotation is not None:
+        assert_scope_unlocked(db, quotation)
     if not is_frozen(db, version):
         return
     # The two reasons read differently to a person: one says somebody moved on, the other says the
@@ -328,6 +350,7 @@ def update_quotation(
 ) -> ProjectQuotation:
     """Scope label, series and notes. Outcome has its own action, so it is not here:
     losing a quotation needs a reason and a decided-at stamp."""
+    assert_scope_unlocked(db, quotation)
     if "scope_label" in payload:
         scope_label = " ".join((payload.get("scope_label") or "").split())
         if not scope_label:
@@ -354,6 +377,7 @@ def revise(
     quotation with three prices moved", and re-keying forty lines is how people end up
     editing the frozen one in a spreadsheet instead.
     """
+    assert_scope_unlocked(db, quotation)
     live = current_version(db, quotation.id)
     live.frozen_at = datetime.utcnow()
 
@@ -426,6 +450,7 @@ def revise(
 def delete_quotation(db: Session, quotation: ProjectQuotation) -> None:
     """Hard delete, cascading to versions and lines. The project's derived outcome is
     recomputed, because removing the only lost scope reopens the project."""
+    assert_scope_unlocked(db, quotation)
     project = db.query(Project).filter(Project.id == quotation.project_id).first()
     db.delete(quotation)
     db.flush()

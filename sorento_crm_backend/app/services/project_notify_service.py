@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
@@ -66,6 +67,34 @@ def management_user_ids(db: Session) -> List[str]:
     return [str(r[0]) for r in rows]
 
 
+def approver_user_ids(db: Session) -> List[str]:
+    """Active, non-bot users who hold the quotation approve grant."""
+    from app.models.user import (
+        User,
+        UserPermission,
+        UserRoleAssignment,
+        UserRolePermission,
+        UserStatus,
+    )
+    from app.services.project_quotation_approval_service import APPROVE_PERMISSION
+
+    rows = (
+        db.query(UserRoleAssignment.user_id)
+        .join(UserRolePermission, UserRolePermission.role_id == UserRoleAssignment.role_id)
+        .join(UserPermission, UserPermission.id == UserRolePermission.permission_id)
+        .join(User, User.id == UserRoleAssignment.user_id)
+        .filter(
+            UserPermission.slug == APPROVE_PERMISSION,
+            User.status == UserStatus.ACTIVE.value,
+            User.is_trashed.is_(False),
+            User.is_integration.is_(False),
+        )
+        .distinct()
+        .all()
+    )
+    return [str(r[0]) for r in rows]
+
+
 def _send(
     db: Session,
     *,
@@ -77,6 +106,8 @@ def _send(
     project_id: str,
     dedup_key: str,
     send_email: bool = True,
+    send_whatsapp: bool = False,
+    send_web_push: bool = False,
 ) -> int:
     """Fan out to a de-duplicated recipient set. Returns how many were notified.
 
@@ -114,6 +145,8 @@ def _send(
                 event_type=notif_type,
                 send_in_app=True,
                 send_email=send_email,
+                send_whatsapp=send_whatsapp,
+                send_web_push=send_web_push,
             )
             sent += 1
         except Exception as exc:  # noqa: BLE001
@@ -191,6 +224,96 @@ def notify_floor_breach(
         },
         project_id=str(project.id),
         dedup_key=floor_breach_dedup_key(event),
+    )
+
+
+def _approval_data(project: Project, document) -> Dict[str, Any]:
+    return {
+        "project_id": str(project.id),
+        "project_code": project.project_code,
+        "document_id": str(document.id),
+        "document_no": document.document_no,
+    }
+
+
+def notify_quotation_approval_requested(
+    db: Session,
+    *,
+    project: Project,
+    document,
+    press: Optional[str],
+    below: int,
+    requester_name: str,
+) -> int:
+    """A quotation was sent for approval: tell every approver. One per press (dedup on `press`)."""
+    return _send(
+        db,
+        user_ids=approver_user_ids(db),
+        notif_type="project_quotation_approval_requested",
+        title=f"{project.project_code}: approval needed on {document.document_no}",
+        body=(
+            f"{requester_name} asked for approval on {document.document_no} "
+            f"({below} line{'' if below == 1 else 's'} below floor)."
+        ),
+        data=_approval_data(project, document),
+        project_id=str(project.id),
+        dedup_key=f"{document.id}:approval_requested:{press or uuid.uuid4()}",
+        send_whatsapp=True,
+    )
+
+
+def notify_quotation_approval_decided(
+    db: Session,
+    *,
+    project: Project,
+    document,
+    approved: bool,
+    recipient_id: Optional[str],
+    decider_name: str,
+    reason: Optional[str] = None,
+) -> int:
+    """Approved or sent back: tell whoever asked for it."""
+    if not recipient_id:
+        return 0
+    verb = "approved" if approved else "sent back"
+    body = f"{decider_name} {verb} {document.document_no}."
+    if reason:
+        body = f"{body} {reason}"
+    return _send(
+        db,
+        user_ids=[recipient_id],
+        notif_type=(
+            "project_quotation_approval_approved"
+            if approved
+            else "project_quotation_approval_rejected"
+        ),
+        title=f"{project.project_code}: {document.document_no} {verb}",
+        body=body,
+        data=_approval_data(project, document),
+        project_id=str(project.id),
+        dedup_key=f"{document.id}:approval_{'approved' if approved else 'rejected'}:{uuid.uuid4()}",
+        send_web_push=True,
+    )
+
+
+def notify_quotation_approval_withdrawn(
+    db: Session,
+    *,
+    project: Project,
+    document,
+    actor_name: str,
+    reason: Optional[str],
+) -> int:
+    """The creator pulled a pending quotation back to change it: tell the approvers."""
+    return _send(
+        db,
+        user_ids=approver_user_ids(db),
+        notif_type="project_quotation_approval_withdrawn",
+        title=f"{project.project_code}: {document.document_no} withdrawn",
+        body=f"{actor_name} took {document.document_no} back for changes. {reason or ''}".strip(),
+        data=_approval_data(project, document),
+        project_id=str(project.id),
+        dedup_key=f"{document.id}:approval_withdrawn:{uuid.uuid4()}",
     )
 
 

@@ -2416,3 +2416,41 @@ register(
         label="Delete comment",
     )
 )
+
+
+def assert_quotation_deletable(db: Session, document_id: str, user_id) -> None:
+    """The DELETE route's checks (edit rights on the project, not issued), run at park time and
+    again when the window lapses. Returns the document through the 404 it raises when absent."""
+    from app.models.projects import Project
+    from app.services import project_quotation_document_service as qdocs
+    from app.services import project_service
+    from app.services.error_handler import handle_not_found
+    from app.services.user_service import UserPermissionService
+
+    document = qdocs.get_document(db, document_id)
+    if document is None:
+        raise handle_not_found("Quotation", document_id)
+    project = db.query(Project).filter(Project.id == document.project_id).first()
+    slugs = set(UserPermissionService(db).get_user_permission_slugs(user_id)) if user_id else set()
+    project_service.assert_can_edit_project(db, project, user_id, slugs)
+    qdocs.assert_deletable(db, document)
+
+
+def _delete_quotation_document(db: Session, payload: dict):
+    from app.services import project_quotation_document_service as qdocs
+
+    document_id = _entity_id(payload)
+    assert_quotation_deletable(db, document_id, payload.get("requested_by_id"))
+    return qdocs.delete_document(db, qdocs.get_document(db, document_id))
+
+
+register(
+    FormAction(
+        key="quotation_document.delete",
+        entity_types=("quotation_document",),
+        execute=_delete_quotation_document,
+        window=WINDOW_DESTRUCTIVE,
+        permission="projects.projects.delete",
+        label="Delete quotation",
+    )
+)

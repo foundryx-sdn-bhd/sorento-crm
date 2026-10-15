@@ -63,7 +63,12 @@ APPROVE_PERMISSION = "projects.quotations.approve"
 # The rungs a salesperson may move to themselves. Everything else on the graph belongs to an act
 # with its own rules (a permission, a reason, an actual issue), so the generic move route refuses
 # them even where the edge exists.
-SELF_SERVE_KEYS = frozenset({STATUS_DRAFT, STATUS_PENDING})
+# `draft` is not here: a rejected quotation resubmits straight to pending (C1, C2), and revise has
+# its own act.
+SELF_SERVE_KEYS = frozenset({STATUS_PENDING})
+
+# While the document stands on one of these rungs, nobody edits it (D1, D2). Revise is the way out.
+LOCKED_KEYS = frozenset({STATUS_PENDING, STATUS_APPROVED})
 
 
 # ------------------------------------------------------------------ the floor
@@ -219,6 +224,21 @@ def mark_issued(db: Session, document: ProjectQuotationDocument) -> None:
     _set_status(db, document, _status_by_key(db, STATUS_ISSUED))
 
 
+def assert_unlocked(db: Session, document: Optional[ProjectQuotationDocument]) -> None:
+    """Refuse an edit to a quotation a manager is looking at, or has already approved."""
+    if document is None:
+        return
+    if current_key(db, document) in LOCKED_KEYS:
+        raise AppException(
+            status_code=422,
+            message=(
+                "This quotation is with a manager or already approved, so it cannot be "
+                "edited. Revise it first."
+            ),
+            code="quotation_locked_for_approval",
+        )
+
+
 # ------------------------------------------------------------------ the moves
 
 
@@ -252,7 +272,7 @@ def _record(
     body_text: str,
     actor_user_id: Optional[str],
     payload: Optional[Dict[str, Any]] = None,
-) -> None:
+) -> Optional[str]:
     """One activity row per decision, on the PROJECT's feed.
 
     A discount below the floor is exactly the decision somebody asks about six months later, so
@@ -265,10 +285,10 @@ def _record(
     """
     project = _project_of(db, document)
     if project is None:
-        return
+        return None
     from app.services import project_activity_service as activity
 
-    activity.record_project_event(
+    event = activity.record_project_event(
         db,
         project=project,
         template=template,
@@ -280,6 +300,31 @@ def _record(
         actor_id=actor_user_id,
         body_text=body_text,
     )
+    return str(event.id) if event is not None else None
+
+
+def requester_id(db: Session, document: ProjectQuotationDocument) -> Optional[str]:
+    """Who pressed Send for approval last; the project owner when no such row exists."""
+    project = _project_of(db, document)
+    if project is None:
+        return None
+    from app.models.activities import ActivityEvent
+
+    rows = (
+        db.query(ActivityEvent)
+        .filter(
+            ActivityEvent.entity_type == "project",
+            ActivityEvent.entity_id == str(project.id),
+            ActivityEvent.system_template == "quotation_approval_requested",
+        )
+        .order_by(ActivityEvent.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    for row in rows:
+        if (row.system_payload or {}).get("document_id") == str(document.id) and row.actor_id:
+            return str(row.actor_id)
+    return str(project.owner_user_id) if project.owner_user_id else None
 
 
 def move(
@@ -314,14 +359,22 @@ def move(
             code="quotation_status_not_self_serve",
         )
 
+    from_id = _from_status_id(db, document)
+    if target.key == STATUS_PENDING and current_key(db, document) == STATUS_REJECTED:
+        # Resubmit (C1): the graph has no rejected -> pending edge, so walk the two it has.
+        draft = _status_by_key(db, STATUS_DRAFT)
+        status_service.assert_transition_allowed(
+            db, ENTITY_TYPE, from_id, draft.id, scope_id=None
+        )
+        from_id = draft.id
     status_service.assert_transition_allowed(
-        db, ENTITY_TYPE, _from_status_id(db, document), to_status_id, scope_id=None
+        db, ENTITY_TYPE, from_id, to_status_id, scope_id=None
     )
     _set_status(db, document, target)
 
     if target.key == STATUS_PENDING:
         below = below_floor_line_count(db, document)
-        _record(
+        press = _record(
             db,
             document,
             template="quotation_approval_requested",
@@ -332,6 +385,7 @@ def move(
             actor_user_id=actor_user_id,
             payload={"below_floor_line_count": below},
         )
+        _notify(db, "requested", document, press=press)
     return document
 
 
@@ -371,6 +425,7 @@ def approve(
         ),
         actor_user_id=actor_user_id,
     )
+    _notify(db, "approved", document, actor_user_id=actor_user_id)
     return document
 
 
@@ -415,7 +470,97 @@ def reject(
         actor_user_id=actor_user_id,
         payload={"reason": cleaned},
     )
+    _notify(db, "rejected", document, actor_user_id=actor_user_id, reason=cleaned)
     return document
+
+
+def revise_approval(
+    db: Session,
+    document: ProjectQuotationDocument,
+    actor_user_id: str,
+    reason: Optional[str],
+) -> ProjectQuotationDocument:
+    """The creator takes a Pending or Approved quotation back to Draft to change it (D3-D5).
+
+    A system move like ``mark_issued``: the graph has no edge for it, the two rungs it leaves
+    are simply the two the lock guards. The reason is required and lands in the feed.
+    """
+    cleaned = " ".join((reason or "").split())
+    if not cleaned:
+        raise AppException(
+            status_code=422,
+            message="Say what changed and why, so the manager can see it.",
+            code="quotation_revise_reason_required",
+        )
+    was = current_key(db, document)
+    if was not in LOCKED_KEYS:
+        raise AppException(
+            status_code=422,
+            message="Only a quotation that is pending or approved needs revising.",
+            code="quotation_not_revisable",
+        )
+    _set_status(db, document, _status_by_key(db, STATUS_DRAFT))
+    _record(
+        db,
+        document,
+        template="quotation_approval_revised",
+        body_text=(
+            f"{_actor_name(db, actor_user_id)} reopened quotation {document.document_no} "
+            f"for changes: {cleaned}"
+        ),
+        actor_user_id=actor_user_id,
+        payload={"reason": cleaned},
+    )
+    if was == STATUS_PENDING:
+        _notify(db, "withdrawn", document, actor_user_id=actor_user_id, reason=cleaned)
+    return document
+
+
+def _notify(
+    db: Session,
+    kind: str,
+    document: ProjectQuotationDocument,
+    *,
+    press: Optional[str] = None,
+    actor_user_id: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> None:
+    """Best effort: the rung has moved, so a notification fault never fails the action."""
+    try:
+        project = _project_of(db, document)
+        if project is None:
+            return
+        from app.services import project_notify_service as notify
+
+        if kind == "requested":
+            notify.notify_quotation_approval_requested(
+                db,
+                project=project,
+                document=document,
+                press=press,
+                below=below_floor_line_count(db, document),
+                requester_name=_actor_name(db, requester_id(db, document)),
+            )
+        elif kind == "withdrawn":
+            notify.notify_quotation_approval_withdrawn(
+                db,
+                project=project,
+                document=document,
+                actor_name=_actor_name(db, actor_user_id),
+                reason=reason,
+            )
+        else:
+            notify.notify_quotation_approval_decided(
+                db,
+                project=project,
+                document=document,
+                approved=kind == "approved",
+                recipient_id=requester_id(db, document),
+                decider_name=_actor_name(db, actor_user_id),
+                reason=reason,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("quotation approval notification failed: kind=%s (%s)", kind, exc)
 
 
 # ------------------------------------------------------------------ serialize

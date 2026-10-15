@@ -2004,6 +2004,13 @@ class QuotationRejectRequest(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class QuotationReviseRequest(BaseModel):
+    """Reopening a pending or approved quotation. The reason is checked by the service, which
+    answers a blank one with a code the screen can render."""
+
+    reason: Optional[str] = None
+
+
 # ------------------------------------------------ cover letter and terms templates
 
 

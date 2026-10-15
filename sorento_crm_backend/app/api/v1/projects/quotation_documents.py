@@ -27,6 +27,7 @@ from app.schemas.projects import (
     ProjectQuotationDocumentCreate,
     QuotationApprovalMoveRequest,
     QuotationRejectRequest,
+    QuotationReviseRequest,
     QuotationSignatureRequest,
     QuotationSignatureResponse,
     ProjectQuotationDocumentResponse,
@@ -517,6 +518,31 @@ async def reject_quotation_document(
             reason=payload.reason,
             permissions=permission_slugs(db, current_user["id"]),
         )
+        db.commit()
+        db.refresh(document)
+        return svc.serialize_document(db, document)
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post(
+    "/projects/{project_id}/quotation-documents/{document_id}/approval-revise",
+    response_model=ProjectQuotationDocumentResponse,
+)
+async def revise_quotation_approval(
+    project_id: str,
+    document_id: str,
+    payload: QuotationReviseRequest,
+    current_user: dict = Depends(require_permission(EDIT)),
+    db: Session = Depends(get_db),
+):
+    """The creator reopens a pending or approved quotation, with a reason, to change it."""
+    try:
+        validate_uuid_path(document_id, resource="Quotation")
+        _editable_project(db, project_id, current_user)
+        document = svc.get_document_or_404(db, project_id, document_id)
+        approvals.revise_approval(db, document, current_user["id"], payload.reason)
         db.commit()
         db.refresh(document)
         return svc.serialize_document(db, document)
