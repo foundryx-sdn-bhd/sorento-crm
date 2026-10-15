@@ -851,6 +851,12 @@ def entity_ids_transformer(
         ]
         if carried_customers and not _self_reference(semantic_input):
             out["customer_ids"] = carried_customers
+        # Chat fix PR-B S5 (AC-B7, R15): the brand this turn named narrows the figures, the
+        # same already-resolved live brand ids the outstanding report sends (a brand word is
+        # kept off the shared resolver under order/sales); never a silently unfiltered total.
+        brand_ids = _resolved_brand_ids(semantic_input)
+        if brand_ids:
+            out["brand_ids"] = brand_ids
         # R-B3 (reviewer finding, Phase 3 fix round): the turn's OWN sales_channel wins
         # when given; a pick or a refinement of an open sales_report_detail offer names
         # no channel of its own, so the offer's CARRIED channel (restored by

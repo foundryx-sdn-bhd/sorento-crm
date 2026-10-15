@@ -243,11 +243,13 @@ def delivered_sales_report(
     group_by: Optional[str] = None,
     policy: Any = None,
     capped_by_policy: bool = False,
+    brand_ids: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """The route's body. `channel` is `dealer` / `project` / None, `group_by` one of
     `GROUP_BYS` or None (both validated by the route). `capped_by_policy` says a contact
     asked: `policy` is then that contact's stock visibility policy, and None (nobody
-    resolved) answers nothing (fail closed)."""
+    resolved) answers nothing (fail closed). `brand_ids` narrows to those brands'
+    products (chat fix PR-B S5); None is no brand filter."""
     token = (location_token or "").strip() or None
     named_codes = [str(c).strip() for c in (warehouse_codes or []) if str(c).strip()]
 
@@ -327,6 +329,10 @@ def delivered_sales_report(
         params["customer"] = scoped_ids
     if product_ids:
         params["product"] = product_ids
+    if brand_ids is not None:
+        if not brand_ids:
+            return body  # never handed to the engine as [] ("no filter")
+        params["brand"] = list(brand_ids)
     if location_ids is not None:
         params["location"] = location_ids
     if channel_used:

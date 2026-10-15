@@ -814,7 +814,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "`product_code` is a PREFIX, case-insensitive (at least 3 characters). "
             "`customer_query` - partial match on customer NAME only. `customer_ids` - canonical "
             "customer UUIDs (csv/JSON/repeated).\n\n"
-            "FILTERS: `channel` - dealer | project (the account's market segment class; an "
+            "FILTERS: `brand_ids` - brand UUIDs (csv/JSON/repeated, max 50), narrows to those "
+            "brands' products. `channel` - dealer | project (the account's market segment class; an "
             "account with no segment is in every channel; ignored when the accounts span one "
             "class). `warehouse_codes` - exact warehouse codes (csv/JSON/repeated); resolve a "
             "location TOKEN yourself first, this tool does no suffix matching. `location_token` "
@@ -832,7 +833,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         "/api/v1/order-management/sales-report",
         (),
         (
-            "product_code", "customer_query", "customer_ids", "channel", "warehouse_codes",
+            "product_code", "customer_query", "customer_ids", "brand_ids", "channel", "warehouse_codes",
             "location_token", "date_from", "date_to", "group_by",
             "contact_id", "space_id",
         ),
