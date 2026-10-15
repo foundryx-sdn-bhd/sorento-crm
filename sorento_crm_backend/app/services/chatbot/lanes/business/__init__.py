@@ -1441,6 +1441,9 @@ def run_fetch(
     scoped_to_links = bool(customer_scope.get("enforced") and customer_scope.get("ids"))
     if scoped_to_links:
         semantic_input["scope_customer_ids"] = list(customer_scope["ids"])
+    elif customer_scope.get("enforced"):
+        # R5-8: held to no customer (PV2's unlinked non-staff contact): no customer-scoped tool runs (fetch refuses).
+        semantic_input["scope_customer_ids"] = []
     # CHATBOT-SELFREF-SCOPE (owner hand test, 30 Sep 2026, "Mr Loo"): a contact WITH linked
     # accounts asking for sales is asking about those accounts, staff tier or not - the
     # company analysis route refuses any linked contact outright (`analysis.py:253-258`,

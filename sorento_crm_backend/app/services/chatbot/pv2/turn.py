@@ -582,8 +582,20 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
     }
 
 
+def _refused_report(line: str | None) -> answer_mod.ReportAnswer:
+    """R5-8: the report answer of a contact held to no customer: its scope's refusal line, no report query."""
+
+    def run(spec: Any, refs: Any, today: date, row: Any, incoming: Any) -> Any:
+        from types import SimpleNamespace
+
+        return SimpleNamespace(text=str(line or ""), plan=None, rows=[], pending=None, frame=None)
+
+    return run
+
+
 def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     from app.services.chatbot.head.access import default_space_id
+    from app.services.chatbot.pv2 import hook as pv2_hook
     from app.services.chatbot.lanes.business.services import _mcp_call
     from app.services.chatbot.pv2 import call as pv2_call
     from app.services.chatbot.pv2.resolve import DbResolver
@@ -619,6 +631,8 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
         scope = scope_for_resolver(sdb, contact, space_id, profile)
     granted = scope.pop("granted_reveals")
     staff = scope.pop("staff")
+    # R5-8: a contact held to no customer runs no report (its route would read no links as no restriction).
+    no_customer = pv2_hook.held_to_no_customer(scope.get("customer_scope"))
 
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
@@ -653,7 +667,8 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             last_reply=session_vars.get("user_response") if isinstance(session_vars.get("user_response"), str) else None,
             conversation_language=session_vars.get("reply_language") if isinstance(session_vars.get("reply_language"), str) else None,
             stock_availability_only=bool(getattr(profile, "stock_availability_only", False)),
-            report_answer=answer_mod.default_report_answer(
+            report_answer=_refused_report((scope.get("customer_scope") or {}).get("refusal")) if no_customer
+            else answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),
                 contact_id=contact,
                 space_id=space_id,

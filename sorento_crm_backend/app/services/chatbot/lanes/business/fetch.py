@@ -1262,6 +1262,9 @@ def entity_ids_transformer(
     # customer-scoped tool, whatever the earlier steps built. Defence in depth behind
     # `engine._customer_scope_gate`, which never lets another customer reach this far.
     scope_ids = jsc.get(semantic_input, "scope_customer_ids") if isinstance(semantic_input, dict) else None
+    if isinstance(scope_ids, list) and not scope_ids and tool_name in CUSTOMER_SCOPED_TOOLS:
+        # R5-8: a contact held to no customer (an enforced scope with no ids) reaches no customer-scoped tool.
+        raise ScopeViolation(f"{tool_name} asked with no customer in the contact's scope")
     if isinstance(scope_ids, list) and scope_ids and tool_name in CUSTOMER_SCOPED_TOOLS:
         requested = out.get("customer_ids")
         requested = requested if isinstance(requested, list) else ([requested] if requested else [])
