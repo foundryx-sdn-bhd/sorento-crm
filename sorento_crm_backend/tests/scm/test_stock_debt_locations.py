@@ -284,6 +284,17 @@ def test_service_export_and_list_span_the_same_warehouses(scm_app):
 # --------------------------------------------------------------------------- AC-R5
 
 
+def _three_codes_out_of_order(db):
+    """Insert order c, a, b; code order a, b, c. Returns {id: code} in INSERT order."""
+    tag = _u()[:4]
+    made = {}
+    for letter in ("C", "A", "B"):
+        w = _warehouse(db, f"ZZTO{tag}{letter}-IB")
+        made[w.id] = w.warehouse_code
+    db.flush()
+    return made
+
+
 def _facet(body):
     return {e["id"]: e for e in body["locations"]}
 
@@ -307,8 +318,13 @@ def test_locations_facet_follows_the_book_and_ignores_picks(scm_app):
     assert b.id in facet and pool.id in facet and unflagged.id not in facet
     assert pool.id not in _facet(project) and a.id in _facet(project)
     assert pool.id in _facet(retail) and a.id not in _facet(retail)
-    mine = [e["code"] for e in all_["locations"] if e["id"] in (a.id, b.id)]
-    assert mine == sorted(mine)
+    ordered = _three_codes_out_of_order(db)
+    with TestClient(app) as c:
+        again = _get(c, marker)
+    seeded = [e["code"] for e in again["locations"] if e["id"] in ordered]
+    assert len(seeded) == 3
+    assert seeded == sorted(seeded)
+    assert seeded != [w for w in ordered.values()], "codes must sort differently from insert"
     assert picked["locations"] == all_["locations"]
 
 
@@ -346,3 +362,68 @@ def test_the_workbook_header_names_the_retail_reference_columns(scm_app):
     header = [c.value for c in load_workbook(BytesIO(blob))["Stock debt"][1]]
     for label in ("BRW Retail On Hand Qty", "BRW Retail PO Qty", "BRW Retail Incoming Qty"):
         assert label in header, header
+
+
+# --------------------------------------------------------------------------- projection
+
+
+def _projection_world(db):
+    """40 owed at bin A next month; an HQ project reserve holds a past-due unlinked PO of
+    1000 (the one thing `projected=true` adds, test_stock_debt_projection_routes)."""
+    from datetime import timedelta
+
+    from tests.scm.test_stock_debt_projection_routes import _po_line
+
+    marker = f"ZZTSD{_u()[:6]}".upper()
+    a = _warehouse(db, f"ZZTLA{_u()[:4]}-IB")
+    hq = _reserve(db)
+    product = _product(db, f"{marker}-A")
+    _stock(db, product, hq, 500)
+    _demand(db, product, a, qty=40, required_date=_months_ahead(1), so_number=f"{marker}-SO1")
+    _po_line(db, product, hq, qty=1000, delivery=TODAY - timedelta(days=4),
+             number=f"{marker}-202610-S0042")
+    db.flush()
+    return marker, product, a, hq
+
+
+def test_projection_ignores_a_reserve_the_location_pick_left_out(scm_app):
+    """AC-R3: `location=A&projected=true` reads the same debt as without projection: the
+    unpicked reserve adds nothing, in the list and in the drill."""
+    app, db = _client(scm_app)
+    marker, product, a, hq = _projection_world(db)
+    with TestClient(app) as c:
+        plain = _balances(_get(c, marker, ("location", a.id)), product)
+        projected = _balances(_get(c, marker, ("location", a.id), projected="true"), product)
+        cell = c.get(f"{BASE}/{product.id}/cell",
+                     params=[("month", NOW), ("location", a.id), ("projected", "true")])
+    assert plain.get(DUE) == -40
+    assert projected.get(DUE) == -40, projected
+    assert cell.status_code == 200, cell.text
+    body = cell.json()
+    assert (body.get("projection") or {}).get("reserve_supply", 0) == 0
+    assert (body.get("projection") or {}).get("reserve_sources", []) == []
+    assert hq.warehouse_code not in str(body)
+
+
+def test_projection_ignores_a_reserve_excluded_by_id(scm_app):
+    """AC-R3: `exclude_location=<reserve>&projected=true` does not project its stock."""
+    app, db = _client(scm_app)
+    marker, product, a, hq = _projection_world(db)
+    with TestClient(app) as c:
+        projected = _balances(
+            _get(c, marker, ("exclude_location", hq.id), projected="true"), product)
+        cell = c.get(f"{BASE}/{product.id}/cell",
+                     params=[("month", NOW), ("exclude_location", hq.id),
+                             ("projected", "true")])
+    assert projected.get(DUE) == -40, projected
+    assert hq.warehouse_code not in str(cell.json())
+
+
+def test_projection_with_no_pick_still_projects_the_reserve(scm_app):
+    """Guard: no pick, `projected=true`: the reserve PO still raises the balance."""
+    app, db = _client(scm_app)
+    marker, product, a, hq = _projection_world(db)
+    with TestClient(app) as c:
+        plain = _balances(_get(c, marker), product)
+        projected = _balances(_get(c, marker, projected="true"), product)
+    assert projected[DUE] > plain[DUE], (plain, projected)

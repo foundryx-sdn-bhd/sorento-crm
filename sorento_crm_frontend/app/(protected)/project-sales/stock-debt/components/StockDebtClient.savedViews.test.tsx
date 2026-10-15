@@ -68,7 +68,9 @@ const LOCATIONS = [
   { id: 'w-brw', code: 'BRW', name: 'BRW' },
 ];
 
-function envelope(total = 1): StockDebtListResponse {
+const RETAIL_LOCATIONS = [{ id: 'w-brw', code: 'BRW', name: 'BRW' }];
+
+function envelope(total = 1, book = 'all'): StockDebtListResponse {
   return {
     data: [
       {
@@ -93,7 +95,7 @@ function envelope(total = 1): StockDebtListResponse {
     months: ['2026-10'],
     tba_month: '2030-01',
     groups: ['BB', 'ED', 'FG'],
-    locations: LOCATIONS,
+    locations: book === 'retail' ? RETAIL_LOCATIONS : LOCATIONS,
     totals: {
       months: { '2026-10': -5 },
       tba: 0,
@@ -169,7 +171,7 @@ const lastList = () => getStockDebtList.mock.calls.at(-1)![0];
 beforeEach(() => {
   vi.clearAllMocks();
   menuProps = null;
-  getStockDebtList.mockResolvedValue(envelope());
+  getStockDebtList.mockImplementation(async (p: { book?: string }) => envelope(1, p?.book));
   getStockDebtCell.mockResolvedValue({ demand: [], supply: [] });
   exportStockDebt.mockResolvedValue({ id: 'd1' });
 });
@@ -229,13 +231,15 @@ describe('Location filter on the real warehouses (AC-R7, AC-R9)', () => {
     await screen.findByText('SRTWB242');
     await openFilters();
 
-    pick('BRW-IB');
+    pick('BRW');
     fireEvent.keyDown(document.body, { key: 'Escape' });
     if (!screen.queryByRole('radio', { name: 'Retail' })) await openFilters();
     fireEvent.click(screen.getByRole('radio', { name: 'Retail' }));
 
-    expect(screen.getByText('Location: BRW-IB')).toBeInTheDocument();
     await screen.findByText('Book: Retail');
+    // The Retail facet holds BRW, so the chip is its code, not "Unknown location".
+    expect(screen.getByText('Location: BRW')).toBeInTheDocument();
+    expect(screen.queryByText(/Unknown location/)).not.toBeInTheDocument();
     const trigger = screen.getByRole('button', { name: /^Filters/, hidden: true });
     expect(trigger.textContent?.trim()).toBe('Filters2');
   });
@@ -246,7 +250,40 @@ describe('Location filter on the real warehouses (AC-R7, AC-R9)', () => {
     applyView({ ...FULL_VIEW, locations: 'w-gone-0000', date_from_days: '', date_to_days: '' });
 
     expect(await screen.findByText(/Unknown location/)).toBeInTheDocument();
+    await openFilters();
     expect(document.body.textContent).not.toContain('w-gone-0000');
+    expect(document.body.innerHTML).not.toContain('w-gone-0000');
+  });
+
+  it('the open Location select shows "Unknown location" for a missing id, never the id', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    applyView({ ...FULL_VIEW, locations: 'w-gone-0000', date_from_days: '', date_to_days: '' });
+    await screen.findByText(/Unknown location/);
+    await openFilters();
+
+    const field = locationTrigger().parentElement as HTMLElement;
+    expect(field.textContent).toMatch(/Unknown location/);
+    expect(field.innerHTML).not.toContain('w-gone-0000');
+    expect(document.body.innerHTML).not.toContain('w-gone-0000');
+    for (const el of document.querySelectorAll('[aria-label]')) {
+      expect(el.getAttribute('aria-label')).not.toContain('w-gone-0000');
+    }
+  });
+
+  it('switching Book to one whose facet lacks the pick shows no id in the select', async () => {
+    renderBoard();
+    await screen.findByText('SRTWB242');
+    await openFilters();
+    pick('BRW-IB');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    if (!screen.queryByRole('radio', { name: 'Retail' })) await openFilters();
+    fireEvent.click(screen.getByRole('radio', { name: 'Retail' }));
+    await screen.findByText('Book: Retail');
+
+    const field = locationTrigger().parentElement as HTMLElement;
+    expect(field.textContent).toMatch(/Unknown location/);
+    expect(document.body.innerHTML).not.toContain('w-brw-ib');
   });
 
   it('clearing the chip clears the picks and returns to Only', async () => {
