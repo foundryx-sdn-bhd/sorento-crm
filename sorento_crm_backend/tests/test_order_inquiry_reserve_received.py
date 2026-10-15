@@ -775,3 +775,113 @@ def test_rr31b_releasing_row_never_relinks_partly_free_target(ctx):
     )
     sc.db.commit()
     assert _target_links(sc, r.row) == [], _target_links(sc, r.row)
+
+
+# --------------------------------------------------------------------------- fix round 2
+def _chained_po(sc, *, spo_received, spo_qty=47):
+    """A closed, fully received PO line (47/47) plus an SPO allocation that ships THAT line
+    (`from_po_number` + `from_po_line_ref`). `spo_received` False -> pending, 0 received."""
+    po, line = _seed_po_line(
+        sc.db, company_id=sc.company, product_id=sc.product.id, qty_ordered="47",
+        qty_received="47",
+    )
+    assert line.line_status == "closed"
+    kwargs = dict(from_po_line_ref=line.source_ref, from_po_number=po.po_number)
+    if spo_received:
+        spo = _received_spo(sc, qty=spo_qty, **kwargs)
+    else:
+        spo = _seed_spo_line(
+            sc.db, company_id=sc.company, product_id=sc.product.id,
+            allocated_quantity=spo_qty, quantity_received=0, **kwargs,
+        )
+    return po, line, spo
+
+
+def test_rr6a_closed_po_with_open_chained_spo_is_not_received(ctx):
+    """AC-RR-6: a closed PO line whose chained SPO is still open is not requestable."""
+    sc = _scene(ctx)
+    po, line, _spo = _chained_po(sc, spo_received=False)
+    r = _row_with(sc, qty=44, state=INQUIRY_PLACED)
+    _link_po(sc, r.row, po, line, 44)
+    sc.db.commit()
+    with pytest.raises(AppException) as exc:
+        sc.svc.create_request(
+            inquiry_id=r.inquiry.id,
+            rows=[{"row_id": r.row.id, "qty_requested": Decimal("17"), "warehouse_id": sc.wh.id}],
+            note=None, actor_user_id=sc.uid,
+        )
+    assert exc.value.status_code == 409
+    assert exc.value.code == "reserve_request_nothing_remaining", exc.value.code
+
+
+def test_rr6a_payload_requestable_is_zero_for_open_chained_spo(worklist_api):
+    """AC-RR-6 (payload): reserve_requestable_qty is 0 for that row."""
+    from datetime import date
+
+    from app.models.project_so import OrderInquiry
+
+    client, db, company_id, seeded = worklist_api
+    inquiry = db.get(OrderInquiry, seeded["authored_row"].order_inquiry_id)
+    so_line = _line_on_authored_order(db, company_id, seeded, qty="44", day=13)
+    made = _purchase_order(db, company_id)
+    line = made["line"]
+    line.qty_ordered = Decimal("47")
+    line.qty_received = Decimal("47")
+    line.line_status = "closed"
+    line.source_ref = f"zzt-rr6-{uuid.uuid4().hex[:8]}"
+    po_number = db.execute(
+        sa.text("SELECT po_number FROM purchase_orders WHERE id = :i"), {"i": line.purchase_order_id}
+    ).scalar()
+    _seed_spo_line(
+        db, company_id=company_id, product_id=line.product_id, allocated_quantity=47,
+        quantity_received=0, from_po_line_ref=line.source_ref, from_po_number=po_number,
+    )
+    row = _row(
+        db, company_id, inquiry, so_line_id=so_line.id, item_code=f"{WL_MARKER}-RR6", qty="44",
+        state=INQUIRY_PLACED, delivery_date=date(2026, 4, 13), po_line_id=line.id,
+    )
+    db.commit()
+    body = client.get(LIST, params={"delivery_month": "2026-04"}).json()
+    entry = next(e for e in body["data"] if e["id"] == row.id)
+    got = entry.get("reserve_requestable_qty")
+    assert isinstance(got, (int, float)) and got == 0, got
+
+
+def test_rr6b_closed_po_with_received_chained_spo_stays_received(ctx):
+    """AC-RR-6: the chained SPO fully received keeps the PO line received; CS 17 releases."""
+    sc = _scene(ctx)
+    po, line, _spo = _chained_po(sc, spo_received=True)
+    r = _row_with(sc, qty=44, state=INQUIRY_PLACED)
+    _link_po(sc, r.row, po, line, 44)
+    sc.db.commit()
+    _request(sc, r.inquiry, r.row, 44)
+    _commit(sc, r.inquiry, r.row, 17, "only 17 free at BRW")
+    assert _target_links(sc, r.row) == []
+    released = _released(sc, r.row)
+    assert len(released) == 1 and released[0].po_line_id == line.id
+    assert Decimal(str(released[0].qty)) == Decimal("44")
+
+
+def test_rr6c_mixed_releases_only_the_truly_received_link(ctx):
+    """AC-RR-6: 20 on a received SPO + 24 on a closed PO line with an OPEN chained SPO:
+    requestable 20; CS 20 releases only the SPO link."""
+    sc = _scene(ctx)
+    r = _row_with(sc, qty=44, state=INQUIRY_PLACED)
+    spo_recv = _received_spo(sc, qty=20)
+    po, line, _open_spo = _chained_po(sc, spo_received=False)
+    _link_spo(sc, r.row, spo_recv, 20)
+    _link_po(sc, r.row, po, line, 24)
+    sc.db.commit()
+    with pytest.raises(AppException) as exc:
+        sc.svc.create_request(
+            inquiry_id=r.inquiry.id,
+            rows=[{"row_id": r.row.id, "qty_requested": Decimal("21"), "warehouse_id": sc.wh.id}],
+            note=None, actor_user_id=sc.uid,
+        )
+    assert exc.value.code == "reserve_request_qty_out_of_range", exc.value.code
+    sc.db.rollback()
+    _request(sc, r.inquiry, r.row, 20)
+    _commit(sc, r.inquiry, r.row, 20)
+    assert [lk.po_line_id for lk in _target_links(sc, r.row)] == [line.id]
+    released = _released(sc, r.row)
+    assert len(released) == 1 and released[0].spo_allocation_id == spo_recv.id

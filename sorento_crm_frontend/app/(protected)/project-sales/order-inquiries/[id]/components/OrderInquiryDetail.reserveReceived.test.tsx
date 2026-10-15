@@ -48,7 +48,17 @@ vi.mock('@/components/ui/tooltip', async () => {
   );
   return {
     ...actual,
-    TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    TooltipContent: ({
+      children,
+      className,
+    }: {
+      children: React.ReactNode;
+      className?: string;
+    }) => (
+      <div data-testid="tooltip-content" className={className}>
+        {children}
+      </div>
+    ),
   };
 });
 
@@ -297,6 +307,16 @@ describe('AC-RR-41: requestable <= 0 on a row with a PO/SPO link', () => {
     expect(
       screen.getByText('ZZT-OPEN: on a PO/SPO not received yet, nothing left to request'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('AC-RR-45: the disabled-action tooltip wraps inside the viewport', () => {
+  it('carries a max width and wraps (the repo convention: max-w-xs break-words)', async () => {
+    await selectOnly('ZZT-OPEN');
+    const text = screen.getByText('ZZT-OPEN: on a PO/SPO not received yet, nothing left to request');
+    const content = text.closest('[data-testid="tooltip-content"]') as HTMLElement;
+    expect(content.className).toMatch(/max-w-/);
+    expect(content.className).toMatch(/break-words|whitespace-normal/);
   });
 });
 
