@@ -59,6 +59,12 @@ vi.mock(
   },
 );
 
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/project-sales/series/s1',
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const listingPrefs = vi.fn((_args: unknown) => ({ resetToDefaults: async () => {}, isLoading: false }));
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
   useListingColumnPreferences: (args: unknown) => listingPrefs(args),
