@@ -26,9 +26,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -86,6 +87,13 @@ HEADER_KEYS = {
 
 def _marker() -> str:
     return f"ZZTSN{_u()[:6]}".upper()
+
+
+def _myt_ddmmyyyy(naive_utc: datetime) -> str:
+    """A stored naive-UTC `created_at` as the Malaysia calendar day, `ddmmyyyy`. Built here
+    rather than from the product helper, so a wrong conversion there cannot agree with itself."""
+    aware = naive_utc.replace(tzinfo=timezone.utc)
+    return aware.astimezone(ZoneInfo("Asia/Kuala_Lumpur")).strftime("%d%m%Y")
 
 
 def _uid_of(app, scm_app) -> str:
@@ -1119,7 +1127,12 @@ def test_export_route_queues_the_snapshot_download(scm_app, monkeypatch):
     row = db.execute(
         text("SELECT kind, filename, user_id FROM user_downloads WHERE id = :i"), {"i": body["id"]},
     ).mappings().first()
-    assert row["filename"] == f"stock-debt-snapshot-{date.today().strftime('%d%m%Y')}.xlsx"
+    # The expected day comes from the STORED row, never `date.today()`: the runner's clock and
+    # the DB's are not the same zone (release run 38821488694 failed on exactly that).
+    created_at = db.execute(
+        text("SELECT created_at FROM projects.stock_debt_snapshots WHERE id = :i"), {"i": sid},
+    ).scalar_one()
+    assert row["filename"] == f"stock-debt-snapshot-{_myt_ddmmyyyy(created_at)}.xlsx"
     assert row["user_id"] == user_id
     assert len(calls) == 1, calls
     from app.tasks.export_tasks import generate_stock_debt_snapshot_xlsx
@@ -1127,6 +1140,38 @@ def test_export_route_queues_the_snapshot_download(scm_app, monkeypatch):
     assert calls[0]["func"] is generate_stock_debt_snapshot_xlsx
     assert calls[0]["args"][0] == body["id"]
     assert calls[0]["kwargs"].get("queue_name") == "imports"
+
+
+def test_export_filename_dates_the_snapshot_in_malaysia_time(scm_app, monkeypatch):
+    """AC-16: the filename's day is `created_at` in Malaysia time. A snapshot taken at
+    17:30 UTC on 15 Oct is 01:30 on 16 Oct in the office, so the file says 16102026, whatever
+    zone the host or the DB session runs in."""
+    from app.services import queue_service
+
+    monkeypatch.setattr(
+        queue_service, "enqueue_job", lambda *a, **k: type("J", (), {"id": "x"})(),
+    )
+    app, db = _client(scm_app)
+    marker = _marker()
+    _book(db, marker)
+
+    with TestClient(app) as c:
+        sid = _taken(c, marker)["id"]
+        db.execute(
+            text(
+                "UPDATE projects.stock_debt_snapshots SET created_at = '2026-10-15 17:30:00' "
+                "WHERE id = :i"
+            ),
+            {"i": sid},
+        )
+        db.expire_all()
+        resp = c.post(f"{SNAP}/{sid}/export", json={"split": "supplier", "show_aux": False})
+
+    assert resp.status_code == 201, resp.text
+    filename = db.execute(
+        text("SELECT filename FROM user_downloads WHERE id = :i"), {"i": resp.json()["id"]},
+    ).scalar_one()
+    assert filename == "stock-debt-snapshot-16102026.xlsx"
 
 
 def test_export_is_refused_while_one_is_in_flight(scm_app, monkeypatch):
