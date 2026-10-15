@@ -477,3 +477,49 @@ def test_s1_a_consignment_borrow_from_another_bin_still_raises_its_order_back():
     assert len(rows) == 1, found
     assert found[0][0] == other_code
     assert found[0][1] == Decimal("10")
+
+
+# --------------------------------------------------------------------------- S2: returns land late
+
+from tests.test_ingest_autocount_consignments import (  # noqa: E402,F401 - env is a fixture
+    CG_INGEST,
+    CR_INGEST,
+    _cg,
+    _cg_line,
+    _cr,
+    _cr_line,
+    _line as _ingested_line,
+    env,
+)
+
+
+def _capture_plan_moves(monkeypatch):
+    import app.services.autocount_cancel_ingest_service as cancel_ingest
+
+    seen = []
+    monkeypatch.setattr(
+        cancel_ingest, "_raise_planning_change",
+        lambda db, moves, *, actor: seen.append(list(moves)),
+    )
+    return seen
+
+
+def test_s2_a_return_landing_after_planning_raises_a_plan_move_for_the_line(env, monkeypatch):
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, qty=10.0)])])
+    line = _ingested_line(env, "db1:CSGN:980001:981001")
+    seen = _capture_plan_moves(monkeypatch)
+
+    env.post(CR_INGEST, [_cr(details=[_cr_line(991001, 4, from_dtl=981001)])])
+
+    assert seen == [[(str(line.id), Decimal("10"), Decimal("6"))]]
+
+
+def test_s2_a_consignment_push_stating_transfered_qty_raises_a_plan_move_too(env, monkeypatch):
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, qty=10.0)])])
+    line = _ingested_line(env, "db1:CSGN:980001:981001")
+    seen = _capture_plan_moves(monkeypatch)
+
+    env.post(CG_INGEST, [_cg(details=[_cg_line(981001, qty=10.0, transferred=3)],
+                             modified="2026-10-03T10:00:00.000")])
+
+    assert seen == [[(str(line.id), Decimal("10"), Decimal("7"))]]
