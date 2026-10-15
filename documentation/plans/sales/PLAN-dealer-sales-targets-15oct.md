@@ -1,6 +1,6 @@
 # PLAN: dealer sales targets and incentive schemes (lane SALES-TARGET-DEALER)
 
-Status: **card and mock with the owner** (15 Oct). Track: full (new subject, tier model, Excel
+Status: **card and mock with the owner** (15 Oct; Q3 answered (a), Q1, Q2, Q4, Q5 and the mock open). Track: full (new subject, tier model, Excel
 import, migration). No code before the owner OKs the card and the mock.
 
 Parent plan: `PLAN-sales-targets-opportunities-26sep.md` (slice S7, dealer targets, line 1412).
@@ -62,7 +62,8 @@ points with a dated ratio); 3 Excel import by customer code with a Test preview.
    the RM value = points x the RM-per-point ratio. The ratio is a dated history per company; a
    new ratio never rewrites an earlier period (ruling 5).
 9. **Sales basis:** until the AutoCount invoices sync is live, achievement is the sales orders'
-   figure and every figure carries a "provisional" label (ruling 1). Slice 4 switches to
+   figure as is (tax included) and every figure carries the label "provisional, incl. tax"
+   (ruling 1; Q3 answered (a) by crew, 15 Oct). Slice 4 switches to
    invoiced minus credit notes, excluding tax.
 10. **Import:** keys on customer CODE. Every upload is a Test first (writes nothing); the preview
     lists per row: matched customer, name differs (warning, still imported), code not found
@@ -101,7 +102,8 @@ points with a dated ratio); 3 Excel import by customer code with a Test preview.
 - **Q2 Which tier pays.** (a) the highest tier reached pays its rate on all the period's sales;
   (b) each rate only on the slice above its threshold. Recommend (a): "threshold paying x%" in
   the Excel reads as (a), and it is the existing "Highest rate on everything" method.
-- **Q3 Provisional figure and tax.** SO lines hold only a tax-inclusive total. (a) show the SO
+- **Q3 Provisional figure and tax. ANSWERED (a)** by crew 15 Oct: SO figure as is, labelled
+  "provisional, incl. tax". Was: SO lines hold only a tax-inclusive total. (a) show the SO
   figure as is, labelled "provisional, incl. tax"; (b) strip a fixed SST rate. Recommend (a):
   (b) guesses per line, and slice 4 replaces it with the true net invoiced figure.
 - **Q4 Points.** Are the Mocha thresholds RM sales with the incentive paid in points (as the card
