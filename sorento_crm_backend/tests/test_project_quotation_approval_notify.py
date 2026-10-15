@@ -289,7 +289,8 @@ def test_b5_a_notification_backend_that_raises_never_fails_the_action(api, monke
     from app.services.notification_service import NotificationService
 
     client, db, company_id, _, project, product = api
-    _approver(db, f"{MARKER} Manager", company_id)
+    seller = _user(db, f"{MARKER} Seller")
+    manager = _approver(db, f"{MARKER} Manager", company_id)
     db.commit()
     attempts: list[str] = []
 
@@ -301,19 +302,23 @@ def test_b5_a_notification_backend_that_raises_never_fails_the_action(api, monke
 
     document = _quotation(client, project.id, product.id, BELOW_FLOOR)
     root = _root(project, document)
+    _act_as(seller)
     sent_for_approval = _send(client, db, root)
     assert sent_for_approval.status_code == 200, sent_for_approval.text
     assert sent_for_approval.json()["approval_status_key"] == "pending_approval"
     assert attempts, "the requested notification was never even attempted"
 
+    _act_as(manager)
     approved = client.post(f"{root}/approve")
     assert approved.status_code == 200, approved.text
     assert approved.json()["approval_status_key"] == "approved"
     assert APPROVED in attempts
 
+    _act_as(seller)
     second = _quotation(client, project.id, product.id, BELOW_FLOOR)
     root2 = _root(project, second)
     _send(client, db, root2)
+    _act_as(manager)
     rejected = client.post(f"{root2}/reject", json={"reason": "Too low."})
     assert rejected.status_code == 200, rejected.text
     assert rejected.json()["approval_status_key"] == "rejected"
