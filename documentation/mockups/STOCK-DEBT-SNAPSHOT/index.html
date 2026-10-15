@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stock Debt snapshots (mockup v1)</title>
+<title>Stock Debt snapshots (mockup v2)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), the same set the other lane mockups use */
 :root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;--success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--page:#f7f7f8}
@@ -142,10 +142,10 @@ table.dg tfoot .pin{background:#fafafa}
 </head>
 <body>
 <div class="doc">
-<h1>Stock Debt snapshots <span class="mut" style="font-size:14px;font-weight:400">mockup v1, STOCK-DEBT-SNAPSHOT</span></h1>
-<p class="intro">Built on the owner's card answers (Q1 to Q5 all a). Every figure is real: dev copy <code>sorento_cagent_stack</code>, 15 Oct 2026, read through the real Stock Debt service with the owner's view (Book Project, delivery 01/01/2023 to 31/05/2027, only in debt, stock and PO columns on). BRW-ED and PRJ-ED do not exist in dev, so Location is All. The decisions shown are examples a reader would mark; the snapshot name, time and creator are what saving now would write.</p>
+<h1>Stock Debt snapshots <span class="mut" style="font-size:14px;font-weight:400">mockup v2, STOCK-DEBT-SNAPSHOT</span></h1>
+<p class="intro"><b>v2 (owner, 15 Oct):</b> the snapshot's "Request CS to reserve" and the OI page's are ONE shared component, and both feed ONE parked queue, sent by the same "Send all parked requests to CS" (#1684) from either page: sections 6, 6b and 11. Built on the owner's card answers (Q1 to Q5 all a). Every figure is real: dev copy <code>sorento_cagent_stack</code>, 15 Oct 2026, read through the real Stock Debt service with the owner's view (Book Project, delivery 01/01/2023 to 31/05/2027, only in debt, stock and PO columns on). BRW-ED and PRJ-ED do not exist in dev, so Location is All. The decisions shown are examples a reader would mark; the snapshot name, time and creator are what saving now would write.</p>
 <div class="nav">
-<a href="#s1">1 Save snapshot</a><a href="#s2">2 Snapshots list</a><a href="#s3">3 Open a snapshot</a><a href="#s4">4 Mark a decision</a><a href="#s5">5 Drill: SO lines + OIs</a><a href="#s6">6 Request CS to reserve</a><a href="#s7">7 Other drill states</a><a href="#s8">8 Export</a><a href="#s9">9 Phone 375</a><a href="#s10">10 Reuse map</a>
+<a href="#s1">1 Save snapshot</a><a href="#s2">2 Snapshots list</a><a href="#s3">3 Open a snapshot</a><a href="#s4">4 Mark a decision</a><a href="#s5">5 Drill: SO lines + OIs</a><a href="#s6">6 Request CS to reserve</a><a href="#s6b">6b Park + send all, both ways</a><a href="#s7">7 Other drill states</a><a href="#s8">8 Export</a><a href="#s9">9 Phone 375</a><a href="#s10">10 Reuse map</a><a href="#s11">11 Shared pieces</a>
 </div>
 
 <!-- ============================================================ 1 -->
@@ -258,7 +258,7 @@ table.dg tfoot .pin{background:#fafafa}
 <thead><tr><th class="pin">Product</th><th>Decision</th><th class="r">BRW Retail On Hand Qty</th><th class="r">BRW Retail PO Qty</th><th class="r">BRW Retail Incoming Qty</th><th class="r">Dealer O/standing Qty</th><th class="r">Oct 26</th><th class="r">Nov 26</th><th class="r">Dec 26</th><th class="r">Jan 27</th><th class="r">Feb 27</th><th class="r">Mar 27</th><th class="r">Apr 27</th><th class="r">May 27</th><th class="r">TBA</th><th class="r">Total</th></tr></thead>
 <tbody>
 <tr><td class="pin sku">SRT23-CR</td><td><span class="dec" title="Already reserved on OI-2609-0733"><span class="pill secondary">Ignore</span></span></td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-633</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-633</td></tr>
-<tr><td class="pin sku">SRTWT5875</td><td><span class="dec"><span class="pill warning">Buy</span></span></td><td class="r num">24</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-30</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c red">-375</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-405</td></tr>
+<tr><td class="pin sku">SRTWT5875</td><td><span class="dec" title="Reserve the 24 in BRW, buy the rest"><span class="pill primary">Reserve</span><span class="mut">BRW</span></span></td><td class="r num">24</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c red">-30</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c red">-375</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-405</td></tr>
 <tr><td class="pin sku">SRTWT8203</td><td><span class="dec"><span class="pill primary">Reserve</span><span class="mut">BRW</span></span></td><td class="r num">41</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-1</td><td><span class="c red">-2</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td class="r num">0</td><td class="r num">-2</td></tr>
 <tr><td class="pin sku">C-FH14</td><td><span class="dec"><span class="pill warning">Buy</span></span></td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-10</td><td><span class="c green">+776</span></td><td><span class="c red">-2,812</span></td><td><span class="c red">-6,420</span></td><td><span class="c red">-4,187</span></td><td><span class="c red">-3,554</span></td><td><span class="c red">-1,906</span></td><td><span class="c red">-3,448</span></td><td><span class="c red">-2,087</span></td><td class="r num">0</td><td class="r num">-23,638</td></tr>
 <tr><td class="pin sku">SRTWT904-NL</td><td style="outline:2px solid #93c5fd;outline-offset:-2px"><span class="dec"><span class="pill primary">Reserve</span><span class="mut">BRW</span></span></td><td class="r num">972</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c green">0</span></td><td><span class="c red">-30</span></td><td><span class="c red">-27</span></td><td><span class="c red">-56</span></td><td><span class="c red">-56</span></td><td><span class="c red">-54</span></td><td class="r num">0</td><td class="r num">-223</td></tr>
@@ -308,8 +308,8 @@ table.dg tfoot .pin{background:#fafafa}
 
 <!-- ============================================================ 6 -->
 <section id="s6">
-<h2><span class="nb">6</span>Request CS to reserve: the OI page's own dialog, filled from the snapshot</h2>
-<p class="why">Same dialog, same rows, same Send / Park as on the OI page; nothing new is written. Rows are that OI's requestable rows for this product; Location defaults to the decision's pool when that pool is offered. After Send, Now reads "Reserve requested" on those lines.</p>
+<h2><span class="nb">6</span>Request CS to reserve: ONE shared component, opened from the snapshot</h2>
+<p class="why"><code>RequestReserveDialog</code> (section 11) is the component the OI page uses today, moved to <code>project-sales/_shared/components/</code> so both pages import the same file. Same rows, same "Park this first" tickbox (unticked on open, as on the OI page), same request. Rows are that OI's requestable rows for this product; Location defaults to the decision's pool when offered. Shown with Park ticked: the request is saved without an email and joins the same parked queue as requests parked on the OI page.</p>
 <div class="row"><div class="desk"><div class="screen"><div class="main stage" style="min-height:560px;background:#f4f4f5">
 <div class="overlay" style="position:absolute;padding-top:30px"><div class="dlg md">
 <div class="dh"><div class="dt">Request CS to reserve</div><span class="x">&#10005;</span></div>
@@ -327,10 +327,92 @@ table.dg tfoot .pin{background:#fafafa}
 </tbody></table></div>
 <div class="field"><label>Note (optional)</label><div class="inp ta"></div></div>
 </div>
-<div class="df"><span class="chk"><i></i>Park this first</span><div class="tools"><span class="btn">Cancel</span><span class="btn pri">Send request</span></div></div>
+<div class="df"><span class="chk"><i style="background:var(--primary);border-color:var(--primary)"></i>Park this first</span><div class="tools"><span class="btn">Cancel</span><span class="btn pri">Park request</span></div></div>
 </div></div>
 </div></div></div></div>
-<p class="note">OI-2609-0417's six rows, remaining 30 / 27 / 28 / 28 / 28 / 54 = 195 (the snapshot's short is 223: the 01/03/2027 row is 28 against an SO line of 56). Remaining, Requested default and the location options are what the OI page's dialog computes today; only the default location comes from the decision.</p>
+<p class="note">OI-2609-0417's six rows, remaining 30 / 27 / 28 / 28 / 28 / 54 = 195 (the snapshot's short is 223: the 01/03/2027 row is 28 against an SO line of 56). Remaining, Requested default and the location options are computed by the shared component exactly as on the OI page; only the default location comes from the decision. After Park request: toast "Request #1 parked. Send it from Order inquiries &gt; Actions." (today's text) and Now on the six lines reads <span class="pill warning">Reserve parked</span>.</p>
+</section>
+
+
+<!-- ============================================================ 6b -->
+<section id="s6b">
+<h2><span class="nb">6b</span>Park from either side, send all from either side: one queue</h2>
+<p class="why">Real dev case, both directions. (A) On the OI page, purchasing parks a request on OI-2609-0271 for SRTWT5875 (24 from BRW, the decision's note). (B) From the snapshot, the six SRTWT904-NL rows on OI-2609-0417 are parked (section 6). Both are the same kind of row in the same table (a request with <code>parked_at</code>), so: the snapshot drill shows OI-2609-0271's row as Reserve parked (section 7); the Order inquiries list shows both under Reserve = "Parked request to reserve"; and "Send all parked requests to CS (2)" counts both, on the Order inquiries Actions menu AND on the snapshot's Actions menu. Either one opens the same send dialog and sends one email per CS person.</p>
+
+<div class="row">
+<div class="desk" style="width:620px"><div class="screen"><div class="main stage" style="min-height:430px;background:#f4f4f5">
+<div class="mut" style="font-size:12px;margin-bottom:6px">(A) OI-2609-0271 page, Lines tab: SRTWT5875 01/01/2027 row ticked, Actions &gt; Request CS to reserve</div>
+<div class="overlay" style="position:absolute;padding:34px 12px"><div class="dlg">
+<div class="dh"><div class="dt">Request CS to reserve</div><span class="x">&#10005;</span></div>
+<div class="db">
+<div class="scroll" style="border:1px solid var(--border);border-radius:8px"><table class="dg" style="width:100%">
+<colgroup><col style="width:110px"><col style="width:96px"><col style="width:80px"><col style="width:80px"><col></colgroup>
+<thead><tr><th>Product</th><th>Delivery date</th><th class="r">Remaining</th><th class="r">Requested</th><th>Location</th></tr></thead>
+<tbody><tr><td class="sku">SRTWT5875</td><td>01/01/2027</td><td class="r num">405</td><td class="r"><span class="inp" style="height:26px;justify-content:flex-end">24</span></td><td><span class="inp" style="height:26px">BRW <span class="mut">available 24</span><span class="x2">&#9662;</span></span></td></tr></tbody>
+</table></div>
+<div class="field"><label>Note (optional)</label><div class="inp ta"></div></div>
+</div>
+<div class="df"><span class="chk"><i style="background:var(--primary);border-color:var(--primary)"></i>Park this first</span><div class="tools"><span class="btn">Cancel</span><span class="btn pri">Park request</span></div></div>
+</div></div>
+</div></div><div class="cap">Same component as section 6 (<code>RequestReserveDialog</code>), opened from the OI page</div></div>
+
+<div class="desk" style="width:640px"><div class="screen"><div class="main">
+<div class="mut" style="font-size:12px;margin-bottom:6px">Order inquiries list after (A) and (B), Reserve = Parked request to reserve, Actions open</div>
+<div class="card" style="position:relative">
+<div class="hd"><div class="tools"><span class="search" style="width:150px">Search</span><span class="chip on">Reserve: Parked request to reserve (2) &#10005;</span></div><div class="tools"><span class="btn">Actions &#9662;</span></div></div>
+<div class="pop" style="right:10px;top:44px;width:300px;padding:6px;gap:0">
+<div style="padding:7px 8px;border-radius:6px;background:var(--muted);font-size:12.5px">Send all parked requests to CS (2)</div>
+<div style="padding:7px 8px;font-size:12.5px;color:var(--muted-fg)" title="Nothing of yours is parked">Send all parked reserves to purchasing (0)</div>
+</div>
+<div class="scroll"><table class="dg" style="width:100%">
+<colgroup><col style="width:104px"><col style="width:84px"><col><col style="width:160px"></colgroup>
+<thead><tr><th>OI</th><th>Sales order</th><th>Customer</th><th>Reserve</th></tr></thead>
+<tbody>
+<tr><td><span class="lk">OI-2609-0271</span></td><td>SO391092</td><td title="ASAL BINA SDN BHD (PROJECT)">ASAL BINA SDN BHD (PROJECT)</td><td><span class="pill warning">Parked request to reserve</span><div class="mut" style="font-size:11.5px">You</div></td></tr>
+<tr><td><span class="lk">OI-2609-0417</span></td><td>SO383872</td><td title="GLOBAL INGRESS SDN BHD (PROJECT)">GLOBAL INGRESS SDN BHD (PROJECT)</td><td><span class="pill warning">Parked request to reserve</span><div class="mut" style="font-size:11.5px">You</div></td></tr>
+</tbody></table></div>
+</div>
+<p class="note">Today's list, filter, Reserve column and Actions menu (#1684), unchanged. OI-2609-0417's request came from the snapshot; nothing marks where it came from.</p>
+<div class="mut" style="font-size:12px;margin:16px 0 6px">Snapshot page, same Actions menu, same count</div>
+<div class="card" style="position:relative">
+<div class="hd"><div class="tools"><span class="search" style="width:150px">Search product</span><span class="chip">Decision</span></div><div class="tools"><span class="btn">Actions &#9662;</span><span class="btn">Export</span></div></div>
+<div class="pop" style="right:80px;top:44px;width:300px;padding:6px;gap:0">
+<div style="padding:7px 8px;border-radius:6px;background:var(--muted);font-size:12.5px">Send all parked requests to CS (2)</div>
+<div style="padding:7px 8px;font-size:12.5px;color:var(--muted-fg)" title="Nothing of yours is parked">Send all parked reserves to purchasing (0)</div>
+</div>
+<div style="height:96px"></div>
+</div>
+<p class="note">The menu items are the same hook as the list's (section 11), each shown only to whom it is shown today (ACKNOWLEDGE / RESERVE); N is the presser's own parked items, wherever they were parked.</p>
+</div></div></div>
+</div>
+
+<div class="row" style="margin-top:20px">
+<div class="desk"><div class="screen"><div class="main stage" style="min-height:640px;background:#f4f4f5">
+<div class="overlay" style="position:absolute;padding-top:24px"><div class="dlg md">
+<div class="dh"><div class="dt">Send all parked requests to CS</div><span class="x">&#10005;</span></div>
+<div class="db">
+<div class="scroll" style="border:1px solid var(--border);border-radius:8px"><table class="dg" style="width:100%">
+<colgroup><col style="width:180px"><col style="width:200px"><col style="width:140px"><col style="width:100px"></colgroup>
+<thead><tr><th>To</th><th>Cc</th><th class="r">Order inquiries</th><th class="r">Lines</th></tr></thead>
+<tbody><tr><td>Jayson Foundryx</td><td>You</td><td class="r num">2</td><td class="r num">7</td></tr></tbody>
+<tfoot><tr><td colspan="2">1 email</td><td class="r num">2</td><td class="r num">7</td></tr></tfoot>
+</table></div>
+<div style="display:flex;gap:22px;border-bottom:1px solid var(--border);font-size:13px"><span style="padding:6px 0;border-bottom:2px solid var(--primary);font-weight:500">Jayson Foundryx</span></div>
+<div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-size:13px;background:#fff">
+<div class="mut" style="font-size:12px">Subject: <b style="color:var(--foreground)">Reserve requests: 2 order inquiries (You)</b></div>
+<div style="font-size:16px;font-weight:600;margin:10px 0 4px">2 order inquiries need your reserve</div>
+<div class="mut" style="font-size:12.5px;margin-bottom:8px">2 order inquiries, 7 lines</div>
+<table class="dg" style="width:100%;margin-bottom:12px"><colgroup><col style="width:120px"><col style="width:100px"><col><col style="width:60px"></colgroup>
+<thead><tr><th>OI NO</th><th>S/O NO</th><th>CUSTOMER</th><th class="r">LINES</th></tr></thead>
+<tbody><tr><td>OI-2609-0271</td><td>SO391092</td><td>ASAL BINA SDN BHD (PROJECT)</td><td class="r num">1</td></tr><tr><td>OI-2609-0417</td><td>SO383872</td><td>GLOBAL INGRESS SDN BHD (PROJECT)</td><td class="r num">6</td></tr></tbody></table>
+<span class="btn pri">View order inquiries that need your reserve</span>
+</div>
+</div>
+<div class="df"><span></span><div class="tools"><span class="btn">Cancel</span><span class="btn pri">Send 1 email</span></div></div>
+</div></div>
+</div></div><div class="cap"><code>components/common/ParkedSendDialog.tsx</code>, opened from either Actions menu; the email is the automation's own template (<code>park_send.render_preview</code>)</div></div>
+</div>
+<p class="note">Recipients are what the dev automation "Order inquiry: request CS to reserve" resolves today (include raiser + include actor): both OIs were raised by Jayson Foundryx, so one email To him, Cc the presser. After Send, both OIs read "Needs reserve" on the list and the snapshot's Now reads <span class="pill warning">Reserve requested</span> on the seven lines.</p>
 </section>
 
 <!-- ============================================================ 7 -->
@@ -339,15 +421,15 @@ table.dg tfoot .pin{background:#fafafa}
 <p class="why">A row that cannot be requested shows why through its Now state; an OI with nothing requestable has no Request button. Lines that were on no OI sit in a "No OI" group with their SO link only.</p>
 <div class="row"><div class="desk"><div class="screen"><div class="main" style="display:flex;flex-direction:column;gap:18px">
 
-<div><div class="mut" style="font-size:12px;margin-bottom:6px">SRTWT5875 &middot; all months (decision: Buy)</div>
+<div><div class="mut" style="font-size:12px;margin-bottom:6px">SRTWT5875 &middot; all months (decision: Reserve, BRW) after its Jan row was parked on the OI page (section 6b)</div>
 <div class="ogrp" style="margin-bottom:8px">
-<div class="gh"><div class="l"><span class="lk"><b>OI-2609-0271</b> &#8599;</span><span class="mut">SO391092 &middot; 2 lines</span><span class="pill secondary dot">Raised</span></div><div class="tools"><span class="btn sm">Request CS to reserve</span></div></div>
+<div class="gh"><div class="l"><span class="lk"><b>OI-2609-0271</b> &#8599;</span><span class="mut">SO391092 &middot; 2 lines</span><span class="pill secondary dot">Raised</span></div><div class="tools"></div></div>
 <div class="scroll"><table class="dg">
 <colgroup><col style="width:90px"><col style="width:76px"><col style="width:70px"><col style="width:86px"><col style="width:64px"><col style="width:66px"><col style="width:82px"><col style="width:66px"><col style="width:120px"><col style="width:74px"><col style="width:60px"><col style="width:70px"><col style="width:170px"></colgroup>
 <thead><tr><th>Sales order</th><th>Agent</th><th>Bin</th><th>Due</th><th class="r">Ordered</th><th class="r">Delivered</th><th class="r">Outstanding</th><th class="r">Assigned</th><th>Covered by</th><th>Status</th><th class="r">Short</th><th class="r">OI row</th><th>Now</th></tr></thead>
 <tbody>
 <tr><td><span class="lk">SO391092</span></td><td>SHAHRUL</td><td>BRW-NTC</td><td>24/08/2026</td><td class="r num">30</td><td class="r num">0</td><td class="r num">30</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">30</td><td class="r num"><span class="lk">30</span></td><td><span class="pill secondary">Open 30</span> <span class="pill success">Placed</span></td></tr>
-<tr><td><span class="lk">SO391092</span></td><td>SHAHRUL</td><td>BRW-NTC</td><td>01/01/2027</td><td class="r num">405</td><td class="r num">30</td><td class="r num">375</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">375</td><td class="r num"><span class="lk">405</span></td><td><span class="pill secondary">Open 375</span> <span class="pill secondary">Raised</span></td></tr>
+<tr><td><span class="lk">SO391092</span></td><td>SHAHRUL</td><td>BRW-NTC</td><td>01/01/2027</td><td class="r num">405</td><td class="r num">30</td><td class="r num">375</td><td class="r num">0</td><td class="mut">-</td><td><span class="pill destructive">Short</span></td><td class="r num">375</td><td class="r num"><span class="lk">405</span></td><td><span class="pill secondary">Open 375</span> <span class="pill warning">Reserve parked</span></td></tr>
 </tbody></table></div></div>
 <div class="ogrp">
 <div class="gh"><div class="l"><b>No OI</b><span class="mut">1 line</span></div></div>
@@ -356,7 +438,7 @@ table.dg tfoot .pin{background:#fafafa}
 <tbody>
 <tr><td><span class="lk">SO381945</span></td><td>ERIC NG</td><td>BRW-BB</td><td>01/07/2026</td><td class="r num">4</td><td class="r num">0</td><td class="r num">4</td><td class="r num">4</td><td><span class="lk">On hand BRW-BB</span> 4</td><td><span class="pill success">Covered</span></td><td class="r num">0</td><td class="r mut">-</td><td><span class="pill secondary">Open 4</span></td></tr>
 </tbody></table></div></div>
-<p class="note">The Placed row (24/08/2026) is not requestable; Request CS to reserve on this OI offers the Raised row only: remaining 405 (OI row) while the snapshot says short 375 (30 already delivered).</p>
+<p class="note">The Placed row (24/08/2026) was never requestable, and the Raised row now has an open (parked) request, so this OI has nothing left to request: no button. Before the park it offered the Raised row only, remaining 405 (OI row) against the snapshot's short 375 (30 already delivered).</p>
 </div>
 
 <div><div class="mut" style="font-size:12px;margin-bottom:6px">SRT23-CR &middot; Oct 26 (decision: Ignore, "Already reserved on OI-2609-0733")</div>
@@ -409,7 +491,7 @@ table.dg tfoot .pin{background:#fafafa}
 <thead><tr><th>Product</th><th class="r">BRW Retail On Hand Qty</th><th class="r">BRW Retail PO Qty</th><th class="r">BRW Retail Incoming Qty</th><th class="r">Dealer O/standing Qty</th><th class="r">Oct 26</th><th class="r">Nov 26</th><th class="r">Dec 26</th><th class="r">Jan 27</th><th class="r">Feb 27</th><th class="r">Mar 27</th><th class="r">Apr 27</th><th class="r">May 27</th><th class="r">TBA</th><th class="r">Total</th><th>Decision</th><th>From</th><th>Note</th></tr></thead>
 <tbody>
 <tr><td>SRT23-CR</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-633</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-633</td><td>Ignore</td><td></td><td>Already reserved on OI-2609-0733</td></tr>
-<tr><td>SRTWT5875</td><td class="r num">24</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-30</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-375</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-405</td><td>Buy</td><td></td><td></td></tr>
+<tr><td>SRTWT5875</td><td class="r num">24</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-30</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-375</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-405</td><td>Reserve</td><td>BRW</td><td>Reserve the 24 in BRW, buy the rest</td></tr>
 <tr><td>SRTWT8203</td><td class="r num">41</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-1</td><td class="r num">-2</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-2</td><td>Reserve</td><td>BRW</td><td></td></tr>
 <tr><td>C-FH14</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-10</td><td class="r num">776</td><td class="r num">-2,812</td><td class="r num">-6,420</td><td class="r num">-4,187</td><td class="r num">-3,554</td><td class="r num">-1,906</td><td class="r num">-3,448</td><td class="r num">-2,087</td><td class="r num">0</td><td class="r num">-23,638</td><td>Buy</td><td></td><td></td></tr>
 <tr><td>SRTWT904-NL</td><td class="r num">972</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">0</td><td class="r num">-30</td><td class="r num">-27</td><td class="r num">-56</td><td class="r num">-56</td><td class="r num">-54</td><td class="r num">0</td><td class="r num">-223</td><td>Reserve</td><td>BRW</td><td>Reserve all 223 from BRW</td></tr>
@@ -479,9 +561,32 @@ table.dg tfoot .pin{background:#fafafa}
 <tr><td>Decision pills</td><td><code>components/ui/badge.tsx</code> light variants</td></tr>
 <tr><td>Drill dialog, Demand columns</td><td><code>StockDebtCellDialog.tsx:316-455</code> (<code>PanelDataGrid</code>), SO link <code>/scm/sales-orders/&lt;id&gt;</code> (<code>:329-337</code>), Covered by via <code>OrderInquiryDocumentLink</code></td></tr>
 <tr><td>OI links</td><td>OI page deep link <code>/project-sales/order-inquiries/&lt;id&gt;?row=&lt;row&gt;</code> (<code>scm/sales-orders/[id]/components/SalesOrderDetail.tsx:1258</code>, <code>order-inquiries/[id]/components/OrderInquiryDetail.tsx:210-212</code>)</td></tr>
-<tr><td>Request CS to reserve</td><td><code>ReserveRequestDialog</code> (<code>order-inquiries/[id]/components/ReserveRequestDialog.tsx:60-73</code>), <code>useCreateOrderInquiryReserveRequest</code> (<code>_shared/hooks/useOrderInquiry.ts:199</code>) &rarr; <code>POST /order-inquiries/{id}/reserve-requests</code> (<code>app/api/v1/projects/order_inquiries.py:1210</code>); requestable rule <code>order_inquiry_reserve_service.py:65-66, 475-500</code></td></tr>
+<tr><td>Request CS to reserve (snapshot drill AND OI page)</td><td>ONE component <code>project-sales/_shared/components/RequestReserveDialog.tsx</code> (moved from <code>order-inquiries/[id]/components/ReserveRequestDialog.tsx</code>, with the row building now at <code>OrderInquiryDetail.tsx:304-330</code>); writes through <code>useCreateOrderInquiryReserveRequest</code> (<code>_shared/hooks/useOrderInquiry.ts:199</code>) &rarr; <code>POST /order-inquiries/{id}/reserve-requests</code> (<code>app/api/v1/projects/order_inquiries.py:1210</code>)</td></tr>
+<tr><td>Park this first</td><td>The tickbox already inside that dialog (#1684); <code>park</code> on <code>CreateReserveRequestIn</code> (<code>app/schemas/project_order_inquiry.py:1458</code>)</td></tr>
+<tr><td>Send all parked requests to CS</td><td><code>project-sales/_shared/hooks/useParkedSendActions.tsx</code> (extracted from <code>OrderInquiryHeadersList.tsx:224-256, 721-735</code>) + <code>components/common/ParkedSendDialog.tsx</code>; <code>GET .../reserve-requests/parked/preview</code> + <code>POST .../parked/send</code> (<code>order_inquiries.py:1337-1370</code>), <code>app/services/park_send.py</code></td></tr>
+<tr><td>Which rows can be requested</td><td><code>project-sales/_shared/lib/reserveEligibility.ts</code> (<code>rowRemaining</code>, <code>reserveIneligibleReason</code> moved from <code>OrderInquiryDetail.tsx:101-130</code>), the FE mirror of <code>order_inquiry_reserve_service.py:65-66, 475-500</code></td></tr>
 <tr><td>Export</td><td><code>StockDebtExportPopover</code> split choices, <code>_render_workbook</code> (<code>stock_debt_service.py:2677</code>) through My Downloads</td></tr>
 </tbody></table>
+</section>
+
+<!-- ============================================================ 11 -->
+<section id="s11">
+<h2><span class="nb">11</span>Shared pieces: two perspectives, one component, one queue</h2>
+<p class="why">Nothing about requesting or sending is built twice. The OI page keeps behaving exactly as today; it just imports the shared files instead of holding them. The snapshot only adds where it opens them from.</p>
+<div style="display:grid;grid-template-columns:1fr 1.25fr 1fr;gap:14px;max-width:1280px;align-items:stretch;font-size:12.5px">
+<div class="card" style="padding:12px"><b>OI perspective (today, #1684)</b>
+<ul style="margin:8px 0 0;padding-left:18px;line-height:1.7"><li>OI page, Lines tab: tick rows &rarr; Actions &gt; Request CS to reserve</li><li>Order inquiries list: Reserve filter + column</li><li>Order inquiries list: Actions &gt; Send all parked requests to CS (N)</li></ul></div>
+<div class="card" style="padding:12px;border-color:#bfdbfe;background:var(--primary-soft)"><b>Shared (one copy each)</b>
+<ul style="margin:8px 0 0;padding-left:18px;line-height:1.7">
+<li><code>_shared/components/RequestReserveDialog.tsx</code>: rows, Requested, Location, Note, Park this first, Send / Park</li>
+<li><code>_shared/lib/reserveEligibility.ts</code>: which rows can be requested, remaining</li>
+<li><code>_shared/hooks/useParkedSendActions.tsx</code>: the two Actions items with N, opening <code>components/common/ParkedSendDialog.tsx</code></li>
+<li>Backend, unchanged: reserve-requests POST (with <code>park</code>), parked preview / send, <code>park_send.py</code>, the one parked queue (<code>order_inquiry_reserve_requests.parked_at</code>)</li>
+</ul></div>
+<div class="card" style="padding:12px"><b>Stock Debt perspective (new)</b>
+<ul style="margin:8px 0 0;padding-left:18px;line-height:1.7"><li>Snapshot drill: per OI group &rarr; Request CS to reserve (this product's requestable rows, decision's pool as default)</li><li>Snapshot page: Actions &gt; Send all parked requests to CS (N)</li><li>Now column: the request's state, wherever it was made</li></ul></div>
+</div>
+<p class="note">The snapshot drill loads the OI's live rows with the OI page's own query (<code>useOrderInquiryHeaderLines</code>) when the dialog opens, so the dialog is fed the same rows the OI page feeds it. Moving the files is the only change to the OI side; its existing tests move with them and must stay green.</p>
 </section>
 </div>
 </body>

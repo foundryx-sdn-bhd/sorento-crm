@@ -1,6 +1,6 @@
 # PLAN: Stock Debt snapshots (STOCK-DEBT-SNAPSHOT)
 
-Status: card answered (Q1 to Q5 all a, 15 Oct); mock v1 filed, awaiting owner approval. Track: L
+Status: card answered (Q1 to Q5 all a, 15 Oct); mock v2 filed (owner v1 note: one shared request component + the #1684 park / send-all path from both perspectives), awaiting owner approval. Track: L
 (migration, new screens, new routes). UAC: `stock-debt-snapshot-acceptance-criteria.md`.
 Card: `CARD-stock-debt-snapshot-15oct.md`. Mock: `documentation/mockups/STOCK-DEBT-SNAPSHOT/index.html`.
 
@@ -89,13 +89,23 @@ search is by product, and the largest dev row has 672 lines. Simplest thing that
 2. Extract the drill's demand column defs from `StockDebtCellDialog.tsx` into
    `lib/stockDebtDemandColumns.tsx`; the live drill keeps identical output.
 3. Live board: Snapshots link + `SaveSnapshotDialog` in the `primaryAction` fragment.
-4. `snapshots/page.tsx` (list), `snapshots/[id]/page.tsx` (`SnapshotClient`), components
-   `SnapshotDecisionPopover`, `SnapshotDrillDialog` (groups by OI, Now badges, reserve button),
-   reusing `ReserveRequestDialog` by import (no move), `useReserveRowOptions`,
-   `useCreateOrderInquiryReserveRequest`. Service `services/stockDebtSnapshotService.ts` via
+4. Shared with the OI side (owner, 15 Oct, mock v2 section 11), moved not copied:
+   - `ReserveRequestDialog.tsx` + the row building at `OrderInquiryDetail.tsx:304-330` ->
+     `project-sales/_shared/components/RequestReserveDialog.tsx` (props: `inquiryId`, live
+     `OrderInquiryWorklistRow[]`, optional `defaultWarehouseId`, open state); the OI page and the
+     snapshot drill both render it;
+   - `rowRemaining` / `reserveIneligibleReason` (`OrderInquiryDetail.tsx:101-130`) ->
+     `project-sales/_shared/lib/reserveEligibility.ts`;
+   - the Actions items + `ParkedSendDialog` wiring (`OrderInquiryHeadersList.tsx:224-256,
+     721-735`) -> `project-sales/_shared/hooks/useParkedSendActions.tsx`; the OI list and the
+     snapshot page both use it.
+   No backend change on the OI side: one parked queue, one send.
+5. `snapshots/page.tsx` (list), `snapshots/[id]/page.tsx` (`SnapshotClient`), components
+   `SnapshotDecisionPopover`, `SnapshotDrillDialog` (groups by OI, Now badges, reserve button
+   opening the shared dialog fed by `useOrderInquiryHeaderLines(oi_id)`). Service `services/stockDebtSnapshotService.ts` via
    `lib/api-client` (`extractApiError`, `buildDataGridParams`), hooks
    `hooks/useStockDebtSnapshots.ts`.
-5. Pages gated on `projects.stock_debt.view` like `stock-debt/page.tsx:15`. No sidebar change.
+6. Pages gated on `projects.stock_debt.view` like `stock-debt/page.tsx:15`. No sidebar change.
 
 ## Slices (one lane, one PR, one coder kept alive)
 
@@ -135,8 +145,11 @@ vitest: `SaveSnapshotDialog.test.tsx` (default name, posts current filters, erro
 filter params, no projected switch), `SnapshotDecisionPopover.test.tsx` (From only for Reserve,
 clear), `SnapshotDrillDialog.test.tsx` (grouping by OI, No OI last, line on two OIs in both, Now
 badges, reserve button only with a requestable row AND permission, dialog rows = requestable rows
-only, default location = decision pool), `stockDebtColumns.test.tsx` (live board output
-unchanged).
+only, default location = decision pool, Park tickbox present and unticked), `SnapshotClient`
+Actions menu (both send items with N from the reserve summary, greyed at 0, opening
+`ParkedSendDialog`), `stockDebtColumns.test.tsx` (live board output unchanged), and the moved OI
+suites re-pointed and green (`ReserveRequestDialog*`, `OrderInquiryDetail*`,
+`OrderInquiryHeadersList*` send-parked tests).
 
 ## Open / risks
 

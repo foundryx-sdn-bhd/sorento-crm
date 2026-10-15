@@ -94,8 +94,10 @@ API-key variant, the same rule the export route follows (`app/api/v1/projects/st
   answers 404 on every route.
 - AC-18 Without `projects.stock_debt.view`: 403 on every route. An API-key principal cannot call
   POST / PUT / export.
-- AC-19 The OI reserve request itself is unchanged: the snapshot page calls the existing
-  `POST /order-inquiries/{id}/reserve-requests` with its own gate.
+- AC-19 The OI reserve request and its batch send are unchanged on the backend: the snapshot page
+  calls the existing `POST /order-inquiries/{id}/reserve-requests` (with `park`), and the
+  existing parked preview / send routes (`order_inquiries.py:1337-1370`, `park_send.py`), each
+  with its own gate. There is one parked queue.
 
 ## Frontend
 
@@ -128,12 +130,27 @@ API-key variant, the same rule the export route follows (`app/api/v1/projects/st
   `/project-sales/order-inquiries/<oi_id>?row=<row_id>`) and "Now" (badges from AC-12). The OI
   number in the group header links to the OI page.
 - AC-F6 An OI group shows "Request CS to reserve" when at least one of its rows for this product
-  is `requestable` and the user holds the OI acknowledge permission. It opens the existing
-  `ReserveRequestDialog` (`ReserveRequestDialog.tsx:60-73`) with exactly those rows (remaining =
-  the row's `remaining`), location options from `useReserveRowOptions`, the default location the
-  decision's pool when offered, else the hook's default. `onSend` is
-  `useCreateOrderInquiryReserveRequest(oi_id)`; on success the drill's lines query is invalidated
-  so Now shows the new reserve state.
+  is `requestable` and the user holds the OI acknowledge permission. It opens the ONE shared
+  request component, `project-sales/_shared/components/RequestReserveDialog.tsx` (owner 15 Oct:
+  "share the same component from these two perspectives"), moved from
+  `order-inquiries/[id]/components/ReserveRequestDialog.tsx` together with the row building now
+  inline at `OrderInquiryDetail.tsx:304-330`. Its rows are the OI's live rows
+  (`useOrderInquiryHeaderLines(oi_id)`, the OI page's own query) narrowed to this product's frozen
+  rows that `reserveEligibility.ts` (moved from `OrderInquiryDetail.tsx:101-130`) accepts; the
+  default location is the decision's pool when offered, else the component's default. "Park
+  this first" behaves exactly as on the OI page (unticked on open). It writes through
+  `useCreateOrderInquiryReserveRequest(oi_id)` (same toast); on success the drill's lines query
+  is invalidated so Now shows Reserve parked / Reserve requested.
+- AC-F6b The OI page uses the same moved files with no visible change: its existing vitest suites
+  (`ReserveRequestDialog*.test.tsx`, `OrderInquiryDetail*.test.tsx`) move or re-point and stay
+  green.
+- AC-F6c The snapshot page toolbar has the same "Actions" menu as the Order inquiries list:
+  "Send all parked requests to CS (N)" (acknowledge) and "Send all parked reserves to purchasing
+  (N)" (reserve), N = the presser's own parked items wherever they were parked, greyed at 0 with
+  today's reason, opening `components/common/ParkedSendDialog.tsx`. Both pages get them from one
+  shared hook, `project-sales/_shared/hooks/useParkedSendActions.tsx`, extracted from
+  `OrderInquiryHeadersList.tsx:224-256, 721-735`. A request parked from the snapshot is counted
+  and sent from the Order inquiries list too, and vice versa.
 - AC-F7 Usable without clipping at 375 and 1280: the grid scrolls sideways with Product pinned;
   the drill's tables scroll on their own; dialogs fit the viewport.
 - AC-F8 No UUIDs on screen; no explanatory text inside the UI.
