@@ -1050,7 +1050,8 @@ def _checked_ids(db: Session, model: Any, ids: Sequence[str], *, code: str, noun
     wanted = {str(i) for i in ids if i}
     try:
         for i in wanted:
-            uuid.UUID(i)
+            if str(uuid.UUID(i)) != i.lower():
+                raise ValueError(i)
         found = (
             {row[0] for row in db.query(model.id).filter(model.id.in_(wanted)).all()}
             if wanted
