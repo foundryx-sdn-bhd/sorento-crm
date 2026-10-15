@@ -139,6 +139,12 @@ options, and R5's fixtures always started from that shape, which the live parser
 - FIX: one granted-report check (grant in `granted_reveals` and the report dataset is chat or sales), applied in
   `pv2_hook.customer_scope` and at turn.py:644 before `held_to_no_customer`; no grant -> held as R5.
 
+## Lead rulings
+- Confirm vs group (15 Oct): the owner rule wins. A family confirm prints the group name only (no account list, no
+  count) with options yes / no, so MEMORY's numbering equals the print (I4). An account is picked only when the user
+  names one (R5-3). test_r6_a passes either way; test_r6_c pins the group-name-only print.
+- Q5(a): R5 hold tests g7, f4_1, f4_2, f4_3 re-scoped (setup only, 9cbbb40441) to an unlinked contact WITHOUT the grant.
+
 ## Slice order (red commit, then fix commit, each)
 0 contract test (red) -> A (clarify first-class, options stored, reask only with an open question, `_without_picked`)
 -> B (reference options) -> C (group = one customer) -> E (bridge codes + scrub at `_run_stages`) -> Q5(a) -> D (if time).
