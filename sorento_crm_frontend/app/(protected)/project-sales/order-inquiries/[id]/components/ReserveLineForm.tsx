@@ -23,8 +23,9 @@ import { bareLocationCode } from '../../../_shared/lib/orderInquiryReserve';
  * owns the staged map). Replaces `ReserveRowDialog`'s per-row `ReserveRowSection`.
  *
  * Reserve mode: Location is a `SearchableSelect` (options = the row's own pools with
- * availability), Reserved defaults to `min(requested, available at the chosen pool)`
- * and recomputes to that ceiling every time Location changes. Amend mode: Location is
+ * availability shown as information), Reserved defaults to the request. Owner, 16 Oct: never
+ * capped by CRM stock - AutoCount may already hold the reservation while CRM stock lags, so
+ * any qty up to the request is allowed whatever the pool shows. Amend mode: Location is
  * locked read-only text (the row's own answered location never changes on an amend),
  * Reserved starts at the row's own net reserved.
  *
@@ -35,20 +36,8 @@ import { bareLocationCode } from '../../../_shared/lib/orderInquiryReserve';
  * The caller mounts this only once the row's pool options have loaded (6e.4, S2), so
  * the reserve-mode prefill is read off real availability, never an empty map.
  */
-/** OI-BULK-RESERVE (AC-BR-10): the form's reserve rules, shared with Decide > Reserve...
- * (`BulkReserveLinesDialog.tsx`) so one line and many lines can never disagree. */
-
-/** What Reserved auto-sets to for a location: the request, capped at what that pool has
- * (0 when it reports nothing). No location (the server defaults it) is the request itself. */
-export function reserveCeiling(
-  requested: number,
-  availableQtyByLocation: Record<string, number>,
-  locationId: string,
-): number {
-  if (!locationId) return requested;
-  const available = availableQtyByLocation[locationId];
-  return Math.max(0, available != null ? Math.min(requested, available) : 0);
-}
+/** OI-BULK-RESERVE (AC-BR-10): the form's reserve rules, shared with the editable Reserve (N)
+ * popup (`ReserveConfirmDialog.tsx`) so one line and many lines can never disagree. */
 
 /** A typed Reserved, kept within 0..max. */
 export function clampReservedQty(raw: string, max: number): number {
@@ -132,26 +121,14 @@ export function ReserveLineForm({
   const requested = Number(requestedQty || '0');
   const max = maxQty != null ? Number(maxQty) : requested;
 
-  // What Reserved auto-sets to, on mount and on every Location switch: the request,
-  // capped at what the chosen pool actually has (0 when that pool reports nothing). No
-  // location at all (the server defaults it) prefills the request itself.
-  const ceilingFor = React.useCallback(
-    (locationId: string): number =>
-      mode === 'amend' ? requested : reserveCeiling(requested, availableQtyByLocation, locationId),
-    [mode, requested, availableQtyByLocation],
-  );
-
   const [location, setLocation] = React.useState(() => defaultLocationId ?? '');
   const [qty, setQty] = React.useState(() =>
-    mode === 'amend'
-      ? Math.max(0, Number(initialQty || '0'))
-      : Math.max(0, ceilingFor(defaultLocationId ?? '')),
+    mode === 'amend' ? Math.max(0, Number(initialQty || '0')) : Math.max(0, requested),
   );
   const [reason, setReason] = React.useState('');
 
   function handleLocationChange(value: string) {
     setLocation(value);
-    setQty(Math.max(0, ceilingFor(value)));
   }
 
   function handleQtyChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -243,7 +220,7 @@ export function ReserveLineForm({
             Cancel
           </Button>
           <Button type="button" onClick={handleStage} disabled={!canStage}>
-            Stage
+            {mode === 'amend' ? 'Amend' : 'Reserve'}
           </Button>
         </DialogFooter>
       </DialogContent>

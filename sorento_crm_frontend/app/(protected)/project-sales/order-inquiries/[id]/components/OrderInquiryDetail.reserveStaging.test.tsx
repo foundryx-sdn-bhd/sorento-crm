@@ -760,7 +760,7 @@ describe('6e.4 review round: declined lines, the action column gate, amend prefi
     expect((screen.getByLabelText('Reserved') as HTMLInputElement).value).toBe('30');
     // 40 is below the 50 requested in total: a reason is needed.
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '40' } });
-    expect(screen.getByRole('button', { name: /^stage$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^amend$/i })).toBeDisabled();
   });
 
   it('AC-RS-85c: a later balance request counts once - 36 asked / 10 got, then 26 asked reads Requested 36', async () => {
@@ -790,7 +790,7 @@ describe('6e.4 review round: declined lines, the action column gate, amend prefi
     expect(within(dialog).getByText('Requested 36 across 2 requests')).toBeInTheDocument();
     // Net 36 = requested 36: nothing to explain.
     expect(within(dialog).queryByLabelText(/reason/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^stage$/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^amend$/i })).toBeEnabled();
   });
 
   it('a commit whose response touched no request toasts Nothing to change', async () => {
@@ -801,7 +801,7 @@ describe('6e.4 review round: declined lines, the action column gate, amend prefi
     fireEvent.click(within(gridRowFor('ZZT-RESERVED')).getByLabelText('Amend reserve'));
     await screen.findByRole('dialog', { name: /ZZT-RESERVED/i });
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'same' } });
-    fireEvent.click(screen.getByRole('button', { name: /^stage$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^amend$/i }));
     fireEvent.click(await screen.findByRole('button', { name: /^reserve \(1\)$/i }));
     await confirmReserve();
 

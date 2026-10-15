@@ -61,7 +61,7 @@ export function BulkRejectReserveDialog({
             Cancel
           </Button>
           <Button type="button" disabled={!trimmed} onClick={() => onConfirm(trimmed)}>
-            {`Stage ${noun}`}
+            {`Reject ${noun}`}
           </Button>
         </DialogFooter>
       </DialogContent>
