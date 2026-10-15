@@ -29,6 +29,7 @@ from app.services.chatbot.pv2.apply import (
     DEFAULT_POLICY,
     ClarifyPolicy,
     ResolverLike,
+    answers_by_number,
     apply_turn,
     reads_as_answer,
     shown_row,
@@ -246,7 +247,11 @@ def _judged_asks(out: Any, pending_in: Any, held: Any = None, rows: list[Any] | 
     asks = []
     for ask in getattr(out, "asks", None) or []:
         if pending_in is not None and reads_as_answer(ask, pending_in, held):
-            asks.append(ask.model_copy(update={"act": "answers_bot_question"}))  # the open list owns the pick
+            ask = ask.model_copy(update={"act": "answers_bot_question"})  # the open list owns the pick
+        if pending_in is not None and ask.act == "answers_bot_question":
+            if answers_by_number(ask, pending_in):
+                ask = ask.model_copy(update={"domain": None})  # judged by the question's own ask, as apply runs it
+            asks.append(ask)
             continue
         picked = shown_row(rows or [], ask)
         asks.append(ask if picked is None else ask.model_copy(update={"entities": [picked, *ask.entities]}))

@@ -411,6 +411,12 @@ def _picks_open_question(ask: Ask, pending: PendingQuestion | None) -> bool:
     )
 
 
+def answers_by_number(ask: Ask, pending: PendingQuestion | None) -> bool:
+    """R5 fix 3 / 4: a printed number on a question that numbers its options: that question's answer, whose own
+    ask runs (the parser's domain on it is ignored by apply and by the grant pre-check alike)."""
+    return _number(ask) is not None and bool(_numbered(pending))
+
+
 def reads_as_answer(ask: Ask, pending: PendingQuestion | None, held: Any) -> bool:
     """R5-1 / R5-5: a refine or a new topic that picks the open question is read as its answer (apply_turn and the
     grant pre-check read it alike, both with the held the turn started with). A number on a numbered question is
@@ -418,7 +424,7 @@ def reads_as_answer(ask: Ask, pending: PendingQuestion | None, held: Any) -> boo
     question's own (its origin's, else held's): "no, what promotions are on" stays a new ask (R5 fix 1)."""
     if ask.act not in ("refines_held", "new_topic") or not _picks_open_question(ask, pending):
         return False
-    if _number(ask) is not None and _numbered(pending):
+    if answers_by_number(ask, pending):
         return True
     origin = valid_origin(pending.origin) if pending is not None else None
     own = origin.domain if origin is not None and origin.domain else getattr(held, "domain", None)
