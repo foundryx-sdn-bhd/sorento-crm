@@ -72,3 +72,34 @@ def test_a_bare_number_tagged_with_an_ungranted_domain_still_runs_the_menus_stoc
     assert res.direct_reply != SALES_REPORT_NOT_ENABLED_MESSAGE, res.direct_reply
     assert res.verdict is not None and res.verdict["domain_hint"] == "inventory"
     assert [e["canonical_code"] for e in res.verdict["entities"] if e["hint"] == "product"] == [menu[1]]
+
+
+# ------------------------------------------------------------------ fix round 6: a refine-answer's shown row is judged
+
+
+def _so_row_state(open_question):
+    st = _lim_confirm() if open_question else mk_state(mk_held("order"))
+    st.last_rows = [option("1", "SO410001", {"kind": "row", "row_kind": "sales_order", "of": 1})]
+    return st
+
+
+def test_a_refine_answer_with_a_row_pick_on_an_so_row_is_refused_before_any_lookup_without_the_so_grant():
+    """RED: the reply names a customer beside the number, so apply reads it as a refine and applies the shown SO row;
+    the pre-check skipped `shown_row` for every answer, so only v1's fetch gate would catch the lost grant."""
+    from app.services.chatbot.lanes.business.fetch import SO_NOT_ENABLED_MESSAGE
+
+    r = FakeResolver({})
+    parsed = out(ask(act="answers_bot_question", row_pick=1, answer={"option_key": None, "free_value": None},
+                     entities=[entity("customer", phrase="ABC")]))
+    res = _run(_so_row_state(True), parsed, r)
+    assert res.direct_reply == SO_NOT_ENABLED_MESSAGE, (res.direct_reply, res.verdict)
+    assert res.actions == [] and r.calls == [], r.calls
+
+
+def test_guard_the_same_row_pick_with_no_open_question_is_refused_as_before():  # guard: passes today
+    from app.services.chatbot.lanes.business.fetch import SO_NOT_ENABLED_MESSAGE
+
+    r = FakeResolver({})
+    res = _run(_so_row_state(False), out(ask(act="refines_held", domain="order", row_pick=1)), r)
+    assert res.direct_reply == SO_NOT_ENABLED_MESSAGE, res.direct_reply
+    assert res.actions == [] and r.calls == []
