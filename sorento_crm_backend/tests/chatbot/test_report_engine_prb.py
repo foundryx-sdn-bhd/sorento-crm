@@ -724,8 +724,9 @@ def test_b15_near_miss_a_parse_that_fills_the_basis_is_still_the_answer(console)
 
 
 # --------------------------------------------------------------------------- #
-# S2d (AC-B6 / AC-B15): an answering turn that also names ANOTHER axis re-targets the held ask
-# (live R25: "how about by brand instead?" under the open top selling question)
+# S2d guard: the slot's axis wins on an answering turn.
+# The parser's group_by on an answering turn is noise 12 of 14 live turns (PR-B replay 16 Oct);
+# the slot's axis wins.
 # --------------------------------------------------------------------------- #
 
 OCT = {"date_filter_start": "2026-10-01", "date_filter_end": "2026-10-31"}
@@ -752,20 +753,6 @@ def _axis_turn(session_factory, monkeypatch, **keys):
     return ts_turn(session_factory, monkeypatch, _parser_output(**base), "how about by brand instead?")
 
 
-def test_b6d_an_answer_naming_another_axis_retargets_the_held_ask_to_a_brand_ranking(
-    session_factory, monkeypatch, route
-) -> None:
-    _open_ts_after_metric(session_factory, monkeypatch)
-    reply, captured = _axis_turn(session_factory, monkeypatch, group_by="brand")
-    assert ts_calls(captured) == [], f"the item list ran, the axis was ignored: {captured}"
-    report = [a for n, a in captured if n == "crm_report_ask"]
-    assert len(report) == 1, (reply, [n for n, _a in captured])
-    a = report[0]
-    assert a["group_by"] == "brand" and a["top_n"] == 5, a
-    assert a["measure"] == "qty" and a["basis"] == "delivered", a
-    assert a["date_from"] == "2026-10-01" and a["date_to"] == "2026-10-31", a
-
-
 @pytest.mark.parametrize("group_by", [None, "product", "item"], ids=["no_axis", "same_axis_product", "same_axis_item"])
 def test_b6d_near_miss_no_axis_or_the_same_axis_is_a_plain_answer(session_factory, monkeypatch, route, group_by) -> None:
     _open_ts_after_metric(session_factory, monkeypatch)
@@ -775,19 +762,38 @@ def test_b6d_near_miss_no_axis_or_the_same_axis_is_a_plain_answer(session_factor
     assert not [a for n, a in captured if n == "crm_report_ask"], captured
 
 
-def test_b6d_the_sales_ranking_slot_retargets_too(console) -> None:
-    console.say(_bare(top_n=5, **THIS_YEAR), "top 5 customers 2026")
-    text, calls = console.say(
-        _answer(group_by="sales_agent", top_n=5, measure="qty", basis="delivered", ranking_refine=True), "by sales agent instead"
-    )
-    assert len(calls) == 1, (text, calls)
-    a = calls[0]
-    assert a["group_by"] == "sales_agent" and a["top_n"] == 5 and a["measure"] == "qty", a
-    assert a["date_from"] == "2026-01-01" and a["date_to"] == "2026-12-31", a
-
-
 @pytest.mark.parametrize("group_by", [None, "customer"], ids=["no_axis", "same_axis"])
 def test_b6d_near_miss_sales_ranking_same_or_no_axis_is_a_plain_answer(console, group_by) -> None:
     console.say(_bare(top_n=5, **THIS_YEAR), "top 5 customers 2026")
     text, calls = console.say(_answer(group_by=group_by, measure="qty", basis="delivered"), "qty delivered")
     assert len(calls) == 1 and calls[0]["group_by"] == "customer" and calls[0]["top_n"] == 5, (text, calls)
+
+
+def test_b6d_guard_a_noisy_group_by_on_a_count_answer_keeps_the_held_axis_R16(console) -> None:
+    """The parser's group_by on an answering turn is noise 12 of 14 live turns (PR-B replay 16 Oct);
+    the slot's axis wins."""
+    first, c1 = console.say(_bare(top_n=None, measure="qty", basis="delivered", **THIS_YEAR), "top customers 2026")
+    assert c1 == [] and first.strip() == TOPN_Q, first
+    text, calls = console.say(_answer(top_n=5, group_by="sales_agent"), "top 5")
+    assert len(calls) == 1, (text, calls)
+    assert calls[0]["group_by"] == "customer" and calls[0]["top_n"] == 5, calls
+
+
+def test_b6d_guard_a_noisy_group_by_on_a_basis_answer_keeps_the_top_selling_items_R12_R17(
+    session_factory, monkeypatch, route
+) -> None:
+    """The parser's group_by on an answering turn is noise 12 of 14 live turns (PR-B replay 16 Oct);
+    the slot's axis wins."""
+    _open_ts_basis(session_factory, monkeypatch)
+    reply, captured = ts_turn(
+        session_factory, monkeypatch,
+        _parser_output(
+            message_type="business_query", domain_hint="order", intent_hint="check_order", entities=[],
+            order_status="sales_ranking", group_by="category", basis="delivered", rank_by=None, top_n=None,
+            measure=None, ranking_refine=None,
+        ),
+        "delivered",
+    )
+    calls = ts_calls(captured)
+    assert len(calls) == 1 and calls[0]["basis"] == "delivered" and calls[0].get("group") in (None, "item"), (reply, captured)
+    assert not [a for n, a in captured if n == "crm_report_ask"], captured
