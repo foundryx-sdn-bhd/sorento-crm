@@ -73,7 +73,7 @@ def _dealer_body(accounts, **extra):
         "end_date": "2026-12-31",
         "split_every": 3,
         "split_unit": "month",
-        "commission_method": "retroactive",
+        "commission_method": "retroactive" if extra.get("tiers") else "none",
         "threshold_unit": "amount",
         "tiers_per_period": True,
         "tiers": [],
@@ -415,6 +415,7 @@ def test_edit_dealer_accounts_and_tiers(api):
     created = client.post(BASE, json=_dealer_body([a1])).json()
     res = client.patch(f"{BASE}/{created['id']}", json={
         "customer_ids": [a1.id, a3.id], "payout_customer_id": a3.id, "rounding": "ringgit",
+        "commission_method": "retroactive",
         "tiers": [{"period_start": "2026-01-01", "threshold": 10, "rate": 1}],
     })
     assert res.status_code == 200, res.text

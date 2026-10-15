@@ -18,7 +18,11 @@ credited to the subject:
   team even when two members share a person label. The window always reads the SALES ORDER's
   date, also for DO-dated quantities.
 
-Both come down to credit rows `(agent_id, valid_from, valid_to)` per period, built in Python
+- **A dealer** (lane SALES-TARGET-DEALER): the order's `customer_id` is one of the target's
+  counted accounts, whatever its agent, any date. Its credit rows carry the customer in the
+  agent's place and `credit_kind` 1, so they meet lines by customer, never by agent.
+
+All come down to credit rows `(agent_id, valid_from, valid_to)` per period, built in Python
 from the small agent and membership tables; periods with the same rows share one credit group,
 and each (group, agent)'s windows are merged so an order date falls inside at most one.
 
@@ -102,6 +106,8 @@ class PeriodSpec:
     basis: str
     product_scope: str
     credits: List[Credit] = field(default_factory=list)
+    #: 0: credits name agents; 1: credits name customers (a dealer's accounts).
+    credit_kind: int = 0
 
 
 # --------------------------------------------------------------------------------------
@@ -134,6 +140,14 @@ def agent_credits(db: Session, company_id: str, agent_ids: Iterable[str]) -> Dic
     return {
         agent_id: [(sibling, None, None) for sibling in sorted(siblings)]
         for agent_id, siblings in label_siblings(db, company_id, agent_ids).items()
+    }
+
+
+def dealer_credits(accounts: Dict[str, List[str]]) -> Dict[str, List[Credit]]:
+    """A dealer target counts every order of its accounts, any agent, any date."""
+    return {
+        target_id: [(customer_id, None, None) for customer_id in sorted(set(ids))]
+        for target_id, ids in accounts.items()
     }
 
 
@@ -179,8 +193,11 @@ def achievement_value_expr(metric: str, basis: str, delivered_qty, line_total=No
 # --------------------------------------------------------------------------------------
 
 
-def _credit_groups(specs: List[PeriodSpec]) -> Tuple[Dict[str, int], List[Tuple[int, str, date, date]]]:
-    """Each period's credit group, and `(group, agent_id, valid_from, valid_to)` per group.
+def _credit_groups(
+    specs: List[PeriodSpec],
+) -> Tuple[Dict[str, int], List[Tuple[int, int, str, date, date]]]:
+    """Each period's credit group, and `(group, kind, key, valid_from, valid_to)` per group (the
+    key an agent, or a customer when `kind` is 1).
 
     Periods with the same credit rows (every period of one target: they share its subject)
     share one group, so a line meets one credit row per subject crediting its agent, not one
@@ -195,30 +212,41 @@ def _credit_groups(specs: List[PeriodSpec]) -> Tuple[Dict[str, int], List[Tuple[
     for s in specs:
         key = tuple(
             sorted(
-                {(a, f or date.min, t or date.max) for a, f, t in s.credits},
+                {(s.credit_kind, a, f or date.min, t or date.max) for a, f, t in s.credits},
             )
         )
         group_of[s.period_id] = groups.setdefault(key, len(groups))
     rows = []
     for key, group in groups.items():
-        by_agent: Dict[str, List[Tuple[date, date]]] = {}
-        for agent_id, valid_from, valid_to in key:
-            by_agent.setdefault(agent_id, []).append((valid_from, valid_to))
-        for agent_id, spans in by_agent.items():
+        by_agent: Dict[Tuple[int, str], List[Tuple[date, date]]] = {}
+        for kind, agent_id, valid_from, valid_to in key:
+            by_agent.setdefault((kind, agent_id), []).append((valid_from, valid_to))
+        for (kind, agent_id), spans in by_agent.items():
             spans.sort()
             start, end = spans[0]
             for next_start, next_end in spans[1:]:
                 if next_start <= end:
                     end = max(end, next_end)
                 else:
-                    rows.append((group, agent_id, start, end))
+                    rows.append((group, kind, agent_id, start, end))
                     start, end = next_start, next_end
-            rows.append((group, agent_id, start, end))
+            rows.append((group, kind, agent_id, start, end))
     return group_of, rows
 
 
 def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) -> Dict[str, Decimal]:
-    """`{period_id: achieved}` for every spec, one statement for all of them.
+    """`{period_id: achieved}` for every spec, one statement for all of them."""
+    out: Dict[str, Decimal] = {s.period_id: Decimal("0") for s in specs}
+    for period_id, by_customer in achieved_by_period_and_account(db, specs, company_id).items():
+        out[period_id] = sum(by_customer.values(), Decimal("0"))
+    return out
+
+
+def achieved_by_period_and_account(
+    db: Session, specs: List[PeriodSpec], company_id: str
+) -> Dict[str, Dict[Optional[str], Decimal]]:
+    """`{period_id: {customer_id: achieved}}` for every spec, one statement for all of them
+    (the customer of the line's sales order; None when the order has none).
 
     Steps (review round 2, B1; #1319), each reading a small VALUES, one earlier step once, or an
     index: `period_days` (every day of every period), `agent_lines` (the credited agents' live
@@ -228,7 +256,7 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
     group, date) through the credit rows of the line's agent: lines dated in the period, DO
     quantity dated in the period, and all linked DO quantity on the line's own period.
     """
-    out: Dict[str, Decimal] = {s.period_id: Decimal("0") for s in specs}
+    out: Dict[str, Dict[Optional[str], Decimal]] = {s.period_id: {} for s in specs}
     group_of, credit_rows = _credit_groups(specs)
     if not credit_rows:
         return out
@@ -283,13 +311,17 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
         # One VALUES per use: a VALUES construct cannot be aliased, it renders its own name.
         return values(
             column("credit_group", Integer),
+            column("ckind", Integer),
             column("agent_id", _UUID),
             column("valid_from", Date),
             column("valid_to", Date),
             name=name,
         ).data(credit_rows)
 
-    agent_ids = sorted({row[1] for row in credit_rows})
+    keys_by_kind: Dict[int, List[str]] = {}
+    for row in credit_rows:
+        keys_by_kind.setdefault(row[1], []).append(row[2])
+    keys_by_kind = {kind: sorted(set(keys)) for kind, keys in keys_by_kind.items()}
     delivered = [s for s in specs if s.basis == "delivered"]
 
     # The four order tables are read as tables, not mapped classes: the company rule is named
@@ -305,8 +337,10 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
     # 160,000 lines (#1319, measured), where the key walk takes milliseconds.
     mine = SOL.company_id == company_id
 
-    def credited_lines():
-        # The credited agents' live lines with a date: the sales report's predicate.
+    def credited_lines(kind: int):
+        # The credited agents' (kind 0) or customers' (kind 1) live lines with a date: the sales
+        # report's predicate. `agent_id` carries the credit key, the agent or the customer.
+        credit_key = SO.sales_agent_id if kind == 0 else SO.customer_id
         return (
             select(
                 SOL.id.label("sol_id"),
@@ -320,13 +354,15 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
                 case((mine, SOL.line_total), else_=0).label("line_total"),
                 mine.label("mine"),
                 SO.order_date.label("order_date"),
-                SO.sales_agent_id.label("agent_id"),
+                credit_key.label("agent_id"),
+                literal(kind, Integer).label("ckind"),
+                SO.customer_id.label("customer_id"),
             )
             .select_from(SalesOrder.__table__)
             .join(SalesOrderLine.__table__, SOL.sales_order_id == SO.id)
             .where(
                 SO.company_id == company_id,
-                SO.sales_agent_id.in_(agent_ids),
+                credit_key.in_(keys_by_kind[kind]),
                 SO.status != "cancelled",
                 SOL.line_status != "cancelled",
                 # AC-CONSIGN-CRM Q5 a: a consignment is not a sale.
@@ -339,7 +375,13 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
     in_span = SO.order_date.between(
         min(s.period_start for s in specs), max(s.period_end for s in specs)
     )
-    dated = credited_lines().where(in_span)
+    kinds = sorted(keys_by_kind)
+
+    def every_kind(*criteria):
+        parts = [credited_lines(kind).where(*criteria) for kind in kinds]
+        return parts[0] if len(parts) == 1 else union_all(*parts)
+
+    dated = every_kind(in_span)
     if delivered:
         # A line ordered outside that span still counts where a DO dated inside a delivered
         # period delivers it; no company here, this only bounds which lines are read and
@@ -360,8 +402,8 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
                 )
             )
         )
-        by_do = credited_lines().where(not_(in_span), delivered_in_span.is_(true()))
-        # The two halves split on the order date, so no line is read twice.
+        by_do = every_kind(not_(in_span), delivered_in_span.is_(true()))
+        # The two halves split on the order date, so no line is read twice per credit kind.
         agent_lines = union_all(dated, by_do).cte("agent_lines")
     else:
         agent_lines = dated.cte("agent_lines")
@@ -372,15 +414,22 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
         agent_lines.c.line_total,
         agent_lines.c.order_date,
         agent_lines.c.agent_id,
+        agent_lines.c.ckind,
+        agent_lines.c.customer_id,
     )
 
-    def in_periods(stmt, name: str, agent_id, order_date, on_date):
+    def in_periods(stmt, name: str, agent_id, order_date, on_date, ckind):
         """`stmt` joined to the periods containing `on_date` whose subject credits `agent_id`
         on `order_date` (the credit window always reads the SALES ORDER's date). The merged
         credit windows match an order date at most once, so no row repeats."""
         pd, cr = period_days.alias(name), credits(f"c{name}")
         stmt = stmt.join(
-            cr, and_(cr.c.agent_id == agent_id, order_date.between(cr.c.valid_from, cr.c.valid_to))
+            cr,
+            and_(
+                cr.c.ckind == ckind,
+                cr.c.agent_id == agent_id,
+                order_date.between(cr.c.valid_from, cr.c.valid_to),
+            ),
         ).join(pd, and_(pd.c.credit_group == cr.c.credit_group, pd.c.day == on_date))
         return stmt, (pd.c.period_id, pd.c.target_id, pd.c.metric, pd.c.basis, pd.c.product_scope), pd
 
@@ -409,7 +458,8 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
             else_=0,
         )
         prior = func.sum(live_qty).over(
-            partition_by=OL.sales_order_line_id,
+            # A line credited both by agent and by customer is read once per kind.
+            partition_by=(OL.sales_order_line_id, agent_lines.c.ckind),
             order_by=(ORD.order_date.asc().nullslast(), ORD.id, OL.line_sequence),
             rows=(None, -1),
         )
@@ -435,11 +485,14 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
             do_counted.c.line_total,
             do_counted.c.order_date,
             do_counted.c.agent_id,
+            do_counted.c.ckind,
+            do_counted.c.customer_id,
         )
         # The capped DO quantity per (period, line), bucketed by the DO date.
         by_do_rows, do_period, pd = in_periods(
             select(do_counted).select_from(do_counted), "pd",
             do_counted.c.agent_id, do_counted.c.order_date, do_counted.c.do_date,
+            do_counted.c.ckind,
         )
         sources.append(
             by_do_rows.with_only_columns(
@@ -460,13 +513,14 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
         )
         linked_rows, linked_period, pl = in_periods(
             select(linked).select_from(linked), "pl",
-            linked.c.agent_id, linked.c.order_date, linked.c.order_date,
+            linked.c.agent_id, linked.c.order_date, linked.c.order_date, linked.c.ckind,
         )
         sources.append(
             linked_rows.with_only_columns(
                 *linked_period, linked.c.sol_id,
                 linked.c.product_id, linked.c.qty_ordered, linked.c.qty_delivered,
                 linked.c.line_total, linked.c.order_date, linked.c.agent_id,
+                linked.c.ckind, linked.c.customer_id,
                 literal(0).label("own"), literal(0).label("by_do"), linked.c.qty.label("all_linked"),
             ).where(pl.c.basis == "delivered")
         )
@@ -475,6 +529,7 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
     own_rows, own_period, _ = in_periods(
         select(agent_lines).select_from(agent_lines), "pb",
         agent_lines.c.agent_id, agent_lines.c.order_date, agent_lines.c.order_date,
+        agent_lines.c.ckind,
     )
     sources.append(
         own_rows.with_only_columns(
@@ -486,7 +541,7 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
     keys = (
         rows.c.period_id, rows.c.target_id, rows.c.metric, rows.c.basis, rows.c.product_scope,
         rows.c.sol_id, rows.c.product_id, rows.c.qty_ordered, rows.c.qty_delivered,
-        rows.c.line_total, rows.c.order_date, rows.c.agent_id,
+        rows.c.line_total, rows.c.order_date, rows.c.agent_id, rows.c.ckind, rows.c.customer_id,
     )
     pairs = (
         select(
@@ -520,7 +575,9 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
         else_=0,
     )
 
-    stmt = select(pairs.c.period_id, func.sum(value)).group_by(pairs.c.period_id)
+    stmt = select(pairs.c.period_id, pairs.c.customer_id, func.sum(value)).group_by(
+        pairs.c.period_id, pairs.c.customer_id
+    )
     scoped = sorted({s.target_id for s in specs if s.product_scope != "all"})
     if scoped:
         # An all-products target reads no scope at all.
@@ -532,8 +589,9 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
                 ),
             )
         )
-    for period_id, total in db.execute(stmt).all():
-        out[str(period_id)] = Decimal(total or 0)
+    for period_id, customer_id, total in db.execute(stmt).all():
+        key = None if customer_id is None else str(customer_id)
+        out[str(period_id)][key] = Decimal(total or 0)
     return out
 
 
