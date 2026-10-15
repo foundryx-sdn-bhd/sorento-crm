@@ -117,6 +117,6 @@ It writes `products.price_tag_description` (`app/models/product.py:279`) and not
 
 ## Rendering check (crew, Q5)
 
-- AC-26 After the dev-copy apply, a price tag that binds `Price tag description` for
+- AC-26 (verified 15 Oct on the crew test copy, PR #1701 comment: five separate lines) After the dev-copy apply, a price tag that binds `Price tag description` for
   `SRTWC286-SH-P` shows the text on separate lines (not run together). If it does not, this is
   reported before any prod run.

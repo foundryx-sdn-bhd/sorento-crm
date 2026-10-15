@@ -1,6 +1,6 @@
 # PLAN: price tag descriptions from the flyer product-code sheet
 
-Status: Build, fix round 1 (reviewer NOT READY: 3 untested rules; security: 2 should-fix, 2 nits). Track: full L (bulk prod data write, owner runs it). Lane: PRICETAG-DESC-IMPORT.
+Status: Review complete (reviewer READY round 2, security CLEAN on 8cc21afc4, render check YES); awaiting crew dev-copy apply + owner hand test. Track: full L (bulk prod data write, owner runs it). Lane: PRICETAG-DESC-IMPORT.
 UAC: `pricetag-desc-import-15oct-acceptance-criteria.md` (alongside).
 
 ## 1. Journey
