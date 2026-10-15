@@ -444,3 +444,36 @@ def test_b1_confirming_the_consignments_own_proposal_writes_no_buy_and_no_purcha
     assert body["lines_decided"] == 1
     assert inquiry_rows == 0
     assert (planned, plannable) == (1, 1)
+
+
+# --------------------------------------------------------------------------- S1
+
+
+def test_s1_a_consignment_borrow_from_another_bin_still_raises_its_order_back():
+    """Only the line's OWN bin is exempt. A Borrow from a planned bin elsewhere is stock that
+    left somebody else's pile, so purchasing is told, exactly once."""
+    from app.models.project_so import INQUIRY_CANCELLED
+
+    with blank_session() as db:
+        world = _consign_world(db, con_stock=0)
+        other = _warehouse(db, f"ZZB{_uid()[:4]}-BB")
+        _stock(db, world["product"], other, on_hand=10)
+        db.commit()
+        _confirm(db, world, borrow=[{
+            "source": "other_location",
+            "warehouse_id": str(other.id),
+            "qty": "10",
+            "reason": "Free stock at another bin.",
+        }])
+        rows = (
+            db.query(OrderInquiryRow)
+            .filter(OrderInquiryRow.verb == "ORDER_BACK",
+                    OrderInquiryRow.state != INQUIRY_CANCELLED)
+            .all()
+        )
+        other_code = other.warehouse_code
+        found = [(r.stock_location, r.qty) for r in rows]
+
+    assert len(rows) == 1, found
+    assert found[0][0] == other_code
+    assert found[0][1] == Decimal("10")
