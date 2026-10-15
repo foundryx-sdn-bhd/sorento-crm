@@ -21,6 +21,8 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
+if not (REPO / ".git").exists():  # backend image has no .git / other compose files
+    pytest.skip("needs the full git checkout of the repo", allow_module_level=True)
 
 # (compose file relative to REPO, service) pairs that are MEANT to face the network: the
 # all-in-one compose's frontend nginx is that stack's edge. Everything else binds loopback.
