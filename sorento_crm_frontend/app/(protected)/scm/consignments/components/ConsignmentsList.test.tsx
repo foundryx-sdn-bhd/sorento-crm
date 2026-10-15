@@ -280,7 +280,11 @@ describe('CONSIGN-PLAN UAC-11: Actions menu', () => {
     fireEvent.click(await screen.findByLabelText('Select ZZT-CG-0001'));
     await openActions();
     fireEvent.click(await screen.findByRole('menuitem', { name: /^Reset planning \(1\)$/ }));
-    expect(await screen.findByRole('dialog')).toHaveTextContent('ZZT-CG-0001');
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('ZZT-CG-0001');
+    // Said in the list's own words, and no sales-order upload rewind (a consignment is never uploaded).
+    expect(dialog).toHaveTextContent('The consignment and its lines stay.');
+    expect(dialog).not.toHaveTextContent('sales-order upload');
     fireEvent.click(screen.getByRole('button', { name: 'Reset planning' }));
     await waitFor(() => expect(resetPlanning).toHaveBeenCalledWith({ id: 'cg-1', rewindBook: false }));
   });

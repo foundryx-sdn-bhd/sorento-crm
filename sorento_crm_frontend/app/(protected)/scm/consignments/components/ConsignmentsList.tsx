@@ -285,6 +285,7 @@ export function ConsignmentsList() {
       selectedCount: selectedSoNumbers.length,
       canPlan,
       max: MAX_PLAN_SELECTION,
+      noun: 'consignments',
     },
     {
       onPlan: () =>
@@ -405,6 +406,8 @@ export function ConsignmentsList() {
         open={resetOpen}
         onOpenChange={setResetOpen}
         orders={selectedOrders}
+        docLabel="consignment"
+        offerRewind={false}
         onDone={() => {
           setRowSelection({});
           void refetch();

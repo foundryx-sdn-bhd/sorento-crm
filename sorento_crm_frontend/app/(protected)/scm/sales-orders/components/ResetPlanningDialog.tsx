@@ -19,11 +19,17 @@ export function ResetPlanningDialog({
   onOpenChange,
   orders,
   onDone,
+  docLabel = 'sales order',
+  offerRewind = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orders: Array<{ id: string; so_number: string }>;
   onDone: () => void;
+  /** What one order is called on the calling list ("consignment"). */
+  docLabel?: string;
+  /** The upload rewind only exists for the sales-order book; a consignment is never uploaded. */
+  offerRewind?: boolean;
 }) {
   const [rewindBook, setRewindBook] = useState(false);
   const resetMut = useResetSalesOrderPlanning();
@@ -46,26 +52,31 @@ export function ResetPlanningDialog({
             </span>{' '}
             back to never planned? Every order inquiry, link, allocation, stock
             transfer and confirmed revision on{' '}
-            {orders.length === 1 ? 'it' : 'them'} is removed. The sales order
-            and its lines stay. This cannot be undone.
+            {orders.length === 1 ? 'it' : 'them'} is removed. The {docLabel} and
+            its lines stay. This cannot be undone.
           </span>
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={rewindBook}
-              onChange={(e) => setRewindBook(e.target.checked)}
-            />
-            <span>
-              Also put the lines a sales-order upload changed back to before the
-              first upload
-            </span>
-          </label>
+          {offerRewind ? (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={rewindBook}
+                onChange={(e) => setRewindBook(e.target.checked)}
+              />
+              <span>
+                Also put the lines a sales-order upload changed back to before
+                the first upload
+              </span>
+            </label>
+          ) : null}
         </span>
       }
       onDelete={async () => {
         for (const o of orders) {
-          await resetMut.mutateAsync({ id: o.id, rewindBook });
+          await resetMut.mutateAsync({
+            id: o.id,
+            rewindBook: offerRewind && rewindBook,
+          });
         }
       }}
       successMessage="Planning reset"
