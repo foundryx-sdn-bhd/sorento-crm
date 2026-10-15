@@ -35,7 +35,7 @@ import {
 } from '../lib/stockDebtSavedView';
 import { useCellSelection } from '../hooks/useCellSelection';
 import { useStockDebtQuery } from '../hooks/useStockDebtQuery';
-import type { StockDebtGroupsMode } from '../services/stockDebtService';
+import type { StockDebtLocationsMode } from '../services/stockDebtService';
 import type { StockDebtBook, StockDebtRow, StockDebtTone } from '../types/stockDebt.types';
 import { StockDebtCellDialog } from './StockDebtCellDialog';
 import { StockDebtExportPopover } from './StockDebtExportPopover';
@@ -85,8 +85,8 @@ import { codeWithName, distinctName } from '@/lib/product-display';
  * is what actually made it usable, not the two-field detour. Chip reads `Delivery:
  * 1 Nov 26 to 30 Nov 26`.
  *
- * R16 is superseded (owner, 14 Oct 2026): Location is back as a multi-select (`groups`),
- * its options the envelope's generic `groups` facet, disabled under Book = Retail. The
+ * R16 is superseded (owner, 14 Oct 2026): Location is back as a multi-select (`locations`),
+ * its options the envelope's `locations` facet (the book's real warehouses). The
  * filters also save as views through `SavedViewsMenu` (`lib/stockDebtSavedView`).
  */
 
@@ -206,10 +206,10 @@ export function StockDebtClient() {
     isSettling: debouncedSettling,
   } = useDebouncedSearch();
   const [book, setBook] = React.useState<StockDebtBook>('all');
-  // Location: a MULTI select of ownership group suffixes; empty = every location.
-  const [groups, setGroups] = React.useState<string[]>([]);
+  // Location: a MULTI select of warehouse ids; empty = every location.
+  const [locations, setLocations] = React.useState<string[]>([]);
   // `Only` keeps the picked locations; `All except` keeps every other one.
-  const [groupsMode, setGroupsMode] = React.useState<StockDebtGroupsMode>('include');
+  const [locationsMode, setLocationsMode] = React.useState<StockDebtLocationsMode>('include');
   // R15: a MULTI select - a product matches when its last supplier is ANY of these.
   const [supplierIds, setSupplierIds] = React.useState<string[]>([]);
   // R14: the single Cutoff date became a Due date RANGE. '' is "no bound", matching the
@@ -252,7 +252,7 @@ export function StockDebtClient() {
   // (AC-24).
   React.useEffect(() => {
     setPagination((previous) => ({ ...previous, pageIndex: 0 }));
-  }, [debounced, onlyDebt, book, supplierIds, groups, groupsMode, dateFrom, dateTo, projected]);
+  }, [debounced, onlyDebt, book, supplierIds, locations, locationsMode, dateFrom, dateTo, projected]);
 
   const list = useStockDebtQuery({
     pageIndex: pagination.pageIndex,
@@ -261,8 +261,8 @@ export function StockDebtClient() {
     onlyDebt,
     book,
     supplierIds,
-    groups,
-    groupsMode,
+    locations,
+    locationsMode,
     dateFrom,
     dateTo,
     projected,
@@ -274,29 +274,35 @@ export function StockDebtClient() {
   const tbaMonth = list.data?.tba_month ?? null;
   const suppliers = React.useMemo(() => list.data?.suppliers ?? [], [list.data]);
   const totals = list.data?.totals;
-  const groupOptions = React.useMemo(
-    () => (list.data?.groups ?? []).map((code) => ({ value: code, label: code })),
+  const locationOptions = React.useMemo(
+    () =>
+      (list.data?.locations ?? []).map((loc) => {
+        const name = (loc.name ?? '').trim();
+        const label =
+          name && name.toLowerCase() !== loc.code.toLowerCase() ? `${loc.code} (${name})` : loc.code;
+        return { value: loc.id, label };
+      }),
     [list.data],
   );
 
   // Saved views: the filters as one object, so a view applies them at once. The search box
   // is reset (no debounce) so the board does not flash the unfiltered list first.
   const currentFilters: StockDebtFilters = {
-    query: search.trim(), book, supplierIds, groups, groupsMode, dateFrom, dateTo, onlyDebt,
+    query: search.trim(), book, supplierIds, locations, locationsMode, dateFrom, dateTo, onlyDebt,
     projected,
   };
   const savedViewConfig = React.useMemo(
     () => toSavedViewConfig(currentFilters, new Date()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [search, book, supplierIds, groups, groupsMode, dateFrom, dateTo, onlyDebt, projected],
+    [search, book, supplierIds, locations, locationsMode, dateFrom, dateTo, onlyDebt, projected],
   );
   const applyView = (view: SavedView | null) => {
     const next = fromSavedView(view, new Date());
     resetSearch(next.query);
     setBook(next.book);
     setSupplierIds(next.supplierIds);
-    setGroups(next.groups);
-    setGroupsMode(next.groupsMode);
+    setLocations(next.locations);
+    setLocationsMode(next.locationsMode);
     setDateFrom(next.dateFrom);
     setDateTo(next.dateTo);
     setOnlyDebt(next.onlyDebt);
@@ -304,12 +310,14 @@ export function StockDebtClient() {
     setViewId(view?.id ?? null);
   };
 
-  // Under Retail the backend ignores Location, so the chip and the count leave with it.
-  const groupsActive = book !== 'retail' && groups.length > 0;
-  const groupChipLabel = groupsActive
-    ? `${groups.length > 1 ? 'Locations' : 'Location'}: ${
-        groupsMode === 'exclude' ? 'all except ' : ''
-      }${groups.join(', ')}`
+  // A picked id missing from the facet (another book's warehouse) never prints as an id.
+  const locationsActive = locations.length > 0;
+  const locationChipLabel = locationsActive
+    ? `${locations.length > 1 ? 'Locations' : 'Location'}: ${
+        locationsMode === 'exclude' ? 'all except ' : ''
+      }${locations
+        .map((id) => (list.data?.locations ?? []).find((loc) => loc.id === id)?.code ?? 'Unknown location')
+        .join(', ')}`
     : null;
 
   // R15: two or more picked suppliers render as ONE chip "Suppliers: N" (AC-19c); one
@@ -630,7 +638,7 @@ export function StockDebtClient() {
   });
 
   const filtered = Boolean(
-    debounced || book !== 'all' || supplierIds.length > 0 || groupsActive || dateFrom || dateTo,
+    debounced || book !== 'all' || supplierIds.length > 0 || locationsActive || dateFrom || dateTo,
   );
 
   // AC-19b: what the Filters button's badge counts. "Only in debt" is the SCREEN's
@@ -639,7 +647,7 @@ export function StockDebtClient() {
   const activeFilterCount =
     (book !== 'all' ? 1 : 0) +
     (supplierIds.length > 0 ? 1 : 0) +
-    (groupsActive ? 1 : 0) +
+    (locationsActive ? 1 : 0) +
     (dateFrom || dateTo ? 1 : 0) +
     (onlyDebt ? 0 : 1) +
     (projected ? 1 : 0);
@@ -662,11 +670,11 @@ export function StockDebtClient() {
     supplierChipLabel
       ? { label: supplierChipLabel, onClear: () => setSupplierIds([]) }
       : null,
-    groupChipLabel ? {
-          label: groupChipLabel,
+    locationChipLabel ? {
+          label: locationChipLabel,
           onClear: () => {
-            setGroups([]);
-            setGroupsMode('include');
+            setLocations([]);
+            setLocationsMode('include');
           },
         } : null,
     deliveryChipLabel
@@ -798,29 +806,27 @@ export function StockDebtClient() {
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Location</Label>
                       <SearchableMultiSelect
-                        value={groups}
-                        onChange={setGroups}
-                        options={groupOptions}
+                        value={locations}
+                        onChange={setLocations}
+                        options={locationOptions}
                         placeholder="Every location"
-                        disabled={book === 'retail'}
                         clearable
                       />
                       <RadioGroup
                         className="flex flex-wrap gap-3"
-                        value={groupsMode}
-                        onValueChange={(value) => setGroupsMode(value as StockDebtGroupsMode)}
+                        value={locationsMode}
+                        onValueChange={(value) => setLocationsMode(value as StockDebtLocationsMode)}
                       >
                         {(
                           [
                             ['include', 'Only'],
                             ['exclude', 'All except'],
-                          ] as [StockDebtGroupsMode, string][]
+                          ] as [StockDebtLocationsMode, string][]
                         ).map(([value, label]) => (
                           <label key={value} className="flex items-center gap-1.5 text-sm">
                             <RadioGroupItem
                               value={value}
-                              id={`groups-mode-${value}`}
-                              disabled={book === 'retail'}
+                              id={`locations-mode-${value}`}
                             />
                             {label}
                           </label>
@@ -886,7 +892,7 @@ export function StockDebtClient() {
                 <StockDebtExportPopover
                   envelope={list.data}
                   filters={{
-                    query: debounced, onlyDebt, book, supplierIds, groups, groupsMode, dateFrom, dateTo, showAux,
+                    query: debounced, onlyDebt, book, supplierIds, locations, locationsMode, dateFrom, dateTo, showAux,
                     projected,
                   }}
                 />
@@ -977,8 +983,8 @@ export function StockDebtClient() {
           dateTo={dateTo || undefined}
           book={book}
           projected={projected}
-          groups={groups}
-          groupsMode={groupsMode}
+          locations={locations}
+          locationsMode={locationsMode}
           onClose={() => setOpenCell(null)}
         />
       )}

@@ -123,6 +123,14 @@ class StockDebtSheetCounts(BaseModel):
     supplier_category: int
 
 
+class StockDebtLocation(BaseModel):
+    """One warehouse of the book's span, for the toolbar's Location select."""
+
+    id: str
+    code: Optional[str] = None
+    name: Optional[str] = None
+
+
 class StockDebtList(BaseModel):
     """The list envelope: the repo's `{data, pagination}` plus the column axis.
 
@@ -136,6 +144,7 @@ class StockDebtList(BaseModel):
     months: List[str]
     tba_month: str
     groups: List[str]
+    locations: List[StockDebtLocation]
     totals: StockDebtTotals
     suppliers: List[StockDebtSupplier]
     sheet_counts: StockDebtSheetCounts
@@ -338,8 +347,9 @@ class StockDebtExportIn(BaseModel):
     """
 
     query: Optional[str] = None
-    group: List[str] = []
-    exclude_group: List[str] = []
+    group: Optional[str] = None
+    location: List[str] = []
+    exclude_location: List[str] = []
     only_debt: bool = True
     date_from: Optional[DateType] = None
     date_to: Optional[DateType] = None
@@ -350,10 +360,10 @@ class StockDebtExportIn(BaseModel):
     #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
     projected: bool = False
 
-    @field_validator("group", "exclude_group", mode="before")
+    @field_validator("location", "exclude_location", mode="before")
     @classmethod
-    def _group_as_list(cls, value):
-        """A bare string wraps and None is empty (Location multi-select, owner 14 Oct 2026)."""
+    def _location_as_list(cls, value):
+        """A bare string wraps and None is empty."""
         if value is None:
             return []
         if isinstance(value, str):

@@ -46,22 +46,24 @@ def list_stock_debt(
     query: Optional[str] = Query(
         None, description="Product code or name."
     ),
-    group: List[str] = Query(
-        [],
+    group: Optional[str] = Query(
+        None,
         description=(
-            "Ownership group suffix (`BB`, `IB`, ...), repeatable: any of the listed "
-            "groups, spanning the flagged bins of every group named. Narrows the STOCK and the DEMAND "
+            "Ownership group suffix (`BB`, `IB`, ...). Narrows the STOCK and the DEMAND "
             "read, so the balances are the group's own rather than the book's filtered. "
             "Ignored under `book=retail` - a site pool is nobody's ownership group."
         ),
     ),
-    exclude_group: List[str] = Query(
+    location: List[str] = Query(
         [],
         description=(
-            "Ownership group suffixes to leave OUT, repeatable (\"all except ED\"): the "
-            "flagged bins of every other group, HQ project reserves kept. Applied after "
-            "`group`; ignored under `book=retail`."
+            "Warehouse ids to keep, repeatable: the read spans only these bins of the "
+            "book's span. An id outside the span matches nothing."
         ),
+    ),
+    exclude_location: List[str] = Query(
+        [],
+        description="Warehouse ids to leave OUT, repeatable (\"all except X\"). Applied after `location`.",
     ),
     only_debt: bool = Query(
         True, description="Drop products that owe nothing in any month."
@@ -123,7 +125,8 @@ def list_stock_debt(
         return StockDebtService(db).list(
             query=query,
             group=group,
-            exclude_group=exclude_group,
+            location=location,
+            exclude_location=exclude_location,
             only_debt=only_debt,
             date_from=date_from,
             date_to=date_to,
@@ -146,21 +149,24 @@ def stock_debt_cell(
             "`YYYY-MM`, or `tba` / `undated` / `unlocated` for the three right-hand columns."
         ),
     ),
-    group: List[str] = Query(
-        [],
+    group: Optional[str] = Query(
+        None,
         description=(
-            "The ownership group(s) the BOARD was narrowed to (repeatable). Same meaning as on the list: it "
+            "The ownership group the BOARD was narrowed to. Same meaning as on the list: it "
             "narrows the span the balance is recomputed from, so the drill foots with the "
             "cell that opened it."
         ),
     ),
-    exclude_group: List[str] = Query(
+    location: List[str] = Query(
         [],
         description=(
-            "Ownership group suffixes to leave OUT, repeatable (\"all except ED\"): the "
-            "flagged bins of every other group, HQ project reserves kept. Applied after "
-            "`group`; ignored under `book=retail`."
+            "Warehouse ids to keep, repeatable: the read spans only these bins of the "
+            "book's span. An id outside the span matches nothing."
         ),
+    ),
+    exclude_location: List[str] = Query(
+        [],
+        description="Warehouse ids to leave OUT, repeatable (\"all except X\"). Applied after `location`.",
     ),
     date_from: Optional[date] = Query(
         None,
@@ -197,7 +203,7 @@ def stock_debt_cell(
         validate_uuid_path(product_id, resource="Product")
         return StockDebtService(db).cell(
             product_id, month, group, date_from=date_from, date_to=date_to, book=book,
-            projected=projected, exclude_group=exclude_group,
+            projected=projected, location=location, exclude_location=exclude_location,
         )
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
@@ -250,7 +256,8 @@ def export_stock_debt(
         guard = StockDebtService(db).list(
             query=payload.query,
             group=payload.group,
-            exclude_group=payload.exclude_group,
+            location=payload.location,
+            exclude_location=payload.exclude_location,
             only_debt=payload.only_debt,
             date_from=payload.date_from,
             date_to=payload.date_to,

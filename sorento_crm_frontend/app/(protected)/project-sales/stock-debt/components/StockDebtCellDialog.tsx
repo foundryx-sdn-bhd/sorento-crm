@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
 import { OrderInquiryDocumentLink } from '../../order-inquiries/components/OrderInquiryDocumentDialog';
 import { useStockDebtCellQuery } from '../hooks/useStockDebtQuery';
-import type { StockDebtGroupsMode } from '../services/stockDebtService';
+import type { StockDebtLocationsMode } from '../services/stockDebtService';
 import type {
   StockDebtAssignedFrom,
   StockDebtBook,
@@ -213,8 +213,8 @@ export function StockDebtCellDialog({
   dateTo,
   book,
   projected = false,
-  groups,
-  groupsMode,
+  locations,
+  locationsMode,
   onClose,
 }: {
   productId: string;
@@ -234,14 +234,14 @@ export function StockDebtCellDialog({
   /** STOCK-DEBT-PROJECTION: the board's "Projected balance" switch, same reason. */
   projected?: boolean;
   /** The board's Location pick (owner, 14 Oct 2026), same reason. */
-  groups?: string[];
-  groupsMode?: StockDebtGroupsMode;
+  locations?: string[];
+  locationsMode?: StockDebtLocationsMode;
   onClose: () => void;
 }) {
   // The board's own narrowing travels with the request AND with the cache key: the same
   // product and month answer differently under a due date range / a book, so the
   // drill has to be recomputed over the span the cell that opened it was.
-  const cell = useStockDebtCellQuery(productId, month, dateFrom, dateTo, book, projected, groups, groupsMode);
+  const cell = useStockDebtCellQuery(productId, month, dateFrom, dateTo, book, projected, locations, locationsMode);
   const projection = cell.data?.projection ?? null;
 
   const demand = cell.data?.demand ?? EMPTY_DEMAND;

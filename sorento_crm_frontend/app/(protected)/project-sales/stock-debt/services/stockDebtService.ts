@@ -44,10 +44,9 @@
  *                               PLUS the site pools, in one span; `project` is
  *                               today's view; `retail` is pools only (R1, AC-8)
  *
- *      &exclude_group=<ED>  REPEATABLE: "all except" mode, sent instead of `group` (14 Oct, round 2).
- *      &group=<BB>          REPEATABLE: Location came back as a multi-select (owner, 14 Oct
- *                               2026, superseding R16); any of the values, spanning the
- *                               flagged bins of every group named. Omitted when none picked.
+ *      &location=<warehouse id>  REPEATABLE: keep only these bins of the book's span.
+ *      &exclude_location=<id>    REPEATABLE: "all except" mode, sent instead of `location`.
+ *                               Both omitted when none picked (owner, 14 Oct 2026).
  *
  *      -> 200 {
  *           data: [{
@@ -59,7 +58,7 @@
  *           pagination: { total, page, limit },
  *           months:    ['YYYY-MM', ...],   the column axis
  *           tba_month: 'YYYY-MM',          the policy's `tba_date_from`, by month
- *           groups:    ['BB', ...]         what the flag admits, for the select
+ *           locations:    ['BB', ...]         what the flag admits, for the select
  *           totals:    { months: { 'YYYY-MM': number, ... }, tba, undated,
  *                        unlocated, total }   over the WHOLE filtered set (AC-6)
  *           suppliers: [{ id, name }]      distinct last suppliers of the
@@ -101,8 +100,8 @@
  *          &date_to=<YYYY-MM-DD>    the board's own `date_to`, same reason.
  *          &book=<all|project|retail>  the board's own book, same reason.
  *
- *      &group=<BB>          REPEATABLE: the board's own Location pick, echoed so the drill
- *                               foots with the cell that opened it (owner, 14 Oct 2026).
+ *      &location=<id> / &exclude_location=<id>  REPEATABLE: the board's own Location pick,
+ *                               echoed so the drill foots with the cell that opened it.
  *
  *      -> 200 {
  *           demand: [{ so_number, agent_code, warehouse_code, required_date, open_qty,
@@ -130,8 +129,8 @@
  * 3) Export (AC-12 to AC-18; R14/R15/R16 owner round)
  *
  *      POST /api/v1/project-sales/stock-debt/export
- *          { query?, only_debt?, date_from?, date_to?, supplier_ids?, group?, book?, split }
- *          (`group` is a list, sent only when non-empty; `cutoff` and `supplier_id` are
+ *          { query?, only_debt?, date_from?, date_to?, supplier_ids?, location?, exclude_location?, book?, split }
+ *          (`location` / `exclude_location` are lists, sent only when non-empty; `cutoff` and `supplier_id` are
  *          retired, not aliased)
  *
  *      -> 201 MyDownload (`status: 'pending'`, `kind: 'stock_debt_xlsx'`) - a
@@ -185,11 +184,11 @@ export const USE_STOCK_DEBT_FILTER_MOCKS = false;
  *
  * Owner's hand-test round (R14-R16): the single `cutoff` became a `dateFrom`/`dateTo`
  * range and the single `supplierId` became a repeatable `supplierIds`. The Ownership group
- * filter left the screen in R16 and came back as the multi-select `groups` (Location,
+ * filter left the screen in R16 and came back as the multi-select `locations` (Location,
  * owner, 14 Oct 2026).
  */
-/** How `groups` narrows the board: only these locations, or every location except them. */
-export type StockDebtGroupsMode = 'include' | 'exclude';
+/** How `locations` narrows the board: only these locations, or every location except them. */
+export type StockDebtLocationsMode = 'include' | 'exclude';
 
 export interface StockDebtListParams {
   pageIndex: number;
@@ -201,10 +200,10 @@ export interface StockDebtListParams {
   /** Repeatable; `'none'` is one more value among the others, not a sentinel that
    *  excludes them (R15, AC-4). Empty = every supplier. */
   supplierIds: string[];
-  /** Location: repeatable ownership group suffixes; empty = every location. */
-  groups?: string[];
-  /** `exclude` sends `exclude_group` instead of `group` ("all except ED"). Default include. */
-  groupsMode?: StockDebtGroupsMode;
+  /** Location: repeatable warehouse ids; empty = every location. */
+  locations?: string[];
+  /** `exclude` sends `exclude_location` instead of `group` ("all except ED"). Default include. */
+  locationsMode?: StockDebtLocationsMode;
   /** `YYYY-MM-DD`, or '' for no lower bound (R14, AC-1b). */
   dateFrom: string;
   /** `YYYY-MM-DD`, or '' for no upper bound (R14, AC-1). */
@@ -219,8 +218,8 @@ export interface StockDebtExportParams {
   onlyDebt: boolean;
   book: StockDebtBook;
   supplierIds: string[];
-  groups?: string[];
-  groupsMode?: StockDebtGroupsMode;
+  locations?: string[];
+  locationsMode?: StockDebtLocationsMode;
   dateFrom: string;
   dateTo: string;
   /** Whether the workbook carries the four stock and PO columns (default off on the wire). */
@@ -253,8 +252,8 @@ export async function getStockDebtList(
   for (const id of params.supplierIds ?? []) {
     if (id) search.append('supplier_ids', id);
   }
-  for (const code of params.groups ?? []) {
-    if (code) search.append(params.groupsMode === 'exclude' ? 'exclude_group' : 'group', code);
+  for (const code of params.locations ?? []) {
+    if (code) search.append(params.locationsMode === 'exclude' ? 'exclude_location' : 'location', code);
   }
   const res = await apiFetch(`/api/v1/project-sales/stock-debt?${search}`);
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to load stock debt'));
@@ -265,7 +264,7 @@ export async function getStockDebtList(
  * The demand and supply behind one cell (AC-S2-7, extended AC-11). `month` is `YYYY-MM`,
  * `tba`, `undated` or `unlocated`; `dateFrom`/`dateTo` (R14) and `book` are the board's
  * own narrowing, passed through so the drill is recomputed over the same span the cell
- * was. `groups` repeats `group`, the board's Location pick; `cutoff` is retired (R14).
+ * was. `locations` repeats `location`, the board's Location pick; `cutoff` is retired (R14).
  */
 export async function getStockDebtCell(
   productId: string,
@@ -274,16 +273,16 @@ export async function getStockDebtCell(
   dateTo?: string,
   book?: StockDebtBook,
   projected?: boolean,
-  groups?: string[],
-  groupsMode?: StockDebtGroupsMode,
+  locations?: string[],
+  locationsMode?: StockDebtLocationsMode,
 ): Promise<StockDebtCell> {
   const search = new URLSearchParams({ month });
   if (dateFrom) search.set('date_from', dateFrom);
   if (dateTo) search.set('date_to', dateTo);
   if (book && book !== 'all') search.set('book', book);
   if (projected) search.set('projected', 'true');
-  for (const code of groups ?? []) {
-    if (code) search.append(groupsMode === 'exclude' ? 'exclude_group' : 'group', code);
+  for (const code of locations ?? []) {
+    if (code) search.append(locationsMode === 'exclude' ? 'exclude_location' : 'location', code);
   }
   const res = await apiFetch(
     `/api/v1/project-sales/stock-debt/${encodeURIComponent(productId)}/cell?${search}`,
@@ -307,8 +306,8 @@ export async function exportStockDebt(params: StockDebtExportParams): Promise<My
       only_debt: params.onlyDebt,
       book: params.book,
       supplier_ids: params.supplierIds ?? [],
-      ...(params.groups?.length
-        ? { [params.groupsMode === 'exclude' ? 'exclude_group' : 'group']: params.groups }
+      ...(params.locations?.length
+        ? { [params.locationsMode === 'exclude' ? 'exclude_location' : 'location']: params.locations }
         : {}),
       date_from: params.dateFrom || undefined,
       date_to: params.dateTo || undefined,

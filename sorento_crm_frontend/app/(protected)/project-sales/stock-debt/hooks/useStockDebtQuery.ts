@@ -10,7 +10,7 @@ import {
 } from '../services/stockDebtService';
 import type {
   StockDebtExportParams,
-  StockDebtGroupsMode,
+  StockDebtLocationsMode,
   StockDebtListParams,
 } from '../services/stockDebtService';
 import type { StockDebtBook } from '../types/stockDebt.types';
@@ -36,8 +36,8 @@ export function useStockDebtQuery(params: StockDebtListParams) {
       params.onlyDebt,
       params.book,
       params.supplierIds,
-      params.groups ?? [],
-      params.groupsMode ?? 'include',
+      params.locations ?? [],
+      params.locationsMode ?? 'include',
       params.dateFrom,
       params.dateTo,
       Boolean(params.projected),
@@ -77,7 +77,7 @@ export function useExportStockDebt() {
  *
  * `dateFrom`, `dateTo` and `book` are part of the KEY, not just of the request: the same
  * product and month answer differently under a narrowed board, so a shared cache entry
- * would hand the narrowed board the whole book's drill. `groups` (Location, owner 14 Oct
+ * would hand the narrowed board the whole book's drill. `locations` (Location, owner 14 Oct
  * 2026) is part of the key for the same reason.
  */
 export function useStockDebtCellQuery(
@@ -87,24 +87,24 @@ export function useStockDebtCellQuery(
   dateTo?: string,
   book?: StockDebtBook,
   projected?: boolean,
-  groups?: string[],
-  groupsMode?: StockDebtGroupsMode,
+  locations?: string[],
+  locationsMode?: StockDebtLocationsMode,
 ) {
   return useQuery({
     queryKey: [
       'project-sales', 'stock-debt', 'cell', productId, month, dateFrom ?? '', dateTo ?? '',
-      book ?? 'all', Boolean(projected), groups ?? [],
-      groupsMode ?? 'include',
+      book ?? 'all', Boolean(projected), locations ?? [],
+      locationsMode ?? 'include',
     ],
     // The projection rides only when the switch is on, so the month view's request is
     // exactly what it was before the switch existed.
     queryFn: () => {
       const id = productId as string;
       const key = month as string;
-      if (groups?.length) {
+      if (locations?.length) {
         return getStockDebtCell(
-          id, key, dateFrom, dateTo, book, projected, groups,
-          groupsMode === 'exclude' ? 'exclude' : undefined,
+          id, key, dateFrom, dateTo, book, projected, locations,
+          locationsMode === 'exclude' ? 'exclude' : 'include',
         );
       }
       return projected
