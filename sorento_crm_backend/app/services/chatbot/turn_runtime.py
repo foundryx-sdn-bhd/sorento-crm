@@ -698,7 +698,8 @@ def promo_subject_ask_back(
         for e in own["entities"]
         if e.get("spec_key") == "product_type" and e.get("spec_value") is None and str(e.get("raw") or "").strip()
     ]
-    terms = promo_filter(own, db, gate).get("scope_terms") or [] if db is not None else []
+    narrowing = promo_filter(own, db, gate) if db is not None else {}
+    terms = narrowing.get("scope_terms") or []
     if not unknown and terms:
         from app.services.chatbot.head import grounding
         from app.services.product_spec_search import filter_specs
@@ -708,7 +709,10 @@ def promo_subject_ask_back(
             # A class name is the subject as it stands; only a word that names no class asks
             # which of a registry key's values it means.
             options = [] if grounding.names_a_class_label(db, term) else grounding.several_values(term, vocab)
-            if options:
+            # Chat fix PR-A (AC-A10): only a choice a promotion holds is offered; with fewer
+            # than two left there is nothing to choose between, and the class answers.
+            options = [o for o in options if _promotions_hold(db, o.lower(), narrowing)]
+            if len(options) >= 2:
                 return "\n".join([f"Which {term} do you mean?", *options]), options
         for term in terms:
             found = filter_specs(db, scope_terms=[term])
@@ -717,6 +721,23 @@ def promo_subject_ask_back(
     if not unknown:
         return None
     return f'I could not match "{", ".join(unknown)}" to a product type.\nWhich product or brand do you mean?', []
+
+
+def _promotions_hold(db: Session, term: str, narrowing: dict[str, list[str]]) -> bool:
+    """Does the promotions read this turn would make, with `term` as its subject, hold a
+    row? The route's own subject filter and serving policy, the kind and brand the ask
+    named (`promo_filter`), so a menu choice is one that leads to a promotion."""
+    from app.services.marketing_service import PromotionService
+
+    result = PromotionService(db).list_promotions(
+        page=1,
+        limit=1,
+        serving_policy=True,
+        scope_terms=[term],
+        promotion_types=narrowing.get("promotion_types"),
+        brand_ids=narrowing.get("brand_ids"),
+    )
+    return bool(result.get("data"))
 
 
 def promotion_kind_rows(db: Session) -> list[dict[str, Any]]:
