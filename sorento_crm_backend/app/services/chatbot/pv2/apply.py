@@ -605,8 +605,13 @@ def _one_ask(
 
     if ask.act in ("refines_held", "new_topic") and not st.held.refs.get("product"):
         # R5-2: "this product" with no product held, after an answer that showed one document: its line.
-        lines = _line_products(st) if any(_points_back(e) for e in ask.entities if e.kind == "product") else []
-        if len(lines) == 1:
+        lines = _line_products(st) if any(_points_back(e) for e in ask.entities if e.kind == "product") else None
+        if lines == []:
+            # Lines the contact may not see (dropped by the reveal filter) are never named: ask which product.
+            act = _which_product(st, i, language)
+            act.pending.origin = _origin_of(ask)
+            return act, False
+        if lines and len(lines) == 1:
             # As a shown row is: the line named by its code, so it routes as a copied code does.
             ask = ask.model_copy(update={"entities": [
                 e.model_copy(update={"phrase": lines[0], "refers_to_held": False})
@@ -1448,14 +1453,14 @@ def _points_back(e: Entity) -> bool:
     return e.refers_to_held and not (e.key or e.phrase or e.doc_number)
 
 
-def _line_products(st: ConversationState) -> list[str]:
+def _line_products(st: ConversationState) -> list[str] | None:
     """R5-2: the product codes of the one document the last answer showed (its printed product rows and the
-    lines kept beside it); [] when it showed none or several."""
+    lines kept beside it; only lines the contact may see are there); None when it showed none or several."""
     turn = max((e.turn for e in st.register), default=None)
     entries = [e for e in st.register if e.turn == turn]
     docs = [e for e in entries if e.parent is None and e.kind in LINE_DOCUMENT_KINDS]
     if len(docs) != 1:
-        return []
+        return None
     children = [e.label for e in entries if e.parent == docs[0].id and e.kind == "product"]
     return list(dict.fromkeys([*st.doc_lines.get(docs[0].key, []), *children]))
 
