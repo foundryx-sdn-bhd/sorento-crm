@@ -845,12 +845,14 @@ class CustomerPortfolioResponse(BaseModel):
 
 class ProjectSeriesBase(BaseModel):
     name: str = Field(min_length=1, max_length=150)
-    brand_id: Optional[str] = None
     description: Optional[str] = None
     is_active: bool = True
 
 
 class ProjectSeriesCreate(ProjectSeriesBase):
+    brand_ids: List[str] = Field(
+        default_factory=list, description="Picked brands. Empty means every brand."
+    )
     category_ids: List[str] = Field(
         default_factory=list,
         description=(
@@ -862,7 +864,9 @@ class ProjectSeriesCreate(ProjectSeriesBase):
 
 class ProjectSeriesUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=150)
-    brand_id: Optional[str] = None
+    brand_ids: Optional[List[str]] = Field(
+        None, description="Sent WHOLE, not as a delta."
+    )
     description: Optional[str] = None
     is_active: Optional[bool] = None
     category_ids: Optional[List[str]] = Field(
@@ -874,7 +878,8 @@ class ProjectSeriesResponse(ProjectSeriesBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    brand_name: Optional[str] = None
+    brand_ids: List[str] = Field(default_factory=list)
+    brand_names: List[str] = Field(default_factory=list)
     category_ids: List[str] = Field(default_factory=list)
     category_names: List[str] = Field(default_factory=list)
     covered_category_count: int = Field(
