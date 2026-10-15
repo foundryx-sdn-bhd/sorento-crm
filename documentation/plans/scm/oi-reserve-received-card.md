@@ -70,6 +70,9 @@ a partial accept (88 asked, 80 reserved) and one a zero accept (44 asked, 0).
   shortfall goes to Remaining. No re-link, because the release record outlives the reserve.
 - **Unlink selected** (today's workaround): unchanged, and out of scope. It has its own re-link
   gap, flagged in Q1.
+- **Stock Debt pin** (crew audit, 15 Oct): releasing a received link also drops that line's
+  on-hand pin at the SPO bin in Stock Debt. Crew ruled this consistent with owner rule 4: the CRM
+  holds no stock, and the bin stock is genuinely no longer held for this line. No code change.
 
 ## Facts (base 504ce9252)
 
