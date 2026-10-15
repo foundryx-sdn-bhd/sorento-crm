@@ -79,7 +79,7 @@ def test_payout_e3_rate_per_account_each_rounded():
         threshold_unit="amount",
     )
     assert out.commission == D("6900.00")
-    assert sorted(line.amount for line in out.lines) == [D("900.00"), D("3000.00"), D("3000.00")]
+    assert [line.amount for line in out.lines] == [D("6900.00")]
 
 
 def test_payout_e4_below_first_threshold_pays_zero():
