@@ -15,6 +15,9 @@
  *   POST   /sales/targets/{id}/duplicate                 -> the new target's detail  sales.targets.edit
  *   POST   /sales/targets/{id}/children   body {sales_agent_id, target_value} -> the team target
  *   DELETE /sales/targets/{id}                                                      sales.targets.delete
+ *   GET    /sales/targets/point-ratios                   -> {rows: PointRatio[]}    sales.targets.view
+ *   POST   /sales/targets/point-ratios   body {effective_from, rm_per_point}        sales.targets.edit
+ *   POST   /sales/targets/import?dry_run&year  multipart file -> DealerImportResult sales.targets.edit
  * The screens park `sales_target.delete` instead of calling DELETE (D7), through
  * useDeferredAction. Products for the scope picker come from master data's own
  * `/master-data/products/select`, paged on the server (about 22,000 rows).
@@ -22,6 +25,8 @@
 import { apiFetch } from '@/lib/api';
 import { extractApiError } from '@/lib/api-client';
 import type {
+  DealerImportResult,
+  PointRatio,
   SalesTargetCreatePayload,
   SalesTargetDetail,
   SalesTargetList,
@@ -123,4 +128,33 @@ export async function searchTargetProducts(
   >(await apiFetch(`/api/v1/master-data/products/select?${search.toString()}`), 'Could not load products');
   const rows = Array.isArray(body) ? body : (body.data ?? []);
   return rows.map((row) => ({ value: row.id, label: codeWithName(row.product_code, row.product_name) }));
+}
+
+/** One page of customers for a dealer target's accounts, searched on the server. */
+export async function searchTargetCustomers(query: string): Promise<{ value: string; label: string }[]> {
+  const search = new URLSearchParams({ limit: '50', offset: '0' });
+  if (query.trim()) search.set('query', query.trim());
+  const body = await read<{ data?: { id: string; customer_code: string; customer_name: string }[] }>(
+    await apiFetch(`/api/v1/order-management/customers/select?${search.toString()}`),
+    'Could not load customers',
+  );
+  return (body.data ?? []).map((row) => ({ value: row.id, label: `${row.customer_code} - ${row.customer_name}` }));
+}
+
+export async function getPointRatios(): Promise<{ rows: PointRatio[] }> {
+  return read(await apiFetch(`${BASE}/point-ratios`), 'Failed to load point ratios');
+}
+
+export async function savePointRatio(payload: { effective_from: string; rm_per_point: number }): Promise<PointRatio> {
+  return read(await apiFetch(`${BASE}/point-ratios`, jsonInit('POST', payload)), 'Failed to save the ratio');
+}
+
+export async function importDealerTargets(file: File, dryRun: boolean, year: number): Promise<DealerImportResult> {
+  const body = new FormData();
+  body.append('file', file);
+  const search = new URLSearchParams({ dry_run: String(dryRun), year: String(year) });
+  return read(
+    await apiFetch(`${BASE}/import?${search.toString()}`, { method: 'POST', body }),
+    dryRun ? 'Failed to test the file' : 'Failed to import the file',
+  );
 }

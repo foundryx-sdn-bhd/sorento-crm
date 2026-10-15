@@ -2,7 +2,7 @@
  * Sales targets as `/api/v1/sales/targets` serialises them (plan 3.1, 3.8, 16.3). Dates are
  * `YYYY-MM-DD` strings, datetimes naive UTC, money and units plain JSON numbers.
  */
-export type TargetSubjectKind = 'agent' | 'team';
+export type TargetSubjectKind = 'agent' | 'team' | 'dealer';
 export type TargetMetric = 'amount' | 'quantity';
 export type TargetBasis = 'ordered' | 'delivered';
 export type TargetProductScope = 'all' | 'categories' | 'products' | 'brands';
@@ -11,14 +11,39 @@ export type TargetSplitUnit = 'day' | 'week' | 'month';
 /** How tiers pay (plan 3.3): `marginal` is "Higher rate above each threshold only", `retroactive`
  * is "Highest rate on everything". */
 export type CommissionMethod = 'none' | 'marginal' | 'retroactive';
+/** What a tier's threshold is in: % of the period's figure, RM (units), or points. */
+export type ThresholdUnit = 'pct' | 'amount' | 'points';
+export type Rounding = 'sen' | 'ringgit';
+
+export interface TierAccountRate {
+  customer_id: string;
+  rate: number;
+}
 
 export interface CommissionTier {
-  /** The achievement % the tier starts at. */
-  from_pct: number;
-  /** Amount target: % of the achieved amount. Quantity target: RM per unit. */
-  rate: number;
-  /** RM paid once per period when `from_pct` is reached. */
+  /** `pct` targets: the achievement % the tier starts at. */
+  from_pct?: number | null;
+  /** `amount` / `points` targets: the threshold in RM (units) or points. */
+  threshold?: number | null;
+  /** Amount target: % of the achieved amount. Quantity target: RM per unit. Null with rates per account. */
+  rate: number | null;
+  /** RM paid once per period when the tier is reached. */
   bonus_amount: number | null;
+  /** A "+ Additional" line, paid on top of the main tier (they stack). */
+  is_additional?: boolean;
+  /** Tiers per period: the start of the period this tier belongs to. */
+  period_start?: string | null;
+  /** Dealer targets: only these accounts earn on the tier, each at its rate. */
+  account_rates?: TierAccountRate[] | null;
+}
+
+export interface TargetAccount {
+  customer_id: string;
+  code: string;
+  name: string;
+  /** "A/C I" for a numbered account, else the customer's name. */
+  label: string;
+  achieved_value?: number | null;
 }
 
 export interface TargetMemberRef {
@@ -57,6 +82,13 @@ export interface SalesTargetRow {
   achieved_value: number | null;
   achieved_pct: number | null;
   parent_target_id: string | null;
+  /** Dealer rows: the counted accounts' labels and codes, and the paid account's label. */
+  account_labels?: string[] | null;
+  account_codes?: string[] | null;
+  payout_label?: string | null;
+  threshold_unit?: ThresholdUnit | null;
+  /** The current period's commission; null with no tiers. */
+  commission_earned?: number | null;
 }
 
 export interface SalesTargetList {
@@ -90,6 +122,13 @@ export interface SalesTargetPeriod {
   /** Null when the target has no tiers. */
   commission_earned?: number | null;
   bonus_earned?: number | null;
+  commission_lines?: { kind: 'main' | 'additional'; threshold_rm: number | null; amount: number }[];
+  tier_reached?: number | null;
+  /** Points targets: RM per point in force on the period's last day. */
+  point_ratio?: number | null;
+  ratio_missing?: boolean;
+  /** Dealer targets: each counted account's achievement in the period. */
+  accounts?: TargetAccount[];
 }
 
 export interface SalesTargetChild {
@@ -127,7 +166,13 @@ export interface SalesTargetDetail {
   members_without_figure: TargetMemberRef[];
   child_count: number;
   commission_method: CommissionMethod;
+  threshold_unit?: ThresholdUnit;
+  rounding?: Rounding;
+  tiers_per_period?: boolean;
   tiers: CommissionTier[];
+  /** Dealer targets: the counted accounts and the paid one. */
+  accounts?: TargetAccount[];
+  payout_account?: TargetAccount | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -158,14 +203,24 @@ interface TargetCreateBase {
   split_every?: number;
   split_unit?: TargetSplitUnit;
   commission_method?: CommissionMethod;
+  threshold_unit?: ThresholdUnit;
+  rounding?: Rounding;
+  tiers_per_period?: boolean;
   tiers?: CommissionTier[];
 }
 
 export interface AgentTargetCreatePayload extends TargetCreateBase {
   subject_kind: 'agent';
   sales_agent_id: string;
-  /** Written to every period. */
-  target_value: number;
+  /** Written to every period; left out when the thresholds are RM or points. */
+  target_value?: number;
+}
+
+export interface DealerTargetCreatePayload extends TargetCreateBase {
+  subject_kind: 'dealer';
+  customer_ids: string[];
+  payout_customer_id?: string;
+  target_value?: number;
 }
 
 export interface TeamTargetCreatePayload extends TargetCreateBase {
@@ -175,7 +230,10 @@ export interface TeamTargetCreatePayload extends TargetCreateBase {
   agent_figures: { sales_agent_id: string; target_value: number }[];
 }
 
-export type SalesTargetCreatePayload = AgentTargetCreatePayload | TeamTargetCreatePayload;
+export type SalesTargetCreatePayload =
+  | AgentTargetCreatePayload
+  | TeamTargetCreatePayload
+  | DealerTargetCreatePayload;
 
 /** The header fields a PATCH may send; `split_every`/`split_unit` null turn the split off. */
 export interface SalesTargetUpdatePayload {
@@ -191,10 +249,50 @@ export interface SalesTargetUpdatePayload {
   split_every?: number | null;
   split_unit?: TargetSplitUnit | null;
   commission_method?: CommissionMethod;
+  threshold_unit?: ThresholdUnit;
+  rounding?: Rounding;
+  tiers_per_period?: boolean;
+  /** Dealer targets: replaces the counted accounts. */
+  customer_ids?: string[];
+  /** Dealer targets: null pays the first counted account. */
+  payout_customer_id?: string | null;
   /** Replaces every tier; `[]` removes them. */
   tiers?: CommissionTier[];
   /** Every changed figure, in one request: this target's periods, or a team target's agents'. */
   figures?: { period_id: string; target_value: number }[];
   /** A team target's members with no figure yet, by the team period's start. */
   new_agents?: { sales_agent_id: string; figures: { period_start: string; target_value: number }[] }[];
+}
+
+export interface PointRatio {
+  id: string;
+  effective_from: string;
+  rm_per_point: number;
+}
+
+export interface DealerImportRow {
+  sheet: string;
+  row: number;
+  code: string | null;
+  name_in_file: string | null;
+  account_in_file: string | null;
+  customer: string | null;
+  status: 'mapped' | 'not_representable';
+  reason: string | null;
+  warnings: string[];
+  target_keys: string[];
+  target_nos: string[];
+}
+
+export interface DealerImportResult {
+  dry_run: boolean;
+  summary: {
+    rows: number;
+    mapped: number;
+    not_representable: number;
+    targets_new: number;
+    targets_updated: number;
+  };
+  rows: DealerImportRow[];
+  notes: string[];
 }

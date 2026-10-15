@@ -10,7 +10,7 @@ import {
   type PaginationState,
   type RowSelectionState,
 } from '@tanstack/react-table';
-import { Plus, UserRound, UsersRound } from 'lucide-react';
+import { Coins, FileSpreadsheet, Plus, Store, UserRound, UsersRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
 import { DataGrid } from '@/components/ui/data-grid';
@@ -30,6 +30,8 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { useSalesTargets } from '../hooks/useSalesTargets';
+import DealerTargetImportDialog from './DealerTargetImportDialog';
+import PointRatioDialog from './PointRatioDialog';
 import {
   BASIS_LABEL,
   METRIC_LABEL,
@@ -43,7 +45,33 @@ import type { SalesTargetRow, TargetSubjectKind } from '../types/salesTarget.typ
 const TABS: { value: TargetSubjectKind; label: string; icon: typeof UsersRound }[] = [
   { value: 'team', label: 'Teams', icon: UsersRound },
   { value: 'agent', label: 'Agents', icon: UserRound },
+  { value: 'dealer', label: 'Dealers', icon: Store },
 ];
+
+function tabOf(value: string | null): TargetSubjectKind {
+  return value === 'agent' || value === 'dealer' ? value : 'team';
+}
+
+/** A dealer row's counted accounts, as pills with the rest behind +N. */
+function AccountsCell({ row }: { row: SalesTargetRow }) {
+  const labels = row.account_labels ?? [];
+  if (!labels.length) return <span className="text-muted-foreground">-</span>;
+  return (
+    <PillOverflow
+      ariaLabel={`Accounts ${row.name ?? 'the target'} counts`}
+      items={labels.map((label, i) => ({ key: `${i}-${label}`, label }))}
+      renderPopover={(all) => (
+        <ul className="flex flex-col gap-1 text-sm">
+          {all.map((i, index) => (
+            <li key={i.key} className="truncate" title={row.account_codes?.[index] ?? undefined}>
+              {`${i.label}${row.account_codes?.[index] ? ` (${row.account_codes[index]})` : ''}`}
+            </li>
+          ))}
+        </ul>
+      )}
+    />
+  );
+}
 
 /** Keep the tab and team filter in the URL without a navigation (a shareable view). */
 function writeUrl(next: Record<string, string>) {
@@ -114,13 +142,13 @@ export default function SalesTargetsView() {
   const params = useSearchParams();
   const router = useRouter();
   const canAdd = useHasPermission('sales.targets.add');
-  const [tab, setTab] = useState<TargetSubjectKind>(params.get('tab') === 'agent' ? 'agent' : 'team');
+  const [tab, setTab] = useState<TargetSubjectKind>(tabOf(params.get('tab')));
   const [teamFilter, setTeamFilter] = useState(params.get('team') ?? '');
 
   const changeTab = (value: string) => {
-    const next: TargetSubjectKind = value === 'agent' ? 'agent' : 'team';
+    const next = tabOf(value);
     setTab(next);
-    writeUrl({ tab: next === 'agent' ? 'agent' : '', team: next === 'agent' ? teamFilter : '' });
+    writeUrl({ tab: next === 'team' ? '' : next, team: next === 'agent' ? teamFilter : '' });
   };
   const changeTeam = (value: string) => {
     setTeamFilter(value);
@@ -178,6 +206,9 @@ function TargetsGrid({
   } = useDebouncedSearch();
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 });
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const canEdit = useHasPermission('sales.targets.edit');
+  const [importOpen, setImportOpen] = useState(false);
+  const [ratioOpen, setRatioOpen] = useState(false);
 
   const { data, isLoading, isFetching, isPlaceholderData, isError, error } = useSalesTargets({
     all: true,
@@ -202,7 +233,31 @@ function TargetsGrid({
 
   const columns = useMemo<ColumnDef<SalesTargetRow>[]>(() => {
     const subjectColumns: ColumnDef<SalesTargetRow>[] =
-      tab === 'team'
+      tab === 'dealer'
+        ? [
+            {
+              id: 'dealer',
+              header: ({ column }) => <DataGridColumnHeader title="Dealer" column={column} />,
+              cell: ({ row }) => <TextCell value={row.original.subject_label} />,
+              size: 160,
+              meta: { headerTitle: 'Dealer', skeleton: <Skeleton className="h-4 w-28" /> },
+            },
+            {
+              id: 'accounts',
+              header: ({ column }) => <DataGridColumnHeader title="Counts" column={column} />,
+              cell: ({ row }) => <AccountsCell row={row.original} />,
+              size: 150,
+              meta: { headerTitle: 'Counts', skeleton: <Skeleton className="h-5 w-24" /> },
+            },
+            {
+              id: 'payout',
+              header: ({ column }) => <DataGridColumnHeader title="Pays to" column={column} />,
+              cell: ({ row }) => <TextCell value={row.original.payout_label} />,
+              size: 100,
+              meta: { headerTitle: 'Pays to', skeleton: <Skeleton className="h-4 w-16" /> },
+            },
+          ]
+        : tab === 'team'
         ? [
             {
               id: 'team',
@@ -303,6 +358,21 @@ function TargetsGrid({
         size: 60,
         meta: { headerTitle: '%', skeleton: <Skeleton className="h-4 w-10" /> },
       },
+      ...(tab === 'dealer'
+        ? [
+            {
+              id: 'commission',
+              header: ({ column }) => <DataGridColumnHeader title="Commission" column={column} />,
+              cell: ({ row }) => (
+                <span className="block truncate text-end tabular-nums">
+                  {formatFigure(row.original.commission_earned ?? null)}
+                </span>
+              ),
+              size: 100,
+              meta: { headerTitle: 'Commission', skeleton: <Skeleton className="h-4 w-16" /> },
+            } satisfies ColumnDef<SalesTargetRow>,
+          ]
+        : []),
     ];
   }, [tab]);
 
@@ -327,7 +397,9 @@ function TargetsGrid({
     ? 'Nothing matches this search.'
     : tab === 'team'
       ? 'No team targets yet'
-      : 'No agent targets yet';
+      : tab === 'dealer'
+        ? 'No dealer targets yet'
+        : 'No agent targets yet';
 
   return (
     <DataGrid
@@ -376,7 +448,15 @@ function TargetsGrid({
                   }
                 : undefined
             }
-            exportConfig={{ filename: tab === 'team' ? 'team_targets.xlsx' : 'agent_targets.xlsx' }}
+            exportConfig={{ filename: `${tab}_targets.xlsx` }}
+            secondaryActions={
+              tab === 'dealer' && canEdit
+                ? [
+                    { key: 'import', label: 'Import from Excel', icon: FileSpreadsheet, onClick: () => setImportOpen(true) },
+                    { key: 'ratio', label: 'Point ratio', icon: Coins, onClick: () => setRatioOpen(true) },
+                  ]
+                : undefined
+            }
           />
         </CardHeader>
         {isError ? (
@@ -391,6 +471,12 @@ function TargetsGrid({
           <DataGridPagination />
         </CardFooter>
       </Card>
+      {tab === 'dealer' && canEdit ? (
+        <>
+          <DealerTargetImportDialog open={importOpen} onOpenChange={setImportOpen} />
+          <PointRatioDialog open={ratioOpen} onOpenChange={setRatioOpen} />
+        </>
+      ) : null}
     </DataGrid>
   );
 }

@@ -57,9 +57,11 @@ vi.mock('@/components/common/SearchableSelect', () => ({
     onChange: (v: string) => void;
     options?: { value: string; label: string }[];
     disabled?: boolean;
+    'aria-label'?: string;
   }) => (
     <select
       id={props.id}
+      aria-label={props['aria-label']}
       value={props.value}
       disabled={props.disabled}
       onChange={(e) => props.onChange(e.target.value)}
@@ -144,7 +146,9 @@ const patchHeader = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false }
 const patchPeriod = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false }));
 const addChild = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false }));
 const productSearch = vi.hoisted(() => vi.fn());
+const customerSearch = vi.hoisted(() => vi.fn());
 const hooks = vi.hoisted(() => ({
+  useTargetCustomerSearch: () => customerSearch,
   useSalesTarget: vi.fn(),
   useSalesTargets: vi.fn(),
   useSalesTargetOptions: vi.fn(),
@@ -233,6 +237,7 @@ beforeEach(() => {
   hooks.useSalesTargets.mockReturnValue({ data: { on: '2026-10-20', rows: [], unassigned_amount: 0, no_team_count: 0 } });
   hooks.useSalesTargetOptions.mockReturnValue({ data: OPTIONS });
   productSearch.mockResolvedValue([]);
+  customerSearch.mockResolvedValue([]);
 });
 
 describe('TargetRecord: create (F4)', () => {
@@ -715,5 +720,110 @@ describe('TargetRecord round 3, F3: the agent target record', () => {
       targetId: 'c2',
       figures: [{ period_id: 'b2', target_value: 800 }],
     });
+  });
+});
+
+
+// ----------------------------------------------------------------------------------------
+// Lane SALES-TARGET-DEALER: dealer subject and the one engine's Commission settings (UAC D4-2)
+// ----------------------------------------------------------------------------------------
+
+const A1 = 'c-a1';
+const A3 = 'c-a3';
+
+function dealerDetail(over: Record<string, unknown> = {}) {
+  return detail({
+    subject_kind: 'dealer', sales_agent_id: null, subject_label: 'Dealer A Sdn Bhd',
+    subject_team_name: null, product_scope: 'all', scope: [],
+    start_date: '2026-01-01', end_date: '2026-12-31', split_every: 3, split_unit: 'month',
+    periods: [
+      {
+        id: 'q2', period_start: '2026-04-01', period_end: '2026-06-30', target_value: 200000,
+        achieved_value: 250000, achieved_pct: 125, is_current: true, commission_earned: 5400,
+        bonus_earned: 0, accounts: [
+          { customer_id: A1, code: '300-A0123', name: 'DEALER A SDN BHD', label: 'A/C I', achieved_value: 180000 },
+          { customer_id: A3, code: '300-A0124', name: 'DEALER A SDN BHD (III)', label: 'A/C III', achieved_value: 70000 },
+        ],
+      },
+    ],
+    commission_method: 'retroactive', threshold_unit: 'amount', rounding: 'sen', tiers_per_period: true,
+    tiers: [
+      { from_pct: null, threshold: 200000, rate: null, bonus_amount: null, is_additional: false,
+        period_start: '2026-04-01', account_rates: [{ customer_id: A1, rate: 2 }] },
+      { from_pct: null, threshold: 250000, rate: null, bonus_amount: null, is_additional: false,
+        period_start: '2026-04-01', account_rates: [{ customer_id: A1, rate: 3 }] },
+    ],
+    accounts: [
+      { customer_id: A1, code: '300-A0123', name: 'DEALER A SDN BHD', label: 'A/C I' },
+      { customer_id: A3, code: '300-A0124', name: 'DEALER A SDN BHD (III)', label: 'A/C III' },
+    ],
+    payout_account: { customer_id: A1, code: '300-A0123', name: 'DEALER A SDN BHD', label: 'A/C I' },
+    ...over,
+  });
+}
+
+describe('TargetRecord: dealer targets (lane SALES-TARGET-DEALER)', () => {
+  it('a dealer target has an Accounts tab with each account and the account it pays to', () => {
+    hooks.useSalesTarget.mockReturnValue({ data: dealerDetail(), isLoading: false, isError: false });
+    render(<TargetRecord id="t1" />);
+    expect(tabNames()).toEqual(['Details', 'Periods', 'Accounts', 'Commission']);
+    openTab('Accounts');
+    const table = screen.getByRole('table', { name: 'Counted accounts' });
+    expect(within(table).getByText('300-A0124')).toBeTruthy();
+    expect(within(table).getByText('A/C III')).toBeTruthy();
+    expect(within(table).getByText('70,000')).toBeTruthy();
+    expect(screen.getByText('300-A0123 - DEALER A SDN BHD (A/C I)')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(UUID);
+  });
+
+  it('the Commission tab shows the four settings and a rate column per account', () => {
+    hooks.useSalesTarget.mockReturnValue({ data: dealerDetail(), isLoading: false, isError: false });
+    render(<TargetRecord id="t1" />);
+    openTab('Commission');
+    expect(screen.getByText('Highest rate on everything')).toBeTruthy();
+    expect(screen.getByText('Own tiers per period')).toBeTruthy();
+    expect(screen.getByText('Sen (0.01)')).toBeTruthy();
+    const table = screen.getByRole('table', { name: 'Commission tiers' });
+    expect(within(table).getByText('A/C I rate')).toBeTruthy();
+    expect(within(table).getByText('A/C III rate')).toBeTruthy();
+    // A/C III has no rate on these tiers: it earns nothing on them (ruling 2).
+    expect(within(table).getAllByText('-').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('creates a dealer target with accounts, RM tiers per period and an additional line', async () => {
+    customerSearch.mockResolvedValue([{ value: A1, label: '300-A0123 - DEALER A SDN BHD' }]);
+    render(<TargetRecord preset={{ kind: 'dealer' }} />);
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Dealer A 2026 quarterly' } });
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText('End date'), { target: { value: '2026-03-31' } });
+    // The multi-select mock lists only `options`; the dealer picker searches, so seed by hand.
+    expect(screen.getByRole('group', { name: 'Accounts' })).toBeTruthy();
+    openTab('Commission');
+    expect((screen.getByLabelText('Threshold in') as HTMLSelectElement).value).toBe('amount');
+    expect((screen.getByRole('switch', { name: 'Own tiers per period' })).getAttribute('aria-checked')).toBe('true');
+    // Saving without an account is not possible.
+    expect((within(screen.getByTestId('record-header')).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('TargetRecord: the one engine on an agent target', () => {
+  it('an agent target offers Threshold in, Round to and own tiers per period, and sends them', async () => {
+    render(<TargetRecord id="t1" />);
+    fireEvent.click(within(screen.getByTestId('gear')).getByRole('button', { name: 'Edit' }));
+    openTab('Commission');
+    fireEvent.click(screen.getByRole('button', { name: /Add tier/ }));
+    fireEvent.change(screen.getByLabelText('Threshold in'), { target: { value: 'amount' } });
+    fireEvent.change(screen.getByLabelText('Round to'), { target: { value: 'ringgit' } });
+    fireEvent.change(screen.getByLabelText(/Tier 1 from \(rm\)/i), { target: { value: '500000' } });
+    fireEvent.change(screen.getByLabelText(/Tier 1 rate/), { target: { value: '1.5' } });
+    fireEvent.change(screen.getByLabelText('Tier 1 type'), { target: { value: 'additional' } });
+    fireEvent.click(within(screen.getByTestId('record-header')).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(patchHeader.mutateAsync).toHaveBeenCalled());
+    const sent = patchHeader.mutateAsync.mock.calls[0][0];
+    expect(sent.threshold_unit).toBe('amount');
+    expect(sent.rounding).toBe('ringgit');
+    expect(sent.tiers).toEqual([
+      { threshold: 500000, rate: 1.5, bonus_amount: null, is_additional: true },
+    ]);
   });
 });
