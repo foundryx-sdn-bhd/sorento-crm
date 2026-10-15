@@ -1,5 +1,6 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
+import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 import { IDEAS_KEY } from '@/hooks/useIdeas';
 import {
   getActivity,
@@ -26,6 +27,7 @@ export function usePortalRoadmapQuery(enabled = true) {
 
 export function usePortalFeedbackQuery(params: PortalFeedbackParams, enabled = true) {
   return useQuery({
+    ...LIST_QUERY_OPTIONS,
     queryKey: [
       ...PORTAL_KEY,
       'feedback',
@@ -36,7 +38,6 @@ export function usePortalFeedbackQuery(params: PortalFeedbackParams, enabled = t
       params.pageSize ?? 0,
     ],
     queryFn: () => listFeedback(params),
-    placeholderData: keepPreviousData,
     enabled,
   });
 }

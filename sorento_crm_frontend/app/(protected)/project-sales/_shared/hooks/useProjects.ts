@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 
-import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { ListPagerPage, ListPagerParams } from '@/hooks/useListPager';
 import { toast } from '@/lib/toast';
@@ -1217,10 +1217,10 @@ export function useSeriesProductRows(
   params: { page: number; limit: number; query?: string },
 ) {
   return useQuery({
+    ...LIST_QUERY_OPTIONS,
     queryKey: [...SERIES_KEY, 'rows', seriesId, params],
     queryFn: () => getSeriesProductRows(seriesId as string, params),
     enabled: Boolean(seriesId),
-    placeholderData: keepPreviousData,
   });
 }
 
