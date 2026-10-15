@@ -1143,3 +1143,60 @@ class TestGrantedReportsRunNoDoProbe:
         )
 
         assert probes, "staff keep the picker's DO probe as today"
+
+
+class TestHiddenCustomerRowsEverywhere:
+    """Reviewer on 70bd1c303: `_without_customer_rows` also drops the customer rows a miss would
+    offer as "did you mean" (`alternatives`), and those in `intersection` / `by_entity_type`. A
+    typo ("hanlm") has no exact match, so it never reaches `hidden_customer_tokens`; without the
+    drop its miss line named other customers' codes."""
+
+    @staticmethod
+    def _typo_turn(session_factory, monkeypatch):
+        from app.services.chatbot.lanes.business.services import ResolveGateServices
+        from tests.chatbot.conftest import validating_resolve_entity
+        from tests.chatbot.test_outstanding_lane import HANLIM_CODE_1, HANLIM_CODE_2, HANLIM_UUID_1, HANLIM_UUID_2
+
+        rows = [
+            {"entity_type": "customer", "canonical_code": HANLIM_CODE_1, "uuid": HANLIM_UUID_1,
+             "company_code": "SRT", "display": {"customer_name": "HANLIM TRADING SDN BHD"}},
+            {"entity_type": "customer", "canonical_code": HANLIM_CODE_2, "uuid": HANLIM_UUID_2,
+             "company_code": "SRT", "display": {"customer_name": "HANLIM HARDWARE SDN BHD"}},
+        ]
+
+        def resolve_entity(body):
+            return {
+                "tokens": ["hanlm"],
+                "resolutions": [{"token": "hanlm", "matches": [], "alternatives": [dict(r) for r in rows]}],
+                "intersection": [dict(r) for r in rows],
+                "by_entity_type": {"customer": [dict(r) for r in rows]},
+                "unresolved_tokens": ["hanlm"],
+            }
+
+        services = ResolveGateServices(
+            access_types=lambda **_: [{"name": "Sorento Dealer"}],
+            resolve_entity=validating_resolve_entity(resolve_entity),
+            probe=lambda **_: {"items": [], "has_result": False},
+        )
+        qf = _parser_output(
+            domain_hint="order", intent_hint="check_order", order_status=None,
+            entities=[{"raw": "hanlm", "hint": "product", "canonical_code": None, "current_message": True, "confident": True}],
+            date_filter_start="2026-10-01", date_filter_end="2026-10-31",
+        )
+        result, _captured = _run_turn(
+            session_factory, monkeypatch, qf=qf, text_body="deliveries this month for hanlm",
+            msg_id=f"ZZT-docscope-typo-{uuid.uuid4().hex[:10]}", attributes=[OUTSTANDING_KEY],
+            resolve_services=services, mcp_response=FOREIGN_DO_LIST,
+        )
+        return (result.reply or {}).get("text") or ""
+
+    def test_a_typo_offers_no_other_customer_as_did_you_mean(self, session_factory, monkeypatch) -> None:
+        from tests.chatbot.test_outstanding_lane import HANLIM_CODE_1, HANLIM_CODE_2
+
+        _seed_contact(session_factory, variables={})
+
+        reply = self._typo_turn(session_factory, monkeypatch)
+
+        assert HANLIM_CODE_1 not in reply and HANLIM_CODE_2 not in reply, reply
+        assert "HANLIM TRADING" not in reply.upper() and "HANLIM HARDWARE" not in reply.upper(), reply
+
