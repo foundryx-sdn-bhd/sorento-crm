@@ -15,7 +15,8 @@ import pytest
 
 from app.services.chatbot.pv2 import bridge, turn
 from app.services.chatbot.pv2.apply import apply_turn
-from app.services.chatbot.pv2.state import Lookup
+from app.services.chatbot.pv2.history import MemoryProfile
+from app.services.chatbot.pv2.state import Lookup, dump_state
 from app.services.chatbot.turn import pending as v1p
 from tests.chatbot.pv2.carry_fakes import NOW, FakeResolver, ask, held as mk_held, mk_state, out
 
@@ -45,10 +46,19 @@ def _as_new_topic():
     return out(ask(act="new_topic", domain="order", answer={"option_key": "1", "free_value": None}))
 
 
-def _bridge(refs, parsed):
-    st, acts = apply_turn(_state(refs), parsed, resolver=FakeResolver({}), now=NOW)
-    assert isinstance(acts[0], Lookup), type(acts[0]).__name__
-    return bridge.to_v1_verdict(st, acts[0], today=TODAY)
+SO_GRANT = "sales_orders.outstanding"
+DO_GRANT = "delivery_orders.outstanding"
+
+
+def _bridge(refs, parsed, granted=frozenset({SO_GRANT, DO_GRANT})):
+    """The whole PV2 turn (grant pre-check included) for a dealer holding `granted`; returns the v1 verdict."""
+    ctx = turn.TurnV2Context(
+        text="x", now=NOW, raw_state=dump_state(_state(refs)), profile=MemoryProfile(audience="dealer"),
+        parse=lambda m, u: parsed, resolver=FakeResolver({}), load_exchanges=lambda s: [],
+        granted_reveals=frozenset(granted))
+    res = turn._run(ctx)
+    assert res.verdict is not None, res.direct_reply
+    return res.verdict
 
 
 def _carries_customer_pick(verdict):
@@ -59,7 +69,7 @@ def _carries_customer_pick(verdict):
 
 PICKS = [("option-key", _by_key), ("free-value-name", _by_name), ("new-topic-with-answer", _as_new_topic)]
 KINDS = [({"delivery_order": ["202610-0151"]}, {"DO"}), ({"sales_order": ["SO419122"]}, {"SO"}), ({}, {"DO", "SO"})]
-KIND_IDS = ["held-DO", "held-SO", "nothing-held"]
+KIND_IDS = ["held-DO", "held-SO", "nothing-held-with-SO-grant"]
 
 
 @pytest.mark.parametrize("pick", [p for _, p in PICKS], ids=[n for n, _ in PICKS])
@@ -90,3 +100,12 @@ def test_a_plain_pick_with_no_held_status_is_not_given_an_outstanding_question()
     st, acts = apply_turn(st, _by_key(), resolver=FakeResolver({}), now=NOW)
     verdict = bridge.to_v1_verdict(st, acts[0], today=TODAY)
     assert verdict["status"] in (None, "") and verdict["domain_hint"] == "inventory"
+
+
+@pytest.mark.parametrize("pick", [p for _, p in PICKS], ids=[n for n, _ in PICKS])
+def test_nothing_held_and_no_so_grant_gets_delivery_orders_only(pick):
+    """RED: a dealer with only delivery-order grants must not be given the SO side (v1's both bucket would print
+    'Sales order figures are not enabled'). Fresh case: the dealer asks the same question, a different customer menu."""
+    verdict = _bridge({}, pick(), granted=frozenset({DO_GRANT}))
+    assert set(verdict["document"] or []) == {"DO"}, verdict["document"]
+    assert verdict["status"] == "outstanding"
