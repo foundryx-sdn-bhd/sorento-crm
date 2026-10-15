@@ -4104,8 +4104,41 @@ class ProjectOrderInquiryService:
         qty: Optional[Decimal] = None,
         borrow_hole: Optional[bool] = None,
     ) -> None:
-        """Queue one line of the `order_inquiry_handover` parallel-run email
-        (`PLAN-scm-oi-handover-email.md` S0-S3), fired post-commit by
+        """Queue `handover_item`'s line on this write's handover email, tagged with the
+        transaction it was earned under (see `handover_item` for the line itself)."""
+        item = self.handover_item(
+            row,
+            kind=kind,
+            was=was,
+            actor_user_id=actor_user_id,
+            qty=qty,
+            borrow_hole=borrow_hole,
+        )
+        #: Which savepoint this was earned under (C2, `_notify_purchasing`'s own rule), so
+        #: a sibling order's rollback cannot discard it.
+        item["tx_chain"] = tx_chain = _transaction_chain(self.db)
+        #: The OUTERMOST entry of that same chain - the ROOT transaction, not the innermost
+        #: savepoint (AC-H27/AC-H28, review round 2 ruling) - is what
+        #: `_fire_pending_handover` waits to see CONCLUDE BY COMMIT before firing, however
+        #: many savepoints this line's own write nests inside.
+        item["tx"] = tx_chain[-1] if tx_chain else None
+        self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(item)
+
+    def handover_item(
+        self,
+        row: OrderInquiryRow,
+        *,
+        kind: str,
+        was: Optional[Dict[str, Any]] = None,
+        actor_user_id: Optional[str] = None,
+        qty: Optional[Decimal] = None,
+        borrow_hole: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """One line of the `order_inquiry_handover` parallel-run email, built but not
+        queued: `_record_handover` queues it, and "Send to purchasing"
+        (`oi_handover_resend`) rebuilds an OI's open rows with it.
+
+        Queued lines (`PLAN-scm-oi-handover-email.md` S0-S3) are fired post-commit by
         `_fire_pending_handover` - the same `Session.info` queue this file already uses
         for `_dispatch_changed_with_links` / `_notify_purchasing` above, and for the same
         reason: several call sites here run deep inside the atomic confirmation
@@ -4201,58 +4234,48 @@ class ProjectOrderInquiryService:
             "remark": handover_remark(kind, row, was, qty),
             "was": _format_handover_was(was),
         }
-        self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(
-            {
-                #: Which row this line tells.
-                "row_id": str(row.id),
-                #: The project line this row is on, so a Confirm can replace a SAVED line's
-                #: row lines with its one decision line (`record_saved_line`).
-                "so_line_id": str(row.so_line_id) if row.so_line_id else None,
-                "order_inquiry_id": str(row.order_inquiry_id),
-                "pso_id": pso_id,
-                "so_number": so_number,
-                "customer": facts.get("customer"),
-                "project": facts.get("project"),
-                #: The subject's location: what LOCATION prints (a Borrow's, the line's own).
-                "stock_location": location,
-                #: AC-2/AC-3: what `_build_handover_context` sorts the whole queue by -
-                #: `so_number` above, then these two.
-                "line_no": line_no,
-                #: #1312: the core sales-order line this row's own line carries -
-                #: `_fire_pending_handover` keys its `handover_attachments` read on
-                #: this, and `_build_handover_context` reads it back to print/attach
-                #: what that returns. `None` for a row with no `so_line_id`, same as
-                #: `line_no` above.
-                "core_line_id": core_line_id,
-                "item_code": row.item_code,
-                #: Never empty for a line that moved (crew, 12 Oct): QTY CHANGE.
-                #: What this line adds to purchasing's order, as a number rather than read
-                #: back off REMARK's words (`record_saved_lines` folds it).
-                "adds_order": str(_handover_adds_order(kind, row, was, qty)),
-                #: A Borrow's hole raised, resized or cancelled: `record_saved_lines` reads
-                #: a donor move or reshuffle as the one hole settled (`_hole_move`).
-                "kind": kind,
-                "borrow_hole": (
-                    _is_borrow_order_back(row) if borrow_hole is None else borrow_hole
-                ),
-                "verb_keys": _handover_verb_keys(kind, row, was, qty)
-                or (
-                    ["QTY_CHANGE"]
-                    if (was or {}).get("qty") or (was or {}).get("delivery_date")
-                    else []
-                ),
-                "line": line,
-                "actor": self._handover_actor(resolved_actor_id),
-                #: Which savepoint this was earned under (C2, `_notify_purchasing`'s own
-                #: rule), so a sibling order's rollback cannot discard it.
-                "tx_chain": (tx_chain := _transaction_chain(self.db)),
-                #: The OUTERMOST entry of that same chain - the ROOT transaction, not
-                #: the innermost savepoint (AC-H27/AC-H28, review round 2 ruling) - is
-                #: what `_fire_pending_handover` waits to see CONCLUDE BY COMMIT before
-                #: firing, however many savepoints this line's own write nests inside.
-                "tx": tx_chain[-1] if tx_chain else None,
-            }
-        )
+        return {
+            #: Which row this line tells.
+            "row_id": str(row.id),
+            #: The project line this row is on, so a Confirm can replace a SAVED line's
+            #: row lines with its one decision line (`record_saved_line`).
+            "so_line_id": str(row.so_line_id) if row.so_line_id else None,
+            "order_inquiry_id": str(row.order_inquiry_id),
+            "pso_id": pso_id,
+            "so_number": so_number,
+            "customer": facts.get("customer"),
+            "project": facts.get("project"),
+            #: The subject's location: what LOCATION prints (a Borrow's, the line's own).
+            "stock_location": location,
+            #: AC-2/AC-3: what `_build_handover_context` sorts the whole queue by -
+            #: `so_number` above, then these two.
+            "line_no": line_no,
+            #: #1312: the core sales-order line this row's own line carries -
+            #: `_fire_pending_handover` keys its `handover_attachments` read on
+            #: this, and `_build_handover_context` reads it back to print/attach
+            #: what that returns. `None` for a row with no `so_line_id`, same as
+            #: `line_no` above.
+            "core_line_id": core_line_id,
+            "item_code": row.item_code,
+            #: Never empty for a line that moved (crew, 12 Oct): QTY CHANGE.
+            #: What this line adds to purchasing's order, as a number rather than read
+            #: back off REMARK's words (`record_saved_lines` folds it).
+            "adds_order": str(_handover_adds_order(kind, row, was, qty)),
+            #: A Borrow's hole raised, resized or cancelled: `record_saved_lines` reads
+            #: a donor move or reshuffle as the one hole settled (`_hole_move`).
+            "kind": kind,
+            "borrow_hole": (
+                _is_borrow_order_back(row) if borrow_hole is None else borrow_hole
+            ),
+            "verb_keys": _handover_verb_keys(kind, row, was, qty)
+            or (
+                ["QTY_CHANGE"]
+                if (was or {}).get("qty") or (was or {}).get("delivery_date")
+                else []
+            ),
+            "line": line,
+            "actor": self._handover_actor(resolved_actor_id),
+        }
 
     def record_saved_lines(
         self,

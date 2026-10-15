@@ -314,6 +314,14 @@ class AutomationService:
                 )
         return {"trigger_type": trigger_type, "fired": len(results), "results": results}
 
+    def send_match(
+        self, automation: Automation, match: "automation_triggers.TriggerMatch"
+    ) -> dict[str, Any]:
+        """Run ONE automation against one prebuilt match whether or not it is enabled: an
+        explicit send ("Send to purchasing", `oi_handover_resend`) that a switched-off
+        automation must not swallow. Records its run and notification like any other."""
+        return self._execute(automation, run_mode="manual", prebuilt_matches=[match])
+
     def evaluate_due(self) -> dict[str, Any]:
         """Master scheduler entrypoint: run every enabled automation whose next_run_at is due."""
         now = datetime.utcnow()
@@ -678,6 +686,13 @@ class AutomationService:
                         **(
                             {"extra_attachments": match.context["email_attachments"]}
                             if match.context.get("email_attachments")
+                            else {}
+                        ),
+                        # Who pressed "Send to purchasing", for the next preview's "Last
+                        # sent" line (`oi_handover_resend`).
+                        **(
+                            {"sent_by": match.context["sent_by"]}
+                            if match.context.get("sent_by")
                             else {}
                         ),
                     },
