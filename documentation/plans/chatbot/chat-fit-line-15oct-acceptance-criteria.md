@@ -67,6 +67,9 @@ their own `ZZT*` products and links (CI's DB is empty).
 - AC-20 In a zh / ms turn the fit-line templates translate only the fit line itself; any other
   line of the usual answer ("This soft-close seat fits most round WCs.", "Mirror for bathroom:
   LED") is left exactly as it is today.
+- AC-22 (reviewer round 2) The ANCHOR code is held to the same rule: a hidden anchor (with or
+  without links, or a model token whose host SKUs are all hidden) runs on as typed: no line, no
+  "No ... on record" claim. The carry path never names a hidden linked product.
 - AC-21 Several-code and model-family lines are asserted exactly (no `startswith`).
 
 ## Live (opt-in, `CHATBOT_LIVE_LLM=1`, dev parser v94 = prod v63 shape)
