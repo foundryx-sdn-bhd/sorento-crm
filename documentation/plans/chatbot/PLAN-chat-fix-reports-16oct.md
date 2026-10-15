@@ -1,6 +1,7 @@
 # PLAN: chat fix PR-B, report engine (lane CHAT-ADVISOR-SPIKE, chat-fix LEAD)
 
-Status: Plan (16 Oct ~04:30). Track: L (expected diff over 300 lines; no migration, no auth/RBAC change, no new
+Status: Build, red tests 913265d3a1 (16 Oct ~05:30); S0 baseline on main 12/25 right, 5/25 right with at most
+one question. Track: L (expected diff over 300 lines; no migration, no auth/RBAC change, no new
 ingest). Branch `crew/chat-fix-reports` off origin/main ccb1ce9820, worktree `sorento_crm-chat-fix-reports` (the PR-A
 worktree stays on PR-A: the crew hand-test copy :8109/:3109 runs from it).
 
@@ -42,10 +43,18 @@ guessed (`report_ask.py:604-606`); the parser decides follow-up vs new, the engi
   PR-B2.
 - Customer stamp picker: `turn_runtime.py:3104` `stamp_customer_ask` asks which account even when every account
   carries the same stamp (W02 t2, "no DO" on all 4).
-- Not yet located on current main (old anchors gone): the dealer-brand drop on a sales total (#15, was
-  `__init__.py:2026-2030`), the "Sorento or Mocha?" brand question with no open question (#24, was
-  `presenters.py:3481`), duplicate brand names in a ranking (was `report_ask.py:141`). Slice S0 finds them from the
-  chains' turn traces before the tester writes those tests.
+- Dealer brand on a sales total (#15, R15): the parser reads the brand (entity MOCHA, confident) but
+  `crm_sales_report` carries no brand, though `sales_report_service.py:614,652` already filters by `brand_ids`.
+- "Sorento or Mocha?" is a COMPANY question: `app/api/v1/sales/analysis.py:102,292` returns
+  `{"status": "clarify"}` and the MCP presenter sends it as a plain reply (`sorento_crm_mcp/presenters.py:3481`),
+  so no open question is registered and the next "sorento" is not read as its answer (R24 t6 ran an unrelated
+  sales report).
+- Sales report with no subject (R03, R23): `crm_sales_report` is sent with no product or customer, the route answers
+  HTTP 422 `subject_required`, and the reply is "I could not fetch sales just now".
+- An answer to the top selling basis question that the parser reads with another `order_status` (R12 "delivered" ->
+  sales_ranking; R17 "已送货" -> sales_ranking/category) leaves the top selling ask: a customer picker or "找不到
+  马桶". A new ask while a question is open (R22 "i want to see the top customer", parser top_selling, no basis) is
+  read as a failed answer: "I don't know 'i want to see the top customer' as a basis".
 
 ## Changes (each its own red-first slice)
 
@@ -60,24 +69,39 @@ guessed (`report_ask.py:604-606`); the parser decides follow-up vs new, the engi
    turn reads every field the parser set (dates, `top_n`, measure/rank_by, basis), not only the asked one; a
    partial answer re-asks only what is left; no regex over the reply (the existing `_COUNT_RE` is not copied).
    `required_fields.py` gets an opt-in "ask all" mode used by the report ask only; other asks keep one per turn.
+   S1b the top selling ask (a separate path, `crm_top_selling_report`) asks metric then basis one per turn too
+   (`lanes/business/__init__.py:511-529` `_top_selling_question` via `ranking_ask.next_question`; the answer is
+   read only if it answers the one asked axis, `turn/apply._top_selling_waiting`): when both are unsettled it asks
+   both in one numbered reply, and an answer settling either or both is read (S0 baseline R01/R02: "By quantity or
+   by amount?" then "Delivered (transferred to DO) or ordered?").
 2. S2 report type held on an answer: an answering turn keeps the report ask's `order_status` (add it to the
    answer's held keys) so "delivered" fills BASIS and never re-routes to the delivery-order list.
+   S2b the same for the top selling ask: a turn whose parse fills the open field (basis / metric) is its answer
+   whatever `order_status` the parser put on it (R12, R17).
+   S2c a turn whose parse fills no open field and reads as a new report ask (another report type or axis) is a new
+   ask, not a failed answer (R22). The test is structural: which open fields the parse filled.
 3. S3 P3-F2 engine applies the parser's refine: with a report held and `ranking_refine` true, apply the parser's
    changed keys to the held report whatever report type the parser picked; carry the frame for every report ask,
    not only sales ranking (`turn_runtime.py:1950-1956`, `engine.py:7028-7033`, dispatch `__init__.py:2183`); the
    multi-ask stores its report frame like a single ask (`turn/sub_asks.py`).
 4. S4 P3-F4 keep the period: a new axis is still asked (8 Oct rule) but the held period and product stay
    (`report_ask.py:616-632`).
-5. S5 P3-F5 dealer brand: a sales total that names a brand runs as a brand-filtered total, never silently unfiltered
-   (anchor from S0).
+5. S5 P3-F5 dealer brand: a sales total whose parse carries a brand passes it as `brand_ids` (route, MCP catalog,
+   lane), never silently unfiltered (R15).
 6. S6 P3-F6 display: header "Top 10 of N" naming the sort measure first, no duplicate names, readable dates (no
    ISO), category name not code, month rows in date order.
-7. S7 P3-F7 a brand question the bot sends is registered as an open question, so the next reply "sorento" answers it
-   (anchor from S0).
-8. S8 P3-F8 limit: a refine of a held report and an answer to the bot's own question do not count toward the
-   10-per-10-minutes limit; fresh report asks still do.
+7. S7 P3-F7 the sales analysis company question (`status: clarify`) is registered as an open question with the
+   company names as options (the existing open-question roster path: labels in the per-turn parser context, the
+   parser's `reference_positions`), so the next "sorento" answers it and re-runs the held analysis for that company
+   (R20 t6, R24 t6). Per-turn context only while that question is open; the system prompt is unchanged.
+8. S8 P3-F8 limit: NO CODE. A client-sent "do not count this call" flag would let any API-key caller skip the
+   limit. The limit is already a setting (`report_ask.py` route `_rate_limit_setting` :95); the owner picks the
+   value (asked on the crew board). With S1 an ask uses fewer calls anyway.
 9. S9 NEW-2 a customer picker whose options all carry the same stamp answers directly instead of asking
    (`turn_runtime.py:3104-3140`).
+10. S10 a sales report with no product and no customer subject is never sent to `crm_sales_report` (422): for a
+   staff contact it runs as the sales analysis for the period (company totals, `crm_sales_analysis`); a
+   customer-scoped contact keeps its links as today (R03, R23).
 
 Out (named, with where it goes):
 - P3-F3 parser conflicts (refine rule vs "sales total" rule, prompt v94 :245-246 vs :212) and channel names from
@@ -101,9 +125,11 @@ only reads as precedent. No open PR touches `lanes/business/report_ask.py`.
   every touched module's direct suite (`-n 2`, `SORENTO_ENV_FILE=.env.ci-tests`).
 - Parser input parity: rendered parser input sha256 identical on main vs PR-B for the 25 chains' first asks (no LLM;
   the PR-A parity script).
-- Report slice (S0) on PR-B vs main, same prompt v94, same DB: no chain right on main goes wrong; target about 19-21
-  of 25 right with at most one question (PR-B2 adds #20, #24; PR-C #21, #25). Questions before data on the right
-  chains: 18 -> about 7-11.
+- Report slice (S0) on PR-B vs main, same prompt v94, same DB, two scripts: the recorded user turns (main: 12/25
+  right, 5/25 with at most one question) and a merged variant for 11 chains where the user's own pre-data answers
+  are sent as one reply (the fair test of S1). No chain right on main goes wrong. Target: about 19-21 of 25 right
+  (R20, R24 need PR-B2 for the parser half; R21, R25 are PR-C context cases). Runner + scorer + expectations:
+  crew/state/eval/advisor-spike/report-slice/ (digest.py, expected.json).
 - Walkthrough rows not written for (W01-W12): same or better.
 - reviewer; security-reviewer not required (no auth/RBAC/ingest/upload/scoping change); if S8 touches the route,
   reviewer checks the limit still bounds fresh asks.
