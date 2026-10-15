@@ -144,15 +144,17 @@ def test_g3_an_unlinked_contacts_family_confirm_prints_no_ledger_account_name(db
 
 def test_g3_a_linked_dealers_family_confirm_prints_only_their_own_linked_accounts():  # guard: passes today
     with S.resolve_session() as db:
-        a1, a2, _a3 = _accounts(db)
+        a1, a2, a3 = _accounts(db)
         c = _contact(db)
         _link(db, c, a1)
         _link(db, c, a2)
         resolver, _ = _resolver(db, c)
         st, acts = _say(resolver, "acme hard")
         said = _everything_said(st, acts)
+        # R6 C lead ruling: a family confirm prints the group name only (no account list); the account outside the
+        # dealer's links is never printed, nor carried in what a pick would apply.
         assert "A/C III" not in said, said
-        assert "A/C I" in said
+        assert str(a3.id) not in said, said
 
 
 # ------------------------------------------------------------------ 4 guards
