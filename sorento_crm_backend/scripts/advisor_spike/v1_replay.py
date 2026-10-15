@@ -123,7 +123,7 @@ def _scope_from_trace(trace: list[Any], contact: str) -> dict[str, str]:
 
     for e in trace:
         if isinstance(e, dict) and e.get("kind") == "tool":
-            args = (e.get("payload") or {}).get("args") or {}
+            args = (e.get("payload") or e).get("args") or {}
             if args.get("contact_id") is not None:
                 return {"contact_id": str(args["contact_id"]), "space_id": space_id_or_default(args.get("space_id"))}
     return {"contact_id": contact, "space_id": space_id_or_default(None)}
@@ -132,8 +132,8 @@ def _scope_from_trace(trace: list[Any], contact: str) -> dict[str, str]:
 def _tool_events(trace: list[Any]) -> list[dict[str, Any]]:
     out = []
     for e in trace:
-        if isinstance(e, dict) and e.get("kind") == "tool":
-            p = e.get("payload") or {}
+        if isinstance(e, dict) and e.get("kind") == "tool" and e.get("name"):
+            p = e.get("payload") or e
             out.append({"name": p.get("name"), "args": p.get("args"), "result_chars": len(str(p.get("envelope") or ""))})
     return out
 

@@ -53,7 +53,7 @@ def summarize(name: str, rows: list[dict[str, Any]], judged: dict[str, dict[str,
                             for c in r["calls"]))
             cost.append(r["cost_usd"])
             catches += 1 if r["guard"] and not r["guard"][0]["ok"] else 0
-            fallbacks += 1 if ("guard_fallback" in r["flags"] or "no_subset" in r["flags"]) else 0
+            fallbacks += 1 if ("guard_fallback" in r["flags"] or "no_subset" in r["flags"] or "no_options" in r["flags"]) else 0
     sal = [x for x in j if kinds.get(x["scenario_id"]) == "salesman"]
     ctl = [x for x in j if kinds.get(x["scenario_id"]) == "control"]
     return {

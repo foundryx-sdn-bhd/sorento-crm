@@ -18,10 +18,11 @@ from typing import Any
 
 # Dry-run estimates. Per advisor model call: input tokens (system + tools + conversation) by arm, 70% of
 # them cache reads after the first call of a turn, ~350 output tokens; ~2.5 calls per turn.
-EST_IN_TOKENS = {"C": 7000, "C2": 7000, "C2opus": 7000, "C2all": 28000}
+EST_IN_TOKENS = {"C3": 1500, "C": 7000, "C2": 7000, "C2opus": 7000, "C2all": 28000}
 EST_OUT_TOKENS = 350
 EST_CACHED_FRACTION = 0.7
 EST_CALLS_PER_TURN = 2.5
+CALLS_PER_TURN = {"C3": 1.0}  # one model call, no tools
 EST_V1_TURN_USD = 0.006
 EST_V1_TURN_SECONDS = 6
 EST_JUDGE_IN, EST_JUDGE_OUT = 3500, 350
@@ -143,7 +144,7 @@ def plan(scenarios: list[dict[str, Any]], arms: list[str], models: list[str], ou
     judgments = len(scenarios) if "v1" in arms or adv else 0
     for a, m in adv:
         todo = [s for s in arm_scenarios(a, scenarios) if s["id"] not in done_ids(out / f"results_{a}_{m}.jsonl")]
-        calls = len(todo) * EST_CALLS_PER_TURN
+        calls = len(todo) * CALLS_PER_TURN.get(a, EST_CALLS_PER_TURN)
         tk = calls * (EST_IN_TOKENS[a] + EST_OUT_TOKENS)
         c = calls * est_call_usd(a, m)
         lines.append(f"{a} x {m}: {len(todo)} turns, ~{calls:.0f} model calls, ~{tk / 1e6:.2f}M tokens, ~${c:.2f}")
@@ -177,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     env.harden_proxy()
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     models = [m.strip() for m in args.models.split(",") if m.strip()]
-    bad = [a for a in arms if a not in ("v1", "C", "C2", "C2all", "C2opus")] + [m for m in models if m not in ("sonnet", "mini")]
+    bad = [a for a in arms if a not in ("v1", "C", "C2", "C2all", "C2opus", "C3")] + [m for m in models if m not in ("sonnet", "mini")]
     if bad:
         raise SystemExit(f"unknown arm/model: {bad}")
     scenarios = load_scenarios(args.scenarios, args.ids, args.only_followups)
@@ -232,7 +233,13 @@ def main(argv: list[str] | None = None) -> int:
                     if sc["id"] in done_ids(path):
                         continue
                     prov = BudgetedProvider(provs[m], ledger, f"{a}:{m}:{sc['id']}", est_call_usd(a, m))
-                    rec = advisor.run_advisor(a, providers.MODEL_IDS[m], v1["turns"], v1["moment"], v1["scope"], provider=prov)
+                    if a == "C3":
+                        from scripts.advisor_spike import c3
+
+                        provm = providers.MODEL_IDS[m]
+                        rec = c3.run_c3(sc, provm, v1["turns"], v1["moment"], v1["scope"], provider=prov)
+                    else:
+                        rec = advisor.run_advisor(a, providers.MODEL_IDS[m], v1["turns"], v1["moment"], v1["scope"], provider=prov)
                     rec.update(scenario_id=sc["id"], kind=sc.get("kind"), model_key=m,
                                v1_parser_latency_ms=v1["moment"]["latency_ms"])
                     append(path, rec)
