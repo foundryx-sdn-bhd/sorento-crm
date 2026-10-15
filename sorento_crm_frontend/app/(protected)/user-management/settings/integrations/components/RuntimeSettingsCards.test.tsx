@@ -317,7 +317,9 @@ describe('RuntimeSettingsCards', () => {
         }),
       });
       render(<RuntimeSettingsCards />);
-      fireEvent.click(screen.getByRole('button', { name: 'Clear saved value' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Clear saved value' }),
+      );
       expect(mockMutate).toHaveBeenCalledWith({
         do_assume_delivered_before: null,
       });

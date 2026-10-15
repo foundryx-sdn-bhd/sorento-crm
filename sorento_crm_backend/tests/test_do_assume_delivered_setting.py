@@ -228,16 +228,19 @@ def test_put_refuses_anything_but_an_iso_date(api, bad):
 
 
 def test_put_refuses_a_date_in_the_future(api):
-    """A future cutover would land today's live DOs delivered with no tracking."""
+    """A future cutover would land today's live DOs delivered with no tracking. "Today" is
+    Malaysia's (AutoCount DocDates are local), not the CI runner's UTC date."""
+    from app.services.incoming_stock_service import today_myt
+
     client, allow, _db, _actor = api
     allow.add(SECRETS_SLUG)
 
-    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    tomorrow = (today_myt() + timedelta(days=1)).isoformat()
     resp = client.put(ENDPOINT, json={NAME: tomorrow})
 
     assert resp.status_code == 422
     assert NAME in resp.text
-    assert client.put(ENDPOINT, json={NAME: date.today().isoformat()}).status_code == 200
+    assert client.put(ENDPOINT, json={NAME: today_myt().isoformat()}).status_code == 200
 
 
 @pytest.mark.parametrize("granted", [set(), {EDIT_SLUG, "user_management.settings.view"}])
