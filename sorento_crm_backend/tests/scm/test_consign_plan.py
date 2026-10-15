@@ -422,10 +422,6 @@ def test_b1_a_sales_order_lines_proposal_is_unchanged_by_the_consignment_rule():
     assert [s["kind"] for s in cg_row["sources"]] == ["borrow"]
 
 
-def _ladder_shape(row):
-    return [(s["kind"], s["location"], s["qty"]) for s in row["sources"]]
-
-
 def test_b2_a_consignment_at_a_planned_bin_gets_the_ladders_proposal_like_a_sales_order():
     with blank_session() as db:
         shapes = []

@@ -3290,7 +3290,9 @@ class FulfilmentBoardService:
         an earlier line had spent, and question 1 offered the 135 at BRW-BB to the 1,305
         line of the same unit that the 135 line had just taken.
 
-        FIVE ROWS, always, in the WALK's own order (v8, R-A): the site pool's share, our
+        ONE ROW for a line planned at its own off-planning bin (CONSIGN-PLAN: "Consignment:
+        the goods are at CON."), which walks no ladder. Otherwise FIVE ROWS, always, in the
+        WALK's own order (v8, R-A): the site pool's share, our
         own locations, borrowing on hand from a later order, borrowing what one is waiting
         on, Buy. The captain, walking SO381895: "our thought process is simpler now" - so
         the proof is the questions a planner would ask out loud, in the order the ladder
