@@ -427,10 +427,19 @@ def _foreign(world):
 def _bad_values(world, kind, case):
     brand, cat = _foreign(world)
     foreign = brand.id if kind == "brand_ids" else cat.id
-    return [{"malformed": ["not-a-uuid"], "random": [_uid()], "foreign": [foreign]}[case]], brand
+    own = world.a.id if kind == "brand_ids" else world.x.id  # a real id of this company
+    return [
+        {
+            "malformed": ["not-a-uuid"],
+            "random": [_uid()],
+            "foreign": [foreign],
+            "urn": [f"urn:uuid:{own}"],
+            "braces": ["{" + own + "}"],
+        }[case]
+    ], brand
 
 
-@pytest.mark.parametrize("case", ["malformed", "random", "foreign"])
+@pytest.mark.parametrize("case", ["malformed", "random", "foreign", "urn", "braces"])
 @pytest.mark.parametrize("kind", ["brand_ids", "category_ids"])
 def test_bad_ids_on_create_are_a_422_and_write_nothing(world, kind, case):
     from app.models.projects import ProjectSeries
@@ -448,7 +457,7 @@ def test_bad_ids_on_create_are_a_422_and_write_nothing(world, kind, case):
     assert world.db.query(ProjectSeries).count() == before
 
 
-@pytest.mark.parametrize("case", ["malformed", "random", "foreign"])
+@pytest.mark.parametrize("case", ["malformed", "random", "foreign", "urn", "braces"])
 @pytest.mark.parametrize("kind", ["brand_ids", "category_ids"])
 def test_bad_ids_on_update_are_a_422_and_leave_the_series_unchanged(world, kind, case):
     bad, foreign_brand = _bad_values(world, kind, case)
