@@ -510,6 +510,9 @@ def plan_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
     `_open_of` keeps its own readers, all of which genuinely mean "what is still owed": the
     hold cap (S1), `project_line_draft_service`'s saved snapshot and `sales_order_service
     .is_stale`.
+
+    CONSIGN-PLAN Q3: a consignment line's `qty_returned` (0 on every sales order line) is
+    not planned either.
     """
     if core is None or (core.line_status or "open") == "cancelled":
         return _ZERO
@@ -517,7 +520,12 @@ def plan_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
     # AC-CANCEL-CRM (owner, 13 Oct): what AutoCount Cancel SO documents cancelled is not
     # planned. A partial cancel lowers the plan; a full one cancels the line (above).
     base = _dec(core.qty_ordered if required is None else required)
-    return max(base - _dec(getattr(core, "qty_cancelled", None)), _ZERO)
+    return max(
+        base
+        - _dec(getattr(core, "qty_cancelled", None))
+        - _dec(getattr(core, "qty_returned", None)),
+        _ZERO,
+    )
 
 
 def delivered_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
@@ -9312,7 +9320,10 @@ class ProjectSupplyService:
                     # board itself no longer shows.
                     else OUTSIDE_FULFILMENT_PLANNING
                     if (
-                        outside_fulfilment_planning(warehouse)
+                        outside_fulfilment_planning(
+                            warehouse,
+                            getattr(core_orders.get(str(core.sales_order_id)), "doc_type", None),
+                        )
                         and str(core.id) not in decided_anywhere
                     )
                     else None

@@ -1632,7 +1632,7 @@ class FulfilmentBoardService:
                 # from the one predicate rather than from two lookups that could disagree.
                 # ACTIVE and flagged off - an inactive bin keeps whatever verdict it carried
                 # before the flag existed (`outside_fulfilment_planning`).
-                outside_planning=outside_fulfilment_planning(warehouse),
+                outside_planning=outside_fulfilment_planning(warehouse, order.doc_type),
                 priority=line.priority,
                 demand_class=order.demand_class,
                 so_doc_type=order.doc_type,

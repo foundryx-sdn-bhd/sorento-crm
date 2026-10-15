@@ -70,15 +70,23 @@ def in_fulfilment_planning(warehouse: Any) -> bool:
     )
 
 
-def outside_fulfilment_planning(warehouse: Any) -> bool:
+#: Documents whose stock sits at a bin the ladder does not plan (a consignment at CON). Their
+#: lines are planned at that bin, so they never earn the OUTSIDE_FULFILMENT_PLANNING verdict.
+#: The bin stays flagged off, so no DRAW reads it and sales order lines never see it.
+PLANNED_AT_OWN_BIN_DOC_TYPES = frozenset({"consignment"})
+
+
+def outside_fulfilment_planning(warehouse: Any, doc_type: Optional[str] = None) -> bool:
     """Whether this bin earns the `OUTSIDE_FULFILMENT_PLANNING` verdict: ACTIVE, flag off.
+
+    A line whose `doc_type` is in `PLANNED_AT_OWN_BIN_DOC_TYPES` never earns it.
 
     Deliberately not `not in_fulfilment_planning(...)`. An INACTIVE warehouse was already
     outside everything the ladder reads before this flag existed, and it keeps the verdict
     it carried then - telling a planner that a retired bin is "outside fulfilment planning"
     points them at a switch that is not the one to flip.
     """
-    if warehouse is None:
+    if warehouse is None or doc_type in PLANNED_AT_OWN_BIN_DOC_TYPES:
         return False
     return bool(getattr(warehouse, "is_active", False)) and not bool(
         getattr(warehouse, "fulfilment_planning", False)
@@ -87,6 +95,7 @@ def outside_fulfilment_planning(warehouse: Any) -> bool:
 
 __all__ = [
     "OUTSIDE_FULFILMENT_PLANNING",
+    "PLANNED_AT_OWN_BIN_DOC_TYPES",
     "fulfilment_planning_predicate",
     "in_fulfilment_planning",
     "outside_fulfilment_planning",
