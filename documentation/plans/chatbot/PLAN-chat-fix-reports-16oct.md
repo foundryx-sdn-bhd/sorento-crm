@@ -116,7 +116,13 @@ Out (named, with where it goes):
 - P3-F3 parser conflicts (refine rule vs "sales total" rule, prompt v94 :245-246 vs :212) and channel names from
   data (`head/parser.py:257`): parser input change -> PR-B2, its own prompt version behind parser-gold TRAIN x2.
   Fixes #20 and the parser half of #24.
-- #21, #25 follow-up context: PR-C (P1).
+- #21, #25 follow-up context: PR-C (P1). R25 too (the parser's group_by on an answering turn, S2d).
+- R23 (one case): a 6-question multi-ask message whose sales sub-ask, after two period questions, runs
+  `crm_sales_report` with only the channel (its product subject lost; live turn 9981c08e, session holds only the
+  open period question). Trigger to fix: a second multi-ask chain losing a sub-ask's subject.
+- Found by the security review, pre-existing, not PR-B: `/api/v1/sales/analysis` refuses only contacts WITH
+  customer links; a non-staff contact with no links holding `sales_orders.sales_report` (off by default) can get
+  company totals. PR-B's own reroute is staff-only. Reported to crew for the owner.
 - "How many dealers sell X" answered as a count (`reports/ask.py:291` has `total_count`): not in the fix table;
   trigger = a second real chain asking a count.
 
