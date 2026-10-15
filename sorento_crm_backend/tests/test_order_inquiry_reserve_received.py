@@ -885,3 +885,28 @@ def test_rr6c_mixed_releases_only_the_truly_received_link(ctx):
     assert [lk.po_line_id for lk in _target_links(sc, r.row)] == [line.id]
     released = _released(sc, r.row)
     assert len(released) == 1 and released[0].spo_allocation_id == spo_recv.id
+
+
+def test_rr6d_other_company_open_spo_does_not_unreceive_this_companys_line(ctx):
+    """AC-RR-6 scoping: company B's OPEN allocation naming the same PO number and line ref
+    must not make company A's closed PO line look un-received."""
+    sc = _scene(ctx)
+    po, line = _seed_po_line(
+        sc.db, company_id=sc.company, product_id=sc.product.id, qty_ordered="47",
+        qty_received="47",
+    )
+    assert line.line_status == "closed"
+    _seed_spo_line(
+        sc.db, company_id=ctx.company_b, product_id=sc.product.id, allocated_quantity=47,
+        quantity_received=0, from_po_line_ref=line.source_ref, from_po_number=po.po_number,
+    )
+    r = _row_with(sc, qty=44, state=INQUIRY_PLACED)
+    _link_po(sc, r.row, po, line, 44)
+    sc.db.commit()
+    req = _request(sc, r.inquiry, r.row, 44)
+    rr = (
+        sc.db.query(OrderInquiryReserveRequestRow)
+        .filter(OrderInquiryReserveRequestRow.request_id == req.id)
+        .one()
+    )
+    assert rr.qty_requested == Decimal("44")
