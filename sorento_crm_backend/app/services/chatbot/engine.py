@@ -2663,49 +2663,6 @@ def _fills_open_top_selling_question(focus: Any, verdict: dict[str, Any]) -> dic
     return {key: reading[key] for key in _TOP_SELLING_FILLS[asked] if reading[key]}
 
 
-#: The axes the top selling list ranks itself (items or categories), as the parser's `group_by`.
-_TOP_SELLING_OWN_AXES = frozenset({"", "product", "item", "category"})
-
-
-def _top_selling_retarget(focus: Any, verdict: dict[str, Any]) -> dict[str, Any] | None:
-    """Chat fix PR-B S2d (live R25): under an open top selling metric or basis question, a
-    reply whose parse names an axis the top selling list does not rank (brand, customer,
-    sales agent, ...) re-targets the held ask: the sales ranking on that axis, with the
-    held period, count, metric and basis (the reply's own win). None otherwise; a sales
-    ranking the parser named itself is its own new ask. Parser fields only."""
-    from app.services.chatbot.lanes.business import report_ask as _report_ask
-
-    slot = focus.top_selling if isinstance(focus.top_selling, dict) else None
-    if focus.status != "top_selling" or not slot or slot.get("asked") not in _TOP_SELLING_FILLS:
-        return None
-    if jsc.js_string(verdict.get("order_status") or "").strip() == _report_ask.ASK_NAME:
-        return None
-    group_by = jsc.js_string(verdict.get("group_by") or "").strip().lower()
-    if group_by in _TOP_SELLING_OWN_AXES or group_by not in _report_ask.GROUP_BY:
-        return None
-    window = focus.date_window if isinstance(focus.date_window, dict) else {}
-    rank_by = verdict.get("rank_by") if verdict.get("rank_by") in ("quantity", "amount") else slot.get("rank_by")
-    basis = verdict.get("basis") if verdict.get("basis") in _report_ask.BASES else slot.get("basis")
-    dated = verdict.get("date_filter_start") or verdict.get("date_filter_end")
-    return {
-        **verdict,
-        "message_type": "business_query",
-        "domain_hint": verdict.get("domain_hint") if verdict.get("domain_hint") in ORDER_OR_SALES_DOMAINS else "order",
-        "intent_hint": "check_order",
-        "order_status": _report_ask.ASK_NAME,
-        "group_by": group_by,
-        "top_n": verdict.get("top_n") if verdict.get("top_n") is not None else slot.get("top_n"),
-        "measure": _report_ask.METRIC_FROM_RANK_BY.get(rank_by),
-        "rank_by": None,
-        "basis": basis if basis in _report_ask.BASES else None,
-        "date_filter_start": verdict.get("date_filter_start") if dated else window.get("start"),
-        "date_filter_end": verdict.get("date_filter_end") if dated else window.get("end"),
-        "ranking_refine": False,
-        "status": None,
-        "document": None,
-    }
-
-
 def _as_ranking_answer(verdict: dict[str, Any], **keys: Any) -> dict[str, Any]:
     """`verdict` re-read as a refinement of the ranking on screen: the top selling ask,
     no ask of its own, only its category and brand words kept."""
@@ -2970,10 +2927,6 @@ def _top_selling_verdict(
     the ranking whatever the parser's status; an echoed word from an earlier turn is
     dropped; basis words switch the basis; a period alone re-runs the ranking for it.
     """
-    retargeted = _top_selling_retarget(state.focus, verdict)
-    if retargeted is not None:
-        # Chat fix PR-B S2d (live R25): "how about by brand instead?" under the open question.
-        return retargeted, state, "top_selling_axis_retarget"
     filled = _fills_open_top_selling_question(state.focus, verdict)
     if filled:
         # Chat fix PR-B S2b (R12, R17): a parse that fills the field the open question asked,
