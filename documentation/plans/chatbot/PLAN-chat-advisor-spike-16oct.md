@@ -1,6 +1,6 @@
 # PLAN: chat advisor spike ("Claude Code for Sorento"), lane CHAT-ADVISOR-SPIKE
 
-Status: Plan. Track: spike (time-box 3 days, done by ~19 Oct 2026). NOT a product PR: deliverables
+Status: Build (design page draft + harness). Budget: 1000 live calls/day on run days, hard total <= $30 (crew 15 Oct). Track: spike (time-box 3 days, done by ~19 Oct 2026). NOT a product PR: deliverables
 are a design page and a measured prototype on a draft PR. Owner approved 15 Oct ~22:15. LLM budget
 about $30 total, spend reported.
 
@@ -139,8 +139,10 @@ max_tools: int = 6) -> list[str]`
   + the last 3 exchanges; tools = `select_tools(parsed domains)`.
 - **C2**: advisor sees the raw transcript (every prior user message and bot reply, then the new message), no
   parser output; tools = the same subset as C (isolates the context variable).
-- **C2-all**: C2 with every tool in `ADVISOR_READ_ONLY` (the Claude Code shape; tests the n8n "more tools =
-  worse" failure head on). Run if the budget allows.
+- **C2-all**: C2 with every tool in `ADVISOR_READ_ONLY` (46 tools; the Claude Code shape; tests the n8n "more
+  tools = worse" failure head on). Approved by crew 15 Oct.
+- **C2-opus**: C2 on claude-opus-5-5 for the follow-up scenarios only (crew 15 Oct: test whether raw context helps
+  follow-ups with a stronger model; parser-gold showed follow-ups at 62% v1 / 69% PV2 vs ~92% on first turns).
 - Loop: at most 4 model calls per turn; scope args (`contact_id`, `space_id`) are removed from the tool schemas
   and stamped by code; fact guard on the final reply; one retry with the unsupported tokens named; a second
   failure falls back to the v1 reply (counted as a guard fallback).
