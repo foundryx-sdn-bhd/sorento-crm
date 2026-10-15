@@ -103,3 +103,19 @@ def test_guard_the_same_row_pick_with_no_open_question_is_refused_as_before():  
     res = _run(_so_row_state(False), out(ask(act="refines_held", domain="order", row_pick=1)), r)
     assert res.direct_reply == SO_NOT_ENABLED_MESSAGE, res.direct_reply
     assert res.actions == [] and r.calls == []
+
+
+# ------------------------------------------------------------------ keyed pick beside a number keeps the parser's domain
+
+
+@pytest.mark.parametrize("extra", [{"row_pick": 1}, {"answer": {"option_key": "yes", "free_value": "1"}}],
+                         ids=["row-pick", "free-value"])
+def test_guard_an_option_key_beside_a_number_is_still_judged_in_the_tagged_domain(extra):  # guard: passes today
+    """'yes' picks by key, so the number does not run the question's own ask and the parser's domain (sales) stays
+    judged: refused for a contact without the sales grant, before any resolver call."""
+    r = FakeResolver({})
+    answer = extra.get("answer") or {"option_key": "yes", "free_value": None}
+    parsed = out(ask(act="answers_bot_question", domain="sales", answer=answer, row_pick=extra.get("row_pick")))
+    res = _run(_lim_confirm(), parsed, r)
+    assert res.direct_reply == SALES_REPORT_NOT_ENABLED_MESSAGE, res.direct_reply
+    assert res.actions == [] and r.calls == []
