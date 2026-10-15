@@ -5473,7 +5473,8 @@ def envelope_of(
     # `*last purchase cost* for M218:` header and contract 7's refusal sentence was
     # never said - the tool was still never called, so nothing leaked, but the customer
     # was told nothing either.
-    refused = fragment.get("outcome") == "access_denied"
+    # A fixed refusal (`_fixed_reply(refused=True)`) is denied too: no fit line opens it.
+    refused = fragment.get("outcome") == "access_denied" or bool(fragment.get("refused"))
     codes = [name for name in (_answer_subject(e) for e in entities) if name]
     rows = fetched.get("answers")
     figures = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []

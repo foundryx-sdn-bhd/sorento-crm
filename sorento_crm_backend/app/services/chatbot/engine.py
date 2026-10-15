@@ -5924,7 +5924,13 @@ def _run_stages_body(  # noqa: PLR0915
         # at all is answered with its line here, ahead of every lane and with nothing
         # fetched or armed, whatever domain the parser gave it (a bare code's null domain
         # included). A refused access keeps its refusal; an escalation keeps its arm.
-        if seat_link_lines and branch_kind not in ("access_denied", "out_of_scope"):
+        if (
+            seat_link_lines
+            and branch_kind not in ("access_denied", "out_of_scope", "stock_denied")
+            # AC-23: a refusal goes out instead of a no-link line.
+            and not sales_report_grant_refused
+            and not customer_scope_refused
+        ):
             return _run_answer(
                 turn_id=turn_id,
                 ctx=ctx,
@@ -7195,6 +7201,12 @@ def _run_stages_body(  # noqa: PLR0915
                 "message_text": latest_user_message,
             },
             chat_console=_chat_console(envelope),
+            # AC-23: a refusal (stock, sales report, customer scope, a denied domain) is sent
+            # exactly as it is, with no fit line.
+            refused=branch_kind == "stock_denied"
+            or sales_report_grant_refused
+            or customer_scope_refused
+            or any(isinstance(e, dict) and e.get("denied") for e in envelopes or []),
         )
 
     with _session(session_factory) as db:
@@ -7359,6 +7371,7 @@ def _run_stages_body(  # noqa: PLR0915
             verdict=verdict,
             recalled=recalled,
             chat_console=_chat_console(envelope),
+            refused=True,
         )
 
     if branch_kind == "out_of_scope" and completes_here:
@@ -7684,6 +7697,7 @@ def _run_answer(
     stock_ask_entries: list[dict[str, Any]] | None = None,
     chat_console: bool = False,
     refer_context: dict[str, Any] | None = None,
+    refused: bool = False,
 ) -> TurnResult:
     """G TAIL for a turn the composer answered: persist, record, hand the actions back.
 
@@ -7707,7 +7721,7 @@ def _run_answer(
     # the entities), never from the message; nothing linked, no line.
     from app.services.chatbot.lanes.business import find as find_lane
 
-    if isinstance(verdict, dict) and (getattr(answer, "text", "") or "").strip():
+    if not refused and isinstance(verdict, dict) and (getattr(answer, "text", "") or "").strip():
         lang = item.get("reply_language") if isinstance(item, dict) else None
         localizer = None
         if lang not in (None, "en") and find_lane.fit_lines(verdict.get("entities") or []):
