@@ -1474,13 +1474,16 @@ def _points_back(e: Entity) -> bool:
 def _line_products(st: ConversationState) -> list[str] | None:
     """R5-2: the product codes of the one document the last answer showed (its printed product rows and the
     lines kept beside it; only lines the contact may see are there); None when it showed none or several."""
-    turn = max((e.turn for e in st.register), default=None)
-    entries = [e for e in st.register if e.turn == turn]
-    docs = [e for e in entries if e.parent is None and e.kind in LINE_DOCUMENT_KINDS]
+    # R5 fix 1: the LAST answer's rows only (`shown`): an answer that printed none leaves no document to read.
+    rows = shown(st)
+    docs = [(n, r) for n, r in enumerate(rows, start=1)
+            if r.payload.get("row_kind") in LINE_DOCUMENT_KINDS and "in" not in r.payload]
     if len(docs) != 1:
         return None
-    children = [e.label for e in entries if e.parent == docs[0].id and e.kind == "product"]
-    return list(dict.fromkeys([*st.doc_lines.get(docs[0].key, []), *children]))
+    n, doc = docs[0]
+    children = [r.label for r in rows if r.payload.get("in") == n and r.payload.get("row_kind") == "product"]
+    key = next((e.key for e in st.register if e.kind == doc.payload["row_kind"] and e.label == doc.label), None)
+    return list(dict.fromkeys([*st.doc_lines.get(key or "", []), *children]))
 
 
 def _lists_all(domain: str | None) -> bool:
