@@ -758,14 +758,24 @@ def test_formula_or_template_text_is_skipped_and_listed(db, tmp_path, text, reas
 # --------------------------------------------------------------------------- fix round 1: AC-25b CSV escaping
 
 
-def test_changes_csv_escapes_a_leading_formula_char_but_the_database_keeps_it(db, tmp_path):
-    p = _prod(db, "SRTEC1", text="-old")
+@pytest.mark.parametrize("old", ["-old", "+old", "\told", "\rold", "=old", "@old"])
+def test_changes_csv_escapes_a_leading_formula_char_but_the_database_keeps_it(db, tmp_path, old):
+    p = _prod(db, "SRTEC1", text=old)
     run = _run(db, tmp_path, [("SRTEC1", "new words")], apply=True)
-    assert run.change("SRTEC1")["old_description"] == "'-old"
+    assert run.change("SRTEC1")["old_description"] == "'" + old
     assert _desc(db, p) == "new words"
-    # the escape never reaches the database: the old text was "-old", not "'-old"
+    # the escape never reaches the database: the old text was raw, not "'"-prefixed
     audit = _audit_updates(db, p)
-    assert audit[0].old_values["price_tag_description"] == "-old"
+    assert audit[0].old_values["price_tag_description"] == old
+
+
+def test_exactly_max_rows_rows_is_accepted(db, tmp_path, monkeypatch):
+    rows = [(f"SRTCAPOK{i}", "t") for i in range(3)]
+    ps = [_prod(db, c) for c, _ in rows]
+    monkeypatch.setattr(_script(), "MAX_ROWS", 3)
+    run = _run(db, tmp_path, rows, apply=True)
+    assert run.code == 0
+    assert all(_desc(db, p) == "t" for p in ps)
 
 
 @pytest.mark.parametrize("code", ["=SRTX", "@SRTX"])
