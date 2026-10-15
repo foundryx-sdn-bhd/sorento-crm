@@ -110,8 +110,11 @@ export function QuotationVersionEditor({
   quotation,
   seriesId,
   edit,
+  locked = false,
 }: {
   project: Project;
+  /** The quotation is locked for approval: no per-scope revise is offered. */
+  locked?: boolean;
   /**
    * The scope. Null on the form page for a scope added there and not saved yet (#1341): it has no
    * version, so there is nothing to read, and its lines start empty and are staged like any other.
@@ -485,7 +488,7 @@ export function QuotationVersionEditor({
               Withheld while an edit session is open on this scope. Recompute writes to the
               server, and the staged rows on screen would silently be answering for a state
               the database no longer holds. */}
-          {project.can_edit && editable && selected && (
+          {project.can_edit && editable && selected && !locked && (
             <Button
               type="button"
               size="sm"
@@ -512,7 +515,7 @@ export function QuotationVersionEditor({
           {/* Not on the form page: a revise writes a new version at once, under lines the form
               has staged against the current one and saves by scope. The quotation page's Edit
               quotation already asks to revise before it opens the form. */}
-          {project.can_edit && current && !edit && (
+          {project.can_edit && current && !edit && !locked && (
             <Button
               type="button"
               size="sm"
