@@ -61,6 +61,7 @@ from app.services.chatbot.contracts import (
     is_timeline,
     named_count,
 )
+from app.services.chatbot.turn.pending import SALES_ANALYSIS_COMPANY_KIND
 from app.services.chatbot.turn.policy import default_policy
 from app.services.chatbot.turn import policy_rows
 from app.services.product_spec_registry import display_spec_value
@@ -2610,7 +2611,6 @@ SALES_REPORT_MISS_MESSAGE = "No sales found."
 #: Chat fix PR-B S7 (AC-B9): the sales analysis's "Sorento or Mocha?" as an open question
 #: (`compose._lane_question` arms it; `lanes.business.sales_analysis_company_reply` reads the
 #: answer), and the parser fields the asked analysis re-runs with.
-SALES_ANALYSIS_COMPANY_KIND = "sales_analysis_company"
 SALES_ANALYSIS_HELD_KEYS = (
     "date_filter_start", "date_filter_end", "group_by", "sales_channel", "sales_basis", "top_n",
 )
@@ -2628,7 +2628,11 @@ def _sales_analysis_company_ask(result: Any, ctx: dict[str, Any]) -> dict[str, A
     return {
         "kind": SALES_ANALYSIS_COMPANY_KIND,
         "last_result_set": [{"idx": i, "label": name} for i, name in enumerate(names, start=1)],
-        "filters": {key: semantic_input.get(key) for key in SALES_ANALYSIS_HELD_KEYS},
+        # `offer_text`: a re-ask prints the route's own question again (`compose_question`).
+        "filters": {
+            **{key: semantic_input.get(key) for key in SALES_ANALYSIS_HELD_KEYS},
+            "offer_text": jsc.js_string(result.get("response") or "").strip() or None,
+        },
     }
 
 
