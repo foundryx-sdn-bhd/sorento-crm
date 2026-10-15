@@ -880,6 +880,7 @@ def test_c1_a_series_set_row_has_a_uuid_id_and_the_pair_stays_unique():
 
         first = _series_row(db, series, product_set, price="100.00")
         assert uuid.UUID(str(first.id))
+        assert [c.name for c in type(first).__table__.primary_key.columns] == ["id"]
 
         with pytest.raises(IntegrityError):
             with db.begin_nested():
