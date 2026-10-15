@@ -71,12 +71,28 @@ def alternative_options(stock_raw: str) -> list[Option]:
     return out[:1]
 
 
-def incoming_options(incoming_raw: str, multi: bool) -> list[Option]:
+def _is_past(date: str, today: Any = None) -> bool:
+    from datetime import date as _d
+
+    t = today or _d.today()
+    try:
+        if "/" in date:
+            d, m, y = (int(x) for x in date.split("/"))
+        else:
+            y, m, d = (int(x) for x in date[:10].split("-"))
+        return _d(y, m, d) < t
+    except ValueError:
+        return False
+
+
+def incoming_options(incoming_raw: str, multi: bool, today: Any = None) -> list[Option]:
     d = _j(incoming_raw)
     for row in (d or {}).get("data") or []:
         date = row.get("nearest_estimated_arrival_date") or (row.get("etas") or [None])[0]
         if date:
-            prefix = f"Next arrival for {row.get('product_code')}" if multi and row.get("product_code") else "Next arrival"
+            # the dev DB is a September snapshot: a past ETA is worded as what is on record, not a promise
+            lead = "ETA on record" if _is_past(date, today) else "Next arrival"
+            prefix = f"{lead} for {row.get('product_code')}" if multi and row.get("product_code") else lead
             return [Option("incoming", f"{prefix}: {date}.", [incoming_raw])]
     return []
 
@@ -106,8 +122,13 @@ def promo_options(promo_raw: str, promotions_raw: str) -> list[Option]:
 def accessory_options(find_raw: str) -> list[Option]:
     d = _j(find_raw)
     for g in (d or {}).get("groups") or []:
-        if g.get("rows") and g.get("head"):
-            return [Option("accessory", str(g["head"]).strip(), [find_raw])]
+        codes = [r.get("product_code") for r in g.get("rows") or [] if r.get("product_code")][:3]
+        head = str(g.get("head") or "").strip()
+        if codes and head:
+            # the tool's head is a header ("Seat cover for X:" / "Y fits these WCs:"); the rows are the fit
+            sentence = (f"{head[:-1]} is {', '.join(codes)}." if head.startswith("Seat cover for") and head.endswith(":")
+                        else f"{head} {', '.join(codes)}." if head.endswith(":") else head)
+            return [Option("accessory", sentence, [find_raw])]
     return []
 
 

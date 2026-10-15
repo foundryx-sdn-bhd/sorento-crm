@@ -128,22 +128,18 @@ def run_advisor(
     messages = ([{"role": "user", "content": _c_block(scenario_turns, moment)}] if mode == "C"
                 else _c2_messages(scenario_turns))
     user_texts = [t["text"] for t in scenario_turns]
-    evidence: list[str] = []
+    # evidence: every tool result of this turn, plus every PRIOR bot reply (the user already saw it; it came from tools)
+    evidence: list[str] = [t["reply"] for t in scenario_turns[:-1] if t.get("reply")]
 
-    def model_call() -> dict[str, Any]:
-        out = provider.complete(messages, tools, system)
+    def model_call(with_tools: bool = True) -> dict[str, Any]:
+        out = provider.complete(messages, tools if with_tools else [], system)
         rec["calls"].append({"latency_ms": out["latency_ms"], "usage": out["usage"], "cost_usd": out["cost_usd"],
                              "tool_calls": [c["name"] for c in out["tool_calls"]]})
         rec["advisor_latency_ms"] += out["latency_ms"]
         rec["cost_usd"] += out["cost_usd"]
         return out
 
-    text = ""
-    for _ in range(MAX_CALLS):
-        out = model_call()
-        if not out["tool_calls"]:
-            text = out["text"].strip()
-            break
+    def run_tools(out: dict[str, Any]) -> None:
         messages.append({"role": "assistant", "text": out["text"], "tool_calls": out["tool_calls"]})
         results = []
         for tc in out["tool_calls"]:
@@ -161,35 +157,45 @@ def run_advisor(
                                         "result": content[:RESULT_CAP_CHARS]})
             results.append({"id": tc["id"], "name": tc["name"], "content": content[:RESULT_CAP_CHARS]})
         messages.append({"role": "tool", "results": results})
+
+    text = ""
+    for _ in range(MAX_CALLS):
+        out = model_call()
+        if not out["tool_calls"]:
+            text = out["text"].strip()
+            break
+        run_tools(out)
     else:
         rec["flags"].append("loop_exhausted")
         rec["final_reply"] = moment["reply"]
         rec["flags"].append("guard_fallback")
+        rec["evidence_chars"] = sum(len(e) for e in evidence)
         return rec
 
     if not text:
         rec["flags"] += ["empty_reply", "guard_fallback"]
         rec["final_reply"] = moment["reply"]
+        rec["evidence_chars"] = sum(len(e) for e in evidence)
         return rec
 
     g = fact_guard.check_reply(text, evidence, user_texts)
-    rec["guard"].append({"ok": g.ok, "unsupported": g.unsupported, "leaks": g.leaks})
+    rec["guard"].append({"ok": g.ok, "unsupported": g.unsupported, "leaks": g.leaks, "from_call": len(rec["calls"])})
     if not g.ok:
         bad = g.unsupported + [f"(internal id) {x}" for x in g.leaks]
         messages.append({"role": "assistant", "text": text, "tool_calls": []})
         messages.append({"role": "user", "content": (
             "Your reply contains values that no tool result or customer message supports: "
-            + "; ".join(bad) + ". Rewrite the reply without them (call a tool if you need the fact), "
-            "and never show internal ids.")})
+            + "; ".join(bad) + ". Rewrite the reply without them. You may call a tool once if you need the fact; "
+            "then finish with the reply text. Never show internal ids.")})
         out = model_call()
+        if out["tool_calls"]:  # the retry may call tools once, then MUST end in text (no tools offered)
+            run_tools(out)
+            out = model_call(with_tools=False)
+            rec["flags"].append("retry_used_tools")
         retry = out["text"].strip()
-        if out["tool_calls"]:
-            for tc in out["tool_calls"]:
-                rec["tools_called"].append({"name": tc["name"], "args": tc["args"], "result_chars": 0, "result": "(retry tool call not executed)"})
-            retry = ""
         g2 = fact_guard.check_reply(retry, evidence, user_texts) if retry else None
         rec["guard"].append({"ok": bool(g2 and g2.ok), "unsupported": g2.unsupported if g2 else ["(no text)"],
-                             "leaks": g2.leaks if g2 else []})
+                             "leaks": g2.leaks if g2 else [], "from_call": len(rec["calls"])})
         if g2 and g2.ok:
             rec["flags"].append("guard_retry_ok")
             text = retry
@@ -197,4 +203,5 @@ def run_advisor(
             rec["flags"].append("guard_fallback")
             text = moment["reply"]
     rec["final_reply"] = text
+    rec["evidence_chars"] = sum(len(e) for e in evidence)
     return rec

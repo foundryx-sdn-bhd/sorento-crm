@@ -26,7 +26,7 @@ def run_c3(scenario: dict[str, Any], model: str, scenario_turns: list[dict[str, 
     moment = v1_turn_record
     rec: dict[str, Any] = {"arm": "C3", "model": model, "calls": [], "tools_called": [], "guard": [], "flags": [],
                            "final_reply": None, "v1_reply": moment["reply"], "advisor_latency_ms": 0, "cost_usd": 0.0,
-                           "tools_offered": [], "options": [], "chosen": None}
+                           "tools_offered": [], "options": [], "chosen": None, "evidence_chars": 0}
     t0 = time.monotonic()
     opts = (build or options.build_options)(scenario, moment, scope, calls_log=rec["tools_called"])
     rec["advisor_latency_ms"] += int((time.monotonic() - t0) * 1000)
