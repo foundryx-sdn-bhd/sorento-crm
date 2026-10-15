@@ -107,13 +107,19 @@ def customer_scope(db: Any, contact_respond_id: Any, space_id: Any, profile: Any
     business fetch a PV2 Lookup runs): v1's own (`business.services.customer_scope`), except that a contact
     with no customer links who is neither staff (the office tier, or `contact_asker`'s staff) nor a salesperson
     is held to none: enforced with no ids, so no customer is searched, named or fetched. v1 turns never read it."""
-    from app.services import contact_customer_scope as scope_mod
     from app.services.chatbot.lanes.business import services as business_services
 
     scope = business_services.customer_scope(db, contact_respond_id, space_id)
     if scope is not None or not _unlinked_non_staff(db, contact_respond_id, space_id, profile):
         return scope
-    # v1's own refusal line for a contact with no account ("I can only check on your own account").
+    return no_customer_scope()
+
+
+def no_customer_scope() -> dict[str, Any]:
+    """R5-8: the scope that allows no customer (enforced, no ids), with v1's own refusal line for a contact with
+    no account ("I can only check on your own account")."""
+    from app.services import contact_customer_scope as scope_mod
+
     refusal = scope_mod.refusal_line(scope_mod.ContactCustomerScope(linked=(), staff=False))
     return {"ids": [], "names": {}, "linked": [], "staff": False, "enforced": True, "levels": {},
             "refusal": refusal}

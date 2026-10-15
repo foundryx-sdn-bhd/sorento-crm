@@ -336,6 +336,8 @@ def scope_for(fetch_domain: str, scope: dict[str, Any], *, asker: str | None, gr
     the reveal is relaxed, and only for a non-dealer (the route scopes chat by the asker rule, so
     customer links make a salesperson or staff contact no dealer); an unresolved contact or an unknown
     asker class fails closed (strict). Every other fetch keeps the strict scope. A new dict: the turn's own scope is never replaced."""
+    if scope.get("enforced") and not scope.get("ids"):
+        return {**scope}  # R5-8: held to no customer (only PV2 builds it) is never relaxed
     if fetch_domain == DOMAIN and granted and asker in _NON_DEALER_ASKERS:
         return {**scope, "enforced": False}
     return {**scope}

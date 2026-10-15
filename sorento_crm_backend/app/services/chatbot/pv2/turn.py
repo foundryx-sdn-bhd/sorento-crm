@@ -560,8 +560,8 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
         attrs = []
     try:
         scope = pv2_hook.customer_scope(db, contact, space_id, profile)  # R5-8: unlinked non-staff see no customer
-    except Exception:  # noqa: BLE001 - unknown scope: held to links, no customer names at all
-        scope = {"enforced": True, "ids": [], "linked": []}
+    except Exception:  # noqa: BLE001 - unknown scope: held to no customer, its refusal line said (R5-8)
+        scope = pv2_hook.no_customer_scope()
     held = (not staff) or bool((scope or {}).get("enforced"))
     try:
         regions = rules_for_contact(db, resolve_request_contact(db, contact, space_id)).regions

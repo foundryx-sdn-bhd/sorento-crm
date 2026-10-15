@@ -5599,6 +5599,7 @@ def _run_stages_body(  # noqa: PLR0915
                 dealer = (
                     business_services.top_selling_dealer_ledgers(db, contact_respond_id, space_id_for_turn)
                     is not None
+                    or bool((gate_scope or {}).get("enforced"))  # R5-8: held to its links, or to none
                 )
                 resolver_parse_output, top_selling_updates = _top_selling_narrowing(
                     db, resolver_parse_output, state_out.focus, dealer=dealer

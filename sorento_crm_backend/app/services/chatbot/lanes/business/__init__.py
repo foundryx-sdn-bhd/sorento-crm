@@ -1583,9 +1583,10 @@ def run_fetch(
         customer_ids = [
             u for u in jsc.array(parse_output.get("outstanding_carried_customer_ids")) if fetch_mod.is_uuid(u)
         ]
-        if scoped_to_links:
-            own = {str(i) for i in customer_scope["ids"]}
-            customer_ids = [u for u in customer_ids if str(u) in own] or list(customer_scope["ids"])
+        if customer_scope.get("enforced"):
+            # Held to the links (R5-8: or to none, when it has no ids: no rows).
+            own = {str(i) for i in customer_scope.get("ids") or []}
+            customer_ids = [u for u in customer_ids if str(u) in own] or list(customer_scope.get("ids") or [])
     if parse_output.get("so_list") is True and parse_output.get("domain_hint") == "order" and customer_ids and db is not None:
         access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
         granted_raw = access_ctx.get("attributes")
