@@ -8,6 +8,8 @@ reserve notice is parked and whose second row still needs a reserve.
 """
 from __future__ import annotations
 
+import pytest
+
 from app.models.project_so import OrderInquiryRow
 
 from .test_oi_staged_notify import (  # noqa: F401  (`sn` is a pytest fixture)
@@ -19,6 +21,9 @@ from .test_order_inquiry_reserve import _captured_dispatches, _register
 from .test_order_inquiry_worklist import LIST
 
 SUMMARY = f"{LIST}/summary"
+
+# v4 is not built yet: this PR merges as v3. Strict, so the build commit must drop this mark.
+pytestmark = pytest.mark.xfail(reason="v4, awaiting owner OK of mock v4", strict=True)
 
 
 def _rows_of(world, inquiry) -> list:
