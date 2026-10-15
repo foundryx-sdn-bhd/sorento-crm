@@ -626,29 +626,98 @@ def test_b1b_unchanged_a_picked_row_is_never_asked_about(session_factory, monkey
 
 
 # --------------------------------------------------------------------------- #
-# S8 (AC-B10), lane half: the lane tells the route which calls are not fresh asks.
-# Pinned name `refine` (see tests/test_report_ask_uncounted_prb.py).
+# S2b (AC-B15): the open top selling question is answered by a parse that fills its field,
+# whatever order_status the parser put on it (R12, R17)
+# --------------------------------------------------------------------------- #
+
+TS_TOOL_ARGS = ts_calls
+
+
+def _open_ts_basis(session_factory, monkeypatch) -> None:
+    _seed_contact(session_factory, variables={})
+    reply, captured = ts_turn(
+        session_factory, monkeypatch, _ts(rank_by="quantity", basis=None, top_n=5), "top 5 selling items"
+    )
+    assert reply.strip() == TS_BASIS_Q and ts_calls(captured) == [], (reply, captured)
+
+
+@pytest.mark.parametrize(
+    "keys",
+    [
+        dict(order_status="sales_ranking"),
+        dict(order_status="sales_ranking", group_by="category"),
+        dict(order_status="sales_report"),
+        dict(order_status=None),
+    ],
+    ids=["sales_ranking_R12", "sales_ranking_category_R17", "sales_report", "none"],
+)
+def test_b15_a_basis_answer_tagged_with_another_report_type_runs_the_top_selling_list(
+    session_factory, monkeypatch, route, keys
+) -> None:
+    _open_ts_basis(session_factory, monkeypatch)
+    reply, captured = ts_turn(
+        session_factory, monkeypatch,
+        _parser_output(
+            message_type="business_query", domain_hint="order", intent_hint="check_order", entities=[],
+            basis="delivered", rank_by=None, top_n=None, measure=None, ranking_refine=None, **keys,
+        ),
+        "delivered",
+    )
+    calls = ts_calls(captured)
+    assert len(calls) == 1, (reply, [n for n, _a in captured])
+    assert calls[0]["basis"] == "delivered" and calls[0]["rank_by"] == "quantity" and calls[0]["n"] == 5, calls
+    assert not [a for n, a in captured if n == "crm_report_ask"], captured
+
+
+def test_b15_near_miss_the_other_report_type_with_no_open_field_filled_is_not_the_answer(
+    session_factory, monkeypatch, route
+) -> None:
+    """A parse that fills neither the basis nor anything the question holds does not run the list."""
+    _open_ts_basis(session_factory, monkeypatch)
+    _reply, captured = ts_turn(
+        session_factory, monkeypatch,
+        _parser_output(
+            message_type="business_query", domain_hint="order", intent_hint="check_order", entities=[],
+            order_status="sales_ranking", basis=None, rank_by=None, top_n=None, measure=None, group_by=None,
+        ),
+        "x",
+    )
+    assert ts_calls(captured) == [], captured
+
+
+# --------------------------------------------------------------------------- #
+# S2c (AC-B15): a new report ask while the ranking basis question is open is not a failed answer
 # --------------------------------------------------------------------------- #
 
 
-def test_b10_a_fresh_ask_does_not_claim_to_be_a_refine(console) -> None:
-    _text, calls = console.say(_rank(group_by="customer", top_n=5, **THIS_YEAR), "x")
-    assert len(calls) == 1 and not calls[0].get("refine"), calls
+def _open_ranking_basis(console) -> None:
+    text, calls = console.say(
+        _rank(group_by="customer", top_n=10, measure="qty", basis=None, **THIS_YEAR), "top 10 customers 2026 by qty"
+    )
+    assert text.strip() == BASIS_Q and calls == [], (text, calls)
 
 
-def test_b10_a_refine_of_the_held_ranking_is_sent_as_a_refine(console) -> None:
-    _t1(console)
-    text, calls = console.say(_refine(top_n=5), "5")
-    assert len(calls) == 1 and calls[0].get("refine") is True, (text, calls)
+def test_b15_a_new_report_ask_that_fills_no_open_field_is_never_a_failed_basis_answer(console) -> None:
+    _open_ranking_basis(console)
+    text, calls = console.say(
+        _parser_output(
+            message_type="business_query", domain_hint="order", intent_hint="check_order", entities=[],
+            order_status="top_selling", group_by="customer", basis=None, rank_by=None, top_n=None, measure=None,
+        ),
+        "i want to see the top customer",
+    )
+    assert "i don't know" not in text.lower(), text
+    assert "as a basis" not in text.lower(), text
 
 
-def test_b10_the_answer_to_the_bots_own_question_is_sent_as_a_refine(console) -> None:
-    console.say(_rank(group_by="customer", top_n=None, **THIS_YEAR), "top customers 2026")
-    text, calls = console.say(_answer(top_n=5), "5")
-    assert len(calls) == 1 and calls[0].get("refine") is True, (text, calls)
-
-
-def test_b10_near_miss_a_new_ask_after_a_held_ranking_is_still_fresh(console) -> None:
-    _t1(console)
-    _text, calls = console.say(_rank(group_by="customer", top_n=5, ranking_refine=False, **THIS_YEAR), "top 5 customers 2026")
-    assert len(calls) == 1 and not calls[0].get("refine"), calls
+def test_b15_near_miss_a_parse_that_fills_the_basis_is_still_the_answer(console) -> None:
+    _open_ranking_basis(console)
+    text, calls = console.say(
+        _parser_output(
+            message_type="business_query", domain_hint="order", intent_hint="check_order", entities=[],
+            order_status="top_selling", group_by=None, basis="delivered", rank_by=None, top_n=None, measure=None,
+        ),
+        "delivered",
+    )
+    assert len(calls) == 1, (text, calls)
+    assert calls[0]["basis"] == "delivered" and calls[0]["measure"] == "qty" and calls[0]["top_n"] == 10, calls
