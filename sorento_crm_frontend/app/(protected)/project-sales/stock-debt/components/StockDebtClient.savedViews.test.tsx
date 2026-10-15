@@ -281,9 +281,11 @@ describe('Location filter on the real warehouses (AC-R7, AC-R9)', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Retail' }));
     await screen.findByText('Book: Retail');
 
-    const field = locationTrigger().parentElement as HTMLElement;
-    expect(field.textContent).toMatch(/Unknown location/);
-    expect(document.body.innerHTML).not.toContain('w-brw-ib');
+    await waitFor(() => {
+      const field = locationTrigger().parentElement as HTMLElement;
+      expect(field.textContent).toMatch(/Unknown location/);
+      expect(document.body.innerHTML).not.toContain('w-brw-ib');
+    });
   });
 
   it('clearing the chip clears the picks and returns to Only', async () => {
