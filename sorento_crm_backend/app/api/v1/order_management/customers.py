@@ -213,7 +213,9 @@ async def create_customer(
     """Create a new customer."""
     try:
         if (
-            customer_data.account_level is not None or customer_data.customer_group_id is not None
+            customer_data.account_level is not None
+            or customer_data.customer_group_id is not None
+            or customer_data.debtor_type is not None
         ) and not UserPermissionService(db).check_user_has_permission(
             current_user["id"], "order_management.customers.edit"
         ):
@@ -256,6 +258,17 @@ async def update_customer(
             # Same gate as the Account level: a CHANGE (clearing included) needs edit.
             current_group = service.get_customer(customer_id).customer_group_id
             if str(customer_data.customer_group_id or "") != str(current_group or "") and not UserPermissionService(db).check_user_has_permission(
+                current_user["id"], "order_management.customers.edit"
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Permission required: order_management.customers.edit",
+                )
+        if "debtor_type" in customer_data.model_fields_set:
+            # Debtor type steers CS routing: same gate as the Account level (a CHANGE,
+            # clearing included, needs edit).
+            current_dt = service.get_customer(customer_id).debtor_type
+            if customer_data.debtor_type != current_dt and not UserPermissionService(db).check_user_has_permission(
                 current_user["id"], "order_management.customers.edit"
             ):
                 raise HTTPException(

@@ -213,6 +213,22 @@ class CsRoutingService:
         for field, label, ftype in self._CURATED_FIELDS.get(table, []):
             if field not in seen:
                 fields.append({"field": field, "label": label, "type": ftype})
+        if table == "purchase_requests":
+            # Computed at CS-stage start (form_sla_service._load_form_field_values), not columns.
+            from app.services.debtor_type import DEBTOR_TYPE_LABELS
+
+            fields.append({
+                "field": "product_lines",
+                "label": "Product lines",
+                "type": "enum",
+                "options": [{"value": "has", "label": "Has lines"}, {"value": "none", "label": "No lines"}],
+            })
+            fields.append({
+                "field": "customer_debtor_type",
+                "label": "Customer debtor type",
+                "type": "enum",
+                "options": [{"value": v, "label": lbl} for v, lbl in DEBTOR_TYPE_LABELS.items()],
+            })
         return fields
 
     # ---- pin CRUD ----------------------------------------------------------
@@ -249,7 +265,7 @@ class CsRoutingService:
         users = {
             u.id: u
             for u in self.db.query(User)
-            .filter(User.id.in_([r.cs_pic_user_id for r in rows]))
+            .filter(User.id.in_([r.cs_pic_user_id for r in rows if r.cs_pic_user_id]))
             .all()
         }
         out: list[dict] = []
@@ -271,7 +287,7 @@ class CsRoutingService:
         self,
         contact_id: str,
         use_case: str,
-        cs_pic_user_id: str,
+        cs_pic_user_id: Optional[str],
         *,
         match_conditions: Optional[list] = None,
         priority: int = 0,
@@ -292,7 +308,8 @@ class CsRoutingService:
             raise handle_validation_error(
                 f"use_case must be one of {PINNABLE_USE_CASES}; got {use_case!r}."
             )
-        if not is_eligible_pic(self.db, cs_pic_user_id):
+        # None = No CS (the form finishes at approval): nothing to check.
+        if cs_pic_user_id is not None and not is_eligible_pic(self.db, cs_pic_user_id):
             raise handle_validation_error(
                 "The selected user cannot be assigned. Pick someone active who can "
                 "process purchase requests."
@@ -361,7 +378,7 @@ class CsRoutingService:
                     f"{label}: use_case must be one of {PINNABLE_USE_CASES}; got {use_case!r}."
                 )
             pic = rule.get("cs_pic_user_id")
-            if not is_eligible_pic(self.db, pic):
+            if pic is not None and not is_eligible_pic(self.db, pic):
                 # Name only, never the email: the id came from the client, so this
                 # must not reveal anything about an arbitrary user beyond a name.
                 user = self.db.query(User).filter(User.id == str(pic)).first() if pic else None

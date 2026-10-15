@@ -581,7 +581,10 @@ export default function PurchaseRequestDetail({
   const isProcessedByCs = lifecycleStatusNorm === 'processed_by_cs';
   const isClosedByCs = lifecycleStatusNorm === 'closed';
   const isCsFinalized = isProcessedByCs || isClosedByCs;
-  const showCsActions = isApprovedStatus && !isCsFinalized;
+  // A No CS form stays Approved but never gets a customer-service stage, so the CS
+  // actions need that stage's tracker (active or resolved); hidden while trackers load.
+  const hasCsStage = (slaTrackers ?? []).some((t) => t.team_set_code === 'customer_service');
+  const showCsActions = isApprovedStatus && !isCsFinalized && hasCsStage;
   const csFinalizeLabel = isProcessedByCs
     ? 'Processed by CS'
     : isClosedByCs
