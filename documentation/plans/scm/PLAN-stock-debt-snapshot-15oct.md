@@ -2,7 +2,8 @@
 
 Status: built (PR #1705). Owner approved mock v2 (15 Oct). Track L. Review rounds closed four sets of findings:
 security L1 to L4, reviewer blockers, the projects-schema move per ADR-0011, and a Park tickbox render loop
-the browser pass found in the shared reserve dialog. Hand test pending on the crew copy.
+the browser pass found in the shared reserve dialog. Reviewer READY and security CLEAN; browser pass 1280/375 PASS
+on the crew copy (15 Oct). Hand test filed (laneboard/scripts/1705.md).
 
 ## Discovery (main 01e275d4c)
 
