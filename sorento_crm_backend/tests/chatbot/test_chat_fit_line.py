@@ -837,3 +837,81 @@ def test_ac22_the_carry_path_never_names_a_hidden_linked_product(session_factory
     assert a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)
     assert HID_MIRROR not in a_reply and f"Mirror for {HID_CAB}" not in a_reply, a_reply
+
+
+# --------------------------------------------------------------------------- AC-23 refusals carry no fit line
+
+
+def _deny_stock(session_factory) -> None:
+    from sqlalchemy import text
+
+    from app.models.user import SystemSetting
+    from tests.chatbot.conftest import set_chatbot_switches
+
+    set_chatbot_switches(session_factory, business_lane=True)
+    db = session_factory()
+    db.query(SystemSetting).first().chatbot_stock_denial_enabled = True
+    db.execute(text("UPDATE respond_contacts SET chatbot_stock_allowed = false"))
+    db.commit()
+
+
+def _refusal_parity(session_factory, monkeypatch, *, typed: list[str], asked: list[str], find: Any,
+                    domain: str, intent: str, setup=None, **qf: Any):
+    """The refused turn with the linked codes typed (control) against the fit ask on the host."""
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    if setup:
+        setup(session_factory)
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_fit_23")
+    control = _turn(
+        session_factory, monkeypatch, text=f"{intent} {' '.join(typed)}", msg_id="ZZT-fit-23-control",
+        domain_hint=domain, intent_hint=intent, entities=[_product(c) for c in typed], **qf,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_fit_23")
+    asked_out = _turn(
+        session_factory, monkeypatch, text=f"{intent} seat cover for {' '.join(asked)}", msg_id="ZZT-fit-23-asked",
+        domain_hint=domain, intent_hint=intent, entities=[_product(c) for c in asked], find=find, **qf,
+    )
+    return control, asked_out
+
+
+def _assert_refusal(a_reply: str, c_reply: str) -> None:
+    assert c_reply.strip(), "the control must be refused in words"
+    assert a_reply == c_reply, (a_reply, c_reply)
+    assert "Seat cover for" not in a_reply and "is on record" not in a_reply, a_reply
+
+
+def test_ac23_a_stock_denied_contact_gets_the_stock_refusal_and_no_fit_line(session_factory, monkeypatch) -> None:
+    (c_reply, _c), (a_reply, _a) = _refusal_parity(
+        session_factory, monkeypatch, typed=[COVER_A], asked=[WC_A], find=fits("seat_cover", "seat cover"),
+        domain="inventory", intent="check_stock", setup=_deny_stock, demand_qty=5,
+    )
+    assert "not allowed" in c_reply.casefold(), c_reply
+    _assert_refusal(a_reply, c_reply)
+
+
+def test_ac23_a_no_link_fit_ask_by_a_stock_denied_contact_gets_the_stock_refusal(session_factory, monkeypatch) -> None:
+    (c_reply, _c), (a_reply, _a) = _refusal_parity(
+        session_factory, monkeypatch, typed=[WC_NONE], asked=[WC_NONE], find=fits("seat_cover", "seat cover"),
+        domain="inventory", intent="check_stock", setup=_deny_stock, demand_qty=5,
+    )
+    assert "not allowed" in c_reply.casefold(), c_reply
+    _assert_refusal(a_reply, c_reply)
+
+
+def test_ac23_a_domain_the_contact_is_not_granted_gets_its_refusal_and_no_fit_line(session_factory, monkeypatch) -> None:
+    (c_reply, _c), (a_reply, _a) = _refusal_parity(
+        session_factory, monkeypatch, typed=[COVER_A], asked=[WC_A], find=fits("seat_cover", "seat cover"),
+        domain="purchase_cost", intent="check_purchase_cost",
+    )
+    _assert_refusal(a_reply, c_reply)
+
+
+def test_ac23_a_sales_report_not_granted_gets_its_fixed_refusal_and_no_fit_line(session_factory, monkeypatch) -> None:
+    (c_reply, _c), (a_reply, _a) = _refusal_parity(
+        session_factory, monkeypatch, typed=[COVER_A], asked=[WC_A], find=fits("seat_cover", "seat cover"),
+        domain="sales", intent="check_sales", order_status="sales_report",
+    )
+    assert "not enabled" in c_reply.casefold(), c_reply
+    _assert_refusal(a_reply, c_reply)
