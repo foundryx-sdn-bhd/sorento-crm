@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Send } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   ColumnDef,
   PaginationState,
+  RowSelectionState,
   SortingState,
   getCoreRowModel,
   useReactTable,
@@ -18,6 +20,7 @@ import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
 import { DataGridPagination } from '@/components/ui/data-grid-pagination';
+import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,15 +33,14 @@ import { useResetPageOnFilterChange } from '@/hooks/useResetPageOnFilterChange';
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { getUserLookup } from '@/services/userSelectService';
+import { toast } from '@/lib/toast';
 import {
   useOrderInquiryHeaders,
   useOrderInquiryWorklistSummary,
-  useParkedPreview,
   useReserveStatusSummary,
-  useSendParked,
-  type ParkedKind,
 } from '../../_shared/hooks/useOrderInquiry';
-import { ParkedSendDialog } from '@/components/common/ParkedSendDialog';
+import { HandoverResendDialog } from '../../_shared/components/HandoverResendDialog';
+import { useParkedSendActions } from '../../_shared/hooks/useParkedSendActions';
 import { formatInquiryQty } from '../../_shared/lib/orderInquiryWorklist';
 import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import {
@@ -61,8 +63,9 @@ const LISTING_KEY = 'projects.projects.view::order-inquiry-headers';
 
 type StateFilter = 'all' | 'outstanding' | 'completed';
 
-const ACKNOWLEDGE_PERMISSION = 'projects.order_inquiries.acknowledge';
-const RESERVE_PERMISSION = 'projects.order_inquiries.reserve';
+const ACTION_PERMISSION = 'projects.order_inquiry.action';
+/** The send route's own cap (`HandoverResendIn`). */
+const MAX_RESEND = 50;
 
 function reserveFrom(value: string | null): OrderInquiryReserveStatus | '' {
   return (ORDER_INQUIRY_RESERVE_STATUSES as string[]).includes(value ?? '')
@@ -168,6 +171,13 @@ export function OrderInquiryHeadersList() {
     projectFilter,
     reserveFilter,
   ]);
+  // A tick on a row the new filter excludes is not a selection any more.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  useEffect(() => {
+    setRowSelection({});
+  }, [stateFilter, searchQuery, raisedByFilter, agentFilter, projectFilter, reserveFilter]);
+  const [resendIds, setResendIds] = useState<string[] | null>(null);
+  const closeResend = useCallback(() => setResendIds(null), []);
 
   const params = useMemo<OrderInquiryHeaderListParams>(
     () => ({
@@ -221,41 +231,9 @@ export function OrderInquiryHeadersList() {
   });
   const worklistSummary = useOrderInquiryWorklistSummary({});
 
-  const canAcknowledge = useHasPermission(ACKNOWLEDGE_PERMISSION);
-  const canReserve = useHasPermission(RESERVE_PERMISSION);
+  const canAct = useHasPermission(ACTION_PERMISSION);
   const reserveSummary = useReserveStatusSummary();
-  const [parkedKind, setParkedKind] = useState<ParkedKind | null>(null);
-  const parkedPreview = useParkedPreview(parkedKind);
-  const sendParked = useSendParked(parkedKind ?? 'requests');
-  const myParkedRequests = reserveSummary.data?.my_parked_requests ?? 0;
-  const myParkedNotices = reserveSummary.data?.my_parked_notices ?? 0;
-  const sendActions = useMemo(
-    () => [
-      ...(canAcknowledge
-        ? [
-            {
-              key: 'send-parked-requests',
-              label: `Send all parked requests to CS (${myParkedRequests})`,
-              disabled: myParkedRequests === 0,
-              disabledReason: 'Nothing of yours is parked',
-              onClick: () => setParkedKind('requests'),
-            },
-          ]
-        : []),
-      ...(canReserve
-        ? [
-            {
-              key: 'send-parked-notices',
-              label: `Send all parked reserves to purchasing (${myParkedNotices})`,
-              disabled: myParkedNotices === 0,
-              disabledReason: 'Nothing of yours is parked',
-              onClick: () => setParkedKind('notices'),
-            },
-          ]
-        : []),
-    ],
-    [canAcknowledge, canReserve, myParkedRequests, myParkedNotices],
-  );
+  const { actions: sendActions, dialog: parkedSendDialog } = useParkedSendActions();
 
   const filterOptions = useMemo(
     () => ({
@@ -313,6 +291,9 @@ export function OrderInquiryHeadersList() {
 
   const columns = useMemo<ColumnDef<OrderInquiryHeader>[]>(
     () => [
+      ...(canAct
+        ? [buildSelectColumn<OrderInquiryHeader>({ rowLabel: (row) => `Select ${row.original.inquiry_no}` })]
+        : []),
       {
         accessorKey: 'raised_at',
         header: ({ column }) => <DataGridColumnHeader title="Raised at" column={column} />,
@@ -534,7 +515,7 @@ export function OrderInquiryHeadersList() {
         ),
       },
     ],
-    [],
+    [canAct],
   );
 
   const table = useReactTable({
@@ -542,7 +523,9 @@ export function OrderInquiryHeadersList() {
     data: rows,
     pageCount: Math.ceil((data?.total || 0) / pagination.pageSize),
     getRowId: (row) => row.id,
-    state: { pagination, sorting },
+    state: { pagination, sorting, rowSelection },
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: canAct,
     onPaginationChange: setPagination,
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
@@ -616,6 +599,26 @@ export function OrderInquiryHeadersList() {
             }
             secondaryActions={sendActions}
             secondaryActionsAsMenu
+            bulkActions={
+              canAct
+                ? [
+                    {
+                      key: 'send-to-purchasing',
+                      label: 'Send to purchasing',
+                      icon: Send,
+                      onClick: () => {
+                        // Ids, not loaded rows: a tick on an earlier page still counts.
+                        const ids = Object.keys(rowSelection).filter((rowId) => rowSelection[rowId]);
+                        if (ids.length > MAX_RESEND) {
+                          toast.error(`Tick at most ${MAX_RESEND} order inquiries at a time.`);
+                          return;
+                        }
+                        setResendIds(ids);
+                      },
+                    },
+                  ]
+                : []
+            }
             filters={{
               kind: 'custom',
               // The list stays readable (and the state toggle reachable) while a filter is set.
@@ -718,21 +721,12 @@ export function OrderInquiryHeadersList() {
           <DataGridPagination />
         </CardFooter>
       </Card>
-      <ParkedSendDialog
-        open={parkedKind !== null}
-        onOpenChange={(next) => {
-          if (!next) setParkedKind(null);
-        }}
-        title={
-          parkedKind === 'notices'
-            ? 'Send all parked reserves to purchasing'
-            : 'Send all parked requests to CS'
-        }
-        preview={parkedPreview.data}
-        isLoading={parkedPreview.isLoading}
-        onSend={() => sendParked.mutateAsync()}
-        isSending={sendParked.isPending}
+      <HandoverResendDialog
+        inquiryIds={resendIds}
+        onClose={closeResend}
+        onSent={() => setRowSelection({})}
       />
+      {parkedSendDialog}
     </DataGrid>
   );
 }

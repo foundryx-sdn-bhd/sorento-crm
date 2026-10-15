@@ -102,14 +102,20 @@ def group_by_recipient(
 
 
 def render_preview(
-    db: Session, trigger_type: str, context: Dict[str, Any], recipients: Sequence[Dict[str, Any]]
+    db: Session,
+    trigger_type: str,
+    context: Dict[str, Any],
+    recipients: Sequence[Dict[str, Any]],
+    *,
+    automation: Optional[Automation] = None,
 ) -> Dict[str, Any]:
     """`{to, cc, subject, body_html}` for one group, rendered by the automation's template
     exactly as `AutomationService._send_per_match` renders it (one_email: `recipient` is
-    the first address)."""
+    the first address). `automation` names one explicitly (a switched-off one, for an
+    explicit send); otherwise the trigger's first enabled automation."""
     from app.services.email_template_service import EmailTemplateService
 
-    automation = first_automation(db, trigger_type)
+    automation = automation or first_automation(db, trigger_type)
     template = (
         db.query(EmailTemplate).filter(EmailTemplate.id == automation.email_template_id).first()
         if automation is not None

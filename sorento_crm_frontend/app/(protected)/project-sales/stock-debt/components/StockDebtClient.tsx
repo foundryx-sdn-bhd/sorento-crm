@@ -8,6 +8,7 @@ import {
   getPaginationRowModel,
   useReactTable,
 } from '@tanstack/react-table';
+import Link from 'next/link';
 import { Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
@@ -18,7 +19,6 @@ import { DataGridTable } from '@/components/ui/data-grid-table';
 import { DateRangePicker, parseIsoDate } from '@/components/ui/date-range-picker';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { cn } from '@/lib/utils';
@@ -36,10 +36,16 @@ import {
 import { useCellSelection } from '../hooks/useCellSelection';
 import { useStockDebtQuery } from '../hooks/useStockDebtQuery';
 import type { StockDebtLocationsMode } from '../services/stockDebtService';
-import type { StockDebtBook, StockDebtRow, StockDebtTone } from '../types/stockDebt.types';
+import type { StockDebtBook, StockDebtRow } from '../types/stockDebt.types';
 import { StockDebtCellDialog } from './StockDebtCellDialog';
 import { StockDebtExportPopover } from './StockDebtExportPopover';
-import { codeWithName, distinctName } from '@/lib/product-display';
+import { SaveSnapshotDialog } from './SaveSnapshotDialog';
+import {
+  VALUE_CELL_CLASS,
+  buildStockDebtColumns,
+  signed,
+  type ValueCellArgs,
+} from '../lib/stockDebtColumns';
 
 /**
  * Stock Debt: one row per product, one column per month, and the cell is that MONTH's own
@@ -90,63 +96,7 @@ import { codeWithName, distinctName } from '@/lib/product-display';
  * filters also save as views through `SavedViewsMenu` (`lib/stockDebtSavedView`).
  */
 
-/** Cell tone as a CLASS, not a component (plan 3.4): three lines, no new file. */
-const TONE_CLASS: Record<StockDebtTone, string> = {
-  red: 'bg-destructive/10 text-destructive',
-  amber: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  green: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-};
-
-/**
- * TBA and No date carry no tone: they draw no supply at all (R14), so a colour that
- * elsewhere means "can this still be bought in time" would be answering a question
- * nobody asked of them. Informational, per the plan's tone card.
- */
-const NEUTRAL_CLASS = 'bg-muted text-foreground';
-
-/** The Total column carries no tone at all (AC-21): it is a sum, not a reading. */
-const TOTAL_CLASS = 'font-semibold';
-
-/** `2026-08` -> `Aug 26`. Narrow on purpose: fifteen of these share one width. */
-function monthLabel(key: string): string {
-  const [year, month] = key.split('-');
-  const index = Number(month) - 1;
-  const names = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return `${names[index] ?? month} ${year?.slice(2) ?? ''}`;
-}
-
 const SHOW_AUX_KEY = 'stock-debt.show-aux';
-
-/** The four read-only columns between Product and the months. */
-const AUX_COLUMNS = [
-  { key: 'pool_on_hand', header: 'BRW Retail On Hand Qty' },
-  { key: 'pool_po_qty', header: 'BRW Retail PO Qty' },
-  { key: 'pool_incoming_qty', header: 'BRW Retail Incoming Qty' },
-  { key: 'dealer_outstanding', header: 'Dealer O/standing Qty' },
-] as const;
-
-/** `-16` reads as debt, `+84` as surplus; a bare `84` reads as neither. */
-function signed(value: number): string {
-  return value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString();
-}
-
-/** Aux quantities print plain: no leading `+`, and never `-0`. */
-function plainQty(value: number): string {
-  return (value || 0).toLocaleString();
-}
 
 /** Which cell is open. `month` is a `YYYY-MM` key, or `tba` / `undated`. */
 interface OpenCell {
@@ -242,6 +192,7 @@ export function StockDebtClient() {
     }
   };
   const [viewId, setViewId] = React.useState<string | null>(null);
+  const [saveOpen, setSaveOpen] = React.useState(false);
   const [openCell, setOpenCell] = React.useState<OpenCell | null>(null);
   const [pagination, setPagination] = React.useState<PaginationState>({
     pageIndex: 0,
@@ -462,15 +413,15 @@ export function StockDebtClient() {
      * `selection.onCellClick` says so by returning `false`. `openDrill=false` for the
      * Total column - it sums three buckets that carry no drill of their own.
      */
-    const cell = (
-      row: StockDebtRow,
-      columnKey: string,
-      month: string,
-      label: string,
-      balance: number,
-      toneClass: string,
-      openDrill: boolean,
-    ) => {
+    const renderValueCell = ({
+      row,
+      columnKey,
+      month,
+      label,
+      balance,
+      toneClass,
+      openDrill,
+    }: ValueCellArgs<StockDebtRow>) => {
       const rowId = row.product_id;
       const selected = selectionRef.current.isSelected(rowId, columnKey);
       return (
@@ -489,18 +440,14 @@ export function StockDebtClient() {
           }}
           title={`${row.product_code} - ${label}: ${signed(balance)}`}
           aria-label={`${row.product_code}, ${label}, balance ${signed(balance)}`}
-          className={cn(
-            'block w-full rounded px-2 py-1 text-end text-sm tabular-nums transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-            toneClass,
-            selected && 'ring-1 ring-primary',
-          )}
+          className={cn(VALUE_CELL_CLASS, toneClass, selected && 'ring-1 ring-primary')}
         >
           {signed(balance)}
         </button>
       );
     };
 
-    const columnHeader = (columnKey: string, label: React.ReactNode, titleText: string) => (
+    const renderColumnHeader = (columnKey: string, label: React.ReactNode, titleText: string) => (
       <button
         type="button"
         onClick={() => selectionRef.current.onColumnHeaderClick(columnKey)}
@@ -511,115 +458,9 @@ export function StockDebtClient() {
       </button>
     );
 
-    return [
-      {
-        id: 'product',
-        header: 'Product',
-        // PINNED, not hand-stuck. The DataGrid's own column pinning
-        // (`tableLayout.columnsPinnable` + `initialState.columnPinning`) writes
-        // `position: sticky` and the `left` offset as an INLINE style, which is the only
-        // way it holds: a `sticky left-0` utility in `headerClassName` sits in the same
-        // Tailwind position group as the `relative` the base cell already carries, and
-        // which of the two wins is decided by their order in the generated stylesheet,
-        // not by the order in the class attribute. It lost, and the column computed to
-        // `position: relative` in the browser while reading as sticky in the source.
-        meta: {
-          headerTitle: 'Product',
-          skeleton: <Skeleton className="h-4 w-40" />,
-        },
-        size: 240,
-        footer: () => 'Total',
-        cell: ({ row }) => {
-          const label = codeWithName(row.original.product_code, row.original.product_name);
-          return (
-            <div className="min-w-0" title={label}>
-              <div className="truncate text-sm font-medium">
-                {row.original.product_code}
-              </div>
-              {distinctName(row.original.product_code, row.original.product_name) && (
-                <div className="truncate text-xs text-muted-foreground">
-                  {row.original.product_name}
-                </div>
-              )}
-            </div>
-          );
-        },
-      },
-      ...(showAux
-        ? AUX_COLUMNS.map<ColumnDef<StockDebtRow>>(({ key, header }) => ({
-            id: `aux:${key}`,
-            header: () => <span className="block truncate text-end" title={header}>{header}</span>,
-            meta: {
-              headerTitle: header,
-              headerClassName: 'text-end',
-              skeleton: <Skeleton className="h-4 w-full" />,
-            },
-            size: 112,
-            footer: () => (totals ? plainQty(totals[key] ?? 0) : '-'),
-            cell: ({ row }) => (
-              <span className="block px-2 py-1 text-end text-sm tabular-nums">
-                {plainQty(row.original[key] ?? 0)}
-              </span>
-            ),
-          }))
-        : []),
-      ...months.map<ColumnDef<StockDebtRow>>((key) => ({
-        id: `m:${key}`,
-        header: () => columnHeader(`m:${key}`, monthLabel(key), monthLabel(key)),
-        meta: {
-          headerTitle: monthLabel(key),
-          headerClassName: 'text-end',
-          skeleton: <Skeleton className="h-4 w-full" />,
-        },
-        size: 96,
-        footer: () => (totals ? signed(totals.months[key] ?? 0) : '-'),
-        cell: ({ row }) => {
-          const month = row.original.months.find((entry) => entry.key === key);
-          if (!month) return <span className="block text-end text-muted-foreground">-</span>;
-          return cell(
-            row.original,
-            `m:${key}`,
-            key,
-            monthLabel(key),
-            month.balance,
-            TONE_CLASS[month.tone],
-            true,
-          );
-        },
-      })),
-      {
-        id: 'tba',
-        // R18: the HEADER reads "TBA" literally always - the policy's own TBA month is
-        // display-only, in the title tooltip. The CELL's own label (aria-label, dialog
-        // title) still names the actual month, exactly as the drill it opens does.
-        header: () =>
-          columnHeader('tba', 'TBA', tbaMonth ? `TBA (${monthLabel(tbaMonth)})` : 'TBA'),
-        meta: {
-          headerTitle: tbaMonth ? `TBA (${monthLabel(tbaMonth)})` : 'TBA',
-          headerClassName: 'text-end',
-          skeleton: <Skeleton className="h-4 w-full" />,
-        },
-        size: 104,
-        footer: () => (totals ? signed(totals.tba) : '-'),
-        cell: ({ row }) =>
-          cell(row.original, 'tba', 'tba', tbaMonth ?? 'TBA', row.original.tba, NEUTRAL_CLASS, true),
-      },
-      {
-        id: 'total',
-        // AC-21: the row's own total, right-aligned, signed, no tone, last column. AC-22:
-        // its footer is the WHOLE filtered set's total, not the page's.
-        header: () => columnHeader('total', 'Total', 'Total'),
-        meta: {
-          headerTitle: 'Total',
-          headerClassName: 'text-end',
-          skeleton: <Skeleton className="h-4 w-full" />,
-        },
-        size: 104,
-        footer: () => (totals ? signed(totals.total) : '-'),
-        cell: ({ row }) =>
-          cell(row.original, 'total', 'total', 'Total', row.original.total, TOTAL_CLASS, false),
-      },
-    ];
+    return buildStockDebtColumns<StockDebtRow>({
+      months, tbaMonth, totals, showAux, renderValueCell, renderColumnHeader,
+    });
     // `selection` deliberately NOT a dependency (diagnosed flicker fix, see the
     // `selectionRef` note above): the renderers close over `selectionRef.current`
     // instead, so `columns` - and the per-cell component identity TanStack's
@@ -642,6 +483,13 @@ export function StockDebtClient() {
     getPaginationRowModel: getPaginationRowModel(),
     columnResizeMode: 'onChange',
   });
+
+  // The board's current filters, minus paging and split: what Export sends and what a
+  // snapshot is taken under.
+  const boardFilters = {
+    query: debounced, onlyDebt, book, supplierIds, locations, locationsMode, dateFrom, dateTo, showAux,
+    projected,
+  };
 
   const filtered = Boolean(
     debounced || book !== 'all' || supplierIds.length > 0 || locationsActive || dateFrom || dateTo,
@@ -895,13 +743,15 @@ export function StockDebtClient() {
                 ),
               }}
               primaryAction={
-                <StockDebtExportPopover
-                  envelope={list.data}
-                  filters={{
-                    query: debounced, onlyDebt, book, supplierIds, locations, locationsMode, dateFrom, dateTo, showAux,
-                    projected,
-                  }}
-                />
+                <>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href="/project-sales/stock-debt/snapshots">Snapshots</Link>
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setSaveOpen(true)}>
+                    Save snapshot
+                  </Button>
+                  <StockDebtExportPopover envelope={list.data} filters={boardFilters} />
+                </>
               }
             />
           </CardHeader>
@@ -972,6 +822,16 @@ export function StockDebtClient() {
           </Button>
         </div>
       )}
+
+      <SaveSnapshotDialog
+        open={saveOpen}
+        onOpenChange={setSaveOpen}
+        filters={boardFilters}
+        productCount={total}
+        locationCodes={locations.map(
+          (id) => facetLocations.find((loc) => loc.id === id)?.code ?? 'Unknown location',
+        )}
+      />
 
       {openCell && (
         <StockDebtCellDialog

@@ -67,6 +67,13 @@ const ALLOWLIST: Record<string, string> = {
     'pending migration: an expanded timeline event\'s lines and the stored email body, inside a sheet',
   'app/(protected)/project-sales/fulfilment-planning/components/PlanningRefusalTable.tsx':
     'pending migration: the Confirm refusal block\'s lines, one row per refused line with its fix',
+
+  // Pending migration (OI-STAGED-NOTIFY #1684 shipped it on the raw table). The send-all
+  // dialog's recipient summary: one row per email that picks the preview tab below it, a
+  // "No recipient" row spanning To and Cc per unresolved group, and a totals row. Moving it
+  // onto PanelDataGrid adds its card, search and pager inside the dialog, an owner-visible change.
+  'components/common/ParkedSendDialog.tsx':
+    'pending migration: the send-all dialog\'s recipient summary, with spanning "No recipient" rows and a totals row',
 };
 
 /**

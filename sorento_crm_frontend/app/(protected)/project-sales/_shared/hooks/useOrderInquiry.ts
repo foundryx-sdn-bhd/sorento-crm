@@ -49,6 +49,10 @@ import {
   type CreateReserveRequestPayload,
 } from '../services/orderInquiryReserveService';
 import { getOrderInquiryMatrix } from '../services/orderInquiryMatrixService';
+import {
+  previewHandoverResend,
+  sendHandoverResend,
+} from '../services/orderInquiryHandoverResendService';
 import { PLANNING_BOARD_KEY } from './useFulfilmentPlanning';
 import type { LinkHorizonRequest } from '../lib/linkHorizon';
 import { acknowledgeOutcomeText, linkOutcomeText } from '../lib/linkHorizon';
@@ -83,6 +87,7 @@ export const ORDER_INQUIRY_HEADER_RELATED_DOCUMENTS_KEY =
 export const ORDER_INQUIRY_RESERVE_REQUESTS_KEY = 'order-inquiry-reserve-requests';
 export const ORDER_INQUIRY_RESERVE_SUMMARY_KEY = 'order-inquiry-reserve-summary';
 export const ORDER_INQUIRY_PARKED_PREVIEW_KEY = 'order-inquiry-parked-preview';
+export const ORDER_INQUIRY_HANDOVER_RESEND_PREVIEW_KEY = 'order-inquiry-handover-resend-preview';
 export const ORDER_INQUIRY_NOTICE_RECIPIENTS_KEY = 'order-inquiry-notice-recipients';
 export const ORDER_INQUIRY_ROW_HISTORY_KEY = 'order-inquiry-row-history';
 export const DECISION_TRAIL_KEY = 'order-inquiry-decision-trail';
@@ -189,12 +194,9 @@ export function useOrderInquiryReserveRequests(inquiryId: string | undefined) {
 }
 
 /**
- * S5 (reviewer round): `ReserveRequestDialog` used to call `createOrderInquiryReserve
- * Request` straight from the component, skipping the hooks layer every other write in
- * this file goes through. The mutate function is what the caller hands the dialog as
- * `onSend` - the dialog stays free of `QueryClientProvider` (its own vitest suite
- * renders it with no providers), and this hook is what supplies the invalidate + toast
- * the layering rule asks for.
+ * Send a "Request CS to reserve" (or park it). `RequestReserveDialog`
+ * (`_shared/components`) calls this hook, which supplies the invalidate + toast the
+ * layering rule asks for; the OI page and the Stock Debt snapshot drill share it.
  */
 export function useCreateOrderInquiryReserveRequest(inquiryId: string | undefined) {
   const queryClient = useQueryClient();
@@ -835,6 +837,45 @@ export function useSendParked(kind: ParkedKind) {
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY] });
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+/** Send to purchasing: the preview for these order inquiries, loaded while `ids` is set. */
+export function useHandoverResendPreview(ids: string[] | null, rowIds?: string[] | null) {
+  return useQuery({
+    queryKey: [ORDER_INQUIRY_HANDOVER_RESEND_PREVIEW_KEY, ids, rowIds ?? null],
+    queryFn: () => previewHandoverResend(ids ?? [], rowIds ?? undefined),
+    enabled: ids !== null && ids.length > 0,
+    // Re-ticking a line keeps the last email on screen while the new one loads.
+    placeholderData: (previous) => previous,
+    gcTime: 0,
+    staleTime: 0,
+  });
+}
+
+/** Send to purchasing: one email per order inquiry; toast what went and what did not. */
+export function useSendHandoverResend() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, rowIds }: { ids: string[]; rowIds?: string[] | null }) =>
+      sendHandoverResend(ids, rowIds ?? undefined),
+    onSuccess: (result) => {
+      const failed = result.skipped.filter((skip) => skip.reason === 'failed');
+      if (result.emails_sent > 0) {
+        toast.success(
+          `Sent to purchasing: ${result.emails_sent} ${result.emails_sent === 1 ? 'email' : 'emails'}`,
+        );
+      }
+      if (failed.length > 0) {
+        toast.error(
+          `Not sent: ${failed.map((skip) => skip.inquiry_no ?? 'order inquiry').join(', ')}. Try again.`,
+        );
+      } else if (result.emails_sent === 0) {
+        toast.error('Nothing was sent: no open lines or no purchasing recipient.');
+      }
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HANDOVER_RESEND_PREVIEW_KEY] });
     },
     onError: (error: Error) => toast.error(error.message),
   });

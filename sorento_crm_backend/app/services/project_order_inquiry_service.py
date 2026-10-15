@@ -4104,8 +4104,41 @@ class ProjectOrderInquiryService:
         qty: Optional[Decimal] = None,
         borrow_hole: Optional[bool] = None,
     ) -> None:
-        """Queue one line of the `order_inquiry_handover` parallel-run email
-        (`PLAN-scm-oi-handover-email.md` S0-S3), fired post-commit by
+        """Queue `handover_item`'s line on this write's handover email, tagged with the
+        transaction it was earned under (see `handover_item` for the line itself)."""
+        item = self.handover_item(
+            row,
+            kind=kind,
+            was=was,
+            actor_user_id=actor_user_id,
+            qty=qty,
+            borrow_hole=borrow_hole,
+        )
+        #: Which savepoint this was earned under (C2, `_notify_purchasing`'s own rule), so
+        #: a sibling order's rollback cannot discard it.
+        item["tx_chain"] = tx_chain = _transaction_chain(self.db)
+        #: The OUTERMOST entry of that same chain - the ROOT transaction, not the innermost
+        #: savepoint (AC-H27/AC-H28, review round 2 ruling) - is what
+        #: `_fire_pending_handover` waits to see CONCLUDE BY COMMIT before firing, however
+        #: many savepoints this line's own write nests inside.
+        item["tx"] = tx_chain[-1] if tx_chain else None
+        self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(item)
+
+    def handover_item(
+        self,
+        row: OrderInquiryRow,
+        *,
+        kind: str,
+        was: Optional[Dict[str, Any]] = None,
+        actor_user_id: Optional[str] = None,
+        qty: Optional[Decimal] = None,
+        borrow_hole: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """One line of the `order_inquiry_handover` parallel-run email, built but not
+        queued: `_record_handover` queues it, and "Send to purchasing"
+        (`oi_handover_resend`) rebuilds an OI's open rows with it.
+
+        Queued lines (`PLAN-scm-oi-handover-email.md` S0-S3) are fired post-commit by
         `_fire_pending_handover` - the same `Session.info` queue this file already uses
         for `_dispatch_changed_with_links` / `_notify_purchasing` above, and for the same
         reason: several call sites here run deep inside the atomic confirmation
@@ -4201,58 +4234,48 @@ class ProjectOrderInquiryService:
             "remark": handover_remark(kind, row, was, qty),
             "was": _format_handover_was(was),
         }
-        self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(
-            {
-                #: Which row this line tells.
-                "row_id": str(row.id),
-                #: The project line this row is on, so a Confirm can replace a SAVED line's
-                #: row lines with its one decision line (`record_saved_line`).
-                "so_line_id": str(row.so_line_id) if row.so_line_id else None,
-                "order_inquiry_id": str(row.order_inquiry_id),
-                "pso_id": pso_id,
-                "so_number": so_number,
-                "customer": facts.get("customer"),
-                "project": facts.get("project"),
-                #: The subject's location: what LOCATION prints (a Borrow's, the line's own).
-                "stock_location": location,
-                #: AC-2/AC-3: what `_build_handover_context` sorts the whole queue by -
-                #: `so_number` above, then these two.
-                "line_no": line_no,
-                #: #1312: the core sales-order line this row's own line carries -
-                #: `_fire_pending_handover` keys its `handover_attachments` read on
-                #: this, and `_build_handover_context` reads it back to print/attach
-                #: what that returns. `None` for a row with no `so_line_id`, same as
-                #: `line_no` above.
-                "core_line_id": core_line_id,
-                "item_code": row.item_code,
-                #: Never empty for a line that moved (crew, 12 Oct): QTY CHANGE.
-                #: What this line adds to purchasing's order, as a number rather than read
-                #: back off REMARK's words (`record_saved_lines` folds it).
-                "adds_order": str(_handover_adds_order(kind, row, was, qty)),
-                #: A Borrow's hole raised, resized or cancelled: `record_saved_lines` reads
-                #: a donor move or reshuffle as the one hole settled (`_hole_move`).
-                "kind": kind,
-                "borrow_hole": (
-                    _is_borrow_order_back(row) if borrow_hole is None else borrow_hole
-                ),
-                "verb_keys": _handover_verb_keys(kind, row, was, qty)
-                or (
-                    ["QTY_CHANGE"]
-                    if (was or {}).get("qty") or (was or {}).get("delivery_date")
-                    else []
-                ),
-                "line": line,
-                "actor": self._handover_actor(resolved_actor_id),
-                #: Which savepoint this was earned under (C2, `_notify_purchasing`'s own
-                #: rule), so a sibling order's rollback cannot discard it.
-                "tx_chain": (tx_chain := _transaction_chain(self.db)),
-                #: The OUTERMOST entry of that same chain - the ROOT transaction, not
-                #: the innermost savepoint (AC-H27/AC-H28, review round 2 ruling) - is
-                #: what `_fire_pending_handover` waits to see CONCLUDE BY COMMIT before
-                #: firing, however many savepoints this line's own write nests inside.
-                "tx": tx_chain[-1] if tx_chain else None,
-            }
-        )
+        return {
+            #: Which row this line tells.
+            "row_id": str(row.id),
+            #: The project line this row is on, so a Confirm can replace a SAVED line's
+            #: row lines with its one decision line (`record_saved_line`).
+            "so_line_id": str(row.so_line_id) if row.so_line_id else None,
+            "order_inquiry_id": str(row.order_inquiry_id),
+            "pso_id": pso_id,
+            "so_number": so_number,
+            "customer": facts.get("customer"),
+            "project": facts.get("project"),
+            #: The subject's location: what LOCATION prints (a Borrow's, the line's own).
+            "stock_location": location,
+            #: AC-2/AC-3: what `_build_handover_context` sorts the whole queue by -
+            #: `so_number` above, then these two.
+            "line_no": line_no,
+            #: #1312: the core sales-order line this row's own line carries -
+            #: `_fire_pending_handover` keys its `handover_attachments` read on
+            #: this, and `_build_handover_context` reads it back to print/attach
+            #: what that returns. `None` for a row with no `so_line_id`, same as
+            #: `line_no` above.
+            "core_line_id": core_line_id,
+            "item_code": row.item_code,
+            #: Never empty for a line that moved (crew, 12 Oct): QTY CHANGE.
+            #: What this line adds to purchasing's order, as a number rather than read
+            #: back off REMARK's words (`record_saved_lines` folds it).
+            "adds_order": str(_handover_adds_order(kind, row, was, qty)),
+            #: A Borrow's hole raised, resized or cancelled: `record_saved_lines` reads
+            #: a donor move or reshuffle as the one hole settled (`_hole_move`).
+            "kind": kind,
+            "borrow_hole": (
+                _is_borrow_order_back(row) if borrow_hole is None else borrow_hole
+            ),
+            "verb_keys": _handover_verb_keys(kind, row, was, qty)
+            or (
+                ["QTY_CHANGE"]
+                if (was or {}).get("qty") or (was or {}).get("delivery_date")
+                else []
+            ),
+            "line": line,
+            "actor": self._handover_actor(resolved_actor_id),
+        }
 
     def record_saved_lines(
         self,
@@ -12567,6 +12590,111 @@ def _build_handover_context(
     return context, pending[0]["order_inquiry_id"]
 
 
+_XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _handover_excel_names(db: Session, inquiry_ids: Sequence[str]) -> List[Tuple[str, Any]]:
+    """`(inquiry_id, header)` for each named OI that has a company, read unscoped: the ids
+    only ever come from rows the caller already wrote or was allowed to read."""
+    out: List[Tuple[str, Any]] = []
+    with company_scope(db, None):
+        for inquiry_id in inquiry_ids:
+            header = db.get(OrderInquiry, inquiry_id)
+            if header is not None and header.company_id:
+                out.append((str(inquiry_id), header))
+    return out
+
+
+def store_handover_excel(
+    db: Session,
+    context: Dict[str, Any],
+    inquiry_ids: Sequence[str],
+    *,
+    row_ids: Optional[Sequence[str]] = None,
+) -> None:
+    """Render and store each named OI's own Excel export (the workbook the detail page's
+    Export Excel makes) and put it first in the context's `email_attachments` (owner ruling,
+    16 Oct: the handover carries the OI Excel). `row_ids` limits the workbook to those rows
+    (Send to purchasing with lines ticked); `None` is the whole OI, as Export Excel prints it.
+
+    The render runs in a SAVEPOINT: a database error inside it is rolled back to there, so
+    the session the email is then sent on stays usable (review B1). Any failure is logged and
+    that workbook left out: the email still goes, the same rule as the per-line files."""
+    from app.services import storage_router
+    from app.services.order_inquiry_worklist_service import OrderInquiryWorklistService
+
+    stored: List[Dict[str, Any]] = []
+    for inquiry_id, header in _handover_excel_names(db, inquiry_ids):
+        filename = f"{header.inquiry_no}.xlsx"
+        try:
+            with company_scope(db, frozenset({str(header.company_id)})), db.begin_nested():
+                _name, file_bytes = OrderInquiryWorklistService(db).export_xlsx(
+                    inquiry_id=inquiry_id,
+                    **({"row_ids": list(row_ids)} if row_ids is not None else {}),
+                )
+            provider = storage_router.default_provider()
+            stored_key, _signed = storage_router.get_backend(provider).upload_file(
+                file_content=file_bytes,
+                file_path=f"exports/order-inquiry/handover/{uuid.uuid4()}/{filename}",
+                content_type=_XLSX_CONTENT_TYPE,
+            )
+            stored.append(
+                {
+                    "filename": filename,
+                    "storage_provider": provider,
+                    "storage_key": stored_key,
+                    "optional": True,
+                }
+            )
+        except Exception:  # noqa: BLE001 - a missing workbook never stops the email
+            logger.exception(
+                "order_inquiry_handover: could not attach the Excel of %s; sending without it",
+                inquiry_id,
+            )
+    if stored:
+        context["email_attachments"] = stored + list(context.get("email_attachments") or [])
+
+
+def build_handover_email(
+    db: Session, items: Sequence[Dict[str, Any]], *, store_excel: bool = True
+) -> Optional[Tuple[Dict[str, Any], str]]:
+    """THE handover email build, shared by the automatic send after a confirm
+    (`_fire_pending_handover`) and by "Send to purchasing" (`oi_handover_resend`), so both
+    carry the same lines, the same per-line SO files and the same OI Excel.
+
+    `items` are `ProjectOrderInquiryService.handover_item` dicts. Returns `_build_handover_
+    context`'s `(context, source_id)` plus `handover.excel_files` (the workbook names);
+    `None` on no items. `store_excel=False` names the workbooks without rendering or storing
+    them: a preview, a confirm with no enabled automation to send it, or a resend that stores
+    later (`store_handover_excel`) only for an OI that has someone to send to."""
+    # #1312: whatever files the lines hold. A failure here never stops the email itself:
+    # on any error the handover still sends, just without those files.
+    attachments_by_line: Dict[str, List[Dict[str, Any]]] = {}
+    core_line_ids = [item["core_line_id"] for item in items if item.get("core_line_id")]
+    if core_line_ids:
+        try:
+            from app.services import so_line_attachments
+
+            attachments_by_line = so_line_attachments.handover_attachments(db, core_line_ids)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "order_inquiry_handover: could not load line attachments; sending without files"
+            )
+    built = _build_handover_context(items, attachments_by_line)
+    if built is None:
+        return None
+    context, source_id = built
+    inquiry_ids = list(
+        dict.fromkeys(item["order_inquiry_id"] for item in items if item.get("order_inquiry_id"))
+    )
+    context["handover"]["excel_files"] = [
+        f"{header.inquiry_no}.xlsx" for _id, header in _handover_excel_names(db, inquiry_ids)
+    ]
+    if store_excel:
+        store_handover_excel(db, context, inquiry_ids)
+    return context, source_id
+
+
 def _build_undo_context(
     pending: Sequence[Dict[str, Any]]
 ) -> Optional[Tuple[Dict[str, Any], str]]:
@@ -12825,29 +12953,18 @@ def register_order_inquiry_post_commit_dispatch() -> None:
 
         fresh = SessionLocal()
         try:
-            # #1312: whatever files this write's lines hold, read on the FRESH session
-            # (the root has committed, so the uploads a concurrent upload wrote are
-            # visible here) - a failure here must never stop the email itself, so it
-            # is caught and logged INSIDE this try, separately from the dispatch below:
-            # on any error the handover still sends, just without attachments.
-            attachments_by_line: Dict[str, List[Dict[str, Any]]] = {}
-            core_line_ids = [
-                item["core_line_id"] for item in concluded if item.get("core_line_id")
-            ]
-            if core_line_ids:
-                try:
-                    from app.services import so_line_attachments
+            # #1312 + OI Excel (owner, 16 Oct): read on the FRESH session (the root has
+            # committed, so a concurrent upload's files are visible here); the one build
+            # "Send to purchasing" uses too.
+            # The workbook is stored only when an enabled automation will send it (S2).
+            from app.services import park_send
 
-                    attachments_by_line = so_line_attachments.handover_attachments(
-                        fresh, core_line_ids
-                    )
-                except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "order_inquiry_handover: could not load line attachments; "
-                        "sending without files"
-                    )
-
-            built = _build_handover_context(concluded, attachments_by_line)
+            built = build_handover_email(
+                fresh,
+                concluded,
+                store_excel=park_send.first_automation(fresh, "order_inquiry_handover")
+                is not None,
+            )
             if built is None:
                 return
             context, source_id = built
