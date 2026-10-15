@@ -15,6 +15,9 @@ the battery. "Same list re-shown" means the reply's option set equals the previo
 - Given the last answer showed a sales order or delivery order with exactly one product line, when the parse refers to
   'this product' / 'this one' / 'that item' / '这个', then the product is that line's product (the question runs on it).
 - Given several product lines, PV2 asks which one, listing the real product names (codes as printed), never ids.
+- Only lines the user may see count (lead ruling 15 Oct, security): a contact without the document's product-lines
+  permission (lanes/business/fetch.py:3084-3085 drops them) never gets a line code from 'this product', neither in the
+  reply nor as the resolved product; PV2 asks which product instead.
 
 ## R5-3 Account pick after a confirm or account menu is applied
 - Given the bot asked to confirm an account or listed accounts, when the parse picks one ('A/C I only', 'the second
