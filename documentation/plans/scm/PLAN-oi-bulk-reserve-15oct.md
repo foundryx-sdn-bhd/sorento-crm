@@ -1,6 +1,6 @@
 # PLAN: one-button bulk reserve on the OI Lines tab (OI-BULK-RESERVE)
 
-Status: Plan (owner OK on mock v3 15 Oct; crew added the line-level x; build after #1684 merges, on this branch with main merged in).
+Status: Build. Part 1 (v3, inside one OI) built and green on `crew/oi-bulk-reserve` (PR #1713), in review + cloud browser pass. Part 2 (v4, cross-OI Lines page) mock committed, crew decisions in, waiting on the owner's OK on the mock; backend red test committed. Track: standard (M), no migration, no auth/RBAC change.
 Size M per crew, frontend only (expected diff small, no migration, no auth/RBAC change, no new
 endpoint). Lead pattern: tester red tests, coder, reviewer, browser pass on the changed screen.
 
@@ -53,3 +53,25 @@ reusing the harness of `OrderInquiryDetail.reserveConfirm.test.tsx`. List in the
 ## Out of scope
 
 - Bulk partial reserve or bulk amend (owner: single-line pen).
+
+## Part 2: reserve from the cross-OI Lines page (mock v4)
+
+Owner 15 Oct night: the stock person reserves ~100 OIs from Order inquiries > Lines without
+opening each one. Mock: `documentation/mockups/OI-BULK-RESERVE/v4-lines-page.html`.
+
+Crew decisions (15 Oct): (1) commit = one existing `POST /order-inquiries/{id}/reserve-commit`
+per OI, a few at a time, a result row per OI, never a stuck dialog (the route is one transaction
+per OI, `order_inquiries.py` 1300-1310; omitting `warehouse_id` defaults to the request row's
+location, service 858). (2) Reserve filter = the Documents view's four statuses and predicate
+(`orderInquiryHeaderStatus.ts` 25-41, `reserve_status_predicates()` service 272-283), applied
+per ROW. (3) No staging on the Lines page: Decide goes straight to one confirmation listing OIs
+with Reserve / Reject counts and "Park notice first". (4) "Send all parked reserves to purchasing
+(N)" also in the Lines view's Actions menu. (5) The confirmation is a multi-OI mode INSIDE
+`ReserveConfirmDialog`, no new component file; Decide and Reject reuse part 1's
+`ReserveDecideControl` / `BulkRejectReserveDialog`.
+
+Code: backend `reserve` query param on `GET /order-inquiries` and its summary
+(`_worklist_filters`, `OrderInquiryWorklistService._base`); frontend `OrderInquiriesClient.tsx`
+(filter in the Filters popover, ticking for the reserve holder at ~929, Decide as the toolbar's
+primary beside Confirm, Send all parked in Actions), `ReserveConfirmDialog.tsx` multi-OI mode.
+Tests: `tests/test_oi_bulk_reserve.py` (red, committed), vitest beside `OrderInquiriesClient`.
