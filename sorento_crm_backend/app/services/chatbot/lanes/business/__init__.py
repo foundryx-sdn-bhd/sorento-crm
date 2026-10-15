@@ -787,6 +787,20 @@ def sales_analysis_company_reply(verdict: Any, pending: Any) -> dict[str, Any] |
     }
 
 
+def _office_staff(db: Any, contact_respond_id: Any, space_id: Any) -> bool:
+    """Is the turn's contact office staff (an active office access type,
+    `contact_customer_scope.is_office_staff`)? False when it resolves to no one (fail closed)."""
+    from app.services.contact_customer_scope import is_office_staff
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+    if db is None or not contact_respond_id or not str(contact_respond_id).strip():
+        return False
+    contact_id = resolve_contact_with_null_workspace_fallback(
+        db, contact_id=str(contact_respond_id).strip(), space_id=(str(space_id).strip() or None) if space_id else None
+    )
+    return bool(contact_id) and is_office_staff(db, str(contact_id))
+
+
 def _sales_analysis_axis_unsupported(group_by: str) -> dict[str, Any]:
     """A sales analysis asked by an axis it cannot draw (customer, product, ...): ONE line
     naming the axes it can, no figure and no fetch (`_sales_report_not_enabled`'s shape)."""
@@ -2085,11 +2099,13 @@ def run_fetch(
         # Chat fix PR-B S10 (AC-B16, R03/R23): a staff sales report naming no product, no
         # customer and no brand has no subject for `crm_sales_report` (422
         # `subject_required`, "I could not fetch sales"): it is the company's sales for
-        # the period, the sales analysis. A customer-scoped contact keeps its links.
+        # the period, the sales analysis. A customer-scoped contact keeps its links, and
+        # only an OFFICE STAFF contact is rerouted (security review: never on "no links").
         order_status_raw == "sales_report"
         and domain in contracts.ORDER_OR_SALES_DOMAINS
         and not has_own_accounts
         and not (has_product or has_customer or has_brand or carried_subject or typed_brand_words(parse_output))
+        and _office_staff(db, contact_id, space_id)
     ):
         # PLAN-retail-sales-reports-26sep S1: a sales ANALYSIS (a company's sales by
         # month, by year, by channel) is the reports kernel's own query, answered as the
