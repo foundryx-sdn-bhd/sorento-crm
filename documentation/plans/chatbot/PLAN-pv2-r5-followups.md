@@ -29,7 +29,79 @@ size ask -> size or 'none on record'; one exact option is used, a guess is a yes
 
 ## Code map (at 380b6cdf4)
 
-(filled from the mapping pass; file:line at 380b6cdf4)
+(filled from the mapping pass; file:line at 380b6cdf4; paths under sorento_crm_backend/app/services/chatbot/)
+
+### 1 Number / ordinal pick
+- Parse: `Ask.answer.option_key` / `free_value` (pv2/schema.py:74-76, 121), `Ask.row_pick` (schema.py:120).
+- State: `state.pending.options` (pv2/state.py:91-94, 132); PV2 questions keyed "1..n" (pv2/apply.py:1847-1849);
+  did-you-mean list pv2/apply.py:1357-1383; a v1 roster mirrored as `v1_open_question` (pv2/turn.py:408-443).
+  Answer rows: `state.last_rows` (state.py:134), written engine.py:4246 (v1) and pv2/answer.py:263 (reports), read via
+  `register.shown` (pv2/register.py:203-207).
+- DROPS (options list): consumer `_answer` pv2/apply.py:682-732. The bare-number branch (row_pick, or free_value "2")
+  at apply.py:724-725 skips `v1_open_question` (in FREE_VALUE_PENDING apply.py:66), `clarify_did_you_mean` and
+  `clarify_confirm`, falls to `_Miss` apply.py:753, `_miss` re-prints the same list (apply.py:1896-1903). A free_value
+  on a v1 roster becomes `Lookup.free_value` (apply.py:736-752) and bridge.py:170 drops it (needs `picked`), so v1
+  re-prints its roster. `refines_held` + `row_pick` while a question is open indexes the old LAST ANSWER ROWS, not
+  `pending.options` (apply.py:483, 545). `clarify.needed` beside a pick re-asks before the ask is read
+  (apply.py:162-182).
+- DROPS (answer rows): only `refines_held` reaches `shown_row` (apply.py:483-490, 1295-1302); the `new_topic` branch
+  (apply.py:517-533) never reads `row_pick`; `answers_bot_question` with no pending -> `_Miss` (apply.py:680-681).
+  Kinds outside LABEL_KINDS (apply.py:1292: brand, product_type, sales_agent, tier) miss at apply.py:488-489 and open
+  an option-less `clarify_other` (apply.py:1873-1883).
+- FIX: one pick resolver. An open pending with numbered options wins over answer rows; a row_pick / bare number /
+  ordinal maps to option N of the pending (every kind, v1 roster included -> its option_key, so the bridge sets
+  `open_question_answer`); with no pending, a row_pick on shown rows acts whatever the act; the pick is read before a
+  `clarify.needed` re-ask; out of range re-asks once. No new text matching (carry-safety guard).
+
+### 3 Account pick after a confirm / account menu
+- No account field: `Entity` (pv2/schema.py:39-46); bridge.py:128, :140 hard-code `"account": None` though v1 reads it
+  (lanes/business/resolve_gate.py:1188-1202, engine.py:2202-2227).
+- Holder: pending `clarify_confirm` (pv2/apply.py:1391-1398), its "yes" payload holds every account of the family in
+  `keys` (pv2/resolve.py:804-812); the account menu `clarify_entity` lists families, not accounts (resolve.py:799-809).
+- Consumer pv2/apply.py:755-838: "yes" sets every account (pv2/state.py:348-361), apply.py:824 re-applies the ask's
+  entity; a no-key reply with an entity re-routes as a refine (apply.py:312).
+- LOOP: resolve.py:781-812 groups by `ledger_family_key`, which strips the `[A/C I]` bracket
+  (ledger_family.py:134-148), so 'A/C I' resolves back to the same family as a guess and apply.py:1163-1166 asks the
+  same "Did you mean X?"; held changed, so `_repeat_is_a_miss` (apply.py:1930) never counts it.
+- FIX: a reply to a family confirm / menu whose entity resolves (scoped to that family's accounts, by the resolver,
+  not by new string matching) to a subset applies that subset; a family with several accounts offers its accounts as
+  options; the repeat guard counts the same confirm subject whatever held did.
+
+### 4 Promotion copy pick
+- No tier / copy field in Ask (pv2/schema.py:112-127). The copy menu is v1's `tier_pick` roster
+  (answer_bridge.py:615-643), mirrored as `v1_open_question` keyed by v1 position (pv2/turn.py:337-340, 428).
+- Send path: apply.py:770-782 Lookup with the pick -> bridge.py:161-179, :261-264 set `open_question_answer` -> v1
+  `_answer_pending` (turn/apply.py:722, engine.py:925) -> promotion lane sends.
+- DROPS: (a) pv2/turn.py:420-421 refuses to mirror a roster with `answered_positions` (pinned by
+  tests/chatbot/pv2/test_fix_r7f.py:79), so 'end user also' has no PENDING; (b) a free_value 'dealer copy' is lost at
+  bridge.py:170, v1 asks the tier again; a non-matching key / row_pick -> apply.py:753 "Sorry, I didn't catch your
+  choice"; (c) pv2/turn.py:119 mirrors only when PV2 has no pending of its own.
+- FIX: mirror a roster that still has unanswered positions (the r7f pin is revisited with a reason in the red commit);
+  a free_value on a v1 roster passes to v1 as `open_question_answer` text (v1's own roster matcher decides) instead
+  of being dropped; a fresh v1 roster replaces a stale PV2 pending.
+
+### 6 Reply language
+- Parse: `ParserV2Output.language` en|zh|ms|mixed (pv2/schema.py:150), "language of the NEW MESSAGE"
+  (pv2/prompt_v2.txt:149).
+- Engine rule (R4a, typed > conversation > ms/zh parse): `_turn_language` engine.py:9806-9824 ->
+  `language.for_turn` language.py:53-62 -> `choose(detected, conversation, saved)` language.py:46, writes
+  `session_vars["reply_language"]`. Governs v1-lane replies only.
+- DROP: PV2's own copy uses the raw parser value `clarify_copy.lang(out.language)` at pv2/answer.py:204 and
+  pv2/turn.py:143, 165 (-> `reply_for`/`render` pv2/answer.py:83-90, pv2/clarify_copy.py:315). A neutral turn ('12',
+  'ok', a code) parsed "en" flips an ms/zh conversation to English; "mixed" becomes en (pv2/clarify_copy.py:231-233).
+  No conversation language reaches pv2/turn.py or pv2/answer.py.
+- FIX: compute the turn language once with the engine rule and pass it into `run_turn_v2`; replace the three
+  `clarify_copy.lang(out.language)` calls.
+
+### 7 Reply-build guard
+- Only sanitizer: `clarify_copy.safe_label` pv2/clarify_copy.py:305-312 (bare-UUID label -> "unnamed"), used by
+  `render` option labels (:324), apply.py:421 `_labels`, apply.py:1394 `_confirm`.
+- Unguarded: `_did_you_mean` pv2/apply.py:1352-1359 prints `payload["key"] or o.key`; `_size_miss` pv2/apply.py:1558
+  prints `r.key`; report and idea text pass through unchecked (pv2/answer.py:239, 269), report keys can be customer
+  UUIDs (pv2/reports.py:364-370).
+- Choke point: `_pv2_direct_reply` engine.py:4303, `reply_text = str(pv2_result.direct_reply or "")` engine.py:4318,
+  sent ~4362. FIX: one scrub there (a UUID-shaped token is replaced by its label when known, else removed) plus the
+  label fallback to the printed code at the two unguarded builders.
 
 ## Work split
 
