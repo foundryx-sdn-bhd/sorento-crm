@@ -144,14 +144,26 @@ def test_a7_the_published_version_renders_the_live_registry_vocabulary(session_f
     from app.services import ai_prompt_registry
     from app.services import chatbot_prompt_vars as pv
 
+    from app.services.chatbot_parser_prompt import specification_lines
+
     db = session_factory()
     _seed_registry(db)
+    product_type = db.query(ProductSpecRegistry).filter_by(spec_key="product_type").one()
+    product_type.user_synonyms = {**(product_type.user_synonyms or {}), "grab_bar": ["zztgrabrail"]}
+    db.flush()
     _publish_source(db)
     version = pv.publish_specs_block(db, from_version=52)
     row = db.query(AIPromptVersion).filter_by(name=KEY, version=version).one()
+    pv.clear_cache()
     rendered, _ = ai_prompt_registry.render(db, KEY, current_date="TODAY", override_version_id=row.id)
-    assert "Specification dim_length" not in rendered
-    assert any(ln.startswith("Specification ") for ln in rendered.splitlines()), rendered[-1500:]
+    live = specification_lines(db)
+    # (a) the block is the live registry's, exactly as `specification_lines` renders it now
+    assert "\n".join(live) in rendered, rendered[-1500:]
+    # (b) a word seeded into the registry reaches the render; the static block's stale line
+    # (one the live registry does not produce) does not
+    assert "zztgrabrail" in rendered, rendered[-1500:]
+    stale = [ln for ln in STATIC_SPEC_BLOCK.splitlines() if ln not in live]
+    assert stale and not [ln for ln in stale if ln in rendered.splitlines()], stale
 
 
 def test_a7_publishing_twice_publishes_nothing_the_second_time(session_factory):
