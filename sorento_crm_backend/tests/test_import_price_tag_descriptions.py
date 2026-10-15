@@ -163,7 +163,11 @@ def _desc(db, row):
 
 
 def _audit_updates(db, row=None):
-    q = db.query(AuditLog).filter(AuditLog.entity_type == "product", AuditLog.action == "UPDATE")
+    q = db.query(AuditLog).filter(
+        AuditLog.entity_type == "product",
+        AuditLog.action == "UPDATE",
+        AuditLog.job_id == "import_price_tag_descriptions",
+    )
     if row is not None:
         q = q.filter(AuditLog.entity_id == str(row.id))
     return [a for a in q.all() if "price_tag_description" in (a.new_values or {})]
