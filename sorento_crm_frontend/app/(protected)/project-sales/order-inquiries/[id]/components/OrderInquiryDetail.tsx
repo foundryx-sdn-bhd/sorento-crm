@@ -81,11 +81,7 @@ import type { CommitReservePayload } from '../../../_shared/services/orderInquir
 import { OrderInquiryLinesTab } from './OrderInquiryLinesTab';
 import { OrderInquiryGeneralTab } from './OrderInquiryGeneralTab';
 import { RequestReserveDialog } from '../../../_shared/components/RequestReserveDialog';
-import {
-  ReserveConfirmDialog,
-  type ReserveConfirmLine,
-  type ReserveConfirmLinePatch,
-} from './ReserveConfirmDialog';
+import { ReserveConfirmDialog, type ReserveConfirmLine } from './ReserveConfirmDialog';
 import { ReserveLineForm } from './ReserveLineForm';
 import { ReserveDecideControl } from './ReserveDecideControl';
 import { BulkRejectReserveDialog } from './BulkRejectReserveDialog';
@@ -406,14 +402,6 @@ export function OrderInquiryDetail({ id }: { id: string }) {
     setRowSelection({});
   }
 
-  // AC-BR-10 (owner 16 Oct): Reserve... reuses the ONE reserve popup - the counted lines go in
-  // as requested and the Reserve (N) confirmation opens, where each line is edited in place.
-  function reserveTickedInPopup() {
-    stageAnswers(decideRowIds, null);
-    setRowSelection({});
-    setReserveConfirmOpen(true);
-  }
-
   function stageReject(reason: string) {
     if (!reserveRejectOpen || !rejectTarget) return;
     stageAnswers(rejectTarget.rowIds, reason);
@@ -531,43 +519,6 @@ export function OrderInquiryDetail({ id }: { id: string }) {
     Object.keys(stagedByRowId),
   );
 
-  // AC-BR-10: the staged reserve lines' pools, resolved only while the popup is open.
-  const confirmOptionEntries = useMemo(
-    () =>
-      reserveConfirmOpen
-        ? Object.entries(stagedByRowId).flatMap(([rowId, entry]) => {
-            const row = entry.kind === 'reserve' ? lines.find((l) => l.id === rowId) : null;
-            return row
-              ? [{ key: rowId, productId: row.product_id ?? null, location: row.location ?? null }]
-              : [];
-          })
-        : [],
-    [reserveConfirmOpen, stagedByRowId, lines],
-  );
-  const confirmOptions = useReserveRowOptions(confirmOptionEntries);
-
-  // AC-BR-10: an edit in the popup rewrites that line's staged entry (its chip follows). A
-  // reason only travels while the line is short of its request, as on the pen.
-  const handleConfirmLineChange = useCallback(
-    (rowId: string, patch: ReserveConfirmLinePatch) => {
-      const requested = Number(openRequestForRow(rowId)?.qtyRequested ?? '0');
-      setStagedByRowId((prev) => {
-        const current = prev[rowId];
-        if (!current || current.kind !== 'reserve') return prev;
-        const next: StagedReserveEntry = { ...current };
-        if (patch.qty != null) next.qty = patch.qty;
-        if (patch.locationId !== undefined) {
-          next.warehouseId = patch.locationId || null;
-          next.locationLabel = patch.locationLabel ?? null;
-        }
-        if (patch.reason !== undefined) next.reason = patch.reason;
-        if (next.qty >= requested) next.reason = null;
-        return { ...prev, [rowId]: next };
-      });
-    },
-    [openRequestForRow],
-  );
-
   /** The staged lines as the confirmation prints them (AC-SN-41). */
   const confirmLines: ReserveConfirmLine[] = Object.entries(stagedByRowId).map(([rowId, entry]) => {
     const line = (linesQuery.data ?? []).find((candidate) => candidate.id === rowId);
@@ -587,15 +538,6 @@ export function OrderInquiryDetail({ id }: { id: string }) {
       balance: Math.max(0, remaining - added),
       location: entry.kind === 'reserve' ? (entry.locationLabel ?? open?.location ?? null) : (answered?.location ?? null),
       reason: entry.reason ?? null,
-      edit:
-        entry.kind === 'reserve' && open
-          ? {
-              requested: Number(open.qtyRequested || '0'),
-              locationId: entry.warehouseId ?? '',
-              locationOptions: confirmOptions[rowId]?.options ?? [],
-              availableQtyByLocation: confirmOptions[rowId]?.availableQtyByWarehouseId ?? {},
-            }
-          : undefined,
     };
   });
 
@@ -1014,7 +956,6 @@ export function OrderInquiryDetail({ id }: { id: string }) {
                 <ReserveDecideControl
                   count={decideRowIds.length}
                   onReserveAsRequested={reserveTickedAsRequested}
-                  onReserve={reserveTickedInPopup}
                   onReject={() => {
                     setRejectTarget({ rowIds: decideRowIds, fromStrip: true });
                     setReserveRejectOpen(true);
@@ -1098,7 +1039,6 @@ export function OrderInquiryDetail({ id }: { id: string }) {
         lines={confirmLines}
         recipients={noticeRecipientsQuery.data}
         onConfirm={commitStaged}
-        onLineChange={handleConfirmLineChange}
         isPending={commitReserveMutation.isPending}
       />
 

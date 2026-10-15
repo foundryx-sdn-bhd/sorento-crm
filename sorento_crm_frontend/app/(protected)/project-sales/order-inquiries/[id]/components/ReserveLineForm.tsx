@@ -36,22 +36,19 @@ import { bareLocationCode } from '../../../_shared/lib/orderInquiryReserve';
  * The caller mounts this only once the row's pool options have loaded (6e.4, S2), so
  * the reserve-mode prefill is read off real availability, never an empty map.
  */
-/** OI-BULK-RESERVE (AC-BR-10): the form's reserve rules, shared with the editable Reserve (N)
- * popup (`ReserveConfirmDialog.tsx`) so one line and many lines can never disagree. */
-
 /** A typed Reserved, kept within 0..max. */
-export function clampReservedQty(raw: string, max: number): number {
+function clampReservedQty(raw: string, max: number): number {
   const value = Number(raw);
   return Math.min(Math.max(Number.isFinite(value) ? value : 0, 0), max);
 }
 
 /** AC-RS-85 / 6e.4: a reason is required whenever Reserved is short of the request. */
-export function reserveReasonNeeded(qty: number, requested: number): boolean {
+function reserveReasonNeeded(qty: number, requested: number): boolean {
   return qty < requested;
 }
 
 /** Location options with the availability as the description line, never in the label. */
-export function reserveLocationOptions(
+function reserveLocationOptions(
   locationOptions: SearchableSelectOption[],
   availableQtyByLocation: Record<string, number>,
 ): SearchableSelectOption[] {
@@ -220,7 +217,9 @@ export function ReserveLineForm({
             Cancel
           </Button>
           <Button type="button" onClick={handleStage} disabled={!canStage}>
-            {mode === 'amend' ? 'Amend' : 'Reserve'}
+            {/* Owner 16 Oct: no "Stage"; Fulfilment Planning's own word for keeping a
+                decision until Confirm (`BoardDecideControl.tsx` "Save N lines"). */}
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>
