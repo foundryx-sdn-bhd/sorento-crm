@@ -7172,9 +7172,17 @@ def _run_stages_body(  # noqa: PLR0915
                 ask = turn_runtime.stamp_customer_ask(
                     db, ask, ctx=ctx, payload=resolver_payload, space_id=space_id_for_turn
                 )
-            answer = turn_compose.compose_question(
-                ask, subject_state, _ask_localizer(ask, db, item, dry_run=dry_run)
-            )
+            same_stamp = turn_runtime.same_stamp_answer(ask)
+            if same_stamp is not None:
+                # Chat fix PR-B S9: every account reads the same, so that is the answer and
+                # nothing is asked (no roster is armed).
+                stage[0] = "replied"
+                answer = turn_compose.Answer(text=same_stamp)
+                state_out = dataclasses_replace(state_out, pending=None)
+            else:
+                answer = turn_compose.compose_question(
+                    ask, subject_state, _ask_localizer(ask, db, item, dry_run=dry_run)
+                )
 
         # -- the REFUSAL: a denied stock check is an answer, not silence ------- #
         # `stock_denied` is one of the three business branch kinds, so it is outside

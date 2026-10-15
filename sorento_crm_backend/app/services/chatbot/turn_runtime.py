@@ -3172,6 +3172,20 @@ def stamp_customer_ask(
     return dataclass_replace(ask, options=stamp_customer_options(options, bases))
 
 
+def same_stamp_answer(ask: Any) -> str | None:
+    """Chat fix PR-B S9 (AC-B11, W02 t2): a customer roster whose every option carries the
+    SAME stamp ("no DO" on all four) gives that answer directly, one line per account, with
+    no question: which account was meant changes nothing. None when the roster is mixed,
+    unmeasured (an option with no stamp, the NOT MEASURED reading) or has one option."""
+    if getattr(ask, "kind", None) != "customer_pick":
+        return None
+    options = [o for o in (ask.options or []) if isinstance(o, dict) and o.get("label") is not None]
+    stamps = {o.get("stamp") for o in options}
+    if len(options) < 2 or len(stamps) != 1 or not next(iter(stamps)):
+        return None
+    return "\n".join(f"{o['label']} - {o['stamp']}" for o in options)
+
+
 def _norm_code(value: Any) -> str:
     """`pickers._norm`'s own rule, for the one comparison this module makes itself."""
     return jsc.nullish_str(value).strip().lower()
