@@ -1366,8 +1366,15 @@ def run(
     brand_entities: Mapping[int, str] | None = None,
     account_levels: Callable[[list[str]], dict[str, int | None]] | None = None,
     account_exact_names: bool = True,
+    hide_customers: bool = False,
 ) -> dict[str, Any]:
     """One pass through `sub-resolve-and-gate`. Returns the exit arm's item.
+
+    `hide_customers` (V1-DOC-SCOPE slice 3): the asker is an unlinked contact that is not
+    document staff, so every customer row the resolver answers is another customer's. They
+    are dropped before the gate (`_without_customer_rows`), so no customer picker is built
+    and its DO probe never runs; the tokens left with nothing are named on
+    `resolved["hidden_customer_tokens"]` for the engine's refusal.
 
     `brand_entities` (CLASS-HINT-KIND-PICK) is `turn_runtime.resolve_kinds`'s own
     `{id(entity): brand name}` for the entities that name a live brand; `resolve_entity_body`
@@ -1454,6 +1461,9 @@ def run(
             brand_entities=brand_entities,
         )
     )
+
+    if hide_customers and isinstance(resolved, dict):
+        _without_customer_rows(resolved)
 
     if account_levels is not None and isinstance(resolved, dict):
         account_refusal = narrow_by_account(
@@ -1575,6 +1585,37 @@ def run(
         return exit_item(_snapshot(annotated), exit_kind="offer", fields=base_fields)
 
     return exit_item(_snapshot(ctx_resolved_item), exit_kind="not_found", fields=base_fields)
+
+
+def _without_customer_rows(resolved: dict[str, Any]) -> None:
+    """V1-DOC-SCOPE slice 3: drop every customer row from the resolver's answer, in place.
+    A token whose every match was a customer is named on `hidden_customer_tokens`. Under
+    `order` the resolver reads a brand or category word as the customer it names
+    (`entity_resolver._DOMAIN_HINT_EXPANSIONS`), so the parser's tag cannot be trusted here."""
+
+    def _kept(rows: Any) -> list[Any]:
+        return [r for r in jsc.array(rows) if jsc.nullish_str(jsc.get(r, "entity_type")).strip().lower() != "customer"]
+
+    hidden: list[str] = []
+    for resolution in jsc.array(resolved.get("resolutions")):
+        if not isinstance(resolution, dict):
+            continue
+        matches = jsc.array(resolution.get("matches"))
+        kept = _kept(matches)
+        if matches and not kept and isinstance(resolution.get("token"), str):
+            hidden.append(resolution["token"])
+        resolution["matches"] = kept
+        if "alternatives" in resolution:
+            resolution["alternatives"] = _kept(resolution.get("alternatives"))
+    if isinstance(resolved.get("intersection"), list):
+        resolved["intersection"] = _kept(resolved["intersection"])
+    by_type = resolved.get("by_entity_type")
+    if isinstance(by_type, dict):
+        resolved["by_entity_type"] = {
+            k: (_kept(v) if isinstance(v, list) else v) for k, v in by_type.items() if str(k).lower() != "customer"
+        }
+    if hidden:
+        resolved["hidden_customer_tokens"] = hidden
 
 
 def probe_incoming(

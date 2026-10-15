@@ -2117,17 +2117,17 @@ def _customer_scope_gate(
     turn's customers: the matched ones, or all of them for a message naming none
     (`self_reference` and a bare ask alike). Words carried from an earlier turn are never
     matched, so a refusal cannot lock the turns after it. `self_reference` ("my", "me",
-    "our") means the links for staff too. Staff without "my" and top selling (its own
-    block, `_top_selling_dealer_scope`) are untouched.
+    "our") means the links for staff too. Staff without "my" and a linked contact's top
+    selling (its own block, `_top_selling_dealer_scope`) are untouched.
 
     V1-DOC-SCOPE slice 3 (owner rule: unlinked != customer): an unlinked contact that is not
     document staff (`unlinked_held`: not the tier, no office access type, not a salesperson)
     owns no customer, so a customer word it typed THIS message names another customer and
-    refuses the turn the same way, with the no-link line; any other unlinked contact is
-    untouched. Before the resolver, so its customer picker never lists other customers'
-    names and its DO probe never runs."""
-    if focus.status == "top_selling":
-        return parse_output, None, False, None
+    refuses the turn the same way, with the no-link line, top selling included; any other
+    unlinked contact is untouched. Before the resolver, so its customer picker never lists
+    other customers' names and its DO probe never runs. A word the parser did not tag as a
+    customer is held by the resolver itself (`resolve_kinds(hide_customers=...)`)."""
+
     entities = [e for e in (parse_output.get("entities") or []) if isinstance(e, dict)]
 
     def _is_customer(e: dict[str, Any]) -> bool:
@@ -2142,9 +2142,12 @@ def _customer_scope_gate(
 
     without_customers = {**parse_output, "entities": [e for e in entities if not _is_customer(e)]}
     if not scope:
-        if unlinked_held and named:
-            no_links = scope_mod.ContactCustomerScope(linked=(), staff=False)
-            return without_customers, None, True, scope_mod.refusal_line(no_links)
+        if unlinked_held:
+            # A word carried from an earlier turn is dropped, never refused, so a refusal
+            # cannot lock the turns after it.
+            return without_customers, None, bool(named), (_no_link_refusal() if named else None)
+        return parse_output, None, False, None
+    if focus.status == "top_selling":
         return parse_output, None, False, None
     self_reference = verdict.get("self_reference") is True
     enforced = bool(scope.get("enforced"))
@@ -2205,6 +2208,28 @@ def _customer_scope_gate(
     if not in_order:
         return parse_output, None, False, None
     return without_customers, ids, False, None
+
+
+def _typed_this_message(tokens: Any, verdict: dict[str, Any]) -> bool:
+    """Is any of the resolver's `tokens` a word the contact typed this message (an entity
+    with `current_message`), compared case and space folded?"""
+
+    def _fold(word: Any) -> str:
+        return " ".join(jsc.js_string(word).split()).lower()
+
+    typed = {
+        _fold(e.get("raw"))
+        for e in verdict.get("entities") or []
+        if isinstance(e, dict) and e.get("current_message") is True and jsc.truthy(e.get("raw"))
+    }
+    return any(_fold(t) in typed for t in jsc.array(tokens))
+
+
+def _no_link_refusal() -> str:
+    """The scope refusal over no links ("I can only check on your own account")."""
+    from app.services import contact_customer_scope as scope_mod
+
+    return scope_mod.refusal_line(scope_mod.ContactCustomerScope(linked=(), staff=False))
 
 
 def _with_account_answer(verdict: dict[str, Any], carried: Any) -> dict[str, Any]:
@@ -5225,6 +5250,29 @@ def _run_stages_body(  # noqa: PLR0915
                 },
             )
 
+        # V1-DOC-SCOPE slice 3: an unlinked contact that is not document staff owns no
+        # customer (`_customer_scope_gate`, `resolve_kinds(hide_customers=...)`). Crew ruling
+        # 15 Oct, keeping the owner's CA-3 Q5(a): a GRANTED report turn is exempt, picker
+        # included: the chat report under `chatbot.analytics`, and the sales report (every
+        # SALES_FIGURE_STATUSES ask, top selling and the ranking included) under
+        # `sales_orders.sales_report`, each granted per contact by the owner.
+        from app.services.chatbot.lanes.business.chat_report import GRANT as _CHAT_REPORT_GRANT
+
+        _granted = set(access.get("attributes") or [])
+        granted_report_turn = bool(
+            plan.fetch
+            and all(spec.domain == "chat_analytics" for spec in plan.fetch)
+            and _CHAT_REPORT_GRANT in _granted
+        ) or (
+            jsc.js_string(parsed_output.get("order_status") or "").strip() in SALES_FIGURE_STATUSES
+            and _SALES_REPORT_GRANT in _granted
+        )
+        unlinked_held = (
+            doc_scope is None
+            and not (doc_staff or is_staff_profile(state_out.profile))
+            and not granted_report_turn
+        )
+
         top_selling_updates: dict[str, Any] = {}
         customer_scope_refused = False
         gate_input: dict[str, Any] | None = None
@@ -5360,8 +5408,7 @@ def _run_stages_body(  # noqa: PLR0915
                 gate_input = resolver_parse_output  # the strict re-gate after a re-plan reads the words as typed
                 resolver_parse_output, scope_ids, scope_refused, gate_refusal = _customer_scope_gate(
                     gate_scope, verdict, state_out.focus, resolver_parse_output, plan.domains,
-                    # V1-DOC-SCOPE slice 3: unlinked and not document staff.
-                    unlinked_held=doc_scope is None and not (doc_staff or is_staff_profile(state_out.profile)),
+                    unlinked_held=unlinked_held,
                 )
             scope_ids = _drill_offer_subject(scope_ids, state_out.focus, plan.trace)
             if (
@@ -5422,6 +5469,7 @@ def _run_stages_body(  # noqa: PLR0915
                     ),
                     roster_caps=roster_caps,
                     enforced_scope=bool((gate_scope or {}).get("enforced")),
+                    hide_customers=unlinked_held,
                     scope_linked=_reference_scope(doc_scope, state_out.profile, doc_staff=doc_staff),
                     po_ref_scope_linked=_reference_scope(doc_scope, state_out.profile),
                 )
@@ -5476,6 +5524,8 @@ def _run_stages_body(  # noqa: PLR0915
                                 "compatible_entities": compatible_entities,
                             },
                         }
+            # V1-DOC-SCOPE slice 3: a word the resolver could only read as another customer.
+            hidden_customer_tokens = ((resolver_payload or {}).get("resolved") or {}).get("hidden_customer_tokens")
             # ACCOUNT-LEDGER Q4: staff asked a level the typed name lacks.
             staff_account_refusal = ((resolver_payload or {}).get("resolved") or {}).get("account_refusal")
             if staff_account_refusal and not (gate_scope or {}).get("enforced"):
@@ -5493,6 +5543,11 @@ def _run_stages_body(  # noqa: PLR0915
                     )
                 )
                 scope_refused = scope_refused or screened_refused
+            if unlinked_held and _typed_this_message(hidden_customer_tokens, verdict):
+                # V1-DOC-SCOPE slice 3: the resolver could only read a word typed THIS
+                # message as another customer (its rows were dropped before the picker).
+                screened_refused = scope_refused = True
+                account_question = account_question or _no_link_refusal()
             if scope_refused:
                 # ONE refusal for the whole turn (a fan-out says it once): nothing below
                 # fetches or asks; the fixed line is the answer.

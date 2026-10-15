@@ -2534,6 +2534,7 @@ def resolve_kinds(
     enforced_scope: bool = False,
     scope_linked: list[Any] | None = None,
     po_ref_scope_linked: Any = _SAME_AS_LINKED,
+    hide_customers: bool = False,
 ) -> ResolveOutcome:
     """Ask the resolver what each named token actually IS (AC-1527).
 
@@ -2721,6 +2722,8 @@ def resolve_kinds(
             account_levels=business_services.account_levels_reader(db),
             # ACCOUNT-LEDGER: an enforced contact's own ledger is never an exact-name sibling.
             account_exact_names=not enforced_scope,
+            # V1-DOC-SCOPE slice 3: an unlinked non-staff asker sees no customer row at all.
+            hide_customers=hide_customers,
         )
     except Exception:  # noqa: BLE001 - see the docstring: nothing to reconcile, not a failure
         logger.warning("chatbot: the resolver did not answer", exc_info=True)
