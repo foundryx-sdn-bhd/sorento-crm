@@ -1,7 +1,8 @@
 # PLAN: dealer sales targets and incentive schemes (lane SALES-TARGET-DEALER)
 
 Status: **card v2 and mock v2 with the owner** (16 Oct 00:10 rulings folded in: one target
-engine, Q1, Q2, Q4, Q5, separate payout account; Q3 (a) by crew 15 Oct). Track: full (new
+engine, Q1, Q2, Q4, Q5, separate payout account; Q3 (a) by crew 15 Oct; A1 (a) and A2 (a) by
+crew 16 Oct). Track: full (new
 subject, tier model, Excel import, migration). Build starts after the owner OKs v2.
 
 Parent plan: `PLAN-sales-targets-opportunities-26sep.md` (slice S7, dealer targets, line 1412).
@@ -85,8 +86,9 @@ points with a dated ratio); 3 Excel import by customer code with a Test preview.
    is met pays, on the same sales as the main tier (Q5, they stack).
 9. **Rounding:** each line (main tier, each additional, each account's amount on a line) is
    rounded on its own, then the lines are added; never one combined rate (ruling 3). The unit is
-   set per target: sen (default) or whole ringgit.
-10. **Payout is in RM.** Points only set thresholds (card assumption from Q4, see A1).
+   set per target, sen (default) or whole ringgit, and the import reads it from a column
+   (A2 answered (a) by crew, 16 Oct).
+10. **Payout is in RM.** Points only set thresholds (A1 answered (a) by crew, 16 Oct).
 11. **Sales basis:** until the AutoCount invoices sync is live, the SO figure as is, labelled
     "provisional, incl. tax" (ruling 1, Q3). Slice 4 switches to invoiced minus credit notes,
     excluding tax.
@@ -125,12 +127,12 @@ points with a dated ratio); 3 Excel import by customer code with a Test preview.
   code, flagged in the preview.
 - Mocha A/C II/III ledgers have no `account_level`: the label falls back to the customer name.
 
-### Assumptions to confirm (2, each with a recommendation)
+### Assumptions (both answered (a) by crew, 16 Oct)
 
-- **A1 Payout unit on a points target.** (a) RM: rate x RM sales, points only set the threshold;
+- **A1 Payout unit on a points target. ANSWERED (a), shown in RM.** (a) RM: rate x RM sales, points only set the threshold;
   (b) points: the incentive is also counted in points and then converted. Recommend (a): with
   one dated ratio both give the same RM, and (a) shows one figure instead of two.
-- **A2 Where rounding is set.** (a) per target, default sen, the import sets it per file;
+- **A2 Where rounding is set. ANSWERED (a), per target, import column, default sen.** (a) per target, default sen, the import sets it per file;
   (b) one company-wide setting. Recommend (a): one column on the target the engine already
   reads, no new settings screen, and a Sorento and a Mocha scheme can differ.
 

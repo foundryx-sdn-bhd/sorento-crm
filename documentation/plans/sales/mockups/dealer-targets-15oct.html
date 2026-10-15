@@ -247,7 +247,7 @@ tr.unassigned td{background:#fcfcfd;color:var(--muted);font-style:italic}
   <span class="pin co" style="left:600px;top:470px">11</span>
 </div></div></div>
 <div class="notes"><ol>
-<li><span class="co">9</span><div><b>Four settings, every subject</b><span class="ruling">v2: one engine.</span> How tiers pay (existing select; dealers and the import use "Highest rate on everything", Q2). Threshold in: % of target (today), RM, Points. Round to: Sen (default) or Ringgit (Q1). Tiers: Same every period (today) or Own tiers per period. An agent target gets exactly the same four. <span class="ref">CommissionTiers TargetRecord.tsx:1406, METHOD_OPTIONS; SearchableSelect; Switch components/ui/switch</span></div></li>
+<li><span class="co">9</span><div><b>Four settings, every subject</b><span class="ruling">v2: one engine.</span> How tiers pay (existing select; dealers and the import use "Highest rate on everything", Q2). Threshold in: % of target (today), RM, Points. Round to: Sen (default) or Ringgit (Q1), set per target and read from an import column (A2 (a)). Tiers: Same every period (today) or Own tiers per period. An agent target gets exactly the same four. <span class="ref">CommissionTiers TargetRecord.tsx:1406, METHOD_OPTIONS; SearchableSelect; Switch components/ui/switch</span></div></li>
 <li><span class="co">10</span><div><b>+ Additional rows stack</b><span class="ruling">v2 (Q5): every additional row whose threshold is met pays; each line is rounded on its own and then added.</span> Add tier / Add additional buttons under the table. <span class="ref">same tier table, row variant; Button components/ui/button</span></div></li>
 <li><span class="co">11</span><div><b>Rate per account (dealer)</b>One rate column per counted account; an empty cell = that account earns nothing on that tier (ruling 2). An agent target has one Rate column, as today. <span class="ref">tier table TargetRecord.tsx:1406-1572</span></div></li>
 </ol></div>
@@ -278,7 +278,7 @@ tr.unassigned td{background:#fcfcfd;color:var(--muted);font-style:italic}
   <span class="pin co" style="left:300px;top:150px">13</span>
 </div></div>
 <div class="notes"><ol>
-<li><span class="co">12</span><div><b>Points thresholds</b><span class="ruling">v2 (Q4): thresholds in points, turned into RM with the ratio in force on the period's last day.</span> Same 100,000 pts, different RM threshold after the ratio changed on 1 Oct. Commission is in RM (assumption A1). <span class="ref">PeriodsTable TargetRecord.tsx:1014, Threshold and Ratio columns on a points target</span></div></li>
+<li><span class="co">12</span><div><b>Points thresholds</b><span class="ruling">v2 (Q4): thresholds in points, turned into RM with the ratio in force on the period's last day.</span> Same 100,000 pts, different RM threshold after the ratio changed on 1 Oct. Commission is in RM (A1 (a)). <span class="ref">PeriodsTable TargetRecord.tsx:1014, Threshold and Ratio columns on a points target</span></div></li>
 <li><span class="co">13</span><div><b>Agent, same flexibility</b><span class="ruling">v2: same component, same logic.</span> Fixed RM tiers per quarter on an agent target; no Accounts tab, no Pays to. <span class="ref">CommissionTiers TargetRecord.tsx:1406</span></div></li>
 </ol></div>
 </div>
