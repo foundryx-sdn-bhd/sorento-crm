@@ -11871,6 +11871,10 @@ class ProjectOrderInquiryService:
         Each link is recorded in `order_inquiry_released_links` (so the target stays used
         up), then deleted the way an unlink does, with its own note. Open links stay."""
         # Locked, so a concurrent unlink cannot leave a released row for a link that is gone.
+        # Row first, then its links: the same order an unlink takes.
+        self.db.query(OrderInquiryRow.id).filter(
+            OrderInquiryRow.id == row.id
+        ).with_for_update().all()
         self.db.query(OrderInquiryLink.id).filter(
             OrderInquiryLink.row_id == row.id
         ).with_for_update().all()
