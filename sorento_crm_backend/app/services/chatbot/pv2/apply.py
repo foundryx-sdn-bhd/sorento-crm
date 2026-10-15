@@ -378,6 +378,14 @@ def _scoped_pick(ask: Ask, pending: PendingQuestion, held: Held, resolver: Resol
         mine = [k for k in covered if k in found]
         if mine:
             hits.append((o, mine))
+    if len(hits) > 1:
+        # R5 fix 1: a containing search finds every account the words are inside ("A/C I" is inside "[A/C II]"):
+        # only the account whose ledger marker names the level the phrase names (ledger_family's own parsing on
+        # both sides) is meant.
+        from app.services.ledger_family import account_level
+
+        level = account_level(ent.phrase or ent.key)
+        hits = [(o, keys) for o, keys in hits if level is not None and account_level(o.label) == level]
     if len(hits) != 1:
         return None, ask
     option, keys = hits[0]

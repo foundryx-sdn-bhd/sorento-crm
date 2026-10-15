@@ -288,6 +288,14 @@ def account_level_from_name(name: str | None) -> int | None:
     return None
 
 
+def account_level(text: str | None) -> int | None:
+    """The `A/C <n>` level a customer name's ledger marker carries (`account_level_from_name`), or that a bare
+    marker IS ("A/C I", as a reply names one account of a family): one parsing for both sides of a comparison."""
+    if not text:
+        return None
+    return account_level_from_name(text) or _marker_level(text.upper())
+
+
 def _marker_level(inside: str) -> int | None:
     """`A/C II` -> 2, from the text inside one bracket pair; None when it is not a marker."""
     text = " ".join(inside.split())
