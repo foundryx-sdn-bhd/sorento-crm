@@ -202,7 +202,7 @@ export default function SmtpSettingsPage() {
             onSubmit={form.handleSubmit(onSubmit)}
             className="space-y-6 lg:max-w-[600px]"
           >
-            <fieldset disabled={!canManage} className="space-y-6">
+            <fieldset disabled={!canManage} className="space-y-6 min-w-0">
               <FormField
                 control={form.control}
                 name="smtp_host"

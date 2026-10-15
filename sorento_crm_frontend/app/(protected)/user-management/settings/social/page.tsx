@@ -136,7 +136,7 @@ const SocialSettingsPage = () => {
             onSubmit={form.handleSubmit(handleSubmit, handleError)}
             className="space-y-6 lg:max-w-[600px] mx-auto"
           >
-            <fieldset disabled={!canEdit} className="space-y-6">
+            <fieldset disabled={!canEdit} className="space-y-6 min-w-0">
               {/* Facebook */}
               <FormField
                 control={form.control}

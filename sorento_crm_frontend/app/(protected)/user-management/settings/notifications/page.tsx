@@ -339,7 +339,7 @@ const NotificationSettingsPage = () => {
             <CardTitle>Notification Settings</CardTitle>
           </CardHeader>
           <CardContent className="px-0 py-2.5">
-            <fieldset disabled={!canEdit}>
+            <fieldset disabled={!canEdit} className="min-w-0">
               <DataGrid
                 table={table}
                 recordCount={notificationSettings.length}

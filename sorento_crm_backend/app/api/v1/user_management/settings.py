@@ -709,6 +709,12 @@ async def get_chatbot_lanes(
         raise handle_internal_error(str(e))
 
 
+# The SMTP login on `SystemSettingUpdate`. Written ONLY through `PUT /smtp`, which carries
+# the secrets slug; `/general` refuses them (SETTINGS-PERM-GATE security review: its
+# setattr loop below took them on `.edit` alone, which went around that gate).
+_SMTP_FIELDS = ("smtp_host", "smtp_port", "smtp_secure", "smtp_username", "smtp_password", "smtp_from")
+
+
 def _update_general_settings_impl(settings_data: SystemSettingUpdate, db: Session):
     """Shared implementation for PUT/POST general settings."""
     from app.models.procurement import Supplier
@@ -717,6 +723,14 @@ def _update_general_settings_impl(settings_data: SystemSettingUpdate, db: Sessio
     if not settings:
         raise HTTPException(status_code=404, detail="Settings not found")
     update_data = settings_data.model_dump(exclude_unset=True)
+
+    smtp_keys = sorted(k for k in update_data if k in _SMTP_FIELDS)
+    if smtp_keys:
+        # Names the fields, never a value: one of them may be the password.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"SMTP settings are saved through PUT /settings/smtp, not here: {', '.join(smtp_keys)}",
+        )
 
     if "default_product_supplier_id" in update_data:
         sid = update_data["default_product_supplier_id"]
@@ -1159,8 +1173,7 @@ async def update_smtp_settings(
         settings = db.query(SystemSetting).first()
         if not settings:
             raise HTTPException(status_code=404, detail="Settings not found")
-        smtp_fields = ["smtp_host", "smtp_port", "smtp_secure", "smtp_username", "smtp_password", "smtp_from"]
-        update_data = {k: v for k, v in settings_data.model_dump(exclude_unset=True).items() if k in smtp_fields}
+        update_data = {k: v for k, v in settings_data.model_dump(exclude_unset=True).items() if k in _SMTP_FIELDS}
         for key, value in update_data.items():
             if key == "smtp_secure":
                 setattr(settings, key, bool(value) if value is not None else True)
