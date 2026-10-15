@@ -532,6 +532,11 @@ def require_permission_with_api_key(permission_slug: str):
     the assistant layer (`_WRITE_TOOL_PERMISSIONS` in ai_assistant_service), so the
     check is applied twice. Do not add it to a write endpoint without that second,
     real-user gate.
+
+    The one exception is a write the integration makes as itself, for no end user: the
+    act-as user IS the actor and the audit row names the integration, so there is no
+    second user to check. The SLA policy and tier writes (`sla/sla_policies.py`,
+    ROUTE-PERM-GATES) are of that kind: before this gate any key could make them.
     """
 
     def _require(
