@@ -3,7 +3,10 @@
 v1 reaches the same tools over HTTP (`services._mcp_call` -> `MCPRuntimeClient` -> `ai_assistant_mcp_url`). Here
 the SAME worktree FastMCP app (`sorento_crm_mcp.server.create_mcp_app`) is connected through an in-memory MCP
 session, so the tools, presenters and narrowing rules are byte-identical. The tools still read the backend
-over HTTP (`CRM_BASE_URL`, GET only, the dev stack's backend), which is also what v1's MCP server does.
+over HTTP, but the HTTP is in process too: the CRMClient is pointed at THIS worktree's FastAPI app through
+httpx.ASGITransport (no lifespan, so no startup hooks or scheduler). Nothing listens on any port, and no other
+lane's stack is touched. `patch_v1_mcp()` routes the chatbot's own MCPRuntimeClient (business lane, ideate) to
+the same session, so v1 and the advisor run identical tools on identical code.
 """
 from __future__ import annotations
 
@@ -50,8 +53,26 @@ async def _serve(ready: threading.Event, stop: asyncio.Event) -> None:
     from sorento_crm_mcp.server import create_mcp_app
     from sorento_crm_mcp.settings import Settings
 
+    import httpx
+
+    import app.main as backend_main
+    from sorento_crm_mcp import server as mcp_server
+    from sorento_crm_mcp.http_client import CRMClient
+
+    class AsgiCRMClient(CRMClient):
+        def __init__(self, settings: Any) -> None:
+            super().__init__(settings)
+            self._client = httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=backend_main.app),
+                base_url=env.CRM_BASE_URL,
+                headers={"X-API-Key": settings.external_api_key, "Accept": "application/json"},
+                timeout=httpx.Timeout(settings.request_timeout_seconds),
+                follow_redirects=True,
+            )
+
+    mcp_server.CRMClient = AsgiCRMClient  # type: ignore[misc]
     settings = Settings(
-        crm_base_url=env.crm_base_url(),
+        crm_base_url=env.CRM_BASE_URL,
         external_api_key=os.environ["EXTERNAL_API_KEY"],
         mcp_host="127.0.0.1",
     )  # type: ignore[call-arg]
@@ -154,3 +175,26 @@ def call_tool(name: str, args: dict[str, Any], scope: dict[str, Any]) -> str:
     if getattr(result, "isError", False):
         return f"ERROR: {text}"
     return text
+
+
+def patch_v1_mcp() -> None:
+    """Route `MCPRuntimeClient` (services._mcp_call, ideate) to the in-process session instead of HTTP."""
+    from app.services import ai_assistant_service as svc
+
+    if getattr(svc.MCPRuntimeClient, "_advisor_spike_patched", False):
+        return
+
+    def _rpc(self: Any, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        params = params or {}
+        if method == "tools/call":
+            res = _run(_state_session().call_tool(params["name"], params.get("arguments") or {}))
+            return {"content": [{"type": "text", "text": c.text} for c in res.content if getattr(c, "text", None)],
+                    "isError": bool(getattr(res, "isError", False))}
+        if method == "tools/list":
+            tools = _all_tools()
+            return {"tools": [{"name": n, "description": t.description or "", "inputSchema": t.inputSchema}
+                              for n, t in tools.items()]}
+        raise RuntimeError(f"in-process MCP: unsupported method {method}")
+
+    svc.MCPRuntimeClient._rpc = _rpc  # type: ignore[method-assign]
+    svc.MCPRuntimeClient._advisor_spike_patched = True  # type: ignore[attr-defined]

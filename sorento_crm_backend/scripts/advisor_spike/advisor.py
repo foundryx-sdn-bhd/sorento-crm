@@ -99,7 +99,8 @@ def run_advisor(
     """scenario_turns: v1 replay records (each {text, reply, parser, ...}), the last one the moment."""
     from . import mcp_local, providers
 
-    assert arm in ("C", "C2", "C2all"), arm
+    assert arm in ("C", "C2", "C2all", "C2opus"), arm
+    mode = "C2" if arm == "C2opus" else arm
     list_tools = list_tools or mcp_local.list_tool_schemas
     call_tool = call_tool or mcp_local.call_tool
     provider = provider or providers.make_provider(model)
@@ -107,7 +108,7 @@ def run_advisor(
     moment = v1_turn_record
     rec = _blank(arm, model, moment)
 
-    if arm == "C2all":
+    if mode == "C2all":
         names = sorted(subset.ADVISOR_READ_ONLY)
     else:
         names = subset.select_tools(moment["parser"].get("domains") or [],
@@ -124,7 +125,7 @@ def run_advisor(
         rec["final_reply"] = moment["reply"]
         return rec
 
-    messages = ([{"role": "user", "content": _c_block(scenario_turns, moment)}] if arm == "C"
+    messages = ([{"role": "user", "content": _c_block(scenario_turns, moment)}] if mode == "C"
                 else _c2_messages(scenario_turns))
     user_texts = [t["text"] for t in scenario_turns]
     evidence: list[str] = []

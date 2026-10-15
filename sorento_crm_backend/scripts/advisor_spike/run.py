@@ -16,11 +16,31 @@ import time
 from pathlib import Path
 from typing import Any
 
-# est. USD per advisor call (tools+system mostly cached, ~2.5 calls/turn) and v1 parser per turn
-EST_CALL_USD = {"sonnet": 0.02, "mini": 0.005, "opus": 0.03}
+# Dry-run estimates. Per advisor model call: input tokens (system + tools + conversation) by arm, 70% of
+# them cache reads after the first call of a turn, ~350 output tokens; ~2.5 calls per turn.
+EST_IN_TOKENS = {"C": 7000, "C2": 7000, "C2opus": 7000, "C2all": 28000}
+EST_OUT_TOKENS = 350
+EST_CACHED_FRACTION = 0.7
 EST_CALLS_PER_TURN = 2.5
 EST_V1_TURN_USD = 0.006
 EST_V1_TURN_SECONDS = 6
+EST_JUDGE_IN, EST_JUDGE_OUT = 3500, 350
+MODEL_OF = {"sonnet": "claude-sonnet-5-5", "mini": "gpt-5.4-mini", "opus": "claude-opus-5-5"}
+ARM_MODELS_DEFAULT = {"C2all": ["sonnet"], "C2opus": ["opus"]}
+
+
+def est_call_usd(arm: str, model_key: str) -> float:
+    from scripts.advisor_spike.providers import cost_usd
+
+    n = EST_IN_TOKENS[arm]
+    cached = int(n * EST_CACHED_FRACTION)
+    return cost_usd(MODEL_OF[model_key], {"input": n - cached, "cache_read": cached, "output": EST_OUT_TOKENS})
+
+
+def est_judge_usd() -> float:
+    from scripts.advisor_spike.providers import cost_usd
+
+    return cost_usd("claude-opus-5-5", {"input": EST_JUDGE_IN, "output": EST_JUDGE_OUT})
 
 
 class BudgetExceeded(RuntimeError):
@@ -59,16 +79,43 @@ class BudgetedProvider:
         return out
 
 
-def load_scenarios(path: str, ids: str | None) -> list[dict[str, Any]]:
+def _normalize(r: dict[str, Any]) -> dict[str, Any]:
+    r = dict(r)
+    r["scenario_kind"] = r.get("kind")  # the miner's kind (alt_out_of_stock|promo|...|control)
+    r["kind"] = "control" if r.get("kind") == "control" else "salesman"
+    r["history"] = [h if isinstance(h, str) else h["user"] for h in (r.get("history") or [])]
+    r["followup"] = bool(r.get("followup"))
+    return r
+
+
+def load_scenarios(path: str, ids: str | None, only_followups: bool = False) -> list[dict[str, Any]]:
     text = Path(path).read_text(encoding="utf-8")
-    rows = json.loads(text) if path.endswith(".json") else [json.loads(l) for l in text.splitlines() if l.strip()]
+    if path.endswith((".yaml", ".yml")):
+        import yaml
+
+        rows = yaml.safe_load(text)
+    elif path.endswith(".json"):
+        rows = json.loads(text)
+    else:
+        rows = [json.loads(l) for l in text.splitlines() if l.strip()]
+    rows = [_normalize(r) for r in rows]
     if ids:
         wanted = [i.strip() for i in ids.split(",") if i.strip()]
         missing = set(wanted) - {r["id"] for r in rows}
         if missing:
             raise SystemExit(f"unknown scenario ids: {sorted(missing)}")
         rows = [r for r in rows if r["id"] in wanted]
+    if only_followups:
+        rows = [r for r in rows if r["followup"]]
     return rows
+
+
+def arm_models(arm: str, models: list[str]) -> list[str]:
+    return ARM_MODELS_DEFAULT.get(arm, models) if arm in ARM_MODELS_DEFAULT else models
+
+
+def arm_scenarios(arm: str, scenarios: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [s for s in scenarios if s["followup"]] if arm == "C2opus" else scenarios
 
 
 def done_ids(path: Path) -> set[str]:
@@ -83,21 +130,32 @@ def append(path: Path, row: dict[str, Any]) -> None:
 
 
 def plan(scenarios: list[dict[str, Any]], arms: list[str], models: list[str], out: Path) -> dict[str, Any]:
-    v1_turns = sum(len(s.get("history") or []) + 1 for s in scenarios if s["id"] not in done_ids(out / "results_v1.jsonl"))
-    adv = [(a, m) for a in arms if a != "v1" for m in models]
-    lines = [f"scenarios: {len(scenarios)}  arms: {arms}  models: {models}"]
+    v1_todo = [s for s in scenarios if s["id"] not in done_ids(out / "results_v1.jsonl")]
+    v1_turns = sum(len(s.get("history") or []) + 1 for s in v1_todo)
+    adv = [(a, m) for a in arms if a != "v1" for m in arm_models(a, models)]
+    lines = [f"scenarios: {len(scenarios)} ({sum(1 for s in scenarios if s['followup'])} followups)  arms: {arms}  models: {models}"]
     cost = 0.0
-    if "v1" in arms or adv:
-        # advisor arms need the v1 record, so v1 runs for any scenario not yet replayed
-        lines.append(f"v1 replay: {v1_turns} live console turns, ~{v1_turns * EST_V1_TURN_SECONDS // 60} min, ~${v1_turns * EST_V1_TURN_USD:.2f}")
-        cost += v1_turns * EST_V1_TURN_USD
+    tokens = 0
+    total_calls = 0
+    lines.append(f"v1 replay: {v1_turns} live console turns (parser calls), ~{v1_turns * EST_V1_TURN_SECONDS // 60} min, "
+                 f"~${v1_turns * EST_V1_TURN_USD:.2f}")
+    cost += v1_turns * EST_V1_TURN_USD
+    judgments = len(scenarios) if "v1" in arms or adv else 0
     for a, m in adv:
-        n = len(scenarios) - len(done_ids(out / f"results_{a}_{m}.jsonl"))
-        calls = n * EST_CALLS_PER_TURN
-        c = calls * EST_CALL_USD[m]
-        lines.append(f"{a} x {m}: {n} turns, ~{calls:.0f} model calls, ~${c:.2f}")
+        todo = [s for s in arm_scenarios(a, scenarios) if s["id"] not in done_ids(out / f"results_{a}_{m}.jsonl")]
+        calls = len(todo) * EST_CALLS_PER_TURN
+        tk = calls * (EST_IN_TOKENS[a] + EST_OUT_TOKENS)
+        c = calls * est_call_usd(a, m)
+        lines.append(f"{a} x {m}: {len(todo)} turns, ~{calls:.0f} model calls, ~{tk / 1e6:.2f}M tokens, ~${c:.2f}")
         cost += c
-    lines.append(f"estimated total: ~${cost:.2f}")
+        tokens += tk
+        total_calls += calls
+        judgments += len(todo)
+    jc = judgments * est_judge_usd()
+    lines.append(f"judge (opus, one per scenario x arm): {judgments} calls, ~{judgments * (EST_JUDGE_IN + EST_JUDGE_OUT) / 1e6:.2f}M tokens, ~${jc:.2f}")
+    cost += jc
+    lines.append(f"TOTAL: ~{total_calls:.0f} advisor calls + {judgments} judge calls + {v1_turns} v1 turns, "
+                 f"~{(tokens) / 1e6:.1f}M advisor tokens, ~${cost:.2f}")
     return {"text": "\n".join(lines), "cost": cost}
 
 
@@ -110,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--budget-usd", type=float, required=True)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--only-followups", action="store_true")
     args = ap.parse_args(argv)
 
     from scripts.advisor_spike import env
@@ -118,10 +177,10 @@ def main(argv: list[str] | None = None) -> int:
     env.harden_proxy()
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     models = [m.strip() for m in args.models.split(",") if m.strip()]
-    bad = [a for a in arms if a not in ("v1", "C", "C2", "C2all")] + [m for m in models if m not in ("sonnet", "mini")]
+    bad = [a for a in arms if a not in ("v1", "C", "C2", "C2all", "C2opus")] + [m for m in models if m not in ("sonnet", "mini")]
     if bad:
         raise SystemExit(f"unknown arm/model: {bad}")
-    scenarios = load_scenarios(args.scenarios, args.ids)
+    scenarios = load_scenarios(args.scenarios, args.ids, args.only_followups)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     p = plan(scenarios, arms, models, out)
@@ -138,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     v1_replay.install_guard()
     v1_replay.check_lanes_on()
     adv_arms = [a for a in arms if a != "v1"]
-    provs = {m: providers.make_provider(m) for m in models} if adv_arms else {}
+    provs = {m: providers.make_provider(m) for m in sorted({m for a in adv_arms for m in arm_models(a, models)})}
     v1_path = out / "results_v1.jsonl"
     cached_v1 = {}
     if v1_path.exists():
@@ -151,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
                 ledger.check(n_turns * EST_V1_TURN_USD)
                 v1 = v1_replay.replay_scenario(sc)
                 v1["kind"], v1["expect"] = sc.get("kind"), sc.get("expect")
+                v1["facts_note"], v1["scenario_kind"], v1["followup"] = sc.get("facts_note"), sc.get("scenario_kind"), sc["followup"]
                 v1_cost = 0.0
                 for t in v1["turns"]:
                     for u in t["llm_usage"]:
@@ -165,11 +225,13 @@ def main(argv: list[str] | None = None) -> int:
                 cached_v1[sc["id"]] = v1
                 print(f"v1 {sc['id']} done ({v1['moment']['latency_ms']} ms)", flush=True)
             for a in adv_arms:
-                for m in models:
+                if sc not in arm_scenarios(a, [sc]):
+                    continue
+                for m in arm_models(a, models):
                     path = out / f"results_{a}_{m}.jsonl"
                     if sc["id"] in done_ids(path):
                         continue
-                    prov = BudgetedProvider(provs[m], ledger, f"{a}:{m}:{sc['id']}", EST_CALL_USD[m])
+                    prov = BudgetedProvider(provs[m], ledger, f"{a}:{m}:{sc['id']}", est_call_usd(a, m))
                     rec = advisor.run_advisor(a, providers.MODEL_IDS[m], v1["turns"], v1["moment"], v1["scope"], provider=prov)
                     rec.update(scenario_id=sc["id"], kind=sc.get("kind"), model_key=m,
                                v1_parser_latency_ms=v1["moment"]["latency_ms"])

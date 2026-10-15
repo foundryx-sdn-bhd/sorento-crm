@@ -47,6 +47,20 @@ def _trunc(s: str, n: int) -> str:
     return s if len(s) <= n else s[:n] + "...(cut)"
 
 
+RULINGS_DIR = Path("/Users/tehjayson/.claude-acct/a1/projects/-Users-tehjayson-Documents-foundryx-crew/memory")
+RULING_CAP = 1500
+
+
+def rulings_text(v1: dict[str, Any], base: str) -> str:
+    """The advisor system prompt plus each ruling file named in the scenario's expect.rulings (cut to 1,500 chars)."""
+    parts = [base]
+    for name in ((v1.get("expect") or {}).get("rulings") or []):
+        f = RULINGS_DIR / name
+        body = f.read_text(encoding="utf-8")[:RULING_CAP] if f.exists() else "(ruling file not found)"
+        parts.append(f"RULING {name}:\n{body}")
+    return "\n\n".join(parts)
+
+
 def build_prompt(v1: dict[str, Any], reply: str, tools: list[dict[str, Any]], rulings: str) -> str:
     turns = v1["turns"]
     hist = "\n".join(f"Customer: {t['text']}\nBot: {_trunc(t['reply'] or '', 400)}" for t in turns[:-1]) or "(none)"
@@ -55,7 +69,8 @@ def build_prompt(v1: dict[str, Any], reply: str, tools: list[dict[str, Any]], ru
         tl.append(f"- {t.get('name')} {json.dumps(t.get('args'), ensure_ascii=False, default=str)[:300]} -> "
                   f"{_trunc(str(t.get('result') or '(result not recorded, %s chars)' % t.get('result_chars')), 1500)}")
     return (f"RULES:\n{rulings}\n\nSCENARIO kind={v1.get('kind')}\nHistory:\n{hist}\n\nMoment (customer): {turns[-1]['text']}\n"
-            f"Expectation: {json.dumps(v1.get('expect'), ensure_ascii=False, default=str)}\n\nREPLY:\n{reply}\n\n"
+            f"Expectation: {json.dumps(v1.get('expect'), ensure_ascii=False, default=str)}\n"
+            f"Dev facts for this scenario: {v1.get('facts_note') or '(none)'}\n\nREPLY:\n{reply}\n\n"
             f"TOOLS CALLED:\n" + ("\n".join(tl) or "(none)"))
 
 
@@ -83,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         if l.strip():
             r = json.loads(l)
             v1s[r["scenario_id"]] = r
-    rulings = Path(args.rulings).read_text() if args.rulings else (Path(__file__).parent / "prompts" / "advisor_system.md").read_text()
+    base_rules = Path(args.rulings).read_text() if args.rulings else (Path(__file__).parent / "prompts" / "advisor_system.md").read_text()
     ledger = Ledger(out / "spend.jsonl", args.budget_usd)
     inner = providers.make_provider("opus")  # complete_json is budget-checked and booked inline below
     try:
@@ -106,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     reply, tools = r.get("final_reply") or "", r.get("tools_called") or []
                 ledger.check(0.03)
-                j = judge_one(inner, v1, reply, tools, rulings)
+                j = judge_one(inner, v1, reply, tools, rulings_text(v1, base_rules))
                 ledger.add(f"judge:{name}:{sid}", j["judge_cost_usd"])
                 append(jpath, {"scenario_id": sid, "arm_file": name, **j})
                 print(f"judged {name} {sid} help={j['helpfulness']} move={j['salesman_move']}", flush=True)

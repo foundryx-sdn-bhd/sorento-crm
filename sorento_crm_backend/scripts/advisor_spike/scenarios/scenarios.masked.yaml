@@ -1,0 +1,1048 @@
+# CHAT-ADVISOR-SPIKE scenarios (masked). Real dev messages, product swaps noted in `adapted`.
+# Items derived from crew eval sets (S14, S17, S20, S27) are run from the private file only and are not committed.
+- id: S01
+  kind: alt_out_of_stock
+  followup: false
+  source: chatbot.turns b867ad24 2026-09-09
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history: []
+  moment: SRTBF11831 stock
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_master_products_list
+    must:
+    - Say truthfully what the asked product's availability is in this contact's Stock Visibility mode
+    - Offer the stored alternative by its code, only because it has stock, and only the stored one
+    - Mention the item is discontinued if the data says so
+    must_not:
+    - Invent an alternative that is not a product_alternatives row
+    - Offer an alternative with zero on hand as if available
+    - Show a UUID or internal id
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-never-leak-ids.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+  facts_note: 'SRTBF11831 on hand 0, is_discontinued=true, list MYR 2220. product_alternatives: SRTBF11831-NEW (auto_new)
+    on hand 14. No incoming.'
+- id: S02
+  kind: alt_out_of_stock
+  followup: false
+  source: chatbot.turns 98acc93c 2026-09-17
+  audience: staff
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,cabana_office,dealer,end_user,mocha_dealer,mocha_office,sorento_office)'
+  language: en
+  history:
+  - cfh24 stock
+  - srtwb7018 stock
+  - 'srtsh22712
+
+    Srtub206
+
+    stock'
+  moment: srtub6503 stock
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_master_products_list
+    must:
+    - Say truthfully what the asked product's availability is in this contact's Stock Visibility mode
+    - Offer the stored alternative by its code, only because it has stock, and only the stored one
+    must_not:
+    - Invent an alternative that is not a product_alternatives row
+    - Offer an alternative with zero on hand as if available
+    - Show a UUID or internal id
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-never-leak-ids.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTUB6503 on hand 0, discontinued, list MYR 769. Alternative SRTUB6503-NEW on hand 14. No incoming.
+- id: S03
+  kind: alt_out_of_stock
+  followup: false
+  source: chat_histories id=34536 2026-05-22
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - can u provide product certificate of wc 8840
+  moment: any similar product of wc286
+  expect:
+    tools_any:
+    - crm_master_products_list
+    - crm_inventory_stock_balance_list
+    - crm_find
+    must:
+    - Answer the similar-product ask from stored alternatives first (SRTWC286-SH-NEW)
+    - State which has stock; SRTWC286-SH-PP has 0
+    - Do not guess other models as similar
+    must_not:
+    - Recommend products only because they sound alike
+    - Show a UUID
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-never-leak-ids.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-chatbot-clarify-not-assume.md
+  facts_note: 'Not out of stock: SRTWC286-SH on hand 613, list MYR 1260. product_alternatives: SRTWC286-SH-NEW (on
+    hand 464), SRTWC286-SH-PP (on hand 0). Also a seat cover link SRTSCBD407 (on hand 228) and a live office promo.
+    Real ask is ''similar product'' with a bare ''wc286''.'
+- id: S04
+  kind: alt_out_of_stock
+  followup: false
+  source: chatbot.turns f4bd3398 2026-09-09
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - "Srtsp231 \nStock"
+  - SRTWB1264
+  - Product detail
+  moment: Can suggest close couple wc p trap with available stock
+  expect:
+    tools_any:
+    - crm_master_products_list
+    - crm_inventory_stock_balance_list
+    must:
+    - Suggest from products that actually have stock and match the stated spec (close-coupled, P-trap)
+    - Keep to a short list; say what the spec filter was
+    must_not:
+    - Name a product with zero stock as available
+    - Claim a spec the data does not hold
+    - Dump the whole stock table
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+  facts_note: 'Dev 15 Oct: 13 active products whose description says close couple or two piece, P-TRAP, on hand
+    > 0 (e.g. SRTWCX188-P-180 8, SRTWCX2350-P-RL 24, SRTWCX8092-P 16, SRTWCX8605-P-RL-PJ 12). v1 real reply dumped
+    17+ stock lines, no suggestion.'
+- id: S05
+  kind: alt_out_of_stock
+  followup: true
+  source: chatbot.turns 7c71fe79 2026-09-11
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - Can suggest close couple wc p trap with available stock
+  - SRTWT908SS-BL
+  moment: Stock
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_master_products_list
+    must:
+    - Say truthfully what the asked product's availability is in this contact's Stock Visibility mode
+    - Offer the stored alternative by its code, only because it has stock, and only the stored one
+    - Resolve 'Stock' to the product named in the previous message
+    must_not:
+    - Invent an alternative that is not a product_alternatives row
+    - Offer an alternative with zero on hand as if available
+    - Show a UUID or internal id
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-never-leak-ids.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTWT908SS-BL on hand 0, discontinued, list MYR 38. Alternative SRTWT908SS-BL-DIY (auto_new) on hand
+    236. No incoming.
+  adapted: 'product swapped: real history was ''Csk14b'' (CSK14B on hand 1038, alt CSK14B-DIY 300, so no out-of-stock
+    move); real moment ''Stock'' kept'
+- id: S06
+  kind: alt_out_of_stock
+  followup: true
+  source: chatbot.turns eaaf4d87 2026-09-11
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - SRTWB7065 have incoming stock?
+  - BT009 HAVE INCOMING STOCK?
+  - SRTWT6234-GY have stock?
+  moment: is it discontinued item?
+  expect:
+    tools_any:
+    - crm_master_products_list
+    - crm_inventory_stock_balance_list
+    - crm_marketing_promotion_products_list
+    must:
+    - Confirm it is discontinued
+    - Name the replacement SRTWT6236-GY that the product description itself states
+    - Give the live promotion on the replacement without repeating the product code in the promo line
+    must_not:
+    - Say the old item is available if it is not
+    - Invent a different replacement
+    - Show the code inside the promo reply (owner ruling)
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+    - feedback-promo-expired-shown.md
+  facts_note: SRTWT6234-GY discontinued=true, description ends 'REPLACE BY SRTWT6236-GY'; on hand today 4 (it was
+    0 on 11 Sep when asked). SRTWT6236-GY on hand 1, list MYR 3500, live promo 'SORENTO EXPOSED SHOWER SET PROMO_11092026'
+    MYR 1499, 2026-09-11..2026-12-11, one row per access level (end_user, dealer, office).
+- id: S07
+  kind: alt_out_of_stock
+  followup: true
+  source: chatbot.turns bd2bed7e 2026-09-10
+  audience: staff
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,cabana_office,dealer,end_user,mocha_dealer,mocha_office,sorento_office)'
+  language: en
+  history:
+  - Check stock Mwc1195 s12
+  - MWC1195-BL-S12
+  - Check eta srtbf11832
+  moment: Check stock srtbf11832
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_master_products_list
+    must:
+    - Say truthfully what the asked product's availability is in this contact's Stock Visibility mode
+    - Offer the stored alternative by its code, only because it has stock, and only the stored one
+    must_not:
+    - Invent an alternative that is not a product_alternatives row
+    - Offer an alternative with zero on hand as if available
+    - Show a UUID or internal id
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-never-leak-ids.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+  facts_note: 'SRTBF11832 on hand 0, discontinued, list MYR 2650. Alternative SRTBF11832-NEW on hand 2 (thin: say
+    so). No incoming.'
+- id: S08
+  kind: promo
+  followup: false
+  source: chatbot.turns b43e9175 2026-09-11
+  audience: staff
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,cabana_office,dealer,end_user,mocha_dealer,mocha_office,sorento_office)'
+  language: en
+  history:
+  - '1'
+  - srtwc191 promotion
+  - '1'
+  moment: srtwc286 promotion
+  expect:
+    tools_any:
+    - crm_marketing_promotions_list
+    - crm_marketing_promotion_products_list
+    - crm_inventory_stock_balance_list
+    must:
+    - Send the live promotion for the asked tier (access-level ask may be clarified first, per today's behaviour)
+    - Mention the price drop vs list only if the data holds both
+    - Optionally add the stored seat cover SRTSCBD407 as a fit line
+    must_not:
+    - Say the product code inside the promo reply
+    - Hide that a promo is EXPIRED if an expired one is returned too (shown, marked)
+    - Quote an end-user price to an office contact
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-promo-expired-shown.md
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-fit-line-wording.md
+  facts_note: SRTWC286-SH on hand 613, list MYR 1260. Live promo 'UPDATED SORENTO WATER CLOSET PROMO_27082026' promo
+    price MYR 599 (52.46% off), 2026-08-27..2026-11-27, access sorento_office. Seat cover link SRTSCBD407 on hand
+    228. Alternatives SRTWC286-SH-NEW 464, -PP 0.
+- id: S09
+  kind: promo
+  followup: true
+  source: chatbot.turns e2de9799 2026-09-11
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - SRTWT6234-GY have stock?
+  - is it discontinued item?
+  - SRTWT6236-GY STOCK
+  moment: have incoming?
+  expect:
+    tools_any:
+    - crm_incoming_stock_by_product
+    - crm_inventory_stock_balance_list
+    - crm_marketing_promotion_products_list
+    must:
+    - Answer the incoming ask truthfully (none recorded)
+    - Then mention the live end-user promotion on this item
+    must_not:
+    - Claim an incoming shipment
+    - Quote the dealer or office price
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTWT6236-GY on hand 1, no incoming, list MYR 3500. Live promo 'SORENTO EXPOSED SHOWER SET PROMO_11092026
+    END USER' MYR 1499, 2026-09-11..2026-12-11, access end_user. Replaces discontinued SRTWT6234-GY.
+- id: S10
+  kind: promo
+  followup: false
+  source: chatbot.turns eaeaf117 2026-09-18
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - SRTWT165-FT CERT
+  - SRTWT165-QT
+  - SRTWC6020-SH-UF STOCK
+  moment: SRTWC6021-SH-UF STOCK
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_marketing_promotion_products_list
+    - crm_find
+    must:
+    - Stock first, then the live end-user promo on the wall-hung WC combo
+    - Add the seat cover link line (Seat cover for X is Y)
+    must_not:
+    - Offer the dealer or office price
+    - Say the seat cover has plenty if only 2 are on hand
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-fit-line-wording.md
+  facts_note: SRTWC6021-SH-UF on hand 24. Live promo 'SORENTO WALL HUNG WC COMBO PROMO_14092026 END USER' MYR 1999,
+    2026-09-14..2026-12-14. Seat cover link SRTSCBD337-UF on hand 2. No alternative row.
+- id: S11
+  kind: promo
+  followup: false
+  source: chatbot.turns 5332fba7 2026-09-09
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (end_user)'
+  language: en
+  history: []
+  moment: promo srtks7061
+  expect:
+    tools_any:
+    - crm_marketing_promotions_list
+    - crm_marketing_promotion_products_list
+    - crm_inventory_stock_balance_list
+    must:
+    - Send the live end-user kitchen sink promotion
+    - Stock can be added in the contact's visibility mode
+    must_not:
+    - Say the product code inside the promo reply
+    - Quote office or dealer pricing
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-promo-expired-shown.md
+    - feedback-truthful-no-fabricated-replies.md
+  facts_note: SRTKS7061 on hand 240, list MYR 780. Live promo 'UPDATED SORENTO PROMO KITCHEN SINK_09092026 END USER'
+    MYR 780 (0% off), 2026-09-09..2026-12-09; same promo exists for dealer and office rows.
+- id: S12
+  kind: promo
+  followup: false
+  source: chatbot.turns f9cf8d8c 2026-09-08
+  audience: dealer
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (dealer)'
+  language: en
+  history: []
+  moment: Srtwc8518-SH incoming
+  expect:
+    tools_any:
+    - crm_incoming_stock_by_product
+    - crm_marketing_promotions_list
+    - crm_marketing_promotion_products_list
+    - crm_inventory_stock_balance_list
+    must:
+    - Answer incoming (849 pending over 4 lines, latest ETA 2026-09-23)
+    - Do not mention the office-only promo to a dealer
+    must_not:
+    - Reveal the sorento_office promo price (MYR 499) to a dealer
+    - Show quantities if the dealer mode is availability
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-availability-onhand-basis.md
+    - feedback-eval-expectations-follow-rulings.md
+  facts_note: 'SRTWC8518-SH on hand 308, incoming 849 over 4 in-transit lines (ETAs 2026-09-08, 09-09, 09-23 x2).
+    The only live promo row is access sorento_office MYR 499 (list 1295): a dealer has none. Seat cover link SRTSCBD408
+    on hand 27. Trap: promo scoped to another tier.'
+- id: S13
+  kind: accessory_fit
+  followup: false
+  source: chatbot.turns 499d22d0 2026-09-11
+  audience: dealer
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,dealer,end_user,mocha_dealer)'
+  language: en
+  history:
+  - ESCALTE TO MARKETING BIDET SEAT COVER FOR SRTWC60630-SH
+  - MARKETING SRTWC6030-SH
+  - ESCALATE TO MARKETING
+  moment: WHICH BIDET SEAT COVER THAT MATCH WITH SRTWC6030-SH
+  expect:
+    tools_any:
+    - crm_find
+    - crm_master_products_list
+    - crm_inventory_stock_balance_list
+    must:
+    - Say 'Seat cover for <WC> is <seat cover>.' first (approved wording)
+    - Then the usual answer; dealer sees availability wording only
+    must_not:
+    - Offer a seat cover that is not in product_compatibility
+    - Escalate to marketing instead of answering
+    - Show quantities to a dealer in availability mode
+    rulings:
+    - feedback-fit-line-wording.md
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-eval-expectations-follow-rulings.md
+  facts_note: SRTWC6030-SH family resolves to SRTWC6030-SH-UF (on hand 23) with link SRTSCBD339-UF (on hand 5).
+    Real v1 reply listed bidets and WCs and never named the seat cover.
+- id: S15
+  kind: accessory_fit
+  followup: false
+  source: chatbot.turns 9da2d967 2026-09-13
+  audience: staff
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,cabana_office,dealer,end_user,mocha_dealer,mocha_office,sorento_office)'
+  language: en
+  history:
+  - SRTWC8354-150 got stock?
+  - '1'
+  - SRTSH22613 got stock?
+  moment: SRTWC286-SH-150 got stock?
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_find
+    must:
+    - 'Fit line first: Seat cover for SRTWC286-SH-150 is SRTSCBD407'
+    - Then stock, which is thin, and the stored alternative SRTWC286-SH-NEW-150
+    must_not:
+    - Offer an alternative or accessory with zero on hand as available
+    rulings:
+    - feedback-fit-line-wording.md
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTWC286-SH-150 on hand 1 (4 when asked 13 Sep). Seat cover link SRTSCBD407 on hand 228. Alternative
+    SRTWC286-SH-NEW-150 on hand 17.
+- id: S16
+  kind: accessory_fit
+  followup: false
+  source: chatbot.turns 71b129d5 2026-09-15
+  audience: staff
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,cabana_office,dealer,end_user,mocha_dealer,mocha_office,sorento_office)'
+  language: en
+  history:
+  - Stock
+  - Srtbf11622
+  - Stock
+  moment: Srtbf11501 stock
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_find
+    must:
+    - Answer stock
+    - Name the mirror and shelf link only if the fits lookup covers those kinds (otherwise say nothing about them)
+    must_not:
+    - Invent a mirror or shelf match
+    - Claim a seat cover for a cabinet
+    rulings:
+    - feedback-fit-line-wording.md
+    - feedback-truthful-no-fabricated-replies.md
+  facts_note: 'SRTBF11501 on hand 729. product_compatibility: mirror SRTMR11404-BL (on hand 144), shelf SRTSV11404-BL
+    (on hand 103). Caveat: crm_find''s fits filter covers seat cover only; mirror/shelf fits arrive with PR #1710
+    (not merged).'
+- id: S18
+  kind: qty_counter
+  followup: false
+  source: chat_histories id=40717 2026-07-14
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (end_user)'
+  language: en
+  history:
+  - SRTWT107, AND THIS GOT STOCK ?
+  moment: SRTKS2425-BL , this item got stock ? Need 226nos
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_incoming_stock_by_product
+    must:
+    - Say on hand is far below 226
+    - Counter with the incoming (219 more, ETAs 2026-09-21/22) and that even all of it is 222, short by 4
+    - Mention it is discontinued
+    must_not:
+    - Say 226 is available
+    - Promise a delivery date not in the data
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTKS2425-BL on hand 3, discontinued, list MYR 750. Incoming 219 across 3 lines (84 allocated, ETA
+    2026-09-21; 48 + 87 in transit, ETA 2026-09-22). 3 + 219 = 222 < 226.
+- id: S19
+  kind: qty_counter
+  followup: true
+  source: chat_histories id=59976 2026-08-28
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (end_user)'
+  language: en
+  history:
+  - Check incoming for CKS8450-BL
+  moment: Yes, escalate. Ask them did they place any order for this item. I need 26 nos for project replacement.
+    Or else I will raise "Stock inquiry" to ask.
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_incoming_stock_by_product
+    - crm_marketing_promotion_products_list
+    must:
+    - Say on hand is 1 against 26, no incoming recorded
+    - 'Counter: offer to raise it with purchasing for the 26 (the user already says he may raise a stock inquiry)'
+    must_not:
+    - Say it is in stock
+    - Invent an ETA
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-availability-onhand-basis.md
+  facts_note: CKS8450-BL on hand 1, no incoming, list MYR 730. Live end-user promo 'CABANA KITCHEN SINK_14092026
+    (END USER)' MYR 730 (0% off). Real v1 reply escalated to customer service without any counter.
+- id: S21
+  kind: qty_counter
+  followup: true
+  source: chatbot.turns a9cb4c45 2026-09-09
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - check stock SRTWT7445
+  moment: '10'
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_master_products_list
+    must:
+    - Take '10' as the quantity for SRTWT7445
+    - Say 8 on hand cannot cover 10
+    - Offer the stored alternative SRTWT7445-NEW (126 on hand) for the balance
+    must_not:
+    - Say 10 are available
+    - Ask what '10' means
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-availability-onhand-basis.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-chatbot-clarify-not-assume.md
+  facts_note: SRTWT7445 on hand 8, list MYR 155. Alternative SRTWT7445-NEW (auto_new) on hand 126. Live office promo
+    MYR 155 (0% off) not relevant to unlinked.
+  adapted: 'product swapped: real history ''check stock SRTWT7408'' (SRTWT7408 on hand 3130, so 10 is no shortage);
+    real moment ''10'' kept'
+- id: S22
+  kind: qty_counter
+  followup: false
+  source: chat_histories id=48498 2026-08-06
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (end_user)'
+  language: en
+  history: []
+  moment: 'SRTWC8152-SH
+
+    Stock check 376 nos'
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_find
+    must:
+    - Confirm 376 are covered (792 on hand)
+    - Note the matching seat cover SRTSCBD320 has only 36 on hand
+    must_not:
+    - Say the seat covers cover 376
+    - Invent a bulk price
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-fit-line-wording.md
+    - feedback-availability-onhand-basis.md
+    - feedback-chatbot-rules-know-dont-ask.md
+  facts_note: SRTWC8152-SH on hand 792 (enough for 376), list MYR 1600. Seat cover link SRTSCBD320 on hand 36. Bulk
+    ask where the WC is covered but its accessory is not.
+  adapted: real moment kept; the shortfall is on the accessory, not the asked WC
+- id: S23
+  kind: eta_counter
+  followup: false
+  source: chatbot.turns b7e7aaf9 2026-09-10
+  audience: staff
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,cabana_office,dealer,end_user,mocha_dealer,mocha_office,sorento_office)'
+  language: en
+  history:
+  - Check stock srtbf11416
+  - Srtwb1086 check stock
+  - Eta
+  moment: Srtkt1631ss eta
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_incoming_stock_by_product
+    must:
+    - No stock now; incoming 192 on one shipment, ETA 2026-09-25
+    must_not:
+    - Claim stock now
+    - Give an ETA that is not the told date
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-availability-onhand-basis.md
+    - feedback-chatbot-rules-know-dont-ask.md
+  facts_note: SRTKT1631SS on hand 0, list MYR 235, chatbot_max_qty 100. Incoming 192 on 1 in-transit line, told
+    ETA 2026-09-25 (estimated 2026-09-27). Live promo rows MYR 799..999 (sink promo, mixed).
+- id: S24
+  kind: eta_counter
+  followup: true
+  source: chatbot.turns 562b523b 2026-09-14
+  audience: staff
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,cabana_office,dealer,end_user,mocha_dealer,mocha_office,sorento_office)'
+  language: en
+  history:
+  - Srtwt8248-bl stock
+  moment: ETA
+  expect:
+    tools_any:
+    - crm_incoming_stock_by_product
+    - crm_inventory_stock_balance_list
+    must:
+    - Take the ETA for SRTWT8248-BL from the stock turn
+    - 120 coming, ETA 2026-09-25, nothing on hand
+    must_not:
+    - Ask which product
+    - Quote a date not in data
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-clarify-not-assume.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTWT8248-BL on hand 0, list MYR 170. Incoming 120 on 1 in-transit line, told ETA 2026-09-25.
+  adapted: 'product swapped: real history ''Srtwb1543 stock'' (SRTWB1543 on hand 25, so ETA is not a shortage case);
+    real moment ''ETA'' kept'
+- id: S25
+  kind: eta_counter
+  followup: false
+  source: chatbot.turns f983cc96 2026-09-09
+  audience: dealer
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,dealer,end_user,mocha_dealer)'
+  language: en
+  history:
+  - Check stock SRTWT51012-GM
+  - Check stock SRT367
+  - List price SRT367-GM
+  moment: Check stock SRTWB1513
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    - crm_incoming_stock_by_product
+    must:
+    - 'Dealer: availability wording only, no quantities'
+    - '''No stock'' with the ETA'
+    must_not:
+    - Show on-hand numbers to a dealer in availability mode
+    - 'Offer an alternative: none stored'
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-eval-expectations-follow-rulings.md
+    - feedback-availability-onhand-basis.md
+    - feedback-truthful-no-fabricated-replies.md
+  facts_note: SRTWB1513 on hand 0, list MYR 385. Incoming 58 on PL-2609-037 in transit, told ETA 2026-09-23. No
+    alternative row.
+- id: S26
+  kind: eta_counter
+  followup: true
+  source: chatbot.turns 9a12a5ad 2026-09-09
+  audience: dealer
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,dealer,end_user,mocha_dealer)'
+  language: en
+  history:
+  - SRTWC191-G3 stock level
+  moment: Incoming
+  expect:
+    tools_any:
+    - crm_incoming_stock_by_product
+    - crm_inventory_stock_balance_list
+    must:
+    - 'Dealer: ''No stock'' plus the ETA, no quantity'
+    must_not:
+    - Quantity to a dealer in availability mode
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-eval-expectations-follow-rulings.md
+    - feedback-truthful-no-fabricated-replies.md
+  facts_note: SRTWC191-G3 on hand 0, list MYR 4499. Incoming 30 on 1 in-transit line, told ETA 2026-09-23.
+  adapted: 'product swapped: real history ''SRTWT9612-GM stock level''; real moment ''Incoming'' kept'
+- id: S28
+  kind: project
+  followup: false
+  source: chat_histories id=62756 2026-09-03
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history: []
+  moment: "i want to ask if the faucets for bath tub srtjc8037 can b in chrome instead of gunmetal ?\n\nwhat will\
+    \ b the price. \nfor 85 unit hse."
+  expect:
+    tools_any:
+    - crm_master_products_list
+    - crm_projects_list
+    - crm_project_quotations_list
+    must:
+    - 'Treat as a project enquiry: 85 units, a finish variant, a price'
+    - Say what the product record holds (SRTJC8037, one finish, no chrome sibling recorded) without inventing a
+      chrome code
+    - Offer to pass to project sales, since the user asked for purchasing
+    must_not:
+    - Invent a chrome variant or a project price
+    - Quote a price without a list or promo row
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-chatbot-clarify-not-assume.md
+  facts_note: SRTJC8037 list MYR 5000, on hand 0, no incoming, no alternative row, no chrome sibling code. projects.projects
+    has 5 rows (PRJ-000001 [PROJECT1] open with 8 quotations).
+- id: S29
+  kind: project
+  followup: true
+  source: chat_histories id=39356 2026-07-07
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (end_user)'
+  language: en
+  history:
+  - srtwb1516 dealer price
+  moment: project price?
+  expect:
+    tools_any:
+    - crm_master_products_list
+    - crm_projects_list
+    - crm_project_quotations_list
+    must:
+    - Read 'project price' as about SRTWB1516
+    - Say no project price is recorded if the data has none; offer the registered-project route
+    must_not:
+    - Make up a project price
+    - Treat it as a new unrelated question
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-chatbot-clarify-not-assume.md
+  facts_note: SRTWB1516 list MYR 613, on hand 5, incoming 30 ETA 2026-09-23. No project price field in the CRM tools;
+    projects.quotations has 8 rows on 1 project.
+- id: S30
+  kind: project
+  followup: false
+  source: chat_histories id=35949 2026-06-12
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (end_user)'
+  language: en
+  history:
+  - 'CB230SS
+
+    Stock check 30 nos'
+  moment: Check project registration
+  expect:
+    tools_any:
+    - crm_projects_list
+    - crm_project_detail
+    - crm_project_quotations_list
+    must:
+    - Look up registered projects, or ask which project, instead of a stock answer
+    must_not:
+    - List every project without a filter
+    - Reveal other customers' projects to an unlinked contact
+    rulings:
+    - feedback-chatbot-clarify-not-assume.md
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+  facts_note: Dev has 5 projects (1 won, 4 open), PRJ-000001 [PROJECT1] with 8 quotations across 4 scopes. Scope
+    visibility for an unlinked contact is the open question.
+  adapted: no real photo-based project message exists; this is the real 'Check project registration'
+- id: K01
+  kind: control
+  followup: false
+  source: chatbot.turns b87e077d 2026-09-11
+  audience: dealer
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,dealer,end_user,mocha_dealer)'
+  language: en
+  history:
+  - MARKETING SRTWC6030-SH
+  - ESCALATE TO MARKETING
+  - WHICH BIDET SEAT COVER THAT MATCH WITH SRTWC6030-SH
+  moment: Check stock SRTMCB21412
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    must:
+    - 'Dealer: got stock or no stock, ask quantity back (owner ruling)'
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTMCB21412 on hand 461, list MYR 619. No selling move expected.
+- id: K02
+  kind: control
+  followup: false
+  source: chatbot.turns 4120a854 2026-09-14
+  audience: staff
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,cabana_office,dealer,end_user,mocha_dealer,mocha_office,sorento_office)'
+  language: en
+  history:
+  - Cbmc5875-BL STOCK
+  - Cbf66410 promotion packages
+  - '2'
+  moment: Srtwb1543 stock
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    must:
+    - Stock in this contact's mode
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTWB1543 on hand 25, list MYR 473, incoming 49 (ETA 2026-09-09).
+- id: K03
+  kind: control
+  followup: false
+  source: chatbot.turns d5a8d6c5 2026-09-10
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (end_user)'
+  language: en
+  history:
+  - Tq
+  - SRTWB7098 SEMI-RECESSED BASIN stock available?
+  - Any incoming shipment for srtwb7098
+  moment: Srtwc 8840 stock available?
+  expect:
+    tools_any:
+    - crm_master_products_list
+    - crm_inventory_stock_balance_list
+    must:
+    - Say the code is not found and ask for it, or offer real-name candidates
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-chatbot-clarify-not-assume.md
+    - feedback-chatbot-never-leak-ids.md
+    - feedback-truthful-no-fabricated-replies.md
+  facts_note: '''SRTWC8840'' is not a product_code on dev (no exact match). Clarify, do not guess.'
+- id: K04
+  kind: control
+  followup: true
+  source: chatbot.turns 56af58e7 2026-09-09
+  audience: dealer
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,dealer,end_user,mocha_dealer)'
+  language: en
+  history:
+  - mfg6633
+  - stock level
+  - Srtscbd319-uf stock level
+  moment: List Price
+  expect:
+    tools_any:
+    - crm_master_products_list
+    must:
+    - 'Price for the seat cover from the previous turn: list MYR 250'
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTSCBD319-UF list MYR 250, on hand 51.
+- id: K05
+  kind: control
+  followup: true
+  source: chatbot.turns b15fdb9e 2026-09-17
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - SRTWT8309-GM pls check incoming
+  - SRTWB4081 incoming
+  moment: got incoming
+  expect:
+    tools_any:
+    - crm_incoming_stock_by_product
+    - crm_inventory_stock_balance_list
+    must:
+    - Incoming for SRTWB4081 (none recorded) from the previous turn
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-clarify-not-assume.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTWB4081 on hand 1, no incoming.
+- id: K06
+  kind: control
+  followup: false
+  source: chatbot.turns 359fae34 2026-09-14
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - 'no'
+  - srt360-hp
+  - srt360-hp incoming
+  moment: PS202609-0261 done delivered?
+  expect:
+    tools_any:
+    - crm_order_management_orders_list
+    must:
+    - Delivered 2026-09-14, from the order record
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+  facts_note: PS202609-0261 order_date 2026-09-14, actual_delivery_date 2026-09-14, doc_status A.
+- id: K07
+  kind: control
+  followup: true
+  source: chatbot.turns ba30fcde 2026-09-14
+  audience: dealer
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (cabana_dealer,dealer,end_user,mocha_dealer)'
+  language: en
+  history:
+  - srtfv2011 stock level
+  - srtbf11606a STOCK LEVEL
+  - SRTBF11621
+  moment: STOCK LEVEL
+  expect:
+    tools_any:
+    - crm_inventory_stock_balance_list
+    must:
+    - Stock for SRTBF11621 from the previous turn, dealer wording
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-eval-expectations-follow-rulings.md
+    - feedback-availability-onhand-basis.md
+  facts_note: SRTBF11621 on hand 12, list MYR 999.
+- id: K08
+  kind: control
+  followup: true
+  source: chatbot.turns e2d1871a 2026-09-09
+  audience: dealer
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (dealer)'
+  language: en
+  history:
+  - "New style lighting \n202609-1091 delivery"
+  - '2'
+  - Srtwc286-sh-new-200 eta
+  moment: last in for 192-gm
+  expect:
+    tools_any:
+    - crm_master_products_list
+    - crm_inventory_stock_balance_list
+    must:
+    - Say '192-gm' is not found and offer real candidates or ask; do not guess the family
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-chatbot-clarify-not-assume.md
+    - feedback-chatbot-never-leak-ids.md
+    - feedback-truthful-no-fabricated-replies.md
+  facts_note: 'No product_code ending 192-GM on dev. Real v1 reply: ''Couldn''t find 192-gm''.'
+- id: K09
+  kind: control
+  followup: false
+  source: chatbot.turns c68bf8dd 2026-09-11
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - may i know container status
+  - may i know container status
+  - container status
+  moment: container status report
+  expect:
+    tools_any:
+    - crm_order_management_orders_list
+    must:
+    - 'Container status report: send or route as today'
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-chatbot-rules-know-dont-ask.md
+    - feedback-truthful-no-fabricated-replies.md
+  facts_note: Plain report ask. No selling move.
+- id: K10
+  kind: control
+  followup: false
+  source: chatbot.turns b9ce33a1 2026-09-10
+  audience: unlinked
+  audience_basis: 'contact access types (respond_contact_access_types): *_office -> staff, *_dealer only -> dealer,
+    end_user or none -> unlinked (none)'
+  language: en
+  history:
+  - 'STATUS DELIVERY : PS202609-0174'
+  - 'STATUS DELIVERY
+
+    PS202609-0149
+
+    PS202609-0150
+
+    PS202609-0193'
+  - INCOMING SRTKS2407
+  moment: 'DELIVERY STATUS : PS202609-0226'
+  expect:
+    tools_any:
+    - crm_order_management_orders_list
+    must:
+    - Delivery status for PS202609-0226 from the order record
+    must_not:
+    - Offer an alternative or promotion that was not asked for
+    - Show a UUID
+    rulings:
+    - feedback-truthful-no-fabricated-replies.md
+    - feedback-chatbot-rules-know-dont-ask.md
+  facts_note: PS202609-0226 order_date 2026-09-11, actual_delivery_date 2026-09-10, doc_status A.

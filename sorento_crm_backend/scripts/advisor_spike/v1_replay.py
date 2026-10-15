@@ -64,6 +64,9 @@ def install_guard() -> None:
         yield
 
     _swap(console_service, "_lanes_on", _noop)
+    from . import mcp_local
+
+    mcp_local.patch_v1_mcp()
 
 
 def check_lanes_on() -> None:
