@@ -3,314 +3,224 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sorento chat advisor</title>
+<title>Chatbot problem statement</title>
 <style>
 :root{--bg:#ffffff;--fg:#18181b;--muted:#f4f4f5;--muted-fg:#71717a;--border:#e4e4e7;
---primary:#1b84ff;--primary-soft:#eef5ff;--warn:#b07d00;--warn-soft:#fff8dd;--ok:#14804a;--ok-soft:#e8f7ee;--bad:#c4321a;--bad-soft:#fdecea;--code:#f4f4f5}
+--primary:#1b84ff;--primary-soft:#eef5ff;--warn:#b07d00;--warn-soft:#fff8dd;--ok:#14804a;--ok-soft:#e8f7ee;--code:#f4f4f5}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0b0d;--fg:#f4f4f5;--muted:#18181b;
---muted-fg:#a1a1aa;--border:#2e2e33;--primary:#4c9dff;--primary-soft:#0f2742;--warn:#f6b100;--warn-soft:#332600;--ok:#4ade80;--ok-soft:#0d2a19;--bad:#f87171;--bad-soft:#3a1310;--code:#18181b}}
+--muted-fg:#a1a1aa;--border:#2e2e33;--primary:#4c9dff;--primary-soft:#0f2742;--warn:#f6b100;--warn-soft:#332600;--ok:#4ade80;--ok-soft:#0d2a19;--code:#18181b}}
 :root[data-theme="dark"]{--bg:#0b0b0d;--fg:#f4f4f5;--muted:#18181b;--muted-fg:#a1a1aa;--border:#2e2e33;
---primary:#4c9dff;--primary-soft:#0f2742;--warn:#f6b100;--warn-soft:#332600;--ok:#4ade80;--ok-soft:#0d2a19;--bad:#f87171;--bad-soft:#3a1310;--code:#18181b}
+--primary:#4c9dff;--primary-soft:#0f2742;--warn:#f6b100;--warn-soft:#332600;--ok:#4ade80;--ok-soft:#0d2a19;--code:#18181b}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-.wrap{display:grid;grid-template-columns:230px minmax(0,1fr);max-width:1240px;margin:0 auto}
+.wrap{display:grid;grid-template-columns:220px minmax(0,1fr);max-width:1200px;margin:0 auto}
 nav{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:28px 16px;border-right:1px solid var(--border);font-size:13px}
 nav b{display:block;margin-bottom:8px;color:var(--muted-fg);font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:11px}
 nav ol{margin:0;padding-left:0;list-style:none}nav li{margin:4px 0}nav a{color:var(--fg);text-decoration:none}nav a:hover{color:var(--primary)}
 main{padding:28px 40px 80px;min-width:0}
-h1{font-size:26px;line-height:1.25;margin:0 0 12px}
-h2{font-size:20px;margin:44px 0 10px;padding-top:12px;border-top:1px solid var(--border)}
-h3{font-size:16px;margin:26px 0 8px}
+h1{font-size:25px;line-height:1.25;margin:0 0 12px}
+h2{font-size:20px;margin:40px 0 10px;padding-top:12px;border-top:1px solid var(--border)}
+h3{font-size:16px;margin:22px 0 8px}
 p,li{max-width:80ch}
-code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}
+code{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}
 .tw{overflow-x:auto;margin:12px 0}
 table{border-collapse:collapse;font-size:13.5px;min-width:100%}
 th,td{border:1px solid var(--border);padding:6px 9px;text-align:left;vertical-align:top}
 th{background:var(--muted);font-weight:600}
 .box{border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin:14px 0;background:var(--muted)}
 .box.hl{background:var(--primary-soft);border-color:var(--primary)}
-.box.wn{background:var(--warn-soft);border-color:var(--warn)}
 .tag{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid var(--border);background:var(--muted);white-space:nowrap}
-.tag.ok{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
-.tag.wn{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
-.tag.bad{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
-.dia{margin:16px 0;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);overflow-x:auto}
-.dia svg{width:100%;height:auto;min-width:600px;display:block}
-.dia figcaption{font-size:12.5px;color:var(--muted-fg);margin-top:6px}
-.dia .b{fill:var(--muted);stroke:var(--border);stroke-width:1.2}
-.dia .hl{fill:var(--primary-soft);stroke:var(--primary)}
-.dia .wn{fill:var(--warn-soft);stroke:var(--warn)}
-.dia .t{fill:var(--fg);font:600 13px system-ui,sans-serif;text-anchor:middle}
-.dia .s{fill:var(--muted-fg);font:11.5px system-ui,sans-serif;text-anchor:middle}
-.dia .a{stroke:var(--muted-fg);stroke-width:1.4;fill:none}
-.dia .ah{fill:var(--muted-fg)}
-.chat{max-width:440px;margin:12px 0 20px;padding:10px;border-radius:12px;background:#efeae2;border:1px solid var(--border)}
+.tag.s{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
+.tag.m{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.small{font-size:12.5px;color:var(--muted-fg)}
+.chat{max-width:440px;margin:10px 0 14px;padding:10px;border-radius:12px;background:#efeae2;border:1px solid var(--border)}
 .chat .m{margin:6px 0;padding:7px 11px;border-radius:9px;font:13.5px/1.45 system-ui,sans-serif;white-space:pre-wrap;max-width:88%;color:#111}
 .chat .u{background:#ffffff;margin-right:auto;border-top-left-radius:2px}
 .chat .bot{background:#dcf8c6;margin-left:auto;border-top-right-radius:2px}
-.chat .note{font-size:11.5px;color:#54656f;text-align:center;margin:8px 0}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .chat{background:#0b141a}:root:not([data-theme="light"]) .chat .m{color:#e9edef}:root:not([data-theme="light"]) .chat .u{background:#202c33}:root:not([data-theme="light"]) .chat .bot{background:#005c4b}:root:not([data-theme="light"]) .chat .note{color:#8696a0}}
-:root[data-theme="dark"] .chat{background:#0b141a}:root[data-theme="dark"] .chat .m{color:#e9edef}:root[data-theme="dark"] .chat .u{background:#202c33}:root[data-theme="dark"] .chat .bot{background:#005c4b}:root[data-theme="dark"] .chat .note{color:#8696a0}
-.small{font-size:12.5px;color:var(--muted-fg)}
-@media (max-width:820px){.wrap{grid-template-columns:minmax(0,1fr)}nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--border);padding:16px}main{padding:16px 16px 60px}h1{font-size:22px}}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .chat{background:#0b141a}:root:not([data-theme="light"]) .chat .m{color:#e9edef}:root:not([data-theme="light"]) .chat .u{background:#202c33}:root:not([data-theme="light"]) .chat .bot{background:#005c4b}}
+:root[data-theme="dark"] .chat{background:#0b141a}:root[data-theme="dark"] .chat .m{color:#e9edef}:root[data-theme="dark"] .chat .u{background:#202c33}:root[data-theme="dark"] .chat .bot{background:#005c4b}
+@media (max-width:820px){.wrap{grid-template-columns:minmax(0,1fr)}nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--border);padding:16px}main{padding:16px 16px 60px}h1{font-size:21px}}
 @media print{nav{display:none}.wrap{display:block}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <nav><b>Contents</b><ol>
-<li><a href="#s0">0. Short answer</a></li>
-<li><a href="#s1">1. Today on the 7 layers</a></li>
-<li><a href="#s2">2. What is missing for a salesman</a></li>
-<li><a href="#s3">3. Options A to E</a></li>
-<li><a href="#s4">4. Option C in detail</a></li>
-<li><a href="#s5">5. The n8n failures, head on</a></li>
-<li><a href="#s6">6. Mock conversations</a></li>
-<li><a href="#s7">7. The spike: what we measure</a></li>
-<li><a href="#s8">8. Spike results</a></li>
-<li><a href="#s9">9. Production build</a></li>
-<li><a href="#s10">10. Questions for the owner</a></li>
+<li><a href="#s0">0. Problem statement</a></li>
+<li><a href="#s1">1. P1 Follow-ups lose context</a></li>
+<li><a href="#s2">2. P2 Spec matching</a></li>
+<li><a href="#s3">3. P3 Report engine</a></li>
+<li><a href="#s4">4. All fixes, in order</a></li>
+<li><a href="#s5">5. Decisions for the owner</a></li>
+<li><a href="#s6">6. What was dropped</a></li>
 </ol></nav>
 <main>
-<h1>ARCH: a "Claude Code for Sorento" chat advisor (16 Oct 2026)</h1>
-<p>Status: DRAFT for owner review (lane CHAT-ADVISOR-SPIKE, PR #1711). Design plus a measured spike; nothing here
-changes the live chatbot. Numbers marked <span class="tag wn">estimate</span> are replaced by measured spike numbers
-in section 8 by 19 Oct. Code cited at <code>origin/main</code> 504ce9252a.</p>
+<h1>Chatbot: problem statement and fixes (16 Oct 2026)</h1>
+<p>Status: for owner review (lane CHAT-ADVISOR-SPIKE, PR #1711). Re-scoped on the owner's feedback: no new
+architecture, today's structured replies stay. Analysis only. Every fix below is a small change inside the live bot
+path, sized S or M, with the expected gain and how it is measured. Code cited at <code>origin/main</code>
+504ce9252a.</p>
 
-<h2 id="s0">0. Short answer</h2>
+<h2 id="s0">0. Problem statement</h2>
 <div class="box hl">
-<p><b>Can we build it on the current architecture?</b> Yes, as an added layer, not a rewrite. Of the seven layers,
-Sorento already has channels (1), a strong understanding step (2), carried state (4, partly), a large tool layer with
-permissions inside it (6: 52 MCP tools, Stock Visibility enforced in the backend) and traces (7). The one layer that
-does not exist is <b>3, reasoning</b>: today code picks exactly one tool per ask and fills a template, so the bot
-can be correct but cannot think "this is out of stock, the alternative has stock, and there is a promotion on it".</p>
-<p><b>Recommendation (to be confirmed by the spike): option C, the hybrid.</b> Keep the parser and today's fast,
-templated answers for plain asks. Send only the selling moments (out of stock, a promotion exists, a fitting
-accessory exists, a quantity or ETA to counter, a project) to an advisor model that may call 3 to 6 tools chosen by
-the parser's domain, sees one structured conversation state, and whose reply passes a <b>fact guard</b>: every code,
-number, price and date in the reply must appear in a tool result, or the reply is redone or falls back to today's
-answer.</p>
-<p><b>"As Claude Code, do you extract entities first?"</b> No. Claude Code reads the raw conversation plus the tool
-descriptions, and one model understands, decides and calls tools in a loop, looking facts up instead of carrying them
-in the prompt. That shape is tested in the spike as <b>C2</b> (the advisor reads the raw transcript, no parser output)
-and <b>C2-all</b> (C2 with every read-only tool, which is the shape that failed in n8n).</p>
+<p><b>Owner, 16 Oct:</b> "what is working today, for first ask, is fine, the struggle comes from continuous messages,
+remembering the context, and also spec matching especially, today there is a case that ask about bathtub with massage
+jet and wrong products are suggested, this is my problem statement, and also the report engine, it is not very smart
+and dynamic".</p>
 </div>
-
-<h2 id="s1">1. Today on the 7 layers</h2>
 <div class="tw"><table>
-<tr><th>Layer</th><th>v1 (live)</th><th>PV2 (branch, not merged)</th><th>Gap for a salesman</th></tr>
-<tr><td>1 Channels</td><td>Respond.io WhatsApp webhook and the console, both into <code>POST /api/v1/external/chat/turn</code> (<code>app/api/v1/external/chat.py:171</code>)</td><td>Same</td><td>None</td></tr>
-<tr><td>2 Perception (intent, entities)</td><td>LLM parser <code>chatbot_semantic_parser</code> v94: 140,897 chars, about 39k tokens, business rules inside the prompt; gpt-5.4-mini, strict JSON, temperature 0 (<code>head/parser.py:33</code>, <code>parser.py:1016-1046</code>)</td><td><code>chatbot_semantic_parser_v2</code> v9: 33,997 chars, about 10k tokens</td><td>Strong on first turns (about 92% whole-parse on crew's gold set), weak on follow-ups (62% v1, 69% PV2)</td></tr>
-<tr><td>3 Orchestration and reasoning</td><td><b>None.</b> Code routing: <code>turn/apply.py:3288</code> -> <code>turn/route.py:65</code>; the tool is the parsed domain row's first tool (<code>lanes/business/fetch.py:156</code>). One ask, one fetch, no loop</td><td>Same shape (code logic over the parse)</td><td><b>The missing layer.</b> Nothing can weigh stock against an alternative, a promotion or an ETA</td></tr>
-<tr><td>4 Memory</td><td>Short term: <code>respond_contacts.session_vars</code> (focus, open question, ...; <code>session_state.py:22</code>) + last 3 exchanges (<code>turn_runtime.py:375</code>). Episodic: <code>conversation_frames</code> (gated). No long-term customer memory</td><td>Own state in <code>session_vars["pv2"]</code></td><td>Context bugs found 15 Oct: v1 drops the current subject on 148 of 152 follow-ups (<code>turn/context.py:409-431</code>); PV2 never sees the first exchange</td></tr>
-<tr><td>5 Knowledge / RAG</td><td>pgvector embeddings for entity resolution and guides; stock and order numbers intentionally answered by SQL tools, not RAG</td><td>Same</td><td>None needed for selling; facts come from tools</td></tr>
-<tr><td>6 Tools / MCP</td><td>52 <code>crm_*</code> MCP tools (<code>sorento_crm_mcp/catalog.py:56</code>); the chatbot may call only a read-only allow-list (<code>fetch.py:1404</code>); scope (contact, space) stamped by code (<code>fetch.py:1295</code>); Stock Visibility applied in the backend (<code>services/stock_visibility.py:229</code>), fails closed</td><td>Same tools</td><td>Already fit for an advisor. Alternatives ride inside the stock answer (<code>presenters.py:1556</code>); seat-cover fits via <code>crm_find</code>; mirror/shelf fits are PR #1710</td></tr>
-<tr><td>7 Guardrails, observability, response</td><td>Replies are templates (<code>chatbot_reply_copy.py:439</code>, <code>turn/compose.py:506</code>), so nothing is invented but nothing is suggested. Traces per turn in <code>chatbot.turns.trace</code>; token usage in <code>ai_assistant_usage_logs</code></td><td>Same</td><td>A model-written reply needs a new guard: the fact guard</td></tr>
+<tr><th>Problem</th><th>Measured today</th><th>Main cause</th><th>Fixes</th></tr>
+<tr><td><b>P1</b> Follow-up messages</td><td>Parser right on about 92% of first asks, but 49-51 of 81 follow-ups (about 62%)</td><td>The "current subject" line never reaches the parser: a list block added on 9 Oct fills its space</td><td>4 (S, S, M, M)</td></tr>
+<tr><td><b>P2</b> Spec matching</td><td>"bathtub with massage jet": 10 of 10 suggestions are plain tubs. 9 of 12 other real spec asks wrong</td><td>"massage jet" has no spec key, so it is dropped without a word and only "bathtub" is searched</td><td>3 (all S) + land one existing branch</td></tr>
+<tr><td><b>P3</b> Report engine</td><td>7 of 25 real report asks right with at most one question; 11 fail</td><td>Four questions forced before any data, answers not read back, the report lost on follow-ups</td><td>8 (all S)</td></tr>
 </table></div>
 
-<h2 id="s2">2. What is missing for a salesman</h2>
-<p>The owner's examples, against what exists today:</p>
-<div class="tw"><table>
-<tr><th>Salesman move</th><th>Data today</th><th>Bot today</th></tr>
-<tr><td>Out of stock -> alternative</td><td><code>product_alternatives</code> rows (<code>app/models/product.py:421</code>)</td><td>Printed under the stock line when stored (PRODUCT-ALTERNATIVES, 8 Oct); not weighed against promotions or ETA</td></tr>
-<tr><td>Out of stock -> incoming ETA</td><td>Incoming stock tools (<code>crm_incoming_stock_by_product</code>)</td><td>Only when the user asks for the ETA</td></tr>
-<tr><td>Offer the promotion</td><td>Promotions + promotion products</td><td>Only when the user asks about promotions</td></tr>
-<tr><td>Matching accessory (seat cover, mirror, shelf)</td><td><code>product_compatibility</code> (<code>app/models/product_compatibility.py:29</code>)</td><td>Fit line on asks that name it (PR #1710, not merged)</td></tr>
-<tr><td>Counter-propose quantity or ETA</td><td>Stock + incoming</td><td>Dealer quantity ask in availability mode; no "I can do 30 now, 20 on 12 Nov"</td></tr>
-<tr><td>Project from a chat or photo</td><td>Project + quotation tools (undomained, <code>contracts.py:65</code>)</td><td>No project lane in the chatbot</td></tr>
-</table></div>
-<p>So the data and the tools are there; what is missing is a step that looks at several results together and decides
-which one helpful move to make. Each move hard-coded in templates is one more lane; a reasoning step does them as one
-capability.</p>
-
-<h2 id="s3">3. Options A to E</h2>
-<div class="tw"><table>
-<tr><th></th><th>A. Today (v1)</th><th>B. PV2 as is</th><th>C. Hybrid advisor</th><th>C2. Raw-conversation advisor</th><th>D. Full agent</th><th>E. Respond.io AI Agent</th></tr>
-<tr><td>Shape</td><td>Parser -> code -> 1 tool -> template</td><td>Smaller parser -> code -> template</td><td>Parser -> fast path for plain asks; selling moments -> advisor (3-6 tools by domain) -> fact guard</td><td>As C, but the advisor reads the raw transcript, not the parse</td><td>One model, raw conversation, all read-only tools, every turn</td><td>Respond.io's built-in LLM agent: one instructions box (max 10,000 chars), knowledge sources (RAG), up to 9 skills chosen from written "when to use" text, reads the last 20 messages + contact fields</td></tr>
-<tr><td>Owner's examples</td><td>Only hard-coded moves</td><td>Same as A</td><td>All six, when data supports them</td><td>All six</td><td>All six</td><td>Wording and engagement yes; live stock, ETA and promotions only through an HTTP skill, which its own guide advises against</td></tr>
-<tr><td>n8n "wrong tool"</td><td>Not possible (code picks)</td><td>Not possible</td><td>Code picks the shelf (domain), model picks among 3-6</td><td>Same shelf as C</td><td>Exposed (model picks among 46)</td><td>Skills chosen from prose; Respond.io says more than 2-3 chained skills gets unpredictable</td></tr>
-<tr><td>n8n "worse with more tools"</td><td>n/a</td><td>n/a</td><td>Capped at 6</td><td>Capped at 6</td><td>Exposed; measured as C2-all</td><td>Capped at 9 skills</td></tr>
-<tr><td>n8n "slow"</td><td>p50 about 3.5 s</td><td>Parser p50 2.1 s</td><td>Plain asks unchanged; advisor turns pay a loop (cap 4 calls)</td><td>As C</td><td>Every turn pays the loop</td><td>Unknown (hosted)</td></tr>
-<tr><td>Cost per turn</td><td>Parser $0.0054-0.0062</td><td>Parser $0.0021-0.0024</td><td>Parser + advisor on selling turns only <span class="tag wn">estimate</span> $0.01-0.04 per advisor turn</td><td>As C</td><td>Advisor on every turn, bigger tool list <span class="tag wn">estimate</span> $0.03-0.08</td><td>Respond.io AI credits per message (pricing in the crew research note)</td></tr>
-<tr><td>Made-up facts</td><td>None (templates)</td><td>None (templates)</td><td>Fact guard on every reply; fallback to A</td><td>Same guard</td><td>Same guard, more surface</td><td>Prompt-only guard: nothing checks a number against our data</td></tr>
-<tr><td>Risk</td><td>Low risk, no selling</td><td>Held-out 9/19, same as v1 (crew audit 15 Oct)</td><td>Medium: new layer, bounded</td><td>Medium; depends on whether raw context helps follow-ups</td><td>High: the n8n failure modes, every turn</td><td>High for live numbers (Stock Visibility, never-leak-ids live in our backend, not theirs); low for static FAQ</td></tr>
-<tr><td>Migration</td><td>None</td><td>Switch already built (per contact)</td><td>Additive: flag per contact, falls back to A</td><td>As C</td><td>Big bang replacement</td><td>A Respond.io assignment rule; our backend reached only through HTTP skills</td></tr>
-</table></div>
-<p class="small">Option E source: crew research note RESEARCH-respondio-ai-agent.md (15 Oct), from respond.io help centre articles; its own prompt guide lists real-time stock checking as a boundary.</p>
-<p class="small">Parser cost and latency: crew parser-gold runs, 15 Oct (v1 about 39k prompt tokens, 38k cached, 441 out; p50 3.3 s, p95 4.0 s). CRM side of a turn p50 0.14 s, p95 0.5 s (crew report CHAT-SPEED).</p>
-
-<h2 id="s4">4. Option C in detail</h2>
-<figure class="dia">
-<svg viewBox="0 0 900 330" role="img" aria-label="Option C flow">
-<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
-<rect x="10" y="130" width="120" height="60" rx="8" class="b"/><text x="70" y="156" class="t">WhatsApp</text><text x="70" y="174" class="s">layer 1</text>
-<rect x="165" y="130" width="140" height="60" rx="8" class="b"/><text x="235" y="156" class="t">Parser</text><text x="235" y="174" class="s">layer 2, today's</text>
-<rect x="340" y="40" width="170" height="60" rx="8" class="b"/><text x="425" y="66" class="t">Fast path</text><text x="425" y="84" class="s">code + 1 tool + template</text>
-<rect x="340" y="220" width="170" height="70" rx="8" class="hl"/><text x="425" y="246" class="t">Advisor (layer 3)</text><text x="425" y="264" class="s">loop, max 4 calls</text><text x="425" y="280" class="s">3-6 tools by domain</text>
-<rect x="545" y="220" width="150" height="70" rx="8" class="b"/><text x="620" y="246" class="t">MCP tools</text><text x="620" y="264" class="s">layer 6, read-only,</text><text x="620" y="280" class="s">scope stamped by code</text>
-<rect x="545" y="130" width="150" height="60" rx="8" class="wn"/><text x="620" y="156" class="t">Fact guard</text><text x="620" y="174" class="s">layer 7</text>
-<rect x="730" y="130" width="150" height="60" rx="8" class="b"/><text x="805" y="156" class="t">Reply</text><text x="805" y="174" class="s">+ trace, usage</text>
-<rect x="165" y="250" width="140" height="60" rx="8" class="b"/><text x="235" y="276" class="t">State</text><text x="235" y="294" class="s">layer 4, one object</text>
-<path d="M130,160 L163,160" class="a" marker-end="url(#ar)"/>
-<path d="M305,150 L338,80" class="a" marker-end="url(#ar)"/>
-<path d="M305,172 L338,240" class="a" marker-end="url(#ar)"/>
-<path d="M305,280 L338,265" class="a" marker-end="url(#ar)"/>
-<path d="M510,255 L543,255" class="a" marker-end="url(#ar)"/>
-<path d="M510,232 L560,192" class="a" marker-end="url(#ar)"/>
-<path d="M510,70 L760,70 L790,128" class="a" marker-end="url(#ar)"/>
-<path d="M695,160 L728,160" class="a" marker-end="url(#ar)"/>
-<text x="560" y="62" class="s">plain asks (most turns)</text>
-<text x="330" y="205" class="s">selling moment</text>
-</svg>
-<figcaption>Plain asks keep today's path and speed. Only selling moments pay for the advisor loop. A failed guard twice falls back to the fast-path answer.</figcaption>
-</figure>
-<h3>What decides "selling moment"</h3>
-<p>Not keywords (owner rule: the parser decides meaning). Two triggers, both from data the system already has:</p>
+<h2 id="s1">1. P1 Follow-ups lose context</h2>
+<h3>What happens</h3>
+<p>On crew's parser gold set (real turns, TRAIN slice only), v1 reads 49 and 51 of the 81 follow-ups right in two
+runs; 29 fail in both. Giving the parser the whole raw chat did not help (59.9% vs 61.8% on all follow-ups), so the fix
+is not "more history". It is four specific gaps.</p>
+<h3>Why</h3>
 <ol>
-<li>The parser's reading is open-ended or selling (a recommendation ask, "anything else", a counter-offer, a project
-enquiry), or</li>
-<li>the fast-path tool result carries a hook: on-hand below the asked quantity or zero, a stored alternative, a live
-promotion on the product, a stored fit, an incoming row. Code sees the hook in the result; the advisor composes.</li>
+<li><b>The current subject is cut on 77 of 81 follow-ups.</b> It comes from the carried focus
+(<code>session_state.py:23</code>) through <code>head/parser.py:809-848</code> and <code>engine.py:4511-4522</code>
+into <code>context.assemble</code>. Since #1527 (9 Oct) the same block also carries the brand, product type, product
+detail and promotion lists (about 629 tokens, <code>context.py:147-158</code>), kept whole (<code>:409-410</code>),
+against a budget of 350 tokens (<code>:29</code>), so the shrink loop (<code>:425-431</code>) always drops the subject.
+The builder that the tests cover (<code>parser.py:851-944</code>) is no longer called, so no test saw it.</li>
+<li><b>A question already answered still shows as open</b> (4 items): an old "did you mean" list stays as the open
+question, so "the NEW one also" picks a list position (<code>question.py:73-93</code>, <code>engine.py:4503</code>,
+<code>:4523-4524</code>).</li>
+<li><b>Prompt rules pull short replies to "casual"</b> (4 items): "office use copy", "what different", "why?" are read
+on their own words (prompt v94 lines 313-319), against lines 35-56 that say read them in context.</li>
+<li><b>Product questions read as file requests</b> (6 of the 15 misreads): "SRTSCBD313 seat cover", "size?" and carton
+questions become a document ask (prompt lines 332-341, 1439-1441).</li>
 </ol>
-<h3>The four parts</h3>
-<ul>
-<li><b>Tool subset</b>: the parser's domain picks the shelf from the existing <code>chatbot_domains</code> table
-(inventory, promotion, incoming, master_products, ...; it already maps domain to tools) plus a short companion list
-(for stock: incoming-by-product, promotion products, find/fits). Never more than 6; write tools never reach the
-model; contact and space are stamped by code, so permissions stay in the tools.</li>
-<li><b>One structured state</b>: the parse of this turn, the carried subject, the open question, the last exchanges.
-C2 replaces this with the raw transcript.</li>
-<li><b>Fact guard</b>: every product code, quantity, price, percentage and date in the reply must appear in a tool
-result of this turn or in the user's own words; UUIDs are always a leak. One retry naming the bad tokens, then the
-fast-path reply.</li>
-<li><b>Traces</b>: tools called, results, tokens, cost and the guard verdict go into the turn trace, like today.</li>
-</ul>
-
-<h3>Three ideas taken from Respond.io's agent (option E)</h3>
-<ol>
-<li><b>A knowledge lane for static questions.</b> Specs, fitment, policies, how to order: answered only from static
-sources (product attachments, user guides), otherwise "I don't know" plus a handoff. It never states a live number;
-live numbers stay with the tools.</li>
-<li><b>Tool cards instead of a bare tool list.</b> Each tool the advisor may call carries: when it applies, the inputs
-it needs and how to ask for a missing one (one question at a time), and fixed exits (done / ask / hand over to a
-human with a summary / cannot answer). The current product and customer live in state slots, not in the chat
-history.</li>
-<li><b>Code proposes, the model picks and words it (variant C3).</b> Code turns the tool results into 1 to 3
-next-best options (in-stock alternative, live promotion, incoming date, matching accessory), each with its sentence
-already filled from data. The model only chooses one (or none) and writes the words around it; every number stays
-template-filled, so the fact guard has nothing to catch. Tested in the spike as C3 if time allows.</li>
-</ol>
-
-<h2 id="s5">5. The n8n failures, head on</h2>
+<h3>Fixes</h3>
 <div class="tw"><table>
-<tr><th>n8n failure (owner, memory <code>feedback-parser-routes-not-agent.md</code>)</th><th>Why it happened</th><th>How C answers it</th><th>How the spike checks it</th></tr>
-<tr><td>Picked the wrong tool</td><td>Model chose among every tool from words alone</td><td>The parser (strong on first turns) picks the domain; the model picks among 3-6 tools of that domain</td><td>"Right tools" per scenario, judged against the expected tools; C vs C2-all</td></tr>
-<tr><td>Worse as tools were added</td><td>Long, overlapping tool menu</td><td>Hard cap of 6; the full menu exists only in the C2-all test arm</td><td>C2 (same 6) vs C2-all (all 46 read-only tools) on the same scenarios</td></tr>
-<tr><td>Slow</td><td>Every turn ran the agent loop</td><td>Plain asks never enter the loop; loop capped at 4 calls; independent lookups in parallel</td><td>p50/p95 per arm, advisor alone and end to end</td></tr>
-<tr><td>(new) Made-up facts</td><td>A writing model can invent</td><td>Fact guard + fallback</td><td>Guard catches + an Opus judge reading reply vs tool results; target 0 reaching the user</td></tr>
+<tr><th>Fix</th><th>Size</th><th>Change</th><th>Expected gain (81 follow-ups)</th><th>Risk</th></tr>
+<tr><td>P1-F1 Subject back</td><td><span class="tag s">S</span></td><td>Leave the list block out of the budget check (<code>context.py:427</code>)</td><td>+2</td><td>Subject may anchor the old domain on a topic switch</td></tr>
+<tr><td>P1-F2 Product questions</td><td><span class="tag s">S</span></td><td>Prompt: seat cover, size and carton questions are product questions</td><td>+3 to +5</td><td>A real "send the spec sheet" must still read as a file</td></tr>
+<tr><td>P1-F3 Answered question closed</td><td><span class="tag m">M</span></td><td>Mark a list already answered as answered (<code>question.py:73-93</code>) + one prompt sentence</td><td>+1 to +2</td><td>Re-picking an earlier list must still work</td></tr>
+<tr><td>P1-F4 Short replies in context</td><td><span class="tag m">M</span></td><td>Prompt lines 313-319: a short reply that depends on the subject is a question on that subject; casual only for greetings and thanks</td><td>+2 to +4</td><td>"ok tq" read as a data ask; first asks re-checked</td></tr>
 </table></div>
+<p><b>Measured how:</b> one variant per fix in the parser gold tooling, v1 on the 81 TRAIN follow-ups, two runs each
+(about $0.5 per fix). Pass bar: at least 3 more right than today on both runs and none of today's 49 broken. Four items
+flip between two unchanged runs, so a smaller gain is noise. All four together: about +8 to +13 (62% to about 72-76%).
+First asks re-run once for P1-F4.</p>
 
-<h2 id="s6">6. Mock conversations (real dev cases)</h2>
-<p>Each mock is a REAL dev message (chatbot.turns or the Respond.io log, read 15 Oct) with the facts the dev data
-holds today. Product codes are real; no customer names appear. Stock wording follows the asker's Stock Visibility:
-staff and (on dev) walk-in customers see numbers, dealers see availability words only. Dev incoming dates come from a
-mid-September snapshot, so they read as past dates against today.</p>
-<h3>6.1 Out of stock: the stored alternative</h3>
-<p class="small">Walk-in customer (detailed view). Real message, 9 Sep (scenario S01).</p>
-<div class="chat">
-<div class="m u">SRTBF11831 stock</div>
-<div class="m bot">SRTBF11831: 0 on hand, and it is discontinued.
-A stored alternative, SRTBF11831-NEW, has 14 on hand. Would you like that one?</div>
-</div>
-<p class="small"><b>Today (v1):</b> a stock table of zeros.<br><b>Tools the advisor calls:</b> stock balance (the alternative rides inside the stock answer).<br><b>Note:</b> A dealer asking the same gets "No stock for SRTBF11831. SRTBF11831-NEW is available." with no number.</p>
-<h3>6.2 Promotion plus the matching seat cover</h3>
-<p class="small">Staff. Real message, 11 Sep (scenario S08).</p>
-<div class="chat">
-<div class="m u">srtwc286 promotion</div>
-<div class="m bot">UPDATED SORENTO WATER CLOSET PROMO, 27 Aug to 27 Nov: MYR 599 (list MYR 1260). Flyer below.
-Matching seat cover: SRTSCBD407, 228 on hand.</div>
-<div class="note">[flyer image]</div>
-</div>
-<p class="small"><b>Today (v1):</b> asked the access tier first.<br><b>Tools the advisor calls:</b> promotion products, find (fits).<br><b>Note:</b> The promotion is office-only on dev, so a dealer asking the same is told no promotion is on record and never sees MYR 599. The promo line does not name the WC code (owner rule); the seat cover is the one move.</p>
-<h3>6.3 Matching accessory</h3>
-<p class="small">Dealer (availability view). Real message, 11 Sep (scenario S13).</p>
-<div class="chat">
-<div class="m u">WHICH BIDET SEAT COVER THAT MATCH WITH SRTWC6030-SH</div>
-<div class="m bot">Seat cover for SRTWC6030-SH-UF is SRTSCBD339-UF.
-SRTSCBD339-UF: got stock. How many do you need?</div>
-</div>
-<p class="small"><b>Today (v1):</b> listed bidet taps and WCs, never the seat cover.<br><b>Tools the advisor calls:</b> find (fits), stock balance.<br><b>Note:</b> Fit line first in the approved wording; the dealer quantity ask is correct in availability mode.</p>
-<h3>6.4 Quantity counter-proposal</h3>
-<p class="small">Walk-in customer (detailed view). Real message from the Respond.io log, 14 Jul (scenario S18).</p>
-<div class="chat">
-<div class="m u">SRTKS2425-BL , this item got stock ? Need 226nos</div>
-<div class="m bot">SRTKS2425-BL: only 3 on hand (discontinued).
-Incoming on record: 84 (ETA 21 Sep), 48 and 87 (ETA 22 Sep). Even with all of them it is still short of 226.
-Shall I pass this to our sales team to confirm dates and the balance?</div>
-</div>
-<p class="small"><b>Today (v1):</b> a stock table.<br><b>Tools the advisor calls:</b> stock balance, incoming by product.<br><b>Note:</b> No totals: "3 + 219 = 222, 4 short" would be numbers no tool returned, and the fact guard would stop them. Sums belong to code (variant C3), not to the model.</p>
-<h3>6.5 Out of stock, ETA instead</h3>
-<p class="small">Dealer (availability view). Real message, 9 Sep (scenario S25).</p>
-<div class="chat">
-<div class="m u">Check stock SRTWB1513</div>
-<div class="m bot">No stock for SRTWB1513 now. Next arrival on record: 23 Sep.
-How many do you need?</div>
-</div>
-<p class="small"><b>Today (v1):</b> no stock.<br><b>Tools the advisor calls:</b> stock balance, incoming by product.<br><b>Note:</b> No alternative is stored for this product, so none is offered. Staff would also see "58 coming".</p>
-<h3>6.6 Project enquiry</h3>
-<p class="small">Walk-in customer. Real message from the Respond.io log, 3 Sep (scenarios S28, S29).</p>
-<div class="chat">
-<div class="m u">i want to ask if the faucets for bath tub srtjc8037 can b in chrome instead of gunmetal ? what will b the price. for 85 unit hse.</div>
-<div class="m bot">No chrome version of SRTJC8037 is on record. Its list price is MYR 5000; it is out of stock with no incoming on record.
-For 85 units and a project price, I will pass this to our sales team with your request. OK?</div>
-</div>
-<p class="small"><b>Today (v1):</b> an unrelated product list; the customer then asked for purchasing.<br><b>Tools the advisor calls:</b> product, stock balance, incoming by product.<br><b>Note:</b> No project price exists in the tools, so the advisor does not invent one: it hands over with a summary (a fixed exit).</p>
-<h3>Real human replies, for tone</h3>
-<p class="small">From the purchasing responses and a handover chat on dev (masked): "Estimated ETA mid of August and
-FOC for this time only."; "Don't have 170mm dia x 110mm H, only have 147mm, 160mm, 200mm, 220mm. This is the nearest
-size supplier have."; "No orders and no stock (will change new model)." Short, honest, one useful move: the tone the
-advisor prompt asks for.</p>
-
-<h2 id="s7">7. The spike: what we measure</h2>
-<ul>
-<li><b>Scenarios</b>: 30 real "salesman moments" from dev chat history (alternative, promotion, accessory, quantity
-counter, ETA counter, project; at least 12 follow-ups, the parser's weak spot) + 10 plain control asks. Names masked
-in anything committed.</li>
-<li><b>Arms</b>: v1 today; C and C2 on claude-sonnet-5-5 and gpt-5.4-mini; C2-all on claude-sonnet-5-5; C2 on
-claude-opus-5-5 for the follow-ups (does raw context help with a stronger model?); C3 (code proposes, model picks
-and words) if time allows.</li>
-<li><b>Per scenario</b>: right tools, made-up facts (guard + judge), owner-rule compliance (truthful, no ids, Stock
-Visibility, qty ask in availability mode, clarify not assume, carry quantity), helpfulness (judge rubric), salesman
-move made, p50/p95 latency, tokens and cost per turn.</li>
-<li><b>Bounds</b>: dev DB only, existing MCP tools only, a script (no live path change), about $30 of model spend
-in total.</li>
-</ul>
-
-<h2 id="s8">8. Spike results</h2>
-<p class="small">RESULTS_PENDING: measured table per arm and model, failure examples and the recommendation, by 19 Oct.</p>
-
-<h2 id="s9">9. Production build (draft, refined after the spike)</h2>
-<ul>
-<li><b>Size</b>: L (new layer, a per-contact switch, a migration for the switch column). Advisor module under
-<code>app/services/chatbot/advisor/</code> (loop, subset, guard), called from the turn engine after the fast path.</li>
-<li><b>Migration path</b>: off by default; per-contact switch like PV2's (console extra, contact column, dev-only
-system setting); staff contacts first, then a few dealers; the fast-path reply is always the fallback.</li>
-<li><b>Gates</b>: the salesman scenario set + today's eval sets (no regression on plain asks), 0 made-up facts
-reaching the user, p95 at or under 8 s on advisor turns, daily cost cap, owner hand test.</li>
-</ul>
-
-<h2 id="s10">10. Questions for the owner</h2>
+<h2 id="s2">2. P2 Spec matching</h2>
+<h3>What happens</h3>
+<p>The owner's chat is newer than the local logs (they stop on 13 Oct), so it was reproduced by running today's code on
+dev data. "bathtub with massage jet", "massage bathtub" and "whirlpool bathtub" all return the same kind of list: plain
+tubs (BRBTB25706W-LEFT "simple bathtub", SRTBT1835-16, SRTBT1876-15, ...). None has jets. Dev data holds about 193
+right answers (176 Jacuzzi-class products, 16 "Bathtub and Jacuzzi" ones such as BRJC25410W-2 "massage bathtub", and
+SRTBT1605-12 "air bubble bathtub").</p>
+<h3>Why</h3>
 <ol>
-<li><b>Which turns may the advisor take?</b> (a) only selling moments as in section 4 <i>(recommended: keeps plain
-asks fast and cheap)</i>; (b) every product turn; (c) every turn (option D).</li>
-<li><b>How many moves per reply?</b> (a) one <i>(recommended: WhatsApp, short)</i>; (b) up to two.</li>
-<li><b>May it mention a live promotion on a plain stock ask?</b> (a) yes, when the promotion covers that product
-<i>(recommended)</i>; (b) only when asked about promotions.</li>
-<li><b>Guard fails twice:</b> (a) send today's template reply <i>(recommended: never worse than today)</i>; (b) hand
-over to a salesperson.</li>
-<li><b>Model</b>: decided from the spike numbers in section 8.</li>
+<li><b>The parser can only name spec keys that exist</b> (<code>head/parser.py:173-179</code>). The spec registry has
+52 keys; none is massage, jet, whirlpool or bubble. The feature lives only in the product description text.</li>
+<li><b>An unknown feature is dropped without a word</b> (<code>grounding.py:738-749</code>; only promotion asks say it
+back). The search then runs on the class alone: "bathtub" means {Bathtub, Bathtub and Jacuzzi}
+(<code>product_spec_search.py:1103-1141</code>), and in exact mode free words never count
+(<code>:1411-1424</code>). The Jacuzzi class was split from "bathtub" on purpose (<code>product_class_signal.py:74-81</code>).</li>
+<li><b>Twelve other real spec asks</b> (dev logs): 3 right, 9 wrong. Five pick the wrong size axis ("200mm wc"
+searched as width; trap length has 51 matches), one lets the parser's colour word beat the registry ("gold" tap,
+<code>grounding.py:601-618</code>), two are parser misreads of the product (P1 territory), one reads "300mm below" as
+"exactly 300mm".</li>
 </ol>
+<h3>Fixes</h3>
+<div class="tw"><table>
+<tr><th>Fix</th><th>Size</th><th>Change</th><th>Expected gain</th><th>Risk</th></tr>
+<tr><td>P2-F1 Massage key</td><td><span class="tag s">S</span></td><td>New yes/no spec key "has massage" (same pattern as "frameless", <code>product_spec_registry.py:259</code>), read from the description words massage, whirlpool, jacuzzi, air bubble, limited to tub classes; synonyms massage jet(s), whirlpool, jacuzzi, air bubble, spa, 按摩 (not bare "jet": jet sprays, hand dryers). Can be added from the Spec Registry screen, no deploy</td><td>Massage-tub asks: 10 of 10 wrong to the jetted tubs in the bathtub classes</td><td>Low: only adds a key</td></tr>
+<tr><td>P2-F2 Say what was not matched</td><td><span class="tag s">S</span></td><td>An unknown spec word is said back on every domain ("Couldn't find: massage jet"), not dropped (<code>grounding.py:744-749</code>)</td><td>No more silent wrong lists for any unknown feature</td><td>More "couldn't find" if filler words are filed as specs</td></tr>
+<tr><td>P2-F3 Raw words first</td><td><span class="tag s">S</span></td><td>Match the user's own word to the registry before the parser's paraphrase (<code>grounding.py:601-618</code>)</td><td>"gold" tap (1 of 12)</td><td>Low; typo path unchanged</td></tr>
+<tr><td>P2-F4 Size axis</td><td><span class="tag s">S</span></td><td>Land the existing branch <code>origin/claude/spec-promo-params-nlw1cq</code> (one size key, no axis guess)</td><td>5 of 12</td><td>Needs review; unmerged</td></tr>
+</table></div>
+<p><b>Measured how, without model calls:</b> the massage and size asks go into
+<code>scripts/eval_spec_search.baseline.json</code>, which <code>tests/test_product_spec_search.py:445-474</code>
+already runs; the ten real turns are recorded with <code>scripts/chatbot_record_turn.py</code> and replayed. One live
+console check for the parser side of P2-F1.</p>
+
+<h2 id="s3">3. P3 Report engine</h2>
+<h3>What happens</h3>
+<p>The live chats on dev hold no report asks, so these 25 come from the human console test sessions (3 to 14 Oct): 7
+right with at most one question, 7 right only after 2 or 3 questions, 11 failed; follow-ups 2 of 8 right. The 14 right
+answers needed 18 questions before any data; 14 of them were "how many", "amount or quantity" or "delivered or
+ordered".</p>
+<div class="chat">
+<div class="m u">哪一位经销商卖得最多SRTWC286-SH-NEW</div>
+<div class="m bot">(asks the period, how many, amount or quantity, delivered or ordered)</div>
+<div class="m u">2026, top 10, by quantity delivered</div>
+<div class="m bot">How many?  ...then: Quantity or amount?</div>
+</div>
+<h3>Why</h3>
+<ol>
+<li><b>Four questions are forced</b> before a ranking runs (<code>lanes/business/report_ask.py:225-243</code>), per the
+4 Oct ruling "never default metric or basis" (<code>:8-9</code>). Every row already shows both RM and pieces
+(<code>presenters.py:3361</code>), and the multi-ask path on the same engine asks only the basis
+(<code>turn/sub_asks.py:776-784</code>): two policies on one engine.</li>
+<li><b>Answers are not read back</b>: only the field just asked is taken (<code>report_ask.py:183-212</code>,
+<code>:552-561</code>), so "2026, top 10, by quantity delivered" answers one question and the rest are asked again;
+"3" is "not a number". Top selling already reads these reliably (<code>engine.py:2568-2591</code>). "delivered" also
+switches the report type and returns the delivery-order list (<code>:242</code>,
+<code>turn_runtime.py:1894-1897</code>).</li>
+<li><b>The report is lost on follow-ups</b>: the multi-ask never stores it (<code>sub_asks.py:776-800</code>); it is
+carried on one reading type only (<code>turn_runtime.py:1950-1956</code>); a refine re-sends the same table
+(<code>report_ask.py:658-686</code>); a new axis drops the period (<code>:633-637</code>).</li>
+<li><b>Shapes not covered</b>: "how many dealers sell X" gets a top-10 list though the count exists
+(<code>reports/ask.py:291</code>); a dealer's brand filter is dropped silently (<code>__init__.py:2026-2030</code>).
+Plus a 10-per-10-minutes limit that counts every refine, and display issues (duplicate brand names, category codes,
+ISO dates, header not naming the sort).</li>
+</ol>
+<h3>Fixes (all inside the existing engine)</h3>
+<div class="tw"><table>
+<tr><th>Fix</th><th>Size</th><th>Change</th><th>Asks it fixes (of 25)</th></tr>
+<tr><td>P3-F1 Read answers</td><td><span class="tag s">S</span></td><td>Read every reply with the top-selling reader; take count and period from any reply; keep the report type</td><td>#8, #11, half of #23</td></tr>
+<tr><td>P3-F2 Fewer questions</td><td><span class="tag s">S</span></td><td>Sort by amount unless the user says quantity; basis delivered unless said; no number = top 10 and "N more"; period still asked; header names basis and sort. <b>Needs the 4 Oct ruling revisited</b></td><td>7 slow asks to at most 1 question</td></tr>
+<tr><td>P3-F3 Multi-ask keeps the report</td><td><span class="tag s">S</span></td><td>Store the multi-ask report like a single one</td><td>#23</td></tr>
+<tr><td>P3-F4 Refine carry</td><td><span class="tag s">S</span></td><td>"dealer only", "retail?" refine the held report; say so when nothing changed</td><td>#20, #24</td></tr>
+<tr><td>P3-F5 Keep the period</td><td><span class="tag s">S</span></td><td>A new axis keeps the held period</td><td>#22</td></tr>
+<tr><td>P3-F6 Dealer brand</td><td><span class="tag s">S</span></td><td>A sales total that names a brand runs as a filtered total</td><td>#15</td></tr>
+<tr><td>P3-F7 Display</td><td><span class="tag s">S</span></td><td>"Top 10 of N", sort measure first, no duplicate names, readable dates, category word, months in date order</td><td>#14 (with F2) + every ranking reply</td></tr>
+<tr><td>P3-F8 Limit</td><td>config</td><td>Raise the report limit or stop counting refines</td><td>#13</td></tr>
+</table></div>
+<p><b>Measured how:</b> today's reports gate has no ranking case and passes a clarifying question, so it cannot see
+P3; it stays as the no-regression bar. The 25 real chains (masked) become a new report slice scored on right rows and
+questions before data: today 7 of 25, target 23 of 25 (the other two are P1 context cases). Unit suites
+<code>tests/chatbot/test_report_ask_lane.py</code> (117 tests) and <code>test_report_ask_clarify.py</code> (55).</p>
+
+<h2 id="s4">4. All fixes, in order</h2>
+<div class="tw"><table>
+<tr><th>Order</th><th>Lane</th><th>Fixes</th><th>Size</th><th>Expected result</th><th>Gate</th></tr>
+<tr><td>1</td><td>Spec massage key</td><td>P2-F1, P2-F2, P2-F3</td><td><span class="tag s">S</span></td><td>Massage-tub asks right; unknown features said back, never a silent wrong list</td><td>Spec search baseline + recorded turns; 1 live check</td></tr>
+<tr><td>2</td><td>Report ask fixes</td><td>P3-F1 to P3-F8</td><td><span class="tag s">S</span> to <span class="tag m">M</span> together</td><td>Report asks 7 to about 23 of 25 right with at most one question</td><td>New report slice + reports gate + 172 unit tests</td></tr>
+<tr><td>3</td><td>Parser context</td><td>P1-F1, P1-F2, then P1-F3, P1-F4</td><td><span class="tag m">M</span></td><td>Follow-ups about 62% to 72-76%</td><td>Parser gold TRAIN, 2 runs per fix, no new breaks</td></tr>
+<tr><td>4</td><td>Size axis</td><td>P2-F4 (existing branch)</td><td><span class="tag s">S</span></td><td>5 more of the 12 real spec asks right</td><td>Review + spec search baseline</td></tr>
+</table></div>
+<p>Spec first: smallest change, no deploy needed for the key itself, and it is the owner's named case.</p>
+
+<h2 id="s5">5. Decisions for the owner</h2>
+<ol>
+<li><b>Report defaults (P3-F2).</b> The 4 Oct ruling says never default amount/quantity or delivered/ordered. (a) Keep
+it: 3-4 questions before a ranking. (b) Default to amount and delivered, ask only the period, show the choice in the
+header so "by quantity" or "ordered" re-runs it <i>(recommended: removes 14 of 18 questions; quantity and amount are
+both shown on every row anyway)</i>.</li>
+<li><b>Should "bathtub" also list jacuzzis?</b> (a) No, keep the split; jetted tubs come back only when a massage or
+whirlpool word is used (P2-F1) <i>(recommended)</i>. (b) Yes, "bathtub" always includes jacuzzis (adds 151, reverses
+the split made on purpose).</li>
+<li><b>Prompt changes (P1-F2, P1-F4)</b> need a new parser prompt version on the live bot. OK to ship them behind the
+gold-set gate above? <i>(recommended: yes, one version per fix so a regression is traceable)</i></li>
+</ol>
+
+<h2 id="s6">6. What was dropped</h2>
+<p>The 15 Oct "advisor" idea (a reasoning model writing free-form replies over the tools) was stopped on 16 Oct after
+two smoke runs, $2.08 of model spend. Two facts from it still matter: (1) staff and walk-in customers never see stored
+alternatives, because the detailed stock view returns before alternatives are attached
+(<code>inventory_service.py:1439</code> vs <code>:1480</code>); only dealers get them. (2) A model-written reply
+needs a fact guard and still slipped on "not on record" claims it never looked up: one more reason to keep structured
+replies.</p>
 </main>
 </div>
 </body>
