@@ -5428,12 +5428,17 @@ def _run_stages_body(  # noqa: PLR0915
         # Lazily: only a turn on a domain a customer scope matters to (the order domain
         # owns every customer-scoped tool; purchase_order is screened for customer words)
         # or one saying "my" pays for the lookup.
-        customer_scope = (
-            business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
-            if verdict.get("self_reference") is True
+        customer_scope = None
+        if (
+            verdict.get("self_reference") is True
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
-            else None
-        )
+        ):
+            # R5-8: a PV2 turn holds an unlinked non-staff contact to no customer; a v1 turn reads v1's scope.
+            customer_scope = (
+                pv2_hook.customer_scope(db, contact_respond_id, space_id_for_turn, state_out.profile)
+                if pv2_result is not None
+                else business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
+            )
         # A turn whose only fetch is a GRANTED chat report is scoped by the asker rule (dealer only),
         # not by customer links, at the gate below; the turn's own `customer_scope` stays strict for
         # every other use (the lane applies `chat_report.scope_for` to its own fetch).

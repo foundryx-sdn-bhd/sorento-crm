@@ -548,7 +548,7 @@ def is_staff_contact(db: Any, contact_respond_id: Any, space_id: Any, profile: A
 def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile: Any) -> dict[str, Any]:
     """Reference kinds, packing-list regions and customer scope for this contact, as v1 computes them."""
     from app.services.chatbot.head.access import _granted_field_reveal_keys
-    from app.services.chatbot.lanes.business import services as business_services
+    from app.services.chatbot.pv2 import hook as pv2_hook
     from app.services.chatbot.turn.state import is_staff_profile
     from app.services.eta_policy import UNRESOLVED, resolve_request_contact, rules_for_contact
 
@@ -559,7 +559,7 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
     except Exception:  # noqa: BLE001 - unknown grants fall to the closed default
         attrs = []
     try:
-        scope = business_services.customer_scope(db, contact, space_id)
+        scope = pv2_hook.customer_scope(db, contact, space_id, profile)  # R5-8: unlinked non-staff see no customer
     except Exception:  # noqa: BLE001 - unknown scope: held to links, no customer names at all
         scope = {"enforced": True, "ids": [], "linked": []}
     held = (not staff) or bool((scope or {}).get("enforced"))

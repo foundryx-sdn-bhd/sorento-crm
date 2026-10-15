@@ -102,6 +102,42 @@ def run_v2(ctx: TurnV2Context) -> Any:
     return _turn_module().run_turn_v2(ctx)
 
 
+def customer_scope(db: Any, contact_respond_id: Any, space_id: Any, profile: Any) -> dict[str, Any] | None:
+    """R5-8: the customer scope a PV2 turn holds the contact to, at both of its seams (the resolver and the
+    business fetch a PV2 Lookup runs): v1's own (`business.services.customer_scope`), except that a contact
+    with no customer links who is neither staff (the office tier, or `contact_asker`'s staff) nor a salesperson
+    is held to none: enforced with no ids, so no customer is searched, named or fetched. v1 turns never read it."""
+    from app.services.chatbot.lanes.business import services as business_services
+
+    scope = business_services.customer_scope(db, contact_respond_id, space_id)
+    if scope is not None or not _unlinked_non_staff(db, contact_respond_id, space_id, profile):
+        return scope
+    return {"ids": [], "names": {}, "linked": [], "staff": False, "enforced": True, "levels": {},
+            "refusal": None}
+
+
+def _unlinked_non_staff(db: Any, contact_respond_id: Any, space_id: Any, profile: Any) -> bool:
+    """Not staff by PV2's own signals (the office tier, an active office access type: `turn.is_staff_contact`),
+    and the one asker rule (`contact_asker.classify`) reads neither staff nor a salesperson (V1-DOC-SCOPE-SALES:
+    a salesperson keeps staff scope). A contact that cannot be resolved is unclassified (the closed side)."""
+    from app.services import contact_asker
+    from app.services import contact_customer_scope as scope_mod
+    from app.services.chatbot.turn.state import is_staff_profile
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+    if is_staff_profile(profile):
+        return False
+    contact = str(contact_respond_id or "").strip()
+    internal = resolve_contact_with_null_workspace_fallback(
+        db, contact_id=contact, space_id=(str(space_id).strip() or None) if space_id is not None else None,
+    ) if contact else None
+    if not internal:
+        return True
+    if scope_mod.is_office_staff(db, internal):
+        return False
+    return contact_asker.classify(db, internal) not in ("salesperson", "staff")
+
+
 def state_dump(state: Any) -> dict[str, Any] | None:
     if state is None:
         return None
