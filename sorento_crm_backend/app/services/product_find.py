@@ -39,6 +39,8 @@ from typing import Any, Callable, Collection, Optional, Union
 
 from sqlalchemy.orm import Session
 
+from app.services.product_compatibility_service import KIND_SEAT_COVER, KINDS
+
 from app.services.error_handler import AppException
 
 TYPE_PRODUCT_REF = "product_ref"
@@ -128,18 +130,77 @@ FITS_WCS_HEAD = "{code} fits these WCs:"
 FITS_NONE_LINE = "No seat cover is on record for {code}."
 #: The none line for a product that is itself a seat cover (crew audit, round 3).
 FITS_NO_WC_LINE = "No WC is on record for {code}."
-#: The derived spec value that says a product is a seat cover (`product_spec_registry`).
-SEAT_COVER_PRODUCT_TYPE = "toilet_seat"
+
+#: ms / zh for the nouns of `KINDS` (CHAT-FIT-LINE card, crew 15 Oct). A kind whose noun is not
+#: here is said in English until it is added.
+_NOUNS_I18N = {
+    "seat cover": ("penutup tempat duduk", "马桶盖"),
+    "WC": ("WC", "马桶"),
+    "mirror": ("cermin", "镜子"),
+    "shelf": ("rak", "置物架"),
+    "cabinet": ("kabinet", "浴室柜"),
+}
 
 
-def _seat_covers(db: Session, products: list[Any]) -> set[str]:
-    """The ids among `products` the data calls a seat cover: an `-SC` code (owner ruling 12
-    Oct, `product_compatibility_service.is_spare_seat_cover`) or a derived `product_type` of
-    toilet_seat. Read from the data, never from the customer's words."""
+def _cap(noun: str) -> str:
+    return noun[:1].upper() + noun[1:]
+
+
+def none_line(kind: str) -> str:
+    """The reply for a host code with no link of `kind` (`No mirror is on record for {code}.`)."""
+    return FITS_NONE_LINE if kind == KIND_SEAT_COVER else f"No {KINDS[kind].accessory} is on record for {{code}}."
+
+
+def no_host_line(kind: str) -> str:
+    """The reply for an accessory code with no link of `kind` (`No cabinet is on record ...`)."""
+    return FITS_NO_WC_LINE if kind == KIND_SEAT_COVER else f"No {KINDS[kind].host} is on record for {{code}}."
+
+
+# CHAT-FIT-LINE: the line that opens a reply reached through a link, per kind and direction.
+def fit_one_forward(kind: str) -> str:
+    return f"{_cap(KINDS[kind].accessory)} for {{code}} is {{linked}}."
+
+
+def fit_many_forward(kind: str) -> str:
+    return f"{_cap(KINDS[kind].accessory)} for {{code}}: {{codes}}"
+
+
+FIT_ONE_REVERSE = "{code} fits {host}."
+
+
+def fit_many_reverse(kind: str) -> str:
+    return f"{{code}} fits these {KINDS[kind].host}s: {{codes}}"
+
+
+def _kind_labels() -> dict[str, dict[str, str]]:
+    """Every per-kind sentence with its ms / zh, from `KINDS` and `_NOUNS_I18N`. The seat cover
+    none lines keep the wording above."""
+    out: dict[str, dict[str, str]] = {}
+    for kind, k in KINDS.items():
+        if k.accessory not in _NOUNS_I18N or k.host not in _NOUNS_I18N:
+            continue
+        (a_ms, a_zh), (h_ms, h_zh) = _NOUNS_I18N[k.accessory], _NOUNS_I18N[k.host]
+        if kind != KIND_SEAT_COVER:
+            out[none_line(kind)] = {"ms": f"Tiada {a_ms} direkodkan untuk {{code}}.", "zh": f"没有 {{code}} 的{a_zh}记录。"}
+            out[no_host_line(kind)] = {"ms": f"Tiada {h_ms} direkodkan untuk {{code}}.", "zh": f"没有 {{code}} 适配的{h_zh}记录。"}
+        out[fit_one_forward(kind)] = {"ms": f"{_cap(a_ms)} untuk {{code}} ialah {{linked}}.", "zh": f"{{code}} 的{a_zh}是 {{linked}}。"}
+        out[fit_many_forward(kind)] = {"ms": f"{_cap(a_ms)} untuk {{code}}: {{codes}}", "zh": f"{{code}} 适配的{a_zh}：{{codes}}"}
+        out[fit_many_reverse(kind)] = {"ms": f"{{code}} sesuai untuk {h_ms} ini: {{codes}}", "zh": f"{{code}} 适配以下{h_zh}：{{codes}}"}
+    out[FIT_ONE_REVERSE] = {"ms": "{code} sesuai untuk {host}.", "zh": "{code} 适配 {host}。"}
+    return out
+
+
+
+
+def _accessories(db: Session, products: list[Any], kind: str) -> set[str]:
+    """The ids among `products` the data calls an accessory of `kind`: for a seat cover an `-SC`
+    code (owner ruling 12 Oct, `product_compatibility_service.is_spare_seat_cover`), and for
+    every kind a derived `product_type` spec equal to the kind's. Read from the data, never from
+    the customer's words."""
     from app.models.product_spec import ProductSpecifications
     from app.services.product_compatibility_service import is_spare_seat_cover
 
-    out = {str(p.id) for p in products if is_spare_seat_cover(p.product_code)}
+    out = {str(p.id) for p in products if kind == KIND_SEAT_COVER and is_spare_seat_cover(p.product_code)}
     rest = [str(p.id) for p in products if str(p.id) not in out]
     if rest:
         rows = db.query(ProductSpecifications.product_id, ProductSpecifications.values).filter(
@@ -147,9 +208,14 @@ def _seat_covers(db: Session, products: list[Any]) -> set[str]:
         )
         for pid, values in rows:
             product_type = (values or {}).get("product_type") if isinstance(values, dict) else None
-            if isinstance(product_type, dict) and product_type.get("value") == SEAT_COVER_PRODUCT_TYPE:
+            if isinstance(product_type, dict) and product_type.get("value") == KINDS[kind].product_type:
                 out.add(str(pid))
     return out
+
+
+def _seat_covers(db: Session, products: list[Any]) -> set[str]:
+    """The ids among `products` the data calls a seat cover."""
+    return _accessories(db, products, KIND_SEAT_COVER)
 
 
 def _run_fits(db: Session, arg: FilterArg) -> list[Group]:
@@ -181,6 +247,9 @@ def _run_fits(db: Session, arg: FilterArg) -> list[Group]:
     return groups
 
 
+_FITS_PAIRS = ", ".join(f"{k.accessory} / {k.host}" for k in KINDS.values())
+_FITS_KEYS = ", ".join(KINDS)
+
 FILTERS: dict[str, FindFilter] = {
     f.key: f
     for f in (
@@ -189,12 +258,16 @@ FILTERS: dict[str, FindFilter] = {
             products=True,
             ask=ASK_PRODUCT_LINE,
             vocabulary=(
-                "fits: the products that fit or go with the named product: the seat cover(s) "
-                "for a WC (water closet / toilet), or the WC(s) a seat cover fits. The other "
+                "fits: the products that fit or go with the named product, one pair per kind: "
+                f"{_FITS_PAIRS} (the accessory for its host, or the hosts an accessory fits; WC = "
+                "water closet / toilet). The other "
                 "side named beside a code, in any language or order, is this filter (\"seat "
                 "cover SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\", \"WC for SRTSCBD330-UF\", "
+                "\"mirror for SRTBF11413\", "
                 "\"stock seat cover for SRTWC8122\"): emit fits and keep that word out of the "
-                "entities. The other side is only a seat cover or a WC word, never a file word "
+                "entities. Its kind is the link kind the other side names "
+                f"({_FITS_KEYS}), null when THIS message names no particular kind (\"what goes with "
+                "SRTBF11413\"). The other side is only one of those words, never a file word "
                 "(photo, drawing, files), a fact (stock, price) or the code itself: \"send me "
                 "SRTWC8383-RL-MBL drawing\" names no other side, so it is no find. Its value is the "
                 "other-side word copied character for character from THIS message's text (\"seat "
@@ -223,6 +296,7 @@ FILTERS: dict[str, FindFilter] = {
                     "ms": "Tiada WC direkodkan untuk {code}.",
                     "zh": "没有 {code} 适配的马桶记录。",
                 },
+                **_kind_labels(),
             },
             run=_run_fits,
         ),
@@ -237,7 +311,7 @@ FIND_RULE = (
     "below to a product CODE it names (for example the seat cover of a WC), emit "
     '"find": {"filters": [{"key": <a key from the list>, "value": <the value its line asks for, '
     'else null>, "unit": <the unit of a number value, else null>, "file_word": <the file word '
-    'its line asks for, else null>}]}. The relation only says WHICH '
+    'its line asks for, else null>, "kind": <the link kind its line asks for, else null>}]}. The relation only says WHICH '
     "products the message is about: the named code stays an ordinary product entity (hint "
     "product), and every other key, domain_hint and intent_hint included, is exactly what it "
     "would be if the message had named the related product's own code instead: \"stock seat "
@@ -249,7 +323,7 @@ FIND_RULE = (
     "needs a file word in THIS message, or BARE ENTITY CONTINUATION of a file answer. "
     "Across turns `find` follows BARE ENTITY CONTINUATION, read from the conversation as usual, "
     "and is part of \"the same question\" it repeats: when the previous user message was a fit "
-    "ask (it named a seat cover / WC beside a code), a reply that is only another code repeats "
+    "ask (it named the other side of a relation beside a code), a reply that is only another code repeats "
     "that fit ask, find included: "
     "a bare code right after a fit ask is the same fit ask for the new code (\"SRTWC8122 seat "
     "cover\" answered, then \"SRTWC8383-RL-MBL\" alone -> fits with value null, domain as "

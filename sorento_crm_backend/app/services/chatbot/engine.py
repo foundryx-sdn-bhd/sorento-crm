@@ -5034,7 +5034,9 @@ def _run_stages_body(  # noqa: PLR0915
         # message names a code of its own that links nothing, or asks its own question (a
         # domain word); else the carried one stays (a follow-up naming nothing).
         linked_as = [
-            e["linked_as"] for e in linked_verdict.get("entities") or [] if isinstance(e, dict) and e.get("linked_as")
+            find_lane.relation_of(e.get("linked_kind") or find_lane.KIND_SEAT_COVER, e["linked_as"])
+            for e in linked_verdict.get("entities") or []
+            if isinstance(e, dict) and e.get("linked_as")
         ]
         if linked_as:
             seat_relation = linked_as[0]
@@ -7699,6 +7701,14 @@ def _run_answer(
     carried = remembered_before.get("_carried_line")
     if carried and (getattr(answer, "text", "") or "").strip():
         answer = dataclasses_replace(answer, text=f"{carried}\n\n{answer.text}")
+    # CHAT-FIT-LINE: a reply reached through a product link opens with the line naming the fit,
+    # then the usual answer unchanged. Read from the resolution (`find.as_linked_products` tagged
+    # the entities), never from the message; nothing linked, no line.
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    fit_lines = find_lane.fit_lines(verdict.get("entities") or []) if isinstance(verdict, dict) else []
+    if fit_lines and (getattr(answer, "text", "") or "").strip():
+        answer = dataclasses_replace(answer, text="\n".join(fit_lines) + f"\n\n{answer.text}")
     stage[0] = "replied"
     # Review S2: the A/B readout counts the files the turn delivered, before link mode
     # empties the list.
