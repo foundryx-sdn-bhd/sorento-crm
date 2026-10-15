@@ -415,6 +415,17 @@ describe('AC-F3 grid', () => {
     expect(screen.queryByLabelText(/only products in debt/i)).not.toBeInTheDocument();
   });
 
+  it('the pinned Product header cell is as opaque as the Product body cell', async () => {
+    renderPage();
+    const code = await screen.findByText('ACC6001');
+    const bodyCell = code.closest('td') as HTMLElement;
+    const headCell = screen.getAllByRole('columnheader')[0] as HTMLElement;
+    const opaque = bodyCell.className.split(/\s+/).filter((c) => /bg-background!|!bg-background/.test(c));
+    expect(opaque.length).toBeGreaterThan(0);
+    const headClasses = headCell.className.split(/\s+/);
+    for (const c of opaque) expect(headClasses).toContain(c);
+  });
+
   it('the Decision cell reads Decide when empty, else a badge with the pool for Reserve', async () => {
     renderPage();
     await screen.findByText('SRTWT904-NL');
