@@ -1,6 +1,6 @@
 # PLAN: chat fix PR-B, report engine (lane CHAT-ADVISOR-SPIKE, chat-fix LEAD)
 
-Status: Build, red tests 913265d3a1 (16 Oct ~05:30); S0 baseline on main 12/25 right, 5/25 right with at most
+Status: Build, all slices green 5efe7ff01e (16 Oct ~08:00), review next; red tests 913265d3a1; S0 baseline on main 12/25 right, 5/25 right with at most
 one question. Track: L (expected diff over 300 lines; no migration, no auth/RBAC change, no new
 ingest). Branch `crew/chat-fix-reports` off origin/main ccb1ce9820, worktree `sorento_crm-chat-fix-reports` (the PR-A
 worktree stays on PR-A: the crew hand-test copy :8109/:3109 runs from it).
@@ -79,7 +79,15 @@ guessed (`report_ask.py:604-606`); the parser decides follow-up vs new, the engi
    S2b the same for the top selling ask: a turn whose parse fills the open field (basis / metric) is its answer
    whatever `order_status` the parser put on it (R12, R17).
    S2c a turn whose parse fills no open field and reads as a new report ask (another report type or axis) is a new
-   ask, not a failed answer (R22). The test is structural: which open fields the parse filled.
+   ask, not a failed answer (R22). The test is structural: which open fields the parse filled. A reply naming
+   another axis that fills only the period stays a new ask (review round 8, "customers last month"); one that
+   fills the count, metric or basis is the answer and the slot's axis wins (R16 noise, see S2d).
+   S2d DROPPED after measuring (built c408aee148, reverted): re-targeting the held ask to the parser's group_by on
+   an answering turn. On 4 live runs, 14 answer turns carried a group_by different from the held axis and only 2
+   were a real axis change (R25 "how about by brand instead?"); 12 were noise on bare answers ("top 5" ->
+   sales_agent, "dealer only" -> customer, "delivered" -> category). The slot's axis wins on an answer (main's
+   behaviour, now pinned by a guard test). R25 moves to PR-C: why the parser emits group_by on a bare "top 5" is a
+   parser-input question.
 3. S3 P3-F2 engine applies the parser's refine: with a report held and `ranking_refine` true, apply the parser's
    changed keys to the held report whatever report type the parser picked; carry the frame for every report ask,
    not only sales ranking (`turn_runtime.py:1950-1956`, `engine.py:7028-7033`, dispatch `__init__.py:2183`); the
@@ -87,7 +95,8 @@ guessed (`report_ask.py:604-606`); the parser decides follow-up vs new, the engi
 4. S4 P3-F4 keep the period: a new axis is still asked (8 Oct rule) but the held period and product stay
    (`report_ask.py:616-632`).
 5. S5 P3-F5 dealer brand: a sales total whose parse carries a brand passes it as `brand_ids` (route, MCP catalog,
-   lane), never silently unfiltered (R15).
+   lane), never silently unfiltered (R15). S5b the response echoes the applied brand (`brand_name`, like the
+   outstanding report) and the reply names it, so an empty brand-filtered total does not read as no sales at all.
 6. S6 P3-F6 display: header "Top 10 of N" naming the sort measure first, no duplicate names, readable dates (no
    ISO), category name not code, month rows in date order.
 7. S7 P3-F7 the sales analysis company question (`status: clarify`) is registered as an open question with the
