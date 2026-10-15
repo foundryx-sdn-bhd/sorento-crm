@@ -223,6 +223,10 @@ class Result:
     #: exact code after "just this one", never the whole family the resolver placed
     #: (crew live check 6). None when the turn only asked.
     focus_products: list[dict[str, str]] | None = None
+    #: The args of the last `crm_report_ask` call that answered, held as the report on screen
+    #: (`Focus.sales_ranking_frame`) so the next refine re-runs it like a single ask's (chat fix
+    #: PR-B S3). None when no sold line ran.
+    report_frame: dict[str, Any] | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -695,6 +699,7 @@ def _answer(
             "failed": calls.failures,
         },
         focus_products=answered,
+        report_frame=calls.report_frame,
     )
 
 
@@ -790,6 +795,7 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
             if status == "busy":
                 return [f"{label}: {loc.fill(TOO_MANY_REPORTS)}"]
             return [f"{label}: {loc.fill(CHECK_FAILED)}"]
+        calls.report_frame = {k: v for k, v in args.items() if v is not None and v != []}
         if measure == "sold_total":
             return [f"{label}: {_qty(_num((payload.get('total') or {}).get('qty')))}"]
         rows = [r for r in payload.get("rows") or [] if isinstance(r, dict)]
@@ -901,6 +907,8 @@ class _Calls:
         #: not check must say which call and why).
         self.failures: list[dict[str, Any]] = []
         self._cache: dict[str, Any] = {}
+        #: The last report call that answered (`Result.report_frame`).
+        self.report_frame: dict[str, Any] | None = None
 
     def payload(self, name: str, args: dict[str, Any]) -> Any:
         # Security review B2: EVERY call names the contact, as the fetch path's

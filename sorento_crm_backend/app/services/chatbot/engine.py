@@ -4874,6 +4874,10 @@ def _run_stages_body(  # noqa: PLR0915
             turn_trace.add("required_ask", {"verdict_rule": required_rule, "ask": (open_ask or {}).get("ask")})
         if required_rule == "required_ask_answer":
             state_in = dataclasses_replace(state_in, pending=None)
+        else:
+            # Chat fix PR-B S3: a refine of the report on screen re-runs it, whatever report
+            # type the parser named (`report_ask.as_held_refine`).
+            verdict = report_ask.as_held_refine(verdict, state_in.focus.sales_ranking_frame)
         # MULTI-ASK-PLAN round 6 (G1): the reply to the scope question re-runs the asked
         # multi-ask turn's own verdict from HERE, with the scope the parser read settled, so
         # it continues exactly as if the scope had been said.
@@ -6200,6 +6204,9 @@ def _run_stages_body(  # noqa: PLR0915
                 turn_trace.add("sub_asks", sub_result.trace)
                 answer = turn_compose.Answer(text=pack_parts(sub_result.text), question=sub_result.question)
                 bridge_answered = True
+                # Chat fix PR-B S3: the report the runner ran is the one on screen, so the next
+                # refine re-runs it; a turn that ran none holds none.
+                state_out.focus.sales_ranking_frame = sub_result.report_frame
                 if turn_sub_asks.resumes(verdict, state_in.pending):
                     # The runner's own question is answered, or a new multi-ask moved on
                     # from it (G4b): closed here, whatever form the parser's reply took

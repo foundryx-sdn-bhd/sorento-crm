@@ -339,6 +339,21 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     return GROUP_BY.get(raw_group, raw_group) != held
 
 
+def as_held_refine(verdict: dict[str, Any], frame: Any) -> dict[str, Any]:
+    """Engine seam, chat fix PR-B S3: with a report held (`Focus.sales_ranking_frame`: a ranking or
+    a total that ran, from a single ask or a multi-ask), the parser's refine (`ranking_refine`)
+    re-runs THAT report whatever report type it named: the verdict goes to this ask, and its
+    document status is dropped (it never turns the refine into an order list). The lane applies
+    only the keys the parser changed (`_refine`)."""
+    status = jsc.js_string(verdict.get("order_status") or "").strip()
+    if verdict.get("ranking_refine") is not True or not isinstance(frame, dict) or not frame or status == ASK_NAME:
+        return verdict
+    return {
+        **{k: v for k, v in verdict.items() if k not in ("status", "document")},
+        **SALES_RANKING_ASK.reroute,
+    }
+
+
 def dealer_location_words(parse_output: dict[str, Any]) -> dict[str, Any]:
     """Engine seam, a DEALER's (customer-scoped) fresh `sales_ranking` ask, 1b fix round F1:
     this message's location words come off the resolver's entity list onto
