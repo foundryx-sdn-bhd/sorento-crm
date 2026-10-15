@@ -859,7 +859,9 @@ def _answer(
         if picked is None:
             raise _Miss("other")
     if picked is None and free is not None and pending.kind != "v1_open_question":
-        # R5-3: a free value that is exactly one printed option's label picks it, as its key does (v1 matches its own).
+        # R5-3 (captain ruling 15 Oct): the PARSER's free_value equal, exactly, to one option label the bot itself
+        # printed picks that option, as its key does. It never reads the raw user message, does no fuzzy or partial
+        # matching, and v1 rosters are excluded (v1's own matcher decides there).
         same = [o for o in _numbered(pending) if o.label == free]
         picked = same[0] if len(same) == 1 else None
     if picked is None and key is None and free is None and number is None and pending.kind in SCOPED_PICK_PENDING:
