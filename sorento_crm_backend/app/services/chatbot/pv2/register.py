@@ -19,7 +19,12 @@ REGISTER_REPLIES = 2
 _UUID_HEX = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 _UUID = re.compile(rf"^{_UUID_HEX}$")
 _UUID_TOKEN = re.compile(rf"(?<![0-9A-Za-z-]){_UUID_HEX}(?![0-9A-Za-z-])")
-_EMPTY_BRACKETS = re.compile(r"[ \t]*\([ \t]*\)")
+# An id with the brackets around it, if any: bounded whitespace keeps the match linear (R5 fix 1).
+_UUID_IN_BRACKETS = re.compile(
+    r"(?P<open>[ \t]{0,8}\([ \t]{0,8})?"
+    rf"(?<![0-9A-Za-z-])(?P<id>{_UUID_HEX})(?![0-9A-Za-z-])"
+    r"(?P<close>[ \t]{0,8}\))?"
+)
 
 # R3: move to chatbot_entity_kinds. A printed field (its `key`, else its label) -> the entity kind it names.
 _FIELD_KIND: dict[str, str] = {
@@ -160,13 +165,22 @@ def document_lines(envelopes: Sequence[dict[str, Any]], previous: dict[str, list
 
 def scrub_ids(text: str, labels: dict[str, str] | None = None) -> str:
     """R5-7: a reply's text with every UUID-shaped token replaced by its known label (`labels`, id -> printed
-    name), else removed, and the empty brackets and trailing spaces a removal leaves. A product code is never
-    UUID-shaped, so it is untouched. The bot's own reply text only; never the user's message."""
+    name), else removed together with the brackets that held only it, and the trailing spaces a removal leaves.
+    Any other bracket stays. A product code is never UUID-shaped, so it is untouched. The bot's own reply text
+    only; never the user's message."""
     if not text or not _UUID_TOKEN.search(text):
         return text
     known = {k.lower(): v for k, v in (labels or {}).items() if v and not _UUID.match(v.strip())}
-    out = _UUID_TOKEN.sub(lambda m: known.get(m.group(0).lower(), ""), text)
-    out = _EMPTY_BRACKETS.sub("", out)
+
+    def swap(m: "re.Match[str]") -> str:
+        label = known.get(m.group("id").lower())
+        if label:
+            return (m.group("open") or "") + label + (m.group("close") or "")
+        if m.group("open") and m.group("close"):
+            return ""  # the brackets held only the id
+        return (m.group("open") or "") + (m.group("close") or "")
+
+    out = _UUID_IN_BRACKETS.sub(swap, text)
     return "\n".join(line.rstrip() for line in out.split("\n"))
 
 
