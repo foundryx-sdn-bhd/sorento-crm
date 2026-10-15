@@ -41,7 +41,7 @@ export function QuotationRejectDialog({
         }
       }}
     >
-      <DialogContent className="max-h-[92vh] w-full max-w-md overflow-hidden">
+      <DialogContent className="max-h-[92dvh] w-full max-w-md overflow-hidden">
         <DialogHeader>
           <DialogTitle>Send this back</DialogTitle>
           <DialogDescription>
@@ -62,7 +62,7 @@ export function QuotationRejectDialog({
             setReason('');
           }}
         >
-          <DialogBody className="max-h-[65vh] space-y-2 overflow-y-auto">
+          <DialogBody className="max-h-[65dvh] space-y-2 overflow-y-auto">
             <Label htmlFor="quotation-reject-reason">
               Why <span className="text-destructive">*</span>
             </Label>
