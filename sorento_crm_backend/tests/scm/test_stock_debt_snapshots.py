@@ -41,6 +41,7 @@ from tests.scm.conftest import (
     as_user,
     ensure_reference_data,
     requires_pg,
+    seed_user,
 )
 from tests.scm.test_order_sheet_export_downloads import _NoCloseSession
 from tests.scm.test_stock_debt_routes import (
@@ -224,9 +225,37 @@ def _reserve_request(db, inquiry, row, *, user_id, parked=False, ordinal=1, qty=
 
 
 def _switch_user(scm_app):
-    """Another staff user holding the view permission; returns (app, db, user_id)."""
-    app, db = _client(scm_app)
-    return app, db, _uid_of(app, scm_app)
+    """Another staff user holding the view permission; returns (app, db, user_id).
+
+    Not a second `_client()` call: that inserts a role with the fixed name
+    'ZZT stock debt', and `user_roles.name` is unique, so the second insert fails.
+    Same grant, its own role name."""
+    app, db, gcu, gcuak = scm_app
+    uid = seed_user(db, None)
+    role_id = _u()
+    db.execute(
+        text(
+            "INSERT INTO user_roles (id, slug, name, is_trashed, is_protected, "
+            "is_default, created_at) VALUES (:id, :slug, :name, false, false, false, now())"
+        ),
+        {"id": role_id, "slug": f"zzt-sds-{role_id[:8]}", "name": f"ZZT sds {role_id[:8]}"},
+    )
+    permission_id = db.execute(
+        text("SELECT id FROM user_permissions WHERE slug = :s"), {"s": VIEW}
+    ).scalar()
+    db.execute(
+        text(
+            "INSERT INTO user_role_permissions (id, role_id, permission_id, assigned_at) "
+            "VALUES (:id, :r, :p, now())"
+        ),
+        {"id": _u(), "r": role_id, "p": permission_id},
+    )
+    from app.models.user import UserRoleAssignment
+
+    db.add(UserRoleAssignment(user_id=uid, role_id=role_id))
+    db.flush()
+    as_user(app, gcu, gcuak, uid)
+    return app, db, uid
 
 
 # --------------------------------------------------------------------------- AC-1 / AC-2
