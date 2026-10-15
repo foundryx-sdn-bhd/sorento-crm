@@ -21,6 +21,8 @@ from types import SimpleNamespace
 
 from app.models.order import SalesOrderLine
 from app.models.project_so import OrderInquiryRow, ProjectSalesOrderLine, SOSupplyDecision
+from app.models.project_so import ProjectSalesOrder
+from app.services.project_so_adoption_service import ProjectSOAdoptionService
 from app.services.project_supply_service import ProjectSupplyService, plan_qty_of
 from app.services.scm.demand import plan_qty
 from app.services.scm.planning_predicate import OUTSIDE_FULFILMENT_PLANNING
@@ -40,7 +42,14 @@ from ..test_fulfilment_board import (
 )
 from ..test_so_supply_confirmation import _stock, _warehouse
 from .test_borrow_own_location import _confirm, _own_borrow
-from .test_project_supply_service_ladder import _group_sites, _seed_line, _world
+from .test_project_supply_service_ladder import (
+    REQUIRED_DATE as LADDER_REQUIRED_DATE,
+    _core_line,
+    _core_so,
+    _group_sites,
+    _seed_line,
+    _world,
+)
 
 REQUIRED = date(2026, 9, 3)
 
@@ -325,3 +334,56 @@ def test_uac09_reset_planning_puts_a_confirmed_consignment_back_to_never_planned
     assert before == (1, 1)
     assert result["planned"] is True and result["removed"]["supply_decisions"] == 1
     assert after == (0, 1)
+
+
+# --------------------------------------------------------------------------- never adopted
+
+
+def test_a_never_adopted_consignment_adopts_then_confirms_a_con_borrow_with_no_buy():
+    """Real consignments arrive from AutoCount with no planning record. The board press
+    adopts first (`/fulfilment-planning/adopt`, then confirm on the new mirror), so this
+    runs that same pair: adopt the closed project-class consignment at flagged-off CON, then
+    confirm a Borrow from CON."""
+    with blank_session() as db:
+        company_id, eling, _project, product = _world(db)
+        sfx = _uid()[:6]
+        con = _warehouse(db, f"CON-{sfx}", fulfilment_planning=False)
+        _stock(db, product, con, on_hand=10)
+        core_so = _core_so(db, company_id)
+        core_so.doc_type = "consignment"
+        core_so.status = "closed"
+        core_line = _core_line(db, core_so, product, con, qty_ordered="10",
+                               required_date=LADDER_REQUIRED_DATE)
+        core_line.qty_delivered = Decimal("10")
+        db.commit()
+        assert db.query(ProjectSalesOrder).filter(
+            ProjectSalesOrder.so_id == core_so.id).count() == 0
+
+        adopted = ProjectSOAdoptionService(db).adopt(str(core_so.id), actor_user_id=eling)
+        db.commit()
+        order = db.query(ProjectSalesOrder).filter(
+            ProjectSalesOrder.id == adopted["project_sales_order_id"]).one()
+        line = (
+            db.query(ProjectSalesOrderLine)
+            .filter(ProjectSalesOrderLine.project_sales_order_id == order.id)
+            .one()
+        )
+        world = {"eling": eling, "product": product, "own": con, "pool": None,
+                 "order": order, "line": line}
+        body = _confirm(db, world, borrow=[_own_borrow(world, "10", "Goods are the CON stock.")])
+        inquiry_rows = (
+            db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == line.id).count()
+        )
+        decision = (
+            db.query(SOSupplyDecision)
+            .filter(SOSupplyDecision.project_sales_order_id == order.id,
+                    SOSupplyDecision.state == "active")
+            .one()
+        )
+        buys = [Decimal(str(x.get("buy_qty") or 0)) for x in decision.line_snapshots]
+        planned, plannable = _planned_state(db, core_so)
+
+    assert body["lines_decided"] == 1
+    assert buys == [Decimal("0")]
+    assert inquiry_rows == 0, "nothing goes to purchasing"
+    assert (planned, plannable) == (1, 1)

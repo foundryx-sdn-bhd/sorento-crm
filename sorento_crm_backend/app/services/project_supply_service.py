@@ -133,6 +133,7 @@ from app.services.scm.pool_predicate import is_project_reserve
 from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     fulfilment_planning_predicate,
+    PLANNED_AT_OWN_BIN_DOC_TYPES,
     outside_fulfilment_planning,
 )
 from app.services.scm.front_planning_engine import (
@@ -799,6 +800,9 @@ class _LineFacts:
     #: reconciled AutoCount line). Set, the line is read out with no components and no
     #: donors; it is never carried and cannot be named to a confirmation.
     unplannable_reason: Optional[str] = None
+    #: The order's doc type (CONSIGN-PLAN): a doc type in `PLANNED_AT_OWN_BIN_DOC_TYPES` owes
+    #: nothing back for goods taken from its own bin.
+    doc_type: Optional[str] = None
     #: Ladder v2 (`PLAN-demo-followups-19aug-ladder-v2.md` section E, section 8). The
     #: OWNERSHIP GROUP this line's own location belongs to - the suffix after the hyphen
     #: (`BRW-BB` -> `BB`) - or `None` for a location that carries no group (a bare pool
@@ -4842,6 +4846,7 @@ class ProjectSupplyService:
                 group_code=sales_agent_service.group_of_warehouse_code(
                     warehouse.warehouse_code if warehouse else None
                 ),
+                doc_type=row.get("so_doc_type"),
             )
             self._apply_group_nets(facts[str(row["key"])])
         return facts
@@ -8228,6 +8233,14 @@ class ProjectSupplyService:
                     continue
                 if getattr(item, "supply_key", None):
                     continue
+                if (
+                    fact.doc_type in PLANNED_AT_OWN_BIN_DOC_TYPES
+                    and fact.warehouse is not None
+                    and str(item.warehouse_id) == str(fact.warehouse.id)
+                ):
+                    # CONSIGN-PLAN: the goods ARE the consignment's own bin; nothing was
+                    # lent, so nothing is owed back and purchasing hears nothing.
+                    continue
                 if unnamed_order_borrows_only and (
                     not getattr(item, "donor_core_line_id", None)
                     or self._names_its_order(item)
@@ -9331,6 +9344,9 @@ class ProjectSupplyService:
                 group_code=sales_agent_service.group_of_warehouse_code(
                     warehouse.warehouse_code if warehouse else None
                 ),
+                doc_type=getattr(core_orders.get(str(core.sales_order_id)), "doc_type", None)
+                if core
+                else None,
             )
             self._apply_group_nets(facts[str(line.id)])
         return facts
