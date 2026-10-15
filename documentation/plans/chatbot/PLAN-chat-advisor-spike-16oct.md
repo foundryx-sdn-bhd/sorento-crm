@@ -1,8 +1,31 @@
 # PLAN: chat advisor spike ("Claude Code for Sorento"), lane CHAT-ADVISOR-SPIKE
 
-Status: Build (design page draft + harness). Budget: 1000 live calls/day on run days, hard total <= $30 (crew 15 Oct). Track: spike (time-box 3 days, done by ~19 Oct 2026). NOT a product PR: deliverables
+Status: RE-SCOPED 16 Oct (owner feedback + crew direction): advisor / layer-3 prototype STOPPED after smoke runs
+(spend $2.08 of $30). Lane is now a problem-statement analysis on the LIVE bot path, keeping today's structured
+replies: P1 follow-up context, P2 spec matching, P3 report engine; deliverable = design page rewritten as "Problem
+statement + 3 fixes" (S/M each, expected gain, measurement). Track: analysis (no product code).
 are a design page and a measured prototype on a draft PR. Owner approved 15 Oct ~22:15. LLM budget
 about $30 total, spend reported.
+
+## Re-scope (16 Oct)
+
+Owner on ARCH-advisor-16oct.html (verbatim): (1) mocks: "Actually i need the answer to be more structured, todays
+version is good"; (2) n8n section: "Actually we only have 1 tool per domain, so why do we even need to go through
+another llm to think?"; (3) options: "I dont want to over engineer this, lets make this clear, what is working today,
+for first ask, is fine, the struggle comes from continuous messages, remembering the context, and also spec matching
+especially, today there is a case that ask about bathtub with massage jet and wrong products are suggested, this is
+my problem statement, and also the report engine, it is not very smart and dynamic, so I dont want to go to further
+engineering".
+
+Crew direction: stop arms C/C2/C3/D (no more spend). Analyse on the live path:
+- P1 continuous messages / context: follow-up parse accuracy 62% v1 (crew PARSER-GOLD-15oct.md); v1 drops 'Current
+  subject' on 148/152 follow-ups (`turn/context.py:29`, `:409-431`). Root causes + minimal fixes, measured on the
+  parser-gold TRAIN slice only.
+- P2 spec matching: reproduce 'bathtub with massage jet' -> wrong products (real dev chat; parser params -> spec
+  filter -> MCP query -> products, file:line) + 8-10 similar real spec asks; root cause + minimal fix.
+- P3 report engine "not smart and dynamic": real report asks that fail, root cause, minimal fix inside the engine.
+
+The sections below record the stopped advisor spike (kept for the record; smoke findings feed the new page).
 
 ## Owner's goal (15 Oct)
 
