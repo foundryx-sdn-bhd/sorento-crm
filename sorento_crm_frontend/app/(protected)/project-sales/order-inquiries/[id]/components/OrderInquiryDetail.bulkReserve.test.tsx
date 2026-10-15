@@ -534,9 +534,16 @@ describe('AC-BR-10 Reserve... opens the Reserve (N) popup, editable per line', (
     const qty = within(dialog).getByLabelText('Reserve CB313');
     fireEvent.change(qty, { target: { value: '10' } });
     expect(within(dialog).getByLabelText('Reason CB313')).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Reason CB313'), { target: { value: 'Partial stock' } });
     fireEvent.change(qty, { target: { value: '500' } });
     expect(qty).toHaveValue(88);
     expect(within(dialog).queryByLabelText('Reason CB313')).not.toBeInTheDocument();
+    // Back at the request, the reason typed while short does not travel (as on the pen).
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reserve and send to Agent J' }));
+    await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(1));
+    expect(commitSpy.mock.calls[0][1].reserves).toEqual([
+      { row_id: 'row-1', warehouse_id: 'wh-brw', qty_reserved: 88, reason: null },
+    ]);
   });
 
   it('clears the ticks; Cancel commits nothing and keeps the chips at the edited qty', async () => {
