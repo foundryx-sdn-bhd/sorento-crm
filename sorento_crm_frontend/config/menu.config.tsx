@@ -818,6 +818,11 @@ export const MENU_SIDEBAR: MenuConfig = [
             permission: 'user_management.access_agents.view',
           },
           {
+            title: 'Chatbot Roles',
+            path: '/user-management/chatbot-roles',
+            permission: 'user_management.access_agents.view',
+          },
+          {
             title: 'Contact Access Types',
             path: '/user-management/contact-access-types',
             permission: 'user_management.access_agents.view',
@@ -1673,6 +1678,10 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
       {
         title: 'AI Agents',
         path: '/user-management/access-agents',
+      },
+      {
+        title: 'Chatbot Roles',
+        path: '/user-management/chatbot-roles',
       },
       {
         title: 'Teams',

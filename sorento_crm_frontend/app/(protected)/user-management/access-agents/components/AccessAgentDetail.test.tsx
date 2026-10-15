@@ -113,9 +113,6 @@ vi.mock('./AccessAgentFormModal', () => ({
 vi.mock('./AccessAgentNavigation', () => ({
   default: () => <div data-testid="nav-stub" />,
 }));
-vi.mock('./AgentFieldAccessCard', () => ({
-  default: () => <div data-testid="field-access-stub" />,
-}));
 vi.mock('./ContactAccessAgentsTable', () => ({
   default: () => <div data-testid="contact-agents-stub" />,
 }));

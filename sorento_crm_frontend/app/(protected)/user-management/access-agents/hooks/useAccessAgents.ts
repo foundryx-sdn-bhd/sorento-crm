@@ -4,7 +4,7 @@ import { toast } from '@/lib/toast';
 
 import type { DataGridApiFetchParams } from '@/components/ui/data-grid';
 import type { ListPagerParams, ListPagerPage } from '@/hooks/useListPager';
-import { getAccessAgents, getAccessAgent, createAccessAgent, updateAccessAgent, getContactAccessAgents, createContactAgentAccess, updateContactAgentAccess, deleteContactAgentAccess, getAgentTeams, setAgentTeams, getTeams, getAgentFieldAccess, setAgentFieldAccess } from '../services/accessAgentService';
+import { getAccessAgents, getAccessAgent, createAccessAgent, updateAccessAgent, getContactAccessAgents, createContactAgentAccess, updateContactAgentAccess, deleteContactAgentAccess, getAgentTeams, setAgentTeams, getTeams } from '../services/accessAgentService';
 import type { AccessAgentFormData, ContactAgentAccessFormData } from '../types/accessAgent.types';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 
@@ -196,36 +196,5 @@ export function useTeams() {
     queryFn: () => getTeams(),
     staleTime: 1000 * 60 * 2,
     retry: 1,
-  });
-}
-
-
-export function useAgentFieldAccess(agentId: string | null) {
-  return useQuery({
-    queryKey: ['agent-field-access', agentId],
-    queryFn: () => {
-      if (!agentId) throw new Error('Agent ID is required');
-      return getAgentFieldAccess(agentId);
-    },
-    enabled: !!agentId,
-    retry: 1,
-  });
-}
-
-export function useSetAgentFieldAccess() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      agentId,
-      fields,
-    }: {
-      agentId: string;
-      fields: { resource: string; field_key: string; is_allowed: boolean | null; contact_id?: string | null }[];
-    }) => setAgentFieldAccess(agentId, fields),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['agent-field-access', variables.agentId] });
-      toast.success('Field access updated');
-    },
-    onError: (error: Error) => toast.error(error.message || 'Failed to update field access'),
   });
 }

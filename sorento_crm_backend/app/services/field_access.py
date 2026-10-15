@@ -451,6 +451,31 @@ def explicitly_denied(db: Session, *, contact_id: str, resource: str) -> set[str
     return {f for f, allowed in resolved.items() if not allowed}
 
 
+def _tree_attributes(
+    db: Session, contact_id: str, space_id: Optional[str]
+) -> Optional[frozenset[str]]:
+    """The contact's effective access-tree attributes, or None when no contact resolves.
+
+    An internal `respond_contacts.id` names exactly one row; a Respond.io id goes through
+    `effective_access`, which applies the strict workspace rule (no NULL-workspace
+    fallback) and intersects duplicate rows. Fails closed to None.
+    """
+    try:
+        from sqlalchemy import text
+
+        from app.services.chatbot.access_tree import effective_access, tree_for_contact
+
+        key = str(contact_id)
+        row = db.execute(text("SELECT id FROM respond_contacts WHERE id = :k"), {"k": key}).first()
+        if row:
+            return frozenset(tree_for_contact(db, key).attributes)
+        tree = effective_access(db, contact_respond_id=key, space_id=space_id)
+        return frozenset(tree.attributes) if tree.resolved else None
+    except Exception:  # noqa: BLE001 - fail closed
+        logger.warning("Access tree lookup failed for %s; denying", contact_id, exc_info=True)
+        return None
+
+
 def decide(
     db: Session,
     *,
@@ -472,38 +497,29 @@ def decide(
             for f in requested
         ]
 
-    resolved = resolve_contact_id(db, contact_id, space_id)
-    if resolved is None:
-        # Denied, but say so as its OWN reason. Reporting AGENT_NOT_ASSIGNED here
-        # sends an admin to check grants that were never consulted - and if the
-        # contact does hold the agent, that screen looks perfectly correct, so the
-        # real cause (usually a space_id from another workspace) stays hidden.
+    visible = _tree_attributes(db, contact_id, space_id)
+    if visible is None:
+        # Denied, but say so as its OWN reason. Reporting a missing grant here sends an
+        # admin to check access that was never consulted - and if the contact does hold
+        # it, that screen looks perfectly correct, so the real cause (usually a space_id
+        # from another workspace) stays hidden.
         return [
             FieldDecision(f, registry.get(f), NOT_GATED if f not in registry else CONTACT_NOT_FOUND)
             for f in requested
         ]
 
-    held = contact_agent_codes(db, resolved)
-    allowed = allowed_fields_for(
-        db, contact_id=resolved, resource=resource, agent_codes=held
-    )
-    denied_defaults = explicitly_denied(db, contact_id=resolved, resource=resource)
-
+    # S5a (ACCESS-MODEL): for a chat contact the access tree decides. A gated field is
+    # visible only while the contact's effective attributes carry `<resource>.<field>`;
+    # `agent_field_access` rows and DEFAULT_ALLOWED no longer apply to a contact.
     decisions: list[FieldDecision] = []
     for field in requested:
         owner = registry.get(field)
         if owner is None:
             decisions.append(FieldDecision(field, None, NOT_GATED))
-        elif field in DEFAULT_ALLOWED and field not in denied_defaults:
-            # Allowed even without the agent: this field is one every caller
-            # already receives, so gating it must not take it away by default.
+        elif f"{resource}.{field}" in visible:
             decisions.append(FieldDecision(field, owner, ALLOWED))
-        elif owner not in held:
-            decisions.append(FieldDecision(field, owner, AGENT_NOT_ASSIGNED))
-        elif field not in allowed:
-            decisions.append(FieldDecision(field, owner, FIELD_NOT_ALLOWED))
         else:
-            decisions.append(FieldDecision(field, owner, ALLOWED))
+            decisions.append(FieldDecision(field, owner, FIELD_NOT_ALLOWED))
     return decisions
 
 

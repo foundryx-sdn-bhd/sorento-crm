@@ -107,6 +107,14 @@ from app.models.chat_facts import (
 )
 from app.models.chatbot_file_link import ChatbotFileLink
 from app.models.conversation_frame import ConversationFrame
+from app.models.chatbot_access import (
+    ChatbotDomainField,
+    ChatbotRole,
+    ChatbotRoleDomain,
+    ChatbotRoleField,
+    ContactAccessOverride,
+    ContactChatbotRole,
+)
 from app.models.chatbot_policy import ChatbotDomain, ChatbotDomainWord, ChatbotEntityKind, ChatbotStatusWord
 from app.models.lookup import LookupSet, LookupOption, LookupOptionKeyword, LookupBinding
 from app.models.portal import (
@@ -350,6 +358,12 @@ __all__ = [
     "ChatThreadSyncState",
     "ConversationFrame",
     "ChatbotDomain",
+    "ChatbotDomainField",
+    "ChatbotRole",
+    "ChatbotRoleDomain",
+    "ChatbotRoleField",
+    "ContactAccessOverride",
+    "ContactChatbotRole",
     "ChatbotEntityKind",
     "ChatbotStatusWord",
     "ChatbotDomainWord",

@@ -21,6 +21,7 @@ class DomainPolicy:
     tools: tuple[str, ...] = ()
     primary_tool: str | None = None
     escalation_team_code: str | None = None
+    escalation_agent_code: str | None = None
     switch_words: tuple[str, ...] = ()
     takes_date_filter: bool = False
     reveal_key: str | None = None
@@ -79,6 +80,7 @@ class Policy:
                 tools=tuple(row.get("tools") or ()),
                 primary_tool=row.get("primary_tool"),
                 escalation_team_code=row.get("escalation_team_code"),
+                escalation_agent_code=row.get("escalation_agent_code"),
                 switch_words=tuple(row.get("switch_words") or ()),
                 takes_date_filter=bool(row.get("takes_date_filter", False)),
                 reveal_key=row.get("reveal_key"),

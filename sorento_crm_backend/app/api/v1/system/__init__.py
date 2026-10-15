@@ -26,6 +26,7 @@ from app.api.v1.system import (
     chatbot,
     chatbot_config,
     chatbot_field_reveals,
+    chatbot_roles,
     statuses,
     translations,
 )
@@ -76,6 +77,12 @@ router.include_router(
 router.include_router(
     chatbot_field_reveals.router,
     tags=["chatbot-field-reveals"],
+    dependencies=[Depends(require_module_enabled_with_api_key("chatbot"))],
+)
+# Chatbot roles, the access registry and per-contact access (ACCESS-MODEL S4).
+router.include_router(
+    chatbot_roles.router,
+    tags=["chatbot-roles"],
     dependencies=[Depends(require_module_enabled_with_api_key("chatbot"))],
 )
 # Status engine (ADR-0001). CORE plumbing, so it rides the always-on `base` guard

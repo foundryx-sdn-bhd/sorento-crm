@@ -21,7 +21,6 @@ import {
 } from '../hooks/useAccessAgents';
 import { formatDate } from '@/lib/helpers';
 import ContactAccessAgentsTable from './ContactAccessAgentsTable';
-import AgentFieldAccessCard from './AgentFieldAccessCard';
 import DetailActions from '@/components/common/DetailActions';
 import { useAccessAgentActions } from '../actions';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
@@ -468,11 +467,6 @@ export default function AccessAgentDetail({ accessAgentId }: AccessAgentDetailPr
         </CardContent>
       </Card>
 
-
-      {/* What the agent may reveal, above WHO holds it: the ticks apply to every
-          contact in the table below, so reading them in that order matches how the
-          two combine. */}
-      <AgentFieldAccessCard agentId={accessAgentId} />
 
       {/* Contact Access Agents Table */}
       <Card>

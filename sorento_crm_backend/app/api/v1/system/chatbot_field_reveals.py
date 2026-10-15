@@ -58,10 +58,13 @@ def _require_contact(db: Session, respond_contact_id: str) -> RespondContact:
 @router.get("/field-reveal-keys", response_model=FieldRevealKeysResponse)
 def list_field_reveal_keys(
     current_user: dict = Depends(require_permission(CONTACT_VIEW)),
+    db: Session = Depends(get_db),
 ):
     """Every restricted key that exists, with its label (AC-963, AC-964)."""
     _ = current_user
-    return FieldRevealKeysResponse(items=service.field_reveal_keys())
+    return FieldRevealKeysResponse(
+        items=[{"key": key, "label": label} for key, label in service.field_reveal_keys(db)]
+    )
 
 
 @router.get(
