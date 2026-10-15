@@ -228,6 +228,8 @@ describe('Send to purchasing from the Documents list', () => {
     await waitFor(() =>
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
     );
+    // A clean send clears the ticks.
+    expect(screen.getByRole('checkbox', { name: 'Select OI-0001' })).not.toBeChecked();
   });
 
   it('a partial failure keeps the dialog open on the OI that did not go', async () => {

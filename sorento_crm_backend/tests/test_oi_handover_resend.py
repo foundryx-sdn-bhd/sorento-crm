@@ -21,6 +21,7 @@ Contract asserted here:
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 
 import pytest
@@ -244,11 +245,14 @@ def test_automation_disabled_still_previews_and_sends(rs):
     client, world = rs
     _automation(world, enabled=False)
     inquiry = _oi(world)
-    _line(world, inquiry)
+    row = _line(world, inquiry)
 
     body = _ok(client.post(PREVIEW, json={"inquiry_ids": [inquiry.id]}))
     assert body["automation_enabled"] is False
     assert len(body["emails"]) == 1
+    # Rendered through the switched-off automation's own template, not an empty fallback.
+    assert body["emails"][0]["subject"].endswith("(Resent)")
+    assert row.item_code in body["emails"][0]["body_html"]
 
     result = _ok(client.post(SEND, json={"inquiry_ids": [inquiry.id]}))
     assert result["emails_sent"] == 1
@@ -329,3 +333,48 @@ def test_unknown_inquiry_is_404_and_bad_bodies_422(rs):
     assert client.post(PREVIEW, json={"inquiry_ids": ["not-a-uuid"]}).status_code == 422
     too_many = [_uid() for _ in range(51)]
     assert client.post(SEND, json={"inquiry_ids": too_many}).status_code == 422
+
+
+# ------------------------------------------------------------------------- content
+
+
+def test_raiser_stays_raiser_and_presser_is_only_sent_by(rs):
+    client, world = rs
+    buyer = _automation(world)
+    raiser = _user(world.db, f"{MARKER} Raiser Rina")
+    inquiry = _oi(world)
+    inquiry.raised_by = raiser
+    world.db.commit()
+    _line(world, inquiry)
+
+    email = _ok(client.post(PREVIEW, json={"inquiry_ids": [inquiry.id]}))["emails"][0]
+    assert [p["name"] for p in email["cc"]] == [f"{MARKER} Raiser Rina"]
+    assert f"{MARKER} Raiser Rina" in email["body_html"]
+    assert _joey(world) not in email["body_html"]
+
+    _ok(client.post(SEND, json={"inquiry_ids": [inquiry.id]}))
+    [note] = _notifications(world, inquiry.id)
+    assert note.data["sent_by"] == _joey(world)
+    assert note.data["recipient_emails"] == [f"{buyer}@zzt.test", f"{raiser}@zzt.test"]
+
+
+def test_partly_linked_row_asks_only_for_its_open_remainder(rs, monkeypatch):
+    client, world = rs
+    _automation(world)
+    inquiry = _oi(world)
+    row = _line(world, inquiry, state=INQUIRY_PARTLY_LINKED, qty="10", item="ZZT-PART-Q")
+
+    from decimal import Decimal
+
+    from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+    monkeypatch.setattr(
+        ProjectOrderInquiryService,
+        "_linked_qty_by_row",
+        lambda self, ids: {row.id: Decimal("4")} if row.id in ids else {},
+    )
+    body_html = _ok(client.post(PREVIEW, json={"inquiry_ids": [inquiry.id]}))["emails"][0][
+        "body_html"
+    ]
+    cells = re.findall(r">\s*([0-9.]+)\s*<", body_html)
+    assert "6" in cells and "10" not in cells

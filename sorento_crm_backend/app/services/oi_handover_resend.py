@@ -17,6 +17,7 @@ recorded, and there was no way to send it again. This is that way, single or bul
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy.orm import Session
@@ -96,8 +97,22 @@ class OrderInquiryHandoverResend:
         if not rows:
             return None
         service = ProjectOrderInquiryService(self.db)
+        # A partly linked row asks only for what no document carries yet: the linked part
+        # is already on order, and re-asking for it invites a double order.
+        linked = service._linked_qty_by_row([str(row.id) for row in rows])
+        # `actor` stays the OI's raiser (`handover_item`'s own fallback), so "Raised by" in
+        # the email is true and the raiser is on Cc as on the automatic email; the presser
+        # is recorded as `sent_by`.
         items = [
-            service.handover_item(row, kind="raised", actor_user_id=actor_user_id)
+            service.handover_item(
+                row,
+                kind="raised",
+                qty=(
+                    Decimal(str(row.qty)) - linked[str(row.id)]
+                    if str(row.id) in linked
+                    else None
+                ),
+            )
             for row in rows
         ]
         attachments: Dict[str, List[Dict[str, Any]]] = {}
@@ -116,8 +131,14 @@ class OrderInquiryHandoverResend:
             f"RESENT: {handover['headline']}" if handover.get("headline") else "RESENT"
         )
         handover["resent"] = True
-        context["sent_by"] = (context.get("actor") or {}).get("name")
+        context["sent_by"] = self._presser_name(actor_user_id)
         return context, len(items)
+
+    def _presser_name(self, user_id: str) -> Optional[str]:
+        from app.models.user import User
+
+        user = self.db.get(User, user_id)
+        return (user.name or user.email) if user is not None else None
 
     def _last_sent(self, inquiry_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
         """The newest handover email on record per OI, automatic or resent."""

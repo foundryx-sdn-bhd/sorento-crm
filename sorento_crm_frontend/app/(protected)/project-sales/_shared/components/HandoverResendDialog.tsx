@@ -36,9 +36,12 @@ export function lastSentText(last: HandoverLastSent | null): string {
 export function HandoverResendDialog({
   inquiryIds,
   onClose,
+  onSent,
 }: {
   inquiryIds: string[] | null;
   onClose: () => void;
+  /** Called once every order inquiry in the preview went. */
+  onSent?: () => void;
 }) {
   const [ids, setIds] = React.useState<string[] | null>(inquiryIds);
   React.useEffect(() => setIds(inquiryIds), [inquiryIds]);
@@ -66,6 +69,7 @@ export function HandoverResendDialog({
       setIds(failed.map((skip) => skip.inquiry_id));
       throw new Error('partly sent');
     }
+    onSent?.();
   }
 
   const notice =

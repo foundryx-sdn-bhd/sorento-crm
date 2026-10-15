@@ -735,6 +735,11 @@ class AutomationService:
                         "source_kind": match.source_kind,
                         "source_id": match.source_id,
                         "trigger_type": str(automation.trigger_type),
+                        **(
+                            {"sent_by": match.context["sent_by"]}
+                            if match.context.get("sent_by")
+                            else {}
+                        ),
                     },
                 )
                 attempted += 1

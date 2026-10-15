@@ -33,6 +33,7 @@ import { useResetPageOnFilterChange } from '@/hooks/useResetPageOnFilterChange';
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { getUserLookup } from '@/services/userSelectService';
+import { toast } from '@/lib/toast';
 import {
   useOrderInquiryHeaders,
   useOrderInquiryWorklistSummary,
@@ -63,6 +64,8 @@ const LISTING_KEY = 'projects.projects.view::order-inquiry-headers';
 type StateFilter = 'all' | 'outstanding' | 'completed';
 
 const ACTION_PERMISSION = 'projects.order_inquiry.action';
+/** The send route's own cap (`HandoverResendIn`). */
+const MAX_RESEND = 50;
 
 function reserveFrom(value: string | null): OrderInquiryReserveStatus | '' {
   return (ORDER_INQUIRY_RESERVE_STATUSES as string[]).includes(value ?? '')
@@ -603,11 +606,15 @@ export function OrderInquiryHeadersList() {
                       key: 'send-to-purchasing',
                       label: 'Send to purchasing',
                       icon: Send,
-                      onClick: () =>
+                      onClick: () => {
                         // Ids, not loaded rows: a tick on an earlier page still counts.
-                        setResendIds(
-                          Object.keys(rowSelection).filter((rowId) => rowSelection[rowId]),
-                        ),
+                        const ids = Object.keys(rowSelection).filter((rowId) => rowSelection[rowId]);
+                        if (ids.length > MAX_RESEND) {
+                          toast.error(`Tick at most ${MAX_RESEND} order inquiries at a time.`);
+                          return;
+                        }
+                        setResendIds(ids);
+                      },
                     },
                   ]
                 : []
@@ -714,7 +721,11 @@ export function OrderInquiryHeadersList() {
           <DataGridPagination />
         </CardFooter>
       </Card>
-      <HandoverResendDialog inquiryIds={resendIds} onClose={closeResend} />
+      <HandoverResendDialog
+        inquiryIds={resendIds}
+        onClose={closeResend}
+        onSent={() => setRowSelection({})}
+      />
       {parkedSendDialog}
     </DataGrid>
   );
