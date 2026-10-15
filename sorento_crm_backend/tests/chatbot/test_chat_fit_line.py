@@ -969,3 +969,56 @@ def test_ac24_a_reverse_ask_follows_the_data_not_a_wrong_kind_guess(
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
     assert "is on record" not in a_reply, a_reply
     _assert_line_then_control(a_reply, c_reply, f"{accessory} fits these cabinets: {', '.join(hosts)}")
+
+
+# --------------------------------------------------------------------------- AC-23 round 6: access_denied, in-lane refusals
+
+
+class _DenyAgent:
+    """A `monkeypatch` stand-in for `_run_turn`: the harness's allow-everything `check_access`
+    stub is swapped for a refusal (the agent is refused, `branch_kind == "access_denied"`)."""
+
+    def __init__(self, real) -> None:
+        self._real = real
+
+    def setattr(self, target, name, value=None, *args, **kwargs):
+        if name == "check_access":
+            value = lambda db, *, agent_code, contact_id, space_id: {  # noqa: E731
+                "allowed": False, "decision": "deny", "agent_name": "General",
+                "attributes": [], "all_attributes_allowed": None,
+            }
+        return self._real.setattr(target, name, value, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def _turn_refused_agent(session_factory, monkeypatch, *, text: str, msg_id: str, **qf: Any):
+    from tests.chatbot.test_outstanding_lane import _qf, _run_turn
+    from tests.chatbot.test_seat_as_product import ENVELOPE
+
+    result, captured = _run_turn(
+        session_factory, _DenyAgent(monkeypatch), qf=_qf(**qf), text_body=text, msg_id=msg_id,
+        mcp_response=ENVELOPE, real_resolver=True,
+    )
+    return (result.reply or {}).get("text") or "", captured
+
+
+def test_ac23_a_bare_fit_ask_by_a_contact_refused_the_agent_gets_the_refusal_and_no_fit_line(session_factory, monkeypatch) -> None:
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_fit_23r6")
+    c_reply, c_calls = _turn_refused_agent(
+        session_factory, monkeypatch, text=MIRROR1, msg_id="ZZT-fit-23r6-control",
+        domain_hint=None, intent_hint=None, entities=[_product(MIRROR1)],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_fit_23r6")
+    a_reply, a_calls = _turn_refused_agent(
+        session_factory, monkeypatch, text=f"which mirror goes on {CAB1}", msg_id="ZZT-fit-23r6-asked",
+        domain_hint=None, intent_hint=None, entities=[_product(CAB1)], find=fits("mirror", "mirror"),
+    )
+    assert c_reply.strip(), "the refused control must say something"
+    assert a_reply == c_reply, (a_reply, c_reply)
+    assert "Mirror for" not in a_reply, a_reply
+
