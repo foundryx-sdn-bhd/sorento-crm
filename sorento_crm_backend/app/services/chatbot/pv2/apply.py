@@ -2104,11 +2104,12 @@ def _carries(ask: Ask) -> bool:
 
 
 def _flag_question(st: ConversationState, i: int, lookup: Lookup, ask: Ask, about: str, language: str) -> Action:
-    """R6 A: a flagged turn whose ask ran: the parser's question is asked only for what the ask left open (no
-    domain to check; no entity named for a which question), with options from what is held and shown; held keeps
-    what the ask settled. Else the Lookup stands."""
-    if about in ("domain", "other") and lookup.held.domain is None:
-        q = _clarify(st, i, "domain", None, language, options=_domain_options(st))
+    """R6 A: a flagged turn whose ask ran keeps what the ask settled in held and asks the parser's question with
+    options from what is held and shown: what to check (the domains that take what is held; with none to offer,
+    only when no domain is known), or for a which question naming nothing, which one. Else the Lookup stands."""
+    options = _domain_options(st) if about in ("domain", "other") else []
+    if about in ("domain", "other") and (options or lookup.held.domain is None):
+        q = _clarify(st, i, about, None, language, options=options)
     elif about in ("entity", "which_held") and not any(e.key or e.phrase or e.doc_number for e in ask.entities):
         options = _options_for(st, "which_held")
         if not options:
