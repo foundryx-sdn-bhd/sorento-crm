@@ -2174,7 +2174,7 @@ def run_fetch(
                  "values": settled.values if settled else None, "line": line},
             )
         if settled is None:
-            return _fixed_reply(line or "", refused=bool(line))
+            return _fixed_reply(line or "", refused=line == report_ask.DEALER_REFUSAL)
         if not settled.done:
             return _fixed_reply(settled.reply or "", required_ask=settled.slot)
         semantic_input["report_ask_args"] = chat_report.route_args(settled)
@@ -2200,7 +2200,7 @@ def run_fetch(
                  "values": settled.values if settled else None, "line": line},
             )
         if settled is None:
-            return _fixed_reply(line or "", refused=bool(line))
+            return _fixed_reply(line or "", refused=line == report_ask.DEALER_REFUSAL)
         if not settled.done:
             return _fixed_reply(settled.reply or "", required_ask=settled.slot)
         semantic_input["report_ask_args"] = report_ask.route_args(settled)
