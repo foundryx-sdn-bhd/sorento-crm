@@ -530,3 +530,47 @@ def test_lines_already_in_an_earlier_handover_are_marked_sent(rs):
     assert lines[a.id]["sent_at"] and lines[b.id]["sent_at"]
     assert lines[c.id]["sent_at"] is None
     assert all(line["selected"] for line in lines.values())  # marked, still ticked
+
+
+def test_resend_excel_holds_only_the_open_lines_in_the_email(rs, stored):
+    """Crew ruling (b), 16 Oct: with every line ticked (or no ticks at all), the resend's
+    workbook still carries only the open lines the email names, never a cancelled or placed
+    row purchasing might read as something to order."""
+    client, world = rs
+    _automation(world)
+    inquiry = _oi(world)
+    _line(world, inquiry, item="ZZT-OPEN-X")
+    _line(world, inquiry, state=INQUIRY_CANCELLED, item="ZZT-GONE-Y")
+    _line(world, inquiry, state=INQUIRY_PLACED, item="ZZT-PLACED-Z")
+
+    _ok(client.post(SEND, json={"inquiry_ids": [inquiry.id]}))
+
+    import io
+
+    import openpyxl
+
+    [upload] = stored
+    workbook = openpyxl.load_workbook(io.BytesIO(upload["bytes"]))
+    cells = {str(v) for ws in workbook for r in ws.iter_rows(values_only=True) for v in r if v}
+    assert "ZZT-OPEN-X" in cells
+    assert "ZZT-GONE-Y" not in cells and "ZZT-PLACED-Z" not in cells
+
+
+def test_tick_list_shows_the_open_remainder_of_a_partly_linked_line(rs, monkeypatch):
+    """Review SF3: the tick reads the same quantity the email asks for."""
+    client, world = rs
+    _automation(world)
+    inquiry = _oi(world)
+    row = _line(world, inquiry, state=INQUIRY_PARTLY_LINKED, qty="10")
+
+    from decimal import Decimal
+
+    from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+    monkeypatch.setattr(
+        ProjectOrderInquiryService,
+        "_linked_qty_by_row",
+        lambda self, ids: {row.id: Decimal("4")} if row.id in ids else {},
+    )
+    [line] = _ok(client.post(PREVIEW, json={"inquiry_ids": [inquiry.id]}))["emails"][0]["lines"]
+    assert Decimal(line["qty"]) == Decimal("6")

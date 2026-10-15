@@ -156,3 +156,15 @@ def test_a_database_error_in_the_excel_still_sends_the_email(api, monkeypatch):
     assert not any(
         a["filename"].endswith(".xlsx") for a in dispatched[0].get("email_attachments", [])
     )
+
+
+def test_confirm_with_no_enabled_automation_stores_no_workbook(api, monkeypatch, stored):
+    """Review SF1 / S2: nothing will send it, so nothing is rendered or stored."""
+    _client, world = api
+    _register(world)
+    _captured_dispatches(monkeypatch)
+    _drain_on_test_connection(monkeypatch, world)
+
+    _raise_one_row(api, qty="10")
+
+    assert stored == []
