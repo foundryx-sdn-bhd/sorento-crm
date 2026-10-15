@@ -303,7 +303,8 @@ Without the flag nothing changes.
 4. The owner approves the numbers.
 5. On prod: set the date (Settings > Integrations > AutoCount) and run S3 for real, off-hours
    MYT, Sorento then Mocha. Re-run the queries, then clear the date so no later push assumes
-   anything.
+   anything (this holds while prod env `DO_ASSUME_DELIVERED_BEFORE` is unset; a set env value is
+   the fallback a cleared date returns to).
 
 ## 8. Asks
 

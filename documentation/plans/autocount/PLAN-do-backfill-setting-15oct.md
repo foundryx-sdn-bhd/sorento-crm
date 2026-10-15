@@ -26,3 +26,6 @@ need to restart the prod services". The DO-HISTORY cutover today is env
 - The env var stays, as the fallback while nothing is saved (the runtime_settings contract).
 - GET adds `delivered_order_status_exists` (the ingest's own `delivered` lookup), and the
   AutoCount card warns when it is false.
+- Review fix: the shared `DatePicker` (`components/ui/date-picker.tsx`) accepted a half-typed
+  `2026-07-0` as 30 Jun and rolled `31/02` into March; a typed date now parses only when it is
+  that real day, and ISO needs two-digit month and day.
