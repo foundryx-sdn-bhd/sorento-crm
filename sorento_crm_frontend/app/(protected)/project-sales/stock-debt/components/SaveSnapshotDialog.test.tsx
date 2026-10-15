@@ -66,6 +66,7 @@ function renderDialog(over: Partial<React.ComponentProps<typeof SaveSnapshotDial
         onOpenChange={onOpenChange}
         filters={FILTERS as never}
         productCount={550}
+        locationCodes={['BRW-BB']}
         {...over}
       />
     </QueryClientProvider>,
@@ -80,6 +81,41 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('AC-F1 read-only filters line (mock v1 section 1)', () => {
+  it('reads exactly like the mock when no location is set and the aux columns are on', async () => {
+    renderDialog({ filters: { ...FILTERS, locations: [] } as never, locationCodes: [] });
+    await screen.findByLabelText(/^name$/i);
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      '550 products · Book Project · All locations · Delivery 01/01/2023 to 31/05/2027 · Only in debt · Stock and PO columns',
+    );
+  });
+
+  it('names the location codes, not a count or an id, when locations are picked', async () => {
+    renderDialog({ filters: { ...FILTERS, locations: [LOCATION_ID, 'x'] } as never, locationCodes: ['BRW-BB', 'MWH'] });
+    await screen.findByLabelText(/^name$/i);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('BRW-BB');
+    expect(dialog).toHaveTextContent('MWH');
+    expect(dialog).not.toHaveTextContent('All locations');
+    expect(dialog.textContent).not.toContain(LOCATION_ID);
+  });
+
+  it('says "All except <codes>" in exclude mode', async () => {
+    renderDialog({
+      filters: { ...FILTERS, locationsMode: 'exclude' } as never,
+      locationCodes: ['BRW-BB'],
+    });
+    await screen.findByLabelText(/^name$/i);
+    expect(screen.getByRole('dialog')).toHaveTextContent('All except BRW-BB');
+  });
+
+  it('omits "Stock and PO columns" when the aux columns are off', async () => {
+    renderDialog({ filters: { ...FILTERS, showAux: false } as never });
+    await screen.findByLabelText(/^name$/i);
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Stock and PO columns');
+  });
 });
 
 describe('AC-F1 Save snapshot modal', () => {

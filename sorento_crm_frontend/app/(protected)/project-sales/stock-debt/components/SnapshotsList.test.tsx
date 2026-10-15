@@ -144,6 +144,17 @@ describe('AC-F2 columns and rows', () => {
     expect(table.querySelector('th[style*="width"]')).toBeInTheDocument();
   });
 
+  it('every column has an explicit size and all of them, Actions included, sum to at most 1000 px', async () => {
+    renderList();
+    await screen.findByText('Stock Debt 15/10/2026');
+    const heads = Array.from(document.querySelectorAll('thead th')) as HTMLElement[];
+    expect(heads.length).toBeGreaterThanOrEqual(7);
+    const widths = heads.map((th) => parseFloat(th.style.width));
+    for (const w of widths) expect(Number.isFinite(w)).toBe(true);
+    const sum = widths.reduce((a, b) => a + b, 0);
+    expect(sum).toBeLessThanOrEqual(1000);
+  });
+
   it('pressing a row opens that snapshot', async () => {
     renderList();
     fireEvent.click(await screen.findByText('Month end'));

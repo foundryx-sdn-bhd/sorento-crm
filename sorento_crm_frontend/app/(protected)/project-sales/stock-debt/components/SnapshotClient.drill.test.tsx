@@ -358,6 +358,28 @@ const LINES = [
     ],
     now: { so_status: 'open', open_qty: 3 },
   }),
+  // Frozen on OI-2609-0417 but placed today: only the shared eligibility rule keeps it out of
+  // the request dialog (its id IS in the frozen set).
+  line({
+    so_number: 'SO440040',
+    agent_code: 'LEENA',
+    required_date: '2027-04-01',
+    short_qty: 0,
+    qty_ordered: 40,
+    open_qty: 0,
+    oi_rows: [
+      oiRow({
+        row_id: 'row-17z',
+        qty: 40,
+        remaining: 0,
+        state: 'placed',
+        now_state: 'placed',
+        requestable: false,
+        delivery_date: '2027-04-01',
+      }),
+    ],
+    now: { so_status: 'open', open_qty: 0 },
+  }),
   line({
     so_number: 'SO381945',
     agent_code: 'ERIC NG',
@@ -467,7 +489,7 @@ describe('AC-F5 opening the drill', () => {
     await within(dialog).findAllByText('SO383872');
     expect(dialog).toHaveTextContent(/Total\s*-223/);
     expect(dialog).toHaveTextContent(/BRW on hand\s*972/);
-    expect(dialog).toHaveTextContent(/Lines\s*7/);
+    expect(dialog).toHaveTextContent(/Lines\s*8/);
     expect(dialog).toHaveTextContent(/Short\s*710/);
     expect(dialog).toHaveTextContent(/Decision\s*Reserve/);
     expect(dialog).toHaveTextContent('MWH');

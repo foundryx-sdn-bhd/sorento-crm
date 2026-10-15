@@ -559,6 +559,15 @@ describe('AC-F4 Decision popover', () => {
     expect(within(popover).queryByRole('combobox', { name: /from/i })).not.toBeInTheDocument();
   });
 
+  it('the Note textarea is w-full with no fixed width, so it cannot overflow the popover', async () => {
+    renderPage();
+    const popover = await openPopover('ACC6001');
+    const note = within(popover).getByLabelText(/note/i) as HTMLTextAreaElement;
+    expect(note.className).toMatch(/(^|\s)w-full(\s|$)/);
+    expect(note.style.width).toBe('');
+    expect(note.className).not.toMatch(/(^|\s)w-\[|(^|\s)w-\d/);
+  });
+
   it('From appears for Reserve only, as a clearable select of the pools with their stock', async () => {
     renderPage();
     const popover = await openPopover('ACC6001');

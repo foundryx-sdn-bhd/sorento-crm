@@ -6,7 +6,7 @@
  * is part of what is tested.
  */
 import React from 'react';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -75,9 +75,28 @@ function setup() {
   return renderHook(() => useParkedSendActions(), { wrapper });
 }
 
-/** Re-renders the hook's dialog node alongside a fresh read of the hook result. */
-function DialogHost({ result }: { result: { current: ReturnType<typeof useParkedSendActions> } }) {
-  return <>{result.current.dialog}</>;
+/** Both real callers render `dialog` in the same component that calls the hook. */
+function Host() {
+  const { actions, dialog } = useParkedSendActions();
+  return (
+    <>
+      {actions.map((a) => (
+        <button key={a.key} onClick={a.onClick}>
+          {a.label}
+        </button>
+      ))}
+      {dialog}
+    </>
+  );
+}
+
+function setupHost() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <Host />
+    </QueryClientProvider>,
+  );
 }
 
 beforeEach(() => {
@@ -144,47 +163,31 @@ describe('items and counts', () => {
 
 describe('opening and sending', () => {
   it('pressing the requests item opens the ParkedSendDialog on the requests preview', async () => {
-    const { result } = setup();
-    await waitFor(() => expect(result.current.actions).toHaveLength(2));
-    const view = render(<DialogHost result={result} />);
-
-    act(() => result.current.actions[0].onClick());
-    view.rerender(<DialogHost result={result} />);
-
+    setupHost();
+    fireEvent.click(await screen.findByRole('button', { name: 'Send all parked requests to CS (2)' }));
     await waitFor(() => expect(previewRequestsSpy).toHaveBeenCalled());
     expect(previewNoticesSpy).not.toHaveBeenCalled();
-    expect(await screen.findByText('Send all parked requests to CS')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Send all parked requests to CS' })).toBeInTheDocument();
   });
 
   it('pressing the reserves item opens it on the purchasing preview', async () => {
-    const { result } = setup();
-    await waitFor(() => expect(result.current.actions).toHaveLength(2));
-    const view = render(<DialogHost result={result} />);
-
-    act(() => result.current.actions[1].onClick());
-    view.rerender(<DialogHost result={result} />);
-
+    setupHost();
+    fireEvent.click(await screen.findByRole('button', { name: 'Send all parked reserves to purchasing (3)' }));
     await waitFor(() => expect(previewNoticesSpy).toHaveBeenCalled());
-    expect(await screen.findByText('Send all parked reserves to purchasing')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Send all parked reserves to purchasing' })).toBeInTheDocument();
   });
 
   it('Send in the dialog sends the own parked requests', async () => {
-    const { result } = setup();
-    await waitFor(() => expect(result.current.actions).toHaveLength(2));
-    const view = render(<DialogHost result={result} />);
-
-    act(() => result.current.actions[0].onClick());
-    view.rerender(<DialogHost result={result} />);
-
+    setupHost();
+    fireEvent.click(await screen.findByRole('button', { name: 'Send all parked requests to CS (2)' }));
     fireEvent.click(await screen.findByRole('button', { name: /send 1 email/i }));
     await waitFor(() => expect(sendRequestsSpy).toHaveBeenCalledTimes(1));
     expect(sendNoticesSpy).not.toHaveBeenCalled();
   });
 
-  it('the dialog node renders nothing visible until an item is pressed', async () => {
-    const { result } = setup();
-    await waitFor(() => expect(result.current.actions).toHaveLength(2));
-    render(<DialogHost result={result} />);
+  it('the dialog renders nothing visible until an item is pressed', async () => {
+    setupHost();
+    await screen.findByRole('button', { name: 'Send all parked requests to CS (2)' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(previewRequestsSpy).not.toHaveBeenCalled();
   });
