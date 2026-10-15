@@ -36,7 +36,7 @@ from app.services.order_inquiry_reserve_service import (
     _REQUESTABLE_STATES,
     _REQUESTABLE_VERBS,
     _open_request_row_ids,
-    _remaining,
+    _requestable,
 )
 from app.services.project_supply_service import ProjectSupplyService
 from app.services.scm.demand import demand_qty
@@ -521,7 +521,9 @@ class StockDebtSnapshotService:
             )
         out: Dict[str, Dict[str, Any]] = {}
         for row_id, row in rows.items():
-            remaining = _remaining(self.db, row)
+            # What `create_request` caps a request against (OI-RESERVE-RECEIVED: includes
+            # links on a fully received PO/SPO), so `requestable` here and the request agree.
+            remaining = _requestable(self.db, row)
             out[row_id] = {
                 "now_state": row.state,
                 "reserve_state": latest.get(row_id),

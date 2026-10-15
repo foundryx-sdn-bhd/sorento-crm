@@ -611,10 +611,12 @@ def test_every_company_id_table_is_registered():
     #   Cancel SO / PO (and stored-only consignment) documents of ONE company's book. The lines are owned
     #   too, not left to their parent: the waiting retry and the order-push relink read them
     #   directly, by company, without the doc = 161.
+    # + 1 (OI-RESERVE-RECEIVED): `order_inquiry_released_links`, one company's own released
+    #   received link per reserve = 162.
     # + 2 (STOCK-DEBT-SNAPSHOT): `stock_debt_snapshots` and `stock_debt_snapshot_rows`, one
     #   company's frozen Stock Debt view and its rows (customer demand, OI numbers and
-    #   decisions); every read is by snapshot within the company = 163.
-    expected_owned = 163
+    #   decisions); every read is by snapshot within the company = 164.
+    expected_owned = 164
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"
     )

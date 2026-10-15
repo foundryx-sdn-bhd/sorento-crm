@@ -14,6 +14,13 @@ export function rowRemaining(row: OrderInquiryWorklistRow): number {
   );
 }
 
+/** OI-RESERVE-RECEIVED (AC-RR-5/40): what a request may ask for - the server's own
+ * `reserve_requestable_qty` (links on a fully received PO/SPO do not count against it);
+ * the plain remaining only for a payload that predates the field. */
+export function rowRequestable(row: OrderInquiryWorklistRow): number {
+  return row.reserve_requestable_qty ?? rowRemaining(row);
+}
+
 /** AC-RS-23: why a selected row cannot be named on a "Request CS to reserve" ask - the
  * SAME rules the backend's own `create_request` enforces (3.2), read client-side off
  * the worklist row so the menu item can be gated and explained before the request is
@@ -27,11 +34,13 @@ export function reserveIneligibleReason(row: OrderInquiryWorklistRow): string | 
   if (!['ORDER', 'ORDER_BACK'].includes(row.verb)) {
     return `${item}: not an ORDER or ORDER BACK row`;
   }
-  if (!['raised', 'partly_linked'].includes(row.state)) {
+  if (!['raised', 'partly_linked', 'placed'].includes(row.state)) {
     return `${item}: not open for a reserve request`;
   }
-  if (rowRemaining(row) <= 0) {
-    return `${item}: has nothing left to request`;
+  if (rowRequestable(row) <= 0) {
+    return (row.links ?? []).some((link) => link.kind === 'po' || link.kind === 'spo')
+      ? `${item}: on a PO/SPO not received yet, nothing left to request`
+      : `${item}: has nothing left to request`;
   }
   if (row.reserve_state === 'requested') {
     return `${item}: already has an open reserve request`;

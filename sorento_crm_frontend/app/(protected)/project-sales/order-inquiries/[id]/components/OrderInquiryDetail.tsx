@@ -54,7 +54,7 @@ import {
   useOrderInquiryRowHistory,
 } from '../../../_shared/hooks/useOrderInquiry';
 import { useReserveRowOptions } from '../../../_shared/hooks/useReserveRowOptions';
-import { reserveIneligibleReason, rowRemaining } from '../../../_shared/lib/reserveEligibility';
+import { reserveIneligibleReason, rowRemaining, rowRequestable } from '../../../_shared/lib/reserveEligibility';
 import { ackStateOf } from '../../../_shared/lib/orderInquiryAck';
 import {
   orderInquiryHeaderStatusLabel,
@@ -462,7 +462,11 @@ export function OrderInquiryDetail({ id }: { id: string }) {
     const line = (linesQuery.data ?? []).find((candidate) => candidate.id === rowId);
     const open = entry.kind === 'reserve' ? openRequestForRow(rowId) : null;
     const answered = entry.kind === 'amend' ? answeredRequestRowFor(rowId) : null;
-    const remaining = line ? rowRemaining(line) : 0;
+    // A request that reaches into the received part releases it (AC-RR-43): the balance
+    // is then worked off requestable, not the plain remaining.
+    const reachesReceived =
+      entry.kind === 'reserve' && !!line && Number(open?.qtyRequested || '0') > rowRemaining(line);
+    const remaining = line ? (reachesReceived ? rowRequestable(line) : rowRemaining(line)) : 0;
     const added = entry.kind === 'amend' ? entry.qty - Number(line?.reserved_qty || '0') : entry.qty;
     return {
       row_id: rowId,
@@ -763,7 +767,7 @@ export function OrderInquiryDetail({ id }: { id: string }) {
                             </DropdownMenuItem>
                           </span>
                         </TooltipTrigger>
-                        <TooltipContent>{reserveDisabledReason}</TooltipContent>
+                        <TooltipContent className="max-w-xs break-words">{reserveDisabledReason}</TooltipContent>
                       </Tooltip>
                     )
                   ) : null}

@@ -5482,6 +5482,9 @@ def envelope_of(
     envelope: dict[str, Any] = {
         "domain": spec.domain,
         "denied": refused,
+        # A fixed refusal (`_fixed_reply(refused=True)`) keeps its own text: not `denied` (the
+        # composer's generic line), only read by `engine._run_answer` to open no fit line.
+        "refused": bool(fragment.get("refused")),
         "entities": codes,
         # The PRODUCT subjects alone, for the composer's "No stock found for X" line: a
         # customer pinned from an earlier turn is a subject too, and is not a stock code.

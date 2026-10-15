@@ -535,6 +535,11 @@ class OrderInquiryWorklistRow(BaseModel):
     #: read N off this, not off a second lookup. Declared here because `response_model`
     #: silently drops a field it has not been told about.
     requested_qty: str = "0"
+    #: OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for - a NUMBER (AC-RR-5): qty less
+    #: open links, reserve links and the bundle; links on a fully received PO/SPO line do
+    #: not count. The screen never re-derives "received". Declared here because
+    #: `response_model` silently drops a field it has not been told about.
+    reserve_requestable_qty: float = 0
 
 
 class OrderInquiryMonthTotal(BaseModel):

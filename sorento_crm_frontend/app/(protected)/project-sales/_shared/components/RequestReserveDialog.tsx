@@ -21,7 +21,7 @@ import { SearchableSelect, type SearchableSelectOption } from '@/components/comm
 import { formatDateInMalaysia } from '@/lib/helpers';
 import { useCreateOrderInquiryReserveRequest } from '../hooks/useOrderInquiry';
 import { useReserveRowOptions } from '../hooks/useReserveRowOptions';
-import { rowRemaining } from '../lib/reserveEligibility';
+import { rowRequestable } from '../lib/reserveEligibility';
 import type { OrderInquiryWorklistRow } from '../types/orderInquiry.types';
 
 /**
@@ -32,7 +32,7 @@ import type { OrderInquiryWorklistRow } from '../types/orderInquiry.types';
  * stock-detail read `OrderInquiryStockGrid` already makes.
  *
  * STOCK-DEBT-SNAPSHOT: shared by the OI page and the snapshot drill. It takes the inquiry's
- * live worklist rows and builds its own lines (`useReserveRowOptions` + `rowRemaining`), and
+ * live worklist rows and builds its own lines (`useReserveRowOptions` + `rowRequestable`), and
  * writes through `useCreateOrderInquiryReserveRequest` (UI -> hook -> service -> api-client).
  *
  * G6 (`PLAN-oi-request-cs-reserve.md` section 6d, AC-RS-75, owner: "we should use
@@ -105,7 +105,7 @@ export function RequestReserveDialog({
           id: line.id,
           item_code: line.item_code ?? null,
           delivery_date: line.delivery_date ?? null,
-          remaining: String(Math.max(0, rowRemaining(line))),
+          remaining: String(Math.max(0, rowRequestable(line))),
           defaultLocation: preferred ?? own?.defaultWarehouseId ?? '',
           locationOptions: options,
         };

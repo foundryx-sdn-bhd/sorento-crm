@@ -56,8 +56,9 @@ describe('reserveIneligibleReason', () => {
     );
   });
 
-  it('refuses a row that is not raised or partly linked', () => {
-    expect(reserveIneligibleReason(row({ state: 'placed' }))).toBe(
+  // OI-RESERVE-RECEIVED (#1708) made `placed` requestable; `actioned` is still refused.
+  it('refuses a row that is not raised, partly linked or placed', () => {
+    expect(reserveIneligibleReason(row({ state: 'actioned' }))).toBe(
       'SRTWT904-NL: not open for a reserve request',
     );
   });
@@ -81,8 +82,8 @@ describe('reserveIneligibleReason', () => {
   });
 
   it('checks the verb before the state, and the state before the quantity', () => {
-    expect(reserveIneligibleReason(row({ verb: 'RETURN', state: 'placed' }))).toMatch(/ORDER or ORDER BACK/);
-    expect(reserveIneligibleReason(row({ state: 'placed', qty: '1', linked_qty: '1' }))).toMatch(
+    expect(reserveIneligibleReason(row({ verb: 'RETURN', state: 'actioned' }))).toMatch(/ORDER or ORDER BACK/);
+    expect(reserveIneligibleReason(row({ state: 'actioned', qty: '1', linked_qty: '1' }))).toMatch(
       /not open for a reserve request/,
     );
   });

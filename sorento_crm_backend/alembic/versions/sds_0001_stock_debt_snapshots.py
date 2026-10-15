@@ -8,14 +8,14 @@ Plan: documentation/plans/scm/PLAN-stock-debt-snapshot-15oct.md.
 Round 2: the tables live in the `projects` schema (ADR-0011).
 
 Revision ID: sds_0001_stock_debt_snapshots
-Revises: dobs_0001_assume_delivered
+Revises: oirr_0001_released_links
 """
 import sqlalchemy as sa
 from alembic import op
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "sds_0001_stock_debt_snapshots"
-down_revision = "dobs_0001_assume_delivered"
+down_revision = "oirr_0001_released_links"
 branch_labels = None
 depends_on = None
 
