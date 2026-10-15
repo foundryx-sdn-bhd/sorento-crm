@@ -16,9 +16,11 @@ their own `ZZT*` products and links (CI's DB is empty).
 - AC-3 `fits` + kind `mirror` on a cabinet code resolves to that cabinet's mirror link(s) only;
   kind `shelf` to its shelf link(s) only; kind `seat_cover` to seat cover links only (a cabinet's
   mirror link never answers a seat cover ask).
-- AC-3b `fits` with kind null (the message names no particular kind, "what goes with <cabinet>")
-  resolves the named code's links of every kind on record (the data decides; a WC holds only
-  seat cover links, so seat cover asks behave as today); each kind then gets its own fit line.
+- AC-3b `fits` with kind null is a fallback only (the parser names the kind for every ask the
+  live set holds): the named code's links of every kind on record (the data decides); none held
+  keeps today's seat cover no-link line. "what goes with <cabinet>" (no other-side word, so
+  value null) is NOT a fit ask (reviewer round 1: the value rule drops it); trigger to build it:
+  a real customer message of that shape.
 - AC-4 Reverse: an accessory code with its kind resolves to its host code(s) (the data decides
   the direction, as today for seat covers).
 - AC-5 No link of that kind on record for any named code: the whole reply is one line per code,
@@ -52,6 +54,20 @@ their own `ZZT*` products and links (CI's DB is empty).
   reverse `<x> 适配 <host>。`; several use the catalogued heads (`Penutup tempat duduk untuk
   {code}:` / `{code} 适配的马桶盖：` and per kind). Nouns: cermin / 镜子, rak / 置物架, kabinet / 浴室柜.
 - AC-15 The line holds product codes only: no ids, no stock numbers; same for every audience.
+
+## Round 2 (reviewer + security, 15 Oct)
+
+- AC-17 A carried fit ask keeps its kind with `find` null on the bare-code turn, and with a
+  value-less kind-null `fits` (the kind comes from the stored relation, not the parse).
+- AC-18 Link fields on a parser entity (`linked_from`, `linked_as`, `linked_kind`) are ignored:
+  only the resolution sets them, so a crafted message never prints a fit line.
+- AC-19 A linked product the chatbot may not answer with (`chat_searchable_products()`: not
+  searchable, or a hidden category) is never named: it is dropped; with none left the turn runs
+  on as typed (no line, no claim).
+- AC-20 In a zh / ms turn the fit-line templates translate only the fit line itself; any other
+  line of the usual answer ("This soft-close seat fits most round WCs.", "Mirror for bathroom:
+  LED") is left exactly as it is today.
+- AC-21 Several-code and model-family lines are asserted exactly (no `startswith`).
 
 ## Live (opt-in, `CHATBOT_LIVE_LLM=1`, dev parser v94 = prod v63 shape)
 
