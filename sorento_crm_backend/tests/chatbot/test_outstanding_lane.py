@@ -2745,6 +2745,8 @@ class TestCustomerOnlyOutstandingAskReachesTheReport:
         bare "outstanding" ask never arms the scope question at all - it falls
         through to the plain order-list tool / the legacy so_outstanding bucket."""
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -3688,6 +3690,8 @@ class TestScopeQuestionCarriesTheFullHeader:
         cust = mc_customer(db, company_id=DEFAULT_COMPANY_ID, name=CUSTOMER_NAME)
         db.commit()
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -4003,6 +4007,8 @@ class TestOutstandingAskPickerHasNoDeliveryHint:
             }
 
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -4049,6 +4055,8 @@ class TestOutstandingAskPickerHasNoDeliveryHint:
             return {"items": [], "has_result": False}
 
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,

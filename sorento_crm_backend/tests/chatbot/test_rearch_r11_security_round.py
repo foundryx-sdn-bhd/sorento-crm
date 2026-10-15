@@ -73,6 +73,7 @@ from app.models.order import Customer
 from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.lanes.business.services import FetchServices
 from app.services.chatbot.lanes.escalation import escalation_context
+from tests.chatbot._turn_helpers import make_office_access_type
 from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import set_chatbot_switches
 from tests.chatbot.test_engine import (  # noqa: F401 - fixtures re-exported by name
@@ -205,6 +206,8 @@ class TestSF2StructuredCompanyNamesNotBotProse:
             session_factory, contact_id=self.CONTACT_ID, phone="+60000000920",
             workspace_id=workspace_id, company_ids=[a, b],
         )
+        # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+        make_office_access_type(session_factory, self.CONTACT_ID)
 
         set_chatbot_switches(session_factory, business_lane=True)
         _set_completed_lanes(session_factory, system_settings_row, ["business_query"])

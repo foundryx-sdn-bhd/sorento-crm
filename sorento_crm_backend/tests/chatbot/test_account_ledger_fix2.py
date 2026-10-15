@@ -228,6 +228,8 @@ def test_n1_unnamed_question_traces_account_unnamed(session_factory, monkeypatch
 
 def test_n1_staff_level_refusal_traces_account_level_absent(session_factory, monkeypatch) -> None:
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE slice 3: plays an office role, unlinked != customer.
+    make_office_access_type(session_factory, CONTACT_ID)
     rows = _seed_book(session_factory)
     events = _events(
         session_factory, monkeypatch, _ask([_acct("Soon Heng Trading", 2)]), "soon heng trading account 2",
