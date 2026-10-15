@@ -1,7 +1,7 @@
 """C3: code builds up to 3 next-best options from structured tool results (no model involved).
 
-Products come from the v1 turn's own resolved `product_ids` (the args of the tool v1 called for the moment);
-nothing is resolved from text here. Tools are called through mcp_local WITHOUT `view`, which returns the raw JSON
+Products come from the v1 turn's own resolved `product_ids` (the args of the tool v1 called for the moment) and,
+beyond those, from the parser's product mentions resolved by the same resolver the advisor tools use. Tools are called through mcp_local WITHOUT `view`, which returns the raw JSON
 before presenting (stock_availability / data rows, incoming data, promotion products, crm_find groups). Only the
 `crm_find` fits line is taken from the tool's own `head` text, which is already a filled sentence.
 Limits (dev data): stored alternatives are only structured in availability-mode (dealer) stock results; for
@@ -42,6 +42,23 @@ def product_ids_from_v1(v1_turn: dict[str, Any], cap: int = 3) -> list[str]:
             if isinstance(pid, str) and pid not in ids:
                 ids.append(pid)
     return ids[:cap]
+
+
+def product_ids_from_parse(v1_turn: dict[str, Any], scope: dict[str, Any], cap: int = 3) -> list[str]:
+    """The parser's product mentions resolved with the same resolver the advisor tools use (mcp_local._resolve)."""
+    from . import mcp_local
+
+    texts: list[str] = []
+    for e in (v1_turn.get("parser") or {}).get("entities") or []:
+        if isinstance(e, dict) and str(e.get("hint") or "").lower() == "product":
+            t = str(e.get("canonical_code") or e.get("raw") or "").strip()
+            if t and t not in texts:
+                texts.append(t)
+    ids: list[str] = []
+    for t in texts[:cap]:
+        got, _msgs = mcp_local._resolve([t], "product", scope)
+        ids += [i for i in got if i not in ids]
+    return ids
 
 
 def alternative_options(stock_raw: str) -> list[Option]:
@@ -104,8 +121,14 @@ def build_options(
 ) -> list[Option]:
     from . import mcp_local
 
-    call_tool = call_tool or mcp_local.call_tool
+    call_tool = call_tool or mcp_local.call_tool_raw
     pids = product_ids_from_v1(v1_turn)
+    if len(pids) < 3:
+        try:
+            pids += [i for i in product_ids_from_parse(v1_turn, scope) if i not in pids]
+        except Exception:  # noqa: BLE001 - resolver trouble must not break the arm
+            pass
+    pids = pids[:3]
     if not pids:
         return []
 

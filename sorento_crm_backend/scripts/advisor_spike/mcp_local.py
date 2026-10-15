@@ -143,6 +143,27 @@ def _strip_scope(schema: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+#: model-facing name param -> (the tool's id param, resolver entity type). The model writes names/codes, code
+#: resolves them with the same resolver v1 uses (the ids are never shown to the model).
+RESOLVED_PARAMS = {
+    "product_codes": ("product_ids", "product", "product codes or names exactly as the customer wrote them"),
+    "customer_names": ("customer_ids", "customer", "customer names exactly as the customer wrote them"),
+}
+
+
+def _with_names(schema: dict[str, Any]) -> dict[str, Any]:
+    props = schema.get("properties") or {}
+    for name, (id_param, _etype, desc) in RESOLVED_PARAMS.items():
+        if id_param in props:
+            props.pop(id_param)
+            props[name] = {"type": "array", "items": {"type": "string"}, "description": desc}
+    if isinstance(schema.get("required"), list):
+        schema["required"] = [r for r in schema["required"] if r not in {v[0] for v in RESOLVED_PARAMS.values()}]
+        if not schema["required"]:
+            schema.pop("required")
+    return schema
+
+
 def list_tool_schemas(names: list[str]) -> list[dict[str, Any]]:
     """`[{name, description, input_schema}]` from the MCP tool definitions, scope params removed.
     Unknown or non-ADVISOR_READ_ONLY names are skipped."""
@@ -154,13 +175,65 @@ def list_tool_schemas(names: list[str]) -> list[dict[str, Any]]:
         t = tools.get(n)
         if t is None or n not in ADVISOR_READ_ONLY:
             continue
-        out.append({"name": n, "description": t.description or "", "input_schema": _strip_scope(t.inputSchema)})
+        out.append({"name": n, "description": t.description or "", "input_schema": _with_names(_strip_scope(t.inputSchema))})
     return out
 
 
-def call_tool(name: str, args: dict[str, Any], scope: dict[str, Any]) -> str:
-    """One read-only tool call with the scope stamped by code (fetch.py:1295: contact_id as a stripped
-    string, space_id with the workspace default). The model's own contact_id/space_id are overwritten."""
+def _resolve(texts: list[str], etype: str, scope: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Resolve typed codes/names to ids with the chatbot's own resolver route (`services.resolve_entity`), on a
+    session stamped with the contact's company and brand scope the way the engine stamps it. Returns
+    (ids, messages): messages (non-empty) are tool-result lines for an unresolved or ambiguous text.
+    Differences from v1: no semantic code reader and no spec fallback (both are model calls)."""
+    from app.database import SessionLocal
+    from app.models.base import set_brand_scope, set_company_scope
+    from app.services.chatbot.lanes.business import services as bs
+    from app.services.chatbot.lanes.business.fetch import space_id_or_default
+    from app.services.chatbot.lanes.business.resolve_gate import _PRODUCT_FOLD, _UNICODE_DASH_FOLD
+    from app.services.company_scope_resolver import resolve_contact_company_scope
+    from app.services.contact_brand_scope import contact_brand_scope
+
+    contact = str(scope.get("contact_id") or "").strip()
+    space = space_id_or_default(scope.get("space_id"))
+    db = SessionLocal()
+    try:
+        set_company_scope(db, resolve_contact_company_scope(db, contact, space))
+        set_brand_scope(db, contact_brand_scope(db, contact, space))
+        ps = bs.production_services(db)
+        levels = [a["name"] for a in ps.access_types(contact_id=contact, space_id=space)]
+        ids: list[str] = []
+        msgs: list[str] = []
+        for text in texts:
+            tok = text.strip()
+            if etype == "product":
+                for bad, good in _UNICODE_DASH_FOLD.items():
+                    tok = tok.replace(bad, good)
+                tok = _PRODUCT_FOLD.sub("", tok)
+            body = {"query": text, "match_mode": "or", "tokens": [tok], "raw_tokens": [text],
+                    "allowed_entity_types": [etype], "access_levels": levels, "fallback_to_all_types": True,
+                    "limit": 15, "exact_match": True, "semantic_fallback": False, "spec_fallback": False,
+                    "understand_phrase": False, "dry_run": True, "contact_id": contact, "space_id": space}
+            res = (ps.resolve_entity(body).get("resolutions") or [{}])[0]
+            matches = [m for m in res.get("matches") or [] if m.get("uuid")]
+            exact = [m for m in matches if m.get("match_tier") == "exact"]
+            pick = exact or matches
+            codes = list(dict.fromkeys(m.get("canonical_code") for m in pick if m.get("canonical_code")))
+            if len(codes) == 1:
+                ids.append(pick[0]["uuid"])
+            elif len(codes) > 1:
+                msgs.append(f"'{text}' matches several: {', '.join(codes[:8])}. Ask the customer which one.")
+            else:
+                alts = list(dict.fromkeys(a.get("canonical_code") for a in res.get("alternatives") or [] if a.get("canonical_code")))
+                msg = f"No {etype} on record matches '{text}'."
+                if alts:
+                    msg += f" Did you mean: {', '.join(alts[:5])}?"
+                msgs.append(msg)
+        return ids, msgs
+    finally:
+        db.close()
+
+
+def call_tool_raw(name: str, args: dict[str, Any], scope: dict[str, Any]) -> str:
+    """Scope stamped, args passed as given (ids allowed). For code-built calls (C3 options); the model never reaches it."""
     from app.services.chatbot.lanes.business.fetch import space_id_or_default
 
     from .subset import ADVISOR_READ_ONLY
@@ -175,6 +248,33 @@ def call_tool(name: str, args: dict[str, Any], scope: dict[str, Any]) -> str:
     if getattr(result, "isError", False):
         return f"ERROR: {text}"
     return text
+
+
+def call_tool(name: str, args: dict[str, Any], scope: dict[str, Any]) -> str:
+    """Model-facing call: `product_codes` / `customer_names` are resolved to ids in code (the production shape);
+    any `*_ids` the model passes itself are dropped. Unresolved or ambiguous texts come back as a short tool result."""
+    from .subset import ADVISOR_READ_ONLY
+
+    if name not in ADVISOR_READ_ONLY:
+        return f"ERROR: tool {name} is not allowed (read-only tools only)"
+    args = dict(args or {})
+    msgs: list[str] = []
+    for param, (id_param, etype, _d) in RESOLVED_PARAMS.items():
+        args.pop(id_param, None)
+        texts = args.pop(param, None)
+        if texts:
+            texts = [texts] if isinstance(texts, str) else [str(t) for t in texts]
+            ids, m = _resolve(texts, etype, scope)
+            msgs += m
+            if ids:
+                args[id_param] = ids
+    if msgs:
+        return "\n".join(msgs)
+    # v1 asks every tool for the presented ("render") view; the chatbot's answer text comes from it
+    tool = _all_tools().get(name)
+    if tool is not None and "view" in (tool.inputSchema or {}).get("properties", {}):
+        args.setdefault("view", "render")
+    return call_tool_raw(name, args, scope)
 
 
 def patch_v1_mcp() -> None:
