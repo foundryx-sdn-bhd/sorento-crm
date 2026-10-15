@@ -1,9 +1,13 @@
 # PLAN: dealer sales targets and incentive schemes (lane SALES-TARGET-DEALER)
 
-Status: **card v2 and mock v2 with the owner** (16 Oct 00:10 rulings folded in: one target
-engine, Q1, Q2, Q4, Q5, separate payout account; Q3 (a) by crew 15 Oct; A1 (a) and A2 (a) by
-crew 16 Oct). Track: full (new
-subject, tier model, Excel import, migration). Build starts after the owner OKs v2.
+Status: **built, in review** (16 Oct). Owner OK on v2 (00:19: "make sure we can configure all
+the sales targets in the excel using this architecture"), with the gate that every row of both
+Excel files is representable. Slices 1 to 3 built on PR #1715: the one engine
+(`commission_service.payout_for`), migration `sales_0006_dealer_targets`, dealer credit in
+`achievement_service`, the import with its per-row dry-run report and the local
+`scripts/dealer_targets_dry_run.py` for the real files, and the frontend. Security review done
+and fixed; code review and kill test running. Track: full (new subject, tier model, Excel import,
+migration). Open: crew's dry run on the real files (only failing patterns come back, masked).
 
 Parent plan: `PLAN-sales-targets-opportunities-26sep.md` (slice S7, dealer targets, line 1412).
 Mock: `mockups/dealer-targets-15oct.html`. UAC: written after the owner OKs v2, as `dealer-sales-targets-15oct-acceptance-criteria.md`.
