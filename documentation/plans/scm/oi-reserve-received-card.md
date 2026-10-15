@@ -96,9 +96,10 @@ a partial accept (88 asked, 80 reserved) and one a zero accept (44 asked, 0).
 **Q1 - Re-link guard (rule 5).**
 - (a) **One small additive table of released links** (line, released target, document, qty,
   who/when). `_linked_by_target` adds released qty to the target's tally, so that SPO/PO line
-  stays used up for EVERY sales order and path (book step, its D3 displacement, relink). The line's
-  own sums never read it. One migration (SQL for the crew test copy) and about four touch points:
-  commit, tally, History, tests.
+  stays used up for EVERY sales order on the book step and its D3 displacement.
+  `relink_to_matching_lines` keeps its own tally (:11633-11636) and needs the same read. The
+  line's own sums never read it. One migration (SQL for the crew test copy) and about five touch
+  points: commit, the two tallies, History, tests.
 - (b) No migration: the book step refuses every received target for lines that have had a CS
   reserve. It protects only this line. Another sales order whose book names the same SPO (21
   targets on dev) can still take the freed qty, so it breaks rule 5 for "other SOs".
