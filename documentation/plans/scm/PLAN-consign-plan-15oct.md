@@ -12,4 +12,4 @@ it to say borrow using the decide and borrow button."
 
 ## Behaviour card
 
-See `CARD-consign-plan-15oct.md` (alongside). Filled in once the code has been read.
+See `CARD-consign-plan-15oct.md` (alongside). Filed as a crew-ask on PR #1712, 15 Oct.
