@@ -11,7 +11,7 @@ Additive only: nullable columns and a new table, so no existing row changes mean
 Downgrade drops them.
 
 Revision ID: sql_0001_set_quote_line
-Revises: ac_consign_0001_doc_type
+Revises: oisn_0001_staged_notify
 Create Date: 2026-10-14
 """
 import sqlalchemy as sa
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "sql_0001_set_quote_line"
-down_revision = "ac_consign_0001_doc_type"
+down_revision = "oisn_0001_staged_notify"
 branch_labels = None
 depends_on = None
 
