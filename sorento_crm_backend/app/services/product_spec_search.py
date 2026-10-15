@@ -915,6 +915,17 @@ def membership_clause(membership: dict[str, Any]):
         # resolvers returned) exists because a value may be a LIST - two finishes
         # on one product - and `#>>` renders a list as its JSON text.
         stored = ProductSpecifications.values[key]["value"]
+        # Chat fix PR-A (AC-A9): a yes-or-no key. Yes is a product that holds yes; no is
+        # one that does not (derivation only ever SETS yes, so an unread key is no, the
+        # same reading `product_spec_rules.gate_passes` gives it). Both is no filter.
+        flags = {v for v in values if isinstance(v, bool)}
+        if flags:
+            said_yes = func.coalesce(func.lower(stored.astext), "false") == "true"
+            if flags == {True}:
+                key_clauses.append(said_yes)
+            elif flags == {False}:
+                key_clauses.append(~said_yes)
+            continue
         # Fix round 8 on PR #833: a grounded number matches the stored number exactly
         # (a JSON number, never a string that happens to read like one).
         numbers = sorted(v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool))
@@ -954,10 +965,10 @@ def filter_specs(
 ) -> dict:
     """The described set as a MEMBERSHIP clause - shape B's filter leg.
 
-    Any spec entry whose value is a non-empty STRING is membership-defining,
-    whatever its key: their coverage is unambiguous yes/no, so a filter on any
-    of them is safe. A numeric entry is dropped here and still reaches the
-    ranker as a boost, so the customer's number is heard, just not
+    Any spec entry whose value is a non-empty STRING or a yes-or-no value is
+    membership-defining, whatever its key: their coverage is unambiguous yes/no,
+    so a filter on any of them is safe. A numeric entry is dropped here and still
+    reaches the ranker as a boost, so the customer's number is heard, just not
     membership-defining (R27/AC-1352).
 
     `scope_terms` are read the same way, one step earlier: a term the caller's
@@ -1007,7 +1018,9 @@ def filter_specs(
     membership: dict[str, set[str]] = {}
 
     def _join(key: Any, value: Any) -> None:
-        if key and isinstance(value, str) and value.strip():
+        # A yes-or-no value defines membership like a named choice (chat fix PR-A,
+        # AC-A9: "intelligent closet" is is_smart yes, and dropping it answered every WC).
+        if key and (isinstance(value, bool) or isinstance(value, str) and value.strip()):
             membership.setdefault(str(key), set()).add(value)
 
     for entry in specs or []:
