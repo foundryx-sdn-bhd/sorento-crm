@@ -25,6 +25,83 @@ EST_TURN_USD, EST_TURN_SECONDS = 0.008, 7
 SUMMARY_FIELDS = 4
 
 
+# ---- isolation: every prior-turn read is limited to the current scenario's own console run_id ----------------
+_ISOLATION: dict[str, Any] = {"run_id": None, "scoping": 0, "installed": False, "user_block": None}
+
+
+def install_isolation() -> None:
+    """Limit every prior-turn read of the chatbot path to the current run (`test_run_id` in the stored envelope).
+
+    The readers (`turn_runtime.previous_reply_text`, `turn_runtime.recent_exchanges`, and the engine's
+    `_memory_intake`, which reads the contact's earlier turns and closed conversation frames) all query
+    `chatbot.turns` / `conversation_frames` by contact. Each is wrapped so that, while it runs, a session-level
+    ORM criterion restricts ChatbotTurn to rows whose envelope carries this run's id and hides every
+    ConversationFrame. Nothing else is touched (the borrowed inbound envelope and by-id reads run outside the
+    wrappers). Also records the parser's user block for the JSONL row."""
+    if _ISOLATION["installed"]:
+        return
+    from sqlalchemy import event, false
+    from sqlalchemy.orm import Session, with_loader_criteria
+
+    from app.models.chatbot_turn import ChatbotTurn
+    from app.models.conversation_frame import ConversationFrame
+    from app.services.chatbot import engine, turn_runtime
+    from app.services.chatbot.head import parser
+
+    @event.listens_for(Session, "do_orm_execute")
+    def _scope(state: Any) -> None:
+        if not _ISOLATION["scoping"] or not state.is_select:
+            return
+        run_id = _ISOLATION["run_id"]
+        state.statement = state.statement.options(
+            with_loader_criteria(ChatbotTurn, lambda cls: cls.envelope["test_run_id"].astext == run_id,
+                                 include_aliases=True),
+            with_loader_criteria(ConversationFrame, lambda cls: false(), include_aliases=True),
+        )
+
+    def scoped(fn: Any) -> Any:
+        def wrapper(*a: Any, **k: Any) -> Any:
+            _ISOLATION["scoping"] += 1
+            try:
+                return fn(*a, **k)
+            finally:
+                _ISOLATION["scoping"] -= 1
+        wrapper.__name__ = getattr(fn, "__name__", "scoped")
+        return wrapper
+
+    turn_runtime.previous_reply_text = scoped(turn_runtime.previous_reply_text)
+    turn_runtime.recent_exchanges = scoped(turn_runtime.recent_exchanges)
+    engine._memory_intake = scoped(engine._memory_intake)
+
+    real_parse = parser.parse
+
+    def recording_parse(config: Any, user_block: str) -> Any:
+        _ISOLATION["user_block"] = user_block
+        return real_parse(config, user_block)
+
+    parser.parse = recording_parse
+    _ISOLATION["installed"] = True
+
+
+def history_seen() -> dict[str, Any]:
+    """What the parser's user block held of earlier turns on the turn just run."""
+    block = _ISOLATION.get("user_block") or ""
+    lines = block.splitlines()
+    out: dict[str, Any] = {"recent_exchanges": None, "previous_response": None, "earlier_messages": []}
+    for i, ln in enumerate(lines):
+        if ln.startswith("Recent exchanges"):
+            tail = "\n".join(lines[i + 1:])
+            out["recent_exchanges"] = tail.split("\nKnown brands")[0]
+            out["recent_exchange_count"] = out["recent_exchanges"].count("\nUser: ") + out["recent_exchanges"].startswith("User: ")
+        elif ln.startswith("Previous response"):
+            out["previous_response"] = ln
+        elif "earlier" in ln.lower() and "message" in ln.lower():
+            out["earlier_messages"].append(ln[:300])
+    out["user_block_chars"] = len(block)
+    out["user_block"] = block[:8000]
+    return out
+
+
 def call_cost(c: dict[str, Any]) -> float | None:
     p = PRICES.get(c.get("model") or "")
     if not p:
@@ -177,6 +254,8 @@ def run_one_turn(contact: str, text: str, session_vars: dict, run_id: str, pvid:
 
     from . import v1_replay
 
+    install_isolation()
+    _ISOLATION["run_id"], _ISOLATION["user_block"] = run_id, None
     db = SessionLocal()
     started = time.monotonic()
     try:
@@ -201,6 +280,7 @@ def run_one_turn(contact: str, text: str, session_vars: dict, run_id: str, pvid:
     idmap = _id_code_map(trace)
     reply = "\n".join(t for t in [res.reply_text, *(res.send_messages or [])] if t)
     return {
+        "history_seen": history_seen(), "run_id": run_id,
         "reply": reply, "branch_kind": res.branch_kind, "turn_id": res.turn_id, "latency_ms": latency_ms,
         "parser": {
             "intent": derived.get("intent_hint"), "domain_hint": derived.get("domain_hint"),
