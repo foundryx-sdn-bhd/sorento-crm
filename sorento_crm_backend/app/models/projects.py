@@ -909,7 +909,7 @@ class ProjectSeriesProduct(Base):
 
 
 class ProjectSeriesSet(Base):
-    """One product SET priced into a series, same shape as ``ProjectSeriesProduct``.
+    """One product SET priced into a series, the set counterpart of ``ProjectSeriesProduct``.
 
     A set is quoted as ONE line, so the series prices the set itself (not its parts). Reached
     only through the company-scoped series, like the product link above.
@@ -927,7 +927,12 @@ class ProjectSeriesSet(Base):
         {"schema": "projects"},
     )
 
-    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    id = Column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=_uuid_str,
+        server_default=text("gen_random_uuid()"),
+    )
     series_id = Column(
         UUID(as_uuid=False),
         ForeignKey("projects.series.id", ondelete="CASCADE"),
