@@ -72,3 +72,7 @@ order at BRW-BB). CON holds 6 of each product, flagged out of fulfilment plannin
    .../reset-planning` 200, decision removed, order reads 0 of 3 planned.
 8. API: board for `CG-SBX/08-072,SO-SBX-0001` admits only the sales order line (fully returned CG
    has nothing to plan); its Borrow candidates are BRW-BB only, never CON.
+9. Fix round 1 (head ff146a7f, B1): after the Reset in step 7, Plan selected (1) again. The
+   board's own suggestion is now Borrow 8, Buy 0. `Save line N as suggested` on the 3 lines, then
+   Confirm (3): "CG-SBX/06-062: confirmed as revision 1 (0 purchase rows handed over)";
+   `projects.order_inquiry_rows` 0.
