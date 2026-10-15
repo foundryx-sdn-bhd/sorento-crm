@@ -7179,10 +7179,10 @@ def _run_stages_body(  # noqa: PLR0915
                 ask = turn_runtime.stamp_customer_ask(
                     db, ask, ctx=ctx, payload=resolver_payload, space_id=space_id_for_turn
                 )
-            same_stamp = turn_runtime.same_stamp_answer(ask)
+            same_stamp = turn_runtime.same_stamp_answer(ask, verdict)
             if same_stamp is not None:
-                # Chat fix PR-B S9: every account reads the same, so that is the answer and
-                # nothing is asked (no roster is armed).
+                # Chat fix PR-B S9: a DO ask where every account reads "no DO": that is the
+                # answer and nothing is asked (no roster is armed).
                 stage[0] = "replied"
                 answer = turn_compose.Answer(text=same_stamp)
                 state_out = dataclasses_replace(state_out, pending=None)

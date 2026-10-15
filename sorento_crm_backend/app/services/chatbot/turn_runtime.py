@@ -3172,16 +3172,25 @@ def stamp_customer_ask(
     return dataclass_replace(ask, options=stamp_customer_options(options, bases))
 
 
-def same_stamp_answer(ask: Any) -> str | None:
-    """Chat fix PR-B S9 (AC-B11, W02 t2): a customer roster whose every option carries the
-    SAME stamp ("no DO" on all four) gives that answer directly, one line per account, with
-    no question: which account was meant changes nothing. None when the roster is mixed,
-    unmeasured (an option with no stamp, the NOT MEASURED reading) or has one option."""
+#: The one stamp that answers a DO question by itself (`pickers.customer_stamp`'s wording).
+_NO_DO_STAMP = "no DO"
+
+
+def same_stamp_answer(ask: Any, verdict: dict[str, Any] | None = None) -> str | None:
+    """Chat fix PR-B S9 (AC-B11, W02 t2): a DO ask whose customer roster reads "no DO" on
+    every option gets that answer directly, one line per account, with no question: which
+    account was meant changes nothing. Review M1: only a DO ask (the parser's `document`
+    DO alone, or a DO status), and only "no DO" (an account with DOs still has a list to
+    pick). None otherwise: mixed, unmeasured (an option with no stamp), one option."""
     if getattr(ask, "kind", None) != "customer_pick":
         return None
+    verdict = verdict if isinstance(verdict, dict) else {}
+    documents = {jsc.js_string(d).strip().upper() for d in jsc.array(verdict.get("document"))}
+    status = jsc.js_string(verdict.get("order_status") or "").strip()
+    if documents != {"DO"} and status not in ("delivered", "do_outstanding"):
+        return None
     options = [o for o in (ask.options or []) if isinstance(o, dict) and o.get("label") is not None]
-    stamps = {o.get("stamp") for o in options}
-    if len(options) < 2 or len(stamps) != 1 or not next(iter(stamps)):
+    if len(options) < 2 or any(o.get("stamp") != _NO_DO_STAMP for o in options):
         return None
     return "\n".join(f"{o['label']} - {o['stamp']}" for o in options)
 
