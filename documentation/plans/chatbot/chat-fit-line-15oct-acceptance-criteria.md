@@ -70,6 +70,13 @@ their own `ZZT*` products and links (CI's DB is empty).
 - AC-22 (reviewer round 2) The ANCHOR code is held to the same rule: a hidden anchor (with or
   without links, or a model token whose host SKUs are all hidden) runs on as typed: no line, no
   "No ... on record" claim. The carry path never names a hidden linked product.
+- AC-23 (crew audit 15 Oct) No fit line on a refusal reply: stock not allowed (`stock_denied`),
+  customer scope refused, sales report not granted, a domain denied for the contact's tier (a
+  `denied` envelope), escalation barred ("Please refer to your salesman."), and the business
+  lane's fixed refusals ("That breakdown is not available for your account." etc.). The refusal
+  is sent exactly as on main. A no-link line ("No seat cover is on record ...") never replaces a
+  refusal either. A field-level partial denial inside a real answer ("I can't share the List
+  Price ...") keeps the line: the answer still carries the product's facts.
 - AC-21 Several-code and model-family lines are asserted exactly (no `startswith`).
 
 ## Live (opt-in, `CHATBOT_LIVE_LLM=1`, dev parser v94 = prod v63 shape)
