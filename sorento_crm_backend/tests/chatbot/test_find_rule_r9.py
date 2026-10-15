@@ -18,7 +18,7 @@ def test_a_bare_fit_ask_is_product_information() -> None:
     m = re.search(r"With nothing else asked.{0,400}", text, re.S)
     assert m
     clause = m.group(0)
-    assert "master_products" in clause and "check_product" in clause
+    assert "the message asks for the related products' information; a file domain" in clause
     assert "never sets master_products" not in text
     assert "a file domain needs a file word in THIS message" in text
     assert "BARE ENTITY CONTINUATION of a file answer" in text
