@@ -183,7 +183,8 @@ def apply_turn(
         else:
             # R6 A: a domain or open question offers the domains that take what is held.
             options = _options_for(st, about) or (
-                _domain_options(st, granted_reveals, dealer=stock_availability_only) if about in ("domain", "other") else []
+                _domain_options(st, granted_reveals, dealer=stock_availability_only)
+                if about in ("domain", "other") else []
             )
             # An entity question without options never quotes a phrase (no list to pick from).
             phrase = out.clarify.phrase if options or about != "which_held" else None
@@ -1916,14 +1917,19 @@ def _size_miss(
 
 
 def _which_held_options(refs: list[ResolvedRef]) -> list[Option]:
-    return [
-        Option(
-            key=str(n),
-            label=r.label,
-            payload={"kind": r.kind, "key": r.key, "label": r.label, "op": "set"},
-        )
-        for n, r in enumerate(refs, start=1)
-    ]
+    """One numbered option per record; a customer group held as several accounts (one ref per account key, one
+    label) is ONE option carrying every account key (owner rule: the group name once, never per account)."""
+    groups: dict[tuple[str, str], list[ResolvedRef]] = {}
+    for r in refs:
+        groups.setdefault((r.kind, r.label) if r.kind == "customer" else (r.kind, r.key), []).append(r)
+    options = []
+    for n, group in enumerate(groups.values(), start=1):
+        r = group[0]
+        payload: dict[str, Any] = {"kind": r.kind, "key": r.key, "label": r.label, "op": "set"}
+        if len(group) > 1:
+            payload["keys"] = [g.key for g in group]
+        options.append(Option(key=str(n), label=r.label, payload=payload))
+    return options
 
 
 #: Domains where v1's `list_all` answers every member of a held family (like the stock ask).
@@ -2183,8 +2189,9 @@ def _domain_options(
 ) -> list[Option]:
     """R6 A: the domains that take every kind held (else every kind of the rows the last answer printed), in v1's
     domain-label order and labelled by v1's own words (`DOMAIN_LABELS`); a pick sets the domain. Never a domain
-    whose grant (`DOMAIN_GRANT_REQUIRED`) the contact lacks, nor a staff-only one to an availability-only `dealer`. R6 rule 2: never none: with nothing held or shown, or no
-    domain taking all of it, every domain the contact may ask is offered."""
+    whose grant (`DOMAIN_GRANT_REQUIRED`) the contact lacks, nor a staff-only one to an availability-only `dealer`.
+    R6 rule 2: never none: with nothing held or shown, or no domain taking all of it, every domain the contact may
+    ask is offered."""
     from app.services.chatbot.lanes.business.answer import DOMAIN_GRANT_REQUIRED, DOMAIN_LABELS
     from app.services.chatbot.lanes.business.gate import ALLOWED
 
@@ -2304,7 +2311,8 @@ def _miss(
         question = PendingQuestion(
             kind=f"clarify_{about}",
             asked=asked,
-            options=_options_for(st, about) or (_domain_options(st, granted, dealer=dealer) if about == "domain" else []),
+            options=_options_for(st, about)
+            or (_domain_options(st, granted, dealer=dealer) if about == "domain" else []),
             asked_turn=st.turn_no,
             misses=1,
         )
