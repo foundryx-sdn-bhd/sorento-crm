@@ -409,6 +409,17 @@ READ_ONLY = {
     SLA_EDIT: {SLA_VIEW},
     SLA_DELETE: {SLA_VIEW},
 }
+READ_ONLY_SLUGS = set().union(*READ_ONLY.values())
+
+
+def test_every_gate_slug_is_in_the_permission_registry():
+    """`allow` stubs the permission check, so a slug misspelt the same way in this file
+    and in a route would pass every case below; the registry is what roles are granted."""
+    from app.rbac.permission_registry import PERMISSION_REGISTRY
+
+    registered = {p["slug"] for p in PERMISSION_REGISTRY}
+    gate_slugs = {w[4] for w in SLUG_WRITES} | READ_ONLY_SLUGS
+    assert gate_slugs - registered == set()
 
 
 @pytest.mark.parametrize(SLUG_PARAMS, SLUG_WRITES, ids=SLUG_IDS)
@@ -509,6 +520,15 @@ def test_scheduled_task_run_now_succeeds_for_admin(client, as_admin, db, seeded,
 
     assert resp.status_code == 200, resp.text
     assert run_now_calls == [seeded["task_id"]]
+
+
+def test_calendar_reads_stay_open_to_a_signed_in_caller(client, allow, db, seeded):
+    """Only the calendar writes move; the config and the holiday list stay readable."""
+    assert allow == set()
+    assert client.get(f"{SYSTEM}/work-calendar-config").status_code == 200
+    resp = client.get(f"{SYSTEM}/public-holidays")
+    assert resp.status_code == 200, resp.text
+    assert [h["name"] for h in resp.json()["data"]] == [HOLIDAY_NAME]
 
 
 def test_scheduled_task_reads_stay_open_to_a_signed_in_caller(client, allow, db, seeded):
