@@ -263,8 +263,10 @@ _ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7, "VIII":
 def account_level_from_name(name: str | None) -> int | None:
     """The `A/C <n>` marker inside a `[..]` or `(..)` of a customer name, as a number.
 
-    Roman I..X or arabic, any case, whitespace tolerant. Read ONCE, by the `acct_ledger_0001`
-    seed; the live bot reads the `customers.account_level` setting, never the name.
+    Roman I..X or arabic, any case, whitespace tolerant. Read by the `acct_ledger_0001` seed and,
+    through `account_level`, by the chatbot's account pick (PV2 R5-3), which tells a family's
+    accounts apart by their printed names; the bot's account scope reads the
+    `customers.account_level` setting.
     """
     if not name:
         return None

@@ -192,7 +192,7 @@ def apply_turn(
     for i, ask in enumerate(out.asks):
         if _bare_switch_back_beside_a_new_ask(out.asks, i, printed_topics):
             continue  # it adds nothing: the other ask carries the subject in that same domain
-        if reads_as_answer(ask, pending_in, st.held):
+        if reads_as_answer(ask, pending_in, held_in):  # the held the pre-check judged with (start of turn)
             ask = ask.model_copy(update={"act": "answers_bot_question"})  # R5-1: the open list owns the number
         held_before, topics_before = st.held.model_copy(deep=True), list(st.topics)
         try:
@@ -413,11 +413,16 @@ def _picks_open_question(ask: Ask, pending: PendingQuestion | None) -> bool:
 
 def reads_as_answer(ask: Ask, pending: PendingQuestion | None, held: Any) -> bool:
     """R5-1 / R5-5: a refine or a new topic that picks the open question is read as its answer (apply_turn and the
-    grant pre-check read it alike). R5 fix 1: a new topic naming its own domain, other than held's, stays a new
-    ask whatever option key it carries ("no, what promotions are on")."""
+    grant pre-check read it alike, both with the held the turn started with). A number on a numbered question is
+    its answer whatever the domain (R5 fix 2). An option key is not when a new topic names a domain other than the
+    question's own (its origin's, else held's): "no, what promotions are on" stays a new ask (R5 fix 1)."""
     if ask.act not in ("refines_held", "new_topic") or not _picks_open_question(ask, pending):
         return False
-    return not (ask.act == "new_topic" and ask.domain and ask.domain != getattr(held, "domain", None))
+    if _number(ask) is not None and _numbered(pending):
+        return True
+    origin = valid_origin(pending.origin) if pending is not None else None
+    own = origin.domain if origin is not None and origin.domain else getattr(held, "domain", None)
+    return not (ask.act == "new_topic" and ask.domain and ask.domain != own)
 
 
 def _roster_kind(pending: PendingQuestion) -> str | None:
