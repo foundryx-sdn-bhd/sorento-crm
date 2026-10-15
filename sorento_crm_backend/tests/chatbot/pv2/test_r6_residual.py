@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from app.services.chatbot.pv2 import answer
 from app.services.chatbot.pv2.apply import apply_turn
 from app.services.chatbot.pv2.state import ClarifyAct, Lookup, Option
@@ -73,3 +75,49 @@ def test_guard_a_contact_offered_the_hand_over_keeps_its_yes_no_offer():  # guar
     parsed = out(ask(act="refines_held", entities=[entity("product", phrase="the grey ones as well")]))
     st, acts = apply_turn(st0, parsed, resolver=FakeResolver({}), now=NOW, can_offer_handover=True)
     assert st.pending.kind == "offer_doc_handover" and [o.key for o in st.pending.options] == ["yes", "no"]
+
+
+# ------------------------------------------------------------------ a number on a confirm is its stored option (lead ruling)
+
+GROUP = "ZEBRA HOMEWARE SDN BHD"
+Z1, Z2 = "CUST-ZEB-1", "CUST-ZEB-2"
+
+
+def _zebra_confirm():
+    """'zebra deliveries this week?': the group named partly, so the bot asked 'Did you mean ZEBRA HOMEWARE SDN BHD?'
+    (the group name only; its yes covers both ledger accounts)."""
+    from tests.chatbot.pv2.carry_fakes import option, pending
+
+    yes = option("yes", GROUP, {"kind": "customer", "key": Z1, "keys": [Z1, Z2], "label": GROUP, "op": "set",
+                                "labels": [f"{GROUP} [A/C I]", f"{GROUP} [A/C II]"]})
+    no = option("no", "No", {"value": False})
+    return mk_state(mk_held("order", status="outstanding"),
+                    pending_=pending("clarify_confirm", [yes, no], asked=f"Did you mean {GROUP}?"))
+
+
+@pytest.mark.parametrize("answer_kw", [
+    {"row_pick": 2},
+    {"answer": {"option_key": None, "free_value": "2"}},
+    {"answer": {"option_key": "2", "free_value": None}},
+], ids=["row-pick", "free-value", "option-key"])
+def test_a_2_on_a_confirm_is_its_stored_second_option_no_never_the_second_account(answer_kw):
+    """RED: '2' to the group-name confirm. MEMORY numbers its stored options 1=yes 2=no, so 2 is the no (asks for the
+    full name), never account II, which HEAD picks."""
+    st, acts = apply_turn(_zebra_confirm(), out(ask(act="answers_bot_question", **answer_kw)), resolver=FakeResolver({}),
+                          now=NOW)
+    assert isinstance(acts[0], ClarifyAct) and acts[0].pending.kind == "clarify_entity", acts
+    assert not st.held.refs.get("customer"), st.held.refs
+
+
+def test_a_1_on_a_confirm_is_its_yes_the_whole_group():
+    st, acts = apply_turn(_zebra_confirm(), out(ask(act="answers_bot_question", row_pick=1)), resolver=FakeResolver({}),
+                          now=NOW)
+    assert isinstance(acts[0], Lookup) and [r.key for r in st.held.refs["customer"]] == [Z1, Z2]
+
+
+def test_guard_naming_one_account_on_the_confirm_still_picks_that_account():  # guard: passes today
+    r = FakeResolver({"entities": {"customer|A/C II": {"status": "exact", "refs": [
+        {"kind": "customer", "key": Z2, "label": f"{GROUP} [A/C II]"}]}}})
+    parsed = out(ask(act="answers_bot_question", entities=[entity("customer", phrase="A/C II")]))
+    st, acts = apply_turn(_zebra_confirm(), parsed, resolver=r, now=NOW)
+    assert isinstance(acts[0], Lookup) and [x.key for x in st.held.refs["customer"]] == [Z2]
