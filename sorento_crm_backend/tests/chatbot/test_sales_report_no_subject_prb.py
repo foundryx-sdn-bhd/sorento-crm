@@ -72,11 +72,20 @@ def test_b16_security_a_non_staff_contact_with_no_links_is_never_rerouted_to_the
     """Review: the reroute gates on 'is office staff', not on 'has no customer links'. A contact
     with no office access type and no links keeps today's behaviour: never the company totals."""
     _seed_contact(session_factory, variables={})
+    import json
+
+    from sorento_crm_mcp.http_client import http_error_body
+
+    # Today's real answer to a subject-less crm_sales_report: HTTP 422 subject_required.
+    err = http_error_body(
+        json.dumps({"message": "A product or a customer is required", "code": "subject_required"}),
+        status_code=422, path="/api/v1/order-management/sales-report", method="GET",
+    )
     _res, reply, captured = _run(
-        session_factory, monkeypatch, _no_subject(), "sales report this month", mcp_response=_rendered(ROUTE_HIT)
+        session_factory, monkeypatch, _no_subject(), "sales report this month", mcp_response=err
     )
     assert _calls(captured, "crm_sales_analysis") == [], captured
-    assert "Sorento" not in reply or "Project team" not in reply, reply
+    assert "Project team: RM" not in reply, reply  # never the company totals
 
 
 def test_b16_a_staff_brand_only_sales_never_ends_in_could_not_fetch(session_factory, monkeypatch) -> None:
