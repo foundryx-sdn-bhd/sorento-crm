@@ -47,6 +47,7 @@ from app.models.project_so import (
     IV_ORDER_BACK,
     OrderInquiry,
     OrderInquiryLink,
+    OrderInquiryReleasedLink,
     OrderInquiryReserveEvent,
     OrderInquiryReserveRequest,
     OrderInquiryReserveRequestRow,
@@ -408,6 +409,22 @@ def _build_commit_context(
             inquiry.project_sales_order_id
         )
 
+    # AC-RR-22: read off the released rows themselves, so the parked (send-later) notice,
+    # rebuilt from the request rows alone, says the same as the immediate one.
+    released_by_rr: Dict[str, List[str]] = {}
+    rr_ids = [item["rr"].id for item in touched]
+    if rr_ids:
+        for rr_id, document in (
+            db.query(
+                OrderInquiryReleasedLink.reserve_request_row_id, OrderInquiryReleasedLink.document
+            )
+            .filter(OrderInquiryReleasedLink.reserve_request_row_id.in_(rr_ids))
+            .order_by(OrderInquiryReleasedLink.created_at.asc(), OrderInquiryReleasedLink.id.asc())
+            .all()
+        ):
+            if document:
+                released_by_rr.setdefault(str(rr_id), []).append(document)
+
     rows_ctx = []
     for item in touched:
         rr = item["rr"]
@@ -423,7 +440,7 @@ def _build_commit_context(
                 "qty_reserved": _qty_str(rr.qty_reserved) if rr.qty_reserved is not None else None,
                 "balance": balance,
                 "remaining": balance,
-                "reason": _context_reason(rr.reason, item.get("released")),
+                "reason": _context_reason(rr.reason, released_by_rr.get(str(rr.id))),
             }
         )
 
@@ -895,7 +912,6 @@ class OrderInquiryReserveService:
         prepared_amendments.sort(key=lambda item: str(item[0].id))
         refresher = ProjectOrderInquiryService(self.db)
         touched_by_request: Dict[str, List[Dict[str, Any]]] = {}
-        released_docs: Dict[str, List[str]] = {}
 
         for rr, row, qty, reason_clean, warehouse_id, release_mode in prepared_reserves:
             rr.qty_reserved = qty
@@ -904,17 +920,13 @@ class OrderInquiryReserveService:
             if qty > _ZERO:
                 code = _warehouse_code(self.db, warehouse_id) or ""
                 if release_mode:
-                    released = refresher.release_received_links(
+                    refresher.release_received_links(
                         row,
                         reserve_request_row_id=rr.id,
                         reserved_qty=qty,
                         location=code,
                         actor_user_id=actor_user_id,
                     )
-                    if released:
-                        released_docs[rr.id] = [
-                            entry.document for entry in released if entry.document
-                        ]
                 self.db.add(
                     OrderInquiryLink(
                         id=str(uuid.uuid4()),
@@ -932,7 +944,7 @@ class OrderInquiryReserveService:
             self._flush_link()
             refresher.refresh_link_state([row])
             touched_by_request.setdefault(rr.request_id, []).append(
-                {"rr": rr, "row": row, "released": released_docs.get(rr.id, [])}
+                {"rr": rr, "row": row}
             )
 
         for row, answered, links_by_rr, current_net, new_net, reason_clean in prepared_amendments:

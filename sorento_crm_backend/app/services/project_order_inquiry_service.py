@@ -3866,7 +3866,18 @@ class ProjectOrderInquiryService:
                 .scalar()
             )
 
-        used_now = _ZERO
+        # OI-RESERVE-RECEIVED: quantity released to a CS reserve stays used up.
+        released_qty = _dec(
+            self.db.query(func.coalesce(func.sum(OrderInquiryReleasedLink.qty), 0))
+            .filter(
+                or_(
+                    OrderInquiryReleasedLink.po_line_id == target_id,
+                    OrderInquiryReleasedLink.spo_allocation_id == target_id,
+                )
+            )
+            .scalar()
+        )
+        used_now = released_qty
         protected_qty = _ZERO
         displaceable: List[Tuple[OrderInquiryLink, OrderInquiryRow]] = []
         for link in links:
@@ -3896,7 +3907,7 @@ class ProjectOrderInquiryService:
                 continue
             displaceable.append((link, row))
 
-        max_gain = min(amount_needed, capacity - protected_qty)
+        max_gain = min(amount_needed, capacity - protected_qty - released_qty)
         if max_gain <= _ZERO:
             return _ZERO, []
         to_free = max_gain - (capacity - used_now)
@@ -11859,6 +11870,10 @@ class ProjectOrderInquiryService:
 
         Each link is recorded in `order_inquiry_released_links` (so the target stays used
         up), then deleted the way an unlink does, with its own note. Open links stay."""
+        # Locked, so a concurrent unlink cannot leave a released row for a link that is gone.
+        self.db.query(OrderInquiryLink.id).filter(
+            OrderInquiryLink.row_id == row.id
+        ).with_for_update().all()
         links = self.received_links_of(row.id)
         if not links:
             return []
