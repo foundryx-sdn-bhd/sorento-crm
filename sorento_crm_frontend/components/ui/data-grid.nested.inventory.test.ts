@@ -62,10 +62,6 @@ const EXPANDED_CONTENT_SITES = new Map<string, string>([
     'BoardLineDecisionPanel - same as above',
   ],
   [
-    'app/(protected)/project-sales/[projectId]/components/QuotationLinesGrid.tsx',
-    'LineDetails - a form (Complete set, Priced per, Notes), no grid',
-  ],
-  [
     'app/(protected)/scm/components/PlanRowDialog.tsx',
     'NESTED GRID: StockDocumentsPanel (PanelDataGrid) inside OnHandTable rows. Covered by the context default AND by its own scrollerMaxHeight={false}',
   ],
@@ -175,11 +171,11 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'Drilldown dialog, rendered BEFORE the list grid in OrderInquiriesClient, not inside it. Already scrollerMaxHeight={false}. (Line moved 57 -> 97 when the cell drilldown gained its `axis`/`axis_key` filters; the census is keyed by line, so a site that moves is a one-line diff here rather than a silent pass)',
   ],
   [
-    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:725',
+    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:405',
     "Demand tab, dialog rendered after the calendar grid closes. Already scrollerMaxHeight={false}. (Line moved 635 -> 588 when R31a folded the R30 SPO/OI columns back into one Covered-by column, still rendering the OI screens' own `OrderInquiryDocumentLink`; 588 -> 636 when R42 linked a covering PO in Covered by and gave the Supply tab its PO-line columns; 684 -> 722 when #1594 added the projected PO coverage from sales orders.)",
   ],
   [
-    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:756',
+    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:436',
     'Supply tab, same dialog. (Line moved 666 -> 619, same round; 619 -> 667 in R42, same as above; 715 -> 753 in #1594.)',
   ],
   [
@@ -207,11 +203,11 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'The DataGridTable of the same grid, not a second one',
   ],
   [
-    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx:261',
+    'app/(protected)/project-sales/_shared/components/RequestReserveDialog.tsx:302',
     "G6 (PLAN-oi-request-cs-reserve.md section 6d): one row per selected line, in a dialog opened as a sibling of the OI Lines tab (Request CS to reserve). Already scrollerMaxHeight={false}. Round 4 review (24 Sep, AC-RS-89): line moved - the inert outer overflow-x-auto wrapper is gone and columnsDraggable: false was added.",
   ],
   [
-    'app/(protected)/project-sales/order-inquiries/[id]/components/ReserveRequestDialog.tsx:273',
+    'app/(protected)/project-sales/_shared/components/RequestReserveDialog.tsx:314',
     'The DataGridTable of the same grid, not a second one',
   ],
   [
