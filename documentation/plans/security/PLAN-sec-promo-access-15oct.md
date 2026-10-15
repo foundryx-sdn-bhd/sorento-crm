@@ -1,6 +1,6 @@
 # PLAN: SEC-PROMO-ACCESS - chatbot promo files fail-open past contact access
 
-Status: in review (small fix track, security: security-reviewer required). Lane SEC-PROMO-ACCESS, PR #1719.
+Status: ready for merge, reviewer READY + security-reviewer READY (small fix track, security). Lane SEC-PROMO-ACCESS, PR #1719. Owner approved shipping without a hand test.
 
 ## Finding
 A dealer contact holding only Sorento Dealer asked "Any promo for Cabana WC?" and got Cabana files,
@@ -26,6 +26,18 @@ Prod `3d4787ce0` carries the same code on every one of these files.
    contact (non-blank `contact_id`) with no usable level returns `[]` (nothing). Used by all six
    promotion routes that filter on access level. Staff callers send no `contact_id`: unchanged.
 3. `answer_bridge.no_live_kind_reply` makes no list call when the contact holds no level.
+
+Security review round 1 (both blocking, both fixed red-first):
+- B1: `PromotionProductService.list_promotion_products` inlined every file of a visible promotion;
+  it now filters them by the contact's codes like the promotions list and get do.
+- B2: a promotion fetch with no resolver tier gate sent the parser's (customer-claimed) levels;
+  the runner now builds the tier gate from the contact's real access types, closed on a read failure.
+
+Follow-ups (not this PR): F1 miss_suggest / resolve_gate probes send parser-claimed levels (names
+only, no files); F2 API-key callers omitting `contact_id` still read every level; F3 get_promotion
+filters inline files only; F4 product attachments / certificates apply no access-level filter;
+`no_live_kind_reply` sends no `contact_id` (company scope); the brand denial on the no-resolver path
+prints the generic miss (wording only, nothing is read).
 
 ## Sweep: other contact-facing document paths
 - `crm_master_product_attachments_list`, `crm_certificates_list`, `crm_resource_attachments_*`
