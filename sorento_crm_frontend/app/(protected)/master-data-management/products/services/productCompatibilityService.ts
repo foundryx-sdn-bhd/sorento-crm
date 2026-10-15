@@ -1,16 +1,17 @@
 /**
- * Seat cover <-> WC compatibility - feature service.
+ * Accessory <-> host compatibility - feature service.
  * Layering: UI -> hooks (useProductCompatibility) -> THIS service -> lib/api-client.
  *
  *  GET  /api/v1/master-data/products/{id}/compatibility -> { data: { covers, fits } }
  *  POST /api/v1/master-data/products/{id}/compatibility
- *       { other_product_id, other_role } -> 201 { data: Row }
+ *       { other_product_id, other_role, kind } -> 201 { data: Row }
  *
  * Unlink (`product_compatibility.unlink`) is a deferred action, not called from here.
  */
 import { apiFetch } from '@/lib/api';
 import { extractApiError } from '@/lib/api-client';
 import type {
+  CompatibilityKind,
   CompatibilityRole,
   ProductCompatibilityResult,
   ProductCompatibilityRow,
@@ -37,6 +38,7 @@ export async function addProductCompatibility(
   productId: string,
   otherProductId: string,
   otherRole: CompatibilityRole,
+  kind: CompatibilityKind,
 ): Promise<ProductCompatibilityRow> {
   const res = await apiFetch(base(productId), {
     method: 'POST',
@@ -44,6 +46,7 @@ export async function addProductCompatibility(
     body: JSON.stringify({
       other_product_id: otherProductId,
       other_role: otherRole,
+      kind,
     }),
   });
   if (!res.ok)

@@ -91,6 +91,7 @@ def _linked_codes_holding(db: Any, token: str) -> list[Any]:
     from app.models.product import Product
     from app.models.product_compatibility import ProductCompatibility
     from app.services.product_alternative_service import _norm_sql, normalize_code
+    from app.services.product_compatibility_service import KIND_SEAT_COVER
 
     if len(token) < 3:
         return []
@@ -99,7 +100,8 @@ def _linked_codes_holding(db: Any, token: str) -> list[Any]:
         db.query(Product)
         .join(
             ProductCompatibility,
-            or_(ProductCompatibility.wc_product_id == Product.id, ProductCompatibility.seat_cover_product_id == Product.id),
+            (ProductCompatibility.kind == KIND_SEAT_COVER)
+            & or_(ProductCompatibility.wc_product_id == Product.id, ProductCompatibility.seat_cover_product_id == Product.id),
         )
         .filter(_norm_sql(Product.product_code).like(f"%{escaped}%", escape="\\"))
         .distinct()
