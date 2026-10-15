@@ -378,3 +378,38 @@ def test_partly_linked_row_asks_only_for_its_open_remainder(rs, monkeypatch):
     ]
     cells = re.findall(r">\s*([0-9.]+)\s*<", body_html)
     assert "6" in cells and "10" not in cells
+
+
+# ------------------------------------------------------------------------- OI Excel
+
+
+@pytest.fixture()
+def stored(monkeypatch):
+    uploads: list[dict] = []
+
+    class _Backend:
+        def upload_file(self, *, file_content, file_path, content_type=None, **_kw):
+            uploads.append({"bytes": file_content, "key": file_path})
+            return file_path, None
+
+    monkeypatch.setattr("app.services.storage_router.get_backend", lambda provider=None: _Backend())
+    return uploads
+
+
+def test_resend_attaches_the_oi_excel_and_preview_names_it_without_storing(rs, stored):
+    client, world = rs
+    _automation(world)
+    inquiry = _oi(world)
+    _line(world, inquiry)
+    world.db.refresh(inquiry)
+    name = f"{inquiry.inquiry_no}.xlsx"
+
+    email = _ok(client.post(PREVIEW, json={"inquiry_ids": [inquiry.id]}))["emails"][0]
+    assert email["attachments"] == [name]
+    assert stored == []  # a preview stores nothing
+
+    _ok(client.post(SEND, json={"inquiry_ids": [inquiry.id]}))
+    [note] = _notifications(world, inquiry.id)
+    [excel] = [a for a in note.data["extra_attachments"] if a["filename"] == name]
+    [upload] = [u for u in stored if u["key"] == excel["storage_key"]]
+    assert upload["bytes"][:2] == b"PK"
