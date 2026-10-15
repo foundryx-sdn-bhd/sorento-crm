@@ -53,6 +53,9 @@ vi.mock('../../_shared/hooks/useOrderInquiry', () => ({
   useReserveStatusSummary: () => ({ data: undefined }),
   useParkedPreview: () => ({ data: undefined, isLoading: false }),
   useSendParked: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // OI-RESEND-PURCHASING: harness only (no assertion changed).
+  useHandoverResendPreview: () => ({ data: undefined, isLoading: false, error: null }),
+  useSendHandoverResend: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 import { OrderInquiryHeadersList } from './OrderInquiryHeadersList';

@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Send } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   ColumnDef,
   PaginationState,
+  RowSelectionState,
   SortingState,
   getCoreRowModel,
   useReactTable,
@@ -18,6 +20,7 @@ import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
 import { DataGridPagination } from '@/components/ui/data-grid-pagination';
+import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -39,6 +42,7 @@ import {
   type ParkedKind,
 } from '../../_shared/hooks/useOrderInquiry';
 import { ParkedSendDialog } from '@/components/common/ParkedSendDialog';
+import { HandoverResendDialog } from '../../_shared/components/HandoverResendDialog';
 import { formatInquiryQty } from '../../_shared/lib/orderInquiryWorklist';
 import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import {
@@ -61,6 +65,7 @@ const LISTING_KEY = 'projects.projects.view::order-inquiry-headers';
 
 type StateFilter = 'all' | 'outstanding' | 'completed';
 
+const ACTION_PERMISSION = 'projects.order_inquiry.action';
 const ACKNOWLEDGE_PERMISSION = 'projects.order_inquiries.acknowledge';
 const RESERVE_PERMISSION = 'projects.order_inquiries.reserve';
 
@@ -168,6 +173,13 @@ export function OrderInquiryHeadersList() {
     projectFilter,
     reserveFilter,
   ]);
+  // A tick on a row the new filter excludes is not a selection any more.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  useEffect(() => {
+    setRowSelection({});
+  }, [stateFilter, searchQuery, raisedByFilter, agentFilter, projectFilter, reserveFilter]);
+  const [resendIds, setResendIds] = useState<string[] | null>(null);
+  const closeResend = useCallback(() => setResendIds(null), []);
 
   const params = useMemo<OrderInquiryHeaderListParams>(
     () => ({
@@ -221,6 +233,7 @@ export function OrderInquiryHeadersList() {
   });
   const worklistSummary = useOrderInquiryWorklistSummary({});
 
+  const canAct = useHasPermission(ACTION_PERMISSION);
   const canAcknowledge = useHasPermission(ACKNOWLEDGE_PERMISSION);
   const canReserve = useHasPermission(RESERVE_PERMISSION);
   const reserveSummary = useReserveStatusSummary();
@@ -313,6 +326,9 @@ export function OrderInquiryHeadersList() {
 
   const columns = useMemo<ColumnDef<OrderInquiryHeader>[]>(
     () => [
+      ...(canAct
+        ? [buildSelectColumn<OrderInquiryHeader>({ rowLabel: (row) => `Select ${row.original.inquiry_no}` })]
+        : []),
       {
         accessorKey: 'raised_at',
         header: ({ column }) => <DataGridColumnHeader title="Raised at" column={column} />,
@@ -534,7 +550,7 @@ export function OrderInquiryHeadersList() {
         ),
       },
     ],
-    [],
+    [canAct],
   );
 
   const table = useReactTable({
@@ -542,7 +558,9 @@ export function OrderInquiryHeadersList() {
     data: rows,
     pageCount: Math.ceil((data?.total || 0) / pagination.pageSize),
     getRowId: (row) => row.id,
-    state: { pagination, sorting },
+    state: { pagination, sorting, rowSelection },
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: canAct,
     onPaginationChange: setPagination,
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
@@ -616,6 +634,22 @@ export function OrderInquiryHeadersList() {
             }
             secondaryActions={sendActions}
             secondaryActionsAsMenu
+            bulkActions={
+              canAct
+                ? [
+                    {
+                      key: 'send-to-purchasing',
+                      label: 'Send to purchasing',
+                      icon: Send,
+                      onClick: () =>
+                        // Ids, not loaded rows: a tick on an earlier page still counts.
+                        setResendIds(
+                          Object.keys(rowSelection).filter((rowId) => rowSelection[rowId]),
+                        ),
+                    },
+                  ]
+                : []
+            }
             filters={{
               kind: 'custom',
               // The list stays readable (and the state toggle reachable) while a filter is set.
@@ -718,6 +752,7 @@ export function OrderInquiryHeadersList() {
           <DataGridPagination />
         </CardFooter>
       </Card>
+      <HandoverResendDialog inquiryIds={resendIds} onClose={closeResend} />
       <ParkedSendDialog
         open={parkedKind !== null}
         onOpenChange={(next) => {
