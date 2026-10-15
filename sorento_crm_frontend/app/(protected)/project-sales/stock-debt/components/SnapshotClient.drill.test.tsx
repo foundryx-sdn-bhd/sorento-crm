@@ -417,8 +417,10 @@ function groupOf(dialog: HTMLElement, inquiryNo: string): HTMLElement {
   return el;
 }
 
+/** The FIRST row carrying `text`: a group can hold several lines of one SO (OI-2609-0417
+ * holds two SO383872 lines), and the first is the one these tests read. */
 function rowWith(scope: HTMLElement, text: string): HTMLElement {
-  return within(scope).getByText(text).closest('tr') as HTMLElement;
+  return within(scope).getAllByText(text)[0].closest('tr') as HTMLElement;
 }
 
 beforeEach(() => {
