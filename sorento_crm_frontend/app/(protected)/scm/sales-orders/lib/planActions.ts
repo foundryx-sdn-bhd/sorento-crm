@@ -40,6 +40,8 @@ export interface PlanActionState {
   canPlan: boolean;
   /** The board's `MAX_BOARD_SELECTION`. */
   max: number;
+  /** What the list holds, plural, for the refusal ("Tick the consignments ..."). */
+  noun?: string;
 }
 
 export interface PlanActionHandlers {
@@ -63,7 +65,7 @@ export function buildPlanActions(
       onClick: handlers.onPlan,
       disabled: nothingPicked || tooMany,
       disabledReason: nothingPicked
-        ? 'Tick the sales orders to plan first.'
+        ? `Tick the ${state.noun ?? 'sales orders'} to plan first.`
         : tooMany
           ? `The planning board takes up to ${state.max} orders at a time. ` +
             `${state.selectedCount} are selected.`
