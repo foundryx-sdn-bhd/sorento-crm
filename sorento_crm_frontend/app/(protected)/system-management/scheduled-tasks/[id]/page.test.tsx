@@ -26,9 +26,9 @@ vi.mock('next/navigation', () => ({
 }));
 
 const noopMutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false };
-const useScheduledTask = vi.fn(() => ({
+const useScheduledTask = vi.fn((id: string) => ({
   data: {
-    id: 'task-1',
+    id,
     key: 'respond_contacts_sync',
     name: 'Respond contacts sync',
     description: null,
