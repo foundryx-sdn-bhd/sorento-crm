@@ -1264,17 +1264,6 @@ def render_prompt_blocks(db: "Session") -> str:
 #: product IS (the category entity carries them), and the brand is its own entity kind.
 SPECIFICATION_BLOCK_SKIP = frozenset({"class", "brand", "product_type"})
 
-#: Chat fix PR-A (AC-A7): the category entity's name is one the `{{specs}}` block lists, the
-#: way the KNOWN BRANDS rule holds a brand to the Known brands line. One line, published
-#: right after `{{specs}}` (`chatbot_prompt_vars.publish_specs_block`), never appended to
-#: the code constant (`test_parser_prompt_budget`).
-CATEGORY_NAME_RULE = (
-    "Category rule: a category entity names one of the product classes or product types listed"
-    " above, said in any language or spelling, and its canonical_code is that name exactly AS"
-    ' LISTED, never the customer\'s own spelling ("PaperHolder", "paper-holder" -> canonical_code'
-    ' "Paper holder"); raw stays the customer\'s own words.'
-)
-
 
 def specification_lines(db: "Session") -> list[str]:
     """The `specification` entity kind's vocabulary, one line per registry key (fix
@@ -1288,10 +1277,7 @@ def specification_lines(db: "Session") -> list[str]:
     it; a numeric key's unit and its own words; a yes-or-no key's words. Staff editing a
     choice or a word on Product Specifications reaches the parser at the next publish,
     with no prompt edit. Keys in `(spec_key)` order so the hash is stable. The product
-    classes and the product types close the block as the words the category entity keeps,
-    each with the words customers use for it (chat fix PR-A, AC-A2: "Grab bar (grab bar,
-    handrail, safety bar)", "Jacuzzi (bathtub with massage jets, whirlpool, ...)"). The class
-    key is open (no closed value list): its choices are the values it holds words for."""
+    types close the block as the words the category entity keeps."""
     from app.services.product_spec_registry import (
         active_registry,
         display_spec_value,
@@ -1299,27 +1285,13 @@ def specification_lines(db: "Session") -> list[str]:
         merged_synonyms,
     )
 
-    def named_with_words(row, values) -> list[str]:
-        synonyms = merged_synonyms(row)
-        labels = dict(getattr(row, "value_labels", None) or {})
-        out = []
-        for value in dict.fromkeys(values):
-            words = [w for w in synonyms.get(value) or [] if w]
-            shown = display_spec_value(value, labels)
-            out.append(f"{shown} ({', '.join(words)})" if words else shown)
-        return out
-
     lines: list[str] = []
     types: list[str] = []
-    classes: list[str] = []
     for row in active_registry(db):
         synonyms = merged_synonyms(row)
         labels = dict(getattr(row, "value_labels", None) or {})
         if row.spec_key == "product_type":
-            types = named_with_words(row, merged_allowed_values(row))
-            continue
-        if row.spec_key == "class":
-            classes = named_with_words(row, [*merged_allowed_values(row), *synonyms])
+            types = [display_spec_value(v, labels) for v in dict.fromkeys(merged_allowed_values(row))]
             continue
         if row.spec_key in SPECIFICATION_BLOCK_SKIP:
             continue
@@ -1351,10 +1323,8 @@ def specification_lines(db: "Session") -> list[str]:
             choices.append(f"{shown} = {value}" + (f" ({', '.join(words)})" if words else ""))
         if choices:
             lines.append(f"{head}: choices {'; '.join(choices)}.")
-    if classes:
-        lines.append(f"Product classes (the category entity keeps these, never a specification): {'; '.join(classes)}.")
     if types:
-        lines.append(f"Product types (the category entity keeps these, never a specification): {'; '.join(types)}.")
+        lines.append(f"Product types (the category entity keeps these, never a specification): {', '.join(types)}.")
     return lines
 
 

@@ -1,9 +1,10 @@
 # PLAN: chat fix PR-A, spec matching (lane CHAT-ADVISOR-SPIKE, chat-fix LEAD)
 
-Status: Plan. Track: L (registry seed migration + one new parser prompt version + code in grounding, search and
-prompt rendering). Owner GO 16 Oct 00:55 ("Ok start"); chatbot freeze lifted for this plan only. Branch
-`crew/chat-fix-spec` off origin/main ccb1ce9820. Source analysis: `ARCH-advisor-16oct.html` sections E, B and 2
-(PR #1711).
+Status: Build, SPLIT (crew 16 Oct ~04:30). PR-A = code fixes + registry data; the parser input stays byte-identical to
+main / prompt v94 (proof: sha256 parity of the rendered parser input). The parser vocabulary (has_massage line,
+Product classes line, product type words, category rule, specs publisher) moves to PR-A2 after a G005 root cause:
+it caused a stable parser-gold regression (TRAIN G005, v94@main 2/2 right, v104 0/5). Reviewer READY (2 should-fix
+folded into the coder's round 2). Track: L. Spend so far $7.68 (gate runs incl. true baseline and A/B).
 
 ## Goal
 
@@ -73,3 +74,13 @@ PR-A owns these lines now. No other open PR touches `product_class_signal.py`.
 - Walkthrough W11/W12/W10/W04/W05/W09 (written for) + the rest (not written for), staff + dealer, v94 vs the PR
   prompt version (`scripts/advisor_spike/walkthrough.py`, kept out of the PR).
 - Parser gold TRAIN 137 items x 2 runs on the PR prompt version (~$1.6).
+
+## Owner data clean-up (outside the PR; owner runs it, UPDATE on product data)
+
+Dev products filed under the "Bathtub and Jacuzzi" category that are not plain bathtubs, so a plain "bathtub" ask
+still lists them (owner ruling: bathtub is not jacuzzi). Move them in Product Categories, then re-read the catalogue:
+- Jacuzzis -> a Jacuzzi category: MJ-827 (two rows), SRTJC2553AB, SRTJC3630AB, SRTJC6669.
+- Jacuzzi accessories -> an accessory category: SRTJC-PILLOW, SRTJC102-PARTS.
+- Shower screens -> a shower screen / enclosure category: BK2085SS, BK2090SS, BK2160SS, F538, F542.
+- Check: SRTJC8037 is described as a free standing bathtub but carries a jacuzzi code prefix.
+- Data words: dev grab bar synonyms lack "handrail" (AC-A2's example); add it in the Spec Registry if wanted.
