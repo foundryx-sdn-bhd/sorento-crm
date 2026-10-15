@@ -1369,6 +1369,9 @@ class OrderInquiryReserveRequest(Base, CompanyScopedMixin):
     reserved_at = Column(DateTime(timezone=False), nullable=True)
     cancelled_by = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     cancelled_at = Column(DateTime(timezone=False), nullable=True)
+    # OI-STAGED-NOTIFY: set while the request is parked (saved, not yet mailed to CS);
+    # who parked it is `requested_by`. NULL = sent (legacy rows count as sent).
+    parked_at = Column(DateTime(timezone=False), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -1379,6 +1382,11 @@ class OrderInquiryReserveRequest(Base, CompanyScopedMixin):
             "order_inquiry_id", "ordinal", name="uq_order_inquiry_reserve_requests_ordinal"
         ),
         Index("ix_order_inquiry_reserve_requests_inquiry", "order_inquiry_id"),
+        Index(
+            "ix_order_inquiry_reserve_requests_parked",
+            "parked_at",
+            postgresql_where=text("parked_at IS NOT NULL"),
+        ),
         {"schema": "projects"},
     )
 
@@ -1414,6 +1422,12 @@ class OrderInquiryReserveRequestRow(Base, CompanyScopedMixin):
     )
     qty_reserved = Column(Numeric(15, 4), nullable=True)
     reason = Column(Text, nullable=True)
+    # OI-STAGED-NOTIFY: a parked notice to purchasing (CS answered, not yet mailed).
+    # `notified_qty` is the figure purchasing was last told; a row is actionable while
+    # `qty_reserved` differs from it (NULL counts as different).
+    notice_parked_at = Column(DateTime(timezone=False), nullable=True)
+    notice_parked_by = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    notified_qty = Column(Numeric(15, 4), nullable=True)
 
     __table_args__ = (
         CheckConstraint("qty_requested > 0", name="ck_order_inquiry_reserve_rows_qty_positive"),
@@ -1422,6 +1436,11 @@ class OrderInquiryReserveRequestRow(Base, CompanyScopedMixin):
         ),
         Index("ix_order_inquiry_reserve_request_rows_request", "request_id"),
         Index("ix_order_inquiry_reserve_request_rows_row", "row_id"),
+        Index(
+            "ix_order_inquiry_reserve_request_rows_notice_parked",
+            "notice_parked_at",
+            postgresql_where=text("notice_parked_at IS NOT NULL"),
+        ),
         {"schema": "projects"},
     )
 

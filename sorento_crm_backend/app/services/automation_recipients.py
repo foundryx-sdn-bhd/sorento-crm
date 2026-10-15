@@ -120,11 +120,16 @@ def resolve_recipients(
         requester = promotion_context.get("requester") or {}
         if requester.get("email"):
             add(requester.get("email"), requester.get("name"))
+        # OI-STAGED-NOTIFY: a bulk (park, send all) email names every requester in it.
+        for person in promotion_context.get("requesters") or []:
+            add((person or {}).get("email"), (person or {}).get("name"))
 
     if config.get("include_raiser") and promotion_context:
         raiser = promotion_context.get("raiser") or {}
         if raiser.get("email"):
             add(raiser.get("email"), raiser.get("name"))
+        for person in promotion_context.get("raisers") or []:
+            add((person or {}).get("email"), (person or {}).get("name"))
 
     for raw in config.get("extra_emails") or []:
         add(str(raw))

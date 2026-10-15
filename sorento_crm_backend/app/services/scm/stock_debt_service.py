@@ -2259,7 +2259,7 @@ class StockDebtService:
         else:
             for hold in holds:
                 already[hold.line_key] = already.get(hold.line_key, 0.0) + float(hold.qty)
-        out: List[Hold] = []
+        candidates: List[Tuple[str, Dict[str, str], List[DemandLine]]] = []
         for product_id, lines in demand_rows.items():
             floors = {
                 str(event.warehouse): event.key
@@ -2271,11 +2271,18 @@ class StockDebtService:
                 if line.source_ref and line.warehouse and str(line.warehouse) in floors
                 and not line.is_pool and float(line.open_qty) > EPSILON
             ]
-            if not wanted:
-                continue
-            received = self.supply._po_received_by_so_line_ref(
-                [line.source_ref for line in wanted], product_id=product_id, company_id=None
-            )
+            if wanted:
+                candidates.append((product_id, floors, wanted))
+        # STOCK-DEBT-PERF: one batched read for every product, not two per product.
+        received_by_product = self.supply._po_received_by_product(
+            {
+                product_id: [line.source_ref for line in wanted]
+                for product_id, _floors, wanted in candidates
+            }
+        )
+        out: List[Hold] = []
+        for product_id, floors, wanted in candidates:
+            received = received_by_product.get(str(product_id), {})
             for line in wanted:
                 landed, _document = received.get(
                     str(line.source_ref).strip(), (Decimal("0"), None)

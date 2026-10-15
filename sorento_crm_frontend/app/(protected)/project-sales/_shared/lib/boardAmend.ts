@@ -714,13 +714,27 @@ function sumSources(sources: BoardSource[], kind: string): number {
 }
 
 /**
+ * CANCEL-STOP-AT-SO (owner, 14 Oct 23:20): an AutoCount Cancel SO cancelled this line and
+ * order inquiry rows still rest on it. The sync saved Transfer to Cancel SO for it; CS confirms
+ * that (the same cancel as any board transfer) or dismisses it. The one cancelled line the
+ * board still decides, and Transfer to Cancel SO is all it can be decided as.
+ */
+export function awaitsCancelSo(
+  contribution: Pick<BoardContribution, 'cancelled' | 'cancel_open_oi_rows'>,
+): boolean {
+  return Boolean(contribution.cancelled && contribution.cancel_open_oi_rows);
+}
+
+/**
  * S3 (D1): which rows the Decide strip may tick, widened from `canQuickSave` - a Confirmed or
  * already-saved row is decidable here too (R3, the owner's own case is amendments), so only an
  * unplannable line (no fulfilment location, `lineFor` returns null for it) or a cancelled one
  * (the book removed it, R3) is refused.
  */
 export function canDecide(contribution: BoardContribution): boolean {
-  return !contribution.unplannable && !contribution.cancelled;
+  return (
+    !contribution.unplannable && (!contribution.cancelled || awaitsCancelSo(contribution))
+  );
 }
 
 /** The Decide menu's six items (R14), the vocabulary's own kinds plus the non-supply pick. */
@@ -817,6 +831,10 @@ export function decideComposition(
   pick?: string,
   claimed?: Map<string, number>,
 ): DecideComposition {
+  // CANCEL-STOP-AT-SO: AutoCount cancelled the line; transferring it is all that is left.
+  if (way !== 'cancel_so' && awaitsCancelSo(contribution)) {
+    return { skip: 'cancelled in AutoCount, transfer it to Cancel SO' };
+  }
   const openMinor = toMinor(contribution.qty);
   // OI-CLOSED-LINE (owner Q1 (a)): what the customer already received needs no free stock,
   // the same credit Confirm gives. Only the rest is drawn from what is free.
@@ -833,7 +851,11 @@ export function decideComposition(
 
   if (way === 'cancel_so') {
     // SO-CANCEL-LINE: a whole-line cancel carries no composition. A confirmed line must be
-    // rejected first, and an already cancelled one has nothing left to cancel.
+    // rejected first, and an already cancelled one has nothing left to cancel - except a
+    // line AutoCount cancelled, which waits for exactly this transfer (CANCEL-STOP-AT-SO).
+    if (awaitsCancelSo(contribution)) {
+      return { reserve: [], borrow: [], timely_spo_qty: '0', buy_qty: '0', order_back: false };
+    }
     if (contribution.cancelled) return { skip: 'already cancelled' };
     // `covered` with no `decision` is a live inquiry row only: the server allows that cancel.
     if (contribution.covered && contribution.decision) {
