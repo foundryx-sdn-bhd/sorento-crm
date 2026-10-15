@@ -471,11 +471,14 @@ def test_service_other_task_key_metadata_is_not_validated():
 
 
 @pytest.fixture
-def http_client():
-    """A TestClient authenticated as a bare principal, `get_db` pointed at a blank
-    scratch schema. The scheduled-tasks router carries no permission dependency beyond
-    `get_current_user`, and its module guard short-circuits with `module_guard_strict`
-    off (the default) - so no role/permission seeding is needed."""
+def http_client(monkeypatch):
+    """A TestClient authenticated as an admin principal, `get_db` pointed at a blank
+    scratch schema. The scheduled-tasks writes take the admin role (ROUTE-PERM-GATES), so
+    only the role lookup is pinned; the module guard short-circuits with
+    `module_guard_strict` off (the default)."""
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
     with blank_session() as db:
         def _override_get_db():
             yield db

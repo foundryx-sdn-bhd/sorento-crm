@@ -7,6 +7,7 @@ import { MoveLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
+import RequireAccess from '@/app/components/common/RequireAccess';
 import SLAPolicyForm from '../../components/SLAPolicyForm';
 
 export default function EditSLAPolicyPage({ params }: { params: Promise<{ id: string }> }) {
@@ -14,7 +15,7 @@ export default function EditSLAPolicyPage({ params }: { params: Promise<{ id: st
   const router = useRouter();
 
   return (
-    <>
+    <RequireAccess permission="sla_management.sla_policies.edit">
       <Container>
         <PageHeader
           title="Edit SLA Policy"
@@ -35,6 +36,6 @@ export default function EditSLAPolicyPage({ params }: { params: Promise<{ id: st
           }}
         />
       </Container>
-    </>
+    </RequireAccess>
   );
 }
