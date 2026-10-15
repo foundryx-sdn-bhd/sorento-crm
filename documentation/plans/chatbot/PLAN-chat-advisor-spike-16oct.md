@@ -147,6 +147,15 @@ max_tools: int = 6) -> list[str]`
   and stamped by code; fact guard on the final reply; one retry with the unsupported tokens named; a second
   failure falls back to the v1 reply (counted as a guard fallback).
 - Models: claude-sonnet-5-5 (effort low) and gpt-5.4-mini. Judge: claude-opus-5-5.
+- **C3** (crew 15 Oct, from the Respond.io research, if time allows): code proposes, the model picks and words it.
+  Code turns the moment's tool results into 1-3 next-best options (in-stock alternative, live promotion, incoming
+  date, matching accessory), each with its sentence already filled from data; the model sees the ask, today's
+  fast-path reply and the options, picks one or none and writes the words around it with a placeholder; code
+  substitutes the filled sentence. No tools for the model, one call; the guard must find no number outside the
+  placeholders.
+
+Design page also carries option E (Respond.io's AI Agent, crew research note RESEARCH-respondio-ai-agent.md) and the
+three ideas taken from it (knowledge lane, tool cards, code proposes / model words).
 
 ## Open questions
 

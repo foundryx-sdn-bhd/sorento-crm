@@ -63,7 +63,7 @@ th{background:var(--muted);font-weight:600}
 <li><a href="#s0">0. Short answer</a></li>
 <li><a href="#s1">1. Today on the 7 layers</a></li>
 <li><a href="#s2">2. What is missing for a salesman</a></li>
-<li><a href="#s3">3. Options A to D</a></li>
+<li><a href="#s3">3. Options A to E</a></li>
 <li><a href="#s4">4. Option C in detail</a></li>
 <li><a href="#s5">5. The n8n failures, head on</a></li>
 <li><a href="#s6">6. Mock conversations</a></li>
@@ -124,19 +124,20 @@ and <b>C2-all</b> (C2 with every read-only tool, which is the shape that failed 
 which one helpful move to make. Each move hard-coded in templates is one more lane; a reasoning step does them as one
 capability.</p>
 
-<h2 id="s3">3. Options A to D</h2>
+<h2 id="s3">3. Options A to E</h2>
 <div class="tw"><table>
-<tr><th></th><th>A. Today (v1)</th><th>B. PV2 as is</th><th>C. Hybrid advisor</th><th>C2. Raw-conversation advisor</th><th>D. Full agent</th></tr>
-<tr><td>Shape</td><td>Parser -> code -> 1 tool -> template</td><td>Smaller parser -> code -> template</td><td>Parser -> fast path for plain asks; selling moments -> advisor (3-6 tools by domain) -> fact guard</td><td>As C, but the advisor reads the raw transcript, not the parse</td><td>One model, raw conversation, all read-only tools, every turn</td></tr>
-<tr><td>Owner's examples</td><td>Only hard-coded moves</td><td>Same as A</td><td>All six, when data supports them</td><td>All six</td><td>All six</td></tr>
-<tr><td>n8n "wrong tool"</td><td>Not possible (code picks)</td><td>Not possible</td><td>Code picks the shelf (domain), model picks among 3-6</td><td>Same shelf as C</td><td>Exposed (model picks among 46)</td></tr>
-<tr><td>n8n "worse with more tools"</td><td>n/a</td><td>n/a</td><td>Capped at 6</td><td>Capped at 6</td><td>Exposed; measured as C2-all</td></tr>
-<tr><td>n8n "slow"</td><td>p50 about 3.5 s</td><td>Parser p50 2.1 s</td><td>Plain asks unchanged; advisor turns pay a loop (cap 4 calls)</td><td>As C</td><td>Every turn pays the loop</td></tr>
-<tr><td>Cost per turn</td><td>Parser $0.0054-0.0062</td><td>Parser $0.0021-0.0024</td><td>Parser + advisor on selling turns only <span class="tag wn">estimate</span> $0.01-0.04 per advisor turn</td><td>As C</td><td>Advisor on every turn, bigger tool list <span class="tag wn">estimate</span> $0.03-0.08</td></tr>
-<tr><td>Made-up facts</td><td>None (templates)</td><td>None (templates)</td><td>Fact guard on every reply; fallback to A</td><td>Same guard</td><td>Same guard, more surface</td></tr>
-<tr><td>Risk</td><td>Low risk, no selling</td><td>Held-out 9/19, same as v1 (crew audit 15 Oct)</td><td>Medium: new layer, bounded</td><td>Medium; depends on whether raw context helps follow-ups</td><td>High: the n8n failure modes, every turn</td></tr>
-<tr><td>Migration</td><td>None</td><td>Switch already built (per contact)</td><td>Additive: flag per contact, falls back to A</td><td>As C</td><td>Big bang replacement</td></tr>
+<tr><th></th><th>A. Today (v1)</th><th>B. PV2 as is</th><th>C. Hybrid advisor</th><th>C2. Raw-conversation advisor</th><th>D. Full agent</th><th>E. Respond.io AI Agent</th></tr>
+<tr><td>Shape</td><td>Parser -> code -> 1 tool -> template</td><td>Smaller parser -> code -> template</td><td>Parser -> fast path for plain asks; selling moments -> advisor (3-6 tools by domain) -> fact guard</td><td>As C, but the advisor reads the raw transcript, not the parse</td><td>One model, raw conversation, all read-only tools, every turn</td><td>Respond.io's built-in LLM agent: one instructions box (max 10,000 chars), knowledge sources (RAG), up to 9 skills chosen from written "when to use" text, reads the last 20 messages + contact fields</td></tr>
+<tr><td>Owner's examples</td><td>Only hard-coded moves</td><td>Same as A</td><td>All six, when data supports them</td><td>All six</td><td>All six</td><td>Wording and engagement yes; live stock, ETA and promotions only through an HTTP skill, which its own guide advises against</td></tr>
+<tr><td>n8n "wrong tool"</td><td>Not possible (code picks)</td><td>Not possible</td><td>Code picks the shelf (domain), model picks among 3-6</td><td>Same shelf as C</td><td>Exposed (model picks among 46)</td><td>Skills chosen from prose; Respond.io says more than 2-3 chained skills gets unpredictable</td></tr>
+<tr><td>n8n "worse with more tools"</td><td>n/a</td><td>n/a</td><td>Capped at 6</td><td>Capped at 6</td><td>Exposed; measured as C2-all</td><td>Capped at 9 skills</td></tr>
+<tr><td>n8n "slow"</td><td>p50 about 3.5 s</td><td>Parser p50 2.1 s</td><td>Plain asks unchanged; advisor turns pay a loop (cap 4 calls)</td><td>As C</td><td>Every turn pays the loop</td><td>Unknown (hosted)</td></tr>
+<tr><td>Cost per turn</td><td>Parser $0.0054-0.0062</td><td>Parser $0.0021-0.0024</td><td>Parser + advisor on selling turns only <span class="tag wn">estimate</span> $0.01-0.04 per advisor turn</td><td>As C</td><td>Advisor on every turn, bigger tool list <span class="tag wn">estimate</span> $0.03-0.08</td><td>Respond.io AI credits per message (pricing in the crew research note)</td></tr>
+<tr><td>Made-up facts</td><td>None (templates)</td><td>None (templates)</td><td>Fact guard on every reply; fallback to A</td><td>Same guard</td><td>Same guard, more surface</td><td>Prompt-only guard: nothing checks a number against our data</td></tr>
+<tr><td>Risk</td><td>Low risk, no selling</td><td>Held-out 9/19, same as v1 (crew audit 15 Oct)</td><td>Medium: new layer, bounded</td><td>Medium; depends on whether raw context helps follow-ups</td><td>High: the n8n failure modes, every turn</td><td>High for live numbers (Stock Visibility, never-leak-ids live in our backend, not theirs); low for static FAQ</td></tr>
+<tr><td>Migration</td><td>None</td><td>Switch already built (per contact)</td><td>Additive: flag per contact, falls back to A</td><td>As C</td><td>Big bang replacement</td><td>A Respond.io assignment rule; our backend reached only through HTTP skills</td></tr>
 </table></div>
+<p class="small">Option E source: crew research note RESEARCH-respondio-ai-agent.md (15 Oct), from respond.io help centre articles; its own prompt guide lists real-time stock checking as a boundary.</p>
 <p class="small">Parser cost and latency: crew parser-gold runs, 15 Oct (v1 about 39k prompt tokens, 38k cached, 441 out; p50 3.3 s, p95 4.0 s). CRM side of a turn p50 0.14 s, p95 0.5 s (crew report CHAT-SPEED).</p>
 
 <h2 id="s4">4. Option C in detail</h2>
@@ -186,6 +187,21 @@ fast-path reply.</li>
 <li><b>Traces</b>: tools called, results, tokens, cost and the guard verdict go into the turn trace, like today.</li>
 </ul>
 
+<h3>Three ideas taken from Respond.io's agent (option E)</h3>
+<ol>
+<li><b>A knowledge lane for static questions.</b> Specs, fitment, policies, how to order: answered only from static
+sources (product attachments, user guides), otherwise "I don't know" plus a handoff. It never states a live number;
+live numbers stay with the tools.</li>
+<li><b>Tool cards instead of a bare tool list.</b> Each tool the advisor may call carries: when it applies, the inputs
+it needs and how to ask for a missing one (one question at a time), and fixed exits (done / ask / hand over to a
+human with a summary / cannot answer). The current product and customer live in state slots, not in the chat
+history.</li>
+<li><b>Code proposes, the model picks and words it (variant C3).</b> Code turns the tool results into 1 to 3
+next-best options (in-stock alternative, live promotion, incoming date, matching accessory), each with its sentence
+already filled from data. The model only chooses one (or none) and writes the words around it; every number stays
+template-filled, so the fact guard has nothing to catch. Tested in the spike as C3 if time allows.</li>
+</ol>
+
 <h2 id="s5">5. The n8n failures, head on</h2>
 <div class="tw"><table>
 <tr><th>n8n failure (owner, memory <code>feedback-parser-routes-not-agent.md</code>)</th><th>Why it happened</th><th>How C answers it</th><th>How the spike checks it</th></tr>
@@ -204,7 +220,8 @@ fast-path reply.</li>
 counter, ETA counter, project; at least 12 follow-ups, the parser's weak spot) + 10 plain control asks. Names masked
 in anything committed.</li>
 <li><b>Arms</b>: v1 today; C and C2 on claude-sonnet-5-5 and gpt-5.4-mini; C2-all on claude-sonnet-5-5; C2 on
-claude-opus-5-5 for the follow-ups (does raw context help with a stronger model?).</li>
+claude-opus-5-5 for the follow-ups (does raw context help with a stronger model?); C3 (code proposes, model picks
+and words) if time allows.</li>
 <li><b>Per scenario</b>: right tools, made-up facts (guard + judge), owner-rule compliance (truthful, no ids, Stock
 Visibility, qty ask in availability mode, clarify not assume, carry quantity), helpfulness (judge rubric), salesman
 move made, p50/p95 latency, tokens and cost per turn.</li>
