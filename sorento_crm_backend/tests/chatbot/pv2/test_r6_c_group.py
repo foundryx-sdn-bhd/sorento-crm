@@ -30,10 +30,14 @@ PARTIAL = ["acfirst", "hanlim trad"]
 GROUP_NAMED = ["Acfirst Ceramics", "J & Y World Hardware"]
 
 
+#: Fixed customer codes (a hash of the phrase changed per process and collided).
+CODE_OF = {phrase: f"GRP{n:02d}" for n, phrase in enumerate(sorted(FAMILIES))}
+
+
 def _world(db, phrase):
     group, names = FAMILIES[phrase]
     for n, name in enumerate(names):
-        S.customer(db, f"GRP{abs(hash(phrase)) % 9999}{n}", name)
+        S.customer(db, f"{CODE_OF[phrase]}{n}", name)
     contact = _contact(db)
     _salesperson(db, contact)
     resolver, _ = _resolver(db, contact)
