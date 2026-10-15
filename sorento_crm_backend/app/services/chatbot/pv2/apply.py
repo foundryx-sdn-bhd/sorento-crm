@@ -192,7 +192,7 @@ def apply_turn(
     for i, ask in enumerate(out.asks):
         if _bare_switch_back_beside_a_new_ask(out.asks, i, printed_topics):
             continue  # it adds nothing: the other ask carries the subject in that same domain
-        if ask.act in ("refines_held", "new_topic") and _picks_open_question(ask, pending_in):
+        if reads_as_answer(ask, pending_in, st.held):
             ask = ask.model_copy(update={"act": "answers_bot_question"})  # R5-1: the open list owns the number
         held_before, topics_before = st.held.model_copy(deep=True), list(st.topics)
         try:
@@ -401,6 +401,15 @@ def _picks_open_question(ask: Ask, pending: PendingQuestion | None) -> bool:
         pending is not None and key is not None and any(o.key == key for o in pending.options)
         and not _is_a_new_ask(ask)
     )
+
+
+def reads_as_answer(ask: Ask, pending: PendingQuestion | None, held: Any) -> bool:
+    """R5-1 / R5-5: a refine or a new topic that picks the open question is read as its answer (apply_turn and the
+    grant pre-check read it alike). R5 fix 1: a new topic naming its own domain, other than held's, stays a new
+    ask whatever option key it carries ("no, what promotions are on")."""
+    if ask.act not in ("refines_held", "new_topic") or not _picks_open_question(ask, pending):
+        return False
+    return not (ask.act == "new_topic" and ask.domain and ask.domain != getattr(held, "domain", None))
 
 
 def _roster_kind(pending: PendingQuestion) -> str | None:
