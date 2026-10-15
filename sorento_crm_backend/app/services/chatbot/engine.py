@@ -5980,6 +5980,8 @@ def _run_stages_body(  # noqa: PLR0915
                 # turn (no outcome ran here at all - S3), which still needs this arm's
                 # own lead.
                 media_prefixed=bool(media_box.get("outcome")),
+                # AC-23: a contact refused the agent gets no fit line on the arm's reply.
+                refused=branch_kind == "access_denied",
             )
 
         # D9: no engine switch. The re-architected turn IS the engine, so a lane the
@@ -7974,6 +7976,7 @@ def _run_entities_only_arm(
     recalled: list[dict[str, Any]],
     from_photo: bool,
     media_prefixed: bool = False,
+    refused: bool = False,
 ) -> TurnResult:
     """S3 (PLAN-chatbot-media-into-turn.md): bare entities, no domain, no carried
     focus (AC-1822 to AC-1832). Resolved directly against the SAME resolver seam
@@ -8137,6 +8140,7 @@ def _run_entities_only_arm(
         contact_respond_id=contact_respond_id,
         verdict=verdict,
         recalled=recalled,
+        refused=refused,
     )
 
 

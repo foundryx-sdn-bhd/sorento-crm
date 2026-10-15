@@ -220,6 +220,7 @@ def _low_stock_not_enabled() -> dict[str, Any]:
         "outcome": "not_found",
         "escalate": True,
         "response": LOW_STOCK_NOT_ENABLED_MESSAGE,
+        "refused": True,
     }
 
 
@@ -615,8 +616,9 @@ def _fixed_reply(
     selling questions. `has_result: True` and no `outstanding_ask` keep it OFF the miss
     lane (no escalate offer) and arm nothing; the carried `focus.status` is what makes
     the next message land on the same ask. `outstanding_report` skips the generic
-    search-scope header. `refused` marks a refusal (grant, scope, audience): the envelope reads
-    it as `denied`, so no fit line opens the reply (CHAT-FIT-LINE AC-23)."""
+    search-scope header. `refused` marks a refusal (grant, scope, audience): the envelope carries
+    it as its own `refused` key (not `denied`, which has its own composer line), so no fit line
+    opens the reply (CHAT-FIT-LINE AC-23)."""
     structured: dict[str, Any] = {
         "response": text,
         "answers": [],
@@ -2230,7 +2232,7 @@ def run_fetch(
         if any(isinstance(e, dict) and e.get("entity_type") == "transporter" for e in entities):
             if trace is not None:
                 trace.add("field_reveal", {"refused": "transporter_filter", "tool": tool_name})
-            return _fixed_reply(do_ask.TRANSPORTER_REFUSED)
+            return _fixed_reply(do_ask.TRANSPORTER_REFUSED, refused=True)
 
     trigger = {
         "tool": tool_name,
@@ -2429,7 +2431,7 @@ def run_fetch(
         if refusal:
             if trace is not None:
                 trace.add("report_ask", {"refused": envelope.get("status_code")})
-            return _fixed_reply(refusal)
+            return _fixed_reply(refusal, refused=True)
         return _error_fragment(envelope["error"])
 
     # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product
