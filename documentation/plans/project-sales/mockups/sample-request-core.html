@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample Request mockup</title>
+<!-- Lane SR-CORE. Annotated mockup, not shipped code. Plain inline CSS so it opens from a file.
+     Behaviour card: documentation/plans/project-sales/sample-request-core-behaviour-card.md
+     Data shaped on paper Form C (10 Oct). People and phones replaced by roles. -->
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --fg:#111827; --muted:#6b7280; --line:#e5e7eb; --line-soft:#f1f2f4;
+  --primary:#1b84ff; --primary-soft:#e9f3ff;
+  --red:#dc2626; --red-soft:#fef2f2;
+  --amber:#b45309; --amber-soft:#fffbeb;
+  --green:#15803d; --green-soft:#f0fdf4;
+  --violet:#6d28d9; --violet-soft:#f5f3ff;
+  --grey-soft:#f3f4f6; --callout:#e11d74; --radius:8px;
+  --font:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1115; --card:#171a21; --fg:#e5e7eb; --muted:#9ca3af; --line:#2a2f3a; --line-soft:#20242c;
+    --primary-soft:#14243a; --grey-soft:#232833; --red-soft:#2a1416; --amber-soft:#2a2210; --green-soft:#10241a; --violet-soft:#1e1a33;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1115; --card:#171a21; --fg:#e5e7eb; --muted:#9ca3af; --line:#2a2f3a; --line-soft:#20242c;
+  --primary-soft:#14243a; --grey-soft:#232833; --red-soft:#2a1416; --amber-soft:#2a2210; --green-soft:#10241a; --violet-soft:#1e1a33;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--font)}
+.doc{max-width:1760px;margin:0 auto;padding:24px 16px 64px}
+.doc>h1{font-size:22px;margin:0 0 4px}
+.doc>.sub{color:var(--muted);margin:0 0 20px;max-width:900px}
+h2.frame-title{font-size:15px;margin:36px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.layout{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.scroll{overflow-x:auto;max-width:100%;border-radius:12px}
+.frame{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);position:relative;overflow:hidden}
+.w1280{width:1280px}
+.w375{width:375px;max-width:100%;flex:none}
+.notes{flex:1 1 360px;min-width:280px;max-width:600px}
+.notes ol{margin:0;padding:0;list-style:none}
+.notes li{display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px}
+.notes li b{display:block;margin-bottom:2px}
+.notes .ref{display:block;color:var(--muted);font-size:12px;margin-top:4px;word-break:break-word}
+.co{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;border-radius:50%;background:var(--callout);color:#fff;font-size:11px;font-weight:700;vertical-align:middle;margin:0 4px}
+/* shell */
+.shell{display:flex}
+.side{width:220px;flex:none;border-right:1px solid var(--line);padding:16px 12px;font-size:13px}
+.side .brand{font-weight:700;font-size:16px;margin:0 8px 18px}
+.side .grp{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:14px 8px 6px}
+.side .it{padding:6px 8px;border-radius:6px}
+.side .it.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.main{flex:1;min-width:0}
+.content{padding:20px 28px 28px}
+.phrow{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.phrow h1{font-size:20px;margin:0}
+.crumbs{color:var(--muted);font-size:13px;margin-top:2px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 22px;color:var(--muted);font-size:13px;margin:4px 0 14px}
+.meta b{color:var(--fg);font-weight:500}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);border-radius:6px;padding:6px 12px;font:500 13px var(--font);color:var(--fg);white-space:nowrap}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.sm{padding:3px 9px;font-size:12px}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:500;white-space:nowrap;background:var(--grey-soft)}
+.pill.blue{background:var(--primary-soft);color:var(--primary)}
+.pill.green{background:var(--green-soft);color:var(--green)}
+.pill.amber{background:var(--amber-soft);color:var(--amber)}
+.pill.red{background:var(--red-soft);color:var(--red)}
+.pill.violet{background:var(--violet-soft);color:var(--violet)}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:4px 0 16px;font-size:13px;overflow-x:auto}
+.tabs span{padding:8px 0;color:var(--muted);white-space:nowrap}
+.tabs span.on{color:var(--fg);border-bottom:2px solid var(--primary);font-weight:600}
+table.g{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+table.g th{text-align:left;font-weight:500;color:var(--muted);padding:7px 8px;border-bottom:1px solid var(--line);background:var(--line-soft)}
+table.g td{padding:7px 8px;border-bottom:1px solid var(--line-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.g tr.sub td{background:var(--line-soft)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.search{border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:var(--muted);min-width:240px;background:var(--card)}
+.chip{border:1px dashed var(--line);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--muted)}
+.card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.card h3{font-size:14px;margin:0 0 10px}
+.kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 24px;font-size:13px}
+.kv .lbl{display:block;color:var(--muted);font-size:12px}
+.banner{border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:12px;background:var(--violet-soft);color:var(--violet)}
+/* portal 375 */
+.p-top{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600}
+.p-body{padding:14px 16px 18px}
+.f{margin-bottom:12px}
+.f label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.inp{border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:13px;background:var(--card);min-height:36px}
+.inp.ph{color:var(--muted)}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:12px}
+.seg span{flex:1;text-align:center;padding:7px 4px;border-right:1px solid var(--line)}
+.seg span:last-child{border-right:none}
+.seg span.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.tog{display:flex;align-items:center;gap:8px;font-size:13px}
+.sw{width:34px;height:20px;border-radius:999px;background:var(--primary);position:relative;flex:none}
+.sw::after{content:"";position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+.line{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:13px}
+.line .alt{color:var(--muted);font-size:12px}
+.hint{font-size:12px;color:var(--muted)}
+.err{font-size:12px;color:var(--red)}
+.foot{position:sticky;bottom:0;border-top:1px solid var(--line);padding:10px 16px;display:flex;gap:8px;justify-content:flex-end;background:var(--card)}
+.tl{list-style:none;margin:0;padding:0}
+.tl li{display:flex;gap:10px;padding:6px 0;font-size:13px}
+.dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex:none;background:var(--line)}
+.dot.done{background:var(--green)}
+.dot.now{background:var(--primary)}
+/* print */
+.a4{width:794px;padding:36px 40px;background:#fff;color:#111;font-size:12px}
+.a4 h2{text-align:center;font-size:15px;margin:6px 0 14px;letter-spacing:.06em}
+.a4 table{width:100%;border-collapse:collapse}
+.a4 td,.a4 th{border:1px solid #333;padding:4px 6px;text-align:left;vertical-align:top}
+.a4 .box{border:1px solid #333;padding:6px 8px;margin:10px 0}
+table.g.map td,table.g.map th{white-space:normal;word-break:break-word}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Sample Request (SR-CORE) - mockup</h1>
+<p class="sub">Six screens built on paper Form C (10 Oct, JV PERKASA, Taman Nusa Duta Fasa 10). People are shown as roles.
+Pink numbers <span class="co">1</span> match the notes beside each screen. Every element reuses an existing component; the map at the bottom lists each one with its repo path.
+Behaviour card: <code>documentation/plans/project-sales/sample-request-core-behaviour-card.md</code>.</p>
+
+<!-- ============ A. PORTAL FORM ============ -->
+<h2 class="frame-title">A. Portal - salesperson fills the request (375px)</h2>
+<div class="layout">
+  <div class="frame w375">
+    <div class="p-top">&#8592; New sample request</div>
+    <div class="p-body">
+      <div class="f"><label>Customer <span class="co">1</span></label><div class="inp">300-J099 JV PERKASA SDN BHD (PROJECT)</div></div>
+      <div class="f"><label>Project <span class="co">2</span></label>
+        <div class="seg" style="margin-bottom:6px"><span>Registered project</span><span class="on">Type the title</span></div>
+        <div class="inp" style="min-height:58px">52 units double-storey terrace houses, Taman Nusa Duta Fasa 10, for TARIKAN ABADI SDN BHD</div></div>
+      <div class="f"><label>Quotation (optional) <span class="co">3</span></label><div class="inp ph">Pick a registered project first</div></div>
+      <div class="f"><label>Scope note</label><div class="inp ph">e.g. Tower A &amp; B</div></div>
+      <div class="f"><label>Requested delivery <span class="co">4</span></label>
+        <div class="seg"><span>Pick a date</span><span class="on">Immediate</span></div></div>
+      <div class="f"><label>Delivery mode <span class="co">5</span></label>
+        <div class="seg"><span class="on">Driver</span><span>I deliver</span><span>Customer collects</span></div></div>
+      <div class="f"><label>Ship to</label><div class="inp">CHENXIN PLUMBING SDN BHD<br><span class="hint">Site address, Johor Bahru</span></div></div>
+      <div class="f"><label>Site contact</label><div class="inp">Plumber's site supervisor &middot; 01X-XXX XXXX<br><span class="hint">Call 1 day before</span></div></div>
+      <div class="f"><div class="tog"><span class="sw"></span> Mount and label on a sample board <span class="co">6</span></div>
+        <div class="inp ph" style="margin-top:6px">Board label (optional)</div></div>
+      <div class="f"><label>Items (21) <span class="co">7</span></label>
+        <div class="line"><b>SRT73-CR</b> &middot; qty 1<div class="alt">SORENTO</div></div>
+        <div class="line"><b>CB313</b> &middot; qty 1<div class="alt">CABANA</div></div>
+        <div class="line"><b>CB2157SS</b> &middot; qty 1</div>
+        <div class="line"><b>SSFH12</b> &middot; qty 1</div>
+        <div class="hint">+ 17 more lines</div>
+        <div class="line" style="border-style:dashed"><b>CB2805A</b> &middot; qty 1<div class="alt">or CB2805A-SS-CR (alternative) &middot; how a Form B "X OR Y" line looks, if that code exists</div></div>
+        <div class="inp ph" style="margin-top:6px">+ Add item: type a code, e.g. TPE9101 &#8594; TPE-9101</div></div>
+      <div class="f"><label>Loan period <span class="co">8</span></label><div style="display:flex;gap:6px"><div class="inp" style="width:70px">2</div><div class="inp" style="flex:1">months</div></div></div>
+      <div class="f"><label>Goods from</label><div class="seg"><span>Demo set</span><span>New goods</span><span class="on">Either</span></div></div>
+      <div class="f"><label>Purpose</label><div class="inp ph">Optional</div></div>
+    </div>
+    <div class="foot"><span class="btn">Save draft</span><span class="btn primary">Submit</span></div>
+  </div>
+  <div class="notes"><ol>
+    <li><span class="co">1</span><div><b>Customer = the salesperson's own debtor book.</b> Code shown with the name. A customer with no debtor (Form B, PINNACLE HOME) can be typed and shows "No debtor" (Q4).<span class="ref">AsyncCombobox + GET /public/portal/lookups/debtors, agent-scoped like the price tag request (price_tag_request_service.lookup_debtors_for_agent)</span></div></li>
+    <li><span class="co">2</span><div><b>Project: registered OR typed.</b> Switch "project required" off (today): either. Switch on: the typed option disappears. Registered list = projects this salesperson owns.<span class="ref">Pattern of SubmissionForm.tsx:324-332 (sponsorship project picker), new lookup scoped by projects.owner_user_id</span></div></li>
+    <li><span class="co">3</span><div><b>Quotation picker.</b> Lists only the picked project's quotation versions. Optional until the "quotation required" switch is on.<span class="ref">Same picker SampleDialog.tsx builds (listQuotations + listQuotationVersions)</span></div></li>
+    <li><span class="co">4</span><div><b>Date or Immediate, as on paper.</b> ("IMMEDIATE ARRANGEMENT" on 2 of 3 forms).</div></li>
+    <li><span class="co">5</span><div><b>Delivery mode is required to submit.</b> Ship-to and site contact are required only for Driver. Phone visible to staff and this salesperson only.</div></li>
+    <li><span class="co">6</span><div><b>Board mounting is a toggle, not an item.</b> Optional label ("TOWER A &amp; B"). Printed as an instruction above the items.</div></li>
+    <li><span class="co">7</span><div><b>Items are picked products only.</b> Search ignores dashes and spaces. "X OR Y" = main + alternative on one line; "X / Y" set = two lines. Qty defaults to 1. Brand comes from the product.<span class="ref">AsyncCombobox + GET /public/portal/lookups/products (portal.py:459), stored as product_id, not the free-text item_code PR lines use</span></div></li>
+    <li><span class="co">8</span><div><b>Loan period, goods from, purpose.</b> Loan = number + days/months, default 2 months. Goods from default Either. Purpose optional.</div></li>
+  </ol></div>
+</div>
+
+<!-- ============ B. PORTAL VIEW ============ -->
+<h2 class="frame-title">B. Portal - salesperson's view after submit (375px)</h2>
+<div class="layout">
+  <div class="frame w375">
+    <div class="p-top">&#8592; SR-000001 <span class="pill blue" style="margin-left:auto">Submitted</span></div>
+    <div class="p-body">
+      <div class="card"><h3>Progress <span class="co">1</span></h3>
+        <ul class="tl">
+          <li><span class="dot done"></span><div>Submitted<div class="hint">10 Oct, 4:12 pm</div></div></li>
+          <li><span class="dot now"></span><div>With the coordinator</div></li>
+          <li><span class="dot"></span><div>Customer confirmed</div></li>
+          <li><span class="dot"></span><div>Delivered</div></li>
+        </ul></div>
+      <div class="card"><h3>Request</h3>
+        <div class="hint">Customer</div><div>300-J099 JV PERKASA SDN BHD (PROJECT)</div>
+        <div class="hint" style="margin-top:6px">Project</div><div>52 units double-storey terrace houses, Taman Nusa Duta ... <span class="pill">Not registered</span></div>
+        <div class="hint" style="margin-top:6px">Delivery</div><div>Driver &middot; Immediate &middot; Loan 2 months</div>
+        <div class="hint" style="margin-top:6px">Board</div><div>Mount and label on a sample board</div>
+      </div>
+      <div class="card"><h3>Items (21)</h3>
+        <div class="line"><b>SRT73-CR</b> &middot; 1</div><div class="line"><b>CB313</b> &middot; 1</div><div class="hint">+ 19 more</div></div>
+      <div class="card"><h3>Comments <span class="co">2</span></h3><div class="hint">No comments yet</div></div>
+    </div>
+    <div class="foot"><span class="btn">Cancel request</span></div>
+  </div>
+  <div class="notes"><ol>
+    <li><span class="co">1</span><div><b>Read-only after submit (Q5).</b> A timeline shows where the request is. SR-STOCK adds its steps between "With the coordinator" and "Customer confirmed".</div></li>
+    <li><span class="co">2</span><div><b>Comments.</b> The way to ask for a change; the coordinator edits.<span class="ref">PortalSubmissionComments (SubmissionForm.tsx:482) + form_comment_service.py:38 gets the new kind</span></div></li>
+  </ol></div>
+</div>
+
+<!-- ============ C. PROJECT TAB ============ -->
+<h2 class="frame-title">C. Staff - project detail, new "Sample requests" tab (1280px)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Project Sales</div>
+    <div class="it on">Projects</div><div class="it">Sample requests</div><div class="it">Order inquiries</div><div class="it">Fulfilment planning</div></div>
+  <div class="main"><div class="content">
+    <div class="phrow"><div><h1>PRJ-000xxx Taman Nusa Duta Fasa 10 (illustrative)</h1><div class="crumbs">Projects / PRJ-000xxx</div></div><span class="btn primary">Edit project</span></div>
+    <div class="tabs"><span>Overview</span><span>Stakeholders</span><span>Tasks</span><span>Quotations</span><span class="on">Sample requests <span class="co">1</span></span><span>Samples</span><span>Sponsorships</span><span>POs</span><span>Schedules</span><span>Sales orders</span><span>Activity</span><span>Documents</span></div>
+    <div class="toolbar"><span class="search">Search SR no, customer</span><span class="chip">Status</span><span style="margin-left:auto" class="btn">+ New sample request <span class="co">2</span></span></div>
+    <table class="g"><colgroup><col style="width:110px"><col style="width:260px"><col style="width:140px"><col style="width:130px"><col style="width:70px"><col style="width:90px"><col style="width:130px"><col></colgroup>
+      <tr><th>SR no</th><th>Customer</th><th>Salesperson</th><th>Mode</th><th>Items</th><th>Board</th><th>Status</th><th>Requested</th></tr>
+      <tr><td><a>SR-000001</a></td><td>300-J099 JV PERKASA SDN BHD (PROJECT)</td><td>Salesperson A</td><td>Driver</td><td>21</td><td>Yes</td><td><span class="pill blue">Submitted</span></td><td>Immediate</td></tr>
+      <tr><td><a>SR-000004</a></td><td>300-J099 JV PERKASA SDN BHD (PROJECT)</td><td>Salesperson A</td><td>Customer collects</td><td>3</td><td>No</td><td><span class="pill green">Delivered</span></td><td>20 Oct</td></tr>
+    </table>
+  </div></div>
+</div></div></div>
+  <div class="notes"><ol>
+    <li><span class="co">1</span><div><b>New tab before "Samples".</b> Samples stays the developer-feedback record; a delivered request with a quotation version creates its Samples row.<span class="ref">ProjectDetailClient.tsx:75-87 TABS; PanelDataGrid like SamplesPanel.tsx:170; row click opens the detail (rowHref)</span></div></li>
+    <li><span class="co">2</span><div><b>Staff can raise one on the salesperson's behalf.</b> (Modal, same fields as the portal, project prefilled). One CTA per page stays in the header; the tab's add button is the panel's own toolbar action, as on Samples.<span class="ref">Modal like SampleDialog.tsx; SearchableSelect for every dropdown, clearable when optional</span></div></li>
+  </ol></div>
+</div>
+
+<!-- ============ D. DETAIL ============ -->
+<h2 class="frame-title">D. Staff - sample request detail (1280px)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Project Sales</div>
+    <div class="it">Projects</div><div class="it on">Sample requests</div><div class="it">Order inquiries</div></div>
+  <div class="main"><div class="content">
+    <div class="phrow"><div><h1>SR-000001 <span class="pill blue">Submitted</span></h1><div class="crumbs">Sample requests / SR-000001 &nbsp; &#8249; prev &middot; next &#8250; <span class="co">1</span></div></div>
+      <div style="display:flex;gap:8px"><span class="btn">Print requisition <span class="co">2</span></span><span class="btn">Cancel</span><span class="btn primary">Customer confirmed <span class="co">3</span></span></div></div>
+    <div class="meta"><span>Salesperson <b>Salesperson A</b></span><span>Submitted <b>10 Oct, 4:12 pm</b> via <b>Portal</b></span><span>Return due <b>-</b></span></div>
+    <div class="tabs"><span class="on">Request</span><span>Comments</span><span>History</span></div>
+    <div class="card"><h3>Request <span class="co">4</span></h3>
+      <div class="kv">
+        <div><span class="lbl">Customer</span>300-J099 JV PERKASA SDN BHD (PROJECT)</div>
+        <div><span class="lbl">Project</span>52 units double-storey terrace houses, Taman Nusa Duta ... <span class="pill">Not registered</span> <a>Link project</a></div>
+        <div><span class="lbl">Quotation</span>None</div>
+        <div><span class="lbl">Requested delivery</span>Immediate</div>
+        <div><span class="lbl">Delivery mode</span>Deliver by driver</div>
+        <div><span class="lbl">Ship to</span>CHENXIN PLUMBING SDN BHD, Johor Bahru</div>
+        <div><span class="lbl">Site contact</span>Plumber's site supervisor, 01X-XXX XXXX, call 1 day before</div>
+        <div><span class="lbl">Loan period</span>2 months</div>
+        <div><span class="lbl">Goods from</span>Either</div>
+        <div><span class="lbl">Board</span>Mount and label on a sample board</div>
+        <div><span class="lbl">Purpose</span><span class="hint" style="display:inline">None</span></div>
+        <div><span class="lbl">Consignment No / PO No <span class="co">5</span></span><span class="hint" style="display:inline">Not yet</span></div>
+      </div></div>
+    <div class="card"><h3>Items (21) <span class="co">6</span></h3>
+      <table class="g"><colgroup><col style="width:44px"><col style="width:90px"><col style="width:150px"><col style="width:330px"><col style="width:120px"><col style="width:50px"><col></colgroup>
+        <tr><th>No</th><th>Brand</th><th>Code</th><th>Name</th><th>Alternative</th><th>Qty</th><th>Remark</th></tr>
+        <tr><td>1</td><td>SORENTO</td><td>SRT73-CR</td><td>(product name)</td><td>-</td><td>1</td><td></td></tr>
+        <tr><td>2</td><td>CABANA</td><td>&#9662; CB313</td><td>(product name)</td><td>-</td><td>1</td><td></td></tr>
+        <tr class="sub"><td></td><td colspan="6">
+          <table class="g" style="background:var(--card)"><colgroup><col style="width:130px"><col style="width:90px"><col style="width:90px"><col style="width:90px"><col></colgroup>
+            <tr><th>Location <span class="co">7</span></th><th>On hand</th><th>Held</th><th>Free</th><th>Tag</th></tr>
+            <tr><td>BRW-DISP</td><td>3</td><td>0</td><td>3</td><td><span class="pill violet">Display</span></td></tr>
+            <tr><td>BRW</td><td>2129</td><td>-</td><td>-</td><td><span class="pill">Site pool</span></td></tr>
+            <tr><td>BRW-BB</td><td>2066</td><td>-</td><td>-</td><td><span class="pill">Group</span></td></tr>
+            <tr><td>BRW-IB</td><td>560</td><td>-</td><td>-</td><td><span class="pill">Group</span></td></tr>
+            <tr><td>BRW-IR</td><td>226</td><td>-</td><td>-</td><td><span class="pill">Group</span></td></tr>
+          </table></td></tr>
+        <tr><td>3</td><td>CABANA</td><td>CB2157SS</td><td>(product name)</td><td>-</td><td>1</td><td></td></tr>
+        <tr><td>4</td><td></td><td>SSFH12</td><td>(product name)</td><td>-</td><td>1</td><td></td></tr>
+      </table>
+      <div class="hint" style="margin-top:6px">+ 17 more lines</div></div>
+  </div></div>
+</div></div></div>
+  <div class="notes"><ol>
+    <li><span class="co">1</span><div><b>Detail page with prev/next.</b> Read-only metadata under the header. View and Edit share this layout; Edit swaps values for inputs in place.<span class="ref">PageHeader, components/common/RecordNavigation, line tabs</span></div></li>
+    <li><span class="co">2</span><div><b>Print requisition</b> makes an A4 PDF like the paper form (frame F).<span class="ref">Download row + export task, WeasyPrint pdf_render.render_html (pdf_render.py:153), as stock_inquiries.py:319</span></div></li>
+    <li><span class="co">3</span><div><b>One primary action = the next step.</b> Submitted &#8594; "Customer confirmed" (asks the agreed date) &#8594; "Mark delivered" (asks the date; label follows the mode). Coordinator only (projects.sample_requests.process).</div></li>
+    <li><span class="co">4</span><div><b>Every header field renders.</b> With "None" when empty. A typed project can be linked to a registered one here.</div></li>
+    <li><span class="co">5</span><div><b>Consignment No / PO No.</b> Typed by the coordinator (paper "For internal purpose"). SR-STOCK links the CSGN to the pulled consignment.</div></li>
+    <li><span class="co">6</span><div><b>Items grid.</b> Fixed layout, resizable columns, long names truncated with a tooltip.<span class="ref">DataGrid tableLayout fixed + columnsResizable</span></div></li>
+    <li><span class="co">7</span><div><b>Stock peek per line (read only).</b> Expanding a line shows the existing location table. With Q1 (b) BRW-DISP and CON appear; with (a) only the BRW group bins do. Real dev figures for CB313 shown. No allocation here: that is SR-STOCK.<span class="ref">CellStockTable (fulfilment-planning/components/CellStockTable.tsx:136-248), fed by location_stock_for_product (scm/location_stock_service.py:35) under Q1 (b)</span></div></li>
+  </ol></div>
+</div>
+
+<!-- ============ E. QUEUE ============ -->
+<h2 class="frame-title">E. Staff - coordinator queue, Project Sales &gt; Sample requests (1280px)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Project Sales</div>
+    <div class="it">Projects</div><div class="it on">Sample requests <span class="co">1</span></div><div class="it">Order inquiries</div><div class="it">Fulfilment planning</div></div>
+  <div class="main"><div class="content">
+    <div class="phrow"><div><h1>Sample requests</h1></div><span class="btn primary">+ New sample request</span></div>
+    <div class="toolbar"><span class="search">Search SR no, customer, project</span><span class="chip">Status: Submitted, Customer confirmed <span class="co">2</span></span><span class="chip">Mode</span><span class="chip">Salesperson</span></div>
+    <table class="g"><colgroup><col style="width:105px"><col style="width:240px"><col style="width:270px"><col style="width:120px"><col style="width:130px"><col style="width:60px"><col style="width:60px"><col style="width:140px"><col></colgroup>
+      <tr><th>SR no</th><th>Customer</th><th>Project</th><th>Salesperson</th><th>Mode</th><th>Items</th><th>Board</th><th>Status</th><th>Requested</th></tr>
+      <tr><td><a>SR-000003</a></td><td>300-J099 JV PERKASA SDN BHD (PROJECT)</td><td>Service apartments, Bukit Senibong <span class="pill">Not registered</span></td><td>Salesperson A</td><td><span class="err">Not chosen</span></td><td>21</td><td>Yes</td><td><span class="pill">Draft</span></td><td>Immediate</td></tr>
+      <tr><td><a>SR-000002</a></td><td>PINNACLE HOME <span class="pill amber">No debtor</span></td><td>EDUCITY DEVELOPMENT <span class="pill">Not registered</span></td><td>Salesperson B</td><td>Driver</td><td>18</td><td>No</td><td><span class="pill blue">Submitted</span></td><td>13 Oct</td></tr>
+      <tr><td><a>SR-000001</a></td><td>300-J099 JV PERKASA SDN BHD (PROJECT)</td><td>52 units double-storey terrace ... <span class="pill">Not registered</span></td><td>Salesperson A</td><td>Driver</td><td>21</td><td>Yes</td><td><span class="pill blue">Submitted</span></td><td>Immediate</td></tr>
+    </table>
+    <div class="hint" style="margin-top:8px">Draft rows are shown only in the salesperson's own view; this row is here to show the "mode not chosen" state.</div>
+  </div></div>
+</div></div></div>
+  <div class="notes"><ol>
+    <li><span class="co">1</span><div><b>One queue across all projects.</b> Including requests with only a typed project. Sidebar entry under Project Sales, gated by projects.sample_requests.process.<span class="ref">config/menu.config.tsx (MENU_SIDEBAR :141 and MENU_SIDEBAR_COMPACT :2009); DataGrid + buildDataGridParams; list-query registry for column prefs</span></div></li>
+    <li><span class="co">2</span><div><b>Default filter = work in hand.</b> (Submitted, Customer confirmed). Status is a Badge pill. Row click opens frame D.</div></li>
+  </ol></div>
+</div>
+
+<!-- ============ F. PRINT ============ -->
+<h2 class="frame-title">F. Printable requisition (A4)</h2>
+<div class="layout">
+<div class="scroll"><div class="frame"><div class="a4">
+  <div style="font-weight:700">SORENTO SDN BHD</div>
+  <h2>CONSIGNMENT REQUISITION FORM</h2>
+  <table>
+    <tr><td style="width:22%">Request No</td><td>SR-000001</td><td style="width:22%">Date</td><td>10 Oct 2026</td></tr>
+    <tr><td>Sales Person</td><td>Salesperson A</td><td>Request Delivery</td><td>IMMEDIATE</td></tr>
+    <tr><td>Customer</td><td colspan="3">300-J099 JV PERKASA SDN BHD (PROJECT)</td></tr>
+    <tr><td>Project</td><td colspan="3">52 units double-storey terrace houses, Taman Nusa Duta Fasa 10, for TARIKAN ABADI SDN BHD (printed in full)</td></tr>
+    <tr><td>Shipping Address</td><td colspan="3">CHENXIN PLUMBING SDN BHD, (site address), Johor Bahru</td></tr>
+    <tr><td>Contact Person</td><td colspan="3">(site supervisor), (phone), call 1 day before</td></tr>
+    <tr><td>Consignment No</td><td></td><td>PO No</td><td></td></tr>
+  </table>
+  <div class="box"><b>MOUNT &amp; LABEL SAMPLE BOARD</b> (all items below)</div>
+  <table>
+    <tr><th style="width:6%">No</th><th style="width:16%">Brand</th><th style="width:22%">Model</th><th>Description</th><th style="width:16%">Or</th><th style="width:7%">Qty</th></tr>
+    <tr><td>1</td><td>SORENTO</td><td>SRT73-CR</td><td>(product name)</td><td></td><td>1</td></tr>
+    <tr><td>2</td><td>CABANA</td><td>CB313</td><td>(product name)</td><td></td><td>1</td></tr>
+    <tr><td>3</td><td>CABANA</td><td>CB2157SS</td><td>(product name)</td><td></td><td>1</td></tr>
+    <tr><td colspan="6" style="text-align:center;color:#666">... 18 more lines, continued on page 2 when needed</td></tr>
+  </table>
+  <div class="box">Delivery: [X] Deliver-Van &nbsp; [ ] Self-Deliver &nbsp; [ ] Self-Collection<br>
+  Loan Period: 2 months &nbsp;&nbsp; Goods Taken From: [ ] Demo Sets [ ] New Goods (either) &nbsp;&nbsp; Purpose: -</div>
+</div></div></div>
+  <div class="notes"><ol>
+    <li><span class="co">1</span><div><b>Same layout as the paper form</b> so Inventory and logistics read it as today. Differences: SR no added, an "Or" column for alternatives, board instruction printed once above the items, no per-line approval columns (Q3).</div></li>
+  </ol></div>
+</div>
+
+<!-- ============ MAP ============ -->
+<h2 class="frame-title">Element map: what is reused, what is new</h2>
+<div class="scroll"><div class="frame" style="padding:12px;min-width:900px">
+<table class="g map">
+  <colgroup><col style="width:24%"><col style="width:38%"><col style="width:12%"><col></colgroup>
+  <tr><th>Element</th><th>Component / service (repo path)</th><th>Status</th><th>Change</th></tr>
+  <tr><td>Portal kind "Sample request"</td><td>portal_service.py:81 SUPPORTED_TYPES, :94 AGENT_ONLY_FORM_TYPES; portal_form_visibility_service.py:38-47; lib/portal-form-kinds.ts:15-27, :110-115</td><td>Reuse</td><td>Add the kind to each list (agent-only + admin switch)</td></tr>
+  <tr><td>Portal form shell, status badge, comments</td><td>app/(auth)/portal/components/SubmissionForm.tsx (badge :1541, comments :482); pages app/(auth)/portal/c/[slug]/[type]/new and [id]</td><td>Reuse</td><td>New FIELDS entry + sample-request section (product lines, board, mode)</td></tr>
+  <tr><td>Portal product picker</td><td>AsyncCombobox + lookupProducts, GET /public/portal/lookups/products (portal.py:459-495)</td><td>Reuse</td><td>Search ignores dashes/spaces</td></tr>
+  <tr><td>Portal debtor picker</td><td>price_tag_request_service.lookup_debtors_for_agent; portal_agent.agent_for_contact</td><td>Reuse</td><td>None</td></tr>
+  <tr><td>Portal project picker</td><td>SubmissionForm.tsx:324-332; sponsorship_link_service.projects_for_contact pattern</td><td>Reuse pattern</td><td>New lookup: projects owned by the salesperson's user</td></tr>
+  <tr><td>Project tab</td><td>[projectId]/components/ProjectDetailClient.tsx:75-87; PanelDataGrid (components/common/PanelDataGrid.tsx)</td><td>Reuse</td><td>New tab key "sample-requests" + panel</td></tr>
+  <tr><td>Staff create/edit modal</td><td>SampleDialog.tsx (quotation version picker); SearchableSelect (components/common/SearchableSelect.tsx); product select GET /master-data/products/select</td><td>Reuse</td><td>New dialog composed of these</td></tr>
+  <tr><td>Detail page</td><td>PageHeader, RecordNavigation, line Tabs, Badge</td><td>Reuse</td><td>New route /project-sales/sample-requests/[id]</td></tr>
+  <tr><td>Stock peek</td><td>CellStockTable (fulfilment-planning/components/CellStockTable.tsx:136-248); OrderInquiryStockGrid (_shared/components/OrderInquiryStockGrid.tsx:30-41); location_stock_service.py:35</td><td>Reuse as is</td><td>Q1: feed choice</td></tr>
+  <tr><td>Coordinator queue</td><td>DataGrid, buildDataGridParams, list_query_registry.py, config/menu.config.tsx</td><td>Reuse</td><td>New page + registry entry</td></tr>
+  <tr><td>Requisition PDF</td><td>pdf_render.py:153 (WeasyPrint), export_tasks.py, stock_inquiry_pdf_service.py pattern</td><td>Reuse pattern</td><td>New PDF service</td></tr>
+  <tr><td>Numbering SR-000001</td><td>numbering_service.py:14; project_seed_service.py:239-259</td><td>Reuse</td><td>Seed rule "sample_request"</td></tr>
+  <tr><td>Project / quotation switches</td><td>system_settings (models/user.py:320), settings.py dict builders, user-management/settings page</td><td>Reuse</td><td>Two boolean columns, default off</td></tr>
+  <tr><td>Notify coordinator</td><td>automation_triggers.py:573-605 (as order_inquiry_reserve_requested)</td><td>Reuse</td><td>New trigger sample_request_submitted</td></tr>
+  <tr><td>Feedback after delivery</td><td>ProjectSample (models/projects.py:1558), Samples tab</td><td>Reuse</td><td>Row created on Delivered when a quotation version is set</td></tr>
+  <tr><td>Data</td><td>-</td><td>New</td><td>projects.sample_requests, projects.sample_request_lines (additive migration)</td></tr>
+</table>
+</div></div>
+</div>
+</body>
+</html>
