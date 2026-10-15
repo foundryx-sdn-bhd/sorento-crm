@@ -5,6 +5,10 @@ The parse is hand-written: a product entity with refers_to_held=true and no key 
 last answer printed one document; its product lines are known to the register whether or not the answer printed
 them (the `delivery_orders.products` reveal). One line -> that line's product; several -> a clarify listing the
 real codes.
+
+UAC R5-2 security re-scope (lead ruling 15 Oct): only lines the user may see count. A contact without the
+`delivery_orders.products` reveal (lanes/business/fetch.py drops the lines) never gets a line code from "this product",
+neither in the reply nor as the resolved or held product; PV2 asks which product instead.
 """
 from __future__ import annotations
 
@@ -49,7 +53,7 @@ def _held_products(st):
     return [x.key for x in st.held.refs.get("product", [])]
 
 
-@pytest.mark.parametrize("revealed", [True, False], ids=["lines printed", "lines not printed"])
+@pytest.mark.parametrize("revealed", [True], ids=["lines printed"])
 @pytest.mark.parametrize("domain", ["inventory", "master_products"])
 def test_d1_this_product_after_a_one_line_delivery_order_is_that_lines_product(revealed, domain):
     st = _state(ONE_LINE_DO, revealed)
@@ -70,7 +74,7 @@ def test_d2_this_product_after_a_one_line_sales_order_is_that_lines_product():
     assert _held_products(s2) == ["SRTW5000"], _held_products(s2)
 
 
-@pytest.mark.parametrize("revealed", [True, False], ids=["lines printed", "lines not printed"])
+@pytest.mark.parametrize("revealed", [True], ids=["lines printed"])
 def test_d3_several_lines_ask_which_listing_the_real_codes_never_the_nothing_selected_miss(revealed):
     st = _state(TWO_LINE_DO, revealed)
     s2, acts = apply_turn(st, _this_product("inventory"), resolver=_resolver(), now=NOW, can_offer_handover=False)
@@ -93,6 +97,28 @@ def test_d3_picking_one_of_the_listed_lines_holds_that_product():
                           resolver=r, now=NOW, can_offer_handover=False)
     assert isinstance(acts[0], Lookup), type(acts[0]).__name__
     assert len(_held_products(st)) == 1 and _held_products(st)[0] in ("SRTWB1096", "SRTWT7203"), _held_products(st)
+
+
+LINE_CODES = ("SRTW5000", "SRTWB1096", "SRTWT7203")
+
+
+@pytest.mark.parametrize("doc,domain", [(ONE_LINE_DO, "inventory"), (ONE_LINE_DO, "master_products"),
+                                        (TWO_LINE_DO, "inventory")],
+                         ids=["one line-inventory", "one line-master_products", "two lines-inventory"])
+def test_d5_a_contact_who_may_not_see_do_lines_gets_no_line_code_and_is_asked_which_product(doc, domain):
+    """UAC R5-2 security re-scope: the lines were dropped for this contact, so none of them is the answer, the
+    held product or a word of the reply; the ask is the which-product question (kind asserted, not wording)."""
+    st = _state(doc, revealed=False)
+    r = _resolver()
+    s2, acts = apply_turn(st, _this_product(domain), resolver=r, now=NOW, can_offer_handover=False)
+    act = acts[0]
+    assert isinstance(act, ClarifyAct), type(act).__name__
+    assert act.about == "entity" and act.pending.kind == "clarify_entity", (act.about, act.pending.kind)
+    reply = clarify_copy.render(act.pending, "en")
+    assert not any(code in reply for code in LINE_CODES), reply
+    assert not any(isinstance(a, Lookup) for a in acts)
+    assert not set(_held_products(s2)) & set(LINE_CODES), _held_products(s2)
+    assert not any(f"product|{code}" in r.entity_lookups for code in LINE_CODES), r.entity_lookups
 
 
 def test_d4_guard_nothing_held_still_asks_which():  # guard: passes today
