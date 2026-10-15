@@ -465,7 +465,7 @@ def _run_turn(
     monkeypatch.setattr(engine_mod, "default_space_id", lambda db: "364817")
     from app.services.chatbot.head import parser as parser_mod
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
         )

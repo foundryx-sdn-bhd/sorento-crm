@@ -1902,7 +1902,14 @@ def answer_for(
     # and a fragment naming the tool it called is the same evidence on the other
     # outcome shapes. The miss text itself ("Couldn't find", refer to salesman) is
     # composed below exactly as before.
-    primary_tool_ran = via_fetched_empty or (
+    # A result fragment the lane built with `tool=None` (`fetch.fetch_result`'s result
+    # arm always writes the key) called nothing either: the low stock grant refusal is
+    # an empty "result" so the team offer still follows its line, and it printed a stock
+    # miss and an incoming block for a carried product (PARSER-PER-AUDIENCE crew audit).
+    named_no_tool = (
+        isinstance(fetch_item, Mapping) and "tool" in fetch_item and not fetch_item.get("tool")
+    )
+    primary_tool_ran = (via_fetched_empty and not named_no_tool) or (
         isinstance(fetch_item, Mapping) and bool(fetch_item.get("tool"))
     )
     if not primary_tool_ran and trace is not None:

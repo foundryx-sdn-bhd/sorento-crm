@@ -275,7 +275,7 @@ class TestReplyWordingWhenNothingPlaced:
         with _patch.object(parser_mod, "parse", lambda config, user_block: photo_qf), _patch.object(
             parser_mod,
             "resolve_config",
-            lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+            lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
                 system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
             ),
         ):
@@ -311,7 +311,7 @@ class TestReplyWordingWhenNothingPlaced:
         with _patch.object(parser_mod, "parse", lambda config, user_block: voice_qf), _patch.object(
             parser_mod,
             "resolve_config",
-            lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+            lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
                 system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
             ),
         ):
@@ -380,7 +380,7 @@ class TestJourneyPhotoThenCheckStock:
             with _patch.object(
                 parser_mod,
                 "resolve_config",
-                lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+                lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
                     system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
                 ),
             ):
@@ -427,7 +427,7 @@ class TestJourneyCheckStockThenPhoto:
         with _patch.object(parser_mod, "parse", lambda config, user_block: photo_qf), _patch.object(
             parser_mod,
             "resolve_config",
-            lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+            lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
                 system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
             ),
         ):
@@ -469,7 +469,7 @@ class TestJourneyCaptionInOneTurn:
         with _patch.object(parser_mod, "parse", lambda config, user_block: stock_qf), _patch.object(
             parser_mod,
             "resolve_config",
-            lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+            lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
                 system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
             ),
         ):
@@ -509,7 +509,7 @@ class TestJourneyVoice:
         with _patch.object(parser_mod, "parse", lambda config, user_block: stock_qf), _patch.object(
             parser_mod,
             "resolve_config",
-            lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+            lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
                 system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
             ),
         ):
@@ -536,7 +536,7 @@ class TestJourneyVoice:
         with _patch.object(parser_mod, "parse", lambda config, user_block: bare_qf), _patch.object(
             parser_mod,
             "resolve_config",
-            lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+            lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
                 system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
             ),
         ):

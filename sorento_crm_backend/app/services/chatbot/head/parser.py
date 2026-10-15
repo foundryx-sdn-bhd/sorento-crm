@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.services.ai_prompt_registry import agent_model, render
 from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-export
+from app.services.chatbot.prompt_gates import hidden_tags, render_for_audience
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
 from app.services.chatbot.turn import task as task_mod
@@ -79,6 +81,9 @@ class ParserConfig:
     provider: str
     model: str
     api_key: str
+    # PARSER-PER-AUDIENCE (review R1): a short stable hash of the gate tags this
+    # contact's prompt leaves out; "" for the full audience. One audience, one cache key.
+    audience: str = ""
 
 
 def _build_json_schema() -> dict[str, Any]:
@@ -743,7 +748,11 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
 
 
 def resolve_config(
-    db: Session, *, current_date: str, override_version_id: str | None = None
+    db: Session,
+    *,
+    current_date: str,
+    override_version_id: str | None = None,
+    grants: Iterable[str] | None = None,
 ) -> ParserConfig:
     """Read the prompt, the per-key model override and the API key. Session-bound.
 
@@ -755,13 +764,24 @@ def resolve_config(
     the way down. It exists for the Prompts screen's "Run a turn" test (AC-807), which is
     dry-run only: the engine refuses to read it off a live envelope, so a customer can
     never be answered by an unpublished prompt.
+
+    `grants` is the contact's reveal keys (`ctx.access.attributes`): the prompt is
+    rendered for that audience, same version and label for everyone
+    (`prompt_gates.render_for_audience`): the heavy blocks a missing grant gates are left
+    out, the registry lists and the classification vocabulary are the same for everyone.
+    None means no grants, the minimal prompt.
     """
     from app.services.ai_assistant_service import AIAssistantConfigService
     from app.services.llm_provider import resolve_api_key
 
+    hidden = hidden_tags(grants)
     system_prompt, prompt_version = render(
-        db, PROMPT_KEY, current_date=current_date, override_version_id=override_version_id
+        db,
+        PROMPT_KEY,
+        current_date=current_date,
+        override_version_id=override_version_id,
     )
+    system_prompt = render_for_audience(system_prompt, grants)
     provider_override, model_override = agent_model(db, PROMPT_KEY)
 
     config = AIAssistantConfigService(db).get()
@@ -778,7 +798,17 @@ def resolve_config(
         provider=provider,
         model=model,
         api_key=api_key,
+        audience=_audience_key(hidden),
     )
+
+
+def _audience_key(hidden: frozenset[str]) -> str:
+    """Eight hex characters naming the hidden tag set, "" when nothing is hidden."""
+    if not hidden:
+        return ""
+    import hashlib
+
+    return hashlib.sha256("+".join(sorted(hidden)).encode()).hexdigest()[:8]
 
 
 def _subject_names(rows: Any) -> list[str]:
@@ -1043,7 +1073,10 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             json_schema_name=PARSE_OUTPUT_SCHEMA_NAME,
             # One cache bucket per published prompt version: every parse on it shares
             # the same static prefix (OpenAI only; the others ignore it).
-            prompt_cache_key=f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}",
+            prompt_cache_key=(
+                f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}"
+                + (f":a{config.audience}" if config.audience else "")
+            ),
         )
     except llm_call.RateLimited as exc:
         raise ParserError(f"parser provider call failed: {exc}", rate_limited=True) from exc

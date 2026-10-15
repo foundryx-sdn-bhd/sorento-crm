@@ -406,7 +406,7 @@ class TestPromptOverridesAC807:
         stub_access()
         captured: dict[str, Any] = {}
 
-        def fake_resolve_config(db, *, current_date, override_version_id=None):
+        def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
             captured["override_version_id"] = override_version_id
             # 1 = "the production label's version"; 999 = "the override, if it leaked
             # through" - deliberately far apart so a wrong value cannot be a typo.
@@ -488,7 +488,7 @@ class TestPromptOverridesAC807:
         version = _create_version(db, "chatbot_semantic_parser")
         db.commit()
 
-        def fake_resolve_config(dbx, *, current_date, override_version_id=None):
+        def fake_resolve_config(dbx, *, current_date, override_version_id=None, grants=None):
             return parser_mod.ParserConfig(
                 system_prompt="stub", prompt_version=1, provider="openai",
                 model="gpt-test", api_key="sk-test",

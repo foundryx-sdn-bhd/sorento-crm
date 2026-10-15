@@ -63,6 +63,13 @@ def _granted_field_reveal_keys(db: Session, *, contact_id: str, space_id: str | 
         return []
 
 
+def contact_reveal_grants(db: Session, *, contact_id: str, space_id: str | None) -> list[str]:
+    """The contact's reveal grants, the SAME read `check_access` puts in `attributes`
+    (so the parser prompt's audience is what every refusal reads), without an access
+    decision. Fails closed to `[]`, the minimal audience (PARSER-PER-AUDIENCE)."""
+    return _granted_field_reveal_keys(db, contact_id=contact_id, space_id=space_id)
+
+
 def _hidden_spec_keys(db: Session, *, contact_id: str, space_id: str | None) -> list[str]:
     """This contact's hidden spec keys, sorted (PLAN-spec-visibility-policy.md
     "Chatbot seam"). Resolved once per turn, the SAME contact resolution field

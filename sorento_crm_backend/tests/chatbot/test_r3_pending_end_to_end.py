@@ -77,7 +77,7 @@ def _stub_parser(monkeypatch, output: dict[str, Any], *, space_id: str | None = 
     SQL trigram probe (the did-you-mean tier) can never return a row. Pass the seeded
     workspace's own space id for any chain that has to resolve a real product.
     """
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
         )

@@ -17,7 +17,7 @@ import { extractApiError } from '@/lib/api-client';
  *
  * GET /api/v1/system/chatbot/field-reveal-keys
  *   Permission: `user_management.contacts.view`.
- *   200 -> { "items": [{ "key": "inventory.sellable", "label": "Sellable stock" }, ...] }
+ *   200 -> { "items": [{ "key": "inventory.sellable", "label": "Sellable stock", "prompt_blocks": [] }, ...] }
  *
  * GET /api/v1/system/chatbot/contacts/{respond_contact_id}/field-reveals
  *   Permission: `user_management.contacts.view`.
@@ -33,6 +33,8 @@ import { extractApiError } from '@/lib/api-client';
 export interface FieldRevealKey {
   key: string;
   label: string;
+  /** Chatbot prompt blocks this key also removes when it is off (`PROMPT_GATES`). */
+  prompt_blocks?: string[];
 }
 
 export async function getFieldRevealKeys(): Promise<FieldRevealKey[]> {

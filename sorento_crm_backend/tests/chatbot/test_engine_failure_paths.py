@@ -56,7 +56,7 @@ class TestNothingEscapesRunTurn:
         stub_parser()
         stub_access()
 
-        def _boom(db, *, current_date, override_version_id=None):
+        def _boom(db, *, current_date, override_version_id=None, grants=None):
             raise parser_mod.ParserError("AI assistant configuration is not set")
 
         monkeypatch.setattr(parser_mod, "resolve_config", _boom)
@@ -221,7 +221,7 @@ class TestStageIsNamedOnEveryFailure:
             monkeypatch.setattr(
                 parser_mod,
                 "resolve_config",
-                lambda db, *, current_date: (_ for _ in ()).throw(RuntimeError("x")),
+                lambda db, *, current_date, grants=None: (_ for _ in ()).throw(RuntimeError("x")),
             )
         else:
             monkeypatch.setattr(
@@ -504,7 +504,7 @@ class TestTheRowKeepsTheFirstOutcome:
         monkeypatch.setattr(
             parser_mod,
             "resolve_config",
-            lambda db, *, current_date: (_ for _ in ()).throw(RuntimeError("boom")),
+            lambda db, *, current_date, grants=None: (_ for _ in ()).throw(RuntimeError("boom")),
         )
 
         result = engine_mod.run_turn(_envelope(), session_factory=session_factory)

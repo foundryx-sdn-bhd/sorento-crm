@@ -710,7 +710,7 @@ def test_clarify_arm_surfaces_the_ask_and_re_persists_the_offer_state(
     setting.chatbot_completed_lanes = ["out_of_scope"]
     db.commit()
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub",
             prompt_version=1,
@@ -879,7 +879,7 @@ def _run_nurain_team_clarify(session_factory, system_settings_row, monkeypatch, 
     setting.chatbot_completed_lanes = ["out_of_scope"]
     db.commit()
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub",
             prompt_version=1,

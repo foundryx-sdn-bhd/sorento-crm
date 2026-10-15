@@ -127,7 +127,7 @@ class EngineConsole:
         monkeypatch.setattr(turn_runtime, "_stock_availability_only", lambda *a, **k: True)
         present = _present_response()
 
-        def fake_resolve_config(db, *, current_date, override_version_id=None):
+        def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
             return parser_mod.ParserConfig(
                 system_prompt="stub",
                 prompt_version=1,

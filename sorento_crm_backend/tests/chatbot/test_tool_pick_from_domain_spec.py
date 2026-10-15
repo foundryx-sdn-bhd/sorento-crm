@@ -176,8 +176,12 @@ class TestNoEmbeddingNoRegistry:
             calls.append((name, dict(args)))
             return '{"answers": [{"title": "SRT62-GM"}], "has_result": true}'
 
+        payload = _continue_payload("spo_allocation")
+        # The contact holds the grant the spo_allocation domain needs (PARSER-PER-AUDIENCE
+        # G2: refused outright without purchase_orders.placed, before any tool is picked).
+        payload["ctx"]["access"] = {"attributes": ["purchase_orders.placed"]}
         business.run_fetch(
-            _continue_payload("spo_allocation"),
+            payload,
             services=_tool_services(recording_mcp_call),
             dry_run=False,
         )

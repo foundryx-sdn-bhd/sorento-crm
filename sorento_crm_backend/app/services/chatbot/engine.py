@@ -31,6 +31,7 @@ from dataclasses import dataclass, replace as dataclasses_replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterator, Mapping
 
+from sqlalchemy import text as sql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -57,7 +58,12 @@ from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.services.ledger_family import customer_groups
 from app.services.chatbot.head import grounding, parser
-from app.services.chatbot.head.access import check_access, default_space_id
+from app.services.chatbot.head.access import (
+    check_access,
+    contact_reveal_grants,
+    default_space_id,
+)
+from app.services.chatbot.prompt_gates import grant_for_domain, grant_for_order_status
 from app.services.chatbot.head.build_ctx import build_ctx
 from app.services.chatbot.lanes import business, canned as canned_lanes, casual
 from app.services.chatbot.lanes import fallback as fallback_mod
@@ -2289,6 +2295,104 @@ def _screen_resolver_for_scope(
     return refused, compatible, candidates, dropped_ids
 
 
+_ORDER_TYPES = ("customer_order", "order")
+
+
+def _drop_foreign_order_suggestions(
+    db: Session,
+    scope: dict[str, Any],
+    payload: dict[str, Any] | None,
+    compatible: list[dict[str, Any]],
+    candidates: dict[str, list[dict[str, Any]]],
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]], list[str]]:
+    """PARSER-PER-AUDIENCE S1: a customer-scoped contact's "did you mean" never offers
+    another customer's order number. Every order row the resolver SUGGESTED (an
+    alternative, or a match of any tier but `exact`) whose order is not one of the
+    contact's linked customers' is dropped, from the payload the miss and the picker are
+    composed from and from the candidates the offer stores. An exact order number keeps
+    `_screen_resolver_for_scope`'s rule (it resolves, without the owner's name). Returns
+    `(compatible, candidates, dropped_order_ids)`."""
+    def _suggested(row: Any, *, alternative: bool) -> bool:
+        return (
+            isinstance(row, dict)
+            and str(row.get("entity_type") or "").lower() in _ORDER_TYPES
+            and bool(row.get("uuid"))
+            and (alternative or str(row.get("match_tier") or "exact") != "exact")
+        )
+
+    resolutions: list[dict[str, Any]] = []
+    resolved = (payload or {}).get("resolved") if isinstance(payload, dict) else None
+    if isinstance(resolved, dict):
+        resolutions = [r for r in resolved.get("resolutions") or [] if isinstance(r, dict)]
+    # The AND-mode shape carries its rows at the top level too (`_screen_resolver_for_scope`
+    # cleans the same three): `alternatives`, `intersection` and `by_entity_type`.
+    top_level: list[tuple[str, list[Any]]] = []
+    if isinstance(resolved, dict):
+        for key in ("alternatives", "intersection"):
+            if isinstance(resolved.get(key), list):
+                top_level.append((key, resolved[key]))
+        if isinstance(resolved.get("by_entity_type"), dict):
+            top_level.extend(
+                ("by_entity_type", rows) for rows in resolved["by_entity_type"].values() if isinstance(rows, list)
+            )
+    asked = {
+        str(row["uuid"])
+        for res in resolutions
+        for key in ("matches", "alternatives")
+        for row in res.get(key) or []
+        if _suggested(row, alternative=key == "alternatives")
+    } | {
+        str(row["uuid"])
+        for key, rows in top_level
+        for row in rows
+        if _suggested(row, alternative=key == "alternatives")
+    } | {
+        str(row["uuid"])
+        for rows in [compatible, *(candidates or {}).values()]
+        if isinstance(rows, list)
+        for row in rows
+        if _suggested(row, alternative=False)
+    }
+    if not asked:
+        return compatible, candidates, []
+    own = [str(i) for i in scope.get("ids") or []]
+    allowed: set[str] = set()
+    if own:
+        allowed = {
+            str(r[0])
+            for r in db.execute(
+                sql("SELECT id FROM orders WHERE id::text = ANY(:ids) AND customer_id::text = ANY(:own)"),
+                {"ids": sorted(asked), "own": own},
+            )
+        }
+    foreign = asked - allowed
+    if not foreign:
+        return compatible, candidates, []
+
+    def _clean(rows: Any) -> Any:
+        if not isinstance(rows, list):
+            return rows
+        return [r for r in rows if not (isinstance(r, dict) and str(r.get("uuid")) in foreign
+                                        and str(r.get("entity_type") or "").lower() in _ORDER_TYPES)]
+
+    for res in resolutions:
+        for key in ("matches", "alternatives"):
+            if isinstance(res.get(key), list):
+                res[key] = _clean(res[key])
+    if isinstance(resolved, dict):
+        for key in ("alternatives", "intersection"):
+            if isinstance(resolved.get(key), list):
+                resolved[key] = _clean(resolved[key])
+        if isinstance(resolved.get("by_entity_type"), dict):
+            resolved["by_entity_type"] = {k: _clean(v) for k, v in resolved["by_entity_type"].items()}
+    gate = (payload or {}).get("gate") if isinstance(payload, dict) else None
+    if isinstance(gate, dict):
+        for key in ("compatible_entities", "customer_probe_entities"):
+            if isinstance(gate.get(key), list):
+                gate[key] = _clean(gate[key])
+    return _clean(compatible), {k: _clean(v) for k, v in (candidates or {}).items()}, sorted(foreign)
+
+
 def _names_an_order_number(entities: list[dict[str, Any]]) -> bool:
     """Does this message name a DO/SO/order number (the parser's own order hints)?"""
     return any(
@@ -4479,10 +4583,27 @@ def _run_stages_body(  # noqa: PLR0915
     # turn returned before this line and never needed a provider configured for a
     # parser it will not call (AC-1810's "no parser call" reading extended to setup).
     with _session(session_factory) as db:
+        # PARSER-PER-AUDIENCE: the prompt is rendered for what this contact may be
+        # answered on. The grants are read the way `check_access` reads the
+        # `attributes` every refusal uses, with no access decision of their own; an
+        # unreadable lookup is the minimal audience, never the full one. In its own
+        # savepoint (review R2): an SQL error there rolls back to it, so the prompt read
+        # below still runs on a live transaction.
+        try:
+            with db.begin_nested():
+                prompt_grants = list(
+                    contact_reveal_grants(
+                        db, contact_id=contact_respond_id, space_id=default_space_id(db)
+                    )
+                )
+        except Exception:  # noqa: BLE001 - fail closed to the minimal audience
+            logger.warning("chatbot: audience grants lookup failed", exc_info=True)
+            prompt_grants = []
         parser_config = parser.resolve_config(
             db,
             current_date=_current_date_directive(),
             override_version_id=_prompt_override(envelope, parser.PROMPT_KEY, dry_run=dry_run),
+            grants=prompt_grants,
         )
         # #1262 slice 9 (F1a): the live brand list for the `Known brands:` line,
         # read in the SAME session as the config above (already scoped to this
@@ -5212,13 +5333,14 @@ def _run_stages_body(  # noqa: PLR0915
         # defence, for a re-entry path that calls it directly.
         from app.services.chatbot.lanes.business import _SALES_REPORT_GRANT
 
-        from app.services.chatbot.contracts import SALES_FIGURE_STATUSES
-
         # PLAN-chatbot-top-x-hot-selling-24sep.md S4 point 5: the top selling ranking is
         # the same money under the same key, refused at the same seam.
-        sales_report_grant_refused = (
-            jsc.js_string(parsed_output.get("order_status") or "").strip() in SALES_FIGURE_STATUSES
-            and _SALES_REPORT_GRANT not in set(access.get("attributes") or [])
+        # The ask-to-grant map is `prompt_gates.PROMPT_GATES` (PARSER-PER-AUDIENCE).
+        status_grant = grant_for_order_status(
+            jsc.js_string(parsed_output.get("order_status") or "").strip()
+        )
+        sales_report_grant_refused = bool(status_grant) and status_grant not in set(
+            access.get("attributes") or []
         )
         if sales_report_grant_refused:
             # Same event shape `lanes.business.run_fetch`'s own sales-report grant
@@ -5232,6 +5354,49 @@ def _run_stages_body(  # noqa: PLR0915
                     "needs": _SALES_REPORT_GRANT,
                 },
             )
+
+        # PARSER-PER-AUDIENCE (review S1): a whole gated domain (purchase cost, purchase
+        # orders, supplier receipts) is refused at the SAME seam, before the resolver, the
+        # picker or a not-found miss could name a product the contact may not ask about.
+        # Only when the plan asks that domain alone: a fan-out keeps its other asks, and
+        # `lanes.business.run_fetch`'s whole-domain gate refuses the gated one there.
+        gated_domain = jsc.js_string(verdict.get("domain_hint") or "").strip()
+        gated_need = grant_for_domain(gated_domain)
+        plan_domains = {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
+        domain_refusal_text: str | None = None
+        # SO-PO-REF: a customer's own PO reference (the parser's `po_refs`, read as one for
+        # every audience but staff) is a sales order question, answered or refused under
+        # the SO grant by `lanes.business.run_fetch`'s `po_refs` arm, never under the
+        # supplier PO grant this gate checks.
+        customer_po_ref_ask = bool(
+            [w for w in jsc.array(verdict.get("po_refs")) if isinstance(w, str) and w.strip()]
+        ) and turn_state.reads_customer_po_refs(state_out.profile)
+        if (
+            not sales_report_grant_refused
+            and not customer_po_ref_ask
+            and gated_need
+            and gated_need != _SALES_REPORT_GRANT
+            and gated_need not in set(access.get("attributes") or [])
+            and plan_domains <= {gated_domain}
+        ):
+            domain_refusal_text = turn_runtime.domain_denial_text(db, gated_domain)
+            if domain_refusal_text:
+                turn_trace.add(
+                    "domain_grant",
+                    {"domain": gated_domain, "skipped": "not_granted", "needs": gated_need},
+                )
+        # Every seam below that skips the resolver, the bridge, the fetch and the ask
+        # for a refused sales report skips them for a refused domain too.
+        grant_refused = sales_report_grant_refused or bool(domain_refusal_text)
+        if grant_refused:
+            # A refused ask names a subject nothing looked up. Kept on the focus, it rode
+            # into the next fetch turn as an unsettled carry (`with_carried_entities`),
+            # was resolved there, and a low stock refusal printed a stock miss and an
+            # incoming block for it (PARSER-PER-AUDIENCE crew audit). The refused turn
+            # leaves the subject the conversation had before it.
+            for attr in turn_state.KIND_FIELD_MAP.values():
+                setattr(state_out.focus, attr, copy.deepcopy(getattr(state_in.focus, attr)))
+            state_out.focus.extra = copy.deepcopy(state_in.focus.extra)
 
         top_selling_updates: dict[str, Any] = {}
         customer_scope_refused = False
@@ -5268,7 +5433,7 @@ def _run_stages_body(  # noqa: PLR0915
         # the set's predicate placed nothing ("wash basin" is no product code), and that
         # resolver's own not-found exit turned the page into "Couldn't find: wash basin".
         set_page_turn = bool(plan.fetch) and isinstance(plan.fetch[0].filters.get("set_page"), dict)
-        if not sales_report_grant_refused and not set_page_turn and (plan.fetch or plan.ask is not None):
+        if not grant_refused and not set_page_turn and (plan.fetch or plan.ask is not None):
             # The REAL branch this plan belongs to, the SAME function "D ROUTE" below
             # calls on the (possibly reconciled) plan - not a literal "business_query"
             # for every turn, so a promotion ask reaches `resolve_gate.run` at
@@ -5491,6 +5656,12 @@ def _run_stages_body(  # noqa: PLR0915
             # reason and the ids it dropped, so a refusal explains itself.
             screened_refused = False
             screened_dropped: list[str] = []
+            if customer_scope and customer_scope.get("enforced"):
+                compatible_entities, resolved_candidates, foreign_orders = _drop_foreign_order_suggestions(
+                    db, customer_scope, resolver_payload, compatible_entities, resolved_candidates
+                )
+                if foreign_orders:
+                    turn_trace.add("customer_scope", {"dropped_order_suggestions": foreign_orders})
             if gate_scope and gate_scope.get("enforced"):
                 screened_refused, compatible_entities, resolved_candidates, screened_dropped = (
                     _screen_resolver_for_scope(
@@ -6253,7 +6424,7 @@ def _run_stages_body(  # noqa: PLR0915
             answer is None
             and branch_kind in ("business_query", "check_promotion")
             and completes_here
-            and not sales_report_grant_refused
+            and not grant_refused
             and not customer_scope_refused
             # AC-1708 (captain's ruling, 20 Sep 2026): an `offer` / `access_ask` exit is
             # the SAME question whether the message named one domain or two - "which
@@ -6390,7 +6561,7 @@ def _run_stages_body(  # noqa: PLR0915
             answer is None
             and branch_kind in ("business_query", "check_promotion")
             and completes_here
-            and not sales_report_grant_refused
+            and not grant_refused
             and not customer_scope_refused
             and not plan.fetch
             and len(plan.domains) == 1
@@ -6425,7 +6596,7 @@ def _run_stages_body(  # noqa: PLR0915
             answer is None
             and branch_kind in ("business_query", "check_promotion")
             and completes_here
-            and not sales_report_grant_refused
+            and not grant_refused
             and not customer_scope_refused
         ):
             stage[0] = "looked_up"
@@ -7080,7 +7251,7 @@ def _run_stages_body(  # noqa: PLR0915
         # they were never entitled to ask. The grant comes before ANY question.
         if (
             not bridge_answered
-            and not sales_report_grant_refused
+            and not grant_refused
             and not customer_scope_refused
             and plan.ask is not None
             and completes_here
@@ -7145,6 +7316,11 @@ def _run_stages_body(  # noqa: PLR0915
 
             stage[0] = "replied"
             answer = turn_compose.Answer(text=SALES_REPORT_NOT_ENABLED_MESSAGE)
+
+        # -- the REFUSAL: a whole gated domain, same seam (PARSER-PER-AUDIENCE S1) -- #
+        if answer is None and domain_refusal_text and completes_here:
+            stage[0] = "replied"
+            answer = turn_compose.Answer(text=domain_refusal_text)
 
         # -- the REFUSAL: a customer word outside a scoped contact's links -------- #
         # Once for the whole turn, however many domains the plan fans out to; no picker,

@@ -130,7 +130,7 @@ def stub_parser(monkeypatch):
     """Stub the provider call, the way `test_ideation_turn` stubs the ideate extractor."""
 
     def _install(output: dict[str, Any] | None = None, *, error: Exception | None = None, on_call=None):
-        def fake_resolve_config(db, *, current_date, override_version_id=None):
+        def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
             return parser_mod.ParserConfig(
                 system_prompt="stub",
                 prompt_version=1,
