@@ -113,7 +113,7 @@ async def get_purchase_request_by_number(
 @router.get("/lookups/customers")
 async def lookup_customers_for_request(
     q: str = Query(""),
-    limit: int = Query(20, ge=1, le=50),
+    limit: int = Query(20, ge=1, le=MAX_PAGE_LIMIT),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

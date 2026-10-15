@@ -40,6 +40,7 @@
     "projects.quotation_templates",
     "projects.price_floor_rules",
     "projects.series_products",
+    "projects.series_sets",
     "projects.series_categories",
     "projects.series",
     "projects.tasks",
