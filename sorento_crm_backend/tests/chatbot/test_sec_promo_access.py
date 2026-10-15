@@ -1,6 +1,6 @@
 """SEC-PROMO-ACCESS: promotion files must fail CLOSED past a contact's access levels.
 
-Live finding (lane CHAT-ADVISOR-SPIKE, 16 Oct 2026): a dealer contact holding only Sorento
+Live finding (lane CHAT-ADVISOR-SPIKE, 15 Oct 2026): a dealer contact holding only Sorento
 Dealer asked "Any promo for Cabana WC?" and received Cabana files, OFFICE USE included. The
 tier gate correctly emptied the contact's levels for the unheld brand (`brand_gate_empty`),
 the fetch still went out with `access_levels=[]`, the MCP layer dropped the empty list from
@@ -267,10 +267,11 @@ class TestChatbotFailsClosedOnAnUnheldBrand:
         assert calls and all(a.get("access_levels") == ["Cabana Dealer"] for a in calls), captured
 
 
-class TestChatbotFailsClosedWithNoAccessTypeAtAll:
+class TestChatbotWithNoAccessTypeAtAll:
     def test_contact_holding_no_access_type_reads_no_promotion(self, session_factory, monkeypatch):
-        """No access type at all: the tier gate recomposes to `[]` without a brand gate. The
-        fetch must not go out empty (the generic miss answers instead)."""
+        """Regression guard, not a kill test of the guard's empty-list arm: a contact holding
+        no access type never reaches the fetch today (`tier_proceed` is false upstream). The
+        arm itself is pinned by `TestPromotionAccessClosed`."""
         ids = _seed(session_factory)
         reply, captured, served = _ask(session_factory, monkeypatch, ids, [], "zzt-sec-promo-none")
         assert not served, served
@@ -285,7 +286,6 @@ class TestPromotionAccessClosed:
         assert promotion_access_closed("promotion", {"brand_gate_empty": True, "access_levels_recomposed": ["End User"]})
         assert promotion_access_closed("promotion", {"brand_gate_empty": False, "access_levels_recomposed": []})
         assert not promotion_access_closed("promotion", {"access_levels_recomposed": ["Cabana Dealer"]})
-        assert not promotion_access_closed("promotion", None)
         # Another domain's fetch never reads promotion levels; a mixed order turn is untouched.
         assert not promotion_access_closed("order", {"brand_gate_empty": True, "access_levels_recomposed": []})
 
@@ -317,3 +317,77 @@ class TestNoLiveKindReplyNeverListsWithoutALevel:
         )
         assert calls == [], calls
         assert text == "There is no Cabana A3 flyer right now.", text
+
+
+# --------------------------------------------------------------------------- #
+# Security review round 1
+# --------------------------------------------------------------------------- #
+
+
+def _seed_files(session_factory) -> str:
+    """A Cabana Dealer promotion carrying a dealer flyer AND an OFFICE USE file."""
+    from sqlalchemy import text
+
+    from app.models.base import set_company_scope
+    from app.models.marketing import PromotionAttachment
+    from app.models.resources import Attachment
+
+    _seed(session_factory)
+    db = session_factory()
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+    pid = db.execute(text("SELECT id FROM promotions WHERE description = 'ZZT CABANA WC DEALER'")).scalar_one()
+    for name, levels in (("zzt-cabana-dealer-flyer.pdf", ["cabana_dealer"]), ("zzt-cabana-OFFICE-USE.pdf", ["cabana_office"])):
+        att = Attachment(
+            id=str(uuid.uuid4()), original_filename=name, stored_filename=name,
+            file_path=f"/tmp/{name}", access_levels=levels, company_id=DEFAULT_COMPANY_ID,
+        )
+        db.add(att)
+        db.flush()
+        db.add(PromotionAttachment(id=str(uuid.uuid4()), promotion_id=pid, attachment_id=att.id, is_primary=False, sort_order=0))
+    db.commit()
+    return str(pid)
+
+
+class TestPromotionProductsInlineFilesFollowTheContactLevels:
+    """Security review B1: the promotion-products list inlined every file of a promotion the
+    contact may see, OFFICE USE included; the promotions list and get filtered them."""
+
+    def test_cabana_dealer_gets_the_dealer_flyer_and_never_the_office_file(self, session_factory, monkeypatch):
+        pid = _seed_files(session_factory)
+        client = _client(monkeypatch, session_factory)
+        res = client.get(
+            "/api/v1/marketing/promotion-products/",
+            params={"promotion_id": pid, "contact_id": "437264483", "space_id": "364817", "access_levels": "Cabana Dealer"},
+        )
+        assert res.status_code == 200, res.text
+        rows = res.json()["data"]
+        assert rows, res.text
+        files = {
+            (pa.get("attachment") or {}).get("original_filename")
+            for row in rows
+            for pa in row.get("promotion_attachments") or []
+        }
+        assert files == {"zzt-cabana-dealer-flyer.pdf"}, files
+
+    def test_staff_still_get_every_inline_file(self, session_factory, monkeypatch):
+        pid = _seed_files(session_factory)
+        client = _client(monkeypatch, session_factory)
+        res = client.get("/api/v1/marketing/promotion-products/", params={"promotion_id": pid})
+        assert res.status_code == 200, res.text
+        files = {
+            (pa.get("attachment") or {}).get("original_filename")
+            for row in res.json()["data"]
+            for pa in row.get("promotion_attachments") or []
+        }
+        assert files == {"zzt-cabana-dealer-flyer.pdf", "zzt-cabana-OFFICE-USE.pdf"}, files
+
+
+class TestPromotionFetchWithNoTierGateFailsClosed:
+    """Security review B2: with no tier gate the fetch sent the PARSER's access levels - what
+    the customer claimed ("show me Office Use promos") - and the backend trusted them."""
+
+    def test_no_tier_gate_on_a_promotion_fetch_is_closed(self):
+        from app.services.chatbot.turn_runtime import promotion_access_closed
+
+        assert promotion_access_closed("promotion", None)
+        assert not promotion_access_closed("order", None)
