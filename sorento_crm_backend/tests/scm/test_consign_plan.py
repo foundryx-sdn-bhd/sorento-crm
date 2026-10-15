@@ -19,6 +19,8 @@ from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
 from app.models.order import SalesOrderLine
 from app.models.project_so import OrderInquiryRow, ProjectSalesOrderLine, SOSupplyDecision
 from app.models.project_so import ProjectSalesOrder
@@ -661,8 +663,6 @@ def test_n6_the_consignment_trail_is_one_step_that_agrees_with_its_borrow():
 # --------------------------------------------------------------------------- CON, whatever its flags
 # Dev has CON inactive AND flagged off: a consignment is planned at its own bin regardless.
 
-import pytest  # noqa: E402
-
 CON_FLAGS = pytest.mark.parametrize("con_active", [True, False], ids=["active", "inactive"])
 
 
@@ -722,11 +722,11 @@ def test_con_holding_none_still_proposes_and_confirms_the_borrow(con_active):
             [str(confirm_world["product"].id)]
         ).get((str(confirm_world["product"].id), str(confirm_world["own"].id)))
         planned, plannable = _planned_state(db, confirm_world["core_so"])
-        print("CON0", con_active, kinds, trail, "short:", body.get("stock_short_notices"),
-              "held:", held)
 
     assert kinds == ["borrow"]
     assert body["lines_decided"] == 1
+    assert not body.get("stock_short_notices"), "no shortage is recorded"
+    assert held is None, "nothing is held at CON"
     assert inquiry_rows == 0
     assert (planned, plannable) == (1, 1)
 
@@ -748,3 +748,31 @@ def test_con_never_reaches_a_sales_order_line(con_active):
 
     assert con_id not in [c.get("warehouse_id") for c in row["borrow_candidates"]]
     assert con_code not in [s.get("location") for s in row["sources"]]
+
+
+def test_s8_an_inactive_bin_flagged_into_planning_is_still_planned_at_its_own_bin():
+    """`is_active=False` with `fulfilment_planning=True` is not "in planning" (the predicate
+    needs both), so the consignment is planned at the bin and owes nothing back."""
+    from app.models.project_so import INQUIRY_CANCELLED
+
+    with blank_session() as db:
+        world = _board_world(db)
+        world["con"].fulfilment_planning = True
+        world["con"].is_active = False
+        db.flush()
+        board = _build(db, world)
+        row = _contributions(board, world["order"].so_number)[0]
+        sources = [(s["kind"], s["location"], Decimal(s["qty"])) for s in row["sources"]]
+        con_code = world["con"].warehouse_code
+
+        confirm_world = _consign_world(db, planned_bin=True, con_active=False)
+        _confirm(db, confirm_world, borrow=[_own_borrow(confirm_world, "10", "Own bin.")])
+        order_backs = (
+            db.query(OrderInquiryRow)
+            .filter(OrderInquiryRow.verb == "ORDER_BACK",
+                    OrderInquiryRow.state != INQUIRY_CANCELLED)
+            .count()
+        )
+
+    assert sources == [("borrow", con_code, Decimal("10"))]
+    assert order_backs == 0
