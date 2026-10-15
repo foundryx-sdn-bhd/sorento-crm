@@ -23,3 +23,9 @@
 - AC-11 (slice 3): An unlinked non-staff contact typing another customer's (partial) name gets the
   no-link refusal line: no customer picker, no other customer's name, no DO probe. Document staff
   (office tier, office access type, salesperson) keep the picker.
+- AC-12: The same holds when the parser tagged the word brand, category, product or order and the
+  resolver reads it as a customer; a carried customer word never refuses a later turn.
+- AC-13 (owner CA-3 Q5(a), crew ruling 15 Oct): an unlinked contact holding `chatbot.analytics`
+  keeps the chat report's customers, and one holding `sales_orders.sales_report` keeps the sales
+  report's (top selling and the ranking included), picker included. A report grant does not open
+  any other domain.

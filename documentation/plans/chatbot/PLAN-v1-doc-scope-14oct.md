@@ -78,6 +78,23 @@ enforced dealer's word outside its links takes. No picker, no probe, no resolver
 word. Document staff are unchanged. AC-CS-03 ("unlinked contact unchanged: the picker") is
 flipped under the owner rule unlinked != customer.
 
+Security review round 2: under `order` the resolver reads a brand, category, product or order
+word as the customer it names (`entity_resolver._DOMAIN_HINT_EXPANSIONS`), so the parser's tag is
+not enough. For a held contact `resolve_kinds` / `resolve_gate.run` (`hide_customers`) drop every
+customer row right after the resolver, before the gate builds a picker or runs its DO probe; a
+word typed this message that only matched customers gets the no-link line. A carried customer
+word is dropped, never refused, so a refusal cannot lock the next turns. Top selling is no
+longer skipped for an unlinked contact.
+
+Crew ruling (b), 15 Oct, keeping the owner's CA-3 Q5(a)
+(`PLAN-chat-analytics-ca3-chat-dataset-10oct.md`:181-184): a GRANTED report turn by an unlinked
+contact is exempt, picker included: the chat report under `chatbot.analytics`, the sales report
+(every `SALES_FIGURE_STATUSES` ask: sales report, top selling, sales analysis, ranking) under
+`sales_orders.sales_report`. The owner grants those per contact. Everything else (orders, DO, SO,
+outstanding, any domain without such a grant) keeps the slice-3 rule. The CA-3, report_ask and
+sales-report suites stay unclassified-asker tests (their slice-3 office marks reverted); without
+the grant, SF-1 and the chat lane's own grant check already keep every name away.
+
 ## Open before merge
 
 The owner runs `crew/state/reports/V1-DOC-SCOPE-salesperson-check.sql` (read-only) on production
