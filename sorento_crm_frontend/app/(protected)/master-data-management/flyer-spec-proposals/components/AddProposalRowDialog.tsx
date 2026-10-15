@@ -19,6 +19,7 @@ import type { SpecProposalValue } from '@/components/spec-proposals';
 
 import { useApplicableSpecKeysQuery } from '../hooks/useFlyerSpecProposals';
 import { fromDraft } from './ProposalValueEditor';
+import { codeWithName } from '@/lib/product-display';
 
 /**
  * A specification the flyer states in a way no rule caught, added to a product it
@@ -100,7 +101,7 @@ export function AddProposalRowDialog({
         <DialogHeader>
           <DialogTitle>Add a specification</DialogTitle>
           <DialogDescription>
-            {productCode} &middot; {productName}
+            {codeWithName(productCode, productName, ' \u00b7 ')}
           </DialogDescription>
         </DialogHeader>
 

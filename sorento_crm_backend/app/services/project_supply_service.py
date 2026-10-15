@@ -586,6 +586,26 @@ class SupplyLinesRefused(AppException):
         return list(self.detail.get("failing_lines") or [])
 
 
+def _preview_row_facts(row: Any) -> Tuple[Any, ...]:
+    """What purchasing reads of one inquiry row: a simulated press that leaves all of it as
+    it was only re-filed the row, and writes nothing for purchasing. The note is read too,
+    so a press that rewrites only a row's note is still listed (none does today: a CS note
+    is written on a newly raised row only)."""
+    return (
+        row.verb, row.state, row.item_code, row.qty, row.delivery_date, row.stock_location,
+        row.so_line_id, row.note,
+    )
+
+
+def _preview_move_facts(move: Any) -> Tuple[Any, ...]:
+    """What a planner reads of one stock transfer: a press that leaves all of it as it was
+    only re-filed the transfer under the new revision, and moves nothing new."""
+    return (
+        move.kind, move.qty, move.from_warehouse_id, move.to_warehouse_id, move.so_line_id,
+        move.state,
+    )
+
+
 def _error_detail(exc: Exception) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
     """What went wrong, and which lines it named, off any exception `confirm` can raise.
 
@@ -1262,8 +1282,14 @@ class ProjectSupplyService:
         Refused before anything is written: a blank reason (422), a line that is not on this
         order (422), an already cancelled line (409, audit columns never rewritten) and a line
         an active decision still covers (409, reject it first).
+
+        CANCEL-STOP-AT-SO (owner, 14 Oct 23:20): a line an AutoCount Cancel SO cancelled, that
+        CS has not transferred yet (`awaits_cancel_so`), is the one cancelled line this takes:
+        the sync proposed the transfer and CS confirming it is this same cancel. Its active
+        decision, if any, holds nothing (owed qty 0), so it does not stand in the way.
         """
         from app.services import project_line_draft_service
+        from app.services.project_line_draft_service import awaits_cancel_so
         from app.services.project_order_inquiry_service import (
             ProjectOrderInquiryService,
             flag_rows_for_cancelled_lines,
@@ -1310,6 +1336,8 @@ class ProjectSupplyService:
             for snap in (active.line_snapshots or [] if active is not None else [])
         }
         for mirror, core, _reason in picked:
+            if awaits_cancel_so(core):
+                continue
             if core.line_status == "cancelled":
                 raise AppException(
                     status_code=409,
@@ -1340,8 +1368,14 @@ class ProjectSupplyService:
             [core.id for _m, core, _r in picked],
             company_id=str(order.company_id) if order.company_id else None,
         )
-        ProjectOrderInquiryService(self.db).retire_rows_for_cancelled_lines(
+        oi_service = ProjectOrderInquiryService(self.db)
+        oi_service.retire_rows_for_cancelled_lines(
             [(str(core.id), reason) for _m, core, reason in picked],
+            actor_user_id=str(actor_user_id),
+        )
+        oi_service.record_cancelled_lines(
+            pso_id=str(order.id),
+            cancelled=[(mirror, core) for mirror, core, _r in picked],
             actor_user_id=str(actor_user_id),
         )
         flag_rows_for_cancelled_lines(self.db, [str(core.id) for _m, core, _r in picked])
@@ -3066,6 +3100,67 @@ class ProjectSupplyService:
             by_ref,
             self._oi_linked_landed_by_ref(refs, product_id=product_id, company_id=company_id),
         )
+
+    def _po_received_by_product(
+        self, refs_by_product: Mapping[str, Iterable[str]]
+    ) -> Dict[str, Dict[str, Tuple[Decimal, Optional[str]]]]:
+        """`product_id -> _po_received_by_so_line_ref(refs, product_id=..., company_id=None)`
+        for many products in two reads, not two per product (STOCK-DEBT-PERF: the Stock
+        Debt board asked once per product, 1,258 of its 1,288 statements on the dev DB).
+
+        The same two joins over every product and ref at once. A row is kept only for the
+        product it is for AND a ref asked about for that product, so each product's answer
+        is the single-key read's own: the receipt JOIN pairs the SPO row with the PO line's
+        product (the single-key read gets that by comparing both to one literal), and no
+        company is stated, as `company_id=None` states none.
+        """
+        wanted = {
+            str(product_id): {ref for ref in {str(r).strip() for r in refs if r} if ref}
+            for product_id, refs in refs_by_product.items()
+            if product_id
+        }
+        wanted = {product_id: refs for product_id, refs in wanted.items() if refs}
+        if not wanted:
+            return {}
+        all_refs = sorted(set().union(*wanted.values()))
+        product_ids = sorted(wanted)
+        received: Dict[str, Dict[str, Dict[str, Decimal]]] = {}
+        rows = (
+            self.db.query(
+                PurchaseOrderLine.from_so_line_ref,
+                SPOAllocation.quantity_received,
+                SPOAllocation.spo_number,
+                PurchaseOrderLine.product_id,
+            )
+            .join(
+                SPOAllocation,
+                (SPOAllocation.from_po_line_ref == PurchaseOrderLine.source_ref)
+                & (SPOAllocation.product_id == PurchaseOrderLine.product_id),
+            )
+            .filter(
+                PurchaseOrderLine.from_so_line_ref.in_(all_refs),
+                PurchaseOrderLine.product_id.in_(product_ids),
+            )
+            .all()
+        )
+        for ref, qty, spo_number, product_id in rows:
+            if str(ref) in wanted.get(str(product_id), ()):
+                _add_landed(received.setdefault(str(product_id), {}), str(ref), spo_number, qty)
+        linked: Dict[str, Dict[str, Dict[str, Decimal]]] = {}
+        for ref, product_id, _company, spo_number, placed, got in self._oi_placements(
+            all_refs, product_ids
+        ):
+            if str(ref) in wanted.get(str(product_id), ()):
+                _add_landed(
+                    linked.setdefault(str(product_id), {}), str(ref).strip(), spo_number,
+                    min(_dec(placed), _dec(got)),
+                )
+        return {
+            product_id: _landed_for_refs(
+                received.get(product_id, {}), linked.get(product_id, {})
+            )
+            for product_id in wanted
+        }
 
     def _oi_linked_landed_by_ref(
         self,
@@ -5466,10 +5561,17 @@ class ProjectSupplyService:
                 "lines_carried": decided,
             }
 
+        previous = self.active_decision(str(order.id))
         carried = self._carried_lines(
-            self.active_decision(str(order.id)), named=seen, by_id=by_id, facts=facts,
+            previous, named=seen, by_id=by_id, facts=facts,
             uncover=set(uncover_line_ids),
         )
+        # What each SAVED line was decided as before this Confirm, read before the revision
+        # below supersedes it: the purchasing email names only what this Confirm changed.
+        before_by_line = {
+            str(snap.get("project_line_id")): snap
+            for snap in ((previous.line_snapshots or []) if previous is not None else [])
+        }
         body = self._write_decision(
             order,
             checked,
@@ -5494,9 +5596,52 @@ class ProjectSupplyService:
         body["lines_fulfilled_skipped"] = len(fulfilled)
         body["landed_buy_notices"] = list(self._landed_buy_notices.values()) or None
         body["stock_short_notices"] = self._stock_short_notices(checked) or None
-        if self._stock_short:
-            self._hand_stock_short_to_purchasing(order, checked, actor_user_id=actor_user_id)
+        self._tell_saved_lines(order, checked, before_by_line, actor_user_id=actor_user_id)
         return body
+
+    def _tell_saved_lines(
+        self,
+        order: ProjectSalesOrder,
+        checked: Sequence[Tuple[ProjectSalesOrderLine, Any, "_LineFacts"]],
+        before_by_line: Mapping[str, Mapping[str, Any]],
+        *,
+        actor_user_id: Optional[str] = None,
+    ) -> None:
+        """ONE purchasing email line per line this Confirm SAVED whose decision is new or
+        changed (ORDERBACK-DELTA extension, owner 13 Oct 2026 22:40). A shortfall is never
+        told in the email (owner 14 Oct 2026). Carried lines are not in `checked` and never
+        appear."""
+        from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+        decision = self.active_decision(str(order.id))
+        now_by_line = {
+            str(snap.get("project_line_id")): snap
+            for snap in ((decision.line_snapshots or []) if decision is not None else [])
+        }
+        # A local Buy is not purchasing's to place (R9) and reads LOCAL BUY (owner, 13 Oct,
+        # Q3). Marked on both snapshots alike, so it never reads as a change by itself.
+        origin = buy_origin_by_product(
+            self.db, {str(fact.product_id) for _l, _e, fact in checked if fact.product_id}
+        )
+
+        def _marked(snapshot, fact):
+            if snapshot is None or origin.get(str(fact.product_id)) != "local":
+                return snapshot
+            return {**snapshot, "buy_origin": "local"}
+
+        saved = [
+            (
+                line,
+                _marked(now_by_line[str(line.id)], fact),
+                _marked(before_by_line.get(str(line.id)), fact),
+            )
+            for line, _entry, fact in checked
+            if str(line.id) in now_by_line
+        ]
+        if saved:
+            ProjectOrderInquiryService(self.db).record_saved_lines(
+                pso_id=str(order.id), saved=saved, actor_user_id=actor_user_id
+            )
 
     def _record_short(
         self,
@@ -5568,30 +5713,6 @@ class ProjectSupplyService:
                     }
                 )
         return notices
-
-    def _hand_stock_short_to_purchasing(
-        self,
-        order: ProjectSalesOrder,
-        checked: Sequence[Tuple[ProjectSalesOrderLine, Any, _LineFacts]],
-        *,
-        actor_user_id: str,
-    ) -> None:
-        """Each shortfall as its own line of the purchasing email this Confirm already sends
-        (owner rule 12 Oct 2026). No purchasing row is raised for it."""
-        from app.services.project_order_inquiry_service import ProjectOrderInquiryService
-
-        service = ProjectOrderInquiryService(self.db)
-        for line, _entry, fact in checked:
-            for entry in self._stock_short.get(str(line.id), ()):
-                service.record_stock_short(
-                    pso_id=str(order.id),
-                    line=line,
-                    item_code=fact.item_code,
-                    qty_short=entry["short"],
-                    location=entry["location"],
-                    remark=self._short_sentence(entry),
-                    actor_user_id=actor_user_id,
-                )
 
     def _carried_lines(
         self,
@@ -11359,8 +11480,8 @@ class ProjectSupplyService:
                         }
                     )
                 before_decision_id = None
-                before_rows: Set[str] = set()
-                before_moves: Set[str] = set()
+                before_rows: Dict[str, Tuple[Any, ...]] = {}
+                before_moves: Dict[str, Tuple[Any, ...]] = {}
                 if observe:
                     active = self.active_decision(str(order.id))
                     before_decision_id = str(active.id) if active is not None else None
@@ -11439,25 +11560,28 @@ class ProjectSupplyService:
                     self.db.info.pop("confirm_preview", None)
         return results
 
-    def _preview_baseline(self, order: ProjectSalesOrder) -> Tuple[Set[str], Set[str]]:
-        """The ids of the order's inquiry rows and transfers BEFORE a press writes, so the
-        preview can tell a row this press raised from one it only settles."""
+    def _preview_baseline(
+        self, order: ProjectSalesOrder
+    ) -> Tuple[Dict[str, Tuple[Any, ...]], Dict[str, Tuple[Any, ...]]]:
+        """The order's inquiry rows and stock transfers (id -> what purchasing or a planner
+        reads of them) BEFORE a press writes, so the preview can tell one this press raised
+        from one it settles, and leave out one it only re-filed."""
         from app.models.stock_transfer import StockTransfer
 
         line_ids = [str(line.id) for line in self.lines_of(str(order.id))]
         rows = (
             {
-                str(row_id)
-                for (row_id,) in self.db.query(OrderInquiryRow.id).filter(
+                str(row.id): _preview_row_facts(row)
+                for row in self.db.query(OrderInquiryRow).filter(
                     OrderInquiryRow.so_line_id.in_(line_ids)
                 )
             }
             if line_ids
-            else set()
+            else {}
         )
         moves = {
-            str(move_id)
-            for (move_id,) in self.db.query(StockTransfer.id).filter(
+            str(move.id): _preview_move_facts(move)
+            for move in self.db.query(StockTransfer).filter(
                 StockTransfer.project_sales_order_id == str(order.id)
             )
         }
@@ -11466,13 +11590,17 @@ class ProjectSupplyService:
     def _preview_of(
         self,
         order: ProjectSalesOrder,
-        before_rows: Set[str],
-        before_moves: Set[str],
+        before_rows: Mapping[str, Tuple[Any, ...]],
+        before_moves: Mapping[str, Tuple[Any, ...]],
     ) -> Dict[str, Any]:
         """The order inquiry rows and stock transfers the press just wrote, read INSIDE its
         transaction (before the caller rolls it back). The new revision is the active one
         until that rollback, so its id names exactly what this press raised; `is_new` is
-        false for a row or transfer that already existed before the write."""
+        false for a row or transfer that already existed before the write.
+
+        A row that existed and still reads exactly as it did (a carried line's row the press
+        only re-filed under the new revision) is left out: nothing is written for purchasing
+        (owner hand test SO424764 line 416, 14 Oct 2026). A transfer is held to the same rule."""
         from app.models.stock_transfer import StockTransfer
 
         decision = self.active_decision(str(order.id))
@@ -11499,6 +11627,7 @@ class ProjectSupplyService:
             for row in self.db.query(OrderInquiryRow)
             .filter(OrderInquiryRow.supply_decision_id == str(decision.id))
             .all()
+            if before_rows.get(str(row.id)) != _preview_row_facts(row)
         ]
         inquiry_rows.sort(key=lambda entry: (entry["line_no"] is None, entry["line_no"] or 0))
         moves = (
@@ -11530,6 +11659,7 @@ class ProjectSupplyService:
                 "to_location": codes.get(str(move.to_warehouse_id or "")),
             }
             for move in moves
+            if before_moves.get(str(move.id)) != _preview_move_facts(move)
         ]
         transfers.sort(key=lambda entry: (entry["line_no"] is None, entry["line_no"] or 0))
         return {"inquiry_rows": inquiry_rows, "transfers": transfers}

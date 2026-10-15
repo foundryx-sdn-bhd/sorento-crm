@@ -68,7 +68,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
-from app.models.order import Customer, OrderInquiryConflict, SalesOrder, SalesOrderLine
+from app.models.order import DOC_TYPE_SALES_ORDER, Customer, OrderInquiryConflict, SalesOrder, SalesOrderLine
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier
 from app.models.product import Product
 from app.models.sales_agent import SalesAgent
@@ -333,13 +333,18 @@ class DocumentIngestService(MasterRefResolver):
     """
 
     def __init__(
-        self, db: Session, integration_id: Optional[str] = None, *, company_id: str
+        self, db: Session, integration_id: Optional[str] = None, *, company_id: str,
+        sales_doc_type: str = DOC_TYPE_SALES_ORDER,
     ):
         # Required, for the reason the master ingest states: a default would be
         # the incumbent company, and a push meant for the other one would land
         # there silently.
         super().__init__(db, integration_id, company_id=company_id)
         self._dry_run = False
+        # AC-CONSIGN-CRM: which `sales_orders.doc_type` this instance writes. The consignments
+        # ingest passes `consignment`; a sales order and a consignment never take over each
+        # other's row (`_check_doc_type`).
+        self.sales_doc_type = sales_doc_type
         # D7/S5 (plan section 2.6): what the ROUTE's post-write hooks need, read
         # off this instance after `ingest()` returns rather than threaded through
         # `IngestResult` - plain attributes, no new classes, and `MasterIngestService`
@@ -729,6 +734,10 @@ class DocumentIngestService(MasterRefResolver):
                     # query too.
                     self._memo[(Product.__tablename__, "code", code.upper())] = pid
 
+        # The FIRST snapshot of a product wins: a service whose `ingest()` runs more than once
+        # in a batch (the consignments door, one CG at a time) must not overwrite a product's
+        # "before" with a picture its own earlier records already changed.
+        product_ids -= set(self.plan_exception_before)
         if not product_ids:
             return
         try:
@@ -882,7 +891,7 @@ class DocumentIngestService(MasterRefResolver):
             entity_type=spec.entity_type, source_ref=payload.source_ref
         )
         if existing_id is not None:
-            return self._load(spec, existing_id), IngestOutcome.UPDATED
+            return self._check_doc_type(spec, self._load(spec, existing_id)), IngestOutcome.UPDATED
 
         # Within the company, and through the model: `so_number` is unique per
         # company only (migration 305), and the same name in the `projects`
@@ -910,7 +919,7 @@ class DocumentIngestService(MasterRefResolver):
                     f"{getattr(payload, spec.number_field)!r} "
                     "is already linked to another source"
                 )
-            return self._load(spec, adopted), IngestOutcome.UPDATED
+            return self._check_doc_type(spec, self._load(spec, adopted)), IngestOutcome.UPDATED
 
         header = spec.header_model(id=str(uuid.uuid4()), company_id=self.company_id)
         # NOT `db.add()`-ed here on purpose. `_header_values` (D4) reads this
@@ -923,6 +932,18 @@ class DocumentIngestService(MasterRefResolver):
         # row and fail on its own constraints. `_apply` adds it once
         # `header_values` is complete and about to be written.
         return header, IngestOutcome.CREATED
+
+    def _check_doc_type(self, spec: DocumentSpec, header: Any) -> Any:
+        """AC-CONSIGN-CRM: a consignment never adopts a sales order's row, nor a sales order a
+        consignment's (same number in one company): the record fails and both stay as they are."""
+        if spec.entity_type == "sales_orders":
+            stored = getattr(header, "doc_type", None) or DOC_TYPE_SALES_ORDER
+            if stored != self.sales_doc_type:
+                raise ReferenceConflict(
+                    f"so_number={header.so_number!r} is already a {stored.replace('_', ' ')}",
+                    field_name="so_number",
+                )
+        return header
 
     def _load(self, spec: DocumentSpec, entity_id: str):
         header = self.db.get(spec.header_model, str(entity_id))
@@ -947,6 +968,8 @@ class DocumentIngestService(MasterRefResolver):
             column: getattr(payload, field) for column, field in spec.header_fields
         }
         values["status"] = status
+        if spec.entity_type == "sales_orders":
+            values["doc_type"] = self.sales_doc_type
         for column, ref_field, model, code_field, name_field in spec.header_refs:
             resolved = self._resolve_master(
                 model=model,
@@ -1556,8 +1579,9 @@ class DocumentIngestService(MasterRefResolver):
                 if spec.entity_type in ("sales_orders", "purchase_orders"):
                     # AC-CANCEL-CRM (R5): AutoCount Cancel SO / Cancel PO documents cancelled the
                     # whole line (`cancelled_by_cancel_doc`, set by the cancel ingest). The push
-                    # recomputes the status from quantities and would read it closed, then the
-                    # relink would cancel it again and retire its OI rows a second time. A line
+                    # recomputes the status from quantities and would read it closed (and this
+                    # push would flag its OI rows as newly cancelled), then the relink would
+                    # cancel it again. A line
                     # only NOW fully covered (ordered lowered) is left to the relink, which
                     # reports it as newly cancelled.
                     ordered = values.get("qty_ordered", row.qty_ordered) or 0

@@ -13,7 +13,6 @@ import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
 import RecordNavigation from '@/components/common/RecordNavigation';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -22,6 +21,7 @@ import { useProductCategorySelectQuery } from '@/app/(protected)/master-data-man
 import { useProjectSeries, useSeriesMutations } from '../../../_shared/hooks/useProjects';
 import type { ProjectSeries } from '../../../_shared/types/project.types';
 import { SeriesProductsTable } from './SeriesProductsTable';
+import { SeriesSetsTable } from './SeriesSetsTable';
 import { SeriesSheetLoader } from './SeriesSheetLoader';
 import BackToList, { useBackToListHref } from '@/components/common/BackToList';
 import DetailActions from '@/components/common/DetailActions';
@@ -49,7 +49,6 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
   const seriesIndex = (series.data ?? []).findIndex((item) => item.id === seriesId);
   const { create, update, remove } = useSeriesMutations();
   const brands = useBrandSelectQuery();
-  const categories = useProductCategorySelectQuery();
 
   const row: ProjectSeries | null = React.useMemo(
     () => (series.data ?? []).find((item) => item.id === seriesId) ?? null,
@@ -57,36 +56,45 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
   );
 
   const [name, setName] = React.useState('');
-  const [brandId, setBrandId] = React.useState('');
+  const [brandIds, setBrandIds] = React.useState<string[]>([]);
+  const categories = useProductCategorySelectQuery(brandIds);
   const [description, setDescription] = React.useState('');
   const [isActive, setIsActive] = React.useState(true);
   const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
   const [seeded, setSeeded] = React.useState(false);
+  // The series the last save resolved with. The cached list refetches after the mutation,
+  // so until it lands `row` is stale; this is the baseline "unsaved changes" is measured from.
+  const [saved, setSaved] = React.useState<ProjectSeries | null>(null);
+  const base = saved && saved.id === seriesId ? saved : row;
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
 
   // Seed ONCE from the server row. Re-seeding on every render of a refetched list would
   // overwrite what somebody is halfway through typing - the same trap the line table avoids.
+  const seedFrom = React.useCallback((source: ProjectSeries) => {
+    setName(source.name);
+    setBrandIds(source.brand_ids ?? []);
+    setDescription(source.description ?? '');
+    setIsActive(source.is_active);
+    setCategoryIds(source.category_ids ?? []);
+  }, []);
+
   React.useEffect(() => {
     if (isNew || seeded || !row) return;
-    setName(row.name);
-    setBrandId(row.brand_id ?? '');
-    setDescription(row.description ?? '');
-    setIsActive(row.is_active);
-    setCategoryIds(row.category_ids ?? []);
+    seedFrom(row);
     setSeeded(true);
-  }, [isNew, row, seeded]);
+  }, [isNew, row, seeded, seedFrom]);
 
   const pending = create.isPending || update.isPending;
   const loading = series.isLoading && !isNew;
   const dirty = isNew
     ? name.trim().length > 0
     : Boolean(
-        row &&
-          (name !== row.name ||
-            brandId !== (row.brand_id ?? '') ||
-            description !== (row.description ?? '') ||
-            isActive !== row.is_active ||
-            categoryIds.join(',') !== (row.category_ids ?? []).join(',')),
+        base &&
+          (name !== base.name ||
+            [...brandIds].sort().join(',') !== [...(base.brand_ids ?? [])].sort().join(',') ||
+            description !== (base.description ?? '') ||
+            isActive !== base.is_active ||
+            categoryIds.join(',') !== (base.category_ids ?? []).join(',')),
       );
 
   const save = async () => {
@@ -96,7 +104,7 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
     }
     const body = {
       name: name.trim(),
-      brand_id: brandId || null,
+      brand_ids: brandIds,
       description: description.trim() || null,
       is_active: isActive,
       category_ids: categoryIds,
@@ -108,33 +116,54 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
       router.replace(`/project-sales/series/${created.id}`);
       return;
     }
-    await update.mutateAsync({ id: seriesId, body });
-    setSeeded(false);
+    const result = await update.mutateAsync({ id: seriesId, body });
+    setSaved(result);
+    seedFrom(result);
   };
 
   const brandOptions = React.useMemo(
     () =>
       (brands.data ?? [])
-        .filter((brand) => brand.is_active || brand.id === brandId)
+        .filter((brand) => brand.is_active || brandIds.includes(brand.id))
         .map((brand) => ({
           value: brand.id,
           label: brand.brand_name,
           description: brand.brand_code,
         })),
-    [brandId, brands.data],
+    [brandIds, brands.data],
   );
 
-  const categoryOptions = React.useMemo(
-    () =>
-      (categories.data ?? [])
-        .filter((category) => category.is_active || categoryIds.includes(category.id))
-        .map((category) => ({
-          value: category.id,
-          label: category.category_name,
-          description: category.category_code,
-        })),
-    [categories.data, categoryIds],
+  // Every category name seen so far, from any brand's list and from the saved row, so a
+  // picked category keeps its name when a brand change drops it from the fetched list.
+  const knownCategories = React.useRef(
+    new Map<string, { label: string; description?: string }>(),
   );
+
+  const categoryOptions = React.useMemo(() => {
+    const names = knownCategories.current;
+    (row?.category_ids ?? []).forEach((id, index) => {
+      const label = row?.category_names?.[index];
+      if (label && !names.has(id)) names.set(id, { label });
+    });
+    (categories.data ?? []).forEach((category) =>
+      names.set(category.id, {
+        label: category.category_name,
+        description: category.category_code,
+      }),
+    );
+    const fetched = (categories.data ?? [])
+      .filter((category) => category.is_active || categoryIds.includes(category.id))
+      .map((category) => ({
+        value: category.id,
+        label: category.category_name,
+        description: category.category_code,
+      }));
+    const listed = new Set(fetched.map((option) => option.value));
+    const kept = categoryIds
+      .filter((id) => !listed.has(id) && names.has(id))
+      .map((id) => ({ value: id, ...names.get(id)! }));
+    return [...fetched, ...kept];
+  }, [categories.data, categoryIds, row]);
 
   return (
     <Container>
@@ -206,14 +235,15 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="series-brand">Brand</Label>
-                    <SearchableSelect
+                    <SearchableMultiSelect
                       id="series-brand"
-                      value={brandId}
-                      onChange={setBrandId}
+                      clearable
+                      value={brandIds}
+                      onChange={setBrandIds}
                       loadError={brands.error}
                       onRetry={() => void brands.refetch()}
                       options={brandOptions}
-                      placeholder="Any brand"
+                      placeholder="All brands"
                       emptyMessage="No brands found"
                     />
                   </div>
@@ -223,11 +253,12 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
                   <Label>Categories</Label>
                   <SearchableMultiSelect
                     value={categoryIds}
+                    clearable
                     onChange={setCategoryIds}
                     loadError={categories.error}
                     onRetry={() => void categories.refetch()}
                     options={categoryOptions}
-                    placeholder="No categories"
+                    placeholder="All categories"
                     emptyMessage="No categories found"
                   />
                 </div>
@@ -286,6 +317,17 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
             </CardHeader>
             <CardContent>
               <SeriesProductsTable seriesId={seriesId} />
+            </CardContent>
+          </Card>
+        )}
+
+        {!isNew && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Sets</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <SeriesSetsTable seriesId={seriesId} />
             </CardContent>
           </Card>
         )}

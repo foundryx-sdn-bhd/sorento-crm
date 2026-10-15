@@ -13,8 +13,12 @@ import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
 import TeamTree from './team-tree';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { useHasPermission } from '@/hooks/usePermissions';
 
 export default function TeamList() {
+  const canAdd = useHasPermission('user_management.teams.add');
+  const canEdit = useHasPermission('user_management.teams.edit');
+  const canDelete = useHasPermission('user_management.teams.delete');
   const [editOpen, setEditOpen] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const {
@@ -46,21 +50,25 @@ export default function TeamList() {
             placeholder="Search teams…"
             className="w-full sm:max-w-xs"
           />
-          <Button
-            onClick={() => {
-              setSelectedTeam(null);
-              setEditOpen(true);
-            }}
-          >
-            <Plus className="me-2 size-4" />
-            Create team
-          </Button>
+          {canAdd && (
+            <Button
+              onClick={() => {
+                setSelectedTeam(null);
+                setEditOpen(true);
+              }}
+            >
+              <Plus className="me-2 size-4" />
+              Create team
+            </Button>
+          )}
         </CardHeader>
 
         <div className="border-t">
-          <p className="text-muted-foreground border-b px-4 py-2 text-xs">
-            Drag a row by its handle onto another team to nest it; drop on the top zone to detach.
-          </p>
+          {canEdit && (
+            <p className="text-muted-foreground border-b px-4 py-2 text-xs">
+              Drag a row by its handle onto another team to nest it; drop on the top zone to detach.
+            </p>
+          )}
           {isLoading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -71,6 +79,8 @@ export default function TeamList() {
             <TeamTree
               teams={teams}
               query={query}
+              canEdit={canEdit}
+              canDelete={canDelete}
               onEdit={(t) => {
                 setSelectedTeam(t);
                 setEditOpen(true);

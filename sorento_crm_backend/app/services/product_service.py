@@ -2446,6 +2446,19 @@ class ProductCategoryService:
         """Delete a category. Raises if any products use this category."""
         category = self.get_category(category_id)
         from sqlalchemy import func
+        from app.models.projects import ProjectSeries, ProjectSeriesCategory
+        series_names = [
+            row[0]
+            for row in self.db.query(ProjectSeries.name)
+            .join(ProjectSeriesCategory, ProjectSeriesCategory.series_id == ProjectSeries.id)
+            .filter(ProjectSeriesCategory.category_id == category_id)
+            .order_by(ProjectSeries.name)
+            .all()
+        ]
+        if series_names:
+            raise handle_conflict(
+                f"Used by series {', '.join(series_names)}; remove it there first."
+            )
         product_count = self.db.query(func.count(Product.id)).filter(
             Product.category_id == category_id
         ).scalar() or 0
@@ -2584,6 +2597,19 @@ class BrandService:
     def delete_brand(self, brand_id: str):
         """Delete a brand. Products using this brand have their brand_id set to null (brand is optional)."""
         brand = self.get_brand(brand_id)
+        from app.models.projects import ProjectSeries, ProjectSeriesBrand
+        series_names = [
+            row[0]
+            for row in self.db.query(ProjectSeries.name)
+            .join(ProjectSeriesBrand, ProjectSeriesBrand.series_id == ProjectSeries.id)
+            .filter(ProjectSeriesBrand.brand_id == brand_id)
+            .order_by(ProjectSeries.name)
+            .all()
+        ]
+        if series_names:
+            raise handle_conflict(
+                f"Used by series {', '.join(series_names)}; remove it there first."
+            )
         updated = (
             self.db.query(Product)
             .filter(Product.brand_id == brand_id)

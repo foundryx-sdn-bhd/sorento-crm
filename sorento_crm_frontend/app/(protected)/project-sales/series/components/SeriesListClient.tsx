@@ -58,7 +58,7 @@ export function SeriesListClient() {
     return all.filter(
       (row) =>
         row.name.toLowerCase().includes(needle) ||
-        (row.brand_name ?? '').toLowerCase().includes(needle),
+        row.brand_names.some((brand) => brand.toLowerCase().includes(needle)),
     );
   }, [search, series.data]);
 
@@ -76,13 +76,14 @@ export function SeriesListClient() {
         ),
       },
       {
-        accessorKey: 'brand_name',
+        id: 'brand_name',
+        accessorFn: (row) => row.brand_names.join(', '),
         header: ({ column }) => <DataGridColumnHeader title="Brand" column={column} />,
         size: 150,
         meta: { headerTitle: 'Brand', skeleton: <Skeleton className="h-4 w-24" /> },
         cell: ({ row }) => (
-          <span className="block truncate" title={row.original.brand_name ?? ''}>
-            {row.original.brand_name || '-'}
+          <span className="block truncate" title={row.original.brand_names.join(', ')}>
+            {row.original.brand_names.length ? row.original.brand_names.join(', ') : 'All brands'}
           </span>
         ),
       },

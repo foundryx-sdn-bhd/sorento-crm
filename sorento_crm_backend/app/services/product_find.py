@@ -190,12 +190,27 @@ FILTERS: dict[str, FindFilter] = {
             ask=ASK_PRODUCT_LINE,
             vocabulary=(
                 "fits: the products that fit or go with the named product: the seat cover(s) "
-                "for a WC (water closet / toilet), or the WC(s) a seat cover fits. The named "
-                "product is a product entity as usual. The other side named beside a code with "
-                "nothing else asked is this filter too, in any language or order (\"seat cover "
-                "SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\", \"WC for SRTSCBD330-UF\"): emit "
-                "fits, keep that word out of the entities, and it is never a file or photo ask "
-                "unless a file word (photo, drawing, catalogue, cert) is said."
+                "for a WC (water closet / toilet), or the WC(s) a seat cover fits. The other "
+                "side named beside a code, in any language or order, is this filter (\"seat "
+                "cover SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\", \"WC for SRTSCBD330-UF\", "
+                "\"stock seat cover for SRTWC8122\"): emit fits and keep that word out of the "
+                "entities. The other side is only a seat cover or a WC word, never a file word "
+                "(photo, drawing, files), a fact (stock, price) or the code itself: \"send me "
+                "SRTWC8383-RL-MBL drawing\" names no other side, so it is no find. Its value is the "
+                "other-side word copied character for character from THIS message's text (\"seat "
+                "cover\", \"马桶盖\", \"WC\"), null when THIS message's text has none, whatever "
+                "earlier turns said; its file_word is the word of THIS message asking for a file, as "
+                "typed (\"photo\", \"drawing\", \"files\", \"cert\"), null when it asks for none. "
+                "The other-side word never IMPLIES an attachment type (no photo, drawing, "
+                "installation guide, certificate or spec file): with no file word said, emit "
+                "no attachment_type (\"seat cover for SRTWC8383-RL-MBL\" -> fits, entities "
+                "[SRTWC8383-RL-MBL] only). It stays this filter when the message ALSO asks something about that "
+                "other side (stock, ETA, photo, price): \"SRTWC8122 马桶盖 有货吗\" is fits with "
+                "domain inventory, \"SRTWC8088 seat cover photo\" is fits with domain "
+                "product_attachment. A fact of the named code itself, with no other side named in "
+                "THIS message (\"SRTWC8383-RL-MBL stock\", \"SRTWC8383-RL-MBL technical "
+                "drawing\"), is no find, even right after a fit ask; only a bare code with no ask "
+                "word of its own carries the fit ask on."
             ),
             labels={
                 FITS_COVERS_HEAD: {"ms": "Penutup tempat duduk untuk {code}:", "zh": "{code} 适配的马桶盖："},
@@ -218,16 +233,38 @@ FILTERS: dict[str, FindFilter] = {
 # --------------------------------------------------------------------------- vocabulary
 
 FIND_RULE = (
-    "FIND (key `find`): when the message asks WHICH products stand in a relation listed below "
-    "to a product it names (for example which seat cover fits a WC), emit "
+    "FIND (key `find`): when the message is about the products that stand in a relation listed "
+    "below to a product CODE it names (for example the seat cover of a WC), emit "
     '"find": {"filters": [{"key": <a key from the list>, "value": <the value its line asks for, '
-    'else null>, "unit": <the unit of a number value, else null>}]}. Never emit it for '
-    "facts about the named product itself (stock, price, ETA, photo, spec): those keep their "
-    "usual keys. The named product stays an ordinary product entity (hint product) and "
-    "domain_hint is master_products. A product entity here needs a product CODE: a type word "
-    "on its own (\"my WC\", \"the toilet\", \"seat cover\", \"马桶\") is no entity at all "
-    "(\"which seat cover fits my WC?\" -> the filter, entities []); never invent a code. Use "
-    "only the keys listed; otherwise emit \"find\": null."
+    'else null>, "unit": <the unit of a number value, else null>, "file_word": <the file word '
+    'its line asks for, else null>}]}. The relation only says WHICH '
+    "products the message is about: the named code stays an ordinary product entity (hint "
+    "product), and every other key, domain_hint and intent_hint included, is exactly what it "
+    "would be if the message had named the related product's own code instead: \"stock seat "
+    "cover for SRTWC8122\" is a stock ask, \"eta seat cover for SRTWC8122\" an incoming ask, "
+    "\"SRTWC8122 seat cover photo\" a file ask. With nothing else asked (\"seat cover for "
+    "SRTWC8122\", \"seat cover SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\") the message is a bare product code: BARE ENTITY "
+    "CONTINUATION decides domain_hint and intent_hint (the previous turn's, else null); the "
+    "relation itself never sets master_products, and never product_attachment: a file domain "
+    "needs a file word in THIS message, or BARE ENTITY CONTINUATION of a file answer. "
+    "Across turns `find` follows BARE ENTITY CONTINUATION, read from the conversation as usual, "
+    "and is part of \"the same question\" it repeats: when the previous user message was a fit "
+    "ask (it named a seat cover / WC beside a code), a reply that is only another code repeats "
+    "that fit ask, find included: "
+    "a bare code right after a fit ask is the same fit ask for the new code (\"SRTWC8122 seat "
+    "cover\" answered, then \"SRTWC8383-RL-MBL\" alone -> fits with value null, domain as "
+    "that previous turn); a "
+    "message pointing at what the last answer listed (\"only the 333A one\", \"the second "
+    "one\", \"its ETA\") is about those listed products, so name the listed code and emit "
+    "\"find\": null, never the code the earlier fit ask named; a message with its own ask "
+    "about a code and no other side named (\"SRTWC8383-RL-MBL technical drawing\") is about "
+    "that code itself: \"find\": null, whatever earlier turns asked. "
+    "A product entity here needs a product CODE: "
+    "the type word on its own (\"seat cover\", "
+    "\"my WC\", \"马桶盖\") is no entity at all, never a category, attachment_type or "
+    "specification (\"which seat cover fits my WC?\" -> the filter, entities []); never invent a "
+    "code. A type word asked about itself in a message that names NO product code (\"seat cover "
+    "got promotion?\") is no find. Use only the keys listed; otherwise emit \"find\": null."
 )
 
 

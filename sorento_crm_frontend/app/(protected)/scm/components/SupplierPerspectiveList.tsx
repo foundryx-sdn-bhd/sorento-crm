@@ -16,6 +16,7 @@ import type {
 import { ConfidenceBadge, HealthLegend, StateChip } from './HealthIndicators';
 import { ScmPager } from './ScmPager';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { distinctName } from '@/lib/product-display';
 
 /** Supplier cards per page. */
 const SUPPLIER_PAGE_SIZE = 10;
@@ -195,9 +196,11 @@ function SupplierCard({ supplier }: { supplier: SupplierGroup }) {
                 <tr key={s.sku} className="border-t border-border/60">
                   <td className="px-4 py-2">
                     <div className="font-medium">{s.sku}</div>
-                    <div className="truncate text-xs text-muted-foreground" title={s.product_name}>
-                      {s.product_name}
-                    </div>
+                    {distinctName(s.sku, s.product_name) ? (
+                      <div className="truncate text-xs text-muted-foreground" title={s.product_name}>
+                        {s.product_name}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums">{fmtInt(s.on_hand)}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{fmtInt(s.on_order)}</td>

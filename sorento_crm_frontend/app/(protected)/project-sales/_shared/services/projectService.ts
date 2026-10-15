@@ -1,5 +1,5 @@
 import { apiFetch } from '@/lib/api';
-import { extractApiError } from '@/lib/api-client';
+import { buildDataGridParams, extractApiError } from '@/lib/api-client';
 import type {
   ClashPreview,
   Project,
@@ -54,6 +54,7 @@ import type {
   SeriesProductImportJob,
   SeriesProductImportResult,
   SeriesProductRow,
+  SeriesSetRow,
   ProjectTemplateTask,
   ProjectTemplateTaskBody,
   ProjectUpdateBody,
@@ -991,10 +992,11 @@ export async function getImportJobStatus(jobId: string): Promise<ImportJobStatus
  */
 export async function judgeQuotationLine(
   quotationId: string,
-  params: { product_id?: string; unit_price?: string },
+  params: { product_id?: string; product_set_id?: string; unit_price?: string },
 ): Promise<QuotationLineVerdict> {
   const search = new URLSearchParams();
   if (params.product_id) search.set('product_id', params.product_id);
+  if (params.product_set_id) search.set('product_set_id', params.product_set_id);
   if (params.unit_price) search.set('unit_price', params.unit_price);
   const qs = search.toString();
   const response = await apiFetch(
@@ -1259,12 +1261,31 @@ export async function getProjectDashboard(): Promise<ProjectDashboard> {
  */
 export async function getSeriesProductRows(
   seriesId: string,
-): Promise<SeriesProductRow[]> {
-  const response = await apiFetch(`${BASE}/config/series/${seriesId}/products/rows`);
+  params: { page: number; limit: number; query?: string; priced?: boolean },
+): Promise<{ data: SeriesProductRow[]; total: number }> {
+  const search = buildDataGridParams(
+    { pageIndex: params.page - 1, pageSize: params.limit, searchQuery: params.query },
+    { priced: params.priced ? 'true' : undefined },
+  );
+  const response = await apiFetch(
+    `${BASE}/config/series/${seriesId}/products/rows?${search.toString()}`,
+  );
   if (!response.ok)
     throw new Error(await extractApiError(response, 'Failed to load the series products'));
   const body = await response.json();
-  return body.data ?? [];
+  return { data: body.data ?? [], total: body.pagination?.total ?? 0 };
+}
+
+/** Every row of the series that carries a selling price, page by page (a quotation line
+ *  opens at that price). Stored prices are a sheet's worth, never the whole catalogue. */
+export async function getSeriesPricedRows(seriesId: string): Promise<SeriesProductRow[]> {
+  const limit = 100;
+  const out: SeriesProductRow[] = [];
+  for (let page = 1; ; page += 1) {
+    const { data, total } = await getSeriesProductRows(seriesId, { page, limit, priced: true });
+    out.push(...data);
+    if (out.length >= total || data.length === 0) return out;
+  }
 }
 
 /**
@@ -1284,6 +1305,38 @@ export async function updateSeriesProductPricing(
   );
   if (!response.ok) throw new Error(await extractApiError(response, 'Failed to save the price'));
   return response.json();
+}
+
+/** The product SETS priced on a series, with the server-computed floor. */
+export async function getSeriesSetRows(seriesId: string): Promise<SeriesSetRow[]> {
+  const response = await apiFetch(`${BASE}/config/series/${seriesId}/sets/rows`);
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Failed to load the series sets'));
+  const body = await response.json();
+  return body.data ?? [];
+}
+
+/** Add a set to the series or set its price and percentage (an upsert); `null` clears. */
+export async function updateSeriesSetPricing(
+  seriesId: string,
+  productSetId: string,
+  body: { selling_price: string | null; max_discount_pct: string | null },
+): Promise<SeriesSetRow> {
+  const response = await apiFetch(
+    `${BASE}/config/series/${seriesId}/sets/${productSetId}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+  );
+  if (!response.ok) throw new Error(await extractApiError(response, 'Failed to save the price'));
+  return response.json();
+}
+
+export async function removeSeriesSet(seriesId: string, productSetId: string): Promise<void> {
+  const response = await apiFetch(
+    `${BASE}/config/series/${seriesId}/sets/${productSetId}`,
+    { method: 'DELETE' },
+  );
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Failed to remove the set'));
 }
 
 export async function removeSeriesProduct(

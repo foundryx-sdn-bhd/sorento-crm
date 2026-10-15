@@ -1,6 +1,6 @@
 """Order management schemas."""
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
 from decimal import Decimal
 import uuid
@@ -33,6 +33,9 @@ class OrderStatusResponse(OrderStatusBase):
         from_attributes = True
 
 
+DebtorTypeValue = Literal["project", "project_cash", "cash_sales"]
+
+
 class CustomerBase(BaseModel):
     customer_code: str
     customer_name: str
@@ -47,6 +50,8 @@ class CustomerCreate(CustomerBase):
     sales_agent_id: Optional[str] = None
     account_level: Optional[int] = Field(default=None, ge=1, le=9)
     customer_group_id: Optional[str] = None
+    # None on create = the default rule fills it (app/services/debtor_type.py).
+    debtor_type: Optional[DebtorTypeValue] = None
 
 
 class CustomerUpdate(BaseModel):
@@ -61,6 +66,8 @@ class CustomerUpdate(BaseModel):
     account_level: Optional[int] = Field(default=None, ge=1, le=9)
     # `null` clears the group; omitted leaves it alone.
     customer_group_id: Optional[str] = None
+    # `null` clears the type; omitted leaves it alone.
+    debtor_type: Optional[DebtorTypeValue] = None
 
 
 class CustomerSimple(BaseModel):
@@ -85,6 +92,7 @@ class CustomerResponse(CustomerBase):
     account_level: Optional[int] = None
     customer_group_id: Optional[str] = None
     customer_group_name: Optional[str] = None
+    debtor_type: Optional[DebtorTypeValue] = None
     # Shown as columns on a sales agent's Customers tab.
     region: Optional[str] = None
     market_segment_code: Optional[str] = None

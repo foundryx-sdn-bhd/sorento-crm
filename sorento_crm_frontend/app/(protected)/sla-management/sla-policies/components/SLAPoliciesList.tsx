@@ -29,6 +29,7 @@ import { useSLAPolicies } from '../hooks/useSLAPolicies';
 import type { SLAPolicy } from '../types/slaPolicy.types';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { useHasPermission } from '@/hooks/usePermissions';
 
 export default function SLAPoliciesList() {
   const router = useRouter();
@@ -138,13 +139,15 @@ export default function SLAPoliciesList() {
   });
 
   // The one offer this listing makes, in both places it belongs: the
-  // toolbar, and the empty state's next step (S5-06).
-  const listPrimaryAction = (
+  // toolbar, and the empty state's next step (S5-06). Only for a caller the
+  // create route will accept (ROUTE-PERM-GATES).
+  const canAdd = useHasPermission('sla_management.sla_policies.add');
+  const listPrimaryAction = canAdd ? (
     <Button onClick={() => router.push('/sla-management/sla-policies/new')}>
       <Plus />
       Create SLA Policy
     </Button>
-  );
+  ) : undefined;
 
   return (
     <DataGrid

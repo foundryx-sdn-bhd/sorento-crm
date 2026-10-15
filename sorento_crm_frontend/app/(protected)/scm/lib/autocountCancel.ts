@@ -16,12 +16,14 @@ export interface CancelSource {
 }
 
 /** How a cancel line was matched to this order line, in the owner's words. */
-const MATCH_LABEL: Record<string, string> = {
+export const MATCH_LABEL: Record<string, string> = {
   line_key: 'line key',
   item: 'item',
   // AutoCount names no line, but every transfer on the item's lines was cancelled, so each
   // line's share is its own transferred qty (owner rule, 13 Oct: exact links only).
   group_whole: 'every line of the item',
+  // AutoCount names the SO and the item but the CRM cannot pick one of several lines.
+  undetermined: 'not tied to one line',
 };
 
 /** "XS-016501: 36 (line key)", one document per line ("XS-016502 (every line of the item)" when

@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { getProductsForVariantSelect } from '../../services/productService';
 import type { ProductVariantRef } from '../../types/product.types';
+import { codeWithName } from '@/lib/product-display';
 
 export interface ProductVariantPickerDialogProps {
   open: boolean;
@@ -33,7 +34,7 @@ export interface ProductVariantPickerDialogProps {
 }
 
 function displayProduct(p: ProductVariantRef): string {
-  return `${p.product_code} - ${p.product_name}`;
+  return codeWithName(p.product_code, p.product_name);
 }
 
 /**

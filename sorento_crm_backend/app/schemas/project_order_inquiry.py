@@ -438,6 +438,9 @@ class OrderInquiryWorklistRow(BaseModel):
     project_id: Optional[str] = None
     project_sales_order_id: Optional[str] = None
     core_sales_order_id: Optional[str] = None
+    #: AC-CONSIGN-CRM: the core sales order's doc_type ('consignment' / 'sales_order'); null
+    #: when the row has no core SO.
+    so_doc_type: Optional[str] = None
     # AC-B6-7 (`PLAN-board-oi-mechanical-22sep.md`, S6): the core LINE's own id, which the
     # "SO line" cell puts on
     # `/scm/sales-orders/<core_sales_order_id>?tab=lines&line=<core_line_id>` beside
@@ -1333,6 +1336,8 @@ class OrderInquiryHeaderOut(BaseModel):
     raised_by_name: Optional[str] = None
     #: The CORE `sales_orders.id`, null when this order never reached AutoCount.
     sales_order_id: Optional[str] = None
+    #: AC-CONSIGN-CRM: that core order's doc_type; null when there is no core order.
+    so_doc_type: Optional[str] = None
     project_sales_order_id: str
     so_number: Optional[str] = None
     so_date: Optional[date] = None
@@ -1347,6 +1352,10 @@ class OrderInquiryHeaderOut(BaseModel):
     qty_total: str = "0"
     #: DERIVED, never stored (AC-LS-02): `lines_to_confirm > 0`.
     status: Literal["outstanding", "completed"] = "outstanding"
+    #: OI-STAGED-NOTIFY (AC-SN-30): the OI's earliest reserve status, null when it has no
+    #: reserve request rows; `parked_by_name` names who parked it while it is parked.
+    reserve_status: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = None
+    parked_by_name: Optional[str] = None
 
 
 class OrderInquiryRaiseHistoryEntryOut(BaseModel):
@@ -1444,6 +1453,9 @@ class CreateReserveRequestIn(BaseModel):
     #: N-4 (review round): an arbitrarily long note lands verbatim in an outgoing email
     #: body / the worklist chip.
     note: Optional[str] = Field(None, max_length=5000)
+    #: OI-STAGED-NOTIFY: save the request without mailing CS; sent later from the
+    #: Order inquiries Actions menu.
+    park: bool = False
 
     @model_validator(mode="after")
     def _no_duplicate_rows(self) -> "CreateReserveRequestIn":
@@ -1500,6 +1512,9 @@ class CommitReserveRequestIn(BaseModel):
 
     reserves: List[CommitReserveRowIn] = []
     amendments: List[CommitAmendRowIn] = []
+    #: OI-STAGED-NOTIFY: write the answers without mailing purchasing; sent later from
+    #: the Order inquiries Actions menu.
+    park_notice: bool = False
 
     @model_validator(mode="after")
     def _at_least_one_row(self) -> "CommitReserveRequestIn":
@@ -1552,3 +1567,50 @@ class OrderInquiryReserveRequestOut(BaseModel):
     cancelled_at: Optional[datetime] = None
     rows: List[OrderInquiryReserveRequestRowOut] = []
     notified_name: Optional[str] = None
+
+
+# ------------------------------------------------ park / send all parked (OI-STAGED-NOTIFY)
+
+
+class ReservePersonOut(BaseModel):
+    name: str
+
+
+class ParkedEmailOut(BaseModel):
+    to: ReservePersonOut
+    cc: List[ReservePersonOut] = []
+    inquiry_count: int
+    line_count: int
+    subject: str
+    body_html: str
+
+
+class ParkedUnresolvedOut(BaseModel):
+    inquiry_count: int
+    line_count: int
+
+
+class ParkedPreviewOut(BaseModel):
+    emails: List[ParkedEmailOut] = []
+    inquiry_total: int = 0
+    unresolved: List[ParkedUnresolvedOut] = []
+
+
+class ParkedSendOut(BaseModel):
+    emails_sent: int
+    items_sent: int
+    unresolved: List[ParkedUnresolvedOut] = []
+
+
+class ReserveStatusSummaryOut(BaseModel):
+    parked: int = 0
+    needs_reserve: int = 0
+    notice_parked: int = 0
+    reserved: int = 0
+    my_parked_requests: int = 0
+    my_parked_notices: int = 0
+
+
+class ReserveNoticeRecipientsOut(BaseModel):
+    to: Optional[ReservePersonOut] = None
+    cc: List[ReservePersonOut] = []

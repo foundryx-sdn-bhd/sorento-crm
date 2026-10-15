@@ -40,6 +40,7 @@ from app.models.sales import (
     SalesTeamMember,
 )
 from app.models.sales_agent import SalesAgent
+from app.utils.product_display import code_with_name
 from app.services.error_handler import AppException
 from app.services.sales import achievement_service as ach
 from app.services.sales import commission_service
@@ -855,7 +856,7 @@ def _scope_labels(db: Session, target_ids: Iterable[str]) -> Dict[str, List[Tupl
     )
     for target_id, product in sorted(products, key=lambda r: r[1].product_code):
         out[target_id].append(
-            (product.id, "product", _code_name(product.product_code, product.product_name))
+            (product.id, "product", code_with_name(product.product_code, product.product_name))
         )
     brands = (
         db.query(SalesTargetScope.target_id, Brand)

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridTable } from '@/components/ui/data-grid-table';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -74,6 +75,7 @@ export function ReserveRequestDialog({
   const [location, setLocation] = React.useState<Record<string, string>>({});
   const [note, setNote] = React.useState('');
   const [sending, setSending] = React.useState(false);
+  const [park, setPark] = React.useState(false);
 
   // S4 (reviewer round): keyed on a SIGNATURE, not the `rows` array itself - the
   // caller's own `useReserveRowOptions` (`_shared/hooks/useReserveRowOptions.ts`)
@@ -91,6 +93,7 @@ export function ReserveRequestDialog({
     );
     setLocation(Object.fromEntries(rows.map((row) => [row.id, row.defaultLocation])));
     setNote('');
+    setPark(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rowsSignature]);
 
@@ -228,6 +231,7 @@ export function ReserveRequestDialog({
           warehouse_id: location[row.id] ?? row.defaultLocation,
         })),
         note: note.trim() ? note.trim() : null,
+        park,
       });
       onOpenChange(false);
       onSent?.();
@@ -278,13 +282,24 @@ export function ReserveRequestDialog({
             />
           </div>
         </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
-            Cancel
-          </Button>
-          <Button onClick={handleSend} disabled={sending || rows.length === 0}>
-            Send request
-          </Button>
+        <DialogFooter className="flex-wrap items-center gap-2 sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="reserve-request-park"
+              checked={park}
+              onCheckedChange={(value) => setPark(value === true)}
+              disabled={sending}
+            />
+            <Label htmlFor="reserve-request-park">Park this first</Label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
+              Cancel
+            </Button>
+            <Button onClick={handleSend} disabled={sending || rows.length === 0}>
+              {park ? 'Park request' : 'Send request'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

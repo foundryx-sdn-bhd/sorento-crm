@@ -10,7 +10,7 @@ Written BEFORE the implementation, from the plan's API contract:
 - issue freezes the drawing (fill only), revise copies both ids;
 - the issue PDF and Excel print the drawing in TECHNICAL SPEC, legacy text under the description,
   description line breaks kept;
-- the "A custom item needs a description" wording.
+- the "A non-standard item needs a description" wording.
 
 Postgres only, via ``blank_session``. Every row carries the ``zzt-qlg`` marker and is seeded here.
 """
@@ -618,7 +618,7 @@ def test_a_custom_line_without_a_description_says_custom_item(api):
     assert refused.status_code == 422, refused.text
     body = _refusal_text(refused)
     assert refused.json()["code"] == "quotation_line_description_required"
-    assert "A custom item needs a description" in body
+    assert "A non-standard item needs a description." in body
     assert "off-catalog" not in body.lower()
 
 

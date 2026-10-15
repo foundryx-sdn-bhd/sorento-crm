@@ -1205,6 +1205,13 @@ class InboundShipmentService:
         line-set that replaced it states the same goods again - counting both would
         call a container received that is still on the water. Its picks, if any,
         are already in the total above.
+
+        AC-CONSIGN-CRM: AutoCount's TransferedQty already includes a quantity an XP
+        cancelled, but a pick never does. When a sibling's statement lags, that cancel
+        would read as still incoming, so the per-product figure is the larger of
+        (picks + the cancelled qty, each capped at its line's allocated) and the
+        stated sum: the cancelled goods and the received goods together account for
+        the line.
         """
         stated_rows = (
             self.db.query(
@@ -1231,10 +1238,51 @@ class InboundShipmentService:
             .group_by(SPOAllocation.product_id)
             .all()
         )
+        # Each allocation's cancel term is bounded by what is not already accounted for by
+        # picks on that same line (AC-CONSIGN-CRM security fix): a cancel can never stand for
+        # goods a sibling line holds, so it is capped per allocation, then summed per product.
+        own_picks = dict(
+            self.db.query(
+                PickingLine.spo_allocation_id,
+                func.coalesce(func.sum(PickingLine.quantity_picked), 0),
+            )
+            .join(PickingHeader, PickingLine.picking_header_id == PickingHeader.id)
+            .join(SPOAllocation, SPOAllocation.id == PickingLine.spo_allocation_id)
+            .filter(
+                SPOAllocation.inbound_shipment_id == shipment_id,
+                PickingHeader.picking_type == "goods_received",
+                PickingHeader.picking_status == "approved",
+            )
+            .group_by(PickingLine.spo_allocation_id)
+            .all()
+        )
+        cancelled_by_product: dict[str, int] = {}
+        for alloc_id, product_id, allocated, cancelled in (
+            self.db.query(
+                SPOAllocation.id,
+                SPOAllocation.product_id,
+                SPOAllocation.allocated_quantity,
+                SPOAllocation.qty_cancelled,
+            )
+            .filter(
+                SPOAllocation.inbound_shipment_id == shipment_id,
+                SPOAllocation.retired_at.is_(None),
+            )
+            .all()
+        ):
+            allocated = int(allocated or 0)
+            term = min(int(cancelled or 0), allocated)
+            term = max(min(term, allocated - int(own_picks.get(alloc_id, 0) or 0)), 0)
+            if term:
+                key = str(product_id)
+                cancelled_by_product[key] = cancelled_by_product.get(key, 0) + term
+        with_cancels = dict(received_totals)
+        for key, cancelled in cancelled_by_product.items():
+            with_cancels[key] = with_cancels.get(key, 0) + cancelled
         for product_id, stated in stated_rows:
             key = str(product_id)
-            received_totals[key] = max(received_totals.get(key, 0), int(stated or 0))
-        return received_totals
+            with_cancels[key] = max(with_cancels.get(key, 0), int(stated or 0))
+        return with_cancels
 
     def open_shipment_ids(self, company_id: Optional[str] = None) -> list[str]:
         """Shipments with at least one line whose stored status is not `received`,
@@ -4855,6 +4903,20 @@ class PickingHeaderService:
 
         computed = self.get_computed_received_map(member_ids)
 
+        def _cancelled(member: SPOAllocation) -> int:
+            return int(member.qty_cancelled or 0)
+
+        def _open_capacity(member: SPOAllocation) -> int:
+            return max(int(member.allocated_quantity or 0) - _cancelled(member), 0)
+
+        def _with_cancel(member: SPOAllocation, own: int) -> int:
+            # `max(allocated, own)`: the remainder rule may leave more than the line holds on
+            # the last line (AC-X32); the cap must not take that back.
+            cancelled = _cancelled(member)
+            if not cancelled:
+                return own
+            return min(own + cancelled, max(int(member.allocated_quantity or 0), own))
+
         def _stated(member: SPOAllocation) -> int:
             # NULL reads 0: a row written before migration 488 stated nothing.
             return int(member.stated_received or 0)
@@ -4873,7 +4935,7 @@ class PickingHeaderService:
             # the line whose GRN was just taken away (MB1).
             self._write_received(
                 member,
-                max(_stated(member), computed.get(str(member.id), 0)),
+                max(_stated(member), _with_cancel(member, computed.get(str(member.id), 0))),
                 may_reopen=True,
             )
 
@@ -4885,11 +4947,17 @@ class PickingHeaderService:
         # live lines reported one GRN twice, once on the retired line that
         # still shows it and once redistributed onto the standing ones.
         kept_total = sum(computed.get(str(member.id), 0) for member in live_targets)
+        # AC-CONSIGN-CRM: a member's XP-cancelled qty is not capacity for a pick, so the
+        # spread runs over what is left to receive; each member is then written with its
+        # cancel added back (received INCLUDES the cancel, as TransferedQty does), capped
+        # at what the line was ordered for.
         shares = shipping_order_rules.distribute_received(
-            kept_total, [int(member.allocated_quantity or 0) for member in live_targets]
+            kept_total, [_open_capacity(member) for member in live_targets]
         )
         for member, share in zip(live_targets, shares):
-            self._write_received(member, max(_stated(member), share), may_reopen=True)
+            self._write_received(
+                member, max(_stated(member), _with_cancel(member, share)), may_reopen=True
+            )
 
     def _sync_received_for_allocations(
         self, allocations: list[SPOAllocation], *, released: Optional[set] = None
@@ -9239,6 +9307,19 @@ class PurchaseRequestService:
             "current_index": idx + 1,
         }
 
+    def _apply_customer_link(self, header, payload: dict) -> None:
+        """Validate a payload's customer_id in place (PC-3): "" unlinks, a link stores the
+        customer's own name as customer_name."""
+        if "customer_id" not in payload:
+            return
+        from app.services.debtor_type import link_customer
+
+        payload["customer_id"], linked_name = link_customer(
+            self.db, payload["customer_id"], current_id=getattr(header, "customer_id", None)
+        )
+        if linked_name:
+            payload["customer_name"] = linked_name
+
     def create_request(self, data: PurchaseRequestHeaderCreate):
         """Create purchase request header + lines (internal API)."""
         dump = data.model_dump(exclude={"products"})
@@ -9266,6 +9347,12 @@ class PurchaseRequestService:
         if respond_inbox_url is not None:
             dump["respond_inbox_url"] = respond_inbox_url
         requestor_value = dump.pop("requested_by_contact_id", None)
+        if "customer_id" in dump:
+            from app.services.debtor_type import link_customer
+
+            dump["customer_id"], linked_name = link_customer(self.db, dump["customer_id"])
+            if linked_name:
+                dump["customer_name"] = linked_name
         header = PurchaseRequestHeader(**{k: v for k, v in dump.items() if hasattr(PurchaseRequestHeader, k)})
         if requestor_value:
             # Validated + label-derived, never a bare setattr: the document, the
@@ -9338,6 +9425,7 @@ class PurchaseRequestService:
             payload["respond_inbox_url"] = None
         self._apply_sponsor_subject_to_payload(payload, header)
         requestor_value = payload.pop("requested_by_contact_id", _UNSET_REQUESTOR)
+        self._apply_customer_link(header, payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)
@@ -9422,6 +9510,7 @@ class PurchaseRequestService:
             payload["respond_inbox_url"] = None
 
         self._apply_sponsor_subject_to_payload(payload, header)
+        self._apply_customer_link(header, payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)

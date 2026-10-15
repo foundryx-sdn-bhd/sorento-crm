@@ -120,9 +120,10 @@ def _record_hooks(monkeypatch):
     return calls
 
 
-def test_apply_hands_a_newly_cancelled_line_to_the_oi_retire_hook_once(env, monkeypatch):
-    """--apply runs the ingest's own post-commit hooks: a line the exact answer fully cancels
-    goes to the #1530 OI retire with its cancel doc number. The dry run never calls them."""
+def test_apply_hands_a_newly_cancelled_line_to_the_cancel_hooks_once(env, monkeypatch):
+    """--apply runs the ingest's own post-commit hooks once per newly cancelled line, with its
+    cancel doc number (the hook itself stops at the SO since CANCEL-STOP-AT-SO). The dry run
+    never calls them."""
     calls = _record_hooks(monkeypatch)
     lines = _stale_no_fit(env, 12, 12)
     preview = _run(env)

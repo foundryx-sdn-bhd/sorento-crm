@@ -5065,8 +5065,57 @@ def _run_stages_body(  # noqa: PLR0915
                 )
                 verdict = picked_verdict
 
+        # SEAT-AS-PRODUCT (owner rule, 13 Oct 2026): "seat cover for <WC>" is a product
+        # resolution, not an answer lane. The WC code is replaced by its linked seat-cover
+        # codes here, before APPLY, so the turn runs on exactly as if the customer had typed
+        # them: the domain the parser resolved answers through its own tool and formatter.
+        # When nothing was replaced (no named code has a link, or no code at all),
+        # `seat_link_lines` is the whole reply, said right after routing below.
+        from app.services.chatbot.lanes.business import find as find_lane
+
+        linked_verdict, seat_link_lines = find_lane.as_linked_products(
+            db,
+            verdict,
+            [
+                str(c)
+                for p in state_in.focus.products
+                if isinstance(p, dict) and (c := p.get("canonical_code") or p.get("code"))
+            ],
+            carried_relation=state_in.focus.relation,
+            # The customer's whole typed text, never the `reply to:` quote and never only its
+            # first line (a WhatsApp ask is often several lines; reviewer round 6).
+            message=_message_text or None,
+        )
+        # The relation this turn leaves on the focus, written onto the turn's OWN focus after
+        # every APPLY below (a topic reset rebuilds it): the side just linked; none once a
+        # message names a code of its own that links nothing, or asks its own question (a
+        # domain word); else the carried one stays (a follow-up naming nothing).
+        linked_as = [
+            e["linked_as"] for e in linked_verdict.get("entities") or [] if isinstance(e, dict) and e.get("linked_as")
+        ]
+        if linked_as:
+            seat_relation = linked_as[0]
+        elif linked_verdict.get("domain_in_message") is True or any(
+            find_lane.entity_code(e) and e.get("current_message") is not False
+            for e in linked_verdict.get("entities") or []
+        ):
+            seat_relation = None
+        else:
+            seat_relation = state_in.focus.relation
+        if linked_verdict is not verdict or seat_link_lines:
+            turn_trace.add(
+                "seat_link",
+                {
+                    "from": [c for e in verdict.get("entities") or [] if (c := find_lane.entity_code(e))],
+                    "to": [c for e in linked_verdict.get("entities") or [] if (c := find_lane.entity_code(e))],
+                    "lines": seat_link_lines,
+                },
+            )
+            verdict = linked_verdict
+
         # C APPLY, first pass: state and plan from the verdict alone.
         state_out, plan = turn_apply(state_in, verdict, policy)
+        state_out.focus.relation = seat_relation
 
         # The resolver seam, and the ONE re-entry of APPLY it feeds (PLAN "Turn order":
         # "Reconciliation lives in E because it needs the resolver, but its RULE is
@@ -5687,6 +5736,7 @@ def _run_stages_body(  # noqa: PLR0915
                     resolved_candidates,
                     frozenset(unplaced_tokens),
                 )
+                state_out.focus.relation = seat_relation
             if (
                 gate_scope is not customer_scope
                 and gate_input is not None
@@ -5743,6 +5793,7 @@ def _run_stages_body(  # noqa: PLR0915
                     resolved_candidates,
                     frozenset(unplaced_tokens),
                 )
+                state_out.focus.relation = seat_relation
             # Round 4 R5: a clarify this turn is about to ask keeps the ask, so its answer
             # re-runs it (`turn_runtime.with_clarify_answer`).
             clarify = turn_runtime.set_clarify_carry(
@@ -5965,6 +6016,30 @@ def _run_stages_body(  # noqa: PLR0915
             },
             raw={"item": item},
         )
+
+        # SEAT-AS-PRODUCT: a fit ask that resolved to no linked code (Q1) or named no code
+        # at all is answered with its line here, ahead of every lane and with nothing
+        # fetched or armed, whatever domain the parser gave it (a bare code's null domain
+        # included). A refused access keeps its refusal; an escalation keeps its arm.
+        if seat_link_lines and branch_kind not in ("access_denied", "out_of_scope"):
+            return _run_answer(
+                turn_id=turn_id,
+                ctx=ctx,
+                item=item,
+                branch_kind=branch_kind,
+                actions=actions,
+                answer=turn_compose.Answer(text="\n".join(seat_link_lines)),
+                state=state_out,
+                remembered_before=remembered_before,
+                dry_run=dry_run,
+                session_factory=session_factory,
+                turn_trace=turn_trace,
+                stage=stage,
+                contact_respond_id=contact_respond_id,
+                verdict=verdict,
+                recalled=recalled,
+                chat_console=_chat_console(envelope),
+            )
 
         # S3 (chatbot media-into-turn): bare entities, no domain, no carried focus -
         # resolved and answered deterministically here, never through the generic

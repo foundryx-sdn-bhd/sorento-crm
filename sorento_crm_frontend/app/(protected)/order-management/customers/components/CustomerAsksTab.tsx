@@ -16,6 +16,7 @@ import { AskDoneByCell, AskedAtCell, AskNoteCell, AskStateCell } from '@/compone
 import { useHasPermission } from '@/hooks/usePermissions';
 import { BRANCH_LABEL, BRANCH_VARIANT, notifiedLabel, type StockAsk } from '@/lib/stock-asks';
 import { useCustomerAsksQuery, useUpdateAskMutation } from '../hooks/useCustomerAsks';
+import { codeWithName } from '@/lib/product-display';
 
 /**
  * Chatbot stock ask v2 S5 (R9): every stock ask the chatbot answered for this customer's
@@ -53,7 +54,7 @@ export function CustomerAsksTab({ customerId }: { customerId: string }) {
         header: 'Product',
         size: 150,
         cell: ({ row }) => (
-          <span className="block truncate" title={row.original.product_name ?? row.original.product_code}>
+          <span className="block truncate" title={codeWithName(row.original.product_code, row.original.product_name)}>
             {row.original.product_code}
           </span>
         ),

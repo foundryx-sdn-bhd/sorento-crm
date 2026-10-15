@@ -291,3 +291,45 @@ describe('splitCodes', () => {
     expect(splitCodes('')).toEqual([]);
   });
 });
+
+describe('SeriesSheetLoader resolved sets and families (D4)', () => {
+  async function load(overrides: Record<string, unknown>) {
+    importSeriesProducts.mockResolvedValue(result(overrides as Partial<SeriesProductImportResult>));
+    renderLoader();
+    fireEvent.change(screen.getByPlaceholderText(/paste product codes/i), {
+      target: { value: 'SRTWC286' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Load' }));
+    await waitFor(() => expect(importSeriesProducts).toHaveBeenCalledTimes(1));
+  }
+
+  it('shows each resolved code, whether it was a set or a family, and every member', async () => {
+    await load({
+      resolved: [
+        { code: 'SRTWC286', via: 'family', members: ['SRTWC286-SH', 'SRTWC286-SH-150'] },
+        { code: 'CWC1009-RL', via: 'set', members: ['CWC1009-SC', 'CWCX1009-RL', 'CWCY1009'] },
+      ],
+    });
+
+    expect(await screen.findByText('SRTWC286')).toBeInTheDocument();
+    expect(screen.getByText('CWC1009-RL')).toBeInTheDocument();
+    expect(screen.getAllByText(/family/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\bset\b/i).length).toBeGreaterThan(0);
+    for (const member of [
+      'SRTWC286-SH',
+      'SRTWC286-SH-150',
+      'CWC1009-SC',
+      'CWCX1009-RL',
+      'CWCY1009',
+    ]) {
+      expect(screen.getByText(member)).toBeInTheDocument();
+    }
+  });
+
+  it('renders no resolved block when resolved is empty or absent', async () => {
+    await load({ resolved: [] });
+    expect(await screen.findByText(/products? added/i)).toBeInTheDocument();
+    expect(screen.queryByText(/family/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\bset\b/i)).not.toBeInTheDocument();
+  });
+});

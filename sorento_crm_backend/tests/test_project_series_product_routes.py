@@ -537,6 +537,15 @@ def test_a_draft_line_is_judged_on_the_spot_without_saving_anything(api):
 
     quotation = _quotation(client, project.id)
     series = _series(client, "Live verdict")
+    # Scope the series to a category neither product is under, else no filters = everything.
+    elsewhere = _category(db)
+    db.commit()
+    assert (
+        client.put(
+            f"{BASE}/config/series/{series['id']}", json={"category_ids": [elsewhere.id]}
+        ).status_code
+        == 200
+    )
     client.post(
         f"{BASE}/config/series/{series['id']}/products",
         json={"codes": ["ZZTRT-CFH14"], "mode": "append"},

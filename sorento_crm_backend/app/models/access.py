@@ -354,9 +354,10 @@ class RespondContactCsRouting(Base):
 
     When a procurement form-SLA customer-service stage spawns at approval, the
     assignee resolver (`form_sla_service._start_for_config`) looks up an active pin
-    for (respond_contact_id, use_case). A valid pin - where ``cs_pic`` is a member of
-    the stage's tier-1 CS team and is active - assigns that user directly; any miss
-    (no pin / stale pin / inactive user / non-member) falls back to the existing
+    for (respond_contact_id, use_case). A valid pin - where ``cs_pic`` is an eligible
+    PIC (``cs_routing_service.is_eligible_pic``: active, can process purchase
+    requests, granted the company; team membership not required) - assigns that user
+    directly; any miss (no pin / ineligible user) falls back to the existing
     round-robin. ``use_case`` is one of {'purchase_request', 'sponsorship_form'};
     complaint never reads this table, so complaint CS assignment stays round-robin.
     See docs/plans/PLAN-procurement-cs-handoff-and-pinpoint-routing.md.
@@ -376,7 +377,7 @@ class RespondContactCsRouting(Base):
     cs_pic_user_id = Column(
         String,
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,  # NULL = No CS (the form finishes at approval)
     )
     use_case = Column(String(50), nullable=False)  # purchase_request | sponsorship_form | complaint | stock_inquiry
     is_active = Column(Boolean, default=True, nullable=False)

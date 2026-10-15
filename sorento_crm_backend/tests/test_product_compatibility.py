@@ -231,6 +231,7 @@ def test_get_lists_both_directions(db, monkeypatch):
         "product_name": cover.product_name,
         "source": "flyer",
         "is_discontinued": False,
+        "kind": "seat_cover",
     }
 
     on_cover = client.get(_page(cover)).json()["data"]

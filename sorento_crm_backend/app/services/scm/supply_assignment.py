@@ -608,6 +608,7 @@ def assign(
     pinned: Sequence[Hold] = (),
     overdue_grace_days: Optional[int] = None,
     overdue_dead_days: Optional[int] = None,
+    stand_in_floors: Optional[Dict[str, float]] = None,
 ) -> Assignment:
     """Assign `supply` to `demand` for one product, and state the balance it leaves.
 
@@ -616,6 +617,11 @@ def assign(
 
     `overdue_grace_days` / `overdue_dead_days` are the policy numbers R-O added; `None`
     walks the documented default, so a direct caller still walks the rule.
+
+    `stand_in_floors` (STOCK-DEBT-STALE-PIN): by supply key, what a bin OUTSIDE the span
+    really holds. A pin honoured off a stand-in (AC-S2-1b) takes no more than is left of
+    it, shared by the pins on it in hold order exactly as `left` is for a bin in the span.
+    A key it does not name is honoured as before (a document outside the span).
     """
     counted: List[SupplyEvent] = []
     uncounted: List[SupplyEvent] = []
@@ -679,6 +685,8 @@ def assign(
     #: Rule 6: event key -> what the lendable claims registered so far already cover of
     #: it, so two far lines cannot both claim the whole floor.
     claimed: Dict[str, float] = {}
+    #: STOCK-DEBT-STALE-PIN: what is left of each stand-in floor (see the docstring).
+    floor_left: Dict[str, float] = dict(stand_in_floors or {})
     #: Event key -> the lines claiming it, in WALK order (the order a lend is charged to
     #: them in `_attribute_lends`, and the order the walk lets them take their claims).
     claimants: Dict[str, List[_Open]] = {}
@@ -747,8 +755,12 @@ def assign(
                 state.uncounted_pinned += take
         else:
             take = min(float(hold.qty), state.remaining)
+            if hold.supply_key in floor_left:
+                take = min(take, floor_left[hold.supply_key])
             if take <= EPSILON:
                 continue
+            if hold.supply_key in floor_left:
+                floor_left[hold.supply_key] -= take
             event = SupplyEvent(
                 key=hold.supply_key,
                 kind=hold.kind,

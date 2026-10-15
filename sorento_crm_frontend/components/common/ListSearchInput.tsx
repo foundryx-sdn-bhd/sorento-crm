@@ -26,6 +26,8 @@ export interface ListSearchInputProps {
    */
   inputClassName?: string;
   'aria-label'?: string;
+  /** `search` gives the box the searchbox role; omitted keeps the plain text input. */
+  type?: 'search';
   /**
    * A one-line hint on the box itself, for the single thing about THIS search a
    * reader would otherwise get wrong (the fulfilment board: a product match
@@ -59,6 +61,7 @@ export function ListSearchInput({
   className,
   inputClassName,
   'aria-label': ariaLabel,
+  type,
   title,
 }: ListSearchInputProps) {
   return (
@@ -76,6 +79,7 @@ export function ListSearchInput({
       )}
       <Input
         id={id}
+        type={type}
         data-testid={testId}
         placeholder={placeholder}
         aria-label={ariaLabel ?? placeholder}

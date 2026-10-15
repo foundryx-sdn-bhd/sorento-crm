@@ -2,10 +2,11 @@
 
 import * as React from 'react';
 
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { ListPagerPage, ListPagerParams } from '@/hooks/useListPager';
 import { toast } from '@/lib/toast';
+import { getProductSetsForLineSelect } from '@/app/(protected)/master-data-management/product-sets/services/productSetService';
 import {
   addStakeholder,
   changeProjectStatus,
@@ -29,7 +30,11 @@ import {
   deleteQuotationLine,
   deleteSeries,
   getEffectivePriceFloor,
+  getSeriesPricedRows,
   getSeriesProductRows,
+  getSeriesSetRows,
+  removeSeriesSet,
+  updateSeriesSetPricing,
   getImportJobStatus,
   judgeQuotationLine,
   importSeriesProducts,
@@ -1207,10 +1212,23 @@ export function useSeriesMutations() {
  * changes both the membership and the prices - refetches this table without each mutation
  * having to remember it exists.
  */
-export function useSeriesProductRows(seriesId?: string) {
+export function useSeriesProductRows(
+  seriesId: string | undefined,
+  params: { page: number; limit: number; query?: string },
+) {
   return useQuery({
-    queryKey: [...SERIES_KEY, 'rows', seriesId],
-    queryFn: () => getSeriesProductRows(seriesId as string),
+    queryKey: [...SERIES_KEY, 'rows', seriesId, params],
+    queryFn: () => getSeriesProductRows(seriesId as string, params),
+    enabled: Boolean(seriesId),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Every priced row of the series, for the quotation line's opening price. */
+export function useSeriesPricedRows(seriesId?: string) {
+  return useQuery({
+    queryKey: [...SERIES_KEY, 'priced', seriesId],
+    queryFn: () => getSeriesPricedRows(seriesId as string),
     enabled: Boolean(seriesId),
   });
 }
@@ -1236,6 +1254,42 @@ export function useSeriesProductRowMutations(seriesId?: string) {
     onSuccess: () => {
       invalidate();
       toast.success('Product removed from the series');
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  return { setPricing, remove };
+}
+
+export function useSeriesSetRows(seriesId?: string) {
+  return useQuery({
+    queryKey: [...SERIES_KEY, 'set-rows', seriesId],
+    queryFn: () => getSeriesSetRows(seriesId as string),
+    enabled: Boolean(seriesId),
+  });
+}
+
+export function useSeriesSetRowMutations(seriesId?: string) {
+  const queryClient = useQueryClient();
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: SERIES_KEY });
+
+  const setPricing = useMutation({
+    mutationFn: ({
+      productSetId,
+      body,
+    }: {
+      productSetId: string;
+      body: { selling_price: string | null; max_discount_pct: string | null };
+    }) => updateSeriesSetPricing(seriesId as string, productSetId, body),
+    onSuccess: invalidate,
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (productSetId: string) => removeSeriesSet(seriesId as string, productSetId),
+    onSuccess: () => {
+      invalidate();
+      toast.success('Set removed from the series');
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -1328,7 +1382,7 @@ export function useImportJobStatus(jobId: string | null) {
  */
 export function useLineVerdict(
   quotationId: string,
-  draft: { product_id?: string; unit_price?: string },
+  draft: { product_id?: string; product_set_id?: string; unit_price?: string },
   enabled: boolean,
 ) {
   const [settled, setSettled] = React.useState(draft);
@@ -1337,7 +1391,7 @@ export function useLineVerdict(
     return () => clearTimeout(handle);
     // Keyed on the VALUES, not the object: the caller builds a fresh literal per render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.product_id, draft.unit_price]);
+  }, [draft.product_id, draft.product_set_id, draft.unit_price]);
 
   // Ask only once the debounce has CAUGHT UP with what is on screen. Without this, the
   // instant a draft diverges (`enabled` flips true) the query would fire against the
@@ -1346,6 +1400,7 @@ export function useLineVerdict(
   // exists to prevent.
   const caughtUp =
     (settled.product_id ?? '') === (draft.product_id ?? '') &&
+    (settled.product_set_id ?? '') === (draft.product_set_id ?? '') &&
     (settled.unit_price ?? '') === (draft.unit_price ?? '');
 
   return useQuery({
@@ -1354,11 +1409,13 @@ export function useLineVerdict(
       'quotation-line-verdict',
       quotationId,
       settled.product_id ?? '',
+      settled.product_set_id ?? '',
       settled.unit_price ?? '',
     ],
     queryFn: () =>
       judgeQuotationLine(quotationId, {
         product_id: settled.product_id,
+        product_set_id: settled.product_set_id,
         unit_price: settled.unit_price,
       }),
     enabled: enabled && caughtUp,
@@ -1379,6 +1436,16 @@ export function useQuotationLineImages(productId: string | null) {
     enabled: Boolean(productId),
     // The signed URLs are reused server-side for 45 minutes; a few minutes here is well inside.
     staleTime: 5 * 60_000,
+  });
+}
+
+/** One set as a quotation line reads it (complete sets, price, parts), by id; null asks nothing. */
+export function useProductSetLineRef(setId: string | null) {
+  return useQuery({
+    queryKey: ['product-set-line-ref', setId ?? ''],
+    queryFn: async () => (await getProductSetsForLineSelect({ ids: [setId as string] }))[0] ?? null,
+    enabled: Boolean(setId),
+    staleTime: 60_000,
   });
 }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { PageHeader } from '@/components/common/PageHeader';
+import BackToList from '@/components/common/BackToList';
 import { projectCrumbs } from '@/app/(protected)/project-sales/_shared/lib/crumbs';
 import { useQuotationDocument } from '../../../../_shared/hooks/useQuotationDocuments';
 
@@ -31,7 +32,14 @@ export function QuotationDocumentPageHeader({
   return (
     <PageHeader
       title={title}
-      crumbs={projectCrumbs(projectId, { title })}
+      crumbs={projectCrumbs(projectId, { tab: 'quotations' }, { title })}
+      actions={
+        <BackToList
+          listPath={`/project-sales/${projectId}?tab=quotations`}
+          label="Back to project"
+          appendListState={false}
+        />
+      }
     />
   );
 }

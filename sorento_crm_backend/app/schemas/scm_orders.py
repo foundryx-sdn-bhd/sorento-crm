@@ -7,7 +7,7 @@ human codes/names. PO is read-only at M1 (create/confirm/receive land in M4).
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
@@ -164,6 +164,9 @@ class SalesOrderLine(BaseModel):
     qty_delivered: float
     #: What AutoCount Cancel SO documents cancelled on this line, derived on every sync.
     qty_cancelled: float = 0
+    #: What a Consignment Return handed back on this consignment line (AC-CONSIGN-CRM).
+    #: Reporting only: it never moves delivered or outstanding.
+    qty_returned: float = 0
     #: The cancel documents that make up `qty_cancelled`, oldest first.
     cancels: list[CancelSource] = []
     #: What is still to go out on this line: `ordered - delivered`, floored at 0, and **0 on a
@@ -320,6 +323,8 @@ class SalesOrder(BaseModel):
     #: `order_type_label`, which names the ERP document type and is blank on almost every
     #: row - this is what the list's "Type" column actually shows.
     demand_class: Optional[str] = None
+    #: 'consignment' for an AutoCount consignment order, 'sales_order' otherwise (AC-CONSIGN-CRM).
+    doc_type: Optional[str] = None
     #: AutoCount's `Transferable` flag (SO-TRANSFERABLE): `False` is an order AutoCount has
     #: not confirmed for the queue yet, which Stock Debt and the fulfilment ladder do not
     #: count; `None` means the source never said (counted). Read-only - AutoCount owns it and
@@ -837,3 +842,39 @@ class PurchaseOrderListResponse(BaseModel):
     # this model is DROPPED from the response however carefully the service builds it -
     # which is exactly how this one went out silently the first time.
     product_cost: Optional[ProductLastCost] = None
+
+
+class SoLineDeliveryRow(BaseModel):
+    order_id: str
+    do_number: str
+    do_date: Optional[date] = None
+    location: Optional[str] = None
+    status: Optional[str] = None
+    actual_delivery_date: Optional[date] = None
+    qty: float
+
+
+class SoLineCancelRow(BaseModel):
+    doc_no: str
+    doc_date: Optional[date] = None
+    location: Optional[str] = None
+    match_reason: Optional[str] = None
+    qty: Optional[float] = None
+
+
+class SoLineHistory(BaseModel):
+    line_id: str
+    deliveries: List[SoLineDeliveryRow]
+    cancels: List[SoLineCancelRow]
+
+
+class SoProductGroupHistory(BaseModel):
+    sku: str
+    line_ids: List[str]
+    deliveries: List[SoLineDeliveryRow]
+    cancels: List[SoLineCancelRow]
+
+
+class SalesOrderDeliveries(BaseModel):
+    lines: List[SoLineHistory]
+    groups: List[SoProductGroupHistory]

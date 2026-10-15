@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useSLAPolicyTiers } from '../hooks/useSLAPolicies';
 import SLAPolicyTierDialog from './SLAPolicyTierDialog';
 import SLAPolicyTierDeleteDialog from './sla-policy-tier-delete-dialog';
@@ -135,6 +136,8 @@ export default function SLAPolicyTiersTable({ policyId }: SLAPolicyTiersTablePro
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [tierToDelete, setTierToDelete] = useState<SLAPolicyTier | null>(null);
   const [usersSheetTier, setUsersSheetTier] = useState<{ level: number; name: string } | null>(null);
+  // Every tier write takes the policy's `.edit` (a tier is part of its policy).
+  const canEdit = useHasPermission('sla_management.sla_policies.edit');
 
   const handleAdd = () => {
     setEditingTier(null);
@@ -213,37 +216,45 @@ export default function SLAPolicyTiersTable({ policyId }: SLAPolicyTiersTablePro
         },
         meta: { skeleton: <Skeleton className="h-4 w-24" /> },
       },
-      {
-        accessorKey: 'actions',
-        header: '',
-        cell: ({ row }) => (
-          <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEdit(row.original);
-              }}
-            >
-              <Edit className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(row.original);
-              }}
-            >
-              <Trash2 className="size-4 text-destructive" />
-            </Button>
-          </div>
-        ),
-        size: 100,
-      },
+      ...(canEdit
+        ? [
+            {
+              accessorKey: 'actions',
+              header: '',
+              cell: ({ row }) => (
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Edit tier"
+                    title="Edit tier"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEdit(row.original);
+                    }}
+                  >
+                    <Edit className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Delete tier"
+                    title="Delete tier"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(row.original);
+                    }}
+                  >
+                    <Trash2 className="size-4 text-destructive" />
+                  </Button>
+                </div>
+              ),
+              size: 100,
+            } satisfies ColumnDef<SLAPolicyTier>,
+          ]
+        : []),
     ],
-    [usersByTier],
+    [usersByTier, canEdit],
   );
 
   const table = useReactTable({
@@ -254,12 +265,14 @@ export default function SLAPolicyTiersTable({ policyId }: SLAPolicyTiersTablePro
 
   return (
     <>
-      <div className="flex items-center gap-2 mb-4">
-        <Button onClick={handleAdd} size="sm">
-          <Plus className="size-4" />
-          Add Tier
-        </Button>
-      </div>
+      {canEdit && (
+        <div className="flex items-center gap-2 mb-4">
+          <Button onClick={handleAdd} size="sm">
+            <Plus className="size-4" />
+            Add Tier
+          </Button>
+        </div>
+      )}
 
       <CardContent>
         {isLoading ? (

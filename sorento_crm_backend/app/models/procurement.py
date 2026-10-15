@@ -1112,6 +1112,12 @@ class PurchaseRequestHeader(Base):
     project_id = Column(
         UUID(as_uuid=False), ForeignKey("projects.projects.id", ondelete="SET NULL"), nullable=True
     )
+    # The customer picked from the customer list (NULL = free text or an older form). The
+    # current customer.debtor_type is what the CS routing rules read; customer_name stays
+    # what prints.
+    customer_id = Column(
+        UUID(as_uuid=False), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
+    )
     purpose = Column(Text, nullable=True)
     delivery_address = Column(Text, nullable=True)  # sponsorship form
     total_project_value = Column(Numeric(15, 2), nullable=True)  # sponsorship form (numeric)
@@ -1183,6 +1189,7 @@ class PurchaseRequestHeader(Base):
         Index("ix_purchase_requests_request_type", "request_type"),
         Index("ix_purchase_requests_request_date", "request_date"),
         Index("ix_purchase_requests_customer_name", "customer_name"),
+        Index("ix_purchase_requests_customer_id", "customer_id"),
     )
 
 

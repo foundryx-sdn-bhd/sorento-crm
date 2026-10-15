@@ -185,7 +185,8 @@ def test_approval_decision_forbidden_without_permission(api, monkeypatch):
 
 # ---- order cancel ---- #
 def test_cancel_reaches_update_order_with_is_cancelled(api, monkeypatch):
-    client, _allow = api  # order cancel has no permission slug (auth-only)
+    client, allow = api
+    allow.add("order_management.orders.view")  # cancel answers with the DO, so it is view-gated (#1669)
     from app.services.order_service import OrderService
 
     captured = _spy_raise_418(monkeypatch, OrderService, "update_order")
@@ -199,7 +200,8 @@ def test_cancel_reaches_update_order_with_is_cancelled(api, monkeypatch):
 
 
 def test_cancel_without_reason_does_not_set_remarks(api, monkeypatch):
-    client, _allow = api
+    client, allow = api
+    allow.add("order_management.orders.view")
     from app.services.order_service import OrderService
 
     captured = _spy_raise_418(monkeypatch, OrderService, "update_order")

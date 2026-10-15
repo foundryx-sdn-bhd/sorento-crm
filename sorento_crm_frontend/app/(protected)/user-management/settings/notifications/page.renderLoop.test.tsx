@@ -57,6 +57,12 @@ const mockRoles = [
   { id: 'role-2', name: 'Operations' },
 ];
 
+// Save is offered only to the edit slug holder (SETTINGS-PERM-GATE); this file is
+// about the checkboxes, so the caller holds it.
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: (slug: string) => slug === 'user_management.settings.edit',
+}));
+
 vi.mock('../components/settings-context', () => ({
   useSettings: () => ({ settings: mockSettings, roles: mockRoles }),
 }));

@@ -47,6 +47,7 @@ import {
 } from './HealthIndicators';
 import { DemandTrendLine } from './DemandTrendLine';
 import { WarehouseBreakdownTable } from './WarehouseBreakdownTable';
+import { distinctName } from '@/lib/product-display';
 
 /** Right-aligned tabular numeric header + cell classes (the "type signature").
  *  `whitespace-nowrap` keeps numerics - money especially - on a single line
@@ -187,9 +188,11 @@ export function ProductPerspectiveGrid({
                 <span className="absolute inset-y-0 left-0 w-0.5 rounded-full bg-scm-stockout" aria-hidden />
               ) : null}
               <span className={cn('font-medium', attention && 'font-semibold')}>{r.sku}</span>
-              <span className="truncate text-xs text-muted-foreground" title={r.product_name}>
-                {r.product_name}
-              </span>
+              {distinctName(r.sku, r.product_name) ? (
+                <span className="truncate text-xs text-muted-foreground" title={r.product_name}>
+                  {r.product_name}
+                </span>
+              ) : null}
             </div>
           );
         },

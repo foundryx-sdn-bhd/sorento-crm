@@ -1929,12 +1929,12 @@ def test_apply_returns_a_dropped_bystander_in_returned_to_review(api):
     frozen = supply.frozen_lines_of(supply.active_decision(str(order.id)))
     assert str(line_sibling.id) in frozen
 
-    # Its Buy is re-raised at its original qty rather than left uncovered - the ORIGINAL
-    # row is cancelled ("Superseded by revision 2") and a fresh one takes its place, the
-    # same cancel-and-reraise every covered line not itself confirmed gets on a new
-    # revision; what matters is a LIVE row still covers it.
+    # Its Buy still covers it at its original qty, on the SAME row re-filed under
+    # revision 2 (ORDERBACK-DELTA, owner 13 Oct 2026: an unchanged carried row is not
+    # cancelled and raised again).
     db.refresh(buy_row_sibling)
-    assert buy_row_sibling.state == INQUIRY_CANCELLED
+    assert buy_row_sibling.state == INQUIRY_RAISED
+    assert str(buy_row_sibling.supply_decision_id) == str(decision.id)
     live_sibling_rows = (
         db.query(OrderInquiryRow)
         .filter(OrderInquiryRow.so_line_id == line_sibling.id,

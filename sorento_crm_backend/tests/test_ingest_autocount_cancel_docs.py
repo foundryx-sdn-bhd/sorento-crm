@@ -5,7 +5,8 @@ Plan: documentation/plans/autocount/PLAN-autocount-cancel-crm-13oct.md (rules R1
 Owner rulings 13 Oct: cancelled qty is DERIVED on every sync (sum of the cancel-doc lines
 matched to a line, live docs only); a line is cancelled only when fully cancelled; AutoCount is
 truth, so a cancel line matches by its FromDocDtlKey. Without one it is decided with its group
-(order + item + location) by exact arithmetic only (owner rule 13 Oct): the group's one line,
+by exact arithmetic only (owner rule 13 Oct): a Cancel SO's group is SO + item, whatever the
+location (owner rule 14 Oct); a Cancel PO's is order + item + location. The group's one line,
 or, when nothing was delivered and the cancels are every transfer, each line's own transfer.
 Anything else is undetermined and names no line: no tie-break, no lowest-Seq fallback, no
 guess. A dangling key stays unmatched. The result never depends on the order documents arrive in.
@@ -246,13 +247,46 @@ def test_no_key_one_line_of_the_item_matches(env):
     assert stored.sales_order_line_id == lines[5001]
 
 
-def test_no_key_the_group_is_order_item_and_location(env):
+def test_no_key_the_so_group_is_so_and_item_whatever_the_location(env):
+    """Owner rule 14 Oct: the cancel sits at the second line's location, but the group is both
+    lines of the item. C (4) is not every transfer (8), so it names no line."""
     _wh2(env)
     lines = _so(env, lines=((5001, "p1", 10, 4, "wh1"), (5002, "p1", 10, 4, "wh2")))
     _push_xs(env, [_xs(details=[_detail(951001, location="ZZAC-WH2", from_dtl=0)])])
     stored = _cancel_lines(env, 950001)[951001]
-    assert stored.match_status == "matched"
-    assert stored.sales_order_line_id == lines[5002]
+    assert (stored.match_status, stored.match_reason) == ("unmatched", "undetermined")
+    assert stored.sales_order_line_id is None
+    assert _totals(env, lines) == {5001: Decimal("0"), 5002: Decimal("0")}
+
+
+def test_no_key_one_line_of_the_item_at_another_location_matches(env):
+    """Owner rule 14 Oct: the SO's one line of the item takes the cancel, whatever the location."""
+    _wh2(env)
+    lines = _so(env, lines=((5001, "p1", 10, 4, "wh1"),))
+    _push_xs(env, [_xs(details=[_detail(951001, location="ZZAC-WH2", from_dtl=0)])])
+    stored = _cancel_lines(env, 950001)[951001]
+    assert (stored.match_status, stored.match_reason) == ("matched", "item")
+    assert stored.sales_order_line_id == lines[5001]
+    assert _so_line(env, lines[5001]).qty_cancelled == Decimal("4")
+
+
+def test_a_do_at_another_location_still_counts_as_delivered_for_the_so_group(env):
+    """Owner rule 14 Oct: D is every live DO line naming the SO and item, whatever its location.
+    Whole at first (C = sum(T), D = 0); a DO at the other warehouse makes it undetermined."""
+    from tests.test_ingest_autocount_do_grn import do_records
+
+    _wh2(env)
+    lines = _so(env, lines=((5001, "p1", 12, 12, "wh1"), (5002, "p1", 12, 0, "wh2")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=12, from_dtl=0)])])
+    assert _cancel_lines(env, 950001)[951001].match_reason == "group_whole"
+    assert _so_line(env, lines[5001]).qty_cancelled == Decimal("12")
+    rec = copy.deepcopy(do_records()[0])
+    rec["Details"] = [dict(rec["Details"][0], ItemCode="ZZAC-P1", Qty=3.0, Location="ZZAC-WH2",
+                           FromDocType="SO", FromDocNo="ZZSO-C001", FromDocDtlKey=0)]
+    assert _records(env.push_do([rec]))["db1:DO:900001"]["outcome"] == "created"
+    stored = _cancel_lines(env, 950001)[951001]
+    assert (stored.match_reason, stored.sales_order_line_id) == ("undetermined", None)
+    assert _so_line(env, lines[5001]).qty_cancelled == Decimal("0")
 
 
 def test_no_key_nothing_explains_the_cancel_is_undetermined(env):
@@ -455,7 +489,7 @@ def test_xp_can_name_an_spo_line(env):
 # ======================================================================= contract
 def test_contract_2_8_lists_the_cancel_entities(env):
     body = env.client.get("/api/v1/external/contract").json()
-    assert body["version"] == "2.8"
+    assert body["version"] == "2.9"
     assert {"cancel_sales_orders", "cancel_purchase_orders", "consignments",
             "consignment_returns"} <= set(body["entities"])
 
@@ -732,12 +766,17 @@ def test_voiding_the_extra_cancel_makes_the_group_whole(env):
     assert _totals(env, lines) == {5001: Decimal("10"), 5002: Decimal("4")}
 
 
-def test_two_locations_in_one_batch_are_two_groups(env):
-    """Review M7: each cancel lands on the line at its own location, in one batch."""
+def test_two_locations_in_one_batch_are_one_so_group(env):
+    """Review M7, owner rule 14 Oct: the two cancels sit at the two lines' locations, but the
+    SO group is SO + item. Together they are every transfer (7) with nothing delivered, so each
+    line's cancelled qty is its own transfer (`group_whole`), never a per-location pick."""
     _wh2(env)
     lines = _so(env, lines=((5001, "p1", 10, 4, "wh1"), (5002, "p1", 10, 3, "wh2")))
     _push_xs(env, [_xs(details=[_detail(951001, qty=4, from_dtl=0),
                                 _detail(951002, qty=3, location="ZZAC-WH2", from_dtl=0)])])
+    stored = _cancel_lines(env, 950001)
+    assert {k: (v.match_reason, v.sales_order_line_id) for k, v in stored.items()} == {
+        951001: ("group_whole", None), 951002: ("group_whole", None)}
     assert _totals(env, lines) == {5001: Decimal("4"), 5002: Decimal("3")}
 
 

@@ -93,7 +93,9 @@ def _assert_applied_and_order_row_cancelled(world, batch, line, calls):
     assert len(handover) == 1, [c["trigger_type"] for c in calls]
     lines = handover[0]["context"]["handover"]["lines"]
     assert [entry["item_code"] for entry in lines] == [order_row.item_code]
-    assert lines[0]["qty"] == "0"  # kind cancelled, the line the email prints as CANCEL
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): one line saying the decision, and that the
+    # Buy purchasing holds is to be taken back.
+    assert "CANCEL ORDER" in lines[0]["remark"], lines[0]
 
 
 # ------------------------------------------------------------------- AC-1 / AC-2
@@ -576,9 +578,10 @@ def test_owner_example_delivered_line_reserve_98_and_order_back_2_over_77_free(a
     assert _holds_by_warehouse(world.db, line).get(world.pool_wh.id) in (None, Decimal("0"))
 
 
-def test_a_short_reserve_is_listed_in_the_purchasing_email(api, monkeypatch):
-    """Owner rule 12 Oct 2026: the shortfall is listed in the purchasing email that the
-    Confirm already sends, as its own line (no purchasing row is raised for it)."""
+def test_a_short_reserve_reads_just_its_decision_in_the_purchasing_email(api, monkeypatch):
+    """Owner hand test 14 Oct 2026 (overrides the 12 Oct rule): REMARK never says "N SHORT";
+    a Reserve confirmed short of free stock reads just its decision, and no STOCK SHORT
+    heading or row comes of it."""
     client, world = api
     _register(world)
     calls = _captured_dispatches(monkeypatch)
@@ -593,10 +596,9 @@ def test_a_short_reserve_is_listed_in_the_purchasing_email(api, monkeypatch):
     handover = _handover_calls(calls)
     assert len(handover) == 1, [c["trigger_type"] for c in calls]
     context = handover[0]["context"]["handover"]
-    assert "STOCK SHORT" in context["verbs"], context["verbs"]
-    short_lines = [e for e in context["lines"] if "short" in (e.get("remark") or "").lower()]
-    assert len(short_lines) == 1, context["lines"]
-    assert short_lines[0]["qty"] == "5", short_lines[0]
+    assert "STOCK SHORT" not in context["verbs"], context["verbs"]
+    (told,) = context["lines"]
+    assert (told["qty"], told["remark"]) == ("10", f"USE {world.pool_wh.warehouse_code}"), told
     world.db.expire_all()
     assert (
         world.db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == line.id).count()

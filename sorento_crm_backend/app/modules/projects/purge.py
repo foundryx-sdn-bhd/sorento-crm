@@ -94,8 +94,10 @@ from app.models.projects import (
     ProjectSalesProfile,
     ProjectSample,
     ProjectSeries,
+    ProjectSeriesBrand,
     ProjectSeriesCategory,
     ProjectSeriesProduct,
+    ProjectSeriesSet,
     ProjectStakeholder,
     ProjectTakeoverRequest,
     ProjectTask,
@@ -190,6 +192,8 @@ PURGE_ORDER: List[Type] = [
     PriceFloorRule,
     # --- catalogue the quotations priced from -------------------------------------------
     ProjectSeriesProduct,
+    ProjectSeriesSet,
+    ProjectSeriesBrand,
     ProjectSeriesCategory,
     ProjectSeries,
     # --- everything hanging directly off a project --------------------------------------
