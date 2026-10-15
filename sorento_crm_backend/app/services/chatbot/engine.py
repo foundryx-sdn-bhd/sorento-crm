@@ -5434,8 +5434,18 @@ def _run_stages_body(  # noqa: PLR0915
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
         ):
             # R5-8: a PV2 turn holds an unlinked non-staff contact to no customer; a v1 turn reads v1's scope.
+            # R6 (CA-3 Q5(a)): a granted chat or sales report turn is exempt, picker included.
+            from app.services.chatbot.contracts import SALES_FIGURE_STATUSES
+
             customer_scope = (
-                pv2_hook.customer_scope(db, contact_respond_id, space_id_for_turn, state_out.profile)
+                pv2_hook.customer_scope(
+                    db, contact_respond_id, space_id_for_turn, state_out.profile,
+                    granted_report=pv2_hook.granted_report_turn(
+                        access.get("attributes"),
+                        chat=bool(plan.fetch) and all(spec.domain == "chat_analytics" for spec in plan.fetch),
+                        sales=jsc.js_string(parsed_output.get("order_status") or "").strip() in SALES_FIGURE_STATUSES,
+                    ),
+                )
                 if pv2_result is not None
                 else business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
             )

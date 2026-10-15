@@ -591,12 +591,23 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
     }
 
 
-def _refused_report(line: str | None) -> answer_mod.ReportAnswer:
-    """R5-8: the report answer of a contact held to no customer: its scope's refusal line, no report query."""
+def _refused_report(line: str | None, granted: Any, granted_run: answer_mod.ReportAnswer) -> answer_mod.ReportAnswer:
+    """R5-8: the report answer of a contact held to no customer: its scope's refusal line, no report query.
+    R6 (owner ruling CA-3 Q5(a)): a granted chat or sales report (`hook.granted_report_turn`) runs like staff."""
 
     def run(spec: Any, refs: Any, today: date, row: Any, incoming: Any) -> Any:
         from types import SimpleNamespace
 
+        from app.services.chatbot.pv2 import hook as pv2_hook
+        from app.services.chatbot.pv2 import reports
+
+        try:
+            ds = reports._dataset_for(spec)
+        except Exception:  # noqa: BLE001 - unreadable spec: the closed side
+            ds = None
+        key = getattr(ds, "key", None)
+        if pv2_hook.granted_report_turn(granted, chat=key == "chat", sales=key == "sales"):
+            return granted_run(spec, refs, today, row, incoming)
         return SimpleNamespace(text=str(line or ""), plan=None, rows=[], pending=None, frame=None)
 
     return run
@@ -640,8 +651,16 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
         scope = scope_for_resolver(sdb, contact, space_id, profile)
     granted = scope.pop("granted_reveals")
     staff = scope.pop("staff")
-    # R5-8: a contact held to no customer runs no report (its route would read no links as no restriction).
-    no_customer = pv2_hook.held_to_no_customer(scope.get("customer_scope"))
+    report_answer = answer_mod.default_report_answer(
+        mcp_call=_mcp_call(None),
+        contact_id=contact,
+        space_id=space_id,
+        dealer=bool(getattr(profile, "stock_availability_only", False)),
+    )
+    # R5-8: a contact held to no customer runs no report (its route would read no links as no restriction),
+    # but a granted chat or sales report (R6, CA-3 Q5(a)).
+    if pv2_hook.held_to_no_customer(scope.get("customer_scope")):
+        report_answer = _refused_report((scope.get("customer_scope") or {}).get("refusal"), granted, report_answer)
 
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
@@ -676,13 +695,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             last_reply=session_vars.get("user_response") if isinstance(session_vars.get("user_response"), str) else None,
             conversation_language=session_vars.get("reply_language") if isinstance(session_vars.get("reply_language"), str) else None,
             stock_availability_only=bool(getattr(profile, "stock_availability_only", False)),
-            report_answer=_refused_report((scope.get("customer_scope") or {}).get("refusal")) if no_customer
-            else answer_mod.default_report_answer(
-                mcp_call=_mcp_call(None),
-                contact_id=contact,
-                space_id=space_id,
-                dealer=bool(getattr(profile, "stock_availability_only", False)),
-            ),
+            report_answer=report_answer,
             idea_answer=answer_mod.default_idea_answer(
                 db,
                 respond_io_id=contact,

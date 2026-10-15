@@ -102,17 +102,34 @@ def run_v2(ctx: TurnV2Context) -> Any:
     return _turn_module().run_turn_v2(ctx)
 
 
-def customer_scope(db: Any, contact_respond_id: Any, space_id: Any, profile: Any) -> dict[str, Any] | None:
+def customer_scope(
+    db: Any, contact_respond_id: Any, space_id: Any, profile: Any, *, granted_report: bool = False
+) -> dict[str, Any] | None:
     """R5-8: the customer scope a PV2 turn holds the contact to, at both of its seams (the resolver and the
     business fetch a PV2 Lookup runs): v1's own (`business.services.customer_scope`), except that a contact
     with no customer links who is neither staff (the office tier, or `contact_asker`'s staff) nor a salesperson
-    is held to none: enforced with no ids, so no customer is searched, named or fetched. v1 turns never read it."""
+    is held to none: enforced with no ids, so no customer is searched, named or fetched. v1 turns never read it.
+    A `granted_report` turn (`granted_report_turn`) keeps v1's own scope, picker included."""
     from app.services.chatbot.lanes.business import services as business_services
 
     scope = business_services.customer_scope(db, contact_respond_id, space_id)
-    if scope is not None or not _unlinked_non_staff(db, contact_respond_id, space_id, profile):
+    if scope is not None or granted_report or not _unlinked_non_staff(db, contact_respond_id, space_id, profile):
         return scope
     return no_customer_scope()
+
+
+#: Owner ruling CA-3 Q5(a): the grant that opens each report to a contact, as to staff.
+CHAT_REPORT_GRANT = "chatbot.analytics"
+SALES_REPORT_GRANT = "sales_orders.sales_report"
+
+
+def granted_report_turn(granted: Any, *, chat: bool, sales: bool) -> bool:
+    """Owner ruling CA-3 Q5(a), v1's rule (#1648): a chat report turn (every fetch `chat_analytics`, or the
+    PV2 `chat` dataset) by a contact holding `chatbot.analytics`, or a sales report turn (an `order_status` in
+    `SALES_FIGURE_STATUSES`, or the PV2 `sales` dataset) by one holding `sales_orders.sales_report`, is answered
+    like staff: never held to no customer. Every other turn of an unlinked contact stays held (R5-8)."""
+    held = set(granted or ())
+    return bool((chat and CHAT_REPORT_GRANT in held) or (sales and SALES_REPORT_GRANT in held))
 
 
 def no_customer_scope() -> dict[str, Any]:
