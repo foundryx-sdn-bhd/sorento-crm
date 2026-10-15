@@ -434,8 +434,8 @@ def _keyed_pick(ask: Ask, pending: PendingQuestion) -> Option | None:
 def number_runs_question(ask: Ask, pending: PendingQuestion | None) -> bool:
     """R5 fix 5: the ONE condition under which an answer's number runs the open question's own ask (`_answer`'s
     number branch, where the parser's domain is dropped); the grant pre-check judges by it too. Not when the
-    answer is a refine (`_answer_is_a_refine`: it runs in the parser's domain) or an option key picks."""
-    if pending is None or ask.act != "answers_bot_question" or _answer_is_a_refine(ask, pending):
+    answer is a refine (`answer_is_a_refine`: it runs in the parser's domain) or an option key picks."""
+    if pending is None or ask.act != "answers_bot_question" or answer_is_a_refine(ask, pending):
         return False
     return _keyed_pick(ask, pending) is None and answers_by_number(ask, pending)
 
@@ -466,7 +466,7 @@ def _roster_kind(pending: PendingQuestion) -> str | None:
     return kinds.pop() if len(kinds) == 1 else None
 
 
-def _answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
+def answer_is_a_refine(ask: Ask, pending: PendingQuestion | None) -> bool:
     """An answer that names no option but carries a structured quantity on the held product
     (under a v1 product pick) or a structured period (under a report question) is a refine of
     the held subject, not an answer to the open question. Structured fields only."""
@@ -683,7 +683,7 @@ def _one_ask(
     counted = _held_count(st, ask, pending)
     if counted is not None:
         ask = counted  # a bare count: a refine (or a new topic) on the held subject
-    elif ask.act == "answers_bot_question" and not _answer_is_a_refine(ask, pending):
+    elif ask.act == "answers_bot_question" and not answer_is_a_refine(ask, pending):
         return _answer(st, i, ask, pending, resolver, policy, language, today, can_offer)
 
     if ask.act == "switch_back":

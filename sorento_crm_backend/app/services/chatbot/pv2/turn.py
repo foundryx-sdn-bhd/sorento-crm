@@ -29,6 +29,7 @@ from app.services.chatbot.pv2.apply import (
     DEFAULT_POLICY,
     ClarifyPolicy,
     ResolverLike,
+    answer_is_a_refine,
     apply_turn,
     number_runs_question,
     reads_as_answer,
@@ -251,6 +252,9 @@ def _judged_asks(out: Any, pending_in: Any, held: Any = None, rows: list[Any] | 
         if pending_in is not None and ask.act == "answers_bot_question":
             if number_runs_question(ask, pending_in):
                 ask = ask.model_copy(update={"domain": None})  # judged by the question's own ask, as apply runs it
+            elif answer_is_a_refine(ask, pending_in):
+                picked = shown_row(rows or [], ask)  # read as a refine, apply applies the shown row it picks (R5 fix 6)
+                ask = ask if picked is None else ask.model_copy(update={"entities": [picked, *ask.entities]})
             asks.append(ask)
             continue
         picked = shown_row(rows or [], ask)
