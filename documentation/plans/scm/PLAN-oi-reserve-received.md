@@ -1,6 +1,6 @@
 # PLAN - Request CS to reserve on an OI line linked to a received SPO
 
-Status: PR #1708 READY for review (reviewer READY, security CLEAN, 15 Oct 2026); browser pass + owner hand test owed. Track: M (new rule on an existing
+Status: PR #1708 READY (reviewer READY after rounds 1-2, security CLEAN, browser pass r2 PASS at 1280/375, 15 Oct 2026); owner hand test owed. Track: M (new rule on an existing
 screen, one additive migration per card Q1). Lane OI-RESERVE-RECEIVED, branch `crew/oi-reserve-received` off
 origin/main 504ce9252. UAC: `oi-reserve-received-acceptance-criteria.md` (written after the card
 answers).
