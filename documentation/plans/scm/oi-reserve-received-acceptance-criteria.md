@@ -25,6 +25,12 @@ Terms:
   already have an open request are refused exactly as today.
 - **AC-RR-5.** The OI detail row payload carries `reserve_requestable_qty`, a number, so the FE
   never re-derives "received".
+- **AC-RR-6.** (Browser pass r1, case B.) For this lane's request eligibility, release and
+  `reserve_requestable_qty`, a PO line counts as received only when no OPEN SPO allocation
+  chains from it (`from_po_number` + `from_po_line_ref` = the line's PO number and
+  `source_ref`). A closed PO line whose goods sit on a pending SPO is still on order: it is not
+  requestable and never released. A line whose chained SPO is fully received stays received. The
+  worklist "received" pill and the #973 replan rule are unchanged.
 
 ## Commit (CS answers)
 
@@ -91,6 +97,7 @@ Terms:
 - **AC-RR-43.** After a full accept the row shows no SPO document, the pill reads Reserved 1260,
   and Remaining is 0. After a partial accept, Remaining is the shortfall (657).
 - **AC-RR-44.** Usable at 1280 and 375.
+- **AC-RR-45.** At 375 the disabled-action tooltip wraps inside the viewport; no text is cut off.
 
 ## Migration
 
