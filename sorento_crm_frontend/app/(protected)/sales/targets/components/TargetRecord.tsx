@@ -797,7 +797,10 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                   KIND_LABEL[kind || 'agent']
                 )}
               </Field>
-              <Field label={isDealer ? 'Accounts' : 'Who'} htmlFor={(isCreate || (isDealer && editing)) ? 'target-who' : undefined}>
+              <Field
+                label={isDealer ? (editing ? 'Accounts' : 'Dealer') : 'Who'}
+                htmlFor={isCreate || (isDealer && editing) ? 'target-who' : undefined}
+              >
                 {isDealer && draft ? (
                   <SearchableMultiSelect
                     id="target-who"
@@ -1008,6 +1011,7 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                   unit={unit}
                   commission={target.commission_method !== 'none'}
                   ratio={target.threshold_unit === 'points'}
+                  provisional={isDealer}
                 >
                   {target.periods.map((p) => {
                     const future = p.period_start > today;
@@ -1212,15 +1216,21 @@ function figureSummary(target: SalesTargetDetail): string {
   return `${formatFigure(only)} ${target.periods.length === 1 ? 'for the whole range' : 'per period'}`;
 }
 
+/** Until the AutoCount invoice sync, a dealer's sales are the sales orders' totals, tax
+ * included (owner ruling 1, crew Q3 (a)): every such figure says so. */
+export const PROVISIONAL = 'provisional, incl. tax';
+
 function PeriodsTable({
   unit,
   commission = false,
   ratio = false,
+  provisional = false,
   children,
 }: {
   unit: string;
   commission?: boolean;
   ratio?: boolean;
+  provisional?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -1230,7 +1240,9 @@ function PeriodsTable({
           <tr>
             <th className="px-3 py-2 text-start font-medium">Period</th>
             <th className="px-3 py-2 text-end font-medium">{`Target (${unit})`}</th>
-            <th className="px-3 py-2 text-end font-medium">Achieved</th>
+            <th className="px-3 py-2 text-end font-medium">
+              {provisional ? `Achieved (${PROVISIONAL})` : 'Achieved'}
+            </th>
             <th className="px-3 py-2 text-end font-medium">%</th>
             {ratio ? <th className="px-3 py-2 text-end font-medium">RM per point</th> : null}
             {commission ? <th className="px-3 py-2 text-end font-medium">Commission (RM)</th> : null}
@@ -1654,7 +1666,9 @@ function DealerAccounts({
                 <th className="px-3 py-2 text-start font-medium">Code</th>
                 <th className="px-3 py-2 text-start font-medium">Customer</th>
                 <th className="px-3 py-2 text-start font-medium">Account</th>
-                {current && !draft ? <th className="px-3 py-2 text-end font-medium">{`Sales, ${period}`}</th> : null}
+                {current && !draft ? (
+                  <th className="px-3 py-2 text-end font-medium">{`Sales, ${period} (${PROVISIONAL})`}</th>
+                ) : null}
               </tr>
             </thead>
             <tbody className="divide-y">

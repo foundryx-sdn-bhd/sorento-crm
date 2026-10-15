@@ -331,11 +331,17 @@ function TargetsGrid({
       },
       {
         id: 'achieved',
-        header: ({ column }) => <DataGridColumnHeader title="Achieved" column={column} />,
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            // A dealer's sales are the sales orders' totals until the invoice sync (ruling 1).
+            title={tab === 'dealer' ? 'Achieved (provisional, incl. tax)' : 'Achieved'}
+            column={column}
+          />
+        ),
         cell: ({ row }) => (
           <span className="block truncate text-end tabular-nums">{formatFigure(row.original.achieved_value)}</span>
         ),
-        size: 85,
+        size: tab === 'dealer' ? 130 : 85,
         meta: { headerTitle: 'Achieved', skeleton: <Skeleton className="h-4 w-16" /> },
       },
       {

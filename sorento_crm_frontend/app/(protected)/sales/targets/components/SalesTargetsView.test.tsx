@@ -231,7 +231,8 @@ describe('SalesTargetsView', () => {
     expect(hooks.useSalesTargets).toHaveBeenCalledWith({ all: true, subject: 'dealer' });
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent?.trim()).filter(Boolean);
     expect(headers).toEqual([
-      'Number', 'Name', 'Dealer', 'Counts', 'Pays to', 'Measures', 'Dates', 'Target', 'Achieved', '%', 'Commission',
+      'Number', 'Name', 'Dealer', 'Counts', 'Pays to', 'Measures', 'Dates', 'Target',
+      'Achieved (provisional, incl. tax)', '%', 'Commission',
     ]);
     expect(screen.getByText('Dealer A Sdn Bhd')).toBeTruthy();
     expect(screen.getByText('5,400')).toBeTruthy();

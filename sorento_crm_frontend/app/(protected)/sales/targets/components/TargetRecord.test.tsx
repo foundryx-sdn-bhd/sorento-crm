@@ -773,7 +773,16 @@ describe('TargetRecord: dealer targets (lane SALES-TARGET-DEALER)', () => {
     expect(within(table).getByText('A/C III')).toBeTruthy();
     expect(within(table).getByText('70,000')).toBeTruthy();
     expect(screen.getByText('300-A0123 - DEALER A SDN BHD (A/C I)')).toBeTruthy();
+    expect(within(table).getByText(/provisional, incl\. tax/)).toBeTruthy();
     expect(document.body.textContent).not.toMatch(UUID);
+  });
+
+  it('read mode names the dealer, and Periods labels the SO-based figures provisional', () => {
+    hooks.useSalesTarget.mockReturnValue({ data: dealerDetail(), isLoading: false, isError: false });
+    render(<TargetRecord id="t1" />);
+    expect(screen.getByText('Dealer', { selector: 'span' })).toBeTruthy();
+    openTab('Periods');
+    expect(screen.getByText('Achieved (provisional, incl. tax)')).toBeTruthy();
   });
 
   it('the Commission tab shows the four settings and a rate column per account', () => {
