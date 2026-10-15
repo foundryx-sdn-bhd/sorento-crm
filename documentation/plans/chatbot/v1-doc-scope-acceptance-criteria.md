@@ -29,3 +29,6 @@
   keeps the chat report's customers, and one holding `sales_orders.sales_report` keeps the sales
   report's (top selling and the ranking included), picker included. A report grant does not open
   any other domain.
+- AC-14: No DO probe and no has / no DO stamp for an unlinked contact that is not document staff,
+  on any customer list (granted report pickers included); the low_signal clarifier's prompt
+  carries no customer row for a held contact.

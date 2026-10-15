@@ -95,6 +95,16 @@ outstanding, any domain without such a grant) keeps the slice-3 rule. The CA-3, 
 sales-report suites stay unclassified-asker tests (their slice-3 office marks reverted); without
 the grant, SF-1 and the chat lane's own grant check already keep every name away.
 
+Security review rounds 4-5: the grant opens the report's customers, never their delivery orders.
+For any unlinked contact that is not document staff (`customer_docs_hidden`, granted report turns
+included) none of the three customer DO probe sites runs: the gate's picker arm
+(`resolve_gate.run(skip_customer_probe=...)`), the roster stamp (`stamp_customer`) and the
+narrower's PICKER-ONE stamp (`turn_runtime.stamp_customer_ask`). The low_signal clarifier asks
+the resolver itself, so a held contact's customer rows are dropped from its prompt too.
+
+Queued follow-up (crew, 15 Oct, after this PR merges): the same clarifier drop for an ENFORCED
+dealer, keeping only its own links' customer rows (pre-existing gap, same files).
+
 ## Open before merge
 
 The owner runs `crew/state/reports/V1-DOC-SCOPE-salesperson-check.sql` (read-only) on production
