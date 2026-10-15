@@ -674,13 +674,24 @@ def settle(
         if drilled is not None:
             return drilled
         # Unsure with nothing above to narrow by: the global reading is the only one left.
+    held_period: rf.Resolved | None = None
+    held_product: dict[str, Any] = {}
     if new_axis and parse_output.get("ranking_refine") is True:
         # Not a refine (it names another axis): the fresh ask reads it whole, its dates included.
+        # Chat fix PR-B S4 (AC-B6): the new axis is still asked (8 Oct rule), but the held period
+        # and product stay, never asked again; the message's own period or product wins.
+        axis = GROUP_BY.get(raw_group, raw_group)
+        held_period = period_from(frame.get("date_from"), frame.get("date_to"))
+        held_product = {
+            k: frame[k] for k in ("product_code", "product_ids") if frame.get(k) and k not in _AXIS_FILTERS.get(axis, ())
+        }
         parse_output = {**parse_output, "ranking_refine": False}
 
     args, line = _fresh_args(db, parse_output, entities, dealer=dealer)
     if args is None:
         return None, line
+    if held_product and not (args.get("product_code") or args.get("product_ids")):
+        args.update(held_product)
     if (
         parse_output.get("ranking_refine") is not True
         and not dealer  # the route forces a dealer's links, so a plain total can never widen
@@ -691,7 +702,7 @@ def settle(
         return None, CATALOGUE_LINE
     top_n = parse_output.get("top_n")
     given = {**_given_choices(args), **_given_top_n(args, top_n)}
-    period = period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end"))
+    period = period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")) or held_period
     if period is not None and parse_output.get("ranking_refine") is not True:
         # A refine with no ranking held has nothing to refine: it is a fresh ask, and a
         # period alone never runs a total (it asks).
