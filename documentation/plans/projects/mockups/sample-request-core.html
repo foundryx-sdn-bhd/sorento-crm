@@ -32,7 +32,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--font)}
 .notes li{display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px}
 .notes li b{display:block;margin-bottom:2px}
 .notes .ref{display:block;color:var(--muted);font-size:12px;margin-top:4px}
-.co{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border-radius:50%;background:var(--callout);color:#fff;font-size:12px;font-weight:700;box-shadow:0 0 0 2px #fff}
+.co{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px;padding:0 3px;height:22px;border-radius:50%;background:var(--callout);color:#fff;font-size:12px;font-weight:700;box-shadow:0 0 0 2px #fff}
 .pin{position:absolute;z-index:5}
 /* app shell */
 .shell{display:flex;min-height:100%}
@@ -176,6 +176,9 @@ Pink numbers point at the notes on the right of each frame.</p>
       <div class="lineitem"><div class="r"><b>3 &middot; CB2829</b><span class="muted">qty 1 &times;</span></div><div class="small muted">or <b>CB2805A</b> &nbsp;<span class="pill">alternative</span></div></div>
       <div class="lineitem"><div class="r"><span class="muted">Add item: </span><span class="mono">tpe9101</span></div>
         <div class="opt"><div><b>TPE-9101</b> &middot; product name</div><div>TPE-9101-W &middot; product name</div></div></div>
+      <div class="lineitem" style="position:relative"><div class="r"><span class="muted">Add item: </span><span class="mono">cb2829ss-cr</span></div>
+        <div class="opt"><div style="color:var(--amber);background:var(--amber-soft)"><b>CB2829SS-CR is not in the product list.</b><br>Pick the product you mean, or ask purchasing to add it as a new product before you request it.</div></div>
+        <span class="pin co" style="right:-8px;top:-6px">5b</span></div>
       <span class="pin co" style="right:-8px;top:-6px">5</span>
     </div>
     <div class="field"><label>Loan period</label><div class="f2"><div class="input">2</div><div class="seg"><span>days</span><span class="on">months</span></div></div></div>
@@ -189,7 +192,8 @@ Pink numbers point at the notes on the right of each frame.</p>
   <li><span class="co">2</span><div><b>Project: registered pick, or typed title (soft transition).</b> With the switch "Sample requests need a registered project" OFF (default) the typed title is accepted; ON hides "Type the project title". Quotation unlocks once a project is picked.<span class="ref">Project lookup reused from the sponsorship form: SubmissionForm.tsx:3029-3045, GET /lookups/projects (portal.py:524) scoped by sponsorship_link_service.projects_for_contact :46-85. Card rules 2, 3.</span></div></li>
   <li><span class="co">3</span><div><b>Delivery mode is one tap and required on submit</b> (Q2). Paper left it blank on 2 of 3 forms.<span class="ref">New radio group, FE components/ui/radio-group.tsx</span></div></li>
   <li><span class="co">4</span><div><b>Board mounting is a switch + label, never a line.</b> Prints as row 1 of the requisition.<span class="ref">components/ui/switch.tsx. Card rule 6.</span></div></li>
-  <li><span class="co">5</span><div><b>Items are picked products.</b> The search ignores dashes and case, so "tpe9101" lists TPE-9101. It only lists: the salesperson taps the product; nothing is preselected or auto-matched. "X OR Y" = an alternative product on the line, also picked. On a phone each line is a card; on desktop the same data is the existing line table.<span class="ref">Line table: SubmissionForm.tsx:1795-1990 (HAS_LINES :370), product search GET /lookups/products (portal.py:459-495) gains the dash-blind match from services/product_code_family.py:79.</span></div></li>
+  <li><span class="co">5</span><div><b>Items are picked products, and only products in the list</b> (owner, 16 Oct 00:21). The search ignores dashes and case, so "tpe9101" lists TPE-9101. It only lists: the salesperson taps the product; nothing is preselected or auto-matched. "X OR Y" = an alternative product on the line, also picked. On a phone each line is a card; on desktop the same data is the existing line table.<span class="ref">Line table: SubmissionForm.tsx:1795-1990 (HAS_LINES :370), product search GET /lookups/products (portal.py:459-495) gains the dash-blind match from services/product_code_family.py:79.</span></div></li>
+  <li><span class="co">5b</span><div><b>Not in the list = a clear message, never a typed line.</b> Search for a code that does not exist (Form C's CB2829SS-CR) shows this message instead of results; nothing is added, nothing is guessed, and the rest of the form still submits. The salesperson picks the product they mean (here CB2829) or asks purchasing.<span class="ref">Card rule 5. API: a line must carry an existing active product_id (422 otherwise). Message lives in the AsyncCombobox empty state, FE app/(auth)/portal/components/AsyncCombobox.tsx.</span></div></li>
 </ol></div>
 </div>
 

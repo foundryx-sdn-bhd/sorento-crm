@@ -1,6 +1,6 @@
 # Behaviour card: Sample Request (consignment requisition) in project management (SR-CORE)
 
-Status: card + mock filed for owner approval (15 Oct 2026); crew answered Q2-Q5 = (a); Q1 with the owner. Size L, slice 1 of 3 (SR-STOCK, SR-RETURN follow).
+Status: card + mock filed for owner approval (15 Oct 2026); card SETTLED (owner Q1 16 Oct 00:21, crew Q2-Q5 = (a)); mock awaiting owner OK. Size L, slice 1 of 3 (SR-STOCK, SR-RETURN follow).
 Mock: `mockups/sample-request-core.html` (open the file in a browser; every element names its component + path).
 Sources: crew discovery `state/reports/SAMPLE-REQUEST-DISCOVERY-15oct.md` sections 1-4, owner rulings 16 Oct 00:10.
 Paths: BE = `sorento_crm_backend/app/`, FE = `sorento_crm_frontend/`.
@@ -33,6 +33,11 @@ and returns are NOT in this slice; the record leaves a column or a status slot f
    so a typed "B2155-BLUE" lists `B2155-BLUE-DIY` among the hits. The search only LISTS products; a human always picks
    one. Nothing is auto-matched, nothing is chosen for the user, and no name or nearest-code matching runs anywhere
    (owner rule). A "X OR Y" line = product X + alternative Y, both picked.
+   **The product must be in the product list** (owner, 16 Oct 00:21). There is no free-typed or unmatched line. When a
+   search finds nothing, the picker says: "<typed text> is not in the product list. Pick the product you mean, or ask
+   purchasing to add it as a new product before you request it." No line is added, and the rest of the request can
+   still be saved and submitted, so the form never gets stuck. The API refuses any line whose product_id is not an
+   existing active product.
    A "X / Y" set = two lines. No per-line approval columns (paper has two, blank on all 3 forms; ruling 4 makes
    approval borrow-only, which belongs to SR-STOCK).
 6. **Board mounting is a header flag, not a line** (it has no SKU): toggle "Mount & label sample board" + label text
@@ -64,7 +69,7 @@ and returns are NOT in this slice; the record leaves a column or a status slot f
 | A | Salesperson A, portal. Customer `300-J099 JV PERKASA SDN BHD (PROJECT)`. Project switch OFF, typed title "3-tower service apartments, Bukit Senibong". Scope "FOR UNIT - TOWER A & B". Immediate. Ships to the site in Masai, site contact role "Site supervisor", "call 1 day before". Board ON, label "TOWER A & B". 21 product lines, loan 2 months, no mode ticked | Submit refused: "Choose a delivery mode" (rule 7). After choosing Deliver by driver: SR-000001, Submitted, no project link, shows in the coordinator queue. Print row 1 = "MOUNT & LABEL SAMPLE BOARD - TOWER A & B" |
 | A2 | Same form, line `TPE9101` | Picker typed "TPE9101" offers `TPE-9101`; line saved as that product |
 | A3 | Same form, line `B2155-BLUE-NL` (no such product) | Typing "B2155-BLUE" lists `B2155-BLUE-DIY`; the salesperson decides whether that is the item. Nothing is preselected. If it is not the item: Q1 |
-| B | Salesperson B, staff, from project "EDUCITY DEVELOPMENT" tab (if registered). Customer PINNACLE HOME has no debtor: typed. Date 13 Oct. "CB2829SS-CR OR CB2829": `CB2829SS-CR` not in products | Line = `CB2829` with no alternative (Q1). Request shows "No debtor code" badge. Deliver by driver. Loan 2 months |
+| B | Salesperson B, staff, from project "EDUCITY DEVELOPMENT" tab (if registered). Customer PINNACLE HOME has no debtor: typed. Date 13 Oct. "CB2829SS-CR OR CB2829": `CB2829SS-CR` not in products | Searching "CB2829SS" finds nothing and shows the not-in-list message; the salesperson picks `CB2829` themselves (or leaves the line out and asks purchasing). Request shows "No debtor code" badge. Deliver by driver. Loan 2 months |
 | B2 | Same, "CSA150 / CSH2072" | Two lines, `CSA150` qty 1 and `CSH2072` qty 1 |
 | C | Salesperson A, Form C, project "52 double-storey terraces, Taman Nusa Duta Fasa 10" for developer TARIKAN ABADI. Ships to CHENXIN PLUMBING SDN BHD (third party) | Ship-to name = the plumber, customer stays JV PERKASA. Board ON. Coordinator: Submitted -> Processing, types Consignment No + PO No, Customer confirmed (date), Delivered (date). Return due = delivered + 2 months |
 | D | Switch `sample_request_require_project` ON, portal submit with typed title only | Refused: "Pick the project". A request saved before the switch keeps its typed title and still opens |
@@ -76,6 +81,8 @@ and returns are NOT in this slice; the record leaves a column or a status slot f
 - Coordinator cancels a Processing request: allowed, with a reason in the activity feed.
 - Same product twice on one request: allowed (paper has it when one is the board's and one is loose); no dedupe.
 - Qty other than 1: allowed (integer, >= 1).
+- Search finds nothing: the not-in-list message (rule 5); submit stays available for the other lines.
+- Request with zero lines and no board: submit refused, "Add at least one item".
 - Inactive product: not offered by the picker; an existing line keeps it and shows "inactive".
 - Portal contact with no linked company: project lookup returns nothing (`services/sponsorship_link_service.py:46-85`),
   so they type the title, unless the project switch is ON, in which case they cannot submit (same as sponsorship today).
@@ -110,12 +117,8 @@ Nothing existing is altered.
 
 ## Questions (recommendation first)
 
-1. **A product that is not in the product list at all** (`CB2829SS-CR`). (a) The salesperson searches and picks the
-   product they mean themselves (e.g. `CB2829`) and notes the difference in the line remark; if none fits, the line is
-   left out and they ask the coordinator; (b) allow an unmatched typed line that the coordinator must resolve by
-   picking a product before Processing. Either way a human picks; the code never matches. **Rec (a)**: one rule
-   (lines are products); the dash-blind search already lists the right product for the other mismatches on the
-   3 forms; (b) adds a resolve step for about one line in 60. OPEN, with the owner.
+1. **ANSWERED, owner 16 Oct 00:21: "The product must be in the product list."** Every line is an existing product a
+   human picks. No nearest-match, no free-typed lines; a not-in-list item gets a clear message (rule 5).
 2. **ANSWERED (a), crew 15 Oct.** **Delivery mode required on submit?** (a) required; (b) optional, coordinator asks. **Rec (a)**: 2 of 3 paper forms
    left it blank and the coordinator has to chase it; one tap fixes that.
 3. **ANSWERED (a), crew 15 Oct.** **Portal visibility.** (a) Opt-in per contact, like price tag requests (`GRANTABLE_PORTAL_FORM_TYPES`,
