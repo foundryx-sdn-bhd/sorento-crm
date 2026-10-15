@@ -182,3 +182,18 @@ sign-off).
 - Not taken (pre-existing, ticket owed): a non-staff contact with no customer links gets an unscoped customer search
   (resolve.py:740); R5-3 now also prints each account's name in the confirm. Numeric code typed exactly as printed
   misses on a numbered list (apply.py:864; not a regression).
+
+## Slice G (crew answer 15 Oct to the linkless security finding: fold the PV2 side into R5)
+Security-reviewer (file:line theirs): a non-staff contact with no customer links gets no customer scope in PV2
+(pv2/turn.py:562, 579), so resolve.py:740 searches every active customer by partial name and prints up to 8 family
+names per message; after a pick the v1 fetch runs without a customer restriction (lanes/business/__init__.py:1441).
+FIX (PV2 side only): unlinked non-staff (contact_asker.classify not salesperson/staff) = empty customer scope in
+PV2; the search returns nothing; PV2's v1 fetch call passes the empty scope (no rows); R5-3 ledger names only from
+own linked accounts. UAC R5-8. Red-first, kill-proof, reviewer + security re-check. v1-only paths untouched (#1648).
+
+## Fix round 2 (reviewer NOT READY on d7f3c4ddc)
+Blocker: apply.py:414-420 compares a new topic's domain with held.domain, not the open question's origin domain, so
+'2' parsed as new_topic in another domain on R5-2's which-product clarify picks the last answer's row (wrong product).
+FIX: a number pick stays the open question's answer whatever its domain; the domain rule applies to option-key
+answers and compares with the open question's origin domain. Also: pre-check and apply judge with the same held
+(security nit + reviewer note); ledger_family.py:266 docstring; sharper confirm repeat-guard test.

@@ -45,3 +45,11 @@ the battery. "Same list re-shown" means the reply's option set equals the previo
 A named customer carries when a product is named next; the clarify is only product -> customer; staff get stock
 numbers, dealers got / no stock; promo replies send the list, never echo the code; size ask -> size or 'none on
 record'; one exact option is used, a guess is a yes/no confirm with the real name.
+
+## R5-8 Unlinked non-staff contacts see no other customer (crew answer 15 Oct, slice G)
+PV2 rule: non-staff documents only from own links, unlinked none; owner ruling 15 Oct: unlinked contacts = dealer view.
+- A non-staff contact with no customer links (contact_asker.classify not salesperson/staff; salespeople keep staff
+  scope per V1-DOC-SCOPE-SALES) has an EMPTY customer scope in PV2. A partial-name customer search prints no customer
+  names, and PV2's call into the v1 fetch passes that empty scope, so no other customer's rows are shown.
+- Account (ledger) names in a confirm only ever come from the contact's own linked accounts.
+- v1-only paths are unchanged (#1648 owns v1).
