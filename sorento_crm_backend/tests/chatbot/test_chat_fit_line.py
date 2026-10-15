@@ -544,7 +544,7 @@ def test_ac14_ms_several_uses_the_catalogued_head(session_factory, monkeypatch) 
 def test_ac14_zh_several_uses_the_catalogued_head(session_factory, monkeypatch) -> None:
     (c_reply, _c), (a_reply, _a) = _parity(
         session_factory, monkeypatch, typed=COVERS_B, asked=[WC_B],
-        text_typed=f"{COVERS_B[0]} 有货吗", text_asked=f"{WC_B} 马桶盖有货吗",
+        text_typed=f"{' '.join(COVERS_B)} 有货吗", text_asked=f"{WC_B} 马桶盖有货吗",
         find=fits("seat_cover", "马桶盖"),
     )
     assert a_reply.endswith(f"\n\n{c_reply}"), a_reply

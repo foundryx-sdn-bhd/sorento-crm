@@ -16,6 +16,9 @@ their own `ZZT*` products and links (CI's DB is empty).
 - AC-3 `fits` + kind `mirror` on a cabinet code resolves to that cabinet's mirror link(s) only;
   kind `shelf` to its shelf link(s) only; kind `seat_cover` to seat cover links only (a cabinet's
   mirror link never answers a seat cover ask).
+- AC-3b `fits` with kind null (the message names no particular kind, "what goes with <cabinet>")
+  resolves the named code's links of every kind on record (the data decides; a WC holds only
+  seat cover links, so seat cover asks behave as today); each kind then gets its own fit line.
 - AC-4 Reverse: an accessory code with its kind resolves to its host code(s) (the data decides
   the direction, as today for seat covers).
 - AC-5 No link of that kind on record for any named code: the whole reply is one line per code,
