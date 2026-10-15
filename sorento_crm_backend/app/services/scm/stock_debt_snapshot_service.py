@@ -30,6 +30,7 @@ from app.models.project_so import (
 )
 from app.models.stock_debt_snapshot import StockDebtSnapshot, StockDebtSnapshotRow
 from app.models.user import User
+from app.services.audit_service import log_audit
 from app.services.error_handler import AppException, handle_not_found
 from app.services.order_inquiry_reserve_service import (
     _REQUESTABLE_STATES,
@@ -42,7 +43,10 @@ from app.services.scm.demand import demand_qty
 from app.services.scm.low_stock_report_service import MAX_LOW_STOCK_ROWS
 from app.services.scm.stock_debt_service import StockDebtService
 from app.services.scm.supply_assignment import month_key
+from app.services.user_service import UserPermissionService, invalidate_rbac_cache
 
+#: The order inquiry rows on a line are project data: serving them needs this on top of Stock Debt.
+OI_PERMISSION = "projects.projects.view"
 _ID_CHUNK = 2000
 _NOTE_MAX = 2000
 _DECISION_LABELS = {"reserve": "Reserve", "buy": "Buy", "ignore": "Ignore"}
@@ -258,11 +262,13 @@ class StockDebtSnapshotService:
         parts: List[str] = []
         if filters.get("query"):
             parts.append(f'"{filters["query"]}"')
-        parts.append(f"Book {filters.get('book') or 'all'}")
+        parts.append(f"Book {(filters.get('book') or 'all').capitalize()}")
         if filters.get("location_codes"):
-            parts.append("Location " + ", ".join(filters["location_codes"]))
-        if filters.get("exclude_location_codes"):
-            parts.append("Except " + ", ".join(filters["exclude_location_codes"]))
+            parts.append(", ".join(filters["location_codes"]))
+        elif filters.get("exclude_location_codes"):
+            parts.append("All except " + ", ".join(filters["exclude_location_codes"]))
+        else:
+            parts.append("All locations")
         if filters.get("supplier_names"):
             parts.append("Supplier " + ", ".join(filters["supplier_names"]))
         start, end = filters.get("date_from"), filters.get("date_to")
@@ -276,6 +282,8 @@ class StockDebtSnapshotService:
             parts.append("Only in debt")
         if filters.get("projected"):
             parts.append("Projected")
+        if filters.get("show_aux"):
+            parts.append("Stock and PO columns")
         return " · ".join(parts)
 
     def get(self, snapshot_id: str, user_id: str) -> Dict[str, Any]:
@@ -404,7 +412,9 @@ class StockDebtSnapshotService:
 
     # ------------------------------------------------------------------ the drill
 
-    def lines(self, snapshot_id: str, row_id: str, month: Optional[str]) -> Dict[str, Any]:
+    def lines(
+        self, snapshot_id: str, row_id: str, month: Optional[str], user_id: str
+    ) -> Dict[str, Any]:
         """The stored lines of one row (one bucket when `month` is given), each with the
         live `now` read at this moment."""
         self._get_snapshot(snapshot_id)
@@ -414,6 +424,17 @@ class StockDebtSnapshotService:
         core_ids = sorted({l["sales_order_line_id"] for l in lines})
 
         now = self._line_now(core_ids)
+        # Security L1: without `projects.projects.view` no order inquiry row is served,
+        # frozen or live. Read fresh, not from the 30 s role cache: a grant or revoke applies
+        # at once, as it does for a session.
+        invalidate_rbac_cache(user_id)
+        if not UserPermissionService(self.db).check_user_has_permission(user_id, OI_PERMISSION):
+            for line in lines:
+                line["oi_rows"] = []
+                line["now"] = now.get(line["sales_order_line_id"]) or {
+                    "so_status": "missing", "open_qty": 0.0,
+                }
+            return {"data": lines}
         linked = self._linked_oi_rows(core_ids)
         frozen_ids = sorted({oi["row_id"] for l in lines for oi in l["oi_rows"]})
         live_ids = frozen_ids + [
@@ -530,6 +551,11 @@ class StockDebtSnapshotService:
     ) -> Dict[str, Any]:
         self._get_snapshot(snapshot_id)
         row = self._get_row(snapshot_id, row_id)
+        before = {
+            "decision": row.decision,
+            "warehouse_id": row.decision_warehouse_id,
+            "note": row.decision_note,
+        }
         if decision is None:
             row.decision = row.decision_warehouse_id = row.decision_note = None
             row.decided_by = row.decided_at = None
@@ -550,6 +576,25 @@ class StockDebtSnapshotService:
             row.decision_note = (note or "").strip() or None
             row.decided_by = user_id
             row.decided_at = datetime.utcnow()
+        log_audit(
+            self.db,
+            "stock_debt_snapshot_row",
+            str(row.id),
+            "UPDATE",
+            old_values=before,
+            new_values={
+                "decision": row.decision,
+                "warehouse_id": row.decision_warehouse_id,
+                "note": row.decision_note,
+            },
+            user_id=user_id,
+            description=(
+                f"Stock debt snapshot decision {'cleared' if decision is None else decision}"
+                f" on {row.product_code}"
+            ),
+            root_entity_type="stock_debt_snapshot",
+            root_entity_id=str(snapshot_id),
+        )
         self.db.commit()
         return self._row_payloads([row])[0]
 

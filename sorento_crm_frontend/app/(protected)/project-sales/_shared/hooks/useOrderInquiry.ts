@@ -189,12 +189,9 @@ export function useOrderInquiryReserveRequests(inquiryId: string | undefined) {
 }
 
 /**
- * S5 (reviewer round): `ReserveRequestDialog` used to call `createOrderInquiryReserve
- * Request` straight from the component, skipping the hooks layer every other write in
- * this file goes through. The mutate function is what the caller hands the dialog as
- * `onSend` - the dialog stays free of `QueryClientProvider` (its own vitest suite
- * renders it with no providers), and this hook is what supplies the invalidate + toast
- * the layering rule asks for.
+ * Send a "Request CS to reserve" (or park it). `RequestReserveDialog`
+ * (`_shared/components`) calls this hook, which supplies the invalidate + toast the
+ * layering rule asks for; the OI page and the Stock Debt snapshot drill share it.
  */
 export function useCreateOrderInquiryReserveRequest(inquiryId: string | undefined) {
   const queryClient = useQueryClient();

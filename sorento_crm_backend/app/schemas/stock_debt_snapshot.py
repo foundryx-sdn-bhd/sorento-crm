@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date as DateType, datetime
 from typing import Any, Dict, List, Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -25,9 +26,34 @@ Decision = Literal["reserve", "buy", "ignore"]
 DecisionFilter = Literal["decided", "undecided", "reserve", "buy", "ignore"]
 
 
+class SnapshotFiltersIn(StockDebtFilters):
+    """The board's filters as a snapshot takes them: bounded, and every id an id."""
+
+    query: Optional[str] = Field(default=None, max_length=200)
+
+    @field_validator("location", "exclude_location", "supplier_ids")
+    @classmethod
+    def _ids(cls, values: List[str]) -> List[str]:
+        for value in values:
+            if value == "none":
+                continue
+            try:
+                UUID(str(value))
+            except ValueError:
+                raise ValueError("must be an id") from None
+        return values
+
+    @field_validator("location", "exclude_location")
+    @classmethod
+    def _no_none_location(cls, values: List[str]) -> List[str]:
+        if "none" in values:
+            raise ValueError("must be an id")
+        return values
+
+
 class SnapshotCreate(BaseModel):
     name: str
-    filters: StockDebtFilters = Field(default_factory=StockDebtFilters)
+    filters: SnapshotFiltersIn = Field(default_factory=SnapshotFiltersIn)
 
     @field_validator("name")
     @classmethod

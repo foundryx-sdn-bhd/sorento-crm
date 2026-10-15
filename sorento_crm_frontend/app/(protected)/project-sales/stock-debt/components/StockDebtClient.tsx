@@ -828,6 +828,9 @@ export function StockDebtClient() {
         onOpenChange={setSaveOpen}
         filters={boardFilters}
         productCount={total}
+        locationCodes={locations.map(
+          (id) => facetLocations.find((loc) => loc.id === id)?.code ?? 'Unknown location',
+        )}
       />
 
       {openCell && (

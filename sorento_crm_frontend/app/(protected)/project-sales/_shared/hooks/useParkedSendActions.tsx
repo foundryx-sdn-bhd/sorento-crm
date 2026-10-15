@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentProps } from 'react';
+import { useMemo, useState } from 'react';
 import { ParkedSendDialog } from '@/components/common/ParkedSendDialog';
 import { useHasPermission } from '@/hooks/usePermissions';
 import {
@@ -12,34 +12,6 @@ import {
 
 const ACKNOWLEDGE_PERMISSION = 'projects.order_inquiries.acknowledge';
 const RESERVE_PERMISSION = 'projects.order_inquiries.reserve';
-
-type DialogProps = ComponentProps<typeof ParkedSendDialog>;
-
-/** The hook owns the preview and send queries; the `dialog` node it hands out reads their
- * latest state through this store, so it stays live wherever the caller mounts it (the
- * preview arrives after the press that opened the dialog). */
-function createDialogStore() {
-  let props: DialogProps | null = null;
-  const listeners = new Set<() => void>();
-  return {
-    get: () => props,
-    set: (next: DialogProps) => {
-      props = next;
-      listeners.forEach((listener) => listener());
-    },
-    subscribe: (listener: () => void) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
-}
-
-function ParkedSendHost({ store }: { store: ReturnType<typeof createDialogStore> }) {
-  const props = useSyncExternalStore(store.subscribe, store.get, store.get);
-  return props ? <ParkedSendDialog {...props} /> : null;
-}
 
 /**
  * The two "Send all parked ..." Actions items and their `ParkedSendDialog`, shared by the
@@ -84,24 +56,23 @@ export function useParkedSendActions() {
     [canAcknowledge, canReserve, myParkedRequests, myParkedNotices],
   );
 
-  const store = useMemo(createDialogStore, []);
-  useEffect(() => {
-    store.set({
-      open: parkedKind !== null,
-      onOpenChange: (next) => {
+  const dialog = (
+    <ParkedSendDialog
+      open={parkedKind !== null}
+      onOpenChange={(next) => {
         if (!next) setParkedKind(null);
-      },
-      title:
+      }}
+      title={
         parkedKind === 'notices'
           ? 'Send all parked reserves to purchasing'
-          : 'Send all parked requests to CS',
-      preview: parkedPreview.data,
-      isLoading: parkedPreview.isLoading,
-      onSend: () => sendParked.mutateAsync(),
-      isSending: sendParked.isPending,
-    });
-  });
-  const dialog = useMemo(() => <ParkedSendHost store={store} />, [store]);
+          : 'Send all parked requests to CS'
+      }
+      preview={parkedPreview.data}
+      isLoading={parkedPreview.isLoading}
+      onSend={() => sendParked.mutateAsync()}
+      isSending={sendParked.isPending}
+    />
+  );
 
   return { actions, dialog };
 }

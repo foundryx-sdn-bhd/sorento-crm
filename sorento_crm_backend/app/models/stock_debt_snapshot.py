@@ -37,6 +37,7 @@ class StockDebtSnapshot(Base, CompanyScopedMixin):
 
     __table_args__ = (
         Index("ix_stock_debt_snapshots_company_created", "company_id", created_at.desc()),
+        {"schema": "projects"},
     )
 
 
@@ -49,7 +50,7 @@ class StockDebtSnapshotRow(Base, CompanyScopedMixin):
     id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
     snapshot_id = Column(
         UUID(as_uuid=False),
-        ForeignKey("stock_debt_snapshots.id", ondelete="CASCADE"),
+        ForeignKey("projects.stock_debt_snapshots.id", ondelete="CASCADE"),
         nullable=False,
     )
     position = Column(Integer, nullable=False)
@@ -77,4 +78,5 @@ class StockDebtSnapshotRow(Base, CompanyScopedMixin):
         ),
         Index("ix_stock_debt_snapshot_rows_snapshot_position", "snapshot_id", "position"),
         Index("ix_stock_debt_snapshot_rows_snapshot_decision", "snapshot_id", "decision"),
+        {"schema": "projects"},
     )

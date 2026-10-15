@@ -5,6 +5,8 @@ Additive only, idempotent (`IF NOT EXISTS`) so the shared dev DB, which converge
 `crew/state/migrations/STOCK-DEBT-SNAPSHOT.sql`.
 Plan: documentation/plans/scm/PLAN-stock-debt-snapshot-15oct.md.
 
+Round 2: the tables live in the `projects` schema (ADR-0011).
+
 Revision ID: sds_0001_stock_debt_snapshots
 Revises: dobs_0001_assume_delivered
 """
@@ -19,8 +21,9 @@ depends_on = None
 
 
 UPGRADE_SQL = (
+    "CREATE SCHEMA IF NOT EXISTS projects",
     """
-    CREATE TABLE IF NOT EXISTS stock_debt_snapshots (
+    CREATE TABLE IF NOT EXISTS projects.stock_debt_snapshots (
         id UUID PRIMARY KEY,
         company_id UUID NOT NULL REFERENCES companies(id),
         name VARCHAR(120) NOT NULL,
@@ -34,12 +37,14 @@ UPGRADE_SQL = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshots_company_created "
-    "ON stock_debt_snapshots (company_id, created_at DESC)",
+    "ON projects.stock_debt_snapshots (company_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshots_company_id "
+    "ON projects.stock_debt_snapshots (company_id)",
     """
-    CREATE TABLE IF NOT EXISTS stock_debt_snapshot_rows (
+    CREATE TABLE IF NOT EXISTS projects.stock_debt_snapshot_rows (
         id UUID PRIMARY KEY,
         company_id UUID NOT NULL REFERENCES companies(id),
-        snapshot_id UUID NOT NULL REFERENCES stock_debt_snapshots(id) ON DELETE CASCADE,
+        snapshot_id UUID NOT NULL REFERENCES projects.stock_debt_snapshots(id) ON DELETE CASCADE,
         position INTEGER NOT NULL,
         product_id UUID REFERENCES products(id) ON DELETE SET NULL,
         product_code VARCHAR(180) NOT NULL,
@@ -56,11 +61,11 @@ UPGRADE_SQL = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshot_rows_snapshot_position "
-    "ON stock_debt_snapshot_rows (snapshot_id, position)",
+    "ON projects.stock_debt_snapshot_rows (snapshot_id, position)",
     "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshot_rows_snapshot_decision "
-    "ON stock_debt_snapshot_rows (snapshot_id, decision)",
+    "ON projects.stock_debt_snapshot_rows (snapshot_id, decision)",
     "CREATE INDEX IF NOT EXISTS ix_stock_debt_snapshot_rows_company_id "
-    "ON stock_debt_snapshot_rows (company_id)",
+    "ON projects.stock_debt_snapshot_rows (company_id)",
 )
 
 
@@ -71,5 +76,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DROP TABLE IF EXISTS stock_debt_snapshot_rows")
-    op.execute("DROP TABLE IF EXISTS stock_debt_snapshots")
+    op.execute("DROP TABLE IF EXISTS projects.stock_debt_snapshot_rows")
+    op.execute("DROP TABLE IF EXISTS projects.stock_debt_snapshots")

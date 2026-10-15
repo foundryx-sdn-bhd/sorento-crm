@@ -23,6 +23,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import RecordNavigation from '@/components/common/RecordNavigation';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
+import { useResetPageOnFilterChange } from '@/hooks/useResetPageOnFilterChange';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
 import { useParkedSendActions } from '../../_shared/hooks/useParkedSendActions';
@@ -73,9 +74,9 @@ function metaFacts(snapshot: Snapshot): string[] {
   const excluded = filters.exclude_location_codes ?? [];
   facts.push(
     included.length
-      ? `Location ${included.join(', ')}`
+      ? included.join(', ')
       : excluded.length
-        ? `Location all except ${excluded.join(', ')}`
+        ? `All except ${excluded.join(', ')}`
         : 'All locations',
   );
   if (filters.date_from || filters.date_to) {
@@ -88,6 +89,7 @@ function metaFacts(snapshot: Snapshot): string[] {
     );
   }
   if (filters.only_debt) facts.push('Only in debt');
+  if (filters.show_aux) facts.push('Stock and PO columns');
   facts.push(`${snapshot.row_count.toLocaleString()} products`);
   facts.push(`${snapshot.decided_count.toLocaleString()} decided`);
   return facts;
@@ -116,9 +118,7 @@ export function SnapshotClient({ snapshotId }: { snapshotId: string }) {
   });
   const [openDrill, setOpenDrill] = React.useState<OpenDrill | null>(null);
 
-  React.useEffect(() => {
-    setPagination((previous) => ({ ...previous, pageIndex: 0 }));
-  }, [debounced, decision]);
+  useResetPageOnFilterChange(setPagination, [debounced, decision]);
 
   const header = useSnapshotQuery(snapshotId);
   const rowsQuery = useSnapshotRowsQuery(snapshotId, {
