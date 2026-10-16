@@ -580,3 +580,43 @@ def test_sent_email_tells_a_cancel_split_once(api, emails):
     cancel_splits = [t for t in sent if t[0] == "60" and "CANCEL BALANCE" in t[1]]
     assert len(cancel_splits) == 1, sent
     assert not [r for _q, r in sent if "CANCEL 60" in r], ("no separate netting cancel", sent)
+
+
+# ---------------------------------------------------------------------------
+# Reviewer: a split must not move off a source row that is received in full, or placed
+# with no link (`_settle_row_in_place` declines both)
+# ---------------------------------------------------------------------------
+
+
+def test_a_split_does_not_move_off_a_row_whose_document_is_received_in_full(api, emails):
+    s = _lines(api, [(2, 51, D_2, 2), (18, 82, D_18, 131)])
+    s.po_line.qty_received = Decimal("51")
+    s.db.commit()
+    _split(s, 2, [(2, D_2, "own"), (49, D_18, 18)])
+    sent = _confirm_sent(s, emails)
+    assert not [t for t in sent if t == ("131", "ORDER")], ("line 18 is not told 131 fresh", sent)
+    assert any(r == "ORDER 49" for _q, r in sent), ("today's no-split result", sent)
+    live_18 = _live(s, s.no[18][1], IV_ORDER)
+    assert all(_linked(s, r) == Decimal("0") for r in live_18), "no link moved to line 18"
+
+
+def test_a_split_does_not_move_off_a_received_row_cut_to_zero(api, emails):
+    s = _lines(api, [(2, 51, D_2, 0), (18, 82, D_18, 133)])
+    s.po_line.qty_received = Decimal("51")
+    s.db.commit()
+    _split(s, 2, [(51, D_18, 18)])
+    sent = _confirm_sent(s, emails)
+    assert not [t for t in sent if t == ("133", "ORDER")], ("line 18 is not told 133 fresh", sent)
+    assert any(r == "ORDER 51" for _q, r in sent), sent
+
+
+def test_a_split_does_not_move_off_a_placed_row_with_no_link(api, emails):
+    s = _lines(api, [(2, 100, D_2, 40), (18, 82, D_18, 132)], link_first=False)
+    s.no[2][2].state = INQUIRY_PLACED
+    s.db.commit()
+    _split(s, 2, [(50, D_2, "own"), (50, D_18, 18)])
+    sent = _confirm_sent(s, emails)
+    source = s.db.get(OrderInquiryRow, s.no[2][2].id)
+    assert source.state == INQUIRY_PLACED, "purchasing placed it: it must not go back to raised"
+    assert not [t for t in sent if t == ("132", "ORDER")], ("nothing moved onto line 18", sent)
+    assert any(r == "CANCEL 60" for _q, r in sent), ("the netting tells it as without splits", sent)
