@@ -869,7 +869,7 @@ def test_an_attachment_tool_result_with_no_file_of_the_type_and_nothing_sent_is_
     r = _live_att([_file("Drawing")])
     r["uuid_codes"] = {UA: "SRTA100"}   # round 17: the searched product must be the item's product
     res = grade_turn(r, item("attachment", code="SRTA100", **GOLD_TS))
-    assert res["checks"]["files"] is True and res["checks"]["type"] is None, res["checks"]
+    assert res["checks"]["none_on_record"] is True and "files" not in res["checks"] and res["checks"].get("type") is None, res["checks"]
     check(res, True)
 
 
@@ -1155,7 +1155,7 @@ def _none_row(held_before=(), held_after=(), message="send the drawing"):
 
 def test_an_honest_none_for_a_product_held_before_the_turn_passes():
     res = grade_turn(_none_row(held_before=[("SRTA100", UA)]), item("attachment", **GOLD_TS))
-    assert res["checks"]["files"] is True, res["checks"]
+    assert res["checks"]["none_on_record"] is True and "files" not in res["checks"], res["checks"]
 
 
 def test_an_honest_none_for_a_product_held_only_after_the_turn_fails_as_circular():
@@ -1166,7 +1166,7 @@ def test_an_honest_none_for_a_product_held_only_after_the_turn_fails_as_circular
 def test_an_honest_none_for_a_code_typed_in_the_message_passes():
     r = _none_row(held_after=[("SRTA100", UA)], message="send the drawing of SRTA100")
     res = grade_turn(r, item("attachment", **GOLD_TS))
-    assert res["checks"]["files"] is True, res["checks"]
+    assert res["checks"]["none_on_record"] is True and "files" not in res["checks"], res["checks"]
 
 
 # ------------------------------------------------------------------ review round 19 (trading and enterprise are part of the name)
