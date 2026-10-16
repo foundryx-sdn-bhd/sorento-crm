@@ -17,8 +17,9 @@ as `sorento_crm_backend/alembic/data/chatbot_semantic_parser.v94.txt` and never 
 
 ## Text (the built output)
 
-- AC4 CURRENT DATE: "before calling the MCP tool" is gone; the instruction to turn relative dates into absolute
-  dates stays; `{{current_date}}` appears exactly once.
+- AC4 CURRENT DATE: "before calling the MCP tool" is gone and `{{current_date}}` appears exactly once. The
+  relative-date sentence itself is removed by #1574 cut D03 and is NOT re-added (amended 16 Oct: stage 1 never
+  undoes a #1574 cut).
 - AC5 FLYER FLAG (16): no instruction to set `contains_flyer` true remains. One line keeps the routing cue: a
   flyer or brochure ask is a promotion ask (`domain_hint` promotion, `intent_hint` check_promotion) and flyer is
   never an entity. The OUTPUT object still lists `"contains_flyer": false`.
@@ -38,11 +39,14 @@ as `sorento_crm_backend/alembic/data/chatbot_semantic_parser.v94.txt` and never 
 - AC10 Banner boxes that only carried a title or that key announcement are gone: TWO MORE OUTPUT KEYS, LAST
   PURCHASE COST, SALES REPORT, THE OPEN TASK, SALES ANALYSIS, SPECIFICATIONS, QUANTITY, KNOWN BRANDS, TOP
   SELLING, SELF REFERENCE. The CURRENT DATE, LOW STOCK REPORT FILTERS and ESCALATION CONFIRMATION banners stay
-  (they carry rules). Every `== X ==` section heading under a removed banner stays.
+  (they carry rules). Every `== X ==` section heading under a removed banner stays, except a heading that an
+  applied #1574 cut deletes (D01 removes the duplicate "A DELIVERY WORD PLUS A NAME IS AN ORDER ASK"; amended 16 Oct).
 - AC11 `{{find_filters}}` appears exactly once, and the text from `<<<CHATBOT POLICY BLOCKS>>>` to
   `<<<END CHATBOT POLICY BLOCKS>>>` is byte-identical to v94's.
 - AC12 No key lost: every required top-level key of `PARSE_OUTPUT_JSON_SCHEMA`
-  (`app/services/chatbot/head/parser.py`) appears as a quoted `"key"` in the output.
+  (`app/services/chatbot/head/parser.py`) that v94 quotes as `"key"` is still quoted in the output. (Amended 16 Oct:
+  10 required keys, e.g. sort_by, sub_asks, find, are never quoted in v94; they reach the model only through the
+  JSON schema, so they are out of scope here.)
 - AC13 The output is at least 7% shorter than v94 in characters.
 - AC14 No em-dash or en-dash is added by any stage-1 edit's `new` text.
 
