@@ -1,6 +1,6 @@
 # PLAN: contact tags + tag access settings (CONTACT-TAGS, 16 Oct)
 
-Status: Plan - owner answered card 16 Oct; mock v2 filed (filters tidy, every setting on a tag), awaiting owner OK; UAC v2 drafted. Track: full (size L: migration, access writes, new list surface). No code yet.
+Status: Build - owner approved mock v2 16 Oct 11:51 ("ok go"); slice 1 red tests next. Track: full (size L).
 
 Lane: `crew/contact-tags`. Rebases on CONTACT-ACTIONS-COPY (branch `claude/contact-actions-copy-ufwe9b`) once it lands.
 
@@ -90,12 +90,13 @@ chat language erased on Chatbot card save (`contactChatbotService.ts:218`).
 
 ## Decision log
 
+- 16 Oct 11:51 owner: mock v2 approved ("ok go"); Q6 taken as (a) Conflict, not applied, as mock view D shows.
 - 16 Oct owner: Q1a, Q2a, Q3 everything (flag nonsense items), Q4a, Q5a with apply / don't apply
   choice + later per-contact and bulk "Apply tag settings". Filters: primary + More filters. See card.
 
 ## Phases
 
-0. Card + mock approved (owner).
-1. FE mock against fixtures.
+0. Card + mock approved (owner). Done 16 Oct.
+1. Phase 1 = the approved Lavish mock v2 (deviation: FE is built in Phase 2 AFTER each slice's red tests, so the crew red-first proof precedes any product code).
 2. Tester red tests from UAC -> coder green; migration on dev copy.
 3. Reviewer + security-reviewer + browser 1280/375; hand test.
