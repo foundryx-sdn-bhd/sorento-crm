@@ -127,9 +127,12 @@ describe('ContactsList filters popover', () => {
 
     await waitFor(() => expect(within(filtersButton()).getByText('1')).toBeInTheDocument());
     expect(screen.getByText('Region: West')).toBeInTheDocument();
+    expect(window.location.search).toContain('region=west');
     await user.click(screen.getByRole('button', { name: 'Clear filter: Region: West' }));
-    await waitFor(() => expect(lastFilters().region).toBeUndefined());
-    expect(screen.queryByText('Region: West')).toBeNull();
+    // The list query is cached (staleTime Infinity): assert what the user sees and the URL.
+    await waitFor(() => expect(screen.queryByText('Region: West')).toBeNull());
+    expect(filtersButton()).toHaveTextContent(/^Filters$/);
+    expect(window.location.search).not.toContain('region');
   });
 
   it('Clear filters in the popover clears every popover filter and leaves Tag settings alone', async () => {
@@ -146,10 +149,11 @@ describe('ContactsList filters popover', () => {
     });
 
     await user.click(screen.getByRole('button', { name: /clear filters/i }));
-    await waitFor(() => {
-      expect(lastFilters().region).toBeUndefined();
-      expect(lastFilters().customers).toBeUndefined();
-    });
-    expect(lastFilters().tag_settings).toBe('differs');
+    await waitFor(() => expect(window.location.search).not.toContain('region'));
+    expect(window.location.search).not.toContain('customers');
+    expect(window.location.search).toContain('tag_settings=differs');
+    expect(screen.queryByText('Region: West')).toBeNull();
+    expect(screen.queryByText('No customers linked', { selector: 'span' })).toBeNull();
+    expect(screen.getByLabelText('Tag settings')).toHaveValue('differs');
   });
 });

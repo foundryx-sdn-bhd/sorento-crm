@@ -6,6 +6,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import userEvent from '@testing-library/user-event';
 
 const apiFetch = vi.fn();
 vi.mock('@/lib/api', () => ({ apiFetch: (...a: unknown[]) => apiFetch(...a) }));
@@ -291,6 +292,7 @@ describe('ContactsList - "No customers linked" filter (U5.2/U5.3)', () => {
     mockContacts();
     renderList();
     await screen.findByText('+60100000004');
+    await userEvent.setup().click(screen.getByRole('button', { name: /^filters/i }));
     fireEvent.click(await screen.findByLabelText('No customers linked'));
     await waitFor(() => {
       const fetched = apiFetch.mock.calls.some((c) => String(c[0]).includes('customers=none'));
