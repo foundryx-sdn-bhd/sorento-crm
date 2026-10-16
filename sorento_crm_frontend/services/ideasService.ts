@@ -8,6 +8,7 @@
  *   listIdeas         GET    /ideation/ideas?filter=<archived|all>&search=&mine=true   view
  *   getBoard          GET    /ideation/ideas/board                                    view
  *   getIdea           GET    /ideation/ideas/{id}                                     view
+ *   getSimilarIdeas  GET    /ideation/ideas/{id}/similar                             view
  *   getMergedChildren GET    /ideation/ideas/{id}/merged                              view
  *   createIdea        POST   /ideation/ideas, then POST .../{id}/attachments per file view
  *   updateIdea        PATCH  /ideation/ideas/{id}                                     manage
@@ -16,7 +17,7 @@
  *   restoreIdea       POST   /ideation/ideas/{id}/status  {toStatusId}                manage
  *                     (one of the idea's own outgoing transitions; no status key is hardcoded)
  *   reorderIdeas      PUT    /ideation/ideas/reorder  {orderedIds}                    manage
- *   mergeIdeas        POST   /ideation/ideas/merge  {survivorId, ideaIds}             manage
+ *   mergeIdeas        POST   /ideation/ideas/merge  {survivorId, ideaIds, fields?} manage
  *   unmergeIdea       POST   /ideation/ideas/{id}/unmerge                             manage
  *   promoteIdea(s)    POST   /ideation/ideas/promote  {ideaIds: [..], title}          manage
  *   uploadAttachment  POST   /ideation/ideas/{id}/attachments (multipart)             view
@@ -30,6 +31,7 @@
  */
 import { apiFetch } from '@/lib/api';
 import { extractApiError } from '@/lib/api-client';
+import { normalizeUseCases } from '@/lib/ideaUseCases';
 import type {
   Idea,
   IdeaAttachment,
@@ -40,7 +42,10 @@ import type {
   IdeaMergeInput,
   IdeaPromoteInput,
   IdeaUpdateInput,
+  SimilarIdeas,
 } from '@/types/ideas';
+
+export { normalizeUseCases };
 
 const BASE = '/api/v1/ideation';
 
@@ -90,6 +95,7 @@ function toAttachment(raw: Raw): IdeaAttachment {
 function toIdea(raw: Raw): Idea {
   return {
     ...(raw as unknown as Idea),
+    useCases: normalizeUseCases(raw.useCases),
     transitions: (raw.transitions as Idea['transitions'] | undefined) ?? [],
     attachments: ((raw.attachments as Raw[] | undefined) ?? []).map(toAttachment),
   };
@@ -122,6 +128,14 @@ export async function listIdeas(params: IdeaListParams): Promise<Idea[]> {
 
 export async function getIdea(id: string): Promise<Idea> {
   return toIdea(await read<Raw>(await apiFetch(`${BASE}/ideas/${id}`), 'Failed to load the idea'));
+}
+
+export async function getSimilarIdeas(id: string): Promise<SimilarIdeas> {
+  const raw = await read<{ available?: boolean; ideas?: Raw[] }>(
+    await apiFetch(`${BASE}/ideas/${id}/similar`),
+    'Failed to load similar ideas',
+  );
+  return { available: raw.available !== false, ideas: (raw.ideas ?? []).map(toIdea) };
 }
 
 export async function getBoard(): Promise<IdeaBoard> {
@@ -161,9 +175,10 @@ export async function fetchAttachment(ideaId: string, attachmentId: string): Pro
 
 export async function createIdea(input: IdeaCreateInput): Promise<Idea> {
   const { files, ...fields } = input;
-  const body: Record<string, string> = {};
+  const body: Record<string, string | string[]> = {};
   for (const [key, value] of Object.entries(fields)) {
     if (typeof value === 'string' && value.trim()) body[key] = value.trim();
+    else if (Array.isArray(value) && value.length > 0) body[key] = value;
   }
   const created = toIdea(
     await read<Raw>(await apiFetch(`${BASE}/ideas`, jsonInit('POST', body)), 'Failed to capture the idea'),

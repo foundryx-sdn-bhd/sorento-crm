@@ -393,7 +393,7 @@ export function DeliveryScheduleReviewClient({
 
   const crumbs = [
     { title: 'Project Sales' },
-    { title: 'Pipeline', path: '/project-sales/pipeline' },
+    { title: 'Projects', path: '/project-sales/pipeline' },
     { title: project.data?.title ?? 'Project', path: `/project-sales/${projectId}` },
   ];
 

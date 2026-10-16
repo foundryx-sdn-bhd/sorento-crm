@@ -128,6 +128,7 @@ class World:
         stated: Optional[int] = None,
         source_system: Optional[str] = None,
         company_id: Optional[str] = None,
+        cancelled: int = 0,
     ) -> str:
         aid = str(uuid.uuid4())
         self.db.add(
@@ -136,7 +137,7 @@ class World:
                 warehouse_id=warehouse_id, product_id=product_id,
                 allocated_quantity=quantity, quantity_received=received,
                 stated_received=stated, source_system=source_system,
-                created_at=self._tick(), company_id=company_id,
+                created_at=self._tick(), company_id=company_id, qty_cancelled=cancelled,
             )
         )
         self.db.flush()
@@ -484,6 +485,42 @@ def test_only_the_unexplained_part_of_a_stored_receipt_consumes(world):
     pool = build_allocation_pool(world.db, product_id=product, spo_number=SPO)
 
     assert [e.available for e in pool] == [70]
+
+
+def test_a_cancel_po_qty_is_not_capacity_for_a_later_grn(world):
+    """AC-CONSIGN-CRM part C. AutoCount Cancel PO adds to TransferedQty (`stated_received`),
+    which the mirror rule above leaves as capacity. The cancelled part never arrives, so a
+    later GRN must not draw it: 100 allocated, 20 cancelled, nothing received yet = 80."""
+    product, warehouse = world.product(), world.warehouse()
+    allocation = world.allocation(
+        product_id=product, warehouse_id=warehouse, quantity=100, received=20, stated=20,
+        cancelled=20,
+    )
+
+    pool = build_allocation_pool(world.db, product_id=product, spo_number=SPO)
+
+    assert [(e.allocation_id, e.available) for e in pool] == [(allocation, 80)]
+
+
+def test_a_fully_cancelled_line_offers_nothing_once_its_grn_linked(world):
+    """AC-CONSIGN-CRM part C. 100 allocated, 80 received on a linked GRN, 20 cancelled:
+    another GRN finds nothing left on the line."""
+    product, warehouse = world.product(), world.warehouse()
+    allocation = world.allocation(
+        product_id=product, warehouse_id=warehouse, quantity=100, received=100, stated=100,
+        cancelled=20,
+    )
+    grn_a = world.grn(status="approved")
+    world.line(header_id=grn_a, product_id=product, warehouse_id=warehouse,
+               quantity=80, allocation_id=allocation)
+
+    pool_for_b = build_allocation_pool(world.db, product_id=product, spo_number=SPO)
+    pool_for_a = build_allocation_pool(
+        world.db, product_id=product, spo_number=SPO, exclude_header_ids={grn_a}
+    )
+
+    assert pool_for_b == []
+    assert [(e.allocation_id, e.available) for e in pool_for_a] == [(allocation, 80)]
 
 
 def test_a_grn_imported_after_the_mirror_statement_links_end_to_end(world):

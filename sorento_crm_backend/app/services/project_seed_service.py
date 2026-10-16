@@ -50,7 +50,9 @@ DEFAULT_FUNNEL = (
     # (key, label, initial, terminal)
     ("identified", "Identified", False, False),
     ("registered", "Registered", True, False),
-    ("specified", "Specified", False, False),
+    # Key unchanged (every stored status_id and metric reads the key); the label is the
+    # owner's word for the rung, 13 Oct.
+    ("specified", "Spec In", False, False),
     ("quoted", "Quoted", False, False),
     ("tendering", "Tendering", False, False),
     ("po_received", "PO Received", False, True),
@@ -106,9 +108,9 @@ DEFAULT_STALE_AFTER_DAYS = {
 _LIVE = ("identified", "registered", "specified", "quoted", "tendering")
 DEFAULT_EDGES = (
     ("identified", "registered", "Register with developer"),
-    # "Spec in" is the trade's own phrase: spec = specification. "Specified in" reads as
+    # "Spec In" is the trade's own phrase: spec = specification. "Specified in" reads as
     # a past participle and is not what anybody says out loud.
-    ("registered", "specified", "Spec in"),
+    ("registered", "specified", "Spec In"),
     ("specified", "quoted", "Quotation sent"),
     ("quoted", "tendering", "Tendering"),
     ("tendering", "po_received", "PO received"),
@@ -118,6 +120,8 @@ DEFAULT_EDGES = (
     ("quoted", "specified", "Re-specify"),
     ("tendering", "quoted", "Re-quote"),
     ("registered", "identified", "Back to identified"),
+    # A project moved to Spec In by mistake must be able to step back (owner, 13 Oct).
+    ("specified", "registered", "Back to registered"),
 )
 
 # Ecohub's five task rungs, ported as-is. Escalate was missing from the first draft of

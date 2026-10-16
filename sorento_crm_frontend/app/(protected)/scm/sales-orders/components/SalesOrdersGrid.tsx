@@ -39,7 +39,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
 import { RowActionsMenu } from '@/components/common/RowActionsMenu';
 import { useSalesOrderActions } from '../actions';
 import { useRowPending } from '@/hooks/useDeferredRowAction';
@@ -47,6 +46,7 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { formatMyrExact } from '@/app/(protected)/project-sales/_shared/lib/money';
 import { buildPlanActions, PLAN_PERMISSION } from '../lib/planActions';
+import { ResetPlanningDialog } from './ResetPlanningDialog';
 import { formatStatusLabel } from '@/lib/status-badge';
 import { demandClassBadge } from '../../lib/demandClass';
 import { TRANSFERABLE_FILTER_OPTIONS, transferableBadge } from '../../lib/transferable';
@@ -61,7 +61,6 @@ import { useCustomerOptions } from '../../hooks/useScmOptions';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   useCreateSalesOrder,
-  useResetSalesOrderPlanning,
   useSalesOrders,
 } from '../../hooks/useSalesOrders';
 import { useSalesAgentOptions } from '../hooks/useSalesAgentOptions';
@@ -353,7 +352,6 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
   const [formOpen, setFormOpen] = useState(false);
   // Reset planning (the captain, 27 Aug): a UAT walk has to be repeatable from the screen.
   const [resetOpen, setResetOpen] = useState(false);
-  const [rewindBook, setRewindBook] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   // Which orders to plan together. The board is a URL, not a stored plan, so the selection
   // is the whole state there is: nothing is saved by picking rows here.
@@ -390,7 +388,6 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
   const router = useRouter();
 
   const createMut = useCreateSalesOrder();
-  const resetMut = useResetSalesOrderPlanning();
 
   // A search brings the reader back to page 0 to see the matches - but not on the FIRST
   // run, or this would wipe the page `useListStateFromUrl` just restored from Back's own
@@ -1303,49 +1300,11 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
       )}
 
 
-      {/* KEPT as a dialog where S6b turned single-record deletes into grace windows
-          (D7). Two reasons, either of them enough: it acts on a SELECTION of orders,
-          and one countdown cannot speak for a set; and it collects an answer
-          ("also rewind the book"), which a countdown has nowhere to put. */}
-      <ConfirmDeleteDialog
+      <ResetPlanningDialog
         open={resetOpen}
-        onOpenChange={(o) => {
-          setResetOpen(o);
-          if (!o) setRewindBook(false);
-        }}
-        title="Reset planning"
-        confirmLabel="Reset planning"
-        description={
-          <span className="flex flex-col gap-3">
-            <span>
-              Put{' '}
-              <span className="font-medium">
-                {selectedOrders.map((o) => o.so_number).join(', ')}
-              </span>{' '}
-              back to never planned? Every order inquiry, link, allocation, stock transfer and
-              confirmed revision on {selectedOrders.length === 1 ? 'it' : 'them'} is removed.
-              The sales order and its lines stay. This cannot be undone.
-            </span>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={rewindBook}
-                onChange={(e) => setRewindBook(e.target.checked)}
-              />
-              <span>
-                Also put the lines a sales-order upload changed back to before the first upload
-              </span>
-            </label>
-          </span>
-        }
-        onDelete={async () => {
-          for (const o of selectedOrders) {
-            await resetMut.mutateAsync({ id: o.id, rewindBook });
-          }
-        }}
-        successMessage="Planning reset"
-        onSuccess={() => {
+        onOpenChange={setResetOpen}
+        orders={selectedOrders}
+        onDone={() => {
           setRowSelection({});
           void refetch();
         }}

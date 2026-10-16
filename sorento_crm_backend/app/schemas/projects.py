@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from app.services.uuid_path_param import UUID_PATTERN
+
 # A pure, dependency-free lookup table (no DB, no network), so a schema importing it introduces
 # no cycle. It lives in services because the PDF renderer needs the same answer.
 from app.services import geo_places
@@ -279,6 +281,13 @@ class ProjectResponse(BaseModel):
     lead_source: Optional[str] = None
     lead_created_at: Optional[datetime] = None
     lead_owner_user_id: Optional[str] = None
+
+    # The customer, read through the lead (a project has no customer column of its own).
+    # Null with no lead, or with a lead whose buyer is not known yet.
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_attn: Optional[str] = None
 
     status_id: Optional[str] = None
     status_key: Optional[str] = None
@@ -836,12 +845,14 @@ class CustomerPortfolioResponse(BaseModel):
 
 class ProjectSeriesBase(BaseModel):
     name: str = Field(min_length=1, max_length=150)
-    brand_id: Optional[str] = None
     description: Optional[str] = None
     is_active: bool = True
 
 
 class ProjectSeriesCreate(ProjectSeriesBase):
+    brand_ids: List[str] = Field(
+        default_factory=list, description="Picked brands. Empty means every brand."
+    )
     category_ids: List[str] = Field(
         default_factory=list,
         description=(
@@ -853,7 +864,9 @@ class ProjectSeriesCreate(ProjectSeriesBase):
 
 class ProjectSeriesUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=150)
-    brand_id: Optional[str] = None
+    brand_ids: Optional[List[str]] = Field(
+        None, description="Sent WHOLE, not as a delta."
+    )
     description: Optional[str] = None
     is_active: Optional[bool] = None
     category_ids: Optional[List[str]] = Field(
@@ -865,7 +878,8 @@ class ProjectSeriesResponse(ProjectSeriesBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    brand_name: Optional[str] = None
+    brand_ids: List[str] = Field(default_factory=list)
+    brand_names: List[str] = Field(default_factory=list)
     category_ids: List[str] = Field(default_factory=list)
     category_names: List[str] = Field(default_factory=list)
     covered_category_count: int = Field(
@@ -926,6 +940,8 @@ class ProjectSeriesProductImportResponse(BaseModel):
     removed: int
     product_count: int
     unmatched_codes: List[str] = Field(default_factory=list)
+    #: Codes that were a set or a family, not a product: ``{code, via, members}``.
+    resolved: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class QuotationLineVerdictResponse(BaseModel):
@@ -978,6 +994,22 @@ class SeriesProductRowResponse(BaseModel):
     #: NULL means the series has not said, and is never read as zero.
     selling_price: Optional[Decimal] = None
     #: A PERCENT: 6 means 6%.
+    max_discount_pct: Optional[Decimal] = None
+    derived_floor: Optional[Decimal] = None
+    #: True when the product is of the series' brand and under one of its categories.
+    in_scope: bool = False
+
+
+class SeriesSetRowResponse(BaseModel):
+    """One product SET priced on a series (SET-QUOTE-LINE), the twin of the product row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    product_set_id: str
+    set_code: Optional[str] = None
+    set_name: Optional[str] = None
+    part_codes: List[str] = Field(default_factory=list)
+    selling_price: Optional[Decimal] = None
     max_discount_pct: Optional[Decimal] = None
     derived_floor: Optional[Decimal] = None
 
@@ -1180,8 +1212,14 @@ class ProjectQuotationLineBase(BaseModel):
     product_id: Optional[str] = Field(
         None, description="Null for an off-catalog line, which always raises the alert."
     )
+    product_set_id: Optional[str] = Field(
+        None,
+        pattern=UUID_PATTERN,
+        description="A product set quoted as ONE line. Never together with product_id (422).",
+    )
     description_snapshot: Optional[str] = Field(
-        None, description="Required when there is no product: it is what the customer reads."
+        None,
+        description="Required when there is no product or set: it is what the customer reads.",
     )
     unit_price: Decimal = Decimal("0")
     quantity: Decimal = Decimal("1")
@@ -1214,7 +1252,20 @@ class ProjectQuotationLineBase(BaseModel):
         False,
         description="Quoted at a rate and printed, contributing nothing to any total.",
     )
-    image_attachment_id: Optional[str] = None
+    image_attachment_id: Optional[str] = Field(
+        None,
+        description=(
+            "The photo picked for this line: an image attachment of the line's product. "
+            "Refused (422 quotation_line_image_invalid) when it is not."
+        ),
+    )
+    drawing_attachment_id: Optional[str] = Field(
+        None,
+        description=(
+            "The drawing picked for this line: a 'Technical Specifications' image of the "
+            "line's product. Refused (422 quotation_line_drawing_invalid) when it is not."
+        ),
+    )
 
 
 class ProjectQuotationLineCreate(ProjectQuotationLineBase):
@@ -1223,6 +1274,7 @@ class ProjectQuotationLineCreate(ProjectQuotationLineBase):
 
 class ProjectQuotationLineUpdate(BaseModel):
     product_id: Optional[str] = None
+    product_set_id: Optional[str] = Field(None, pattern=UUID_PATTERN)
     description_snapshot: Optional[str] = None
     unit_price: Optional[Decimal] = None
     quantity: Optional[Decimal] = None
@@ -1231,6 +1283,7 @@ class ProjectQuotationLineUpdate(BaseModel):
     sort_order: Optional[int] = None
     notes: Optional[str] = None
     image_attachment_id: Optional[str] = None
+    drawing_attachment_id: Optional[str] = None
     item_label: Optional[str] = Field(None, max_length=8)
     brand_snapshot: Optional[str] = Field(None, max_length=100)
     technical_spec: Optional[str] = None
@@ -1272,6 +1325,15 @@ class ProjectQuotationLineBulkWrite(BaseModel):
     )
 
 
+class QuotationLineFileCandidate(BaseModel):
+    """One image a line's photo or drawing could be: a signed thumbnail and the original."""
+
+    attachment_id: str
+    filename: Optional[str] = None
+    url: Optional[str] = None
+    preview_url: Optional[str] = None
+
+
 class QuotationLineImageResponse(BaseModel):
     """The picture cell for one line (S21).
 
@@ -1294,9 +1356,36 @@ class QuotationLineImageResponse(BaseModel):
     #: Lets the viewer download through the authenticated attachments route.
     attachment_id: Optional[str] = None
     filename: Optional[str] = None
-    #: Photographs somebody could choose between. Zero on `no_photos` and `off_catalog`, and
-    #: zero on a frozen line, which has nothing left to choose.
+    #: "Product Photos" images somebody could choose between (a drawing is never one). Zero on
+    #: `no_photos` and `off_catalog`.
     candidate_count: int = 0
+    #: The product's photos, for the picker that writes `image_attachment_id`.
+    candidates: List[QuotationLineFileCandidate] = Field(default_factory=list)
+
+
+class QuotationLineDrawingResponse(BaseModel):
+    """The drawing cell for one line (QUOTATION-UX): the product's "Technical Specifications"
+    images, printed in TECHNICAL SPEC.
+
+    Declared for the same reason as `QuotationLineImageResponse`: `response_model` drops any key
+    no field declares.
+    """
+
+    #: chosen (picked or stamped) | default (first by upload) | no_drawings | off_catalog
+    state: str
+    url: Optional[str] = None
+    preview_url: Optional[str] = None
+    attachment_id: Optional[str] = None
+    filename: Optional[str] = None
+    candidate_count: int = 0
+    candidates: List[QuotationLineFileCandidate] = Field(default_factory=list)
+
+
+class QuotationLineImagesResponse(BaseModel):
+    """The photo and drawing cells for a product on a line not saved yet (no picks)."""
+
+    product_image: QuotationLineImageResponse
+    technical_drawing: QuotationLineDrawingResponse
 
 
 class ProjectQuotationLineResponse(BaseModel):
@@ -1305,11 +1394,17 @@ class ProjectQuotationLineResponse(BaseModel):
     id: str
     version_id: str
     product_id: Optional[str] = None
+    product_set_id: Optional[str] = None
+    #: The parts frozen on a set line ({product_id, product_code, description, quantity,
+    #: is_driver}); empty for a product line.
+    set_parts: List[Dict[str, Any]] = Field(default_factory=list)
     product_code: Optional[str] = None
     description: Optional[str] = None
     list_price: Optional[Decimal] = None
     image_attachment_id: Optional[str] = None
     product_image: Optional[QuotationLineImageResponse] = None
+    drawing_attachment_id: Optional[str] = None
+    technical_drawing: Optional[QuotationLineDrawingResponse] = None
 
     unit_price: Decimal = Decimal("0")
     quantity: Decimal = Decimal("1")
@@ -1911,7 +2006,14 @@ class QuotationRejectRequest(BaseModel):
     something (which is the service's answer, because only it knows a stripped string is empty).
     """
 
-    reason: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class QuotationReviseRequest(BaseModel):
+    """Reopening a pending or approved quotation. The reason is checked by the service, which
+    answers a blank one with a code the screen can render."""
+
+    reason: Optional[str] = Field(default=None, max_length=1000)
 
 
 # ------------------------------------------------ cover letter and terms templates

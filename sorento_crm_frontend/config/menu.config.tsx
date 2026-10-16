@@ -74,8 +74,18 @@ export const MENU_SIDEBAR: MenuConfig = [
   {
     title: 'Ideas',
     icon: Lightbulb,
-    path: '/ideas',
-    permission: 'ideation.board.view',
+    children: [
+      {
+        title: 'All ideas',
+        path: '/ideas',
+        permission: 'ideation.board.view',
+      },
+      {
+        title: 'Roadmap',
+        path: '/ideas/portal',
+        permission: 'ideation.board.view',
+      },
+    ],
   },
 
   { heading: 'SALES' },
@@ -133,7 +143,7 @@ export const MENU_SIDEBAR: MenuConfig = [
     moduleKey: 'projects',
     children: [
       {
-        title: 'Pipeline',
+        title: 'Projects',
         path: '/project-sales/pipeline',
         permission: 'projects.projects.view',
       },
@@ -688,6 +698,12 @@ export const MENU_SIDEBAR: MenuConfig = [
         moduleKey: 'scm',
       },
       {
+        title: 'Consignment',
+        path: '/scm/consignments',
+        permission: 'scm.dashboard.view',
+        moduleKey: 'scm',
+      },
+      {
         title: 'Purchase Requests',
         path: '/procurement-management/purchase-requests',
         permission: 'procurement.purchase_requests.view',
@@ -1064,6 +1080,11 @@ export const MENU_SIDEBAR: MenuConfig = [
           {
             title: 'Usage',
             path: '/system-management/ai-assistant/usage',
+            permission: 'system.ai_assistant_settings.view',
+          },
+          {
+            title: 'Model prices',
+            path: '/system-management/ai-assistant/model-prices',
             permission: 'system.ai_assistant_settings.view',
           },
           {
@@ -1994,7 +2015,7 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
         // is the same list a separate "Projects" entry used to show. Two menu entries
         // onto one screen is a choice the user has to make and cannot get right.
         // /project-sales/projects still resolves, it redirects here.
-        title: 'Pipeline',
+        title: 'Projects',
         path: '/project-sales/pipeline',
         permission: 'projects.projects.view',
       },

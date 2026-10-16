@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { LoaderCircleIcon } from 'lucide-react';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useSettings } from '../components/settings-context';
 import {
   SocialSettingsSchema,
@@ -28,6 +29,8 @@ import {
 const SocialSettingsPage = () => {
   const queryClient = useQueryClient();
   const { settings } = useSettings();
+  // The save needs the edit slug (SETTINGS-PERM-GATE); without it the tab is read-only.
+  const canEdit = useHasPermission('user_management.settings.edit');
 
   const form = useForm<SocialSettingsSchemaType>({
     resolver: zodResolver(SocialSettingsSchema),
@@ -133,113 +136,117 @@ const SocialSettingsPage = () => {
             onSubmit={form.handleSubmit(handleSubmit, handleError)}
             className="space-y-6 lg:max-w-[600px] mx-auto"
           >
-            {/* Facebook */}
-            <FormField
-              control={form.control}
-              name="socialFacebook"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Facebook</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter Facebook URL" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <fieldset disabled={!canEdit} className="space-y-6 min-w-0">
+              {/* Facebook */}
+              <FormField
+                control={form.control}
+                name="socialFacebook"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Facebook</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter Facebook URL" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Twitter */}
-            <FormField
-              control={form.control}
-              name="socialTwitter"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Twitter</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter Twitter URL" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              {/* Twitter */}
+              <FormField
+                control={form.control}
+                name="socialTwitter"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Twitter</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter Twitter URL" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Instagram */}
-            <FormField
-              control={form.control}
-              name="socialInstagram"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Instagram</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter Instagram URL" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              {/* Instagram */}
+              <FormField
+                control={form.control}
+                name="socialInstagram"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Instagram</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter Instagram URL" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* LinkedIn */}
-            <FormField
-              control={form.control}
-              name="socialLinkedIn"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>LinkedIn</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter LinkedIn URL" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              {/* LinkedIn */}
+              <FormField
+                control={form.control}
+                name="socialLinkedIn"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>LinkedIn</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter LinkedIn URL" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Pinterest */}
-            <FormField
-              control={form.control}
-              name="socialPinterest"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Pinterest</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter Pinterest URL" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              {/* Pinterest */}
+              <FormField
+                control={form.control}
+                name="socialPinterest"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Pinterest</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter Pinterest URL" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* YouTube */}
-            <FormField
-              control={form.control}
-              name="socialYoutube"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>YouTube</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter YouTube URL" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              {/* YouTube */}
+              <FormField
+                control={form.control}
+                name="socialYoutube"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>YouTube</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter YouTube URL" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </fieldset>
 
             {/* Action Buttons */}
-            <div className="flex space-x-4 justify-end">
-              <Button
-                type="reset"
-                variant="outline"
-                onClick={() => form.reset()}
-              >
-                Reset
-              </Button>
-              <Button
-                type="submit"
-                disabled={!form.formState.isDirty || isProcessing}
-              >
-                {isProcessing && <LoaderCircleIcon className="animate-spin" />}
-                Save Settings
-              </Button>
-            </div>
+            {canEdit && (
+              <div className="flex space-x-4 justify-end">
+                <Button
+                  type="reset"
+                  variant="outline"
+                  onClick={() => form.reset()}
+                >
+                  Reset
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={!form.formState.isDirty || isProcessing}
+                >
+                  {isProcessing && <LoaderCircleIcon className="animate-spin" />}
+                  Save Settings
+                </Button>
+              </div>
+            )}
           </form>
         </Form>
       </CardContent>

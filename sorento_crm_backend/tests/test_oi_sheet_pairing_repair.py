@@ -216,14 +216,23 @@ def test_ac_r_2_ref_po_chains_to_spo_first():
 
     87 is the owner's own case (SO347594 / CB2154-DIY): the allocation covers 30 of it and
     the purchase order line answers for the other 57.
+
+    The allocation names the purchase order LINE (`from_po_line_ref`), as every AutoCount
+    allocation that names a source purchase order does: OI-SPO-EXACT (13 Oct) removed the
+    walk by document number alone (`test_oi_spo_exact.py`).
     """
     with world() as w:
         ref = _ref()
+        po_line_ref = f"AED_SORENTO:{_n()}:PO"
         order = w.order()
         _with_ref(w, w.line(order, qty_ordered="100"), ref)
         po, po_line = w.po_line(qty_ordered="87")
         _names(w, po_line, ref)
-        allocation = w.spo_allocation(quantity=30, from_po_number=po.po_number)
+        po_line.source_ref = po_line_ref
+        w.db.flush()
+        allocation = w.spo_allocation(
+            quantity=30, from_po_number=po.po_number, from_po_line_ref=po_line_ref
+        )
         data = sheet([
             (order.so_number, w.product.product_code, 87, D_OCT,
              w.warehouse.warehouse_code, ""),
@@ -1860,7 +1869,14 @@ def test_ac_r_46_undated_row_does_not_prefer_an_undated_line():
         )
         po, po_line = w.po_line(qty_ordered="50")
         _names(w, po_line, l2.source_ref)
-        allocation = w.spo_allocation(quantity=50, from_po_number=po.po_number)
+        # The allocation names the purchase order LINE, as AutoCount's always do
+        # (OI-SPO-EXACT: no walk by document number alone).
+        po_line.source_ref = f"AED_SORENTO:{_n()}:PO"
+        w.db.flush()
+        allocation = w.spo_allocation(
+            quantity=50, from_po_number=po.po_number,
+            from_po_line_ref=po_line.source_ref,
+        )
         data = sheet([
             (order.so_number, w.product.product_code, 30, "ORDER BACK",
              w.warehouse.warehouse_code, ""),

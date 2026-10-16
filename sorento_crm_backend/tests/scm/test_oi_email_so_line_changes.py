@@ -276,6 +276,10 @@ def test_redirected_and_met_from_stock_delay_notice_carries_its_was(api, monkeyp
     entries = _handover_calls(calls)[-1]["context"]["handover"]["lines"]
     dated = [e for e in entries if (e["was"] or {}).get("delivery_date")]
     assert dated, f"the date move must reach the email: {entries}"
+    # ORDERBACK-DELTA review B1: the apply's own DELAY notice does not tell the saved line
+    # a second time - ONE line in the whole email.
+    every_line = _handover_calls(calls)[-1]["context"]["handover"]["lines"]
+    assert len(every_line) == 1, every_line
     assert dated[0]["was"]["delivery_date"] == WAS_FMT, dated[0]
     assert dated[0]["delivery_date"] == later.strftime("%d/%m/%Y"), dated[0]
     assert not any(e["qty"] == "0" for e in entries), entries
@@ -384,4 +388,6 @@ def test_qty_rise_met_from_stock_alone_names_qty_change_in_the_headline(api, mon
     entries = _line_entries(calls, fixture["row"].item_code)
     assert len(entries) == 1 and entries[0]["was"] == {"qty": "1"}, entries
     headline = _handover_calls(calls)[-1]["context"]["handover"]["headline"]
-    assert headline == "QTY CHANGE", headline
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): the headline names the decision the line now
+    # carries (met from own stock), never empty.
+    assert headline == "USE OWN LOCATION", headline

@@ -265,6 +265,7 @@ def add_scope(
     Delegates to the existing scope service so there is one definition of "a scope and its first
     version", then binds it to this document and puts it last in tab order.
     """
+    approvals.assert_unlocked(db, document)
     project = db.query(Project).filter(Project.id == document.project_id).first()
     if project is None:
         raise AppException(
@@ -393,6 +394,7 @@ def remove_form_scopes(
     open one, because the customer holds that paper and a revision opened since does not change
     that. Refused before anything is deleted, so one issued scope in the list stops them all.
     """
+    approvals.assert_unlocked(db, document)
     scopes = [get_scope_or_404(db, document, str(scope_id)) for scope_id in scope_ids]
     for scope in scopes:
         issued = (
@@ -429,6 +431,7 @@ def apply_form_scopes(
     the status rules are the bulk line route's, unchanged. An item without an ``id`` is a new
     scope. A saved scope the payload leaves out is not touched.
     """
+    approvals.assert_unlocked(db, document)
     written: List[ProjectQuotationLine] = []
     for item in scopes:
         scope_id = item.get("id")
@@ -594,13 +597,7 @@ def issue(
 # ------------------------------------------------------------------ delete
 
 
-def delete_document(db: Session, document: ProjectQuotationDocument) -> None:
-    """Hard delete, and refused outright once anything has been issued.
-
-    An issued quotation is a thing the customer holds. Deleting the record of it would leave a
-    reference in their inbox that this system cannot explain, so the exit is an explicit
-    withdrawal on the status graph, never a delete.
-    """
+def assert_deletable(db: Session, document: ProjectQuotationDocument) -> None:
     if current_issue(db, document) is not None:
         raise AppException(
             status_code=422,
@@ -610,6 +607,16 @@ def delete_document(db: Session, document: ProjectQuotationDocument) -> None:
             ),
             code="quotation_document_issued",
         )
+
+
+def delete_document(db: Session, document: ProjectQuotationDocument) -> None:
+    """Hard delete, and refused outright once anything has been issued.
+
+    An issued quotation is a thing the customer holds. Deleting the record of it would leave a
+    reference in their inbox that this system cannot explain, so the exit is an explicit
+    withdrawal on the status graph, never a delete.
+    """
+    assert_deletable(db, document)
     db.delete(document)
     db.flush()
 
@@ -825,6 +832,7 @@ def update_document(
     absent as null would blank the letterhead as a side effect. Null is a separate, deliberate
     answer, and it clears.
     """
+    approvals.assert_unlocked(db, document)
     for field in (
         "your_ref",
         "doc_date",
@@ -847,6 +855,7 @@ def update_document(
 def update_scope(
     db: Session, *, scope: ProjectQuotation, payload: Dict[str, Any]
 ) -> ProjectQuotation:
+    scope_service.assert_scope_unlocked(db, scope)
     if "scope_label" in payload and payload["scope_label"] is not None:
         label = " ".join(str(payload["scope_label"]).split())
         if not label:

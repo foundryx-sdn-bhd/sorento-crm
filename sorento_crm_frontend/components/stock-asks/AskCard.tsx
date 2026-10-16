@@ -6,6 +6,7 @@ import { doneByText } from '@/components/stock-asks/AskEditCells';
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import type { StockAsk } from '@/lib/stock-asks';
 import { askAnswerText, askProductText } from '@/lib/stock-asks-todo';
+import { codeWithName } from '@/lib/product-display';
 
 /**
  * One ask on the landing card shell: who asked, what they asked, what the system answered, when.
@@ -66,7 +67,7 @@ export function AskCard({
           {secondary ? <span className="text-sm text-muted-foreground"> {secondary}</span> : null}
         </p>
         <div className="mt-1 space-y-1">
-          <p className="text-sm text-foreground/85 break-words" title={ask.product_name ?? ask.product_code}>
+          <p className="text-sm text-foreground/85 break-words" title={codeWithName(ask.product_code, ask.product_name)}>
             Asked: {askProductText(ask)}
           </p>
           <p className="text-sm text-foreground/85 break-words">

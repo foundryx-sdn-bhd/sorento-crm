@@ -58,7 +58,7 @@ from typing import (
     Tuple,
 )
 
-from sqlalchemy import case, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, aliased
 
 from app.models.inventory import Warehouse
@@ -85,6 +85,7 @@ from app.services.project_supply_service import (
     _dec,
     _leading_factor,
     _open_of,
+    delivered_qty_of,
     plan_qty_of,
 )
 from app.services.scm import ladder_steps
@@ -95,6 +96,7 @@ from app.services.scm.supply_origin import buy_origin_by_product
 from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     outside_fulfilment_planning,
+    planned_at_own_bin,
 )
 from app.services.scm.demand import (
     demand_qty,
@@ -397,6 +399,7 @@ class _Row:
         "qty",
         "qty_outstanding",
         "required_date", "warehouse_id", "location", "priority", "demand_class",
+        "so_doc_type",
         "payment_terms_days", "bucket_key", "is_past", "rank_score", "rank_factors",
         "sources", "trail", "options", "contested", "qty_ordered", "qty_delivered",
         "proposed",
@@ -419,6 +422,9 @@ class _Row:
         #: SO-CANCEL-LINE: CS transferred the line to Cancel SO. `cancelled_by_name` is a
         #: display name, never the user id.
         "cancelled_at", "cancelled_by_name", "cancel_reason",
+        #: CANCEL-STOP-AT-SO: live order inquiry rows on a line an AutoCount Cancel SO
+        #: cancelled, which CS still has to handle. 0 on every other row.
+        "cancel_open_oi_rows",
         #: R7 (query-count): the core line's own `source_ref` / `company_id`, off the SAME
         #: `SalesOrderLine` this row's own demand read already fetched - threaded onto
         #: `_LineFacts` (`ProjectSupplyService.demand_facts`) so the own-arrival credit's
@@ -838,7 +844,11 @@ class FulfilmentBoardService:
         self._allocate(served, as_of=as_of)
         # AFTER the ladder, never before: `stale` compares what was saved against what this
         # build is proposing, and before `_allocate` there is no proposal to compare with.
-        self._attach_drafts(rows)
+        # CANCEL-STOP-AT-SO: a line an AutoCount Cancel SO cancelled carries the Transfer to
+        # Cancel SO the sync proposed (or CS saved) for CS to confirm or dismiss.
+        self._attach_drafts(
+            [*rows, *(row for row in cancelled_rows if row.cancel_open_oi_rows)]
+        )
 
         cells: List[Dict[str, Any]] = []
         for bucket in buckets:
@@ -1066,6 +1076,7 @@ class FulfilmentBoardService:
                     SalesOrderLine.warehouse_id.label("warehouse_id"),
                     owed.label("owed"),
                     SalesOrderLine.qty_delivered,
+                    SalesOrderLine.qty_cancelled,
                     Warehouse.warehouse_code.label("line_location"),
                     SalesAgent.sales_agent.label("agent_code"),
                 )
@@ -1084,7 +1095,10 @@ class FulfilmentBoardService:
             for row in done:
                 entry = _so_row(row)
                 entry["location"] = entry["location"] or row.line_location
-                entry["fulfilled_qty"] = qty_text(_dec(row.qty_delivered))
+                # AC-CANCEL-CRM: a Cancel SO is in TransferedQty but never went out.
+                entry["fulfilled_qty"] = qty_text(
+                    max(_dec(row.qty_delivered) - _dec(row.qty_cancelled), _ZERO)
+                )
                 sales_orders.append(entry)
         by_location = self.supply.incoming_by_location([product_id], target_ids)
         incoming_rows = [
@@ -1610,7 +1624,7 @@ class FulfilmentBoardService:
                 # because it and the planned quantity have stopped being the same number.
                 qty_outstanding=_open_of(line),
                 qty_ordered=_dec(line.qty_ordered),
-                qty_delivered=_dec(line.qty_delivered),
+                qty_delivered=delivered_qty_of(line),
                 required_date=line.required_date,
                 warehouse_id=str(line.warehouse_id) if line.warehouse_id else None,
                 location=warehouse.warehouse_code if warehouse else None,
@@ -1619,9 +1633,10 @@ class FulfilmentBoardService:
                 # from the one predicate rather than from two lookups that could disagree.
                 # ACTIVE and flagged off - an inactive bin keeps whatever verdict it carried
                 # before the flag existed (`outside_fulfilment_planning`).
-                outside_planning=outside_fulfilment_planning(warehouse),
+                outside_planning=outside_fulfilment_planning(warehouse, order.doc_type),
                 priority=line.priority,
                 demand_class=order.demand_class,
+                so_doc_type=order.doc_type,
                 # R7 (query-count): off the SAME `line` row this read already fetched -
                 # see `_Row.__slots__`'s own docstring.
                 source_ref=line.source_ref,
@@ -1786,7 +1801,7 @@ class FulfilmentBoardService:
                     project_line_id=str(project_line.id),
                     qty=_ZERO,
                     qty_ordered=core_line.qty_ordered,
-                    qty_delivered=core_line.qty_delivered,
+                    qty_delivered=delivered_qty_of(core_line),
                     required_date=core_line.required_date,
                     warehouse_id=str(core_line.warehouse_id) if core_line.warehouse_id else None,
                     location=warehouse.warehouse_code if warehouse else None,
@@ -1806,9 +1821,22 @@ class FulfilmentBoardService:
     ) -> List[_Row]:
         """SO-CANCEL-LINE: the lines CS transferred to Cancel SO (`cancelled_at` set). The
         board's own predicate drops a `cancelled` line, so without this the line CS just
-        cancelled would vanish from the board it was cancelled on. Read-only at zero."""
+        cancelled would vanish from the board it was cancelled on. Read-only at zero.
+
+        CANCEL-STOP-AT-SO (owner, 14 Oct): a line an AutoCount Cancel SO cancelled
+        (`cancelled_by_cancel_doc`) is here too while it still has a live order inquiry row,
+        because the cancel no longer retires those rows: CS handles them. It reads as
+        transferred by AutoCount, `cancel_open_oi_rows` > 0."""
         if not so_numbers:
             return []
+        live_oi = (
+            self.db.query(OrderInquiryRow.id)
+            .filter(
+                OrderInquiryRow.so_line_id == ProjectSalesOrderLine.id,
+                OrderInquiryRow.state != INQUIRY_CANCELLED,
+            )
+            .exists()
+        )
         records = (
             self.db.query(SalesOrderLine, SalesOrder, ProjectSalesOrderLine, Product, User)
             .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
@@ -1823,19 +1851,27 @@ class FulfilmentBoardService:
                 SalesOrder.status.in_(["open", "closed"]),
                 SalesOrder.demand_class == "project",
                 SalesOrderLine.line_status == "cancelled",
-                SalesOrderLine.cancelled_at.isnot(None),
+                or_(
+                    SalesOrderLine.cancelled_at.isnot(None),
+                    and_(SalesOrderLine.cancelled_by_cancel_doc.is_(True), live_oi),
+                ),
             )
             .all()
         )
         records = [r for r in records if str(r[0].id) not in shown]
         if not records:
             return []
+        by_cancel_doc = self._autocount_cancel_facts(
+            [(str(core.id), str(pl.id)) for core, _o, pl, *_r in records
+             if core.cancelled_at is None]
+        )
         customers = self._customers(
             {str(order.customer_id) for _cl, order, *_r in records if order.customer_id}
         )
         rows: List[_Row] = []
         for core_line, order, project_line, product, user in records:
             customer_id = str(order.customer_id) if order.customer_id else None
+            autocount = by_cancel_doc.get(str(core_line.id))
             rows.append(
                 _Row(
                     line_id=str(core_line.id),
@@ -1851,23 +1887,84 @@ class FulfilmentBoardService:
                     project_line_id=str(project_line.id),
                     qty=_ZERO,
                     qty_ordered=core_line.qty_ordered,
-                    qty_delivered=core_line.qty_delivered,
+                    qty_delivered=delivered_qty_of(core_line),
                     required_date=core_line.required_date,
                     warehouse_id=str(core_line.warehouse_id) if core_line.warehouse_id else None,
                     bucket_key=NO_DATE_BUCKET,
                     cancelled=True,
-                    cancelled_at=core_line.cancelled_at,
-                    cancelled_by_name=(
-                        (getattr(user, "name", None) or "Unknown user")
-                        if user is not None
-                        else None
+                    # Always set: the screen reads a set `cancelled_at` as committed, never
+                    # as a line Confirm retires.
+                    cancelled_at=(
+                        (autocount["at"] or core_line.updated_at) if autocount is not None
+                        else core_line.cancelled_at
                     ),
-                    cancel_reason=core_line.cancel_reason,
+                    cancelled_by_name=(
+                        "AutoCount" if autocount is not None
+                        else None if user is None
+                        else getattr(user, "name", None) or "Unknown user"
+                    ),
+                    cancel_reason=(
+                        autocount["reason"] if autocount is not None
+                        else core_line.cancel_reason
+                    ),
+                    cancel_open_oi_rows=autocount["open"] if autocount is not None else 0,
                     source_ref=core_line.source_ref,
                     company_id=str(core_line.company_id) if core_line.company_id else None,
                 )
             )
         return rows
+
+    def _autocount_cancel_facts(
+        self, lines: Sequence[Tuple[str, str]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """CANCEL-STOP-AT-SO: per `(core line id, project line id)` an AutoCount Cancel SO
+        cancelled, the live order inquiry rows still on it, the Cancel SO numbers and when
+        the CRM received the latest. Two statements for the whole board, none when empty."""
+        if not lines:
+            return {}
+        from app.models.autocount_cancel import (
+            KIND_CANCEL_SO,
+            AutocountCancelDoc,
+            AutocountCancelLine,
+        )
+        from app.services.autocount_cancel_ingest_service import cancel_sources
+
+        project_of = dict(lines)
+        open_by_project = dict(
+            self.db.query(OrderInquiryRow.so_line_id, func.count(OrderInquiryRow.id))
+            .filter(
+                OrderInquiryRow.so_line_id.in_(list(project_of.values())),
+                OrderInquiryRow.state != INQUIRY_CANCELLED,
+            )
+            .group_by(OrderInquiryRow.so_line_id)
+            .all()
+        )
+        sources = cancel_sources(self.db, AutocountCancelLine.sales_order_line_id,
+                                 project_of.keys())
+        numbers = {s["doc_no"] for docs in sources.values() for s in docs}
+        received = dict(
+            self.db.query(AutocountCancelDoc.doc_no, func.max(AutocountCancelDoc.created_at))
+            .filter(AutocountCancelDoc.kind == KIND_CANCEL_SO,
+                    AutocountCancelDoc.doc_no.in_(sorted(numbers)))
+            .group_by(AutocountCancelDoc.doc_no)
+            .all()
+        ) if numbers else {}
+        out: Dict[str, Dict[str, Any]] = {}
+        for core_id, project_id in project_of.items():
+            docs = list(dict.fromkeys(s["doc_no"] for s in sources.get(core_id, [])))
+            count = int(open_by_project.get(project_id, 0))
+            times = [received[d] for d in docs if received.get(d) is not None]
+            rows_word = "row" if count == 1 else "rows"
+            out[core_id] = {
+                "at": max(times) if times else None,
+                "open": count,
+                # `cancelled_by` already says AutoCount; the reason names the documents.
+                "reason": " · ".join(
+                    [*([", ".join(docs)] if docs else []),
+                     f"{count} open order inquiry {rows_word}"]
+                ),
+            }
+        return out
 
     def _lent_from(self, core_line_ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
         """What another sales order borrowed OFF each of these lines (AC-L6).
@@ -2061,6 +2158,7 @@ class FulfilmentBoardService:
                     "ack_state": ack_state,
                     "rejected_reason": None,
                     "rejected_by_name": None,
+                    "rejected_at": None,
                     "_row_id": str(row_id),
                     "redirected": bool(redirected_to_pool),
                 }
@@ -2092,6 +2190,7 @@ class FulfilmentBoardService:
                 "ack_state": None if answered_refusal else ack_state,
                 "rejected_reason": None,
                 "rejected_by_name": None,
+                "rejected_at": None,
                 # AC-RL-07: this ROW's own id (to address `links_for_rows`) and whether
                 # IT was redirected - popped/resolved below, never sent as `_row_id`.
                 "_row_id": str(row_id),
@@ -2124,6 +2223,7 @@ class FulfilmentBoardService:
             entry["ack_state"] = ACK_REJECTED
             entry["rejected_reason"] = reason
             entry["rejected_by_name"] = name
+            entry["rejected_at"] = rejected_at
         # A LINE WITH A LIVE INSTRUCTION IS ABOUT THAT INSTRUCTION. It replaces whatever
         # last-wins left standing, so the number the cell prints is the row that decides the
         # line and not a cancelled or refused one that happened to be written after it. A
@@ -2159,6 +2259,29 @@ class FulfilmentBoardService:
                 for link in links_by_row.get(row_id, [])
             ]
         return out
+
+    def open_refusals(self, core_line_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+        """The board's own order-inquiry entry for each line purchasing has refused and CS
+        has not decided again, keyed by core line id - for the Sales Order page's Lines tab
+        (PR 1622 mock v3), so both screens read a refusal by the SAME rules
+        (`_order_inquiries`, answered once an active revision is confirmed after it)."""
+        ids = [str(x) for x in core_line_ids if x]
+        if not ids:
+            return {}
+        self._addressing = self._mirror_addressing(ids)
+        frozen, _proposals, _names = self._frozen_decisions()
+        entries = self._order_inquiries(
+            ids,
+            decided_at={
+                core_id: (decision or {}).get("confirmed_at")
+                for core_id, decision in frozen.items()
+            },
+        )
+        return {
+            core_id: entry
+            for core_id, entry in entries.items()
+            if entry.get("ack_state") == ACK_REJECTED
+        }
 
     def _frozen_decisions(
         self,
@@ -2665,6 +2788,9 @@ class FulfilmentBoardService:
                     "sales_order_id": row.sales_order_id,
                     "source_ref": row.source_ref,
                     "company_id": row.company_id,
+                    # CONSIGN-PLAN: lets the fact carry its doc type, so the proposal for a
+                    # consignment is its own bin (`ProjectSupplyService.compose_lines`).
+                    "so_doc_type": row.so_doc_type,
                 }
                 for row in plannable
             ],
@@ -2896,7 +3022,8 @@ class FulfilmentBoardService:
         whole free-stock cache once per row - but the RANKING is against this line's residual
         (13.11), so two rows covering different quantities are two different questions.
         Hot-selling no longer changes the donor set (own location is always Reserve-eligible,
-        never a Borrow source), so it is not part of the key.
+        and always offered as a plain Borrow too since BORROW-OWN-LOC), so it is not part of
+        the key.
         """
         cache_key = (fact.product_id, row.warehouse_id, need)
         if cache_key not in borrow_cache:
@@ -3163,7 +3290,9 @@ class FulfilmentBoardService:
         an earlier line had spent, and question 1 offered the 135 at BRW-BB to the 1,305
         line of the same unit that the 135 line had just taken.
 
-        FIVE ROWS, always, in the WALK's own order (v8, R-A): the site pool's share, our
+        ONE ROW for a line planned at its own off-planning bin (CONSIGN-PLAN: "Consignment:
+        the goods are at CON."), which walks no ladder. Otherwise FIVE ROWS, always, in the
+        WALK's own order (v8, R-A): the site pool's share, our
         own locations, borrowing on hand from a later order, borrowing what one is waiting
         on, Buy. The captain, walking SO381895: "our thought process is simpler now" - so
         the proof is the questions a planner would ask out loud, in the order the ladder
@@ -3282,6 +3411,21 @@ class FulfilmentBoardService:
                 }
             )
 
+        # CONSIGN-PLAN: a consignment planned at its own bin skipped the ladder
+        # (`compose_lines`), so the five questions would describe a walk that never happened
+        # and contradict its Borrow. One step states what was decided.
+        if planned_at_own_bin(fact.warehouse, getattr(fact, "doc_type", None)) and components:
+            add(
+                "own",
+                "Are the goods already at the line's own bin?",
+                taken=_dec(row.qty),
+                sources=[own_code] if own_code else None,
+                location=own_code,
+                warehouse_id=str(fact.warehouse.id),
+                why=lambda _outcome: f"Consignment: the goods are at {own_code}.",
+            )
+            return steps, []
+
         # The ATP reserve window verdict, read once and answered the same way by all four
         # questions. Under v5 NOTHING runs beyond it, incoming included, so every question
         # answers No with the rule as its reason and Buy takes the whole line.
@@ -3301,8 +3445,13 @@ class FulfilmentBoardService:
             if outside_window
             else [c for c in row.borrow_candidates if c.get("rung") == "group_borrow"]
         )
+        # Less any row with nothing free: the line's own location is always offered as a
+        # plain Borrow (BORROW-OWN-LOC) at 0 free, and "borrowing is possible from" a place
+        # with nothing to give would break AC-V4.
         ungrouped_donors = (
-            [] if outside_window or fact.group_code else list(row.borrow_candidates)
+            []
+            if outside_window or fact.group_code
+            else [c for c in row.borrow_candidates if _dec(c.get("free_qty")) > _ZERO]
         )
 
         # ------------------------------------------- 0. Can the site pool spare us a share?
@@ -5145,6 +5294,7 @@ class FulfilmentBoardService:
             #: null is the honest answer: there is no planning record to confirm against.
             "project_line_id": row.project_line_id,
             "so_number": row.so_number,
+            "so_doc_type": row.so_doc_type,
             "customer_name": row.customer_name,
             #: Addressing only, and the key a pivot BY CUSTOMER groups on: two different
             #: customers can carry the same name, and grouping by the label would merge them.
@@ -5335,6 +5485,7 @@ class FulfilmentBoardService:
             "cancelled_at": row.cancelled_at,
             "cancelled_by": row.cancelled_by_name,
             "cancel_reason": row.cancel_reason,
+            "cancel_open_oi_rows": row.cancel_open_oi_rows or 0,
         }
 
     def _buckets(

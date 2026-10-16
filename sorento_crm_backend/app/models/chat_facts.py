@@ -103,6 +103,9 @@ class ChatAskFact(Base):
     phantom_dropped = Column(Boolean, nullable=False, server_default=text("false"), default=False)
 
     episode_id = Column(UUID(as_uuid=False), nullable=True)
+    # CHAT-TURN-COST: the parser prompt version the turn ran on (its `understood` stage), so
+    # the analytics connector's `turn_costs` never opens the trace per row.
+    prompt_version = Column(Integer, nullable=True)
 
     # CA-2 owns these; a trace row leaves them empty.
     topic_code = Column(Text, nullable=True)

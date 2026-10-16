@@ -348,26 +348,28 @@ def test_storage_being_down_degrades_to_no_picture_rather_than_no_quotation(monk
         assert images.data_uri(db, attachment.id) is None
 
 
-def test_a_file_that_is_not_a_decodable_image_is_carried_through_only_while_it_is_small(
-    monkeypatch,
-):
-    """Pillow failing must not silently drop a picture that would have rendered - some formats
-    WeasyPrint handles are ones Pillow does not. But the fallback cannot be a licence to inline a
-    4 MB original, so it is capped."""
+def test_bytes_pillow_cannot_decode_render_to_nothing_whatever_their_size(monkeypatch):
+    """The raw-bytes fallback is gone: it let an SVG claiming to be a jpeg reach the PDF. Anything
+    Pillow cannot decode as png/jpeg/webp renders to nothing, small or large; a real image still
+    renders."""
     from app.services import product_image_service as images
 
     with blank_session() as db:
         company_id = _sorento(db)
-        monkeypatch.setattr(images, "get_backend", lambda provider: _FakeBackend(b"zzt-not-an-image"))
-        small = _attachment(db, company_id, name="odd.png", mime="image/png")
-        rendered = images.render(db, small.id)
-        assert rendered is not None
-        assert rendered.data == b"zzt-not-an-image"
-        assert rendered.mime_type == "image/png"
 
-        huge = b"z" * (images.RAW_FALLBACK_LIMIT + 1)
-        monkeypatch.setattr(images, "get_backend", lambda provider: _FakeBackend(huge))
-        assert images.render(db, _attachment(db, company_id, name="big.png").id) is None
+        for label, payload in (
+            ("small", b"zzt-not-an-image"),
+            ("svg", b'<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>'),
+            ("large", b"z" * (5 * 1024 * 1024)),
+        ):
+            monkeypatch.setattr(images, "get_backend", lambda provider, p=payload: _FakeBackend(p))
+            row = _attachment(db, company_id, name=f"{label}.png", mime="image/png")
+            assert images.render(db, row.id) is None, label
+            assert images.data_uri(db, row.id) is None, label
+
+        monkeypatch.setattr(images, "get_backend", lambda provider: _FakeBackend(_jpeg(64, 64)))
+        ok = _attachment(db, company_id, name="real.jpg")
+        assert images.render(db, ok.id) is not None
 
 
 # ------------------------------------------------------------------- CHO-1/CHO-2

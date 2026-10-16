@@ -27,6 +27,7 @@ vi.mock('xlsx', () => ({
 import {
   exportSponsorshipFormToExcel,
   exportPurchaseRequestToExcel,
+  buildPurchaseRequestOrSponsorshipAoa,
 } from './purchase-request-excel-export';
 
 function makeRequest(overrides: Partial<PurchaseRequest> = {}): PurchaseRequest {
@@ -144,5 +145,22 @@ describe('revision suffix on the exported document number', () => {
     const numberRow = captured.aoa!.find((r) => r[0] === 'Purchase request number:');
     expect(numberRow?.[1]).toBe('PR26-0332');
     expect(captured.filename).toBe('Purchase_Request_PR26-0332.xlsx');
+  });
+});
+
+describe('sponsorship form Sales Type row', () => {
+  it('puts Sales Type immediately after Sponsor Subject', () => {
+    const aoa = buildPurchaseRequestOrSponsorshipAoa(
+      makeRequest({ sponsor_subject: 'event', sales_type: 'cash_sales' } as Partial<PurchaseRequest>),
+      'Cash Sales',
+    );
+    const i = aoa.findIndex((r) => r[0] === 'Sponsor Subject:');
+    expect(i).toBeGreaterThan(-1);
+    expect(aoa[i + 1]).toEqual(['Sales Type:', 'Cash Sales']);
+  });
+
+  it('is a blank value when the SF has no sales type and no label', () => {
+    const aoa = buildPurchaseRequestOrSponsorshipAoa(makeRequest(), null);
+    expect(aoa.find((r) => r[0] === 'Sales Type:')).toEqual(['Sales Type:', '']);
   });
 });

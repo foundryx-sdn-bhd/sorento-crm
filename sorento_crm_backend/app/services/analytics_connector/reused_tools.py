@@ -533,7 +533,8 @@ REUSED_TOOLS: tuple[dict, ...] = (
             "independent of `include_summary`. Omit both for a plain DO list. 'outstanding' "
             '= NOT yet delivered (New Order, Processing, In Transit, Cancelled, or a '
             "delivery date under a non-delivered status); 'delivered' = status "
-            'delivered/completed AND actual_delivery_date set. Use for '
+            'delivered/completed AND actual_delivery_date set (or, with no date, assumed '
+            'delivered by the DO history backfill). Use for '
             "'outstanding/pending/undelivered orders', 'belum hantar', 'not delivered yet'. "
             "AND'd with the other filters.\n\nGROUPING: `group_by` = customer | transporter | "
             'date | product renders headed sections instead of (alongside) the flat list - '

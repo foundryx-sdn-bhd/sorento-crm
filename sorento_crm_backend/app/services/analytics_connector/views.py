@@ -6,8 +6,10 @@ A later change to a view means a new migration that calls `ensure_views` again.
 
 Times are Malaysia wall clock. OTP sign-in codes are masked here with the same pattern as
 `app.services.otp_redaction.OTP_TEXT_RE`; a test feeds both the same fixtures. No view carries
-a phone number, `session_vars`, `portal_slug`, a turn `envelope`/`trace`/`response` blob, or
+a phone number (except `turn_costs.contact_phone`, owner ruling 13 Oct), `session_vars`, `portal_slug`, a turn `envelope`/`trace`/`response` blob, or
 `chat_histories.result`/`state_trace`.
+
+The two cost views (`llm_calls`, `turn_costs`) are created by ``ensure_cost_views``.
 """
 from __future__ import annotations
 
@@ -15,6 +17,8 @@ import re
 from typing import Any
 
 from sqlalchemy import text
+
+from app.services.analytics_connector.prices import cost_sql
 
 SCHEMA = "analytics_connector"
 RO_ROLE = "sorento_analytics_ro"
@@ -160,6 +164,121 @@ SELECT cf.id::text AS id,
 
 VIEWS = (MESSAGES_V, CONTACTS_V, BOT_TURNS_V, EPISODES_V)
 
+# CHAT-TURN-COST (plan documentation/plans/analytics/PLAN-chat-turn-cost-13oct.md). One row per
+# CHATBOT `ai_assistant_usage_logs` row, priced from `llm_model_prices`. No `user_id`, no
+# conversation id. Chatbot features only: the CRM shows staff-side AI spend (assistant, extraction,
+# drafts) only to `system.ai_assistant_settings.view`, which the connector's chat gate is not.
+# Anthropic reports cache reads OUTSIDE `prompt_tokens` (`llm_provider.py`), OpenAI and Gemini
+# inside it, so the uncached part is computed per provider. A model with no price row is NULL
+# (unpriced), never 0. A model priced with no cached-input price prices a call only
+# when nothing was cached; a call with cached tokens is NULL and flagged `cached_price_missing`
+# (owner 13 Oct: no invented cached price, no estimate). Not rounded: numeric division by 1e6 is
+# exact, so a hand calculation matches the dataset to the last digit. Anthropic
+# cache WRITES (`cache_creation_input_tokens`, 1.25x input) are not captured: nothing in `app/`
+# sets `cache_control` today, so they are zero; capture them when prompt caching is turned on.
+_CACHED = "COALESCE(u.cached_tokens, 0)"
+_COST = cost_sql("u", "p")
+LLM_CALLS_V = f"""
+CREATE OR REPLACE VIEW {SCHEMA}.llm_calls AS
+SELECT u.id::text AS id,
+       {_myt_naive('u.created_at')} AS created_at,
+       u.feature,
+       u.chatbot_turn_id,
+       u.contact_id,
+       rc.name AS contact_name,
+       u.provider,
+       u.model,
+       u.prompt_tokens,
+       u.cached_tokens AS cached_tokens,
+       u.completion_tokens,
+       u.total_tokens,
+       u.response_time_ms,
+       u.was_answered,
+       {_COST.cost_usd} AS cost_usd,
+       {_COST.priced} AS priced,
+       {_COST.cached_price_missing} AS cached_price_missing,
+       -- New columns go LAST (CREATE OR REPLACE VIEW cannot reorder).
+       {_COST.cache_unknown} AS cache_unknown
+  FROM ai_assistant_usage_logs u
+  LEFT JOIN respond_contacts rc ON rc.id = u.contact_id
+  LEFT JOIN llm_model_prices p ON p.model = u.model
+ WHERE u.feature LIKE 'chatbot%'
+"""
+
+# One row per live turn. The calls are summed per turn in a LATERAL over the
+# `chatbot_turn_id` index: measured on 100k synthetic turns, a newest-first page took 71 ms this
+# way against 2.9 s as a grouped hash join, and a group-by over every turn 1.2 s against 1.4 s
+# (plan, "Performance"). Category, outcome, topic,
+# episode and prompt version come from the turn's CA-1 fact row (`chatbot.chat_ask_facts`, one per
+# closed live turn, `ask_seq` 1), never from the trace: a trace is tens of KB per turn and reading
+# it per row would not fit the connector's 10 s statement timeout. A turn with no fact yet (still
+# open, superseded by a retry, or not swept) has those columns empty.
+TURN_COSTS_V = f"""
+CREATE OR REPLACE VIEW {SCHEMA}.turn_costs AS
+SELECT t.id::text AS id,
+       {_myt_tz('t.created_at')} AS created_at,
+       rc.id AS contact_id,
+       t.contact_respond_id,
+       rc.name AS contact_name,
+       cu.customer_name,
+       f.episode_id::text AS episode_id,
+       {_mask("COALESCE(t.envelope #>> '{message,message,message,text}', t.envelope #>> '{message,message,message,attachment,description}')")} AS inbound_text,
+       {_mask("t.response #>> '{reply,text}'")} AS reply_text,
+       t.status,
+       t.stage,
+       t.branch_kind,
+       f.domain,
+       f.intent,
+       f.topic_code,
+       tp.label AS topic_label,
+       f.outcome,
+       f.prompt_version,
+       calls.model,
+       COALESCE(calls.llm_calls, 0) AS llm_calls,
+       COALESCE(calls.prompt_tokens, 0) AS prompt_tokens,
+       COALESCE(calls.cached_tokens, 0) AS cached_tokens,
+       COALESCE(calls.completion_tokens, 0) AS completion_tokens,
+       COALESCE(calls.total_tokens, 0) AS total_tokens,
+       COALESCE(calls.llm_ms, 0) AS llm_ms,
+       (extract(epoch FROM (t.finished_at - COALESCE(t.started_at, t.created_at))) * 1000)::bigint AS latency_ms,
+       CASE WHEN calls.chatbot_turn_id IS NULL THEN 0::numeric
+            WHEN calls.priced THEN calls.cost_usd END AS cost_usd,
+       COALESCE(calls.priced, true) AS priced,
+       COALESCE(calls.cached_price_missing, false) AS cached_price_missing,
+       -- New columns go LAST: CREATE OR REPLACE VIEW cannot insert or reorder columns, and a
+       -- database that already holds an earlier version of this view upgrades in place.
+       rc.phone_number AS contact_phone,
+       COALESCE(calls.cache_unknown, false) AS cache_unknown
+  FROM chatbot.turns t
+  LEFT JOIN LATERAL (
+        SELECT r.id, r.name, r.phone_number FROM respond_contacts r
+         WHERE r.respond_io_id = t.contact_respond_id ORDER BY r.created_at ASC LIMIT 1
+  ) rc ON true
+  LEFT JOIN chatbot.chat_ask_facts f ON f.turn_id = t.id AND f.ask_seq = 1
+  LEFT JOIN customers cu ON cu.id = f.customer_id
+  LEFT JOIN chatbot.chat_topics tp ON tp.code = f.topic_code
+  LEFT JOIN LATERAL (
+        SELECT lc.chatbot_turn_id,
+               count(*) AS llm_calls,
+               string_agg(DISTINCT lc.model, ', ' ORDER BY lc.model) AS model,
+               sum(lc.prompt_tokens) AS prompt_tokens,
+               sum(lc.cached_tokens) AS cached_tokens,
+               sum(lc.completion_tokens) AS completion_tokens,
+               sum(lc.total_tokens) AS total_tokens,
+               sum(lc.response_time_ms) AS llm_ms,
+               sum(lc.cost_usd) AS cost_usd,
+               bool_and(lc.priced) AS priced,
+               bool_or(lc.cached_price_missing) AS cached_price_missing,
+               bool_or(lc.cache_unknown) AS cache_unknown
+          FROM {SCHEMA}.llm_calls lc
+         WHERE lc.chatbot_turn_id = t.id::text
+         GROUP BY lc.chatbot_turn_id
+  ) calls ON true
+ WHERE NOT t.is_test
+"""
+
+COST_VIEWS = (LLM_CALLS_V, TURN_COSTS_V)
+
 _ROLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -167,6 +286,16 @@ def ensure_views(conn: Any) -> None:
     """Create the schema and (re)create the four views. ``conn`` is a Session or a Connection."""
     conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}"))
     for ddl in VIEWS:
+        conn.execute(text(ddl))
+
+
+def ensure_cost_views(conn: Any) -> None:
+    """(Re)create the two cost views (CHAT-TURN-COST). Separate from ``ensure_views`` because
+    they need `llm_model_prices`, `ai_assistant_usage_logs.cached_tokens` and
+    `chat_ask_facts.prompt_version`, which exist only
+    from migration `ctc_0001_turn_costs` on, and `acc_0001_connector` still calls ``ensure_views``."""
+    conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}"))
+    for ddl in COST_VIEWS:
         conn.execute(text(ddl))
 
 

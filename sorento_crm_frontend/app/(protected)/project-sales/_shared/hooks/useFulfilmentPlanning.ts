@@ -60,6 +60,8 @@ import { BOARD_TRANSFERS_KEY } from './useBoardTransfers';
 // (applied_at, applied_by, the per-row applied state) is stale the moment it returns.
 import { PLANNING_CHANGE_BATCH_KEY } from './usePlanningChanges';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
+import { getWarehouses } from '@/app/(protected)/inventory-management/warehouses/services/warehouseService';
+import { groupOfWarehouseCode } from '../lib/supplyVocabulary';
 
 export const FULFILMENT_PLANNING_KEY = 'project-fulfilment-planning';
 export const PLANNING_BOARD_KEY = 'project-fulfilment-board';
@@ -405,7 +407,8 @@ export function useClassificationEvidence(productId?: string | null, enabled = t
 export function useStockDetail(
   productId: string,
   warehouseId: string | null,
-  lineIds: string[] = [],
+  /** Null or empty: read on nobody's behalf (the quotation's stock chip has no order line). */
+  lineIds: string[] | null = [],
   /** A whole SET instead of one bin: the group suffix (`IB`), or `pools`. */
   group?: string | null,
   /**
@@ -417,12 +420,40 @@ export function useStockDetail(
    */
   enabled = true,
 ) {
-  const key = lineIds.join(',');
+  const key = (lineIds ?? []).join(',');
   return useQuery({
     queryKey: [STOCK_DETAIL_KEY, productId, group ?? warehouseId, key],
-    queryFn: () => getStockDetail(productId, warehouseId, lineIds, group),
+    queryFn: () => getStockDetail(productId, warehouseId, lineIds ?? [], group),
     enabled: enabled && Boolean(warehouseId || group),
     retry: 1,
+  });
+}
+
+/**
+ * The ownership groups stock can be read over (`IB`, `BB`, ...): the group suffix of every active
+ * warehouse that takes part in fulfilment planning, in warehouse-code order, each once. The
+ * quotation's "Stock at" picker lists these, and `useStockDetail` reads a group by the same name.
+ * A site pool (`BRW`, no suffix) is not a group; it is read through `pools`.
+ */
+export function useStockGroups() {
+  return useQuery({
+    queryKey: ['fulfilment-planning-stock-groups'],
+    queryFn: async () => {
+      const response = await getWarehouses({
+        pageIndex: 0,
+        pageSize: 500,
+        sorting: [{ id: 'warehouse_code', desc: false }],
+        is_active: true,
+      });
+      const groups: string[] = [];
+      (response.data ?? []).forEach((warehouse) => {
+        if (warehouse.fulfilment_planning === false) return;
+        const group = groupOfWarehouseCode(warehouse.warehouse_code);
+        if (group && !groups.includes(group)) groups.push(group);
+      });
+      return groups;
+    },
+    staleTime: Infinity,
   });
 }
 

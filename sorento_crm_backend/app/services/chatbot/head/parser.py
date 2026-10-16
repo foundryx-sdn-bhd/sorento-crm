@@ -27,6 +27,7 @@ from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
 from app.services.chatbot.turn import task as task_mod
+from app.services.product_compatibility_service import KINDS
 
 logger = logging.getLogger(__name__)
 
@@ -398,6 +399,39 @@ def _build_json_schema() -> dict[str, Any]:
             # `engine.run_turn` closes the conversation episode on it. Both readers shipped
             # with no way for the model to set it, so no live turn has ever reset a topic
             # or written an episode.
+            # MULTI-ASK-PLAN S2: every thing the message asks, in order, when it asks two
+            # or more (`turn/sub_asks.py` runs one query per entry), and whether a typed
+            # code means the exact code or its family. Tolerated absent: no prompt version
+            # before `maskp_0001_parser_sub_asks` emits them.
+            "sub_asks": {
+                "type": ["array", "null"],
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "measure": {
+                            "type": "string",
+                            "enum": [
+                                "stock", "incoming", "received_qty", "last_receipt", "supplier",
+                                "last_cost", "sold_total", "sold_by", "other",
+                            ],
+                        },
+                        "group_by": {
+                            "type": ["string", "null"],
+                            "enum": [
+                                "sales_agent", "customer", "product", "brand", "category",
+                                "location", "channel", "month", None,
+                            ],
+                        },
+                        "date_from": string_or_null,
+                        "date_to": string_or_null,
+                        "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", None]},
+                        "label": string_or_null,
+                    },
+                    "required": ["measure", "group_by", "date_from", "date_to", "basis", "label"],
+                },
+            },
+            "family": {"type": ["boolean", "null"]},
             "topic_reset": {"type": ["boolean", "null"]},
             # Ported from PR #1118 (not merged), D13/D15: "go ahead without answering
             # the open question" - said in any wording, in any language ("just
@@ -522,8 +556,17 @@ def _build_json_schema() -> dict[str, Any]:
                                 # and the number's unit, when its line says it takes one.
                                 "value": {"type": ["string", "number", "null"]},
                                 "unit": {"type": ["string", "null"]},
+                                # SEAT-AS-PRODUCT (crew v94 check, 13 Oct): the word of THIS
+                                # message asking for a file, as typed, null when none. The
+                                # parser states it; `lanes/business/find.as_linked_products`
+                                # reads it so the relation's own word is never a file ask.
+                                "file_word": {"type": ["string", "null"]},
+                                # CHAT-FIT-LINE: which link kind the other side names, one of
+                                # `product_compatibility_service.KINDS` (generated, so a new
+                                # kind needs no edit here); null when no particular kind.
+                                "kind": {"type": ["string", "null"], "enum": [*KINDS, None]},
                             },
-                            "required": ["key", "value", "unit"],
+                            "required": ["key", "value", "unit", "file_word", "kind"],
                         },
                     },
                 },
@@ -625,6 +668,8 @@ def _build_json_schema() -> dict[str, Any]:
             "low_stock",
             "chat_report",
             "po_refs",
+            "sub_asks",
+            "family",
             "find",
         ],
     }
@@ -691,6 +736,10 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
         # absent reads as "no PO number given".
         "po_refs",
+        # MULTI-ASK-PLAN S2: no prompt version before `maskp_0001_parser_sub_asks`
+        # emits either; absent reads as one ask, scope not said.
+        "sub_asks",
+        "family",
         # CHAT-FIND: no prompt version before the `{{find_filters}}` publish carries it;
         # absent reads as "not a find".
         "find",

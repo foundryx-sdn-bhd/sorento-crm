@@ -55,11 +55,11 @@ PERMISSION_REGISTRY.append({
     "name": "Get contact portal link",
     "description": "Generate or send a user-submission portal link for a respond contact.",
 })
-# Contact editing had no slug at all - every contact write is `get_current_user`
-# only, so today any authenticated user may change one. This names that authority
-# so the media gate can be enforced against something, and migration 357 grants it
-# to every existing role, which reproduces today's reach exactly rather than
-# silently narrowing it. Revoking it per role is now possible; it was not before.
+# Contact editing had no slug at all - every contact write was `get_current_user`
+# only. This names that authority, and migration 357 grants it to every role that
+# existed then, which reproduced the old reach rather than silently narrowing it.
+# It now gates every contact write in user_management/contacts.py and its sibling
+# /contacts routers (SEC-CONTACT-WRITE-PERMS), so it is revocable per role.
 PERMISSION_REGISTRY.append({
     "slug": "user_management.contacts.edit",
     "name": "Edit Contacts",
@@ -898,6 +898,32 @@ PERMISSION_REGISTRY.extend([
         "name": "Delete Billing Documents",
         "description": "Permission to delete billing documents through the AutoCount ingest.",
     },
+])
+
+# AC-CANCEL-CRM (contract 2.8): the AutoCount Cancel SO / Cancel PO (and the Consignment /
+# Consignment Return; AC-CONSIGN-CRM 2.9: a consignment push writes a sales order marked
+# Consignment, a return push records its returned qty) ingest doors. Their own
+# slugs (one per entity per door, `test_external_permission_coverage`), granted by migration
+# `ac_cancel_0001_docs` to admin / superadmin and to the role that already pushes the orders.
+PERMISSION_REGISTRY.extend([
+    {"slug": f"scm.{entity}.{action}", "name": f"{verb} {label}", "description": description}
+    for entity, label in (("cancel_sales_orders", "AutoCount Cancel SO"),
+                          ("cancel_purchase_orders", "AutoCount Cancel PO"),
+                          ("consignments", "AutoCount Consignment"),
+                          ("consignment_returns", "AutoCount Consignment Return"))
+    for action, verb, description in (
+        ("view", "View", f"Permission to read {label} documents pushed by the AutoCount ingest."),
+        ("edit", "Ingest",
+         "Permission to push AutoCount Consignment documents, which are written as sales "
+         "orders marked Consignment, through the AutoCount ingest."
+         if entity == "consignments" else
+         "Permission to push AutoCount Consignment Return documents, which record the "
+         "returned quantity on the consignment line, through the AutoCount ingest."
+         if entity == "consignment_returns" else
+         f"Permission to push {label} documents through the AutoCount ingest."),
+        ("delete", "Sweep", f"Permission to mark vanished {label} documents through the "
+                            "AutoCount ingest."),
+    )
 ])
 
 

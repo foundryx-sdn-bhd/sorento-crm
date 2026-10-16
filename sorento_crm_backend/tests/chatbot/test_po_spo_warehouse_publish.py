@@ -188,3 +188,9 @@ class TestThePublishScript:
                 .one()
             )
             assert label.version_id == previous.id
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

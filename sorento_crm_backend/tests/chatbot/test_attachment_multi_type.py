@@ -485,6 +485,42 @@ class TestFoundAnswerNamesTheGap:
         assert f"{SH} has no {PHOTOS}" not in text, text
         assert f"{SH} has no {SPECS}." in text, text
 
+    def test_one_product_row_grouping_a_photo_and_a_spec_is_not_a_gap(self) -> None:
+        """Mr Loo T7 (trace 6866b1b8): `fetch._file_rows` groups one product's files into ONE
+        row carrying an "Attachment Type" field per file; the gap check read the row as a
+        label -> value dict, so the last type won and the photo just sent read "has no
+        Product Photos". Every type on the grouped row counts."""
+        from app.services.chatbot.lanes.business.fetch import _file_rows
+
+        env = _attachment_envelope([SH], [(SH, PHOTOS), (SH, SPECS)], [PHOTOS, SPECS])
+        grouped = _file_rows({"result_type": "product_attachments", "items": env["figures"]}, links=False)
+        env["figures"] = grouped["items"]
+        assert len(env["figures"]) == 1, env["figures"]
+        text = _compose_text(env)
+
+        assert "has no" not in text, text
+
+    def test_a_grouped_row_still_names_the_type_it_lacks(self) -> None:
+        """The grouped row's types are all read, but an asked type with no file on it is
+        still named (R3)."""
+        env = _attachment_envelope([SH], [], [PHOTOS, SPECS, "Certificates"])
+        env["figures"] = [
+            {
+                "fields": [
+                    {"label": "Product Code", "value": SH},
+                    {"label": "Attachment Type", "value": PHOTOS},
+                    {"label": "File Name", "value": "a.jpg"},
+                    {"label": "Attachment Type", "value": SPECS},
+                    {"label": "File Name", "value": "b.pdf"},
+                ]
+            }
+        ]
+        env.update(miss=[], has_result=True, tool_has_result=True, lane_text="I have attached the file(s) below.")
+        text = _compose_text(env)
+
+        assert f"{SH} has no Certificates." in text, text
+        assert f"has no {PHOTOS}" not in text and f"has no {SPECS}" not in text, text
+
 
 # --------------------------------------------------------------------------- #
 # Q5 (a): every customer-facing snake_case leak the sweep found, one test each

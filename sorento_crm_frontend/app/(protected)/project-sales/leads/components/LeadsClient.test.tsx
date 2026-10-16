@@ -304,13 +304,13 @@ describe('LeadsClient', () => {
     ).toBeInTheDocument();
   });
 
-  // #1335: one CTA per page. The header's "Record a lead" is the only one; the
+  // #1335: one CTA per page. The header's "Create lead" is the only one; the
   // empty state keeps its heading and hint, and no subtitle sits under the title.
-  it('offers Record a lead once, in the header, and it opens the wizard', async () => {
+  it('offers Create lead once, in the header, and it opens the wizard', async () => {
     renderClient();
 
     await screen.findByText('No open leads');
-    const buttons = screen.getAllByRole('button', { name: /record a lead/i });
+    const buttons = screen.getAllByRole('button', { name: /^create lead$/i });
     expect(buttons).toHaveLength(1);
     expect(buttons[0].closest('[data-slot="toolbar-actions"]')).not.toBeNull();
     expect(
@@ -319,7 +319,7 @@ describe('LeadsClient', () => {
 
     fireEvent.click(buttons[0]);
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('Record a lead')).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: 'Create lead' })).toBeInTheDocument();
   });
 
   it('distinguishes an empty filter result from an empty pipeline', async () => {

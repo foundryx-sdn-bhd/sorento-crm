@@ -15,13 +15,14 @@ One lookup (`product_alternative_service.alternatives_for`) feeds both modes.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import timedelta
 
 import pytest
 
 from app.main import app  # noqa: F401  (first app import)
 from app.models.product import ProductAlternative
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from app.services.incoming_stock_service import today_myt
 from app.services.inventory_service import StockService
 
 from tests._mc_lookup_seed import product, stock
@@ -126,13 +127,15 @@ def test_alternative_judged_on_allowed_locations_only(db):
 
 def test_alternative_incoming_carries_its_own_eta(db):
     wh, old, new = _pair(db, old_on_hand=0, new_on_hand=0)
-    shipment = _incoming_shipment(db, eta=date(2026, 10, 20), attachment_id=_attachment(db).id)
+    # The stock ask only reads shipments due today or later (MYT).
+    eta = today_myt() + timedelta(days=4)
+    shipment = _incoming_shipment(db, eta=eta, attachment_id=_attachment(db).id)
     _incoming_line(db, shipment_id=shipment.id, product_id=new.id)
     entry = _entry(_ask(db, _dealer(db, wh), old, 2), old.id)
     assert entry["branch"] == "no_incoming"
     [alt] = entry["alternatives"]
     assert alt["branch"] == "incoming"
-    assert alt["eta"] == "20/10/2026"
+    assert alt["eta"] == eta.strftime("%d/%m/%Y")
 
 
 def test_live_old_code_out_of_stock_still_shows_alternative(db):
@@ -300,7 +303,8 @@ def test_merged_code_takes_the_alternative_of_any_companys_row(db):
 
 def test_nested_alternative_never_carries_a_packing_list(db):
     wh, old, new = _pair(db, old_on_hand=0, new_on_hand=0)
-    shipment = _incoming_shipment(db, eta=date(2026, 10, 20), attachment_id=_attachment(db).id)
+    eta = today_myt() + timedelta(days=4)
+    shipment = _incoming_shipment(db, eta=eta, attachment_id=_attachment(db).id)
     _incoming_line(db, shipment_id=shipment.id, product_id=new.id)
     contact = _contact(db, packing_list_allowed=True)
     _policy_row(db, mode="availability", warehouse_ids=[wh.id], contact=contact)

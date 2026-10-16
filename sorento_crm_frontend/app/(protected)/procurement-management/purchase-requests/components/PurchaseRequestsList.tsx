@@ -358,33 +358,29 @@ export default function PurchaseRequestsList({
         meta: { headerTitle: 'Project Title', skeleton: <Skeleton className="h-4 w-32" /> },
       },
       purposeOrSponsorSubjectColumn(requestType),
-      // Sales Type applies to purchase requests only (not sponsorship forms).
-      ...(requestType !== 'sponsorship_form'
-        ? [
-            {
-              accessorKey: 'sales_type',
-              header: ({ column }: { column: Column<PurchaseRequest> }) => (
-                <DataGridColumnHeader title="Sales Type" column={column} />
-              ),
-              size: 120,
-              cell: ({ row }: { row: Row<PurchaseRequest> }) => {
-                const value = row.original.sales_type;
-                if (!value) return '-';
-                return (
-                  <span className="truncate" title={value}>
-                    <LookupBoundLabel
-                      table="purchase_requests"
-                      column="sales_type"
-                      value={value}
-                      fallback="-"
-                    />
-                  </span>
-                );
-              },
-              meta: { headerTitle: 'Sales Type', skeleton: <Skeleton className="h-4 w-20" /> },
-            } as ColumnDef<PurchaseRequest>,
-          ]
-        : []),
+      // Sales Type: both purchase requests and sponsorship forms (SF-SALES-TYPE).
+      {
+        accessorKey: 'sales_type',
+        header: ({ column }: { column: Column<PurchaseRequest> }) => (
+          <DataGridColumnHeader title="Sales Type" column={column} />
+        ),
+        size: 120,
+        cell: ({ row }: { row: Row<PurchaseRequest> }) => {
+          const value = row.original.sales_type;
+          if (!value) return '-';
+          return (
+            <span className="truncate" title={value}>
+              <LookupBoundLabel
+                table="purchase_requests"
+                column="sales_type"
+                value={value}
+                fallback="-"
+              />
+            </span>
+          );
+        },
+        meta: { headerTitle: 'Sales Type', skeleton: <Skeleton className="h-4 w-20" /> },
+      } as ColumnDef<PurchaseRequest>,
       {
         accessorKey: 'requested_by',
         header: ({ column }) => (

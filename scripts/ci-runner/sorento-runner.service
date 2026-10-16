@@ -1,0 +1,20 @@
+[Unit]
+Description=GitHub Actions runner sorento-mac-1 (jayson-odoo/sorento-crm)
+Requires=ci-guard.service
+After=ci-guard.service network-online.target user@1500.service
+Wants=network-online.target user@1500.service
+ConditionPathExists=/home/runner/actions-runner/.runner
+
+[Service]
+User=runner
+WorkingDirectory=/home/runner/actions-runner
+Environment=XDG_RUNTIME_DIR=/run/user/1500
+ExecStart=/home/runner/actions-runner/run.sh
+Restart=always
+RestartSec=10
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=multi-user.target

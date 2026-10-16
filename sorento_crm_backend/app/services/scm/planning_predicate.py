@@ -70,15 +70,39 @@ def in_fulfilment_planning(warehouse: Any) -> bool:
     )
 
 
-def outside_fulfilment_planning(warehouse: Any) -> bool:
+#: Documents whose stock sits at a bin the ladder does not plan (a consignment at CON). Their
+#: lines are planned at that bin, so they never earn the OUTSIDE_FULFILMENT_PLANNING verdict.
+#: The bin stays flagged off, so no DRAW reads it and sales order lines never see it.
+PLANNED_AT_OWN_BIN_DOC_TYPES = frozenset({"consignment"})
+
+
+def planned_at_own_bin(warehouse: Any, doc_type: Optional[str]) -> bool:
+    """Whether this line is planned AT its own bin: its doc type is in
+    `PLANNED_AT_OWN_BIN_DOC_TYPES` AND the bin is not in fulfilment planning.
+
+    Regardless of the bin's `is_active`: the bin is the document's own location, and the dev
+    CON is inactive as well as flagged off. A consignment line at a bin that IS in planning
+    (active, flag on) is planned like a sales order line (CONSIGN-PLAN card R6), so the doc
+    type alone is never enough.
+    """
+    return (
+        doc_type in PLANNED_AT_OWN_BIN_DOC_TYPES
+        and warehouse is not None
+        and not in_fulfilment_planning(warehouse)
+    )
+
+
+def outside_fulfilment_planning(warehouse: Any, doc_type: Optional[str] = None) -> bool:
     """Whether this bin earns the `OUTSIDE_FULFILMENT_PLANNING` verdict: ACTIVE, flag off.
+
+    A line whose `doc_type` is in `PLANNED_AT_OWN_BIN_DOC_TYPES` never earns it.
 
     Deliberately not `not in_fulfilment_planning(...)`. An INACTIVE warehouse was already
     outside everything the ladder reads before this flag existed, and it keeps the verdict
     it carried then - telling a planner that a retired bin is "outside fulfilment planning"
     points them at a switch that is not the one to flip.
     """
-    if warehouse is None:
+    if warehouse is None or doc_type in PLANNED_AT_OWN_BIN_DOC_TYPES:
         return False
     return bool(getattr(warehouse, "is_active", False)) and not bool(
         getattr(warehouse, "fulfilment_planning", False)
@@ -87,7 +111,9 @@ def outside_fulfilment_planning(warehouse: Any) -> bool:
 
 __all__ = [
     "OUTSIDE_FULFILMENT_PLANNING",
+    "PLANNED_AT_OWN_BIN_DOC_TYPES",
     "fulfilment_planning_predicate",
     "in_fulfilment_planning",
+    "planned_at_own_bin",
     "outside_fulfilment_planning",
 ]

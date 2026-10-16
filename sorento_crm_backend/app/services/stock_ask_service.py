@@ -22,6 +22,7 @@ from typing import Any, Iterable, Optional
 
 from sqlalchemy.orm import Session
 
+from app.utils.product_display import code_with_name
 from app.services.queue_service import enqueue_job
 from app.services.respond_messaging_service import send_text_or_template
 
@@ -471,7 +472,7 @@ def notify_salesman(db: Session, facts: dict[str, Any]) -> dict[str, Any]:
         ),
         "customer_name": customer.customer_name,
         "contact_name": _contact_label(dealer),
-        "product": f"{code} - {name}" if name and name != code else code,
+        "product": code_with_name(code, name),
         "quantity": str(facts.get("quantity")),
         "asked_at": asked_at_label(moment),
     }
@@ -812,15 +813,15 @@ def _agent_scope(db: Session, agent_id: Optional[str | Iterable[str]]) -> Any:
 
 def list_for_agent(
     db: Session,
-    agent_id: str,
+    agent_id: str | Iterable[str],
     *,
     page: int,
     limit: int,
     q: Optional[str] = None,
     state: Optional[str] = None,
 ) -> dict[str, Any]:
-    """The portal's Customer asks page, newest first. `q` matches the customer name or
-    code, or the product code."""
+    """The portal's Customer asks page, newest first. `agent_id` is every active agent the
+    portal contact is linked to. `q` matches the customer name or code, or the product code."""
     from sqlalchemy import or_
 
     from app.models.order import Customer
@@ -850,7 +851,7 @@ def list_for_agent(
 
 def update_for_agent(
     db: Session,
-    agent_id: str,
+    agent_id: str | Iterable[str],
     ask_id: str,
     data: dict[str, Any],
     *,

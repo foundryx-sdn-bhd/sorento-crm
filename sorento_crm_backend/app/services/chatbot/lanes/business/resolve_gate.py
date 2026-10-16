@@ -27,7 +27,7 @@ Nodes reproduced, in edge order::
     If-incoming-picker    require_specific && domain === 'incoming'
     If-customer-picker    customer_probe_entities.length > 0
     probe-*               services.probe
-    annotate-*-picker     pickers.annotate_incoming / annotate_customer
+    annotate-*-picker     pickers.annotate_incoming / measure_customer_picker (data only)
     resolve-exit-*        the four arms
 """
 from __future__ import annotations
@@ -92,9 +92,7 @@ OUTSTANDING_ORDER_STATUS: frozenset[str] = frozenset(
 )
 
 # The probe's injected default window, from `probe-customer-orders`' semantic_input
-# expression (`$now.minus({days: 90})`). `annotate-customer-picker` mirrors this rule to
-# decide whether its miss claim says "no recent delivery" or "no delivery"; the two are
-# two halves of one sentence.
+# expression (`$now.minus({days: 90})`), reported on the measured picker item.
 CUSTOMER_PROBE_DEFAULT_WINDOW_DAYS = pickers.CUSTOMER_PROBE_WINDOW_DAYS
 
 
@@ -912,8 +910,67 @@ def _report_ask_has_product_subject(parser: dict[str, Any], compatible: Any) -> 
     )
 
 
+def _carried_and_unusable(token: Any, entities: Any, allowed_lookup: Any) -> bool:
+    """CARRIED-MISS (prod, 13 Oct 2026): is this unresolved token one the current
+    message never typed, of a kind this domain never looks up?
+
+    `turn_runtime.with_carried_entities` hands the focus to the resolver on a turn that
+    names nothing, every kind included; "I want to make complaint report" after an order
+    question reached it with the order number (`current_message: false`), which no
+    portal link can use. That token's miss is not this turn's. A token the message typed,
+    or a carried one of a kind the domain's `ALLOWED` row takes (a product under
+    `incoming`: the ask is about it), is still a miss. Tokens are matched trimmed and
+    lower-cased, against the entity's words and against the token the resolver was sent
+    (`_token_of`: a product code reaches it with its dashes folded away).
+
+    Only a domain with an `ALLOWED` row says which kinds it uses. With no row
+    (`allowed_lookup` absent: no domain at all, as on a quick-reply pick, or an unmapped
+    one) the gate passes every entity through, so nothing is excused here; the chat report
+    keeps its own excuse in `engine.py`."""
+    if not isinstance(allowed_lookup, list):
+        return False
+    key = jsc.js_string(token if jsc.truthy(token) else "").strip().lower()
+    if not key:
+        return False
+    hits = [
+        e
+        for e in jsc.array(entities)
+        if jsc.truthy(e)
+        and key
+        in {
+            jsc.js_string(jsc.get(e, "raw") or "").strip().lower(),
+            jsc.js_string(jsc.get(e, "canonical_code") or "").strip().lower(),
+            jsc.js_string(_token_of(e)).strip().lower(),
+        }
+    ]
+    if not hits or any(jsc.get(e, "current_message") is not False for e in hits):
+        return False
+    allowed = {jsc.lower_or_empty(k) for k in jsc.array(allowed_lookup)}
+    return not any(_kind_is_used(jsc.lower_or_empty(jsc.get(e, "hint")), allowed) for e in hits)
+
+
+#: Every resolver kind a typed reference number may become (`REFERENCE_NARROW`'s values).
+_REFERENCE_KINDS = frozenset(k for kinds in REFERENCE_NARROW.values() if kinds for k in kinds)
+
+
+def _kind_is_used(hint: str, allowed: set[str]) -> bool:
+    """Does a domain whose `ALLOWED` row is `allowed` look up an entity hinted `hint`? A
+    reference hint counts by the kinds it narrows to (`order`: any reference kind), the
+    way `_allowed_entity_types` widens it for the resolver."""
+    if hint in allowed:
+        return True
+    if hint not in REFERENCE_NARROW:
+        return False
+    narrow = REFERENCE_NARROW[hint]
+    return bool(allowed & (narrow if narrow is not None else _REFERENCE_KINDS))
+
+
 def if3_miss(ctx_resolved_ctx: dict[str, Any], *, parser: dict[str, Any]) -> bool:
     """`If3` - the miss gate, three OR'd clauses, verbatim.
+
+    Clause 2 skips an unresolved token the current message never typed whose kind the
+    domain never looks up (`_carried_and_unusable`, CARRIED-MISS 13 Oct 2026): a gate
+    that passed the ask without it answers the ask.
 
     Clause 3 is the "customer resolved to nothing" case the first two cannot see: the
     domain accepts a customer, the parser named one, and nothing customer-shaped survived
@@ -930,15 +987,20 @@ def if3_miss(ctx_resolved_ctx: dict[str, Any], *, parser: dict[str, Any]) -> boo
     unresolved = unresolved if jsc.truthy(unresolved) else []
     compatible = jsc.get(gate, "compatible_entities")
     compatible = compatible if jsc.truthy(compatible) else []
-    if len(jsc.array(unresolved)) > 0 and len(jsc.array(compatible)) == 0:
-        return True
-
     gate_debug = jsc.get(gate, "gate_debug")
     gate_debug = gate_debug if jsc.truthy(gate_debug) else {}
-    allowed_lookup = jsc.get(gate_debug, "allowed_lookup")
-    allowed_lookup = allowed_lookup if jsc.truthy(allowed_lookup) else []
+    allowed_row = jsc.get(gate_debug, "allowed_lookup")
+    allowed_lookup = allowed_row if jsc.truthy(allowed_row) else []
     parser_entities = parser.get("entities")
     parser_entities = parser_entities if jsc.truthy(parser_entities) else []
+    missed = [
+        t
+        for t in jsc.array(unresolved)
+        if not _carried_and_unusable(t, parser_entities, allowed_row)
+    ]
+    if len(missed) > 0 and len(jsc.array(compatible)) == 0:
+        return True
+
     return (
         "customer" in jsc.array(allowed_lookup)
         and any(
@@ -968,6 +1030,40 @@ def if_customer_picker(gate: dict[str, Any]) -> bool:
     probe_entities = jsc.get(gate, "customer_probe_entities")
     probe_entities = probe_entities if jsc.truthy(probe_entities) else []
     return len(jsc.array(probe_entities)) > 0
+
+
+def measure_customer_picker(
+    gate: dict[str, Any] | None, *, probe: Any, parser: dict[str, Any] | None
+) -> dict[str, Any]:
+    """The customer picker's probe answer, kept as DATA on the gate item (PICKER-ONE,
+    owner 13 Oct 2026). `customer_bases_with_do` is `pickers.customer_bases_with_do`'s
+    answer (a sorted list, or `None` for NOT MEASURED); the bridge stamps the roster's
+    options from it through `pickers.customer_stamp` and prints them with
+    `compose_question`, the one renderer every customer picker uses. It used to rewrite
+    the gate's own picker text instead (`annotate_customer`), which is how one customer
+    read three different ways in three pickers.
+
+    Mutates and returns `gate`, as the incoming annotator does, so the `offer` exit
+    carries the gate's own keys plus these.
+    """
+    out = gate if isinstance(gate, dict) else {}
+    parser = parser if isinstance(parser, dict) else {}
+    # WHICH WINDOW WAS PROBED: the parser's own bounds when the customer named one, else
+    # the injected 90-day default - a fact about the measurement, for the trace.
+    probe_windowed = (
+        jsc.get(parser, "date_filter_start") is None and jsc.get(parser, "date_filter_end") is None
+    )
+    out["customer_probe_window_days"] = CUSTOMER_PROBE_DEFAULT_WINDOW_DAYS if probe_windowed else None
+    bases = pickers.customer_bases_with_do(probe)
+    out["customer_bases_with_do"] = sorted(bases) if bases is not None else None
+    out["customer_probe_hits"] = len(bases) if bases is not None else None
+    if bases is not None:
+        out["customer_probe_skip_reason"] = None
+    elif pickers.probe_rows(probe) is None:
+        out["customer_probe_skip_reason"] = "probe_unavailable"
+    else:
+        out["customer_probe_skip_reason"] = "page_saturated"
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -1467,13 +1563,10 @@ def run(
                 space_id=space_id,
             )
         )
-        annotated = pickers.annotate_customer(
-            _snapshot(picker_gate), probe=probe, parser=parser
-        )
+        annotated = measure_customer_picker(_snapshot(picker_gate), probe=probe, parser=parser)
         if outstanding_ask:
-            # The annotator's UNPROBED arm renders exactly what R20 wants - the bare
-            # picker, no suffixes, no closing claim - so its wording is untouched. Only
-            # its reason is, because "probe_unavailable" would tell the operator a probe
+            # NOT MEASURED is exactly what R20 wants - no stamp on any line. Only the
+            # reason differs, because "probe_unavailable" would tell the operator a probe
             # failed when one was deliberately not run.
             annotated["customer_probe_skip_reason"] = "outstanding_ask"
         # `annotate_incoming` stays NULL on this arm: the customer annotator is not the

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -28,19 +28,27 @@ CHAT_QUEUE = "chat"
 ANALYTICS_QUEUE = "analytics"
 
 
-def run_turn_job(envelope: dict[str, Any]) -> dict[str, Any]:
+def run_turn_job(
+    envelope: dict[str, Any], session_factory: Callable[[], Any] | None = None
+) -> dict[str, Any]:
     """Run one turn on the worker and return what the waiting request will answer with.
 
     The argument is the envelope as JSON (RQ pickles the arguments; a plain dict travels
     where a pydantic model's version-coupled pickle would be a deploy hazard), and the
     return is `TurnResult.as_dict()` plus the three fields the endpoint reads off the
     result object rather than the response body.
+
+    `session_factory` is for in-process callers outside the module boundary (the live
+    usage probe in `scripts/`, whose test hands it a test session factory); RQ never
+    passes it, so the worker keeps `SessionLocal`.
     """
     from app.database import SessionLocal
     from app.services.chatbot import run_turn
     from app.services.chatbot.contracts import Envelope
 
-    result = run_turn(Envelope(**envelope), session_factory=SessionLocal, offload=False)
+    result = run_turn(
+        Envelope(**envelope), session_factory=session_factory or SessionLocal, offload=False
+    )
     payload = result.as_dict()
     # `as_dict` is the RESPONSE shape; the waiting request rebuilds a full `TurnResult`,
     # and the endpoint's own logging reads `status` / `stage` / `error` off it. Sending

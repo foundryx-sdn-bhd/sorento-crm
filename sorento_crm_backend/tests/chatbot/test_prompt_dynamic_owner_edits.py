@@ -224,3 +224,7 @@ def test_rebuilt_from_the_edited_version_it_verifies_against_it():
 def test_the_cli_takes_owner_edits_from():
     args = _script().parse_args(["--owner-edits-from", "54", "--save"])
     assert (args.owner_edits_from, args.save) == (54, True)
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

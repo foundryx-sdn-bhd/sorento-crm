@@ -61,7 +61,9 @@ def test_the_rendered_output_is_identical_to_the_source_for_production():
             .one()
         )
         out, _report = pv.identical_wording_layer(prod.template, db)
-        assert _render_template(db, out) == prod.template
+        # Rendered on both sides, as a turn does (and as the script compares): production
+        # carries the add-on variables of the code constant (`pv.ADDON_VARIABLES`).
+        assert _render_template(db, out) == _render_template(db, prod.template)
 
 
 def test_save_publishes_one_unlabelled_identical_version():
@@ -80,7 +82,7 @@ def test_save_publishes_one_unlabelled_identical_version():
         assert result["identical"] is True
         row = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY, AIPromptVersion.version == result["saved_version"]).one()
         # Plus the account block (#1432), which every rebuilt version carries.
-        assert _render_template(db, row.template) == pv.with_account_block(prod.template)
+        assert _render_template(db, row.template) == pv.with_account_block(_render_template(db, prod.template))
         assert db.query(AIPromptLabel).filter(AIPromptLabel.version_id == row.id).count() == 0
         assert {(l.label, l.version_id) for l in db.query(AIPromptLabel).filter(AIPromptLabel.name == KEY)} == labels_before
 
@@ -263,3 +265,7 @@ def test_the_cli_prints_the_leftover_placeholders_and_exits_1(monkeypatch, capsy
         monkeypatch.setattr(sys, "argv", ["x", "--verify", str(leaky.version), "--against", str(reference.version)])
         assert script.main() == 1
     assert f"# leftover placeholders in v{leaky.version}: ['{LEAK}']" in capsys.readouterr().out
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

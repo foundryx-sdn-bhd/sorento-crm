@@ -269,15 +269,12 @@ def test_local_buy_records_decision_no_oi_row():
         assert second["created"] == 0
         assert _raised_rows(db, local_line.id) == []
 
-        # The overseas line is CARRIED (`created` does not count it): a still-open row
-        # is cancelled-and-re-raised under the new revision regardless of `carried`
-        # (the loop's own rule, unconditional on any still-RAISED row) - so identity is
-        # not what "carried" preserves here, one still-open row is. `overseas_row_id`
-        # is asserted CANCELLED, not still open, which is what tells the two apart.
+        # The overseas line is CARRIED (`created` does not count it) and unchanged, so
+        # its still-open row is the same row, re-filed under the new revision
+        # (ORDERBACK-DELTA, owner 13 Oct 2026), not cancelled and raised again.
         overseas_rows = _raised_rows(db, overseas_line.id)
         still_open = [row for row in overseas_rows if row.state != INQUIRY_CANCELLED]
-        assert len(still_open) == 1
-        assert next(r for r in overseas_rows if r.id == overseas_row_id).state == INQUIRY_CANCELLED
+        assert [r.id for r in still_open] == [overseas_row_id]
 
         # No SECOND header minted for the local-only confirmation - still the one from
         # revision 1.

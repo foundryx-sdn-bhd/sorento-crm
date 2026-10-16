@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSLAPolicy } from '../hooks/useSLAPolicies';
 import { formatDate } from '@/lib/helpers';
+import { useHasPermission } from '@/hooks/usePermissions';
 import SLAPolicyDeleteDialog from './sla-policy-delete-dialog';
 import SLAPolicyTiersTable from './SLAPolicyTiersTable';
 
@@ -20,6 +21,8 @@ export default function SLAPolicyDetail({ slaPolicyId }: SLAPolicyDetailProps) {
   const router = useRouter();
   const { data: slaPolicy, isLoading } = useSLAPolicy(slaPolicyId);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const canEdit = useHasPermission('sla_management.sla_policies.edit');
+  const canDelete = useHasPermission('sla_management.sla_policies.delete');
 
   if (isLoading) {
     return (
@@ -58,14 +61,18 @@ export default function SLAPolicyDetail({ slaPolicyId }: SLAPolicyDetailProps) {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push(`/sla-management/sla-policies/${slaPolicyId}/edit`)}>
-            <Edit className="size-4" />
-            Edit
-          </Button>
-          <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
-            <Trash2 className="size-4" />
-            Delete
-          </Button>
+          {canEdit && (
+            <Button variant="outline" onClick={() => router.push(`/sla-management/sla-policies/${slaPolicyId}/edit`)}>
+              <Edit className="size-4" />
+              Edit
+            </Button>
+          )}
+          {canDelete && (
+            <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
+              <Trash2 className="size-4" />
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -118,7 +125,7 @@ export default function SLAPolicyDetail({ slaPolicyId }: SLAPolicyDetailProps) {
       </Card>
 
       {/* Delete Dialog */}
-      {slaPolicy && (
+      {slaPolicy && canDelete && (
         <SLAPolicyDeleteDialog
           open={deleteDialogOpen}
           closeDialog={() => setDeleteDialogOpen(false)}

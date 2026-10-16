@@ -514,8 +514,25 @@ class TestSGuardNeverCallsStockToolUnfiltered:
         SAME `entities=[]` shape `test_rearch_s3_attribute_first.py::
         TestTierVisiblePromotionsOnly` already pins as a real, working, entity-less
         `list_all`-shaped flow) and must keep calling its own tool today, unlike the
-        S-GUARD case above where entities WERE named but none placed."""
+        S-GUARD case above where entities WERE named but none placed.
+
+        SEC-PROMO-ACCESS: the contact holds a real access level. A contact holding none
+        reads no promotion at all (the call used to go out with `access_levels: []`, which
+        the route read as "every level")."""
         _seed_business_contact(session_factory, variables={})
+        from sqlalchemy import text
+
+        from app.models.access import ContactAccessType
+        from app.services.contact_access_type_service import ContactAccessTypeService
+
+        db = session_factory()
+        db.add(ContactAccessType(code="sorento_dealer", name="Sorento Dealer"))
+        db.flush()
+        contact_pk = db.execute(
+            text("SELECT id FROM respond_contacts WHERE respond_io_id = :rid"), {"rid": str(CONTACT_ID)}
+        ).scalar_one()
+        ContactAccessTypeService(db).set_contact_access_codes(str(contact_pk), ["sorento_dealer"])
+        db.commit()
 
         calls = _capturing_call_tool(monkeypatch)
 

@@ -559,9 +559,9 @@ def test_module_gate_403s_every_route_when_sales_is_not_enabled(monkeypatch):
 
 
 def test_price_tag_debtor_lookup_still_works_after_the_resolver_lift():
-    """`PriceTagRequestService.lookup_debtors_for_agent` calls
-    `app.services.sales.portal_agent.agent_for_contact` after the lift; the lowest code wins
-    when two agents share one contact (the pre-existing rule)."""
+    """`PriceTagRequestService.lookup_debtors_for_agent` still serves the debtor list after
+    the lift. `agent_for_contact` (the CRM to-do's one-agent answer) still picks the lowest
+    code; the portal's debtor list covers both agents (PORTAL-MULTI-AGENT)."""
     from app.services.price_tag_request_service import PriceTagRequestService
     from app.services.sales.portal_agent import agent_for_contact
 

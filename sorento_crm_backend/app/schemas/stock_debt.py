@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import date as DateType
 from typing import Annotated, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.export_split import ExportSplit as ExportSplit
 
@@ -123,6 +123,14 @@ class StockDebtSheetCounts(BaseModel):
     supplier_category: int
 
 
+class StockDebtLocation(BaseModel):
+    """One warehouse of the book's span, for the toolbar's Location select."""
+
+    id: str
+    code: Optional[str] = None
+    name: Optional[str] = None
+
+
 class StockDebtList(BaseModel):
     """The list envelope: the repo's `{data, pagination}` plus the column axis.
 
@@ -136,6 +144,7 @@ class StockDebtList(BaseModel):
     months: List[str]
     tba_month: str
     groups: List[str]
+    locations: List[StockDebtLocation]
     totals: StockDebtTotals
     suppliers: List[StockDebtSupplier]
     sheet_counts: StockDebtSheetCounts
@@ -325,10 +334,40 @@ class StockDebtCell(BaseModel):
     projection: Optional[StockDebtProjection] = None
 
 
-class StockDebtExportIn(BaseModel):
-    """The export route's body (AC-12): every list filter except `page`/`limit`, plus the
-    workbook `split`. Every field optional/defaulted so `{"split": "none"}` alone is a
-    valid request - the same shape `list_stock_debt`'s own query params default to.
+class StockDebtFilters(BaseModel):
+    """Every list filter except `page`/`limit`: the board's own current filters. The export
+    body adds `split` to it; a snapshot stores it as taken. Every field
+    optional/defaulted, the same shape `list_stock_debt`'s own query params default to."""
+
+    query: Optional[str] = None
+    group: Optional[str] = None
+    location: List[str] = []
+    exclude_location: List[str] = []
+    only_debt: bool = True
+    date_from: Optional[DateType] = None
+    date_to: Optional[DateType] = None
+    supplier_ids: List[str] = []
+    book: Book = "all"
+    #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
+    projected: bool = False
+    #: The workbook's auxiliary columns (the board's "Show more" toggle). Not a filter, but
+    #: a snapshot keeps it so its page shows the columns the board was showing.
+    show_aux: bool = False
+
+    @field_validator("location", "exclude_location", mode="before")
+    @classmethod
+    def _location_as_list(cls, value):
+        """A bare string wraps and None is empty."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        return value
+
+
+class StockDebtExportIn(StockDebtFilters):
+    """The export route's body (AC-12): the list filters plus the workbook `split`, so
+    `{"split": "none"}` alone is a valid request.
 
     `date_from`/`date_to` replace `cutoff` and `supplier_ids` replaces `supplier_id`
     (R14/R15): both are REMOVED, not aliased - a caller still sending the old names sends
@@ -337,14 +376,4 @@ class StockDebtExportIn(BaseModel):
     by that ruling and stays for parity with `list()`'s own signature).
     """
 
-    query: Optional[str] = None
-    group: Optional[str] = None
-    only_debt: bool = True
-    date_from: Optional[DateType] = None
-    date_to: Optional[DateType] = None
-    supplier_ids: List[str] = []
-    book: Book = "all"
     split: ExportSplit = "none"
-    show_aux: bool = False
-    #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
-    projected: bool = False

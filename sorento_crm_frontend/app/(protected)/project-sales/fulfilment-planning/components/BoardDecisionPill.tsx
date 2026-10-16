@@ -75,12 +75,38 @@ const VERDICT_LABEL: Record<string, string> = {
  * The states the list's Status filter offers, in the order an owner reads them: the four the
  * planner works with first, then the rest so nothing becomes unfilterable.
  */
+/** The Status filter value for lines whose order inquiry purchasing refused (PR 1622). */
+export const PURCHASING_REJECTED_FILTER = 'purchasing_rejected';
+
+/**
+ * Whether a line passes the Status filter: its verdict is one of the chosen ones, or the
+ * filter asks for "Rejected by purchasing" and the line's order inquiry carries an open
+ * refusal. One rule for the List and the Grid, so the two views never filter differently.
+ */
+export function matchesStatusFilter(
+  contribution: BoardContribution,
+  decision: BoardDecision | null,
+  filter: readonly string[],
+): boolean {
+  if (filter.length === 0) return true;
+  if (
+    filter.includes(PURCHASING_REJECTED_FILTER) &&
+    contribution.order_inquiry?.ack_state === 'rejected'
+  ) {
+    return true;
+  }
+  return filter.includes(verdictOf(contribution, decision));
+}
+
 export const VERDICT_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'saved', label: VERDICT_LABEL.saved },
   { value: 'suggested', label: VERDICT_LABEL.suggested },
   { value: 'confirmed', label: VERDICT_LABEL.confirmed },
   { value: 'change_proposed', label: VERDICT_LABEL.change_proposed },
   { value: 'rejected', label: VERDICT_LABEL.rejected },
+  // PR 1622 (mock v3): not a verdict - the order inquiry's own status - but filterable from
+  // the same control (`matchesStatusFilter`).
+  { value: PURCHASING_REJECTED_FILTER, label: 'Rejected by purchasing' },
   { value: 'stale', label: VERDICT_LABEL.stale },
   { value: 'cancelled', label: VERDICT_LABEL.cancelled },
   { value: 'unplannable', label: 'Needs a location' },
@@ -123,7 +149,13 @@ export type VerdictKey =
 export function verdictOf(
   contribution: Pick<
     BoardContribution,
-    'cancelled' | 'cancelled_at' | 'unplannable' | 'covered' | 'draft' | 'decision'
+    | 'cancelled'
+    | 'cancelled_at'
+    | 'cancel_open_oi_rows'
+    | 'unplannable'
+    | 'covered'
+    | 'draft'
+    | 'decision'
   >,
   decision: BoardDecision | null,
 ): VerdictKey {
@@ -147,7 +179,13 @@ export function verdictOf(
   // quantity nobody is owed would be the board agreeing to supply it.
   // SO-CANCEL-LINE: CS transferred it to Cancel SO and pressed Confirm. No label of its own:
   // the line wears Confirmed, and the cancel reads in Decided.
-  if (contribution.cancelled_at) return 'confirmed';
+  // CANCEL-STOP-AT-SO: an AutoCount Cancel SO left live order inquiry rows for CS to handle,
+  // so nothing about the line is settled yet. With the Transfer to Cancel SO the sync (or CS)
+  // saved it reads Saved, waiting for Confirm; dismissed, it wears Cancelled.
+  if (contribution.cancelled_at) {
+    if (!contribution.cancel_open_oi_rows) return 'confirmed';
+    return draftSource?.verdict === 'cancelled' ? 'saved' : 'cancelled';
+  }
   if (contribution.cancelled) return 'cancelled';
   if (covered) return 'confirmed';
   if (draftSource?.verdict === 'rejected') return 'rejected';

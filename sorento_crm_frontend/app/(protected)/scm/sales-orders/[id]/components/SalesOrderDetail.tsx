@@ -52,6 +52,7 @@ import { DEMAND_CLASS_OPTIONS } from '@/app/(protected)/master-data-management/s
 // The SAME pill the order-inquiry worklist reads, not a second one worded differently:
 // "Placed" has to mean the same thing on both screens or the two disagree in a glance.
 import { OrderInquiryStatePill } from '@/app/(protected)/project-sales/_shared/components/OrderInquiryVerbPill';
+import { OrderInquiryRejectedBadge } from '@/app/(protected)/project-sales/_shared/components/OrderInquiryRejectedBadge';
 import {
   formatMyrExact,
   multiplyMoney,
@@ -61,6 +62,7 @@ import {
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useSalesOrder, useUpdateSalesOrder } from '../../../hooks/useSalesOrders';
+import { useSalesOrderDeliveries } from '../../../hooks/useSalesOrderDeliveries';
 import { useWarehouseOptions } from '../../../hooks/useScmOptions';
 import {
   SELECT_PAGE_SIZE,
@@ -69,13 +71,16 @@ import {
 } from '../../../services/scmOptionsService';
 import { useSalesAgentOptions } from '../../hooks/useSalesAgentOptions';
 import DetailActions from '@/components/common/DetailActions';
-import { salesOrdersPagerQuery } from '../../../hooks/useSalesOrders';
+import { consignmentsPagerQuery, salesOrdersPagerQuery } from '../../../hooks/useSalesOrders';
 import { getSalesOrderUoms, type SalesOrderPlanningChangeBatch } from '../../../services/salesOrderService';
 import { PlanRowDialog } from '../../../components/PlanRowDialog';
 import { PlanNumberButton } from '../../../components/PlanNumberButton';
 import { SoLineLinksBody } from './SoLineLinksBody';
+import { SoLineHistoryBody } from './SoLineHistoryBody';
 import { fmtDate, fmtInt } from '../../../lib/format';
 import { demandClassBadge } from '../../../lib/demandClass';
+import { ConsignmentBadge } from '../../../lib/docType';
+import { consignmentStatusLabel, consignmentStatusVariant } from '../../../lib/consignmentStatus';
 import { transferableBadge } from '../../../lib/transferable';
 import { salesOrderPlannedBadge } from '../../../lib/salesOrderPlanned';
 import {
@@ -106,7 +111,9 @@ import { PLAN_PERMISSION } from '../../lib/planActions';
 // LINE column reads the list's map instead, so the two sit side by side rather than one
 // shadowing the other.
 import { SOURCE_LABELS as LINE_SOURCE_LABELS } from '../../lib/sourceLabels';
+import { cancelSourcesTitle, isPartlyCancelled, PARTLY_CANCELLED } from '@/app/(protected)/scm/lib/autocountCancel';
 import { useHasPermission } from '@/hooks/usePermissions';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The sales-order detail, built to mirror `PurchaseOrderDetail` section for section: the
@@ -370,19 +377,45 @@ function SupplyText({
   );
 }
 
-export function SalesOrderDetail({ id }: { id: string }) {
+export function SalesOrderDetail({
+  id,
+  docType,
+}: {
+  id: string;
+  /** AC-CONSIGN-CRM: 'consignment' on the Consignment route, which backs out to that list. */
+  docType?: 'consignment';
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { data, isLoading, isError } = useSalesOrder(id);
+  const isConsignmentRoute = docType === 'consignment';
+  const listPath = isConsignmentRoute ? '/scm/consignments' : '/scm/sales-orders';
+  const listLabel = isConsignmentRoute ? 'Back to consignments' : 'Back to sales orders';
   // Read here rather than off `so` below, which is narrowed after the loading and error
   // returns: the Lines columns are built above them, and the What-changed dialog titles
   // itself with the order this line belongs to.
   const soNumber = data?.so_number ?? '';
-  const backHref = useBackToListHref('/scm/sales-orders');
+  const backHref = useBackToListHref(listPath);
   // Same gate the list's own "Plan selected" carries (S2, R3): a door that answers 403
   // is worse than not offering it, so the primary is simply absent without it.
+  // Which LINE's truck button was pressed (SO-DELIVERIES-VIEW). The read is enabled by the
+  // first press and stays enabled, so one fetch serves every line's lightbox.
+  const [deliveriesLineId, setDeliveriesLineId] = useState<string | null>(null);
+  const [deliveriesRequested, setDeliveriesRequested] = useState(false);
   const canPlan = useHasPermission(PLAN_PERMISSION);
+  const canOpenDo = useHasPermission('order_management.orders.view');
+  const deliveries = useSalesOrderDeliveries(id, deliveriesRequested);
   const searchParams = useSearchParams();
+  // A consignment opened by a sales-orders link lands on its own page.
+  const isConsignmentOnSalesOrderRoute = !docType && data?.doc_type === 'consignment';
+  const redirectQs = searchParams.toString();
+  const redirected = useRef(false);
+  useEffect(() => {
+    if (isConsignmentOnSalesOrderRoute && !redirected.current) {
+      redirected.current = true;
+      router.replace(`/scm/consignments/${id}${redirectQs ? `?${redirectQs}` : ''}`);
+    }
+  }, [isConsignmentOnSalesOrderRoute, id, redirectQs, router]);
 
   const updateMut = useUpdateSalesOrder();
   const agentOptions = useSalesAgentOptions();
@@ -689,7 +722,33 @@ export function SalesOrderDetail({ id }: { id: string }) {
 
   const columns = useMemo<ColumnDef<SalesOrderLine>[]>(
     () => [
-      // LEFTMOST, so the grid reads left to right in the same order AutoCount does
+      // First, in view and edit: the truck opens the line's Deliveries lightbox. Empty header,
+      // like the trailing Remove line column.
+      {
+        id: 'deliveries',
+        header: () => null,
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }: { row: { original: SalesOrderLine } }) =>
+          isNewLine(row.original) ? null : (
+          <Button
+            type="button"
+            mode="icon"
+            variant="ghost"
+            size="sm"
+            aria-label={`Deliveries for ${row.original.sku}`}
+            title={`Deliveries for ${row.original.sku}`}
+            onClick={() => {
+              setDeliveriesRequested(true);
+              setDeliveriesLineId(row.original.id);
+            }}
+          >
+            <Truck className="size-4" />
+          </Button>
+        ),
+        size: 52,
+      } as ColumnDef<SalesOrderLine>,
+      // First of the data columns after the truck button, so the grid reads in the same order AutoCount does
       // (PLAN-so-lines-autocount-order.md). A saved column order that predates this column
       // has never seen its id, so `mergeColumnOrderWithLeafColumns` (the shared column-config
       // merge every `DataGrid` runs) has no preceding neighbour to anchor it after and places
@@ -767,9 +826,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
             );
           }
           const showProductName =
-            !!row.original.product_name?.trim() &&
-            row.original.product_name.trim().toLowerCase() !==
-              row.original.sku?.trim().toLowerCase();
+            distinctName(row.original.sku, row.original.product_name) !== null;
           return (
             <div className="flex min-w-0 flex-col">
               <span className="font-medium">{row.original.sku}</span>
@@ -837,6 +894,53 @@ export function SalesOrderDetail({ id }: { id: string }) {
           cellClassName: 'text-right tabular-nums',
         },
       },
+      {
+        // AC-CANCEL-CRM (owner hand test, 13 Oct): AutoCount Cancel SO is part of
+        // TransferedQty, so without its own figure a cancelled line reads ordered 36,
+        // delivered 0, outstanding 0 with nothing saying why. The tooltip names each cancel
+        // document and how it was matched to this line.
+        id: 'qty_cancelled',
+        accessorFn: (line) => Number(line.qty_cancelled ?? 0),
+        header: ({ column }) => <DataGridColumnHeader title="Qty cancelled" column={column} />,
+        cell: ({ row }) => {
+          const qty = Number(row.original.qty_cancelled ?? 0);
+          return (
+            <span
+              data-testid={`qty-cancelled-${row.original.id}`}
+              title={cancelSourcesTitle(row.original.cancels)}
+              className="truncate"
+            >
+              {fmtInt(qty)}
+            </span>
+          );
+        },
+        size: 130,
+        meta: {
+          headerTitle: 'Qty cancelled',
+          headerClassName: 'text-right',
+          cellClassName: 'text-right tabular-nums',
+        },
+      },
+      // AC-CONSIGN-CRM (owner Q6 a): what a Consignment Return handed back. Reporting only, so
+      // it never feeds delivered or outstanding; a plain sales order has no such figure.
+      ...(data?.doc_type === 'consignment'
+        ? [
+            {
+              id: 'qty_returned',
+              accessorFn: (line) => Number(line.qty_returned ?? 0),
+              header: ({ column }) => (
+                <DataGridColumnHeader title="Qty returned" column={column} />
+              ),
+              cell: ({ row }) => fmtInt(Number(row.original.qty_returned ?? 0)),
+              size: 130,
+              meta: {
+                headerTitle: 'Qty returned',
+                headerClassName: 'text-right',
+                cellClassName: 'text-right tabular-nums',
+              },
+            } as ColumnDef<SalesOrderLine>,
+          ]
+        : []),
       {
         id: 'outstanding',
         // Computed here rather than sent, so it cannot disagree with the two columns beside
@@ -1092,15 +1196,22 @@ export function SalesOrderDetail({ id }: { id: string }) {
         header: ({ column }) => <DataGridColumnHeader title="Status" column={column} />,
         // The same light chip as every other pill on this page, worded the way AutoCount
         // words it - the same helper the header pill and the list column use.
-        cell: ({ row }) => (
-          <Badge
-            variant={salesOrderStatusVariant(row.original.line_status ?? 'open')}
-            appearance="light"
-            size="md"
-          >
-            {salesOrderStatusLabel(row.original.line_status ?? 'open')}
-          </Badge>
-        ),
+        // A line AutoCount Cancel SO cancelled only part of reads "Partly cancelled"
+        // (AC-CANCEL-CRM); a whole cancel is the line's own `cancelled`.
+        cell: ({ row }) =>
+          isPartlyCancelled(row.original) ? (
+            <Badge variant={PARTLY_CANCELLED.variant} appearance="light" size="md">
+              {PARTLY_CANCELLED.label}
+            </Badge>
+          ) : (
+            <Badge
+              variant={salesOrderStatusVariant(row.original.line_status ?? 'open')}
+              appearance="light"
+              size="md"
+            >
+              {salesOrderStatusLabel(row.original.line_status ?? 'open')}
+            </Badge>
+          ),
         size: 130,
         meta: { headerTitle: 'Status' },
       },
@@ -1161,11 +1272,21 @@ export function SalesOrderDetail({ id }: { id: string }) {
                   {reference}
                 </span>
               )}
-              <OrderInquiryStatePill state={inquiry.state} />
+              {/* PR 1622 (owner, mock v3): an open purchasing refusal IS this inquiry's
+                  status on the line, with who/when/why behind the info icon. */}
+              {inquiry.ack_state === 'rejected' ? (
+                <OrderInquiryRejectedBadge
+                  refusal={inquiry}
+                  testId={`so-line-oi-rejected-${row.original.id}`}
+                />
+              ) : (
+                <OrderInquiryStatePill state={inquiry.state} />
+              )}
             </div>
           );
         },
-        size: 200,
+        // Wide enough for a full OI number beside the Rejected badge and its info icon.
+        size: 240,
         meta: { headerTitle: 'Order inquiry' },
       },
       {
@@ -1307,6 +1428,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
       amountTotal,
       handleRemoveLine,
       soNumber,
+      data?.doc_type,
     ],
   );
 
@@ -1348,7 +1470,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
   // Back carries the list query the row click wrote (S3-01). It lives on the
   // toolbar row now; the empty states below keep one of their own.
   const backLink = (
-    <BackToList listPath="/scm/sales-orders" label="Back to sales orders" />
+    <BackToList listPath={listPath} label={listLabel} />
   );
 
   if (isLoading) {
@@ -1380,6 +1502,7 @@ export function SalesOrderDetail({ id }: { id: string }) {
   const lineCount = so.line_count ?? lines.length;
   // How far the order has been planned, in the same chip the list carries.
   const plannedBadge = salesOrderPlannedBadge(so.planned_lines, so.plannable_lines);
+  const deliveriesLine = deliveriesLineId ? (lines.find((l) => l.id === deliveriesLineId) ?? null) : null;
   const linksLine = linksLineId ? (lines.find((l) => l.id === linksLineId) ?? null) : null;
 
   const handleSave = async () => {
@@ -1473,18 +1596,28 @@ export function SalesOrderDetail({ id }: { id: string }) {
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex min-w-0 flex-wrap items-center gap-3">
                 <CardTitle className="text-lg">{so.so_number}</CardTitle>
-                <Badge variant={salesOrderStatusVariant(so.status)} appearance="light" size="md">
-                  {salesOrderStatusLabel(so.status)}
-                </Badge>
-                {/* How far the order has been PLANNED, beside the status it keeps being
-                    confused with. The SAME chip the list carries, in the header rather than a
-                    tab body because it is read-only metadata about the whole record - so view
-                    and edit show it identically, with nothing to change about it here. */}
+                {/* CONSIGN-DELIVERED-FIX: a consignment reads where its goods are. */}
                 <Badge
-                  variant={plannedBadge.variant}
+                  variant={
+                    so.doc_type === 'consignment'
+                      ? consignmentStatusVariant(so)
+                      : salesOrderStatusVariant(so.status)
+                  }
                   appearance="light"
                   size="md"
                 >
+                  {so.doc_type === 'consignment'
+                    ? consignmentStatusLabel(so)
+                    : salesOrderStatusLabel(so.status)}
+                </Badge>
+                <ConsignmentBadge docType={so.doc_type} size="md" />
+                {/* How far the order has been PLANNED, beside the status it keeps being
+                    confused with. The SAME chip the list carries, in the header rather than a
+                    tab body because it is read-only metadata about the whole record - so view
+                    and edit show it identically, with nothing to change about it here. A
+                    consignment carries it too: it is planned like a sales order at its own
+                    bin (CONSIGN-PLAN, which supersedes CONSIGN-DELIVERED-FIX's "never planned"). */}
+                <Badge variant={plannedBadge.variant} appearance="light" size="md">
                   {plannedBadge.label}
                 </Badge>
               </div>
@@ -1518,10 +1651,10 @@ export function SalesOrderDetail({ id }: { id: string }) {
             ) : (
               <DetailActions
                 pager={{
-                  ...salesOrdersPagerQuery,
-                  detailPath: '/scm/sales-orders',
+                  ...(isConsignmentRoute ? consignmentsPagerQuery : salesOrdersPagerQuery),
+                  detailPath: listPath,
                   currentId: id,
-                  ariaLabel: 'sales order',
+                  ariaLabel: isConsignmentRoute ? 'consignment' : 'sales order',
                 }}
                 actions={actions}
                 pendingAction={deletionPending}
@@ -1534,7 +1667,9 @@ export function SalesOrderDetail({ id }: { id: string }) {
                 // the permission the board's own page requires: a door that answers 403 is
                 // worse than no door. Also absent off a non-project demand class (AC-S2-6b):
                 // the fulfilment board only accepts project demand, so a retail order's Plan
-                // would open onto an empty board.
+                // would open onto an empty board. A consignment gets Plan exactly like a sales
+                // order (CONSIGN-PLAN supersedes CONSIGN-DELIVERED-FIX's "nothing to plan"):
+                // its goods sit at CON and are borrowed from there on the board.
                 primary={
                   canPlan && so.demand_class === 'project' ? (
                     <Button asChild variant="primary" size="sm" className="gap-1.5">
@@ -1948,7 +2083,9 @@ export function SalesOrderDetail({ id }: { id: string }) {
             // who had already used this screen kept the OLD 13th-of-16 slot regardless of the
             // code change (AC-K1 failed on a live account for exactly this reason). A fresh
             // key means everyone reads R4's own order once, same as a first-time visitor.
-            listingKey="scm.dashboard.view::sales-order-lines-v2"
+            // -v3 (AC-CANCEL-CRM, owner 13 Oct): Qty cancelled and Status must show by
+            // default; a saved -v2 preference could keep either hidden.
+            listingKey="scm.dashboard.view::sales-order-lines-v3"
             rowAttributes={lineDeepLink.rowAttributes}
             rowClassName={lineDeepLink.rowClassName}
           >
@@ -2064,6 +2201,27 @@ export function SalesOrderDetail({ id }: { id: string }) {
           }}
         >
           <SoLineLinksBody links={linksLine.linked_to ?? []} />
+        </PlanRowDialog>
+      ) : null}
+
+      {deliveriesLine ? (
+        <PlanRowDialog
+          kind="deliveries"
+          productCode={deliveriesLine.sku}
+          productName={deliveriesLine.product_name}
+          open
+          onOpenChange={(next) => {
+            if (!next) setDeliveriesLineId(null);
+          }}
+        >
+          <SoLineHistoryBody
+            line={deliveriesLine}
+            data={deliveries.data}
+            isLoading={deliveries.isLoading}
+            isError={deliveries.isError}
+            onRetry={() => void deliveries.refetch()}
+            canOpenDo={canOpenDo}
+          />
         </PlanRowDialog>
       ) : null}
     </div>

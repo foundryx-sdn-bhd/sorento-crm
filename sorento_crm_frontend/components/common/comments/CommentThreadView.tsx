@@ -65,6 +65,8 @@ export interface CommentThreadViewProps {
   onEdit: (id: string, body: string) => Promise<void>;
   /** The host's delete control (a server-deferred countdown), rendered where Delete goes. */
   renderDelete?: (comment: ThreadComment) => ReactNode;
+  /** Extra host controls beside Reply (a like button, say). */
+  renderExtra?: (comment: ThreadComment) => ReactNode;
   /** True while that comment's delete countdown runs: the row dims. */
   isDeleting?: (comment: ThreadComment) => boolean;
   previewItem?: (attachment: ThreadAttachment) => AttachmentPreviewItem;
@@ -90,6 +92,7 @@ export function CommentThreadView({
   onAdd,
   onEdit,
   renderDelete,
+  renderExtra,
   isDeleting,
   previewItem,
   fetchBytes,
@@ -238,6 +241,7 @@ export function CommentThreadView({
                   Reply
                 </Button>
               ) : null}
+              {renderExtra ? renderExtra(comment) : null}
               {canEdit ? (
                 <Button
                   type="button"

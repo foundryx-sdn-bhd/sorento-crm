@@ -23,6 +23,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { EM_DASH, fmtDoc, fmtInt } from '../../lib/format';
 import { splitDispositionRows, type M8DispositionAction, type M8DispositionRow } from '../lib/planRow';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * SCM M8 - read-only Stock allocation list (M8-C12 / M8-F18; internal key stays
@@ -96,10 +97,14 @@ function DispositionDetailDialog({
             <div className="flex items-center gap-2">
               <ActionBadge action={row.action} />
               <span className="font-semibold">{row.sku}</span>
-              <span className="text-sm text-muted-foreground">{EM_DASH}</span>
-              <span className="truncate text-sm text-muted-foreground" title={row.product_name}>
-                {row.product_name}
-              </span>
+              {distinctName(row.sku, row.product_name) ? (
+                <>
+                  <span className="text-sm text-muted-foreground">{EM_DASH}</span>
+                  <span className="truncate text-sm text-muted-foreground" title={row.product_name}>
+                    {row.product_name}
+                  </span>
+                </>
+              ) : null}
             </div>
 
             <div className="rounded-lg border bg-muted/30 p-3">
@@ -184,9 +189,11 @@ function DispositionTable({
             >
               <td className="px-3 py-2">
                 <div className={cn('font-medium', muted && 'font-normal')}>{r.sku}</div>
-                <div className="truncate text-xs text-muted-foreground" title={r.product_name}>
-                  {r.product_name}
-                </div>
+                {distinctName(r.sku, r.product_name) ? (
+                  <div className="truncate text-xs text-muted-foreground" title={r.product_name}>
+                    {r.product_name}
+                  </div>
+                ) : null}
               </td>
               <td className="px-3 py-2">
                 <ActionBadge action={r.action} />

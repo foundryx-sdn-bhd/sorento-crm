@@ -88,6 +88,14 @@ _assert_dev_login_safe(
     in_container=_running_in_container(),
 )
 
+from app.utils.field_encryption import assert_field_encryption_ready
+
+assert_field_encryption_ready(
+    settings.environment,
+    environment_explicit="environment" in settings.model_fields_set,
+    production_entrypoint=_running_under_gunicorn(),
+)
+
 # Create FastAPI app
 app = FastAPI(
     title="Sorento CRM API",
@@ -206,7 +214,10 @@ def _cors_headers_for(request: Request) -> dict:
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     validation_logger = logging.getLogger(__name__)
-    validation_logger.error(f"Validation error: {exc.errors()}")
+    # `input` can be the whole request body (a missing-field error carries it), and a body can
+    # hold a secret such as an AI provider key, so it never reaches the log.
+    logged_errors = [{k: v for k, v in e.items() if k != "input"} for e in exc.errors()]
+    validation_logger.error(f"Validation error: {logged_errors}")
     validation_logger.error(f"Request URL: {request.url}")
     validation_logger.error(f"Request method: {request.method}")
     return JSONResponse(
@@ -655,7 +666,36 @@ async def health_check():
             "prompt_version": prompt_version,
         }
     except Exception as e:
+        # The error stays server-side: a Postgres connection error names the internal host
+        # and port.
+        logging.getLogger(__name__).error("/health: database check failed: %s", str(e)[:200])
+        return JSONResponse(status_code=503, content={"status": "unhealthy"})
+
+
+@app.get("/api/v1/health")
+def public_health_check():
+    """Outside monitor probe (HA-MONITOR): 200 only if the DB answers.
+
+    Prod's `/health` on the public host is answered by nginx itself, which sends only
+    `/api/v1/*` here, so Uptime Kuma polls this path. Registered on the app, not on
+    `api_router`, so it carries no auth or company-scope dependency. Unauthenticated and
+    polled every minute, so it is one `SELECT 1` and says only status + checks: no git
+    sha, no prompt version, no error text (a DB error can name the host and user).
+    """
+    from sqlalchemy import text
+    from app import database
+
+    db = None
+    try:
+        db = database.SessionLocal()
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        logging.getLogger(__name__).warning("api/v1/health: database check failed: %s", type(e).__name__)
         return JSONResponse(
             status_code=503,
-            content={"status": "unhealthy", "error": str(e)[:200]},
+            content={"status": "unhealthy", "checks": {"database": "error"}},
         )
+    finally:
+        if db is not None:
+            db.close()
+    return {"status": "healthy", "checks": {"database": "ok"}}

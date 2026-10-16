@@ -27,7 +27,16 @@ from app.services.reports.datasets.sales_order_lines import channel_label
 from app.services.sales_report_service import _basis_figures, _bucket_expr, _common_filters, _per_line_exprs
 
 
-def _base(ctx: Any) -> sa.Select:
+def _base_for(basis: str):
+    # AC-CONSIGN-CRM: only the outstanding basis keeps consignment lines (open demand); ordered
+    # and delivered are sales, which a consignment is not.
+    def _base(ctx: Any) -> sa.Select:
+        return _select(include_consignments=basis == "outstanding")
+
+    return _base
+
+
+def _select(*, include_consignments: bool) -> sa.Select:
     return (
         sa.select()
         .select_from(SalesOrderLine)
@@ -46,6 +55,7 @@ def _base(ctx: Any) -> sa.Select:
                     date_from=None,
                     date_to=None,
                     bucket_expr=_bucket_expr(),
+                    include_consignments=include_consignments,
                 )
             )
         )
@@ -155,7 +165,7 @@ def _definition(basis: str) -> reg.ReportDefinition:
         scope="company",
         columns=columns,
         date_bases=(reg.DateBasis("order_date", "Line date", _bucket_expr()),),
-        base=_base,
+        base=_base_for(basis),
         company_column=SalesOrder.company_id,
         product_id_column=SalesOrderLine.product_id,
     )

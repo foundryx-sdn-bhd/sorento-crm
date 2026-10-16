@@ -161,6 +161,12 @@ export interface Project {
   lead_source?: string | null;
   lead_created_at?: string | null;
   lead_owner_user_id?: string | null;
+  /** The lead's buyer: a project has no customer of its own (owner, 13 Oct). */
+  customer_id?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  /** The customer's main contact, which the quotation header's Attn defaults to. */
+  customer_attn?: string | null;
 
   last_meaningful_activity_at?: string | null;
   days_since_last_activity?: number | null;
@@ -657,18 +663,64 @@ export interface QuotationLineImage {
   filename?: string | null;
   /** Photographs somebody could choose between. Zero on `no_photos` and `off_catalog`. */
   candidate_count: number;
+  /** Those photographs, for the picker that sets the line's `image_attachment_id`. */
+  candidates?: QuotationLineFileCandidate[];
+}
+
+/** One image a line's photo or drawing could be: a signed thumbnail and the original. */
+export interface QuotationLineFileCandidate {
+  attachment_id: string;
+  filename?: string | null;
+  url?: string | null;
+  preview_url?: string | null;
+}
+
+/**
+ * The drawing cell: the product's "Technical Specifications" images. `chosen` is a picked or
+ * issued id, `default` the product's first drawing by upload.
+ */
+export interface QuotationLineDrawing {
+  state: 'chosen' | 'default' | 'no_drawings' | 'off_catalog';
+  url?: string | null;
+  preview_url?: string | null;
+  attachment_id?: string | null;
+  filename?: string | null;
+  candidate_count: number;
+  candidates?: QuotationLineFileCandidate[];
+}
+
+/** The photo and drawing cells for a product on a line not saved yet. */
+export interface QuotationLineImages {
+  product_image: QuotationLineImage;
+  technical_drawing: QuotationLineDrawing;
+}
+
+/** One part of a set, as FROZEN on the line when the set was picked. */
+export interface QuotationSetPart {
+  product_id: string;
+  product_code: string;
+  description?: string | null;
+  /** A server decimal string. */
+  quantity: string;
+  is_driver: boolean;
 }
 
 export interface QuotationLine {
   id: string;
   version_id: string;
   product_id?: string | null;
+  /** A product SET quoted as one line. Never together with `product_id`. */
+  product_set_id?: string | null;
+  set_parts?: QuotationSetPart[];
   product_code?: string | null;
   description?: string | null;
   list_price?: string | null;
   image_attachment_id?: string | null;
   /** The picture cell. Absent on a payload from before S21. */
   product_image?: QuotationLineImage | null;
+  /** The drawing picked for (or issued with) this line. */
+  drawing_attachment_id?: string | null;
+  technical_drawing?: QuotationLineDrawing | null;
 
   unit_price: string;
   quantity: string;
@@ -699,6 +751,7 @@ export interface QuotationLine {
 
 export interface QuotationLineBody {
   product_id?: string | null;
+  product_set_id?: string | null;
   description_snapshot?: string | null;
   unit_price?: string;
   quantity?: string;
@@ -707,6 +760,7 @@ export interface QuotationLineBody {
   sort_order?: number;
   notes?: string | null;
   image_attachment_id?: string | null;
+  drawing_attachment_id?: string | null;
 
   item_label?: string | null;
   /** The REQUEST's name for the brand. The response calls the same value `brand`. */
@@ -756,8 +810,9 @@ export interface QuotationOutcomeBody {
 export interface ProjectSeries {
   id: string;
   name: string;
-  brand_id?: string | null;
-  brand_name?: string | null;
+  /** Picked brands, in brand-name order. Empty means every brand. */
+  brand_ids: string[];
+  brand_names: string[];
   description?: string | null;
   is_active: boolean;
   category_ids: string[];
@@ -792,6 +847,20 @@ export interface SeriesProductRow {
    * second implementation in the browser could disagree with the one that blocks a save.
    */
   derived_floor?: string | null;
+  /** Of the series' brand and under one of its categories. Out-of-scope rows can only be removed. */
+  in_scope: boolean;
+}
+
+/** One product SET priced on a series; the twin of `SeriesProductRow`. */
+export interface SeriesSetRow {
+  product_set_id: string;
+  set_code?: string | null;
+  set_name?: string | null;
+  part_codes: string[];
+  selling_price?: string | null;
+  max_discount_pct?: string | null;
+  /** Computed on the SERVER, null unless both numbers are set. */
+  derived_floor?: string | null;
 }
 
 /** A list of product codes to load onto a series (S18). */
@@ -820,6 +889,8 @@ export interface SeriesProductImportResult {
   removed: number;
   product_count: number;
   unmatched_codes: string[];
+  /** Codes that were a set or a family rather than a product, with the products they stand for. */
+  resolved?: { code: string; via: 'set' | 'family'; members: string[] }[];
 }
 
 /**

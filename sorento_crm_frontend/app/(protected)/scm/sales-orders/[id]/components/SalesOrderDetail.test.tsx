@@ -1564,6 +1564,57 @@ describe('SalesOrderDetail - what has already been planned about a line', () => 
     );
   });
 
+  /**
+   * PR 1622 (owner, mock v3): an open purchasing refusal is the inquiry's status on the line,
+   * a "Rejected" badge whose info text names who, when and why. It replaces the state word
+   * only while the refusal is open; the backend drops `ack_state` once CS decides again.
+   */
+  it('PR 1622: shows the open refusal as a Rejected badge with who, when and why', () => {
+    useSalesOrder.mockReturnValue({
+      data: planned({
+        order_inquiry: {
+          inquiry_no: 'OI-000123',
+          state: 'raised',
+          inquiry_id: 'oi-header-1',
+          row_id: 'oi-row-9',
+          ack_state: 'rejected',
+          rejected_reason: 'DISCON',
+          rejected_by_name: 'Joey',
+          rejected_at: '2026-10-13T08:32:00',
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    renderDetail();
+    openTab('Lines');
+
+    const row = screen.getByText('SKU-PLANNED').closest('tr') as HTMLElement;
+    expect(within(row).getByText('OI-000123').closest('a')).not.toBeNull();
+    const badge = within(row).getByTestId('so-line-oi-rejected-l-planned');
+    expect(badge).toHaveTextContent(/^Rejected$/);
+    expect(badge.getAttribute('title')).toMatch(
+      /^Rejected by Joey on 13\/10\/2026, 4:32\s?pm: DISCON$/i,
+    );
+    expect(within(row).queryByText('To buy')).toBeNull();
+  });
+
+  it('PR 1622: shows the plain state word again once the refusal is answered', () => {
+    useSalesOrder.mockReturnValue({
+      data: planned({
+        order_inquiry: { inquiry_no: 'OI-000123', state: 'placed', ack_state: null },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    renderDetail();
+    openTab('Lines');
+
+    const row = screen.getByText('SKU-PLANNED').closest('tr') as HTMLElement;
+    expect(within(row).getByText('On PO/SPO')).toBeInTheDocument();
+    expect(within(row).queryByTestId('so-line-oi-rejected-l-planned')).toBeNull();
+  });
+
   it('AC-B6-2: stays plain text - no link - while inquiry_id/row_id are not yet on the line', () => {
     useSalesOrder.mockReturnValue({ data: planned(), isLoading: false, isError: false });
     renderDetail();
@@ -2428,5 +2479,90 @@ describe('SalesOrderDetail - What changed dialog Was / Now sides', () => {
       to: null,
     });
     expect(dialog).toHaveTextContent('Cancelled');
+  });
+});
+
+// AC-CANCEL-CRM (owner hand test, 13 Oct): "where do I see the cancelled quantity?" AutoCount
+// Cancel SO is in TransferedQty, so without its own column a cancelled line reads as ordered
+// 36, delivered 0, outstanding 0 with nothing saying why.
+describe('SalesOrderDetail - AutoCount Cancel SO on the lines', () => {
+  function cancelledOrder() {
+    return so({
+      lines: [
+        {
+          id: 'l-1', line_no: 1, sku: 'CB110', product_name: 'Cabinet 110',
+          qty_ordered: 36, qty_delivered: 0, qty_cancelled: 36, outstanding_qty: 0, uom: 'PCS',
+          warehouse_code: 'BRW-BB', line_status: 'cancelled', required_date: '2026-10-01',
+          cancels: [{ doc_no: 'XS-016501', qty: 36, match_reason: 'line_key' }],
+        },
+        {
+          id: 'l-2', line_no: 2, sku: 'CB110-R', product_name: 'Cabinet 110 R',
+          qty_ordered: 10, qty_delivered: 4, qty_cancelled: 6, outstanding_qty: 0, uom: 'PCS',
+          warehouse_code: 'BRW-BB', line_status: 'closed', required_date: '2026-10-01',
+          cancels: [
+            { doc_no: 'XS-016502', qty: null, match_reason: 'group_whole' },
+            { doc_no: 'XS-016503', qty: 2, match_reason: 'item' },
+          ],
+        },
+        {
+          id: 'l-3', line_no: 3, sku: 'CB110LP', product_name: 'Cabinet 110 LP',
+          qty_ordered: 10, qty_delivered: 0, qty_cancelled: 4, outstanding_qty: 6, uom: 'PCS',
+          warehouse_code: 'BRW-BB', line_status: 'open', required_date: '2026-10-01',
+          cancels: [{ doc_no: 'XS-016504', qty: 4, match_reason: 'item' }],
+        },
+      ],
+    });
+  }
+
+  it('states Qty cancelled in its own column, right after Qty delivered', () => {
+    useSalesOrder.mockReturnValue({ data: cancelledOrder(), isLoading: false, isError: false });
+    renderDetail();
+    openTab('Lines');
+
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent ?? '');
+    const delivered = headers.findIndex((h) => h.includes('Qty delivered'));
+    expect(headers[delivered + 1]).toContain('Qty cancelled');
+    expect(screen.getByTestId('qty-cancelled-l-1')).toHaveTextContent('36');
+    expect(screen.getByTestId('qty-cancelled-l-2')).toHaveTextContent('6');
+  });
+
+  it('names each cancel document and how it was matched, on the figure', () => {
+    useSalesOrder.mockReturnValue({ data: cancelledOrder(), isLoading: false, isError: false });
+    renderDetail();
+    openTab('Lines');
+
+    expect(screen.getByTestId('qty-cancelled-l-1')).toHaveAttribute(
+      'title', 'XS-016501: 36 (line key)',
+    );
+    expect(screen.getByTestId('qty-cancelled-l-2')).toHaveAttribute(
+      'title', 'XS-016502 (every line of the item)\nXS-016503: 2 (item)',
+    );
+  });
+
+  it('reads Cancelled for a whole cancel, Partly cancelled only while a partial one is open', () => {
+    // Owner, 13 Oct: a done line reads Completed (the Qty cancelled column carries the
+    // cancel); "Partly cancelled" is for a line still open.
+    useSalesOrder.mockReturnValue({ data: cancelledOrder(), isLoading: false, isError: false });
+    renderDetail();
+    openTab('Lines');
+
+    const rows = screen.getAllByRole('row');
+    const row1 = rows.find((r) => within(r).queryByText('CB110'));
+    const row2 = rows.find((r) => within(r).queryByText('CB110-R'));
+    const row3 = rows.find((r) => within(r).queryByText('CB110LP'));
+    expect(within(row1!).getByText('Cancelled')).toBeInTheDocument();
+    expect(within(row2!).getByText('Completed')).toBeInTheDocument();
+    expect(within(row2!).queryByText('Partly cancelled')).not.toBeInTheDocument();
+    expect(within(row3!).getByText('Partly cancelled')).toBeInTheDocument();
+  });
+
+  it('reads 0 with no tooltip on a line nothing cancelled, like the other quantities', () => {
+    useSalesOrder.mockReturnValue({ data: so(), isLoading: false, isError: false });
+    renderDetail();
+    openTab('Lines');
+
+    const cell = screen.getAllByTestId(/^qty-cancelled-/)[0];
+    expect(cell).toHaveTextContent(/^0$/);
+    expect(cell).not.toHaveAttribute('title');
   });
 });

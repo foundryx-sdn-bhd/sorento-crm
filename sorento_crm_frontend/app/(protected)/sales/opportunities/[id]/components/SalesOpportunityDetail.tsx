@@ -45,6 +45,7 @@ import {
   customerTriggerLabel,
 } from '../../lib/customerOrProspect';
 import type { SalesOpportunityTransition } from '../../types/salesOpportunity.types';
+import { codeWithName } from '@/lib/product-display';
 
 /**
  * `/sales/opportunities/{id}` detail page (UAC S2-11, S2-12, S2-13; plan section 16; Phase 3
@@ -175,7 +176,7 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
       productId: line.product_id,
       qty: String(line.qty),
       unitPrice: line.unit_price ?? '',
-      productLabel: `${line.product_code} - ${line.product_name}`,
+      productLabel: codeWithName(line.product_code, line.product_name),
     }));
     setLines(seededLines);
     // F7: only start "touched" (the typed value wins) when the stored amount does not
@@ -508,8 +509,8 @@ export default function SalesOpportunityDetail({ id }: { id: string }) {
                   </li>
                   {existingLines.map((line) => (
                     <li key={line.id} className="flex items-center gap-2 px-3 py-2">
-                      <span className="min-w-0 flex-1 truncate" title={`${line.product_code} - ${line.product_name}`}>
-                        {line.product_code} - {line.product_name}
+                      <span className="min-w-0 flex-1 truncate" title={codeWithName(line.product_code, line.product_name)}>
+                        {codeWithName(line.product_code, line.product_name)}
                       </span>
                       <span className="w-10 shrink-0 text-end text-muted-foreground">{line.qty}</span>
                       <span className="w-20 shrink-0 text-end text-muted-foreground">

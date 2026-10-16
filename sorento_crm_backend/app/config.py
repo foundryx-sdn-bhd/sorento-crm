@@ -4,7 +4,8 @@ from pathlib import Path as _Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List, Union
+from datetime import date as _date
+from typing import List, Optional, Union
 
 
 def _resolve_settings_env_file() -> str:
@@ -49,6 +50,12 @@ class Settings(BaseSettings):
     # JWT Authentication
     jwt_secret: str
     jwt_algorithm: str = "HS256"
+
+    # Stored-secret encryption (app/utils/field_encryption.py). Comma-separated Fernet keys,
+    # current first: the first encrypts, every one decrypts. Kept apart from JWT_SECRET so
+    # rotating that loses no stored secret. Unset = JWT_SECRET-derived key (the old scheme).
+    # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    field_encryption_key: str = ""
     
     # API Server
     api_host: str = "0.0.0.0"
@@ -375,6 +382,13 @@ class Settings(BaseSettings):
     # delivery-orders pull is refused until BOTH Excel files have been compared with zero
     # differences; when False (default) the compare is advisory, as on Products / Stock.
     autocount_do_pull_confirm_requires_match: bool = False  # AUTOCOUNT_DO_PULL_CONFIRM_REQUIRES_MATCH
+    # DO-HISTORY (owner 13 Oct 2026): an AutoCount DO that lands (created, or an untracked Order
+    # Tracking row adopted) with a DocDate before this date has no tracking to come, so it lands
+    # DELIVERED with `orders.tracking_assumed_at` set and no delivery date. Unset = off. Set to
+    # 2026-07-01 for the 2023-09-01 history backfill. Fallback only (DO-BACKFILL-SETTING): the
+    # date saved on Settings > Integrations > AutoCount wins and needs no restart; this env
+    # value applies while none is saved (`app/services/runtime_settings.py`).
+    do_assume_delivered_before: Optional[_date] = None  # DO_ASSUME_DELIVERED_BEFORE
 
     model_config = SettingsConfigDict(
         env_file=_resolve_settings_env_file(),

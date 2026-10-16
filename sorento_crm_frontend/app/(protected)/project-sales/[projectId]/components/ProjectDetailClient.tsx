@@ -18,6 +18,7 @@ import {
   Receipt,
   ShoppingCart,
   Trash2,
+  UserCog,
   Users,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -29,8 +30,10 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
+import { useHasPermission } from '@/hooks/usePermissions';
 import DetailActions from '@/components/common/DetailActions';
 import { useProjectStatusGraph } from '@/app/(protected)/project-sales/_shared/hooks/useProjectStatusGraph';
+import type { Project } from '../../_shared/types/project.types';
 import {
   projectsPagerQuery,
   useChangeProjectStatus,
@@ -49,6 +52,7 @@ import { ProjectStatusPill } from './ProjectStatusPill';
 import { ProjectActivityPanel } from './ProjectActivityPanel';
 import { ProjectDocumentsPanel } from './ProjectDocumentsPanel';
 import { ProjectAccessPanel } from './ProjectAccessPanel';
+import { ReassignProjectDialog } from './ReassignProjectDialog';
 import { DeliverySchedulesPanel } from './DeliverySchedulesPanel';
 import { PurchaseOrdersPanel } from './PurchaseOrdersPanel';
 import { SalesOrdersPanel } from './SalesOrdersPanel';
@@ -97,6 +101,9 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   const move = useChangeProjectStatus();
   const remove = useDeleteProject();
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [reassigning, setReassigning] = React.useState(false);
+  // Moving an owner is a manager act server-side too (project_service.update_project).
+  const canReassign = useHasPermission('projects.projects.manage');
 
   function selectTab(tab: TabId) {
     const next = new URLSearchParams(searchParams.toString());
@@ -128,7 +135,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
           {error instanceof Error ? error.message : 'It may have been deleted.'}
         </p>
         <Button asChild variant="outline" className="mt-4">
-          <Link href="/project-sales/pipeline">Back to the pipeline</Link>
+          <Link href="/project-sales/pipeline">Back to projects</Link>
         </Button>
       </div>
     );
@@ -139,6 +146,26 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
     ? availableStatusMoves(graph.data, project.status_id)
     : [];
   const { secondary: secondaryMoves } = splitStatusMoves(moves);
+
+  /**
+   * Spec In is where quoting starts, so making it opens the new quotation page (owner,
+   * 13 Oct). Only after the move lands: a refused move leaves the person where they were.
+   * Matched on the rung's KEY, which an admin relabel cannot break.
+   */
+  function moveTo(toStatusId: string) {
+    const target = moves.find((option) => option.toStatusId === toStatusId);
+    move.mutate(
+      { projectId: project!.id, toStatusId },
+      {
+        onSuccess: () => {
+          // Forward only: Quoted -> Spec In ("Re-specify") is a correction, not a new quote.
+          if (target?.toKey === 'specified' && target.isForward) {
+            router.push(`/project-sales/${project!.id}/quotation-documents/new`);
+          }
+        },
+      },
+    );
+  }
 
   return (
     // The shared drawer (AC-H1): posting, @-mentions and internal notes come from the same
@@ -186,10 +213,6 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             {!project.can_edit && <Badge variant="outline">Read only</Badge>}
           </div>
           <h2 className="mt-1 text-xl font-semibold">{project.title}</h2>
-          <p className="text-sm text-muted-foreground">
-            {[project.developer_name, project.location].filter(Boolean).join(' · ') ||
-              'No developer or location recorded yet'}
-          </p>
         </div>
 
         {/* Pager, gear, primary (D6). One primary action, and everything else behind
@@ -215,15 +238,19 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
                   <Pencil className="size-4" aria-hidden />
                   Edit project
                 </DropdownMenuItem>
+                {canReassign && (
+                  <DropdownMenuItem onSelect={() => setReassigning(true)}>
+                    <UserCog className="size-4" aria-hidden />
+                    Reassign
+                  </DropdownMenuItem>
+                )}
                 {/* Exits and side moves. Deliberately not in the header: marking a
                     pursuit lost should never sit one careless click from advancing it. */}
                 {secondaryMoves.map((option) => (
                   <DropdownMenuItem
                     key={option.transitionId}
                     disabled={move.isPending}
-                    onSelect={() =>
-                      move.mutate({ projectId: project.id, toStatusId: option.toStatusId })
-                    }
+                    onSelect={() => moveTo(option.toStatusId)}
                   >
                     {option.label}
                   </DropdownMenuItem>
@@ -242,9 +269,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             <ProjectStatusAction
               moves={moves}
               isPending={move.isPending}
-              onMove={(toStatusId) =>
-                move.mutate({ projectId: project.id, toStatusId })
-              }
+              onMove={moveTo}
             />
           }
         />
@@ -286,94 +311,66 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
           ))}
         </TabsList>
         <TabsContent value="overview">
-          {/* Four titled sections rather than one fifteen-field grid. The old
-              single "Registration" card put the developer, the contract value
-              and the originating lead in one undifferentiated list, so finding
-              any one of them meant reading all of them, and the lead link was
-              invisible at the bottom. */}
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="space-y-4 lg:col-span-2">
-              <Section title="The development">
-                <Fact label="Developer" value={project.developer_name} />
-                <Fact label="Registered company / SPV" value={project.registered_company_name} />
-                <Fact label="Location" value={project.location} />
-                <Fact label="Address" value={project.address} />
-                <Fact label="Project type" value={project.type_name} />
-                <Fact label="Template" value={project.template_name} />
-                <Fact label="Filing reference" value={project.admin_ref} />
-              </Section>
+          {/* One even grid: every card in a row is the same height and the columns line up
+              (owner, 13 Oct: "aligned and nicer"). Critical runs full width under it, because
+              it carries its own actions and notes and reads badly squeezed into a column. */}
+          <div className="grid gap-4 md:grid-cols-2 [&>*]:h-full">
+            <Section title="The development">
+              <Fact label="Developer" value={project.developer_name} />
+              <Fact label="Registered company / SPV" value={project.registered_company_name} />
+              <Fact label="Location" value={project.location} />
+              <Fact label="Address" value={project.address} />
+              <Fact label="Project type" value={project.type_name} />
+              <Fact label="Template" value={project.template_name} />
+              <Fact label="Reference" value={project.admin_ref} />
+            </Section>
 
-              <Section title="Value and timing">
-                <Fact
-                  label="Estimated sales value"
-                  value={
-                    project.estimated_sales_value
-                      ? formatMyr(project.estimated_sales_value)
-                      : null
-                  }
-                />
-                <Fact label="Launch date" value={formatDate(project.launch_date)} />
-                <Fact
-                  label="Expected delivery"
-                  value={
-                    project.expected_delivery_from || project.expected_delivery_to
-                      ? [
-                          formatDate(project.expected_delivery_from),
-                          formatDate(project.expected_delivery_to),
-                        ]
-                          .filter(Boolean)
-                          .join(' - ')
-                      : null
-                  }
-                />
-                <Fact
-                  label="Brands"
-                  value={project.brands.length ? project.brands.join(', ') : null}
-                />
-              </Section>
+            <Section title="Customer">
+              <Fact label="Name" value={project.customer_name} />
+              <Fact label="Phone" value={project.customer_phone} />
+              <Fact label="Attn" value={project.customer_attn} />
+            </Section>
 
-              <Section title="Consultants">
-                <Fact label="Architect" value={project.architect_name} />
-                <Fact label="Main contractor" value={project.main_contractor_name} />
-              </Section>
+            <Section title="Value and timing">
+              <Fact
+                label="Estimated sales value"
+                value={
+                  project.estimated_sales_value
+                    ? formatMyr(project.estimated_sales_value)
+                    : null
+                }
+              />
+              <Fact label="Launch date" value={formatDate(project.launch_date)} />
+              <Fact
+                label="Expected delivery"
+                value={
+                  project.expected_delivery_from || project.expected_delivery_to
+                    ? [
+                        formatDate(project.expected_delivery_from),
+                        formatDate(project.expected_delivery_to),
+                      ]
+                        .filter(Boolean)
+                        .join(' - ')
+                    : null
+                }
+              />
+              <Fact
+                label="Brands"
+                value={project.brands.length ? project.brands.join(', ') : null}
+              />
+            </Section>
 
-              <CriticalPanel project={project} />
-            </div>
+            <Section title="Consultants">
+              <Fact label="Architect" value={project.architect_name} />
+              <Fact label="Main contractor" value={project.main_contractor_name} />
+            </Section>
 
-            <div className="space-y-4">
-              {/* AC-O10, and its own card because "which lead did this come from" is a
-                  question people ask directly. As one more Fact in a long grid it read as
-                  filing metadata and got missed. "Registered directly" is a real answer,
-                  not a missing one: a tender notice claimed the same hour never had a lead. */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Where this came from</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {project.lead_id ? (
-                    <dl className="grid gap-x-6 gap-y-3">
-                      <div className="min-w-0">
-                        <dt className="text-xs text-muted-foreground">Lead</dt>
-                        <dd className="break-words text-sm font-medium">
-                          <Link
-                            href={`/project-sales/leads/${project.lead_id}`}
-                            className="text-primary hover:underline"
-                          >
-                            {project.lead_code ?? 'View the lead'}
-                          </Link>
-                        </dd>
-                      </div>
-                      <Fact label="Lead source" value={labelise(project.lead_source)} />
-                      <Fact label="Lead raised" value={formatDate(project.lead_created_at)} />
-                    </dl>
-                  ) : (
-                    <p className="text-sm">Registered directly, with no lead before it.</p>
-                  )}
-                </CardContent>
-              </Card>
+            <SourceCard project={project} />
 
-              <ProjectAccessPanel project={project} />
-            </div>
+            <ProjectAccessPanel project={project} />
+          </div>
+          <div className="mt-4">
+            <CriticalPanel project={project} />
           </div>
         </TabsContent>
 
@@ -409,6 +406,10 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
         </TabsContent>
       </Tabs>
 
+      {reassigning && (
+        <ReassignProjectDialog project={project} onDone={() => setReassigning(false)} />
+      )}
+
       <ConfirmDeleteDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
@@ -422,6 +423,42 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       />
     </div>
     </EntityActivitiesLayout>
+  );
+}
+
+/**
+ * AC-O10, and its own card because "which lead did this come from" is a question people
+ * ask directly. "Registered directly" is a real answer, not a missing one: a tender notice
+ * claimed the same hour never had a lead.
+ */
+function SourceCard({ project }: { project: Project }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Where this came from</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {project.lead_id ? (
+          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+            <div className="min-w-0">
+              <dt className="text-xs text-muted-foreground">Lead</dt>
+              <dd className="break-words text-sm font-medium">
+                <Link
+                  href={`/project-sales/leads/${project.lead_id}`}
+                  className="text-primary hover:underline"
+                >
+                  {project.lead_code ?? 'View the lead'}
+                </Link>
+              </dd>
+            </div>
+            <Fact label="Lead source" value={labelise(project.lead_source)} />
+            <Fact label="Lead raised" value={formatDate(project.lead_created_at)} />
+          </dl>
+        ) : (
+          <p className="text-sm">Registered directly, with no lead before it.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -50,6 +50,7 @@ EXEMPTIONS: dict[str, str] = {
     # not, and a bare "brands" key here would exempt the wrong table.
     "projects.brands": "JUNCTION (project_id + brand_id)",
     "projects.collaborators": "JUNCTION (project_id + user_id)",
+    "projects.series_brands": "JUNCTION (series_id + brand_id), mirrors series_categories",
     "projects.series_categories": "JUNCTION (series_id + category_id)",
     "projects.series_products": "JUNCTION (series_id + product_id)",
     # One row per project, keyed BY the project. A surrogate uuid would invite a

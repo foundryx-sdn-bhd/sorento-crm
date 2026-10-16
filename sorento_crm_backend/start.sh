@@ -10,10 +10,10 @@ DB_HOST_PORT=$(echo "${DATABASE_URL}" | sed -n 's|.*@\([^/]*\)/.*|\1|p')
 DB_HOST=$(echo "${DB_HOST_PORT}" | cut -d: -f1)
 DB_PORT=$(echo "${DB_HOST_PORT}" | cut -d: -f2)
 
-# Default to host:port if not found in DATABASE_URL
+# No guessed fallback host: an empty or unparseable DATABASE_URL is a config error.
 if [ -z "$DB_HOST" ]; then
-  DB_HOST="72.62.195.19"
-  DB_PORT="5432"
+  echo "DATABASE_URL is empty or has no host (expected postgresql://user:pass@host:port/db)" >&2
+  exit 1
 fi
 
 echo "Waiting for database to be ready..."

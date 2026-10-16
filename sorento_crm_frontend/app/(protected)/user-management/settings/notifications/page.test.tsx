@@ -35,6 +35,12 @@ vi.mock('../components/settings-context', () => ({
 
 vi.mock('@/lib/api', () => ({ apiFetch: vi.fn() }));
 
+// Save is offered only to the edit slug holder (SETTINGS-PERM-GATE); this file is
+// about the grid, so the caller holds it.
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: (slug: string) => slug === 'user_management.settings.edit',
+}));
+
 import NotificationSettingsPage from './page';
 
 function wrap(node: React.ReactElement) {

@@ -1563,7 +1563,7 @@ describe('FulfilmentBoardPanel: states', () => {
       await screen.findByText('No lines to plan on these sales orders'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('Every line is cancelled or marked no purchase needed.'),
+      screen.getByText('Every line is cancelled, fully returned or marked no purchase needed.'),
     ).toBeInTheDocument();
     // The retired wording is gone from the component AND from this file.
     expect(screen.queryByText(/Nothing is outstanding/)).not.toBeInTheDocument();
@@ -5409,5 +5409,41 @@ describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 12 inquiry-decided cancels 
     await screen.findByTestId('fulfilment-board-matrix');
     expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (0)');
     expect(confirmMany).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * PR 1622 (owner hand test 13 Oct, mock v3): a line purchasing refused is counted in the header.
+ */
+describe('Purchasing refusals on the board (PR 1622)', () => {
+  const refused = (entry: BoardContribution): BoardContribution => ({
+    ...entry,
+    project_line_id: 'pl-1',
+    order_inquiry: {
+      inquiry_no: 'OI-2610-0007',
+      state: 'raised',
+      ack_state: 'rejected',
+      rejected_reason: 'Supplier discontinued this finish',
+      rejected_by_name: 'Joey',
+      rejected_at: '2026-10-13T06:05:00',
+    } as BoardContribution['order_inquiry'],
+  });
+
+  it('adds "· N rejected by purchasing" to the header while a refusal is open', async () => {
+    getPlanningBoard.mockResolvedValue(
+      withContribution(boardOf([demand()]), () => true, refused),
+    );
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    expect(screen.getByTestId('board-confirm-summary')).toHaveTextContent(
+      '1 rejected by purchasing',
+    );
+  });
+
+  it('says nothing about purchasing when no line is refused', async () => {
+    getPlanningBoard.mockResolvedValue(boardOf([demand()]));
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    expect(screen.getByTestId('board-confirm-summary')).not.toHaveTextContent('by purchasing');
   });
 });

@@ -128,13 +128,22 @@ def _link_count(db, row):
     return db.query(OrderInquiryLink).filter(OrderInquiryLink.row_id == row.id).count()
 
 
+
+def _cancel_only(calls):
+    """Exactly one handover dispatch, every line of it a plain CANCEL."""
+    matches = _handover_calls(calls)
+    return len(matches) == 1 and all(
+        line["remark"] == "CANCEL" for line in matches[0]["context"]["handover"]["lines"]
+    )
+
 def _assert_cancel_balance_line(line, row):
-    assert line["remark"] == "CANCEL ALL"
+    # ORDERBACK-DELTA (owner, 13 Oct 2026 22:40): "cancel -> CANCEL", one line per line.
+    assert line["remark"] == "CANCEL"
     assert line["qty"] == "0"  # QTY CHANGE TO 0, same as the cancel balance route
     assert line["was"]["qty"] == "36"
     assert line["item_code"] == row.item_code
-    assert line["delivery_date"] == DELIVERY.strftime("%d/%m/%Y")
-    assert line["location"] == LOCATION
+    # The line describes the SO LINE (its own date and location, owner 13 Oct 2026), not
+    # the row's: `tests/test_oi_saved_line_email.py` pins those.
 
 
 # ---------------------------------------------------------------- AC-H1, H2, H3
@@ -248,7 +257,9 @@ def test_h6_an_actioned_row_is_not_cancelled_unlinked_or_handed_over(api, monkey
     _reload(world.db, row)
     assert row.state == INQUIRY_ACTIONED
     assert _link_count(world.db, row) == 1
-    assert not _handover_calls(calls)
+    # ORDERBACK-DELTA (owner, 13 Oct 2026 22:40): every saved decision is one line, so the
+    # Cancel SO press still tells purchasing CANCEL even with no live row left to cancel.
+    assert _cancel_only(calls)
     assert not [c for c in calls if c["trigger_type"] == CHANGED_WITH_LINKS]
     assert link.row_id == row.id
 
@@ -273,10 +284,12 @@ def test_h7_cancelled_and_cancel_balance_exception_rows_are_left_alone(api, monk
     assert row.state == INQUIRY_CANCELLED
     assert exception.state == INQUIRY_RAISED
     assert exception.ack_state == ACK_AWAITING
-    assert not _handover_calls(calls)
+    # ORDERBACK-DELTA (owner, 13 Oct 2026 22:40): every saved decision is one line, so the
+    # Cancel SO press still tells purchasing CANCEL even with no live row left to cancel.
+    assert _cancel_only(calls)
 
 
-def test_h8_a_cancelled_line_with_no_live_row_queues_nothing_and_succeeds(api, monkeypatch):
+def test_h8_a_cancelled_line_with_no_live_row_still_reads_cancel(api, monkeypatch):
     """AC-H8 [GUARD, passes today]."""
     client, world = api
     _register(world)
@@ -288,7 +301,9 @@ def test_h8_a_cancelled_line_with_no_live_row_queues_nothing_and_succeeds(api, m
 
     assert response.status_code == 200, response.text
     assert _status(world.db, w["a"][0].id) == "cancelled"
-    assert not _handover_calls(calls)
+    # ORDERBACK-DELTA (owner, 13 Oct 2026 22:40): every saved decision is one line, so the
+    # Cancel SO press still tells purchasing CANCEL even with no live row left to cancel.
+    assert _cancel_only(calls)
 
 
 # ---------------------------------------------------------------- AC-H9, H10, H11
@@ -324,7 +339,7 @@ def test_h9_three_cancelled_lines_make_one_dispatch_with_three_lines(api, monkey
     assert len(matches) == 1, f"expected one {TRIGGER} dispatch, got {len(matches)}"
     handover = matches[0]["context"]["handover"]
     assert handover["line_count"] == 3
-    assert {line["remark"] for line in handover["lines"]} == {"CANCEL ALL"}
+    assert {line["remark"] for line in handover["lines"]} == {"CANCEL"}
     assert {line["item_code"] for line in handover["lines"]} == {
         p.product_code for _c, _m, p in mirrors
     }
@@ -344,7 +359,7 @@ def test_h10_a_mixed_press_hands_over_the_cancel_beside_the_confirm(api, monkeyp
     assert len(matches) == 1, f"expected one {TRIGGER} dispatch, got {len(matches)}"
     lines = matches[0]["context"]["handover"]["lines"]
     assert len(lines) >= 2, lines
-    assert [ln["remark"] for ln in lines].count("CANCEL ALL") == 1
+    assert [ln["remark"] for ln in lines].count("CANCEL") == 1
 
 
 def test_h11_confirm_all_behaves_the_same(api, monkeypatch):
@@ -428,7 +443,9 @@ def test_h15_a_pool_redirected_row_is_left_as_it_is(api, monkeypatch):
     _reload(world.db, row)
     assert row.state == INQUIRY_RAISED
     assert row.note == "ZZT earlier note"
-    assert not _handover_calls(calls)
+    # ORDERBACK-DELTA (owner, 13 Oct 2026 22:40): every saved decision is one line, so the
+    # Cancel SO press still tells purchasing CANCEL even with no live row left to cancel.
+    assert _cancel_only(calls)
 
 
 def test_h16_a_cancelled_rows_suggested_links_are_dropped(api, monkeypatch):

@@ -62,7 +62,11 @@ import {
 import { usePlanningChangeBatchesByIds } from '../../_shared/hooks/usePlanningChanges';
 import { useSoLineAttachmentLookup } from '../../_shared/hooks/useSoLineAttachments';
 import { formatQty } from '../../_shared/lib/money';
-import { canQuickSave, suggestedDecisionFor } from '../../_shared/lib/boardAmend';
+import {
+  awaitsCancelSo,
+  canQuickSave,
+  suggestedDecisionFor,
+} from '../../_shared/lib/boardAmend';
 import {
   annotationsByCell,
   annotationsByLine,
@@ -106,14 +110,22 @@ import type {
 import { BoardCellBreakdownDialog } from './BoardCellBreakdownDialog';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { BoardScopeToggle, type BoardScope } from './BoardScopeToggle';
-import { isPreMarkOnly, VERDICT_FILTER_OPTIONS, verdictOf } from './BoardDecisionPill';
+import {
+  isPreMarkOnly,
+  matchesStatusFilter,
+  VERDICT_FILTER_OPTIONS,
+} from './BoardDecisionPill';
 import { BoardTransfersPanel } from './BoardTransfersPanel';
 import { PlanningHistorySheet } from './PlanningHistorySheet';
 import { PlanningRefusalTable, hasReasonCode } from './PlanningRefusalTable';
 import { FulfilmentBoardListView } from './FulfilmentBoardListView';
 import { FulfilmentBoardMatrix } from './FulfilmentBoardMatrix';
 import { DecisionStrip } from './DecisionStrip';
-import { cellCarriesKind, contributionCarriesKind } from '../../_shared/lib/decisionStrip';
+import {
+  cellCarriesKind,
+  contributionCarriesKind,
+  rejectedLineCount,
+} from '../../_shared/lib/decisionStrip';
 import type { SupplyKind } from '../../_shared/lib/supplyVocabulary';
 
 /**
@@ -643,6 +655,10 @@ export function FulfilmentBoardPanel({
   const allContributions = React.useMemo<BoardContribution[]>(
     () => board.data?.contributions ?? [],
     [board.data],
+  );
+  const purchasingRejected = React.useMemo(
+    () => rejectedLineCount(allContributions),
+    [allContributions],
   );
 
   /**
@@ -1494,7 +1510,7 @@ export function FulfilmentBoardPanel({
                 ((contribution.covered &&
                   draftWithoutPreMark[contribution.key]?.verdict === 'rejected') ||
                   (!contribution.covered &&
-                    !contribution.cancelled &&
+                    (!contribution.cancelled || awaitsCancelSo(contribution)) &&
                     batchNamedKeys.has(contribution.key) &&
                     draftWithoutPreMark[contribution.key]?.verdict === 'cancelled')),
             )
@@ -2060,8 +2076,7 @@ export function FulfilmentBoardPanel({
           (linesByRow.get(row.key) ?? []).some((line) => {
             return (
               (scope === 'all' || isSavedLine(line) === (scope === 'saved')) &&
-              (statusFilter.length === 0 ||
-                statusFilter.includes(verdictOf(line, draft[line.key] ?? null)))
+              matchesStatusFilter(line, draft[line.key] ?? null, statusFilter)
             );
           }),
       ),
@@ -2264,6 +2279,10 @@ export function FulfilmentBoardPanel({
               className="text-sm text-muted-foreground tabular-nums"
             >
               {`${confirmSummary.toConfirm} to confirm · ${confirmSummary.rejected} rejected`}
+              {/* PR 1622 owner hand test: a line purchasing refused is back with CS, and the
+                  header said "0 rejected" over it. Counted apart from CS's own rejections
+                  (which Confirm acts on), and only while one is open. */}
+              {purchasingRejected > 0 ? ` · ${purchasingRejected} rejected by purchasing` : ''}
               {/* C4 (code review round 3 batch 2): a saved line the engine has re-suggested
                   is dropped from Confirm with no trace beyond the pill itself - stated here
                   too, and only while it applies, the same rule the two figures beside it
@@ -2801,7 +2820,7 @@ export function FulfilmentBoardPanel({
                   No lines to plan on these sales orders
                 </h3>
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                  Every line is cancelled or marked no purchase needed.
+                  Every line is cancelled, fully returned or marked no purchase needed.
                 </p>
               </>
             )}

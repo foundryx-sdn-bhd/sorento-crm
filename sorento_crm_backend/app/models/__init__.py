@@ -18,6 +18,7 @@ from app.models.sales import SalesTeam, SalesTeamMember
 from app.models.stock_ask import StockAsk
 from app.models.finance import BillingDocument, BillingDocumentLine
 from app.models.autocount_branch import Branch
+from app.models.autocount_cancel import AutocountCancelDoc, AutocountCancelLine
 from app.models.autocount_compare_mapping import AutocountCompareMapping
 from app.models.inventory import Warehouse, StorageZone, Stock, StockBatch, StockLedger
 from app.models.procurement import Supplier, ProductSupplier, InboundShipment, InboundShipmentLine, SPOAllocation, PickingHeader, PickingLine, StockInquiry, PurchaseRequestHeader, PurchaseRequestLine, PurchaseOrder, PurchaseOrderLine
@@ -75,6 +76,7 @@ from app.models.job import ImportJob, ImportJobRow
 from app.models.download import UserDownload, DownloadStatus
 from app.models.report_view import ReportView
 from app.models.saved_view import SavedView
+from app.models.stock_debt_snapshot import StockDebtSnapshot, StockDebtSnapshotRow
 from app.models.audit import AuditLog, AuditTrailGap
 from app.models.notification import Notification, NotificationDelivery, PushSubscription
 from app.models.scheduled_task import ScheduledTask, ScheduledTaskRun
@@ -91,6 +93,7 @@ from app.models.ai_assistant import (
     AIAssistantUsageLog,
     AIAssistantWishlistCluster,
     AIAssistantUnansweredQuery,
+    LLMModelPrice,
 )
 from app.models.ai_prompt import AIPromptVersion, AIPromptLabel
 from app.models.chat_history import ChatHistory
@@ -339,6 +342,7 @@ __all__ = [
     "AIAssistantMessage",
     "AIAssistantGovernanceEvent",
     "AIAssistantUsageLog",
+    "LLMModelPrice",
     "AIAssistantWishlistCluster",
     "AIAssistantUnansweredQuery",
     "AIPromptVersion",
@@ -401,6 +405,8 @@ __all__ = [
     "BillingDocumentLine",
     # AutoCount branch table (#1354 S2)
     "Branch",
+    "AutocountCancelDoc",
+    "AutocountCancelLine",
     "AutocountCompareMapping",
     # Dealer Kit (schema: dealer_kit)
     "Page",

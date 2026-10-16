@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permission_with_api_key
+from app.dependencies import get_current_user_or_api_key, require_permission_with_api_key
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.schemas.product_set import (
     ApplyProductSetProposalsRequest,
@@ -31,7 +31,8 @@ from app.schemas.product_set import (
     ProductSetResponse,
     ProductSetUpdate,
 )
-from app.services.error_handler import handle_internal_error
+from app.modules.runtime.guards import module_allowed_with_api_key
+from app.services.error_handler import AppException, handle_internal_error
 from app.services.product_set_proposal_service import ProductSetProposalService
 from app.services.product_set_service import ProductSetService
 from app.services.uuid_path_param import validate_uuid_path
@@ -121,6 +122,68 @@ def list_product_sets(
         }
     except Exception as e:
         raise handle_internal_error(str(e))
+
+
+@router.get("/select")
+def select_product_sets(
+    query: Optional[str] = Query(None),
+    ids: Optional[str] = Query(None, description="Comma list; inactive sets included."),
+    current_user: dict = Depends(get_current_user_or_api_key),
+    db: Session = Depends(get_db),
+):
+    """Sets for the quotation line picker, session-gated like `products/select`.
+
+    Deliberately NOT behind `master_data.product_sets.view`: the sales roles that quote a set
+    do not hold it, exactly as they read products through `products/select`. Own company only
+    (the scoped session), items carry no cost figure.
+
+    DECLARED BEFORE `/{product_set_id}`, or that route swallows `select` whole.
+    """
+    try:
+        wanted = [part.strip() for part in (ids or "").split(",") if part.strip()]
+        if len(wanted) > 100:
+            raise AppException(status_code=422, message="Too many ids (100 at most).")
+        for part in wanted:
+            try:
+                validate_uuid_path(part, resource="Product set")
+            except Exception:
+                raise AppException(status_code=422, message="An id is not valid.")
+        rows = ProductSetService(db).select(query=query, ids=wanted or None)
+        # Stock is the inventory module's data and the quoting roles' to read: anyone else gets
+        # the set without a count.
+        from app.services.user_service import UserPermissionService
+
+        with_stock = bool(
+            UserPermissionService(db).check_user_has_permission(
+                current_user["id"], "projects.projects.view"
+            )
+        ) and module_allowed_with_api_key(db, current_user, "inventory")
+        brands = ProductSetService(db).driver_brand_names([row.id for row in rows])
+        return {
+            "data": [
+                {
+                    "id": row.id,
+                    "set_code": row.set_code,
+                    "name": row.name,
+                    "is_active": row.is_active,
+                    "member_count": row.member_count,
+                    "list_price": row.price.resolved,
+                    "complete_sets": row.complete_sets if with_stock else None,
+                    "brand_name": brands.get(row.id),
+                    "parts": [
+                        {
+                            "product_id": m.product_id,
+                            "product_code": getattr(m.product, "product_code", None),
+                            "quantity": m.quantity,
+                        }
+                        for m in row.members
+                    ],
+                }
+                for row in rows
+            ]
+        }
+    except Exception as e:
+        raise e if hasattr(e, "status_code") else handle_internal_error(str(e))
 
 
 # --------------------------------------------------------------- proposals

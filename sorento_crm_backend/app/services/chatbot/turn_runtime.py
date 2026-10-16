@@ -25,7 +25,7 @@ import copy
 import logging
 import re
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclass_replace
 from typing import Any, Callable
 
 from sqlalchemy import func, text
@@ -40,7 +40,7 @@ from app.services.chatbot.contracts import (
     named_count,
 )
 from app.services.chatbot.turn.apply import names_its_own_ask
-from app.services.chatbot.turn.decide import picked_positions
+from app.services.chatbot.turn.decide import RESTATED_KINDS_KEY, picked_positions
 from app.services.chatbot.turn.pending import (
     OFFER_KINDS,
     Pending,
@@ -647,7 +647,7 @@ def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dic
 
 
 def promo_subject_ask_back(
-    parse_output: dict[str, Any], db: Any, gate: Any = None
+    parse_output: dict[str, Any], db: Any, gate: Any = None, *, access_levels: list[str] | None = None
 ) -> tuple[str, list[str]] | None:
     """PROMO-SUBJECT-FILTER AC-7, AC-23, AC-25: the ask-back for a promotion subject the
     catalogue cannot hold as one thing, as `(text, options)`, else None. A product type the
@@ -655,7 +655,11 @@ def promo_subject_ask_back(
     the promotions route filters by) binds to nothing, is said back as typed (no options);
     one word that heads several values of a registry key ("cabinet") asks which, the values
     its options. Only what THIS message named counts (a carried subject was already asked
-    about), and a message that answers an open numbered question is never asked back."""
+    about), and a message that answers an open numbered question is never asked back.
+    `access_levels` are the access level names the promotions read is made at
+    (`tier_gate.access_levels_recomposed`): a choice is offered only when a promotion at
+    one of them holds it (fix round 1 F4). None is no level filter (a contact the tier gate
+    holds no tier for); an empty list is a contact who can see none (reviewer R1)."""
     if jsc.array(parse_output.get("reference_positions")):
         return None
     own = {
@@ -698,7 +702,8 @@ def promo_subject_ask_back(
         for e in own["entities"]
         if e.get("spec_key") == "product_type" and e.get("spec_value") is None and str(e.get("raw") or "").strip()
     ]
-    terms = promo_filter(own, db, gate).get("scope_terms") or [] if db is not None else []
+    narrowing = promo_filter(own, db, gate) if db is not None else {}
+    terms = narrowing.get("scope_terms") or []
     if not unknown and terms:
         from app.services.chatbot.head import grounding
         from app.services.product_spec_search import filter_specs
@@ -708,7 +713,10 @@ def promo_subject_ask_back(
             # A class name is the subject as it stands; only a word that names no class asks
             # which of a registry key's values it means.
             options = [] if grounding.names_a_class_label(db, term) else grounding.several_values(term, vocab)
-            if options:
+            # Chat fix PR-A (AC-A10): only a choice a promotion holds is offered; with fewer
+            # than two left there is nothing to choose between, and the class answers.
+            options = [o for o in options if _promotions_hold(db, o.lower(), narrowing, access_levels)]
+            if len(options) >= 2:
                 return "\n".join([f"Which {term} do you mean?", *options]), options
         for term in terms:
             found = filter_specs(db, scope_terms=[term])
@@ -717,6 +725,33 @@ def promo_subject_ask_back(
     if not unknown:
         return None
     return f'I could not match "{", ".join(unknown)}" to a product type.\nWhich product or brand do you mean?', []
+
+
+def _promotions_hold(
+    db: Any, term: str, narrowing: dict[str, list[str]], access_levels: list[str] | None = None
+) -> bool:
+    """Does the promotions read this turn would make, with `term` as its subject, hold a
+    row? The route's own subject filter, serving policy and access-level filter (the
+    names translated to codes exactly as the promotions route does), the kind and brand
+    the ask named (`promo_filter`), so a menu choice is one that leads to a promotion the
+    contact can see."""
+    from app.services.contact_access_type_service import ContactAccessTypeService
+    from app.services.marketing_service import PromotionService
+
+    if access_levels is not None and not access_levels:
+        # Reviewer R1: a contact whose levels the tier gate emptied (a dealer lacking the
+        # asked brand) sees no promotion; None alone means no level filter (staff).
+        return False
+    result = PromotionService(db).list_promotions(
+        page=1,
+        limit=1,
+        serving_policy=True,
+        contact_access_codes=ContactAccessTypeService(db).translate_names_to_codes(access_levels),
+        scope_terms=[term],
+        promotion_types=narrowing.get("promotion_types"),
+        brand_ids=narrowing.get("brand_ids"),
+    )
+    return bool(result.get("data"))
 
 
 def promotion_kind_rows(db: Session) -> list[dict[str, Any]]:
@@ -2273,6 +2308,50 @@ def companies_by_uuid(resolved: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _resolved_matches(resolved: Any) -> list[Any]:
+    """Every match the resolver returned, flattened the three ways `gate.py::run_gate`
+    flattens its own `flat` list (resolutions, intersection, by_entity_type)."""
+    from app.services.chatbot.lanes.business.gate import _flatten_by_entity_type
+
+    matches = [
+        m
+        for resolution in jsc.array(jsc.get(resolved, "resolutions"))
+        for m in jsc.array(jsc.get(resolution, "matches"))
+    ]
+    matches += jsc.array(jsc.get(resolved, "intersection"))
+    matches += jsc.array(_flatten_by_entity_type(jsc.get(resolved, "by_entity_type")))
+    return matches
+
+
+def company_codes_by_uuid(resolved: Any) -> dict[str, str]:
+    """The resolver's own COMPANY CODE per match ("MCH", "SRT"), keyed by uuid - the tag a
+    customer picker line carries when its options' companies differ (PICKER-ONE). Read off
+    the RAW resolver payload for `companies_by_uuid`'s reason (never off `gate.py`'s
+    frozen `compatible_entities`)."""
+    out: dict[str, str] = {}
+    for m in _resolved_matches(resolved):
+        uuid = jsc.nullish_str(jsc.get(m, "uuid")).strip()
+        code = jsc.nullish_str(jsc.get(m, "company_code")).strip()
+        if uuid and code:
+            out.setdefault(uuid, code)
+    return out
+
+
+def display_names_by_uuid(resolved: Any) -> dict[str, str]:
+    """The resolver's own human label per match (`gate._display_name`'s rule), keyed by
+    uuid - for the gate's picker rows, which carry their printed line as `title` and no
+    `display_name` of their own (`compatible_entities` is frozen by the node replay)."""
+    from app.services.chatbot.lanes.business.gate import _display_name
+
+    out: dict[str, str] = {}
+    for m in _resolved_matches(resolved):
+        uuid = jsc.nullish_str(jsc.get(m, "uuid")).strip()
+        name = _display_name(m)
+        if uuid and name:
+            out.setdefault(uuid, name)
+    return out
+
+
 def company_names_by_uuid(resolved: Any) -> dict[str, str]:
     """`companies_by_uuid`, names only - the shape `candidates_by_kind` has always read.
 
@@ -2779,7 +2858,13 @@ def resolve_kinds(
     stamps_from = annotated if isinstance(annotated, dict) else gate
 
     customer_bases: set[str] | None = None
-    if stamp_customer and any(
+    if "customer_bases_with_do" in payload:
+        # PICKER-ONE: the gate's own customer picker already probed this turn
+        # (`resolve_gate.measure_customer_picker`, R20 included) - one probe, one answer,
+        # never a second measurement that could disagree with the first.
+        measured = payload.get("customer_bases_with_do")
+        customer_bases = set(measured) if isinstance(measured, list) else None
+    elif stamp_customer and any(
         jsc.nullish_str(e.get("entity_type")).strip().lower() == "customer" for e in compatible
     ):
         # The roster this turn is about to print IS the customer picker's roster, reached
@@ -2866,7 +2951,12 @@ def resolve_kinds(
         predicate,
         mark_described_set(
             candidates_by_kind(
-                stamps_from, compatible, customer_bases, product_stamp, company_names_by_uuid(resolved)
+                stamps_from,
+                compatible,
+                customer_bases,
+                product_stamp,
+                company_names_by_uuid(resolved),
+                company_codes_by_uuid(resolved),
             ),
             predicate,
         ),
@@ -2939,6 +3029,7 @@ def candidates_by_kind(
     customer_bases_with_do: set[str] | None = None,
     product_stamp: tuple[set[str], str, str] | None = None,
     company_names_by_uuid: dict[str, str] | None = None,
+    company_codes_by_uuid: dict[str, str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """The resolver's own rows, grouped by entity kind, for the narrower's roster.
 
@@ -3006,10 +3097,114 @@ def candidates_by_kind(
             # Item 2: a customer line says what a product line says - whether the thing
             # it names has anything to show. `None` is "not measured" (the probe failed,
             # or its page saturated) and reads as no stamp at all, never as "no DO".
-            base = pickers_module().customer_base(built.get("name") or code)
-            built["stamp"] = "has DO" if base in customer_bases_with_do else "no DO"
+            built["stamp"] = pickers_module().customer_stamp(
+                built.get("name") or code, customer_bases_with_do
+            )
+        if kind == "customer" and company_codes_by_uuid:
+            # PICKER-ONE: every company the line's rows sit in, first-seen order - the
+            # tag `narrow._options` prints when the options' companies differ.
+            codes = [
+                company_codes_by_uuid[u]
+                for u in (built.get("uuids") or [built.get("uuid")])
+                if u and u in company_codes_by_uuid
+            ]
+            if codes:
+                built["company_codes"] = list(dict.fromkeys(codes))
         grouped.setdefault(kind, []).append(built)
     return grouped
+
+
+def stamp_customer_options(
+    options: list[dict[str, Any]], bases_with_do: set[str] | None
+) -> list[dict[str, Any]]:
+    """A customer roster's options, each stamped by `pickers.customer_stamp` (PICKER-ONE).
+
+    For a roster that reached the ask unstamped - built off the focus (a carried subject)
+    or off the contact's own typed words, where no resolver answer carried a stamp. An
+    option that already carries one keeps it: it was measured by the same helper on the
+    way in. Returns new option dicts; the input is not touched.
+    """
+    stamp = pickers_module().customer_stamp
+    out: list[dict[str, Any]] = []
+    for option in options:
+        option = dict(option)
+        if not option.get("stamp"):
+            value = stamp(option.get("name") or option.get("label") or option.get("code"), bases_with_do)
+            if value:
+                option["stamp"] = value
+        out.append(option)
+    return out
+
+
+def stamp_customer_ask(
+    db: Session,
+    ask: Any,
+    *,
+    ctx: dict[str, Any],
+    payload: dict[str, Any] | None,
+    space_id: str | None,
+) -> Any:
+    """`ask`, its customer options stamped when no option carries a stamp yet.
+
+    The ask point's half of PICKER-ONE: a `customer_pick` the narrower raised off the
+    focus or off typed words never reached `candidates_by_kind`'s stamp, so the owner read
+    "1. HANLIM 2. HANLIM TRADING" in one picker and "1. HANLIM - no DO ..." in the next.
+    The gate's own measurement is reused when this turn has one (one probe per turn);
+    otherwise the customer probe runs once, over the options themselves plus whatever the
+    gate would have probed beside them. The caller withholds this for an outstanding ask
+    (R20). Any failure leaves the roster unstamped, which is the NOT MEASURED reading.
+    """
+    if getattr(ask, "kind", None) != "customer_pick":
+        return ask
+    options = [o for o in (ask.options or []) if isinstance(o, dict)]
+    if not options or any(o.get("stamp") for o in options):
+        return ask
+    payload = payload if isinstance(payload, dict) else {}
+    if "customer_bases_with_do" in payload:
+        measured = payload.get("customer_bases_with_do")
+        bases = set(measured) if isinstance(measured, list) else None
+    else:
+        from app.services.chatbot.lanes.business import resolve_gate
+        from app.services.chatbot.lanes.business import services as business_services
+
+        gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
+        from app.services.chatbot.lanes.business.fetch import is_uuid as is_uuid_value
+
+        # An option the resolver placed nowhere (typed words) carries its code as identity,
+        # not a uuid: it goes as a name, so the probe reads the window unfiltered and the
+        # family-base rule attributes the rows (a saturated page reads as not measured).
+        entities: list[dict[str, Any]] = []
+        for option in options:
+            for uuid in option.get("uuids") or [option.get("uuid")]:
+                entities.append(
+                    {
+                        "uuid": uuid if is_uuid_value(uuid) else None,
+                        "entity_type": "customer",
+                        "code": option.get("code"),
+                        "raw": option.get("name") or option.get("label"),
+                    }
+                )
+        entities += [
+            e
+            for e in jsc.array(gate.get("customer_probe_entities"))
+            if isinstance(e, dict) and jsc.nullish_str(e.get("entity_type")).strip().lower() != "customer"
+        ]
+        try:
+            probe = resolve_gate.probe_customer(
+                business_services.production_services(db),
+                ctx=ctx,
+                entities=entities,
+                aggregate=payload.get("aggregate"),
+                default_start=resolve_gate.default_probe_start(),
+                space_id=space_id,
+            )
+        except Exception:  # noqa: BLE001 - an unprobed roster is the NOT MEASURED arm
+            logger.warning("chatbot: the customer roster probe did not run", exc_info=True)
+            probe = None
+        bases = pickers_module().customer_bases_with_do(probe)
+    if bases is None:
+        return ask
+    return dataclass_replace(ask, options=stamp_customer_options(options, bases))
 
 
 def _norm_code(value: Any) -> str:
@@ -3698,6 +3893,13 @@ def make_tool_runner(
             if spec.filters.get("tier")
             else resolver_tier_gate
         )
+        if domain == "promotion" and tier_gate_value is None:
+            # SEC-PROMO-ACCESS (security review B2): no resolver tier gate (an entity-less
+            # ask routed as a business query never enters `access_check`). Without one the
+            # fetch sends the PARSER's levels - what the customer claimed - so the gate is
+            # computed here off what the contact actually holds. A read that fails leaves
+            # None, which `promotion_access_closed` refuses.
+            tier_gate_value = _entitlement_tier_gate(db, lane_ctx, space_id)
         payload = {"gate": gate, "tier_gate": tier_gate_value, "ctx": lane_ctx}
         # Security B1, FAIL CLOSED: a tier-filtered fetch whose recomposed access
         # levels came out EMPTY must never reach the tool. Downstream an empty list
@@ -3826,11 +4028,24 @@ def make_tool_runner(
             or (page_predicate is not None and not page_ids)
             or would_be_unfiltered
             or no_subject_gate is not None
+            or promotion_access_closed(domain, tier_gate_value)
         ):
             fragment = {
                 "fetch": {"has_result": False, "response": business_fetch.NO_RESULT_INTRO},
                 "outcome": "not_found",
             }
+            # SEC-PROMO-ACCESS: a closed brand gate is a refusal, not a miss. Its words are
+            # the gate's own brand notice ("You don't have access to <brand> promotions.",
+            # `gate.py`), which the miss composer here would never print. Only that notice:
+            # a stated-tier one ends "Here's what you do have:" and there is nothing to show.
+            access_notice = jsc.js_string(gate.get("access_notice") or "").strip()
+            if (
+                promotion_access_closed(domain, tier_gate_value)
+                and gate.get("brand_gate_empty") is True
+                and not gate.get("access_denied_levels")
+                and access_notice
+            ):
+                fragment = business._fixed_reply(access_notice, refused=True)
             if no_subject_gate is not None:
                 # The refusal's OWN reason, for `answer_bridge.answer_for`'s miss
                 # composer - which otherwise reads the RESOLVER's gate, and the
@@ -4352,6 +4567,58 @@ def page_the_set(
     return predicate, page_ids
 
 
+def _entitlement_tier_gate(db: Any, lane_ctx: dict[str, Any], space_id: str | None) -> dict[str, Any] | None:
+    """The tier gate `resolve_gate.run`'s `access_check` step would have produced: the
+    contact's own access levels through `tier_gate.tier_gate`, read against this fetch's
+    parse output. None when the entitlement cannot be read."""
+    from app.services.chatbot.lanes.business import fetch as business_fetch
+    from app.services.chatbot.lanes.business import resolve_gate as resolve_gate_mod
+    from app.services.chatbot.lanes.business import services as business_services
+    from app.services.chatbot.lanes.business.tier_gate import tier_gate as run_tier_gate
+
+    try:
+        rows = business_services.production_services(db).access_types(
+            contact_id=jsc.nullish_str(jsc.get(jsc.get(lane_ctx, "contact"), "id")).strip(),
+            # The same workspace the fetch itself sends (`fetch._fetch_semantic_input`).
+            space_id=business_fetch.space_id_or_default(space_id),
+        )
+        parser = jsc.get(jsc.get(lane_ctx, "parse"), "output")
+        return run_tier_gate(
+            resolve_gate_mod.aggregate_names(rows),
+            parser=parser if isinstance(parser, dict) else {},
+            item=None,
+        )
+    except Exception:  # noqa: BLE001 - an unreadable entitlement is no entitlement: fail closed
+        logger.warning("chatbot: promotion entitlement could not be read", exc_info=True)
+        return None
+
+
+def promotion_access_closed(domain: str, tier_gate: Any) -> bool:
+    """SEC-PROMO-ACCESS: a promotion fetch the contact's own entitlement leaves EMPTY.
+
+    Security B1 above covers a tier-FILTERED fetch only. The forced fetch for a single
+    entitled tier (`engine.py`, `tier_proceed`) carries no tier filter, so a closed brand
+    gate ("Any promo for Cabana WC?" from a Sorento-only dealer: `brand_gate_empty`, an
+    empty `access_levels_recomposed`) reached the tool with `access_levels: []` - which the
+    MCP server drops from the query, and the route reads as "no access filter". An empty
+    recomposed list is also a contact holding no access type at all. Either way nothing
+    may be read; the caller answers the turn as a miss, and the gate's own
+    `access_notice` ("You don't have access to <brand> promotions.") leads that reply.
+
+    No tier gate at all (the resolver raised, or never ran the access check) is closed
+    too: `lanes/business._fetch_semantic_input` would fall back to the PARSER's
+    `access_levels`, which is what the customer claimed, not what they hold.
+    """
+    if domain != "promotion":
+        return False
+    if not isinstance(tier_gate, dict):
+        return True
+    if tier_gate.get("brand_gate_empty") is True:
+        return True
+    # The tier-ask arm reads its own per-tier probe plan, not the recomposed list.
+    return tier_gate.get("tier_ask") is not True and not tier_gate.get("access_levels_recomposed")
+
+
 def _tier_gate(
     spec: FetchSpec,
     verdict: dict[str, Any],
@@ -4443,9 +4710,18 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     reached the resolver, the fetch dropped both as `missing_or_bad_uuid` and answered with
     every file of every type, and the "has no Certification" line had no types to name.
 
-    Only the document types, only those with no uuid, only when this turn named none of its
-    own, and only when the one domain in play is `product_attachment` - any other domain's
-    gate would read a document type as an incompatible entity.
+    CARRY-ATTACH (prod, 13 Oct 2026; owner ruling: "the parser should be able to
+    understand"): a SETTLED type too, with its uuid. "Srt8313" after "Srt8308 drawing" is the
+    same question about a new product in the parser's own reading (the domain carried,
+    `domain_in_message: false`, so `decide` refines and the type stays on the focus), and the
+    fetch already ran under it; left out here, the gate's required-type check asked "Please
+    provide the attachment type for product Srt8313" over the file it had found. A message
+    that starts a new ask ("attachments for Srt8313") has already dropped the carried type in
+    `apply._focus_rules`, so nothing is handed over and the gate still asks.
+
+    Only the document types, only when this turn named none of its own, and only when the
+    one domain in play is `product_attachment` - any other domain's gate would read a
+    document type as an incompatible entity.
     """
     own = [e for e in parse_output.get("entities") or [] if isinstance(e, dict)]
     if any(str(e.get("hint") or "").strip().lower() == "attachment_type" for e in own):
@@ -4457,20 +4733,21 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     rows = (getattr(focus, "extra", {}) or {}).get("attachment_type") or []
     carried: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or row.get("uuid"):
+        if not isinstance(row, dict):
             continue
         code = row.get("canonical_code") or row.get("raw")
         if not jsc.truthy(code):
             continue
-        carried.append(
-            {
-                "raw": row.get("raw") or code,
-                "hint": "attachment_type",
-                "canonical_code": code,
-                "current_message": False,
-                "confident": True,
-            }
-        )
+        entity: dict[str, Any] = {
+            "raw": row.get("raw") or code,
+            "hint": "attachment_type",
+            "canonical_code": code,
+            "current_message": False,
+            "confident": True,
+        }
+        if row.get("uuid"):
+            entity["uuid"] = row["uuid"]
+        carried.append(entity)
     if not carried:
         return parse_output
     return {**parse_output, "entities": [*own, *carried]}
@@ -4500,6 +4777,9 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     ask that names another axis ("outstanding DO for hanlim" after a stock answer) still
     carries the echoed product through `apply._focus_rules` exactly as today, where the
     echo is what keeps the product on a new ask that starts fresh."""
+    # CARRY-ATTACH (reviewer S1): the key is the engine's own, never the parser's; one the
+    # emission carried is dropped before any exit, so it cannot keep a kind a NEW ASK drops.
+    verdict = {k: v for k, v in verdict.items() if k != RESTATED_KINDS_KEY}
     entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
     typed = [e for e in entities if e.get("current_message") is not False]
     if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in typed):
@@ -4507,7 +4787,16 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     restated = [e for e in entities if _restates_a_settled_row(e, focus)]
     if not restated:
         return verdict
-    return {**verdict, "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)]}
+    # CARRY-ATTACH (prod, 13 Oct 2026): the kinds the echoes restated ride on the verdict,
+    # so a turn the parser also reads as naming its own domain (`domain_in_message: true`,
+    # a NEW ASK) keeps the settled rows instead of evicting the subject it was asked about
+    # ("Drawing" answering "which attachment type for Srt8313?").
+    kinds = sorted({str(e.get("hint") or "").strip().lower() for e in restated})
+    return {
+        **verdict,
+        "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)],
+        RESTATED_KINDS_KEY: kinds,
+    }
 
 
 def _restates_a_settled_row(entity: dict[str, Any], focus: Focus) -> bool:
@@ -5300,6 +5589,9 @@ def envelope_of(
     envelope: dict[str, Any] = {
         "domain": spec.domain,
         "denied": refused,
+        # A fixed refusal (`_fixed_reply(refused=True)`) keeps its own text: not `denied` (the
+        # composer's generic line), only read by `engine._run_answer` to open no fit line.
+        "refused": bool(fragment.get("refused")),
         "entities": codes,
         # The PRODUCT subjects alone, for the composer's "No stock found for X" line: a
         # customer pinned from an earlier turn is a subject too, and is not a stock code.
@@ -5430,7 +5722,7 @@ def envelope_of(
         # for it (`lanes/business.order_date_text` is the one writer). Absent when the
         # fetch had no window - the header then says nothing rather than "all", which is
         # the report's own line and belongs with the other three.
-        "date_line": _date_line(ran_with),
+        "date_line": _date_line(ran_with, (fetched.get("tool") or {}).get("name") if isinstance(fetched.get("tool"), dict) else None),
         # R3 (PLAN-chatbot-answer-half-reattach.md): `lanes.business.run_fetch`'s own
         # tier-ask arm - the REAL "entitled, must pick a tier" path, discovered only
         # once the fetch actually ran the per-tier promotion probe. `fragment` (not
@@ -5482,10 +5774,21 @@ def envelope_of(
     return envelope
 
 
-def _date_line(ran_with: dict[str, Any] | None) -> str | None:
-    """`Order date: 01/09/2026 to 30/09/2026`, or None when the fetch had no window."""
+def _date_line(ran_with: dict[str, Any] | None, tool: str | None = None) -> str | None:
+    """`Order date: 01/09/2026 to 30/09/2026`, or None when the fetch had no window.
+
+    MULTI-ASK-PLAN R5 (owner, 9 Oct 2026): also None when the tool that ran takes no
+    window at all. The lane input carries the turn's window whatever the tool, so a last
+    purchase cost asked beside "2026" printed "Order date: 2026" over a cost the window
+    never touched. A tool takes one when `fetch.DATE_PARAMS` names it (the same table the
+    arg builder reads); an unknown tool keeps the line, as before."""
     if not isinstance(ran_with, dict):
         return None
+    if tool:
+        from app.services.chatbot.lanes.business import fetch as fetch_mod
+
+        if tool not in fetch_mod.DATE_PARAMS:
+            return None
     start = ran_with.get("date_filter_start")
     end = ran_with.get("date_filter_end")
     if not (start or end):

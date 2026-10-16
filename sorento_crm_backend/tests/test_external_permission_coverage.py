@@ -83,6 +83,7 @@ class TestCoverage:
             INGEST_PERMISSIONS,
             READ_PERMISSIONS,
         )
+        from app.services.autocount_cancel_ingest_service import AUTOCOUNT_CANCEL_ENTITIES
         from app.services.autocount_doc_ingest_service import (
             AUTOCOUNT_BRANCH_ENTITIES,
             AUTOCOUNT_DOC_ENTITIES,
@@ -109,6 +110,8 @@ class TestCoverage:
             # Contract 2.7 (#1354 S2): AutoCount DOs, GRNs and branches, same route.
             | set(AUTOCOUNT_DOC_ENTITIES)
             | set(AUTOCOUNT_BRANCH_ENTITIES)
+            # Contract 2.8 (AC-CANCEL-CRM): Cancel SO / Cancel PO, consignments stored only.
+            | set(AUTOCOUNT_CANCEL_ENTITIES)
         )
         assert set(INGEST_PERMISSIONS) == served
         assert set(READ_PERMISSIONS) == served

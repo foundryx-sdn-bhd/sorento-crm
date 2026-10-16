@@ -566,6 +566,59 @@ def test_quantity_golden_capped(api):
     assert next(r for r in rows if r["target_id"] == delivered["id"])["achieved_value"] == 14  # least(12,10)+4, never 16
 
 
+def test_quantity_leaves_an_autocount_cancel_out(api):
+    """AC-CANCEL-CRM: 10 ordered, TransferedQty 10 of which 4 is AutoCount Cancel SO. Neither
+    basis credits the agent with the cancelled 4."""
+    client, db, company_id = api
+    a = _agent(db, "A")
+    category = _category(db, company_id)
+    product = _product(db, company_id, category.id)
+    _so, line = _so_line(db, company_id, agent_id=a.id, order_date=date(2026, 10, 5),
+                         line_total=Decimal("1000"), qty_ordered=10, qty_delivered=10,
+                         product_id=product.id)
+    line.qty_cancelled = 4
+    db.flush()
+    ids = {}
+    for basis in ("ordered", "delivered"):
+        ids[basis] = client.post(BASE, json={
+            "subject_kind": "agent", "sales_agent_id": a.id, "name": f"ZZT Qty {basis}",
+            "metric": "quantity", "basis": basis, "product_scope": "all",
+            "start_date": "2026-10-01", "end_date": "2026-10-31", "target_value": 0,
+        }).json()["id"]
+    rows = client.get(BASE, params={"on": "2026-10-15", "subject": "agent"}).json()["rows"]
+    got = {b: next(r for r in rows if r["target_id"] == i)["achieved_value"] for b, i in ids.items()}
+    assert got == {"ordered": 6, "delivered": 6}
+
+
+def test_a_consignment_never_counts_as_sold(api):
+    """AC-CONSIGN-CRM Q5 a: a consignment line is not a sale; the sale counts where the DO /
+    invoice already does. Neither basis credits the agent with it."""
+    client, db, company_id = api
+    a = _agent(db, "A")
+    category = _category(db, company_id)
+    product = _product(db, company_id, category.id)
+    _so_line(db, company_id, agent_id=a.id, order_date=date(2026, 10, 5),
+             line_total=Decimal("1000"), qty_ordered=10, qty_delivered=10, product_id=product.id)
+    consignment, _line = _so_line(db, company_id, agent_id=a.id, order_date=date(2026, 10, 6),
+                                  line_total=Decimal("500"), qty_ordered=5, qty_delivered=5,
+                                  product_id=product.id)
+    consignment.doc_type = "consignment"
+    db.flush()
+    ids = {}
+    for metric in ("amount", "quantity"):
+        for basis in ("ordered", "delivered"):
+            ids[(metric, basis)] = client.post(BASE, json={
+                "subject_kind": "agent", "sales_agent_id": a.id, "name": f"ZZT {metric} {basis}",
+                "metric": metric, "basis": basis, "product_scope": "all",
+                "start_date": "2026-10-01", "end_date": "2026-10-31", "target_value": 0,
+            }).json()["id"]
+    rows = client.get(BASE, params={"on": "2026-10-15", "subject": "agent"}).json()["rows"]
+    got = {k: next(r for r in rows if r["target_id"] == i)["achieved_value"]
+           for k, i in ids.items()}
+    assert got == {("amount", "ordered"): 1000, ("amount", "delivered"): 1000,
+                   ("quantity", "ordered"): 10, ("quantity", "delivered"): 10}
+
+
 def test_scope_subcategories_products_all(api):
     client, db, company_id = api
     a = _agent(db, "A")

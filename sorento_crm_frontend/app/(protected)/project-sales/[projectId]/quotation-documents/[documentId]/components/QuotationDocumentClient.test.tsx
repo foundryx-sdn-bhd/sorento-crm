@@ -17,6 +17,9 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { StatusGraph } from '@/app/(protected)/system-management/status-graphs/types/statusGraph.types';
 import type {
   QuotationDocument,
   QuotationScope,
@@ -45,6 +48,7 @@ vi.mock('@/lib/toast', () => ({
     error: vi.fn(),
     success: vi.fn(),
     warning: vi.fn(),
+    dismiss: vi.fn(),
   },
 }));
 
@@ -64,6 +68,10 @@ const updateQuotationLine = vi.fn();
 const deleteQuotationLine = vi.fn();
 const reviseQuotation = vi.fn();
 const push = vi.fn();
+const reviseQuotationApproval = vi.fn();
+const moveQuotationApproval = vi.fn();
+const approveQuotationDocument = vi.fn();
+const rejectQuotationDocument = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: vi.fn() }),
@@ -81,10 +89,32 @@ vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
 // Answered outright rather than through a SessionProvider: none of the specs in this file are
 // about the approval gate (its own spec covers that), and the real hook reaches NextAuth, which
 // throws outside a provider.
+// Mutable per test (QUOTE-APPROVAL-UX): empty by default, so every older spec runs as a viewer
+// without the approve grant; the approver specs grant `projects.quotations.approve`.
+let granted = new Set<string>();
 vi.mock('@/hooks/usePermissions', () => ({
-  useHasPermission: () => false,
-  useHasAnyPermission: () => false,
-  usePermissions: () => ({ permissions: [], permissionSet: new Set(), isLoading: false }),
+  useHasPermission: (slug: string) => granted.has(slug),
+  useHasAnyPermission: (slugs: string[]) => slugs.some((slug) => granted.has(slug)),
+  usePermissions: () => ({ permissions: [...granted], permissionSet: granted, isLoading: false }),
+}));
+
+// The approval graph the header reads its "Send for approval" label from. Null by default.
+let graphData: StatusGraph | null = null;
+
+const createPendingAction = vi.fn();
+const getCurrentPendingAction = vi.fn();
+vi.mock('@/services/pendingActionService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/pendingActionService')>();
+  return {
+    ...actual,
+    createPendingAction: (...args: unknown[]) => createPendingAction(...args),
+    cancelPendingAction: vi.fn(),
+    getCurrentPendingAction: (...args: unknown[]) => getCurrentPendingAction(...args),
+  };
+});
+vi.mock('@/components/common/deferredToast', () => ({
+  deferredToast: (input: { id?: string }) => input.id ?? 'toast',
+  dismissDeferredToast: vi.fn(),
 }));
 
 // The approval graph is one install-wide read the block uses to name the salesperson's next
@@ -95,7 +125,7 @@ vi.mock('../../../../_shared/hooks/useQuotationDocuments', async (importOriginal
   >();
   return {
     ...actual,
-    useQuotationApprovalGraph: () => ({ data: null, isLoading: false }),
+    useQuotationApprovalGraph: () => ({ data: graphData, isLoading: false }),
   };
 });
 
@@ -108,6 +138,10 @@ vi.mock('../../../../_shared/services/quotationDocumentService', async (importOr
     getQuotationDocument: (...args: unknown[]) => getQuotationDocument(...args),
     listQuotationIssues: (...args: unknown[]) => listQuotationIssues(...args),
     updateQuotationDocument: (...args: unknown[]) => updateQuotationDocument(...args),
+    reviseQuotationApproval: (...args: unknown[]) => reviseQuotationApproval(...args),
+    moveQuotationApproval: (...args: unknown[]) => moveQuotationApproval(...args),
+    approveQuotationDocument: (...args: unknown[]) => approveQuotationDocument(...args),
+    rejectQuotationDocument: (...args: unknown[]) => rejectQuotationDocument(...args),
     queueQuotationIssuePdf: (...args: unknown[]) => queueQuotationIssuePdf(...args),
     queueQuotationIssueXlsx: (...args: unknown[]) => queueQuotationIssueXlsx(...args),
   };
@@ -368,6 +402,21 @@ async function gearOffersEdit() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  granted = new Set();
+  graphData = null;
+  getCurrentPendingAction.mockResolvedValue({ pending: null, last_outcome: null });
+  createPendingAction.mockImplementation(async (input: { entityId: string }) => ({
+    id: `pa-${input.entityId}`,
+    action_key: 'quotation_document.delete',
+    entity_type: 'quotation_document',
+    entity_id: input.entityId,
+    commit_at: new Date(Date.now() + 10_000).toISOString().replace(/\.\d+Z$/, ''),
+    window_seconds: 10,
+  }));
+  reviseQuotationApproval.mockResolvedValue(quotationDocument());
+  moveQuotationApproval.mockResolvedValue(quotationDocument());
+  approveQuotationDocument.mockResolvedValue(quotationDocument());
+  rejectQuotationDocument.mockResolvedValue(quotationDocument());
   getProject.mockResolvedValue(project());
   listQuotations.mockResolvedValue([]);
   listQuotationIssues.mockResolvedValue([]);
@@ -450,17 +499,15 @@ describe('QuotationDocumentClient header dedupe', () => {
 });
 
 describe('QuotationDocumentClient signing gate', () => {
-  it('refuses to offer Issue until the quotation is signed, and says why', async () => {
+  it('E4: offers Sign, not Send to Customer, until the quotation is signed', async () => {
+    // Replaces "a disabled Send to Customer with a Sign it first title": the one primary button
+    // is now the NEXT action, so an unsigned quotation leads with Sign.
     getQuotationDocument.mockResolvedValue(quotationDocument());
     renderScreen();
 
-    const issue = await screen.findByRole('button', { name: 'Send to Customer R1' });
-    expect(issue).toBeDisabled();
-    expect(issue).toHaveAttribute('title', 'Sign it first');
-    // Readable without hovering: the tooltip alone is unusable on a phone.
-    expect(screen.getByText('Sign it first')).toBeInTheDocument();
-    // And the way out of it is right there.
-    expect(screen.getByRole('button', { name: 'Sign' })).toBeEnabled();
+    const sign = await screen.findByRole('button', { name: 'Sign' });
+    expect(sign).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /^Send to Customer/ })).toBeNull();
   });
 
   it('opens Issue once a signature is on the draft', async () => {
@@ -475,10 +522,7 @@ describe('QuotationDocumentClient signing gate', () => {
     expect(screen.queryByRole('button', { name: 'Sign' })).not.toBeInTheDocument();
   });
 
-  it('holds Issue shut while below-floor pricing is waiting on a manager, and says why', async () => {
-    // S15's half of the same gate. Signed is not enough: the server refuses a below-floor
-    // quotation with 422 `quotation_below_floor_pending_approval`, so the CTA says so up front
-    // rather than letting somebody press it and read an error.
+  it('E1: below-floor pricing nobody has asked a manager about leads with Send for approval, never Send to Customer', async () => {
     getQuotationDocument.mockResolvedValue(
       quotationDocument({
         signatory_signature: signature(),
@@ -489,12 +533,8 @@ describe('QuotationDocumentClient signing gate', () => {
     );
     renderScreen();
 
-    const issue = await screen.findByRole('button', { name: 'Send to Customer R1' });
-    expect(issue).toBeDisabled();
-    expect(issue).toHaveAttribute(
-      'title',
-      'A manager has to approve the below-floor pricing first',
-    );
+    expect(await screen.findByRole('button', { name: 'Send for approval' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /^Send to Customer/ })).toBeNull();
   });
 
   it('leaves Issue alone once a manager has approved', async () => {
@@ -511,11 +551,9 @@ describe('QuotationDocumentClient signing gate', () => {
     expect(await screen.findByRole('button', { name: 'Send to Customer R1' })).toBeEnabled();
   });
 
-  it('refuses to re-issue an issued document that carries no signature', async () => {
-    // "It is issued, so it must have been signed" is the tempting shortcut and it is wrong on
-    // every document issued before the signature gate existed. Those rows are real: pressing
-    // Issue on one puts the user straight into the server's `quotation_document_unsigned` 422.
-    // Signed-ness is read off the signature and nothing else.
+  it('E4: an issued document that carries no signature leads with Sign, not Send to Customer', async () => {
+    // "It is issued, so it must have been signed" is wrong on every document issued before the
+    // signature gate existed. Signed-ness is read off the signature and nothing else.
     getQuotationDocument.mockResolvedValue(
       quotationDocument({
         is_issued: true,
@@ -539,11 +577,8 @@ describe('QuotationDocumentClient signing gate', () => {
     ]);
     renderScreen();
 
-    const issue = await screen.findByRole('button', { name: 'Send to Customer R2' });
-    expect(issue).toBeDisabled();
-    expect(issue).toHaveAttribute('title', 'Sign it first');
-    // And the way out is offered, not just the refusal.
-    expect(screen.getByRole('button', { name: 'Sign' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Sign' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /^Send to Customer/ })).toBeNull();
   });
 
   it('shows the captured signature read-only in the signatures panel', async () => {
@@ -597,7 +632,7 @@ describe('QuotationDocumentClient Edit quotation (#1341)', () => {
     seedOneScope();
     renderScreen();
 
-    expect(await screen.findByRole('button', { name: 'Send to Customer R1' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Sign' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
   });
 
@@ -1214,5 +1249,586 @@ describe('QuotationDocumentClient header dedupe (#1336 kept, AC-QF054)', () => {
       await screen.findByRole('heading', { level: 2, name: 'CADANGAN MEMBINA PANGSAPURI' }),
     ).toBeInTheDocument();
     expect(screen.getAllByText('CADANGAN MEMBINA PANGSAPURI')).toHaveLength(1);
+  });
+});
+
+
+// ---------------------------------------------------------------------------------------------
+// QUOTE-APPROVAL-UX (15 Oct 2026): one primary CTA = the next action; locked while Pending or
+// Approved with an explicit Revise; the page leads back to the Quotations tab.
+// ---------------------------------------------------------------------------------------------
+
+/** The seeded `quotation` graph: Send for approval is the draft -> pending_approval edge. */
+function approvalGraph(sendLabel = 'Send for approval'): StatusGraph {
+  const rungs = [
+    { key: 'draft', label: 'Draft', sort_order: 0, is_initial: true },
+    { key: 'rejected', label: 'Rejected', sort_order: 1, is_initial: false },
+    { key: 'pending_approval', label: 'Pending Approval', sort_order: 2, is_initial: false },
+    { key: 'approved', label: 'Approved', sort_order: 3, is_initial: false },
+    { key: 'issued', label: 'Issued', sort_order: 4, is_initial: false },
+  ];
+  const statuses = rungs.map((rung) => ({
+    id: `s-${rung.key}`,
+    entity_type: 'quotation',
+    scope_id: null,
+    key: rung.key,
+    label: rung.label,
+    category: null,
+    color_hex: null,
+    description: null,
+    sort_order: rung.sort_order,
+    is_initial: rung.is_initial,
+    is_terminal: false,
+    is_active: true,
+    is_archived: false,
+    is_default: rung.is_initial,
+    is_system: false,
+  }));
+  const edges = [
+    ['draft', 'pending_approval', sendLabel, 0],
+    ['pending_approval', 'approved', 'Approve', 0],
+    ['pending_approval', 'rejected', 'Reject', 1],
+    ['rejected', 'draft', 'Back to draft', 0],
+    ['approved', 'issued', 'Issued to the customer', 0],
+    ['issued', 'pending_approval', 'Send for approval', 0],
+  ] as const;
+  return {
+    entity_type: 'quotation',
+    requested_scope_id: null,
+    resolved_scope_id: null,
+    is_fork: false,
+    statuses,
+    transitions: edges.map(([from, to, label, sort_order], index) => ({
+      id: `t${index}`,
+      entity_type: 'quotation',
+      scope_id: null,
+      from_status_id: `s-${from}`,
+      to_status_id: `s-${to}`,
+      label,
+      sort_order,
+      trigger_mode: 'manual' as const,
+      conditions_json: null,
+    })),
+  };
+}
+
+/** A quotation with lines below the floor, standing on the given approval rung. */
+function belowFloor(
+  rung: string | null,
+  overrides: Partial<QuotationDocument> = {},
+): QuotationDocument {
+  return quotationDocument({
+    requires_approval: true,
+    below_floor_line_count: 2,
+    approval_status_key: rung,
+    approval_status_id: rung ? `s-${rung}` : null,
+    ...overrides,
+  });
+}
+
+/** Every button whose variant is `primary` (the filled one); Reject and the rest are outline. */
+function primaryButtons() {
+  return screen.getAllByRole('button').filter((button) => button.classList.contains('bg-primary'));
+}
+
+async function screenReady() {
+  await screen.findByRole('button', { name: 'Quotation actions' });
+}
+
+describe('QuotationDocumentClient: one primary CTA (E1-E9)', () => {
+  it.each([
+    ['no rung', null, false],
+    ['draft', 'draft', false],
+    ['issued', 'issued', true],
+  ])('E1: below floor on %s leads with Send for approval and renders no Send to Customer', async (_name, rung, issued) => {
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(
+      belowFloor(rung, {
+        signatory_signature: signature(),
+        is_issued: issued,
+        current_issue_no: issued ? 1 : null,
+        issue_count: issued ? 1 : 0,
+      }),
+    );
+    renderScreen();
+
+    const send = await screen.findByRole('button', { name: 'Send for approval' });
+    expect(send).toBeEnabled();
+    expect(primaryButtons()).toEqual([send]);
+    expect(screen.queryByRole('button', { name: /^Send to Customer/ })).toBeNull();
+  });
+
+  it('E1: an UNSIGNED below-floor draft leads with Send for approval; Sign is not a primary button', async () => {
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(belowFloor('draft'));
+    renderScreen();
+
+    const send = await screen.findByRole('button', { name: 'Send for approval' });
+    expect(primaryButtons()).toEqual([send]);
+    expect(
+      screen.queryAllByRole('button', { name: 'Sign' }).filter((b) => b.classList.contains('bg-primary')),
+    ).toHaveLength(0);
+    const menu = await openGear();
+    expect(within(menu).getByRole('menuitem', { name: /Sign quotation/ })).toBeInTheDocument();
+  });
+
+  it('E1: the label comes off the graph edge, and falls back to Send for approval with no graph', async () => {
+    graphData = approvalGraph('Ask a manager');
+    getQuotationDocument.mockResolvedValue(belowFloor('draft', { signatory_signature: signature() }));
+    const { unmount } = renderScreen();
+
+    expect(await screen.findByRole('button', { name: 'Ask a manager' })).toBeInTheDocument();
+    unmount();
+
+    graphData = null;
+    renderScreen();
+    expect(await screen.findByRole('button', { name: 'Send for approval' })).toBeInTheDocument();
+  });
+
+  it('E1: pressing it moves the quotation along the draft to pending edge', async () => {
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(belowFloor('draft', { signatory_signature: signature() }));
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Send for approval' }));
+
+    await waitFor(() =>
+      expect(moveQuotationApproval).toHaveBeenCalledWith('p1', 'd1', 's-pending_approval'),
+    );
+  });
+
+  it('C3: a rejected quotation shows the reason and leads with Send for approval, with no Back to draft anywhere', async () => {
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(
+      belowFloor('rejected', {
+        signatory_signature: signature(),
+        approval_rejected_reason: 'Bring the WC suite back to RM 240.',
+      }),
+    );
+    renderScreen();
+
+    const send = await screen.findByRole('button', { name: 'Send for approval' });
+    expect(screen.getByText(/Bring the WC suite back to RM 240\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Back to draft/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Back to draft/i })).toBeNull();
+
+    // Straight from Rejected: the press targets the pending rung (the server walks the graph).
+    fireEvent.click(send);
+    await waitFor(() =>
+      expect(moveQuotationApproval).toHaveBeenCalledWith('p1', 'd1', 's-pending_approval'),
+    );
+  });
+
+  it('E2: a manager on a pending quotation gets Approve (primary) and Reject (outline) in the header only', async () => {
+    granted = new Set(['projects.quotations.approve']);
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(belowFloor('pending_approval'));
+    renderScreen();
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    const reject = screen.getByRole('button', { name: 'Reject' });
+    expect(primaryButtons()).toEqual([approve]);
+    expect(reject.classList.contains('bg-primary')).toBe(false);
+    // Not repeated in the banner.
+    expect(screen.getAllByRole('button', { name: 'Approve' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Reject' })).toHaveLength(1);
+
+    fireEvent.click(approve);
+    await waitFor(() => expect(approveQuotationDocument).toHaveBeenCalledWith('p1', 'd1'));
+  });
+
+  it('E2: Reject asks for a reason before it can be sent', async () => {
+    granted = new Set(['projects.quotations.approve']);
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(belowFloor('pending_approval'));
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    expect(screen.getByRole('button', { name: 'Send it back' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/Why/i), { target: { value: '  Bring it back.  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send it back' }));
+
+    await waitFor(() =>
+      expect(rejectQuotationDocument).toHaveBeenCalledWith('p1', 'd1', 'Bring it back.'),
+    );
+  });
+
+  it('E3: a salesperson on a pending quotation who has not signed gets Sign', async () => {
+    getQuotationDocument.mockResolvedValue(belowFloor('pending_approval'));
+    renderScreen();
+
+    const sign = await screen.findByRole('button', { name: 'Sign' });
+    expect(primaryButtons()).toEqual([sign]);
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Send to Customer/ })).toBeNull();
+  });
+
+  it('E3: once signed there is no primary button, only "With a manager for approval"', async () => {
+    getQuotationDocument.mockResolvedValue(
+      belowFloor('pending_approval', { signatory_signature: signature() }),
+    );
+    renderScreen();
+
+    await screenReady();
+    expect(await screen.findByText('With a manager for approval')).toBeInTheDocument();
+    expect(primaryButtons()).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /^Send to Customer/ })).toBeNull();
+  });
+
+  it.each([
+    ['nothing below the floor', () => quotationDocument()],
+    ['approved', () => belowFloor('approved')],
+  ])('E4: %s and unsigned leads with Sign and renders no Send to Customer', async (_name, make) => {
+    getQuotationDocument.mockResolvedValue(make());
+    renderScreen();
+
+    const sign = await screen.findByRole('button', { name: 'Sign' });
+    expect(primaryButtons()).toEqual([sign]);
+    expect(screen.queryByRole('button', { name: /^Send to Customer/ })).toBeNull();
+  });
+
+  it.each([
+    ['nothing below the floor', () => quotationDocument({ signatory_signature: signature() }), 'R1'],
+    ['approved', () => belowFloor('approved', { signatory_signature: signature() }), 'R1'],
+    [
+      'approved on an issued document',
+      () =>
+        belowFloor('approved', {
+          signatory_signature: signature(),
+          is_issued: true,
+          current_issue_no: 2,
+          issue_count: 2,
+        }),
+      'R3',
+    ],
+  ])('E5: %s and signed leads with an enabled Send to Customer %s', async (_name, make, revision) => {
+    getQuotationDocument.mockResolvedValue(make());
+    renderScreen();
+
+    const send = await screen.findByRole('button', { name: `Send to Customer ${revision}` });
+    expect(send).toBeEnabled();
+    expect(primaryButtons()).toEqual([send]);
+  });
+
+  it.each([
+    ['draft below floor, unsigned', () => belowFloor('draft'), []],
+    ['pending, unsigned, as manager', () => belowFloor('pending_approval'), ['projects.quotations.approve']],
+    ['pending, signed, as manager', () => belowFloor('pending_approval', { signatory_signature: signature() }), ['projects.quotations.approve']],
+    ['rejected, unsigned', () => belowFloor('rejected'), []],
+    ['approved, unsigned', () => belowFloor('approved'), []],
+    ['approved, signed', () => belowFloor('approved', { signatory_signature: signature() }), []],
+  ])('E6: at most one primary button in %s', async (_name, make, grants) => {
+    granted = new Set(grants);
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(make());
+    renderScreen();
+
+    await screenReady();
+    await waitFor(() => expect(primaryButtons().length).toBeGreaterThan(0));
+    expect(primaryButtons()).toHaveLength(1);
+  });
+
+  it('E7: the gear keeps Sign again, Edit, both downloads, the counter-sign link and Delete', async () => {
+    getQuotationDocument.mockResolvedValue(quotationDocument({ signatory_signature: signature() }));
+    renderScreen();
+
+    const menu = await openGear();
+    for (const name of [
+      'Sign again',
+      'Edit quotation',
+      'Download PDF',
+      'Download Excel',
+      'Copy counter-sign link',
+      'Delete quotation',
+    ]) {
+      expect(within(menu).getByRole('menuitem', { name: new RegExp(name) })).toBeInTheDocument();
+    }
+  });
+
+  it('E7: an unsigned quotation reads Sign quotation in the gear', async () => {
+    getQuotationDocument.mockResolvedValue(quotationDocument());
+    renderScreen();
+
+    const menu = await openGear();
+    expect(within(menu).getByRole('menuitem', { name: /Sign quotation/ })).toBeInTheDocument();
+  });
+
+  it('E8: the approval banner states the situation and holds no buttons', async () => {
+    granted = new Set(['projects.quotations.approve']);
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(belowFloor('pending_approval'));
+    renderScreen();
+
+    const sentence = await screen.findByText(/2 lines are priced below their floor/i);
+    const banner = sentence.closest('div.rounded-lg') as HTMLElement;
+    expect(banner).not.toBeNull();
+    expect(within(banner).queryByRole('button')).toBeNull();
+  });
+
+  it.each([
+    ['pending below floor', () => belowFloor('pending_approval', { signatory_signature: signature() })],
+    ['draft below floor', () => belowFloor('draft', { signatory_signature: signature() })],
+    ['draft, nothing below floor, signed', () => quotationDocument({ signatory_signature: signature() })],
+  ])('E9: a reader without edit rights and without the grant sees no primary button (%s)', async (_name, make) => {
+    getProject.mockResolvedValue(project({ can_edit: false }));
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(make());
+    renderScreen();
+
+    expect(
+      await screen.findByText('You can read this quotation but not change it.'),
+    ).toBeInTheDocument();
+    expect(primaryButtons()).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /^Send to Customer/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Send for approval' })).toBeNull();
+  });
+});
+
+/** The header chip: the PR/SF pill (rounded-full, font-semibold) carrying the given words. */
+async function headerPill(label: string) {
+  await screenReady();
+  return await waitFor(() => {
+    const hit = screen
+      .getAllByText(label)
+      .find((el) => el.classList.contains('rounded-full') && el.classList.contains('font-semibold'));
+    if (!hit) throw new Error(`no pill reading ${label}`);
+    return hit;
+  });
+}
+
+describe('QuotationDocumentClient: status chip is the shared PR/SF pill (A1-A5)', () => {
+  it.each([
+    ['pending_approval', 'Pending approval', ['bg-amber-100', 'text-amber-800']],
+    ['approved', 'Approved', ['bg-blue-100', 'text-blue-800']],
+    ['rejected', 'Rejected', ['bg-red-100', 'text-red-800']],
+    ['draft', 'Draft', ['bg-muted', 'text-muted-foreground']],
+  ])('chip: the %s rung reads "%s" on the pill palette', async (rung, label, classes) => {
+    getQuotationDocument.mockResolvedValue(belowFloor(rung));
+    renderScreen();
+
+    const pill = await headerPill(label);
+    for (const cls of classes) expect(pill.classList.contains(cls)).toBe(true);
+  });
+
+  it.each([
+    ['Issued', { is_issued: true, current_issue_no: 1, issue_count: 1 }, 'bg-emerald-100', 'text-emerald-800'],
+    ['Accepted', { is_issued: true, current_issue_no: 1, issue_count: 1, customer_decision: 'accepted' as const }, 'bg-emerald-100', 'text-emerald-800'],
+    ['Changes requested', { is_issued: true, current_issue_no: 1, issue_count: 1, customer_decision: 'changes_requested' as const }, 'bg-amber-100', 'text-amber-800'],
+  ])('chip: %s uses the shared pill colours', async (label, overrides, bg, text) => {
+    getQuotationDocument.mockResolvedValue(quotationDocument(overrides));
+    renderScreen();
+
+    const pill = await headerPill(label);
+    expect(pill.classList.contains(bg)).toBe(true);
+    expect(pill.classList.contains(text)).toBe(true);
+  });
+});
+
+describe('QuotationDocumentClient: locked while Pending or Approved, explicit Revise (D6-D7)', () => {
+  it.each(['pending_approval', 'approved'])(
+    'D6: Edit quotation on a %s quotation asks for a reason and calls Revise before opening the form',
+    async (rung) => {
+      seedOneScope();
+      getQuotationDocument.mockResolvedValue(
+        belowFloor(rung, { grand_total: '9000.00', scopes: [scope()] }),
+      );
+      renderScreen();
+
+      expect(await screen.findByText('Wall-hung WC')).toBeInTheDocument();
+      await pressEdit();
+
+      // The prompt, not the form.
+      expect(push).not.toHaveBeenCalled();
+      const reason = await screen.findByLabelText('What changed, and why?');
+      const revise = screen.getByRole('button', { name: 'Revise' });
+      expect(revise).toBeDisabled();
+
+      fireEvent.change(reason, { target: { value: '   ' } });
+      expect(screen.getByRole('button', { name: 'Revise' })).toBeDisabled();
+
+      fireEvent.change(reason, { target: { value: 'Customer re-scoped the towers' } });
+      expect(screen.getByRole('button', { name: 'Revise' })).toBeEnabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Revise' }));
+
+      await waitFor(() =>
+        expect(reviseQuotationApproval).toHaveBeenCalledWith(
+          'p1',
+          'd1',
+          'Customer re-scoped the towers',
+        ),
+      );
+      await waitFor(() =>
+        expect(push).toHaveBeenCalledWith('/project-sales/p1/quotation-documents/d1/edit'),
+      );
+    },
+  );
+
+  it('D6: a draft quotation still goes straight to the form, with no prompt', async () => {
+    seedOneScope();
+    getQuotationDocument.mockResolvedValue(
+      belowFloor('draft', { grand_total: '9000.00', scopes: [scope()] }),
+    );
+    renderScreen();
+
+    expect(await screen.findByText('Wall-hung WC')).toBeInTheDocument();
+    await pressEdit();
+
+    expect(push).toHaveBeenCalledWith('/project-sales/p1/quotation-documents/d1/edit');
+    expect(screen.queryByLabelText('What changed, and why?')).toBeNull();
+    expect(reviseQuotationApproval).not.toHaveBeenCalled();
+  });
+
+  it('D6: the Lines tab offers a per-scope Revise to vN on a draft but not while locked', async () => {
+    seedOneScope();
+    getQuotationDocument.mockResolvedValue(
+      belowFloor('draft', { grand_total: '9000.00', scopes: [scope()] }),
+    );
+    const { unmount } = renderScreen();
+    expect(await screen.findByRole('button', { name: /Revise to v3/i })).toBeInTheDocument();
+    unmount();
+
+    seedOneScope();
+    getQuotationDocument.mockResolvedValue(
+      belowFloor('pending_approval', { grand_total: '9000.00', scopes: [scope()] }),
+    );
+    renderScreen();
+    expect(await screen.findByText('Wall-hung WC')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Revise to v/i })).toBeNull();
+  });
+
+  it('D7: after Revise the chip reads Draft and the primary button reads Send for approval', async () => {
+    graphData = approvalGraph();
+    seedOneScope();
+    const pending = belowFloor('pending_approval', {
+      grand_total: '9000.00',
+      scopes: [scope()],
+      signatory_signature: signature(),
+    });
+    getQuotationDocument.mockResolvedValue(pending);
+    reviseQuotationApproval.mockImplementation(async () => {
+      const revised = belowFloor('draft', {
+        grand_total: '9000.00',
+        scopes: [scope()],
+        signatory_signature: signature(),
+      });
+      getQuotationDocument.mockResolvedValue(revised);
+      return revised;
+    });
+    renderScreen();
+
+    expect(await screen.findByText('Wall-hung WC')).toBeInTheDocument();
+    await pressEdit();
+    fireEvent.change(await screen.findByLabelText('What changed, and why?'), {
+      target: { value: 'Re-priced the WC suite' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Revise' }));
+
+    await waitFor(() => expect(reviseQuotationApproval).toHaveBeenCalled());
+    await waitFor(async () => expect(await headerPill('Draft')).toBeInTheDocument());
+    expect(await screen.findByRole('button', { name: 'Send for approval' })).toBeEnabled();
+  });
+});
+
+describe('QuotationDocumentClient: Delete is the deferred countdown (F7)', () => {
+  it('F7: the record gear Delete parks quotation_document.delete and opens no confirmation dialog', async () => {
+    granted = new Set(['projects.projects.delete']);
+    getQuotationDocument.mockResolvedValue(quotationDocument());
+    renderScreen();
+
+    const menu = await openGear();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: /Delete quotation/ }));
+
+    await waitFor(() => expect(createPendingAction).toHaveBeenCalledTimes(1));
+    expect(createPendingAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKey: 'quotation_document.delete',
+        entityType: 'quotation_document',
+        entityId: 'd1',
+      }),
+    );
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByText('Confirm delete')).toBeNull();
+  });
+
+  it('F7: neither the quotation page nor the panel imports ConfirmDeleteDialog any more', () => {
+    const here = __dirname;
+    const page = readFileSync(resolve(here, 'QuotationDocumentClient.tsx'), 'utf8');
+    const panel = readFileSync(resolve(here, '../../../components/QuotationsPanel.tsx'), 'utf8');
+    expect(page).not.toContain('ConfirmDeleteDialog');
+    expect(panel).not.toContain('ConfirmDeleteDialog');
+  });
+});
+
+
+describe('QuotationDocumentClient: fix round 2', () => {
+  it('2: a failed Reject keeps the dialog open, the reason typed, and shows the error in the dialog', async () => {
+    granted = new Set(['projects.quotations.approve']);
+    graphData = approvalGraph();
+    getQuotationDocument.mockResolvedValue(belowFloor('pending_approval'));
+    rejectQuotationDocument.mockRejectedValue(new Error('Server says no'));
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    fireEvent.change(screen.getByLabelText(/Why/i), { target: { value: 'Bring it back.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send it back' }));
+
+    await waitFor(() => expect(rejectQuotationDocument).toHaveBeenCalled());
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText(/Why/i)).toHaveValue('Bring it back.');
+    expect(await within(dialog).findByText(/Server says no/)).toBeInTheDocument();
+  });
+
+  it.each(['pending_approval', 'approved'])(
+    '3: no Recheck alerts button on the Lines tab while %s',
+    async (rung) => {
+      seedOneScope();
+      getQuotationDocument.mockResolvedValue(
+        belowFloor(rung, { grand_total: '9000.00', scopes: [scope()] }),
+      );
+      renderScreen();
+
+      expect(await screen.findByText('Wall-hung WC')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Recheck alerts/i })).toBeNull();
+    },
+  );
+
+  it('3: a draft still offers Recheck alerts', async () => {
+    seedOneScope();
+    getQuotationDocument.mockResolvedValue(
+      belowFloor('draft', { grand_total: '9000.00', scopes: [scope()] }),
+    );
+    renderScreen();
+
+    expect(await screen.findByRole('button', { name: /Recheck alerts/i })).toBeInTheDocument();
+  });
+
+  it('6: gear Delete shows the countdown INLINE in the header, not only a toast', async () => {
+    getQuotationDocument.mockResolvedValue(quotationDocument());
+    renderScreen();
+
+    const menu = await openGear();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: /Delete quotation/ }));
+
+    expect(await screen.findByTestId('deferred-countdown')).toBeInTheDocument();
+  });
+
+  it('6: a delete already running for this document shows its countdown on mount', async () => {
+    getCurrentPendingAction.mockResolvedValue({
+      pending: {
+        id: 'pa-running',
+        action_key: 'quotation_document.delete',
+        entity_type: 'quotation_document',
+        entity_id: 'd1',
+        commit_at: new Date(Date.now() + 8_000).toISOString().replace(/\.\d+Z$/, ''),
+        window_seconds: 10,
+      },
+      last_outcome: null,
+    });
+    getQuotationDocument.mockResolvedValue(quotationDocument());
+    renderScreen();
+
+    expect(await screen.findByTestId('deferred-countdown')).toBeInTheDocument();
+    expect(createPendingAction).not.toHaveBeenCalled();
   });
 });

@@ -85,6 +85,7 @@ from app.services.product_companion_service import (
     bundled_with_item_codes_map,
     resolve_bundled_item_codes,
 )
+from app.services.order_inquiry_reserve_service import reserve_status_predicates
 from app.services.project_order_inquiry_service import (
     ProjectOrderInquiryService,
     arrives_outside_window,
@@ -463,6 +464,32 @@ _OPEN_REQUEST_QTY = (
     .limit(1)
     .scalar_subquery()
 )
+#: OI-BULK-RESERVE v4 (B2): the OPEN request row's warehouse id and code, same open-row
+#: conditions and latest ordinal as `_OPEN_REQUEST_QTY`, for the Lines page's Decide drafts.
+_OPEN_REQUEST_WAREHOUSE_ID = (
+    select(OrderInquiryReserveRequestRow.warehouse_id)
+    .select_from(OrderInquiryReserveRequestRow)
+    .join(
+        OrderInquiryReserveRequest,
+        OrderInquiryReserveRequest.id == OrderInquiryReserveRequestRow.request_id,
+    )
+    .where(
+        OrderInquiryReserveRequestRow.row_id == OrderInquiryRow.id,
+        OrderInquiryReserveRequestRow.qty_reserved.is_(None),
+        OrderInquiryReserveRequest.state == "requested",
+    )
+    .correlate(OrderInquiryRow)
+    .order_by(OrderInquiryReserveRequest.ordinal.desc())
+    .limit(1)
+    .scalar_subquery()
+)
+# Aliased: the main query outer-joins `Warehouse` itself, which this would auto-correlate to.
+_REQUEST_WAREHOUSE = aliased(Warehouse)
+_OPEN_REQUEST_LOCATION = (
+    select(_REQUEST_WAREHOUSE.warehouse_code)
+    .where(_REQUEST_WAREHOUSE.id == _OPEN_REQUEST_WAREHOUSE_ID)
+    .scalar_subquery()
+)
 #: 6e.4 (AC-RS-78c): the LATEST answered request row's own `qty_reserved` for this
 #: row - `0` means CS declined it (`Reserve 0`, or amended down to 0), which the Lines
 #: grid reads as `Not reserved` with Amend + History. NULL when nothing was answered.
@@ -770,6 +797,7 @@ _COLUMNS = (
     ProjectSalesOrder.id.label("project_sales_order_id"),
     ProjectSalesOrder.is_pre_order.label("is_pre_order"),
     SalesOrder.id.label("core_sales_order_id"),
+    SalesOrder.doc_type.label("so_doc_type"),
     # AC-B6-7 (`PLAN-board-oi-mechanical-22sep.md`, S6): the "SO line" cell resolves
     # `/scm/sales-orders/<core_sales_order_id>?tab=lines&line=<core_line_id>`, so the only
     # NEW column the deep link needs is the core LINE's own id - the sales-order half is
@@ -818,6 +846,8 @@ _COLUMNS = (
     _HAS_OPEN_RESERVE_REQUEST.label("has_open_reserve_request"),
     # PLAN-oi-request-cs-reserve.md 6e.2: the open request row's own `qty_requested`.
     _OPEN_REQUEST_QTY.label("requested_qty"),
+    _OPEN_REQUEST_WAREHOUSE_ID.label("reserve_warehouse_id"),
+    _OPEN_REQUEST_LOCATION.label("reserve_location"),
     # 6e.4 (AC-RS-78c): the latest answer, so a declined line reads `declined`.
     _LATEST_ANSWERED_QTY.label("latest_answered_qty"),
     # PLAN-oi-worklist-split-customer-project.md, Slice 2: the Raised at column's own
@@ -976,9 +1006,14 @@ class OrderInquiryWorklistService:
     # -------------------------------------------------------------- derived SPO
 
     def _derived_spo_query(self, *columns: Any, extra_where: tuple = ()) -> Any:
-        """S5 (R-D/R-E/R-F): every OPEN SPO allocation this row's own PO links reach -
-        `from_po_number = po_number AND product_id = po_line.product_id`, open per
-        `derived_spo_open_clauses()` (shared with `links_for_rows`'s display entries).
+        """S5 (R-D/R-E/R-F): every OPEN SPO allocation this row's own PO LINKS' LINES
+        became - `from_po_number = po_number AND trim(from_po_line_ref) =
+        trim(po_line.source_ref) AND product_id = po_line.product_id`, open per
+        `derived_spo_open_clauses()` (shared with `links_for_rows`'s display entries,
+        which apply the same line key). OI-SPO-EXACT (owner 13 Oct): an allocation of the
+        same PO and product that quotes ANOTHER line was bought for another sales order
+        line and is not this row's incoming stock; a PO line with no `source_ref` reaches
+        nothing.
 
         ONE ROW PER ALLOCATION. The links are reached through an EXISTS rather than a
         join, which is the whole of AC-D12: a row holding two PO links on the SAME
@@ -1008,6 +1043,9 @@ class OrderInquiryWorklistService:
             .where(
                 OrderInquiryLink.row_id == OrderInquiryRow.id,
                 SPOAllocation.from_po_number == PurchaseOrder.po_number,
+                func.btrim(SPOAllocation.from_po_line_ref)
+                == func.btrim(PurchaseOrderLine.source_ref),
+                func.coalesce(func.btrim(PurchaseOrderLine.source_ref), "") != "",
                 SPOAllocation.product_id == PurchaseOrderLine.product_id,
             )
             .correlate(OrderInquiryRow, SPOAllocation)
@@ -1143,6 +1181,8 @@ class OrderInquiryWorklistService:
         # the whole-OI Confirm (`AcknowledgeFilter.inquiry_id`) and gear > Auto link
         # (`AutoPlaceRequest.filter.inquiry_id`).
         inquiry_id: Optional[str] = None,
+        # OI-BULK-RESERVE v4: keep a line when one of ITS request rows is in this status.
+        reserve: Optional[str] = None,
         # Lane C, PLAN-order-sheet-oi-reports-22sep.md (AC-C3): the OI worksheet's own
         # row set - a run's `run_scope_oi_rows` result, fed in as the row ids to print
         # rather than as a new set of filter clauses. `None` (the default) means "every
@@ -1238,6 +1278,21 @@ class OrderInquiryWorklistService:
             base = base.filter(_PROJECT_TITLE == project)
         if inquiry_id:
             base = base.filter(OrderInquiry.id == inquiry_id)
+        if reserve:
+            base = base.filter(
+                select(OrderInquiryReserveRequestRow.id)
+                .select_from(OrderInquiryReserveRequestRow)
+                .join(
+                    OrderInquiryReserveRequest,
+                    OrderInquiryReserveRequest.id == OrderInquiryReserveRequestRow.request_id,
+                )
+                .where(
+                    OrderInquiryReserveRequestRow.row_id == OrderInquiryRow.id,
+                    reserve_status_predicates()[reserve],
+                )
+                .correlate(OrderInquiryRow)
+                .exists()
+            )
         if row_ids is not None:
             base = base.filter(OrderInquiryRow.id.in_(list(row_ids)))
         if supplier_id:
@@ -1575,6 +1630,15 @@ class OrderInquiryWorklistService:
         anchor_headline_by_id = self._anchor_headline_by_id(rows, links)
         host_changes_by_row_id = self._host_changes_for_rows(rows, bundle_map)
         raise_events_by_row = self._raise_events_by_row(rows)
+        # AC-RR-6: one query for every PO line on the page that has an open SPO chained from it.
+        blocked = ProjectOrderInquiryService(self.db).po_lines_with_open_chained_spo(
+            [
+                link.get("po_line_id")
+                for row_links in links.values()
+                for link in row_links
+                if link.get("received") and link.get("po_line_id")
+            ]
+        )
         return {
             "data": [
                 self._serialize(
@@ -1588,6 +1652,7 @@ class OrderInquiryWorklistService:
                     host_changes_by_row_id,
                     suggested_links,
                     raise_events_by_row,
+                    blocked,
                 )
                 for row in rows
             ],
@@ -2209,6 +2274,7 @@ class OrderInquiryWorklistService:
         host_changes_by_row_id: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         suggested_links: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         raise_events_by_row: Optional[Dict[str, Dict[str, Any]]] = None,
+        blocked: Optional[set] = None,
     ) -> Dict[str, Any]:
         line_flow = (flow or {}).get(row.so_line_id, {})
         row_links = (links or {}).get(row.id, [])
@@ -2220,8 +2286,30 @@ class OrderInquiryWorklistService:
         linked_qty = sum(
             (_dec(link["qty"]) for link in row_links if not link.get("derived")), _ZERO
         )
+        # OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for -
+        # `order_inquiry_reserve_service._requestable`, worked off the links already
+        # loaded: qty less the OPEN links, the reserve links and the bundle (a link on a
+        # fully received document does not count against it).
+        open_linked = sum(
+            (
+                _dec(link["qty"])
+                for link in row_links
+                if not link.get("derived")
+                and (not link.get("received") or link.get("po_line_id") in (blocked or ()))
+            ),
+            _ZERO,
+        )
+        requestable = (
+            _dec(row.qty)
+            - open_linked
+            - _dec(getattr(row, "reserved_qty", None))
+            - _dec(row.bundled_qty)
+        )
         return {
             "id": row.id,
+            "reserve_requestable_qty": float(max(requestable, _ZERO)),
+            # OI-BULK-RESERVE v4: the header's id, so the Lines page can commit per order inquiry.
+            "order_inquiry_id": row.order_inquiry_id,
             "inquiry_no": row.inquiry_no,
             "so_date": row.so_date,
             "so_number": row.so_number,
@@ -2262,6 +2350,9 @@ class OrderInquiryWorklistService:
             # 6e.2: "0" when there is no open request row, same default shape as
             # `reserved_qty` above.
             "requested_qty": _qty_str(_dec(getattr(row, "requested_qty", None))),
+            # OI-BULK-RESERVE v4 (B2): the open request row's warehouse, null without one.
+            "reserve_warehouse_id": getattr(row, "reserve_warehouse_id", None),
+            "reserve_location": getattr(row, "reserve_location", None),
             # WHERE this row's quantity sits (AC-I5), off the ONE reader the per-project
             # list and the SCM sales-order detail also use.
             "links": row_links,
@@ -2352,6 +2443,7 @@ class OrderInquiryWorklistService:
             "project_id": row.project_id,
             "project_sales_order_id": row.project_sales_order_id,
             "core_sales_order_id": row.core_sales_order_id,
+            "so_doc_type": row.so_doc_type,
             # AC-B6-7 (`PLAN-board-oi-mechanical-22sep.md`, S6): the core LINE's own id,
             # which the "SO line" cell puts on
             # `/scm/sales-orders/<core_sales_order_id>?tab=lines&line=<core_line_id>`

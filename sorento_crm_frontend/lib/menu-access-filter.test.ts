@@ -48,13 +48,13 @@ const LOADED = {
 } as const;
 
 describe('applyMenuAccess on the real MENU_SIDEBAR', () => {
-  it('a user holding only ideation.board.view sees exactly Ideas, under OVERVIEW alone', () => {
+  it('a user holding only ideation.board.view sees exactly the Ideas group (All ideas + Roadmap), under OVERVIEW alone', () => {
     const menu = applyMenuAccess(MENU_SIDEBAR, {
       ...LOADED,
       isSuperadmin: false,
       permissionSet: new Set(['ideation.board.view']),
     });
-    expect(collectPaths(menu)).toEqual(['/ideas']);
+    expect(collectPaths(menu)).toEqual(['/ideas', '/ideas/portal']);
     expect(menu.filter((i) => i.heading).map((i) => i.heading)).toEqual([
       'OVERVIEW',
     ]);

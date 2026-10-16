@@ -50,6 +50,14 @@ vi.mock('@/app/(protected)/sla-management/_shared/formSLAService', () => ({
 const apiFetch = vi.fn();
 vi.mock('@/lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetch(...args) }));
 
+// Both saves need `user_management.settings.edit` (SETTINGS-PERM-GATE). The caller
+// holds it unless a test takes it away.
+const EDIT = 'user_management.settings.edit';
+const granted = new Set<string>([EDIT]);
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: (slug: string) => granted.has(slug),
+}));
+
 import PortalRevisionsSettingsPage from './page';
 
 const CONFIGS = [
@@ -87,6 +95,8 @@ function mockApi() {
 beforeEach(() => {
   cleanup();
   apiFetch.mockReset();
+  granted.clear();
+  granted.add(EDIT);
   mockSettings.portalRevisionsEnabled = true;
   mockSettings.portalMaxRevisions = 2;
 });
@@ -201,5 +211,21 @@ describe('PortalRevisionsSettingsPage per-type table', () => {
       expect(put).toBeTruthy();
       expect(JSON.parse(put![1].body).max_revisions).toBeNull();
     });
+  });
+});
+
+describe('PortalRevisionsSettingsPage without the edit slug', () => {
+  it('offers no save and no row edit, and the globals are read-only', async () => {
+    granted.clear();
+    granted.add('user_management.settings.view');
+    mockApi();
+    wrap(<PortalRevisionsSettingsPage />);
+
+    expect(await screen.findByText('Stock Inquiry')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /save settings/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /reset/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit Stock Inquiry' })).toBeNull();
+    expect(screen.getByLabelText('Enabled')).toBeDisabled();
+    expect(screen.getByLabelText('Max revisions')).toBeDisabled();
   });
 });
