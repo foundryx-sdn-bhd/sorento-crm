@@ -314,7 +314,7 @@ def test_recorded_prompt_overrides_and_result_set_keys_are_stripped(session_fact
 
 
 # ------------------------------------------------------------------ review round 2
-@pytest.mark.parametrize("blocked_name", ["crm_low_stock_report", "crm_portal_link_get"])
+@pytest.mark.parametrize("blocked_name", ["crm_low_stock_report", "crm_portal_link_get", "crm_sales_analysis"])
 def test_live_mode_refuses_mcp_tools_with_side_effects(session_factory, recorded, live_env, monkeypatch, blocked_name):
     real_parse = parser_mod.parse
 
@@ -345,7 +345,8 @@ def test_query_embeddings_in_a_live_run_are_counted_as_calls(session_factory, re
 
     monkeypatch.setattr(parser_mod, "parse", embed_only)
     out = go(session_factory, recorded)[0]
-    assert out["usage"]["calls"] >= 1, "the embedding call was not metered"
+    assert out["usage"]["embed_calls"] >= 1, "the embedding call was not metered"
+    assert out["usage"]["calls"] == 0, "embeddings must not count as model calls"
 
 
 def test_an_unpriced_model_call_stops_the_item_before_a_second_model_call(session_factory, recorded, live_env, monkeypatch):
@@ -355,3 +356,20 @@ def test_an_unpriced_model_call_stops_the_item_before_a_second_model_call(sessio
     _parse_with(monkeypatch, "mystery-model", calls_per_turn=2)
     go(session_factory, recorded, n=1)
     assert len(actual) == 1, "a second model call went out after an unpriced one"
+
+
+def test_embeddings_use_their_own_bucket_and_do_not_consume_max_calls(session_factory, recorded, live_env, monkeypatch):
+    from app.services import embedding_worker
+
+    monkeypatch.setattr(embedding_worker, "_embed_text_chunks", lambda chunks: [[0.0] for _ in chunks])
+
+    def embed_then_chat(config, user_block):
+        for _ in range(3):
+            embedding_worker._embed_text_chunks(["x"])
+        llm_provider.OpenAIProvider.chat(object(), [{"role": "user", "content": "x"}], model="gpt-5.4-mini")
+        return _parser_output()
+
+    monkeypatch.setattr(parser_mod, "parse", embed_then_chat)
+    out = go(session_factory, recorded, n=1, max_calls=1)[0]
+    assert "stopped" not in out and "turn" in out, out
+    assert out["usage"]["embed_calls"] == 3 and out["usage"]["calls"] == 1
