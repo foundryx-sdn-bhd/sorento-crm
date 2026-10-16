@@ -131,7 +131,10 @@ Decisions:
   but the column order_lines.quantity is NOT NULL (models/order.py:556), so a blank can only become 0 or a 500.
 - Backend (crew, 17 Oct): internal PR create / PUT / update-and-reply reject a line qty that is null, missing or
   <= 0 (422); order-management order lines reject an explicit null (0 still allowed: 4267 of 116487 dev lines are 0);
-  SPO allocation update rejects an explicit null qty (422, today a 500). External PR intake: pending crew ruling.
+  SPO allocation update rejects an explicit null qty (422, today a 500). External PR intake (crew ruling (b), 17 Oct):
+  unchanged, a customer / n8n PR is never lost; a line that arrives with a NULL qty shows as needs-a-qty to staff:
+  the PR detail Quantity cell shows the edit form's sentence as an error instead of "-", and the edit form flags it on
+  load, Update blocked until a valid qty.
   Not in scope (follow-ups): quotation / project PO line update turns null into 1; gt=0 on int line qtys.
 - ConvertToPackingListDialog "Quantity to place" is required (blank used to place the full remaining silently).
 - System-health field rules equal the backend bounds; packing list quantity_shipped is a whole number.
