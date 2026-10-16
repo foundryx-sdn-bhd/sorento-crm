@@ -3441,14 +3441,17 @@ class OrderInquiryWorklistService:
                 carrier = min(
                     sitting, key=lambda v: (v.split.delivery_date is None, v.split.delivery_date or date.max)
                 )
+                # Worked off the row as it stands, before a split's qty replaces it.
+                figures = (_export_taken(row), _export_remaining(row), _export_suggested(row))
                 for view in sitting:
+                    first = view is carrier
                     out.append(
                         {
                             **row,
                             "qty": _qty_str(_dec(view.split.qty)),
                             "delivery_date": view.split.delivery_date,
                             "split_remark": splits.sitting_remark(view, line_id),
-                            "split_follow": view is not carrier,
+                            "split_figures": figures if first else ("", "", ""),
                         }
                     )
                 continue
@@ -3501,9 +3504,11 @@ class OrderInquiryWorklistService:
                     row.get("po_number") or "",
                     row.get("location") or "",
                     ack_label(row),
-                    "" if row.get("split_follow") else _export_taken(row),
-                    "" if row.get("split_follow") else _export_remaining(row),
-                    "" if row.get("split_follow") else _export_suggested(row),
+                    *(
+                        row["split_figures"]
+                        if "split_figures" in row
+                        else (_export_taken(row), _export_remaining(row), _export_suggested(row))
+                    ),
                     row.get("split_remark") or "",
                 ]
                 # `columns` may be a PREFIX of `EXPORT_HEADINGS` (Lane C's worksheet, no
