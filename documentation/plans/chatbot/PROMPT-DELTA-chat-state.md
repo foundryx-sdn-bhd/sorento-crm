@@ -19,3 +19,15 @@ Rules taught are business rules (what carries), not language: no word lists, no 
 Add to the op table: `keep` / `skip` / `clear` / `unclear` with axis `customer` or `period`. Rule: when the State holds
 a customer or a period, say for each one whether it applies to THIS message (keep), does not apply (skip, it stays
 held), is dropped (clear), or you cannot tell (unclear). An ETA ask is about incoming stock (meaning, not a word).
+
+## Pending text changes from review (16 Oct ~23:30; the coder applies them to `STATE_SECTION`)
+
+- `set` / `clear` axis must be one of: product, customer, warehouse, brand, tier, channel, period, status, sort,
+  quantity, or an entity kind listed in the prompt. Replace "filter" with these names.
+- Every value this message states needs its own `set` for its axis; a stated value without a `set` is not used.
+- `switch_domain`: axis null; the new domain is the `domain_hint` you fill as usual.
+- `new_subject`: the customer (see the held-slot rule), the access tier and the brand carry; nothing else.
+- `pick`: one item per picked position ("1 and 3" = two picks). Only product rows of the `last list` are pickable.
+- `close_question`: only when the open question is still owed (it asked for something) and the message leaves it
+  unanswered; not for a question that was already answered.
+- When the State block is absent or every line is none: output `[]` (nothing to change); do not output `new_subject`.
