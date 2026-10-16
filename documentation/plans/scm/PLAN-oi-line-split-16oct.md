@@ -96,3 +96,8 @@ handshake; an unlinked late tranche is placed against the line date (cascade rea
 - Mock v2 filed: whole-SO split view (rows = SO lines grouped by item + location, columns = dates,
   New date, Cancel; a New line row), zoom pane = the single-line view. Design draft above still
   holds; the balance mode column is dropped (Q2 b) and a split may be a cancel.
+- Dev DB (15 Oct prod copy, read-only check 16 Oct): SO417636 now present. CSK14B BRW-BB lines (Seq =
+  `line_no`): 263 301 @ 20/09/2026 closed; 560 14 @ 20/09/2026 (the old 417 @ 20/10/2026 line);
+  640 632 @ 20/11/2026 (old 192); 720 649 @ 02/01/2027 (old 504 @ 20/12/2026); 4816 751 @
+  01/01/2030 cancelled. CSK11A: 768 335 @ 02/01/2027, 4817 313 @ 20/11/2026, 544 154 closed. Use it
+  for the hand test once the build starts.
