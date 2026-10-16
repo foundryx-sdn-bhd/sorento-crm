@@ -239,7 +239,7 @@ describe('AC-RS-83 / 83b / 83c: the reserve icons live inside the State cell', (
     expect(screen.getByLabelText('Edit reserve')).toBeInTheDocument();
   });
 
-  it('AC-RS-83c: with the permission the State column starts at 410 wide with no minSize, so it can be narrowed back down', () => {
+  it('AC-RS-83c: with the permission the State column starts at 438 wide with no minSize, so it can be narrowed back down', () => {
     const { result } = renderHook(() =>
       useOrderInquiryHeaderLinesColumns({ canReserve: true } as never),
     );
@@ -247,8 +247,9 @@ describe('AC-RS-83 / 83b / 83c: the reserve icons live inside the State cell', (
       (column) => ((column as { id?: string }).id ?? (column as { accessorKey?: string }).accessorKey) === 'state',
     ) as { size?: number; minSize?: number };
     // Round 2 (`PLAN-oi-decision-trail-ui.md`): 380 -> 410, room for the new Decision
-    // trail icon beside the pill and the reserve icons.
-    expect(stateColumn.size).toBe(410);
+    // trail icon beside the pill and the reserve icons. OI-BULK-RESERVE: 410 -> 438 for
+    // the line's x Reject between the tick and the pen.
+    expect(stateColumn.size).toBe(438);
     expect(stateColumn.minSize).toBeUndefined();
   });
 

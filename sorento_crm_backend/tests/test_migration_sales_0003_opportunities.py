@@ -84,7 +84,7 @@ def test_upgrade_then_downgrade():
         outer = raw.begin()
         try:
             raw.exec_driver_sql(f'CREATE SCHEMA "{scratch}"')
-            conn = raw.execution_options(schema_translate_map={"sales": scratch})
+            conn = raw.execution_options(schema_translate_map={None: None, "sales": scratch})
             _run(conn, teams.upgrade)
             _run(conn, leader.upgrade)
 

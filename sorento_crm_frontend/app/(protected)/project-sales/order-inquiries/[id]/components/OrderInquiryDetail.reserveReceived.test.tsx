@@ -348,10 +348,10 @@ describe('AC-RR-43: the confirm dialog Balance counts the received part', () => 
     await screen.findByText('ZZT-BAL');
     const gridRow = screen.getAllByText('ZZT-BAL').map((e) => e.closest('tr')).find(Boolean) as HTMLElement;
     fireEvent.click(within(gridRow).getByLabelText('Edit reserve'));
-    await screen.findByRole('dialog', { name: /ZZT-BAL/i });
+    const form = await screen.findByRole('dialog', { name: /ZZT-BAL/i });
     fireEvent.change(screen.getByLabelText('Reserved'), { target: { value: '435' } });
     fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'BRW only has 435' } });
-    fireEvent.click(screen.getByRole('button', { name: /^stage$/i }));
+    fireEvent.click(within(form).getByRole('button', { name: /^save$/i }));
     await screen.findByText(/Reserve 435 @/);
     fireEvent.click(screen.getByRole('button', { name: /^reserve \(1\)$/i }));
 
