@@ -80,6 +80,7 @@ import type {
 import BackToList from '@/components/common/BackToList';
 import { codeWithName, distinctName } from '@/lib/product-display';
 import { numberFieldError } from '@/lib/number-field';
+import { useStableColumns } from '@/hooks/useStableColumns';
 
 /**
  * The purchase-order detail, built section for section as the twin of `SalesOrderDetail`.
@@ -461,7 +462,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
     [currency],
   );
 
-  const columns = useMemo<ColumnDef<PurchaseOrderLine>[]>(
+  const liveColumns = useMemo<ColumnDef<PurchaseOrderLine>[]>(
     () => [
       {
         accessorKey: 'sku',
@@ -663,6 +664,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                 step="0.01"
                 aria-label={`Unit price on ${row.original.sku}`}
                 value={draft.unit_price}
+                error={numberFieldError(draft.unit_price, { min: 0, optional: true })}
                 onChange={(e) =>
                   setLineDrafts((prev) => ({
                     ...prev,
@@ -698,6 +700,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                 step="0.01"
                 aria-label={`Discount on ${row.original.sku}`}
                 value={draft.discount}
+                error={numberFieldError(draft.discount, { min: 0, optional: true })}
                 onChange={(e) =>
                   setLineDrafts((prev) => ({
                     ...prev,
@@ -896,6 +899,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
     ],
   );
 
+  const columns = useStableColumns(liveColumns);
   const table = useReactTable({
     columns,
     data: lines,
