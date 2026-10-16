@@ -117,6 +117,8 @@ class OrderInquiryHandoverResend:
             )
             for row in rows
         ]
+        # OI-LINE-SPLIT (UAC D1): a split line reads one line per split, as on Confirm.
+        items = service.split_handover_items(items)
         context, _source_id = build_handover_email(self.db, items, store_excel=False)
         handover = context["handover"]
         handover["subject_scope"] = f"{handover['subject_scope']} (Resent)"

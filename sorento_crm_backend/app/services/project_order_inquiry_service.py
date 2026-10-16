@@ -4377,6 +4377,84 @@ class ProjectOrderInquiryService:
                 # what purchasing must order is what the rows raised, never need - held.
                 raised=raised if same_kind and lines_told > 1 else None,
             )
+        self._tell_splits(pso_id, [line for line, _now, _before in saved])
+
+    def _tell_splits(self, pso_id: str, lines: Sequence[ProjectSalesOrderLine]) -> None:
+        """OI-LINE-SPLIT (UAC D1): a SPLIT line this Confirm tells purchasing about reads one
+        email line per split instead of what it queued (`split_handover_items`). A split
+        line this Confirm tells nothing about stays untold (Q3)."""
+        queue = self.db.info.get(_HANDOVER_PENDING_KEY)
+        if not queue:
+            return
+        queue[:] = self.split_handover_items(
+            queue, line_ids={str(line.id) for line in lines}
+        )
+
+    def split_handover_items(
+        self, items: Sequence[Dict[str, Any]], *, line_ids: Optional[set] = None
+    ) -> List[Dict[str, Any]]:
+        """OI-LINE-SPLIT (UAC D1): every handover item of a SPLIT line (its own splits,
+        the origin view) is replaced, at the place of its first item, by one item per
+        split, each reading alone in the same template: QTY / DELIVERY = the base the line
+        was split from (`was`), NEW QTY / NEW DATE = the split's (blank date for a cancel),
+        REMARK = its change word and remark. Read by Confirm (`_tell_splits`) and by Send to
+        purchasing (`oi_handover_resend`). `line_ids` narrows which lines may expand."""
+        from app.services.project_line_split_service import SplitOutputs
+
+        candidates = {str(i.get("so_line_id")) for i in items if i.get("so_line_id")}
+        if line_ids is not None:
+            candidates &= {str(i) for i in line_ids}
+        splits = SplitOutputs(self.db, candidates)
+        if not splits.by_origin:
+            return list(items)
+        out: List[Dict[str, Any]] = []
+        done: set = set()
+        for item in items:
+            line_id = str(item.get("so_line_id") or "")
+            views = splits.by_origin.get(line_id) if line_id in candidates else None
+            if not views:
+                out.append(item)
+                continue
+            if line_id in done:
+                continue
+            done.add(line_id)
+            line = self.db.get(ProjectSalesOrderLine, line_id)
+            own_location = line.stock_location if line is not None else None
+            out.extend(self._split_item(item, view, own_location) for view in views)
+        return out
+
+    @staticmethod
+    def _split_item(
+        template: Mapping[str, Any], view: Any, own_location: Optional[str]
+    ) -> Dict[str, Any]:
+        """One split's handover item, built off the item its line queued."""
+        from app.services.project_line_split_service import WORD_CANCEL
+
+        split = view.split
+        word = view.word
+        entry = dict(template.get("line") or {})
+        entry.update(
+            qty=_qty_str(_dec(split.qty)),
+            delivery_date=_handover_fmt_date(split.delivery_date),
+            location=own_location or entry.get("location") or "",
+            remark=f"{word}, {split.remark}" if split.remark else word,
+            was=_format_handover_was({"qty": split.base_qty, "delivery_date": split.base_date}),
+        )
+        if word == WORD_CANCEL:
+            keys = [IV_CANCEL_BALANCE]
+        elif word == REMARK_SPELLING[IV_DELAY]:
+            keys = [IV_DELAY]
+        elif word == REMARK_SPELLING[IV_ADVANCE]:
+            keys = [IV_ADVANCE]
+        else:
+            keys = list(template.get("verb_keys") or ["QTY_CHANGE"])
+        return {
+            **template,
+            "stock_location": entry["location"] or template.get("stock_location"),
+            "verb_keys": keys,
+            "told_for_saved_line": True,
+            "line": entry,
+        }
 
     def forget_rows_told_for_saved_lines(self, pso_id: str) -> None:
         """A planning-change apply confirms its lines first (one decision line each, which
@@ -6379,6 +6457,8 @@ class ProjectOrderInquiryService:
         links_by_row = self.links_for_rows([row.id for row in rows])
         suggested_links_by_row = self.suggested_links_for_rows([row.id for row in rows])
         linked_by_row = self._linked_qty_by_row([row.id for row in rows])
+        # OI-LINE-SPLIT (UAC D3): the splits of each row's line (origin view), one read.
+        splits_by_line = self.splits_for_lines([row.so_line_id for row in rows])
         # PLAN-scm-supplied-with-companions.md S5: the anchor's own item code, for the
         # rows that carry a bundle - one query for the whole page rather than one per row.
         anchor_ids = {row.bundled_with_row_id for row in rows if row.bundled_with_row_id}
@@ -6493,9 +6573,40 @@ class ProjectOrderInquiryService:
                     ),
                     "previous_delivery_date": row.previous_delivery_date,
                     "previous_item_code": row.previous_item_code,
+                    "splits": splits_by_line.get(str(row.so_line_id), [])
+                    if row.so_line_id
+                    else [],
                 }
             )
         return out
+
+    def splits_for_lines(self, line_ids: Sequence[Optional[str]]) -> Dict[str, List[Dict[str, Any]]]:
+        """OI-LINE-SPLIT (UAC D3): each line's own splits as the OI Lines tab's read-only
+        expand reads them - Qty, Date, Change, the line it sits on (its number, never an
+        id on screen) and Remark. `{}` for lines with none."""
+        from app.services.project_line_split_service import SplitOutputs
+
+        splits = SplitOutputs(self.db, [str(i) for i in line_ids if i])
+        return {
+            line_id: [
+                {
+                    "id": str(view.split.id),
+                    "qty": _qty_str(_dec(view.split.qty)),
+                    "delivery_date": (
+                        view.split.delivery_date.isoformat()
+                        if view.split.delivery_date
+                        else None
+                    ),
+                    "is_cancel": bool(view.split.is_cancel),
+                    "change": view.word,
+                    "sits_on_line_id": view.sits_on,
+                    "sits_on_line_no": splits.line_nos.get(view.sits_on) if view.sits_on else None,
+                    "remark": view.split.remark or "",
+                }
+                for view in views
+            ]
+            for line_id, views in splits.by_origin.items()
+        }
 
     def links_for_rows(self, row_ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
         """Every link on these rows, serialized, keyed by row - one query for a page.
