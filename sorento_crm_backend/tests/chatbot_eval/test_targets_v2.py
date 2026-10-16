@@ -1069,8 +1069,8 @@ def test_a_code_lookup_for_an_attribute_passes_when_the_reply_states_it():
 
 # 7. an unlinked non-staff contact must not see another company's delivery order fields
 DO_RESULT = {"deliveryOrders": [{"doNumber": "DO-SYN-1", "customer": "Synthetic Trading Sdn Bhd", "driver": "Ali Synthetic",
-                                 "lorry_plate": "ZZZ1234"}]}
-DO_REPLY = "DO-SYN-1 for Synthetic Trading Sdn Bhd, driver Ali Synthetic, lorry ZZZ1234."
+                                 "lorry_plate": "PLATE-1"}]}
+DO_REPLY = "DO-SYN-1 for Synthetic Trading Sdn Bhd, driver Ali Synthetic, lorry PLATE-1."
 
 
 def _do_leak_row():
