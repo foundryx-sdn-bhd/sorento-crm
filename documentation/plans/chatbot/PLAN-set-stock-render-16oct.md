@@ -1,6 +1,6 @@
 # PLAN: SET-STOCK-RENDER - chatbot stock answers for a product set read right
 
-Status: Build (tester red tests), card v2 filed for the owner OK 16 Oct; defaults Q1 a, Q2 b, Q3 a. Size M, LEAD pattern. Not the small fix track:
+Status: PARKED after review (owner 16 Oct 18:10: owner-visible chatbot changes wait for the EVAL-BENCH chatbot hand test). Built: fix ca3de65de, PR #1744; Q1 a, Q2 built as b2 (asked crew), Q3 a. Size M, LEAD pattern. Not the small fix track:
 new reply wording the owner notices.
 
 ## Why
