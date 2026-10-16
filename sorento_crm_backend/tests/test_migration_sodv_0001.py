@@ -62,11 +62,12 @@ def test_revision_ids_are_within_32_chars_and_chain_onto_main():
     assert module.down_revision
 
 
-def test_the_migration_chain_has_a_single_head_that_is_ours():
+def test_the_migration_chain_has_a_single_head():
     cfg = Config(str(BACKEND / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND / "alembic"))
     heads = ScriptDirectory.from_config(cfg).get_heads()
-    assert heads == ["sodv_0001_ol_from_doc_idx"]
+    # Exactly one head; which revision it is moves with every later migration.
+    assert len(heads) == 1, heads
 
 
 def test_upgrade_builds_concurrently_under_a_bounded_lock_wait_and_downgrade_drops_it():
