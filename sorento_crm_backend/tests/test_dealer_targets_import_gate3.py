@@ -214,3 +214,96 @@ def test_one_threshold_repeated_by_tiers_naming_different_accounts_is_one_tier()
     assert [(t.threshold, t.rate, t.account_rates) for t in q.tiers] == [
         (D("300000"), None, {keys[0]: D("3"), keys[1]: D("2")}),
     ]
+
+
+# review (gate 3) ----------------------------------------------------------------------
+
+
+def test_two_branches_in_one_upload_each_map_to_their_own_ledger(api):
+    """Review B1: the tie-break is not cached across branches."""
+    client, db, company_id = api
+    jb = _customer(db, company_id, "ALPHA HARDWARE (JB) SDN BHD [A/C I]", 1)
+    kl = _customer(db, company_id, "ALPHA HARDWARE (KL) SDN BHD [A/C I]", 1)
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "DEALER NAME", "Q1"
+        ws["A2"], ws["B2"] = "Alpha Hardware (KL) Sdn Bhd A/C I", "100,000 - 1%"
+        ws["A3"], ws["B3"] = "Alpha Hardware (JB) Sdn Bhd A/C I", "200,000 - 2%"
+
+    data, _ = _wb(fill)
+    rows = _upload(client, db, data, dry_run=True)["rows"]
+    assert [r["customer"] for r in rows] == [kl.customer_name, jb.customer_name]
+
+
+def test_an_at_sign_in_a_sheet_name_or_pay_to_never_crashes(api):
+    """Review B2: "@" is file text, never a key marker."""
+    client, db, company_id = api
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "@HQ"
+    ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "Q1", "PAY TO"
+    ws["A2"], ws["B2"] = "ZZT NOBODY A/C I", "100,000 - 1%"
+    ws["A3"], ws["B3"], ws["C3"] = "ZZT NOBODY TWO A/C I", "100,000 - 1%", "@ZH01"
+    buf = io.BytesIO()
+    wb.save(buf)
+    files = {"file": ("t.xlsx", buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    res = client.post(f"{BASE}/import", params={"dry_run": "true", "year": 2026}, files=files)
+    assert res.status_code == 200, res.text
+
+
+def test_an_unpaired_incentive_in_a_split_block_fails_the_rows():
+    """Review S1: the split never drops an incentive it cannot pair."""
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "DEALER NAME", "Q1"
+        ws.merge_cells("B1:F1")
+        for col, text in zip("BCDEF", ("Tier 1", "Tier 1 Incentive", "Tier 4", "Tier 4 Incentive", "Tier 5 Incentive")):
+            ws[f"{col}2"] = text
+        ws["A3"], ws["A4"] = "X TRADING A/C I", "X TRADING A/C III"
+        ws["B3"], ws["B4"], ws["C3"], ws["C4"] = 100000, 120000, 0.01, 0.01
+        ws["D3"], ws["E3"], ws["E4"], ws["F3"], ws["F4"] = 500000, 0.02, 0.02, 0.03, 0.03
+        ws.merge_cells("D3:D4")
+
+    parsed = _parse(fill)
+    assert all(r.status == "not_representable" and "no threshold" in r.reason for r in parsed.rows), [
+        (r.row, r.status, r.reason) for r in parsed.rows
+    ]
+
+
+def test_only_a_plain_incentive_after_a_quarterly_block_is_adopted():
+    """Review S2: any other rate column the reader cannot place still fails loudly."""
+
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "YEARLY TARGET", "TOTAL INCENTIVE"
+        ws["A2"], ws["B2"], ws["C2"] = "X TRADING A/C I", 500000, 0.05
+
+    row = _parse(fill).rows[0]
+    assert row.status == "not_representable" and "cannot place" in row.reason
+
+
+def test_a_shared_quarterly_incentive_reaches_both_halves_of_a_split():
+    """Review nit: the dealer's quarters and the accounts' quarters both read the one INCENTIVE."""
+
+    def fill(ws):
+        ws["A2"] = "CUSTOMER NAME"
+        ws.merge_cells("A2:A3")
+        ws["B2"] = "QUARTERLY (POINT)"
+        ws.merge_cells("B2:C2")
+        ws["B3"], ws["C3"], ws["D3"] = "JAN-MAR", "APR-JUN", "INCENTIVE"
+        ws["A4"], ws["A5"] = "KILO LIVING A/C I", "KILO LIVING A/C II"
+        ws["B4"], ws["B5"] = 100000, 90000             # Q1 per account
+        ws["C4"] = 300000                               # Q2 merged: the dealer's
+        ws.merge_cells("C4:C5")
+        ws["D4"], ws["D5"] = 0.04, 0.03
+
+    parsed = _parse(fill)
+    assert all(r.status == "mapped" for r in parsed.rows), [(r.row, r.reason) for r in parsed.rows]
+    keys = [r.key for r in parsed.rows]
+    dealer = next(s for s in parsed.schemes if s.codes == keys)
+    assert [(t.period_start, t.threshold, t.account_rates) for t in dealer.tiers] == [
+        (date(2026, 4, 1), D("300000"), {keys[0]: D("4"), keys[1]: D("3")}),
+    ]
+    owns = sorted((s.codes[0], [(t.threshold, t.rate) for t in s.tiers]) for s in parsed.schemes if len(s.codes) == 1)
+    assert owns == [(keys[0], [(D("100000"), D("4"))]), (keys[1], [(D("90000"), D("3"))])]
