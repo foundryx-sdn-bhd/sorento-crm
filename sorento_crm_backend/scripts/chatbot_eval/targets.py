@@ -476,6 +476,7 @@ def _menu_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tupl
     return ("no_menu", ok, "The bot asked a clarifying menu that is not product versus customer.")
 
 
+STOCK_WORDS_RE = re.compile(r"\b(?:stock|in stock|available|availability|ada|ready stock|ready|how many left|berapa ada)\b", re.I)
 QUANTITY_ASK_RE = re.compile(r"how\s+many|berapa", re.I)
 
 
@@ -513,11 +514,17 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> 
     owed = (list(after.get("owed") or []) if isinstance(after, dict) else []) + list(payload.get("owed") or [])
     if not (QUANTITY_ASK_RE.search(reply_text(row)) or "quantity" in owed):
         return ("no_qty_ask", True, "The bot asked how many although it was not needed.")
-    # a stock ask is what the ANSWER KEY says, never what the bot planned
-    stock_ask = (gold or {}).get("fact") == "inventory" or _norm((gold or {}).get("fact_label")) == "stock"
+    # a stock ask is what the ANSWER KEY says; with no fact in it, the user's own words; never what the bot planned
+    g = gold or {}
+    if g.get("fact") or g.get("fact_label"):
+        stock_ask = g.get("fact") == "inventory" or _norm(g.get("fact_label")) == "stock"
+    else:
+        stock_ask = bool(STOCK_WORDS_RE.search(user_message(row)))
     if not stock_ask:
         return ("no_qty_ask", False, "The bot asked how many although it was not needed.")
     mode = _stock_mode(row)
+    if mode is None and not any("inventory" in str(t.get("name")) or "stock" in str(t.get("name")) for t in _tools(row)):
+        return ("no_qty_ask", False, "The bot asked how many although it was not needed.")   # no stock lookup behind it
     return ("no_qty_ask", None if mode is None else mode == "availability", "The bot asked how many although it was not needed.")
 
 
