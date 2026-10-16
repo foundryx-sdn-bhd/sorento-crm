@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
+from app.models.chatbot_turn import ChatbotTurn
 from app.services.ai_assistant_service import MCPRuntimeClient
 from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.head import parser as parser_mod
@@ -53,7 +54,7 @@ def _record(session_factory, stub_access, monkeypatch, *, keep_turn: bool):
     }
     if not keep_turn:
         db = session_factory()
-        db.execute(text("DELETE FROM chatbot.turns"))
+        db.query(ChatbotTurn).delete()  # ORM, so the fixture schema_translate_map applies
         db.commit()
     # the replay must not reach a live parser or the real MCP server
     monkeypatch.setattr(parser_mod, "parse", lambda *a, **k: (_ for _ in ()).throw(AssertionError("live parser called")))
@@ -74,7 +75,7 @@ def recorded_kept(session_factory, seeded, stub_access, monkeypatch):
 
 
 def _turn_count(session_factory) -> int:
-    return session_factory().execute(text("SELECT count(*) FROM chatbot.turns")).scalar()
+    return session_factory().query(ChatbotTurn).count()  # ORM, so the fixture schema_translate_map applies
 
 
 def _leaves(x):

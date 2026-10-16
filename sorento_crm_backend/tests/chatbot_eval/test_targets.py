@@ -359,3 +359,27 @@ def test_summarise_refuses_with_fewer_than_three_runs():
     s = summarise(runs, {"code_lookup": 0.97})
     assert s["meets"] is False
     assert "3" in str(s.get("reason", "")) and "run" in str(s.get("reason", ""))
+
+
+def test_asked_attachment_type_accepts_the_parser_taxonomy_words_in_gold_names():
+    gold = dict(GOLD_TS, attachment_type_names=["technical_specifications", "Technical Specifications",
+                                                "technical drawing", "drawing"])
+    ok = _att([_file("Technical Specifications")], asked="technical drawing")
+    check(grade_turn(ok, item("attachment", **gold)), True)
+    check(grade_turn(_att([_file("Technical Specifications")], asked="Drawing"), item("attachment", **gold)), True)
+    bad = _att([_file("Technical Specifications")], asked="product photos")
+    check(grade_turn(bad, item("attachment", **gold)), False, "asked type")
+
+
+def test_a_word_starting_with_a_month_prefix_is_not_a_date():
+    r = _fact_row("SRTA100 Marble 1200 pcs", [{"code": "SRTA100", "qty": 1200}])
+    assert made_up_facts(r) == []
+    r2 = _fact_row("SRTA100 Mayfair 1200 pcs, Mandarin 1200 pcs", [{"code": "SRTA100", "qty": 1200}])
+    assert made_up_facts(r2) == []
+
+
+def test_month_year_still_parses_as_a_date():
+    ok = _fact_row("SRTA100 arrives in Mar 2026.", [{"code": "SRTA100", "eta": "2026-03-12"}])
+    assert made_up_facts(ok) == []
+    bad = _fact_row("SRTA100 arrives in Mar 2026.", [{"code": "SRTA100", "eta": "2026-04-01"}])
+    assert any("Mar 2026" in f for f in made_up_facts(bad))
