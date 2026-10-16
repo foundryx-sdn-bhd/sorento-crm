@@ -52,7 +52,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { SectionSkeleton } from '@/components/common/SectionSkeleton';
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
-import { numberFieldError } from '@/lib/number-field';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -911,6 +911,12 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   };
 
   const handleSaveDraft = async () => {
+    // A draft may be incomplete, but a typed number that is wrong is never saved.
+    const badHeaderNumbers = collectMissingRequired().filter((m) => m.badNumber);
+    if (badHeaderNumbers.length > 0) {
+      reportMissingRequired(badHeaderNumbers);
+      return;
+    }
     if (lineQuantitiesInvalid()) return;
     setSaving(true);
     try {
@@ -969,10 +975,19 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
     return missing;
   };
 
-  /** A line quantity that is typed but wrong (negative). Blank stays allowed. */
+  const isUnreadable = (v: string | null | undefined): boolean =>
+    typeof v === 'string' && v.trim() !== '' && parseNumberDraft(v) === null;
+
+  /** A line quantity, unit price or total that is typed but wrong (negative, bad input). Blank stays allowed. */
   const lineQuantitiesInvalid = (): boolean => {
     const bad =
-      products.some((l) => numberFieldError(l.quantity, { min: 0, optional: true })) ||
+      products.some(
+        (l) =>
+          numberFieldError(l.quantity, { min: 0, optional: true }) ||
+          // A negative unit price keeps its own "Unit price is required" refusal on submit.
+          (isUnreadable(l.unit_price) && numberFieldError(l.unit_price, { min: 0, optional: true })) ||
+          numberFieldError(l.total, { min: 0, optional: true }),
+      ) ||
       complaintLines.some((l) => numberFieldError(l.quantity, { min: 0, optional: true }));
     if (bad) {
       setShowNumberErrors(true);
@@ -1928,6 +1943,11 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
                                 min="0"
                                 step="0.01"
                                 value={line.unit_price ?? ''}
+                                error={
+                                  showNumberErrors
+                                    ? numberFieldError(line.unit_price, { min: 0, optional: true })
+                                    : undefined
+                                }
                                 onChange={(e) => {
                                   setProducts((prev) =>
                                     prev.map((p, i) =>
@@ -1963,6 +1983,11 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
                                 min="0"
                                 step="0.01"
                                 value={line.total ?? computedTotal}
+                                error={
+                                  showNumberErrors
+                                    ? numberFieldError(line.total, { min: 0, optional: true })
+                                    : undefined
+                                }
                                 onChange={(e) =>
                                   setProducts((prev) =>
                                     prev.map((p, i) =>
