@@ -314,3 +314,37 @@ def test_guard_o_part_of_a_values_phrase_in_the_message_takes_mains_path(vdb, me
     shape = _shape(_ground(vdb, message, entity))
     assert ("specification", "pnk", "", None) in shape, shape
     assert not [s for s in shape if s[2] == key and s[3] == value], shape
+
+
+def _seed_product_word(db, word: str) -> None:
+    """A product whose name holds `word`, which no registry phrase does: the catalogue's own word."""
+    from app.models.product import Product
+    from tests._pg_fixture import unique_code
+    from tests.chatbot.test_lane_require import _seed_category_and_uom
+
+    category_id, uom_id = _seed_category_and_uom(db)
+    code = unique_code("ZZF4")[:50]
+    db.add(
+        Product(
+            id=str(uuid.uuid4()), product_code=code, product_name=f"{code} {word.upper()} BASIN", description=f"{word.upper()} BASIN",
+            category_id=category_id, base_uom_id=uom_id, list_price=10, is_active=True,
+        )
+    )
+    db.commit()
+
+
+def test_guard_p_a_catalogue_word_the_registry_lacks_takes_mains_path(vdb):
+    _seed_product_word(vdb, "zzinset")
+    entity = _e("pnk zzinset basin", "category", spec_key="mounting", spec_value="under_counter")
+    shape = _shape(_ground(vdb, "any pnk zzinset basin", entity))
+    assert ("specification", "pnk", "", None) in shape, shape
+    assert not [s for s in shape if s[2] == "mounting" and s[3] == "under_counter"], shape
+
+
+def test_owner_shape_a_brand_and_an_undrmount_basin_binds_under_counter(vdb):
+    """A behaviour test (passes on the fix, fails on main): the owner's recorded shape."""
+    brand = _e("sorento", "brand")
+    out = _ground(vdb, "i mean any stock for sorento undrmount basin", brand, _basin_typo_entity())["entities"]
+    [spec] = [e for e in _specs(out) if e["spec_key"] == "mounting"]
+    assert spec["spec_value"] == "under_counter" and spec["raw"] == "under counter", spec
+    assert brand in out, out
