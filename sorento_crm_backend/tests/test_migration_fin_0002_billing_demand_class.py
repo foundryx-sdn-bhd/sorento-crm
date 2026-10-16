@@ -69,7 +69,10 @@ def migrated(monkeypatch):
         outer = raw.begin()
         try:
             raw.exec_driver_sql(f'CREATE SCHEMA "{scratch}"')
-            conn = raw.execution_options(schema_translate_map={"finance": scratch})
+            # `None: None` keeps the default schema as is but gives every statement compiled here
+            # its None placeholder: the blank-schema engine shares this engine's compiled cache,
+            # and a cached statement compiled without one breaks a later blank_session test.
+            conn = raw.execution_options(schema_translate_map={None: None, "finance": scratch})
             _run(conn, first.upgrade)
             _run(conn, second.upgrade)
             yield raw, conn, scratch, second
