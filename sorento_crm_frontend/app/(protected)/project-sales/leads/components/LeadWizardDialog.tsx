@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -101,7 +102,10 @@ export function LeadWizardDialog({
 
   const developmentReady = title.trim().length > 0;
   const stepIndex = STEPS.findIndex((candidate) => candidate.id === step);
-  const canAdvance = step === 'development' ? developmentReady : true;
+  // Rough value may stay blank; a typed one that cannot be read stops the walk at its step.
+  const valueError = numberFieldError(estimatedValue, { min: 0, optional: true });
+  const canAdvance =
+    step === 'development' ? developmentReady : step === 'detail' || step === 'confirm' ? !valueError : true;
 
   async function submit() {
     const body: ProjectLeadBody & LeadInformantBody = {
@@ -303,6 +307,7 @@ export function LeadWizardDialog({
                     id="lead-value"
                     min={0}
                     value={estimatedValue}
+                    error={estimatedValue.trim() ? valueError : undefined}
                     onChange={(event) => setEstimatedValue(event.target.value)}
                   />
                 </div>
