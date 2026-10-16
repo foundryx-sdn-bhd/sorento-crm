@@ -3,7 +3,7 @@
  *
  * Picking a customer sets `customer_name` AND `customer_id` in the saved payload; typing free
  * text leaves `customer_id` empty; on a PR a non-null `sales_type` on the picked item fills
- * Sales type, a null one leaves it as it was; a sponsorship form has no Sales type at all.
+ * Sales type, a null one leaves it as it was; a sponsorship form fills it the same way (SF-SALES-TYPE).
  *
  * Mocking pattern: SubmissionForm.sponsorshipUnitPrice.test.tsx (portal-client mocked, the
  * form drives `saveDraft`).

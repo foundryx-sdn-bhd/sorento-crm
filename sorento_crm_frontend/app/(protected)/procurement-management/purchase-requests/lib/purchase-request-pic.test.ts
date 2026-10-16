@@ -108,14 +108,14 @@ describe('Sales Type in the PR Excel export', () => {
     expect(String(row?.[1])).toBe('cash_sales');
   });
 
-  it('omits Sales Type from a sponsorship form', async () => {
-    // The field is Purchase Request only; an empty row on the SF would imply the
-    // form has a sales type that nobody filled in.
+  it('exports Sales Type on a sponsorship form too, by label (SF-SALES-TYPE)', async () => {
     await exportPurchaseRequestOrSponsorshipToExcel(
       request({ request_type: 'sponsorship_form', sales_type: 'cash_sales' }),
       'Cash Sales',
     );
 
-    expect(flatRows().find((r) => String(r?.[0]).startsWith('Sales Type'))).toBeFalsy();
+    const row = flatRows().find((r) => String(r?.[0]).startsWith('Sales Type'));
+    expect(row, 'no Sales Type row in the exported SF sheet').toBeTruthy();
+    expect(row).toContain('Cash Sales');
   });
 });
