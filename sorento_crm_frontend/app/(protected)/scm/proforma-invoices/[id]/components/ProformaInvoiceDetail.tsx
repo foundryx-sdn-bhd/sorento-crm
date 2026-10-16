@@ -193,6 +193,11 @@ function perUnitCbm(row: DraftLine): number | null {
   return null;
 }
 
+/** A typed optional figure is never negative; blank is fine. Told on the box at once. */
+function figureError(value: string): string | undefined {
+  return numberFieldError(value, { min: 0, optional: true });
+}
+
 export function ProformaInvoiceDetail({ id }: { id: string }) {
   const router = useRouter();
   const backHref = useBackToListHref('/scm/proforma-invoices');
@@ -932,6 +937,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
             <NumberInput
               min={0}
               value={line.cartons}
+              error={figureError(line.cartons)}
               onChange={(e) => patchLine(line.key, { cartons: e.target.value })}
               className="h-8 w-20 text-right tabular-nums"
               aria-label={`Cartons for ${line.itemCode || `line ${row.index + 1}`}`}
@@ -961,6 +967,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
               min={0}
               step="0.001"
               value={line.cbmPerUnit}
+              error={figureError(line.cbmPerUnit)}
               onChange={(e) => patchLine(line.key, { cbmPerUnit: e.target.value })}
               className="h-8 w-24 text-right tabular-nums"
               aria-label={`CBM per unit for ${line.itemCode || `line ${row.index + 1}`}`}
@@ -1009,6 +1016,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
               min={0}
               step="0.01"
               value={line.unitPrice}
+              error={figureError(line.unitPrice)}
               onChange={(e) => patchLine(line.key, { unitPrice: e.target.value })}
               className="h-8 w-24 text-right tabular-nums"
               aria-label={`Unit price for ${line.itemCode || `line ${row.index + 1}`}`}
@@ -1053,6 +1061,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
               min={0}
               step="0.01"
               value={line.netWeight}
+              error={figureError(line.netWeight)}
               onChange={(e) => patchLine(line.key, { netWeight: e.target.value })}
               className="h-8 w-20 text-right tabular-nums"
               aria-label={`Net weight for ${line.itemCode || `line ${row.index + 1}`}`}
@@ -1082,6 +1091,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
               min={0}
               step="0.01"
               value={line.grossWeight}
+              error={figureError(line.grossWeight)}
               onChange={(e) => patchLine(line.key, { grossWeight: e.target.value })}
               className="h-8 w-20 text-right tabular-nums"
               aria-label={`Gross weight for ${line.itemCode || `line ${row.index + 1}`}`}
