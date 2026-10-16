@@ -2,11 +2,12 @@
 
 Mounted at ``/api/v1/public/portal`` beside the price tag routes. Auth: the portal token.
 
-The page belongs to a portal contact linked to a sales agent (`sales_agent_for_contact`, the
-same resolution the debtor lookup uses). It lists the stock asks of the customers assigned to
-that agent (`customers.sales_agent_id`), never the agent's order debtors, and edits the same
-`state` and `note` the CRM customer's Asks tab edits. A contact linked to no agent gets 403
-`NOT_A_SALES_AGENT`; an ask outside the agent's customers is a 404.
+The page belongs to a portal contact linked to one or more active sales agents
+(`sales_agents_for_contact`, the same resolution the debtor lookup uses). It lists the stock
+asks of the customers assigned to any of those agents (`customers.sales_agent_id`), never the
+agents' order debtors, and edits the same `state` and `note` the CRM customer's Asks tab edits.
+A contact linked to no active agent gets 403 `NOT_A_SALES_AGENT`; an ask outside those agents'
+customers is a 404.
 
 Fix round 5 (owner, 29 Sep): Customer asks is also a per-contact switch, the
 `contact_portal_form_overrides` row Price Tag Request is switched by (Contact page -> Portal
@@ -34,9 +35,11 @@ from app.services.uuid_path_param import validate_uuid_path
 router = APIRouter(tags=["public-portal-customer-asks"])
 
 
-def _agent_id(db: Session, token: PortalToken) -> str:
-    agent = price_tag_request_service.sales_agent_for_contact(db, token.contact_id)
-    if agent is None:
+def _agent_ids(db: Session, token: PortalToken) -> list[str]:
+    """Every active agent the contact is linked to (PORTAL-MULTI-AGENT: all of them, not the
+    first by code), then the contact's own Customer asks switch."""
+    agents = price_tag_request_service.sales_agents_for_contact(db, token.contact_id)
+    if not agents:
         raise AppException(
             status_code=403,
             message="Customer asks are for sales agents only.",
@@ -48,7 +51,7 @@ def _agent_id(db: Session, token: PortalToken) -> str:
             message="Customer asks is not available for your account.",
             code="FORM_TYPE_NOT_VISIBLE",
         )
-    return agent.id
+    return [agent.id for agent in agents]
 
 
 @router.get("/customer-asks", response_model=ListResponse[StockAskResponse])
@@ -60,8 +63,8 @@ def portal_list_customer_asks(
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
-    agent_id = _agent_id(db, token)
-    return stock_ask_service.list_for_agent(db, agent_id, page=page, limit=limit, q=q, state=state)
+    agent_ids = _agent_ids(db, token)
+    return stock_ask_service.list_for_agent(db, agent_ids, page=page, limit=limit, q=q, state=state)
 
 
 @router.get("/customer-asks/todo", response_model=StockAskTodoResponse)
@@ -71,7 +74,7 @@ def portal_customer_asks_todo(
 ):
     """The salesperson's to-do (sales-asks-todo S1): open asks oldest first plus what was
     cleared today, grouped on the client from `today_start`."""
-    return stock_ask_service.todo_for_agent(db, _agent_id(db, token))
+    return stock_ask_service.todo_for_agent(db, _agent_ids(db, token))
 
 
 @router.get("/customer-asks/{ask_id}/conversation", response_model=StockAskConversationResponse, response_model_exclude_unset=True)
@@ -82,9 +85,9 @@ def portal_customer_ask_conversation(
     db: Session = Depends(get_db),
 ):
     """The chat around one ask, for the opened card. Same gate and scope as the PATCH."""
-    agent_id = _agent_id(db, token)
+    agent_ids = _agent_ids(db, token)
     validate_uuid_path(ask_id, resource="Stock ask")
-    ask = stock_ask_service.get_ask_in_scope(db, agent_id, ask_id)
+    ask = stock_ask_service.get_ask_in_scope(db, agent_ids, ask_id)
     payload = stock_ask_service.conversation_for_ask(db, ask, whole_day=whole_day)
     payload.pop("contact_id", None)  # the CRM's "Open in Conversations" link only
     return payload
@@ -103,11 +106,11 @@ def portal_customer_ask_conversation_page(
     """One scroll-back window of the ask's contact thread (ASKS-UX item 3), byte-identical in
     shape to the ticket-keyed `GET .../conversation-sla-tracking/{id}/conversation/page`. Same
     gate and scope as the sibling `/conversation`."""
-    agent_id = _agent_id(db, token)
+    agent_ids = _agent_ids(db, token)
     validate_uuid_path(ask_id, resource="Stock ask")
     if len([c for c in (before, after, around) if c]) > 1:
         raise AppException(status_code=422, message="Pass at most one of before, after, around.", code="VALIDATION_ERROR")
-    ask = stock_ask_service.get_ask_in_scope(db, agent_id, ask_id)
+    ask = stock_ask_service.get_ask_in_scope(db, agent_ids, ask_id)
     try:
         return stock_ask_service.conversation_page_for_ask(
             db, ask, before=before, after=after, around=around, limit=limit, portal=True
@@ -125,9 +128,9 @@ def portal_customer_ask_conversation_search(
     db: Session = Depends(get_db),
 ):
     """In-thread search over the ask's contact thread, same shape as the ticket-keyed twin."""
-    agent_id = _agent_id(db, token)
+    agent_ids = _agent_ids(db, token)
     validate_uuid_path(ask_id, resource="Stock ask")
-    ask = stock_ask_service.get_ask_in_scope(db, agent_id, ask_id)
+    ask = stock_ask_service.get_ask_in_scope(db, agent_ids, ask_id)
     return stock_ask_service.conversation_search_for_ask(db, ask, q=q, limit=limit)
 
 
@@ -138,13 +141,13 @@ def portal_update_customer_ask(
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
-    agent_id = _agent_id(db, token)
+    agent_ids = _agent_ids(db, token)
     validate_uuid_path(ask_id, resource="Stock ask")
     # Who cleared it: the portal contact, and the CRM user that contact is (if any).
     user_id = db.query(User.id).filter(User.respond_contact_id == token.contact_id).scalar()
     return stock_ask_service.update_for_agent(
         db,
-        agent_id,
+        agent_ids,
         ask_id,
         body.model_dump(exclude_unset=True),
         actor_contact_id=token.contact_id,

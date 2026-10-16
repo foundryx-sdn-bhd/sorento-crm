@@ -10,7 +10,7 @@ Postgres only, blank schema, every row seeded here (CI's database has none).
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -40,7 +40,7 @@ from app.services.field_access import (
     GATED_FIELDS,
     field_label,
 )
-from app.services.incoming_stock_service import CLEARANCE_KEYS
+from app.services.incoming_stock_service import CLEARANCE_KEYS, today_myt
 from app.services.inventory_service import StockService
 from app.services.user_service import UserPermissionService
 
@@ -61,6 +61,13 @@ SHIP_ETA = date(2026, 10, 28)
 # 28 Oct + 5 days crosses the month end.
 PADDED = "2026-11-02"
 EXACT = "2026-10-28"
+
+
+def _ask_eta() -> date:
+    """A shipment ETA for the stock ask, which only reads shipments due today or later
+    (MYT): three days before the end of next month, so the 5-day pad still crosses it."""
+    month_after_next = (today_myt().replace(day=1) + timedelta(days=62)).replace(day=1)
+    return month_after_next - timedelta(days=3)
 
 
 def _told(iso: str) -> str:
@@ -273,13 +280,16 @@ def _stock_ask_eta(db, p, contact):
 
 
 def test_stock_ask_pads_the_eta_when_the_contacts_switch_is_on(db):
-    p, _ = _seed(db)
-    assert _stock_ask_eta(db, p, _contact(db, offset_applied=True)) == "02/11/2026"
+    eta = _ask_eta()
+    p, _ = _seed(db, eta=eta)
+    padded = eta + timedelta(days=5)
+    assert _stock_ask_eta(db, p, _contact(db, offset_applied=True)) == padded.strftime("%d/%m/%Y")
 
 
 def test_stock_ask_prints_the_exact_eta_when_the_contacts_switch_is_off(db):
-    p, _ = _seed(db)
-    assert _stock_ask_eta(db, p, _contact(db, offset_applied=False)) == "28/10/2026"
+    eta = _ask_eta()
+    p, _ = _seed(db, eta=eta)
+    assert _stock_ask_eta(db, p, _contact(db, offset_applied=False)) == eta.strftime("%d/%m/%Y")
 
 
 # ============================================================== incoming routes: ETA
@@ -355,7 +365,7 @@ def test_stock_ask_and_incoming_agree_for_one_contact_and_product(client, db):
     """The owner's ask in one assertion: one shipment, one answer, whichever route.
     `_stock_ask_eta` puts the contact on the availability policy, so the incoming route
     answers it with the dealer view (PR #1329 fix round): the one date it tells."""
-    p, _ = _seed(db)
+    p, _ = _seed(db, eta=_ask_eta())
     for switch in (True, False):
         contact = _contact(db, offset_applied=switch)
         told = _stock_ask_eta(db, p, contact)
@@ -711,7 +721,8 @@ def test_the_stock_ask_reads_the_switch_of_a_contact_asked_by_respond_io_id(db):
     contact never reaches this point on a stock ask: `stock_visibility.resolve_policy`
     resolves without the fallback and answers nothing for one, before any switch is
     read - so the two resolutions cannot disagree on an answered stock ask.)"""
-    p, _ = _seed(db)
+    eta = _ask_eta()
+    p, _ = _seed(db, eta=eta)
     space = unique_code("SPACE")[:30]
     contact = _contact(db, offset_applied=False)
     contact.respond_io_id = unique_code("RIO")
@@ -728,7 +739,7 @@ def test_the_stock_ask_reads_the_switch_of_a_contact_asked_by_respond_io_id(db):
         space_id=space,
         requested_quantities={p.id: 150},
     )
-    assert _entry(result, p.id)["eta"] == "28/10/2026"
+    assert _entry(result, p.id)["eta"] == eta.strftime("%d/%m/%Y")
 
 
 # ============================================================== dealer view (PR #1329 fix round)

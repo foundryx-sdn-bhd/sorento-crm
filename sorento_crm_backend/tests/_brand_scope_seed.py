@@ -72,10 +72,23 @@ def branded_product(db, code: str, brand_row: Brand | None):
     return row
 
 
+def office_access_type(db) -> str:
+    """A fresh active "Sorento Office" access type; returns its code."""
+    code = unique_code("zzt_at").lower().replace("-", "_")[:50]
+    db.add(ContactAccessType(code=code, name="Sorento Office", is_active=True))
+    db.flush()
+    return code
+
+
 def contact(
-    db, *, brand_ids: list[str] | None = None, companies: list[str] | None = None
+    db,
+    *,
+    brand_ids: list[str] | None = None,
+    companies: list[str] | None = None,
+    access_code: str | None = None,
 ) -> RespondContact:
-    """A contact in `companies` (Sorento alone by default) with the given brand list."""
+    """A contact in `companies` (Sorento alone by default) with the given brand list, holding
+    `access_code` (a fresh office access type of its own when not given)."""
     kwargs = {"brand_ids": brand_ids} if brand_ids else {}
     row = RespondContact(
         # The full unique code: truncating it to 10 chars left 3 hex digits of entropy, and a
@@ -96,9 +109,7 @@ def contact(
     set_granted_keys(db, row.id, list(GRANTS), actor_id=None)
     # An office access type: the report routes serve staff-tier contacts without a customer
     # link, and AC-7 says the brand scope applies to office staff too (Q2).
-    code = unique_code("zzt_at").lower().replace("-", "_")[:50]
-    db.add(ContactAccessType(code=code, name="Sorento Office", is_active=True))
-    db.flush()
+    code = access_code or office_access_type(db)
     db.execute(respond_contact_access_types.insert().values(contact_id=row.id, access_type_code=code))
     db.flush()
     return row
@@ -117,7 +128,11 @@ class BrandWorld:
         self.wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
         self._db = db
         self._scoped = None
-        self.unscoped = contact(db)
+        # Both contacts hold the one access level the world's promotion is published at, so the
+        # promotion reads isolate the brand axis: a contact read with no `access_levels` sees what
+        # its OWN levels allow (SEC-PROMO-ACCESS), never every level.
+        self.access_code = office_access_type(db)
+        self.unscoped = contact(db, access_code=self.access_code)
         self.cust = customer(db, company_id=DEFAULT_COMPANY_ID, name="ZZT BRAND CUSTOMER")
         # mixed order: MOCHA 2 x 100 and SORENTO 3 x 1000; SORENTO-only order: 5 x 7
         self.mixed = self._so(db, [(self.p_mocha, 2, Decimal("100.00")), (self.p_sorento, 3, Decimal("1000.00"))])
@@ -171,6 +186,7 @@ class BrandWorld:
                 company_id=DEFAULT_COMPANY_ID,
             ))
         promo = promotion(db, company_id=DEFAULT_COMPANY_ID)
+        promo.access_levels = [self.access_code]
         group = promotion_group(db, company_id=DEFAULT_COMPANY_ID, promotion_id=promo.id)
         for prod in self.products:
             promotion_product(
@@ -217,7 +233,7 @@ class BrandWorld:
     def scoped(self) -> RespondContact:
         """MOCHA-only contact, built on first use so an unscoped-only test never needs the column."""
         if self._scoped is None:
-            self._scoped = contact(self._db, brand_ids=[self.mocha.id])
+            self._scoped = contact(self._db, brand_ids=[self.mocha.id], access_code=self.access_code)
             self._db.commit()
         return self._scoped
 

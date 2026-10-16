@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bulk reserve (mockup v3)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set the other lane mockups use */
+:root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;--success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--info:#1d4ed8;--info-soft:#eff6ff;--info-line:#bfdbfe;--page:#f7f7f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:980px}
+.nav{position:sticky;top:0;z-index:50;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:980px}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.desk{width:1280px;max-width:100%;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{display:flex;background:#fff}
+.side{width:200px;flex:none;background:#0d0e12;color:#a1a1aa;font-size:12.5px;padding:18px 14px}
+.side .logo{color:#fff;font-weight:600;margin:0 0 18px}
+.side div{padding:6px 8px;border-radius:6px}
+.side .on{background:#1f2128;color:#fff}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:780px;overflow:auto;background:#fff;position:relative}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+.main{flex:1;min-width:0;padding:20px 24px}
+.phone .main{padding:14px 16px}
+.pagehead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.pagehead .t{font-size:22px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pagehead .s{font-size:13px;color:var(--muted-fg)}
+.btn{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 10px;border-radius:6px;border:1px solid var(--input);background:#fff;font-size:12.5px;font-weight:500;white-space:nowrap;color:var(--foreground);cursor:pointer}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.icon{width:30px;justify-content:center;padding:0}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+.btn svg,.ic svg{width:15px;height:15px}
+.seg{display:inline-flex;border:1px solid var(--input);border-radius:6px;overflow:hidden}
+.seg span{height:28px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:500}
+.seg span+span{border-left:1px solid var(--input)}
+.seg .on{background:var(--primary);color:#fff}
+.seg.outline .on{background:var(--muted);color:var(--foreground)}
+.card{border:1px solid var(--border);border-radius:12px;background:#fff}
+.card>.hd{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.search{height:30px;border:1px solid var(--input);border-radius:6px;padding:0 10px;font-size:12.5px;color:var(--muted-fg);display:flex;align-items:center;width:190px;overflow:hidden;white-space:nowrap}
+.phone .search{width:100%}
+.card>.ft{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;font-size:12px;color:var(--muted-fg);border-top:1px solid var(--border)}
+.cnt{display:inline-flex;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--primary);color:#fff;font-size:11px;align-items:center;justify-content:center}
+.chip{display:inline-flex;align-items:center;gap:6px;height:26px;border:1px solid var(--input);border-radius:999px;padding:0 6px 0 10px;font-size:12px;background:#fff}
+.chip .x{color:var(--muted-fg);cursor:pointer}
+
+/* DataGrid look: components/ui/data-grid-table.tsx */
+.scroll{overflow-x:auto}
+table.dg{border-collapse:collapse;table-layout:fixed;font-size:12.5px;width:100%}
+table.dg th{position:relative;height:36px;background:#fafafa;color:var(--muted-fg);font-weight:500;font-size:12px;text-align:left;padding:0 8px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.dg th::after{content:"";position:absolute;right:0;top:9px;bottom:9px;width:1px;background:var(--border)}
+table.dg th.r,table.dg td.r{text-align:right}
+table.dg td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.dg tr.dim td{color:var(--muted-fg)}
+.num{font-variant-numeric:tabular-nums}
+.mut{color:var(--muted-fg)}
+.lk{color:var(--primary);text-decoration:none;font-weight:500}
+.inp{height:30px;border:1px solid var(--input);border-radius:6px;padding:0 8px;display:flex;align-items:center;font-size:12.5px;background:#fff;justify-content:space-between}
+.inp.sel::after{content:"\2304";color:var(--muted-fg);font-size:12px;line-height:1;margin-top:-6px}
+.ta{min-height:52px;border:1px solid var(--input);border-radius:6px;padding:6px 8px;font-size:12.5px;color:var(--muted-fg)}
+label.l{display:block;font-size:12.5px;font-weight:500;margin:0 0 4px}
+label.l.s{font-size:12px;color:var(--muted-fg);font-weight:400}
+
+/* Badge light pills: components/ui/badge.tsx */
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:0 8px;font-size:11.5px;line-height:20px;font-weight:500;white-space:nowrap;border:1px solid transparent}
+.pill.success{background:var(--success-soft);color:var(--success);border-color:var(--success-line)}
+.pill.secondary{background:var(--muted);color:#3f3f46}
+.pill.warning{background:var(--warning-soft);color:var(--warning);border-color:var(--warning-line)}
+.pill.info{background:var(--info-soft);color:var(--info);border-color:var(--info-line)}
+.pill.destructive{background:var(--destructive-soft);color:var(--destructive);border-color:var(--destructive-line)}
+
+/* Checkbox: components/ui/checkbox.tsx */
+.cb{display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none}
+.cb .box{width:16px;height:16px;border-radius:4px;border:1px solid var(--input);background:#fff;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.cb.on .box{background:var(--primary);border-color:var(--primary)}
+.cb.on .box::after{content:"";width:8px;height:4px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
+
+/* Dialog: components/ui/dialog.tsx overlay + content */
+.stage{position:relative}
+.overlay{position:absolute;inset:0;background:rgba(9,9,11,.5);display:flex;align-items:flex-start;justify-content:center;padding:48px 24px;z-index:5}
+.phone .overlay{padding:16px 8px}
+.dlg{background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25);width:100%;max-width:896px;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.dlg .dh{padding:20px 24px 14px}
+.phone .dlg .dh{padding:14px 16px 10px}
+.dlg .dt{font-size:16px;font-weight:600;padding-right:28px}
+.dlg .ds{font-size:13px;color:var(--muted-fg);margin-top:2px}
+.dlg .x{position:absolute;right:20px;top:20px;color:var(--muted-fg);font-size:15px;line-height:1}
+.dlg .db{padding:4px 24px 16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto}
+.phone .dlg .db{padding:4px 16px 12px}
+.dlg .df{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 24px 18px;flex-wrap:wrap}
+.phone .dlg .df{padding:10px 16px 14px}
+.dlg .df .left{margin-right:auto}
+
+/* Popover: components/ui/popover.tsx (the toolbar Filters popover) */
+.pop{position:absolute;z-index:6;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:14px;width:300px;display:flex;flex-direction:column;gap:12px}
+
+/* Preview cards */
+.mail{border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.mail .mh{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fafafa;flex-wrap:wrap}
+.mail .mh .who{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.mail .mh .who b{font-size:13px}
+.mail .mh .who span{font-size:12px;color:var(--muted-fg)}
+.mail .mb{padding:14px;border-top:1px solid var(--border);background:#fff}
+.chev{display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;border-radius:6px;color:#52525b;font-size:12px;flex:none}
+.frame{border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff;overflow-x:auto}
+
+/* Email body: same styles as the seeded templates (oirs_0001_reserve_requests.py _TH/_TD/_TABLE) */
+.em{font:13px Arial,sans-serif;color:#111}
+.em p{margin:0 0 10px}
+.em h3{font:600 13px Arial,sans-serif;margin:16px 0 6px}
+.em table{border-collapse:collapse;font:13px Arial,sans-serif;margin:0 0 8px}
+.em th{border:1px solid #d0d0d5;padding:4px 8px;background:#f2f2f5;text-align:left;white-space:nowrap}
+.em td{border:1px solid #d0d0d5;padding:4px 8px;white-space:nowrap}
+.em a{color:#2563eb}
+.em .subj{font-weight:600;border-bottom:1px solid #e4e4e7;padding-bottom:8px;margin-bottom:12px}
+
+.toast{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.08);padding:10px 14px;font-size:13px}
+.toast .dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.toast.warn .dot{background:var(--warning)}
+.note{font-size:12px;color:var(--muted-fg);max-width:980px;margin:8px 0 0}
+.map{border-collapse:collapse;font-size:12.5px;width:100%;max-width:1280px;background:#fff;border:1px solid var(--border)}
+.map th,.map td{border-bottom:1px solid var(--border);padding:7px 10px;text-align:left;vertical-align:top}
+.map th{background:#fafafa;color:var(--muted-fg);font-weight:500}
+.map code{font-size:11.5px;background:var(--muted);padding:0 4px;border-radius:4px}
+.tag{display:inline-block;font-size:10.5px;border-radius:4px;padding:0 5px;background:var(--primary-soft);color:var(--primary);font-weight:600;margin-left:4px}
+.new{outline:2px dashed #f59e0b;outline-offset:2px;border-radius:6px}
+@media (max-width:700px){.doc{padding:16px}.desk .side{display:none}}
+/* v2: summary preview table + the email as the layout renders it (brand header, heading, intro, table, one big button, footer: eml_0002_seed_layouts.py blocks) */
+table.sum{border-collapse:collapse;width:100%;font-size:13px}
+table.sum th{background:#fafafa;color:var(--muted-fg);font-weight:500;font-size:12px;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+table.sum td{padding:9px 10px;border-bottom:1px solid var(--border)}
+table.sum th.r,table.sum td.r{text-align:right}
+table.sum tfoot td{font-weight:600;background:#fafafa;border-bottom:0}
+.mailwrap{background:#f2f2f5;padding:24px 12px;border-radius:12px;max-width:680px}
+.mailcard{background:#fff;border-radius:8px;overflow:hidden;font:14px Arial,sans-serif;color:#111}
+.mailmeta{background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:12.5px;margin-bottom:10px;max-width:680px}
+.mailmeta div{display:flex;gap:8px}.mailmeta div b{width:62px;color:var(--muted-fg);font-weight:500;flex:none}
+.brand{background:#0d0e12;color:#fff;padding:14px 22px;font-weight:600;font-size:14px}
+.mailbody{padding:22px 22px 8px}
+.mailbody h2{font:600 18px Arial,sans-serif;margin:0 0 10px}
+.mailbody p{margin:0 0 12px;line-height:1.5}
+.mailbody table{border-collapse:collapse;width:100%;font-size:13px;margin:0 0 6px}
+.mailbody th{border:1px solid #d0d0d5;padding:5px 8px;background:#f2f2f5;text-align:left;white-space:nowrap}
+.mailbody td{border:1px solid #d0d0d5;padding:5px 8px}
+.mailbody td.r,.mailbody th.r{text-align:right}
+.more{color:#555;font-size:13px;margin:4px 0 16px}
+.bigbtn{display:block;text-align:center;background:#2563eb;color:#fff;font:600 14px Arial,sans-serif;padding:13px 16px;border-radius:6px;text-decoration:none;margin:6px 0 18px}
+.mailfoot{padding:14px 22px;border-top:1px solid #ececee;color:#777;font-size:12px}
+.phone .mailwrap{padding:12px 6px;border-radius:0}
+.phone .mailbody{padding:16px 14px 4px}
+.phone .brand{padding:12px 14px}
+/* v3: toolbar Actions menu (data-grid-list-toolbar.tsx 558-575), line tabs (components/ui/tabs.tsx variant line), preview frame (EmailPreviewFrame.tsx) */
+.menu{position:absolute;z-index:6;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:4px;min-width:260px;font-size:13px}
+.menu div{padding:7px 10px;border-radius:6px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.menu div.hl{background:var(--muted)}
+.menu div.dis{color:var(--muted-fg)}
+.menu hr{border:0;border-top:1px solid var(--border);margin:4px 0}
+.ltabs{display:flex;gap:18px;border-bottom:1px solid var(--border);font-size:13px;overflow-x:auto}
+.ltabs span{padding:7px 0;color:var(--muted-fg);white-space:nowrap}
+.ltabs .on{color:var(--foreground);border-bottom:2px solid var(--primary);font-weight:500}
+.pframe{border:1px solid var(--border);border-radius:8px;background:#f2f2f5;max-height:430px;overflow:auto;padding:12px}
+.pframe .mailmeta{margin:0 0 10px}
+.pframe .mailwrap{padding:0;background:transparent}
+table.sum tr.sel td{background:var(--primary-soft)}
+.optlist{border:1px solid var(--border);border-radius:8px;margin-top:4px;font-size:12px;overflow:hidden}
+.optlist div{padding:6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.optlist div.hl{background:var(--muted)}
+.optlist .srch{color:var(--muted-fg);border-bottom:1px solid var(--border)}
+
+tr.part td{background:#fffbeb}
+.strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--border);background:#fafafa;font-size:12.5px}
+.reasonall{display:flex;flex-direction:column;gap:4px;max-width:360px}
+
+.strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--border);background:#fafafa;font-size:12.5px}
+.chipd{display:inline-block;border:1px dashed #a1a1aa;border-radius:999px;padding:0 8px;font-size:11.5px;line-height:20px;color:var(--muted-fg)}
+.ib{display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;border-radius:6px;color:#3f3f46;font-size:13px}
+.callout{display:inline-flex;gap:14px;flex-wrap:wrap;border:1px solid var(--border);border-radius:8px;background:#fff;padding:8px 12px;font-size:12.5px;margin:6px 0 12px}
+.callout span b{display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:6px;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>Bulk Decide on the OI Lines tab (OI-BULK-RESERVE, mockup v3)</h1>
+<p class="intro">v3 applies the owner's note on v2: bulk mirrors the LINE actions, with a Decide button like Fulfilment Planning. Today a requested line has &#10003; Reserve (full requested qty at the default pool) and &#9998; Edit reserve; a reserved or declined line has &#9998; Amend reserve. There is no &#10005; on the line today: CS turns a request down by reserving 0 with a reason through &#9998;. Real dev OI-2609-0731 (SO419603, APEX CONNECTION SDN BHD (PROJECT)): scenario where Joey asked CS to reserve 12 lines due 01/12/2026; Eling reserves 10 as requested and rejects 2 (no stock). Dashed amber outline = new element.</p>
+<nav class="nav"><a href="#s1">1 Line icons today</a><a href="#s2">2 Tick lines, Decide (N)</a><a href="#s3">3 Reject N lines</a><a href="#s4">4 Staged chips, Reserve (12)</a><a href="#s5">5 Confirm (unchanged)</a><a href="#s6">6 Phone 375</a><a href="#map">Component map</a></nav>
+
+<section id="s1">
+<h2><span class="nb">1</span>What each line offers today (no change)</h2>
+<div class="callout"><span><b>&#10003;</b>Reserve: stage the full requested qty at the request's location</span><span><b>&#9998;</b>Edit reserve: qty, location, reason (needed when below requested; 0 = reject)</span><span><b>&#9998;</b>Amend reserve (after it is answered)</span></div>
+<p class="note">Source: orderInquiryHeaderLinesColumns.tsx (Reserve 255-266, Edit reserve 267-278, Amend reserve 283-300); reason rule ReserveLineForm.tsx 125-126.</p>
+</section>
+
+<section id="s2">
+<h2><span class="nb">2</span>Tick lines, then ONE "Decide (12)" button at the right of the selection strip</h2>
+<p class="why">The Fulfilment Planning Decide pattern. Its menu mirrors the line icons: "Reserve as requested" (&#10003; for every ticked line) and "Reject..." (reserve 0 with one reason for every ticked line). Amend stays on each line (&#9998;). The count is the ticked lines with an open request.</p>
+<div class="row"><div class="desk"><div class="screen stage" style="min-height:760px"><div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div>Procurement</div><div class="on">Order Inquiries</div><div>Purchase Orders</div><div>Stock</div></div><div class="main" style="position:relative">
+<div class="pagehead"><div><div class="t">OI-2609-0731 <span class="pill warning">Outstanding</span></div><div class="s">SO419603 &nbsp; APEX CONNECTION SDN BHD (PROJECT)</div></div><div class="tools"><span class="btn pri" aria-disabled="true">Reserve</span><span class="btn icon">&#8942;</span></div></div><div class="seg outline" style="margin-bottom:12px"><span class="on">Lines</span><span>General</span><span>Related PO</span><span>Related SPO</span></div>
+<div class="card"><div class="strip">12 selected <span class="btn ghost">Clear</span><span style="margin-left:auto" class="btn pri new">Decide (12) &#9662;</span></div>
+<div class="scroll"><table class="dg" style="min-width:980px"><colgroup><col style="width:40px"><col style="width:44px"><col style="width:190px"><col style="width:110px"><col style="width:90px"><col style="width:90px"><col style="width:70px"><col style="width:110px"><col style="width:200px"></colgroup><thead><tr><th></th><th>No.</th><th>Product</th><th>Delivery date</th><th>Location</th><th>Instruction</th><th class="r">Qty</th><th>State</th><th>Reserve</th></tr></thead><tbody>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">1</td><td><b>B2155-NL-BLUE</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">2</td><td><b>B2155-NL-BLUE</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">3</td><td><b>B2155-NL-BLUE</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">4</td><td><b>C-FH14</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">5</td><td><b>C-FH14</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">6</td><td><b>C-FH14</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">7</td><td><b>CB2806A-SS-CR-DIY</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">8</td><td><b>CB2807-DIY</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">9</td><td><b>CB2829-SS-CR-DIY</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">10</td><td><b>CB313</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">11</td><td><b>CGB9032B-NEW</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+<tr><td><span class="cb on"><span class="box"></span></span></td><td class="num">12</td><td><b>CKS1050</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+</tbody></table></div><div class="ft"><span>12 of 51 lines</span><span>Rows per page 25</span></div></div>
+<div class="menu new" style="right:24px;top:206px"><div class="hl">&#10003; Reserve as requested</div><div>&#10005; Reject...</div></div>
+</div></div></div></div>
+<p class="note">"Reserve as requested" stages at once (no dialog), exactly like pressing &#10003; on each line, and clears the ticks. Nothing is saved until the header Reserve (N).</p>
+</section>
+
+<section id="s3">
+<h2><span class="nb">3</span>"Reject..." asks one reason for all ticked lines</h2>
+<p class="why">Same as &#9998; Edit reserve with 0 on each line: a reason is required. Eling ticks CB2829-SS-CR-DIY and CKS1050, Decide (2), Reject..., types "No stock", Stage 2 lines.</p>
+<div class="row"><div class="desk"><div class="screen stage" style="min-height:440px"><div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div>Procurement</div><div class="on">Order Inquiries</div><div>Purchase Orders</div><div>Stock</div></div><div class="main"><div style="height:300px;background:#fafafa;border-radius:12px"></div></div>
+<div class="overlay" style="padding-top:60px"><div class="dlg new" style="max-width:520px">
+ <div class="dh"><div class="dt">Reject 2 lines</div><span class="x">&#10005;</span></div>
+ <div class="db"><div><label class="l">Reason</label><div class="ta" style="color:var(--foreground)">No stock</div></div></div>
+ <div class="df"><span class="btn">Cancel</span><span class="btn pri">Stage 2 lines</span></div>
+</div></div>
+</div></div></div>
+<p class="note">Stage stays greyed until a reason is typed. Purchasing hears about it the same way as a single-line reserve of 0: the reserved notice lists RESERVED 0, the full BALANCE and the REASON, sent at once or parked per the confirmation's "Park notice first".</p>
+</section>
+
+<section id="s4">
+<h2><span class="nb">4</span>Staged: chips on each line, header "Reserve (12)"</h2>
+<p class="why">The same dashed chips and Undo the line icons give today. Nothing is saved yet.</p>
+<div class="row"><div class="desk"><div class="screen stage" style="min-height:700px"><div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div>Procurement</div><div class="on">Order Inquiries</div><div>Purchase Orders</div><div>Stock</div></div><div class="main">
+<div class="pagehead"><div><div class="t">OI-2609-0731 <span class="pill warning">Outstanding</span></div><div class="s">SO419603 &nbsp; APEX CONNECTION SDN BHD (PROJECT)</div></div><div class="tools"><span class="btn pri">Reserve (12)</span><span class="btn icon">&#8942;</span></div></div><div class="seg outline" style="margin-bottom:12px"><span class="on">Lines</span><span>General</span><span>Related PO</span><span>Related SPO</span></div>
+<div class="card"><div class="scroll"><table class="dg" style="min-width:980px"><colgroup><col style="width:40px"><col style="width:44px"><col style="width:190px"><col style="width:110px"><col style="width:90px"><col style="width:90px"><col style="width:70px"><col style="width:110px"><col style="width:200px"></colgroup><thead><tr><th></th><th>No.</th><th>Product</th><th>Delivery date</th><th>Location</th><th>Instruction</th><th class="r">Qty</th><th>State</th><th>Reserve</th></tr></thead><tbody>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">1</td><td><b>B2155-NL-BLUE</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 44 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">2</td><td><b>B2155-NL-BLUE</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 88 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">3</td><td><b>B2155-NL-BLUE</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 88 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">4</td><td><b>C-FH14</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 88 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">5</td><td><b>C-FH14</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 44 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">6</td><td><b>C-FH14</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 88 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">7</td><td><b>CB2806A-SS-CR-DIY</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 88 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">8</td><td><b>CB2807-DIY</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 88 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">9</td><td><b>CB2829-SS-CR-DIY</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 0</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">10</td><td><b>CB313</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 88 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">11</td><td><b>CGB9032B-NEW</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">88</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 88 @ BRW</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+<tr><td><span class="cb"><span class="box"></span></span></td><td class="num">12</td><td><b>CKS1050</b></td><td>01/12/2026</td><td>BRW-IB</td><td>ORDER</td><td class="r num">44</td><td><span class="pill warning">Requested</span></td><td><span class="chipd">Reserve 0</span> <span class="mut" style="font-size:11.5px">Undo</span></td></tr>
+</tbody></table></div><div class="ft"><span>51 lines</span><span>Rows per page 25</span></div></div>
+</div></div></div></div>
+</section>
+
+<section id="s5">
+<h2><span class="nb">5</span>Reserve (12) opens today's confirmation (#1684), unchanged</h2>
+<div class="row"><div class="desk"><div class="screen stage" style="min-height:900px"><div class="side"><div class="logo">Sorento CRM</div><div>Dashboard</div><div>Procurement</div><div class="on">Order Inquiries</div><div>Purchase Orders</div><div>Stock</div></div><div class="main"><div style="height:500px;background:#fafafa;border-radius:12px"></div></div>
+<div class="overlay" style="padding-top:28px"><div class="dlg" style="max-width:760px">
+ <div class="dh"><div class="dt">Reserve 12 lines on OI-2609-0731</div><span class="x">&#10005;</span></div>
+ <div class="db">
+  <div class="card" style="border-radius:8px"><div class="scroll" style="max-height:480px;overflow:auto"><table class="dg" style="min-width:640px"><colgroup><col style="width:170px"><col style="width:90px"><col style="width:80px"><col style="width:110px"><col style="width:80px"><col style="width:110px"></colgroup>
+   <thead><tr><th>Product</th><th class="r">Requested</th><th class="r">Reserve</th><th class="r">Balance to buy</th><th>Location</th><th>Reason</th></tr></thead><tbody>
+   <tr><td><b>B2155-NL-BLUE</b></td><td class="r num">44</td><td class="r num"><b>44</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>B2155-NL-BLUE</b></td><td class="r num">88</td><td class="r num"><b>88</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>B2155-NL-BLUE</b></td><td class="r num">88</td><td class="r num"><b>88</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>C-FH14</b></td><td class="r num">88</td><td class="r num"><b>88</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>C-FH14</b></td><td class="r num">44</td><td class="r num"><b>44</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>C-FH14</b></td><td class="r num">88</td><td class="r num"><b>88</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>CB2806A-SS-CR-DIY</b></td><td class="r num">88</td><td class="r num"><b>88</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>CB2807-DIY</b></td><td class="r num">88</td><td class="r num"><b>88</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>CB2829-SS-CR-DIY</b></td><td class="r num">44</td><td class="r num"><b>0</b></td><td class="r num">44</td><td>BRW</td><td>No stock</td></tr>
+<tr><td><b>CB313</b></td><td class="r num">88</td><td class="r num"><b>88</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>CGB9032B-NEW</b></td><td class="r num">88</td><td class="r num"><b>88</b></td><td class="r num">0</td><td>BRW</td><td></td></tr>
+<tr><td><b>CKS1050</b></td><td class="r num">44</td><td class="r num"><b>0</b></td><td class="r num">44</td><td>BRW</td><td>No stock</td></tr>
+   </tbody></table></div></div>
+  <div style="font-size:12.5px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#fafafa">Notice to purchasing: <b>To Joey</b>, Cc Eling</div>
+ </div>
+ <div class="df"><span class="cb left"><span class="box"></span>Park notice first</span><span class="btn">Cancel</span><span class="btn pri">Reserve and send to Joey</span></div>
+</div></div>
+</div></div></div>
+</section>
+
+<section id="s6">
+<h2><span class="nb">6</span>Phone 375: strip and menu</h2>
+<div class="row"><div class="phone"><div class="screen"><div class="main" style="position:relative">
+ <div class="pagehead"><div class="t">OI-2609-0731</div><span class="btn pri" aria-disabled="true">Reserve</span></div>
+ <div class="card"><div class="strip">12 selected <span class="btn ghost">Clear</span><span style="margin-left:auto" class="btn pri new">Decide (12) &#9662;</span></div>
+ <div class="scroll"><table class="dg" style="min-width:520px"><colgroup><col style="width:36px"><col style="width:150px"><col style="width:70px"><col style="width:110px"><col style="width:90px"></colgroup><thead><tr><th></th><th>Product</th><th class="r">Qty</th><th>State</th><th>Reserve</th></tr></thead><tbody>
+ <tr><td><span class="cb on"><span class="box"></span></span></td><td><b>B2155-NL-BLUE</b></td><td class="r">44</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr><tr><td><span class="cb on"><span class="box"></span></span></td><td><b>B2155-NL-BLUE</b></td><td class="r">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr><tr><td><span class="cb on"><span class="box"></span></span></td><td><b>B2155-NL-BLUE</b></td><td class="r">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr><tr><td><span class="cb on"><span class="box"></span></span></td><td><b>C-FH14</b></td><td class="r">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr><tr><td><span class="cb on"><span class="box"></span></span></td><td><b>C-FH14</b></td><td class="r">44</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr><tr><td><span class="cb on"><span class="box"></span></span></td><td><b>C-FH14</b></td><td class="r">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr><tr><td><span class="cb on"><span class="box"></span></span></td><td><b>CB2806A-SS-CR-DIY</b></td><td class="r">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr><tr><td><span class="cb on"><span class="box"></span></span></td><td><b>CB2807-DIY</b></td><td class="r">88</td><td><span class="pill warning">Requested</span></td><td><span class="ib" title="Reserve">&#10003;</span><span class="ib" title="Edit reserve">&#9998;</span></td></tr>
+ </tbody></table></div></div>
+ <div class="menu new" style="right:16px;top:118px"><div class="hl">&#10003; Reserve as requested</div><div>&#10005; Reject...</div></div>
+</div></div><div class="cap">375: the Decide button stays at the right of the strip; the grid scrolls sideways</div></div></div>
+</section>
+
+<section id="map">
+<h2>Element to existing component map</h2>
+<table class="map"><thead><tr><th>Element</th><th>Reuses</th><th>Repo path</th></tr></thead><tbody>
+<tr><td>Tick boxes, "12 selected / Clear" strip</td><td>Existing line selection and toolbar selection strip</td><td><code>app/(protected)/project-sales/order-inquiries/[id]/components/OrderInquiryLinesTab.tsx</code> (~243), <code>components/ui/data-grid-list-toolbar.tsx</code> (strip ~456-475, <code>bulkActionsSlot</code>)</td></tr>
+<tr><td>"Decide (12)" button + menu <span class="tag">new</span></td><td>Fulfilment Planning's Decide button, DropdownMenu and lightbox</td><td><code>app/(protected)/project-sales/fulfilment-planning/components/BoardDecideControl.tsx</code></td></tr>
+<tr><td>"Reserve as requested"</td><td>The line's &#10003; Reserve, applied to every ticked line</td><td><code>[id]/components/orderInquiryHeaderLinesColumns.tsx</code> (255-266, <code>onTickReserve</code>)</td></tr>
+<tr><td>"Reject N lines" <span class="tag">new</span></td><td>FP's "Decide N lines" lightbox with one Reason; the line's &#9998; Edit reserve at 0 (reason required)</td><td><code>BoardDecideControl.tsx</code>; <code>[id]/components/ReserveLineForm.tsx</code> (125-126)</td></tr>
+<tr><td>Chips "Reserve 88 @ BRW" / "Reserve 0", Undo</td><td>Existing staged chip</td><td><code>orderInquiryHeaderLinesColumns.tsx</code> (reserveChipText 210-215)</td></tr>
+<tr><td>Header Reserve (N) + confirmation</td><td>Unchanged (#1684)</td><td><code>[id]/components/OrderInquiryDetail.tsx</code> (commitStaged), <code>[id]/components/ReserveConfirmDialog.tsx</code></td></tr>
+</tbody></table>
+</section>
+</div>
+</body>
+</html>

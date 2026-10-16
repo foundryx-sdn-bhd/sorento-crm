@@ -101,13 +101,14 @@ def switched_form_types(db: Session, contact_id: str) -> set[str]:
 def resolve_visible_form_types(db: Session, contact_id: str) -> set[str]:
     """Return the set of portal form type strings visible to ``contact_id``."""
     visible = switched_form_types(db, contact_id)
-    # Step 4: the agent-only kinds (Customer asks, Conversation) need a linked sales agent on
-    # top of their switch. Imported here: price_tag_request_service imports half the portal.
+    # Step 4: the agent-only kinds (Customer asks, Conversation) need a linked ACTIVE sales
+    # agent on top of their switch, the same rule their routes 403 on. Imported here:
+    # price_tag_request_service imports half the portal.
     agent_only = [kind for kind in AGENT_ONLY_FORM_TYPES if kind in visible]
     if agent_only:
         from app.services import price_tag_request_service
 
-        if price_tag_request_service.sales_agent_for_contact(db, contact_id) is None:
+        if not price_tag_request_service.sales_agents_for_contact(db, contact_id):
             visible.difference_update(agent_only)
     return visible
 

@@ -7,8 +7,9 @@ the fetch still went out with `access_levels=[]`, the MCP layer dropped the empt
 the query string, and the route read "no access_levels" as "no filter".
 
 Two layers, each tested on its own (defence in depth):
-- backend: a read made on behalf of a contact (`contact_id` supplied) with no usable access
-  level returns nothing; staff / internal reads (no `contact_id`) are unchanged.
+- backend: a read made on behalf of a contact (`contact_id` supplied) with no access levels
+  reads the contact's own levels (RELEASE-FIX-3), and nothing when it holds none or the id
+  resolves to no contact; staff / internal reads (no `contact_id`) are unchanged.
 - chatbot: a closed brand gate or an empty recomposed list never reaches the tool; the
   reply is the gate's existing "You don't have access to <brand> promotions." wording.
 
