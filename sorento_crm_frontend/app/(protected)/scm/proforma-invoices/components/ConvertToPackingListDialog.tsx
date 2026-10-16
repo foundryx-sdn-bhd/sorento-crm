@@ -91,6 +91,10 @@ export function ConvertToPackingListDialog({
   // types (a new column array remounts the cell and drops the box under the cursor).
   const quantitiesRef = useRef(quantities);
   quantitiesRef.current = quantities;
+  // Set by a pressed Convert that was refused: from then on each box shows its sentence, live.
+  const [convertTried, setConvertTried] = useState(false);
+  const convertTriedRef = useRef(convertTried);
+  convertTriedRef.current = convertTried;
   const containerSizes = useContainerSizes();
   const [containerSizeId, setContainerSizeId] = useState<string | null>(null);
   // A packing row placed whole or not at all (S4, AC-D2b) - every MATCHED row starts
@@ -109,6 +113,7 @@ export function ConvertToPackingListDialog({
   useEffect(() => {
     if (!open) return;
     setQuantities({});
+    setConvertTried(false);
     setContainerSizeId(null);
     setSearch('');
   }, [open]);
@@ -339,7 +344,11 @@ export function ConvertToPackingListDialog({
                 min={0}
                 max={row.original.line.remaining_qty}
                 value={quantitiesRef.current[row.original.line.id] ?? String(row.original.line.remaining_qty)}
-                error={placeError(row.original.line, quantitiesRef.current[row.original.line.id])}
+                error={
+                  convertTriedRef.current
+                    ? placeError(row.original.line, quantitiesRef.current[row.original.line.id])
+                    : undefined
+                }
                 errorClassName="w-32 whitespace-normal"
                 onChange={(e) =>
                   setQuantities((prev) => ({ ...prev, [row.original.line.id]: e.target.value }))
@@ -370,6 +379,10 @@ export function ConvertToPackingListDialog({
   });
 
   const submit = () => {
+    if (placeable.some((line) => placeError(line, quantities[line.id]) !== undefined)) {
+      setConvertTried(true);
+      return;
+    }
     const lineQuantities: Record<string, number> = {};
     for (const line of placeable) {
       const raw = quantities[line.id];
@@ -476,7 +489,7 @@ export function ConvertToPackingListDialog({
             </div>
           ) : null}
 
-          {invalid ? (
+          {invalid && convertTried ? (
             <Alert variant="destructive">
               <AlertDescription>
                 A quantity cannot be negative, and cannot be more than the line has left.
@@ -491,7 +504,7 @@ export function ConvertToPackingListDialog({
           </Button>
           <Button
             onClick={submit}
-            disabled={pending || invalid || (!!single && placeable.length === 0)}
+            disabled={pending || (!!single && placeable.length === 0)}
           >
             {pending ? <LoaderCircle className="size-4 animate-spin" /> : null}
             Convert
