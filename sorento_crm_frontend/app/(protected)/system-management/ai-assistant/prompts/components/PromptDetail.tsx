@@ -46,7 +46,7 @@ import { PublishDialog } from './PublishDialog';
 import { VarChips } from './VarChips';
 import { WiredPanel } from './WiredPanel';
 // The full-screen overlay the Dealer Kit designers already use (Esc exits, body scroll locked).
-import { FocusShell, FocusToggle } from '../../../../dealer-kit/components/FocusMode';
+import { FocusShell, FocusToggle } from '@/app/(protected)/dealer-kit/components/FocusMode';
 
 const EDIT_PERMISSION = 'system.ai_assistant_settings.edit';
 
@@ -370,7 +370,7 @@ export function PromptDetail({ name }: { name: string }) {
         {/* gap, not space-y: the full-screen wrapper around the card is `display: contents`. */}
         <div className="flex min-w-0 flex-col gap-4">
           <FocusShell active={focus} onExit={() => setFocus(false)} keepMounted>
-          <Card className={cn(focus && 'flex-1')}>
+          <Card className={cn(focus && 'mb-8 min-h-0 flex-1')}>
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-base">
                 Editor{' '}
@@ -394,6 +394,8 @@ export function PromptDetail({ name }: { name: string }) {
                       onClick={() =>
                         setPublishState({ open: true, version: baseRow.version, versionId: baseRow.id, label: 'staging' })
                       }
+                      disabled={dirty}
+                      title={dirty ? 'Save first: this publishes the saved version, not the unsaved edits' : undefined}
                       data-testid="fullscreen-publish-staging"
                     >
                       Stage v{baseRow.version}
@@ -407,6 +409,8 @@ export function PromptDetail({ name }: { name: string }) {
                       onClick={() =>
                         setPublishState({ open: true, version: baseRow.version, versionId: baseRow.id, label: 'production' })
                       }
+                      disabled={dirty}
+                      title={dirty ? 'Save first: this publishes the saved version, not the unsaved edits' : undefined}
                       data-testid="fullscreen-publish-production"
                     >
                       Publish v{baseRow.version}
@@ -432,7 +436,7 @@ export function PromptDetail({ name }: { name: string }) {
               <FocusToggle active={focus} onToggle={setFocus} label="editor" />
               </div>
             </CardHeader>
-            <CardContent className={cn('space-y-3', focus && 'flex flex-1 flex-col')}>
+            <CardContent className={cn('space-y-3', focus && 'flex min-h-0 flex-1 flex-col')}>
               {hasRegistry ? (
                 <Tabs value={editorMode} onValueChange={(v) => setEditorMode(v as 'edit' | 'preview')}>
                   <TabsList shape="pill" size="sm" aria-label="Editor mode">
@@ -453,7 +457,7 @@ export function PromptDetail({ name }: { name: string }) {
                 // look at the preview and the wired panel's Insert still lands there.
                 <div
                   hidden={editorMode === 'preview'}
-                  className={cn(focus && 'flex flex-1 flex-col')}
+                  className={cn(focus && 'flex min-h-0 flex-1 flex-col')}
                   data-testid="chip-editor-pane"
                 >
                   <PromptChipEditor
@@ -471,7 +475,7 @@ export function PromptDetail({ name }: { name: string }) {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   className={cn('min-h-[320px] font-mono text-xs', focus && 'flex-1 resize-none')}
-                  containerClassName={cn(focus && 'flex flex-1 flex-col')}
+                  containerClassName={cn(focus && 'flex min-h-0 flex-1 flex-col')}
                   spellCheck={false}
                   disabled={!canEdit}
                   data-testid="prompt-editor"
@@ -673,10 +677,11 @@ function RenderedPreview({
 }
 
 /**
- * A line that reads as a section header in a long prompt: a markdown heading ("# Output") or a
- * short ALL-CAPS line, optionally ending in a colon ("RULES:"). Bold, so the eye can scan.
+ * A line that reads as a section header in a long prompt: a markdown heading ("# Output"), a
+ * banner ("== PRICE TERMINOLOGY ==", the chatbot parser's own style) or a short ALL-CAPS line,
+ * optionally ending in a colon ("RULES:"). Bold, so the eye can scan.
  */
-const HEADING_LINE = /^(#{1,6}\s+\S.*|[A-Z][A-Z0-9 _&/()-]{2,60}:?)$/;
+const HEADING_LINE = /^(#{1,6}\s+\S.*|={2,}\s.*\s={2,}|[A-Z][A-Z0-9 _&/()-]{2,60}:?)$/;
 
 function HeadedText({ text }: { text: string }) {
   return (

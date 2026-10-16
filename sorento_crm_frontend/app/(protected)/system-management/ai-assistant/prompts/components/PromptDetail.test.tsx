@@ -405,6 +405,14 @@ describe('PromptDetail full screen editor (PROMPT-EDITOR-FULLSCREEN)', () => {
     expect(screen.getByText('Publish router v2 to staging?')).toBeInTheDocument();
   });
 
+  it('disables full-screen Stage / Publish while the draft has unsaved edits', () => {
+    renderDetail();
+    enter();
+    fireEvent.change(screen.getByTestId('prompt-editor'), { target: { value: 'unsaved' } });
+    // It publishes the SAVED version, so beside unsaved text it would mislead.
+    expect(screen.getByTestId('fullscreen-publish-staging')).toBeDisabled();
+  });
+
   describe('with registry variables (chip editor)', () => {
     beforeEach(() => {
       usePromptVersions.mockReturnValue({
@@ -413,7 +421,7 @@ describe('PromptDetail full screen editor (PROMPT-EDITOR-FULLSCREEN)', () => {
         isError: false,
       });
       usePromptVersion.mockReturnValue({
-        data: { ...BASE, template: 'RULES:\ncurrent one {{domains}}\n# Output\ncurrent two' },
+        data: { ...BASE, template: 'RULES:\ncurrent one {{domains}}\n# Output\ncurrent two\n== PRICE TERMS (decisive) ==\nlower case line' },
         isLoading: false,
         isError: false,
       });
@@ -436,8 +444,11 @@ describe('PromptDetail full screen editor (PROMPT-EDITOR-FULLSCREEN)', () => {
       expect(screen.getByTestId('find-count')).toHaveTextContent('2/2');
       expect(overlay()!.contains(screen.getByTestId('find-bar'))).toBe(true);
 
-      // Esc on the editor while Find is open closes Find only.
+      // Esc on the editor while Find is open closes Find only, and keeps the place the jump
+      // scrolled to: a plain focus() sends a contentEditable back to the top.
+      const focusSpy = vi.spyOn(editor, 'focus');
       fireEvent.keyDown(editor, { key: 'Escape' });
+      expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
       expect(screen.queryByTestId('find-bar')).toBeNull();
       expect(overlay()).not.toBeNull();
       // A second Esc leaves full screen.
@@ -452,7 +463,7 @@ describe('PromptDetail full screen editor (PROMPT-EDITOR-FULLSCREEN)', () => {
       const preview = screen.getByTestId('prompt-preview');
       expect(overlay()!.contains(preview)).toBe(true);
       const headings = Array.from(preview.querySelectorAll('[data-heading]')).map((n) => n.textContent);
-      expect(headings).toEqual(['RULES:', '# Output']);
+      expect(headings).toEqual(['RULES:', '# Output', '== PRICE TERMS (decisive) ==']);
       expect(preview.textContent).toContain('current one a | b');
     });
   });

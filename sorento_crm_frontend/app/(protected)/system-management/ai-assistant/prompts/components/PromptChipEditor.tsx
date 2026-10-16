@@ -478,7 +478,9 @@ export const PromptChipEditor = forwardRef<
     root?.removeAttribute('data-find-active');
     if (!root || !offsets) return;
     const range = rangeFor(offsets.start, offsets.end);
-    root.focus();
+    // preventScroll: a plain focus() scrolls the box back to the top, so closing Find
+    // lost the place the jump had just centred (PROMPT-EDITOR-FULLSCREEN browser pass).
+    root.focus({ preventScroll: true });
     if (range) {
       const sel = window.getSelection();
       sel?.removeAllRanges();
@@ -499,7 +501,7 @@ export const PromptChipEditor = forwardRef<
   );
 
   return (
-    <div className={cn('space-y-2', fill && 'flex flex-1 flex-col', className)}>
+    <div className={cn('space-y-2', fill && 'flex min-h-0 flex-1 flex-col', className)}>
       <div className="flex flex-wrap items-center gap-2">
         {!disabled ? (
           <Popover
@@ -551,7 +553,7 @@ export const PromptChipEditor = forwardRef<
         </Button>
       </div>
 
-      <div className={cn('relative', fill && 'flex flex-1 flex-col')}>
+      <div className={cn('relative', fill && 'flex min-h-0 flex-1 flex-col')}>
         <FindBar controller={find} onDismiss={dismissFind} />
         <div
           ref={ref}
