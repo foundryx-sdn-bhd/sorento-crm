@@ -139,8 +139,8 @@ def _mem_focus(row: dict[str, Any], which: str) -> dict[str, Any]:
 
 
 def _subject_before(row: dict[str, Any]) -> set[str]:
-    codes = _codes_of(_mem_focus(row, "before").get("products"))
-    return codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products"))
+    # never the `state` record: it is written after the turn, so it is the subject AFTER, not before
+    return _codes_of(_mem_focus(row, "before").get("products"))
 
 
 def _lookup_subjects(row: dict[str, Any]) -> set[str]:
@@ -251,11 +251,12 @@ def _fact_ok(row: dict[str, Any], fact: Any) -> bool:
 
 def _oq(row: dict[str, Any]) -> tuple[Any, Any]:
     """(question before, question after): `memory.open_question` is {before, after} in real traces, the bare
-    after value in older rows; the before value is the `state` event's."""
+    after value in older rows (whose before value is the `state` event's). In a real trace a missing `before` is
+    unknown: the `state` record is written after the turn, so it never stands in for it."""
     mem = _kind(row, "memory").get("open_question")
     state_q = _kind(row, "state").get("open_question")
     if isinstance(mem, dict) and ("before" in mem or "after" in mem):
-        return mem.get("before") or state_q, mem.get("after")
+        return mem.get("before"), mem.get("after")
     return state_q, mem
 
 
@@ -433,6 +434,15 @@ def _code_lookup(row, item):
     return checks
 
 
+def _squash(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def _covered(code: str, want: set[str]) -> bool:
+    """A subject code is the typed literal or an expansion of it (it starts with the literal), separators ignored."""
+    return any(_squash(code).startswith(_squash(w)) for w in want if _squash(w))
+
+
 def _subject_check(want: set[str], after: set[str]) -> tuple[str, bool | None, str]:
     """The new subject is in memory after; with no gold subject the check is unknown (None), never a failure."""
     return ("new_subject", (want <= after) if want else None, "The new subject was not picked up.")
@@ -448,7 +458,16 @@ def _followup(row, item):
     _mem_before = _codes_of(_mem_focus(row, "before").get("products"))
 
     def carried_old() -> bool:
-        return bool(want) and not after_subject <= want
+        return bool(want) and not all(_covered(a, want) for a in after_subject)
+
+    def new_subject_ok() -> bool | None:
+        if not want:
+            return None
+        if all(any(_covered(a, {w}) for a in after_subject) for w in want):
+            return True
+        options = [_squash(o.get("code") or o.get("label")) for o in ((_oq(row)[1] or {}).get("options") or [])
+                   if isinstance(o, dict)] if isinstance(_oq(row)[1], dict) else []
+        return bool(options) and all(any(o.startswith(_squash(w)) for w in want) for o in options)
 
     if kind == "pick":
         positions = _positions(row)
@@ -484,31 +503,46 @@ def _followup(row, item):
         answered = bool(ans.get("picked") or ans.get("mode") not in (None, "", "cancel") or verdict.get("is_affirmative")
                         or verdict.get("continuation") or (changed and ans.get("mode") != "cancel"))
         checks = [
-            ("not_reasked", not (question and same), "The bot asked the same question again."),
+            # a question after the turn with none known before: the before question is unknown, not absent
+            ("not_reasked", None if question is None and after_q is not None else not (question and same),
+             "The bot asked the same question again."),
             ("answered", answered, "The bot did not read the message as an answer to its question."),
         ]
         if picked:  # the mode is not always recorded, so the option is checked only when it is
-            checks.append(("option", _norm(gold.get("option")) in picked, "The answer was not resolved to the chosen option."))
+            want_option = _norm(gold.get("option"))
+            num = re.fullmatch(r"(\d+)\.?", want_option)
+            if num and 0 < int(num.group(1)) <= len(options):  # a numeric gold is the 1-based position in the question
+                want_option = options[int(num.group(1)) - 1]
+            checks.append(("option", want_option in picked, "The answer was not resolved to the chosen option."))
         return checks
     if kind == "refine":
         flt = gold.get("filter") or {}
+        payload_omitted = _kind(row, "apply").get("note") == "payload omitted"  # the entities cannot be read
         extra = _mem_focus(row, "after").get("extra") or {}
         values = {_val(e.get("spec_value")) for e in _entities(row) if e.get("spec_value") is not None}
+        # a boolean spec value ("true") carries no words: the entity's own phrase is what the filter names
+        values |= {_val(e.get(k)) for e in _entities(row) if e.get("spec_value") is not None or e.get("spec_key")
+                   for k in ("raw", "label") if e.get(k)}
         values |= {_val(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "brand"}
         values |= {_val(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
         values |= {_val(b) for b in (_mem_focus(row, "after").get("brands") or [])}
         checks = [
             ("subject", (want <= after_subject) if want else None, "The subject was dropped when refining."),
-            ("filter", _val(flt.get("value")) in values, "The new filter was not applied."),
+            ("filter", True if _val(flt.get("value")) in values else (None if payload_omitted else False),
+             "The new filter was not applied."),
         ]
         if real:  # asking instead of looking up is not a refine that worked
             checks.append(("lookup", bool(_tools(row)), "The bot did not run a lookup after the filter."))
         return checks
     if kind == "switch":
+        # a typed literal that is no exact code but whose family the bot holds (it expanded to the held rows) is a
+        # new subject and a change
+        expanded = bool(gold.get("code_unresolved") and want and _mem_before and not want & _mem_before
+                        and all(any(_covered(a, {w}) for a in after_subject) for w in want))
         return [
             ("old_dropped", not carried_old(), "The old subject was carried into the new ask."),
-            _subject_check(want, after_subject),
-            ("changed", not (_mem_before and after_subject == _mem_before), "The subject did not change."),
+            ("new_subject", new_subject_ok(), "The new subject was not picked up."),
+            ("changed", expanded or not (_mem_before and after_subject == _mem_before), "The subject did not change."),
         ]
     if kind == "and_x" and gold.get("variant") == "new_fact":
         return [
@@ -519,7 +553,7 @@ def _followup(row, item):
         return [
             ("fact", _fact_ok(row, gold.get("fact")), "The fact asked was not carried over to the new item."),
             ("old_dropped", not carried_old(), "The old item was carried into the new ask."),
-            ("new_subject", (want <= after_subject) if want else None, "The new item was not picked up."),
+            ("new_subject", new_subject_ok(), "The new item was not picked up."),
         ]
     return [("known_kind", False, "Unknown follow-up kind.")]
 
