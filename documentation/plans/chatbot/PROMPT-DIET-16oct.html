@@ -1535,7 +1535,7 @@ your PASS. Base version: whichever version is the prod candidate when the stage 
 CHAT-ADVISOR-SPIKE, which already uses <code>{{specs}}</code>), not v94 blindly; section numbers here are v94's.</p>
 <div class="tw"><table>
 <tr><th>Stage</th><th>What changes</th><th class=num>Sections</th><th class=num>Tokens before</th><th class=num>After</th><th>Risk</th><th>Gate cost</th></tr>
-<tr><td><b>1. Fix and delete dead text</b></td><td>Section 43 contradiction; OUTPUT comma and stale enums; delete REFERENCE TARGET (dead), FLYER, CORRECTION, the "before calling the MCP tool" line and 9 banners.</td><td class=num>15</td><td class=num>1,704</td><td class=num>790</td><td>low</td><td rowspan=4>Per stage: TRAIN x2 repeats = 236 calls, about $1.40; crew held-out (113 items) about $0.70 a repeat. Base-version TRAIN x2 once, about $1.40. The per-lane cap of 300 calls a day means one stage gate a day.</td></tr>
+<tr><td><b>1. Fix, delete dead text, port #1574</b></td><td>Re-apply #1574's cut list (100 of 118 cuts, -2,598 tokens, counted on top of this row). Section 43 contradiction; OUTPUT comma and stale enums; delete REFERENCE TARGET (dead), FLYER, CORRECTION, the "before calling the MCP tool" line and 9 banners.</td><td class=num>15</td><td class=num>1,704</td><td class=num>790</td><td>low</td><td rowspan=4>Per stage: TRAIN x2 repeats = 236 calls, about $1.40; crew held-out (113 items) about $0.70 a repeat. Base-version TRAIN x2 once, about $1.40. The per-lane cap of 300 calls a day means one stage gate a day.</td></tr>
 <tr><td><b>2. Make lists dynamic</b></td><td>Policy block to <code>{{domains_detail}}</code> <code>{{entity_kinds_detail}}</code> <code>{{specs}}</code>; <code>{{domains}}</code>, <code>{{access_levels}}</code>, <code>{{teams}}</code>, <code>{{agents}}</code>. Attachment types after Q2.</td><td class=num>5</td><td class=num>4,817</td><td class=num>4,228</td><td>low; fixes drift</td></tr>
 <tr><td><b>3. Collapse repeats: conversation and entity rules</b></td><td>One escalation section (4, 31, 49, 90); one entity section (18, 19, 20); positional (28 + 43); trim 7, 8, 9, 11, 12, 13, 21.</td><td class=num>20</td><td class=num>11,809</td><td class=num>5,750</td><td>medium to high: positional and entity rules carried the 11 Oct ablation drop</td></tr>
 <tr><td><b>4. Collapse repeats: reports, specs, quantity, dates</b></td><td>One report-kind table (order status, sales report, sales analysis, top selling, ranking); one quantity section; one spec section; one broaden definition; dates restatements out.</td><td class=num>29</td><td class=num>11,057</td><td class=num>5,467</td><td>medium; many of these rules have 0 TRAIN items, so held-out carries the gate</td></tr>
@@ -1545,6 +1545,9 @@ CHAT-ADVISOR-SPIKE, which already uses <code>{{specs}}</code>), not v94 blindly;
 parser-gold v1 rate (about $1.4 to $1.6 per 250 parses); actual USD comes from each run's own usage.</p>
 
 <h2 id="questions">7. Questions for you</h2>
+<p class="call"><b>Owner rulings, 16 Oct 16:31:</b> Q1 stage 1 first, with #1574's cut ported into it (section 8).
+Q2 attachment types: dynamic, a new variable from <code>attachment_types</code> (b). Q3 access levels: dynamic (a).
+Q4 stage 5 code: allowed (a). Q5 examples: trim only 65 (a).</p>
 <ol>
 <li><b>Order.</b> (a) Stage 1 first: lowest risk, fixes two bugs, about 900 tokens. (b) Stage 3 first: biggest cut.
 Recommendation: (a), because a clean baseline makes the later, riskier cuts easier to read.</li>
@@ -1562,6 +1565,14 @@ the 11 Oct ablation showed examples carry pass rate, so a wide example cut needs
 </ol>
 
 <h2 id="lessons">8. What 11 Oct taught us (PR #1568, PR #1574)</h2>
+<p class="call"><b>"We already had a cut before?"</b> Yes. #1574 (PROMPT-ABLATION, merged 11 Oct) cut v50's
+language teaching: Malay and Chinese synonym lists, typo examples, number words, honorifics and the Chinese class
+map, 118 exact cuts, 37.9k to 34.9k tokens. It passed the hidden gate (83.2% vs 80.8%), and its migration published
+the text UNLABELLED; the production label never moved to it. Prod moved along the v50 line instead (v52, then
+v63), which other lanes kept extending, so 204 of the 235 lines #1574 cut are still in prod. That is why v63 is
+35.6k. The ablation text itself is stale (no <code>{{find_filters}}</code>, no policy block), so stage 1 re-applies
+#1574's own cut list to v94: 100 of the 118 cuts still match, saving 2,598 tokens. The 18 that no longer match are
+dropped rather than re-derived, and no later stage adds language teaching back.</p>
 <ul>
 <li>Per-message prompt parts (cards, retrieved examples) cut tokens 41% but raised cost 47% and p95, because they
 break the prompt cache. This plan keeps one static prompt plus variables that render the same text between data
