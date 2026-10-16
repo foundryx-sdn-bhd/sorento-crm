@@ -2,6 +2,8 @@
 
 usage (cwd = the backend dir of the checkout under test):
   python scripts/chatbot_eval/replay.py run --traces FILE... --out OUT.jsonl
+  python scripts/chatbot_eval/replay.py live --items F --recorded F --out F --max-calls N --max-usd X --require-key-last4 XXXX
+      (live spends only when the provider key ends with --require-key-last4; any other key stops the run at "wrong_key")
   python scripts/chatbot_eval/replay.py diff BASE.jsonl HEAD.jsonl [--intended FILE]
 
 Imports only the stdlib at module level and `app.*` inside functions, so one copy of this
@@ -393,6 +395,15 @@ def _check_caps(total: dict[str, Any]) -> None:
         raise _CapStop("max_usd")
 
 
+def _check_key(total: dict[str, Any], key: Any) -> None:
+    """Before every real call: only the key whose last four characters were required may spend. The key itself
+    is never stored or printed."""
+    want = total.get("require_key_last4")
+    if want is not None and not str(key or "").endswith(want):
+        total["stop"] = "wrong_key"
+        raise _CapStop("wrong_key")
+
+
 @contextlib.contextmanager
 def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
     """Pass-through wrapper on every provider `chat`: checks the caps BEFORE the call, then counts calls and tokens
@@ -406,6 +417,7 @@ def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
     def wrap(original: Callable[..., Any]) -> Callable[..., Any]:
         def chat(self: Any, *args: Any, **kwargs: Any) -> Any:
             _check_caps(total)
+            _check_key(total, getattr(self, "api_key", ""))
             res = original(self, *args, **kwargs)
             prompt = int(getattr(res, "prompt_tokens", 0) or 0)
             cached = int(getattr(res, "cached_tokens", 0) or 0)
@@ -429,8 +441,11 @@ def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
 
     def wrap_embed(original: Callable[..., Any]) -> Callable[..., Any]:
         def embed(chunks: Any) -> Any:  # counted, never capped: a query embedding is tiny next to a chat call
-            res = original(chunks)
             from app.config import settings
+
+            if getattr(settings, "openai_api_key", ""):  # empty: the original raises before any request goes out
+                _check_key(total, settings.openai_api_key)
+            res = original(chunks)
 
             tokens = sum(len(str(c)) for c in chunks) // 4  # an estimate: the endpoint's own count is not returned
             model = str(getattr(settings, "embedding_model_name", ""))
@@ -565,11 +580,11 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
 
 def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], *,
               session_factory: Callable[[], Any], max_calls: int, max_usd: float,
-              on_row: Callable[[dict[str, Any]], None] | None = None) -> list[dict[str, Any]]:
+              require_key_last4: str, on_row: Callable[[dict[str, Any]], None] | None = None) -> list[dict[str, Any]]:
     """Run each item's message through the engine on its recorded state; stop cleanly at a call or spend cap."""
     by_id = {str(r["id"]): r for r in recorded_rows}
     total = _new_usage()
-    total.update(max_calls=max_calls, max_usd=max_usd, stop=None)
+    total.update(max_calls=max_calls, max_usd=max_usd, stop=None, require_key_last4=require_key_last4)
     results: list[dict[str, Any]] = []
     stopped: str | None = None
     previous_disable = logging.root.manager.disable
@@ -700,7 +715,7 @@ def _cmd_live(args: argparse.Namespace) -> int:
             n["stopped" if "stopped" in r else "skipped" if "skipped" in r else "run"] += 1
 
         live_rows(items, recorded, session_factory=SessionLocal, max_calls=args.max_calls, max_usd=args.max_usd,
-                  on_row=write)
+                  require_key_last4=args.require_key_last4, on_row=write)
     print(f"live items {len(items)} run {n['run']} stopped {n['stopped']} skipped {n['skipped']}")
     return 0
 
@@ -734,6 +749,7 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument("--out", required=True)
     live.add_argument("--max-calls", type=int, required=True)
     live.add_argument("--max-usd", type=float, required=True)
+    live.add_argument("--require-key-last4", required=True)
     diff = sub.add_parser("diff")
     diff.add_argument("base")
     diff.add_argument("head")

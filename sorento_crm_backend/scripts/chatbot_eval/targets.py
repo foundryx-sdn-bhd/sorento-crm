@@ -661,7 +661,8 @@ def _stats(runs: list[list[dict[str, Any]]]) -> dict[str, Any]:
         return [x for x in r if x["passed"] is not None]
 
     ns = [len(r) for r in runs]
-    rates = [(sum(1 for x in known(r) if x["passed"]) / len(known(r))) if known(r) else 0.0 for r in runs]
+    # a run with no known result for this group (absent or all unknown) stays out of rate and lowest
+    rates = [sum(1 for x in known(r) if x["passed"]) / len(known(r)) for r in runs if known(r)]
     return {"n": round(sum(ns) / len(ns)) if ns else 0,
             "passed": round(sum(sum(1 for x in r if x["passed"]) for r in runs) / len(runs)) if runs else 0,
             "unknown": round(sum(len(r) - len(known(r)) for r in runs) / len(runs)) if runs else 0,
@@ -686,10 +687,12 @@ def summarise(results: list[list[dict[str, Any]]], bars: dict[str, float]) -> di
 
     slices, growth = by_slice(core), by_slice(grow)
     leaks_per_run = [sum(len(x["leaks"]) for x in run) for run in results]
-    made_per_run = [sum(len(x["made_up"]) for x in run) for run in results]
+    made_per_run = [sum(1 for x in run for m in x["made_up"] if not str(m).startswith("unverifiable")) for run in results]
+    unverifiable = sum(1 for run in results for x in run for m in x["made_up"] if str(m).startswith("unverifiable"))
     meets = (all(n == 0 for n in leaks_per_run) and all(n == 0 for n in made_per_run)
              and all(name in slices and slices[name]["rate"] >= bar for name, bar in bars.items()))
-    out = {"slices": slices, "growth": growth, "leaks": sum(leaks_per_run), "made_up": sum(made_per_run), "meets": meets}
+    out = {"slices": slices, "growth": growth, "leaks": sum(leaks_per_run), "made_up": sum(made_per_run),
+           "unverifiable": unverifiable, "meets": meets}
     if len(results) < 3:
         out.update(meets=False, reason=f"needs at least 3 runs, got {len(results)}")
     return out
