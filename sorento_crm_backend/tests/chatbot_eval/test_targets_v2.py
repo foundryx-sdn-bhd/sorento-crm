@@ -401,3 +401,20 @@ def test_looked_up_envelopes_that_report_a_miss_do_not_count_as_the_subject():
     for miss in ({"outcome": "not_found"}, {"miss": ["x"]}, {"unresolved": [DO]}):
         env = {"tool": "crm_orders_list", "entities": [DO], "product_codes": [], **miss}
         check(grade_turn(_lookup_row(env), item("code_lookup", **gold)), False, "code")
+
+
+def _tool_only_row(uuid):
+    r = row2(message="and eta of cb88ss-diy?", reply="CB88SS-DIY arrives soon.", domains=("incoming",),
+             tools=[{"name": "crm_incoming_stock_list", "args": {"product_ids": [uuid]}}])
+    r["trace"] = [e for e in r["trace"] if e.get("kind") != "memory"]       # no memory event at all
+    r["uuid_codes"] = {UA: "CB88SS-DIY", UB: "SRTB200"}
+    return r
+
+
+def test_subject_after_includes_the_tool_targets_resolved_through_uuid_codes():
+    gold = dict(variant="new_item", fact="incoming", subject_after=["cb88ss-diy"])
+    check(grade_turn(_tool_only_row(UA), item("followup", "and_x", **gold)), True)
+    check(grade_turn(_tool_only_row(UB), item("followup", "and_x", **gold)), False)
+    sw = dict(subject_after=["cb88ss-diy"])
+    check(grade_turn(_tool_only_row(UA), item("followup", "switch", **sw)), True)
+    check(grade_turn(_tool_only_row(UB), item("followup", "switch", **sw)), False)
