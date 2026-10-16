@@ -141,3 +141,18 @@ Decisions:
 - `lib/whole-number-range.ts` keeps its stricter format check and takes its sentence from `numberFieldError`.
 - Browser-pass rule (crew): a save in a browser pass uses data created for the test or is reverted in the same run,
   and every write is logged in the crew-note.
+
+## Fix round 2 (17 Oct: reviewer round 2 NOT READY)
+
+- Convert to packing list "Quantity to place": 0 is valid again (leaves the line for the next container, backend
+  skips it, proforma_invoice_service.py:1999-2002); blank and over-remaining are refused.
+- Bad input in string pass-through mode (about 205 sites): NumberInput hands the screen the string 'NaN' and keeps
+  the typed text on screen; `numberFieldError('NaN')` is invalid even on optional fields. One central fix, no per-site
+  change.
+- react-hook-form numbers with bad input show the numberFieldError sentence, never zod's raw "Expected number".
+- SpoPlannerTable: the sentence shows after Create SPO / Save changes, then live (Q1), never while typing.
+- LiveNumberInput judges a box at blur only once it was edited (an untouched empty box is never red).
+- SCM PO edit gets the SO edit rules (blank or invalid qty shows "-" in Outstanding and totals, Save refused with
+  the sentence); SO edit treats a negative qty like blank in the totals.
+- Browser passes clear a box with the keyboard and read its value before every press (agent-browser `fill ""` did
+  not clear a number box; one accidental parked reserve request on OI-2610-0057 was cancelled in the same run).
