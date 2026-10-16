@@ -1147,7 +1147,7 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind, shared_rates=()) -> Tuple
     if per_account and merged:
         raise CellError(
             f"{name}: per-account {per_account[0].header} beside dealer {merged[0].header} is read "
-            "on yearly targets only"
+            "only on a yearly target whose dealer tiers are merged over the accounts"
         )
     previous_threshold: Optional[Decimal] = None
     for thr_col, rate_col in pairs:
