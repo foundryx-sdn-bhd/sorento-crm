@@ -161,6 +161,8 @@ describe('SupplierSheet', () => {
     fireEvent.change(qtyInput, { target: { value: '' } });
 
     expect(qtyInput.value).toBe('');
+    expect(screen.queryByText(/^Enter a number/)).not.toBeInTheDocument();
+    fireEvent.blur(qtyInput);
     expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
     expect(onQtyChange).not.toHaveBeenCalled();
     fireEvent.change(qtyInput, { target: { value: '12' } });

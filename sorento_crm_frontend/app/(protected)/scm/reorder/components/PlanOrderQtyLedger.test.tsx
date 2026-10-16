@@ -530,6 +530,8 @@ describe('order-qty ledger - the add-on quantity is editable (Fix A, user feedba
     // Proposal is 60, so the cap is 600. No silent clamp any more.
     fireEvent.change(input, { target: { value: '99999' } });
     expect(input).toHaveValue(99999);
+    expect(screen.queryByText(/^Enter a (whole )?number between 0 and 600/)).not.toBeInTheDocument();
+    fireEvent.blur(input);
     expect(screen.getByText(/^Enter a (whole )?number between 0 and 600/)).toBeInTheDocument();
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(onDecide).not.toHaveBeenCalled();
@@ -540,6 +542,8 @@ describe('order-qty ledger - the add-on quantity is editable (Fix A, user feedba
     const input = screen.getByRole('spinbutton', { name: 'Forecast add-on quantity' });
     fireEvent.change(input, { target: { value: '-5' } });
     expect(input).toHaveValue(-5);
+    expect(screen.queryByText(/^Enter a (whole )?number between 0 and 600/)).not.toBeInTheDocument();
+    fireEvent.blur(input);
     expect(screen.getByText(/^Enter a (whole )?number between 0 and 600/)).toBeInTheDocument();
   });
 
@@ -553,6 +557,9 @@ describe('order-qty ledger - the add-on quantity is editable (Fix A, user feedba
     expect(input.value).toBe('');
     // A blank is not a buy of 40: nothing new is recorded.
     expect(onDecide).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/^Enter a (whole )?number/)).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.blur(input);
     expect(screen.getByText(/^Enter a (whole )?number/)).toBeInTheDocument();
     expect(input).toHaveAttribute('aria-invalid', 'true');
 
@@ -688,6 +695,8 @@ describe('order-qty ledger - per-location use stock', () => {
     fireEvent.change(screen.getByLabelText('Use from BRW-BB'), { target: { value: '999' } });
 
     expect(screen.getByLabelText('Use from BRW-BB')).toHaveValue(999);
+    expect(screen.queryByText('Enter a whole number between 0 and 5.')).not.toBeInTheDocument();
+    fireEvent.blur(screen.getByLabelText('Use from BRW-BB'));
     expect(screen.getByText('Enter a whole number between 0 and 5.')).toBeInTheDocument();
     expect(onDecide.mock.calls.length).toBe(before);
   });
@@ -793,6 +802,8 @@ describe('order-qty ledger - the offered locations, at what they hold', () => {
 
     // NUMBER-FIELDS: 40 stays as typed with its sentence; the recorded figure is untouched.
     expect(ib).toHaveValue(40);
+    expect(screen.queryByText('Enter a whole number between 0 and 10.')).not.toBeInTheDocument();
+    fireEvent.blur(ib);
     expect(screen.getByText('Enter a whole number between 0 and 10.')).toBeInTheDocument();
     expect(onDecide.mock.calls.length).toBe(before);
   });
@@ -806,6 +817,8 @@ describe('order-qty ledger - the offered locations, at what they hold', () => {
     const ntc = screen.getByLabelText('Use from BRW-NTC');
     fireEvent.change(ntc, { target: { value: '6' } });
     expect(ntc).toHaveValue(6);
+    expect(ntc).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.blur(ntc);
     expect(ntc).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText('Use from BRW-IB')).toHaveValue(10);
 

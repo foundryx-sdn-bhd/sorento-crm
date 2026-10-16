@@ -104,4 +104,46 @@ describe('LiveNumberInput', () => {
     await userEvent.click(screen.getByText('elsewhere'));
     expect(screen.getByText('Enter a number above 0.')).toBeVisible();
   });
+
+  it('Q1a: a blank after an edit shows nothing while focused, the sentence at blur, clears on a valid figure', async () => {
+    const spy = vi.fn();
+    render(<Harness initial={12} rules={rules} spy={spy} />);
+    const input = screen.getByLabelText('Qty') as HTMLInputElement;
+    await userEvent.clear(input);
+    expect(input).toHaveFocus();
+    expect(screen.queryByText(/Enter a/)).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute('aria-invalid', 'true');
+    await userEvent.click(screen.getByText('elsewhere'));
+    expect(screen.getByText('Enter a whole number between 1 and 50.')).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    await userEvent.type(input, '5');
+    expect(screen.queryByText(/Enter a/)).not.toBeInTheDocument();
+    expect(spy).toHaveBeenLastCalledWith(5);
+  });
+
+  it('Q1b: a figure over max shows nothing while focused, the sentence at blur', async () => {
+    const spy = vi.fn();
+    render(<Harness initial={3} rules={rules} spy={spy} />);
+    const input = screen.getByLabelText('Qty') as HTMLInputElement;
+    await userEvent.clear(input);
+    await userEvent.type(input, '400');
+    expect(input).toHaveFocus();
+    expect(screen.queryByText(/Enter a/)).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute('aria-invalid', 'true');
+    await userEvent.click(screen.getByText('elsewhere'));
+    expect(screen.getByText('Enter a whole number between 1 and 50.')).toBeInTheDocument();
+  });
+
+  it('Q1c: a negative with min 0 shows nothing while focused, the sentence at blur', async () => {
+    const spy = vi.fn();
+    render(<Harness initial={null} rules={{ min: 0 }} spy={spy} />);
+    const input = screen.getByLabelText('Qty') as HTMLInputElement;
+    await userEvent.type(input, '-5');
+    expect(input).toHaveFocus();
+    expect(screen.queryByText(/Enter a/)).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute('aria-invalid', 'true');
+    expect(spy).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByText('elsewhere'));
+    expect(screen.getByText(/Enter a/)).toBeInTheDocument();
+  });
 });

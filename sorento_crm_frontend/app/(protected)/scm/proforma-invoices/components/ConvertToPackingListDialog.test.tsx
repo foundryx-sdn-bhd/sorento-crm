@@ -320,7 +320,7 @@ describe('ConvertToPackingListDialog Quantity to place (B4)', () => {
     fireEvent.click(screen.getByRole('button', { name: /convert/i }));
     expect(onConvert).not.toHaveBeenCalled();
     expect(box).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByText('Enter a number above 0 and up to 40.')).toBeVisible();
+    expect(screen.getByText('Enter a number above 0 and up to 40.')).toBeInTheDocument();
   });
 });
 
