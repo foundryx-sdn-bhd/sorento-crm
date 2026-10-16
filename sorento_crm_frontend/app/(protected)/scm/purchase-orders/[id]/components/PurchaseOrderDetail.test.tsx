@@ -997,7 +997,10 @@ describe('PurchaseOrderDetail - a blank or invalid quantity is pending, never 0 
     fireEvent.change(box, { target: { value: typed } });
     // Outstanding was 320 and must not become 0.
     expect(cells(tr).filter((t) => t === '-').length).toBeGreaterThan(rowDashesBefore);
-    expect(cells(tr)).not.toContain('0');
+    const headers = Array.from(document.querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
+    const outstandingAt = headers.findIndex((h) => /^Outstanding qty/.test(h));
+    expect(outstandingAt).toBeGreaterThan(-1);
+    expect(cells(tr)[outstandingAt]).toBe('-');
     expect(footer().filter((t) => t === '-').length).toBeGreaterThanOrEqual(dashesBefore + 2);
   });
 
