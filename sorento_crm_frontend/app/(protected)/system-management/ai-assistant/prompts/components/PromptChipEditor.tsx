@@ -98,8 +98,13 @@ export const PromptChipEditor = forwardRef<
     registryNames: string[];
     disabled?: boolean;
     className?: string;
+    /** Full screen: grow to the parent's height instead of the 70dvh cap. */
+    fill?: boolean;
   }
->(function PromptChipEditor({ value, onChange, variables, registryNames, disabled = false, className }, handleRef) {
+>(function PromptChipEditor(
+  { value, onChange, variables, registryNames, disabled = false, className, fill = false },
+  handleRef,
+) {
   const ref = useRef<HTMLDivElement>(null);
   const emitted = useRef<string | null>(null);
   const savedRange = useRef<Range | null>(null);
@@ -494,7 +499,7 @@ export const PromptChipEditor = forwardRef<
   );
 
   return (
-    <div className={cn('space-y-2', className)}>
+    <div className={cn('space-y-2', fill && 'flex flex-1 flex-col', className)}>
       <div className="flex flex-wrap items-center gap-2">
         {!disabled ? (
           <Popover
@@ -546,7 +551,7 @@ export const PromptChipEditor = forwardRef<
         </Button>
       </div>
 
-      <div className="relative">
+      <div className={cn('relative', fill && 'flex flex-1 flex-col')}>
         <FindBar controller={find} onDismiss={dismissFind} />
         <div
           ref={ref}
@@ -558,7 +563,10 @@ export const PromptChipEditor = forwardRef<
           suppressContentEditableWarning
           spellCheck={false}
           data-testid="prompt-chip-editor"
-          className="max-h-[70dvh] min-h-[320px] overflow-y-auto overflow-x-hidden whitespace-pre-wrap [overflow-wrap:anywhere] rounded-md border bg-background p-3 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            'max-h-[70dvh] min-h-[320px] overflow-y-auto overflow-x-hidden whitespace-pre-wrap [overflow-wrap:anywhere] rounded-md border bg-background p-3 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            fill && 'max-h-none flex-1',
+          )}
           onInput={() => {
             // Typing after a removal makes the removal final: Undo would roll the typing back.
             setUndoValue(null);

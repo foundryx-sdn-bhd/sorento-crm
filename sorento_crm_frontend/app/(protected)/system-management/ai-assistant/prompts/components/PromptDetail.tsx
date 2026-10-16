@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, GitCompare, Loader2, Save } from 'lucide-react';
 import { toast } from '@/lib/toast';
@@ -45,6 +45,8 @@ import { PromptChipEditor, type PromptChipEditorHandle } from './PromptChipEdito
 import { PublishDialog } from './PublishDialog';
 import { VarChips } from './VarChips';
 import { WiredPanel } from './WiredPanel';
+// The full-screen overlay the Dealer Kit designers already use (Esc exits, body scroll locked).
+import { FocusShell, FocusToggle } from '../../../../dealer-kit/components/FocusMode';
 
 const EDIT_PERMISSION = 'system.ai_assistant_settings.edit';
 
@@ -122,6 +124,8 @@ export function PromptDetail({ name }: { name: string }) {
   const registryQuery = useRegistryVariables(name, hasRegistry);
   const registryRows = useMemo(() => registryQuery.data ?? [], [registryQuery.data]);
   const [editorMode, setEditorMode] = useState<'edit' | 'preview'>('edit');
+  // Full screen for the Editor card (owner, 16 Oct: long prompts are hard to read in the box).
+  const [focus, setFocus] = useState(false);
   const chipEditorRef = useRef<PromptChipEditorHandle>(null);
   const validation = useMemo(
     () => validateVars(draft, declared, registryNames),
@@ -230,6 +234,9 @@ export function PromptDetail({ name }: { name: string }) {
   };
 
   const baseVersionId = baseQuery.data?.id ?? null;
+  // Publish / Stage live in Version history, which full screen covers; the loaded version's
+  // two buttons come along into the editor header so they stay one click away.
+  const baseRow = meta.versions.find((v) => v.version === baseVersion);
 
   return (
     <Container className="space-y-4">
@@ -360,9 +367,11 @@ export function PromptDetail({ name }: { name: string }) {
         </div>
 
         {/* Editor + tools */}
-        <div className="min-w-0 space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2">
+        {/* gap, not space-y: the full-screen wrapper around the card is `display: contents`. */}
+        <div className="flex min-w-0 flex-col gap-4">
+          <FocusShell active={focus} onExit={() => setFocus(false)} keepMounted>
+          <Card className={cn(focus && 'flex-1')}>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-base">
                 Editor{' '}
                 <span className="text-xs font-normal text-muted-foreground">
@@ -374,6 +383,37 @@ export function PromptDetail({ name }: { name: string }) {
                   {dirty ? ' · unsaved changes' : ''})
                 </span>
               </CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+              {focus && canEdit && meta.active && baseRow ? (
+                <>
+                  {!baseRow.labels.includes('staging') ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPublishState({ open: true, version: baseRow.version, versionId: baseRow.id, label: 'staging' })
+                      }
+                      data-testid="fullscreen-publish-staging"
+                    >
+                      Stage v{baseRow.version}
+                    </Button>
+                  ) : null}
+                  {!baseRow.labels.includes('production') ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPublishState({ open: true, version: baseRow.version, versionId: baseRow.id, label: 'production' })
+                      }
+                      data-testid="fullscreen-publish-production"
+                    >
+                      Publish v{baseRow.version}
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -389,8 +429,10 @@ export function PromptDetail({ name }: { name: string }) {
               >
                 <GitCompare className="size-4" /> {diffOpen ? 'Hide diff' : 'Diff'}
               </Button>
+              <FocusToggle active={focus} onToggle={setFocus} label="editor" />
+              </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className={cn('space-y-3', focus && 'flex flex-1 flex-col')}>
               {hasRegistry ? (
                 <Tabs value={editorMode} onValueChange={(v) => setEditorMode(v as 'edit' | 'preview')}>
                   <TabsList shape="pill" size="sm" aria-label="Editor mode">
@@ -404,12 +446,16 @@ export function PromptDetail({ name }: { name: string }) {
                 </Tabs>
               ) : null}
               {hasRegistry && editorMode === 'preview' ? (
-                <RenderedPreview template={draft} registryNames={registryNames} rows={registryRows} />
+                <RenderedPreview template={draft} registryNames={registryNames} rows={registryRows} fill={focus} />
               ) : null}
               {hasRegistry ? (
                 // Stays mounted (hidden) under Preview, so the owner's last caret survives a
                 // look at the preview and the wired panel's Insert still lands there.
-                <div hidden={editorMode === 'preview'} data-testid="chip-editor-pane">
+                <div
+                  hidden={editorMode === 'preview'}
+                  className={cn(focus && 'flex flex-1 flex-col')}
+                  data-testid="chip-editor-pane"
+                >
                   <PromptChipEditor
                     ref={chipEditorRef}
                     value={draft}
@@ -417,13 +463,15 @@ export function PromptDetail({ name }: { name: string }) {
                     variables={registryRows}
                     registryNames={registryNames}
                     disabled={!canEdit}
+                    fill={focus}
                   />
                 </div>
               ) : (
                 <SearchableTextarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  className="min-h-[320px] font-mono text-xs"
+                  className={cn('min-h-[320px] font-mono text-xs', focus && 'flex-1 resize-none')}
+                  containerClassName={cn(focus && 'flex flex-1 flex-col')}
                   spellCheck={false}
                   disabled={!canEdit}
                   data-testid="prompt-editor"
@@ -494,6 +542,7 @@ export function PromptDetail({ name }: { name: string }) {
               )}
             </CardContent>
           </Card>
+          </FocusShell>
 
           <DryRunBox
             keyName={name}
@@ -590,21 +639,29 @@ function RenderedPreview({
   template,
   registryNames,
   rows,
+  fill = false,
 }: {
   template: string;
   registryNames: string[];
   rows: { name: string; label: string; rendered: string }[];
+  /** Full screen: grow to the card's height instead of the 70dvh cap. */
+  fill?: boolean;
 }) {
   const byName = new Map(rows.map((r) => [r.name, r]));
   return (
     <pre
       data-testid="prompt-preview"
       aria-readonly="true"
-      className="max-h-[70dvh] min-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/20 p-3 font-mono text-xs leading-relaxed"
+      className={cn(
+        'max-h-[70dvh] min-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/20 p-3 font-mono text-xs leading-relaxed',
+        fill && 'max-h-none flex-1',
+      )}
     >
       {splitTemplate(template, registryNames).map((seg, i) =>
         seg.kind === 'text' ? (
-          <span key={i}>{seg.text.replace(/\{\{\s*current_date\s*\}\}/g, todayInMalaysia())}</span>
+          <span key={i}>
+            <HeadedText text={seg.text.replace(/\{\{\s*current_date\s*\}\}/g, todayInMalaysia())} />
+          </span>
         ) : (
           <span key={i} className="rounded-sm bg-primary/10" title={byName.get(seg.name)?.label ?? seg.name}>
             {byName.get(seg.name)?.rendered ?? ''}
@@ -612,5 +669,30 @@ function RenderedPreview({
         ),
       )}
     </pre>
+  );
+}
+
+/**
+ * A line that reads as a section header in a long prompt: a markdown heading ("# Output") or a
+ * short ALL-CAPS line, optionally ending in a colon ("RULES:"). Bold, so the eye can scan.
+ */
+const HEADING_LINE = /^(#{1,6}\s+\S.*|[A-Z][A-Z0-9 _&/()-]{2,60}:?)$/;
+
+function HeadedText({ text }: { text: string }) {
+  return (
+    <>
+      {text.split('\n').map((line, i) => (
+        <Fragment key={i}>
+          {i > 0 ? '\n' : null}
+          {HEADING_LINE.test(line.trim()) ? (
+            <span data-heading className="font-semibold text-foreground">
+              {line}
+            </span>
+          ) : (
+            line
+          )}
+        </Fragment>
+      ))}
+    </>
   );
 }
