@@ -41,6 +41,7 @@ vi.mock('@/lib/toast', () => ({
 
 vi.mock('../lib/sample-request-service', () => ({
   searchSampleRequestProducts: vi.fn(async () => []),
+  lookupSampleRequestCustomers: vi.fn(async () => []),
   createSampleRequest: vi.fn(),
   updateSampleRequest: vi.fn(),
   submitSampleRequest: vi.fn(),
@@ -70,6 +71,7 @@ vi.mock('@/components/common/DetailActionsMenu', () => ({
 import {
   createSampleRequest,
   getSampleRequest,
+  lookupSampleRequestCustomers,
   searchSampleRequestProducts,
   submitSampleRequest,
 } from '../lib/sample-request-service';
@@ -124,7 +126,7 @@ beforeEach(() => {
   asMock(searchSampleRequestProducts).mockImplementation(async (q: string) =>
     fold(q) === 'tpe9101' ? [TPE] : [],
   );
-  asMock(lookupDebtors).mockResolvedValue([]);
+  asMock(lookupSampleRequestCustomers).mockResolvedValue([]);
   asMock(createSampleRequest).mockResolvedValue({ id: 'sr-new', lines: [] });
   asMock(submitSampleRequest).mockResolvedValue({ id: 'sr-new' });
 });
@@ -285,7 +287,7 @@ describe('AC-SR-81 Customer Name is a searchable box that accepts free text', ()
     const customer = screen.getByLabelText(/^Customer Name/) as HTMLInputElement;
     fireEvent.focus(customer);
     fireEvent.change(customer, { target: { value: 'Walk-in Trading' } });
-    await waitFor(() => expect(lookupDebtors).toHaveBeenCalled());
+    await waitFor(() => expect(lookupSampleRequestCustomers).toHaveBeenCalled());
     fireEvent.blur(customer);
     await new Promise((r) => setTimeout(r, 250));
     expect(customer.value).toBe('Walk-in Trading');
@@ -299,12 +301,11 @@ describe('AC-SR-81 Customer Name is a searchable box that accepts free text', ()
   });
 
   it("lists the contact's debtors with their code and links the pick", async () => {
-    asMock(lookupDebtors).mockResolvedValue([
+    asMock(lookupSampleRequestCustomers).mockResolvedValue([
       {
         customer_id: 'c-1',
-        debtor_name: 'JV PERKASA SDN BHD',
-        customer_code: '300-J099',
-        sales_type: null,
+        debtor_name: 'ZZT PERKASA SDN BHD',
+        customer_code: 'ZZT-C001',
       },
     ]);
     renderForm();
@@ -312,12 +313,22 @@ describe('AC-SR-81 Customer Name is a searchable box that accepts free text', ()
     const customer = screen.getByLabelText(/^Customer Name/);
     fireEvent.focus(customer);
     fireEvent.change(customer, { target: { value: 'perkasa' } });
-    expect(await screen.findByText('300-J099')).toBeTruthy();
-    fireEvent.click(await screen.findByRole('option', { name: /JV PERKASA SDN BHD/ }));
+    expect(await screen.findByText('ZZT-C001')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('option', { name: /ZZT PERKASA SDN BHD/ }));
 
     fireEvent.click(screen.getByRole('button', { name: /^save as draft$/i }));
     await waitFor(() => expect(createSampleRequest).toHaveBeenCalled());
     expect(asMock(createSampleRequest).mock.calls[0][0]).toMatchObject({ customer_id: 'c-1' });
+  });
+
+  it('asks the sample request lookup (the set submit accepts), never the unscoped debtor list', async () => {
+    renderForm();
+    await screen.findByText(TITLE);
+    const customer = screen.getByLabelText(/^Customer Name/);
+    fireEvent.focus(customer);
+    fireEvent.change(customer, { target: { value: 'zzt' } });
+    await waitFor(() => expect(lookupSampleRequestCustomers).toHaveBeenCalledWith('zzt'));
+    expect(lookupDebtors).not.toHaveBeenCalled();
   });
 });
 

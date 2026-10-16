@@ -149,6 +149,7 @@ ROUTES = [
     ("post", f"{BASE}/{{id}}/cancel", None),
     ("get", f"{BASE}/{{id}}/pdf", None),
     ("get", f"{PORTAL}/sample-request/products?q=zzt", None),
+    ("get", f"{PORTAL}/sample-request/customers?q=zzt", None),
 ]
 
 
@@ -363,6 +364,36 @@ def test_review_s2_customer_must_be_in_the_contacts_debtors(portal):
 
     typed = _create(portal, customer_name=f"{MARKER} walk-in")
     assert typed["customer_id"] is None
+
+
+def test_browser_pass_customer_picker_lists_only_what_submit_accepts(portal):
+    """Browser pass on 85d42f75: the portal picker listed every debtor (the unscoped
+    `/lookups/debtors`) while submit accepts only the contact's debtors-for-agent, so a picked
+    debtor came back 422. The sample request's own lookup lists the accepted set only, each with
+    the id submit needs, and filters by code or name."""
+    agent = _link_agent(portal, portal.granted)
+    mine = make_customer(portal.db, portal.company_id)
+    mine.sales_agent_id = agent.id
+    stranger = make_customer(portal.db, portal.company_id)
+    portal.db.commit()
+
+    c = _as(portal, portal.granted)
+    res = c.get(f"{PORTAL}/sample-request/customers", params={"q": ""})
+    assert res.status_code == 200, res.text
+    ids = {row["customer_id"] for row in res.json()}
+    assert mine.id in ids
+    assert stranger.id not in ids
+    row = next(r for r in res.json() if r["customer_id"] == mine.id)
+    assert row["customer_code"] == mine.customer_code
+    assert row["debtor_name"] == mine.customer_name
+
+    by_code = c.get(f"{PORTAL}/sample-request/customers", params={"q": mine.customer_code.lower()})
+    assert [r["customer_id"] for r in by_code.json()] == [mine.id]
+    none = c.get(f"{PORTAL}/sample-request/customers", params={"q": stranger.customer_code})
+    assert none.json() == []
+
+    picked = _create(portal, customer_id=row["customer_id"], customer_name=None)
+    assert picked["customer_id"] == mine.id
 
 
 def test_review_portal_put_rechecks_the_customer_only_when_it_changes(portal):
