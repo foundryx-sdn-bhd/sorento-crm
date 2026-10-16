@@ -3,6 +3,7 @@
 usage (cwd = the backend dir of the checkout under test):
   python scripts/chatbot_eval/replay.py run --traces FILE... --out OUT.jsonl
   python scripts/chatbot_eval/replay.py live --items F --recorded F --out F --max-calls N --max-usd X --require-key-last4 XXXX
+      (history is read as of the recorded turn (prod world), not as of now)
       (live spends only when the provider key ends with --require-key-last4; any other key stops the run at "wrong_key")
       (the guard and meter see only this process: MCP tools run on the stack's backend server with its own key, e.g.
       order search embeds via app/api/v1/external/rag.py:36, and media work runs on the RQ worker; neither is metered here)
@@ -532,6 +533,112 @@ def _set_text(payload: dict[str, Any], text: str) -> bool:
     return False
 
 
+def _trace_events(row: dict[str, Any]) -> list[dict[str, Any]]:
+    return [x for x in row.get("trace") or [] if isinstance(x, dict)]
+
+
+def _recorded_history(db: Any, row: dict[str, Any], envelope: Any) -> dict[str, Any] | None:
+    """The prod history the recorded turn saw, read as of that turn: the engine's own history reads are scoped to the
+    live world (`is_test`) and the newest rows as of now, so a live (dry-run) turn would see none of it, or later turns.
+    Anchor = the recorded turn's `created_at` (else the `at` of its `prompt_text` event). Read-only. None = no anchor."""
+    from datetime import datetime
+
+    from sqlalchemy import func
+
+    from app.models.chatbot_turn import ChatbotTurn
+    from app.models.conversation_frame import ConversationFrame
+    from app.services.chatbot import engine, turn_runtime
+    from app.services.chatbot.turn import memory as memory_mod
+
+    events = _trace_events(row)
+    prompt = next((e for e in events if e.get("kind") == "prompt_text" and isinstance(e.get("text"), str)), None)
+    recorded = db.query(ChatbotTurn.created_at, ChatbotTurn.contact_respond_id).filter(ChatbotTurn.id == row.get("id")).first()
+    anchor, contact = (recorded[0], recorded[1]) if recorded else (None, None)
+    if anchor is None and prompt is not None and prompt.get("at"):
+        anchor = datetime.fromisoformat(str(prompt["at"]))
+    if anchor is None:
+        return None
+    contact = contact or engine._contact_respond_id(envelope)
+    console = str(getattr(envelope, "ingress", "") or "") == turn_runtime._CONSOLE_INGRESS
+
+    def prior(*cols: Any) -> Any:
+        q = db.query(*cols).filter(ChatbotTurn.contact_respond_id == str(contact), ChatbotTurn.is_test.is_(False),
+                                   ChatbotTurn.created_at < anchor, ChatbotTurn.id != row.get("id"))
+        return q
+
+    def scoped(q: Any) -> Any:
+        q = q.filter(ChatbotTurn.status == "done")
+        return q.filter(ChatbotTurn.ingress == "console") if console else q.filter(ChatbotTurn.ingress != "console")
+
+    order = turn_runtime._newest_turn_first(ChatbotTurn)
+    first = scoped(prior(ChatbotTurn.response)).order_by(*order).first()
+    reply = (first[0] or {}).get("reply") if first is not None and isinstance(first[0], dict) else None
+    previous_reply = str(reply.get("text")) if isinstance(reply, dict) and reply.get("text") else None
+    pairs: list[tuple[str, str]] = []
+    for env, resp in scoped(prior(ChatbotTurn.envelope, ChatbotTurn.response)).order_by(*order).limit(6).all():
+        rep = resp.get("reply") if isinstance(resp, dict) else None
+        answer = rep.get("text") if isinstance(rep, dict) else None
+        if isinstance(answer, str) and answer.strip():
+            pairs.append((turn_runtime._envelope_text(env) or "(media)", answer))
+            if len(pairs) == 3:
+                break
+    recent = list(reversed(pairs))
+
+    # the closed-frame summaries are the recorded "Recent conversations" lines (oldest first in the prompt, newest first here)
+    lines: list[str] = []
+    if prompt is not None:
+        block = prompt["text"].split("Recent conversations:", 1)
+        if len(block) == 2:
+            for line in block[1].split("\n")[1:]:
+                if not line.startswith("- "):
+                    break
+                lines.append(line[2:])
+    summaries = list(reversed(lines))
+    mem = next((e for e in events if isinstance(e.get("episodes"), dict)), {})
+    read_ids = [i for i in (mem.get("episodes") or {}).get("read") or [] if i is not None]
+    read_frames = [{"id": i} for i in read_ids]
+
+    frame = db.query(ConversationFrame).filter(ConversationFrame.id.in_(read_ids)).order_by(
+        ConversationFrame.last_activity_at.desc()).first() if read_ids else None
+    earlier_q = prior(ChatbotTurn)  # the engine's rule: after the newest closed frame, newest 3, oldest first
+    if console:
+        earlier_q = earlier_q.filter(ChatbotTurn.ingress == "console")
+    if frame is not None:
+        earlier_q = earlier_q.filter(ChatbotTurn.created_at > frame.last_activity_at)
+    earlier = [{"created_at": engine._short_day_time(x.created_at), "text": t}
+               for x in reversed(earlier_q.order_by(ChatbotTurn.created_at.desc()).limit(3).all())
+               if (t := memory_mod._turn_message_text(x))]
+    seen = db.query(func.count(ChatbotTurn.id)).filter(ChatbotTurn.contact_respond_id == str(contact),
+                                                       ChatbotTurn.created_at <= anchor).scalar()
+    return {"turn_number": int(seen or 0) or 1, "previous_reply": previous_reply, "recent": recent, "summaries": summaries, "read_frames": read_frames,
+            "earlier_messages": earlier}
+
+
+def _history_patches(stack: Any, history: dict[str, Any] | None) -> None:
+    """Make the engine's history reads return the recorded turn's prod history (see `_recorded_history`)."""
+    if history is None:
+        return
+    from unittest import mock
+
+    from app.services.chatbot import engine, turn_runtime
+
+    stack.enter_context(mock.patch.object(turn_runtime, "previous_reply_text", lambda *a, **k: history["previous_reply"]))
+    stack.enter_context(mock.patch.object(turn_runtime, "recent_exchanges", lambda *a, **k: list(history["recent"])))
+    stack.enter_context(mock.patch.object(turn_runtime, "turn_number", lambda *a, **k: history["turn_number"]))
+    real_intake = engine._memory_intake
+
+    def intake(db: Any, **kwargs: Any) -> Any:
+        res = real_intake(db, **kwargs)
+        level = res.get("effective_level")
+        if level in ("episodes", "full"):
+            res["summaries"], res["read_frames"] = list(history["summaries"]), list(history["read_frames"])
+        if level in ("conversation", "episodes", "full"):
+            res["earlier_messages"] = list(history["earlier_messages"])
+        return res
+
+    stack.enter_context(mock.patch.object(engine, "_memory_intake", intake))
+
+
 def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], Any],
               total: dict[str, Any]) -> dict[str, Any]:
     from app.models.chatbot_turn import ChatbotTurn
@@ -564,6 +671,8 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
             raise RuntimeError("llm_blocked: ideate")
 
         stack.enter_context(mock.patch.object(ideate, "call_ideation_tool", ideation_blocked))
+        hist_db = factory()
+        _history_patches(stack, _recorded_history(hist_db, row, envelope))
         try:
             result = engine.run_turn(envelope, session_factory=factory, offload=False)
         except _CapStop as stop:
