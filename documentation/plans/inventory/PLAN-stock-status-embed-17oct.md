@@ -1,6 +1,6 @@
 # PLAN: Available stock status, embedded in every process (STOCK-STATUS)
 
-Status: Mock round 3 on crew's masked data (Forecast reconciled, Transferable F, PL fix, Q6 answered: inactive locations count); waiting on owner OK of the mock (lane STOCK-STATUS, size L, standard track; build only after the owner OKs the mock)
+Status: Mock round 4 (owner feedback 17 Oct 07:10-07:13: dynamic Group by, location search, no separators, documents open, outstanding + approved only, where it appears); waiting on owner OK of the mock (lane STOCK-STATUS, size L, standard track; build only after the owner OKs the mock)
 
 ## Owner request (17 Oct)
 
@@ -141,10 +141,50 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 - R6. (Dropped, owner Q4: no status / health level anywhere.)
 - R7. Expanding a location lists its documents: SO, PO, SPO, sorted by delivery / expected date,
   with Doc no, Type, Account (debtor or creditor code), Name, Doc date, Delivery / ETA, Loading date
-  (SPO: container), Qty. Clicking a document opens it (SO `/scm/sales-orders/{id}`, SPO detail, PO
-  detail) in a new tab.
-- R8. "By project" tab: SO outstanding summed per `project_label` (else per customer), per location
-  and in total, the figure Jereen now adds up by hand (Q5).
+  (SPO: container), Qty. **Every document number is a link to that document's CRM page** (owner,
+  17 Oct; AutoCount's double-click), the Incoming PL shipments included: SO `/scm/sales-orders/{id}`
+  (`StockDocumentsPanel.tsx:424` already does it), SPO `spoDetailHref()` to
+  `/procurement-management/spo-allocations/{spoNumber}` (`:440`), PO `/scm/purchase-orders/{id}` (as
+  `scm/sales-orders/[id]/components/SoLineLinksBody.tsx:60`), PL
+  `/procurement-management/packing-lists/{id}`. A viewer without the right to a document sees its
+  number as plain text.
+- R7b. **Outstanding, not cancelled, approved only** (owner, 17 Oct). Document rows and every SO / PO /
+  SPO total count only the outstanding qty of open lines on open documents: SO `qty_ordered -
+  qty_delivered` (AutoCount's delivered already includes cancelled qty, `app/models/order.py:760-764`),
+  PO `qty_ordered - qty_received` (`OPEN_PO_SQL`), SPO allocated less received (`scm.on_order_v`). A
+  cancelled line or document counts nothing and is not listed. The approval AutoCount holds and the
+  CRM stores is the SO header's **Transferable** flag: `CanonicalSalesOrder.transferable`
+  (`app/schemas/canonical_documents.py:260-265`) stored as `sales_orders.is_transferable`
+  (`app/models/order.py:700`). F = not approved for the queue: left out, exactly as AutoCount's report
+  leaves it out (R4). Searched: the CRM stores no other approval field from AutoCount on SO, PO or
+  SPO (PO and SPO status is derived from their lines, `canonical_documents.py` S2 notes); if the owner
+  means a different AutoCount column, it is not ingested today (Q7).
+- R8. **SO totals with a Group by switch** (owner, 17 Oct: "need to be dynamic, like customer angle
+  also"). One totals view replaces the project-only tab: rows = the values of the chosen attribute,
+  columns = the locations carrying SO, a total per row and per column, each row expanding to its SOs.
+  Group by: **Project** (`sales_orders.project_label`, else the customer; default), **Customer**
+  (`debtor_code` / `debtor_name`), **Salesperson** (`sales_orders.sales_agent_id`,
+  `app/models/order.py:658`; stock-detail's SO row already carries `agent_code`,
+  `app/schemas/project_board.py:857`), **Delivery month** (line `required_date`, `order.py:792`; "No
+  date" for none or 1 Jan 2030). Pattern reused: the chat history page's Group by, a
+  `SearchableSelect` over fixed options (`sorento_crm_frontend/app/(protected)/system-management/
+  chat-history/page.tsx:51` and `:353`). Not reused: the reports pivot
+  (`components/reports/ReportPivotTable.tsx`, a server-side report with datasets and saved views; one
+  item's SO lines are already loaded, so grouping in the browser is simpler); the two `GroupBySelect`
+  components (`components/common/GroupBySelect.tsx`, `components/ui/group-by-select.tsx`) are imported
+  nowhere. The app has no drag-a-column-header-to-group grid.
+- R11. **Search the locations** (owner, 17 Oct: "got many locations"; SRTWB1515 has 14). One search
+  box above both tabs, the shared `ListSearchInput` (`sorento_crm_frontend/components/common/
+  ListSearchInput.tsx`, used by 159 screens). It filters as you type, client side, matching the
+  location code or name anywhere, the match highlighted. By location: filters the rows. SO totals:
+  narrows the location columns, and rows with nothing at the shown locations drop out. A "Shown, n of
+  N" subtotal sums the visible locations; the All locations total, Incoming PL and Forecast incl. PL
+  stay on screen, so a filter is never mistaken for the item's total. Enter (`onSubmit`) opens the
+  documents of the first visible location; the x clears. No match: "No location matches <text>" with
+  the box kept.
+- R12. **No separators** (owner rule): one fact per element, never "a · b". Labelled fields for the item
+  and record metadata; two chips (On hand, SO) rather than one joined chip; a missing per-location
+  Incoming PL prints "-".
 - R9. Read-only. No writes to AutoCount, no new stored figures; every number is a live read.
   "On hand as of <last push time>" from `companies.stock_push_confirmed_at`.
 - R10. A/O, AO and A/O (RM) columns are dropped: the CRM holds no such figure.
@@ -173,6 +213,8 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 - 375px: one card per location (On hand, SO, PO, SPO, Forecast), then a Total card carrying
   Incoming PL.
 - An SO line with `qty_delivered > qty_ordered` (over-delivery): contributes 0, never negative.
+- Group by a value that is empty (no project label, no salesperson, no date): one row "No project" /
+  "No salesperson" / "No date", so the column totals still add up.
 
 ### Examples (crew's masked rows, dev DB = 15 Oct prod copy)
 
@@ -184,7 +226,8 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
   AutoCount. Incoming PL 227 (PL-2610-001 118, PL-2610-010 109); Forecast incl. PL -6,771.
 - CWCX605-RL: On hand 1,030, SO 12,081, PO 1,820, SPO 0, Forecast -9,231; Incoming PL 641
   (PL-2610-014, on no SPO); Forecast incl. PL -8,590. (Transferable F not measured for this item.)
-- SRTWCX8605-S-PJ: nothing at any active location, so the empty state.
+- SRTWCX8605-S-PJ: nothing at any active location and nothing open, but 7 at CON (inactive in the
+  CRM), so under R1 it lists one row, CON 7, rather than the empty state.
 
 ### Questions (max 5)
 
@@ -216,13 +259,37 @@ The 459 is SPO (crew's rows, 17 Oct): AutoCount's Forecast = On hand - SO + PO +
 
 ## 3. Mock
 
-`documentation/plans/inventory/mockups/stock-status.html`, round 3: SRTWB1515 drawn from the crew's masked rows (round 1 had a Status column and the board's SO rule; round 2 used made-up figures). Six screens at 1280 and 375:
+`documentation/plans/inventory/mockups/stock-status.html`, round 4: SRTWB1515 drawn from the crew's masked rows, 14 locations (the four inactive in the CRM at AutoCount's values), Group by, location search, no separators, every document a link, a 'Where it appears' strip and a Sample request frame (round 1 had a Status column and the board's SO rule; round 2 used made-up figures; round 3 had a project-only tab). Six screens at 1280 and 375:
 stand-alone page (By location with BRW-BB expanded to its documents), By project tab, Order inquiry
 line expand, Fulfilment planning item chip + popover (same chip on the OI worklist), Loading plan row
 dialog tab, empty state. Each screen ends with a "Built from" table mapping every element to its
 existing component. Quantities, dates, document numbers, account codes and short company names are
 the crew's masked rows (person names masked by crew); project labels are AutoCount's, cut at 12
 characters as crew sent them.
+
+### Where it appears (owner asked, 17 Oct)
+
+| Place | How | Frame in the mock |
+| --- | --- | --- |
+| Inventory, Stock status page | stand-alone, any item | 1, 1b, 2, 2b |
+| Order inquiry detail | each line's expand | 3 |
+| Order inquiry worklist | chip + popover on the item code | 4 |
+| Fulfilment planning | chip + popover on the product | 4 |
+| Loading plan | Stock status tab in the product row dialog | 5 |
+| Sample request | each line's expand, **follow-up once PR #1718 (SR-CORE) merges** | 5b |
+
+Sample request hook: #1718's detail page already expands every line to `OrderInquiryStockGrid` (its PR
+body), the component this lane turns into the panel. Follow-up after both merge: check the panel
+renders there, and add the item chip to the form's Item Code column if the owner wants it before
+expanding a line. No code in this lane depends on #1718.
+
+### Questions
+
+- Q7. Approval: the only AutoCount approval-like field the CRM stores is SO Transferable (R7b), left out
+  when F. (a) that is the "approve column" the owner means; (b) another AutoCount column, not
+  ingested today, which a separate ingest lane would add first. Recommendation: (a), because
+  Transferable is AutoCount's own gate for "confirmed for the queue" and leaving F out already makes
+  the SO match AutoCount's report to the unit (10,390).
 
 ## 4. Build sketch (after the mock is OK'd)
 
