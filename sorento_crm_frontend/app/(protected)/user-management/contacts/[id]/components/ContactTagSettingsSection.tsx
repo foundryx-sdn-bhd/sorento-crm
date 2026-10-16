@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -9,7 +10,9 @@ import {
   CardHeading,
   CardTitle,
 } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import ApplyTagSettingsDialog from '../../components/ApplyTagSettingsDialog';
 import {
   getContactTagSettings,
   type TagSettingsItem,
@@ -68,13 +71,17 @@ function ItemRow({ item }: { item: TagSettingsItem }) {
 /** The contact page's Tags section: its tags, then each setting that differs from what they say. */
 export default function ContactTagSettingsSection({
   contactId,
+  canApply = true,
 }: {
   contactId: string;
+  /** Whether to offer Apply; the page passes the viewer's `contacts.edit`. */
+  canApply?: boolean;
 }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['contact-tag-settings', contactId],
     queryFn: () => getContactTagSettings(contactId),
   });
+  const [applyOpen, setApplyOpen] = useState(false);
   const differing = (data?.items ?? []).filter((i) => i.differs);
 
   return (
@@ -83,6 +90,15 @@ export default function ContactTagSettingsSection({
         <CardHeading>
           <CardTitle>Tags</CardTitle>
         </CardHeading>
+        {canApply && data && data.status !== 'none' ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setApplyOpen(true)}
+          >
+            Apply tag settings
+          </Button>
+        ) : null}
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -123,6 +139,13 @@ export default function ContactTagSettingsSection({
           </div>
         ) : null}
       </CardContent>
+      {applyOpen ? (
+        <ApplyTagSettingsDialog
+          open
+          onOpenChange={setApplyOpen}
+          contactIds={[contactId]}
+        />
+      ) : null}
     </Card>
   );
 }

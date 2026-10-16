@@ -33,6 +33,8 @@ export interface BulkTagRow {
   tags_before: string[];
   tags_after: string[];
   error: string | null;
+  /** S3: the setting changes the add would apply (same shape as an apply row). */
+  settings?: ApplyRow | null;
 }
 
 export interface BulkTagResult {
@@ -46,6 +48,8 @@ export interface BulkTagInput {
   addTagIds: string[];
   removeTagIds: string[];
   dryRun: boolean;
+  /** Add mode only: apply the added tags' settings after the tag change. */
+  applySettings?: boolean;
 }
 
 export interface CatalogOption {
@@ -68,3 +72,30 @@ export interface SettingsCatalog {
 }
 
 export type TagSettingsValue = Record<string, unknown>;
+
+export interface ApplyChange {
+  section: string;
+  key: string;
+  label: string;
+  before: unknown;
+  after: unknown;
+  decided_by: string[];
+  added: string[];
+  removed: string[];
+}
+
+export interface ApplyRow {
+  contact_id?: string;
+  label?: string | null;
+  status: 'changed' | 'unchanged' | 'skipped' | 'failed';
+  changes: ApplyChange[];
+  conflicts: { label: string; tags: { name: string; value: unknown }[] }[];
+  not_applied: { label: string; reason: string }[];
+  error?: string | null;
+}
+
+export interface ApplyResult {
+  dry_run: boolean;
+  results: (ApplyRow & { contact_id: string })[];
+  counts: { changed: number; unchanged: number; skipped: number; failed: number; conflicts: number };
+}

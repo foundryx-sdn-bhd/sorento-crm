@@ -12,6 +12,8 @@ from app.database import get_db
 from app.dependencies import require_permission
 from app.schemas.common import ListResponse, PaginationResponse
 from app.schemas.contact_tag import (
+    ApplyRequest,
+    TagApplyRequest,
     BulkTagRequest,
     BulkTagResult,
     ContactTagCreate,
@@ -22,7 +24,7 @@ from app.schemas.contact_tag import (
     ContactTagUpdate,
 )
 from app.services.contact_tag_service import ContactTagService
-from app.services.error_handler import AppException, handle_internal_error
+from app.services.error_handler import AppException, handle_internal_error, handle_unprocessable
 
 router = APIRouter()
 
@@ -165,12 +167,68 @@ async def bulk_tag_contacts(
             body.remove_tag_ids,
             body.dry_run,
             str(current_user.get("id") or "") or None,
+            apply_settings=body.apply_settings,
+            gates=_gates(db, current_user),
         )
     except AppException:
         raise
     except Exception as e:
         db.rollback()
         raise handle_internal_error(str(e))
+
+
+def _run_apply(db: Session, current_user: dict, ids: list[str], dry_run: bool, only_tags=None):
+    from app.services import contact_tag_apply
+
+    can, is_super = _gates(db, current_user)
+    try:
+        result = contact_tag_apply.apply_settings(
+            db,
+            ids,
+            dry_run=dry_run,
+            actor_id=str(current_user.get("id") or "") or None,
+            can=can,
+            is_superadmin=is_super,
+            only_tags=only_tags,
+        )
+        if not dry_run:
+            db.commit()
+        return result
+    except AppException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise handle_internal_error(str(e))
+
+
+@contact_router.post("/bulk-apply-tag-settings")
+async def bulk_apply_tag_settings(
+    body: ApplyRequest,
+    current_user: dict = Depends(require_permission(EDIT)),
+    db: Session = Depends(get_db),
+):
+    """Preview (`dry_run`) or apply the settings of every tag each contact holds."""
+    return _run_apply(db, current_user, body.contact_ids, body.dry_run)
+
+
+@router.post("/{tag_id}/apply")
+async def apply_contact_tag(
+    tag_id: str,
+    body: TagApplyRequest,
+    current_user: dict = Depends(require_permission(EDIT)),
+    db: Session = Depends(get_db),
+):
+    """Preview or apply to every holder of the tag, only the keys this tag sets."""
+    from app.models.access import RespondContact
+    from app.services import contact_tag_apply, contact_tag_settings
+
+    tag = ContactTagService(db).get_tag(tag_id)
+    holders = sorted(contact_tag_settings.holders_of(db, str(tag.id)), key=lambda c: (c.name or c.phone_number or "").lower())
+    if len(holders) > contact_tag_apply.MAX_CONTACTS:
+        raise handle_unprocessable(
+            f"This tag has {len(holders)} contacts; at most {contact_tag_apply.MAX_CONTACTS} per apply."
+        )
+    return _run_apply(db, current_user, [str(c.id) for c in holders], body.dry_run, only_tags={str(tag.id)})
 
 
 @contact_router.put("/{contact_id}/tags", response_model=ContactTagsSetResponse)

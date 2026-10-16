@@ -28,6 +28,7 @@ import { contactTagsPagerQuery } from '../lib/listQuery';
 import { CONTACT_TAG_PERMS } from '../lib/permissions';
 import ContactTagFormDialog from './ContactTagFormDialog';
 import ContactTagSettings from './ContactTagSettings';
+import ApplyTagSettingsDialog from '../../contacts/components/ApplyTagSettingsDialog';
 
 const HOLDERS_LIMIT = 50;
 
@@ -52,6 +53,7 @@ export default function ContactTagDetail({ id }: { id: string }) {
   const canEdit = useHasPermission(CONTACT_TAG_PERMS.edit);
   const [editOpen, setEditOpen] = useState(false);
   const [editingSettings, setEditingSettings] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
   const { data: tag, isLoading, error } = useContactTagQuery(id);
 
   const listSearch = searchParams.toString();
@@ -109,6 +111,11 @@ export default function ContactTagDetail({ id }: { id: string }) {
             <Pencil className="me-1 size-4" />
             Edit
           </Button>
+          {tag.contact_count > 0 ? (
+            <Button size="sm" onClick={() => setApplyOpen(true)}>
+              {`Apply to ${tag.contact_count} contact${tag.contact_count === 1 ? '' : 's'}`}
+            </Button>
+          ) : null}
           {!editingSettings ? (
             <Button
               variant="outline"
@@ -263,6 +270,9 @@ export default function ContactTagDetail({ id }: { id: string }) {
           </Card>
         </div>
       </Container>
+      {applyOpen ? (
+        <ApplyTagSettingsDialog open onOpenChange={setApplyOpen} contactIds={[]} tagId={id} />
+      ) : null}
       <ContactTagFormDialog
         open={editOpen}
         onOpenChange={setEditOpen}

@@ -3,6 +3,8 @@ import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 import { toast } from '@/lib/toast';
 import type { ListPagerParams } from '@/hooks/useListPager';
 import {
+  applyContactTagSettings,
+  applyTagSettings,
   bulkTagContacts,
   createContactTag,
   getContactTag,
@@ -103,6 +105,23 @@ export function useBulkTagContacts() {
       queryClient.invalidateQueries({ queryKey: ['respond-contact'] });
       queryClient.invalidateQueries({ queryKey: ['contact-tags'] });
       queryClient.invalidateQueries({ queryKey: ['contact-tag'] });
+    },
+  });
+}
+
+/** Preview and apply of tag settings are one call with a flag; the lists refresh after an apply only. */
+export function useApplyTagSettings(target: { contactIds: string[]; tagId?: string }) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dryRun: boolean) =>
+      target.tagId
+        ? applyContactTagSettings(target.tagId, { dryRun })
+        : applyTagSettings({ contactIds: target.contactIds, dryRun }),
+    onSuccess: (result) => {
+      if (result.dry_run) return;
+      for (const key of ['respond-contacts', 'respond-contact', 'contact-tag-settings', 'contact-tags', 'contact-tag']) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
     },
   });
 }

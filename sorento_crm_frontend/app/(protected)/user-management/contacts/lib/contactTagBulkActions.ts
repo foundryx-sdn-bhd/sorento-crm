@@ -1,4 +1,4 @@
-import { Tag, X } from 'lucide-react';
+import { Tag, TagsIcon, X } from 'lucide-react';
 
 /**
  * CONTACT-TAGS: the two bulk actions the contacts list adds ("Add tag (n)" / "Remove tag (n)"),
@@ -9,11 +9,13 @@ export function contactTagBulkActions({
   canEdit,
   onAdd,
   onRemove,
+  onApply,
 }: {
   count: number;
   canEdit: boolean;
   onAdd: () => void;
   onRemove: () => void;
+  onApply: () => void;
 }) {
   if (!canEdit) return [];
   return [
@@ -24,5 +26,6 @@ export function contactTagBulkActions({
       icon: X,
       onClick: onRemove,
     },
+    { key: 'tag-apply', label: `Apply tag settings (${count})`, icon: TagsIcon, onClick: onApply },
   ];
 }

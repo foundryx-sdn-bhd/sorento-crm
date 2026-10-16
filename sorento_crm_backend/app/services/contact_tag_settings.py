@@ -801,6 +801,8 @@ def evaluate(
                     "conflict": conflict,
                     "conflict_tags": conflict_tags,
                     "differs": differs,
+                    # Raw (id / code valued) view for the writers; never serialised (response models drop it).
+                    "_raw": {"expected": None if conflict else expected, "current": current},
                 }
             )
         status = "none" if not items else ("differs" if any(i["differs"] for i in items) else "matches")

@@ -5,6 +5,7 @@ import {
   type DataGridParamsInput,
 } from '@/lib/api-client';
 import type {
+  ApplyResult,
   BulkTagInput,
   BulkTagResult,
   ContactTag,
@@ -88,6 +89,7 @@ export async function bulkTagContacts(
       contact_ids: input.contactIds,
       add_tag_ids: input.addTagIds,
       remove_tag_ids: input.removeTagIds,
+      apply_settings: input.applySettings,
       dry_run: input.dryRun,
     }),
   });
@@ -114,4 +116,26 @@ export async function setContactTags(
       await extractApiError(response, 'Failed to save contact tags'),
     );
   return (await response.json()) as { tags: { id: string; name: string }[] };
+}
+
+/** Preview (`dryRun`) or apply the settings of every tag each contact holds. */
+export async function applyTagSettings(input: { contactIds: string[]; dryRun: boolean }): Promise<ApplyResult> {
+  const response = await apiFetch('/api/user-management/contacts/bulk-apply-tag-settings', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ contact_ids: input.contactIds, dry_run: input.dryRun }),
+  });
+  if (!response.ok) throw new Error(await extractApiError(response, 'Failed to apply tag settings'));
+  return (await response.json()) as ApplyResult;
+}
+
+/** Preview or apply to every holder of one tag, only the keys that tag sets. */
+export async function applyContactTagSettings(tagId: string, input: { dryRun: boolean }): Promise<ApplyResult> {
+  const response = await apiFetch(`${base}/${encodeURIComponent(tagId)}/apply`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ dry_run: input.dryRun }),
+  });
+  if (!response.ok) throw new Error(await extractApiError(response, 'Failed to apply tag settings'));
+  return (await response.json()) as ApplyResult;
 }

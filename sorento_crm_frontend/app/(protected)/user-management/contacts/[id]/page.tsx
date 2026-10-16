@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Info, Pencil, RefreshCw } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { apiFetch } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ import { StockVisibilitySection } from '@/components/stock-visibility/StockVisib
 import { SpecVisibilitySection } from '@/components/spec-visibility/SpecVisibilitySection';
 
 export default function ContactProfilePage() {
+  const canEditContacts = useHasPermission('user_management.contacts.edit');
   const { contact, isLoading, contactId } = useContact();
   const queryClient = useQueryClient();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -246,7 +248,7 @@ export default function ContactProfilePage() {
         </CardContent>
       </Card>
 
-      <ContactTagSettingsSection contactId={contactId} />
+      <ContactTagSettingsSection contactId={contactId} canApply={canEditContacts} />
 
       <ContactCustomersSection contactId={contactId} />
 

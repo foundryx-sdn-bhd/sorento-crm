@@ -196,6 +196,8 @@ class ContactTagService:
         remove_tag_ids: list[str],
         dry_run: bool,
         actor_id: Optional[str],
+        apply_settings: bool = False,
+        gates=None,
     ) -> dict:
         add = self._require_tags(add_tag_ids)
         remove = self._require_tags(remove_tag_ids)
@@ -241,7 +243,7 @@ class ContactTagService:
                 }
             )
 
-        if not dry_run and (inserts or deletes):
+        def write_tags() -> None:
             for cid, tag_id in deletes:
                 self.db.execute(
                     delete(respond_contact_tags).where(
@@ -250,5 +252,37 @@ class ContactTagService:
                 )
             if inserts:
                 self.db.execute(insert(respond_contact_tags), inserts)
+            self.db.flush()
+
+        if apply_settings and add and gates is not None:
+            # The settings of the tags ADDED here are applied after the tag change; a preview
+            # runs the same change inside a savepoint it then rolls back (preview equals apply).
+            from app.services import contact_tag_apply
+
+            savepoint = self.db.begin_nested()
+            try:
+                write_tags()
+                applied = contact_tag_apply.apply_settings(
+                    self.db,
+                    [r["contact_id"] for r in results if r["status"] != "failed"],
+                    dry_run=dry_run,
+                    actor_id=actor_id,
+                    can=gates[0],
+                    is_superadmin=gates[1],
+                    only_tags=set(add),
+                )
+            except Exception:
+                savepoint.rollback()
+                raise
+            if dry_run:
+                savepoint.rollback()
+            else:
+                savepoint.commit()
+                self.db.commit()
+            by_contact = {r["contact_id"]: r for r in applied["results"]}
+            for r in results:
+                r["settings"] = by_contact.get(r["contact_id"])
+        elif not dry_run and (inserts or deletes):
+            write_tags()
             self.db.commit()
         return {"dry_run": dry_run, "results": results, "counts": counts}

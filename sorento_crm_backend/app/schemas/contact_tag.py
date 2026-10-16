@@ -72,6 +72,7 @@ class BulkTagRequest(BaseModel):
     contact_ids: list[Annotated[str, Field(max_length=64)]] = Field(..., min_length=1, max_length=2000)
     add_tag_ids: list[Annotated[str, Field(max_length=64)]] = Field(default_factory=list, max_length=1000)
     remove_tag_ids: list[Annotated[str, Field(max_length=64)]] = Field(default_factory=list, max_length=1000)
+    apply_settings: bool = False
     dry_run: bool = True
 
     @field_validator("contact_ids")
@@ -95,6 +96,7 @@ class BulkTagRow(BaseModel):
     tags_before: list[str]
     tags_after: list[str]
     error: Optional[str] = None
+    settings: Optional[dict] = None
 
 
 class BulkTagCounts(BaseModel):
@@ -130,3 +132,23 @@ class ContactTagSettingsResponse(BaseModel):
     status: Literal["matches", "differs", "none"]
     tags: list[ContactTagRef]
     items: list[TagSettingsItem]
+
+
+class ApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contact_ids: list[Annotated[str, Field(max_length=64)]] = Field(..., min_length=1, max_length=2000)
+    dry_run: bool = True
+
+    @field_validator("contact_ids")
+    @classmethod
+    def _at_most_500(cls, ids: list[str]) -> list[str]:
+        if len(dict.fromkeys(ids)) > MAX_BULK_CONTACTS:
+            raise ValueError(f"At most {MAX_BULK_CONTACTS} contacts per request.")
+        return ids
+
+
+class TagApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dry_run: bool = True

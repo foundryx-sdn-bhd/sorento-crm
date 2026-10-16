@@ -39,6 +39,7 @@ import ContactCreateDialog from './ContactCreateDialog';
 import ContactDeleteDialog from './ContactDeleteDialog';
 import ContactBulkDeleteDialog from './ContactBulkDeleteDialog';
 import BulkCopyAccessDialog from './BulkCopyAccessDialog';
+import ApplyTagSettingsDialog from './ApplyTagSettingsDialog';
 import BulkTagDialog from './BulkTagDialog';
 import ContactTagFilters from './ContactTagFilters';
 import ContactTagsCell from './ContactTagsCell';
@@ -159,6 +160,8 @@ export default function ContactsList() {
   const [bulkCopyDialogOpen, setBulkCopyDialogOpen] = useState(false);
   const [bulkLinkOpen, setBulkLinkOpen] = useState(false);
   const [bulkTagMode, setBulkTagMode] = useState<'add' | 'remove' | null>(null);
+  // Apply tag settings: the selection, or the one row whose menu opened it.
+  const [applyIds, setApplyIds] = useState<string[] | null>(null);
   const [impersonateTarget, setImpersonateTarget] = useState<RespondContact | null>(null);
   const [bulkDisableOutboundOpen, setBulkDisableOutboundOpen] = useState(false);
 
@@ -553,6 +556,7 @@ export default function ContactsList() {
                     setDeleteDialogOpen(true);
                   },
                   createUser: () => setCreateUserContact(row.original),
+                  applyTagSettings: canEditContacts ? () => setApplyIds([row.original.id]) : undefined,
                 },
                 // users.view too: without it the row carries no linked_user_id,
                 // so every contact would look unlinked (fix round 2, N3).
@@ -724,6 +728,7 @@ export default function ContactsList() {
                 canEdit: canEditContacts,
                 onAdd: () => setBulkTagMode('add'),
                 onRemove: () => setBulkTagMode('remove'),
+                onApply: () => setApplyIds(selectedContactIds),
               }),
               {
                 key: 'delete',
@@ -792,6 +797,15 @@ export default function ContactsList() {
         targetContacts={selectedContacts}
         onCheckDiffers={(source) => setAccessFilters({ accessDiffersFrom: source.id })}
       />
+
+      {applyIds ? (
+        <ApplyTagSettingsDialog
+          open
+          onOpenChange={(open) => !open && setApplyIds(null)}
+          contactIds={applyIds}
+          onApplied={clearSelection}
+        />
+      ) : null}
 
       {bulkTagMode ? (
         <BulkTagDialog

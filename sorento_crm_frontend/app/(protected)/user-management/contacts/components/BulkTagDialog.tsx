@@ -24,6 +24,7 @@ import type {
   BulkTagRow,
 } from '../../contact-tags/types/contactTag.types';
 import type { RespondContact } from '../types/contact.types';
+import { ChangeLine } from './ApplyTagSettingsDialog';
 
 /**
  * CONTACT-TAGS UAC T2.2/T2.3: "Add tag" / "Remove tag" for the selected contacts.
@@ -48,7 +49,7 @@ const STATUS: Record<
   failed: { label: 'Failed', variant: 'destructive' },
 };
 
-function PreviewRow({ row }: { row: BulkTagRow }) {
+function PreviewRow({ row, showSettings }: { row: BulkTagRow; showSettings: boolean }) {
   const status = STATUS[row.status];
   const before = new Set(row.tags_before);
   const after = new Set(row.tags_after);
@@ -99,6 +100,13 @@ function PreviewRow({ row }: { row: BulkTagRow }) {
           ))}
         </div>
       )}
+      {showSettings && row.settings?.changes?.length ? (
+        <div className="mt-2 border-t pt-1">
+          {row.settings.changes.map((c) => (
+            <ChangeLine key={`${c.section}:${c.key}`} change={c} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -113,6 +121,8 @@ export default function BulkTagDialog({
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<BulkTagResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Add mode only: apply the added tags' settings after the tag change (default), or just link.
+  const [applyNow, setApplyNow] = useState(true);
   const {
     data: options = [],
     isError: optionsFailed,
@@ -126,12 +136,14 @@ export default function BulkTagDialog({
     addTagIds: mode === 'add' ? tagIds : [],
     removeTagIds: mode === 'remove' ? tagIds : [],
     dryRun,
+    ...(mode === 'add' ? { applySettings: applyNow } : {}),
   });
 
   const reset = () => {
     setTagIds([]);
     setPreview(null);
     setError(null);
+    setApplyNow(true);
     run.reset();
   };
   const handleOpenChange = (next: boolean) => {
@@ -205,9 +217,21 @@ export default function BulkTagDialog({
                   </Badge>
                 ) : null}
               </div>
+              {mode === 'add' ? (
+                <div className="mb-3 space-y-1 text-sm" role="radiogroup" aria-label="Tag settings">
+                  <label className="flex items-center gap-2">
+                    <input type="radio" name="bulk-tag-apply" checked={applyNow} onChange={() => setApplyNow(true)} />
+                    Apply tag settings now
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="radio" name="bulk-tag-apply" checked={!applyNow} onChange={() => setApplyNow(false)} />
+                    Don&apos;t apply now
+                  </label>
+                </div>
+              ) : null}
               <div className="max-h-96 space-y-2 overflow-y-auto">
                 {preview.results.map((row) => (
-                  <PreviewRow key={row.contact_id} row={row} />
+                  <PreviewRow key={row.contact_id} row={row} showSettings={mode === 'add' && applyNow} />
                 ))}
               </div>
             </div>
@@ -250,7 +274,9 @@ export default function BulkTagDialog({
                 {run.isPending ? (
                   <LoaderCircleIcon className="size-4 animate-spin" />
                 ) : null}
-                {`Apply to ${preview.counts.changed} contact${preview.counts.changed === 1 ? '' : 's'}`}
+                {mode === 'add'
+                  ? `Add tag to ${n} contact${n === 1 ? '' : 's'}`
+                  : `Apply to ${preview.counts.changed} contact${preview.counts.changed === 1 ? '' : 's'}`}
               </Button>
             </>
           )}
