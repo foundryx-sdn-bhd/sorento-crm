@@ -660,13 +660,63 @@ async def health_check():
             prompt_version = _production_prompt_version(db)
         finally:
             db.close()
-        return {
-            "status": "healthy",
-            "git_sha": GIT_SHA,
-            "prompt_version": prompt_version,
-        }
     except Exception as e:
+        # The error stays server-side: a Postgres connection error names the internal host
+        # and port.
+        logging.getLogger(__name__).error("/health: database check failed: %s", str(e)[:200])
+        return JSONResponse(status_code=503, content={"status": "unhealthy"})
+
+    # Reported, never gating: Redis or the scheduler being down must not hold a deploy.
+    from app.services import health_probes
+
+    probes = await health_probes.snapshot()
+    return {
+        "status": "healthy",
+        "git_sha": GIT_SHA,
+        "prompt_version": prompt_version,
+        "redis": probes["redis"],
+        "scheduler": probes["scheduler"],
+    }
+
+
+@app.get("/health/deep")
+async def health_deep():
+    """For monitors, not for blue/green: 503 unless the database, Redis and the scheduler are
+    all OK. States only, no error text (unauthenticated route)."""
+    from app.services import health_probes
+
+    probes = await health_probes.snapshot()
+    ok = probes["database"] == "ok" and probes["redis"] == "ok" and probes["scheduler"]["status"] == "ok"
+    return JSONResponse(
+        status_code=200 if ok else 503,
+        content={"status": "healthy" if ok else "unhealthy", **probes},
+    )
+
+
+@app.get("/api/v1/health")
+def public_health_check():
+    """Outside monitor probe (HA-MONITOR): 200 only if the DB answers.
+
+    Prod's `/health` on the public host is answered by nginx itself, which sends only
+    `/api/v1/*` here, so Uptime Kuma polls this path. Registered on the app, not on
+    `api_router`, so it carries no auth or company-scope dependency. Unauthenticated and
+    polled every minute, so it is one `SELECT 1` and says only status + checks: no git
+    sha, no prompt version, no error text (a DB error can name the host and user).
+    """
+    from sqlalchemy import text
+    from app import database
+
+    db = None
+    try:
+        db = database.SessionLocal()
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        logging.getLogger(__name__).warning("api/v1/health: database check failed: %s", type(e).__name__)
         return JSONResponse(
             status_code=503,
-            content={"status": "unhealthy", "error": str(e)[:200]},
+            content={"status": "unhealthy", "checks": {"database": "error"}},
         )
+    finally:
+        if db is not None:
+            db.close()
+    return {"status": "healthy", "checks": {"database": "ok"}}

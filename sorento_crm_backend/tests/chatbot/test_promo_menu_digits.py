@@ -11,7 +11,7 @@ import pytest
 from app.main import app
 from app.models.access import ContactAccessType
 from app.models.marketing import PromotionType
-from app.models.product import Brand
+from app.models.product import Brand, Product
 from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
 from app.services.chatbot.lanes.business.services import ResolveGateServices
 from app.services.company_scope import DEFAULT_COMPANY_ID
@@ -323,15 +323,56 @@ def test_the_resolver_route_with_an_empty_query_and_grounded_specs_does_not_rais
     assert isinstance(out, dict), out
 
 
-def test_answering_the_which_question_closes_it_and_a_later_digit_never_merges_subjects(session_factory, monkeypatch):
-    """Sorento has no basin cabinet promotion: which-question -> "basin cabinet" -> "No current
-    promotion for basin cabinet, ..." (no menu) -> "2". The which-question is closed by its answer,
-    so "2" is not read against it: no "tall cabinet", never a merged "tall cabinet, basin cabinet"."""
+def _basin_promo(session_factory, *, level: str) -> None:
+    """One Sorento basin cabinet with a standard promotion at `level`."""
+    db = session_factory()
+    std = db.query(PromotionType).filter_by(type_code="standard").one()
+    basin = product(db, company_id=DEFAULT_COMPANY_ID, code="ZZTBASINLEVEL")
+    basin.brand_id = db.query(Brand).filter_by(brand_name="Sorento").first().id
+    db.add(ProductSpecifications(id=str(uuid.uuid4()), product_id=basin.id, values={"class": {"value": "Bathroom Furniture"}, "furniture_type": {"value": "basin_cabinet"}}))
+    db.flush()
+    _promo(db, "ZZT PROMO BASIN", std, basin, levels=[level])
+    db.commit()
+
+
+def test_a_choice_whose_only_promotion_is_at_a_level_the_contact_lacks_is_not_offered(session_factory, monkeypatch):
+    """Fix round 1 F4 (AC-A10, lead sign-off): basin cabinet's only promotion is at a level
+    the contact does not hold, so the menu offers side and tall cabinet only."""
     from app.services.chatbot.lanes.business.services import _resolve_entity
 
     _world(session_factory, basin_promo=False)
+    _basin_promo(session_factory, level="zzt_other_level")
     _mcp(monkeypatch, session_factory)
     names = ["Sorento Office", "Sorento Dealer", "End User"]
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": n} for n in names],
+        resolve_entity=_resolve_entity(session_factory()), probe=lambda **_: None,
+    )
+    which = _turn(session_factory, monkeypatch, services, _ask_qf("cabinet", brand="Sorento"), "Pls send sorento cabinet promotion", "zzt-md-level-ask")
+    assert which.splitlines()[0] == "Which cabinet do you mean?", which
+    assert "basin cabinet" not in which.lower(), which
+    assert "side cabinet" in which.lower() and "tall cabinet" in which.lower(), which
+
+
+def test_answering_the_which_question_closes_it_and_a_later_digit_never_merges_subjects(session_factory, monkeypatch):
+    """which-question -> "basin cabinet" -> the basin cabinet promotion (no menu) -> "2". The
+    which-question is closed by its answer, so "2" is not read against it: no "tall cabinet",
+    never a merged "tall cabinet, basin cabinet"."""
+    from app.services.chatbot.lanes.business.services import _resolve_entity
+
+    _world(session_factory, basin_promo=False)
+    # Chat fix PR-A (AC-A10, fix round 1 F4, lead sign-off): the menu offers only a choice a
+    # promotion holds at one of the contact's own levels. The contact is a dealer, and every
+    # cabinet type has a dealer promotion, so the menu is the same three choices and the pick
+    # answers with no access-level question (the negative case is the test above).
+    _basin_promo(session_factory, level="sorento_dealer")
+    db = session_factory()
+    std = db.query(PromotionType).filter_by(type_code="standard").one()
+    for code in ("ZZTSIDE9", "ZZTTALL9"):
+        _promo(db, f"ZZT PROMO {code} DEALER", std, db.query(Product).filter_by(product_code=code).one(), levels=["sorento_dealer"])
+    db.commit()
+    _mcp(monkeypatch, session_factory)
+    names = ["Sorento Dealer"]
     services = ResolveGateServices(
         access_types=lambda **_: [{"name": n} for n in names],
         resolve_entity=_resolve_entity(session_factory()), probe=lambda **_: None,
@@ -348,9 +389,31 @@ def test_answering_the_which_question_closes_it_and_a_later_digit_never_merges_s
         )
 
     empty = _turn(session_factory, monkeypatch, services, pick(3, "basin cabinet"), "basin cabinet", "zzt-md-close-answer")
-    assert empty.startswith("No current promotion for basin cabinet"), empty
+    assert "ZZT PROMO BASIN" in empty and "Which cabinet do you mean?" not in empty, empty
     assert "Which access level" not in empty, empty
     question = _session_of(session_factory).get("open_question")
     assert not question or question.get("kind") != "category_pick", question
     after = _turn(session_factory, monkeypatch, services, pick(2), "2", "zzt-md-close-2")
     assert "tall cabinet" not in after.lower(), after
+
+
+def test_a_dealer_who_lacks_the_asked_brand_is_offered_no_choice(session_factory, monkeypatch):
+    """Reviewer R1 on PR-A (fails closed): a dealer of another brand has no access level the
+    Sorento promotions are at (the tier gate's recomposed list is empty), so the which-question
+    offers no Sorento cabinet type, however many have a promotion at some level."""
+    from app.services.chatbot.lanes.business.services import _resolve_entity
+
+    _world(session_factory, basin_promo=True)
+    db = session_factory()
+    db.add(ContactAccessType(code="mocha_dealer", name="Mocha Dealer"))
+    db.commit()
+    _mcp(monkeypatch, session_factory)
+    names = ["Mocha Dealer"]
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": n} for n in names],
+        resolve_entity=_resolve_entity(session_factory()), probe=lambda **_: None,
+    )
+    reply = _turn(session_factory, monkeypatch, services, _ask_qf("cabinet", brand="Sorento"), "Pls send sorento cabinet promotion", "zzt-md-nobrand-ask")
+    assert "Which cabinet do you mean?" not in reply, reply
+    for choice in ("basin cabinet", "side cabinet", "tall cabinet"):
+        assert choice not in reply.lower(), reply

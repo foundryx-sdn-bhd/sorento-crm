@@ -274,8 +274,8 @@ direct to the origin.
 
 Follow-up, blocker-class and not this lane: MCP needs a credential of its own. Have the server
 check a bearer token on every call, and have n8n send it. Until then the firewall is the only
-control. Also, n8n's traffic to 8765 crosses the internet in clear text. Moving it to
-`http://<CRM_TS_IP>:8765/mcp` over Tailscale closes that.
+control. Also, n8n's traffic to 8765 crosses the internet in clear text. Moving it onto
+Tailscale closes that: `documentation/runbooks/n8n-private-path.md`.
 
 ## Step 3. SSH: key-only, no root password, fail2ban
 
@@ -396,14 +396,10 @@ Change each published port that is not already `127.0.0.1:`:
 Do not bind pgbouncer to `<CRM_TS_IP>`. After a reboot docker can start before tailscaled has
 that address, and pgbouncer then fails to start, taking the backend with it.
 
-If the n8n box is on the tailnet and you want 6432 off the public interface before BL-049:
-
-1. Bind pgbouncer to `127.0.0.1:6432:6432`.
-2. Forward it onto the tailnet from the host:
-   `sudo tailscale serve --bg --tcp 6432 tcp://127.0.0.1:6432`. Check the syntax with
-   `tailscale serve --help` on your version.
-3. Point n8n's Postgres credential at `<CRM_TS_IP>:6432`.
-4. Remove the step 1 provider rule for 6432.
+To take 6432 off the public interface before BL-049, put n8n on the tailnet first:
+`documentation/runbooks/n8n-private-path.md`. Its step 2.3 forwards a loopback-bound pgbouncer
+onto the tailnet, its step 4.2 points the credential at `crm-private.internal` (not at
+`<CRM_TS_IP>`, so a failover stays one line), and its step 6 removes the step 1 provider rule.
 
 The `backend_*`, `frontend_*` and `mcp_*` colours already publish on `127.0.0.1`
 (`scripts/blue_green_deploy.sh:12-13`). Confirm that while you are in the file.
@@ -435,6 +431,10 @@ Use either:
 
 - a Cloudflare Origin CA certificate on nginx (15 years, no renewal); or
 - certbot with a DNS-01 challenge.
+
+Once n8n reaches the origin directly over the tailnet (`documentation/runbooks/n8n-private-path.md`),
+only the second works: n8n checks the certificate itself, and it does not trust Cloudflare's
+Origin CA.
 
 Plain HTTP-01 renewal through Cloudflare usually still works, but test it after the firewall
 change.

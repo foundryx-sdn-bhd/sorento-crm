@@ -78,7 +78,7 @@ shared local database.
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import text
 
@@ -88,7 +88,7 @@ from app.services.scm import demand
 from app.services.scm import reorder_run_service as svc
 from app.services.scm import summary_order_service as sos
 from tests.scm.conftest import SORENTO_COMPANY_ID, requires_pg, scm_app  # noqa: F401
-from tests.scm.test_channel_read_model import _core_line_for_run
+from tests.scm.test_channel_read_model import _core_line_for_run, _today
 from tests.scm.test_m3_run import (
     _link,
     _mk_demand,
@@ -275,10 +275,16 @@ def _allocation_for(db, run_id: str, pid: str) -> dict[str, float]:
     return {a["warehouse_id"]: float(a["qty"]) for a in (row["allocation"] or [])}
 
 
+def _horizon_end() -> date:
+    """A year out: the seeded lines fall due relative to today (`_today() + 14`), so a
+    fixed "Plan until" would drop them once today passes it less those 14 days."""
+    return _today() + timedelta(days=365)
+
+
 def _run_all(db, *, so_numbers: list[str]) -> str:
     created = svc.create_run(
         db, [], enqueue=False,
-        plan_horizon_start=date(2026, 1, 1), plan_horizon_date=date(2026, 12, 31),
+        plan_horizon_start=date(2026, 1, 1), plan_horizon_date=_horizon_end(),
         demand_class=None, so_numbers=so_numbers,
     )
     svc.run_reorder(created["run_id"], db=db)
@@ -288,7 +294,7 @@ def _run_all(db, *, so_numbers: list[str]) -> str:
 def _run_project(db, *, so_numbers: list[str]) -> str:
     created = svc.create_run(
         db, [], enqueue=False,
-        plan_horizon_start=date(2026, 1, 1), plan_horizon_date=date(2026, 12, 31),
+        plan_horizon_start=date(2026, 1, 1), plan_horizon_date=_horizon_end(),
         demand_class="project", so_numbers=so_numbers,
     )
     svc.run_reorder(created["run_id"], db=db)
@@ -298,7 +304,7 @@ def _run_project(db, *, so_numbers: list[str]) -> str:
 def _run_dealer(db, *, so_numbers: list[str] | None = None) -> str:
     created = svc.create_run(
         db, [], enqueue=False,
-        plan_horizon_start=date(2026, 1, 1), plan_horizon_date=date(2026, 12, 31),
+        plan_horizon_start=date(2026, 1, 1), plan_horizon_date=_horizon_end(),
         demand_class="retail", so_numbers=so_numbers or [],
     )
     svc.run_reorder(created["run_id"], db=db)

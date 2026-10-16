@@ -7,7 +7,7 @@ attachment already flows through - this proves the two compose correctly.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import timedelta
 
 import pytest
 
@@ -15,6 +15,7 @@ from app.models.base import set_company_scope
 from app.services.chatbot.engine import _send_actions, _stock_ask_packing_list_files
 from app.services.chatbot.turn.compose import Answer
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from app.services.incoming_stock_service import today_myt
 from app.services.inventory_service import StockService
 
 from tests._mc_lookup_seed import product, stock
@@ -141,7 +142,9 @@ def test_b3_toggle_off_produces_no_send_attachments_action(db):
     _category_of(db, p).chatbot_max_qty = 200
     stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=brw.id, on_hand=0)
     att = _attachment(db)
-    shipment = _incoming_shipment(db, eta=date(2026, 10, 19), attachment_id=att.id)
+    # The stock ask only reads shipments due today or later (MYT).
+    eta = today_myt() + timedelta(days=3)
+    shipment = _incoming_shipment(db, eta=eta, attachment_id=att.id)
     _incoming_line(db, shipment_id=shipment.id, product_id=p.id)
     contact = _contact(db, packing_list_allowed=False)
     _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
@@ -158,7 +161,7 @@ def test_b3_toggle_off_produces_no_send_attachments_action(db):
     assert files == []
 
     reply = {
-        "text": "SRTW2000 x 5: ❌ No stock, ETA 19/10/2026.",
+        "text": f"SRTW2000 x 5: ❌ No stock, ETA {eta:%d/%m/%Y}.",
         "quick_replies": None,
         "result_set": None,
         "attachments_src": files or None,
