@@ -332,6 +332,37 @@ function renderQtyOrderedCell({ row }: { row: { original: SalesOrderLine } }) {
   return <QtyOrderedCell line={row.original} />;
 }
 
+/** Unit price and discount: same context route as the quantity, so a keystroke never remounts the box. */
+function LinePriceCell({ line, field }: { line: SalesOrderLine; field: 'unit_price' | 'discount' }) {
+  const ctx = useContext(QtyDraftContext);
+  if (!ctx || !ctx.isEditing || isCancelledLine(line)) return <>{fmtMoneyCell(line[field])}</>;
+  const value = draftOrRow(ctx.lineDrafts, line)[field];
+  return (
+    <NumberInput
+      min={0}
+      step="0.01"
+      aria-label={`${field === 'unit_price' ? 'Unit price' : 'Discount'} on ${line.sku}`}
+      value={value}
+      error={ctx.showErrors ? numberFieldError(value, PRICE_RULES) : undefined}
+      onChange={(e) =>
+        ctx.setLineDrafts((prev) => ({
+          ...prev,
+          [line.id]: { ...draftOrRow(prev, line), [field]: e.target.value },
+        }))
+      }
+      className="h-8 text-right tabular-nums"
+    />
+  );
+}
+
+function renderUnitPriceCell({ row }: { row: { original: SalesOrderLine } }) {
+  return <LinePriceCell line={row.original} field="unit_price" />;
+}
+
+function renderDiscountCell({ row }: { row: { original: SalesOrderLine } }) {
+  return <LinePriceCell line={row.original} field="discount" />;
+}
+
 function seedDraft(row: SalesOrderLine): LineDraft {
   return {
     sku: row.sku,
@@ -387,6 +418,9 @@ function lineAmount(
 function qtyIsPending(raw: string): boolean {
   return numberFieldError(raw, { min: 0 }) !== undefined;
 }
+
+/** Unit price and discount may stay blank (blank clears the figure); a typed one is never negative or unreadable. */
+const PRICE_RULES = { min: 0, optional: true } as const;
 
 function fmtQtyCell(value: number | null): string {
   return value === null ? '-' : fmtInt(value);
@@ -1047,30 +1081,7 @@ export function SalesOrderDetail({
         id: 'unit_price',
         accessorFn: (line) => Number(line.unit_price ?? 0),
         header: ({ column }) => <DataGridColumnHeader title="Unit price" column={column} />,
-        cell: ({ row }) => {
-          if (isEditing && !isCancelledLine(row.original)) {
-            const draft = draftOrRow(lineDrafts, row.original);
-            return (
-              <NumberInput
-                min={0}
-                step="0.01"
-                aria-label={`Unit price on ${row.original.sku}`}
-                value={draft.unit_price}
-                onChange={(e) =>
-                  setLineDrafts((prev) => ({
-                    ...prev,
-                    [row.original.id]: {
-                      ...draftOrRow(prev, row.original),
-                      unit_price: e.target.value,
-                    },
-                  }))
-                }
-                className="h-8 text-right tabular-nums"
-              />
-            );
-          }
-          return fmtMoneyCell(row.original.unit_price);
-        },
+        cell: renderUnitPriceCell,
         size: 140,
         meta: {
           headerTitle: 'Unit price',
@@ -1082,30 +1093,7 @@ export function SalesOrderDetail({
         id: 'discount',
         accessorFn: (line) => Number(line.discount ?? 0),
         header: ({ column }) => <DataGridColumnHeader title="Discount" column={column} />,
-        cell: ({ row }) => {
-          if (isEditing && !isCancelledLine(row.original)) {
-            const draft = draftOrRow(lineDrafts, row.original);
-            return (
-              <NumberInput
-                min={0}
-                step="0.01"
-                aria-label={`Discount on ${row.original.sku}`}
-                value={draft.discount}
-                onChange={(e) =>
-                  setLineDrafts((prev) => ({
-                    ...prev,
-                    [row.original.id]: {
-                      ...draftOrRow(prev, row.original),
-                      discount: e.target.value,
-                    },
-                  }))
-                }
-                className="h-8 text-right tabular-nums"
-              />
-            );
-          }
-          return fmtMoneyCell(row.original.discount);
-        },
+        cell: renderDiscountCell,
         size: 130,
         meta: {
           headerTitle: 'Discount',
@@ -1567,6 +1555,19 @@ export function SalesOrderDetail({
       liveLines.some((ln) =>
         numberFieldError(lineDrafts[ln.id]?.qty_ordered ?? String(ln.qty_ordered), { min: 0 }),
       )
+    ) {
+      setShowQtyErrors(true);
+      return;
+    }
+    const pricedLines = [...liveLines, ...newLines.filter((ln) => !isCancelledLine(ln))];
+    if (
+      pricedLines.some((ln) => {
+        const d = lineDrafts[ln.id];
+        return (
+          numberFieldError(d?.unit_price ?? ln.unit_price ?? '', PRICE_RULES) ||
+          numberFieldError(d?.discount ?? ln.discount ?? '', PRICE_RULES)
+        );
+      })
     ) {
       setShowQtyErrors(true);
       return;
