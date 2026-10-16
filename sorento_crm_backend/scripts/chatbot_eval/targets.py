@@ -626,6 +626,36 @@ def _type_word(x) -> str:
     return _norm(x).replace("_", " ")
 
 
+ATTACHMENT_LIST_TOOL = "crm_master_product_attachments_list"
+
+
+def _result_has_type(result: Any, accepted: set[str]) -> bool:
+    """Does one attachments-list result hold a file of an accepted type? A live result is often a JSON string: parsed
+    when it is JSON, else searched as plain text for the type name or code."""
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except ValueError:
+            text = result.lower().replace("_", " ")
+            return any(a in text for a in accepted if a)
+
+    def walk(x: Any) -> bool:
+        if isinstance(x, dict):
+            return (_type_word(x.get("attachmentType")) in accepted if x.get("attachmentType") else False) or any(
+                walk(v) for v in x.values())
+        return isinstance(x, list) and any(walk(v) for v in x)
+
+    return walk(result)
+
+
+def _honest_none(row: dict[str, Any], accepted: set[str], sent: int) -> bool:
+    """The attachments tool ran (full results), none of its results holds a file of the asked type, nothing was sent
+    and the reply does not claim an attachment: the record has none, and the bot said so."""
+    results = [t for t in row.get("tool_results") or [] if isinstance(t, dict) and t.get("name") == ATTACHMENT_LIST_TOOL]
+    return (bool(results) and sent == 0 and "attached" not in reply_text(row).lower()
+            and not any(_result_has_type(t.get("result"), accepted) for t in results))
+
+
 def _attachment(row, item):
     gold = item.get("gold") or {}
     accepted = {_type_word(x) for x in [gold.get("attachment_type"), gold.get("attachment_type_name"),
@@ -645,6 +675,8 @@ def _attachment(row, item):
         checks.append(("none_on_record", not files and sent == 0,
                        "Files were sent although none exist on record."))
         return checks
+    if not files and _honest_none(row, accepted, sent):
+        return checks + [("files", True, "No files were sent."), ("type", None, "The files sent are not of the type asked.")]
     checks += [
         ("files", bool(files) and sent > 0, "No files were sent."),
         ("type", bool(files) and all(_type_word(f.get("attachmentType")) in accepted for f in files),
