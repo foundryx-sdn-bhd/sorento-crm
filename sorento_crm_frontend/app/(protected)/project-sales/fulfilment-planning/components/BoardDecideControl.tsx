@@ -42,6 +42,7 @@ import {
   type DecideWay,
 } from '../../_shared/lib/boardAmend';
 import { matchesSuggestion } from '../../_shared/lib/fulfilmentBoard';
+import { useLineSplitOpener } from './lineSplitOpener';
 import { toMinor } from '../../_shared/lib/supplyComposition';
 import { LABELS } from '../../_shared/lib/supplyVocabulary';
 import type {
@@ -238,6 +239,11 @@ export function BoardDecideControl({
     () => contributions.filter((row) => selectedKeys.includes(row.key)),
     [contributions, selectedKeys],
   );
+  const splitOpener = useLineSplitOpener();
+  const splitRow =
+    splitOpener && tickedRows.length === 1 && splitOpener.canOpen(tickedRows[0])
+      ? tickedRows[0]
+      : null;
 
   // "Borrow from another order" is offered exactly when the setting is on (BORROW-LOCATION-
   // ONLY BR1); off, every borrow is a location's.
@@ -558,6 +564,18 @@ export function BoardDecideControl({
               {entry.separatorAfter && <DropdownMenuSeparator />}
             </React.Fragment>
           ))}
+          {splitOpener ? (
+            <>
+              <DropdownMenuSeparator />
+              {/* OI-LINE-SPLIT (UAC A1): one ticked line opens its order's split view. */}
+              <DropdownMenuItem
+                disabled={!splitRow}
+                onSelect={() => splitRow && splitOpener.open(splitRow)}
+              >
+                Split delivery…
+              </DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       {!embedded && selectedKeys.length > 0 ? (

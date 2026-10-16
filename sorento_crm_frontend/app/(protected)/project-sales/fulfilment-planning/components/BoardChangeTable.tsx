@@ -4,14 +4,18 @@ import * as React from 'react';
 import { TriangleAlert } from 'lucide-react';
 import { formatDateInMalaysia } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import type { BoardContribution } from '../../_shared/types/fulfilmentPlanning.types';
+import { useLineSplitOpener } from './lineSplitOpener';
 import { changedFieldsOf } from '../../_shared/lib/boardChangeAnnotations';
 import type { BoardChangeAnnotation } from '../../_shared/lib/boardChangeAnnotations';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -35,7 +39,13 @@ export function BoardChangeTable({
   column,
   compact = false,
   className,
+  contribution,
 }: {
+  /**
+   * OI-LINE-SPLIT (UAC A2): the board line these changes are about. With it, and inside the
+   * board (`LineSplitOpenerContext`), the lightbox offers "Split delivery" for that line.
+   */
+  contribution?: BoardContribution;
   /** ONE change - the shape every caller but the list view's own columns passes. */
   annotation?: BoardChangeAnnotation;
   /**
@@ -56,6 +66,8 @@ export function BoardChangeTable({
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
+  const splitOpener = useLineSplitOpener();
+  const canSplit = Boolean(splitOpener && contribution && splitOpener.canOpen(contribution));
   // One list either way, so nothing below has to ask which prop it was called with.
   const changes = annotations ?? (annotation ? [annotation] : []);
   // The icon is addressed by the FIRST change's row (`board-change-icon-<rowId>`) - the only
@@ -109,6 +121,22 @@ export function BoardChangeTable({
           <DialogBody>
             <BoardChangeSummary annotations={changes} />
           </DialogBody>
+          {canSplit ? (
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  if (contribution) splitOpener?.open(contribution);
+                }}
+              >
+                Split delivery
+              </Button>
+            </DialogFooter>
+          ) : null}
         </DialogContent>
       </Dialog>
     </>
