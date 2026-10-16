@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -44,6 +44,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StockTransfersPanel } from '@/app/(protected)/inventory-management/stock-transfers/components/StockTransfersPanel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { useTableDeepLinkHighlight } from '@/hooks/useTableDeepLinkHighlight';
@@ -293,6 +295,43 @@ function draftOrRow(
   return drafts[row.id] ?? seedDraft(row);
 }
 
+/**
+ * The Qty ordered box reads its draft through a context, so its grid cell function stays
+ * the same across keystrokes. A new cell function would remount the box and drop focus
+ * (and the typed text) on every digit.
+ */
+const QtyDraftContext = createContext<{
+  isEditing: boolean;
+  lineDrafts: Record<string, LineDraft>;
+  showErrors: boolean;
+  setLineDrafts: React.Dispatch<React.SetStateAction<Record<string, LineDraft>>>;
+} | null>(null);
+
+function QtyOrderedCell({ line }: { line: SalesOrderLine }) {
+  const ctx = useContext(QtyDraftContext);
+  if (!ctx || !ctx.isEditing || isCancelledLine(line)) return <>{fmtInt(line.qty_ordered)}</>;
+  const value = ctx.lineDrafts[line.id]?.qty_ordered ?? String(line.qty_ordered);
+  return (
+    <NumberInput
+      min={0}
+      value={value}
+      error={ctx.showErrors ? numberFieldError(value, { min: 0 }) : undefined}
+      onChange={(e) =>
+        ctx.setLineDrafts((prev) => ({
+          ...prev,
+          [line.id]: { ...draftOrRow(prev, line), qty_ordered: e.target.value },
+        }))
+      }
+      className="h-8 text-right tabular-nums"
+    />
+  );
+}
+
+// Module level on purpose: the same function every render keeps the box mounted.
+function renderQtyOrderedCell({ row }: { row: { original: SalesOrderLine } }) {
+  return <QtyOrderedCell line={row.original} />;
+}
+
 function seedDraft(row: SalesOrderLine): LineDraft {
   return {
     sku: row.sku,
@@ -444,6 +483,8 @@ export function SalesOrderDetail({
   );
 
   const [isEditing, setIsEditing] = useState(false);
+  // Set by a refused Save; from then on each quantity box re-checks itself live.
+  const [showQtyErrors, setShowQtyErrors] = useState(false);
   // The PLANNING CLASS, not `order_type`: this is the value the read view renders, so it is
   // the value the edit form seeds from and writes back.
   const [demandClass, setDemandClass] = useState('');
@@ -506,6 +547,7 @@ export function SalesOrderDetail({
       })),
     );
     setError(null);
+    setShowQtyErrors(false);
     setIsEditing(true);
   };
 
@@ -521,6 +563,7 @@ export function SalesOrderDetail({
   const cancelEdit = () => {
     setIsEditing(false);
     setError(null);
+    setShowQtyErrors(false);
     setRemovedLineIds(new Set());
     setNewLines([]);
   };
@@ -850,26 +893,7 @@ export function SalesOrderDetail({
         // API as "1200.0000" would otherwise order before "45" the way a word does.
         accessorFn: (line) => Number(line.qty_ordered),
         header: ({ column }) => <DataGridColumnHeader title="Qty ordered" column={column} />,
-        cell: ({ row }) => {
-          if (isEditing && !isCancelledLine(row.original)) {
-            const draft = lineDrafts[row.original.id];
-            return (
-              <Input
-                type="number"
-                min={0}
-                value={draft?.qty_ordered ?? String(row.original.qty_ordered)}
-                onChange={(e) =>
-                  setLineDrafts((prev) => ({
-                    ...prev,
-                    [row.original.id]: { ...draftOrRow(prev, row.original), qty_ordered: e.target.value },
-                  }))
-                }
-                className="h-8 text-right tabular-nums"
-              />
-            );
-          }
-          return fmtInt(row.original.qty_ordered);
-        },
+        cell: renderQtyOrderedCell,
         size: 130,
         // One `td` per column, so the sum sits UNDER the column it sums and needs no label.
         // Rendered by the shared grid (`DataGridTable`) as soon as any column declares a
@@ -1001,8 +1025,7 @@ export function SalesOrderDetail({
           if (isEditing && !isCancelledLine(row.original)) {
             const draft = draftOrRow(lineDrafts, row.original);
             return (
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 step="0.01"
                 aria-label={`Unit price on ${row.original.sku}`}
@@ -1037,8 +1060,7 @@ export function SalesOrderDetail({
           if (isEditing && !isCancelledLine(row.original)) {
             const draft = draftOrRow(lineDrafts, row.original);
             return (
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 step="0.01"
                 aria-label={`Discount on ${row.original.sku}`}
@@ -1511,6 +1533,18 @@ export function SalesOrderDetail({
     // on an empty one made most orders un-editable; an empty class means "leave the stored
     // classification alone", which is what the BE does with it.
     if (!customerCode) return setError('Select a customer.');
+    // A blank or non-numeric quantity is refused here, before it can turn into 0 (which
+    // cancels an existing line). The message sits on the box itself. A new row keeps the
+    // older "every line needs a product and a quantity" refusal below.
+    const liveLines = so.lines.filter((ln) => !removedLineIds.has(ln.id) && !isCancelledLine(ln));
+    if (
+      liveLines.some((ln) =>
+        numberFieldError(lineDrafts[ln.id]?.qty_ordered ?? String(ln.qty_ordered), { min: 0 }),
+      )
+    ) {
+      setShowQtyErrors(true);
+      return;
+    }
     // `id` is sent so the BE matches this line by id rather than falling back to SKU.
     // Location / delivery date / UoM / price / discount ride the SAME upsert as SKU/qty -
     // see the class docstring - carrying either what the person typed or, for an untouched
@@ -1587,6 +1621,7 @@ export function SalesOrderDetail({
   };
 
   return (
+    <QtyDraftContext.Provider value={{ isEditing, lineDrafts, showErrors: showQtyErrors, setLineDrafts }}>
     <div className="space-y-4">
       {/* The record header - what the order IS, and what can be done to it. Above the tabs,
           because it belongs to the whole record rather than to any one of its concerns. */}
@@ -2225,6 +2260,7 @@ export function SalesOrderDetail({
         </PlanRowDialog>
       ) : null}
     </div>
+    </QtyDraftContext.Provider>
   );
 }
 
