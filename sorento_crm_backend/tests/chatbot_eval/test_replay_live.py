@@ -4,13 +4,16 @@ The parser is stubbed at test level (it calls a fake provider so the usage count
 client is a test-level recorder: the runner must NOT patch either of them. No network, no real model.
 
 Requires from `scripts/chatbot_eval/replay.py`:
-  live_rows(items, recorded_rows, *, session_factory, max_calls, max_usd, on_row=None) -> list[dict]
+  live_rows(items, recorded_rows, *, session_factory, max_calls, max_usd, require_key_last4, on_row=None)
+      -> list[dict]; require_key_last4 must be exactly 4 non-blank characters (ValueError before any item)
       item = {item_id, run, message, recorded_turn_id}; recorded row matched on row["id"] == recorded_turn_id.
       A row output per item: {item_id, run, provenance: {code_sha, prompt_sha256, prompt_version, model,
       reasoning_effort}, usage: {calls, prompt_tokens, cached_tokens, completion_tokens, usd},
       turn: {envelope, trace, response, branch_kind}}.
-      Items not run because a cap was hit come back as {item_id, run, stopped: "max_calls" | "max_usd"}.
-  CLI: replay.py live --items FILE --recorded FILE --out FILE --max-calls N --max-usd X   (main(argv) -> int)
+      Items not run because a cap was hit come back as {item_id, run, stopped: "max_calls" | "max_usd" | "wrong_key"}
+      ("wrong_key": a provider or embedding key that does not end with require_key_last4; no real call goes out).
+  CLI: replay.py live --items FILE --recorded FILE --out FILE --max-calls N --max-usd X --require-key-last4 XXXX
+      (main(argv) -> int)
 """
 from __future__ import annotations
 

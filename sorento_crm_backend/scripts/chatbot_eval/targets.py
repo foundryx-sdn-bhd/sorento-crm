@@ -666,6 +666,7 @@ def _stats(runs: list[list[dict[str, Any]]]) -> dict[str, Any]:
     return {"n": round(sum(ns) / len(ns)) if ns else 0,
             "passed": round(sum(sum(1 for x in r if x["passed"]) for r in runs) / len(runs)) if runs else 0,
             "unknown": round(sum(len(r) - len(known(r)) for r in runs) / len(runs)) if runs else 0,
+            "runs": len(rates),
             "rate": sum(rates) / len(rates) if rates else 0.0, "lowest": min(rates) if rates else 0.0}
 
 
@@ -690,7 +691,7 @@ def summarise(results: list[list[dict[str, Any]]], bars: dict[str, float]) -> di
     made_per_run = [sum(1 for x in run for m in x["made_up"] if not str(m).startswith("unverifiable")) for run in results]
     unverifiable = sum(1 for run in results for x in run for m in x["made_up"] if str(m).startswith("unverifiable"))
     meets = (all(n == 0 for n in leaks_per_run) and all(n == 0 for n in made_per_run)
-             and all(name in slices and slices[name]["rate"] >= bar for name, bar in bars.items()))
+             and all(name in slices and slices[name]["runs"] == len(results) and slices[name]["rate"] >= bar for name, bar in bars.items()))
     out = {"slices": slices, "growth": growth, "leaks": sum(leaks_per_run), "made_up": sum(made_per_run),
            "unverifiable": unverifiable, "meets": meets}
     if len(results) < 3:

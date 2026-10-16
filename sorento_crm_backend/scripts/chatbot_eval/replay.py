@@ -4,6 +4,8 @@ usage (cwd = the backend dir of the checkout under test):
   python scripts/chatbot_eval/replay.py run --traces FILE... --out OUT.jsonl
   python scripts/chatbot_eval/replay.py live --items F --recorded F --out F --max-calls N --max-usd X --require-key-last4 XXXX
       (live spends only when the provider key ends with --require-key-last4; any other key stops the run at "wrong_key")
+      (the guard and meter see only this process: MCP tools run on the stack's backend server with its own key, e.g.
+      order search embeds via app/api/v1/external/rag.py:36, and media work runs on the RQ worker; neither is metered here)
   python scripts/chatbot_eval/replay.py diff BASE.jsonl HEAD.jsonl [--intended FILE]
 
 Imports only the stdlib at module level and `app.*` inside functions, so one copy of this
@@ -395,11 +397,21 @@ def _check_caps(total: dict[str, Any]) -> None:
         raise _CapStop("max_usd")
 
 
+def _valid_last4(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 4 and not any(c.isspace() for c in value)
+
+
+def _last4_arg(value: str) -> str:
+    if not _valid_last4(value):
+        raise argparse.ArgumentTypeError("must be exactly 4 non-blank characters")
+    return value
+
+
 def _check_key(total: dict[str, Any], key: Any) -> None:
     """Before every real call: only the key whose last four characters were required may spend. The key itself
     is never stored or printed."""
     want = total.get("require_key_last4")
-    if want is not None and not str(key or "").endswith(want):
+    if not _valid_last4(want) or not str(key or "").endswith(want):
         total["stop"] = "wrong_key"
         raise _CapStop("wrong_key")
 
@@ -581,7 +593,11 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
 def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], *,
               session_factory: Callable[[], Any], max_calls: int, max_usd: float,
               require_key_last4: str, on_row: Callable[[dict[str, Any]], None] | None = None) -> list[dict[str, Any]]:
-    """Run each item's message through the engine on its recorded state; stop cleanly at a call or spend cap."""
+    """Run each item's message through the engine on its recorded state; stop cleanly at a call or spend cap,
+    or at "wrong_key" when a provider or embedding key does not end with `require_key_last4` (exactly 4 non-blank
+    characters, else ValueError before any item)."""
+    if not _valid_last4(require_key_last4):
+        raise ValueError("require_key_last4 must be exactly 4 non-blank characters")
     by_id = {str(r["id"]): r for r in recorded_rows}
     total = _new_usage()
     total.update(max_calls=max_calls, max_usd=max_usd, stop=None, require_key_last4=require_key_last4)
@@ -749,7 +765,7 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument("--out", required=True)
     live.add_argument("--max-calls", type=int, required=True)
     live.add_argument("--max-usd", type=float, required=True)
-    live.add_argument("--require-key-last4", required=True)
+    live.add_argument("--require-key-last4", type=_last4_arg, required=True)
     diff = sub.add_parser("diff")
     diff.add_argument("base")
     diff.add_argument("head")
