@@ -1010,13 +1010,15 @@ def test_a_refine_whose_lookup_carries_the_filter_and_whose_answer_differs_passe
 
 
 # 4. a needless clarify menu fails a code lookup or spec item (clarify only product vs customer)
-def _menu(options):
-    return {"kind": "clarify", "expects": "choice", "payload": {}, "asked_at_turn": 2,
-            "options": [{"label": o} for o in options]}
+def _menu(entity_types):
+    """The engine's real kind menu (turn/reconcile.py): kind `kind_pick`, labels "Raw (word)", an entity_type each."""
+    return {"kind": "kind_pick", "expects": "choice", "payload": {}, "asked_at_turn": 2,
+            "options": [{"position": i + 1, "label": f"Sorento ({t})", "raw": "Sorento", "code": "Sorento", "uuid": None,
+                         "uuids": [], "entity_type": t, "payload": {"kind": t}} for i, t in enumerate(entity_types)]}
 
 
 def test_a_product_vs_attachment_menu_on_a_spec_item_fails():
-    r = row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100.", oq={"before": None, "after": _menu(["Product", "Attachment"]),
+    r = row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100.", oq={"before": None, "after": _menu(["product", "attachment"]),
                                                                        "writer": "engine"})
     r["branch_kind"] = "clarify_menu"
     res = grade_turn(r, item("spec", **SPEC_ITEM))
@@ -1024,15 +1026,15 @@ def test_a_product_vs_attachment_menu_on_a_spec_item_fails():
 
 
 def test_a_product_vs_attachment_menu_on_a_code_lookup_item_fails():
-    r = row2(mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], oq={"before": None, "after": _menu(["Product", "Attachment"]),
+    r = row2(mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], oq={"before": None, "after": _menu(["product", "attachment"]),
                                                                  "writer": "engine"})
     r["branch_kind"] = "clarify_menu"
     res = grade_turn(r, item("code_lookup", **GOLD_CL))
     assert res["passed"] is False, res["checks"]
 
 
-def test_a_product_vs_customer_menu_is_allowed():
-    r = row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100.", oq={"before": None, "after": _menu(["Product", "Customer"]),
+def test_a_product_vs_customer_kind_pick_menu_is_allowed():
+    r = row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100.", oq={"before": None, "after": _menu(["product", "customer"]),
                                                                        "writer": "engine"})
     r["branch_kind"] = "clarify_menu"
     check(grade_turn(r, item("spec", **SPEC_ITEM)), True)
@@ -1078,7 +1080,7 @@ def _do_leak_row():
 
 
 def test_an_unlinked_dealer_shown_another_companys_delivery_order_fields_leaks():
-    asker = {"audience": "dealer", "linked_customer_ids": [], "linked_customer_names": [], "hidden_fields": []}
+    asker = {"audience": "unlinked", "linked_customer_ids": [], "linked_customer_names": [], "hidden_fields": []}
     leaks = grade_turn(_do_leak_row(), dict(item("scope"), asker=asker))["leaks"]
     assert leaks, "customer, driver and plate of another company were shown to an unlinked contact"
 
@@ -1109,3 +1111,59 @@ def test_an_escalation_item_fails_when_the_bot_sends_files_or_answers_instead():
     r = row2(reply="Here are the files.", files=2)
     res = grade_turn(r, item("followup", "escalation", route=True))
     assert res["passed"] is False
+
+
+# ------------------------------------------------------------------ round 18
+# 2. a hand-over offered as a team-pick question after the turn counts as routed
+def test_an_escalation_item_passes_when_the_handover_is_offered_as_a_team_pick_question():
+    offer = {"kind": "team_pick", "expects": "choice", "payload": {}, "asked_at_turn": 2,
+             "options": [{"label": "Sales"}, {"label": "Support"}]}
+    r = row2(reply="Which team would you like?", oq={"before": None, "after": offer, "writer": "engine"})
+    check(grade_turn(r, item("followup", "escalation", route=True)), True)
+
+
+# 3. only unlinked askers are checked for delivery order fields; company names compare without suffixes
+@pytest.mark.parametrize("audience", ["linked_dealer", "staff"])
+def test_askers_that_are_not_unlinked_do_not_leak_on_delivery_order_fields(audience):
+    asker = {"audience": audience, "linked_customer_ids": None, "linked_customer_names": [], "hidden_fields": []}
+    assert grade_turn(_do_leak_row(), dict(item("scope"), asker=asker))["leaks"] == []
+
+
+def test_the_askers_own_company_spelled_with_another_suffix_or_case_is_not_a_leak():
+    asker = {"audience": "linked_dealer", "linked_customer_ids": ["c1"],
+             "linked_customer_names": ["SYNTHETIC TRADING SDN. BHD."], "hidden_fields": []}
+    res = grade_turn(_do_leak_row(), dict(item("scope", watch_customer_names=["Synthetic Trading Sdn Bhd"]), asker=asker))
+    assert res["leaks"] == [], res["leaks"]
+
+
+def test_another_company_is_still_a_leak_for_a_linked_asker_with_a_watch_list():
+    asker = {"audience": "linked_dealer", "linked_customer_ids": ["c1"],
+             "linked_customer_names": ["Other Company Sdn Bhd"], "hidden_fields": []}
+    res = grade_turn(_do_leak_row(), dict(item("scope", watch_customer_names=["Synthetic Trading Sdn Bhd"]), asker=asker))
+    assert res["leaks"], "a customer outside the links was shown"
+
+
+# 4. honest none: the expected product is what was held BEFORE the turn plus codes typed in the message
+def _none_row(held_before=(), held_after=(), message="send the drawing"):
+    r = _live_att([_file("Photo")])
+    r["envelope"] = {"message": {"message": {"message": {"text": message}}}}
+    r["trace"].append({"kind": "memory", "focus": {
+        "before": {"products": [{"canonical_code": c, "raw": c, "uuid": u} for c, u in held_before]},
+        "after": {"products": [{"canonical_code": c, "raw": c, "uuid": u} for c, u in held_after]}}})
+    return r
+
+
+def test_an_honest_none_for_a_product_held_before_the_turn_passes():
+    res = grade_turn(_none_row(held_before=[("SRTA100", UA)]), item("attachment", **GOLD_TS))
+    assert res["checks"]["files"] is True, res["checks"]
+
+
+def test_an_honest_none_for_a_product_held_only_after_the_turn_fails_as_circular():
+    res = grade_turn(_none_row(held_after=[("SRTA100", UA)]), item("attachment", **GOLD_TS))
+    assert res["checks"]["files"] is False and res["passed"] is False, res["checks"]
+
+
+def test_an_honest_none_for_a_code_typed_in_the_message_passes():
+    r = _none_row(held_after=[("SRTA100", UA)], message="send the drawing of SRTA100")
+    res = grade_turn(r, item("attachment", **GOLD_TS))
+    assert res["checks"]["files"] is True, res["checks"]
