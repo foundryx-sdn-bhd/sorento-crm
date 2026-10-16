@@ -348,3 +348,46 @@ def test_owner_shape_a_brand_and_an_undrmount_basin_binds_under_counter(vdb):
     [spec] = [e for e in _specs(out) if e["spec_key"] == "mounting"]
     assert spec["spec_value"] == "under_counter" and spec["raw"] == "under counter", spec
     assert brand in out, out
+
+
+# --------------------------------------------------------------------------- #
+# Round 6: the split shape, a category entity plus a separate corrected spec      #
+# --------------------------------------------------------------------------- #
+
+
+def _spec_entity(raw: str, key: str, value: Any) -> dict[str, Any]:
+    return _e(raw, "specification", spec_key=key, spec_value=value)
+
+
+def test_q_the_split_shape_binds_the_corrected_spec_and_says_no_typo(vdb):
+    """Behaviour test (fails on head and main): the parser's other common shape."""
+    message = "i mean any stock for sorento undrmount basin"
+    out = _ground(vdb, message, _e("sorento", "brand"), _e("undrmount basin", "category"), _spec_entity("under counter", "mounting", "under_counter"))["entities"]
+    assert any(e["hint"] == "category" and e["raw"] == "basin" for e in out), out
+    specs = _specs(out)
+    assert [(e["spec_key"], e["spec_value"], e["raw"]) for e in specs] == [("mounting", "under_counter", "under counter")], out
+    assert "undrmount" not in repr(out), out
+
+
+def test_r_two_corrected_specs_are_ambiguous_and_the_word_is_said_back(vdb):
+    out = _ground(
+        vdb, "any undrmount basin", _e("undrmount basin", "category"),
+        _spec_entity("under counter", "mounting", "under_counter"), _spec_entity("gunmetal", "finish", "gunmetal"),
+    )["entities"]
+    assert ("specification", "undrmount", "", None) in _shape({"entities": out}), out
+
+
+@pytest.mark.parametrize(
+    "message,spec",
+    [
+        ("any pnk basin under counter", _spec_entity("under counter", "mounting", "under_counter")),
+        ("any undrmount basin", _spec_entity("under countr", "mounting", "flushmount")),
+        ("any undrmount basin", _spec_entity("600 mm", "dim_width", 600)),
+    ],
+    ids=["s-spec-words-in-message", "t-invalid-value", "u-numeric"],
+)
+def test_stu_a_spec_entity_that_is_not_a_correction_leaves_the_typed_word_said_back(vdb, message, spec):
+    raw = "pnk basin" if "pnk" in message else "undrmount basin"
+    word = "pnk" if "pnk" in message else "undrmount"
+    out = _ground(vdb, message, _e(raw, "category"), spec)
+    assert ("specification", word, "", None) in _shape(out), out
