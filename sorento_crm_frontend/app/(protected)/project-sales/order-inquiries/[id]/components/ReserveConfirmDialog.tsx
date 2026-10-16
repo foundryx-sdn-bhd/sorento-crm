@@ -128,12 +128,12 @@ export interface ReserveConfirmInquiry {
 }
 
 const MULTI_SIZES: Record<string, number> = {
-  product: 190,
+  product: 185,
   requested: 105,
-  reserve: 85,
+  reserve: 100,
   balance: 135,
-  location: 85,
-  reason: 170,
+  location: 105,
+  reason: 155,
 };
 
 /** Multi-OI mode: the line columns, with the order inquiry first and the commit result last. */
@@ -164,7 +164,7 @@ const MULTI_COLUMNS: ColumnDef<ReserveConfirmLine>[] = [
         </span>
       );
     },
-    size: 170,
+    size: 155,
     enableSorting: false,
     meta: { headerTitle: 'Result' },
   },
