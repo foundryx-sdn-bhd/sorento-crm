@@ -493,3 +493,68 @@ def test_pma5_my_targets_hold_both_agents_targets(monkeypatch):
             res = c.get(f"{OPPORTUNITIES}/my-targets")
             assert res.status_code == 200, res.text
             assert {t["target_id"] for t in res.json()["targets"]} == set(ids)
+
+
+# --------------------------------------------------------------------------- #
+# Security review (16 Oct 2026): the agents' companies never widen the contact's own scope
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "junk",
+    [{"Authorization": "Bearer junk"}, {"X-API-Key": "junk"}],
+    ids=["junk-bearer", "junk-api-key"],
+)
+def test_pma_scope_a_junk_auth_header_never_widens_to_another_agents_company(junk):
+    """A junk Bearer / X-API-Key next to a valid portal token resolves the request scope to
+    UNSET. The agents' companies (A and B) must then be bounded by the contact's OWN companies
+    (`respond_contact_companies`: A only), never set as they are."""
+    from app.database import get_db
+    from app.services.sales import sales_seed_service
+    from tests._portal_grant import grant_portal_forms
+    from tests.test_fix2_4_portal_company_scope_narrowing import (
+        BASE,
+        _agent,
+        _company,
+        _contact,
+        _customer,
+        _real_token,
+        _scope_contact_to,
+    )
+
+    with blank_session() as db:
+        sales_seed_service.run(db)
+        db.flush()
+        company_a = _company(db, name="ZZT PMA Company A")
+        company_b = _company(db, name="ZZT PMA Company B")
+        contact = _contact(db)
+        _scope_contact_to(db, contact.id, company_a)
+        grant_portal_forms(db, contact.id, ["sales_opportunity"])
+        agent_a = _agent(db, contact_id=contact.id, company_id=company_a)
+        agent_b = _agent(db, contact_id=contact.id, company_id=company_b)
+        in_a = _customer(db, company_a, name="ZZT PMA In A", agent_id=agent_a.id)
+        in_b = _customer(db, company_b, name="ZZT PMA In B", agent_id=agent_b.id)
+        token = _real_token(db, contact.id)
+
+        def _override_get_db():
+            yield db
+
+        app.dependency_overrides[get_db] = _override_get_db
+        headers = {"X-Portal-Token": token.token, **junk}
+        with TestClient(app) as c:
+            options = c.get(f"{BASE}/customer-options", params={"q": "ZZT PMA"}, headers=headers)
+            created = c.post(
+                BASE,
+                json={
+                    "title": "ZZT PMA widen",
+                    "expected_amount": "1",
+                    "expected_close_date": "2026-11-01",
+                    "customer_id": in_b.id,
+                },
+                headers=headers,
+            )
+        assert options.status_code == 200, options.text
+        names = {i["customer_name"] for i in options.json()["items"]}
+        assert in_b.customer_name not in names
+        assert in_a.customer_name in names
+        assert created.status_code == 422, created.text
