@@ -176,3 +176,21 @@ def test_grounding_tier_returns_only_the_grounded_stage_equal_to_the_whole_turn(
     assert "tools" not in tier["stages"] and "reply" not in tier["stages"]
     assert tier["stages"]["grounded"] == whole["stages"]["grounded"]
     assert tier["case_id"] == whole["case_id"] and tier["turn_id"] == whole["turn_id"]
+
+
+def test_replay_blocks_every_provider_chat_and_records_it():
+    import inspect
+
+    from app.services import llm_provider
+
+    classes = {
+        n: c for n, c in vars(llm_provider).items()
+        if inspect.isclass(c) and c is not llm_provider.LLMProvider and n.endswith("Provider") and "chat" in vars(c)
+    }
+    assert {"OpenAIProvider", "AnthropicProvider", "GeminiProvider"} <= set(classes)
+    misses: list = []
+    with replay_mod._patched({}, misses):
+        for name, cls in classes.items():
+            with pytest.raises(RuntimeError, match=f"llm_blocked: provider.{name}"):
+                cls.chat(object())
+    assert {m.get("llm_blocked") for m in misses} >= {f"provider.{n}" for n in classes}
