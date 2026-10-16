@@ -10,6 +10,13 @@ import { renderHook, render, screen, act, waitFor, fireEvent } from '@testing-li
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const apiFetch = vi.fn();
+const getAgentFieldAccess = vi.fn();
+const setAgentFieldAccess = vi.fn();
+vi.mock('../../../access-agents/services/accessAgentService', async (orig) => ({
+  ...(await orig<object>()),
+  getAgentFieldAccess: (...a: unknown[]) => getAgentFieldAccess(...a),
+  setAgentFieldAccess: (...a: unknown[]) => setAgentFieldAccess(...a),
+}));
 vi.mock('@/lib/api', () => ({ apiFetch: (...a: unknown[]) => apiFetch(...a) }));
 vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), custom: vi.fn() },
@@ -164,6 +171,33 @@ describe('contact edit dialog save refreshes the Tags section', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: /update contact/i }));
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith(expect.stringContaining('/contacts/c1'), expect.objectContaining({ method: 'PUT' })));
+    await waitFor(() => expect(tagSettingsInvalidated()).toBe(true));
+  });
+});
+
+describe('field access dialog save refreshes the Tags section', () => {
+  it('agent field access saved for a contact', async () => {
+    const FIELDS = [
+      { resource: 'incoming_stock', field_key: 'eta_date', label: 'ETA', is_allowed: true, override: null, effective: true },
+    ];
+    getAgentFieldAccess.mockResolvedValue({ agent_code: 'x', fields: FIELDS, overrides: [] });
+    setAgentFieldAccess.mockResolvedValue({ agent_code: 'x', fields: FIELDS, overrides: [] });
+    const { default: RealDialog } = await vi.importActual<{ default: React.ComponentType<Record<string, unknown>> }>(
+      '../../../access-agents/components/ContactFieldAccessDialog',
+    );
+    seedTagSettings();
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(RealDialog, {
+          open: true, onOpenChange: vi.fn(), agentId: 'a1', agentName: 'Agent', contactId: 'c1', contactName: 'Al',
+        }),
+      ),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'ETA: Follows agent (allowed)' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Save \(1\)/ }));
+    await waitFor(() => expect(setAgentFieldAccess).toHaveBeenCalled());
     await waitFor(() => expect(tagSettingsInvalidated()).toBe(true));
   });
 });
