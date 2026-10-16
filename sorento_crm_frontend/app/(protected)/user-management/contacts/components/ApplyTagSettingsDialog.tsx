@@ -57,14 +57,17 @@ const DONE: typeof STATUS = {
 };
 
 export function ChangeLine({ change }: { change: ApplyChange }) {
-  const isList = change.added.length > 0 || change.removed.length > 0;
+  const added = change.added ?? [];
+  const removed = change.removed ?? [];
+  const decidedBy = change.decided_by ?? [];
+  const isList = added.length > 0 || removed.length > 0;
   return (
     <div className="grid grid-cols-1 gap-1 py-1 text-sm sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-3">
       <span className="text-muted-foreground">{change.label}</span>
       <span className="flex flex-wrap items-center gap-1">
         {isList ? (
           <>
-            {change.added.map((v) => (
+            {added.map((v) => (
               <span
                 key={`+${v}`}
                 className="rounded bg-success/10 px-1 text-success"
@@ -72,7 +75,7 @@ export function ChangeLine({ change }: { change: ApplyChange }) {
                 + {v}
               </span>
             ))}
-            {change.removed.map((v) => (
+            {removed.map((v) => (
               <span
                 key={`-${v}`}
                 className="rounded bg-destructive/10 px-1 text-destructive line-through"
@@ -91,8 +94,8 @@ export function ChangeLine({ change }: { change: ApplyChange }) {
             </span>
           </>
         )}
-        {change.decided_by.length ? (
-          <span className="text-xs text-muted-foreground">{`by ${change.decided_by.join(', ')}`}</span>
+        {decidedBy.length ? (
+          <span className="text-xs text-muted-foreground">{`by ${decidedBy.join(', ')}`}</span>
         ) : null}
       </span>
     </div>
@@ -126,10 +129,10 @@ export function ApplyRowCard({
       {row.error ? (
         <p className="mt-1 text-sm text-muted-foreground">{row.error}</p>
       ) : null}
-      {row.changes.map((c) => (
+      {(row.changes ?? []).map((c) => (
         <ChangeLine key={`${c.section}:${c.key}`} change={c} />
       ))}
-      {row.conflicts.map((c) => (
+      {(row.conflicts ?? []).map((c) => (
         <div
           key={c.label}
           className="mt-1 rounded bg-warning/10 px-2 py-1 text-sm"
@@ -139,10 +142,12 @@ export function ApplyRowCard({
             {' '}
             conflict, not applied:{' '}
           </span>
-          {c.tags.map((t) => `${t.name}: ${showValue(t.value)}`).join(', ')}
+          {(c.tags ?? [])
+            .map((t) => `${t.name}: ${showValue(t.value)}`)
+            .join(', ')}
         </div>
       ))}
-      {row.not_applied.map((n) => (
+      {(row.not_applied ?? []).map((n) => (
         <div key={n.label} className="mt-1 text-sm text-muted-foreground">
           <span className="font-medium">{n.label}</span>
           {` not applied: ${n.reason}`}
