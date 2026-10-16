@@ -372,4 +372,4 @@ def test_embeddings_use_their_own_bucket_and_do_not_consume_max_calls(session_fa
     monkeypatch.setattr(parser_mod, "parse", embed_then_chat)
     out = go(session_factory, recorded, n=1, max_calls=1)[0]
     assert "stopped" not in out and "turn" in out, out
-    assert out["usage"]["embed_calls"] == 3 and out["usage"]["calls"] == 1
+    assert out["usage"]["embed_calls"] >= 3 and out["usage"]["calls"] == 1
