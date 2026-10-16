@@ -320,7 +320,7 @@ def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | No
 
 
 def replay_rows(rows: list[dict[str, Any]], *, session_factory: Callable[[], Any],
-                stage: str | None = None) -> list[dict[str, Any]]:
+                stage: str | None = None, on_row: Callable[[dict[str, Any]], None] | None = None) -> list[dict[str, Any]]:
     """`stage="grounding"` runs only `grounding.ground()` per row (vocabulary loaded once per call)
     and returns `stages.grounded` alone; None runs the whole turn."""
     results = []
@@ -328,6 +328,8 @@ def replay_rows(rows: list[dict[str, Any]], *, session_factory: Callable[[], Any
     for row in rows:
         with _rolled_back(session_factory) as factory:
             results.append(_replay_one(row, factory, stage, vocab_box))
+        if on_row is not None:
+            on_row(results[-1])
     return results
 
 
@@ -377,8 +379,14 @@ def diff_rows(base: list[dict[str, Any]], head: list[dict[str, Any]],
 
 
 def _read(path: str) -> list[dict[str, Any]]:
+    out = []
     with open(path) as fh:
-        return [json.loads(line) for line in fh if line.strip()]
+        for line in fh:
+            try:
+                out.append(json.loads(line))
+            except ValueError:  # a run killed mid-write leaves a cut last line
+                continue
+    return out
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -390,10 +398,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
     from app.database import SessionLocal
 
     rows = [r for path in args.traces for r in _read(path)]
-    results = replay_rows(rows, session_factory=SessionLocal, stage=args.stage)
+    # One line per finished row, flushed, so a run killed at a time budget leaves its finished rows.
     with open(args.out, "w") as fh:
-        for r in results:
+        def write(r: dict[str, Any]) -> None:
             fh.write(json.dumps(r) + "\n")
+            fh.flush()
+
+        replay_rows(rows, session_factory=SessionLocal, stage=args.stage, on_row=write)
     return 0
 
 
