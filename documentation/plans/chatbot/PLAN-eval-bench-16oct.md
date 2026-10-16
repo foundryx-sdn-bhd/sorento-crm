@@ -88,7 +88,7 @@ Repo, `scripts/chatbot_eval/stats.py` (pure, stdlib only, no numpy):
   `reps` (min reps per arm), `base_mean`, `base_ci`, `head_mean`, `head_ci`, `delta`, `delta_ci` (each CI a
   `(lo, hi)` tuple, 95%, percentile bootstrap over items, reps averaged per item first), `verdict` in
   {`better`, `worse`, `within noise`} or `refused` with `reason` `"<n> reps < 3"`. Means are fractions 0..1.
-  `weights` (optional) maps `item_id -> stratum weight`; when given, means and deltas are weighted means
+  `weights` (optional) maps `item_id -> per-item weight` (the caller passes stratum share / items in that stratum, as `score.py --weights` does); when given, means and deltas are weighted means; fewer than `min_items` (10) paired items -> `refused`
   (used by S5; tests may leave it None).
 - `format_compare(result) -> str`: one short block; `verdict refused: <n> reps < 3` when refused.
 

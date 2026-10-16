@@ -34,7 +34,7 @@ synthetic rows only.
 - AC2.4 The DB the replay reads is unchanged afterwards (`chatbot.turns` count and max `created_at` equal before and
   after).
 - AC2.5 A full replay of both arms finishes in under 5 minutes on the Mac mini with at most 2 worker processes.
-- AC2.6 When the head's tool call args differ from the recorded call, the case reports stage `tool_args` and no
+- AC2.6 When the head's tool call args differ from the recorded call, the case reports stage `tools` and no
   `reply` diff is computed for it.
 - AC2.7 A recorded turn without a parse is counted as `skipped:no_parse`, never as a diff.
 - AC2.8 `--split dev` reads only dev-split runs; output for hidden runs carries ids only.
