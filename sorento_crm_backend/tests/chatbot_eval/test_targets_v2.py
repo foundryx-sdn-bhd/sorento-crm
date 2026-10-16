@@ -1347,3 +1347,95 @@ def test_a_warehouse_entity_held_in_memory_counts_as_the_applied_filter():
 def test_a_different_warehouse_does_not_match_the_gold_filter():
     res = grade_turn(_warehouse_row("JB", "JB"), item("followup", "refine", **WAREHOUSE_ITEM))
     assert res["checks"]["filter"] is False, res["checks"]
+
+
+# ------------------------------------------------------------------ review round 21 part 2 (needless questions, crew policy)
+# Where the resolved Stock Visibility mode lives in the trace: the stock tool envelope carries
+# `stock_visibility: {"mode": ...}` (lanes/business/miss_suggest.py:898 reads it the same way; the mode itself is
+# `stock_visibility.resolve_policy(...).mode`, `turn_runtime._stock_availability_only` is the engine's own read).
+def _stock_tool(mode):
+    return {"name": "crm_inventory_list", "args": {"product_ids": [UA]},
+            "envelope": {"stock_visibility": {"mode": mode}, "items": [{"code": "SRTA100", "qty": 40}]}}
+
+
+def _stock_lookup(mode, reply):
+    return row2(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[_stock_tool(mode)], reply=reply)
+
+
+@pytest.mark.parametrize("ask", ["How many units do you need?", "Berapa unit yang anda perlukan?"])
+def test_a_quantity_question_is_right_on_a_stock_ask_for_an_availability_only_contact(ask):
+    res = grade_turn(_stock_lookup("availability", f"SRTA100 is available. {ask}"), item("code_lookup", **GOLD_CL))
+    assert res["checks"]["code"] is True and res["checks"]["tool_ran"] is True, res["checks"]
+    check(res, True)
+
+
+@pytest.mark.parametrize("mode", ["detailed", "compact"])
+def test_the_same_quantity_question_fails_for_a_detailed_or_compact_stock_contact(mode):
+    res = grade_turn(_stock_lookup(mode, "SRTA100 has 40 pcs. How many units do you need?"), item("code_lookup", **GOLD_CL))
+    assert res["checks"]["code"] is True and res["checks"]["tool_ran"] is True, res["checks"]
+    assert res["passed"] is False, res["checks"]
+
+
+def test_a_quantity_question_after_a_promo_answer_fails_an_and_x_item():
+    tool = {"name": "crm_promotions_list", "args": {"product_ids": [UA]}, "envelope": {"items": [{"code": "SRTA100"}]}}
+    r = row2(domains=("promotion",), state_products=[prod("SRTA100", UA)], mem_before=[prod("SRTOLD1", UB)],
+             mem_after=[prod("SRTA100", UA)], tools=[tool], reply="Promo price for SRTA100 is RM 90. How many units?")
+    res = grade_turn(r, item("followup", "and_x", fact="promotion", subject_after=["SRTA100"]))
+    assert res["checks"]["new_subject"] is True, res["checks"]
+    assert res["passed"] is False, res["checks"]
+
+
+# Q2a: product-variant pickers fail unless the gold code is ambiguous
+VARIANT_Q = {"kind": "product_pick", "expects": "choice", "payload": {}, "asked_at_turn": 2,
+             "options": [{"label": "SRTA100-W", "code": "SRTA100-W"}, {"label": "SRTA100-B", "code": "SRTA100-B"}]}
+TIER_Q = {"kind": "tier_pick", "expects": "choice", "payload": {}, "asked_at_turn": 2,
+          "options": [{"label": "Dealer"}, {"label": "End user"}]}
+
+
+def _with_oq(r, q, asking=None):
+    r["trace"].append({"kind": "memory", "open_question": {"before": None, "after": q, "writer": "engine"}})
+    if asking:
+        for rec in r["trace"]:
+            if rec.get("stage") == "replied":
+                rec["facts"]["asking"] = asking
+    return r
+
+
+def test_a_variant_picker_fails_a_code_lookup_on_a_non_ambiguous_code():
+    r = _with_oq(row2(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A]), VARIANT_Q)
+    res = grade_turn(r, item("code_lookup", **GOLD_CL))
+    assert res["checks"]["code"] is True and res["checks"]["tool_ran"] is True, res["checks"]
+    assert res["passed"] is False, res["checks"]
+
+
+def test_a_variant_picker_fails_an_attachment_item():
+    r = _with_oq(_att([_file("Technical Specifications")]), VARIANT_Q)
+    assert grade_turn(r, item("attachment", **GOLD_TS))["checks"]["type"] is True
+    assert grade_turn(r, item("attachment", **GOLD_TS))["passed"] is False
+
+
+def test_a_variant_picker_fails_an_and_x_item():
+    r = _with_oq(row2(mem_before=[prod("SRTOLD1", UB)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A]), VARIANT_Q)
+    res = grade_turn(r, item("followup", "and_x", fact="inventory", subject_after=["SRTA100"]))
+    assert res["checks"]["new_subject"] is True, res["checks"]
+    assert res["passed"] is False, res["checks"]
+
+
+def test_a_variant_picker_is_right_when_the_gold_code_is_ambiguous():
+    r = _with_oq(row2(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A]),
+                 VARIANT_Q, asking="product_pick")
+    res = grade_turn(r, item("code_lookup", ambiguous=True, **GOLD_CL))
+    check(res, True)
+
+
+# Q2b: the tier menu is an access ask: the item is unknown
+def test_a_tier_menu_after_a_spec_ask_is_unknown_not_failed_and_not_passed():
+    r = _with_oq(row2(verdict=SPEC_V, reply="Which price tier are you?"), TIER_Q, asking="tier_pick")
+    assert grade_turn(r, item("spec", **SPEC_ITEM))["passed"] is None
+
+
+def test_a_tier_menu_after_a_promo_ask_is_unknown():
+    tool = {"name": "crm_promotions_list", "args": {"product_ids": [UA]}, "envelope": {"items": []}}
+    r = _with_oq(row2(domains=("promotion",), mem_before=[prod("SRTOLD1", UB)], mem_after=[prod("SRTA100", UA)],
+                      tools=[tool], reply="Which price tier are you?"), TIER_Q, asking="tier_pick")
+    assert grade_turn(r, item("followup", "and_x", fact="promotion", subject_after=["SRTA100"]))["passed"] is None
