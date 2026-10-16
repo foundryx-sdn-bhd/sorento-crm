@@ -166,8 +166,10 @@ _PURCHASING_NOTIFY_PENDING_KEY = "oi_purchasing_notify_pending"
 _HANDOVER_PENDING_KEY = "oi_handover_pending"
 #: Per sales order, the lines the last `record_saved_lines` told (review B1).
 _SAVED_TOLD_KEY = "oi_saved_lines_told"
-#: OI-LINE-SPLIT: per origin line, the qty `_apply_split_links` moved to another line in the
-#: running Confirm - what the planning-change cancel netting (`_oi_demand_rows`) takes off.
+#: OI-LINE-SPLIT: per origin line, what `_apply_split_links` moved to another line in the
+#: running Confirm: `{"qty": total, "splits": {split id: qty}}`. The planning-change cancel
+#: netting (`_oi_demand_rows`) takes `qty` off; the email (`_tell_splits`) prints only the
+#: splits named here beside the line's own.
 SPLIT_MOVED_KEY = "oi_split_moved_by_origin"
 
 #: `Session.info` key holding the transactions THIS session has actually committed
@@ -4403,12 +4405,41 @@ class ProjectOrderInquiryService:
             return
         from app.services.project_line_split_service import LineSplitService
 
+        from app.services.project_line_split_service import SplitOutputs
+
         # Only splits that still act: a stale plan is not told again on a later change.
         acting = LineSplitService(self.db).acting_origin_ids(str(line.id) for line in lines)
         if not acting:
             return
+        # The email agrees with the OI rows: it prints the splits the engine honoured in this
+        # Confirm (the line's own splits, and those `_apply_split_links` moved) and nothing
+        # of a split sitting elsewhere that did not move - that qty is the netting's CANCEL.
+        moved = self.db.info.get(SPLIT_MOVED_KEY) or {}
+        splits = SplitOutputs(self.db, sorted(acting))
+        honoured: Dict[str, Tuple[Dict[str, Decimal], Decimal]] = {}
+        for origin in acting:
+            moved_splits = (moved.get(origin) or {}).get("splits") or {}
+            printed: Dict[str, Decimal] = {}
+            left = _ZERO
+            for view in splits.by_origin.get(origin, []):
+                split_id = str(view.split.id)
+                qty = _dec(view.split.qty)
+                if view.split.is_cancel or view.sits_on == origin:
+                    printed[split_id] = qty
+                elif split_id in moved_splits:
+                    printed[split_id] = _dec(moved_splits[split_id])
+                    left += qty - printed[split_id]
+                else:
+                    left += qty
+            if left > _ZERO and not moved_splits:
+                # Nothing moved: the line's own told line (its CANCEL) stands as it is.
+                continue
+            honoured[origin] = (printed, left)
+        if not honoured:
+            return
         self.split_handover_items(
-            queue, line_ids=acting, actor_user_id=actor_user_id, queued=True,
+            queue, line_ids=set(honoured), actor_user_id=actor_user_id, queued=True,
+            honoured=honoured,
         )
 
     def split_handover_items(
@@ -4418,6 +4449,7 @@ class ProjectOrderInquiryService:
         line_ids: Optional[set] = None,
         actor_user_id: Optional[str] = None,
         queued: bool = False,
+        honoured: Optional[Mapping[str, Tuple[Mapping[str, Decimal], Decimal]]] = None,
     ) -> List[Dict[str, Any]]:
         """OI-LINE-SPLIT (UAC D1): every handover item of a SPLIT line (its own splits, the
         origin view) is replaced by one line per split, each reading alone in the same
@@ -4427,7 +4459,9 @@ class ProjectOrderInquiryService:
         Send to purchasing (`oi_handover_resend`) passes its built items and gets the new
         list back. Confirm (`_tell_splits`) passes the pending queue with `queued=True`:
         the line's items leave the queue and each split is queued by `_record_handover`.
-        `line_ids` narrows which lines may expand."""
+        `line_ids` narrows which lines may expand. `honoured` (Confirm only): per line, the
+        splits to print with the qty each prints, and a qty left over that reads as one
+        CANCEL BALANCE line; without it every saved split prints (the saved plan)."""
         from app.services.project_line_split_service import SplitOutputs
 
         candidates = {str(i.get("so_line_id")) for i in items if i.get("so_line_id")}
@@ -4447,21 +4481,52 @@ class ProjectOrderInquiryService:
                 out.append(item)
         if queued:
             items[:] = out
+        from app.services.project_line_split_service import WORD_CANCEL
+
         for line_id, template in templates.items():
             line = self.db.get(ProjectSalesOrderLine, line_id)
+            plan = honoured.get(line_id) if honoured is not None else None
+            views: List[Tuple[Any, Decimal]] = []
             for view in splits.by_origin[line_id]:
+                if plan is None:
+                    views.append((view, _dec(view.split.qty)))
+                elif str(view.split.id) in plan[0]:
+                    views.append((view, _dec(plan[0][str(view.split.id)])))
+            if plan is not None and plan[1] > _ZERO and splits.by_origin[line_id]:
+                # What did not move reads as the cancel the netting made of it.
+                first = splits.by_origin[line_id][0].split
+                views.append(
+                    (
+                        SimpleNamespace(
+                            word=WORD_CANCEL,
+                            split=SimpleNamespace(
+                                id=f"{line_id}:left",
+                                so_line_id=line_id,
+                                qty=plan[1],
+                                delivery_date=None,
+                                is_cancel=True,
+                                remark="",
+                                base_qty=first.base_qty,
+                                base_date=first.base_date,
+                            ),
+                        ),
+                        plan[1],
+                    )
+                )
+            for view, qty in views:
                 stand_in = self._split_stand_in(template, view, line)
+                stand_in.qty = qty
                 was = {"qty": view.split.base_qty, "delivery_date": view.split.base_date}
                 if queued:
                     self._record_handover(
                         stand_in, kind="settled", was=was,
-                        actor_user_id=actor_user_id, qty=_dec(view.split.qty),
+                        actor_user_id=actor_user_id, qty=qty,
                     )
                     item = self.db.info[_HANDOVER_PENDING_KEY][-1]
                 else:
                     item = self.handover_item(
                         stand_in, kind="settled", was=was,
-                        actor_user_id=actor_user_id, qty=_dec(view.split.qty),
+                        actor_user_id=actor_user_id, qty=qty,
                     )
                     out.append(item)
                 self._read_as_split(item, template, view)
@@ -5671,7 +5736,9 @@ class ProjectOrderInquiryService:
                 ):
                     continue
                 take = min(_dec(view.split.qty), room)
-                moved_by_origin[origin] = moved_by_origin.get(origin, _ZERO) + take
+                record = moved_by_origin.setdefault(origin, {"qty": _ZERO, "splits": {}})
+                record["qty"] += take
+                record["splits"][str(view.split.id)] = take
                 self._split_row(
                     source,
                     _dec(source.qty) - take,

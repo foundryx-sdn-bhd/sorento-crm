@@ -3837,8 +3837,8 @@ def _oi_demand_rows(
     linked_out_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
     for line_id in qty_down_line_ids:
         moved = moved_by_origin.pop(line_id, None)
-        if moved:
-            linked_out_by_line[line_id] = _dec(moved)
+        if moved and _dec(moved.get("qty")) > _ZERO:
+            linked_out_by_line[line_id] = _dec(moved.get("qty"))
 
     out: List[dict] = []
     counts: Dict[str, int] = {}
