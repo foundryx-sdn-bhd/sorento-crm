@@ -134,3 +134,32 @@ def test_no_team_found_on_the_preview_still_gets_the_handover_reply(
 ) -> None:
     stub_access()
     _assert_handover_reply(session_factory, _run(session_factory, "no-team"))
+
+
+def test_a_voice_turn_handover_sends_and_persists_the_same_prefixed_line() -> None:
+    """A voice/image turn that ends in a hand-over (reviewer should-fix, 16 Oct 2026).
+
+    Before the fix the reply was blank, so `_apply_media_reply_prefix` wrote only the
+    "I heard: ..." line into the reply and left the sent action unprefixed: the stored
+    reply and the sent message disagreed. With the hand-over line in the reply, the
+    prefix lands on both (AC-1817), so the customer reads one message and the record
+    matches it.
+    """
+    from app.services.chatbot.media_intake import MediaIntakeOutcome
+
+    outcome = MediaIntakeOutcome(
+        modality="voice",
+        decision="accept",
+        status="completed",
+        stops_here=False,
+        rendered_text="can someone help me",
+    )
+    result = engine_mod.TurnResult(
+        reply={"text": ROUTED_TO_PIC_REPLY},
+        actions=[{"kind": "send_message", "text": ROUTED_TO_PIC_REPLY}],
+    )
+    engine_mod._apply_media_reply_prefix(result, outcome)
+
+    expected = f"I heard: can someone help me\n{ROUTED_TO_PIC_REPLY}"
+    assert result.reply["text"] == expected
+    assert [a["text"] for a in result.actions] == [expected]

@@ -997,8 +997,8 @@ def test_a_clarifys_quick_replies_reach_the_persisted_reply(
 
     Team names short enough to be buttons (QUICK-REPLY-NAMES: a title is cut at 20
     characters by the transport; the long-name twin is the test below). The persisted
-    TEXT is the separate, still-open gap `_XFAIL_CLARIFY_TEXT_IS_NONE` names, pinned by
-    `test_a_clarifys_text_reaches_the_persisted_reply` so it stays visible.
+    TEXT is pinned by `test_a_clarifys_text_reaches_the_persisted_reply` (CHAT-SPARSE:
+    the tail falls back to the lane's own message, so it is no longer blank).
     """
     result, row = _run_nurain_team_clarify(
         session_factory, system_settings_row, monkeypatch,
