@@ -47,7 +47,8 @@ def carry_live_state(
         # A canned / low-signal / clarify / out-of-scope lane answered nothing (or a lane only
         # re-asked the quote's own task): the quoted state is never written as the live state,
         # so the WHOLE live focus stays.
-        return replace(state, focus=live["focus"], pending=live["pending"], quoted_live=None)
+        # The set-aside slots belong to the quoted focus, not to the live one kept here.
+        return replace(state, focus=live["focus"], pending=live["pending"], quoted_live=None, held_aside=None)
     live_open = _open_stock(live["focus"])
     mine = _open_stock(focus)
     # AC-QR-26 (owner ruling, 7 Oct 2026): a quoted answer that opened a follow-up question of

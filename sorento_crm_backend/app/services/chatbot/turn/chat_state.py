@@ -560,6 +560,11 @@ def apply_changes(
 
     axes = set(FIXED_AXES) | set(kinds) | set(CLEAR_ONLY_AXES) | {k for k, v in (state.focus.extra or {}).items() if v}
     focus = copy.deepcopy(state.focus)
+    # A carried customer row with no code and no key names nothing: it is not carried.
+    focus.customers = [
+        c for c in focus.customers
+        if not isinstance(c, dict) or c.get("uuid") or c.get("uuids") or c.get("canonical_code") or c.get("raw") or c.get("name")
+    ]
     # The same op stated twice (several `set product`) is one op.
     seen_ops: list[Any] = []
     deduped = []
@@ -597,10 +602,10 @@ def apply_changes(
         op = change.get("op") if isinstance(change, dict) else None
         axis, position = (change.get("axis"), change.get("position")) if isinstance(change, dict) else (None, None)
         if op in ("keep", "skip", "unclear") and axis in SLOT_AXES and (
-            axis in declared_sets or (axis == "period" and states_period and op != "skip")
+            axis in declared_sets or (axis == "period" and states_period)
         ):
+            # The stated value is the change; the slot op is logged, not rejected.
             ignored.append({"axis": axis, "reason": f"{op} {axis} dropped: the message states its own"})
-            ignored_ops += 1
         elif op not in OPS and op not in SLOT_OPS:
             fail(op, "unknown op")
         elif op in ("set", "clear") or (op in SLOT_OPS and axis is not None) or op == "skip" or op == "unclear":

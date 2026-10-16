@@ -23,7 +23,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.services.ai_prompt_registry import agent_model, get_prompt, render
+from app.services.ai_prompt_registry import agent_model, get_prompt, render, render_resolved
 from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-export
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
@@ -802,14 +802,12 @@ def resolve_config(
     from app.services.ai_assistant_service import AIAssistantConfigService
     from app.services.llm_provider import resolve_api_key
 
-    system_prompt, prompt_version = render(
-        db, PROMPT_KEY, current_date=current_date, override_version_id=override_version_id
-    )
-    # CHAT-STATE: the gate reads the RAW template (before any {{variable}} is filled), so a
-    # rendered value can never turn the state path on.
+    # ONE registry read: the gate reads the RAW template, the prompt is that same text rendered.
     from app.services.chatbot.head.chat_state_prompt import HEADING
 
-    raw_template = get_prompt(db, PROMPT_KEY, override_version_id=override_version_id).text
+    resolved = get_prompt(db, PROMPT_KEY, override_version_id=override_version_id)
+    raw_template = resolved.text
+    system_prompt, prompt_version = render_resolved(db, PROMPT_KEY, resolved, current_date=current_date)
     provider_override, model_override = agent_model(db, PROMPT_KEY)
 
     config = AIAssistantConfigService(db).get()

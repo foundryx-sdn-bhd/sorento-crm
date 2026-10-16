@@ -4715,12 +4715,15 @@ def _run_stages_body(  # noqa: PLR0915
     state_path = bool(parser_config.state_block or (parser_bypassed and "state_changes" in verdict))
     if state_path:
         state_in = dataclasses_replace(state_in, state_path=True)
-        if not contact_scope:
-            # No company scope left: a stored customer key is not trusted, the customer is
-            # resolved fresh from its code under whatever scope the contact now has.
+        with _session(session_factory) as hygiene_db:
             state_in = dataclasses_replace(
                 state_in,
-                focus=dataclasses_replace(state_in.focus, customers=[_without_keys(r) for r in state_in.focus.customers]),
+                focus=dataclasses_replace(
+                    state_in.focus,
+                    customers=_readable_customers(
+                        hygiene_db, state_in.focus.customers, contact_respond_id, bool(contact_scope)
+                    ),
+                ),
             )
         shown_view = chat_state.view(state_in, open_question)
         state_log: dict[str, Any] = {
@@ -8445,8 +8448,49 @@ def _demand_qty_missing(verdict: dict[str, Any]) -> bool:
     return jsc.is_empty(verdict.get("demand_qty")) or verdict.get("demand_qty") == 0
 
 
-def _without_keys(row: Any) -> Any:
-    return {k: v for k, v in row.items() if k not in ("uuid", "uuids")} if isinstance(row, dict) else row
+def _readable_customers(db: Any, rows: Any, contact_respond_id: Any, has_company_scope: bool) -> list[Any]:
+    """CHAT-STATE S7: the carried customer rows this contact can still read, at turn start.
+    One read through the contact's scope-stamped session (company scope applies), narrowed to
+    the current customer links for an enforced contact. A row whose keys are all unreadable is
+    dropped; a row with no code and no key is dropped; token-only rows travel to the resolver."""
+    keys_of = lambda r: [  # noqa: E731
+        str(k) for k in ([r.get("uuid")] if r.get("uuid") else []) + list(r.get("uuids") or []) if k
+    ]
+    wanted = {k for r in rows or [] if isinstance(r, dict) for k in keys_of(r)}
+    unreadable: set[str] = set()
+    if wanted:
+        from app.models.base import company_scope
+        from app.models.order import Customer
+
+        # A key nothing holds names no data and is left to the resolver; a key a customer holds
+        # but this contact's scope cannot read is dropped.
+        with company_scope(db, None):
+            existing = {str(i) for (i,) in db.query(Customer.id).filter(Customer.id.in_(wanted)).all()}
+        readable = (
+            {str(i) for (i,) in db.query(Customer.id).filter(Customer.id.in_(wanted)).all()}
+            if has_company_scope
+            else set()
+        )
+        scope = business_services.customer_scope(db, contact_respond_id, business_services.fetch_space_id(db))
+        if scope and scope.get("enforced"):
+            readable &= {str(i) for i in scope["ids"]}
+        # With no company scope at all nothing is readable, whether or not the key exists.
+        unreadable = (existing - readable) if has_company_scope else set(wanted)
+    kept: list[Any] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        keys = keys_of(row)
+        if keys:
+            live = [k for k in keys if k not in unreadable]
+            if not live:
+                continue
+            if len(live) != len(keys):
+                row = {**row, "uuid": live[0], **({"uuids": live} if row.get("uuids") else {})}
+        elif not (row.get("canonical_code") or row.get("raw") or row.get("name")):
+            continue
+        kept.append(row)
+    return kept
 
 
 def _state_log(before: dict[str, Any], state: Any, answer: Any) -> dict[str, Any]:
