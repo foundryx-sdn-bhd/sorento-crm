@@ -109,6 +109,10 @@ async def get_contacts(
     stock: Optional[Literal["yes", "no"]] = Query(None),
     region: Optional[Literal["west", "east"]] = Query(None),
     customer_id: Optional[uuid.UUID] = Query(None),
+    # CONTACT-TAGS: `tag` repeats (any-of); `tags=none` lists contacts holding no tag.
+    tag: Optional[list[uuid.UUID]] = Query(None),
+    tags: Optional[Literal["none"]] = Query(None),
+    tag_settings: Optional[Literal["differs", "matches"]] = Query(None),
     access_differs_from: Optional[str] = Query(None),
     current_user: dict = Depends(require_permission("user_management.contacts.view")),
     db: Session = Depends(get_db)
@@ -121,7 +125,11 @@ async def get_contacts(
         can_view_users = UserPermissionService(db).check_user_has_permission(
             current_user["id"], "user_management.users.view"
         )
+        from app.api.v1.user_management.contact_tags import _gates
+        from app.services.contact_tag_settings import unreadable_sections
+
         result = service.list_contacts(
+            redact_sections=unreadable_sections(*_gates(db, current_user)),
             page=page,
             limit=limit,
             query=query,
@@ -140,6 +148,9 @@ async def get_contacts(
                 "stock": stock,
                 "region": region,
                 "customer_id": str(customer_id) if customer_id else None,
+                "tag_ids": [str(t) for t in tag] if tag else None,
+                "no_tags": tags == "none",
+                "tag_settings": tag_settings,
                 "access_differs_from": access_differs_from,
                 # What this viewer's copy would leave alone is not a difference to them.
                 "access_differs_skip": (

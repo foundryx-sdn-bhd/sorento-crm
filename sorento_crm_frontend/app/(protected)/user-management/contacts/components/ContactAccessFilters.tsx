@@ -42,9 +42,11 @@ const contactLabel = (c: { name?: string | null; phone_number: string }) =>
 interface Props {
   value: Filters;
   onChange: (next: Filters) => void;
+  /** The Filters popover owns Clear filters for all of its controls. */
+  hideClear?: boolean;
 }
 
-export default function ContactAccessFilters({ value, onChange }: Props) {
+export default function ContactAccessFilters({ value, onChange, hideClear = false }: Props) {
   const { data: accessTypes = [] } = useContactAccessTypes();
   const [customerOption, setCustomerOption] = useState<SearchableSelectOption | undefined>();
   const [differsOption, setDiffersOption] = useState<SearchableSelectOption | undefined>();
@@ -96,13 +98,13 @@ export default function ContactAccessFilters({ value, onChange }: Props) {
   };
 
   const active = Object.values(value).some(Boolean);
-  const cls = 'w-full sm:w-44';
+  const cls = 'w-full';
 
   return (
     // Phones: a one-column grid (`minmax(0,1fr)`), so a long chosen label truncates instead of
     // widening the toolbar past the screen; from `sm` up the fixed-width triggers wrap in a row.
     <div
-      className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center"
+      className="grid w-full min-w-0 grid-cols-1 gap-2"
       data-testid="contact-access-filters"
     >
       <SearchableSelect
@@ -186,7 +188,7 @@ export default function ContactAccessFilters({ value, onChange }: Props) {
         clearable
       />
       <SearchableSelect
-        triggerClassName="w-full sm:w-56"
+        triggerClassName="w-full"
         truncateTriggerLabel
         value={value.customerId ?? ''}
         onChange={set('customerId')}
@@ -199,7 +201,7 @@ export default function ContactAccessFilters({ value, onChange }: Props) {
         clearable
       />
       <SearchableSelect
-        triggerClassName="w-full sm:w-64"
+        triggerClassName="w-full"
         truncateTriggerLabel
         value={value.accessDiffersFrom ?? ''}
         onChange={set('accessDiffersFrom')}
@@ -211,7 +213,7 @@ export default function ContactAccessFilters({ value, onChange }: Props) {
         emptyMessage="No contacts match."
         clearable
       />
-      {active ? (
+      {active && !hideClear ? (
         <Button variant="ghost" size="sm" onClick={() => onChange({})}>
           Clear filters
         </Button>

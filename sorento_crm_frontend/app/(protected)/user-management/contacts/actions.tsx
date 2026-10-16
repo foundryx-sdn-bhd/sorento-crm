@@ -12,7 +12,7 @@
  * the list confirms over a row, the record over the record it is showing.
  */
 
-import { Trash2, UserCog, UserPlus } from 'lucide-react';
+import { Tags, Trash2, UserCog, UserPlus } from 'lucide-react';
 import type { RecordAction } from '@/components/common/recordActions';
 import type { RespondContact } from './types/contact.types';
 
@@ -22,6 +22,8 @@ export interface ContactActionHandlers {
   /** Opens the Add user modal with this contact locked (S3, AC-59). Omitted on
    *  a surface that has no `users.add` grant or no room for the dialog. */
   createUser?: () => void;
+  /** CONTACT-TAGS S3: opens Apply tag settings for this contact. Omitted without `contacts.edit`. */
+  applyTagSettings?: () => void;
 }
 
 export interface ContactActionOptions {
@@ -46,6 +48,15 @@ export function contactActions(
       label: 'Create user',
       icon: UserPlus,
       run: handlers.createUser,
+    });
+  }
+
+  if (handlers.applyTagSettings) {
+    actions.push({
+      key: 'contact.apply_tag_settings',
+      label: 'Apply tag settings',
+      icon: Tags,
+      run: handlers.applyTagSettings,
     });
   }
 

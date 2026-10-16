@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import userEvent from '@testing-library/user-event';
 
 if (!window.matchMedia) {
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
@@ -137,7 +138,8 @@ describe('ContactsList - Regions column and filter (AC-CR-19, AC-CR-20)', () => 
   it('AC-CR-20: choosing East in the Region filter sends region=east to the list request', async () => {
     renderList();
     await screen.findByText('+60100000011');
-    fireEvent.change(screen.getByLabelText(/region/i), { target: { value: 'east' } });
+    await userEvent.setup().click(screen.getByRole('button', { name: /^filters/i }));
+    fireEvent.change(await screen.findByLabelText(/region/i), { target: { value: 'east' } });
     await waitFor(() => {
       const calls = getContactsMock.mock.calls;
       const filters = calls[calls.length - 1][1] as Record<string, string>;
