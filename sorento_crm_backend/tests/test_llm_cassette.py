@@ -558,3 +558,26 @@ class TestHardening:
             transcribe._post_transcription(
                 b"", filename="f.ogg", mime_type="audio/ogg", fields={}, api_key="k", timeout=1.0
             )
+
+
+class TestReasoningEffortKey:
+    """PARSER-GEMINI-LITE: an effort decides the answer, so a set one is its own
+    recording; an unset one keeps every existing cassette's key byte-identical."""
+
+    BASE = {"model": "m", "messages": MESSAGES, "response_format": {"type": "json_object"}}
+
+    def test_a_set_effort_changes_the_key(self):
+        base = llm_cassette.chat_key(self.BASE)
+        assert llm_cassette.chat_key({**self.BASE, "reasoning_effort": "low"}) != base
+        assert llm_cassette.chat_key({**self.BASE, "reasoning_effort": "low"}) != llm_cassette.chat_key(
+            {**self.BASE, "reasoning_effort": "high"}
+        )
+
+    def test_an_unset_effort_does_not(self):
+        # Pinned to the digest of the four key fields alone, so a key that took the
+        # effort in even when unset (and so moved every existing recording) fails here.
+        before = llm_cassette._digest(
+            {"kind": "chat", **{f: self.BASE.get(f) for f in llm_cassette._CHAT_KEY_FIELDS}}
+        )
+        assert llm_cassette.chat_key(self.BASE) == before
+        assert llm_cassette.chat_key({**self.BASE, "reasoning_effort": None}) == before

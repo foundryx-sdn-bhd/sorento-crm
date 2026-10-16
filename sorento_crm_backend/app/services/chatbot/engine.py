@@ -4579,7 +4579,10 @@ def _run_stages_body(  # noqa: PLR0915
             why="The parser did not return a usable answer, so the turn was not routed.",
             facts={
                 "prompt_version": parser_config.prompt_version,
+                "provider": parser_config.provider,
                 "model": parser_config.model,
+                "reasoning_effort": parser_config.reasoning_effort,
+                "latency_ms": getattr(exc, "latency_ms", None),
                 # A replay miss fails here: the console check must not read it as a live
                 # spend (LLM-TEST-COST).
                 "llm_cassette": llm_cassette.mode_label(),
@@ -4654,6 +4657,15 @@ def _run_stages_body(  # noqa: PLR0915
             # LLM-TEST-COST: the prompt-cache hit, and whether this parse was live,
             # recorded or replayed (`off` everywhere but a test run).
             "cached_tokens": int(parser_usage.get("cached_tokens") or 0),
+            # PARSER-GEMINI-LITE: which model answered and how. `model` is the one the
+            # label asked for, `model_answered` the id the provider says ran (empty on a
+            # bypassed or replayed parse), `latency_ms` the call's wall clock.
+            "provider": parser_usage.get("provider") or parser_config.provider,
+            "model": parser_usage.get("model") or parser_config.model,
+            "model_answered": parser_usage.get("model_answered") or None,
+            "reasoning_effort": parser_usage.get("reasoning_effort"),
+            "latency_ms": parser_usage.get("latency_ms"),
+            "reasoning_tokens": int(parser_usage.get("reasoning_tokens") or 0),
             "llm_cassette": llm_cassette.mode_label(),
             "parser_bypassed": parser_bypassed,
             "recalled_frames": len(recalled),

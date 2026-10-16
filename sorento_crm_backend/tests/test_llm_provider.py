@@ -1364,3 +1364,230 @@ def test_resolve_model_never_hands_one_vendors_model_to_another():
 
 def test_resolve_model_without_a_config_row_uses_the_provider_default():
     assert resolve_model(None, "anthropic", None) == default_model_for("anthropic")
+
+
+# ---- PARSER-GEMINI-LITE: multi-type fields, reasoning effort, answering model ----
+
+
+def test_gemini_schema_turns_a_multi_type_field_into_any_of():
+    """`{"type": ["string","array"], "items": ...}` used to collapse to a STRING that
+    still carried `items`, and Google rejects that with a 400 - every Gemini parser call
+    failed on `profile_statements[].value`. Each concrete type becomes its own branch and
+    only the array branch keeps `items`."""
+    translated = _gemini_schema(
+        {"type": ["string", "array"], "items": {"type": "string"}, "description": "d"}
+    )
+    assert translated == {
+        "description": "d",
+        "anyOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}},
+        ],
+    }
+
+
+def test_gemini_schema_carries_null_onto_every_any_of_branch():
+    translated = _gemini_schema({"type": ["number", "string", "null"]})
+    assert translated == {
+        "anyOf": [
+            {"type": "number", "nullable": True},
+            {"type": "string", "nullable": True},
+        ]
+    }
+
+
+def test_gemini_schema_keeps_a_single_type_with_null_as_a_nullable_type():
+    """The common OpenAI-strict nullable is unchanged: no needless `anyOf`."""
+    assert _gemini_schema(
+        {"type": ["array", "null"], "maxItems": 3, "items": {"type": "string"}}
+    ) == {"type": "array", "nullable": True, "maxItems": 3, "items": {"type": "string"}}
+
+
+def test_openai_sends_reasoning_effort_only_when_asked(monkeypatch):
+    stub = _StubOpenAIClient()
+    monkeypatch.setattr("openai.OpenAI", lambda api_key=None, **_k: stub)
+    provider = OpenAIProvider("k", default_model="gpt-5.4-mini")
+
+    provider.chat([{"role": "user", "content": "hi"}])
+    assert "reasoning_effort" not in stub.last_kwargs
+
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    assert stub.last_kwargs["reasoning_effort"] == "low"
+
+
+def test_openai_reports_the_answering_model_and_reasoning_tokens(monkeypatch):
+    stub = _StubOpenAIClient()
+    usage = _StubUsage(100, 40)
+    usage.completion_tokens_details = types.SimpleNamespace(reasoning_tokens=32)
+    stub.chat.completions._next_usage = usage
+    original_create = stub.chat.completions.create
+
+    def create(**kwargs):
+        completion = original_create(**kwargs)
+        completion.model = "gpt-5.4-mini-2026-03-17"
+        return completion
+
+    stub.chat.completions.create = create
+    monkeypatch.setattr("openai.OpenAI", lambda api_key=None, **_k: stub)
+    result = OpenAIProvider("k", default_model="gpt-5.4-mini").chat(
+        [{"role": "user", "content": "hi"}]
+    )
+    assert result.reasoning_tokens == 32
+    assert result.model == "gpt-5.4-mini-2026-03-17"
+
+
+def test_gemini_3_keeps_its_default_budget_but_gets_answer_headroom(monkeypatch):
+    """Crew gate, 13 Oct: flash-lite truncated a parser answer at the 2048 cap that the
+    same answer fits under on mini. On 3.x `thinkingBudget` is a legacy hint, not a
+    ceiling, so thinking can eat the answer budget it is billed against. The default
+    (budget 1, the only value 3.x takes that means "barely think") is kept and the
+    answer gets `GEMINI_3_ANSWER_HEADROOM` on top; output is billed as used, so room
+    that is not needed costs nothing."""
+    import app.services.llm_provider as llm
+
+    t = _install(monkeypatch, _GeminiTransport(_gemini_text_response()))
+    GeminiProvider("k").chat(
+        [{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite", max_tokens=100
+    )
+    generation = t.body["generationConfig"]
+    assert generation["thinkingConfig"] == {"thinkingBudget": 1}
+    assert generation["maxOutputTokens"] == 100 + 1 + llm.GEMINI_3_ANSWER_HEADROOM
+
+
+def test_gemini_3_takes_an_effort_as_its_thinking_level(monkeypatch):
+    """`thinkingLevel` is the 3.x control (`thinkingBudget` is kept there only for
+    backward compatibility, and the two together are a 400), so an effort goes out as a
+    level, never beside a budget."""
+    import app.services.llm_provider as llm
+
+    t = _install(monkeypatch, _GeminiTransport(_gemini_text_response()))
+    provider = GeminiProvider("k")
+    for effort, level in (("none", "minimal"), ("minimal", "minimal"), ("low", "low"), ("medium", "medium"), ("high", "high")):
+        provider.chat(
+            [{"role": "user", "content": "hi"}],
+            model="gemini-3.5-flash-lite",
+            max_tokens=100,
+            reasoning_effort=effort,
+        )
+        generation = t.body["generationConfig"]
+        assert generation["thinkingConfig"] == {"thinkingLevel": level}, effort
+        assert generation["maxOutputTokens"] == (
+            100 + llm.GEMINI_3_ANSWER_HEADROOM + llm.GEMINI_EFFORT_BUDGETS.get(effort, 0)
+        ), effort
+
+
+def test_gemini_2_5_maps_an_effort_onto_its_budget_as_before(monkeypatch):
+    t = _install(monkeypatch, _GeminiTransport(_gemini_text_response()))
+    provider = GeminiProvider("k")
+    provider.chat([{"role": "user", "content": "hi"}], model="gemini-2.5-flash", max_tokens=100)
+    assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+    assert t.body["generationConfig"]["maxOutputTokens"] == 100
+    provider.chat(
+        [{"role": "user", "content": "hi"}], model="gemini-2.5-flash", max_tokens=100, reasoning_effort="low"
+    )
+    assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 1024}
+    assert t.body["generationConfig"]["maxOutputTokens"] == 100 + 1024
+    # A model with no thinking (2.0) still gets no thinkingConfig, whatever is asked.
+    provider.chat(
+        [{"role": "user", "content": "hi"}], model="gemini-2.0-flash", reasoning_effort="high"
+    )
+    assert "thinkingConfig" not in t.body["generationConfig"]
+
+
+def test_a_truncated_gemini_answer_says_where_the_tokens_went(monkeypatch):
+    """The failed `understood` record is the only place a truncation shows; it has to
+    say whether thinking or the answer used the budget, or the next cap is a guess."""
+    payload = {
+        "candidates": [{"content": {"parts": [{"text": '{"a": "'}]}, "finishReason": "MAX_TOKENS"}],
+        "usageMetadata": {"promptTokenCount": 9000, "candidatesTokenCount": 300, "thoughtsTokenCount": 1800},
+    }
+    _install(monkeypatch, _GeminiTransport(payload))
+    with pytest.raises(RuntimeError) as caught:
+        GeminiProvider("k").chat(
+            [{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite", max_tokens=100
+        )
+    message = str(caught.value)
+    assert "MAX_TOKENS" in message
+    assert "thinking 1800" in message and "answer 300" in message
+
+
+def test_gemini_reports_the_answering_model_and_reasoning_tokens(monkeypatch):
+    payload = _gemini_text_response()
+    payload["usageMetadata"]["thoughtsTokenCount"] = 9
+    payload["modelVersion"] = "gemini-3.5-flash-lite-001"
+    _install(monkeypatch, _GeminiTransport(payload))
+    result = GeminiProvider("k").chat(
+        [{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite"
+    )
+    assert result.reasoning_tokens == 9
+    assert result.model == "gemini-3.5-flash-lite-001"
+
+
+def test_anthropic_accepts_reasoning_effort_and_ignores_it(monkeypatch):
+    stub = _StubAnthropicClient()
+    monkeypatch.setattr(AnthropicProvider, "_client", lambda self, **_k: stub)
+    AnthropicProvider("k").chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    assert "reasoning_effort" not in stub.last_kwargs
+
+
+def test_a_refused_effort_value_is_not_remembered_against_the_model(monkeypatch):
+    """`minimal` on a model that takes other efforts is a 400 `unsupported_value`. That is
+    a fact about the VALUE, so the next call (another effort, or the same after the label
+    is fixed) still sends one; only `Unsupported parameter` means the model takes none."""
+    import app.services.llm_provider as llm
+
+    class _Refusal(Exception):
+        code = "unsupported_value"
+        param = "reasoning_effort"
+
+    stub = _StubOpenAIClient()
+    original_create = stub.chat.completions.create
+    refused = {"left": 1}
+
+    def create(**kwargs):
+        if kwargs.get("reasoning_effort") == "minimal" and refused["left"]:
+            refused["left"] -= 1
+            raise _Refusal("Unsupported value: 'reasoning_effort' does not support 'minimal' with this model.")
+        return original_create(**kwargs)
+
+    stub.chat.completions.create = create
+    monkeypatch.setattr("openai.OpenAI", lambda api_key=None, **_k: stub)
+    monkeypatch.setattr(llm, "_OPENAI_REJECTED_PARAMS", {})
+    provider = OpenAIProvider("k", default_model="gpt-effort-test")
+
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="minimal")
+    assert "reasoning_effort" not in stub.last_kwargs  # this call went without it
+
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    assert stub.last_kwargs["reasoning_effort"] == "low"
+
+
+def test_a_model_that_takes_no_effort_is_remembered_and_not_asked_again(monkeypatch):
+    """gpt-4o answers `Unsupported parameter: 'reasoning_effort'`: a fact about the MODEL,
+    so the 400 is paid once per process, not on every call (the carve-out above is for a
+    refused VALUE only)."""
+    import app.services.llm_provider as llm
+
+    class _NoEffort(Exception):
+        code = "unsupported_parameter"
+        param = "reasoning_effort"
+
+    stub = _StubOpenAIClient()
+    original_create = stub.chat.completions.create
+    refusals: list[dict] = []
+
+    def create(**kwargs):
+        if "reasoning_effort" in kwargs:
+            refusals.append(kwargs)
+            raise _NoEffort("Unsupported parameter: 'reasoning_effort' is not supported with this model.")
+        return original_create(**kwargs)
+
+    stub.chat.completions.create = create
+    monkeypatch.setattr("openai.OpenAI", lambda api_key=None, **_k: stub)
+    monkeypatch.setattr(llm, "_OPENAI_REJECTED_PARAMS", {})
+    provider = OpenAIProvider("k", default_model="gpt-4o")
+
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    assert len(refusals) == 1
+    assert "reasoning_effort" not in stub.last_kwargs

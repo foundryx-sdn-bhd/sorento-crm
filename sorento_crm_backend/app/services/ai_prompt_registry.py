@@ -1545,6 +1545,27 @@ def agent_model(db: Session, name: str, label: str = "production") -> tuple[str 
     return (row.provider or None), (row.model or None)
 
 
+def agent_reasoning_effort(db: Session, name: str, label: str = "production") -> str | None:
+    """The reasoning effort this agent's label sets, or None for the provider default.
+
+    Separate from `agent_model` so its six callers keep their pair; read the same way
+    (never cached, never raises) for the same reasons.
+    """
+    if name not in PROMPT_KEYS:
+        return None
+    try:
+        value = (
+            db.query(AIPromptLabel.reasoning_effort)
+            .filter(AIPromptLabel.name == name, AIPromptLabel.label == label)
+            .scalar()
+        )
+    except Exception:
+        logger.warning("agent reasoning effort lookup failed name=%s label=%s", name, label, exc_info=True)
+        _safe_rollback(db)
+        return None
+    return (value or "").strip().lower() or None
+
+
 def render(
     db: Session,
     name: str,

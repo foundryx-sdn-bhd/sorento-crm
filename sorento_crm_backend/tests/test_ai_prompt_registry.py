@@ -571,3 +571,28 @@ def test_ac_s2_1_price_tag_fallback_carries_rule_9_omit_quantity():
 # Writes the parser's prompt rows: one such test at a time across xdist workers
 # (tests/conftest.py `_parser_prompt_rows_lock`).
 pytestmark = pytest.mark.parser_prompt_rows
+
+# --------------------------------------------------------------------------- #
+# PARSER-GEMINI-LITE: per-label reasoning effort, beside the model it tunes
+# --------------------------------------------------------------------------- #
+def test_an_agents_reasoning_effort_is_unset_until_somebody_sets_it(seeded: Session):
+    # Unset means "the provider default", which is what every call sent before.
+    assert ai_prompt_registry.agent_reasoning_effort(seeded, "chatbot_semantic_parser") is None
+
+
+def test_an_agents_reasoning_effort_is_read_off_its_label(seeded: Session):
+    from app.models.ai_prompt import AIPromptLabel
+
+    row = (
+        seeded.query(AIPromptLabel)
+        .filter(AIPromptLabel.name == "chatbot_semantic_parser", AIPromptLabel.label == "production")
+        .one()
+    )
+    row.reasoning_effort = " Low "
+    seeded.flush()
+    assert ai_prompt_registry.agent_reasoning_effort(seeded, "chatbot_semantic_parser") == "low"
+    # Another label of the same key is a different row.
+    assert (
+        ai_prompt_registry.agent_reasoning_effort(seeded, "chatbot_semantic_parser", label="staging")
+        is None
+    )
