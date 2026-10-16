@@ -90,6 +90,41 @@ def _git_provenance() -> tuple[str | None, bool | None]:
     return os.environ.get("EVAL_APP_SHA") or sha, dirty
 
 
+def _git_provenance_head() -> str | None:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent, text=True).strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _server_sha(base_url: str) -> str | None:
+    """The git_sha the server's /health names, or None when it is unreachable or silent."""
+    import httpx
+
+    try:
+        resp = httpx.get(base_url.rstrip("/") + "/health", timeout=30)
+        sha = resp.json().get("git_sha")
+    except (httpx.HTTPError, ValueError, AttributeError):
+        return None
+    return sha.strip() if isinstance(sha, str) and sha.strip() and sha.strip().lower() != "unknown" else None
+
+
+PROVENANCE_FIELDS = ("code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_effort")
+
+
+def _provenance_seen(results: list) -> dict[str, list]:
+    """Distinct value per provenance field across every result's parser digest, in first-seen order."""
+    seen: dict[str, list] = {f: [] for f in PROVENANCE_FIELDS}
+    for r in results:
+        parser = (r.trace_digest or {}).get("parser")
+        if not parser:
+            continue
+        for f in PROVENANCE_FIELDS:
+            if parser.get(f) not in seen[f]:
+                seen[f].append(parser.get(f))
+    return seen
+
+
 def _select(cases: list[Case], topics: str | None, ids_file: str | None) -> list[Case]:
     if not topics and not ids_file:
         return cases
@@ -282,6 +317,12 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
+    server_sha = None
+    if args.engine == "http":
+        server_sha = _server_sha(args.base_url)
+        if not server_sha:
+            print("refusing to start: /health reported no git_sha, so the code under test is unknown", file=sys.stderr)
+            return 2
     engine = load_engine(args.engine, **kw)
     budget = Budget(args.budget_usd, args.budget_model) if args.budget_usd is not None else None
     calibrated = False
@@ -308,6 +349,11 @@ def main(argv: list[str] | None = None) -> int:
             seen[key] = seen.get(key, 0) + 1
     mismatch = prompt["source"] != "unknown" and any(k != str(prompt["version"]) for k in seen)
     git_sha, git_dirty = _git_provenance()
+    runner_sha = git_sha
+    if server_sha:
+        runner_sha = _git_provenance_head()
+        git_sha = server_sha
+    provenance = _provenance_seen(run.results)
     baseline = _load_baseline(args.baseline, run.results)
     report = build_report(run, baseline, args.budget_model, "calibrated" if calibrated else "uncalibrated")
     report.update(
@@ -315,6 +361,12 @@ def main(argv: list[str] | None = None) -> int:
         prompt_version=args.prompt_version or "label", cases=len(loaded.cases), started_at=started_at,
         selection={"topics": args.topics.split(",") if args.topics else None, "ids_file": args.ids_file, "cases": len(loaded.cases)},
         prompt=prompt, prompt_versions_seen=seen, git_sha=git_sha, git_dirty=git_dirty,
+        runner_sha=runner_sha, provenance=provenance,
+        provenance_missing=not any(
+            ((r.trace_digest or {}).get("parser") or {}).get(f) is not None
+            for r in run.results for f in PROVENANCE_FIELDS
+        ),
+        provenance_mixed=any(len(v) > 1 for v in provenance.values()),
         judge_stopped=judge.stopped if judge is not None else None,
         judge_usd=judge.budget.spent if judge is not None else 0.0,
     )

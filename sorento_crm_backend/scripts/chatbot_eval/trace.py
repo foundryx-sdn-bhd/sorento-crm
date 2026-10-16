@@ -51,7 +51,7 @@ def build_digest(trace: list | None, reply_text: str, branch_kind: str | None) -
             continue
         if entry.get("stage") == "understood" and not parser:
             facts = entry.get("facts") or {}
-            parser = {k: facts.get(k) for k in ("domain", "intent", "entities", "prompt_version")}
+            parser = {k: facts.get(k) for k in ("domain", "intent", "entities", "prompt_version", "prompt_sha256", "model", "provider", "reasoning_effort", "code_sha")}
         if entry.get("stage") == "looked_up":
             for env in (entry.get("raw") or {}).get("envelopes") or []:
                 if isinstance(env, dict):
