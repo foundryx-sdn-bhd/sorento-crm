@@ -254,6 +254,78 @@ export function useCommitOrderInquiryReserve(inquiryId: string | undefined) {
   });
 }
 
+/** Most reserve commits the cross-OI Lines page keeps in flight at once. */
+const RESERVE_COMMIT_CONCURRENCY = 3;
+
+export interface InquiryCommitResult {
+  inquiryId: string;
+  ok: boolean;
+  /** The server's message when the commit failed. */
+  message?: string;
+}
+
+/**
+ * OI-BULK-RESERVE v4 (F9): the cross-OI Lines page's Reserve (N) - one
+ * `commitOrderInquiryReserve` per order inquiry (the route is keyed by inquiry), at most
+ * three in flight. Never rejects as a whole: it resolves with one result per order inquiry
+ * so the confirmation can show which saved, and the toast sums them up. Refreshes the same
+ * keys `useCommitOrderInquiryReserve` does plus the Lines page's own list and counts.
+ */
+export function useCommitReserveAcrossInquiries() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      commits: { inquiryId: string; payload: CommitReservePayload }[],
+    ): Promise<InquiryCommitResult[]> => {
+      const results: InquiryCommitResult[] = new Array(commits.length);
+      let next = 0;
+      async function worker() {
+        while (next < commits.length) {
+          const index = next;
+          next += 1;
+          const { inquiryId, payload } = commits[index];
+          try {
+            await commitOrderInquiryReserve(inquiryId, payload);
+            results[index] = { inquiryId, ok: true };
+          } catch (error) {
+            results[index] = {
+              inquiryId,
+              ok: false,
+              message: error instanceof Error ? error.message : 'Failed to reserve those lines',
+            };
+          }
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(RESERVE_COMMIT_CONCURRENCY, commits.length) }, worker),
+      );
+      return results;
+    },
+    onSuccess: (results) => {
+      const saved = results.filter((result) => result.ok).length;
+      const failed = results.length - saved;
+      if (failed === 0) {
+        toast.success(`Reserved on ${saved} order ${saved === 1 ? 'inquiry' : 'inquiries'}`);
+      } else {
+        toast.error(`Reserved on ${saved} of ${results.length} order inquiries; ${failed} failed`);
+      }
+      for (const result of results) {
+        if (!result.ok) continue;
+        queryClient.invalidateQueries({
+          queryKey: [ORDER_INQUIRY_HEADER_LINES_KEY, result.inquiryId],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY, result.inquiryId],
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_WORKLIST_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_WORKLIST_SUMMARY_KEY] });
+    },
+  });
+}
+
 /** F3: one row's own History tab, fetched only while `ReserveRowDialog` is open for it. */
 export function useOrderInquiryRowHistory(
   requestId: string | null | undefined,

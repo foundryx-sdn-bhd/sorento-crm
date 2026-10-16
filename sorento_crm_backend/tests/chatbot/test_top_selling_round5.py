@@ -87,7 +87,9 @@ class Catalogue:
 def _seed(session_factory) -> Catalogue:
     from app.models.product import Brand, ProductCategory
     from app.models.sales_agent import SalesAgent
-    from app.services.product_class_signal import CLASS_SYNONYMS
+    from app.services.product_spec_registry import shipped_class_synonyms
+
+    CLASS_SYNONYMS = shipped_class_synonyms()
     from tests._mc_lookup_seed import customer
 
     cat = Catalogue()

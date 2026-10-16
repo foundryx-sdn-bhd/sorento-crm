@@ -179,7 +179,7 @@ def test_s1_a_dual_finish_product_is_counted_once_beside_the_scalar_ones(chat, w
         _ask("incoming", "gunmetal bathtub", "any gunmetal bathtub has incoming"),
     )
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026: no explanations, the one reply structure): one line per other finish.
-    assert "• White bathtubs: 2\n• Black bathtubs: 1\n• Rose gold bathtubs: 1\n" in text, text
+    assert "• White products: 2\n• Black products: 1\n• Rose gold products: 1\n" in text, text
 
 
 # --------------------------------------------------------------------------- #

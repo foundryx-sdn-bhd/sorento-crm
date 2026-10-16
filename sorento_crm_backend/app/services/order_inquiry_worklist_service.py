@@ -85,6 +85,7 @@ from app.services.product_companion_service import (
     bundled_with_item_codes_map,
     resolve_bundled_item_codes,
 )
+from app.services.order_inquiry_reserve_service import reserve_status_predicates
 from app.services.project_order_inquiry_service import (
     ProjectOrderInquiryService,
     arrives_outside_window,
@@ -463,6 +464,32 @@ _OPEN_REQUEST_QTY = (
     .limit(1)
     .scalar_subquery()
 )
+#: OI-BULK-RESERVE v4 (B2): the OPEN request row's warehouse id and code, same open-row
+#: conditions and latest ordinal as `_OPEN_REQUEST_QTY`, for the Lines page's Decide drafts.
+_OPEN_REQUEST_WAREHOUSE_ID = (
+    select(OrderInquiryReserveRequestRow.warehouse_id)
+    .select_from(OrderInquiryReserveRequestRow)
+    .join(
+        OrderInquiryReserveRequest,
+        OrderInquiryReserveRequest.id == OrderInquiryReserveRequestRow.request_id,
+    )
+    .where(
+        OrderInquiryReserveRequestRow.row_id == OrderInquiryRow.id,
+        OrderInquiryReserveRequestRow.qty_reserved.is_(None),
+        OrderInquiryReserveRequest.state == "requested",
+    )
+    .correlate(OrderInquiryRow)
+    .order_by(OrderInquiryReserveRequest.ordinal.desc())
+    .limit(1)
+    .scalar_subquery()
+)
+# Aliased: the main query outer-joins `Warehouse` itself, which this would auto-correlate to.
+_REQUEST_WAREHOUSE = aliased(Warehouse)
+_OPEN_REQUEST_LOCATION = (
+    select(_REQUEST_WAREHOUSE.warehouse_code)
+    .where(_REQUEST_WAREHOUSE.id == _OPEN_REQUEST_WAREHOUSE_ID)
+    .scalar_subquery()
+)
 #: 6e.4 (AC-RS-78c): the LATEST answered request row's own `qty_reserved` for this
 #: row - `0` means CS declined it (`Reserve 0`, or amended down to 0), which the Lines
 #: grid reads as `Not reserved` with Amend + History. NULL when nothing was answered.
@@ -819,6 +846,8 @@ _COLUMNS = (
     _HAS_OPEN_RESERVE_REQUEST.label("has_open_reserve_request"),
     # PLAN-oi-request-cs-reserve.md 6e.2: the open request row's own `qty_requested`.
     _OPEN_REQUEST_QTY.label("requested_qty"),
+    _OPEN_REQUEST_WAREHOUSE_ID.label("reserve_warehouse_id"),
+    _OPEN_REQUEST_LOCATION.label("reserve_location"),
     # 6e.4 (AC-RS-78c): the latest answer, so a declined line reads `declined`.
     _LATEST_ANSWERED_QTY.label("latest_answered_qty"),
     # PLAN-oi-worklist-split-customer-project.md, Slice 2: the Raised at column's own
@@ -1152,6 +1181,8 @@ class OrderInquiryWorklistService:
         # the whole-OI Confirm (`AcknowledgeFilter.inquiry_id`) and gear > Auto link
         # (`AutoPlaceRequest.filter.inquiry_id`).
         inquiry_id: Optional[str] = None,
+        # OI-BULK-RESERVE v4: keep a line when one of ITS request rows is in this status.
+        reserve: Optional[str] = None,
         # Lane C, PLAN-order-sheet-oi-reports-22sep.md (AC-C3): the OI worksheet's own
         # row set - a run's `run_scope_oi_rows` result, fed in as the row ids to print
         # rather than as a new set of filter clauses. `None` (the default) means "every
@@ -1247,6 +1278,21 @@ class OrderInquiryWorklistService:
             base = base.filter(_PROJECT_TITLE == project)
         if inquiry_id:
             base = base.filter(OrderInquiry.id == inquiry_id)
+        if reserve:
+            base = base.filter(
+                select(OrderInquiryReserveRequestRow.id)
+                .select_from(OrderInquiryReserveRequestRow)
+                .join(
+                    OrderInquiryReserveRequest,
+                    OrderInquiryReserveRequest.id == OrderInquiryReserveRequestRow.request_id,
+                )
+                .where(
+                    OrderInquiryReserveRequestRow.row_id == OrderInquiryRow.id,
+                    reserve_status_predicates()[reserve],
+                )
+                .correlate(OrderInquiryRow)
+                .exists()
+            )
         if row_ids is not None:
             base = base.filter(OrderInquiryRow.id.in_(list(row_ids)))
         if supplier_id:
@@ -2262,6 +2308,8 @@ class OrderInquiryWorklistService:
         return {
             "id": row.id,
             "reserve_requestable_qty": float(max(requestable, _ZERO)),
+            # OI-BULK-RESERVE v4: the header's id, so the Lines page can commit per order inquiry.
+            "order_inquiry_id": row.order_inquiry_id,
             "inquiry_no": row.inquiry_no,
             "so_date": row.so_date,
             "so_number": row.so_number,
@@ -2302,6 +2350,9 @@ class OrderInquiryWorklistService:
             # 6e.2: "0" when there is no open request row, same default shape as
             # `reserved_qty` above.
             "requested_qty": _qty_str(_dec(getattr(row, "requested_qty", None))),
+            # OI-BULK-RESERVE v4 (B2): the open request row's warehouse, null without one.
+            "reserve_warehouse_id": getattr(row, "reserve_warehouse_id", None),
+            "reserve_location": getattr(row, "reserve_location", None),
             # WHERE this row's quantity sits (AC-I5), off the ONE reader the per-project
             # list and the SCM sales-order detail also use.
             "links": row_links,

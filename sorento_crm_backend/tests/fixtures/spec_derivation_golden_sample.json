@@ -7494,6 +7494,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=830.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -7511,6 +7516,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 830
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -7536,6 +7544,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=830.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -7553,6 +7566,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 830
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -7600,6 +7616,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1500.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -7617,6 +7638,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1500
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -7654,6 +7678,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1500.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -7671,6 +7700,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1500
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -15726,6 +15758,11 @@
 "confidence": 1.0,
 "evidence": "L 1400 X W 1400 X H 650MM",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "MASSAGE",
+"source": "derived"
 }
 },
 "values": {
@@ -15743,6 +15780,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1400
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -15768,6 +15808,11 @@
 "confidence": 1.0,
 "evidence": "L 1400 X W 1400 X H 650MM",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "MASSAGE",
+"source": "derived"
 }
 },
 "values": {
@@ -15785,6 +15830,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1400
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -15821,6 +15869,11 @@
 "evidence": "L 1700 X W 780 X H 650MM",
 "source": "derived"
 },
+"has_massage": {
+"confidence": 1.0,
+"evidence": "MASSAGE",
+"source": "derived"
+},
 "shape": {
 "confidence": 1.0,
 "evidence": "RECTANGULAR",
@@ -15842,6 +15895,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 780
+},
+"has_massage": {
+"value": true
 },
 "shape": {
 "value": "rectangular"
@@ -15871,6 +15927,11 @@
 "evidence": "L 1700 X W 780 X H 650MM",
 "source": "derived"
 },
+"has_massage": {
+"confidence": 1.0,
+"evidence": "MASSAGE",
+"source": "derived"
+},
 "shape": {
 "confidence": 1.0,
 "evidence": "RECTANGULAR",
@@ -15892,6 +15953,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 780
+},
+"has_massage": {
+"value": true
 },
 "shape": {
 "value": "rectangular"
@@ -15931,6 +15995,11 @@
 "evidence": "1800*800*650MM",
 "source": "derived"
 },
+"has_massage": {
+"confidence": 1.0,
+"evidence": "MASSAGE",
+"source": "derived"
+},
 "mounting": {
 "confidence": 1.0,
 "evidence": "FREE STANDING",
@@ -15952,6 +16021,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 800
+},
+"has_massage": {
+"value": true
 },
 "mounting": {
 "value": "floor_standing"
@@ -15981,6 +16053,11 @@
 "evidence": "1800*800*650MM",
 "source": "derived"
 },
+"has_massage": {
+"confidence": 1.0,
+"evidence": "MASSAGE",
+"source": "derived"
+},
 "mounting": {
 "confidence": 1.0,
 "evidence": "FREE STANDING",
@@ -16002,6 +16079,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 800
+},
+"has_massage": {
+"value": true
 },
 "mounting": {
 "value": "floor_standing"
@@ -46632,6 +46712,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=800.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -46649,6 +46734,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 800
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -46674,6 +46762,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=800.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -46691,6 +46784,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 800
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -46738,6 +46834,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1500.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -46755,6 +46856,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1500
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -46792,6 +46896,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1500.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -46809,6 +46918,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1500
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -64514,6 +64626,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1500.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -64531,6 +64648,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1500
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -64568,6 +64688,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1500.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -64585,6 +64710,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1500
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -64620,6 +64748,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=850.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -64637,6 +64770,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 850
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -64662,6 +64798,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=850.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -64679,6 +64820,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 850
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -64726,6 +64870,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1350.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -64743,6 +64892,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1350
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -64780,6 +64932,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1350.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -64797,6 +64954,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1350
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -64832,6 +64992,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=750.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -64849,6 +65014,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 750
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -64874,6 +65042,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=750.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -64891,6 +65064,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 750
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -65150,6 +65326,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1350.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65167,6 +65348,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1350
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -65204,6 +65388,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1350.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65221,6 +65410,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1350
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -65256,6 +65448,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1300.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65273,6 +65470,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1300
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -65298,6 +65498,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1300.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65315,6 +65520,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1300
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -65350,6 +65558,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=750.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65367,6 +65580,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 750
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -65392,6 +65608,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=750.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65409,6 +65630,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 750
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -65456,6 +65680,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1520.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65473,6 +65702,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1520
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -65510,6 +65742,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1520.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65527,6 +65764,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1520
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -65562,6 +65802,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=850.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65579,6 +65824,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 850
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -65604,6 +65852,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=850.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -65621,6 +65874,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 850
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113322,6 +113578,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1830.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113339,6 +113600,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1830
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -113376,6 +113640,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1830.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113393,6 +113662,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1830
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113428,6 +113700,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1300.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113445,6 +113722,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1300
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -113470,6 +113750,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1300.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113487,6 +113772,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1300
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113522,6 +113810,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=750.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113539,6 +113832,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 750
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -113564,6 +113860,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=750.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113581,6 +113882,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 750
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113616,6 +113920,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=850.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113633,6 +113942,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 850
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -113658,6 +113970,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=850.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113675,6 +113992,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 850
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113710,6 +114030,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=700.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113727,6 +114052,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 700
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -113752,6 +114080,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=700.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113769,6 +114102,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 700
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113789,11 +114125,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -113804,11 +114148,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113829,11 +114181,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "AIR BUBBLE",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -113844,11 +114204,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "AIR BUBBLE",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113869,11 +114237,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -113884,11 +114260,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113909,11 +114293,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -113924,11 +114316,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -113964,6 +114364,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1600.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -113981,6 +114386,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1600
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -114006,6 +114414,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1600.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -114023,6 +114436,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1600
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -114043,11 +114459,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -114058,11 +114482,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -114083,11 +114515,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -114098,11 +114538,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -114123,11 +114571,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -114138,11 +114594,19 @@
 "confidence": 1.0,
 "evidence": "JACUZZI",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
 "class": {
 "value": "Jacuzzi"
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -114183,6 +114647,11 @@
 "confidence": 1.0,
 "evidence": "GUNMETAL",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -114203,6 +114672,9 @@
 },
 "finish": {
 "value": "gunmetal"
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -114233,6 +114705,11 @@
 "confidence": 1.0,
 "evidence": "GUNMETAL",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -114253,6 +114730,9 @@
 },
 "finish": {
 "value": "gunmetal"
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -114300,6 +114780,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1800.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -114317,6 +114802,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1800
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -114354,6 +114842,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1800.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -114371,6 +114864,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1800
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -114406,6 +114902,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1100.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -114423,6 +114924,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1100
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -114448,6 +114952,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1100.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -114465,6 +114974,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1100
+},
+"has_massage": {
+"value": true
 }
 }
 }
@@ -114512,6 +115024,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1500.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -114529,6 +115046,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1500
+},
+"has_massage": {
+"value": true
 }
 }
 },
@@ -114566,6 +115086,11 @@
 "confidence": 1.0,
 "evidence": "dim_width=1500.00",
 "source": "derived"
+},
+"has_massage": {
+"confidence": 1.0,
+"evidence": "JACUZZI",
+"source": "derived"
 }
 },
 "values": {
@@ -114583,6 +115108,9 @@
 "dim_width": {
 "unit": "mm",
 "value": 1500
+},
+"has_massage": {
+"value": true
 }
 }
 }
