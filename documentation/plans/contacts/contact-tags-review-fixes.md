@@ -72,3 +72,12 @@ Paths under `sorento_crm_backend/app/` or `sorento_crm_frontend/app/(protected)/
 - Three older tests (S3 t3_8, S3 t3_9, S2 stock merge) follow R3 / F4 / F1 (test-only alignment).
 - R2 preview must also list a sibling list the one-rule CHECK clears (inherited include list cleared
   when a tag sets an exclude list, and the reverse; stock and spec).
+
+## Final security re-check (834a21bac)
+
+- MUST: apply's `changes[].added/removed` named out-of-scope brands (`contact_tag_apply.py:387` built an
+  unscoped Catalog). Fix: scoped catalog for names; test with a contact whose current brand set holds
+  another company's brand.
+- Known, parity with the contact Brands card (not changed here): apply writes the expected brand list
+  whole, so a company-scoped user's apply can drop a brand restriction that belongs to another company;
+  the preview shows it ("unavailable brand" removed) before anything is written.
