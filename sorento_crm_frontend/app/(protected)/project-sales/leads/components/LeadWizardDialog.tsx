@@ -104,8 +104,9 @@ export function LeadWizardDialog({
   const stepIndex = STEPS.findIndex((candidate) => candidate.id === step);
   // Rough value may stay blank; a typed one that cannot be read stops the walk at its step.
   const valueError = numberFieldError(estimatedValue, { min: 0, optional: true });
-  const canAdvance =
-    step === 'development' ? developmentReady : step === 'detail' || step === 'confirm' ? !valueError : true;
+  // The sentence stays hidden while typing; a refused press shows it, then it follows the box live.
+  const [valueErrorShown, setValueErrorShown] = React.useState(false);
+  const canAdvance = step === 'development' ? developmentReady : true;
 
   async function submit() {
     const body: ProjectLeadBody & LeadInformantBody = {
@@ -156,6 +157,11 @@ export function LeadWizardDialog({
             // React bubbles a portalled submit up the COMPONENT tree, so a caller that ever
             // renders this inside its own form must not receive the wizard's submit.
             event.stopPropagation();
+            if (valueError && (step === 'detail' || step === 'confirm')) {
+              setValueErrorShown(true);
+              setStep('detail');
+              return;
+            }
             if (step === 'confirm') {
               void submit();
               return;
@@ -307,7 +313,7 @@ export function LeadWizardDialog({
                     id="lead-value"
                     min={0}
                     value={estimatedValue}
-                    error={estimatedValue.trim() ? valueError : undefined}
+                    error={valueErrorShown && estimatedValue.trim() ? valueError : undefined}
                     onChange={(event) => setEstimatedValue(event.target.value)}
                   />
                 </div>

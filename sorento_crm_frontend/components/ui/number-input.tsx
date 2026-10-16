@@ -19,6 +19,9 @@ type NumberInputProps = Omit<InputProps, 'type' | 'value' | 'onChange'> & {
   errorClassName?: string;
 };
 
+// A box holding bad input ("1e") reports value ''; a non-empty value is a real figure.
+const isBadInput = (e: React.ChangeEvent<HTMLInputElement>) => Boolean(e.target.validity?.badInput) && e.target.value === '';
+
 function withNaNValue(e: React.ChangeEvent<HTMLInputElement>): React.ChangeEvent<HTMLInputElement> {
   const read = (obj: object, key: string | symbol, special?: unknown) => {
     const v = Reflect.get(obj, key, obj);
@@ -58,12 +61,12 @@ function NumberInput({ value, onValueChange, onChange, error, errorClassName, cl
       const raw = e.target.value;
       setDraft(raw);
       // A type=number box reports '' for bad input ("1e"): that is invalid, not "no value".
-      onValueChange?.(e.target.validity?.badInput ? NaN : parseNumberDraft(raw));
+      onValueChange?.(isBadInput(e) ? NaN : parseNumberDraft(raw));
     }
     if (!numeric && onChange) {
       // String mode: a box the browser flags as bad input reads '' ("1e"), which a screen would
       // take as "no value". Hand it the string 'NaN' instead (invalid in numberFieldError).
-      onChange(e.target.validity?.badInput ? withNaNValue(e) : e);
+      onChange(isBadInput(e) ? withNaNValue(e) : e);
       return;
     }
     onChange?.(e);
@@ -142,7 +145,7 @@ function LiveNumberInput({ value, onCommit, onClear, rules, onBlur, onValidityCh
       }}
       onChange={(e) => {
         const raw = e.target.value;
-        const isBad = Boolean(e.target.validity?.badInput);
+        const isBad = isBadInput(e);
         setDraft(raw);
         setTouched(true);
         setBad(isBad);
