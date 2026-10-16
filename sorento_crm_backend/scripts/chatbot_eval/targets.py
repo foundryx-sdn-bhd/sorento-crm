@@ -476,6 +476,10 @@ def _menu_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tupl
     return ("no_menu", ok, "The bot asked a clarifying menu that is not product versus customer.")
 
 
+# the engine's stock reply lines (label_catalog.py: "Got stock.", "Only N got stock.", "No stock, ETA ...", "No stock found
+# for ...", "yes, we have stock") and their ms / zh renderings
+STOCK_ANSWER_RE = re.compile(r"\bgot stock\b|\bno stock\b|\bin stock\b|\bhave stock\b|\bstok ada\b|\btiada stok\b|有库存|没有库存", re.I)
+NON_STOCK_QUESTIONS = frozenset({"tier_pick", "team_pick", "member_offer", "company_pick", "kind_pick", "clarify"})
 STOCK_WORDS_RE = re.compile(r"\b(?:stock|in stock|available|availability|ada|ready stock|ready|how many left|berapa ada)\b", re.I)
 QUANTITY_ASK_RE = re.compile(r"how\s+many|berapa", re.I)
 
@@ -523,15 +527,20 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None,
         before = _oq(row)[0]
         picked_stock = isinstance(before, dict) and before.get("kind") == "product_pick" and bool(
             (before.get("payload") or {}).get("stock_pick"))
-        # a follow-up on a stock answer: the domain held before the turn (memory focus.before.domains) is inventory
-        on_stock = followup and "inventory" in (_mem_focus(row, "before").get("domains") or [])
+        # a follow-up on a stock answer: the domain held before the turn (memory focus.before.domains) is inventory, the
+        # bot's previous message reads as a stock answer, and no non-stock question (tier, team, menu) was open
+        on_stock = (followup and "inventory" in (_mem_focus(row, "before").get("domains") or [])
+                    and bool(STOCK_ANSWER_RE.search(str(row.get("prev_bot_message") or "")))
+                    and not (isinstance(before, dict) and before.get("kind") in NON_STOCK_QUESTIONS))
         stock_ask = bool(STOCK_WORDS_RE.search(user_message(row))) or picked_stock or on_stock
     if not stock_ask:
         return ("no_qty_ask", False, "The bot asked how many although it was not needed.")
     mode = _stock_mode(row)
     if mode is None and not any("inventory" in str(t.get("name")) or "stock" in str(t.get("name")) for t in _tools(row)):
         return ("no_qty_ask", False, "The bot asked how many although it was not needed.")   # no stock lookup behind it
-    return ("no_qty_ask", None if mode is None else mode == "availability", "The bot asked how many although it was not needed.")
+    if mode == "availability":   # an allowed how-many is named as such, not reported as "no quantity ask"
+        return ("qty_ask_ok", True, "The bot asked how many although it was not needed.")
+    return ("no_qty_ask", None if mode is None else False, "The bot asked how many although it was not needed.")
 
 
 def _picker_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tuple[str, bool, str] | None:
