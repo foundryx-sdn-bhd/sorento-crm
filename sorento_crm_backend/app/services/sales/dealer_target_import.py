@@ -101,7 +101,10 @@ def _number(value) -> Optional[Decimal]:
         return None
     if isinstance(value, (int, float, Decimal)):
         return Decimal(str(value))
-    text = re.sub(r"^(?:\u2265|>=?|=>)\s*", "", _norm(str(value)))
+    raw = str(value)
+    if len(raw) > MAX_CELL_TEXT:
+        return None
+    text = re.sub(r"^(?:\u2265|>=?|=>)\s*", "", _norm(raw))
     m = re.fullmatch(r"(?:RM\s*)?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*([kKmM])?\s*%?", text, re.IGNORECASE)
     return _amount(m) if m else None
 
@@ -140,6 +143,8 @@ def parse_tier_cell(value, *, default_rate: Optional[Decimal] = None) -> List[Ce
     number = None if isinstance(value, str) else _number(value)
     if number is not None:
         return [CellTier(number, default_rate)]
+    if len(str(value)) > MAX_CELL_TEXT:
+        raise CellError(f"a cell of more than {MAX_CELL_TEXT} characters")
     text = _norm(str(value))
     if text.lower() in _BLANK:
         return []
@@ -310,7 +315,9 @@ def _safe_window(text: str, year: int) -> Optional[Tuple[date, date]]:
 
 
 def _text(value) -> str:
-    return "" if value is None else _norm(str(value))
+    # Cut once, before any regex: `_PCT` / `_AMOUNT` are quadratic on a long digit run
+    # (security re-check B3). One character over the cap keeps every length check firing.
+    return "" if value is None else _norm(str(value)[: MAX_CELL_TEXT + 1])
 
 
 def _role(text: str) -> Optional[str]:
@@ -448,9 +455,10 @@ MAX_SHEET_ROWS = 5_000
 MAX_SHEET_COLS = 300
 MAX_MERGE_AREA = 2_000
 MAX_CELL_TEXT = 500
-#: A rate above this is reported on its rows (review S3: 0.5 reads as 50% under the fraction
-#: rule, where a 0.5% rebate may have been meant). A warning, not a refusal: owner's call.
-RATE_WARNING_PCT = 20
+#: The highest incentive rate the import accepts (crew ruling 16 Oct, review S3): 0.5 reads as
+#: 50% under the fraction rule where a 0.5% rebate may have been meant, so a rate above this
+#: fails its row rather than risk a 100x overpay. The real files top out at 10%.
+RATE_LIMIT_PCT = 20
 #: A dealer name, code or account label; the real ones are under 100 characters.
 MAX_ID_TEXT = 200
 #: The workbook's XML once unzipped; a 10 MB upload that inflates past this is refused.
@@ -603,9 +611,9 @@ def parse_rate_cell(value, *, percent_format: bool = False) -> List[RateEntry]:
     if _is_number(value):
         return [RateEntry(None, _fraction(Decimal(str(value)), percent_format))]
     raw = str(value)
-    text = _norm(raw)
-    if len(text) > MAX_CELL_TEXT:
+    if len(raw) > MAX_CELL_TEXT:
         raise CellError(f"a cell of more than {MAX_CELL_TEXT} characters")
+    text = _norm(raw)
     if text.lower() in _NIL:
         raise CellError(f'"{text}" is no rate')
     out: List[RateEntry] = []
@@ -1126,11 +1134,12 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier]
         previous_threshold = threshold
     for t in out:
         for rate in [t.rate] + list((t.account_rates or {}).values()):
-            if rate is not None and rate > RATE_WARNING_PCT:
-                warning = f"{name}: a rate of {rate.normalize():f}% is above {RATE_WARNING_PCT}%; check the cell"
-                for r in ctx.rows:
-                    if warning not in ctx.results[r].warnings:
-                        ctx.results[r].warnings.append(warning)
+            if rate is not None and rate > RATE_LIMIT_PCT:
+                shown = f"{rate.normalize():f}"
+                raise CellError(
+                    f"{name}: rate {shown}% looks wrong: Excel {(rate / 100).normalize():f} means "
+                    f"{shown}%, type 0.005 or 0.5% for half a percent"
+                )
     return out, payees
 
 
@@ -1478,6 +1487,10 @@ def run(
             match_key = (
                 frozenset(ids), scheme.start, scheme.end, scheme.split_every, scheme.split_unit, scheme.threshold_unit
             )
+            same_group = next((p[0].rows[0] for p in prepared if p[3] == match_key), None)
+            if same_group is not None:
+                problem = f"the same accounts and dates as row {same_group}"
+                break
             if match_key in written_by:
                 # Two rows of one file for the same accounts and dates: the second would
                 # silently overwrite the first (review nit).

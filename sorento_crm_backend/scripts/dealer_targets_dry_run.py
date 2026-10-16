@@ -31,6 +31,7 @@ _CATEGORIES = (
     ("not read: no DEALER NAME", "SHEET_NOT_READ"),
     ("no dealer name or customer code", "NO_NAME_OR_CODE"),
     ("no customer has this name", "NO_NAME_MATCH"),
+    ("looks wrong: Excel", "RATE_ABOVE_LIMIT"),
     ("more than 200 characters", "CELL_TOO_LONG"),
     ("more than one customer has this name", "NAME_MATCHES_SEVERAL"),
     ("picked customer", "PICK_NOT_A_CUSTOMER"),

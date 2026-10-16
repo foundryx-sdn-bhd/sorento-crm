@@ -618,8 +618,9 @@ def test_one_cell_paying_a_counted_and_an_uncounted_account_fails():
     assert "both" in row2.reason
 
 
-def test_a_rate_above_twenty_percent_is_flagged_and_a_percent_is_no_threshold():
-    """Review S3: 0.5 reads as 50% under the fraction rule; the row says so. A "2%" typed in a
+def test_a_rate_above_twenty_percent_fails_and_a_percent_is_no_threshold():
+    """Review S3, crew ruling (b): 0.5 reads as 50% under the fraction rule; above
+    RATE_LIMIT_PCT the row fails with a reason, never a possible 100x overpay. A "2%" typed in a
     Tier threshold column is not a threshold of RM 2."""
     from app.services.sales.dealer_target_import import parse_workbook
 
@@ -632,8 +633,8 @@ def test_a_rate_above_twenty_percent_is_flagged_and_a_percent_is_no_threshold():
 
     parsed = parse_workbook(_wb(fill), year=2026)
     x, y = parsed.rows
-    assert x.status == "mapped"
-    assert any("50%" in w for w in x.warnings)
+    assert x.status == "not_representable"
+    assert "rate 50% looks wrong: Excel 0.5 means 50%, type 0.005 or 0.5% for half a percent" in x.reason
     assert y.status == "not_representable"
     assert "threshold" in y.reason
 
@@ -700,3 +701,21 @@ def test_a_refused_scheme_rolls_back_its_dealer_s_other_schemes(api, monkeypatch
     rows = client.get(BASE, params={"subject": "dealer", "all": "true"}).json()["rows"]
     assert not [r for r in rows if r["name"].startswith("Alpha")]
     assert body["summary"]["targets_new"] == len(rows)
+
+
+def test_a_long_digit_run_in_a_header_cell_parses_fast():
+    """Security re-check B3: `_PCT` / `_AMOUNT` are quadratic on a long run of digits; every
+    cell's text is cut once, so a few-KB upload cannot hold the CPU for hours."""
+    import time
+
+    from app.services.sales.dealer_target_import import _number, parse_workbook
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "DEALER NAME", "Q1"
+        ws["B2"] = "1" * 100_000
+        ws["A3"], ws["B3"] = "ACME", "100,000 - 1%"
+
+    started = time.monotonic()
+    parse_workbook(_wb(fill), year=2026)
+    assert _number("9" * 100_000 + "x") is None
+    assert time.monotonic() - started < 5

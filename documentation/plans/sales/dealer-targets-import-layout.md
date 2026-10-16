@@ -67,8 +67,9 @@ over several data rows makes those rows one target**, per scheme kind and unit.
   of its own, is that threshold's additional line (computed and rounded on its own, ruling 3;
   every additional line reached pays, ruling 5). A second tier at the same threshold with a
   plain rate is NOT guessed: its row fails with "repeats in one period".
-- A rate above 20% (e.g. `0.5`, read as 50% under the fraction rule) maps, with a warning on
-  its rows. Two unlabelled rates in one cell (`2% / 3%`) and a rate typed in a threshold column
+- A rate above 20% (`RATE_LIMIT_PCT`; e.g. `0.5`, read as 50% under the fraction rule) fails
+  its row: "rate 50% looks wrong: Excel 0.5 means 50%, type 0.005 or 0.5% for half a percent"
+  (crew ruling 16 Oct). The real files top out at 10%. Two unlabelled rates in one cell (`2% / 3%`) and a rate typed in a threshold column
   fail the row.
 - All targets of one dealer (schemes sharing a row or a pay-to account) are created together or
   not at all; two rows of one file with the same accounts and dates fail the second.
