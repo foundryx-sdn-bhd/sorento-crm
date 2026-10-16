@@ -605,3 +605,136 @@ def test_pma4_order_debtors_match_the_agent_code_in_the_agents_own_company():
         codes = {d["debtor_code"] for d in PriceTagRequestService.lookup_debtors_for_agent(db, me)}
         assert {"ZZT-DEB-MINE-C", "ZZT-DEB-SHARED-A", "ZZT-DEB-SHARED-C"} <= codes
         assert "ZZT-DEB-OTHER-ALAN-A" not in codes
+
+
+# --------------------------------------------------------------------------- #
+# Reviewer round (16 Oct 2026): narrowing on the normal path, the prospect's agent, the
+# empty-list restriction and a non-set scope
+# --------------------------------------------------------------------------- #
+
+
+def _two_company_world(db, *, b_sorts_first: bool = False):
+    from app.services.sales import sales_seed_service
+    from tests._portal_grant import grant_portal_forms
+    from tests.test_fix2_4_portal_company_scope_narrowing import (
+        _agent,
+        _company,
+        _contact,
+        _customer,
+        _real_token,
+        _scope_contact_to,
+    )
+
+    sales_seed_service.run(db)
+    db.flush()
+    company_a = _company(db, name="ZZT PMA Rev Company A")
+    company_b = _company(db, name="ZZT PMA Rev Company B")
+    contact = _contact(db)
+    _scope_contact_to(db, contact.id, company_a)
+    grant_portal_forms(db, contact.id, ["sales_opportunity"])
+    agent_a = _agent(db, contact_id=contact.id, company_id=company_a)
+    agent_b = _agent(db, contact_id=contact.id, company_id=company_b)
+    agent_a.sales_agent = f"{'ZZZ' if b_sorts_first else 'AAA'}-PMA-{_uid()[:6]}".upper()
+    agent_b.sales_agent = f"{'AAA' if b_sorts_first else 'ZZZ'}-PMA-{_uid()[:6]}".upper()
+    db.flush()
+    return {
+        "company_a": company_a,
+        "company_b": company_b,
+        "contact": contact,
+        "agent_a": agent_a,
+        "agent_b": agent_b,
+        "in_a": _customer(db, company_a, name="ZZT PMA Rev In A", agent_id=agent_a.id),
+        "in_b": _customer(db, company_b, name="ZZT PMA Rev In B", agent_id=agent_b.id),
+        "token": _real_token(db, contact.id),
+    }
+
+
+def _real_client(db):
+    from app.database import get_db
+
+    def _override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = _override_get_db
+    return TestClient(app)
+
+
+def test_pma_scope_two_agents_in_two_companies_never_widen_past_the_contacts_scope():
+    """The ordinary request: the contact is in company A only; agent B's company-B customer
+    must not be offered (the agents' companies are bounded by the contact's scope)."""
+    from tests.test_fix2_4_portal_company_scope_narrowing import BASE
+
+    with blank_session() as db:
+        w = _two_company_world(db)
+        with _real_client(db) as c:
+            res = c.get(f"{BASE}/customer-options", params={"q": "ZZT PMA Rev"}, headers={"X-Portal-Token": w["token"].token})
+        assert res.status_code == 200, res.text
+        names = {i["customer_name"] for i in res.json()["items"]}
+        assert w["in_a"].customer_name in names
+        assert w["in_b"].customer_name not in names
+
+
+def test_pma5_prospect_goes_to_the_first_agent_the_contacts_scope_can_see():
+    """The first agent by code sits in company B, outside the contact's scope: a prospect
+    goes to agent A (in scope), not to B (which the create would refuse as not visible)."""
+    from tests.test_fix2_4_portal_company_scope_narrowing import BASE
+
+    with blank_session() as db:
+        w = _two_company_world(db, b_sorts_first=True)
+        with _real_client(db) as c:
+            res = c.post(
+                BASE,
+                json={
+                    "title": "ZZT PMA prospect",
+                    "expected_amount": "1",
+                    "expected_close_date": "2026-11-01",
+                    "prospect_name": "ZZT PMA Brand New Prospect Qx",
+                },
+                headers={"X-Portal-Token": w["token"].token},
+            )
+        assert res.status_code == 201, res.text
+        assert res.json()["sales_agent_id"] == w["agent_a"].id
+
+
+def test_pma_an_empty_agent_list_restricts_the_customer_to_nobody():
+    """`restrict_customer_to_agent_id=[]` is "no agent's customer is yours", never "no
+    restriction" (list_opportunities already reads [] as match nothing)."""
+    from app.services.error_handler import AppException
+    from app.services.sales import opportunity_service
+
+    with blank_session() as db:
+        w = _two_company_world(db)
+        set_company_scope(db, frozenset({w["company_a"]}))
+        payload = {"title": "ZZT PMA empty", "expected_close_date": date(2026, 11, 1), "customer_id": w["in_a"].id}
+        with pytest.raises(AppException) as created:
+            opportunity_service.create_opportunity(
+                db,
+                company_id=w["company_a"],
+                payload=payload,
+                sales_agent_id=None,
+                source="portal",
+                restrict_customer_to_agent_id=[],
+            )
+        assert created.value.code == "CUSTOMER_NOT_YOURS"
+
+
+@pytest.mark.parametrize("start", ["none", "unset"])
+def test_pma_scope_a_non_set_scope_narrows_to_the_contacts_side(start):
+    """A scope that is not a set (None = every company, UNSET = nothing) ends as the agents'
+    companies inside the contact's own (A), or the contact's own when they do not overlap."""
+    from app.api.v1.public import portal_sales_opportunity as mod
+    from app.models.base import UNSET, get_company_scope
+    from app.models.portal import PortalToken
+
+    with blank_session() as db:
+        w = _two_company_world(db)
+        token = PortalToken(id=_uid(), contact_id=w["contact"].id, space_id="zzt-space")
+        set_company_scope(db, None if start == "none" else UNSET)
+        mod._require_agents(db, token)
+        assert get_company_scope(db) == frozenset({w["company_a"]})
+
+        w["agent_a"].is_active = False  # left: agent B in company B, outside the contact's A
+        db.flush()
+        set_company_scope(db, None if start == "none" else UNSET)
+        mod._require_agents(db, token)
+        assert get_company_scope(db) == frozenset({w["company_a"]})
