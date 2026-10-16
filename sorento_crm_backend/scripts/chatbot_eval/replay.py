@@ -369,7 +369,7 @@ MODEL_HOSTS = ("api.openai.com", "api.anthropic.com", "generativelanguage.google
 # outside the metered providers). A dry-run turn must never reach them.
 SIDE_EFFECT_TOOLS = frozenset({
     "crm_low_stock_report", "crm_portal_link_get", "crm_it_support_ticket_create", "crm_complaint_close",
-    "crm_order_cancel", "crm_purchase_request_approve", "crm_purchase_request_reject", "crm_ideation_turn",
+    "crm_sales_analysis", "crm_order_cancel", "crm_purchase_request_approve", "crm_purchase_request_reject", "crm_ideation_turn",
 })
 PROVENANCE_KEYS = ("code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_effort")
 
@@ -436,7 +436,7 @@ def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
             model = str(getattr(settings, "embedding_model_name", ""))
             usd = max(0.0, cost_usd({"prompt": tokens, "cached": 0, "output": 0}, model)) if model in PRICES else 0.0
             for bucket in (usage, total):
-                bucket["calls"] += 1
+                bucket["embed_calls"] += 1  # its own bucket: never consumes max_calls
                 bucket["prompt_tokens"] += tokens
                 bucket["usd"] += usd
             return res
@@ -492,7 +492,7 @@ def _uuid_codes(db: Any, args_list: list[Any]) -> dict[str, str]:
 
 
 def _new_usage() -> dict[str, Any]:
-    return {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0, "usd": 0.0}
+    return {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0, "usd": 0.0, "embed_calls": 0}
 
 
 def _set_text(payload: dict[str, Any], text: str) -> bool:
