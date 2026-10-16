@@ -116,3 +116,86 @@ def test_a_second_unclear_right_after_the_bot_asked_offers_the_hand_over_and_nev
     assert "2026-10-01" not in _blob(seam), "no guess"
     assert not UUID_RE.search(reply)
     assert _mem_state(seam, out).get("changes")
+
+
+def test_unclear_customer_with_an_unmapped_kind_asks_one_question_with_real_names(seam, monkeypatch):
+    """R11: the held entity's kind has no domain mapping, so the type cannot settle it."""
+    from app.services.chatbot.turn import chat_state
+
+    monkeypatch.setattr(chat_state, "KIND_DOMAIN", {})
+    prev = _held_customer_state(window=HELD_WINDOW)
+    out = seam.say("delivery?", _delivery(_op("keep"), _op("unclear", "customer")), previous=prev)
+    reply = _text(out)
+    assert "Customer X" in reply and "all" in reply.lower(), reply
+    assert not UUID_RE.search(reply) and CUSTOMER_UUID not in reply, reply
+    question = seam.state["open_question"]
+    assert question and len(question["options"]) == 2, question
+    assert "Customer X" in question["options"][0]["label"]
+    assert "all" in question["options"][1]["label"].lower()
+    assert CUSTOMER_UUID not in _blob(seam), "nothing is fetched while asking"
+
+
+def test_answering_another_period_asks_the_period_question_and_runs_nothing_unfiltered(seam):
+    _ask(seam)
+    out = seam.say(
+        "2",
+        _delivery(
+            _op("answer"),
+            reference_positions=[2],
+            open_question_answer={"mode": "pick", "picked": [2], "items": [], "qty_for_all": None},
+        ),
+    )
+    reply = _text(out)
+    assert "this month" in reply.lower() and "last month" in reply.lower(), reply
+    assert seam.turn_calls[-1] == [], f"an unfiltered ask ran: {_blob(seam)[:300]}"
+
+
+# --------------------------------------------------------------------------- #
+# The state log is gated: a turn whose parser did not opt in records no new memory event
+# --------------------------------------------------------------------------- #
+
+
+def _say_without_the_state_path(seam, monkeypatch, text: str, emission: dict[str, Any]):
+    """A normal (not bypassed) parse: the stub parser answers, ParserConfig.state_block is off."""
+    import uuid as _uuid
+
+    from app.services.chatbot import engine as engine_mod
+    from app.services.chatbot.head import parser as parser_mod
+    from tests.chatbot.test_engine import CONTACT_ID, _envelope
+
+    monkeypatch.setattr(parser_mod, "parse", lambda config, user_block: emission)
+    out = engine_mod.run_turn(
+        _envelope(
+            is_test=True,
+            previous_conversation_state=None,
+            message={
+                "event_type": "message.received",
+                "contact": {"id": CONTACT_ID},
+                "message": {
+                    "messageId": f"ZZT-s4-{_uuid.uuid4().hex[:10]}", "contactId": CONTACT_ID,
+                    "channelId": "whatsapp", "traffic": "incoming",
+                    "message": {"type": "text", "text": text},
+                },
+            },
+        ),
+        session_factory=seam.session_factory,
+    )
+    return out
+
+
+def test_a_turn_on_a_non_opted_in_parser_carries_no_state_log_on_any_arm(seam, monkeypatch):
+    arms = [
+        _emit(message_type="casual", intent_hint=None, domain_hint=None),
+        _emit(message_type="out_of_scope", intent_hint=None, domain_hint=None),
+        _emit(domain_hint="order", intent_hint="check_order", domain_in_message=True),
+    ]
+    for emission in arms:
+        out = _say_without_the_state_path(seam, monkeypatch, "hello", emission)
+        events = [r for r in seam.trace_rows(out) if r.get("kind") == "memory"]
+        assert all("state" not in e for e in events), (emission["message_type"], events)
+
+
+def test_an_access_denied_turn_on_a_non_opted_in_parser_adds_no_memory_event(seam, monkeypatch, stub_access):
+    stub_access(allowed=False, decision="deny_no_access")
+    out = _say_without_the_state_path(seam, monkeypatch, "stock SRT1", _emit(domain_hint="inventory", intent_hint="check_stock"))
+    assert [r for r in seam.trace_rows(out) if r.get("kind") == "memory"] == []
