@@ -14,7 +14,7 @@ label move in the Chatbot Console, and the owner decides. To rebuild the data fi
 Idempotent: a version already carrying this exact template publishes nothing.
 
 Revision ID: pdiet_s1_0001
-Revises: cfs_0001_spec_registry_seed
+Revises: ctg_0001_contact_tags
 """
 import logging
 from pathlib import Path
@@ -24,7 +24,7 @@ from alembic import op
 from sqlalchemy.orm import Session
 
 revision = "pdiet_s1_0001"
-down_revision = "cfs_0001_spec_registry_seed"
+down_revision = "ctg_0001_contact_tags"
 branch_labels = None
 depends_on = None
 
