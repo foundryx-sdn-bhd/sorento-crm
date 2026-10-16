@@ -752,3 +752,21 @@ def test_a_sheet_title_past_excels_limit_is_refused():
     with pytest.raises(AppException) as exc:
         parse_workbook(_wb(fill), year=2026)
     assert exc.value.status_code == 422
+
+
+def test_a_number_format_past_excels_limit_is_never_scanned():
+    """Security re-check B6: one long shared number format would be scanned per cell; a format
+    longer than Excel's 255 characters is treated as no format."""
+    from types import SimpleNamespace
+
+    from app.services.sales import dealer_target_import as imp
+
+    long_fmt = "0" * 10_000 + "%"
+    ws = SimpleNamespace(
+        _cells={(1, 1): SimpleNamespace(value=0.02, number_format=long_fmt),
+                (1, 2): SimpleNamespace(value=0.02, number_format="0%")},
+        merged_cells=SimpleNamespace(ranges=[]),
+    )
+    grid = imp._Grid(ws)
+    assert grid.fmt(1, 1) is None
+    assert grid.fmt(1, 2) == "0%"

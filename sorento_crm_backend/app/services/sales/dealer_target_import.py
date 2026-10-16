@@ -452,6 +452,8 @@ def _columns(grid: "_Grid", first: int, last: int, year: int) -> List[_Column]:
 MAX_SHEETS = 30
 #: Excel's own limit on a sheet's name.
 MAX_SHEET_TITLE = 31
+#: Excel's own limit on a number format code.
+MAX_NUMBER_FORMAT = 255
 MAX_SHEET_CELLS = 100_000
 MAX_SHEET_ROWS = 5_000
 MAX_SHEET_COLS = 300
@@ -490,8 +492,11 @@ class _Grid:
             if value is None or (isinstance(value, str) and not value.strip()):
                 continue
             self.values[(r, c)] = value
-            if _is_number(value) and cell.number_format and "%" in cell.number_format:
-                self.formats[(r, c)] = cell.number_format
+            fmt = cell.number_format
+            # A format past Excel's own 255 characters is not a real one; never scanned, since one
+            # shared format would be walked once per cell (security re-check B6).
+            if _is_number(value) and fmt and len(fmt) <= MAX_NUMBER_FORMAT and "%" in fmt:
+                self.formats[(r, c)] = fmt
             if len(self.values) > MAX_SHEET_CELLS:
                 raise SheetTooLarge(f"more than {MAX_SHEET_CELLS:,} filled cells")
         self.merge: Dict[Tuple[int, int], Tuple[int, int, int, int]] = {}
