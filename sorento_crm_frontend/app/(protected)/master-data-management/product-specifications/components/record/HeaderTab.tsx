@@ -1,6 +1,8 @@
 'use client';
 
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Switch } from '@/components/ui/switch';
 import { WordsDataGrid } from '../WordsDataGrid';
 import { dedupe, seedWordsFor, type SpecKeyDraft } from '../../hooks/useSpecKeyRecord';
@@ -93,14 +95,23 @@ export function HeaderTab({ row, mode, draft, setDraft }: HeaderTabProps) {
       {isNumeric && (
         <Field label="Highest believable value">
           {mode === 'edit' && draft ? (
-            <Input
-              type="number"
+            <NumberInput
               step="1"
               min="0"
               placeholder="no limit"
               className="h-8 w-40"
               value={draft.maxValue}
-              onChange={(event) => setDraft((d) => ({ ...d, maxValue: event.target.value }))}
+              error={draft.maxValueError}
+              onChange={(event) => {
+                const maxValue = event.target.value;
+                setDraft((d) => ({
+                  ...d,
+                  maxValue,
+                  maxValueError: d.maxValueError
+                    ? numberFieldError(maxValue, { min: 0, optional: true })
+                    : undefined,
+                }));
+              }}
             />
           ) : (
             <span className="text-sm">

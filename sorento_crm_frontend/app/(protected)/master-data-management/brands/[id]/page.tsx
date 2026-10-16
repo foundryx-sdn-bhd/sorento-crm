@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
@@ -94,6 +96,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ id: stri
   });
 
   const [editing, setEditing] = useState(false);
+  const [checked, setChecked] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
 
   const header = (
@@ -150,10 +153,13 @@ export default function BrandDetailPage({ params }: { params: Promise<{ id: stri
   const cancelEdit = () => {
     setEditing(false);
     setDraft(null);
+    setChecked(false);
   };
 
   const handleSave = async () => {
     if (!draft) return;
+    setChecked(true);
+    if (weightProblem(draft.chatbot_weight)) return;
     await update.mutateAsync({
       id,
       data: {
@@ -163,24 +169,27 @@ export default function BrandDetailPage({ params }: { params: Promise<{ id: stri
         is_active: draft.is_active,
         access_levels: draft.access_levels,
         flows_to_purchasing: draft.flows_to_purchasing,
-        chatbot_weight: Number(draft.chatbot_weight) || 0,
+        chatbot_weight: parseNumberDraft(draft.chatbot_weight) as number,
         is_searchable: draft.is_searchable,
       },
     });
     cancelEdit();
   };
 
-  // Round 6 N-r5-1: the dialog's own words (zod in BrandFormDialog), under the input.
-  const weight = draft ? Number(draft.chatbot_weight) : 0;
-  const weightError =
-    weight < 0 ? 'Enter 0 or more' : weight > 9999 ? 'Enter 9999 or less' : null;
+  // The dialog's own words (zod in BrandFormDialog), under the input once Save has been pressed.
+  const weightProblem = (raw: string): string | undefined => {
+    const n = parseNumberDraft(raw);
+    if (n === null) return numberFieldError(raw, { min: 0, max: 9999 });
+    if (n < 0) return 'Enter 0 or more';
+    if (n > 9999) return 'Enter 9999 or less';
+    return undefined;
+  };
+  const weightError = checked && draft ? weightProblem(draft.chatbot_weight) : undefined;
 
   const canSave =
     !!draft &&
     draft.brand_code.trim().length > 0 &&
     draft.brand_name.trim().length > 0 &&
-    Number(draft.chatbot_weight) >= 0 &&
-    Number(draft.chatbot_weight) <= 9999 &&
     !update.isPending;
 
   const actions: RecordAction[] = [
@@ -330,21 +339,17 @@ export default function BrandDetailPage({ params }: { params: Promise<{ id: stri
                 <Field label="Chatbot brand weight" htmlFor="brand-chatbot-weight">
                   {editing && draft ? (
                     <div className="grid gap-1.5">
-                      <Input
+                      <NumberInput
                         id="brand-chatbot-weight"
-                        type="number"
                         min={0}
                         max={9999}
                         step={0.1}
                         inputMode="decimal"
                         className="w-32"
-                        aria-invalid={weightError ? true : undefined}
                         value={draft.chatbot_weight}
                         onChange={(e) => setDraft({ ...draft, chatbot_weight: e.target.value })}
+                        error={weightError}
                       />
-                      {weightError && (
-                        <p className="text-xs font-normal text-destructive">{weightError}</p>
-                      )}
                     </div>
                   ) : (
                     String(brand.chatbot_weight ?? 0)
