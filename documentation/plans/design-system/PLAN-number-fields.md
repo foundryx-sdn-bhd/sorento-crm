@@ -1,7 +1,17 @@
 # PLAN: NUMBER-FIELDS
 
-Status: Plan (size M, full track: frontend only, no migration, no auth change). Lane NUMBER-FIELDS, branch
-`crew/number-fields`. Behaviour card + mockup v1 filed to crew; build waits for the answers.
+Status: Build (size M, full track: frontend only, no migration, no auth change). Lane NUMBER-FIELDS, branch
+`crew/number-fields`. Behaviour card answered 17 Oct (crew, from owner standing rules): Q1-Q5 all (a); no
+owner mock review needed (reuses existing components + wording). SO blank-qty-cancels case goes first.
+
+## Answers (17 Oct, crew ask a68457864)
+
+- Q1 (a) message on Save / confirm (blur for save-on-blur grid cells), then live until fixed.
+- Q2 (a) over-limit keeps the typed value and blocks with the message; nothing changes silently.
+- Q3 (a) optional fields stay optional: empty = no value, as today.
+- Q4 (a) the 6 disabled Save buttons are enabled; a click shows the field message (never stuck).
+- Q5 (a) filters use the same component; empty = no filter, no message.
+- SCM SO edit: a red test pins "blank never cancels a line" and "typed 0 still cancels".
 
 UAC: `number-fields-acceptance-criteria.md`. Audit: `number-fields-audit.md` (298 rows). Mockup:
 `documentation/mockups/number-fields/index.html`.
