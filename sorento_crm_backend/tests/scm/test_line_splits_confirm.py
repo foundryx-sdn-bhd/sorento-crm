@@ -606,3 +606,63 @@ def test_a_split_does_not_move_off_a_placed_row_with_no_link(api, emails):
     assert source.state == INQUIRY_PLACED, "purchasing placed it: it must not go back to raised"
     assert not [t for t in sent if t == ("132", "ORDER")], ("nothing moved onto line 18", sent)
     assert any(r == "CANCEL 60" for _q, r in sent), ("the netting tells it as without splits", sent)
+
+
+# ---------------------------------------------------------------------------
+# Reviewer re-check on ebdde26a2: the TARGET row guards and core line numbers in row notes
+# ---------------------------------------------------------------------------
+
+
+def test_a_split_does_not_move_onto_a_target_row_whose_document_is_received_in_full(api, emails):
+    """Line 2 51 -> 2 linked to an open PO (DOC-A); line 18's 82 row is linked to DOC-B, received
+    in full; 49 is split onto line 18 (82 -> 131). The sent email is the no-split result."""
+    s = _lines(api, [(2, 51, D_2, 2), (18, 82, D_18, 131)])
+    _po, po_b = _po_line(s.world, _supplier(s.world), qty=82, expected_date=date(2026, 8, 25))
+    _link(s.world, s.no[18][2], po_b, qty=82, document="DOC-B")
+    po_b.qty_received = Decimal("82")
+    s.db.commit()
+    _split(s, 2, [(2, D_2, "own"), (49, D_18, 18)])
+    sent = _confirm_sent(s, emails)
+    assert any(r == "CANCEL 49" for _q, r in sent), ("line 2 as without splits", sent)
+    assert not [t for t in sent if t[0] == "49" and t[1].startswith("DELAY")], sent
+    assert not [t for t in sent if t == ("131", "ORDER")], ("line 18 is not told 131 fresh", sent)
+    row_2 = s.db.get(OrderInquiryRow, s.no[2][2].id)
+    assert _linked(s, row_2) == Decimal("2"), "DOC-A's link is not dropped"
+    for row in _live(s, s.no[18][1], IV_ORDER):
+        links = ProjectOrderInquiryService(s.db)._links_of(row.id)
+        assert not [l for l in links if l.po_line_id == s.po_line.id], "nothing moved onto line 18"
+
+
+def test_a_split_does_not_move_onto_a_placed_target_row_with_no_link(api, emails):
+    s = _lines(api, [(2, 51, D_2, 2), (18, 82, D_18, 131)])
+    s.no[18][2].state = INQUIRY_PLACED
+    s.db.commit()
+    _split(s, 2, [(2, D_2, "own"), (49, D_18, 18)])
+    sent = _confirm_sent(s, emails)
+    target = s.db.get(OrderInquiryRow, s.no[18][2].id)
+    assert target.state == INQUIRY_PLACED, f"became {target.state}: purchasing placed it"
+    assert _linked(s, target) == Decimal("0"), "no link moved onto the placed row"
+    assert not [t for t in sent if t[0] == "49" and t[1].startswith("DELAY")], sent
+    assert any(r == "CANCEL 49" for _q, r in sent), ("as without splits", sent)
+
+
+def test_row_notes_name_the_core_autocount_line_numbers(api, emails):
+    """Seed core line numbers 480 / 608 for mirror lines 2 / 18: the notes `_split_row` writes
+    must say 608 / 480, never the mirror numbers."""
+    from app.models.order import SalesOrderLine
+
+    s = _lines(api, [(2, 51, D_2, 2), (18, 82, D_18, 131)])
+    s.db.get(SalesOrderLine, s.no[2][1].core_sales_order_line_id).line_no = 480
+    s.db.get(SalesOrderLine, s.no[18][1].core_sales_order_line_id).line_no = 608
+    s.db.commit()
+    _split(s, 2, [(2, D_2, "own"), (49, D_18, 18)])
+    _confirm_sent(s, emails)
+    notes = " | ".join(
+        str(r.note or "") for no in (2, 18) for r in
+        s.db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == s.no[no][1].id).all()
+    )
+    split_notes = [n for n in notes.split(" | ") if "line " in n]
+    assert split_notes, notes
+    text = " | ".join(split_notes)
+    assert "608" in text or "480" in text, text
+    assert "line 18" not in text and "line 2 " not in text and not text.endswith("line 2"), text
