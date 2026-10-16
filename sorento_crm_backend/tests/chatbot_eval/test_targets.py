@@ -283,3 +283,20 @@ def test_growth_items_are_reported_apart_and_never_count_toward_meets():
     assert s["slices"]["followup"]["n"] == 10 and s["slices"]["followup"]["rate"] == 1.0
     g = s["growth"]["followup"]
     assert g["n"] == 1 and g["rate"] == 0.0
+
+
+def test_and_x_new_fact_passes_when_subject_kept_and_fact_replaced():
+    r = row(decision="new_ask", domains=("incoming",), focus_codes=["SRTA100"])
+    check(grade_turn(r, item("followup", "and_x", variant="new_fact", fact="incoming", subject_after=["SRTA100"])), True)
+
+
+def test_and_x_new_fact_fails_when_subject_dropped():
+    r = row(decision="new_ask", domains=("incoming",), focus_codes=[])
+    check(grade_turn(r, item("followup", "and_x", variant="new_fact", fact="incoming", subject_after=["SRTA100"])),
+          False, "subject")
+
+
+def test_and_x_new_fact_fails_when_fact_is_wrong():
+    r = row(decision="new_ask", domains=("inventory",), focus_codes=["SRTA100"])
+    check(grade_turn(r, item("followup", "and_x", variant="new_fact", fact="incoming", subject_after=["SRTA100"])),
+          False, "asked")
