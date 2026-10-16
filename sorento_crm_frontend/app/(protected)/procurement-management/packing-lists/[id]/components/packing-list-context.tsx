@@ -76,7 +76,7 @@ export interface DraftLine {
  * server starts it at 1.
  */
 const LINE_NUMBER_RULES: Partial<Record<keyof DraftLine, NumberFieldRules>> = {
-  quantity_shipped: { min: 0 },
+  quantity_shipped: { min: 0, integer: true },
   cartons_count: { min: 0, integer: true },
   pcs_per_carton: { min: 0, optional: true },
   carton_length_cm: { min: 0, optional: true },

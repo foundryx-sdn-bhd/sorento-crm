@@ -28,7 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatDateInMalaysia } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
 import { EM_DASH, fmtInt } from '../../lib/format';
-import { CommittedNumberInput } from '../../components/CommittedNumberInput';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { describeWindow } from '../../reorder/lib/runListing';
 import { useContainerRequestBuild, useContainerRequestHistory } from '../../hooks/useFulfilment';
 import type {
@@ -427,7 +427,7 @@ export function ContainerRequestSection({
       return <span className="tabular-nums">{fmtInt(value)}</span>;
     }
     return (
-      <CommittedNumberInput
+      <LiveNumberInput
         min={0}
         rules={{ min: 0 }}
         className="h-8 w-24 tabular-nums"

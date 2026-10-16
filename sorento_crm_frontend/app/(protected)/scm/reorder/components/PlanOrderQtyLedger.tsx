@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { NumberInput } from '@/components/ui/number-input';
-import { numberFieldError } from '@/lib/number-field';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import {
   EM_DASH,
   fmtDate,
@@ -149,19 +148,19 @@ function ToggleLine({
 function ForecastAddOnLine({
   checked,
   onToggle,
-  text,
-  onTextChange,
-  error,
+  value,
+  onCommit,
+  onValidityChange,
   label,
   cap,
   detail,
 }: {
   checked: boolean;
   onToggle: () => void;
-  /** What the buyer typed, kept as typed (empty and out-of-range included). */
-  text: string;
-  onTextChange: (value: string) => void;
-  error?: string;
+  /** The figure in force (the last valid entry). */
+  value: number;
+  onCommit: (value: number) => void;
+  onValidityChange?: (valid: boolean) => void;
   /** The tick's own accessible name, built from the last valid figure. */
   label: string;
   cap: number;
@@ -181,15 +180,16 @@ function ForecastAddOnLine({
           className={`flex flex-wrap items-baseline gap-1.5 ${checked ? 'font-medium' : 'text-muted-foreground'}`}
         >
           <span>{checked ? 'Added' : '+ Add'}</span>
-          <NumberInput
+          <LiveNumberInput
             variant="sm"
             min={0}
             max={cap}
             step={1}
-            value={text}
-            error={error}
+            rules={{ min: 0, max: cap, integer: true }}
+            value={value}
+            onCommit={onCommit}
+            onValidityChange={onValidityChange}
             errorClassName="basis-full"
-            onChange={(e) => onTextChange(e.target.value)}
             className="h-6 w-20 tabular-nums"
             aria-label="Forecast add-on quantity"
           />
@@ -216,19 +216,17 @@ function CoverSourceLine({
   code,
   free,
   max,
-  text,
-  error,
-  onTextChange,
+  value,
+  onCommit,
 }: {
   code: string;
   /** What the location holds - a fact about the location, stated as such. */
   free: number;
   /** What this field may actually be set to: `free`, capped by what the row still needs. */
   max: number;
-  /** What the buyer typed, kept as typed (empty and over-limit included). */
-  text: string;
-  error?: string;
-  onTextChange: (value: string) => void;
+  /** The figure in force (the last valid entry). */
+  value: number;
+  onCommit: (value: number) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs">
@@ -238,15 +236,15 @@ function CoverSourceLine({
       <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
         {`${fmtInt(free)} free`}
       </span>
-      <NumberInput
+      <LiveNumberInput
         variant="sm"
         min={0}
         max={max}
         step={1}
-        value={text}
-        error={error}
+        rules={{ min: 0, max, integer: true }}
+        value={value}
+        onCommit={onCommit}
         errorClassName="basis-full text-end"
-        onChange={(e) => onTextChange(e.target.value)}
         className="h-6 w-20 shrink-0 tabular-nums"
         aria-label={`Use from ${code}`}
       />
@@ -615,8 +613,6 @@ export function OrderQtyLedger({
     return defaultSourceEdits(cover);
   };
   const [sourceEdits, setSourceEdits] = useState<SourceEdits>(seedEdits);
-  // What the buyer typed in each location's box, apart from the figure in force above.
-  const [sourceTexts, setSourceTexts] = useState<Record<string, string>>({});
   // Re-seed when the OFFER itself changes - another row's decision can free a location up or
   // spend it down while this popover is open, and a newly offered location left out of the
   // edits map would silently render as 0 with no way to tell it from a deliberate zero. The
@@ -628,7 +624,6 @@ export function OrderQtyLedger({
     if (seededFor.current === offerKey) return;
     seededFor.current = offerKey;
     setSourceEdits(seedEdits());
-    setSourceTexts({});
     // `seedEdits` closes over the current cover/decision, which is what a re-seed wants.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offerKey]);
@@ -652,17 +647,12 @@ export function OrderQtyLedger({
   // feedback, 2026-08-12: "what if I don't want to buy 1,200 more, what if 1,500?
   // editable here"). The trend-aware proposal is only ever the STARTING value - once the
   // popover mounts, the buyer's typed figure is the one that gets applied.
-  // The figure in force (the last VALID entry) and, apart from it, what the buyer has typed
-  // in the box: a blank or out-of-range entry stays as typed, shows its message, and
-  // commits nothing, so the recorded buy never rests on a figure the buyer did not give.
+  // The figure in force (the last VALID entry); the box keeps what was typed and commits
+  // nothing for a blank or out-of-range entry, so the recorded buy never rests on a figure
+  // the buyer did not give.
   const [forecastQty, setForecastQty] = useState<number>(() => addOn?.qty ?? 0);
-  const [forecastText, setForecastText] = useState<string>(() => String(addOn?.qty ?? 0));
+  const [forecastInvalid, setForecastInvalid] = useState(false);
   const forecastCap = forecastQtyCap(addOn?.qty ?? 0);
-  const forecastError = numberFieldError(forecastText, {
-    min: 0,
-    max: forecastCap,
-    integer: true,
-  });
   // `qty` can be 0 (a falling trend ate the whole flat proposal) - that renders a disabled
   // line, never a checkbox, so it can never actually be toggled on.
   const delta = forecastOn ? forecastQty : 0;
@@ -737,7 +727,7 @@ export function OrderQtyLedger({
   const togglePo = () => commit({ stockOn, poOn: !poOn, forecastOn, forecastQty, edits: sourceEdits });
   const toggleForecast = () => {
     const next = !forecastOn;
-    if (next && forecastError) return;
+    if (next && forecastInvalid) return;
     setForecastOn(next);
     commit({ stockOn, poOn, forecastOn: next, forecastQty, edits: sourceEdits });
   };
@@ -748,20 +738,14 @@ export function OrderQtyLedger({
     max: maxSourceEdit(cover, warehouseId, sourceEdits),
     integer: true,
   });
-  const changeSourceText = (warehouseId: string, text: string) => {
-    setSourceTexts((prev) => ({ ...prev, [warehouseId]: text }));
-    // Blank, partial or over-limit: stays as typed, shows its sentence, records nothing.
-    if (numberFieldError(text, sourceRules(warehouseId))) return;
-    const edits = { ...sourceEdits, [warehouseId]: Number(text) };
+  const changeSource = (warehouseId: string, figure: number) => {
+    const edits = { ...sourceEdits, [warehouseId]: figure };
     setSourceEdits(edits);
     if (stockOn) commit({ stockOn, poOn, forecastOn, forecastQty, edits });
   };
   // Editing while ticked re-applies immediately - the input IS the edit, there is no
   // separate "Record" step (mirrors the ledger's own UAC B4 non-goal for the toggles).
-  const changeForecastText = (text: string) => {
-    setForecastText(text);
-    if (numberFieldError(text, { min: 0, max: forecastCap, integer: true })) return;
-    const value = Number(text);
+  const changeForecast = (value: number) => {
     setForecastQty(value);
     if (forecastOn) commit({ stockOn, poOn, forecastOn, forecastQty: value, edits: sourceEdits });
   };
@@ -932,12 +916,8 @@ export function OrderQtyLedger({
                             code={s.warehouse_code}
                             free={s.qty}
                             max={maxSourceEdit(cover, s.warehouse_id, sourceEdits)}
-                            text={sourceTexts[s.warehouse_id] ?? String(sourceEdits[s.warehouse_id] ?? 0)}
-                            error={numberFieldError(
-                              sourceTexts[s.warehouse_id] ?? String(sourceEdits[s.warehouse_id] ?? 0),
-                              sourceRules(s.warehouse_id),
-                            )}
-                            onTextChange={(v) => changeSourceText(s.warehouse_id, v)}
+                            value={sourceEdits[s.warehouse_id] ?? 0}
+                            onCommit={(v) => changeSource(s.warehouse_id, v)}
                           />
                         ))}
                       </div>
@@ -972,9 +952,9 @@ export function OrderQtyLedger({
               <ForecastAddOnLine
                 checked={forecastOn}
                 onToggle={toggleForecast}
-                text={forecastText}
-                onTextChange={changeForecastText}
-                error={forecastError}
+                value={forecastQty}
+                onCommit={changeForecast}
+                onValidityChange={(valid) => setForecastInvalid(!valid)}
                 label={forecastOn ? `Added ${fmtInt(forecastQty)}` : `Add ${fmtInt(forecastQty)}`}
                 cap={forecastCap}
                 detail={addOnDetail(addOn)}

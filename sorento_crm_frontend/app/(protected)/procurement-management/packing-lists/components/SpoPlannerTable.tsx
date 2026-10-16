@@ -400,12 +400,6 @@ export function SpoPlannerTable({
    */
   const stateRef = useRef(state);
   stateRef.current = state;
-  // Set when Create SPO / Save changes was refused on a quantity; the boxes then show their
-  // message and follow the field. A ref too, because the cells live in the identity-stable
-  // `columns` memo (see `stateRef`).
-  const [qtyChecked, setQtyChecked] = useState(false);
-  const qtyCheckedRef = useRef(false);
-  qtyCheckedRef.current = qtyChecked;
   /** Which lines have their destinations open (R22). Closed to start with: the table is a
    *  ranked reading first, and every row open turns it into a form. */
   const [expanded, setExpanded] = useState<ExpandedState>({});
@@ -674,10 +668,8 @@ export function SpoPlannerTable({
     return !ln.cannot_convert && (st.qtyText !== undefined || st.splits.some((sp) => sp.qtyText !== undefined));
   });
   const sendIfUsable = (send: () => void) => {
-    if (hasUnusableQty) {
-      setQtyChecked(true);
-      return;
-    }
+    // The refused boxes already show their sentence (blank or negative is told at once).
+    if (hasUnusableQty) return;
     send();
   };
 
@@ -780,7 +772,7 @@ export function SpoPlannerTable({
           : 'h-8 w-24 tabular-nums'
       }
       value={stateFor(ln).qtyText ?? qtyFor(ln)}
-      error={qtyCheckedRef.current ? quantityMessage(stateFor(ln).qtyText) : undefined}
+      error={quantityMessage(stateFor(ln).qtyText)}
       disabled={ln.cannot_convert}
       aria-label="SPO qty"
       // A test hook, not a live tooltip (the `title` this used to carry was the explanatory
@@ -1212,7 +1204,6 @@ export function SpoPlannerTable({
               qty={qtyFor(ln)}
               disabled={cannotSplit(ln)}
               mismatch={splitMismatchRef.current.has(ln.shipment_line_id)}
-              qtyChecked={qtyCheckedRef.current}
               onChange={(next) => setSplits(ln, next)}
             />
           ),
@@ -1776,7 +1767,6 @@ function LocationSplitPanel({
   qty,
   disabled,
   mismatch,
-  qtyChecked,
   onChange,
 }: {
   line: SpoSuggestionLine;
@@ -1785,7 +1775,6 @@ function LocationSplitPanel({
   disabled: boolean;
   mismatch: boolean;
   /** A send was refused on a quantity: the boxes now show their message. */
-  qtyChecked: boolean;
   onChange: (splits: SplitState[]) => void;
 }) {
   const options = line.location_options.map((o: SpoLocationOption) => ({
@@ -1857,7 +1846,7 @@ function LocationSplitPanel({
                         className="h-8 w-20 tabular-nums"
                         aria-label={`Quantity for destination ${i + 1}`}
                         value={split.qtyText ?? split.qty}
-                        error={qtyChecked ? quantityMessage(split.qtyText) : undefined}
+                        error={quantityMessage(split.qtyText)}
                         errorClassName="w-24 whitespace-normal"
                         onChange={(e) => {
                           const text = e.target.value;

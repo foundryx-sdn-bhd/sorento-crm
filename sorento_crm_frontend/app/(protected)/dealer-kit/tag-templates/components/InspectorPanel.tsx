@@ -25,7 +25,7 @@ import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { LiveNumberInput } from '../../components/LiveNumberInput';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -166,6 +166,7 @@ function NumberInput({
         step={step}
         min={min}
         max={max}
+        rules={{ min, max }}
         onCommit={onChange}
       />
     </div>

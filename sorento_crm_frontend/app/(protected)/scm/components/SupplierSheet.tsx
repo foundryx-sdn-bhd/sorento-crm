@@ -37,7 +37,7 @@
 
 import { cn } from '@/lib/utils';
 import { fmtInt } from '../lib/format';
-import { CommittedNumberInput } from './CommittedNumberInput';
+import { LiveNumberInput } from '@/components/ui/number-input';
 
 export interface SupplierSheetColumn {
   /** Their heading, in their own words (or ours, on a no-file document). */
@@ -141,7 +141,7 @@ export function SupplierSheet({
         )}
       >
         {isEditableCell && colIndex === qtyAt ? (
-          <CommittedNumberInput
+          <LiveNumberInput
             min={0}
             rules={{ min: 0 }}
             aria-label="Qty to load"

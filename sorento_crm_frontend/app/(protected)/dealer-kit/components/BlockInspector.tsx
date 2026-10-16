@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LiveNumberInput } from './LiveNumberInput';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -308,7 +308,7 @@ export function BlockInspector({
                       id={`dk-cols-${breakpoint}`}
                       min={1}
                       max={8}
-                      integer
+                      rules={{ min: 1, max: 8, integer: true }}
                       value={props.columns[breakpoint]}
                       aria-label={`Tiles across on ${breakpoint}`}
                       onCommit={(columns) =>

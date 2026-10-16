@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { NumberInput } from '@/components/ui/number-input';
 import { numberFieldError } from '@/lib/number-field';
-import { CommittedNumberInput } from '../../components/CommittedNumberInput';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -425,7 +425,7 @@ export function PlanRowPanel({
                 <span className="ms-1 text-2xs">{`master ${fmtInt(masterMoq)}`}</span>
               )}
             </span>
-            <CommittedNumberInput
+            <LiveNumberInput
               min={0}
               inputMode="numeric"
               aria-label="MOQ"
@@ -588,7 +588,7 @@ export function PlanRowPanel({
               The reorder quantity beside it has no such rule and stays editable. */}
           <label className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="text-muted-foreground">Level</span>
-            <CommittedNumberInput
+            <LiveNumberInput
               min={0}
               inputMode="numeric"
               aria-label="AutoCount level"
@@ -603,7 +603,7 @@ export function PlanRowPanel({
           </label>
           <label className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="text-muted-foreground">Reorder qty</span>
-            <CommittedNumberInput
+            <LiveNumberInput
               min={0}
               inputMode="numeric"
               aria-label="AutoCount reorder qty"
@@ -751,7 +751,7 @@ function NumberField({
         {label}
         {hint ? <span className="ms-1 text-2xs">{`(${hint})`}</span> : null}
       </span>
-      <CommittedNumberInput
+      <LiveNumberInput
         min={0}
         max={max}
         inputMode="numeric"

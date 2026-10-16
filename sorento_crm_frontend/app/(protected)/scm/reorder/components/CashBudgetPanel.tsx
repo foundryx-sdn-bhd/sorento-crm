@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Slider, SliderThumb } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { fmtInt, fmtMoney } from '../../lib/format';
-import { CommittedNumberInput } from '../../components/CommittedNumberInput';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import type { FundingResult } from '../lib/reorderCashAllocation';
 
 /** One compact readout figure (label above, value below). */
@@ -76,7 +76,7 @@ export function CashBudgetPanel({
           <Label htmlFor="cash-budget" className="mb-1 block text-xs">
             Budget (RM)
           </Label>
-          <CommittedNumberInput
+          <LiveNumberInput
             id="cash-budget"
             inputMode="numeric"
             min={0}

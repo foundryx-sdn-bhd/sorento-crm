@@ -33,7 +33,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
-import { LiveNumberInput } from '../../components/LiveNumberInput';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -939,6 +939,7 @@ export function RoomDesigner() {
                         id="dk-opening-width"
                         className="h-8 w-24"
                         min={1}
+                        rules={{ min: 1 }}
                         value={selectedOpening.widthMm}
                         onCommit={(widthMm) => resizeOpening({ widthMm })}
                       />
@@ -952,6 +953,7 @@ export function RoomDesigner() {
                         id="dk-opening-height"
                         className="h-8 w-24"
                         min={1}
+                        rules={{ min: 1 }}
                         value={selectedOpening.heightMm}
                         onCommit={(heightMm) => resizeOpening({ heightMm })}
                       />
@@ -968,6 +970,7 @@ export function RoomDesigner() {
                         id="dk-opening-offset"
                         className="h-8 w-24"
                         min={0}
+                        rules={{ min: 0 }}
                         value={Math.round(selectedOpening.offsetMm)}
                         onCommit={(offsetMm) =>
                           moveOpening(selectedOpening.id, offsetMm, selectedOpening.wallIndex)
@@ -1006,6 +1009,7 @@ export function RoomDesigner() {
                         id="dk-opening-sill"
                         className="h-8 w-24"
                         min={0}
+                        rules={{ min: 0 }}
                         value={selectedOpening.sillMm}
                         onCommit={(sillMm) => resizeOpening({ sillMm })}
                       />
@@ -1094,6 +1098,7 @@ export function RoomDesigner() {
                     <LiveNumberInput
                       id="dk-ceiling-height"
                       min={1000}
+                      rules={{ min: 1000, max: 6000 }}
                       max={6000}
                       step={50}
                       className="h-8"

@@ -243,10 +243,10 @@ export default function PurchaseRequestForm({
                       if (form.getFieldState(f.name, form.formState).error) void form.trigger(f.name);
                       if (isSponsorship) {
                         const up = form.getValues(`products.${row.index}.unit_price`);
-                        if (v !== null && up != null && up !== "") {
+                        if (v !== null && !Number.isNaN(v) && up != null && up !== "") {
                           form.setValue(`products.${row.index}.total`, (v ?? 0) * Number(up));
                         }
-                        if (v === null) form.setValue(`products.${row.index}.total`, null);
+                        if (v === null || Number.isNaN(v)) form.setValue(`products.${row.index}.total`, null);
                       }
                     }}
                     className="h-8 w-24"
@@ -290,10 +290,10 @@ export default function PurchaseRequestForm({
                           onValueChange={(v) => {
                             f.onChange(v);
                             const qty = form.getValues(`products.${row.index}.quantity`);
-                            if (v !== null && qty != null && qty !== "") {
+                            if (v !== null && !Number.isNaN(v) && qty != null && qty !== "") {
                               form.setValue(`products.${row.index}.total`, (v ?? 0) * Number(qty));
                             }
-                            if (v === null) form.setValue(`products.${row.index}.total`, null);
+                            if (v === null || Number.isNaN(v)) form.setValue(`products.${row.index}.total`, null);
                           }}
                           className="h-8 w-24"
                         />

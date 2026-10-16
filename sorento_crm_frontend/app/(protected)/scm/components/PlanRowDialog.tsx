@@ -36,7 +36,7 @@ import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { getStatusBadgeVariant, formatStatusLabel } from '@/lib/status-badge';
 import { cn } from '@/lib/utils';
 
-import { CommittedNumberInput } from './CommittedNumberInput';
+import { LiveNumberInput } from '@/components/ui/number-input';
 import { demandClassBadge } from '../lib/demandClass';
 import { EM_DASH, fmtDate, fmtInt, fmtMoney, fmtSupplierCost } from '../lib/format';
 import { purchaseOrderStatusPill } from '../lib/purchaseOrderStatus';
@@ -1894,7 +1894,7 @@ export function SoCoveragePicker({
           }
           const invalid = ticked && value > c.qty;
           return (
-            <CommittedNumberInput
+            <LiveNumberInput
               min={0}
               step={1}
               rules={{ min: 0, integer: true }}
