@@ -158,3 +158,18 @@ Crew, `crew/state/eval/bin/replay-gate.sh BASE_WT HEAD_WT [--split dev|hidden|al
   functions (`classify_language`, `classify_shape(position, text, has_code)`, `candidate_signals(turn,
   next_user_msg_gap_s)`) are unit-tested on synthetic rows; reuse the parser-gold builder's language helper
   (`parser-gold/tooling/build_pool.py`) if one exists rather than writing a new one.
+
+## S3b: L1 replay in two tiers (crew decision 16 Oct)
+
+Measured: whole-turn replay 0.8 s/row (40 real rows, 42 s wall, 16 s CPU). Corpus: 10,650 traced rows, 5,584
+distinct parses (hidden 4,057, dev 1,504), 1,480 distinct core parses (case, message, domain, intent, entities).
+
+- Tier 1, grounding: `replay.py run --stage grounding` runs only `grounding.ground()` (the f4_replay class) over
+  all distinct parses; output `stages.grounded` only. Seconds to about a minute.
+- Tier 2, whole turn: the 1,480 core parses, one process per arm, after a profiling pass that memoises
+  contact-independent loaders inside the replay process only (both arms alike; no product code change); the gate
+  prints coverage when its time box ends.
+- `--full` (all distinct parses, whole turn, ~40 min) runs nightly. It is replay only: every model call is
+  blocked, so it costs $0.
+- The corpus is rebuilt from the restored prod DB (`sorento_prod_20261015`, adds 18 Sep-15 Oct) once crew says
+  it is live.
