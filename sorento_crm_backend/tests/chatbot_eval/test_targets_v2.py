@@ -13,7 +13,7 @@ event `{kind: "apply", note: "payload omitted"}`. `row["prev_bot_message"]` carr
 from __future__ import annotations
 
 from scripts.chatbot_eval.targets import grade_turn, made_up_facts
-from tests.chatbot_eval.test_targets import check, item, ent  # noqa: F401  (helpers only)
+from tests.chatbot_eval.test_targets import check, item, ent, _att, _file, GOLD_TS  # noqa: F401  (helpers only)
 
 UA = "11111111-1111-4111-8111-111111111111"
 UB = "22222222-2222-4222-8222-222222222222"
@@ -847,3 +847,38 @@ def test_a_known_memory_before_still_gives_the_subject_before():
 
     r = row2(mem_before=[prod("SRTBEFORE1", UA)], state_products=[prod("SRTPOST1", UB)])
     assert _subject_before(r) == {"SRTBEFORE1"}
+
+
+# ------------------------------------------------------------------ review round 15 (attachment: honest none on record)
+ATT_TOOL = "crm_master_product_attachments_list"
+
+
+def _live_att(result_files, *, tool=ATT_TOOL, reply="No technical specifications are on record for this product.",
+              sent=0):
+    r = _att([], reply=reply, sent=sent)
+    for rec in r["trace"]:
+        if rec.get("kind") == "tool":
+            rec["name"] = tool
+    r["tool_results"] = [{"name": tool, "args": {"product_ids": [UA]}, "result": {"attachments": result_files}}]
+    return r
+
+
+def test_an_attachment_tool_result_with_no_file_of_the_type_and_nothing_sent_is_an_honest_none():
+    res = grade_turn(_live_att([_file("Drawing")]), item("attachment", **GOLD_TS))
+    assert res["checks"]["files"] is True and res["checks"]["type"] is None, res["checks"]
+    check(res, True)
+
+
+def test_a_result_that_has_the_type_but_nothing_sent_still_fails_files():
+    res = grade_turn(_live_att([_file("Technical Specifications")]), item("attachment", **GOLD_TS))
+    assert res["checks"]["files"] is False and res["passed"] is False, res["checks"]
+
+
+def test_no_attachment_tool_run_still_fails_files():
+    res = grade_turn(_live_att([_file("Drawing")], tool="crm_inventory_list"), item("attachment", **GOLD_TS))
+    assert res["checks"]["files"] is False and res["passed"] is False, res["checks"]
+
+
+def test_a_reply_claiming_attachment_with_nothing_sent_still_fails_files():
+    res = grade_turn(_live_att([_file("Drawing")], reply="I have attached the file(s) below."), item("attachment", **GOLD_TS))
+    assert res["checks"]["files"] is False and res["passed"] is False, res["checks"]
