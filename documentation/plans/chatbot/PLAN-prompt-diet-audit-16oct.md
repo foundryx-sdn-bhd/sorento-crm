@@ -1,6 +1,8 @@
 # PLAN: PROMPT-DIET audit of the production parser prompt (16 Oct 2026)
 
-Status: Deliverable 1 DONE (owner annotated 16 Oct). Stage 1 gate PASS on dev v111, hand test pending (PR #1739).
+Status: PARKED (crew, 16 Oct ~18:40) until the EVAL-BENCH follow-up slice exists (CP0); crew then measures v112 vs v94
+there over 3 runs and the lane resumes only if v112 is not worse. PR #1739 stays open at c06e082bd (dev v112 1de617ac).
+Why: on the step 7 pick v112 fell back to outstanding where v94 stayed so_outstanding (history-dependent).
 Stages 2-5 HELD for crew's chatbot architecture. Track: deliverable 1 docs only; stage 1 M (see below).
 
 Result: 91 sections, 35,585 tokens today, about 20,435 after the proposed five stages (-43%). Two text bugs
