@@ -1,16 +1,17 @@
 """EVAL-BENCH CP0 grader (`scripts/chatbot_eval/targets.py`): one pass and one fail per slice on hand-built rows.
 
-Row shapes below mirror a real persisted turn (probed from a synthetic engine turn). Where the plan did not pin a
-location, the choice made here is the contract the coder is held to:
-  - grounded entities: the `apply` event's `verdict.entities` (the real `understood.facts.entities` is only a COUNT)
-  - `apply.decision = {kind, why, positions}`; `apply.verdict.reference_positions` is the parser's own read
-  - subject after the turn: `state` event `focus.products[*].canonical_code`
-  - fact asked: the `routed` stage `facts.domains`; a clarify = `replied` stage `facts.asking` truthy
-  - open question: `open_question` event `{before, answer, after, handler, outcome}`; re-asked = `after` equals `before`
-  - attachment: tool event `crm_attachments_list` args `attachment_type`; envelope `items[*].attachment_type`
-  - customers in an envelope: `items[*].{customer_id, customer_name}`; reply text at `response.reply.text`
-  - user message: `envelope.message.message.message.text`
-  - truncated envelope: `{"truncated": True, "head": "..."}` (trace.cap_envelope)
+Row shapes below mirror a real persisted turn (checked against recorded rows by the captain):
+  - grounded entities: `apply.verdict.entities`; the parser's pick read: `apply.verdict.reference_positions` and
+    `apply.verdict.open_question_answer`; `apply.decision = {kind, why}`; optional `engine_pick` event
+    `{parser_positions, positions, roster}` when the engine resolved a pick (picked position = its `positions`)
+  - subject after the turn: `state.focus.products[*].canonical_code`
+  - fact asked: `routed.facts.domains`; a clarify = `replied.facts.asking` truthy
+  - open question: before = `state.open_question`, after = `memory.open_question`; re-asked = both equal and set
+  - attachments: tool args `attachment_type_ids`; envelope `attachments[*].attachmentType` (gold matches the label)
+  - scope: `asker.linked_customer_names`, `item.watch_customer_names`; leak = a watched name not linked, a hidden
+    field, or a uuid in the reply. `scope_leaks(row, asker, watch_customer_names=())`
+  - reply text `response.reply.text`; user message `envelope.message.message.message.text`;
+    truncated envelope `{"truncated": True, "head": "..."}`
 """
 from __future__ import annotations
 
@@ -25,20 +26,23 @@ STAFF = {"audience": "staff", "linked_customer_ids": None, "hidden_fields": []}
 
 
 def row(*, message="stock of SRTA100", reply="SRTA100 has 40 pcs.", entities=None, domains=("inventory",),
-        asking=None, decision=None, positions=None, tools=None, open_question=None, focus_codes=None):
+        asking=None, decision=None, positions=None, tools=None, open_question=None, focus_codes=None, answer=None, engine_pick=None):
     trace = [
         {"stage": "understood", "status": "ok", "facts": {"entities": len(entities or [])}, "raw": {}},
         {"stage": "routed", "status": "ok", "facts": {"lane": "business_query", "domains": list(domains)}},
         {"stage": "replied", "status": "ok", "facts": {"asking": asking, "files": 0}},
-        {"kind": "apply", "verdict": {"entities": entities or [], "reference_positions": positions or []},
-         "decision": {"kind": decision, "why": "synthetic", "positions": positions or []} if decision else None},
+        {"kind": "apply", "verdict": {"entities": entities or [], "reference_positions": positions or [],
+                                      "open_question_answer": answer},
+         "decision": {"kind": decision, "why": "synthetic", "own_domain": None} if decision else None},
     ]
+    if engine_pick:
+        trace.append({"kind": "engine_pick", "parser_positions": [], "positions": engine_pick, "roster": []})
     for t in tools or []:
         trace.append({"kind": "tool", "name": t["name"], "args": t.get("args", {}), "envelope": t.get("envelope", {})})
-    if open_question is not None:
-        trace.append({"kind": "open_question", **open_question})
-    if focus_codes is not None:
-        trace.append({"kind": "state", "focus": {"products": [{"canonical_code": c} for c in focus_codes]}})
+    trace.append({"kind": "state", "turn_no": 2,
+                  "focus": {"products": [{"canonical_code": c} for c in (focus_codes or [])]},
+                  "open_question": (open_question or {}).get("before")})
+    trace.append({"kind": "memory", "focus": {}, "episodes": [], "open_question": (open_question or {}).get("after")})
     return {"id": "t1", "branch_kind": "business_query",
             "envelope": {"message": {"message": {"message": {"text": message}}}},
             "trace": trace, "response": {"reply": {"text": reply}}}
@@ -52,8 +56,9 @@ def tool_for(code, items=None, name="crm_inventory_list"):
     return {"name": name, "args": {"code": code}, "envelope": {"items": items if items is not None else [{"code": code, "qty": 40}]}}
 
 
-def item(slice_, kind=None, message="synthetic ask", asker=STAFF, **gold):
-    return {"item_id": "it1", "slice": slice_, "kind": kind, "message": message, "gold": gold, "asker": asker}
+def item(slice_, kind=None, message="synthetic ask", asker=STAFF, watch_customer_names=(), **gold):
+    return {"item_id": "it1", "slice": slice_, "kind": kind, "message": message, "gold": gold, "asker": asker,
+            "watch_customer_names": list(watch_customer_names)}
 
 
 def check(result, passed, gist=None):
@@ -89,19 +94,19 @@ def test_code_lookup_clarify_passes_when_gold_is_ambiguous():
 
 # ------------------------------------------------------------------ follow-ups
 def test_followup_pick_pass_and_wrong_position_fails():
-    ok = row(decision="answer", positions=[2], entities=[ent("SRTA200")], reply="SRTA200 has 7 pcs.",
+    ok = row(decision="answer", positions=[2], engine_pick=[2], entities=[ent("SRTA200")], reply="SRTA200 has 7 pcs.",
              tools=[tool_for("SRTA200")])
     check(grade_turn(ok, item("followup", "pick", position=2, code="SRTA200")), True)
-    bad = row(decision="answer", positions=[3], entities=[ent("SRTA300")], reply="SRTA300 has 7 pcs.",
+    bad = row(decision="answer", positions=[3], engine_pick=[3], entities=[ent("SRTA300")], reply="SRTA300 has 7 pcs.",
               tools=[tool_for("SRTA300")])
     check(grade_turn(bad, item("followup", "pick", position=2, code="SRTA200")), False, "position")
 
 
 def test_followup_answer_pass_and_reask_fails():
     q = {"question": "which colour", "options": ["white", "black"]}
-    ok = row(decision="answer", open_question={"before": q, "answer": "white", "after": None, "outcome": "resolved"})
+    ok = row(decision="answer", open_question={"before": q, "after": None}, answer={"mode": "pick", "picked": [1]})
     check(grade_turn(ok, item("followup", "answer", option="white")), True)
-    bad = row(decision="answer", open_question={"before": q, "answer": None, "after": q, "outcome": "unresolved"})
+    bad = row(decision="answer", open_question={"before": q, "after": q})
     check(grade_turn(bad, item("followup", "answer", option="white")), False, "again")
 
 
@@ -136,14 +141,14 @@ def test_spec_pass_and_missing_value_fails():
 
 
 def _att(files, type_="technical_specifications", reply="Here are the files."):
-    return row(reply=reply, tools=[{"name": "crm_attachments_list", "args": {"attachment_type": type_},
-                                    "envelope": {"items": files}}])
+    return row(reply=reply, tools=[{"name": "crm_attachments_list", "args": {"attachment_type_ids": ["id-1"]},
+                                    "envelope": {"items": [], "attachments": files}}])
 
 
 def test_attachment_pass_and_wrong_type_fails():
-    files = [{"name": "a.pdf", "attachment_type": "technical_specifications"}]
+    files = [{"filename": "a.pdf", "url": "u", "mimeType": "application/pdf", "attachmentType": "technical_specifications"}]
     check(grade_turn(_att(files), item("attachment", attachment_type="technical_specifications")), True)
-    wrong = [{"name": "a.jpg", "attachment_type": "product_photos"}]
+    wrong = [{"filename": "a.jpg", "url": "u", "mimeType": "image/jpeg", "attachmentType": "product_photos"}]
     check(grade_turn(_att(wrong, type_="product_photos"), item("attachment", attachment_type="technical_specifications")), False, "type")
 
 
@@ -154,21 +159,23 @@ def test_attachment_none_on_record_passes_only_when_gold_says_none():
 
 
 # ------------------------------------------------------------------ scope
-DEALER = {"audience": "dealer", "linked_customer_ids": ["c-own"], "hidden_fields": ["cost_price"]}
+DEALER = {"audience": "dealer", "linked_customer_ids": ["c-own"], "linked_customer_names": ["Acme Sdn Bhd"],
+          "hidden_fields": ["cost_price"]}
+WATCH = ["Rival Trading"]
 
 
 def test_scope_customer_outside_links_is_a_leak_and_clean_passes():
-    leaky = row(reply="Orders for Acme Sdn Bhd and Rival Trading.",
-                tools=[{"name": "crm_orders_list", "envelope": {"items": [
-                    {"customer_id": "c-own", "customer_name": "Acme Sdn Bhd"},
-                    {"customer_id": "c-other", "customer_name": "Rival Trading"}]}}])
-    leaks = scope_leaks(leaky, DEALER)
+    leaky = row(reply="Orders for Acme Sdn Bhd and Rival Trading.")
+    leaks = scope_leaks(leaky, DEALER, watch_customer_names=WATCH)
     assert leaks and any("Rival Trading" in x for x in leaks) and not any("Acme" in x for x in leaks)
-    clean = row(reply="Orders for Acme Sdn Bhd.",
-                tools=[{"name": "crm_orders_list", "envelope": {"items": [{"customer_id": "c-own", "customer_name": "Acme Sdn Bhd"}]}}])
-    assert scope_leaks(clean, DEALER) == []
-    check(grade_turn(clean, item("scope", asker=DEALER)), True)
-    check(grade_turn(leaky, item("scope", asker=DEALER)), False, "customer")
+    clean = row(reply="Orders for Acme Sdn Bhd.")
+    assert scope_leaks(clean, DEALER, watch_customer_names=WATCH) == []
+    check(grade_turn(clean, item("scope", asker=DEALER, watch_customer_names=WATCH)), True)
+    check(grade_turn(leaky, item("scope", asker=DEALER, watch_customer_names=WATCH)), False, "customer")
+
+
+def test_scope_uuid_in_reply_is_a_leak():
+    assert scope_leaks(row(reply="Ref 123e4567-e89b-42d3-a456-426614174000."), DEALER)
 
 
 def test_scope_hidden_field_in_reply_is_a_leak():
