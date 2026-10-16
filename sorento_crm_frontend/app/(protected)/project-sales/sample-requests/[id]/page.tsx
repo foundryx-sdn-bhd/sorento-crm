@@ -3,8 +3,8 @@ import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
 import BackToList from '@/components/common/BackToList';
 import RecordEntityRegistrar from '@/components/common/RecordEntityRegistrar';
-import FormDetailWithSLATabs from '@/app/(protected)/sla-management/_shared/FormDetailWithSLATabs';
 import SampleRequestDetail from '../components/SampleRequestDetail';
+import SampleRequestDetailTabs from '../components/SampleRequestDetailTabs';
 
 export const metadata: Metadata = {
   title: 'Sample Request',
@@ -26,14 +26,10 @@ export default async function SampleRequestDetailPage({
         }
       />
       <div className="mt-6">
-        <FormDetailWithSLATabs
-          sourceEntityType="sample_request"
-          sourceEntityId={id}
-          commentsKind="sample_request"
-        >
+        <SampleRequestDetailTabs id={id}>
           <RecordEntityRegistrar entityType="sample_request" id={id} />
           <SampleRequestDetail requestId={id} />
-        </FormDetailWithSLATabs>
+        </SampleRequestDetailTabs>
       </div>
     </Container>
   );

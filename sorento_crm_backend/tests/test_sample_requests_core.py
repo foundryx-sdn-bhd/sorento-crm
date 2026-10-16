@@ -1256,6 +1256,21 @@ def test_review_audit_trail_is_readable_with_the_sample_request_view_slug(world)
     assert no.status_code == 403, no.text
 
 
+def test_review_audit_trail_names_the_status_not_its_id(world):
+    """No UUIDs in the UI: a status move reads "Status: Draft -> Submitted" in the Audit Trail,
+    not the two raw status ids."""
+    import re
+
+    rid = _submitted(world)
+    params = {"entity_type": "project_sample_requests", "entity_id": rid}
+    res = world.api.as_(world.coord).get("/api/v1/audit/logs/", params=params)
+    assert res.status_code == 200, res.text
+    descriptions = [e.get("description") or "" for e in res.json()["data"]]
+    assert "Status: Draft \u2192 Submitted" in descriptions, descriptions
+    uuid = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+    assert not any(uuid.search(d) for d in descriptions), descriptions
+
+
 def test_review_list_filters_by_salesperson(world):
     """List Filters popover: ?salesperson_id= narrows the queue to one salesperson."""
     mine = _submitted(world)

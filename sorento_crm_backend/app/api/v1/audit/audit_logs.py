@@ -134,11 +134,33 @@ def _integration_names(db: Session, integration_ids: list[str]) -> dict[str, str
 
 # Human-readable one-liner for a status transition, e.g. "status: pending → approved".
 # Derived at serialize time from the JSONB diff - no schema/storage change.
-def _derive_description(it) -> Optional[str]:
+def _status_labels(db: Session, items) -> dict[str, str]:
+    """Labels for every status-engine `status_id` an UPDATE row moved between, in one query,
+    so the trail reads "Status: Draft -> Submitted" instead of two raw ids."""
+    ids = set()
+    for it in items:
+        for values in (it.old_values or {}, it.new_values or {}):
+            value = values.get("status_id")
+            if value:
+                ids.add(str(value))
+    if not ids:
+        return {}
+    from app.models.status import Status
+
+    rows = db.query(Status.id, Status.label).filter(Status.id.in_(list(ids))).all()
+    return {str(r.id): r.label for r in rows}
+
+
+def _derive_description(it, status_labels: Optional[dict[str, str]] = None) -> Optional[str]:
     if it.description:
         return it.description
     old = it.old_values or {}
     new = it.new_values or {}
+    if status_labels and new.get("status_id") and new.get("status_id") != old.get("status_id"):
+        frm = status_labels.get(str(old.get("status_id"))) if old.get("status_id") else None
+        to = status_labels.get(str(new.get("status_id")))
+        if to:
+            return f"Status: {frm if frm else '∅'} → {to}"
     # Attachment upload activity: surface the filename + what happened.
     if it.entity_type == "attachment":
         fname = new.get("original_filename") or old.get("original_filename")
@@ -206,6 +228,7 @@ async def get_audit_logs(
     from app.services.activity_service import entity_labels
 
     record_labels = entity_labels(db, items)
+    status_labels = _status_labels(db, items)
     data = []
     for it in items:
         payload = AuditLogResponse.model_validate(it).model_dump()
@@ -223,7 +246,7 @@ async def get_audit_logs(
             it, user_names, contact_names, integration_names, payload["user_display_name"],
             scheduled_names=scheduled_names,
         )
-        payload["description"] = _derive_description(it)
+        payload["description"] = _derive_description(it, status_labels)
         payload["entity_label"] = record_labels.get(str(it.id))
         data.append(AuditLogResponse(**payload))
     return {

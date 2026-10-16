@@ -581,7 +581,13 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
               columns={lineColumns}
               rows={r.lines}
               getRowId={(row) => row.id}
-              listingKey="projects.sample_requests.view::sample-request-lines"
+              // Column preferences are keyed by a slug the reader holds: view for the
+              // coordinator, create for the owning salesperson (list_query._can_view_listing_key).
+              listingKey={
+                canViewRecord
+                  ? 'projects.sample_requests.view::sample-request-lines'
+                  : 'projects.sample_requests.create::sample-request-lines'
+              }
               emptyTitle="No items"
               paginate={false}
               expanded={expanded}
