@@ -150,6 +150,7 @@ On the n8n box (`<N8N_MAIN>` is the main n8n container, not a worker; list them 
 `docker ps --format '{{.Names}}\t{{.Image}}' | grep -i n8n`):
 
 ```bash
+umask 077                                            # export files are private from the start
 D=~/n8n-export-$(date +%Y%m%d-%H%M)                  # set once, reused below
 docker exec -u node <N8N_MAIN> sh -c 'rm -rf /tmp/wf && mkdir -p /tmp/wf && n8n export:workflow --all --separate --output=/tmp/wf/'
 docker cp <N8N_MAIN>:/tmp/wf "$D"
@@ -168,7 +169,8 @@ Re-check, from inside that folder (each line prints the workflow name, its `acti
 node name):
 
 ```bash
-CRM_ORIGIN='<CRM_ORIGIN>' python3 -I - <<'PY'
+read -r CRM_ORIGIN && export CRM_ORIGIN    # paste <CRM_ORIGIN>, Enter (keeps it out of shell history)
+python3 -I - <<'PY'
 import glob, json, os
 ORIGIN = os.environ["CRM_ORIGIN"]
 assert not ORIGIN.startswith("<"), "put the real origin address in CRM_ORIGIN"
