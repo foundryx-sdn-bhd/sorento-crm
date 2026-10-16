@@ -90,6 +90,9 @@ S4 seam (stub parser / dry-run mock emission, $0):
 4. APPLY re-entry gives the same focus as the first pass.
 5. Invalid change -> today's path, `memory.state.rejected` filled.
 6. `memory` trace event carries `state.shown/before/changes/after`; before = the view the parser was shown.
+7. R14: held customer then an incoming/inventory ask -> tool args carry no customer and no held period; the stored
+   focus still holds the customer; a following order ask applies it (slots from `chatbot_domains.narrowing` /
+   `takes_date_filter`, no word rule).
 
 S5 parser input:
 1. Flag off: `assemble()` byte-identical to main at levels off / conversation / full (golden).

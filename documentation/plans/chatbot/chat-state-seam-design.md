@@ -161,6 +161,16 @@ Edit budget: state.py 1 field; apply.py 1 override, 1 kwarg at 2 sites, 4 guards
 one-line guards, block pass-through; move `_answer_pending`'s option-to-entity builder (apply.py:795-850) into a
 helper `option_entities(option)` (turn/pending.py), no behaviour change.
 
+### A4. R14 slot applies by domain (owner 16 Oct ~21:45)
+
+A held customer / period is APPLIED to this turn's ask only when the answer domain takes it: `chatbot_domains.narrowing`
+keys (customer is a key only for `order` and `sales` in the seeded rows) and `takes_date_filter` (`turn/policy.py:25`,
+read at `lanes/business/answer.py:2415-2425`). A held slot the domain does not take stays in the stored focus (not
+dropped) and is not projected into the lane / tool args for this turn. Existing precedent for reading `narrowing` by
+kind: `turn/apply.py:286`, `:1831`. S4 decides the projection point (likely where the focus reaches the resolver and
+lanes: `with_carried_entities` turn_runtime.py:4825, `outstanding_carry` :3360) so the tail still writes the full
+focus back. Period on a domain switch is already dropped by A2 (switch_domain).
+
 ## B. Changes onto existing consumers (no new answer path)
 
 | Op | Becomes | Consumer |

@@ -23,7 +23,7 @@ in full; the parser outputs CHANGES to it; code applies them and logs before/aft
 | R3 | "and X?" (swaps one subject item) | Replace that item; keep the ask: domain, qty, period, filters | 15 Oct "qty carries" (#1617: "5件" then "SRTWC286-SH-NEW 呢？" -> 5) |
 | R4 | New full ask that names its own subject and measure ("top 3 sales agents" again, "any stock for sorento undermount basin") | New subject = only what this message names; basis / measure / channel / period / filters only from this message. Customer still carries (R6) | #1721 step 7 + REPORT-ENGINE-L AC-HT8 (no carried channel); feedback-chatbot-clarify-not-assume |
 | R5 | Answers the bot's open question (a position, an offered name, yes/no, a value) | Fills ONLY the asked slot; the question closes | feedback-live-check-follow-ups (reply to bot question); REPORT-ENGINE-L ("an answer fills only the asked slot"); #1572 "sorento" |
-| R6 | Customer first, then a product | Customer carries; answer for that customer only, never widen to the contact's other accounts | feedback-chatbot-clarify-not-assume (owner 15 Oct direction) |
+| R6 | Customer first, then a product | Customer stays in state; it APPLIES only when the new ask's domain takes a customer (R14): a delivery/order ask for that customer only, never widened; a product-level ask (stock, incoming/ETA, files, specs, price) ignores it | feedback-chatbot-clarify-not-assume (owner 15 Oct direction); owner 16 Oct ~21:45 (ETA is incoming, not customer delivery) |
 | R7 | Product first, then a customer named with no reference to the product | Ask "same product or all products?" with real names. Explicit reference ("delivery for this") = use the held product | feedback-chatbot-clarify-not-assume (Q9), feedback-chatbot-rules-know-dont-ask |
 | R8 | States a quantity on the held item ("HAVE 10??" after an answer) | Quantity attaches to the held item; it rides on R3 and on a pick | 15 Oct "qty carries" (#1617 QTY-CARRIED) |
 | R9 | Points at the last list ("2", "the 2nd one", a label from it) | That item from the last list shown; a short reply to a bot list keeps the held item | IDEA-CAPTURE G1 (brief); #1352 (roster survives "check stock") |
@@ -31,6 +31,7 @@ in full; the parser outputs CHANGES to it; code applies them and logs before/aft
 | R11 | Unclear: no reference, could be the held subject or a new one | Ask with real-name options, never guess; loop breaker = hand-over offer, never a guess | feedback-chatbot-clarify-not-assume, feedback-chatbot-never-leak-ids |
 | R12 | (mechanism) | Parser outputs the change in registry values / list positions; code validates and keeps a registry-valid value; no word, regex or fuzzy rules on the message | feedback-semantic-no-hardcoded-rules, feedback-no-code-fuzzy-matching, feedback-trust-parser-registry-output |
 | R13 | (truth + scope) | State holds only items an answer actually showed to this contact; replies never show ids/UUIDs | feedback-truthful-no-fabricated-replies, feedback-chatbot-never-leak-ids, SEC-MCP-AUTH #1742 |
+| R14 | (slot applies by domain, owner 16 Oct ~21:45) | A held customer or period applies to an ask only when the answer domain takes that slot, read from data: `chatbot_domains.narrowing` keys (customer only in `order`, `sales`) and `chatbot_domains.takes_date_filter`. A held slot the domain does not take is not applied and STAYS in state for the next ask that takes it. The parser picks the domain; code applies only that domain's slots; no word rule | owner 16 Oct ~21:45 verbatim: "ETA is like the incoming ... not related to the delivery to the customer" |
 
 ## Real examples (target behaviour)
 
@@ -44,8 +45,10 @@ in full; the parser outputs CHANGES to it; code applies them and logs before/aft
    the table with carried basis/measure/channel. Target R4: ask "By quantity or by amount?"; "qty" -> R5, by-quantity table.
 4. Prod, #1617 (QTY-CARRIED.md): "SRT5733 HAVE 5 NOS??" got the type ask ~10 times; after a photo, "HAVE 10??"
    re-sent the photo. Target R8: stock check for 10 units of the held item.
-5. Owner 15 Oct: "HANLIM 7/10 有送货吗" -> "SRT391-GM几时送货". Target R6: ETA for that customer's order of
-   SRT391-GM only. Reverse order (product, then "delivery for <customer>") -> R7 ask.
+5. Owner 15 Oct: "HANLIM 7/10 有送货吗" -> "SRT391-GM几时送货". Target (owner ruling 16 Oct ~21:45, R6 + R14):
+   incoming ETA for SRT391-GM with no customer filter and no held period (incoming takes no customer); the customer
+   stays in state, so a following "delivery?" is for that customer again. Reverse order (product, then
+   "delivery for <customer>") -> R7 ask.
 
 Note: reading `sorento_prod_20261015` was refused by this session's permission guard (PII), so the examples are the
 owner's own probes and prod incidents already in crew reports. Crew can attach more if needed.
@@ -96,3 +99,6 @@ owner's own probes and prod incidents already in crew reports. Crew can attach m
 - Owner, 16 Oct: Q4 (a) CONFIRMED. Q3: asked why (b); crew explained (period carries on refines and on "and X?";
   on a new full ask it comes only from the new message, customer carries). (b) is the working rule until he answers;
   no code on the period rule until then.
+- Owner, 16 Oct ~21:45: ETA is incoming stock arrival, a product-level answer; a held customer (and a held period) does
+  not apply to it; the customer stays in state. Made general as R14 (slot applies by domain data). Q3 (b) stays the
+  working rule for customer-scoped asks.
