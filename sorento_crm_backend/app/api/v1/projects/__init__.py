@@ -16,6 +16,7 @@ from app.api.v1.projects import (
     quotation_templates,
     quotations,
     sales_orders,
+    sample_requests,
     samples_pos,
     schedules,
     so_line_attachments,
@@ -54,6 +55,9 @@ router.include_router(status_graphs.router, tags=["project-status-graphs"])
 # Samples and customer POs mount at the root for the same reason: both are nested
 # under a project for listing but addressed directly for editing.
 router.include_router(samples_pos.router, tags=["project-samples-pos"])
+# Sample requests (SR-CORE): `/sample-requests/...` and `/projects/{id}/sample-requests`, root-mounted
+# ahead of the projects router for the same reason as the routers above.
+router.include_router(sample_requests.router, tags=["project-sample-requests"])
 # Phase 2 document intake. Root-mounted for the same reason as the three above: a PO
 # version, a schedule version and an SO draft are each listed under a project but
 # addressed directly by id. All three MUST precede the projects router.

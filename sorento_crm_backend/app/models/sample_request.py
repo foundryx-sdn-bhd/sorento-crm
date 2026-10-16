@@ -129,10 +129,8 @@ class SampleRequest(Base, CompanyScopedMixin):
 
     __table_args__ = (
         UniqueConstraint("company_id", "request_no", name="uq_sample_request_no"),
-        CheckConstraint(
-            "project_id IS NOT NULL OR project_title IS NOT NULL",
-            name="ck_sample_requests_project_or_title",
-        ),
+        # No project_id-or-title CHECK: a draft may be saved with neither (every field is
+        # optional on a draft, contract); the rule is enforced when the request is submitted.
         CheckConstraint(
             "delivery_mode IS NULL OR delivery_mode IN ('driver','self_deliver','self_collect')",
             name="ck_sample_requests_delivery_mode",

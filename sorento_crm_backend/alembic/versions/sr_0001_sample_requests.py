@@ -93,8 +93,6 @@ def upgrade() -> None:
             created_at TIMESTAMP NOT NULL DEFAULT now(),
             updated_at TIMESTAMP NOT NULL DEFAULT now(),
             CONSTRAINT uq_sample_request_no UNIQUE (company_id, request_no),
-            CONSTRAINT ck_sample_requests_project_or_title
-                CHECK (project_id IS NOT NULL OR project_title IS NOT NULL),
             CONSTRAINT ck_sample_requests_delivery_mode
                 CHECK (delivery_mode IS NULL OR delivery_mode IN ('driver','self_deliver','self_collect')),
             CONSTRAINT ck_sample_requests_loan_unit CHECK (loan_unit IN ('days','months')),
