@@ -181,3 +181,13 @@ separate lanes: #1753 (raw database error text in handle_internal_error(str(e)))
 line writes without an edit permission). Browser observations: PR edit top Cancel and product first Update are not
 lane-caused (reviewer r4, compared with main); SPO planner quantities are disabled in all dev data (pre-existing),
 so its timing is covered by tests only.
+
+## Round 5 (17 Oct: reviewer r5 NOT READY)
+
+- B1 regression: an automation rule "=" / "not =" with bad input saved 'NaN' (before: null); "not = NaN" matched every
+  promotion. Backend rule `_numeric` check covers eq / neq too; the automation form refuses before save.
+- Collection rules gate narrowed to the number checks only (it also refused empty groups, blank conditions, empty
+  "is any of", blank between, which saved before; 0 of 340 dev collections hold a rule tree).
+- Portal: "1e1000000" refused with 400 (no abs() overflow); "too large" says "Quantity is too large.".
+- Product picker Save from the "By hand" tab with a bad rule number shows a visible message (never a silent no-op).
+- Follow-up, not this lane: no lower bound on order line / SPO allocation quantity (large negatives reach the DB).
