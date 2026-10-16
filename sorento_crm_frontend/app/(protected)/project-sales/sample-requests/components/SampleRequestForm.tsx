@@ -439,7 +439,7 @@ export default function SampleRequestForm({
         )}
 
         {state.lines.length > 0 && (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-[640px] table-fixed text-sm">
               <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
