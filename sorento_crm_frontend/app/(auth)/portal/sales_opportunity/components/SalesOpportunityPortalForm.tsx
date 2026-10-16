@@ -5,6 +5,8 @@ import { LoaderCircleIcon, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { toast } from '@/lib/toast';
@@ -18,6 +20,7 @@ import {
 } from '../lib/customerOrProspect';
 import {
   PortalOpportunityLineRow,
+  linesHaveNumberErrors,
   nextLineKey,
   sumLineDraftAmounts,
   type LineDraft,
@@ -56,6 +59,7 @@ export default function SalesOpportunityPortalForm({
   const [expectedCloseDate, setExpectedCloseDate] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [saving, setSaving] = useState(false);
+  const [showNumberErrors, setShowNumberErrors] = useState(false);
 
   // F7: the expected amount tracks the lines total until the salesperson types one in.
   useEffect(() => {
@@ -78,13 +82,18 @@ export default function SalesOpportunityPortalForm({
   const canSave =
     customerOrProspect !== BLOCKED_VALUE &&
     title.trim().length > 0 &&
-    !!expectedAmount &&
     !!expectedCloseDate &&
     !saving;
+
+  const amountError = numberFieldError(expectedAmount, { min: 0 });
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canSave) return;
+    if (amountError || linesHaveNumberErrors(lines)) {
+      setShowNumberErrors(true);
+      return;
+    }
     setSaving(true);
     const payload = {
       title: title.trim(),
@@ -97,7 +106,7 @@ export default function SalesOpportunityPortalForm({
         .filter((l) => l.productId)
         .map((l) => ({
           product_id: l.productId,
-          qty: Number(l.qty) || 0,
+          qty: Number(l.qty),
           unit_price: l.unitPrice === '' ? null : Number(l.unitPrice),
         })),
     };
@@ -146,9 +155,8 @@ export default function SalesOpportunityPortalForm({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="opportunity-amount">Expected amount</Label>
-            <Input
+            <NumberInput
               id="opportunity-amount"
-              type="number"
               min="0"
               step="0.01"
               value={expectedAmount}
@@ -156,6 +164,7 @@ export default function SalesOpportunityPortalForm({
                 setExpectedAmount(e.target.value);
                 setAmountTouched(true);
               }}
+              error={showNumberErrors ? amountError : undefined}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -188,6 +197,7 @@ export default function SalesOpportunityPortalForm({
                 line={line}
                 onChange={(patch) => updateLine(line.key, patch)}
                 onRemove={() => removeLine(line.key)}
+                showErrors={showNumberErrors}
               />
             ))
           )}

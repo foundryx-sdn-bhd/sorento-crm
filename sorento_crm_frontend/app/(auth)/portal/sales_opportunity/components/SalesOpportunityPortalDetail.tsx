@@ -23,6 +23,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
@@ -46,6 +48,7 @@ import {
 } from '../lib/customerOrProspect';
 import {
   PortalOpportunityLineRow,
+  linesHaveNumberErrors,
   nextLineKey,
   sumLineDraftAmounts,
   type LineDraft,
@@ -77,6 +80,7 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
   // opportunity's own value on `beginEdit`, then follows every fresh pick.
   const [editCustomerOption, setEditCustomerOption] = useState<SearchableSelectOption | undefined>();
   const [expectedAmount, setExpectedAmount] = useState('');
+  const [showNumberErrors, setShowNumberErrors] = useState(false);
   const [amountTouched, setAmountTouched] = useState(false);
   const [expectedCloseDate, setExpectedCloseDate] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([]);
@@ -181,6 +185,7 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
     setAmountTouched(storedAmount !== storedSum);
     setExpectedAmount(storedAmount);
     setIsEditing(true);
+    setShowNumberErrors(false);
   };
 
   const isProspect = customerOrProspect.startsWith(PROSPECT_PREFIX);
@@ -197,12 +202,17 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
   const canSaveEdit =
     customerOrProspect !== BLOCKED_VALUE &&
     title.trim().length > 0 &&
-    !!expectedAmount &&
     !!expectedCloseDate &&
     !saving;
 
+  const amountError = numberFieldError(expectedAmount, { min: 0 });
+
   const handleSaveEdit = async () => {
     if (!canSaveEdit) return;
+    if (amountError || linesHaveNumberErrors(lines)) {
+      setShowNumberErrors(true);
+      return;
+    }
     setSaving(true);
     try {
       await updatePortalSalesOpportunity(id, {
@@ -220,7 +230,7 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
           .filter((l) => l.productId)
           .map((l) => ({
             product_id: l.productId,
-            qty: Number(l.qty) || 0,
+            qty: Number(l.qty),
             unit_price: l.unitPrice === '' ? null : Number(l.unitPrice),
           })),
       });
@@ -346,10 +356,9 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="portal-opportunity-edit-amount">Expected amount</Label>
-                <Input
+                <NumberInput
                   id="portal-opportunity-edit-amount"
                   aria-label="Expected amount"
-                  type="number"
                   min="0"
                   step="0.01"
                   value={expectedAmount}
@@ -357,6 +366,7 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
                     setExpectedAmount(e.target.value);
                     setAmountTouched(true);
                   }}
+                  error={showNumberErrors ? amountError : undefined}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -432,6 +442,7 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
                     line={line}
                     onChange={(patch) => updateLine(line.key, patch)}
                     onRemove={() => removeLine(line.key)}
+                    showErrors={showNumberErrors}
                   />
                 ))}
               </div>
