@@ -135,7 +135,12 @@ drawing items.
   `{audience, linked_customer_ids, hidden_fields}`. Returns `{item_id, slice, kind, passed, reason, checks,
   leaks, made_up}`: `checks` = name -> bool for each rule of the slice, `reason` = one plain sentence for the
   review page (no ids, no internal field names), `leaks` / `made_up` = lists of short findings (empty = clean).
-- `scope_leaks(row, asker) -> list[str]` and `made_up_facts(row) -> list[str]` run on every graded turn.
+- `scope_leaks(row, asker, watch_customer_names=()) -> list[str]` and `made_up_facts(row) -> list[str]` run on
+  every graded turn. `asker` also carries `linked_customer_names`; `item.watch_customer_names` (other customers'
+  names, filled from the DB when items are built) is what a leak is looked for, since recorded tool rows carry no
+  customer names. Trace locations (checked on 2,500 real rows): positions in `apply.verdict.reference_positions` /
+  `open_question_answer` and the `engine_pick` event; open question before = `state.open_question`, after =
+  `memory.open_question`; sent attachment types = tool envelope `attachments[*].attachmentType`.
   Made-up rule: every product-code-like token, quantity, date and container number in the reply must appear in the
   turn's tool envelopes or the user's message; list ordinals ("1.", "2.") are not facts; numbers and dates are
   compared after normalising (`1,200` = `1200`, `6 Sep 2026` = `2026-09-06`); a truncated envelope makes the
