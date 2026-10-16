@@ -344,3 +344,32 @@ def test_resend_of_a_split_line_that_no_longer_acts_prints_the_current_row(api, 
     out = OrderInquiryHandoverResend(world.db).preview([str(inquiry.id)], actor_user_id=world.actor)
     assert out["emails"], out
     assert out["emails"][0]["line_count"] == 1, "the stale split plan is not printed"
+
+
+def test_resend_after_the_confirm_that_applied_the_split_still_prints_one_line_per_split(
+    api, monkeypatch, stored
+):
+    """State applied: no pending change and the open qty equals the own-line plan (4), the
+    normal state after the Confirm that applied the split. The preview prints the split plan."""
+    from app.models.order import SalesOrderLine
+    from app.models.project_so import OrderInquiry
+    from app.services.oi_handover_resend import OrderInquiryHandoverResend
+    from tests.test_oi_handover_excel import _drain_on_test_connection, _enabled_handover
+    from tests.test_order_inquiry_handover_automation import _register
+
+    _client, world = api
+    _register(world)
+    _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
+    s = _order(api, [(10, 10, D_A)])
+    _confirm_all(s)
+    _save(s, {10: [_sp(4, D_A, on=_on(s, 10)), _sp(6, D_B, on=None)]})
+    # AutoCount cut the line to the own-line plan, no change pending any more
+    line = s.line[10]
+    s.db.get(SalesOrderLine, line.core_sales_order_line_id).qty_ordered = Decimal("4")
+    line.qty = Decimal("4")
+    s.db.commit()
+    inquiry = world.db.get(OrderInquiry, _order_row(world, line).order_inquiry_id)
+    out = OrderInquiryHandoverResend(world.db).preview([str(inquiry.id)], actor_user_id=world.actor)
+    assert out["emails"], out
+    assert out["emails"][0]["line_count"] == 2, "an applied split still prints its plan"

@@ -169,6 +169,8 @@ def test_get_a_saved_split_keeps_the_base_it_was_made_against(api):
     l200 = _line(_get(s), s.l200.id)
     assert Decimal(str(l200["base_qty"])) == Decimal("417")
     assert l200["base_date"] == D_417.isoformat()
+    assert l200["split_state"] == "applied", "the change was applied: the own-line plan is the open qty"
+    assert l200["acting"] is False
 
 
 def test_get_requires_the_view_permission(api, monkeypatch):
@@ -483,6 +485,8 @@ def test_get_acting_is_true_while_the_stored_base_matches_and_false_when_it_does
     out = _get(s)
     assert _line(out, s.l200.id)["acting"] is True
     assert _line(out, s.l100.id)["acting"] is True
+    assert _line(out, s.l200.id)["split_state"] == "acting"
+    assert _line(out, s.l100.id)["split_state"] == "acting"
 
     # a newer pending change starting from another qty: line 200's stored base no longer matches
     row = (
@@ -496,6 +500,8 @@ def test_get_acting_is_true_while_the_stored_base_matches_and_false_when_it_does
     out = _get(s)
     assert _line(out, s.l200.id)["acting"] is False
     assert _line(out, s.l100.id)["acting"] is False
+    assert _line(out, s.l200.id)["split_state"] == "stale"
+    assert _line(out, s.l100.id)["split_state"] == "stale"
 
 
 def test_a_non_acting_line_reads_its_current_base_and_can_be_split_again(api):
@@ -508,6 +514,7 @@ def test_a_non_acting_line_reads_its_current_base_and_can_be_split_again(api):
 
     l100 = _line(_get(s), s.l100.id)
     assert l100["acting"] is False
+    assert l100["split_state"] == "stale"
     assert Decimal(str(l100["base_qty"])) == Decimal("296"), "the CURRENT base"
     assert l100["base_date"] == D_301.isoformat()
     assert [Decimal(str(x["qty"])) for x in l100["splits"]] == [200, 101], "stored splits kept"
@@ -520,4 +527,5 @@ def test_a_non_acting_line_reads_its_current_base_and_can_be_split_again(api):
     assert r.status_code == 200, r.text
     l100 = _line(_get(s), s.l100.id)
     assert l100["acting"] is True
+    assert l100["split_state"] == "acting"
     assert Decimal(str(l100["base_qty"])) == Decimal("296")

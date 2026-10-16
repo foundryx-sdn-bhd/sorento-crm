@@ -41,10 +41,16 @@ vi.mock('@/lib/toast', () => ({
   toast: Object.assign(toastFn, { error: toastError, success: vi.fn(), warning: toastWarning }),
 }));
 
-function payload(actingFalse: string[] = []) {
+function payload(stale: string[] = [], applied: string[] = []) {
   const p = structuredClone(LINE_SPLITS_SO417636) as { lines: Array<Record<string, unknown>> };
   p.lines.forEach((l) => {
-    l.acting = !actingFalse.includes(l.line_id as string);
+    const state = stale.includes(l.line_id as string)
+      ? 'stale'
+      : applied.includes(l.line_id as string)
+        ? 'applied'
+        : 'acting';
+    l.split_state = state;
+    l.acting = state === 'acting';
   });
   return p;
 }
@@ -77,7 +83,7 @@ beforeEach(() => {
   saveLineSplits.mockResolvedValue(payload());
 });
 
-describe('acting: false warning', () => {
+describe('split_state: stale warning', () => {
   it('shows "AutoCount changed" in the row header and the zoom of a line that no longer acts', async () => {
     getLineSplits.mockResolvedValue(payload(['line-20']));
     await renderDialog();
@@ -88,6 +94,14 @@ describe('acting: false warning', () => {
     expect(
       within(screen.getByTestId('line-split-row-line-30')).queryByText(/AutoCount changed/i),
     ).not.toBeInTheDocument();
+  });
+
+  it('an applied line shows no pill', async () => {
+    getLineSplits.mockResolvedValue(payload([], ['line-20']));
+    await renderDialog();
+    const row = await screen.findByTestId('line-split-row-line-20');
+    expect(within(row).queryByText(/AutoCount changed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/AutoCount changed/i)).not.toBeInTheDocument();
   });
 
   it('shows no pill when every line acts', async () => {
