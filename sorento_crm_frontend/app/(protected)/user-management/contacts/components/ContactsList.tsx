@@ -42,6 +42,7 @@ import BulkCopyAccessDialog from './BulkCopyAccessDialog';
 import BulkTagDialog from './BulkTagDialog';
 import ContactTagFilters from './ContactTagFilters';
 import ContactTagsCell from './ContactTagsCell';
+import ContactTagSettingsCell from './ContactTagSettingsCell';
 import { contactTagBulkActions } from '../lib/contactTagBulkActions';
 import { regionLabel } from '@/lib/packing-list-regions';
 import ContactAccessFilters from './ContactAccessFilters';
@@ -56,6 +57,8 @@ import { buildDetailSearch } from '@/lib/listNavQuery';
 import {
   contactAccessFiltersFromUrl,
   contactTagFiltersFromUrl,
+  contactTagSettingsFilterFromUrl,
+  type TagSettingsFilter,
   contactsListFilters,
   contactsListQueryKey,
   fetchContactsPage,
@@ -120,6 +123,7 @@ export default function ContactsList() {
   // CONTACT-TAGS (UAC T4.2): the Tag filter (any-of) and the "No tags" checkbox.
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [noTags, setNoTags] = useState(false);
+  const [tagSettings, setTagSettings] = useState<TagSettingsFilter | null>(null);
 
   // Back hands the list its own query string back, and the pager keeps
   // rewriting it, so the list reads it (S3-01). One hook, every list.
@@ -133,12 +137,13 @@ export default function ContactsList() {
     const tagState = contactTagFiltersFromUrl(state.filters);
     setTagIds(tagState.tagIds);
     setNoTags(tagState.noTags);
+    setTagSettings(contactTagSettingsFilterFromUrl(state.filters));
   });
 
   // Page one when a filter CHANGES, never on mount - the mount run used to stamp
   // page 1 over the page `useListStateFromUrl` had just restored from the URL.
   const accessFiltersKey = JSON.stringify(accessFilters);
-  const tagFiltersKey = JSON.stringify([tagIds, noTags]);
+  const tagFiltersKey = JSON.stringify([tagIds, noTags, tagSettings]);
   useResetPageOnFilterChange(setPagination, [
     searchQuery,
     chatbotMemoryLevel,
@@ -171,9 +176,10 @@ export default function ContactsList() {
         access: accessFilters,
         tagIds,
         noTags,
+        tagSettings,
       }),
     }),
-    [pagination, sorting, searchQuery, chatbotMemoryLevel, customersNone, accessFilters, tagIds, noTags],
+    [pagination, sorting, searchQuery, chatbotMemoryLevel, customersNone, accessFilters, tagIds, noTags, tagSettings],
   );
 
   // UAC A2.3: a filter change is written to the URL (same query string a row click
@@ -395,6 +401,15 @@ export default function ContactsList() {
         enableSorting: false,
         cell: ({ row }) => <ContactTagsCell contact={row.original} />,
         meta: { headerTitle: 'Tags', skeleton: <Skeleton className="h-4 w-28" /> },
+      },
+      {
+        id: 'tag_settings',
+        accessorFn: (row) => row.tag_settings?.status ?? 'none',
+        header: ({ column }) => <DataGridColumnHeader title="Tag settings" column={column} />,
+        size: 140,
+        enableSorting: false,
+        cell: ({ row }) => <ContactTagSettingsCell contact={row.original} />,
+        meta: { headerTitle: 'Tag settings', skeleton: <Skeleton className="h-5 w-20" /> },
       },
       {
         id: 'brands',
@@ -655,6 +670,8 @@ export default function ContactsList() {
                   noTags={noTags}
                   onTagIdsChange={setTagIds}
                   onNoTagsChange={setNoTags}
+                  tagSettings={tagSettings}
+                  onTagSettingsChange={setTagSettings}
                 />
                 <ContactAccessFilters value={accessFilters} onChange={setAccessFilters} />
               </div>

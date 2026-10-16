@@ -112,6 +112,7 @@ async def get_contacts(
     # CONTACT-TAGS: `tag` repeats (any-of); `tags=none` lists contacts holding no tag.
     tag: Optional[list[uuid.UUID]] = Query(None),
     tags: Optional[Literal["none"]] = Query(None),
+    tag_settings: Optional[Literal["differs", "matches"]] = Query(None),
     access_differs_from: Optional[str] = Query(None),
     current_user: dict = Depends(require_permission("user_management.contacts.view")),
     db: Session = Depends(get_db)
@@ -145,6 +146,7 @@ async def get_contacts(
                 "customer_id": str(customer_id) if customer_id else None,
                 "tag_ids": [str(t) for t in tag] if tag else None,
                 "no_tags": tags == "none",
+                "tag_settings": tag_settings,
                 "access_differs_from": access_differs_from,
                 # What this viewer's copy would leave alone is not a difference to them.
                 "access_differs_skip": (

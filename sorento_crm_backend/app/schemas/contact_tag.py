@@ -53,6 +53,7 @@ class ContactTagResponse(BaseModel):
     sort_order: int
     settings: dict = {}
     contact_count: int = 0
+    differs_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -106,3 +107,26 @@ class BulkTagResult(BaseModel):
     dry_run: bool
     results: list[BulkTagRow]
     counts: BulkTagCounts
+
+
+class TagSettingsConflict(BaseModel):
+    name: str
+    value: object = None
+
+
+class TagSettingsItem(BaseModel):
+    section: str
+    key: str
+    label: str
+    current: object = None
+    expected: object = None
+    decided_by: list[str] = []
+    conflict: bool = False
+    conflict_tags: list[TagSettingsConflict] = []
+    differs: bool = False
+
+
+class ContactTagSettingsResponse(BaseModel):
+    status: Literal["matches", "differs", "none"]
+    tags: list[ContactTagRef]
+    items: list[TagSettingsItem]

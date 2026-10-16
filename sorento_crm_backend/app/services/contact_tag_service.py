@@ -50,6 +50,8 @@ class ContactTagService:
         return {str(t): int(n) for t, n in rows}
 
     def _with_count(self, tags: list[ContactTag]) -> list[dict]:
+        from app.services import contact_tag_settings as cts
+
         counts = self._counts([str(t.id) for t in tags])
         return [
             {
@@ -60,6 +62,7 @@ class ContactTagService:
                 "sort_order": t.sort_order,
                 "settings": t.settings or {},
                 "contact_count": counts.get(str(t.id), 0),
+                "differs_count": cts.differs_count(self.db, str(t.id)) if cts.leaves_of(t.settings) else 0,
                 "created_at": t.created_at,
                 "updated_at": t.updated_at,
             }
@@ -116,8 +119,17 @@ class ContactTagService:
         if clash is not None and str(clash.id) != str(own_id or ""):
             raise handle_conflict(f'A tag named "{clash.name}" already exists.')
 
-    def create_tag(self, data: dict, actor_id: Optional[str]) -> dict:
+    def _check_settings(self, old: dict, new: dict, gates) -> None:
+        """Validate (422) first, then gate (403) the sections that changed."""
+        from app.services import contact_tag_settings as cts
+
+        cts.validate_settings(self.db, new)
+        if gates is not None:
+            cts.assert_gates(old, new, *gates)
+
+    def create_tag(self, data: dict, actor_id: Optional[str], gates=None) -> dict:
         self._assert_name_free(data["name"])
+        self._check_settings({}, data.get("settings") or {}, gates)
         row = ContactTag(
             name=data["name"],
             description=data.get("description"),
@@ -132,8 +144,10 @@ class ContactTagService:
         self.db.refresh(row)
         return self._with_count([row])[0]
 
-    def update_tag(self, tag_id: str, data: dict, actor_id: Optional[str]) -> dict:
+    def update_tag(self, tag_id: str, data: dict, actor_id: Optional[str], gates=None) -> dict:
         row = self.get_tag(tag_id)
+        if data.get("settings") is not None:
+            self._check_settings(row.settings or {}, data["settings"], gates)
         if data.get("name") is not None:
             self._assert_name_free(data["name"], own_id=str(row.id))
         for key in ("name", "description", "is_active", "sort_order", "settings"):

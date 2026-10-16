@@ -72,18 +72,26 @@ export function contactTagFiltersFromUrl(filters: Record<string, string>): {
   };
 }
 
+export type TagSettingsFilter = 'matches' | 'differs';
+
+export function contactTagSettingsFilterFromUrl(filters: Record<string, string>): TagSettingsFilter | null {
+  return filters.tag_settings === 'matches' || filters.tag_settings === 'differs' ? filters.tag_settings : null;
+}
+
 export function contactsListFilters({
   chatbotMemoryLevel,
   customersNone = false,
   access = {},
   tagIds = [],
   noTags = false,
+  tagSettings = null,
 }: {
   chatbotMemoryLevel: string | null;
   customersNone?: boolean;
   access?: ContactAccessFilters;
   tagIds?: string[];
   noTags?: boolean;
+  tagSettings?: TagSettingsFilter | null;
 }): Record<string, string> {
   const filters: Record<string, string> = {};
   if (chatbotMemoryLevel) filters.chatbot_memory_level = chatbotMemoryLevel;
@@ -91,6 +99,7 @@ export function contactsListFilters({
   if (customersNone) filters.customers = 'none';
   if (tagIds.length) filters.tag = tagIds.join(',');
   if (noTags) filters.tags = 'none';
+  if (tagSettings) filters.tag_settings = tagSettings;
   for (const [field, param] of Object.entries(CONTACT_ACCESS_FILTER_PARAMS)) {
     const value = access[field as keyof ContactAccessFilters];
     if (value) filters[param] = value;

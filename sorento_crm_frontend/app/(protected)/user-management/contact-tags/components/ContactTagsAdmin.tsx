@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   getCoreRowModel,
@@ -148,6 +149,29 @@ export default function ContactTagsAdmin() {
             </span>
           ) : (
             <span className="text-muted-foreground">-</span>
+          ),
+      },
+      {
+        id: 'differs_count',
+        accessorFn: (row) => row.differs_count ?? 0,
+        header: ({ column }) => <DataGridColumnHeader title="Differs" column={column} />,
+        size: 110,
+        enableSorting: false,
+        meta: { headerTitle: 'Differs', skeleton: <Skeleton className="h-4 w-10" /> },
+        cell: ({ row }) =>
+          (row.original.differs_count ?? 0) > 0 ? (
+            <Link
+              href={`/user-management/contacts?${new URLSearchParams({
+                tag: row.original.id,
+                tag_settings: 'differs',
+              }).toString()}`}
+              className="tabular-nums text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {row.original.differs_count}
+            </Link>
+          ) : (
+            <span className="tabular-nums text-muted-foreground">0</span>
           ),
       },
       {

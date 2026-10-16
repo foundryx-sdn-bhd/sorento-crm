@@ -6,6 +6,7 @@ export interface ContactTag {
   sort_order: number;
   settings: Record<string, unknown>;
   contact_count: number;
+  differs_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -20,6 +21,7 @@ export interface ContactTagInput {
   description?: string | null;
   is_active?: boolean;
   sort_order?: number;
+  settings?: Record<string, unknown>;
 }
 
 export type BulkTagStatus = 'changed' | 'unchanged' | 'failed';
@@ -45,3 +47,24 @@ export interface BulkTagInput {
   removeTagIds: string[];
   dryRun: boolean;
 }
+
+export interface CatalogOption {
+  value: string;
+  label: string;
+  code?: string;
+}
+
+export interface SettingsCatalog {
+  access_types: CatalogOption[];
+  brands: CatalogOption[];
+  companies: CatalogOption[];
+  market_segments: CatalogOption[];
+  attachment_types: CatalogOption[];
+  warehouses: CatalogOption[];
+  agents: CatalogOption[];
+  field_reveals: CatalogOption[];
+  portal_forms: CatalogOption[];
+  spec_keys: CatalogOption[];
+}
+
+export type TagSettingsValue = Record<string, unknown>;

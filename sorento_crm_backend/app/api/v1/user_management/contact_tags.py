@@ -16,6 +16,7 @@ from app.schemas.contact_tag import (
     BulkTagResult,
     ContactTagCreate,
     ContactTagResponse,
+    ContactTagSettingsResponse,
     ContactTagsSet,
     ContactTagsSetResponse,
     ContactTagUpdate,
@@ -24,6 +25,18 @@ from app.services.contact_tag_service import ContactTagService
 from app.services.error_handler import AppException, handle_internal_error
 
 router = APIRouter()
+
+
+def _gates(db: Session, current_user: dict):
+    """(can, is_superadmin) for the settings gates (`contact_tag_settings.assert_gates`)."""
+    from app.api.v1.system.companies import _is_superadmin
+    from app.services.user_service import UserPermissionService
+
+    perms = UserPermissionService(db)
+    uid = current_user["id"]
+    return (lambda slug: perms.check_user_has_permission(uid, slug), lambda: _is_superadmin(db, uid))
+
+
 contact_router = APIRouter()
 
 VIEW = "user_management.contacts.view"
@@ -54,6 +67,22 @@ async def list_contact_tags(
         raise handle_internal_error(str(e))
 
 
+@router.get("/settings-catalog")
+async def get_settings_catalog(
+    current_user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    """The pick lists behind the tag settings editor (declared before `/{tag_id}`)."""
+    from app.services import contact_tag_settings
+
+    try:
+        return contact_tag_settings.settings_catalog(db)
+    except AppException:
+        raise
+    except Exception as e:
+        raise handle_internal_error(str(e))
+
+
 @router.get("/{tag_id}", response_model=ContactTagResponse)
 async def get_contact_tag(
     tag_id: str,
@@ -75,7 +104,9 @@ async def create_contact_tag(
     db: Session = Depends(get_db),
 ):
     try:
-        return ContactTagService(db).create_tag(data.model_dump(), str(current_user.get("id") or "") or None)
+        return ContactTagService(db).create_tag(
+            data.model_dump(), str(current_user.get("id") or "") or None, _gates(db, current_user)
+        )
     except AppException:
         raise
     except Exception as e:
@@ -92,7 +123,10 @@ async def update_contact_tag(
 ):
     try:
         return ContactTagService(db).update_tag(
-            tag_id, data.model_dump(exclude_unset=True), str(current_user.get("id") or "") or None
+            tag_id,
+            data.model_dump(exclude_unset=True),
+            str(current_user.get("id") or "") or None,
+            _gates(db, current_user),
         )
     except AppException:
         raise
@@ -155,4 +189,23 @@ async def set_contact_tags(
         raise
     except Exception as e:
         db.rollback()
+        raise handle_internal_error(str(e))
+
+
+@contact_router.get("/{contact_id}/tag-settings", response_model=ContactTagSettingsResponse)
+async def get_contact_tag_settings(
+    contact_id: str,
+    current_user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    """Expected (merged across the contact's tags) against current, per setting."""
+    from app.services import contact_tag_settings
+    from app.services.contact_service import ContactService
+
+    try:
+        contact = ContactService(db).get_contact(contact_id)
+        return contact_tag_settings.tag_settings_for_contact(db, contact)
+    except AppException:
+        raise
+    except Exception as e:
         raise handle_internal_error(str(e))

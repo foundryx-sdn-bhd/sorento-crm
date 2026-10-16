@@ -18,6 +18,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useContact } from './components/contact-context';
+import ContactTagSettingsSection from './components/ContactTagSettingsSection';
 import ContactCustomersSection from './components/ContactCustomersSection';
 import ContactUserAccountSection from './components/ContactUserAccountSection';
 import ContactMarketSegmentSection from './components/ContactMarketSegmentSection';
@@ -244,6 +245,8 @@ export default function ContactProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      <ContactTagSettingsSection contactId={contactId} />
 
       <ContactCustomersSection contactId={contactId} />
 

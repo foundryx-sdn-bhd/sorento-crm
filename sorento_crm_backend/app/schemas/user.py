@@ -54,6 +54,8 @@ class RespondContactResponse(RespondContactBase):
     customer_codes: List[str] = []
     # CONTACT-TAGS: `[{id, name}]` ordered by tag sort_order then name.
     tags: List[dict] = []
+    # CONTACT-TAGS S2: `{status: matches|differs|none, differ_count, differ_labels}` (list rows).
+    tag_settings: Optional[dict] = None
     # CONTACT-BRAND-SCOPE: the brands the contact may see, `[{id, brand_name}]`; empty = all.
     brands: List[dict] = []
     workspace_name: Optional[str] = None

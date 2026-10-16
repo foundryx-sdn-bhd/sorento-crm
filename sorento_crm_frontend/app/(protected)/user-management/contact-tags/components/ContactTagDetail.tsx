@@ -27,6 +27,7 @@ import { useContactTagQuery } from '../hooks/useContactTags';
 import { contactTagsPagerQuery } from '../lib/listQuery';
 import { CONTACT_TAG_PERMS } from '../lib/permissions';
 import ContactTagFormDialog from './ContactTagFormDialog';
+import ContactTagSettings from './ContactTagSettings';
 
 const HOLDERS_LIMIT = 50;
 
@@ -50,6 +51,7 @@ export default function ContactTagDetail({ id }: { id: string }) {
   const searchParams = useSearchParams();
   const canEdit = useHasPermission(CONTACT_TAG_PERMS.edit);
   const [editOpen, setEditOpen] = useState(false);
+  const [editingSettings, setEditingSettings] = useState(false);
   const { data: tag, isLoading, error } = useContactTagQuery(id);
 
   const listSearch = searchParams.toString();
@@ -107,6 +109,15 @@ export default function ContactTagDetail({ id }: { id: string }) {
             <Pencil className="me-1 size-4" />
             Edit
           </Button>
+          {!editingSettings ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditingSettings(true)}
+            >
+              Edit settings
+            </Button>
+          ) : null}
           <DeferredActionButton
             pending={remove.pending}
             verb="Deleting"
@@ -190,6 +201,15 @@ export default function ContactTagDetail({ id }: { id: string }) {
               )}
             </CardContent>
           </Card>
+
+          {tag ? (
+            <ContactTagSettings
+              key={`${tag.updated_at}-${editingSettings}`}
+              tag={tag}
+              editing={editingSettings}
+              onDone={() => setEditingSettings(false)}
+            />
+          ) : null}
 
           <Card>
             <CardHeader>

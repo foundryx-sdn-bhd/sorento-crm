@@ -189,6 +189,11 @@ class ContactService:
 
         tags_map = tags_by_contact(self.db, [str(c.id) for c in contacts])
 
+        from app.services import contact_tag_settings
+
+        only = set((access_filters or {}).get("tag_ids") or []) or None
+        tag_settings_map = contact_tag_settings.evaluate(self.db, contacts, only_tags=only)
+
         # Validate and convert contacts to response models
         # Explicitly convert UUID to string to ensure Pydantic validation works
         contact_responses = []
@@ -201,6 +206,7 @@ class ContactService:
                 data["customer_codes"] = codes_map.get(str(contact.id), [])
                 data["brands"] = brands_map.get(str(contact.id), [])
                 data["tags"] = tags_map.get(str(contact.id), [])
+                data["tag_settings"] = contact_tag_settings.row_summary(tag_settings_map[str(contact.id)])
                 data["cost_visible"] = str(contact.id) in cost_ids
                 contact_responses.append(RespondContactResponse.model_validate(data))
             except Exception as e:
@@ -284,6 +290,8 @@ class ContactService:
                     tag_pivot.c.tag_id.in_(f["tag_ids"]),
                 )
             )
+        if f.get("tag_settings") in ("differs", "matches"):
+            q = self._filter_tag_settings(q, f)
         if f.get("no_tags"):
             from app.models.access import respond_contact_tags as tag_pivot
 
@@ -318,6 +326,31 @@ class ContactService:
             )
             q = q.filter(RespondContact.id.in_(ids))
         return q
+
+    def _filter_tag_settings(self, q, f: dict):
+        """Contacts whose tag settings differ / match, over the holders of a tag that sets something."""
+        from app.models.access import ContactTag, respond_contact_tags as pivot
+        from app.services import contact_tag_settings
+        from app.services.contact_access_copy_service import MAX_DIFF_CANDIDATES
+        from app.services.error_handler import handle_unprocessable
+
+        setting_tags = [
+            tid for tid, st in self.db.query(ContactTag.id, ContactTag.settings)
+            if contact_tag_settings.leaves_of(st)
+        ]
+        q = q.filter(
+            exists().where(pivot.c.contact_id == RespondContact.id, pivot.c.tag_id.in_(setting_tags or [None]))
+        )
+        if q.count() > MAX_DIFF_CANDIDATES:
+            raise handle_unprocessable(
+                f"Tag settings compare at most {MAX_DIFF_CANDIDATES} contacts; narrow the list with "
+                "another filter or a search first."
+            )
+        only = set(f.get("tag_ids") or []) or None
+        results = contact_tag_settings.evaluate(self.db, q.all(), only_tags=only)
+        want = f["tag_settings"]
+        ids = [cid for cid, r in results.items() if r["status"] == want]
+        return q.filter(RespondContact.id.in_(ids))
 
     def assign_default_agents_to_contact(self, contact: RespondContact) -> None:
         """Assign all agents with assign_to_new_internal_contacts=True to this contact. Idempotent per agent (skips if access already exists).
