@@ -261,3 +261,44 @@ def test_spec_ignores_class_keys_and_compares_values_as_normalised_strings():
     assert wrong_class["passed"] is True and wrong_class["checks"]["class"] is False
     check(grade_turn(row2(verdict=v, mem_extra={"specification": bot}), item("spec", spec=[{"key": "length", "value": "300"}])),
           False, "spec")
+
+
+def _asking(r, value):
+    for rec in r["trace"]:
+        if rec.get("stage") == "replied":
+            rec["facts"]["asking"] = value
+    return r
+
+
+def test_no_clarify_fails_only_when_the_bot_asked_instead_of_answering():
+    answered = _asking(row2(mem_after=[prod("SRTA100", UA)], tools=[TOOL_A]), "product_pick")
+    check(grade_turn(answered, item("code_lookup", **GOLD_CL)), True)
+    asked = _asking(row2(mem_after=[prod("SRTA100", UA)], tools=[]), "product_pick")
+    res = grade_turn(asked, item("code_lookup", **GOLD_CL))
+    assert res["passed"] is False and res["checks"]["no_clarify"] is False
+
+
+def test_team_pick_never_counts_as_a_clarify():
+    r = _asking(row2(mem_after=[prod("SRTA100", UA)], tools=[]), "team_pick")
+    assert grade_turn(r, item("code_lookup", **GOLD_CL))["checks"]["no_clarify"] is True
+
+
+def test_absent_token_is_unverifiable_when_named_tools_ran_without_recorded_results():
+    ran = row2(reply="SRTA100 has 4321 pcs.", tools=[TOOL_A])
+    found = made_up_facts(ran)
+    assert found and all(f.startswith("unverifiable:") and "4321" in f for f in found), found
+
+
+def test_absent_token_is_made_up_when_no_named_tool_ran():
+    none = row2(reply="SRTA100 has 4321 pcs.", tools=[{"name": None, "args": {}}])
+    found = made_up_facts(none)
+    assert found and any("4321" in f and not f.startswith("unverifiable:") for f in found), found
+
+
+def test_with_recorded_tool_results_an_absent_token_is_still_made_up():
+    import json
+
+    r = row2(reply="SRTA100 has 4321 pcs.", tools=[TOOL_A])
+    r["tool_results"] = [{"name": "crm_inventory_list", "args": {}, "result": json.dumps({"qty": 5})}]
+    found = made_up_facts(r)
+    assert found and any("4321" in f and not f.startswith("unverifiable:") for f in found), found
