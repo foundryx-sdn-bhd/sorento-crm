@@ -1069,23 +1069,20 @@ def _group_schemes(
     # One threshold repeated by tiers that each name other accounts ("A/C I- 3%" in Tier 1,
     # "A/C III- 2%" in Tier 2, both at 300,000) is one tier with a rate per account (gate 3).
     merged_tiers: List[SchemeTier] = []
+    # Each tier as written, before the per-account merge below changes any of them in place, so
+    # the repeat check does not depend on the order of the columns.
+    written: set = set()
     for t in tiers:
-        same = next(
-            (
-                m for m in merged_tiers
-                if (m.period_start, m.threshold, m.is_additional, m.rate) == (t.period_start, t.threshold, t.is_additional, t.rate)
-                and (m.account_rates or {}) == (t.account_rates or {})
-            ),
-            None,
-        )
-        if same is not None:
+        shape = (t.period_start, t.threshold, t.is_additional, t.rate, frozenset((t.account_rates or {}).items()))
+        if shape in written:
             # The same threshold and rate written twice in one period is one tier (gate 5:
             # "A/C I 9% | A/C I 9%"), said on the row so it is never silent.
+            note = f"{_KIND_NAME[kind]}: the threshold {t.threshold:,.0f} is written twice with the same rate; read once"
             for r in ctx.rows:
-                results[r].warnings.append(
-                    f"{_KIND_NAME[kind]}: the threshold {t.threshold:,.0f} is written twice with the same rate; read once"
-                )
+                if note not in results[r].warnings:
+                    results[r].warnings.append(note)
             continue
+        written.add(shape)
         twin = next(
             (
                 m for m in merged_tiers
@@ -1391,11 +1388,16 @@ MAX_PICKS = MAX_SHEETS * MAX_SHEET_ROWS
 _ACCOUNT_SUFFIX = re.compile(r"\bA\s*+/\s*+C\.?\s*+([IVX]++|\d++)\s*+[)\]]?\s*+\Z", re.IGNORECASE)
 
 
+def _is_account_marker(text: str) -> bool:
+    """A bracketed "A/C I" / "A/C 1", never a branch that merely starts with L ("(LABUAN)")."""
+    return re.fullmatch(r"L\d+|RAW\d+", account_key(text) or "") is not None
+
+
 def branch_key(name: Optional[str]) -> str:
     """`dealer_key` that keeps the words of a bracketed part which is not an account marker
     ("(JB)", "(KL)"): the tie-break between ledgers of one name and account."""
     text = re.sub(r"\[[^\]]*\]", " ", (name or "").upper())
-    text = re.sub(r"\([^)]*\)", lambda m: " " if (account_key(m.group(0)[1:-1]) or "").startswith(("L", "RAW")) else f" {m.group(0)[1:-1]} ", text)
+    text = re.sub(r"\([^)]*\)", lambda m: " " if _is_account_marker(m.group(0)[1:-1]) else f" {m.group(0)[1:-1]} ", text)
     return dealer_key(text)
 
 
@@ -1404,7 +1406,7 @@ def literal_name(name: Optional[str]) -> str:
     the account markers and suffix dropped. The tie-break between ledgers whose names differ only
     in punctuation or spacing (gate 5): the one the file writes the same way is the exact match."""
     text = re.sub(r"\[[^\]]*\]", " ", (name or "").upper())
-    text = re.sub(r"\([^)]*\)", lambda m: " " if (account_key(m.group(0)[1:-1]) or "").startswith(("L", "RAW")) else m.group(0), text)
+    text = re.sub(r"\([^)]*\)", lambda m: " " if _is_account_marker(m.group(0)[1:-1]) else m.group(0), text)
     text = split_account_suffix(text)[0]
     return " ".join(text.split()).strip(" -\u2013")
 
@@ -1495,7 +1497,9 @@ class _CustomerIndex:
 
         self.by_family: Dict[str, List[_Candidate]] = {}
         self.all: List[_Candidate] = []
-        self._cache: Dict[Tuple[str, Optional[str]], Tuple[Optional[_Candidate], List[_Candidate], bool]] = {}
+        self._cache: Dict[
+            Tuple[str, str, Optional[str]], Tuple[Optional[_Candidate], List[_Candidate], bool, Optional[str]]
+        ] = {}
         self.fuzzy_lookups = 0
         q = db.query(Customer.id, Customer.customer_code, Customer.customer_name, Customer.account_level).filter(
             Customer.is_active.is_(True)
@@ -1514,8 +1518,9 @@ class _CustomerIndex:
         `several` ledgers answer to the name and account, the name is there but `no_account` of
         its ledgers has the account, or `no_name`). Cached per name and account, so a dealer's
         many rows cost one lookup."""
-        # By `branch_key`, not `dealer_key`: two branches of one name are two lookups (review B1).
-        key = (branch_key(name), account_key(account) or (name or "").upper())
+        # By `branch_key`, not `dealer_key`: two branches of one name are two lookups (review B1);
+        # and by the spelling, which the letter-for-letter tie-break reads (gate 5 review B1).
+        key = (branch_key(name), literal_name(name), account_key(account) or (name or "").upper())
         if key not in self._cache:
             self._cache[key] = self._match(name, account)
         return self._cache[key]
@@ -1541,6 +1546,12 @@ class _CustomerIndex:
             if len(strict) == 1:
                 exact = strict
         if len(exact) > 1 and acc is not None:
+            # In a tie, a ledger whose name states another account ("[CERAMIC]" at level 1) is
+            # out before any tie-break can land on it (gate 5 review B2).
+            plain = [c for c in exact if not name_accounts(c.name) or acc in name_accounts(c.name)]
+            if plain:
+                exact = plain
+        if len(exact) > 1 and acc is not None:
             # Several ledgers answer to the account through `account_level`, but only one names
             # it in its own name ("[A/C I]", "A/C I"): that one (gate 4). A level never outranks
             # a name that says another account.
@@ -1559,8 +1570,12 @@ class _CustomerIndex:
             return None, exact[:_MAX_SUGGESTIONS], False, "several"
         # The name is there, but none of its ledgers has the file's account (Mocha A/C II rows
         # beside "[A/C I]", "[CERAMIC]", "[IBORN]", gate 5): its ledgers are the suggestions.
-        why = "no_account" if same and acc is not None else "no_name"
-        if why == "no_account":
+        why = "no_name"
+        if same:
+            # Ledgers of the name, none answering: the file's account is not theirs, or the file
+            # names no account and they all carry one (gate 5 review S1).
+            why = "no_account" if acc is not None else "account_needed"
+        if why != "no_name":
             ranked = sorted(same, key=lambda c: c.name)
             return None, ranked[:_MAX_SUGGESTIONS], False, why
         if not family:
@@ -1684,8 +1699,15 @@ def run(
             res.status = "needs_pick"
             if why == "several":
                 res.reason = "more than one customer has this name and account"
+            elif why == "account_needed":
+                res.reason = "this name has several ledgers and the file names no account; add an ACCOUNT column or pick one"
             elif why == "no_account":
-                shown = res.account_in_file or split_account_suffix(res.name_in_file or "")[1] or ""
+                markers = re.findall(r"\[([^\]]*)\]|\(([^)]*)\)", res.name_in_file or "")
+                shown = (
+                    res.account_in_file
+                    or split_account_suffix(res.name_in_file or "")[1]
+                    or next(((a or b).strip() for a, b in markers if (a or b).strip()), "")
+                )
                 res.reason = f'no ledger of this name has the account "{shown}"; pick one of its ledgers or skip'
             else:
                 res.reason = "no customer has this name and account"

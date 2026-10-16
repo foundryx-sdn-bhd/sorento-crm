@@ -32,6 +32,7 @@ _CATEGORIES = (
     ("no dealer name or customer code", "NO_NAME_OR_CODE"),
     ("no customer has this name", "NO_NAME_MATCH"),
     ("no ledger of this name has the account", "NAME_WITHOUT_ACCOUNT"),
+    ("the file names no account", "NAME_NEEDS_ACCOUNT"),
     ("which has no row in the file", "PAY_TO_ACCOUNT_NOT_FOUND"),
     ("looks wrong: Excel", "RATE_ABOVE_LIMIT"),
     ("more than 200 characters", "CELL_TOO_LONG"),
