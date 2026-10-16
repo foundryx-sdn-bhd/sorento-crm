@@ -466,6 +466,18 @@ def _columns(grid: "_Grid", first: int, last: int, year: int) -> List[_Column]:
         if col is not None:
             col.index = c
             cols.append(col)
+    # An incentive column right after a period block whose merged header stops short of it
+    # (Mocha: "QUARTERLY (POINT)" merged over JAN-MAR..OCT-DEC, "INCENTIVE" beside it; gate 3)
+    # belongs to that block: every quarter's rate on a quarterly block, else its neighbour's.
+    by_index = {col.index: col for col in cols}
+    for col in cols:
+        left = by_index.get(col.index - 1)
+        if col.role == "unplaced" and col.is_rate and left is not None and left.role == "period" and left.kind:
+            col.role, col.kind, col.points = "period", left.kind, left.points
+            if left.kind == "Q" and left.tier is None:
+                col.number = 0
+            else:
+                col.number, col.tier, col.window = left.number, left.tier, left.window
     return cols
 
 
@@ -750,6 +762,10 @@ def gate_passes(result: dict) -> bool:
     return not result.get("notes") and summary.get("not_representable", 0) == 0 and summary.get("needs_pick", 0) == 0
 
 
+#: A payout key naming an account by dealer name and account label, not by row or code.
+PAY_BY_NAME = "@"
+
+
 def _row_key(sheet: str, row: int, code: Optional[str]) -> str:
     """How a row goes in a scheme: its customer code when the file has one, else its place."""
     return code or f"{sheet}!{row}"
@@ -918,9 +934,10 @@ class _Ctx:
 def _account_and_dealer_columns(ctx: "_Ctx", cols: List[_Column]):
     """(per-account columns, dealer columns) when one yearly block holds thresholds that differ
     per account (Tier 1-3) beside thresholds merged over the accounts (Tier 4-5); else None."""
-    pairs, _ = _pairs(cols, [])
-    per_account: List[_Column] = []
-    dealer: List[_Column] = []
+    shared_rates = [c for c in cols if c.kind != "Y" and c.number == 0 and c.is_rate]
+    pairs, _ = _pairs([c for c in cols if c not in shared_rates], [])
+    per_account: List[_Column] = list(shared_rates)
+    dealer: List[_Column] = list(shared_rates)
     for threshold, rate in pairs:
         if not ctx.per_row(threshold):
             continue
@@ -931,17 +948,19 @@ def _account_and_dealer_columns(ctx: "_Ctx", cols: List[_Column]):
             next(iter(boxes))[0] <= r <= next(iter(boxes))[2] for r in ctx.rows
         )
         (dealer if merged else per_account).extend(c for c in (threshold, rate) if c is not None)
-    if not per_account or not dealer:
+    if len(per_account) == len(shared_rates) or len(dealer) == len(shared_rates):
         return None
     return per_account, dealer
 
 
-def _group_schemes(ctx: _Ctx, kind: str, points: bool, kind_cols, window_col, by_role) -> List[Scheme]:
+def _group_schemes(
+    ctx: _Ctx, kind: str, points: bool, kind_cols, window_col, by_role, inherit_window=None
+) -> List[Scheme]:
     """The one target of `kind` and unit over `ctx.rows`, or none. A yearly block with Tier 1-3
     per account and Tier 4-5 merged over the accounts is one dealer target plus one target per
     account that the dealer target replaces once it reaches a tier (crew ruling 16 Oct)."""
     grid, results = ctx.grid, ctx.results
-    if kind == "Y" and len(ctx.rows) > 1:
+    if len(ctx.rows) > 1:
         split = _account_and_dealer_columns(ctx, list(kind_cols))
         if split is not None:
             per_account, dealer_cols = split
@@ -951,7 +970,11 @@ def _group_schemes(ctx: _Ctx, kind: str, points: bool, kind_cols, window_col, by
             out = list(dealer)
             for r in ctx.rows:
                 single = _Ctx(grid, ctx.sheet, [r], results, ctx.dealer_labels, ctx.year)
-                for scheme in _group_schemes(single, kind, points, per_account, window_col, by_role):
+                own_schemes = _group_schemes(
+                    single, kind, points, per_account, window_col, by_role,
+                    inherit_window=(dealer[0].start, dealer[0].end),
+                )
+                for scheme in own_schemes:
                     if (scheme.start, scheme.end) != (dealer[0].start, dealer[0].end):
                         # The replacement needs the dealer's period to cover the account's.
                         raise CellError(
@@ -992,7 +1015,9 @@ def _group_schemes(ctx: _Ctx, kind: str, points: bool, kind_cols, window_col, by
                 if win:
                     stated = win
         header_window = next((c.window for c in kind_cols if c.window), None)
-        start, end = stated or header_window or (date(ctx.year, 1, 1), date(ctx.year, 12, 31))
+        # Account targets split off a dealer's block take the dealer's window when neither a row
+        # cell nor their own headers state one (gate 3).
+        start, end = stated or header_window or inherit_window or (date(ctx.year, 1, 1), date(ctx.year, 12, 31))
         split = (None, None)
     else:
         start, end = date(ctx.year, 1, 1), date(ctx.year, 12, 31)
@@ -1015,6 +1040,24 @@ def _group_schemes(ctx: _Ctx, kind: str, points: bool, kind_cols, window_col, by
         pay_to.extend(payees)
     if not tiers:
         return []
+    # One threshold repeated by tiers that each name other accounts ("A/C I- 3%" in Tier 1,
+    # "A/C III- 2%" in Tier 2, both at 300,000) is one tier with a rate per account (gate 3).
+    merged_tiers: List[SchemeTier] = []
+    for t in tiers:
+        twin = next(
+            (
+                m for m in merged_tiers
+                if (m.period_start, m.threshold, m.is_additional) == (t.period_start, t.threshold, t.is_additional)
+                and m.account_rates and t.account_rates and m.rate is None and t.rate is None
+                and not set(m.account_rates) & set(t.account_rates)
+            ),
+            None,
+        )
+        if twin is not None:
+            twin.account_rates.update(t.account_rates)
+        else:
+            merged_tiers.append(t)
+    tiers = merged_tiers
     seen = set()
     for t in tiers:
         if t.is_additional:
@@ -1109,6 +1152,11 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind, shared_rates=()) -> Tuple
             return in_target[key], True
         if key in ctx.dealer_labels:
             return ctx.dealer_labels[key], False
+        if (account_key(label) or "").startswith("L"):
+            # An account of this dealer with no row in the file: paid to it, found by the
+            # dealer's name and that account in the CRM when the import runs (gate 3).
+            dealer = ctx.results[ctx.rows[0]].name_in_file or ""
+            return f"{PAY_BY_NAME}{dealer}|{split_account_suffix('x ' + label)[1] or label}", False
         raise CellError(f'{name}: the rate names "{label}", which is not an account of this dealer')
 
     def shared(col: _Column, *, every_row: bool) -> Tuple[object, Dict[int, object]]:
@@ -1285,6 +1333,14 @@ MAX_PICKS = MAX_SHEETS * MAX_SHEET_ROWS
 _ACCOUNT_SUFFIX = re.compile(r"\bA\s*+/\s*+C\.?\s*+([IVX]++|\d++)\s*+[)\]]?\s*+\Z", re.IGNORECASE)
 
 
+def branch_key(name: Optional[str]) -> str:
+    """`dealer_key` that keeps the words of a bracketed part which is not an account marker
+    ("(JB)", "(KL)"): the tie-break between ledgers of one name and account."""
+    text = re.sub(r"\[[^\]]*\]", " ", (name or "").upper())
+    text = re.sub(r"\([^)]*\)", lambda m: " " if (account_key(m.group(0)[1:-1]) or "").startswith(("L", "RAW")) else f" {m.group(0)[1:-1]} ", text)
+    return dealer_key(text)
+
+
 def split_account_suffix(name: str) -> Tuple[str, Optional[str]]:
     """("<dealer>", "A/C <n>") from "<dealer> A/C <n>" (also "- A/C III", "(A/C I)"); the name
     whole and None when it carries no such suffix."""
@@ -1402,6 +1458,12 @@ class _CustomerIndex:
             exact = [c for c in same if acc in c.accounts]
         else:
             exact = same if len(same) == 1 else [c for c in same if not c.accounts]
+        if len(exact) > 1:
+            # A bracketed word other than the account (a branch: "(JB)", "(KL)") breaks the tie
+            # when the file writes it too (gate 3).
+            strict = [c for c in exact if branch_key(c.name) == branch_key(name)]
+            if len(strict) == 1:
+                exact = strict
         if len(exact) == 1:
             return exact[0], [], False
         if len(exact) > 1:
@@ -1462,7 +1524,8 @@ def run(
     # Codes the file names (a CUSTOMER CODE column, a PAY TO code), matched without regard to
     # case or surrounding spaces. A code wins over the name when the row has one.
     codes = {r.code for r in parsed.rows if r.code} | {
-        s.payout_code for s in parsed.schemes if s.payout_code and "!" not in s.payout_code
+        s.payout_code for s in parsed.schemes
+        if s.payout_code and "!" not in s.payout_code and not s.payout_code.startswith(PAY_BY_NAME)
     }
     wanted = sorted({code.strip().upper() for code in codes})
     by_code = {}
@@ -1481,7 +1544,12 @@ def run(
         if valid_ids
         else {}
     )
-    index = _CustomerIndex(db) if any(r.status == "mapped" and not r.code for r in parsed.rows) else None
+    by_name_payouts = [s.payout_code for s in parsed.schemes if (s.payout_code or "").startswith(PAY_BY_NAME)]
+    index = (
+        _CustomerIndex(db)
+        if by_name_payouts or any(r.status == "mapped" and not r.code for r in parsed.rows)
+        else None
+    )
 
     #: row key -> the CRM customer (code, picked or name-matched)
     customer_by_key: Dict[str, Customer] = {}
@@ -1539,11 +1607,22 @@ def run(
                 if cand.id == c.id:
                     customer_by_key[key] = c
 
+    # Accounts paid by dealer name + account (no row of their own): one exact CRM match each.
+    for key in set(by_name_payouts):
+        dealer, label = key[len(PAY_BY_NAME):].split("|", 1)
+        exact, _suggestions, _capped = index.match(dealer, label)
+        if exact is not None:
+            found = db.query(Customer).filter(Customer.id == exact.id).first()
+            if found is not None:
+                customer_by_key[key] = found
+
     def customer_of(key: Optional[str]):
         if not key:
             return None
         if key in customer_by_key:
             return customer_by_key[key]
+        if key.startswith(PAY_BY_NAME):
+            return None
         return by_code.get(key.strip().upper())
 
     # Existing dealer targets by (accounts, dates, split, unit): a re-import updates, never adds.
@@ -1624,6 +1703,13 @@ def run(
         for scheme in schemes:
             ids = [customer_of(code).id for code in scheme.codes]
             payout = customer_of(scheme.payout_code)
+            if payout is None and (scheme.payout_code or "").startswith(PAY_BY_NAME):
+                dealer, label = scheme.payout_code[len(PAY_BY_NAME):].split("|", 1)
+                problem = (
+                    f"pays to {label}, which has no row in the file and no single CRM customer "
+                    "of this dealer with that account"
+                )
+                break
             if payout is None:
                 problem = f"PAY TO: no customer with code {scheme.payout_code}"
                 break

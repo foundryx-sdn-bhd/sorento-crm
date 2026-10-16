@@ -31,6 +31,7 @@ _CATEGORIES = (
     ("not read: no DEALER NAME", "SHEET_NOT_READ"),
     ("no dealer name or customer code", "NO_NAME_OR_CODE"),
     ("no customer has this name", "NO_NAME_MATCH"),
+    ("which has no row in the file", "PAY_TO_ACCOUNT_NOT_FOUND"),
     ("looks wrong: Excel", "RATE_ABOVE_LIMIT"),
     ("more than 200 characters", "CELL_TOO_LONG"),
     ("more than one customer has this name", "NAME_MATCHES_SEVERAL"),
@@ -67,6 +68,21 @@ def _shape(text: str, digits: bool = True) -> str:
     if digits:
         text = re.sub(r"\d", "9", text)
     return re.sub(r"[A-Za-z]+", lambda m: m.group(0) if m.group(0).lower() in _KEEP else "x" * len(m.group(0)), text)
+
+
+def _differ(names) -> str:
+    """What tells several same-name candidates apart, masked: the words each one has that the
+    others lack, as shapes (no name survives), or that they differ only in punctuation, or are
+    the same name twice (gate 3 diagnosis of NAME_MATCHES_SEVERAL)."""
+    norm = [" ".join(n.upper().split()) for n in names]
+    if len(set(norm)) == 1:
+        return "identical names"
+    words = [re.findall(r"[A-Z0-9]+", n) for n in norm]
+    if all(w == words[0] for w in words):
+        return "differ by: punctuation or spacing only"
+    common = set.intersection(*(set(w) for w in words))
+    parts = [_shape(" ".join(w for w in ws if w not in common)) or "-" for ws in words]
+    return "differ by: " + " | ".join(parts)
 
 
 def _mask(reason: str) -> str:
@@ -132,6 +148,8 @@ def main(argv=None) -> int:
             line = f"{_shape(row['sheet'], digits=False)} row {row['row']}: {_mask(row['reason'])}"
             if row["status"] == "needs_pick":
                 line += f", {len(row['suggestions'])} suggestion(s)"
+                if len(row["suggestions"]) > 1 and "more than one customer" in (row["reason"] or ""):
+                    line += f", {_differ([s['name'] for s in row['suggestions']])}"
             print(line)
             continue
         line = f"{row['sheet']} row {row['row']} {row['code'] or '-'}: {row['status']}"
