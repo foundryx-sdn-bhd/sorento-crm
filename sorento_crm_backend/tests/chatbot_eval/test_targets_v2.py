@@ -692,3 +692,36 @@ def test_summarise_every_run_known_reports_runs_3_and_meets_as_before():
     s = summarise([[_r5("spec", None, True)] for _ in range(3)], {"spec": 0.9})
     assert s["slices"]["spec"]["runs"] == 3
     assert s["meets"] is True
+
+
+# ------------------------------------------------------------------ review round 11 (picker option codes are sources)
+def _picker(codes):
+    return {"kind": "product_pick", "expects": "choice", "payload": {},
+            "options": [{"code": c, "label": f"{c} synthetic label"} for c in codes]}
+
+
+PICK_CODES = ["SRTPICKA1", "SRTPICKB2", "SRTPICKC3"]
+PICK_REPLY = "Did you mean SRTPICKA1, SRTPICKB2 or SRTPICKC3?"
+
+
+def test_option_codes_only_in_the_memory_open_question_after_are_not_made_up():
+    q = _picker(PICK_CODES)
+    r = row2(reply=PICK_REPLY, oq={"before": None, "after": q, "writer": "engine"})
+    assert made_up_facts(r) == []
+
+
+def test_option_codes_only_in_the_memory_open_question_before_are_not_made_up():
+    q = _picker(PICK_CODES)
+    r = row2(reply=PICK_REPLY, oq={"before": q, "after": None, "writer": "engine"})
+    assert made_up_facts(r) == []
+
+
+def test_option_codes_only_in_the_state_open_question_are_not_made_up():
+    r = row2(reply=PICK_REPLY, state_oq=_picker(PICK_CODES))
+    assert made_up_facts(r) == []
+
+
+def test_a_code_in_no_source_and_no_option_is_still_made_up():
+    r = row2(reply="Did you mean SRTPICKA1 or SRTNOWHERE9?", state_oq=_picker(["SRTPICKA1"]))
+    found = made_up_facts(r)
+    assert found == ["made up: SRTNOWHERE9"], found
