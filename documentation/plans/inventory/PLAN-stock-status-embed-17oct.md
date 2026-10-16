@@ -1,6 +1,6 @@
 # PLAN: Available stock status, embedded in every process (STOCK-STATUS)
 
-Status: Behaviour card posted, waiting on owner answers + crew masked rows; mock next (lane STOCK-STATUS, size L, standard track; build only after the owner OKs the mock)
+Status: Mock round 1 posted, waiting on owner OK of the mock + Q3/Q4, and crew masked rows to reconcile Q1 (lane STOCK-STATUS, size L, standard track; build only after the owner OKs the mock)
 
 ## Owner request (17 Oct)
 
@@ -140,6 +140,14 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 
 ### Questions (max 5)
 
+Answers so far (crew, 16 Oct): Q2 (a), Q5 (a). Q1: reconcile against AutoCount's -6,994 from the
+crew's masked rows before build, and name what the 459 is. Q3, Q4: with the owner; the mock uses
+the recommendations.
+
+Working hypothesis for the 459: it is SRTWB1515's SPO total, so AutoCount's Forecast = On hand
++ SO (negative) + PO + SPO, i.e. Q1 (a) exactly. The location example fits the same way (its SPO
+would be 50: 0 - 7,312 + 1,734 + 50 = -5,528). Unconfirmed until the masked rows arrive.
+
 - Q1. Forecast: (a) On hand - SO + PO + SPO, (b) AutoCount's exact formula once the masked rows
   show what the 459 is. Recommendation: (a) now, reconciled to (b) before build.
 - Q2. Incoming PL: (a) one product-level line, not split by location, (b) split by the PL's
@@ -156,7 +164,12 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 
 ## 3. Mock
 
-`documentation/plans/inventory/mockups/stock-status.html` (pending).
+`documentation/plans/inventory/mockups/stock-status.html`, round 1. Six screens at 1280 and 375:
+stand-alone page (By location with BRW-BB expanded to its documents), By project tab, Order inquiry
+line expand, Fulfilment planning item chip + popover (same chip on the OI worklist), Loading plan row
+dialog tab, empty state. Each screen ends with a "Built from" table mapping every element to its
+existing component. SRTWB1515's figures reproduce the screenshot totals under the 459 hypothesis
+above; names and document numbers are placeholders (public repo).
 
 ## 4. Build sketch (after the mock is OK'd)
 
