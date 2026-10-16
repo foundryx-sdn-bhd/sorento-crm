@@ -6,7 +6,7 @@ Plan: `PLAN-chat-fix-context-16oct.md`.
   conversation is about) even when the brand / product type / product detail / promotion lists are all present; the
   subject is shortened only when the subject, task, open question and pending lines alone exceed the layer's cap.
 - AC-C2 After the user picks from a list, the parser sees that list as answered (nothing owed, the picked options
-  named) and no "waiting for a reply" line; the list and its options stay, so "2 also" still picks number 2.
+  named) and no "waiting for a reply" line; the list and its options stay, so a second pick from it still picks number 2.
 - AC-C3 A list that was not answered yet is shown exactly as today (owed, waiting line).
 - AC-C4 A first message's parser input is byte-identical to main.
 - AC-C5 Parser gold TRAIN follow-ups: at least 3 more right than main on both runs per slice, and no item right in
