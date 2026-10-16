@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from app.models.access import (
     AccessAgent,
+    AgentFieldAccess,
     ContactAccessType,
     ContactAgentAccess,
     ContactAttachmentType,
@@ -62,7 +63,7 @@ MAX_TARGETS = 500
 
 TIER_LABELS = {"dealer": "Dealer", "office": "Office", "end_user": "End user"}
 
-#: The eight chatbot switches, column -> label (the Chatbot card shows AI replies first; this order is the copy dialog's).
+#: The per-contact switches (eight chatbot ones plus the registered project rule), column -> label (the Chatbot card shows AI replies first; this order is the copy dialog's).
 SWITCHES: tuple[tuple[str, str], ...] = (
     ("chatbot_stock_allowed", "Stock checks"),
     ("notify_salesman", "Notify salesman"),
@@ -72,6 +73,8 @@ SWITCHES: tuple[tuple[str, str], ...] = (
     ("chatbot_allowed", "AI replies"),
     ("chatbot_skip_period_questions", "Skip date-range questions"),
     ("chatbot_files_as_links", "Send files as links"),
+    # Not a chatbot switch, but a per-contact rule edited under the same permission (portal project picker).
+    ("requires_registered_project", "Requires registered project"),
 )
 
 REGION_ORDER = ("west", "east")
@@ -101,6 +104,9 @@ STOCK_MODE_LABELS = {"detailed": "Detailed", "compact": "Compact", "availability
 STOCK_FACETS = frozenset({"stock_check_mode", "stock_locations"})
 COMPANIES_FACET = "companies"
 AGENTS_FACET = "agent_access"
+#: Per-contact agent field overrides (`agent_field_access.contact_id`): part of Agent access, so they
+#: are copied and skipped together with it (same `access_agents.edit` permission on their editor).
+AGENT_FIELDS_FACET = "agent_field_overrides"
 AGENTS_EDIT_PERMISSION = "user_management.access_agents.edit"
 
 #: Always named under "Not copied" in the dialog; a skipped facet's label is added to it.
@@ -111,6 +117,7 @@ FACET_LABELS = {
     "companies": "Companies",
     "market_segments": "Market segments",
     "agent_access": "Agent access",
+    "agent_field_overrides": "Agent field overrides",
     "brands": "Brands",
     "attachment_types": "Attachment types",
     "portal_forms": "Portal forms",
@@ -129,7 +136,7 @@ def facets_to_skip(db: Session, user_id: str) -> frozenset[str]:
         skip.add(COMPANIES_FACET)
     permissions = UserPermissionService(db)
     if not permissions.check_user_has_permission(user_id, AGENTS_EDIT_PERMISSION):
-        skip.add(AGENTS_FACET)
+        skip |= {AGENTS_FACET, AGENT_FIELDS_FACET}
     if not permissions.check_user_has_permission(user_id, "inventory.stock.edit"):
         skip |= STOCK_FACETS
     elif not is_admin and _inventory_module_off(db):
@@ -216,6 +223,8 @@ class AccessSnapshot:
     portal_forms: dict[str, bool] = field(default_factory=dict)
     #: The contact-tier spec visibility row as (spec_keys, excluded_spec_keys), or None (inherits).
     spec: Optional[tuple] = None
+    #: (agent_code, resource, field_key) -> is_allowed, this contact's own overrides only.
+    agent_fields: dict[tuple, bool] = field(default_factory=dict)
 
 
 @dataclass
@@ -259,6 +268,11 @@ def portal_forms_text(forms: dict[str, bool]) -> str:
     if not forms:
         return INHERITED
     return ", ".join(f"{_form_label(f)} {'on' if forms[f] else 'off'}" for f in sorted(forms))
+
+
+def _field_override_label(key: tuple, allowed: bool) -> str:
+    agent_code, resource, field_key = key
+    return f"{agent_code}: {resource}.{field_key} {'allowed' if allowed else 'denied'}"
 
 
 def _form_label(form_type: str) -> str:
@@ -406,6 +420,9 @@ def snapshots(db: Session, contacts: Iterable[RespondContact]) -> dict[str, Acce
             tuple(sorted(row.spec_keys)) if row.spec_keys is not None else None,
             tuple(sorted(row.excluded_spec_keys)) if row.excluded_spec_keys is not None else None,
         )
+
+    for row in db.query(AgentFieldAccess).filter(AgentFieldAccess.contact_id.in_(ids)):
+        out[str(row.contact_id)].agent_fields[(row.agent_code, row.resource, row.field_key)] = bool(row.is_allowed)
 
     for snap in out.values():
         snap.attachment_types.sort()
@@ -589,6 +606,20 @@ def diff(
             )
         )
 
+    if AGENT_FIELDS_FACET not in skip and source.agent_fields != target.agent_fields:
+        src_rows = {_field_override_label(k, v) for k, v in source.agent_fields.items()}
+        tgt_rows = {_field_override_label(k, v) for k, v in target.agent_fields.items()}
+        changes.append(
+            _change(
+                AGENT_FIELDS_FACET,
+                FACET_LABELS[AGENT_FIELDS_FACET],
+                sorted(tgt_rows),
+                sorted(src_rows),
+                sorted(src_rows - tgt_rows),
+                sorted(tgt_rows - src_rows),
+            )
+        )
+
     src_mode = source.stock.mode if source.stock else None
     tgt_mode = target.stock.mode if target.stock else None
     if "stock_check_mode" not in skip and src_mode != tgt_mode:
@@ -695,6 +726,14 @@ def summary(source: AccessSnapshot, names: Names, skip: frozenset[str] = frozens
     ]
     if AGENTS_FACET not in skip:
         lines.append({"label": FACET_LABELS[AGENTS_FACET], "value": ", ".join(agents)})
+    if AGENT_FIELDS_FACET not in skip:
+        lines.append(
+            {
+                "label": FACET_LABELS[AGENT_FIELDS_FACET],
+                "value": ", ".join(sorted(_field_override_label(k, v) for k, v in source.agent_fields.items()))
+                or "None",
+            }
+        )
     extra = {
         "stock_check_mode": STOCK_MODE_LABELS.get(source.stock.mode, source.stock.mode) if source.stock else "Inherited",
         "stock_locations": locations_text(source.stock, names) or "Inherited",
@@ -777,6 +816,22 @@ def _write(
 
     if AGENTS_FACET in changed:
         _write_agents(db, source, target, actor_id)
+
+    if AGENT_FIELDS_FACET in changed:
+        db.query(AgentFieldAccess).filter(AgentFieldAccess.contact_id == target_id).delete(synchronize_session=False)
+        for (agent_code, resource, field_key), allowed in source.agent_fields.items():
+            db.add(
+                AgentFieldAccess(
+                    id=str(uuid.uuid4()),
+                    agent_code=agent_code,
+                    resource=resource,
+                    field_key=field_key,
+                    contact_id=target_id,
+                    is_allowed=allowed,
+                    created_by=actor_id,
+                    updated_by=actor_id,
+                )
+            )
 
     if changed & STOCK_FACETS:
         _write_stock(db, source.stock, target_id)

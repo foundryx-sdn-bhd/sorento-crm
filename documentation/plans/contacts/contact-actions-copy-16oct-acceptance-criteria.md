@@ -8,3 +8,4 @@
 - B3 An empty brand list on the source clears the target's brand scope, shown as "All brands"; a source brand outside the actor's company scope is not copied and is listed under Not copied.
 - B5 Inherited portal forms / spec visibility on the source clear the target's own overrides; attachment type grants are replaced.
 - B4 The copy dialog's first step lists what will be copied (Brands, Image access, Voice note access included) and what is not, before Apply.
+- B6 Per-contact agent field overrides are copied (replaced) with Agent access, and left alone with it (named under Not copied) for an actor without access_agents.edit. Requires registered project is copied.

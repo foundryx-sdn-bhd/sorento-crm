@@ -1,6 +1,6 @@
 # PLAN: contacts list Actions dropdown + copy access copies everything (CONTACT-ACTIONS-COPY)
 
-Status: in review (fix round 1 from reviewer applied) (small fix track: FE swap to an existing component + extend an existing copy service; no migration, no auth/RBAC change)
+Status: in review (reviewer fix round + crew audit round applied) (small fix track: FE swap to an existing component + extend an existing copy service; no migration, no auth/RBAC change)
 
 Owner, 16 Oct 2026: "also please put these all actions under 'Actions' dropdown just like other list view,
 and when we copy, it doesn't copy things like brands, image access, voice note access, it doesn't copy all".
@@ -24,6 +24,8 @@ Copied (`app/services/contact_access_copy_service.py`), all through the one bulk
 | Regions | `respond_contacts.regions` | CONTACT-REGION |
 | Field reveals (incl. cost visibility) | `contact_field_reveals` | 3 Oct |
 | Agent access | `contact_agent_access` (needs `access_agents.edit`) | 3 Oct |
+| Agent field overrides | `agent_field_access` rows with `contact_id` set (part of Agent access, same permission and skip) | **this lane** (crew audit) |
+| Requires registered project | `respond_contacts.requires_registered_project` | **this lane** (crew audit) |
 | Stock check mode + locations | `stock_visibility_policies` contact row (needs `inventory.stock.edit`) | 4 Oct |
 | Companies | `respond_contact_companies` (superadmin/admin) | 4 Oct |
 | Market segments | `respond_contact_market_segments` | 4 Oct |
@@ -42,5 +44,5 @@ gate fails closed).
 
 Not copied (identity or the person's own state): name, phone, Respond.io id, portal slug, workspace,
 linked customers, CS routing, memory level, chatbot language / ledgers / facts (rest of `chatbot_profile`),
-outbound messaging switch (own bulk action), "Requires registered project" (portal form rule on the identity
-edit dialog), media usage counters and notice stamps, voice `languages` (no editor writes it).
+outbound messaging switch (own bulk action), media usage counters and notice stamps, voice `languages` (no
+editor writes it).
