@@ -373,3 +373,39 @@ def test_resend_after_the_confirm_that_applied_the_split_still_prints_one_line_p
     out = OrderInquiryHandoverResend(world.db).preview([str(inquiry.id)], actor_user_id=world.actor)
     assert out["emails"], out
     assert out["emails"][0]["line_count"] == 2, "an applied split still prints its plan"
+
+
+def _core_numbers(s, mapping):
+    from app.models.order import SalesOrderLine
+
+    for no, core_no in mapping.items():
+        s.db.get(SalesOrderLine, s.line[no].core_sales_order_line_id).line_no = core_no
+    s.db.commit()
+
+
+def test_worklist_splits_name_the_target_by_its_core_line_number(api):
+    from tests.test_planning_changes import BASE
+
+    s = _order(api, [(10, 10, D_A), (20, 6, D_B)])
+    _confirm_all(s)
+    _core_numbers(s, {10: 480, 20: 608})
+    _save(s, {10: [_sp(4, D_A, on=_on(s, 10)), _sp(6, D_B, on=_on(s, 20))]})
+    listed = s.client.get(f"{BASE}/order-inquiries", params={"query": s.core_so.so_number})
+    rows = {r["id"]: r for r in listed.json()["data"]}
+    got = rows[str(_order_row(s.world, s.line[10]).id)]["splits"]
+    assert [x["sits_on_line_no"] for x in got] == [480, 608], got
+
+
+def test_excel_remark_names_the_origin_by_its_core_line_number(api):
+    s = _order(api, [(40, 10, D_A), (50, 12, D_A)])
+    _confirm_all(s)
+    _core_numbers(s, {40: 480, 50: 608})
+    _save(s, {
+        40: [_sp(6, D_A, on=_on(s, 40)), _sp(4, D_B, on=_on(s, 50))],
+        50: [_sp(8, D_A, on=_on(s, 50)), _sp(4, D_B, on=_on(s, 40))],
+    })
+    heads, rows = _sheet_rows(s)
+    remarks = [r[heads.index("REMARK")] for r in rows]
+    assert any("from line 480" in x for x in remarks), remarks
+    assert any("from line 608" in x for x in remarks), remarks
+    assert not [x for x in remarks if "from line 40" in x or "from line 50" in x], remarks

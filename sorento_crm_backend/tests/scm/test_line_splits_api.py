@@ -597,3 +597,16 @@ def test_an_added_line_reads_base_zero_and_is_explained_by_what_moves_in(api):
             if x["sits_on_line_id"] == str(lid) and not x["is_cancel"]
         )
         assert moved_in == Decimal(str(line["now_qty"])) == Decimal(qty), "planned = moved-in only"
+
+
+def test_get_labels_lines_with_the_core_autocount_line_number(api):
+    """The board and AutoCount number a line by the CORE line (`public.sales_order_lines.line_no`),
+    not the mirror's: the view must show 480 / 608, and fall back to the mirror number only when
+    the core line has none."""
+    s = _seed(api)
+    s.c100.line_no, s.c200.line_no, s.c300.line_no = 480, 608, None
+    s.db.commit()
+    out = _get(s)
+    assert _line(out, s.l100.id)["line_no"] == 480
+    assert _line(out, s.l200.id)["line_no"] == 608
+    assert _line(out, s.l300.id)["line_no"] == 300, "no core number: the mirror's"
