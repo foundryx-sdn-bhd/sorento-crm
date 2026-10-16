@@ -76,6 +76,7 @@ SWITCHES: tuple[tuple[str, str], ...] = (
     # Not a chatbot switch, but a per-contact rule edited under the same permission (portal project picker).
     ("requires_registered_project", "Requires registered project"),
 )
+REGISTERED_PROJECT = "requires_registered_project"
 
 REGION_ORDER = ("west", "east")
 REGION_LABELS = {"west": "West Malaysia", "east": "East Malaysia"}
@@ -238,6 +239,7 @@ class Names:
     brands: dict[str, str] = field(default_factory=dict)  # brand id -> name
     attachment_types: dict[str, str] = field(default_factory=dict)  # type id -> name
     specs: dict[str, str] = field(default_factory=dict)  # spec key -> label
+    agents: dict[str, str] = field(default_factory=dict)  # agent code -> name
 
 
 def _media_key(modality: str, allowed: bool, limit: Optional[int], clip: Optional[int]) -> tuple:
@@ -270,9 +272,13 @@ def portal_forms_text(forms: dict[str, bool]) -> str:
     return ", ".join(f"{_form_label(f)} {'on' if forms[f] else 'off'}" for f in sorted(forms))
 
 
-def _field_override_label(key: tuple, allowed: bool) -> str:
-    agent_code, resource, field_key = key
-    return f"{agent_code}: {resource}.{field_key} {'allowed' if allowed else 'denied'}"
+def _field_override_label(key: tuple, allowed: bool, names: Names) -> str:
+    """Agent name and field label, as the agent's Field access card shows them."""
+    from app.services.field_access import field_label
+
+    agent_code, _resource, field_key = key
+    agent = names.agents.get(agent_code, agent_code)
+    return f"{agent}: {field_label(field_key)} {'allowed' if allowed else 'denied'}"
 
 
 def _form_label(form_type: str) -> str:
@@ -490,6 +496,11 @@ def names_for(db: Session, snaps: Iterable[AccessSnapshot]) -> Names:
                 AttachmentType.id.in_(sorted(type_ids))
             )
         }
+    agent_codes = {k[0] for s in snaps for k in s.agent_fields}
+    if agent_codes:
+        names.agents = dict(
+            db.query(AccessAgent.code, AccessAgent.name).filter(AccessAgent.code.in_(sorted(agent_codes))).all()
+        )
     if any(s.spec for s in snaps):
         from app.services.spec_visibility import full_registry_rows
 
@@ -607,8 +618,8 @@ def diff(
         )
 
     if AGENT_FIELDS_FACET not in skip and source.agent_fields != target.agent_fields:
-        src_rows = {_field_override_label(k, v) for k, v in source.agent_fields.items()}
-        tgt_rows = {_field_override_label(k, v) for k, v in target.agent_fields.items()}
+        src_rows = {_field_override_label(k, v, names) for k, v in source.agent_fields.items()}
+        tgt_rows = {_field_override_label(k, v, names) for k, v in target.agent_fields.items()}
         changes.append(
             _change(
                 AGENT_FIELDS_FACET,
@@ -719,8 +730,14 @@ def summary(source: AccessSnapshot, names: Names, skip: frozenset[str] = frozens
         {"label": "Tier", "value": TIER_LABELS.get(source.tier or "", source.tier or "")},
         {
             "label": "Chatbot switches",
-            "value": ", ".join(f"{label} {'on' if source.switches[col] else 'off'}" for col, label in SWITCHES),
+            "value": ", ".join(
+                f"{label} {'on' if source.switches[col] else 'off'}"
+                for col, label in SWITCHES
+                if col != REGISTERED_PROJECT
+            ),
         },
+        # A portal rule, not a chatbot switch: its own line.
+        {"label": "Requires registered project", "value": "on" if source.switches[REGISTERED_PROJECT] else "off"},
         {"label": "Regions", "value": ", ".join(REGION_LABELS.get(r, r) for r in source.regions)},
         {"label": "Field reveals", "value": ", ".join(labels.get(k, k) for k in source.reveals)},
     ]
@@ -730,7 +747,7 @@ def summary(source: AccessSnapshot, names: Names, skip: frozenset[str] = frozens
         lines.append(
             {
                 "label": FACET_LABELS[AGENT_FIELDS_FACET],
-                "value": ", ".join(sorted(_field_override_label(k, v) for k, v in source.agent_fields.items()))
+                "value": ", ".join(sorted(_field_override_label(k, v, names) for k, v in source.agent_fields.items()))
                 or "None",
             }
         )

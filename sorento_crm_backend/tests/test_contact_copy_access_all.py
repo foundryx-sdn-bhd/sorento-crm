@@ -230,6 +230,9 @@ def test_b1_new_facets_are_reported_as_changes_and_listed_in_the_summary(client,
     } <= facets
     labels = {line["label"] for line in body["source"]["summary"]}
     assert {"Brands", "Image access", "Voice note access", "Attachment types", "Portal forms", "Spec visibility"} <= labels
+    lines = {line["label"]: line["value"] for line in body["source"]["summary"]}
+    assert lines["Requires registered project"] == "on"
+    assert "Requires registered project" not in lines["Chatbot switches"]
     assert "Media limits" not in body["source"]["not_copied"]
     # A dry run writes nothing.
     assert _media_of(db, target.id) == {}
@@ -359,4 +362,7 @@ def test_b6_agent_field_overrides_are_replaced_and_follow_the_agent_access_rule(
     assert resp.status_code == 200, resp.text
     change = next(c for c in _by_id(resp.json())[target.id]["changes"] if c["facet"] == "agent_field_overrides")
     assert change["added"] and change["removed"]
+    # Agent name and field label, never the raw code or key.
+    assert change["added"] == [f"{agent.name}: Liner allowed"]
+    assert change["removed"] == [f"{agent.name}: Consignee allowed"]
     assert _field_overrides_of(db, target.id) == _field_overrides_of(db, source.id)
