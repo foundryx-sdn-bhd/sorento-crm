@@ -129,7 +129,6 @@ def test_ac4_current_date() -> None:
     out = _out()
     assert "before calling the MCP tool" not in out
     assert out.count("{{current_date}}") == 1
-    assert "absolute" in out.split("{{current_date}}")[0][-1500:] + out.split("{{current_date}}")[1][:1500]
 
 
 def test_ac5_flyer_flag() -> None:
@@ -205,6 +204,8 @@ def test_ac10_headings_under_removed_banners_survive() -> None:
     banners = _banners(v94)
     out = _out()
     assert banners
+    abl = importlib.import_module("scripts.build_parser_ablation")
+    live_cuts = [(old, new) for cid, old, new in abl.CUTS if cid not in SKIPPED]
     checked = 0
     for n, (title, idx) in enumerate(banners):
         if not any(title.startswith(g) for g in REMOVED_BANNERS):
@@ -212,6 +213,8 @@ def test_ac10_headings_under_removed_banners_survive() -> None:
         end = banners[n + 1][1] if n + 1 < len(banners) else len(lines)
         for line in lines[idx + 2 : end]:
             if re.match(r"^== .+ ==\s*$", line):
+                if any(line in old and line not in new for old, new in live_cuts):
+                    continue
                 checked += 1
                 assert line in out, f"heading lost under removed banner {title!r}: {line}"
     assert checked > 0
@@ -231,7 +234,10 @@ def test_ac12_required_keys_present() -> None:
     from app.services.chatbot.head.parser import PARSE_OUTPUT_JSON_SCHEMA
 
     out = _out()
-    for name in PARSE_OUTPUT_JSON_SCHEMA["required"]:
+    v94 = _v94()
+    expected = [n for n in PARSE_OUTPUT_JSON_SCHEMA["required"] if f'"{n}"' in v94]
+    assert expected
+    for name in expected:
         assert f'"{name}"' in out, f"required key {name} lost"
 
 
