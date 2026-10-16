@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from app.models.access import ContactAttachmentType, RespondContact, SpecVisibilityPolicy
+from app.models.access import AgentFieldAccess, ContactAttachmentType, RespondContact, SpecVisibilityPolicy
 from app.models.media import ContactMediaLimit
 from app.models.price_tag import ContactPortalFormOverride
 from app.models.product import Brand
@@ -63,6 +63,7 @@ SWITCHES = {
     "chatbot_allowed": True,
     "chatbot_skip_period_questions": True,
     "chatbot_files_as_links": True,
+    "requires_registered_project": True,
 }
 
 
@@ -120,6 +121,21 @@ def _spec_of(db, contact_id):
     return None if row is None else (row.spec_keys, row.excluded_spec_keys)
 
 
+def _field_overrides_of(db, contact_id):
+    db.expire_all()
+    rows = db.query(AgentFieldAccess).filter(AgentFieldAccess.contact_id == contact_id)
+    return sorted((r.agent_code, r.resource, r.field_key, r.is_allowed) for r in rows)
+
+
+def _override(db, contact, agent, field_key, allowed):
+    db.add(
+        AgentFieldAccess(
+            agent_code=agent.code, resource="incoming_stock", field_key=field_key, contact_id=contact.id, is_allowed=allowed
+        )
+    )
+    db.flush()
+
+
 def _everything(db, contact_id):
     """Every access setting of one contact, read fresh."""
     db.expire_all()
@@ -136,6 +152,7 @@ def _everything(db, contact_id):
         "attachment_types": _attachments_of(db, contact_id),
         "portal_forms": _forms_of(db, contact_id),
         "spec": _spec_of(db, contact_id),
+        "agent_field_overrides": _field_overrides_of(db, contact_id),
     }
 
 
@@ -172,6 +189,8 @@ def rich(db):
     db.add(ContactPortalFormOverride(contact_id=source.id, form_type="complaint", is_enabled=False))
     db.add(SpecVisibilityPolicy(contact_id=source.id, spec_keys=None, excluded_spec_keys=["zzt_thickness"]))
     db.flush()
+    _override(db, source, agent, "liner_code", True)
+    _override(db, source, agent, "consignee", False)
     target = _contact(db, "all-target", language="en", memory="off")
     return source, target
 
@@ -206,6 +225,8 @@ def test_b1_new_facets_are_reported_as_changes_and_listed_in_the_summary(client,
         "attachment_types",
         "portal_forms",
         "spec_visibility",
+        "requires_registered_project",
+        "agent_field_overrides",
     } <= facets
     labels = {line["label"] for line in body["source"]["summary"]}
     assert {"Brands", "Image access", "Voice note access", "Attachment types", "Portal forms", "Spec visibility"} <= labels
@@ -317,3 +338,25 @@ def test_b3_the_differs_filter_ignores_a_brand_the_actor_cannot_copy(db):  # noq
     different.notify_salesman = True
     db.flush()
     assert contacts_differing_from(db, source, [same, different]) == [different.id]
+
+
+def test_b6_agent_field_overrides_are_replaced_and_follow_the_agent_access_rule(client, db, full, perms):  # noqa: F811
+    """Per-contact field overrides are part of Agent access: copied (replace) with it, and left
+    alone with it for an actor without `access_agents.edit`."""
+    agent = _agent(db, "fo")
+    source, target = _contact(db, "fo-src"), _contact(db, "fo-tgt")
+    _override(db, source, agent, "liner_code", True)
+    _override(db, target, agent, "consignee", True)
+
+    perms["granted"] = perms["granted"] - {AGENTS_EDIT}
+    body = _post(client, source, [target]).json()
+    assert all(c["facet"] != "agent_field_overrides" for c in _by_id(body)[target.id]["changes"])
+    assert "Agent field overrides" in body["source"]["not_copied"]
+    assert _field_overrides_of(db, target.id) == [(agent.code, "incoming_stock", "consignee", True)]
+
+    perms["granted"] = perms["granted"] | {AGENTS_EDIT}
+    resp = _post(client, source, [target])
+    assert resp.status_code == 200, resp.text
+    change = next(c for c in _by_id(resp.json())[target.id]["changes"] if c["facet"] == "agent_field_overrides")
+    assert change["added"] and change["removed"]
+    assert _field_overrides_of(db, target.id) == _field_overrides_of(db, source.id)
