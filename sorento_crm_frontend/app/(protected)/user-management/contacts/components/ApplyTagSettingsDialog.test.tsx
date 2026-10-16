@@ -50,6 +50,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  svc.applyTagSettings.mockReset();
+  svc.applyContactTagSettings.mockReset();
   vi.clearAllMocks();
 });
 
@@ -75,10 +77,10 @@ describe('ApplyTagSettingsDialog', () => {
     expect(row).toHaveTextContent('Needs access agents edit.');
   });
 
-  it('"Apply to N contacts" sends dry_run false', async () => {
+  it('"Apply to N contact(s)" (N = rows that will change) sends dry_run false', async () => {
     svc.applyTagSettings.mockResolvedValueOnce(answer(true)).mockResolvedValueOnce(answer(false));
     const { onApplied } = renderDialog();
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply to 2 contacts' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply to 1 contact' }));
     await waitFor(() =>
       expect(svc.applyTagSettings).toHaveBeenLastCalledWith({ contactIds: ['c1', 'c2'], dryRun: false }),
     );
@@ -101,8 +103,8 @@ describe('ApplyTagSettingsDialog', () => {
   it('a rejected apply shows the message and the button stays usable', async () => {
     svc.applyTagSettings.mockResolvedValueOnce(answer(true)).mockRejectedValueOnce(new Error('Server went away.'));
     renderDialog();
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply to 2 contacts' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply to 1 contact' }));
     expect(await screen.findByText(/Server went away\./)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Apply to 2 contacts' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Apply to 1 contact' })).not.toBeDisabled();
   });
 });
