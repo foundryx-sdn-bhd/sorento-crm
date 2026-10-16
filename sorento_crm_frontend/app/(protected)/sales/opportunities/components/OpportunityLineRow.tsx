@@ -13,7 +13,7 @@ import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { formatCurrency } from '@/lib/helpers';
-import { numberFieldError } from '@/lib/number-field';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import {
   getSalesOpportunityProductOptions,
   type SalesOpportunityProductOption,
@@ -44,8 +44,9 @@ export interface LineDraft {
 export function lineAmount(line: Pick<LineDraft, 'qty' | 'unitPrice'>): number | null {
   if (line.unitPrice.trim() === '') return null;
   const price = Number(line.unitPrice);
-  const qty = Number(line.qty);
-  if (!Number.isFinite(price) || !Number.isFinite(qty)) return null;
+  // A blank or invalid qty is pending (null), never 0: Number('') is 0.
+  const qty = parseNumberDraft(line.qty);
+  if (!Number.isFinite(price) || qty === null) return null;
   return Math.round(qty * price * 100) / 100;
 }
 
@@ -61,7 +62,9 @@ export function lineHasNumberError(line: LineDraft): boolean {
   return Boolean(line.productId) && Boolean(lineQtyError(line) || linePriceError(line));
 }
 
-/** The live total across every line - what Expected amount defaults to while untouched. */
+/** The live total across every line - what Expected amount defaults to while untouched.
+ *  A line whose amount is pending (blank qty) is skipped, never added as 0; the row's own
+ *  qty error blocks the save. */
 export function sumLineAmounts(lines: Pick<LineDraft, 'qty' | 'unitPrice'>[]): number {
   return lines.reduce((sum, line) => sum + (lineAmount(line) ?? 0), 0);
 }
