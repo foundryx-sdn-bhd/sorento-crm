@@ -155,4 +155,19 @@ describe('read-only view of an existing request', () => {
     expect(screen.getByText('Submitted')).toBeTruthy();
     expect(getSampleRequest).toHaveBeenCalledWith('sr-1');
   });
+
+  it('prints the created date the way staff screens and the PDF do (dd/mm/yyyy, Malaysia day)', async () => {
+    // A naive UTC stamp from the API: 15 Oct 23:30 UTC is already 16 Oct in Malaysia.
+    asMock(getSampleRequest).mockResolvedValue({
+      id: 'sr-2',
+      request_no: 'SR-000008',
+      status: 'submitted',
+      status_label: 'Submitted',
+      created_at: '2026-10-15T23:30:00',
+      lines: [],
+      board_mounting: false,
+    });
+    renderForm({ requestId: 'sr-2' });
+    expect(await screen.findByText('Created 16/10/2026')).toBeTruthy();
+  });
 });
