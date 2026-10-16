@@ -467,3 +467,30 @@ def test_security_review_customer_picker_is_scoped_to_the_stamped_company(portal
     ids = {r["customer_id"] for r in c.get(f"{PORTAL}/sample-request/customers").json()}
     assert mine.id in ids
     assert foreign.id not in ids
+
+
+def test_review_customer_picker_leaves_out_an_order_only_debtor(portal):
+    """Reviewer on 75261484: the agent's book also holds debtors seen only on orders (no
+    customer row, so no id submit can accept). The picker lists only pickable debtors."""
+    from datetime import date
+
+    from app.models.order import Order
+
+    agent = _link_agent(portal, portal.granted)
+    mine = make_customer(portal.db, portal.company_id)
+    mine.sales_agent_id = agent.id
+    portal.db.add(
+        Order(
+            order_number=f"ZZT-SO-{uid()[:6]}",
+            order_date=date.today(),
+            debtor_code="ZZT-ORDONLY",
+            debtor_name=f"{MARKER} order only debtor",
+            agent=agent.sales_agent,
+            company_id=portal.company_id,
+        )
+    )
+    portal.db.commit()
+
+    rows = _as(portal, portal.granted).get(f"{PORTAL}/sample-request/customers").json()
+    assert [r["customer_id"] for r in rows] == [mine.id]
+    assert all(r["customer_id"] for r in rows)
