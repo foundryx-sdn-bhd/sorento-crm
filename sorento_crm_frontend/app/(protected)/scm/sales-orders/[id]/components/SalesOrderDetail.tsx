@@ -45,7 +45,7 @@ import { StockTransfersPanel } from '@/app/(protected)/inventory-management/stoc
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
-import { numberFieldError } from '@/lib/number-field';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { useTableDeepLinkHighlight } from '@/hooks/useTableDeepLinkHighlight';
@@ -382,6 +382,11 @@ function lineAmount(
   return discount ? subtractMoney(gross, discount) : gross;
 }
 
+/** A quantity cell's text: the figure, or "-" while the qty is blank or invalid. */
+function fmtQtyCell(value: number | null): string {
+  return value === null ? '-' : fmtInt(value);
+}
+
 /** The money cell's text: the figure, or a plain "-" for a line nobody priced. */
 function fmtMoneyCell(value: string | null | undefined): string {
   return value ? formatMyrExact(value) : '-';
@@ -637,9 +642,10 @@ export function SalesOrderDetail({
         return row.outstanding_qty;
       }
       const ordered = isEditing
-        ? Number(draftOrRow(lineDrafts, row).qty_ordered)
+        ? parseNumberDraft(draftOrRow(lineDrafts, row).qty_ordered)
         : Number(row.qty_ordered);
-      if (!Number.isFinite(ordered)) return 0;
+      // A blank or invalid draft qty is pending ("-"), never 0.
+      if (ordered === null || !Number.isFinite(ordered)) return null;
       return Math.max(ordered - Number(row.qty_delivered), 0);
     },
     [isEditing, lineDrafts],
@@ -653,6 +659,7 @@ export function SalesOrderDetail({
         );
       }
       const draft = draftOrRow(lineDrafts, row);
+      if (parseNumberDraft(draft.qty_ordered) === null) return null;
       // The stated `line_total` is what the source document charged, so it wins - until one
       // of the figures it was charged ON is edited, at which point it no longer describes
       // what is on the screen and the arithmetic does.
@@ -742,10 +749,12 @@ export function SalesOrderDetail({
 
   const qtyOrderedTotal = useMemo(
     () =>
-      countedLines.reduce((sum, l) => {
+      countedLines.reduce<number | null>((sum, l) => {
+        if (sum === null) return null;
         const qty = isEditing
-          ? Number(draftOrRow(lineDrafts, l).qty_ordered)
+          ? parseNumberDraft(draftOrRow(lineDrafts, l).qty_ordered)
           : Number(l.qty_ordered);
+        if (qty === null) return null;
         return sum + (Number.isFinite(qty) ? qty : 0);
       }, 0),
     [countedLines, isEditing, lineDrafts],
@@ -755,13 +764,24 @@ export function SalesOrderDetail({
     [lines],
   );
   const outstandingTotal = useMemo(
-    () => countedLines.reduce((sum, l) => sum + outstandingOf(l), 0),
+    () =>
+      countedLines.reduce<number | null>((sum, l) => {
+        const out = outstandingOf(l);
+        return sum === null || out === null ? null : sum + out;
+      }, 0),
     [countedLines, outstandingOf],
   );
   const amountTotal = useMemo(() => {
+    // A blank qty on any counted line makes the total pending, not a sum that skips it.
+    if (
+      isEditing &&
+      countedLines.some((l) => parseNumberDraft(draftOrRow(lineDrafts, l).qty_ordered) === null)
+    ) {
+      return null;
+    }
     const amounts = countedLines.map(amountOf).filter((a): a is string => a !== null);
     return amounts.length ? sumMoney(amounts) : null;
-  }, [countedLines, amountOf]);
+  }, [countedLines, amountOf, isEditing, lineDrafts]);
 
   const columns = useMemo<ColumnDef<SalesOrderLine>[]>(
     () => [
@@ -898,7 +918,7 @@ export function SalesOrderDetail({
         // One `td` per column, so the sum sits UNDER the column it sums and needs no label.
         // Rendered by the shared grid (`DataGridTable`) as soon as any column declares a
         // `footer`, which is why this is a column property rather than a hand-rolled tfoot.
-        footer: () => fmtInt(qtyOrderedTotal),
+        footer: () => fmtQtyCell(qtyOrderedTotal),
         meta: {
           headerTitle: 'Qty ordered',
           headerClassName: 'text-right',
@@ -979,9 +999,9 @@ export function SalesOrderDetail({
         accessorFn: (line) =>
           Math.max(Number(line.qty_ordered) - Number(line.qty_delivered), 0),
         header: ({ column }) => <DataGridColumnHeader title="Outstanding qty" column={column} />,
-        cell: ({ row }) => fmtInt(outstandingOf(row.original)),
+        cell: ({ row }) => fmtQtyCell(outstandingOf(row.original)),
         size: 140,
-        footer: () => fmtInt(outstandingTotal),
+        footer: () => fmtQtyCell(outstandingTotal),
         meta: {
           headerTitle: 'Outstanding qty',
           headerClassName: 'text-right',
