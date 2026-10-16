@@ -252,6 +252,10 @@ no existence leak; UAC AC-SR-41 updated). `ProjectDetailClient.tsx` exports `TAB
 - Comments for the owning salesperson: the form comment thread is gated on `projects.sample_requests.view`
   (`services/form_comment_service.py` VIEW_PERMISSION), so a salesperson holding only `create` gets no Comments tab.
   An owner rule in the comment service would let them talk to the coordinator on their own request.
+- Pre-existing, found by the security review on 0ec1299e: `GET /public/portal/lookups/debtors`
+  (`api/v1/public/portal.py`) checks only the portal token, with no form grant and no agent filter, so any portal
+  contact can page through every active customer of their companies. The sample request form no longer calls it;
+  other portal forms still do (`portal-client.ts` `lookupDebtors`). Its own fix: a grant check or the agent's book.
 
 ## Owner hand test 1 (16 Oct, on b4f9bd2a): layout FAIL
 
