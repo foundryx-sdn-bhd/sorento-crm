@@ -239,6 +239,8 @@ class Scheme:
     tiers: List[SchemeTier]
     #: "<dealer> <2026 | Dec 2025 to Nov 2026> <quarterly | monthly | yearly>", the kind last.
     name: str = ""
+    #: Paid to an account of the dealer with no row in the file, found by name + account.
+    payout_by_name: Optional["ByName"] = None
     #: The key of the dealer scheme that replaces this per-account one once it reaches a tier
     #: (crew ruling 16 Oct: Tier 1-3 per account, Tier 4-5 on the dealer, one scale).
     replaced_by: Optional[str] = None
@@ -472,12 +474,18 @@ def _columns(grid: "_Grid", first: int, last: int, year: int) -> List[_Column]:
     by_index = {col.index: col for col in cols}
     for col in cols:
         left = by_index.get(col.index - 1)
-        if col.role == "unplaced" and col.is_rate and left is not None and left.role == "period" and left.kind:
-            col.role, col.kind, col.points = "period", left.kind, left.points
-            if left.kind == "Q" and left.tier is None:
-                col.number = 0
-            else:
-                col.number, col.tier, col.window = left.number, left.tier, left.window
+        if (
+            col.role == "unplaced"
+            and col.header.split(" / ")[-1].strip().upper() == "INCENTIVE"
+            and left is not None
+            and left.role == "period"
+            and left.kind == "Q"
+            and not left.is_rate
+            and left.tier is None
+        ):
+            # Only the Mocha shape (review S2): any other rate column the reader cannot place
+            # still fails its rows.
+            col.role, col.kind, col.points, col.number = "period", "Q", left.points, 0
     return cols
 
 
@@ -762,8 +770,13 @@ def gate_passes(result: dict) -> bool:
     return not result.get("notes") and summary.get("not_representable", 0) == 0 and summary.get("needs_pick", 0) == 0
 
 
-#: A payout key naming an account by dealer name and account label, not by row or code.
-PAY_BY_NAME = "@"
+@dataclass(frozen=True)
+class ByName:
+    """An account paid by the dealer's name and its account label: it has no row in the file
+    (gate 3). Its own type, never a string, so no file text can be read as one (review B2)."""
+
+    dealer: str
+    label: str
 
 
 def _row_key(sheet: str, row: int, code: Optional[str]) -> str:
@@ -932,10 +945,14 @@ class _Ctx:
 
 
 def _account_and_dealer_columns(ctx: "_Ctx", cols: List[_Column]):
-    """(per-account columns, dealer columns) when one yearly block holds thresholds that differ
+    """(per-account columns, dealer columns) when one period block holds thresholds that differ
     per account (Tier 1-3) beside thresholds merged over the accounts (Tier 4-5); else None."""
     shared_rates = [c for c in cols if c.kind != "Y" and c.number == 0 and c.is_rate]
-    pairs, _ = _pairs([c for c in cols if c not in shared_rates], [])
+    pairs, unpaired = _pairs([c for c in cols if c not in shared_rates], [])
+    for col in unpaired:
+        if ctx.per_row(col):
+            # Never dropped by the split (review S1).
+            raise CellError(f"{col.header}: an incentive with no threshold column before it")
     per_account: List[_Column] = list(shared_rates)
     dealer: List[_Column] = list(shared_rates)
     for threshold, rate in pairs:
@@ -956,7 +973,7 @@ def _account_and_dealer_columns(ctx: "_Ctx", cols: List[_Column]):
 def _group_schemes(
     ctx: _Ctx, kind: str, points: bool, kind_cols, window_col, by_role, inherit_window=None
 ) -> List[Scheme]:
-    """The one target of `kind` and unit over `ctx.rows`, or none. A yearly block with Tier 1-3
+    """The one target of `kind` and unit over `ctx.rows`, or none. A block with Tier 1-3
     per account and Tier 4-5 merged over the accounts is one dealer target plus one target per
     account that the dealer target replaces once it reaches a tier (crew ruling 16 Oct)."""
     grid, results = ctx.grid, ctx.results
@@ -978,7 +995,7 @@ def _group_schemes(
                     if (scheme.start, scheme.end) != (dealer[0].start, dealer[0].end):
                         # The replacement needs the dealer's period to cover the account's.
                         raise CellError(
-                            f"yearly: an account's window ({scheme.start:%b %Y} to {scheme.end:%b %Y}) "
+                            f"{_KIND_NAME[kind]}: an account's window ({scheme.start:%b %Y} to {scheme.end:%b %Y}) "
                             f"differs from its dealer's ({dealer[0].start:%b %Y} to {dealer[0].end:%b %Y})"
                         )
                     scheme.replaced_by = dealer[0].key
@@ -1074,6 +1091,9 @@ def _group_schemes(
         payout = pay_to[0]
     else:
         payout = next((next(iter(t.account_rates)) for t in tiers if t.account_rates), None) or codes[0]
+    by_name = payout if isinstance(payout, ByName) else None
+    if by_name is not None:
+        payout = None
     span = (
         str(start.year)
         if (start.month, start.day, end.month, end.day) == (1, 1, 12, 31) and start.year == end.year
@@ -1090,6 +1110,7 @@ def _group_schemes(
             codes=list(codes),
             names=[results[r].name_in_file or "" for r in ctx.rows],
             payout_code=payout,
+            payout_by_name=by_name,
             start=start,
             end=end,
             split_every=split[0],
@@ -1156,7 +1177,7 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind, shared_rates=()) -> Tuple
             # An account of this dealer with no row in the file: paid to it, found by the
             # dealer's name and that account in the CRM when the import runs (gate 3).
             dealer = ctx.results[ctx.rows[0]].name_in_file or ""
-            return f"{PAY_BY_NAME}{dealer}|{split_account_suffix('x ' + label)[1] or label}", False
+            return ByName(dealer, split_account_suffix("x " + label)[1] or label), False
         raise CellError(f'{name}: the rate names "{label}", which is not an account of this dealer')
 
     def shared(col: _Column, *, every_row: bool) -> Tuple[object, Dict[int, object]]:
@@ -1195,7 +1216,7 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind, shared_rates=()) -> Tuple
     if per_account and merged:
         raise CellError(
             f"{name}: per-account {per_account[0].header} beside dealer {merged[0].header} is read "
-            "only on a yearly target whose dealer tiers are merged over the accounts"
+            "only when the dealer tiers are merged over the accounts"
         )
     previous_threshold: Optional[Decimal] = None
     for thr_col, rate_col in pairs:
@@ -1439,7 +1460,8 @@ class _CustomerIndex:
         """(the one exact match or None, up to 3 suggestions when there is none, whether the
         near-match was skipped for being past `MAX_FUZZY_LOOKUPS`). Cached per name and account,
         so a dealer's many rows cost one lookup."""
-        key = (dealer_key(name), account_key(account) or (name or "").upper())
+        # By `branch_key`, not `dealer_key`: two branches of one name are two lookups (review B1).
+        key = (branch_key(name), account_key(account) or (name or "").upper())
         if key not in self._cache:
             self._cache[key] = self._match(name, account)
         return self._cache[key]
@@ -1525,7 +1547,7 @@ def run(
     # case or surrounding spaces. A code wins over the name when the row has one.
     codes = {r.code for r in parsed.rows if r.code} | {
         s.payout_code for s in parsed.schemes
-        if s.payout_code and "!" not in s.payout_code and not s.payout_code.startswith(PAY_BY_NAME)
+        if s.payout_code and "!" not in s.payout_code
     }
     wanted = sorted({code.strip().upper() for code in codes})
     by_code = {}
@@ -1544,7 +1566,7 @@ def run(
         if valid_ids
         else {}
     )
-    by_name_payouts = [s.payout_code for s in parsed.schemes if (s.payout_code or "").startswith(PAY_BY_NAME)]
+    by_name_payouts = [s.payout_by_name for s in parsed.schemes if s.payout_by_name is not None]
     index = (
         _CustomerIndex(db)
         if by_name_payouts or any(r.status == "mapped" and not r.code for r in parsed.rows)
@@ -1608,21 +1630,19 @@ def run(
                     customer_by_key[key] = c
 
     # Accounts paid by dealer name + account (no row of their own): one exact CRM match each.
-    for key in set(by_name_payouts):
-        dealer, label = key[len(PAY_BY_NAME):].split("|", 1)
-        exact, _suggestions, _capped = index.match(dealer, label)
+    by_name_customer: Dict[ByName, Customer] = {}
+    for payee in set(by_name_payouts):
+        exact, _suggestions, _capped = index.match(payee.dealer, payee.label)
         if exact is not None:
             found = db.query(Customer).filter(Customer.id == exact.id).first()
             if found is not None:
-                customer_by_key[key] = found
+                by_name_customer[payee] = found
 
     def customer_of(key: Optional[str]):
         if not key:
             return None
         if key in customer_by_key:
             return customer_by_key[key]
-        if key.startswith(PAY_BY_NAME):
-            return None
         return by_code.get(key.strip().upper())
 
     # Existing dealer targets by (accounts, dates, split, unit): a re-import updates, never adds.
@@ -1702,14 +1722,16 @@ def run(
         problem = None
         for scheme in schemes:
             ids = [customer_of(code).id for code in scheme.codes]
-            payout = customer_of(scheme.payout_code)
-            if payout is None and (scheme.payout_code or "").startswith(PAY_BY_NAME):
-                dealer, label = scheme.payout_code[len(PAY_BY_NAME):].split("|", 1)
-                problem = (
-                    f"pays to {label}, which has no row in the file and no single CRM customer "
-                    "of this dealer with that account"
-                )
-                break
+            if scheme.payout_by_name is not None:
+                payout = by_name_customer.get(scheme.payout_by_name)
+                if payout is None:
+                    problem = (
+                        f"pays to {scheme.payout_by_name.label}, which has no row in the file and no "
+                        "single CRM customer of this dealer with that account"
+                    )
+                    break
+            else:
+                payout = customer_of(scheme.payout_code)
             if payout is None:
                 problem = f"PAY TO: no customer with code {scheme.payout_code}"
                 break
