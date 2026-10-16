@@ -817,11 +817,22 @@ def test_ac_sr_32_draft_edit_replaces_lines(world):
 # ------------------------------------------------------------------ AC-SR-33 / 34
 
 
+# Through the ORM, not raw SQL: a schema-qualified `projects.samples` in text() bypasses the
+# scratch schema's translate map and reads the real (empty) `projects` schema instead.
 def _samples_for_version(w, version_id):
-    return w.db.execute(
-        text("select submitted_on from projects.samples where quotation_version_id = :v"),
-        {"v": version_id},
-    ).fetchall()
+    from app.models.projects import ProjectSample
+
+    return (
+        w.db.query(ProjectSample.submitted_on)
+        .filter(ProjectSample.quotation_version_id == version_id)
+        .all()
+    )
+
+
+def _sample_count(w):
+    from app.models.projects import ProjectSample
+
+    return w.db.query(ProjectSample).count()
 
 
 def test_ac_sr_33_delivered_with_version_creates_a_sample_row(world):
@@ -839,9 +850,10 @@ def test_ac_sr_33_delivered_with_version_creates_a_sample_row(world):
 
 def test_ac_sr_33_delivered_without_version_creates_no_sample(world):
     """AC-SR-33: no version, no row."""
-    before = world.db.execute(text("select count(*) from projects.samples")).scalar()
+    before = _sample_count(world)
+    assert before == 0
     _delivered(world)
-    after = world.db.execute(text("select count(*) from projects.samples")).scalar()
+    after = _sample_count(world)
     assert after == before
 
 
