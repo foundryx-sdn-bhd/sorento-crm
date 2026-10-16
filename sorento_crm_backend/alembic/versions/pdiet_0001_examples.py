@@ -12,7 +12,7 @@ Plan: documentation/plans/chatbot/PLAN-prompt-diet-11oct.md.
 Idempotent: `IF NOT EXISTS` and `WHERE NOT EXISTS` throughout.
 
 Revision ID: pdiet_0001_examples
-Revises: chat_backfill_0001
+Revises: sds_0001_stock_debt_snapshots
 """
 import json
 from pathlib import Path
@@ -24,7 +24,7 @@ from app.services.prompt_diet_files import PARSER_CARDS_FILE, PARSER_CORE_FILE
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "pdiet_0001_examples"
-down_revision = "chat_backfill_0001"
+down_revision = "sds_0001_stock_debt_snapshots"
 branch_labels = None
 depends_on = None
 
