@@ -1,6 +1,6 @@
 # PLAN: contact tags + tag access settings (CONTACT-TAGS, 16 Oct)
 
-Status: Plan - behaviour card filed to owner (CARD-contact-tags-16oct.md), awaiting answers. Track: full (size L: migration, access writes, new list surface). No code yet.
+Status: Plan - card + mock v1 filed to owner 16 Oct, awaiting answers; UAC drafted on recommended answers. Track: full (size L: migration, access writes, new list surface). No code yet.
 
 Lane: `crew/contact-tags`. Rebases on CONTACT-ACTIONS-COPY (branch `claude/contact-actions-copy-ufwe9b`) once it lands.
 
