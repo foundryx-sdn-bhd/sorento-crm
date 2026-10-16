@@ -1228,7 +1228,7 @@ class TestTheDebtorLookupIsDeterministic:
     different debtor books with nothing on screen to explain it.
     """
 
-    def test_the_same_contact_answers_the_same_agent_every_time(self, db: Session):
+    def test_the_same_contact_answers_both_agents_every_time(self, db: Session):
         contact = _make_contact(db)
         first = _make_sales_agent(db, contact_id=contact.id)
         second = _make_sales_agent(db, contact_id=contact.id)
@@ -1246,8 +1246,7 @@ class TestTheDebtorLookupIsDeterministic:
         ]
 
         assert answers[0] == answers[1] == answers[2]
-        # And it is the ordering the code names, not whichever row came back.
-        expected = min([first, second], key=lambda agent: (agent.sales_agent, agent.id))
+        # PORTAL-MULTI-AGENT (owner, 16 Oct 2026): both links answer, not the first by code.
         customers = {
             row["customer_code"]
             for row in PriceTagRequestService.lookup_debtors_for_agent(db, contact.id)
@@ -1255,7 +1254,7 @@ class TestTheDebtorLookupIsDeterministic:
         assert customers == {
             customer.customer_code
             for customer in db.query(Customer)
-            .filter(Customer.sales_agent_id == expected.id)
+            .filter(Customer.sales_agent_id.in_([first.id, second.id]))
             .all()
         }
 
