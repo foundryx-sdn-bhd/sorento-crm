@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { toast } from '@/lib/toast';
+import { numberFieldError } from '@/lib/number-field';
 import {
   Boxes,
   Download,
@@ -40,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import type { SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { Field } from '@/components/common/Field';
@@ -462,6 +464,21 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         toast.error(`${row.itemCode || 'A new line'}: enter a quantity of zero or more.`);
         return;
       }
+      // The optional figures may stay blank, but a typed one is never negative.
+      const optionalFigures: [string, string][] = [
+        ['cartons', row.cartons],
+        ['CBM per unit', row.cbmPerUnit],
+        ['unit price', row.unitPrice],
+        ['net weight', row.netWeight],
+        ['gross weight', row.grossWeight],
+      ];
+      for (const [label, value] of optionalFigures) {
+        const message = numberFieldError(value, { min: 0, optional: true });
+        if (message) {
+          toast.error(`${row.itemCode || 'A new line'} ${label}: ${message}`);
+          return;
+        }
+      }
     }
     // ONE call. Rows with an id update, rows without create, and a line the array no longer
     // names is deleted - so the whole draft either lands or none of it does.
@@ -807,8 +824,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
           return (
             <div className="flex flex-col items-end gap-0.5">
               {editing ? (
-                <Input
-                  type="number"
+                <NumberInput
                   min={0}
                   value={line.qty}
                   onChange={(e) => patchLine(line.key, { qty: e.target.value })}
@@ -913,8 +929,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               value={line.cartons}
               onChange={(e) => patchLine(line.key, { cartons: e.target.value })}
@@ -942,8 +957,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               step="0.001"
               value={line.cbmPerUnit}
@@ -991,8 +1005,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               step="0.01"
               value={line.unitPrice}
@@ -1036,8 +1049,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               step="0.01"
               value={line.netWeight}
@@ -1066,8 +1078,7 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
         cell: ({ row }) => {
           const line = row.original;
           return editing ? (
-            <Input
-              type="number"
+            <NumberInput
               min={0}
               step="0.01"
               value={line.grossWeight}
