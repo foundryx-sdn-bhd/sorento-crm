@@ -513,7 +513,8 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> 
     owed = (list(after.get("owed") or []) if isinstance(after, dict) else []) + list(payload.get("owed") or [])
     if not (QUANTITY_ASK_RE.search(reply_text(row)) or "quantity" in owed):
         return ("no_qty_ask", True, "The bot asked how many although it was not needed.")
-    stock_ask = (gold or {}).get("fact") == "inventory" or "inventory" in _domains(row)
+    # a stock ask is what the ANSWER KEY says, never what the bot planned
+    stock_ask = (gold or {}).get("fact") == "inventory" or _norm((gold or {}).get("fact_label")) == "stock"
     if not stock_ask:
         return ("no_qty_ask", False, "The bot asked how many although it was not needed.")
     mode = _stock_mode(row)
@@ -527,11 +528,15 @@ def _picker_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tu
         return None
     after = _oq(row)[1]
     return ("no_picker", not (isinstance(after, dict) and after.get("kind") == "product_pick"),
-            "The bot asked which variant although the code was clear.")
+            "The bot left a list of products open to pick from instead of answering.")
 
 
-def _needless(row: dict[str, Any], gold: dict[str, Any], menu: bool = True) -> list[tuple[str, bool | None, str]]:
-    return [c for c in ((_menu_check(row, gold) if menu else None), _quantity_check(row, gold), _picker_check(row, gold)) if c]
+def _needless(row: dict[str, Any], gold: dict[str, Any], menu: bool = True,
+              shown: bool = False) -> list[tuple[str, bool | None, str]]:
+    """The needless-question checks every item gets. `shown`: the answer already showed products, so a list left open
+    after it is not a needless picker."""
+    picker = None if shown else _picker_check(row, gold)
+    return [c for c in ((_menu_check(row, gold) if menu else None), _quantity_check(row, gold), picker) if c]
 
 
 def _code_lookup(row, item):
@@ -583,9 +588,7 @@ def _subject_check(want: set[str], after: set[str]) -> tuple[str, bool | None, s
 
 def _followup(row, item):
     kind, gold = item.get("kind"), item.get("gold") or {}
-    if kind in {"and_x", "switch", "refine"}:   # a lookup-type follow-up: no needless question after the answer
-        return _followup_checks(row, item, kind, gold) + _needless(row, gold, menu=kind != "refine")
-    return _followup_checks(row, item, kind, gold)
+    return _followup_checks(row, item, kind, gold) + _needless(row, gold, menu=kind in {"and_x", "switch"})
 
 
 def _followup_checks(row, item, kind, gold):
@@ -793,7 +796,7 @@ def _spec(row, item):
     reply = reply_text(row)
     shown = bool(CODE_RE.search(reply)) and not COULD_NOT_FIND_RE.search(reply)   # at least one product, no dead end
     checks = [("spec_set", want <= got and bool(want or class_want), "The spec words were not grounded to the expected set."),
-              ("shown", shown, "The reply showed no product."), *_needless(row, {})]
+              ("shown", shown, "The reply showed no product."), *_needless(row, {}, shown=shown)]
     if class_want:  # reported, not part of `passed`: the bot records class words as category entities
         checks.append(("class", all(any(set(v.split()) <= w for w in words) for v in class_want),
                        "The product class was read differently from the one asked."))
@@ -895,7 +898,7 @@ def _attachment(row, item):
 
 
 def _scope(row, item):
-    return []
+    return _needless(row, item.get("gold") or {}, menu=False)
 
 
 _SLICES = {"code_lookup": _code_lookup, "followup": _followup, "spec": _spec, "attachment": _attachment, "scope": _scope}
