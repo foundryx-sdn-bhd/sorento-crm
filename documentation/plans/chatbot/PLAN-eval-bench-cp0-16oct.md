@@ -180,3 +180,21 @@ dev DB (`chatbot.turns`, console, 16 Oct 04:01-04:03Z, #1720 copy), so the follo
   their slice rates every run, carry `source: owner_probe`, and the CP0 page lists each one with its verdict.
   Probe 2's outcome for this contact is an access ask (0 access types: data, not code); the follow-up is graded on
   what was understood, the dead-end wording is a separate lane (CHAT-PROMO-NOACCESS).
+
+## Recorded-state runner contract (branch `crew/eval-bench-cp0`, stacked on #1743)
+
+`sorento_crm_backend/scripts/chatbot_eval/replay.py` gains a live mode, reusing the replay seams:
+
+- `live_rows(items, recorded_rows, *, session_factory, max_calls, max_usd, on_row=None) -> list[dict]`; CLI
+  `replay.py live --items FILE --recorded FILE --out FILE --max-calls N --max-usd X`.
+- Per item: the recorded prod turn row gives the state (session vars + `previous_conversation_state` through the
+  dry-run harness keys, as in replay) and the envelope; the item's own `message` (seed text or a paraphrase variant)
+  replaces the recorded message text; a fresh message id per (item, run); `dry_run=True`; NO
+  `mock_reformulator_output`, so the parser runs live.
+- Model calls are allowed (they are part of the bot) and counted: a pass-through wrapper on `llm_provider.*Provider
+  .chat` records calls and tokens and prices them; the run stops cleanly at `max_calls` or `max_usd`. MCP tools are
+  NOT patched (they hit the live stack named by the env). The network guard allows localhost and the model host only.
+- The DB is never written: the same rolled-back outer transaction as replay.
+- Output per item: `{item_id, run, provenance, usage: {calls, prompt_tokens, cached_tokens, completion_tokens, usd},
+  turn: {envelope, trace, response, branch_kind}}`, the full turn (crew-only file), so `targets.grade_turn` can grade
+  it; replay's ids-only rule does not apply to this crew-only output, but stdout/stderr stay text-free.
