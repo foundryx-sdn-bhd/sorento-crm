@@ -14,7 +14,9 @@ CODE_RE = re.compile(r"\b(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z][A-Z0-9-]{3,}\b
 MONTHS = {m: i + 1 for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split())}
 DATE_DMY = re.compile(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})\b")
 DATE_MDY = re.compile(r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})\b")
-DATE_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+DATE_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})(?!\d)")
+DATE_SLASH = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+DATE_MY = re.compile(r"\b([A-Za-z]{3,9})\.?,?\s+(\d{4})\b")
 NUM_RE = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?")
 ORDINAL_RE = re.compile(r"^\s*\d{1,3}[.)]\s+", re.M)
 
@@ -128,29 +130,32 @@ def _norm_date(d: int, m: int, y: int) -> str:
     return f"{y:04d}-{m:02d}-{d:02d}"
 
 
-def _dates(text: str) -> tuple[set[str], str]:
-    found: set[str] = set()
+def _dates(text: str) -> tuple[dict[str, str], dict[str, str], str]:
+    """(full dates, month-year mentions, text with them removed). Each maps a normalised value
+    (`YYYY-MM-DD`, `YYYY-MM`) to the text as written, for the finding."""
+    full: dict[str, str] = {}
+    months: dict[str, str] = {}
 
-    def dmy(m: re.Match) -> str:
-        mon = MONTHS.get(m.group(2)[:3].lower())
-        if mon:
-            found.add(_norm_date(int(m.group(1)), mon, int(m.group(3))))
+    def put(m: re.Match, d: int, mon: int | None, y: int) -> str:
+        if not mon or not 1 <= d <= 31:
+            return m.group(0)
+        full.setdefault(_norm_date(d, mon, y), m.group(0))
         return " "
 
-    def mdy(m: re.Match) -> str:
+    text = DATE_ISO.sub(lambda m: put(m, int(m.group(3)), int(m.group(2)), int(m.group(1))), text)
+    text = DATE_DMY.sub(lambda m: put(m, int(m.group(1)), MONTHS.get(m.group(2)[:3].lower()), int(m.group(3))), text)
+    text = DATE_MDY.sub(lambda m: put(m, int(m.group(2)), MONTHS.get(m.group(1)[:3].lower()), int(m.group(3))), text)
+    text = DATE_SLASH.sub(lambda m: put(m, int(m.group(1)), int(m.group(2)), int(m.group(3))), text)
+
+    def month_year(m: re.Match) -> str:
         mon = MONTHS.get(m.group(1)[:3].lower())
-        if mon:
-            found.add(_norm_date(int(m.group(2)), mon, int(m.group(3))))
+        if not mon:
+            return m.group(0)
+        months.setdefault(f"{int(m.group(2)):04d}-{mon:02d}", m.group(0))
         return " "
 
-    def iso(m: re.Match) -> str:
-        found.add(m.group(0))
-        return " "
-
-    text = DATE_ISO.sub(iso, text)
-    text = DATE_DMY.sub(dmy, text)
-    text = DATE_MDY.sub(mdy, text)
-    return found, text
+    text = DATE_MY.sub(month_year, text)
+    return full, months, text
 
 
 def _num(token: str) -> float | None:
@@ -165,11 +170,12 @@ def made_up_facts(row: dict[str, Any]) -> list[str]:
     source_parts = [user_message(row)] + [_dump(t.get("envelope")) for t in _tools(row)]
     truncated = any(isinstance(t.get("envelope"), dict) and t["envelope"].get("truncated") for t in _tools(row))
     source = "\n".join(source_parts)
-    src_dates, src_rest = _dates(source)
+    src_dates, src_months, src_rest = _dates(source)
+    src_month_keys = {d[:7] for d in src_dates} | set(src_months)
     src_upper = source.upper()
     src_nums = {n for n in (_num(t) for t in NUM_RE.findall(src_rest)) if n is not None}
     src_nums |= {n for n in (_num(t) for t in re.findall(r"\d+", src_rest)) if n is not None}
-    rep_dates, rep_rest = _dates(reply)
+    rep_dates, rep_months, rep_rest = _dates(reply)
     codes = CODE_RE.findall(rep_rest)
     rep_rest = CODE_RE.sub(" ", rep_rest)
     findings: list[str] = []
@@ -183,9 +189,12 @@ def made_up_facts(row: dict[str, Any]) -> list[str]:
     for c in codes:
         if c.upper() not in src_upper:
             add(c)
-    for d in sorted(rep_dates):
+    for d, written in rep_dates.items():
         if d not in src_dates:
-            add(d)
+            add(written)
+    for ym, written in rep_months.items():
+        if ym not in src_month_keys:
+            add(written)
     for tok in NUM_RE.findall(rep_rest):
         n = _num(tok)
         if n is not None and n not in src_nums:
@@ -287,7 +296,8 @@ def _followup(row, item):
 
 
 def _held_idea(row: dict[str, Any]) -> Any:
-    sv = (_stage(row, "received").get("raw") or {}).get("session_vars") or {}
+    raw = (_stage(row, "received").get("raw") or {}).get("session_vars") or {}
+    sv = raw.get("session_vars") if isinstance(raw.get("session_vars"), dict) else raw
     idea = sv.get("ideation")
     if idea is None and isinstance(sv.get("variables"), dict):
         idea = sv["variables"].get("ideation")
@@ -318,18 +328,24 @@ def _spec(row, item):
 
 def _attachment(row, item):
     gold = item.get("gold") or {}
+    code = _norm(gold.get("attachment_type"))
+    labels = {x for x in (code, _norm(gold.get("attachment_type_name"))) if x}
     files = [f for t in _tools(row) if isinstance(t.get("envelope"), dict)
              for f in (t["envelope"].get("attachments") or []) if isinstance(f, dict)]
-    said_none = "none on record" in reply_text(row).lower()
+    announced = (_stage(row, "replied").get("facts") or {}).get("files")
+    sent = announced if isinstance(announced, int) else len(files)
+    asked = {_norm(e.get("canonical_code")) for e in _entities(row) if e.get("hint") == "attachment_type"}
+    checks = [("asked_type", asked == {code}, "The asked type was read differently from the type requested.")]
     if gold.get("none_on_record"):
-        return [("none_on_record", said_none and not files, "The bot sent files or did not say there is none on record.")]
-    want = _norm(gold.get("attachment_type"))
-    return [
-        ("said_none", not said_none, "The bot said there is none on record, but files exist."),
-        ("files", bool(files), "No files were sent."),
-        ("type", bool(files) and all(_norm(f.get("attachmentType")) == want for f in files),
+        checks.append(("none_on_record", not files and sent == 0,
+                       "Files were sent although none exist on record."))
+        return checks
+    checks += [
+        ("files", bool(files) and sent > 0, "No files were sent."),
+        ("type", bool(files) and all(_norm(f.get("attachmentType")) in labels for f in files),
          "The files sent are not of the type asked."),
     ]
+    return checks
 
 
 def _scope(row, item):
@@ -392,4 +408,7 @@ def summarise(results: list[list[dict[str, Any]]], bars: dict[str, float]) -> di
     made_per_run = [sum(len(x["made_up"]) for x in run) for run in results]
     meets = (all(n == 0 for n in leaks_per_run) and all(n == 0 for n in made_per_run)
              and all(name in slices and slices[name]["rate"] >= bar for name, bar in bars.items()))
-    return {"slices": slices, "growth": growth, "leaks": sum(leaks_per_run), "made_up": sum(made_per_run), "meets": meets}
+    out = {"slices": slices, "growth": growth, "leaks": sum(leaks_per_run), "made_up": sum(made_per_run), "meets": meets}
+    if len(results) < 3:
+        out.update(meets=False, reason=f"needs at least 3 runs, got {len(results)}")
+    return out
