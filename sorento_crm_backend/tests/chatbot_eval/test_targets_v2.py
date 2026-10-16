@@ -122,7 +122,8 @@ def test_answer_via_memory_open_question_change_without_a_mode():
 def test_refine_with_a_brand_entity_and_memory_extra():
     v = {"entities": [{"raw": "sorento", "hint": "brand", "canonical_code": "Sorento"}], "reference_positions": []}
     gold = dict(subject_after=["SRTA100"], filter={"kind": "brand", "value": "Sorento"})
-    ok = row2(verdict=v, mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], mem_brands=["Sorento"])
+    ok = row2(verdict=v, mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], mem_brands=["Sorento"],
+              tools=[TOOL_A])
     check(grade_turn(ok, item("followup", "refine", **gold)), True)
     bad = row2(verdict={"entities": [], "reference_positions": []}, mem_before=[prod("SRTA100", UA)],
                mem_after=[prod("SRTA100", UA)], mem_brands=[])
@@ -342,3 +343,33 @@ def test_and_x_new_item_accepts_a_non_product_subject_from_looked_up_entities():
     check(grade_turn(ok, item("followup", "and_x", **gold)), True)
     bad = _do_row(["PS202610-9999"], **base)
     check(grade_turn(bad, item("followup", "and_x", **gold)), False)
+
+
+def test_old_subject_still_in_memory_does_not_fail_and_x_new_item_or_switch():
+    both = dict(mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA), prod("SRTB200", UB)],
+                tools=[TOOL_B], reply="SRTB200 has 5 pcs.")
+    r = row2(message="and srtb200?", **both)
+    res = grade_turn(r, item("followup", "and_x", variant="new_item", fact="inventory", subject_after=["SRTB200"]))
+    check(res, True)
+    assert "old_dropped" in res["checks"], "old_dropped stays reported"
+    sw = grade_turn(row2(message="stock of srtb200", **both), item("followup", "switch", subject_after=["SRTB200"]))
+    check(sw, True)
+    assert "old_dropped" in sw["checks"]
+
+
+def test_empty_or_missing_gold_subject_skips_the_subject_check():
+    r = row2(mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTB200", UB)])
+    for gold in ({"subject_after": []}, {}):
+        res = grade_turn(r, item("followup", "switch", **gold))
+        assert res["passed"] is True, res
+        assert "new_subject" in res["checks"] and res["checks"]["new_subject"] is None, res["checks"]  # unknown
+
+
+def test_refine_needs_a_named_tool_after_the_filter():
+    v = {"entities": [{"raw": "sorento", "hint": "brand", "canonical_code": "Sorento"}], "reference_positions": []}
+    gold = dict(subject_after=["SRTA100"], filter={"kind": "brand", "value": "Sorento"})
+    base = dict(verdict=v, mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], mem_brands=["Sorento"])
+    asked = _asking(row2(tools=[], reply="Which brand do you want?", **base), "product_pick")
+    res = grade_turn(asked, item("followup", "refine", **gold))
+    assert res["passed"] is False and "lookup" in res["reason"].lower(), res["reason"]
+    check(grade_turn(row2(tools=[TOOL_A], **base), item("followup", "refine", **gold)), True)
