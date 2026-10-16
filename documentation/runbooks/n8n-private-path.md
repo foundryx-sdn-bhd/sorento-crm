@@ -150,13 +150,14 @@ On the n8n box (`<N8N_MAIN>` is the main n8n container, not a worker; list them 
 `docker ps --format '{{.Names}}\t{{.Image}}' | grep -i n8n`):
 
 ```bash
-umask 077                                            # export files are private from the start
+umask 077                                            # new files private; the chmod below covers docker cp's copied modes
 D=~/n8n-export-$(date +%Y%m%d-%H%M)                  # set once, reused below
 docker exec -u node <N8N_MAIN> sh -c 'rm -rf /tmp/wf && mkdir -p /tmp/wf && n8n export:workflow --all --separate --output=/tmp/wf/'
 docker cp <N8N_MAIN>:/tmp/wf "$D"
 docker exec -u node <N8N_MAIN> rm -rf /tmp/wf
 chmod -R go-rwx "$D"
 cd "$D" && ls | wc -l       # one file per workflow
+umask 022                    # back to the default for the rest of the session
 ```
 
 The export holds no credential secrets, but nodes may carry literal header values and pinned
