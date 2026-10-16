@@ -31,6 +31,7 @@ from sqlalchemy import (
     event,
     func,
     select,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -57,6 +58,9 @@ class SampleRequest(Base, CompanyScopedMixin):
     __audit_track__ = True
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    #: NOT NULL here although the mixin leaves it nullable: the insert stamp fills it, and the
+    #: numbering lock is keyed on it.
+    company_id = Column(UUID(as_uuid=False), ForeignKey("companies.id"), nullable=False, index=True)
     #: `SR-000001`, a per-company series copied from `StockTransfer.transfer_no`.
     request_no = Column(String(20), nullable=False)
     status_id = Column(
@@ -191,8 +195,14 @@ REQUEST_NO_DIGITS = 6
 def next_request_no(bind, company_id) -> str:
     """Highest issued number for the company plus one (never the count: a cancelled
     request's number is on paperwork and must not be reissued). Same discipline, and the
-    same unlocked-read caveat, as `app.models.stock_transfer.next_transfer_no`."""
+    discipline as `app.models.stock_transfer.next_transfer_no`, plus a per-company lock."""
     table = SampleRequest.__table__
+    # Two concurrent drafts of one company would read the same max; the transaction-scoped
+    # lock makes the second wait for the first's commit.
+    bind.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+        {"key": f"sample_request:{company_id}"},
+    )
     latest = bind.execute(
         select(table.c.request_no)
         .where(

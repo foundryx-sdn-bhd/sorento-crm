@@ -32,8 +32,8 @@ CREATE = "projects.sample_requests.create"
 PROCESS = "projects.sample_requests.process"
 
 
-def _actor(db: Session, user: dict) -> svc.Actor:
-    slugs = permission_slugs(db, user["id"])
+def _actor(db: Session, user: dict, slugs=None) -> svc.Actor:
+    slugs = permission_slugs(db, user["id"]) if slugs is None else slugs
     return svc.Actor(
         user_id=user["id"], can_process=PROCESS in slugs, can_view_all=VIEW in slugs
     )
@@ -41,8 +41,8 @@ def _actor(db: Session, user: dict) -> svc.Actor:
 
 def _list_actor(db: Session, user: dict) -> svc.Actor:
     """The queue and the project tab: `.view` sees all, `.create` sees own rows."""
-    actor = _actor(db, user)
     slugs = permission_slugs(db, user["id"])
+    actor = _actor(db, user, slugs)
     if not (actor.can_view_all or CREATE in slugs):
         raise AppException(
             status_code=403, message=f"Permission required: {VIEW}", code="FORBIDDEN"
@@ -73,6 +73,7 @@ def search_products(
 def list_requests(
     status_filter: Optional[str] = Query(None, alias="status"),
     project_id: Optional[str] = Query(None),
+    salesperson_id: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(25, ge=1, le=200),
@@ -87,6 +88,7 @@ def list_requests(
         actor=actor,
         statuses=_statuses(status_filter),
         project_id=validate_uuid_path(project_id, resource="Project") if project_id else None,
+        salesperson_id=salesperson_id or None,
         q=q,
         page=page,
         limit=limit,
@@ -157,7 +159,7 @@ def get_request(
 def update_request(
     request_id: str,
     payload: SampleRequestWrite,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission(CREATE)),
     db: Session = Depends(get_db),
 ):
     try:
@@ -176,7 +178,7 @@ def update_request(
 @router.post("/sample-requests/{request_id}/submit")
 def submit_request(
     request_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission(CREATE)),
     db: Session = Depends(get_db),
 ):
     try:
@@ -198,11 +200,20 @@ def move_request(
     db: Session = Depends(get_db),
 ):
     try:
+        slugs = permission_slugs(db, user["id"])
+        if not (CREATE in slugs or PROCESS in slugs):
+            raise AppException(
+                status_code=403,
+                message=f"Permission required: {CREATE} or {PROCESS}",
+                code="FORBIDDEN",
+            )
+        actor = _actor(db, user, slugs)
         req = _load(db, request_id)
+        svc.assert_can_view(req, actor)
         svc.move(
             db,
             req,
-            actor=_actor(db, user),
+            actor=actor,
             to=payload.to,
             on=payload.date,
             reason=payload.reason,
@@ -224,10 +235,12 @@ def update_internal(
 ):
     try:
         req = _load(db, request_id)
+        actor = _actor(db, user)
+        svc.assert_can_view(req, actor)
         svc.update_internal(
             db,
             req,
-            actor=_actor(db, user),
+            actor=actor,
             consignment_no=payload.consignment_no,
             po_no=payload.po_no,
         )

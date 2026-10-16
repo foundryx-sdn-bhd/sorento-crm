@@ -16,6 +16,8 @@ from ._pg_fixture import blank_session
 from ._sample_request_seed import (
     MARKER,
     full_payload,
+    make_customer,
+    make_product,
     make_project,
     make_user,
     second_company,
@@ -85,6 +87,8 @@ def portal():
                     cat=cat,
                     inside=inside,
                     outside=outside,
+                    company_id=company_id,
+                    other_company=other_company,
                     granted=granted,
                     granted_b=granted_b,
                     ungranted=ungranted,
@@ -304,3 +308,75 @@ def test_generic_submissions_handler_does_not_shadow_the_literal_route(portal):
     )
     assert res.status_code == 201, res.text
     assert "fields" not in res.text
+
+
+# ------------------------------------------------------------------ review round 1
+
+def _link_agent(p, contact_id):
+    from app.models.sales_agent import SalesAgent
+
+    agent = SalesAgent(id=uid(), sales_agent=f"ZZT{uid()[:6]}".upper(), contact_id=contact_id)
+    p.db.add(agent)
+    p.db.flush()
+    return agent
+
+
+def test_review_s2_customer_must_be_in_the_contacts_debtors(portal):
+    """S2: a customer id outside the contact's debtors-for-agent set is 422
+    SAMPLE_REQUEST_CUSTOMER_INVALID, on create and on update; the contact's own debtor is
+    accepted; a typed name without an id stays allowed."""
+    agent = _link_agent(portal, portal.granted)
+    mine = make_customer(portal.db, portal.company_id)
+    mine.sales_agent_id = agent.id
+    stranger = make_customer(portal.db, portal.company_id)
+    portal.db.commit()  # the first refusal rolls the session back
+
+    c = _as(portal, portal.granted)
+    bad = c.post(
+        BASE,
+        json=full_payload(
+            product_id=portal.cat.plain.id, customer_id=stranger.id, customer_name=None
+        ),
+    )
+    assert bad.status_code == 422, bad.text
+    assert bad.json().get("code") == "SAMPLE_REQUEST_CUSTOMER_INVALID"
+
+    ok = _create(portal, customer_id=mine.id, customer_name=None)
+    assert ok["customer_id"] == mine.id
+
+    res = c.put(f"{BASE}/{ok['id']}", json={"customer_id": stranger.id})
+    assert res.status_code == 422, res.text
+    assert res.json().get("code") == "SAMPLE_REQUEST_CUSTOMER_INVALID"
+
+    typed = _create(portal, customer_name=f"{MARKER} walk-in")
+    assert typed["customer_id"] is None
+
+
+def _other_company_product(p):
+    # ORM, not raw SQL: text() would bypass the scratch schema's translate map.
+    row = make_product(p.db, code="ZZT-OTHERCO-77", name=f"{MARKER} other company item")
+    row.company_id = p.other_company
+    p.db.commit()
+    return row
+
+
+def test_review_s3_other_company_product_is_not_listed_and_refused(portal):
+    """S3 / AC-SR-10: the portal product search is scoped to the contact's company, and a
+    write naming another company's product is a 422."""
+    from tests._portal_grant import link_contact_company
+
+    # The contact belongs to BOTH companies: the token scope alone would list both
+    # catalogues, the route must narrow to the one company it stamps requests with.
+    link_contact_company(portal.db, portal.granted, portal.other_company)
+    foreign = _other_company_product(portal)
+    c = _as(portal, portal.granted)
+    res = c.get(f"{PORTAL}/sample-request/products", params={"q": "OTHERCO"})
+    assert res.status_code == 200, res.text
+    assert res.json() == []
+
+    body = full_payload(
+        product_id=portal.cat.plain.id, lines=[{"product_id": foreign.id, "qty": 1}]
+    )
+    refused = c.post(BASE, json=body)
+    assert refused.status_code == 422, refused.text
+    assert refused.json().get("code") == "SAMPLE_REQUEST_PRODUCT_INVALID"

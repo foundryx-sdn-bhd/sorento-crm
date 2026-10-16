@@ -174,8 +174,12 @@ def illegal_move(frm: Optional[str], to: str) -> AppException:
 # ------------------------------------------------------------------ validation
 
 
-def _check_products(db: Session, lines: Iterable[Dict[str, Any]]) -> None:
-    """Every product and alternative must exist and be active (AC-SR-10)."""
+def _check_products(
+    db: Session, lines: Iterable[Dict[str, Any]], kept: frozenset = frozenset()
+) -> None:
+    """Every product and alternative must exist and be active (AC-SR-10). Ids already on
+    the request (`kept`) are accepted even if they went inactive since; only NEW ids must
+    be active."""
     wanted: set[str] = set()
     for line in lines:
         for key in ("product_id", "alt_product_id"):
@@ -190,7 +194,10 @@ def _check_products(db: Session, lines: Iterable[Dict[str, Any]]) -> None:
     found = {
         str(pid)
         for (pid,) in db.query(Product.id)
-        .filter(Product.id.in_(wanted), Product.is_active.is_(True))
+        .filter(
+            Product.id.in_(wanted),
+            or_(Product.is_active.is_(True), Product.id.in_(list(kept) or [None])),
+        )
         .all()
     }
     if wanted - found:
@@ -278,6 +285,27 @@ def assert_portal_project_allowed(db: Session, *, contact, project_id: Optional[
         )
 
 
+def assert_portal_customer_allowed(db: Session, *, contact_id: str, customer_id: Optional[str]) -> None:
+    """A debtor picked in the portal must be one of the contact's `debtors-for-agent` (the
+    same set the picker lists); anything else is refused. A typed name needs no check."""
+    if not customer_id:
+        return
+    from app.services.price_tag_request_service import PriceTagRequestService
+
+    allowed = {
+        str(d["customer_id"])
+        for d in PriceTagRequestService.lookup_debtors_for_agent(db, str(contact_id))
+        if d.get("customer_id")
+    }
+    if str(customer_id) not in allowed:
+        raise AppException(
+            status_code=422,
+            message="Pick one of your own customers, or type the customer name.",
+            code="SAMPLE_REQUEST_CUSTOMER_INVALID",
+            details={"field": "customer_id"},
+        )
+
+
 def validate_submit(db: Session, req: SampleRequest) -> None:
     """The refusals of AC-SR-02/03/06/21/22, in the contract's order."""
     require_project, require_quotation = settings_flags(db)
@@ -323,7 +351,13 @@ def _apply(db: Session, req: SampleRequest, data: Dict[str, Any]) -> None:
 
     _check_refs(db, data)
     line_dicts: List[Dict[str, Any]] = [dict(line) for line in (lines or [])]
-    _check_products(db, line_dicts)
+    kept = frozenset(
+        str(pid)
+        for line in (req.lines or [])
+        for pid in (line.product_id, line.alt_product_id)
+        if pid
+    )
+    _check_products(db, line_dicts, kept)
 
     for field in HEADER_TEXT:
         if field in data:
@@ -398,6 +432,26 @@ def update_draft(db: Session, req: SampleRequest, *, actor: Actor, data: Dict[st
             code="SAMPLE_REQUEST_NOT_EDITABLE",
         )
     _apply(db, req, data)
+
+
+def assert_deletable(db: Session, request_id: str, user_id: Optional[str]) -> SampleRequest:
+    """Delete draft: the owner's own Draft, nothing else (403 not yours, 409 not a draft)."""
+    req = get_for(db, request_id)
+    if not is_owner(req, Actor(user_id=user_id)):
+        raise _forbidden("Only the person who raised this request can delete it.")
+    if status_key(db, req) != DRAFT:
+        raise AppException(
+            status_code=409,
+            message="Only a draft can be deleted. Cancel a submitted request instead.",
+            code="SAMPLE_REQUEST_NOT_DRAFT",
+        )
+    return req
+
+
+def delete_draft(db: Session, request_id: str, user_id: Optional[str]) -> None:
+    """Hard delete (the lines go with it). Runs when the pending-action window lapses."""
+    db.delete(assert_deletable(db, request_id, user_id))
+    db.commit()
 
 
 def update_internal(
@@ -572,7 +626,8 @@ LIST_SORTS = {
     "request_no": SampleRequest.request_no,
     "request_date": SampleRequest.request_date,
     "delivery_date": SampleRequest.delivery_date,
-    "customer_name": SampleRequest.customer_name,
+    # The debtor's name when there is one, else the typed name (set in `list_for`).
+    "customer_name": None,
     "ship_to_name": SampleRequest.ship_to_name,
 }
 
@@ -584,6 +639,7 @@ def list_for(
     statuses: Optional[List[str]] = None,
     project_id: Optional[str] = None,
     contact_id: Optional[str] = None,
+    salesperson_id: Optional[str] = None,
     q: Optional[str] = None,
     page: int = 1,
     limit: int = 25,
@@ -594,13 +650,15 @@ def list_for(
     `.view` see only the rows they own."""
     from app.models.order import Customer
 
-    query = db.query(SampleRequest)
+    query = db.query(SampleRequest).outerjoin(Customer, Customer.id == SampleRequest.customer_id)
     if contact_id is not None:
         query = query.filter(SampleRequest.contact_id == contact_id)
     elif not actor.can_view_all:
         query = query.filter(SampleRequest.salesperson_id == actor.user_id)
     if project_id:
         query = query.filter(SampleRequest.project_id == project_id)
+    if salesperson_id:
+        query = query.filter(SampleRequest.salesperson_id == salesperson_id)
     if statuses:
         ids = [s.id for k, s in _statuses(db).items() if k in statuses]
         query = query.filter(SampleRequest.status_id.in_(ids))
@@ -608,8 +666,7 @@ def list_for(
     if needle:
         like = f"%{needle}%"
         query = (
-            query.outerjoin(Customer, Customer.id == SampleRequest.customer_id)
-            .outerjoin(Project, Project.id == SampleRequest.project_id)
+            query.outerjoin(Project, Project.id == SampleRequest.project_id)
             .filter(
                 or_(
                     SampleRequest.request_no.ilike(like),
@@ -627,6 +684,8 @@ def list_for(
     total = query.with_entities(func.count(SampleRequest.id)).scalar() or 0
 
     column = LIST_SORTS.get(sort or "")
+    if sort == "customer_name":
+        column = func.coalesce(Customer.customer_name, SampleRequest.customer_name)
     if column is not None:
         ordered = column.desc() if direction == "desc" else column.asc()
         query = query.order_by(ordered.nulls_last(), SampleRequest.request_no.asc())

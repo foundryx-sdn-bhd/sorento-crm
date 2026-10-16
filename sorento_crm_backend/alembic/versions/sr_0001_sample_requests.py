@@ -3,10 +3,11 @@ three permissions.
 
 Additive only and idempotent (`IF NOT EXISTS`, `WHERE NOT EXISTS`) so the shared dev DB, which
 converges through `create_all`, can take it in any order. Permission grants follow
-`362_promotion_type_permissions`: view + create go to whoever already holds
-`projects.projects.edit` (every salesperson); `process` goes to the admin roles only, and an
-admin grants it to the coordinator role (the role name is not in the repo). A permission
-granted to nobody would read as a broken feature, which is why admins hold it.
+`362_promotion_type_permissions`: only `create` goes to whoever already holds
+`projects.projects.edit` (every salesperson sees own requests only); `view` and `process` go to
+the admin roles, and an admin grants them to the coordinator role (the role name is not in the
+repo). A permission granted to nobody would read as a broken feature, which is why admins hold
+them.
 
 Plan: documentation/plans/projects/PLAN-sample-request-core-15oct.md.
 
@@ -35,7 +36,7 @@ _PERMS = (
         "Move sample requests through Processing to Delivered and fill the internal fields.",
     ),
 )
-_COPY_FROM_EDIT = ("projects.sample_requests.view", "projects.sample_requests.create")
+_COPY_FROM_EDIT = ("projects.sample_requests.create",)
 _ADMIN_ROLES = ("superadmin", "admin")
 
 
@@ -54,7 +55,7 @@ def upgrade() -> None:
         f"""
         CREATE TABLE IF NOT EXISTS "{p}".sample_requests (
             id UUID PRIMARY KEY,
-            company_id UUID REFERENCES public.companies(id),
+            company_id UUID NOT NULL REFERENCES public.companies(id),
             request_no VARCHAR(20) NOT NULL,
             status_id UUID REFERENCES public.statuses(id) ON DELETE SET NULL,
             project_id UUID REFERENCES "{p}".projects(id) ON DELETE SET NULL,
@@ -140,7 +141,7 @@ def upgrade() -> None:
             {"slug": slug, "name": name, "descr": descr},
         )
 
-    # view + create: copied from the holders of projects.projects.edit.
+    # create: copied from the holders of projects.projects.edit.
     for slug in _COPY_FROM_EDIT:
         bind.execute(
             sa.text(

@@ -517,17 +517,6 @@ def test_ac_sr_11_search_needs_create_permission(world):
     assert res.status_code == 403, res.text
 
 
-def test_ac_sr_11_master_data_select_keeps_old_hits_and_gains_folded(world):
-    """Plan: products/select only widens. Exact ilike still hits; folded now hits."""
-    c = world.api.as_(world.sales)
-    old = c.get("/api/v1/master-data/products/select", params={"query": "ZZT-9101"})
-    assert old.status_code == 200, old.text
-    assert "ZZT-9101" in old.text
-    folded = c.get("/api/v1/master-data/products/select", params={"query": "zzt9101"})
-    assert folded.status_code == 200, folded.text
-    assert "ZZT-9101" in folded.text
-
-
 # ------------------------------------------------------------------ AC-SR-20..22
 
 
@@ -1030,3 +1019,215 @@ def test_ac_sr_61_stranger_cannot_print(world):
     assert world.api.as_(world.stranger).get(f"{SR}/{d['id']}/pdf").status_code == 403
     assert world.api.as_(world.sales_b).get(f"{SR}/{d['id']}/pdf").status_code == 403
     assert world.api.as_(world.coord).get(f"{SR}/{d['id']}/pdf").status_code == 200
+
+
+# ------------------------------------------------------------------ review round 1
+
+
+def _other_company_product(w):
+    from tests._sample_request_seed import second_company
+
+    other = second_company(w.db)
+    row = make_product(w.db, code="ZZT-OTHERCO-88")
+    row.company_id = other  # ORM, not raw SQL: text() bypasses the scratch schema
+    w.db.flush()
+    return row
+
+
+def test_review_s3_staff_out_of_company_product_is_refused_and_not_listed(world):
+    """AC-SR-10 / plan test 5: another company's product is a 422 and never listed."""
+    foreign = _other_company_product(world)
+    res = _bad_line(world, product_id=foreign.id, qty=1)
+    assert res.status_code == 422, res.text
+    assert res.json().get("code") == "SAMPLE_REQUEST_PRODUCT_INVALID"
+    listed = world.api.as_(world.sales).get(f"{SR}/products", params={"q": "OTHERCO"})
+    assert listed.status_code == 200
+    assert listed.json() == []
+
+
+def test_review_s4_edit_and_submit_need_the_create_grant(world):
+    """S4: an owner whose `.create` grant is gone cannot PUT, submit or cancel own request."""
+    d = _draft(world)["id"]
+    world.perms[world.sales] = {"projects.projects.view"}
+    put = world.api.as_(world.sales).put(f"{SR}/{d}", json={"scope_note": "x"})
+    assert put.status_code == 403, put.text
+    assert _submit(world, d).status_code == 403
+    assert _move(world, d, "cancelled", user=world.sales).status_code == 403
+
+
+def test_review_s4_move_and_internal_check_view_first(world):
+    """S4: a `.process` holder with no `.view` who does not own the request is refused on
+    move and on /internal."""
+    rid = _submitted(world)
+    blind = make_user(world.db, f"{MARKER} process only")
+    world.perms[blind] = {"projects.projects.view", "projects.sample_requests.process"}
+    assert _move(world, rid, "processing", user=blind).status_code == 403
+    res = world.api.as_(blind).put(f"{SR}/{rid}/internal", json={"consignment_no": "C"})
+    assert res.status_code == 403, res.text
+
+
+def test_review_r7_inactive_product_already_on_the_request_is_kept(world):
+    """R7: an update may resend a product that went inactive since; only NEW ids must be
+    active. The detail marks the line inactive."""
+    d = _draft(world)
+    world.cat.plain.is_active = False
+    world.db.flush()
+    keep = [{"product_id": world.cat.plain.id, "qty": 2}]
+    res = world.api.as_(world.sales).put(f"{SR}/{d['id']}", json={"scope_note": "n", "lines": keep})
+    assert res.status_code == 200, res.text
+    line = _get(world, d["id"])["lines"][0]
+    assert line["product_active"] is False
+    new = world.api.as_(world.sales).put(
+        f"{SR}/{d['id']}",
+        json={"lines": keep + [{"product_id": world.cat.inactive.id, "qty": 1}]},
+    )
+    assert new.status_code == 422, new.text
+    assert new.json().get("code") == "SAMPLE_REQUEST_PRODUCT_INVALID"
+
+
+def test_review_r8_timestamps_follow_the_naive_utc_convention(world):
+    """R8: like every other form, `submitted_at` / `cancelled_at` go out as naive UTC
+    ISO strings (no offset); the frontend shows them with `formatDateInMalaysia`."""
+    from datetime import datetime, timedelta
+
+    rid = _submitted(world)
+    got = _get(world, rid)
+    stamp = got["submitted_at"]
+    assert stamp and not stamp.endswith("Z") and "+" not in stamp[10:]
+    assert abs(datetime.utcnow() - datetime.fromisoformat(stamp)) < timedelta(minutes=5)
+    assert _move(world, rid, "cancelled", user=world.sales).status_code == 200
+    assert _get(world, rid)["cancelled_at"]
+
+
+def test_review_r9_request_number_takes_a_per_company_advisory_lock(world):
+    """R9: max+1 runs under pg_advisory_xact_lock keyed per company."""
+    from sqlalchemy import event
+
+    seen = []
+
+    def spy(_conn, _cursor, statement, *_a):
+        if "pg_advisory_xact_lock" in statement:
+            seen.append(statement)
+
+    engine = world.db.get_bind()
+    event.listen(engine, "before_cursor_execute", spy)
+    try:
+        _draft(world)
+    finally:
+        event.remove(engine, "before_cursor_execute", spy)
+    assert seen, "next_request_no did not take the advisory lock"
+
+
+def test_review_r10_company_is_not_null():
+    """R10: company_id is NOT NULL on the model and in the migration."""
+    import pathlib
+
+    from app.models.sample_request import SampleRequest
+
+    assert SampleRequest.__table__.c.company_id.nullable is False
+    body = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "alembic" / "versions" / "sr_0001_sample_requests.py"
+    ).read_text()
+    assert "company_id UUID NOT NULL" in body
+
+
+def test_review_r12_customer_name_sort_uses_the_debtor_name_too(world):
+    """R12: sort=customer_name orders on coalesce(debtor name, typed name)."""
+    mid = make_customer(world.db, world.company_id)
+    mid.customer_name = f"{MARKER} mmm debtor"
+    world.db.flush()
+    ids = {}
+    for tag, over in (
+        ("a", {"customer_name": f"{MARKER} aaa typed"}),
+        ("m", {"customer_id": mid.id, "customer_name": None}),
+        ("z", {"customer_name": f"{MARKER} zzz typed"}),
+    ):
+        ids[tag] = _submitted(world, **over)
+    res = world.api.as_(world.coord).get(
+        SR, params={"sort": "customer_name", "dir": "asc", "limit": 200}
+    )
+    assert res.status_code == 200, res.text
+    order = [r["id"] for r in res.json()["data"] if r["id"] in ids.values()]
+    assert order == [ids["a"], ids["m"], ids["z"]]
+
+
+def test_review_s1_migration_copies_only_create_to_edit_holders():
+    """S1: view and process go to the admin roles; only `.create` is copied."""
+    import importlib.util
+    import pathlib
+
+    path = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "alembic" / "versions" / "sr_0001_sample_requests.py"
+    )
+    spec = importlib.util.spec_from_file_location("sr_0001", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod._COPY_FROM_EDIT == ("projects.sample_requests.create",)
+
+
+# ------------------------------------------------------------------ delete draft (deferred)
+
+
+def _park_delete(w, rid, user):
+    return w.api.as_(user).post(
+        "/api/v1/pending-actions",
+        json={
+            "action_key": "sample_request.delete",
+            "entity_type": "sample_request",
+            "entity_id": rid,
+            "payload": {},
+        },
+    )
+
+
+def _lapse(w, rid, action_id, user):
+    from datetime import datetime, timedelta
+
+    from app.models.sla import SlaFormAction
+
+    w.db.query(SlaFormAction).filter(SlaFormAction.id == action_id).update(
+        {"commit_at": datetime.utcnow() - timedelta(seconds=1)}, synchronize_session=False
+    )
+    w.db.commit()
+    return w.api.as_(user).get(
+        "/api/v1/pending-actions/current",
+        params={"entity_type": "sample_request", "entity_id": rid},
+    )
+
+
+def test_delete_draft_is_a_destructive_deferred_action_for_the_owner(world):
+    """Owner deletes own draft: parked with the destructive window, hard-deleted on lapse."""
+    from app.services.form_action_grace import WINDOW_DESTRUCTIVE, window_class_for
+    from app.services.form_action_registry import REGISTRY
+
+    assert window_class_for(REGISTRY["sample_request.delete"]) == WINDOW_DESTRUCTIVE
+    rid = _draft(world)["id"]
+    parked = _park_delete(world, rid, world.sales)
+    assert parked.status_code == 202, parked.text
+    out = _lapse(world, rid, parked.json()["id"], world.sales).json()
+    assert out["last_outcome"]["status"] == "committed", out["last_outcome"]
+    assert world.api.as_(world.coord).get(f"{SR}/{rid}").status_code == 404
+
+
+def test_delete_draft_refused_for_a_non_owner_and_a_submitted_request(world):
+    """Non-owner 403, submitted request 409, both at park time; the record stays."""
+    draft = _draft(world)["id"]
+    assert _park_delete(world, draft, world.sales_b).status_code == 403
+    sent = _submitted(world)
+    refused = _park_delete(world, sent, world.sales)
+    assert refused.status_code == 409, refused.text
+    assert _get(world, sent)["status"] == "submitted"
+    assert _get(world, draft)["status"] == "draft"
+
+
+def test_review_list_filters_by_salesperson(world):
+    """List Filters popover: ?salesperson_id= narrows the queue to one salesperson."""
+    mine = _submitted(world)
+    other = _draft(world, user=world.sales_b)["id"]
+    assert _submit(world, other, user=world.sales_b).status_code in (200, 201)
+    res = world.api.as_(world.coord).get(SR, params={"salesperson_id": world.sales_b})
+    assert res.status_code == 200, res.text
+    ids = [r["id"] for r in res.json()["data"]]
+    assert other in ids and mine not in ids

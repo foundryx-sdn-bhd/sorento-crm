@@ -59,7 +59,8 @@ def portal_search_products(
     db: Session = Depends(get_db),
 ):
     _assert_visible(db, token.contact_id)
-    return svc.search_products(db, q)
+    with company_scope(db, frozenset({_resolve_company(db, token)})):
+        return svc.search_products(db, q)
 
 
 @router.get("/submissions/sample_request")
@@ -95,6 +96,9 @@ def portal_create(
             data = payload.model_dump(exclude_unset=True)
             svc.assert_portal_project_allowed(
                 db, contact=PortalService(db).get_contact(token), project_id=data.get("project_id")
+            )
+            svc.assert_portal_customer_allowed(
+                db, contact_id=token.contact_id, customer_id=data.get("customer_id")
             )
             req = svc.create_draft(
                 db,
@@ -148,6 +152,9 @@ def portal_update(
                 svc.assert_portal_project_allowed(
                     db, contact=PortalService(db).get_contact(token), project_id=data["project_id"]
                 )
+            svc.assert_portal_customer_allowed(
+                db, contact_id=token.contact_id, customer_id=data.get("customer_id")
+            )
             svc.update_draft(db, req, actor=_actor(token), data=data)
             db.commit()
             db.refresh(req)

@@ -205,6 +205,15 @@ DEFAULT_QUOTATION_STATUSES = (
 # - approved -> issued  stamped BY issuing, never claimed by a person: it spends the approval,
 #   so the next below-floor revision has to be approved on its own merits
 # - issued -> pending_approval  which is how that next revision asks
+DEFAULT_QUOTATION_EDGES = (
+    ("draft", "pending_approval", "Send for approval", 0),
+    ("pending_approval", "approved", "Approve", 0),
+    ("pending_approval", "rejected", "Reject", 1),
+    ("rejected", "draft", "Back to draft", 0),
+    ("approved", "issued", "Issued to the customer", 0),
+    ("issued", "pending_approval", "Send for approval", 0),
+)
+
 # Sample request flow (SR-CORE card rule 10). Cancelled is reachable from Draft, Submitted and
 # Processing; every other move is one rung forward.
 DEFAULT_SAMPLE_REQUEST_STATUSES = (
@@ -224,15 +233,6 @@ DEFAULT_SAMPLE_REQUEST_EDGES = (
     ("draft", "cancelled", "Cancel"),
     ("submitted", "cancelled", "Cancel"),
     ("processing", "cancelled", "Cancel"),
-)
-
-DEFAULT_QUOTATION_EDGES = (
-    ("draft", "pending_approval", "Send for approval", 0),
-    ("pending_approval", "approved", "Approve", 0),
-    ("pending_approval", "rejected", "Reject", 1),
-    ("rejected", "draft", "Back to draft", 0),
-    ("approved", "issued", "Issued to the customer", 0),
-    ("issued", "pending_approval", "Send for approval", 0),
 )
 
 # Seeded starting points for the disqualification reason lookup (AC-O6). A free-text
