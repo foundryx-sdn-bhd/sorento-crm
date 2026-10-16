@@ -198,7 +198,7 @@ export default function BulkTagDialog({
         <DialogHeader>
           <DialogTitle>
             {applied
-              ? `Tags ${mode === 'add' ? 'added to' : 'removed from'} ${n} contact${n === 1 ? '' : 's'}`
+              ? `Tags ${mode === 'add' ? 'added to' : 'removed from'} ${applied.counts.changed} contact${applied.counts.changed === 1 ? '' : 's'}`
               : preview
                 ? `Preview: ${title.toLowerCase()}`
                 : title}

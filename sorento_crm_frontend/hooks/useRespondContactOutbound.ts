@@ -24,6 +24,7 @@ const OUTBOUND_LIST_KEYS = [
   RESPOND_CONTACTS_OUTBOUND_KEY, // System Management -> Respond.io Contacts
   'respond-contacts', // Internal Users / Contacts grid
   'contact-access-agents', // Contact x agent grants (flat and grouped)
+  'contact-tag-settings', // The contact page's Tags section (messaging is a taggable setting)
 ];
 
 /**

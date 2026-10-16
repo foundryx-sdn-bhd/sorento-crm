@@ -1,5 +1,6 @@
 'use client';
 
+import { invalidateContactTagSettings } from '@/app/(protected)/user-management/contacts/[id]/hooks/useContactTagSettings';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { RiCheckboxCircleFill, RiErrorWarningFill } from '@remixicon/react';
@@ -216,6 +217,7 @@ export default function ContactEditDialog({
       queryClient.invalidateQueries({ queryKey: ['respond-contact', contact.id] });
       queryClient.invalidateQueries({ queryKey: ['respond-contacts'] });
       queryClient.invalidateQueries({ queryKey: ['contact-companies', contact.id] });
+      invalidateContactTagSettings(queryClient, contact.id);
 
       closeDialog();
     },
