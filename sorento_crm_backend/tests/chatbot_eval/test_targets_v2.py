@@ -1967,3 +1967,12 @@ def test_r28b_a_failed_tier_check_keeps_an_earlier_failure_reason():
     res = grade_turn(r, item("spec", spec_products=R28_SPEC_CODES, **SPEC_ITEM))
     assert res["passed"] is False
     assert res["reason"] == "The reply shows an internal id.", res["reason"]
+
+
+@pytest.mark.parametrize("reply", [
+    "Weight: nonetheless SRTKT1636SS-GM is a wall hung tap.",
+    "Weight: none/other",
+])
+def test_r28b_a_none_word_glued_to_a_longer_word_after_the_attribute_is_not_a_none(reply):
+    res = grade_turn(_r28_attr_row(reply), item("code_lookup", **R28_GOLD))
+    assert res["checks"]["attribute_value"] is False, res["checks"]
