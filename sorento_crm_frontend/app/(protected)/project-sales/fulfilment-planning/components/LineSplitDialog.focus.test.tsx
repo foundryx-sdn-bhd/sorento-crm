@@ -104,10 +104,23 @@ describe('focus after a keyboard move', () => {
 
   it('when the move merges into another split, focus goes to the merged card', async () => {
     await open();
-    const card = await screen.findByTestId('line-split-card-sp-20-167');
-    card.focus();
-    // 167 on 20/11/2029 steps left onto the 236 on 20/11/2026 (same origin, same line): merge
-    fireEvent.keyDown(card, { key: 'ArrowLeft' });
+    const first = await screen.findByTestId('line-split-card-sp-20-167');
+    first.focus();
+    // 167 sits on 20/11/2029; the columns to its left are 02/01/2027, 20/12/2026, 20/11/2026.
+    // Step left (waiting for focus each time) until it reaches 20/11/2026 and merges with the
+    // 236 sitting on the same line.
+    for (let step = 0; step < 6; step += 1) {
+      const cards = screen.getAllByTestId(/^line-split-card-/);
+      if (cards.some((c) => c.textContent?.trim().startsWith('403'))) break;
+      const active = document.activeElement as HTMLElement;
+      expect(active.getAttribute('data-testid') ?? '').toMatch(/^line-split-card-/);
+      fireEvent.keyDown(active, { key: 'ArrowLeft' });
+      await waitFor(() =>
+        expect((document.activeElement as HTMLElement).getAttribute('data-testid') ?? '').toMatch(
+          /^line-split-card-/,
+        ),
+      );
+    }
     await waitFor(() => {
       const cards = screen.getAllByTestId(/^line-split-card-/);
       expect(cards.some((c) => c.textContent?.trim().startsWith('403'))).toBe(true);
