@@ -9,6 +9,9 @@ const handlers = (): ContactBulkActionHandlers => ({
   onSync: vi.fn(),
   onCopyAccess: vi.fn(),
   onDelete: vi.fn(),
+  onAddTag: vi.fn(),
+  onRemoveTag: vi.fn(),
+  onApplyTagSettings: vi.fn(),
 });
 
 const base = { selectedCount: 3, canEdit: true, outboundBusy: false, syncBusy: false };
@@ -22,6 +25,9 @@ describe('buildContactBulkActions', () => {
       'Enable messaging (3)',
       'Sync from Respond (3)',
       'Copy access from contact (3)',
+      'Add tag (3)',
+      'Remove tag (3)',
+      'Apply tag settings (3)',
       'Disable messaging (3)',
       'Delete (3)',
     ]);
