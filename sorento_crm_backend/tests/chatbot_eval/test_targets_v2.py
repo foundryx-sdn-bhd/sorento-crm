@@ -831,3 +831,19 @@ def test_a_switch_to_an_unresolved_code_that_expands_to_the_held_family_is_a_new
     r = row2(mem_before=held, mem_after=held, state_products=held, tools=[TOOL_A])
     res = grade_turn(r, item("followup", "switch", subject_after=["SRT6538-GM"], code_unresolved=True))
     assert res["checks"]["new_subject"] is True and res["checks"]["changed"] is True, res["checks"]
+
+
+# ------------------------------------------------------------------ review round 12b (subject before)
+# `before_subject` is computed in `_followup` but no check reads it today; the leak is in `_subject_before` itself.
+def test_the_subject_before_never_comes_from_the_post_turn_state_record():
+    from scripts.chatbot_eval.targets import _subject_before
+
+    r = row2(mem_before=[], state_products=[prod("SRTPOST1", UA)])
+    assert _subject_before(r) == set(), "the post-turn state record stood in for the unknown subject before"
+
+
+def test_a_known_memory_before_still_gives_the_subject_before():
+    from scripts.chatbot_eval.targets import _subject_before
+
+    r = row2(mem_before=[prod("SRTBEFORE1", UA)], state_products=[prod("SRTPOST1", UB)])
+    assert _subject_before(r) == {"SRTBEFORE1"}
