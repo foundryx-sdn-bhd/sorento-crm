@@ -13,7 +13,7 @@ So the cases worth pinning here are the ones that would let that regress:
   project, rather than going blank (an inner join to Project is what made it blank);
 * every filter narrows, including the two that are the screen's own controls;
 * the sort set is CLOSED, nulls sort LAST in both directions, and the order is total;
-* the workbook is one sheet per delivery MONTH with the client's own heading row.
+* the workbook is ONE sheet (every delivery month on it) with the client's own heading row.
 """
 from __future__ import annotations
 

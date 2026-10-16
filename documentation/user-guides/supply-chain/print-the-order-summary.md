@@ -98,7 +98,8 @@ It prints in the same ORDER INQUIRY layout the Order Inquiries worklist export a
 from](upload-plan-data.md#the-order-inquiries-page)): one **ORDER INQUIRY** sheet holding every
 delivery month (rows with no date included), rows ordered by **SUPPLIER**, **ITEM CODE**, then
 delivery date, and
-**TOTAL QTY** printed once, on an item's last row. Columns, in order: **SO DATE**, **S/O NO**,
+**TOTAL QTY** printed once, on the last row of each supplier + item code run, totalling every
+date. Columns, in order: **SO DATE**, **S/O NO**,
 **ITEM CODE**, **QTY**, **TOTAL QTY**, **DELIVERY DATE**, **PROJECT/CUSTOMER**, **SUPPLIER**,
 **PO NO**, **LOCATION**. **QTY** is the quantity still owed - a linked quantity is already
 netted out.

@@ -3334,8 +3334,9 @@ class OrderInquiryWorklistService:
         sheet.
         A row with no date is still an instruction and is never dropped from the file.
 
-        Within the sheet the rows go SUPPLIER then ITEM CODE then delivery date, which is the order their own
-        sheets are in and the order a buyer places in - one purchase order per factory.
+        Within the sheet the rows go SUPPLIER then ITEM CODE then delivery date, which is
+        the order their own sheets are in and the order a buyer places in - one purchase
+        order per factory.
         TOTAL QTY prints on the last row of each supplier-and-item-code run and totals
         that run, which is the one thing on their sheet that is arithmetic rather than
         typing. The run is the pair, not the item code alone: the same item bought from

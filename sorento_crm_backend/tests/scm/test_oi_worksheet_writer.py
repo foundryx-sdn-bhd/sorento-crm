@@ -157,6 +157,9 @@ def test_the_oi_worksheet_is_one_sheet_across_delivery_months(db, chain):
     assert workbook.sheetnames == [EXPORT_TITLE], workbook.sheetnames
     rows = _data_rows(workbook)
     assert [row[3] for row in rows] == [5.0, 7.0, 9.0, 2.0], rows  # QTY, by date
+    # TOTAL QTY: one supplier + item run, so one total on its last row, summing every date
+    # (crew ruling 16 Oct 2026, not a total per month).
+    assert [row[4] for row in rows] == [None, None, None, 23.0], rows
 
 
 def test_fr1_a_row_ids_match_under_a_different_companys_scope_yields_nothing(db, chain):
