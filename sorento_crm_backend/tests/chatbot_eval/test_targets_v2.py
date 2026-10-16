@@ -1500,3 +1500,45 @@ def test_the_picker_reason_for_an_unresolved_code_never_says_the_code_was_clear(
     assert res["passed"] is False
     assert "code was clear" not in res["reason"].lower(), res["reason"]
     assert "list of products" in res["reason"].lower(), res["reason"]
+
+
+# ------------------------------------------------------------------ review round 23 (stock ask from the user's words)
+def _how_many_row(message, verdict=None, mode="availability"):
+    kw = {"verdict": verdict} if verdict else {}
+    return row2(message=message, tools=[_stock_tool(mode)], reply="Here are SRTKT100 and SRTKT200. How many units?", **kw)
+
+
+def test_a_spec_item_without_a_fact_is_a_stock_ask_when_the_message_says_available():
+    r = _how_many_row("Any WC with s trap 300mm available?", SPEC_V)
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+
+
+def test_a_scope_item_without_a_fact_is_a_stock_ask_when_the_message_says_ada_stock():
+    res = grade_turn(_how_many_row("ada stock?"), item("scope"))
+    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+
+
+@pytest.mark.parametrize("message", ["is it in stock", "ready stock?", "how many left", "berapa ada"])
+def test_the_other_stock_words_count_when_the_gold_has_no_fact(message):
+    res = grade_turn(_how_many_row(message, SPEC_V), item("spec", **SPEC_ITEM))
+    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+
+
+def test_a_spec_item_without_a_fact_and_without_a_stock_word_still_fails_a_how_many():
+    res = grade_turn(_how_many_row("white tap with soft close", SPEC_V), item("spec", **SPEC_ITEM))
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+def test_the_stock_word_makes_no_difference_when_the_bots_plan_is_the_only_stock_evidence():
+    r = row2(message="white tap with soft close", verdict=SPEC_V, domains=("inventory",), tools=[_stock_tool("availability")],
+             reply="Here are SRTKT100 and SRTKT200. How many units?")
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["checks"].get("no_qty_ask") is False, res["checks"]
+
+
+def test_a_non_stock_gold_fact_stays_not_a_stock_ask_whatever_the_message_says():
+    r = row2(message="promo price, is it in stock?", state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)],
+             tools=[_stock_tool("availability")], reply="Promo price for SRTA100 is RM 90. How many units?")
+    res = grade_turn(r, item("code_lookup", code="srta100", fact="promotion"))
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
