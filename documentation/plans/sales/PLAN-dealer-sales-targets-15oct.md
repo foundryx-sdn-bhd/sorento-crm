@@ -1,6 +1,9 @@
 # PLAN: dealer sales targets and incentive schemes (lane SALES-TARGET-DEALER)
 
-Status: **built, in review** (16 Oct). Owner OK on v2 (00:19: "make sure we can configure all
+Status: **built, review READY, waiting on the owner's hand test** (16 Oct; L track). Code review
+fix round done: a rate typed on some rows of a merged target is those accounts' rate (ruling 2),
+accounts group per scheme kind, codes match loosely incl. PAY TO, kill tests for the ratio day and
+the default pay-to; agent and team targets keep the plain achievement statement. Owner OK on v2 (00:19: "make sure we can configure all
 the sales targets in the excel using this architecture"), with the gate that every row of both
 Excel files is representable. Slices 1 to 3 built on PR #1715: the one engine
 (`commission_service.payout_for`), migration `sales_0006_dealer_targets`, dealer credit in
