@@ -1511,18 +1511,18 @@ def _how_many_row(message, verdict=None, mode="availability"):
 def test_a_spec_item_without_a_fact_is_a_stock_ask_when_the_message_says_available():
     r = _how_many_row("Any WC with s trap 300mm available?", SPEC_V)
     res = grade_turn(r, item("spec", **SPEC_ITEM))
-    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
 def test_a_scope_item_without_a_fact_is_a_stock_ask_when_the_message_says_ada_stock():
     res = grade_turn(_how_many_row("ada stock?"), item("scope"))
-    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
 @pytest.mark.parametrize("message", ["is it in stock", "ready stock?", "how many left", "berapa ada"])
 def test_the_other_stock_words_count_when_the_gold_has_no_fact(message):
     res = grade_turn(_how_many_row(message, SPEC_V), item("spec", **SPEC_ITEM))
-    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
 def test_a_spec_item_without_a_fact_and_without_a_stock_word_still_fails_a_how_many():
@@ -1561,7 +1561,7 @@ def _pick_two(before_q):
 # 1. a pick on a stock picker is a stock ask
 def test_a_pick_on_a_stock_picker_may_ask_how_many_in_availability_mode():
     res = grade_turn(_pick_two(STOCK_PICK_Q), item("followup", "pick", position=2, code="SRTA200"))
-    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
     check(res, True)
 
 
@@ -1624,13 +1624,13 @@ def test_a_different_product_list_left_open_with_nothing_shown_still_fails():
 
 # ------------------------------------------------------------------ review round 26 (a follow-up on a stock answer is a stock ask)
 # The domain before the turn lives at memory `focus.before.domains` (the session focus slot `domains`, session_state.py).
-def _refine_how_many(before_domain, message="black only"):
+def _refine_how_many(before_domain, message="black only", prev_bot="SRTA100: Got stock.\nSRTA200: Got stock."):
     tool = {"name": "crm_inventory_list", "args": {"product_ids": [UA], "scope_terms": ["black"]},
             "envelope": {"stock_visibility": {"mode": "availability"}, "items": [{"code": "SRTA100", "qty": 40}]}}
     v = {"entities": [{"raw": "black", "hint": "specification", "spec_key": "colour", "spec_value": "black"}],
          "reference_positions": []}
     r = row2(message=message, verdict=v, mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[tool],
-             prev_bot="Stock of SRTA100 and SRTA200.", reply="Black SRTA100 is available. How many units?")
+             prev_bot=prev_bot, reply="Black SRTA100 is available. How many units?")
     for rec in r["trace"]:
         if rec.get("kind") == "memory":
             rec["focus"]["before"]["domains"] = [before_domain]
@@ -1639,9 +1639,42 @@ def _refine_how_many(before_domain, message="black only"):
 
 def test_a_refine_of_a_stock_answer_may_ask_how_many_in_availability_mode():
     res = _refine_how_many("inventory")
-    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
 
 
 def test_a_refine_of_a_promo_answer_may_not_ask_how_many():
     res = _refine_how_many("promotion")
     assert res["checks"].get("no_qty_ask") is False, res["checks"]
+
+
+# ------------------------------------------------------------------ review round 27 (stock carry only after a stock answer)
+# Stock reply markers: label_catalog.py "Got stock." (~77), "No stock ...", "in stock" lines.
+def test_a_dealer_answer_to_a_tier_question_followed_by_how_many_is_not_a_stock_carry():
+    tool = {"name": "crm_inventory_list", "args": {"product_ids": [UA]},
+            "envelope": {"stock_visibility": {"mode": "availability"}, "items": [{"code": "SRTA100", "qty": 40}]}}
+    q = {"kind": "tier_pick", "expects": "choice", "payload": {}, "asked_at_turn": 1,
+         "options": [{"label": "Dealer"}, {"label": "End user"}]}
+    r = row2(message="Dealer", verdict=_picks([1]), state_oq=q, oq={"before": q, "after": None, "writer": "engine"},
+             mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[tool],
+             prev_bot="Which price tier are you?", reply="Promo for SRTA100 attached. How many units do you need?")
+    for rec in r["trace"]:
+        if rec.get("kind") == "memory":
+            rec["focus"]["before"]["domains"] = ["inventory"]
+    res = grade_turn(r, item("followup", "answer", option="Dealer"))
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+def test_a_refine_after_a_stock_answer_in_availability_mode_may_ask_how_many_and_says_so():
+    res = _refine_how_many("inventory", prev_bot="SRTA100: Got stock.")
+    assert res["checks"].get("qty_ask_ok") is True and "no_qty_ask" not in res["checks"], res["checks"]
+
+
+def test_a_refine_after_a_non_stock_answer_with_an_inventory_domain_is_not_a_stock_carry():
+    res = _refine_how_many("inventory", prev_bot="Here is the promotion price list for SRTA100.")
+    assert res["checks"].get("no_qty_ask") is False, res["checks"]
+
+
+def test_no_quantity_ask_is_reported_as_no_qty_ask_true():
+    r = row2(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], reply="SRTA100 has 40 pcs.")
+    res = grade_turn(r, item("code_lookup", **GOLD_CL))
+    assert res["checks"].get("no_qty_ask") is True and "qty_ask_ok" not in res["checks"], res["checks"]
