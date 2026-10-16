@@ -17,7 +17,7 @@ Downgrade drops the dealer targets (and their accounts, rates) and the new tiers
 columns and tables; the original tier index comes back.
 
 Revision ID: sales_0006_dealer_targets
-Revises: sds_0001_stock_debt_snapshots
+Revises: ctg_0001_contact_tags
 Create Date: 2026-10-16
 """
 import sqlalchemy as sa
@@ -27,7 +27,7 @@ from sqlalchemy.dialects import postgresql
 from app.models.sales import translated_schema
 
 revision = "sales_0006_dealer_targets"
-down_revision = "sds_0001_stock_debt_snapshots"
+down_revision = "ctg_0001_contact_tags"
 branch_labels = None
 depends_on = None
 

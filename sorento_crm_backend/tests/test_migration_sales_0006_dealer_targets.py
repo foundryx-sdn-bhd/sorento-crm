@@ -68,7 +68,7 @@ def _seed_old_target(raw, scratch):
 def test_revision_chains_and_fits():
     m6 = _load("sales_0006_dealer_targets")
     assert m6.revision == "sales_0006_dealer_targets"
-    assert m6.down_revision == "sds_0001_stock_debt_snapshots"
+    assert m6.down_revision == "ctg_0001_contact_tags"
     assert len(m6.revision) <= 32
 
 
