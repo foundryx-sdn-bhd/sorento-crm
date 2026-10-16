@@ -130,6 +130,11 @@ one question with real names, no ids, answer fills only that slot; `assume` -> a
 
 ## Open
 
+- Bench (crew 17 Oct, option a): EVAL-BENCH fixes TRAIN gold, grader and legacy-state rows from the lane's root-cause
+  analysis (28 of 34 persistent failures are bench). Lane vs main re-run only after the fixed bench is posted; crew
+  opens a new envelope (~$4.2). Round 5 fixes the lane classes (S-OFFER regression, A-HELD-WINS, validation
+  strictness) red-first at $0.
+
 - Q3: answered by the owner 16 Oct ~23:00 (R16). S3b built in the S4b/S6 round.
 - Unclear default: one named constant `ask` in code, pinned by a test (crew); storage + UI later behind
   CLARIFY-POLICY #1570. The owner's type rule settles an unclear held customer before any ask.
