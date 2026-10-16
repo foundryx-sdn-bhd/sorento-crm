@@ -610,3 +610,45 @@ def test_get_labels_lines_with_the_core_autocount_line_number(api):
     assert _line(out, s.l100.id)["line_no"] == 480
     assert _line(out, s.l200.id)["line_no"] == 608
     assert _line(out, s.l300.id)["line_no"] == 300, "no core number: the mirror's"
+
+
+def test_resaving_the_same_splits_on_a_stale_line_writes_one_audit_row_showing_the_rebase(api):
+    """AutoCount moved line 100's date (qty unchanged): the stored splits are stale. Saving the
+    SAME splits re-bases them to the current base and makes them acting; that is one audited
+    change (actor, company) whose before/after show base_date moving."""
+    from app.models.audit import AuditLog
+    from app.services.audit_service import register_audit_listeners
+
+    register_audit_listeners()
+    s = _seed(api)
+    same = {"line_id": str(s.l100.id), "splits": [
+        _sp(200, D_301, on=str(s.l100.id)), _sp(101, D_NEW, on=str(s.l300.id))]}
+    assert _put(s, [same]).status_code == 200
+    s.db.commit()
+
+    def rows():
+        return (
+            s.db.query(AuditLog)
+            .filter(AuditLog.entity_type == "project_so_line_splits")
+            .order_by(AuditLog.changed_at)
+            .all()
+        )
+
+    before = len(rows())
+    new_date = date(2026, 9, 27)
+    s.c100.required_date = new_date
+    s.l100.delivery_date = new_date
+    s.db.commit()
+    assert _line(_get(s), s.l100.id)["split_state"] == "stale", "premise: the line went stale"
+
+    assert _put(s, [same]).status_code == 200
+    s.db.commit()
+    assert _line(_get(s), s.l100.id)["split_state"] == "acting"
+
+    added = rows()[before:]
+    assert len(added) == 1, [(r.action, r.old_values, r.new_values) for r in added]
+    row = added[0]
+    assert row.user_id == s.world.actor
+    assert str(row.company_id) == str(s.world.company_id)
+    assert str((row.old_values or {}).get("base_date")) == D_301.isoformat()
+    assert str((row.new_values or {}).get("base_date")) == new_date.isoformat()
