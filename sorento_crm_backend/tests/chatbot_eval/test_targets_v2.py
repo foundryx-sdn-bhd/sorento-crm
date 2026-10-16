@@ -1439,3 +1439,64 @@ def test_a_tier_menu_after_a_promo_ask_is_unknown():
     r = _with_oq(row2(domains=("promotion",), mem_before=[prod("SRTOLD1", UB)], mem_after=[prod("SRTA100", UA)],
                       tools=[tool], reply="Which price tier are you?"), TIER_Q, asking="tier_pick")
     assert grade_turn(r, item("followup", "and_x", fact="promotion", subject_after=["SRTA100"]))["passed"] is None
+
+
+# ------------------------------------------------------------------ review round 22
+# 1. the quantity policy runs on every slice and follow-up kind, and a stock ask comes from the gold only
+def _promo_widened_to_inventory(**kw):
+    return row2(domains=("promotion", "inventory"), tools=[_stock_tool("availability")],
+                reply="Promo price for SRTA100 is RM 90. How many units?", **kw)
+
+
+def test_a_promo_answer_followup_asking_how_many_fails_even_if_the_bot_widened_its_plan_to_inventory():
+    q = COLOUR_Q
+    r = _promo_widened_to_inventory(state_oq=q, oq={"before": q, "after": None, "writer": "engine"})
+    r["trace"] = [dict(e, verdict=_picks([1])) if e.get("kind") == "apply" else e for e in r["trace"]]
+    res = grade_turn(r, item("followup", "answer", option="white", fact="promotion"))
+    assert res["checks"]["answered"] is True and res["checks"]["option"] is True, res["checks"]
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+def test_a_pick_followup_asking_how_many_on_a_non_stock_gold_fails():
+    v = {"entities": [], "reference_positions": [1], "open_question_answer": {"mode": None, "items": [], "picked": []}}
+    r = row2(verdict=v, state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)],
+             tools=[_stock_tool("availability")], reply="SRTA100 is RM 90. How many units?")
+    res = grade_turn(r, item("followup", "pick", position=1, code="SRTA100", fact="promotion"))
+    assert res["checks"]["position"] is True, res["checks"]
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+def test_a_pick_followup_on_a_stock_gold_in_availability_mode_may_ask_how_many():
+    v = {"entities": [], "reference_positions": [1], "open_question_answer": {"mode": None, "items": [], "picked": []}}
+    r = row2(verdict=v, state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)],
+             tools=[_stock_tool("availability")], reply="SRTA100 is available. How many units?")
+    check(grade_turn(r, item("followup", "pick", position=1, code="SRTA100", fact="inventory")), True)
+
+
+def test_a_code_lookup_whose_gold_is_not_stock_fails_a_how_many_even_when_the_plan_includes_inventory():
+    r = _promo_widened_to_inventory(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)])
+    res = grade_turn(r, item("code_lookup", code="srta100", fact="promotion"))
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+# 2. a spec answer that showed products and leaves a product list open is not a needless picker
+def test_a_spec_answer_that_showed_products_and_leaves_the_list_open_is_not_a_needless_picker():
+    r = _with_oq(row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100 and SRTKT200."), VARIANT_Q)
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["checks"].get("no_picker") is not False, res["checks"]
+    check(res, True)
+
+
+def test_a_spec_picker_with_no_products_shown_still_fails_as_a_picker():
+    r = _with_oq(row2(verdict=SPEC_V, reply="Which one do you mean?"), VARIANT_Q)
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["checks"].get("no_picker") is False and res["passed"] is False, res["checks"]
+
+
+# 3. neutral picker reason wording
+def test_the_picker_reason_for_an_unresolved_code_never_says_the_code_was_clear():
+    r = _with_oq(row2(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A]), VARIANT_Q)
+    res = grade_turn(r, item("code_lookup", code="srta100", fact="inventory", code_unresolved=True))
+    assert res["passed"] is False
+    assert "code was clear" not in res["reason"].lower(), res["reason"]
+    assert "list of products" in res["reason"].lower(), res["reason"]
