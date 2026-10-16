@@ -53,6 +53,7 @@ step 1), first asks not worse; crew's held-out bar for the owner hand test is >=
 | S5 | block into context + schema variant + gate + prompt delta (repo file) | `tests/chatbot/test_chat_state_parser_input.py` | YES (lane label live check, 3 TRAIN runs) |
 | S4b | held-slot ops keep/skip/clear/unclear for customer + period; remove static R14 projection | `test_chat_state_seam.py` (R14 tests rewritten) + `test_chat_state_apply.py` | no |
 | S6 | R15 unclear held slot -> one real-name ask (policy default `ask`) | `tests/chatbot/test_chat_state_clarify.py` | trigger needs live parses |
+| S7 | carried-state hygiene (crew 17 Oct): at turn start on the state path, drop carried customer rows the contact can no longer read (one scope-stamped `Customer.id IN` read + current links for an enforced contact) | `test_chat_state_seam.py` | no |
 | S3b | R16 period: kept on follow-ups and on new_subject unless skip/clear; a stated period replaces it (owner 16 Oct ~23:00) | `test_chat_state_apply.py` | no |
 
 ### Test list (captain's; the tester writes from this + the UAC)
@@ -129,6 +130,9 @@ one question with real names, no ids, answer fills only that slot; `assume` -> a
   after the ~00:30 17 Oct swap, and the lane version is published only after it.
 
 ## Open
+
+- Unlinked non-staff contacts seeing a whole company's customers (security review 17 Oct): covered by #1648
+  (V1-DOC-SCOPE-SALES, owner-approved; "no links" means none). No ticket from this lane.
 
 - Bench (crew 17 Oct, option a): EVAL-BENCH fixes TRAIN gold, grader and legacy-state rows from the lane's root-cause
   analysis (28 of 34 persistent failures are bench). Lane vs main re-run only after the fixed bench is posted; crew
