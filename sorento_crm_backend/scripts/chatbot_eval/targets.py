@@ -589,7 +589,8 @@ def _item_code(item: dict[str, Any]) -> str:
     return ""
 
 
-NONE_WORDS = r"(?:not defined|not on record|not recorded|not available|none|n/a)"
+NONE_WORDS = r"(?:not defined|not on record|not recorded|not available|none|n/a)(?![\w/])"
+NONE_VALUE_RE = re.compile(NONE_WORDS.replace("(?![\\w/])", "") + r"?\s*", re.I)   # a field value that is itself a none word, or empty
 
 
 def _attribute_answered(row: dict[str, Any], attr: str, code: Any) -> bool:
@@ -598,14 +599,16 @@ def _attribute_answered(row: dict[str, Any], attr: str, code: Any) -> bool:
     for that attribute."""
     reply = reply_text(row)
     word = re.escape(attr)
-    if re.search(word + r"[^\n]{0,40}\d", CODE_RE.sub(" ", reply), re.I):
-        return True
     says_none = re.search(rf"\bno {word}\b|(?:don.?t|do not|does not|doesn.?t) have (?:the |a |any )?{word}\b"
-                          rf"|{word}\b[^\n]{{0,60}}?{NONE_WORDS}", reply, re.I)
+                          rf"|\b{word}\b(?:\s+(?:of|for)\s+[\w-]+)?\s*:?\s*(?:(?:is|are)\s+)?\b{NONE_WORDS}", reply, re.I)
+    if not says_none:   # a none statement takes the none branch only: a number elsewhere does not rescue it
+        return bool(re.search(word + r"[^\n]{0,40}\d", CODE_RE.sub(" ", reply), re.I))
     items = [i for i in _result_items(row) if _item_code(i) == _key(code)] if code else []
     names_attr = any(attr.lower() in _norm(f.get(k)).replace("_", " ")
-                     for i in items for f in i.get("fields") or [] if isinstance(f, dict) for k in ("label", "key"))
-    return bool(says_none and items and not names_attr)
+                     for i in items for f in i.get("fields") or [] if isinstance(f, dict)
+                     and not NONE_VALUE_RE.fullmatch(str(f.get("value") if f.get("value") is not None else ""))
+                     for k in ("label", "key"))
+    return bool(items and not names_attr)
 
 
 def _code_lookup(row, item):
@@ -973,8 +976,9 @@ def _scope(row, item):
 _SLICES = {"code_lookup": _code_lookup, "followup": _followup, "spec": _spec, "attachment": _attachment, "scope": _scope}
 
 
-SET_HEADER_RE = re.compile(r"\((\d+)(?:,[^)]*)?\)\s*$")
-SET_ENTRY_RE = re.compile(r"^\d+\. ", re.M)
+SET_HEADER_RE = re.compile(r"\((\d+(?:,\d{3})*)(?:,\s*[^)]*)?\)\s*(?:$|\.)")
+# a numbered line, or a bullet / plain row whose first token is a product code (not "*DC1-SMC:* 0", not "• Sorento: 282")
+SET_ENTRY_RE = re.compile(r"^(?:\d+\. |(?:[•-]\s+)?(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z][A-Z0-9-]{3,}\b)", re.M)
 SET_CUT_RE = re.compile(r"showing\s+\d+\s+to\s+\d+", re.I)
 SEE_MORE_RE = re.compile(r"\bsee more\b|\breply\s+more\b", re.I)
 
@@ -989,7 +993,7 @@ def _set_list_check(row: dict[str, Any]) -> tuple[str, bool, str] | None:
     entries = len(SET_ENTRY_RE.findall(reply))
     if not entries:
         return ("set_list", False, "The set reply showed no product.")
-    complete = entries >= int(header.group(1)) or SET_CUT_RE.search(reply) or SEE_MORE_RE.search(reply)
+    complete = entries >= int(header.group(1).replace(",", "")) or SET_CUT_RE.search(reply) or SEE_MORE_RE.search(reply)
     return ("set_list", bool(complete), "The list is cut short without saying how to see more.")
 
 
@@ -999,7 +1003,12 @@ def _tier_spec_check(row: dict[str, Any], item: dict[str, Any]) -> tuple[str, bo
     spec_products = {_key(c) for c in (item.get("gold") or {}).get("spec_products") or []}
     if item.get("slice") != "spec" or not spec_products:
         return None
-    found = {c for t in _tools(row) for c in _args_codes(row, t.get("args") or {})}
+    ids = _uuid_map(row)
+    found: set[str] = set()
+    for t in _tools(row):   # product ids that map to a code, and literal codes; scope terms are not products found
+        args = t.get("args") or {}
+        found |= {ids[x.lower()] for n in ("product_ids", "product_id") for x in _strings(args.get(n)) if x.lower() in ids}
+        found |= {_key(x) for n in ("product_code", "product_codes") for x in _strings(args.get(n)) if re.search(r"\d", x)}
     found |= {c for c in (_item_code(i) for i in _result_items(row)) if c}
     if not found:
         return ("tier_spec", False, "The bot asked which price tier before finding any product.")
@@ -1021,7 +1030,8 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     checks = [c for c in checks if c[0] not in informational]
     failed = next((msg for name, ok, msg in checks if ok is False), None)
     # A leak fails the item on any slice; made-up facts stay their own bar, counted by `summarise`.
-    if failed is None and leaks:
+    leaked = failed is None and bool(leaks)
+    if leaked:
         failed = ("The reply shows an internal id." if any(x.startswith("internal id") for x in leaks)
                   else "The reply shows a field hidden from the asker." if any(x.startswith("hidden") for x in leaks)
                   else "The reply shows a customer outside the asker's linked customers.")
@@ -1032,7 +1042,7 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     if tier_spec:
         checks.append(tier_spec)
     if tier_spec and tier_spec[1] is False:
-        passed, failed = False, tier_spec[2]
+        passed, failed = False, failed if leaked else tier_spec[2]   # a leak keeps its own reason
     elif tier:
         passed, failed = None, "The bot asked an access question (price tier); the bench cannot judge it."
     elif passed and checks and all(ok is None for _, ok, _ in checks):
