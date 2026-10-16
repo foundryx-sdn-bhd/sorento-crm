@@ -5,6 +5,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SampleRequestDetail as Detail } from '@/types/sampleRequest';
 
 const state = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const state = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(''),
+  usePathname: () => '/project-sales/sample-requests/r-1',
 }));
 vi.mock('@/hooks/usePermissions', () => ({
   useHasPermission: (slug: string) => state.perms.has(slug),
@@ -53,6 +55,12 @@ vi.mock('../../_shared/components/OrderInquiryStockGrid', () => ({
     <div data-testid="stock-grid">{productId}</div>
   ),
 }));
+vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
+  useListingColumnPreferences: () => ({
+    resetToDefaults: () => Promise.resolve(),
+    isLoading: false,
+  }),
+}));
 vi.mock('../hooks/useSampleRequests', () => ({
   sampleRequestsPagerQuery: {},
   useSampleRequestQuery: () => ({
@@ -70,6 +78,15 @@ vi.mock('../hooks/useSampleRequests', () => ({
 vi.mock('../services/sampleRequestService', () => ({ downloadSampleRequestPdf: vi.fn() }));
 
 import SampleRequestDetail from './SampleRequestDetail';
+
+function Page() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <QueryClientProvider client={client}>
+      <SampleRequestDetail requestId="r-1" />
+    </QueryClientProvider>
+  );
+}
 
 function detail(over: Partial<Detail> = {}): Detail {
   return {
@@ -126,7 +143,7 @@ afterEach(cleanup);
 
 describe('SampleRequestDetail', () => {
   it('expands a line into the stock grid for its product', () => {
-    render(<SampleRequestDetail requestId="r-1" />);
+    render(<Page />);
     expect(screen.queryByTestId('stock-grid')).toBeNull();
     fireEvent.click(screen.getByLabelText('Stock for line 1'));
     expect(screen.getByTestId('stock-grid').textContent).toBe('p-1');
@@ -134,7 +151,7 @@ describe('SampleRequestDetail', () => {
 
   it('gives the owner with create Submit, Edit and Delete draft on a draft', () => {
     state.perms = new Set(['projects.sample_requests.create']);
-    render(<SampleRequestDetail requestId="r-1" />);
+    render(<Page />);
     expect(screen.getByText('Submit')).toBeTruthy();
     expect(screen.getByText('Edit')).toBeTruthy();
     expect(screen.getByText('Delete draft')).toBeTruthy();
@@ -143,7 +160,7 @@ describe('SampleRequestDetail', () => {
   it('hides Submit, Edit and Delete draft from a non-owner', () => {
     state.perms = new Set(['projects.sample_requests.create']);
     state.userId = 'u-other';
-    render(<SampleRequestDetail requestId="r-1" />);
+    render(<Page />);
     expect(screen.queryByText('Submit')).toBeNull();
     expect(screen.queryByText('Edit')).toBeNull();
     expect(screen.queryByText('Delete draft')).toBeNull();
@@ -153,13 +170,13 @@ describe('SampleRequestDetail', () => {
     state.data = detail({ status: 'submitted', status_label: 'Submitted' });
     state.perms = new Set(['projects.sample_requests.process']);
     state.userId = 'u-coord';
-    const { unmount } = render(<SampleRequestDetail requestId="r-1" />);
+    const { unmount } = render(<Page />);
     expect(screen.getByText('Change to processing')).toBeTruthy();
     unmount();
 
     state.perms = new Set(['projects.sample_requests.create']);
     state.userId = 'u-owner';
-    render(<SampleRequestDetail requestId="r-1" />);
+    render(<Page />);
     expect(screen.queryByText('Change to processing')).toBeNull();
     // the owner may still cancel their own submitted request
     expect(screen.getByText('Cancel request')).toBeTruthy();
@@ -167,21 +184,21 @@ describe('SampleRequestDetail', () => {
 
   it('badges a customer with no debtor code', () => {
     state.data = detail({ customer_id: null, customer_code: null, customer_name: 'Walk-in Co' });
-    render(<SampleRequestDetail requestId="r-1" />);
+    render(<Page />);
     expect(screen.getByText('No debtor code')).toBeTruthy();
   });
 
   it('does not badge a customer with a debtor code', () => {
-    render(<SampleRequestDetail requestId="r-1" />);
+    render(<Page />);
     expect(screen.queryByText('No debtor code')).toBeNull();
   });
 
   it('shows the audit trail only to a view holder', () => {
-    const { unmount } = render(<SampleRequestDetail requestId="r-1" />);
+    const { unmount } = render(<Page />);
     expect(screen.queryByTestId('audit-trail')).toBeNull();
     unmount();
     state.perms = new Set(['projects.sample_requests.view']);
-    render(<SampleRequestDetail requestId="r-1" />);
+    render(<Page />);
     expect(screen.getByTestId('audit-trail')).toBeTruthy();
   });
 });
