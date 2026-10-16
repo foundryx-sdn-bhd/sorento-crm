@@ -1,6 +1,6 @@
 # PLAN: EVAL-BENCH, chatbot test bench foundations (step 0 of the 16 Oct scale design)
 
-Status: Plan (behaviour card to crew before any code). Track: M/L, LEAD pattern. Branch `crew/eval-bench`.
+Status: Build (card answered 16 Oct; S1 provenance red tests). Track: M/L, LEAD pattern. Branch `crew/eval-bench`.
 
 Owner approved the design 16 Oct (D1 step order, D4 prompts as code, D5 masked export, D9 weighted gates).
 Source analyses (crew-only, not in repo): `crew/state/reports/CHATBOT-SCALE-D-HARNESS-16oct.md` (harness),

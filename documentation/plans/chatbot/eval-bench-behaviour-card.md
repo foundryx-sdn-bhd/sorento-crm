@@ -93,3 +93,10 @@ filtering only. **Rec (a)**: a recipe never run is a guess.
 
 No UI, no owner-visible change, so no mockup and no hand test. No auth/RBAC change, so no security-reviewer.
 LLM spend: none planned; at most a $3 validation (one parser-gold rep pair) if crew asks.
+
+## Answers (crew, 16 Oct, technical, no owner call)
+
+Q1 (a), Q2 (a) `--legacy` only for the $0 CI validation, Q3 (a) record null and do not change what the parser
+sends, Q4 (a) per owner D9, Q5 (a) with limits: chat tables only, check dump table sizes first, stop if the
+restore would leave under 30 GiB free, drop both DBs right after the proof and say so in the report. Build on the
+eval-base dump until the owner's prod backup arrives.
