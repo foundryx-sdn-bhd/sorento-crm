@@ -46,6 +46,7 @@ UAC: `order-sheet-oi-reports-22sep-acceptance-criteria.md`.
   inquiry_id=` streams bytes and `saveBlobAs`.
 - The ORDER INQUIRY tabular format the owner pasted IS `OrderInquiryWorklistService.
   export_xlsx` (EXPORT_HEADINGS, one sheet per delivery month, SUPPLIER then ITEM CODE).
+  Superseded in part (owner, 16 Oct 2026, `PLAN-oi-excel-one-sheet-16oct.md`): the OI Excel is ONE sheet, never split by month.
   The new report is that writer over a different row set, not a new writer.
 - Engine's last-purchase cost per product already exists: `reorder_engine.
   last_purchase_costs` (newest PO line with `unit_cost IS NOT NULL`, per supplier).
