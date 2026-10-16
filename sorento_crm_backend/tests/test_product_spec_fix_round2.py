@@ -869,7 +869,10 @@ def test_s14_the_migrations_frozen_converter_writes_exactly_the_shipped_rules():
         assert [r["builder"] for r in converted] == [
             r["builder"] for r in shipped.get(spec_key) or []
         ], spec_key
-    assert set(shipped) <= set(legacy)
+    # has_massage (#1720) is a shipped rule seeded by cfs_0001, after spec_0002, so the
+    # legacy fixture spec_0002 converted never held it.
+    assert "has_massage" not in legacy
+    assert set(shipped) - {"has_massage"} <= set(legacy)
 
 
 # --------------------------------------------------------------------------- #

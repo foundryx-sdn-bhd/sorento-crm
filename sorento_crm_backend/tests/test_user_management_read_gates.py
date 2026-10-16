@@ -663,7 +663,8 @@ class TestStructuralCoverage:
         # per-contact accessible brands read (`/contacts/{contact_id}/brands`,
         # CONTACT-BRAND-SCOPE, under contacts.view). 46 with the runtime settings read
         # (`/settings/runtime`, SETTINGS-IN-DB-SORENTO, under user_management.settings.secrets).
-        assert len(gated_paths) == 46
+        # 50 with the four contact-tags reads (#1736), all under user_management.contacts.view.
+        assert len(gated_paths) == 50
         assert gated_paths == {
             "/api/v1/user-management/teams/",
             "/api/v1/user-management/teams/{team_id}",
@@ -709,6 +710,12 @@ class TestStructuralCoverage:
             # the contact record, so `user_management.contacts.view`; its episodes need
             # `system.chat_history.view` as well (tests/chatbot/test_memory_security_fixes.py).
             "/api/v1/user-management/contacts/{contact_id}/chatbot/memory",
+            # --- Contact tags (#1736): the tag list, its settings catalog, one tag, and a
+            # contact's resolved tag settings; reads under user_management.contacts.view.
+            "/api/v1/user-management/contact-tags/",
+            "/api/v1/user-management/contact-tags/settings-catalog",
+            "/api/v1/user-management/contact-tags/{tag_id}",
+            "/api/v1/user-management/contacts/{contact_id}/tag-settings",
             # --- Q2 decided: user_management.settings.view (the narrow
             # /settings/app-config projection stays open - see the allowlist)
             "/api/v1/user-management/settings/",
