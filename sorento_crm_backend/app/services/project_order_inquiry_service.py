@@ -166,6 +166,9 @@ _PURCHASING_NOTIFY_PENDING_KEY = "oi_purchasing_notify_pending"
 _HANDOVER_PENDING_KEY = "oi_handover_pending"
 #: Per sales order, the lines the last `record_saved_lines` told (review B1).
 _SAVED_TOLD_KEY = "oi_saved_lines_told"
+#: OI-LINE-SPLIT: per origin line, the qty `_apply_split_links` moved to another line in the
+#: running Confirm - what the planning-change cancel netting (`_oi_demand_rows`) takes off.
+SPLIT_MOVED_KEY = "oi_split_moved_by_origin"
 
 #: `Session.info` key holding the transactions THIS session has actually committed
 #: (never rolled back), so `_fire_pending_handover` - which listens on
@@ -4398,9 +4401,14 @@ class ProjectOrderInquiryService:
         queue = self.db.info.get(_HANDOVER_PENDING_KEY)
         if not queue:
             return
+        from app.services.project_line_split_service import LineSplitService
+
+        # Only splits that still act: a stale plan is not told again on a later change.
+        acting = LineSplitService(self.db).acting_origin_ids(str(line.id) for line in lines)
+        if not acting:
+            return
         self.split_handover_items(
-            queue, line_ids={str(line.id) for line in lines}, actor_user_id=actor_user_id,
-            queued=True,
+            queue, line_ids=acting, actor_user_id=actor_user_id, queued=True,
         )
 
     def split_handover_items(
@@ -5560,20 +5568,44 @@ class ProjectOrderInquiryService:
             and entry.get("origin") != "local"
             and not entry.get("order_back")
         }
+        # What this Confirm moves per origin line, for the cancel netting the planning-change
+        # apply runs next (`planning_change_service._oi_demand_rows`). Reset for every line
+        # of this Confirm first, so a figure from an earlier Confirm never rides along.
+        moved_by_origin = self.db.info.setdefault(SPLIT_MOVED_KEY, {})
+        for line_id in entries:
+            moved_by_origin.pop(line_id, None)
         if len(entries) < 2 or not line_changes:
             return
+
+        def _change(line_id: str) -> Tuple[Optional[Decimal], Optional[Decimal]]:
+            change = line_changes.get(line_id) or {}
+            before, after = change.get("from_qty"), change.get("to_qty")
+            return (
+                _dec(before) if before is not None else None,
+                _dec(after) if after is not None else None,
+            )
+
         went_down = [
             line_id
             for line_id in entries
-            if (line_changes.get(line_id) or {}).get("from_qty") is not None
-            and (line_changes.get(line_id) or {}).get("to_qty") is not None
-            and _dec(line_changes[line_id]["to_qty"]) < _dec(line_changes[line_id]["from_qty"])
+            if None not in _change(line_id) and _change(line_id)[1] < _change(line_id)[0]
         ]
-        if not went_down:
+        # The target's own AutoCount qty went up in this Confirm (or the line was added).
+        went_up = {
+            line_id
+            for line_id in entries
+            if _change(line_id)[1] is not None
+            and (_change(line_id)[0] is None or _change(line_id)[1] > _change(line_id)[0])
+        }
+        if not went_down or not went_up:
             return
-        from app.services.project_line_split_service import SplitOutputs
+        from app.services.project_line_split_service import LineSplitService, SplitOutputs
 
-        splits = SplitOutputs(self.db, went_down)
+        # Stale splits (made against a base AutoCount has since moved on from) never act.
+        acting = LineSplitService(self.db).acting_origin_ids(went_down)
+        if not acting:
+            return
+        splits = SplitOutputs(self.db, sorted(acting))
         linked_by_origin = {
             origin: [
                 view
@@ -5581,7 +5613,7 @@ class ProjectOrderInquiryService:
                 if not view.split.is_cancel
                 and view.sits_on
                 and view.sits_on != origin
-                and view.sits_on in entries
+                and view.sits_on in went_up
             ]
             for origin, views in splits.by_origin.items()
         }
@@ -5639,6 +5671,7 @@ class ProjectOrderInquiryService:
                 ):
                     continue
                 take = min(_dec(view.split.qty), room)
+                moved_by_origin[origin] = moved_by_origin.get(origin, _ZERO) + take
                 self._split_row(
                     source,
                     _dec(source.qty) - take,

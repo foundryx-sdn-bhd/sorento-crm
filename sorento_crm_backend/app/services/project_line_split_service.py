@@ -87,6 +87,7 @@ class LineFacts:
     core: Optional[SalesOrderLine]
     item_code: str
     location: str
+    #: The line's OPEN qty now (AutoCount qty less delivered), the same footing as the base.
     now_qty: Decimal
     now_date: Optional[date]
     delivered_qty: Decimal
@@ -110,12 +111,35 @@ class LineFacts:
         if self.splits:
             first = self.splits[0]
             return _dec(first.base_qty), first.base_date
+        return self.live_base()
+
+    def live_base(self) -> Tuple[Decimal, Optional[date]]:
+        """Rules 2 and 3 alone: what a split made NOW would be made against."""
         if self.pending_from is not None:
             from_qty = self.pending_from.get("qty")
-            qty = _dec(from_qty) if from_qty is not None else self.now_qty
+            if from_qty is None:
+                qty = self.now_qty
+            else:
+                qty = max(_dec(from_qty) - self.delivered_qty, _ZERO)
             when = _as_date(self.pending_from.get("required_date")) or self.now_date
-            return max(qty - self.delivered_qty, _ZERO), when
-        return max(self.now_qty - self.delivered_qty, _ZERO), self.now_date
+            return qty, when
+        return self.now_qty, self.now_date
+
+    @property
+    def splits_act(self) -> bool:
+        """Do this line's stored splits still describe the change in front of the planner?
+
+        A split was made against a base (`base_qty`, `base_date`). It acts on Confirm (moves
+        links, tells purchasing its lines, nets a cancel) only while the line still reads from
+        that base: its pending change starts from it, or, with no change pending, its open qty
+        and date are it. Once AutoCount moved on (a change applied, a newer one pending), the
+        splits are the saved plan to read, never applied again.
+        """
+        if not self.splits:
+            return False
+        first = self.splits[0]
+        qty, when = self.live_base()
+        return _dec(first.base_qty) == qty and first.base_date == when
 
 
 class LineSplitService:
@@ -202,13 +226,27 @@ class LineSplitService:
 
     def line_facts(self, order: ProjectSalesOrder) -> Dict[str, LineFacts]:
         """Every mirror line of the order, keyed by id, with its core line, codes and splits."""
+        return self._facts_for(
+            ProjectSalesOrderLine.project_sales_order_id == order.id
+        )
+
+    def acting_origin_ids(self, line_ids: Iterable[str]) -> set:
+        """Which of these ORIGIN lines have stored splits that still act (`splits_act`): the
+        one gate the Confirm engine, its email lines and the cancel netting all read."""
+        wanted = sorted({str(i) for i in line_ids if i})
+        if not wanted:
+            return set()
+        facts = self._facts_for(ProjectSalesOrderLine.id.in_(wanted))
+        return {line_id for line_id, f in facts.items() if f.splits_act}
+
+    def _facts_for(self, criterion: Any) -> Dict[str, LineFacts]:
         rows = (
             self.db.query(ProjectSalesOrderLine, SalesOrderLine)
             .outerjoin(
                 SalesOrderLine,
                 SalesOrderLine.id == ProjectSalesOrderLine.core_sales_order_line_id,
             )
-            .filter(ProjectSalesOrderLine.project_sales_order_id == order.id)
+            .filter(criterion)
             .all()
         )
         product_ids = {
@@ -247,15 +285,16 @@ class LineSplitService:
             location = line.stock_location or (
                 warehouses.get(str(core.warehouse_id)) if core is not None else None
             )
-            now_qty = _dec(line.qty if line.qty is not None else getattr(core, "qty_ordered", None))
+            delivered = _dec(getattr(core, "qty_delivered", None))
+            ordered = _dec(line.qty if line.qty is not None else getattr(core, "qty_ordered", None))
             out[str(line.id)] = LineFacts(
                 line=line,
                 core=core,
                 item_code=codes.get(str(product_id), ""),
                 location=str(location or ""),
-                now_qty=now_qty,
+                now_qty=max(ordered - delivered, _ZERO),
                 now_date=line.delivery_date or (core.required_date if core is not None else None),
-                delivered_qty=_dec(getattr(core, "qty_delivered", None)),
+                delivered_qty=delivered,
                 pending_from=pending.get(str(line.id)),
                 splits=splits.get(str(line.id), []),
             )

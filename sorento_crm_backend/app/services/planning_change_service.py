@@ -3827,16 +3827,18 @@ def _oi_demand_rows(
             elif not held_row.redirected_to_pool:
                 cancellable_by_line[line_key] += _dec(held_row.qty)
 
-    # OI-LINE-SPLIT (UAC E1): what staff linked from a cut line onto another line of the
-    # order is not a cancel - it moved (`_apply_split_links`), and is told as its split.
-    linked_out_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
-    if qty_down_line_ids:
-        from app.services.project_line_split_service import SplitOutputs
+    # OI-LINE-SPLIT (UAC E1): what the Confirm just MOVED from a cut line onto another line
+    # of the order (`_apply_split_links`) is not a cancel - it is told as its split. Only
+    # what actually moved, never every split sitting elsewhere: a split whose target was
+    # not in the Confirm, did not grow, or that no longer acts moved nothing.
+    from app.services.project_order_inquiry_service import SPLIT_MOVED_KEY
 
-        for line_id, views in SplitOutputs(db, qty_down_line_ids).by_origin.items():
-            for view in views:
-                if not view.split.is_cancel and view.sits_on and view.sits_on != line_id:
-                    linked_out_by_line[line_id] += _dec(view.split.qty)
+    moved_by_origin = db.info.get(SPLIT_MOVED_KEY) or {}
+    linked_out_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    for line_id in qty_down_line_ids:
+        moved = moved_by_origin.pop(line_id, None)
+        if moved:
+            linked_out_by_line[line_id] = _dec(moved)
 
     out: List[dict] = []
     counts: Dict[str, int] = {}
