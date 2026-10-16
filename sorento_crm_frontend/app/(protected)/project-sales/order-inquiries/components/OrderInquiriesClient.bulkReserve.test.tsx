@@ -519,24 +519,19 @@ describe('AC-BR-22 / AC-BR-24 / F6 / F7 the line controls and the pen', () => {
 });
 
 describe('AC-BR-25 / F8 the Reserve (N) confirmation across order inquiries', () => {
-  async function draftThree() {
-    await ready();
-    tick('CB313', 'SO-A1');
-    tick('CKS1050', 'SO-A2');
-    tick('C-FH14', 'SO-B1');
-    await reserveAsRequested();
-    await screen.findByText('Reserve 88 @ BRW');
-  }
-
   async function openThreeLineConfirm() {
-    await draftThree();
-    // One of the three becomes a reject, so the second OI's only line reads Reserve 0.
-    fireEvent.click(within(rowOf('SO-B1')).getByRole('button', { name: 'Undo' }));
+    await ready();
+    // The second OI's line is drafted FIRST (a reject), the first OI's two lines after it,
+    // so the dialog's order by OI no is the sort's doing, not the drafting order.
     fireEvent.click(within(rowOf('SO-B1')).getByRole('button', { name: 'Reject' }));
     const rejectDialog = await screen.findByRole('dialog', { name: 'Reject 1 line' });
     fireEvent.change(within(rejectDialog).getByLabelText(/reason/i), { target: { value: 'No stock' } });
     fireEvent.click(within(rejectDialog).getByRole('button', { name: 'Save 1 line' }));
     await within(rowOf('SO-B1')).findByText('Reserve 0');
+    tick('CB313', 'SO-A1');
+    tick('CKS1050', 'SO-A2');
+    await reserveAsRequested();
+    await screen.findByText('Reserve 88 @ BRW');
 
     fireEvent.click(reserveButton(3));
     return screen.findByRole('dialog', { name: 'Reserve 3 lines on 2 order inquiries' });

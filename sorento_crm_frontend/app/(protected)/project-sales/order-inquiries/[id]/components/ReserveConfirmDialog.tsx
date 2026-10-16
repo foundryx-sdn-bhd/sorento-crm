@@ -127,6 +127,15 @@ export interface ReserveConfirmInquiry {
   result?: { ok: boolean; message?: string };
 }
 
+const MULTI_SIZES: Record<string, number> = {
+  product: 190,
+  requested: 105,
+  reserve: 85,
+  balance: 135,
+  location: 85,
+  reason: 170,
+};
+
 /** Multi-OI mode: the line columns, with the order inquiry first and the commit result last. */
 const MULTI_COLUMNS: ColumnDef<ReserveConfirmLine>[] = [
   {
@@ -137,11 +146,12 @@ const MULTI_COLUMNS: ColumnDef<ReserveConfirmLine>[] = [
         {row.original.inquiry_no}
       </span>
     ),
-    size: 130,
+    size: 140,
     enableSorting: false,
     meta: { headerTitle: 'OI no' },
   },
-  ...COLUMNS,
+  // Widths that fit all eight columns in the wider dialog at 1280 without a sideways scroll.
+  ...COLUMNS.map((column) => ({ ...column, size: MULTI_SIZES[column.id as string] ?? column.size })),
   {
     id: 'result',
     header: 'Result',
@@ -154,7 +164,7 @@ const MULTI_COLUMNS: ColumnDef<ReserveConfirmLine>[] = [
         </span>
       );
     },
-    size: 220,
+    size: 170,
     enableSorting: false,
     meta: { headerTitle: 'Result' },
   },
@@ -225,7 +235,10 @@ export function ReserveConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={!done} className="flex max-h-[85dvh] flex-col sm:max-w-4xl">
+      <DialogContent
+        showCloseButton={!done}
+        className={`flex max-h-[85dvh] flex-col ${inquiries ? 'sm:max-w-6xl' : 'sm:max-w-4xl'}`}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>

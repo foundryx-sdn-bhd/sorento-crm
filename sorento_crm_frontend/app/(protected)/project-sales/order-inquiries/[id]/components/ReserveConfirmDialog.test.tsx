@@ -369,6 +369,7 @@ describe('F8 ReserveConfirmDialog with 100 lines across 7 order inquiries', () =
     renderMulti({ lines: HUNDRED, inquiries: HUNDRED_INQUIRIES });
     const dialog = screen.getByRole('dialog');
     expect(dialog.className).toContain('max-h-[85dvh]');
+    expect(dialog.className).toContain('sm:max-w-6xl');
     expect(within(dialog).getByRole('button', { name: 'Reserve and send' })).toBeEnabled();
   });
 });
