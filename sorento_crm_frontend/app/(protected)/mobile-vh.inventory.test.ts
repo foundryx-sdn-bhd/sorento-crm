@@ -53,6 +53,14 @@
  * PLAN-project-form-28sep.md (#1339) deleted `pipeline/components/RegisterProjectDialog.tsx`
  * outright - the dialog it fixed-height-scrolled is gone, moved to a page (`ProjectForm.tsx`,
  * no dialog, no `vh`), not converted. Baseline below is -1 file / -4 lines.
+ *
+ * QUOTE-APPROVAL-UX (#1698) moved the reject dialog out of `QuotationApprovalPanel.tsx` (its
+ * two lines, `max-h-[92vh]` / `max-h-[65vh]`) into `QuotationRejectDialog.tsx` and gave the new
+ * `ReviseApprovalDialog.tsx` the same two; STOCK-DEBT-SNAPSHOT (#1705) added
+ * `SnapshotDrillDialog.tsx`'s `max-h-[85vh]`. RELEASE-FIX-PROD-EDGE converted all three new
+ * files to `dvh` (the dealer-kit dialogs' `max-h-[90dvh]` convention) instead of allowlisting
+ * them, and the panel, now with no `vh` left, leaves the list. Baseline below is -1 file /
+ * -2 lines.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -109,7 +117,6 @@ const FRACTIONAL_VH_FILES = [
   'app/(protected)/project-sales/[projectId]/delivery-schedules/components/DeliveryScheduleByDateMatrix.tsx',
   'app/(protected)/project-sales/[projectId]/delivery-schedules/components/DeliveryScheduleConfirmDialog.tsx',
   'app/(protected)/project-sales/[projectId]/delivery-schedules/components/DeliveryScheduleMatrix.tsx',
-  'app/(protected)/project-sales/[projectId]/quotation-documents/[documentId]/components/QuotationApprovalPanel.tsx',
   'app/(protected)/project-sales/_shared/components/LinkDocumentDialog.tsx',
   'app/(protected)/project-sales/_shared/components/PriceFloorDialog.tsx',
   'app/(protected)/project-sales/divergences/components/DivergenceRowDialog.tsx',
@@ -275,13 +282,13 @@ describe('fixed viewport-height sweep (M6-02 / M6-03)', () => {
     }
   });
 
-  it('the allowlist matches its baseline (209 lines, 144 files)', () => {
+  it('the allowlist matches its baseline (207 lines, 143 files)', () => {
     let matchingLines = 0;
     for (const file of ALLOWLIST.keys()) {
       const lines = fs.readFileSync(file, 'utf8').split('\n');
       matchingLines += lines.filter((line) => PATTERN.test(line)).length;
     }
-    expect(ALLOWLIST.size).toBe(144);
-    expect(matchingLines).toBe(209);
+    expect(ALLOWLIST.size).toBe(143);
+    expect(matchingLines).toBe(207);
   });
 });

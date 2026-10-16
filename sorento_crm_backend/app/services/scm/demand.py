@@ -212,10 +212,13 @@ def plan_qty():
 
     AC-CANCEL-CRM (owner, 13 Oct): what AutoCount Cancel SO documents cancelled is not planned
     (`qty_cancelled`, derived on every sync); `plan_qty_of` is the Python twin.
+    CONSIGN-PLAN Q3: a consignment line's returned units (`qty_returned`, 0 on every sales
+    order line) are not planned either.
     """
     return func.greatest(
         func.coalesce(SalesOrderLine.qty_required, SalesOrderLine.qty_ordered)
-        - func.coalesce(SalesOrderLine.qty_cancelled, 0),
+        - func.coalesce(SalesOrderLine.qty_cancelled, 0)
+        - func.coalesce(SalesOrderLine.qty_returned, 0),
         0,
     )
 

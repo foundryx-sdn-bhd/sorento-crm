@@ -313,7 +313,7 @@ export function SnapshotDrillDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent
         data-testid="snapshot-drill-dialog"
-        className="flex max-h-[85vh] w-full flex-col overflow-hidden p-0 sm:max-w-[95vw]"
+        className="flex max-h-[85dvh] w-full flex-col overflow-hidden p-0 sm:max-w-[95vw]"
       >
         <DialogHeader className="shrink-0 space-y-1 border-b p-4 pe-10 sm:p-6 sm:pe-10">
           <DialogTitle className="min-w-0 break-words">{`${row.product_code} · ${label}`}</DialogTitle>

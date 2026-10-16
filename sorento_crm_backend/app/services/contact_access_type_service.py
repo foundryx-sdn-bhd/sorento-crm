@@ -125,6 +125,22 @@ class ContactAccessTypeService:
                 codes.append(code)
         return codes
 
+    def translate_names_to_codes_for_caller(
+        self, names: Optional[list[str]], *, contact_id: Optional[str]
+    ) -> Optional[list[str]]:
+        """``translate_names_to_codes``, failing CLOSED for a read made on behalf of a contact.
+
+        SEC-PROMO-ACCESS: a contact-scoped caller (the chatbot through MCP, which sends a
+        non-blank ``contact_id``) whose access list is empty or absent gets ``[]`` (nothing),
+        never ``None`` (no filter). The MCP layer drops an empty list from the query string,
+        so "the contact holds nothing for this ask" reaches the route as no ``access_levels``
+        at all. Staff and internal callers send no ``contact_id`` and keep ``None``.
+        """
+        codes = self.translate_names_to_codes(names)
+        if codes is None and (contact_id or "").strip():
+            return []
+        return codes
+
     def validate_access_levels(self, access_levels: list[str], field_name: str = "access_levels") -> list[str]:
         """Validate codes against the active catalog. Returns normalized (stripped, deduplicated) list."""
         if not access_levels:

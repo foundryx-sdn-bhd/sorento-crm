@@ -11,6 +11,7 @@ import {
   Link2,
   ListOrdered,
   Printer,
+  Send,
   ShoppingCart,
   Ship,
   Unlink,
@@ -35,6 +36,7 @@ import { useHasPermission } from '@/hooks/usePermissions';
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import { LinkDocumentDialog } from '../../../_shared/components/LinkDocumentDialog';
 import { BulkRejectOrderInquiryDialog } from '../../../_shared/components/BulkRejectOrderInquiryDialog';
+import { HandoverResendDialog } from '../../../_shared/components/HandoverResendDialog';
 import {
   ORDER_INQUIRY_HEADER_KEY,
   ORDER_INQUIRY_HEADER_LINES_KEY,
@@ -145,6 +147,8 @@ export function OrderInquiryDetail({ id }: { id: string }) {
   const reserveHistoryRow = historyLine ? reserveHistoryRowOf(historyLine) : null;
   const historyRow = reserveHistoryRow ?? historyLine?.primary ?? null;
   const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const [resendIds, setResendIds] = useState<string[] | null>(null);
+  const closeResend = useCallback(() => setResendIds(null), []);
   // Unlink selected (AC-DP-06, fix round UL): a server-deferred pending action
   // (`order_inquiry_row.unlink`), never a confirm dialog - one park per ticked line,
   // ONE countdown rendered inline in the header card (`useDeferredBulkAction`'s own
@@ -771,6 +775,17 @@ export function OrderInquiryDetail({ id }: { id: string }) {
                       </Tooltip>
                     )
                   ) : null}
+                  {canAct ? (
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        setResendIds([id]);
+                      }}
+                    >
+                      <Send className="size-4" aria-hidden />
+                      Send to purchasing
+                    </DropdownMenuItem>
+                  ) : null}
                   {canCancelOpenRequest ? (
                     <DropdownMenuItem
                       onSelect={(e) => {
@@ -997,6 +1012,8 @@ export function OrderInquiryDetail({ id }: { id: string }) {
           reserveEntries={reserveHistoryRow ? (historyQuery.data ?? []) : undefined}
         />
       ) : null}
+
+      <HandoverResendDialog inquiryIds={resendIds} onClose={closeResend} />
 
       <EntityDownloadsButton
         entityType="order_inquiry"
