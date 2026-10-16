@@ -28,6 +28,7 @@ from app.models.project_so import (
 from app.services.project_order_inquiry_service import ProjectOrderInquiryService
 from app.services.scm.outstanding_diff import QTY_CHANGED
 from tests.scm.test_line_splits_api import _put, _sp
+from tests.scm.test_line_splits_outputs import emails  # noqa: F401 - the SENT handover
 from tests.test_oi_cancel_bugs_so422492 import (  # noqa: F401 - fixtures reused
     _TOLD,
     _handovers_for,
@@ -330,3 +331,134 @@ def test_the_email_prints_only_the_splits_the_engine_honoured(api, line18_now):
     line_2 = [(h["line"]["qty"], h["line"]["remark"]) for h in told if h.get("line_no") == 2]
     assert not [t for t in line_2 if t[0] == "49" and t[1].startswith("DELAY")], line_2
     assert ("49", "CANCEL 49") in line_2 or any(t[1] == "CANCEL 49" for t in line_2), line_2
+
+
+# ---------------------------------------------------------------------------
+# Round 2: assert on the email that is SENT (`emails`), not on what `_TOLD` queued
+# ---------------------------------------------------------------------------
+
+
+def _lines(world, specs, link_first=True):
+    """One published order whose lines `(no, qty, date, now_qty)` are confirmed as Buy, the
+    first one linked to a PO and every row acknowledged; then AutoCount moves each line whose
+    `now_qty` differs and a change batch is built."""
+    client = world[0]
+    world_ = world[1]
+    db = world_.db
+    core_so = _core_so(db, world_.company_id)
+    order = _project_so(db, world_.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    s = _S()
+    s.client, s.world, s.db, s.order, s.core_so, s.no = client, world_, db, order, core_so, {}
+    for no, qty, when, _now in specs:
+        core = _core_line(db, core_so, world_.product, world_.own_wh, qty_ordered=str(qty),
+                          required_date=when)
+        line = _project_line(db, order, line_no=no, product=world_.product, core_line=core)
+        s.no[no] = [core, line, None, when, qty]
+    db.commit()
+    r = _confirm(client, order.id, [_line_payload(v[1].id, buy_qty=str(v[4])) for v in s.no.values()])
+    assert r.status_code == 200, r.text
+    for no, v in s.no.items():
+        v[2] = _order_row(world_, v[1])
+        v[2].ack_state = ACK_ACKNOWLEDGED
+        v[2].acknowledged_by = world_.actor
+        v[2].acknowledged_at = datetime.utcnow()
+    first = s.no[specs[0][0]]
+    _po, s.po_line = _po_line(world_, _supplier(world_), qty=specs[0][1],
+                              expected_date=date(2026, 8, 20))
+    if link_first:
+        _link(world_, first[2], s.po_line, qty=specs[0][1], document="202607-S9999")
+    db.commit()
+    changes, ids = [], []
+    for no, qty, when, now in specs:
+        if now == qty:
+            continue
+        core, line = s.no[no][0], s.no[no][1]
+        core.qty_ordered, line.qty = Decimal(str(now)), Decimal(str(now))
+        changes.append(_change(QTY_CHANGED, core, so_number=core_so.so_number, old_date=when,
+                               new_date=when, old_qty=str(qty), new_qty=str(now)))
+        ids.append(str(core.id))
+    db.commit()
+    s.batch = _build(world_, changes, core_so, ids)
+    assert s.batch is not None, "premise: the pending change batch exists"
+    s.specs = specs
+    return s
+
+
+def _split(s, no, parts):
+    """parts: [(qty, date, 'own' | line_no | 'cancel')]"""
+    body = []
+    for qty, when, on in parts:
+        if on == "cancel":
+            body.append(_sp(qty, None, on=str(s.no[no][1].id), cancel=True))
+        else:
+            target = s.no[no][1] if on == "own" else s.no[on][1]
+            body.append(_sp(qty, when, on=str(target.id)))
+    r = _put(s, [{"line_id": str(s.no[no][1].id), "splits": body}])
+    assert r.status_code == 200, f"premise: the splits save ({r.status_code}) {r.text}"
+
+
+def _confirm_sent(s, emails):
+    r = _confirm(s.client, s.order.id,
+                 [_line_payload(v[1].id, buy_qty=str(now)) for v, (_n, _q, _d, now)
+                  in zip(s.no.values(), s.specs)],
+                 batch_id=str(s.batch.id))
+    assert r.status_code == 200, r.text
+    s.db.commit()
+    s.db.expire_all()
+    return [(ln["qty"], ln["remark"]) for ctx in emails for ln in ctx["lines"]]
+
+
+def test_sent_email_for_a_move_alone_has_the_delay_and_no_order_for_the_moved_qty(api, emails):
+    """SO417636 shape: line 20 417 -> 14 with 403 to line 30 (192 -> 595)."""
+    d_a, d_b = date(2026, 10, 20), date(2026, 11, 20)
+    s = _lines(api, [(20, 417, d_a, 14), (30, 192, d_b, 595)])
+    _split(s, 20, [(14, d_a, "own"), (403, d_b, 30)])
+    sent = _confirm_sent(s, emails)
+    assert any(q == "403" and r.startswith("DELAY") for q, r in sent), sent
+    assert not [r for _q, r in sent if "ORDER 403" in r], sent
+
+
+def test_sent_email_when_line_18_grows_by_exactly_the_moved_qty(api, emails):
+    """SO402757 with line 18 going to 131 (82 + 49): 49 DELAY for line 2, no ORDER 49."""
+    s = _lines(api, [(2, 51, D_2, 2), (18, 82, D_18, 131)])
+    _split(s, 2, [(2, D_2, "own"), (49, D_18, 18)])
+    sent = _confirm_sent(s, emails)
+    assert any(q == "49" and r.startswith("DELAY") for q, r in sent), sent
+    assert not [r for _q, r in sent if "ORDER 49" in r], sent
+
+
+def test_sent_email_tells_the_netting_remainder_as_a_cancel(api, emails):
+    """Line 2 goes 51 -> 1 while the splits say 2 own + 49 to line 18 (131): CANCEL 1."""
+    s = _lines(api, [(2, 51, D_2, 1), (18, 82, D_18, 131)])
+    _split(s, 2, [(2, D_2, "own"), (49, D_18, 18)])
+    sent = _confirm_sent(s, emails)
+    assert any(r == "CANCEL 1" or r.endswith("CANCEL 1") for _q, r in sent), sent
+    assert any(q == "49" and r.startswith("DELAY") for q, r in sent), sent
+
+
+def test_sent_email_for_a_partial_move_cancels_exactly_what_the_netting_cut(api, emails):
+    """Line 2 splits 2 own, 30 to line 18 (grew by 30), 19 to line 40 (did not grow); AutoCount
+    line 2 -> 1: the CANCEL is 20 (19 + 1), and no ORDER for the 30 on the grown line."""
+    d_40 = date(2026, 12, 1)
+    s = _lines(api, [(2, 51, D_2, 1), (18, 82, D_18, 112), (40, 60, d_40, 60)])
+    _split(s, 2, [(2, D_2, "own"), (30, D_18, 18), (19, d_40, 40)])
+    sent = _confirm_sent(s, emails)
+    assert any(r.endswith("CANCEL 20") or r == "CANCEL 20" for _q, r in sent), sent
+    assert not [r for _q, r in sent if "ORDER 30" in r], sent
+
+
+def test_apply_path_writes_no_cancel_balance_row_for_the_moved_qty(api):
+    """A planning-change apply where the move happened: the origin gets no CANCEL_BALANCE
+    row for the 49 that moved to line 18."""
+    from app.services import planning_change_service
+
+    s = _so402757(api, with_splits=True)
+    batch = planning_change_service.get_batch(s.db, str(s.batch.id))
+    for order in batch["orders"]:
+        for row in order["rows"]:
+            planning_change_service.set_row_decision(s.db, str(s.batch.id), row["id"], "confirm")
+    planning_change_service.apply(s.db, str(s.batch.id), s.world.actor)
+    s.db.commit()
+    s.db.expire_all()
+    cancels = [r for r in _live(s, s.line_2, IV_CANCEL_BALANCE) if Decimal(str(r.qty)) == 49]
+    assert cancels == [], "no CANCEL_BALANCE row for the moved 49"

@@ -303,3 +303,18 @@ def test_the_send_to_purchasing_preview_lists_one_line_per_split(api, monkeypatc
     out = OrderInquiryHandoverResend(world.db).preview([str(inquiry.id)], actor_user_id=world.actor)
     assert out["emails"], out
     assert out["emails"][0]["line_count"] == 2, "one email line per split of the split line"
+
+
+def test_taken_and_remaining_print_the_exact_figures_on_the_first_split_row(api):
+    s = _order(api, [(10, 10, D_A)])
+    _confirm_all(s)
+    _po, po_line = _po_line(s.world, _supplier(s.world), qty=4, expected_date=date(2026, 10, 20))
+    _link(s.world, _order_row(s.world, s.line[10]), po_line, qty=4, document="202610-S0004")
+    s.db.commit()
+    _save(s, {10: [_sp(4, D_A, on=_on(s, 10)), _sp(6, D_B, on=_on(s, 10))]})
+    heads, rows = _sheet_rows(s)
+    taken, remaining = heads.index("TAKEN"), heads.index("REMAINING")
+    first, second = rows[0], rows[1]
+    assert float(first[taken]) == 4.0 and float(first[remaining]) == 6.0, (
+        first[taken], first[remaining])
+    assert second[taken] in (None, "") and second[remaining] in (None, "")

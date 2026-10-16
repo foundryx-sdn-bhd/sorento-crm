@@ -471,3 +471,28 @@ def test_a_user_who_may_not_act_on_the_order_gets_403_and_nothing_is_saved(api):
     r = _put(s, [_valid_200(s)])
     assert r.status_code == 403, r.text
     assert _line(_get(s), s.l200.id)["splits"] == []
+
+
+def test_get_acting_is_true_while_the_stored_base_matches_and_false_when_it_does_not(api):
+    from app.models.planning_change import PlanningChangeRow
+
+    s = _seed(api)
+    base_100 = {"line_id": str(s.l100.id), "splits": [
+        _sp(200, D_301, on=str(s.l100.id)), _sp(101, D_NEW, on=str(s.l100.id))]}
+    assert _put(s, [_valid_200(s), base_100]).status_code == 200
+    out = _get(s)
+    assert _line(out, s.l200.id)["acting"] is True
+    assert _line(out, s.l100.id)["acting"] is True
+
+    # a newer pending change starting from another qty: line 200's stored base no longer matches
+    row = (
+        s.db.query(PlanningChangeRow)
+        .filter(PlanningChangeRow.project_line_id == s.l200.id).one()
+    )
+    row.from_json = {**row.from_json, "qty": "20"}
+    # a delivery shrinks line 100's open qty (301 -> 296): its stored base no longer matches
+    s.c100.qty_delivered = Decimal("5")
+    s.db.commit()
+    out = _get(s)
+    assert _line(out, s.l200.id)["acting"] is False
+    assert _line(out, s.l100.id)["acting"] is False
