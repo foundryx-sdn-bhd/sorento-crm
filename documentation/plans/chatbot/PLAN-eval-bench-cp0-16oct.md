@@ -159,3 +159,24 @@ drawing items.
   ("only for the Penang branch" after IDEA-9003) must not get "what's your idea?". Reported beside the follow-up
   bar with its own n, never inside it.
 - Seeds for both come from real ideas-lane conversations in the prod backup; paraphrase variants as for every slice.
+
+## Owner probes on #1720 (crew, 16 Oct): scored as real owner items
+
+Source: `crew/state/reports/CHAT-ADVISOR-SPIKE-owner-probes-1720.md` (rows 1-6, root causes). Recorded turns on the
+dev DB (`chatbot.turns`, console, 16 Oct 04:01-04:03Z, #1720 copy), so the follow-up items replay the recorded state:
+
+| probe | turn | slice / kind | gold (what must be understood) |
+|---|---|---|---|
+| 1 | 8e05309c | spec (typo "undermunt") | class basin + mounting under_counter, fact stock |
+| 2 | 9bbad3cc | follow-up `and_x` (new fact, subject carried) | subject = probe 1's undermount basins, fact promotions |
+| 3 | 78e4b48d | spec | class basin + mounting under_counter, fact promotions |
+| 4 | 77b33ba8 | spec | class basin + mounting under_counter, fact stock |
+| 5 | 0df37f38 | follow-up `refine` (brand added) | subject kept, filter brand Sorento; no stray `fits` filter |
+| 6 | c51d083c | spec (typo "undrmount", "i mean" correction) | class basin + mounting under_counter + brand Sorento, fact stock |
+
+- `and_x` covers both short forms the owner uses: "and <item>?" (fact carried, item replaced) and "<fact>?" right
+  after a lookup (subject carried, fact replaced); gold says which.
+- These six are known to lanes (the report is in their briefs), so they cannot measure generalisation: they count in
+  their slice rates every run, carry `source: owner_probe`, and the CP0 page lists each one with its verdict.
+  Probe 2's outcome for this contact is an access ask (0 access types: data, not code); the follow-up is graded on
+  what was understood, the dead-end wording is a separate lane (CHAT-PROMO-NOACCESS).
