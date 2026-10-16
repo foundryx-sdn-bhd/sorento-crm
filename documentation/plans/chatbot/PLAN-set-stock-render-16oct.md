@@ -1,6 +1,6 @@
 # PLAN: SET-STOCK-RENDER - chatbot stock answers for a product set read right
 
-Status: Plan, behaviour card CARD-set-stock-render-16oct.md v2 (unified with the code answer, owner direction 16 Oct 17:40) filed for the owner OK. Size M, LEAD pattern. Not the small fix track:
+Status: Build (tester red tests), card v2 filed for the owner OK 16 Oct; defaults Q1 a, Q2 b, Q3 a. Size M, LEAD pattern. Not the small fix track:
 new reply wording the owner notices.
 
 ## Why
@@ -43,6 +43,31 @@ today" (items 1-9). The render lands in `fetch.output_structurer` (fetch.py:3487
 :3596-3681 set header) over the MCP's structured items; `_stock_compact` (presenters.py:1451)
 is the per-product block to reuse.
 
-## Design
+## Design (card v2, owner direction 16 Oct 17:40; defaults Q1 a, Q2 b, Q3 a)
 
-Filled in after the owner's rulings.
+UAC: `set-stock-render-acceptance-criteria.md` (SSR-1 to SSR-14). Touch points for the coder
+(the tester does not see this section):
+
+1. R2 over 50 (SSR-5/6): stop withholding rows. `fetch.output_structurer` withheld branch
+   (fetch.py:3625-3628, and its `answers` / attachment withholding at :3703, :3712) and the
+   breakdown request `resolve_product_set(breakdown_over=...)` (references.py:3456,
+   resolve_gate.py:848); `build_set_header` (answer.py:2986-2992) then never prints
+   `breakdown_lines`. The header's existing "showing 1 to N" form carries the cut.
+2. R2 misspelt word (SSR-7): `_unknown_value_members` (references.py:1797-1840, early return
+   :3331-3343) and `unknown_values_reply` (answer.py:2895, called :4429): answer the set without
+   the word through the normal set path, then the existing "Couldn't find" line
+   (`not_understood_line`, fetch.py:3661-3665).
+3. R3 with stock (SSR-9/10): a per-call flag beside the policy check in the stock list
+   (inventory_service.py:870-872 detailed rows, :1548-1555 compact lines), passed only by the set
+   fetch (fetch.py:1234-1241) when the set's `require` carries stock. Not
+   `quantity_operator` (it reads available, not on hand, and moves the compact total).
+4. R4 twins (SSR-11): the set's `product_ids` carry every company's product for a family code,
+   as the code gate does (gate.py:677-698); the count stays per family
+   (product_predicate_service.py:1061).
+5. R5 (SSR-12): verify `with_brand_from_offer` (turn_runtime.py:4373) fires after a fully listed
+   set (it reads `set_brands`, carried at turn_runtime.py:4298 / engine.py:6969); fix only if the
+   test is red.
+6. R1/SSR-1 to SSR-4 hold on main already for the row loop; tests pin them.
+
+Simplest-thing check: no new format, no new layer; one flag on an existing call, and two
+branches removed.
