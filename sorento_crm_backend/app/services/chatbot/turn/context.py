@@ -402,11 +402,11 @@ def _render_l2(
     )
     subject_text = str(current_subject) if current_subject else None
 
-    def _render(subj: str | None) -> str:
+    def _render(subj: str | None, with_vocabulary: bool = True) -> str:
         parts = []
         # #1301: the brand list is the most stable line in this layer, so it goes
         # first, and it is kept whole (only the subject shrinks).
-        if brands_line:
+        if brands_line and with_vocabulary:
             parts.append(brands_line)
         if subj:
             parts.append(f"Current subject: {subj}")
@@ -424,7 +424,10 @@ def _render_l2(
 
     text = _render(subject_text)
     subject_bytes = len((subject_text or "").encode("utf-8"))
-    while subject_text and est_tokens(text) > CAPS["L2"] and subject_bytes > 0:
+    # PR-C AC-C1: the vocabulary lines are kept whole and do not count against the cap, so
+    # the subject is cut only when its own lines (subject, task, open question, pending,
+    # options) exceed it.
+    while subject_text and est_tokens(_render(subject_text, False)) > CAPS["L2"] and subject_bytes > 0:
         subject_bytes = max(0, subject_bytes - 100)
         subject_text = _cut_bytes(subject_text, subject_bytes) or None
         dropped = True
