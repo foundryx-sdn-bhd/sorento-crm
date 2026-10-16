@@ -509,3 +509,92 @@ def test_the_named_check_matches_codes_on_word_boundaries():
     assert ok["checks"]["named"] is True
     longer = grade_turn(row2(reply="SRT105 has 40 pcs.", **base), item("code_lookup", **gold))
     assert longer["checks"]["named"] is False
+
+
+# ------------------------------------------------------------------ review round 2 (grader)
+_NULL_V = {"entities": [], "reference_positions": [], "open_question_answer": {"mode": None, "items": [], "picked": []}}
+
+
+def _oq_row(before, after, picked=()):
+    v = {"entities": [], "reference_positions": [],
+         "open_question_answer": {"mode": None, "items": [], "picked": list(picked)}}
+    return row2(verdict=v, state_oq=before, oq={"before": before, "after": after, "writer": "engine"})
+
+
+def _colour_q(turn):
+    return {"kind": "product_pick", "expects": "choice", "team": None, "asked_at_turn": turn, "payload": {},
+            "options": [{"label": "white"}, {"label": "black"}]}
+
+
+def test_a_question_differing_only_in_asked_at_turn_is_a_reask():
+    r = _oq_row(_colour_q(1), _colour_q(2), picked=[1])
+    res = grade_turn(r, item("followup", "answer", option="white"))
+    assert res["checks"]["not_reasked"] is False and res["passed"] is False, res
+
+
+def test_a_hand_over_offer_replacing_the_question_is_not_an_answer():
+    offer = {"kind": "team_pick", "expects": "choice", "team": None, "asked_at_turn": 2, "payload": {},
+             "options": [{"label": "Sales"}, {"label": "Support"}]}
+    res = grade_turn(_oq_row(_colour_q(1), offer), item("followup", "answer", option="white"))
+    assert res["checks"]["answered"] is False and res["passed"] is False, res
+
+
+def test_a_genuinely_new_next_question_still_counts_as_answered():
+    nxt = {"kind": "period_pick", "expects": "choice", "team": None, "asked_at_turn": 2, "payload": {},
+           "options": [{"label": "this month"}, {"label": "last month"}]}
+    res = grade_turn(_oq_row(_colour_q(1), nxt), item("followup", "answer", option="white"))
+    assert res["checks"]["not_reasked"] is True and res["checks"]["answered"] is True, res
+
+
+def test_made_up_reads_real_newlines_in_a_string_tool_result():
+    r = row2(reply="Next arrival is 6 Sep 2026 with 1,200 pcs.", tools=[TOOL_A])
+    r["tool_results"] = [{"name": "crm_inventory_list", "args": {}, "result": "ETA\n6 Sep 2026\n1,200 pcs"}]
+    assert made_up_facts(r) == []
+
+
+def test_made_up_walks_dict_results_string_by_string():
+    r = row2(reply="Next arrival is 6 Sep 2026 with 1,200 pcs.", tools=[TOOL_A])
+    r["tool_results"] = [{"name": "crm_inventory_list", "args": {},
+                          "result": {"items": [{"note": "ETA\n6 Sep 2026\n1,200 pcs"}]}}]
+    assert made_up_facts(r) == []
+
+
+def _after_none(r):
+    for rec in r["trace"]:
+        if rec.get("kind") == "memory":
+            rec["focus"]["after"] = None
+    return r
+
+
+def test_memory_focus_after_none_is_subject_dropped_and_a_refine_without_a_tool_fails():
+    v = {"entities": [{"raw": "sorento", "hint": "brand", "canonical_code": "Sorento"}], "reference_positions": []}
+    gold = dict(subject_after=["SRTA100"], filter={"kind": "brand", "value": "Sorento"})
+    r = _after_none(row2(verdict=v, state_products=[prod("SRTA100", UA)], mem_before=[prod("SRTA100", UA)], tools=[]))
+    res = grade_turn(r, item("followup", "refine", **gold))
+    assert res["checks"].get("lookup") is False and res["passed"] is False, res
+    assert res["checks"]["subject"] is False, "the pre-turn state stood in for a dropped subject"
+
+
+def test_pick_tool_target_is_unknown_only_when_the_bot_asked_its_next_question():
+    gold = dict(position=2, code="SRTA200")
+    v = dict(_NULL_V, reference_positions=[2])
+    err = row2(verdict=v, mem_after=[prod("SRTA200", UA)], tools=[], reply="Sorry, something went wrong.")
+    res = grade_turn(err, item("followup", "pick", **gold))
+    assert res["checks"]["tool_target"] is False and res["passed"] is False, res
+    asked = _asking(row2(verdict=v, mem_after=[prod("SRTA200", UA)], tools=[], reply="Which period?"), "period_pick")
+    assert grade_turn(asked, item("followup", "pick", **gold))["checks"]["tool_target"] is None
+
+
+def test_tool_ran_matches_codes_on_word_boundaries():
+    r = row2(reply="SRT10 has 40 pcs.", mem_after=[prod("SRT10", UA)],
+             tools=[{"name": "crm_inventory_list", "args": {"scope_terms": ["SRT105"]}}])
+    res = grade_turn(r, item("code_lookup", code="srt10", fact="inventory"))
+    assert res["checks"]["tool_ran"] is False, res
+
+
+def test_pick_tool_target_matches_codes_on_word_boundaries():
+    v = dict(_NULL_V, reference_positions=[2])
+    r = row2(verdict=v, mem_after=[prod("SRTA20", UA)],
+             tools=[{"name": "crm_inventory_list", "args": {"scope_terms": ["SRTA200"]}}], reply="SRTA200 has 5 pcs.")
+    res = grade_turn(r, item("followup", "pick", position=2, code="SRTA20"))
+    assert res["checks"]["tool_target"] is False and res["passed"] is False, res

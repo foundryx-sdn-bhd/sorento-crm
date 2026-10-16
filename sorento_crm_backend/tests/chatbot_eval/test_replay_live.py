@@ -311,3 +311,47 @@ def test_recorded_prompt_overrides_and_result_set_keys_are_stripped(session_fact
     replay_mod.live_rows(items_for(row), [row], session_factory=session_factory, max_calls=5, max_usd=5)
     extras = live_env["envelopes"][0].model_extra or {}
     assert "prompt_overrides" not in extras and "referenced_result_set" not in extras
+
+
+# ------------------------------------------------------------------ review round 2
+@pytest.mark.parametrize("blocked_name", ["crm_low_stock_report", "crm_portal_link_get"])
+def test_live_mode_refuses_mcp_tools_with_side_effects(session_factory, recorded, live_env, monkeypatch, blocked_name):
+    real_parse = parser_mod.parse
+
+    def parse_then_call(config, user_block):
+        out = real_parse(config, user_block)
+        for name in (blocked_name, "crm_inventory_list"):
+            try:
+                MCPRuntimeClient.call_tool(object(), name, {})
+            except Exception:  # noqa: BLE001
+                pass
+        return out
+
+    monkeypatch.setattr(parser_mod, "parse", parse_then_call)
+    out = go(session_factory, recorded)[0]
+    assert blocked_name not in live_env["mcp_calls"], "a side-effect tool reached the MCP client"
+    assert "crm_inventory_list" in live_env["mcp_calls"], "a read tool must still pass through"
+    assert {"blocked_tool": blocked_name} in out.get("misses", [])
+
+
+def test_query_embeddings_in_a_live_run_are_counted_as_calls(session_factory, recorded, live_env, monkeypatch):
+    from app.services import embedding_worker
+
+    monkeypatch.setattr(embedding_worker, "_embed_text_chunks", lambda chunks: [[0.0] for _ in chunks])
+
+    def embed_only(config, user_block):
+        embedding_worker._embed_text_chunks(["price of the white one"])
+        return _parser_output()
+
+    monkeypatch.setattr(parser_mod, "parse", embed_only)
+    out = go(session_factory, recorded)[0]
+    assert out["usage"]["calls"] >= 1, "the embedding call was not metered"
+
+
+def test_an_unpriced_model_call_stops_the_item_before_a_second_model_call(session_factory, recorded, live_env, monkeypatch):
+    actual = []
+    monkeypatch.setattr(llm_provider.OpenAIProvider, "chat", lambda self, messages, **kw: actual.append(1) or llm_provider.ChatResult(
+        content="{}", prompt_tokens=1000, completion_tokens=100, total_tokens=1100, cached_tokens=800))
+    _parse_with(monkeypatch, "mystery-model", calls_per_turn=2)
+    go(session_factory, recorded, n=1)
+    assert len(actual) == 1, "a second model call went out after an unpriced one"
