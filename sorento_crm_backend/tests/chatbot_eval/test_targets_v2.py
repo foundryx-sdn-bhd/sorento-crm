@@ -302,3 +302,43 @@ def test_with_recorded_tool_results_an_absent_token_is_still_made_up():
     r["tool_results"] = [{"name": "crm_inventory_list", "args": {}, "result": json.dumps({"qty": 5})}]
     found = made_up_facts(r)
     assert found and any("4321" in f and not f.startswith("unverifiable:") for f in found), found
+
+
+def test_unresolved_code_lets_a_did_you_mean_reply_pass_no_clarify():
+    r = _asking(row2(message="stock of chs2072", reply="Did you mean CSH2072?", tools=[]), "product_pick")
+    typo_gold = item("code_lookup", code="CSH2072", fact="inventory", code_unresolved=True)
+    assert grade_turn(r, typo_gold)["checks"]["no_clarify"] is True
+    resolvable = item("code_lookup", code="CSH2072", fact="inventory", code_unresolved=False)
+    assert grade_turn(r, resolvable)["checks"]["no_clarify"] is False
+    plain = item("code_lookup", code="CSH2072", fact="inventory")
+    assert grade_turn(r, plain)["checks"]["no_clarify"] is False
+
+
+DO = "PS202610-0239"
+
+
+def _do_row(codes, **kw):
+    return row2(message=f"status of {DO}", reply=f"{DO} is delivered.", domains=("order",),
+                looked=[{"tool": "crm_orders_list", "entities": codes, "product_codes": []}],
+                tools=[{"name": "crm_orders_list", "args": {"scope_terms": [DO]}}], **kw)
+
+
+def test_code_lookup_accepts_a_non_product_code_found_in_looked_up_entities():
+    gold = dict(code=DO, fact="order")
+    check(grade_turn(_do_row([DO], mem_after=[]), item("code_lookup", **gold)), True)
+    check(grade_turn(_do_row(["PS202610-9999"], mem_after=[]), item("code_lookup", **gold)), False, "code")
+
+
+def test_switch_accepts_a_non_product_subject_from_looked_up_entities():
+    base = dict(mem_before=[prod("SRTA100", UA)], mem_after=[])
+    check(grade_turn(_do_row([DO], **base), item("followup", "switch", subject_after=[DO])), True)
+    check(grade_turn(_do_row(["PS202610-9999"], **base), item("followup", "switch", subject_after=[DO])), False)
+
+
+def test_and_x_new_item_accepts_a_non_product_subject_from_looked_up_entities():
+    gold = dict(variant="new_item", fact="order", subject_after=[DO])
+    base = dict(mem_before=[prod("SRTA100", UA)], mem_after=[])
+    ok = _do_row([DO], **base)
+    check(grade_turn(ok, item("followup", "and_x", **gold)), True)
+    bad = _do_row(["PS202610-9999"], **base)
+    check(grade_turn(bad, item("followup", "and_x", **gold)), False)
