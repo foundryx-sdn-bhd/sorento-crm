@@ -1,6 +1,6 @@
 # PLAN: RELEASE-FIX-3 - release blockers (2 stale tests + #1719 promotion over-block)
 
-Status: in progress (small fix track: test-only for 1-2, one service helper for 3; no migration,
+Status: PR #1729 review READY (reviewer + security-reviewer), awaiting CI + merge (small fix track: test-only for 1-2, one service helper for 3; no migration,
 no RBAC change; security-reviewer runs because item 3 is the SEC-PROMO-ACCESS hotfix's scope)
 
 UAC: `release-fix-3-acceptance-criteria.md` beside this file.
