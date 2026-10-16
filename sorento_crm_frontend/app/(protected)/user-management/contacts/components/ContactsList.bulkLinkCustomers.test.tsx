@@ -6,6 +6,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import userEvent from '@testing-library/user-event';
 
 const apiFetch = vi.fn();
 vi.mock('@/lib/api', () => ({ apiFetch: (...a: unknown[]) => apiFetch(...a) }));
@@ -200,9 +201,19 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+/** CONTACT-ACTIONS-COPY: bulk actions live in the "Actions" dropdown. Radix opens on pointerdown. */
+async function openActions() {
+  fireEvent.pointerDown(await screen.findByRole('button', { name: /^Actions/ }), { button: 0, ctrlKey: false });
+}
+
+async function bulkItem(name: string) {
+  await openActions();
+  return screen.findByRole('menuitem', { name });
+}
+
 async function openDialogAndPick(ids: string[]) {
   await selectBothRows();
-  fireEvent.click(await screen.findByRole('button', { name: 'Link customers (2)' }));
+  fireEvent.click(await bulkItem('Link customers (2)'));
   const dialog = await screen.findByRole('dialog');
   for (const label of ids) {
     fireEvent.click(await within(dialog).findByLabelText(label));
@@ -215,7 +226,7 @@ describe('ContactsList - bulk Link customers (U4)', () => {
     mockContacts();
     renderList();
     await selectBothRows();
-    expect(await screen.findByRole('button', { name: 'Link customers (2)' })).toBeInTheDocument();
+    expect(await bulkItem('Link customers (2)')).toBeInTheDocument();
   });
 
   it('U4.1 hides the button without contacts.edit', async () => {
@@ -223,14 +234,16 @@ describe('ContactsList - bulk Link customers (U4)', () => {
     mockContacts();
     renderList();
     await selectBothRows();
-    expect(screen.queryByRole('button', { name: /Link customers/ })).not.toBeInTheDocument();
+    await openActions();
+    expect(await screen.findByRole('menuitem', { name: 'Delete (2)' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /Link customers/ })).not.toBeInTheDocument();
   });
 
   it('U4.2 Apply is disabled until a customer is picked', async () => {
     mockContacts();
     renderList();
     await selectBothRows();
-    fireEvent.click(await screen.findByRole('button', { name: 'Link customers (2)' }));
+    fireEvent.click(await bulkItem('Link customers (2)'));
     const dialog = await screen.findByRole('dialog');
     const apply = within(dialog).getByRole('button', { name: 'Apply' });
     expect(apply).toBeDisabled();
@@ -252,7 +265,7 @@ describe('ContactsList - bulk Link customers (U4)', () => {
     await waitFor(() => expect(toastMock.success).toHaveBeenCalled());
     expect(toastMock.error).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /Link customers/ })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('button', { name: /^Actions/ })).not.toBeInTheDocument(),
     );
   });
 
@@ -271,7 +284,7 @@ describe('ContactsList - bulk Link customers (U4)', () => {
     expect(/Farah Idris|\+60100000003/.test(msg)).toBe(true);
     expect(/Aisyah Rahman|\+60100000004/.test(msg)).toBe(false);
     expect(msg).toContain('Customer is inactive');
-    expect(await screen.findByRole('button', { name: 'Link customers (1)' })).toBeInTheDocument();
+    expect(await bulkItem('Link customers (1)')).toBeInTheDocument();
     const boxes = screen.getAllByRole('checkbox', { name: 'Select row' }) as HTMLInputElement[];
     expect(boxes.filter((b) => b.checked || b.getAttribute('aria-checked') === 'true')).toHaveLength(1);
   });
@@ -291,6 +304,7 @@ describe('ContactsList - "No customers linked" filter (U5.2/U5.3)', () => {
     mockContacts();
     renderList();
     await screen.findByText('+60100000004');
+    await userEvent.setup().click(screen.getByRole('button', { name: /^filters/i }));
     fireEvent.click(await screen.findByLabelText('No customers linked'));
     await waitFor(() => {
       const fetched = apiFetch.mock.calls.some((c) => String(c[0]).includes('customers=none'));
@@ -356,16 +370,16 @@ describe('ContactsList - selection resets on page change (review R2)', () => {
     renderList();
     await screen.findByText('+60100000004');
     fireEvent.click(screen.getAllByRole('checkbox', { name: 'Select row' })[0]);
-    expect(await screen.findByRole('button', { name: 'Link customers (1)' })).toBeInTheDocument();
+    expect(await bulkItem('Link customers (1)')).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole('button', { name: /Go to next page/ }));
     await screen.findByText('+60100000073');
-    expect(screen.queryByRole('button', { name: /Link customers/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Actions/ })).not.toBeInTheDocument();
     const boxes = screen.getAllByRole('checkbox', { name: 'Select row' }) as HTMLInputElement[];
     expect(boxes.some((b) => b.checked || b.getAttribute('aria-checked') === 'true')).toBe(false);
 
     fireEvent.click(boxes[0]);
-    fireEvent.click(await screen.findByRole('button', { name: 'Link customers (1)' }));
+    fireEvent.click(await bulkItem('Link customers (1)'));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(await within(dialog).findByLabelText('Option C-100'));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Apply' }));

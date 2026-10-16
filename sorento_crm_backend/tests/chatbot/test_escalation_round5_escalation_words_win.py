@@ -207,7 +207,13 @@ def _assert_escalated(session_factory, turn, calls, *, brand: str | None, assign
     assert routing["team_code"] == "marketing_product", routing
     assert routing["brand_code"] == brand, routing
     assert routing.get("product_company") == company, routing
-    assert turn.send_messages[-1] == ROUTED_TO_PIC, turn.send_messages
+    assert _bubbles(turn)[-1] == ROUTED_TO_PIC, (turn.reply_text, turn.send_messages)
+
+
+def _bubbles(turn) -> list[str]:
+    """What the customer is sent, in order: the reply bubble, then any extra ones. The
+    escalation arm's handover line is the reply itself since CHAT-SPARSE (never blank)."""
+    return [t for t in [turn.reply_text, *(turn.send_messages or [])] if t]
 
 
 def _no_customer_service_offer(turn) -> None:
@@ -236,7 +242,7 @@ class TestTheOwnersRound4HandTestReplayed:
         # the resolver's own did-you-mean, answered by a number, naming the team it goes to.
         assert typo.branch_kind == "out_of_scope", (typo.branch_kind, typo.send_messages)
         assert typo_calls == [], "nothing is drawn until the product is settled"
-        assert typo.send_messages == [DID_YOU_MEAN], typo.send_messages
+        assert _bubbles(typo) == [DID_YOU_MEAN], (typo.reply_text, typo.send_messages)
         assert typo.trace_summary["routing_line"] == (
             "Routing: team marketing_product, brand none, source none, "
             "product MWC-SC8609-)PP not found in any company, assignee none"
@@ -269,7 +275,7 @@ class TestTheOwnersRound4HandTestReplayed:
         (_spec, _), (typo, typo_calls), (one, one_calls) = _replay(
             session_factory, monkeypatch, stub_parser, stub_access, messages
         )
-        assert typo.send_messages == [DID_YOU_MEAN], typo.send_messages
+        assert _bubbles(typo) == [DID_YOU_MEAN], (typo.reply_text, typo.send_messages)
         assert typo_calls == []
         # The question is an escalation offer over the three products, each carrying the
         # team the customer named.

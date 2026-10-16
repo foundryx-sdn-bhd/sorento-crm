@@ -316,7 +316,10 @@ def read_reply(db: Any, open_slot: dict[str, Any], message_text: str) -> dict[st
 
 
 def asker_of(db: Any, contact_respond_id: Any, space_id: Any) -> str | None:
-    """The asker class (`contact_asker`) of the Respond.io contact, None when it resolves to no one."""
+    """The asker class (`contact_asker`) of the Respond.io contact, None when it resolves to no one.
+    A `salesperson` without an active role-salesperson user (only a `sales_agents` link, or a
+    user since set INACTIVE or trashed) is None too, so for a contact with customer links,
+    deactivating the user revokes the relaxed chat-report scope (V1-CHATREPORT-REVOKE)."""
     from app.services import contact_asker
     from app.services.field_access import resolve_contact_with_null_workspace_fallback
 
@@ -325,7 +328,12 @@ def asker_of(db: Any, contact_respond_id: Any, space_id: Any) -> str | None:
     contact_id = resolve_contact_with_null_workspace_fallback(
         db, contact_id=str(contact_respond_id).strip(), space_id=(str(space_id).strip() or None) if space_id else None
     )
-    return contact_asker.classify(db, str(contact_id)) if contact_id else None
+    if not contact_id:
+        return None
+    asker = contact_asker.classify(db, str(contact_id))
+    if asker == "salesperson" and not contact_asker.is_salesperson_user(db, str(contact_id)):
+        return None
+    return asker
 
 
 _NON_DEALER_ASKERS = tuple(a for a in ASKERS if a != "dealer")

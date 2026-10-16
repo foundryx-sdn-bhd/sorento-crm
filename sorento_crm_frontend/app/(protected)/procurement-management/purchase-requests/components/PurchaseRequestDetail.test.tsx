@@ -325,3 +325,24 @@ describe('PurchaseRequestDetail - printed / on-screen layout', () => {
     expect(await screen.findByText('Print / Download PDF')).toBeTruthy();
   });
 });
+
+describe('PurchaseRequestDetail - sponsorship form Sales Type (SF-SALES-TYPE)', () => {
+  it('shows Sales Type right after Sponsor Subject', async () => {
+    usePurchaseRequestMock.mockReturnValue({
+      data: purchaseRequest({
+        request_type: 'sponsorship_form',
+        request_number: 'PSSF26-0001',
+        sponsor_subject: 'others',
+        sales_type: 'cash_sales',
+        lines: [],
+      }),
+      isLoading: false,
+    });
+    renderPage();
+
+    const subject = await screen.findByText('Sponsor Subject');
+    const salesType = screen.getByText('Sales Type');
+    const labels = Array.from(document.querySelectorAll('p.text-muted-foreground'));
+    expect(labels.indexOf(salesType as Element)).toBe(labels.indexOf(subject as Element) + 1);
+  });
+});

@@ -144,7 +144,9 @@ class Console:
 def _seed(session_factory) -> None:
     from app.models.procurement import Supplier
     from app.models.product import ProductCategory
-    from app.services.product_class_signal import CLASS_SYNONYMS
+    from app.services.product_spec_registry import shipped_class_synonyms
+
+    CLASS_SYNONYMS = shipped_class_synonyms()
     from tests._mc_lookup_seed import product, warehouse
 
     db = session_factory()

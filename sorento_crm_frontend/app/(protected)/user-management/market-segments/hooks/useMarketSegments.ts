@@ -1,3 +1,4 @@
+import { invalidateContactTagSettings } from '@/app/(protected)/user-management/contacts/[id]/hooks/useContactTagSettings';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 import {
@@ -75,6 +76,7 @@ export function useSetContactMarketSegments(contactId: string) {
     mutationFn: (codes: string[]) => setContactMarketSegments(contactId, codes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contact-market-segments', contactId] });
+      invalidateContactTagSettings(queryClient, contactId);
       toast.success('Market segment updated');
     },
     onError: (e: Error) => toast.error(e.message),

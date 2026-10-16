@@ -61,36 +61,9 @@ CLASS_SUFFIXES: dict[str, str] = {
     "GNS": "Kitchen Sink",  # 4 - granite sinks are kitchen sinks
 }
 
-# Customer language is not catalog language. Matched case-insensitively alongside the
-# class label itself. Malay terms included because the corpus is bilingual.
-CLASS_SYNONYMS: dict[str, list[str]] = {
-    "Kitchen Sink": ["kitchen sink", "sink", "sinki", "dapur"],
-    # "water tap" / "water basin": the owner's own words for the two (26 Sep 2026, "which
-    # water tap got stock"). Migration 511 appends them to the categories already on file.
-    "Tap": ["tap", "faucet", "mixer", "paip", "kepala paip", "water tap"],
-    "Wash Basin": ["wash basin", "basin", "washbasin", "sink basin", "besen", "water basin"],
-    "Water Closet": ["water closet", "wc", "toilet", "toilet bowl", "closet", "tandas"],
-    "Shower": ["shower", "shower head", "rain shower", "hand shower", "pancuran"],
-    "Bathroom Furniture": ["cabinet", "mirror", "vanity", "bathroom cabinet", "kabinet"],
-    # The two the catalog used to file together. Each answers only to its own words, so
-    # "bathtub" stops returning jacuzzis.
-    "Bathtub": ["bathtub", "bath tub", "tub"],
-    "Jacuzzi": ["jacuzzi", "whirlpool", "spa bath"],
-    # Kept: 182 products are classed from their CATEGORY alone, which names both. They
-    # genuinely could be either, and answering to both words is the truthful reading.
-    "Bathtub and Jacuzzi": ["bathtub", "bath tub", "jacuzzi", "tub", "shower screen"],
-    "Bathroom Accessory": [
-        "bathroom accessory",
-        "towel rail",
-        "towel bar",
-        "soap holder",
-        "paper holder",
-        "robe hook",
-    ],
-    "Cloth Hanger": ["cloth hanger", "clothes hanger", "hanger", "penyidai"],
-    "Urinal": ["urinal", "urinary"],
-    "Flexible Hose": ["flexible hose", "hose", "shower tube", "hos"],
-}
+# Customer language is not catalog language: the words each class answers to are data,
+# the registry's `class` row (`product_spec_registry.class_synonyms`), not a list here
+# (chat fix PR-A, AC-A3).
 
 # Categories that carry no class meaning at all. Flagged non-searchable so they cannot
 # masquerade as a class once the ranker starts trusting `class_label`.
@@ -176,7 +149,7 @@ def signal_for_code(category_code: str) -> tuple[str | None, str | None] | None:
     return (class_label, brand)
 
 
-def _desired_row(code: str) -> dict | None:
+def _desired_row(code: str, class_words: dict[str, list[str]]) -> dict | None:
     """The values this code should hold, or None when the code is unmapped."""
     signal = signal_for_code(code)
     if signal is None:
@@ -185,7 +158,7 @@ def _desired_row(code: str) -> dict | None:
     return {
         "class_label": class_label,
         "brand_hint": brand_hint,
-        "search_synonyms": CLASS_SYNONYMS.get(class_label or "", []),
+        "search_synonyms": list(class_words.get(class_label or "", [])),
         "is_searchable": class_label is not None,
     }
 
@@ -201,11 +174,14 @@ def backfill_category_signals(db: Session, *, commit: bool = False) -> dict:
     point: a category nobody has classified is invisible to spec search, and the only
     way that surfaces is if the job says so.
     """
+    from app.services.product_spec_registry import class_synonyms
+
     updated = 0
     unmapped: list[str] = []
+    class_words = class_synonyms(db)
 
     for row in db.query(ProductCategory).all():
-        desired = _desired_row(row.category_code)
+        desired = _desired_row(row.category_code, class_words)
         if desired is None:
             unmapped.append(row.category_code)
             continue
@@ -242,11 +218,11 @@ class ClassVocabulary:
     carrying `Seat Cover`, because the word could only be looked up in the wrong place.
     `Squatting Pan` had been unreachable the same way since the day it was added.
 
-    4. The customer words this module itself ships (`CLASS_SYNONYMS`), for a class the
-    catalogue has, consulted only when 1-3 found nothing. A database that converges
-    through `create_all` never ran the migration that appended "water basin" to its
-    categories, and the owner's "which water basin has stock" answered a clarify there
-    (hand test round 2, W6).
+    (3) carries the words the seed ships for every class (chat fix PR-A, AC-A3, moved out
+    of the code list `CLASS_SYNONYMS`): "water basin" and "whirlpool" reach their class on
+    a database whose categories never heard of them, read like any word staff added. A
+    database with no `class` row yet reads the seed's words
+    (`product_spec_registry.class_synonyms`).
 
     SPEC-CLASS-QUADRATIC (prod, 6 Oct 2026 20:02 MYT): `search_specs(exact=True)` resolves
     EVERY word span of a free term, and the chatbot hands it the whole message, so a
@@ -257,13 +233,12 @@ class ClassVocabulary:
     never kept on the process: rows added in the same session are seen by the next one.
     """
 
-    __slots__ = ("_index", "_fallback")
+    __slots__ = ("_index",)
 
     def __init__(self, db: Session) -> None:
         # So "toilet seat" can be taught to reach Seat Cover in the UI, without inventing
         # a category for it.
-        from app.models.product_spec import ProductSpecRegistry
-        from app.services.product_spec_registry import merged_synonyms
+        from app.services.product_spec_registry import class_synonyms
 
         index: dict[str, set[str]] = {}
         rows = (
@@ -281,21 +256,11 @@ class ClassVocabulary:
         for label in stored_class_labels(db):
             index.setdefault(label.lower(), set()).add(label)
 
-        registry_row = db.query(ProductSpecRegistry).filter_by(spec_key="class").first()
-        if registry_row is not None:
-            for value, words in merged_synonyms(registry_row).items():
-                for word in words:
-                    index.setdefault(str(word).strip().lower(), set()).add(value)
-
-        fallback: dict[str, set[str]] = {}
-        known = {r.class_label for r in rows if r.class_label}
-        for label, words in CLASS_SYNONYMS.items():
-            if label in known:
-                for word in words:
-                    fallback.setdefault(str(word).strip().lower(), set()).add(label)
+        for value, words in class_synonyms(db).items():
+            for word in [value, *words]:
+                index.setdefault(str(word).strip().lower(), set()).add(value)
 
         self._index = index
-        self._fallback = fallback
 
     def resolve(self, term: str) -> list[str]:
         """Class labels a customer's word refers to, matched on label or synonym.
@@ -307,7 +272,7 @@ class ClassVocabulary:
         needle = (term or "").strip().lower()
         if not needle:
             return []
-        found = self._index.get(needle) or self._fallback.get(needle) or ()
+        found = self._index.get(needle) or ()
         return sorted(found)
 
 

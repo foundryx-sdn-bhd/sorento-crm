@@ -84,6 +84,7 @@ export default function ContactAttachmentTypesSection({ contactId }: { contactId
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contact-attachment-types', contactId] });
+      queryClient.invalidateQueries({ queryKey: ['contact-tag-settings', contactId] });
       toast.success('Document types updated');
       setConfirmOpen(false);
       setDialogOpen(false);

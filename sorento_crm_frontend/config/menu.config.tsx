@@ -827,6 +827,11 @@ export const MENU_SIDEBAR: MenuConfig = [
             path: '/user-management/contact-access-types',
             permission: 'user_management.access_agents.view',
           },
+          {
+            title: 'Contact Tags',
+            path: '/user-management/contact-tags',
+            permission: 'user_management.contacts.view',
+          },
         ],
       },
       {
@@ -1690,6 +1695,10 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
       {
         title: 'Contact Access Types',
         path: '/user-management/contact-access-types',
+      },
+      {
+        title: 'Contact Tags',
+        path: '/user-management/contact-tags',
       },
       {
         title: 'Market Segments',
