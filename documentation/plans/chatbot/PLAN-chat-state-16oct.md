@@ -53,7 +53,7 @@ step 1), first asks not worse; crew's held-out bar for the owner hand test is >=
 | S5 | block into context + schema variant + gate + prompt delta (repo file) | `tests/chatbot/test_chat_state_parser_input.py` | YES (lane label live check, 3 TRAIN runs) |
 | S4b | held-slot ops keep/skip/clear/unclear for customer + period; remove static R14 projection | `test_chat_state_seam.py` (R14 tests rewritten) + `test_chat_state_apply.py` | no |
 | S6 | R15 unclear held slot -> one real-name ask (policy default `ask`) | `tests/chatbot/test_chat_state_clarify.py` | trigger needs live parses |
-| S3b | Q3 period rule on new_subject (after owner answer) | add to `test_chat_state_apply.py` | no |
+| S3b | R16 period: kept on follow-ups and on new_subject unless skip/clear; a stated period replaces it (owner 16 Oct ~23:00) | `test_chat_state_apply.py` | no |
 
 ### Test list (captain's; the tester writes from this + the UAC)
 
@@ -113,9 +113,10 @@ S5 parser input:
 5. `parse()` sends `PARSE_OUTPUT_JSON_SCHEMA` (identity) when off, WITH_STATE when on; the extended schema is strict-
    valid; base schema and `DECLARED_KEYS` unchanged.
 
-S6 unclear held slot (R15, now required): `unclear customer` with policy default `ask` -> one question with the held
-customer's display name vs all customers, as an open question whose answer fills only that slot (R5); no ids;
-default `assume` -> the slot applies; a second `unclear` right after the bot asked -> hand-over offer, never a guess.
+S6 unclear held slot (R15, owner 16 Oct ~23:00): `unclear customer` with a held registry-kind `customer` -> no
+question, the ask runs as a delivery (domain `order`) for that customer; supplier kind -> incoming/PO (no supplier kind
+exists today, untested); only when the type cannot settle it (tested with `unclear period`): default `ask` (pinned) ->
+one question with real names, no ids, answer fills only that slot; `assume` -> applies; second unclear -> hand-over.
 `[]` / invalid changes stay on today's path until TRAIN shows how often they occur.
 
 ## Measurement
@@ -129,7 +130,8 @@ default `assume` -> the slot applies; a second `unclear` right after the bot ask
 
 ## Open
 
-- Q3 (owner): period rule (refine keeps it, a new question uses its own). Working rule (b). S3b waits.
-- Owner: unclear default ask vs assume (crew rec: ask once). Crew ruling: one named constant `ask` in code, pinned by
-  a test; storage + UI later behind CLARIFY-POLICY #1570.
+- Q3: answered by the owner 16 Oct ~23:00 (R16). S3b built in the S4b/S6 round.
+- Unclear default: one named constant `ask` in code, pinned by a test (crew); storage + UI later behind
+  CLARIFY-POLICY #1570. The owner's type rule settles an unclear held customer before any ask.
+- Owner flag (card example 5): a "when" follow-up keeps a held date filter that may hide the answer; parser judges.
 - Security review items: stored last-list pick after a scope change (seam design risk 6).

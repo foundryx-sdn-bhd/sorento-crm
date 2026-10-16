@@ -37,13 +37,16 @@ Plan: `PLAN-chat-state-16oct.md`. Card: `chat-state-behaviour-card.md` (rules R1
 - C5. When the parse carries the field, no other code path changes the carried subject in that turn.
 - C6. When the parse does not carry the field, the turn runs exactly as on main (the $0 L1 replay gate shows zero
   unintended diffs on `--split dev`).
-- C7. (Q3 working rule b, owner answer pending; not built yet) On a new ask, the period comes only from the current message even while the customer carries.
+- C7. (R16, owner 16 Oct ~23:00) A held period is kept on follow-ups and on a new subject unless the parse says
+  `skip` / `clear` period; a period the message states replaces it.
 - C9. (R14, owner 16 Oct ~22:45) When the State holds a customer or period, the parse's `keep` / `skip` / `clear` /
   `unclear` for that axis decides it: keep applies it to this ask; skip does not apply it and it stays held; clear
   drops it. No per-domain table and no word rule decide it. No statement = applies as today.
-- C10. (R15) `unclear` for a held slot, with the policy default `ask`: the bot asks once with real names (the held
-  customer's display name vs all customers; the held period vs another), no ids; the reply fills that slot (R5). With
-  the default set to `assume`, the held slot applies and the reply says which one was used.
+- C10. (R15) `unclear` for a held customer whose registry kind is `customer`: no question; the ask runs as a
+  delivery (domain `order`) for that customer. When the type cannot settle it (e.g. `unclear` period), with the default
+  `ask` (one named constant, pinned by a test): one question with real names (held value vs another), no ids, stored as
+  the open question; the reply fills only that slot (R5); default `assume` -> the held slot applies; a second
+  unresolved turn -> hand-over offer.
 - C8. (Q4 a, owner confirmed 16 Oct) A new ask closes the bot's open question; the last list stays pickable until a new list replaces it.
 
 ## D. The log (design row G)
