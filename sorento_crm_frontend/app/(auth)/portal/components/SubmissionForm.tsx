@@ -431,6 +431,10 @@ interface Props {
 
 export function SubmissionForm({ kind, submissionId, slug }: Props) {
   const router = useRouter();
+  // Read inside the load effect through a ref: its identity must not re-run the seed and wipe
+  // what the visitor has typed.
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const [loading, setLoading] = useState(Boolean(submissionId));
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -799,7 +803,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         }
       } catch (e) {
         if (e instanceof PortalUnauthorizedError) {
-          router.replace(
+          routerRef.current.replace(
             portalVerifyPath({
               slug,
               reason: 'expired',
@@ -812,7 +816,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         // Logged in as a different contact than the form's owner - send them to
         // the owner's confirm-identity card (deep-link slug), keep their token.
         if (e instanceof PortalOwnerMismatchError) {
-          router.replace(
+          routerRef.current.replace(
             portalVerifyPath({
               slug,
               reason: 'expired',
@@ -834,7 +838,6 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   }, [
     fieldDefs,
     kind,
-    router,
     showLines,
     submissionId,
     defaultsFromContact,
@@ -937,8 +940,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
 
   /** Required fields still empty. Shared by submit and revise so the two can
    *  never disagree about what a complete form is. */
-  const collectMissingRequired = (): { name: string; label: string }[] => {
-    const missing: { name: string; label: string }[] = [];
+  const collectMissingRequired = (): { name: string; label: string; badNumber?: boolean }[] => {
+    const missing: { name: string; label: string; badNumber?: boolean }[] = [];
     for (const f of fieldDefs) {
       const isRequired =
         f.required || (f.requiredWhen ? f.requiredWhen(contact) : false);
@@ -953,7 +956,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
       if (f.widget !== 'number' || (f.showWhen && !f.showWhen(fields))) continue;
       const v = fields[f.name];
       if (typeof v === 'string' && v.trim() && numberFieldError(v, { min: 0 })) {
-        missing.push({ name: f.name, label: f.label });
+        // Typed but wrong: told on the field itself, not listed as missing.
+        missing.push({ name: f.name, label: f.label, badNumber: true });
       }
     }
     if (
@@ -978,17 +982,24 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   };
 
   const reportMissingRequired = (
-    missing: { name: string; label: string }[],
+    all: { name: string; label: string; badNumber?: boolean }[],
   ) => {
-    setInvalidFields(new Set(missing.map((m) => m.name)));
-    toast.error(
-      `Missing ${missing.length} required field${missing.length === 1 ? '' : 's'}: ${missing
-        .map((m) => m.label)
-        .join(', ')}`,
-    );
+    const missing = all.filter((m) => !m.badNumber);
+    const badNumbers = all.filter((m) => m.badNumber);
+    setInvalidFields(new Set(all.map((m) => m.name)));
+    if (missing.length > 0) {
+      toast.error(
+        `Missing ${missing.length} required field${missing.length === 1 ? '' : 's'}: ${missing
+          .map((m) => m.label)
+          .join(', ')}`,
+      );
+    }
+    if (badNumbers.length > 0) {
+      toast.error(`Fix the number in: ${badNumbers.map((m) => m.label).join(', ')}`);
+    }
     setTimeout(() => {
       const node = document.querySelector(
-        `[data-field-name="${missing[0].name}"]`,
+        `[data-field-name="${all[0].name}"]`,
       ) as HTMLElement | null;
       node?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
     }, 50);
