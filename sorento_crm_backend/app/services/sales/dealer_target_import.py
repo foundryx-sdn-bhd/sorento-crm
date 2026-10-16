@@ -421,6 +421,16 @@ def _classify(chain: List[str], year: int) -> Optional[_Column]:
         m = re.fullmatch(rf"({_MONTH_RE})\b[\s'0-9]*(?:\(.*\))?(?:\s*POINTS?)?", t)
         if m:
             month = _MONTHS[m.group(1)]
+    quarterly = "QUARTER" in joined
+    monthly = re.search(r"\bMONTHLY\b", joined) is not None
+    if quarter is None and quarterly:
+        for t in up:
+            # "QUARTERLY (POINT)" over "JAN-MAR": the quarter its months are (gate 2, item 4).
+            m = re.fullmatch(rf"({_MONTH_RE})\s*(?:-|TO|\u2013)\s*({_MONTH_RE})", t.strip())
+            if m:
+                first, last = _MONTHS[m.group(1)], _MONTHS[m.group(2)]
+                if first % 3 == 1 and last == first + 2:
+                    quarter = (first - 1) // 3 + 1
     col = _Column(0, "period", points=points, default_rate=default_rate, is_rate=is_rate, tier=tier, header=header)
     if quarter is not None:
         col.kind, col.number = "Q", quarter
@@ -430,6 +440,16 @@ def _classify(chain: List[str], year: int) -> Optional[_Column]:
         col.kind, col.window = "Y", window
         if re.fullmatch(r"PERIOD|WINDOW|DATES?", up[-1]):
             col.role = "window"
+    elif quarterly and is_rate:
+        # One INCENTIVE under a QUARTERLY block: every quarter's rate (number 0 = all).
+        col.kind, col.number = "Q", 0
+    elif monthly:
+        # A "Monthly" block with tiers and no months: the same tiers every month (number 0).
+        col.kind, col.number = "M", 0
+    elif _PERIOD_WORDS.search(joined):
+        # Period words the reader cannot place (gate 2, item 4): never dropped silently, the
+        # rows holding a figure in it fail (`_parse_sheet`).
+        col.role = "unplaced"
     else:
         return None
     return col
@@ -765,6 +785,10 @@ def _parse_sheet(grid: _Grid, sheet: str, header: Tuple[int, int], year: int, no
             name_in_file=cell(r, by_role["name"]),
             account_in_file=cell(r, by_role["account"]),
         )
+        if res.name_in_file and not res.account_in_file:
+            # The real files carry the account as a SUFFIX of the dealer name cell ("<dealer>
+            # A/C I"), with no ACCOUNT column (gate 2, item 1).
+            res.name_in_file, res.account_in_file = split_account_suffix(res.name_in_file)
         if too_long(code, res.name_in_file, res.account_in_file):
             # Security review B1: an unbounded name never reaches the matcher (difflib indexes
             # it) or the report; the row fails and only a cut of it is echoed back.
@@ -805,6 +829,16 @@ def _parse_sheet(grid: _Grid, sheet: str, header: Tuple[int, int], year: int, no
             if text:
                 labels.setdefault(_label_key(text), res.key)
 
+    # A column under period words the reader cannot place is never dropped silently: every
+    # row with a figure in it fails (gate 2, item 4).
+    for col in (c for c in cols if c.role == "unplaced"):
+        for r, res in results.items():
+            if res.status == "mapped" and _text(grid.value(r, col.index)):
+                res.status = "not_representable"
+                res.reason = (
+                    f'column "{col.header}" holds figures the reader cannot place '
+                    "(not a Q1-Q4, month or yearly column)"
+                )
     data_rows = [r for r, res in sorted(results.items()) if res.status == "mapped"]
     schemes: List[Scheme] = []
     # Rows group per scheme kind AND unit: a yearly threshold merged over two accounts is one
@@ -916,10 +950,17 @@ def _group_schemes(ctx: _Ctx, kind: str, points: bool, kind_cols, window_col, by
 
     tiers: List[SchemeTier] = []
     pay_to: List[str] = []
-    for number in sorted({c.number or 0 for c in kind_cols}):
-        cols = [c for c in kind_cols if (c.number or 0) == number]
-        period_start = _period_start(kind, number, start)
-        got, payees = _period_tiers(ctx, cols, period_start, kind)
+    # One incentive column for every period of the block ("QUARTERLY (POINT)" ... "INCENTIVE"),
+    # unless the block's number-0 columns are tiers of their own (a "Monthly" block with no months).
+    shared_rates = [c for c in kind_cols if kind != "Y" and c.number == 0 and c.is_rate]
+    if any(c.number == 0 and not c.is_rate for c in kind_cols):
+        shared_rates = []
+    own = [c for c in kind_cols if c not in shared_rates]
+    for number in sorted({c.number or 0 for c in own}):
+        cols = [c for c in own if (c.number or 0) == number]
+        # Number 0 on a monthly block: the same tiers every month (no period of their own).
+        period_start = None if kind != "Y" and number == 0 else _period_start(kind, number, start)
+        got, payees = _period_tiers(ctx, cols, period_start, kind, shared_rates)
         tiers.extend(got)
         pay_to.extend(payees)
     if not tiers:
@@ -977,33 +1018,32 @@ def _period_start(kind: str, number: int, start: date) -> date:
     return start
 
 
-def _pairs(cols: List[_Column]) -> List[Tuple[_Column, Optional[_Column]]]:
-    """(threshold column, its incentive column or None): by tier number when the headers say
-    `Tier n` / `Tier n Incentive`, else a threshold followed by a rate column."""
+def _pairs(
+    cols: List[_Column], shared_rates: List[_Column]
+) -> Tuple[List[Tuple[_Column, Optional[_Column]]], List[_Column]]:
+    """(threshold column, its incentive column or None) per threshold, and the incentive
+    columns nothing paired. An incentive pairs with the threshold column right before it (a
+    plain "INCENTIVE" after "TIER n", gate 2 item 2), else with the same "Tier n", else with the
+    one incentive shared by every period of the block ("QUARTERLY (POINT)" ... "INCENTIVE")."""
+    rates = [c for c in cols if c.is_rate]
+    used: set = set()
     out: List[Tuple[_Column, Optional[_Column]]] = []
-    if any(c.tier for c in cols):
-        tiers = sorted({c.tier for c in cols if c.tier})
-        for n in tiers:
-            thr = next((c for c in cols if c.tier == n and not c.is_rate), None)
-            rate = next((c for c in cols if c.tier == n and c.is_rate), None)
-            if thr is None:
-                raise CellError(f'{(rate or cols[0]).header}: an incentive column with no "Tier {n}" beside it')
-            out.append((thr, rate))
-        return out
-    i = 0
-    while i < len(cols):
-        col = cols[i]
-        nxt = cols[i + 1] if i + 1 < len(cols) else None
-        if nxt is not None and nxt.is_rate and not col.is_rate:
-            out.append((col, nxt))
-            i += 2
-            continue
-        out.append((col, None))
-        i += 1
-    return out
+    for col in (c for c in cols if not c.is_rate):
+        rate = next(
+            (r for r in rates if r.index == col.index + 1 and r.tier in (None, col.tier) and r.index not in used),
+            None,
+        )
+        if rate is None and col.tier is not None:
+            rate = next((r for r in rates if r.tier == col.tier and r.index not in used), None)
+        if rate is not None:
+            used.add(rate.index)
+        elif len(shared_rates) == 1:
+            rate = shared_rates[0]
+        out.append((col, rate))
+    return out, [r for r in rates if r.index not in used]
 
 
-def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier], List[str]]:
+def _period_tiers(ctx: _Ctx, cols, period_start, kind, shared_rates=()) -> Tuple[List[SchemeTier], List[str]]:
     """One period's tiers for one target, and the accounts its rates name to be paid (pay-to)."""
     name = cols[0].header or _KIND_NAME[kind]
     out: List[SchemeTier] = []
@@ -1046,8 +1086,21 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier]
     def pct_format(col: _Column, r: int) -> bool:
         return "%" in (ctx.grid.fmt(r, col.index) or "")
 
+    pairs, unpaired = _pairs(cols, list(shared_rates))
+    for col in unpaired:
+        if ctx.per_row(col):
+            raise CellError(f"{col.header}: an incentive with no threshold column before it")
+    # Gate 2 item 3: in one period, thresholds per account beside thresholds merged over the
+    # accounts (Tier 1-3 per account, Tier 4-5 for the dealer). Held for the owner's ruling.
+    per_account = [t for t, _ in pairs if shared(t, every_row=False)[1]]
+    merged = [t for t, _ in pairs if shared(t, every_row=False)[0] is not None]
+    if per_account and merged:
+        raise CellError(
+            f"{name}: waiting on a ruling: per-account {per_account[0].header} with dealer "
+            f"{merged[0].header} (PR #1715)"
+        )
     previous_threshold: Optional[Decimal] = None
-    for thr_col, rate_col in _pairs(cols):
+    for thr_col, rate_col in pairs:
         if rate_col is None:
             # One cell per tier text ("150,000 - 2%"), or a bare figure paying the header's rate.
             value, per_row = shared(thr_col, every_row=False)
@@ -1177,11 +1230,26 @@ MAX_FUZZY_LOOKUPS = 300
 MAX_PICKS = MAX_SHEETS * MAX_SHEET_ROWS
 
 
+_ACCOUNT_SUFFIX = re.compile(
+    r"[\s\-\u2013(\[]*\bA\s*/\s*C\.?\s*([IVX]+|\d+)\s*[)\]]?\s*$", re.IGNORECASE
+)
+
+
+def split_account_suffix(name: str) -> Tuple[str, Optional[str]]:
+    """("<dealer>", "A/C <n>") from "<dealer> A/C <n>" (also "- A/C III", "(A/C I)"); the name
+    whole and None when it carries no such suffix."""
+    m = _ACCOUNT_SUFFIX.search(name or "")
+    if not m or not name[: m.start()].strip():
+        return name, None
+    return name[: m.start()].strip(" -"), f"A/C {m.group(1).upper()}"
+
+
 def dealer_key(name: Optional[str]) -> str:
     """The normalised company name a file name and a CRM name are compared on: case, spaces and
     punctuation ignored, bracketed ledger markers (`[A/C I]`, `(SRT)`) dropped, the SDN BHD forms
     dropped, ENTERPRISES = ENTERPRISE (owner ruling 16 Oct 09:12)."""
     text = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", (name or "").upper())
+    text = split_account_suffix(text)[0]
     text = re.sub(r"\bS\s*/\s*B\b", " ", text)
     words = re.sub(r"[^A-Z0-9]+", " ", text).split()
     out = []
@@ -1222,6 +1290,9 @@ def customer_account_keys(name: str, level: Optional[int]) -> set:
         key = account_key(marker[0] or marker[1])
         if key:
             keys.add(key)
+    suffix = split_account_suffix(name or "")[1]
+    if suffix:
+        keys.add(account_key(suffix))
     return keys
 
 
@@ -1534,7 +1605,9 @@ def run(
                 "commission_method": "retroactive",
                 "threshold_unit": scheme.threshold_unit,
                 "rounding": scheme.rounding,
-                "tiers_per_period": bool(scheme.split_every),
+                # Tiers with no period of their own (a "Monthly" block with no months) are every
+                # period's tiers.
+                "tiers_per_period": bool(scheme.split_every) and any(t.period_start for t in scheme.tiers),
                 "tiers": tiers,
             }
             prepared.append((scheme, ids, payout, match_key, fields))
