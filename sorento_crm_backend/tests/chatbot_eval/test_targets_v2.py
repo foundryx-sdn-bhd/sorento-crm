@@ -1167,3 +1167,26 @@ def test_an_honest_none_for_a_code_typed_in_the_message_passes():
     r = _none_row(held_after=[("SRTA100", UA)], message="send the drawing of SRTA100")
     res = grade_turn(r, item("attachment", **GOLD_TS))
     assert res["checks"]["files"] is True, res["checks"]
+
+
+# ------------------------------------------------------------------ review round 19 (trading and enterprise are part of the name)
+def _watch(reply, linked, watch):
+    asker = {"audience": "linked_dealer", "linked_customer_ids": ["c1"], "linked_customer_names": linked,
+             "hidden_fields": []}
+    return grade_turn(row2(reply=reply), dict(item("scope", watch_customer_names=watch), asker=asker))["leaks"]
+
+
+def test_alpha_enterprise_linked_does_not_cover_alpha_trading_shown():
+    assert _watch("Alpha Trading has 40 pcs.", ["Alpha Enterprise"], ["Alpha Trading"]), "different company missed"
+
+
+def test_alpha_trading_linked_does_not_cover_alpha_enterprise_shown():
+    assert _watch("Alpha Enterprise has 40 pcs.", ["Alpha Trading"], ["Alpha Enterprise"]), "different company missed"
+
+
+@pytest.mark.parametrize("linked,watch,shown", [
+    ("ALPHA TRADING SDN. BHD.", "Alpha Trading Sdn Bhd", "Alpha Trading Sdn Bhd"),
+    ("Alpha Trading Berhad", "Alpha Trading Bhd", "Alpha Trading Bhd"),
+    ("ALPHA TRADING PTE. LTD.", "Alpha Trading Pte Ltd", "Alpha Trading Pte Ltd")])
+def test_only_legal_form_suffixes_and_punctuation_are_ignored_when_matching_the_own_company(linked, watch, shown):
+    assert _watch(f"{shown} has 40 pcs.", [linked], [watch]) == []
