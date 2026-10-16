@@ -339,6 +339,9 @@ def _header_rows(grid: "_Grid") -> Optional[Tuple[int, int]]:
             break
     if anchor is None:
         return None
+    # The columns the anchor names a row's own field in: a later row with its own value there
+    # is a data row, whatever its words ("PTS TRADING", "MAY HARDWARE"; review S1).
+    identity = {c for c in grid.row_cols.get(anchor, []) if _role(_text(grid.own(anchor, c))) in ("name", "code", "account")}
     first = anchor
     while first - 1 >= 1 and anchor - first < 3:
         texts = [_text(grid.own(first - 1, c)) for c in grid.row_cols.get(first - 1, [])]
@@ -353,7 +356,11 @@ def _header_rows(grid: "_Grid") -> Optional[Tuple[int, int]]:
         own = [v for v in own if v is not None]
         if not own or any(_is_number(v) for v in own):
             break
+        if any(grid.own(r, c) is not None for c in identity):
+            break
         texts = [_text(v) for v in own]
+        if any(_PCT.search(t) and _AMOUNT.search(t) for t in texts):
+            break
         if not all(_PERIOD_WORDS.search(t) or _PCT.search(t) or _role(t) or _safe_window(t, 2000)
                    or re.fullmatch(r"(?i)%|RM|TARGET|RATE|THRESHOLD|PERIOD|WINDOW|SALES", t) for t in texts):
             break
@@ -441,6 +448,9 @@ MAX_SHEET_ROWS = 5_000
 MAX_SHEET_COLS = 300
 MAX_MERGE_AREA = 2_000
 MAX_CELL_TEXT = 500
+#: A rate above this is reported on its rows (review S3: 0.5 reads as 50% under the fraction
+#: rule, where a 0.5% rebate may have been meant). A warning, not a refusal: owner's call.
+RATE_WARNING_PCT = 20
 #: A dealer name, code or account label; the real ones are under 100 characters.
 MAX_ID_TEXT = 200
 #: The workbook's XML once unzipped; a 10 MB upload that inflates past this is refused.
@@ -611,6 +621,8 @@ def parse_rate_cell(value, *, percent_format: bool = False) -> List[RateEntry]:
                 continue
             if _PCT.search(part):
                 named, plain = _rates_in(part)
+                if len(list(_PCT.finditer(part))) - len(named) > 1:
+                    raise CellError(f'"{line}" holds two rates for one tier')
                 tail = part[[m for m in _PCT.finditer(part)][-1].end():]
                 if re.search(r"\d", tail):
                     raise CellError(f'"{line}" is not a rate')
@@ -630,9 +642,6 @@ def parse_rate_cell(value, *, percent_format: bool = False) -> List[RateEntry]:
     return out
 
 
-# --------------------------------------------------------------------------------------
-# the sheet reader
-# --------------------------------------------------------------------------------------
 
 
 def parse_workbook(data: bytes, *, year: int) -> ParsedWorkbook:
@@ -1000,6 +1009,8 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier]
     def threshold_of(value) -> Optional[Decimal]:
         if _is_dash(value) or _is_nil(value):
             return None
+        if isinstance(value, str) and "%" in value:
+            raise CellError(f'{name}: cannot read the threshold "{_text(value)}" (a rate in a threshold column)')
         n = _number(value)
         if n is None:
             raise CellError(f'{name}: cannot read the threshold "{_text(value)}"')
@@ -1024,15 +1035,23 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier]
                     raise CellError(f"{name}: a rate with no threshold")
                 rates = None
                 if t.account_rates:
-                    rates = {}
+                    counted_rates: Dict[str, Decimal] = {}
+                    paid: List[Tuple[str, Decimal]] = []
                     for label, rate in t.account_rates.items():
                         key, counted = resolve(label)
-                        if not counted:
-                            payees.append(key)
-                            rates = None
-                            t.rate = rate
-                            break
-                        rates[key] = rate
+                        if counted:
+                            counted_rates[key] = rate
+                        else:
+                            paid.append((key, rate))
+                    if counted_rates and paid:
+                        raise CellError(f"{name}: one tier pays both every account and named accounts")
+                    if len(paid) > 1:
+                        raise CellError(f"{_KIND_NAME[kind]}: the rates name two different accounts to pay")
+                    if paid:
+                        payees.append(paid[0][0])
+                        t.rate = paid[0][1]
+                    else:
+                        rates = counted_rates
                 if rates is None and t.rate is None:
                     raise CellError(f"{name}: the threshold {t.threshold:,.0f} has no rate")
                 out.append(SchemeTier(period_start, t.threshold, None if rates else t.rate, t.is_additional, rates))
@@ -1105,6 +1124,13 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier]
         for rates, rate in extras:
             out.append(SchemeTier(period_start, threshold, rate, True, rates))
         previous_threshold = threshold
+    for t in out:
+        for rate in [t.rate] + list((t.account_rates or {}).values()):
+            if rate is not None and rate > RATE_WARNING_PCT:
+                warning = f"{name}: a rate of {rate.normalize():f}% is above {RATE_WARNING_PCT}%; check the cell"
+                for r in ctx.rows:
+                    if warning not in ctx.results[r].warnings:
+                        ctx.results[r].warnings.append(warning)
     return out, payees
 
 
@@ -1349,6 +1375,8 @@ def run(
             )
             if capped:
                 res.reason += "; too many unmatched names for suggestions, add a CUSTOMER CODE column"
+            if (account_key(res.account_in_file) or "").startswith("RAW"):
+                res.reason = f'the account "{res.account_in_file}" is not one of A/C I to A/C V; ' + res.reason
             res.suggestions = [{"customer_id": s.id, "code": s.code, "name": s.name} for s in suggestions]
             continue
         candidates[res.key] = exact
@@ -1382,100 +1410,156 @@ def run(
 
     new = updated = 0
     target_nos: Dict[str, str] = {}
-    key_to_row = {r.key: r for r in parsed.rows if getattr(r, "key", None)}
-    for scheme in parsed.schemes:
-        scheme_rows = [rows_by_key[(scheme.sheet, r)] for r in scheme.rows]
-        broken = [r for r in scheme_rows if r.status != "mapped"]
-        payee_row = key_to_row.get(scheme.payout_code)
-        if not broken and payee_row is not None and payee_row.status != "mapped":
-            broken = [payee_row]
+    key_to_row = {r.key: r for r in parsed.rows if r.key}
+
+    # Schemes that share a row, or whose pay-to account is another scheme's row, are one
+    # dealer: they are created together or not at all (review S4: no partial dealer).
+    parent = list(range(len(parsed.schemes)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    owner: Dict[Tuple[str, int], int] = {}
+    for i, scheme in enumerate(parsed.schemes):
+        touched = [(scheme.sheet, r) for r in scheme.rows]
+        payee = key_to_row.get(scheme.payout_code)
+        if payee is not None:
+            touched.append((payee.sheet, payee.row))
+        for place in touched:
+            if place in owner:
+                parent[find(i)] = find(owner[place])
+            else:
+                owner[place] = i
+    components: Dict[int, List[Scheme]] = {}
+    for i, scheme in enumerate(parsed.schemes):
+        components.setdefault(find(i), []).append(scheme)
+
+    class _Refused(Exception):
+        def __init__(self, scheme: Scheme, message: str):
+            super().__init__(message)
+            self.scheme, self.message = scheme, message
+
+    #: match key -> the first row of the scheme this run already wrote it from.
+    written_by: Dict[Tuple, int] = {}
+    for _root, schemes in sorted(components.items()):
+        all_rows = [rows_by_key[(s.sheet, r)] for s in schemes for r in s.rows]
+        all_rows = list({id(r): r for r in all_rows}.values())
+
+        def fail(reason: str) -> None:
+            for r in all_rows:
+                if r.status == "mapped":
+                    r.status, r.reason = "not_representable", reason
+
+        broken = [r for r in all_rows if r.status != "mapped"]
+        for s in schemes:
+            payee_row = key_to_row.get(s.payout_code)
+            if payee_row is not None and payee_row.status != "mapped":
+                broken.append(payee_row)
         if broken:
             first = broken[0]
             why = {
                 "needs_pick": "which needs a customer picked",
                 "skipped": "which is skipped",
-            }.get(first.status, f": {first.reason}")
-            for r in scheme_rows:
-                if r.status == "mapped":
-                    r.status = "not_representable"
-                    r.reason = f"shares a target with row {first.row}, {why}".replace(", :", ":")
+            }.get(first.status)
+            fail(f"shares a target with row {first.row}, {why}" if why else
+                 f"shares a target with row {first.row}: {first.reason}")
             continue
-        ids = [customer_of(code).id for code in scheme.codes]
-        payout = customer_of(scheme.payout_code)
-        if payout is None:
-            for r in scheme_rows:
-                r.status, r.reason = "not_representable", f"PAY TO: no customer with code {scheme.payout_code}"
-            continue
-        tiers = [
-            {
-                "period_start": t.period_start if scheme.split_every else None,
-                "threshold": float(t.threshold),
-                "rate": float(t.rate or 0),
-                "is_additional": t.is_additional,
-                "account_rates": (
-                    [{"customer_id": customer_of(code).id, "rate": float(rate)} for code, rate in t.account_rates.items()]
-                    if t.account_rates
-                    else None
-                ),
+        prepared = []
+        problem = None
+        for scheme in schemes:
+            ids = [customer_of(code).id for code in scheme.codes]
+            payout = customer_of(scheme.payout_code)
+            if payout is None:
+                problem = f"PAY TO: no customer with code {scheme.payout_code}"
+                break
+            match_key = (
+                frozenset(ids), scheme.start, scheme.end, scheme.split_every, scheme.split_unit, scheme.threshold_unit
+            )
+            if match_key in written_by:
+                # Two rows of one file for the same accounts and dates: the second would
+                # silently overwrite the first (review nit).
+                problem = f"the same accounts and dates as row {written_by[match_key]}"
+                break
+            tiers = [
+                {
+                    "period_start": t.period_start if scheme.split_every else None,
+                    "threshold": float(t.threshold),
+                    "rate": float(t.rate or 0),
+                    "is_additional": t.is_additional,
+                    "account_rates": (
+                        [{"customer_id": customer_of(code).id, "rate": float(rate)}
+                         for code, rate in t.account_rates.items()]
+                        if t.account_rates
+                        else None
+                    ),
+                }
+                for t in scheme.tiers
+            ]
+            fields = {
+                "commission_method": "retroactive",
+                "threshold_unit": scheme.threshold_unit,
+                "rounding": scheme.rounding,
+                "tiers_per_period": bool(scheme.split_every),
+                "tiers": tiers,
             }
-            for t in scheme.tiers
-        ]
-        fields = {
-            "commission_method": "retroactive",
-            "threshold_unit": scheme.threshold_unit,
-            "rounding": scheme.rounding,
-            "tiers_per_period": bool(scheme.split_every),
-            "tiers": tiers,
-        }
-        match_key = (
-            frozenset(ids), scheme.start, scheme.end, scheme.split_every, scheme.split_unit, scheme.threshold_unit
-        )
-        match = existing.get(match_key)
+            prepared.append((scheme, ids, payout, match_key, fields))
+        if problem:
+            fail(problem)
+            continue
+        done = []
         try:
             with db.begin_nested():
-                if match is not None:
-                    target_service.update_target(
-                        db,
-                        match,
-                        SalesTargetUpdate(customer_ids=ids, payout_customer_id=payout.id, **fields),
-                        user_id=user_id,
-                    )
-                    target = match
-                else:
-                    target = target_service.create_target(
-                        db,
-                        SalesTargetCreate(
-                            subject_kind="dealer",
-                            customer_ids=ids,
-                            payout_customer_id=payout.id,
-                            name=scheme.name[:120],
-                            metric="amount",
-                            basis="ordered",
-                            product_scope="all",
-                            start_date=scheme.start,
-                            end_date=scheme.end,
-                            split_every=scheme.split_every,
-                            split_unit=scheme.split_unit,
-                            **fields,
-                        ),
-                        user_id=user_id,
-                    )
-        except AppException as exc:
-            for r in scheme_rows:
-                r.status, r.reason = "not_representable", f"{scheme.kind}: {exc.message}"
+                for scheme, ids, payout, match_key, fields in prepared:
+                    match = existing.get(match_key)
+                    try:
+                        if match is not None:
+                            target_service.update_target(
+                                db,
+                                match,
+                                SalesTargetUpdate(customer_ids=ids, payout_customer_id=payout.id, **fields),
+                                user_id=user_id,
+                            )
+                            target = match
+                        else:
+                            target = target_service.create_target(
+                                db,
+                                SalesTargetCreate(
+                                    subject_kind="dealer",
+                                    customer_ids=ids,
+                                    payout_customer_id=payout.id,
+                                    name=scheme.name[:120],
+                                    metric="amount",
+                                    basis="ordered",
+                                    product_scope="all",
+                                    start_date=scheme.start,
+                                    end_date=scheme.end,
+                                    split_every=scheme.split_every,
+                                    split_unit=scheme.split_unit,
+                                    **fields,
+                                ),
+                                user_id=user_id,
+                            )
+                    except AppException as exc:
+                        raise _Refused(scheme, exc.message) from exc
+                    except ValueError as exc:  # a payload the schema refuses (pydantic)
+                        errors = getattr(exc, "errors", None)
+                        message = errors()[0].get("msg", "not valid") if callable(errors) and errors() else str(exc)
+                        raise _Refused(scheme, message) from exc
+                    done.append((scheme, match, match_key, target))
+        except _Refused as exc:
+            fail(f"{exc.scheme.kind}: {exc.message}")
             continue
-        except ValueError as exc:  # a payload the schema refuses (pydantic's ValidationError)
-            errors = getattr(exc, "errors", None)
-            message = errors()[0].get("msg", "not valid") if callable(errors) and errors() else str(exc)
-            for r in scheme_rows:
-                r.status, r.reason = "not_representable", f"{scheme.kind}: {message}"
-            continue
-        if match is not None:
-            updated += 1
-        else:
-            new += 1
-            existing[match_key] = target
-        target_nos[scheme.key] = target.target_no
+        for scheme, match, match_key, target in done:
+            if match is not None:
+                updated += 1
+            else:
+                new += 1
+                existing[match_key] = target
+            written_by[match_key] = scheme.rows[0]
+            target_nos[scheme.key] = target.target_no
 
     out_rows = []
     for res in parsed.rows:

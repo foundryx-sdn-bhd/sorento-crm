@@ -124,7 +124,16 @@ describe('DealerTargetImportDialog', () => {
       'Skip this row',
     ]);
     fireEvent.change(select, { target: { value: 'c-1' } });
-    const importButton = screen.getByRole('button', { name: 'Import 3 rows' }) as HTMLButtonElement;
+    // A pick needs a fresh Test before Import.
+    expect((screen.getByRole('button', { name: /^Import/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /Test/ }));
+    await waitFor(() =>
+      expect(run.mutateAsync).toHaveBeenLastCalledWith(
+        expect.objectContaining({ dryRun: true, picks: { 'Sorento 2026!12': 'c-1' } }),
+      ),
+    );
+    const importButton = (await screen.findByRole('button', { name: 'Import 2 rows' })) as HTMLButtonElement;
+    await waitFor(() => expect(importButton.disabled).toBe(false));
     fireEvent.click(importButton);
     await waitFor(() =>
       expect(run.mutateAsync).toHaveBeenLastCalledWith(

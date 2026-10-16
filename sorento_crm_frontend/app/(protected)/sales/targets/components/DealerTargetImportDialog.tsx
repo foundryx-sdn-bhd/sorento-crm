@@ -34,7 +34,7 @@ const MAX_SIZE_MB = 10;
  * the same file and year. The report lists every row of the file: mapped, waiting on a pick,
  * skipped, or not representable with the reason, so a row is never silently dropped. Rows the
  * name match left open (owner ruling 16 Oct 09:12) get a pick from their suggestions, or Skip;
- * the picks go with the next Test and with Import.
+ * a pick needs a fresh Test before Import, so the report always shows what Import will do.
  */
 export default function DealerTargetImportDialog({
   open,
@@ -51,7 +51,8 @@ export default function DealerTargetImportDialog({
   const run = useImportDealerTargets();
   const template = useDownloadDealerTemplate();
   const file = files[0] ?? null;
-  const key = file ? `${file.name}:${file.size}:${file.lastModified}:${year}` : '';
+  // A pick changes what Import does, so it needs a fresh Test (review S5): the key holds them.
+  const key = file ? `${file.name}:${file.size}:${file.lastModified}:${year}:${JSON.stringify(picks)}` : '';
   const yearNumber = Number(year);
   const yearOk = Number.isInteger(yearNumber) && yearNumber >= 2000 && yearNumber <= 2100;
 
@@ -75,11 +76,7 @@ export default function DealerTargetImportDialog({
       // The hook toasted the reason.
     }
   };
-  // Mapped rows plus the rows picked since the Test (a pick is checked again on Import).
-  const importCount =
-    (result?.summary.mapped ?? 0) +
-    (result?.rows.filter((r) => r.status === 'needs_pick' && picks[r.pick_key] && picks[r.pick_key] !== SKIP)
-      .length ?? 0);
+  const importCount = result?.summary.mapped ?? 0;
   const apply = async () => {
     if (!file || testedKey !== key) return;
     try {

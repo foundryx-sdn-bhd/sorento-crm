@@ -63,9 +63,15 @@ over several data rows makes those rows one target**, per scheme kind and unit.
 - An incentive naming an account of the same dealer that is NOT counted in the target is the
   pay-to case: the target counts its own rows and pays the named account.
 - A rate typed on some rows of a merged target only is those accounts' rate.
-- A second tier at a threshold already paid, or `+ Additional x%` with no threshold, is that
-  threshold's additional line (computed and rounded on its own, ruling 3; every additional line
-  reached pays, ruling 5).
+- `+ Additional x%` written as a second tier at a threshold already paid, or with no threshold
+  of its own, is that threshold's additional line (computed and rounded on its own, ruling 3;
+  every additional line reached pays, ruling 5). A second tier at the same threshold with a
+  plain rate is NOT guessed: its row fails with "repeats in one period".
+- A rate above 20% (e.g. `0.5`, read as 50% under the fraction rule) maps, with a warning on
+  its rows. Two unlabelled rates in one cell (`2% / 3%`) and a rate typed in a threshold column
+  fail the row.
+- All targets of one dealer (schemes sharing a row or a pay-to account) are created together or
+  not at all; two rows of one file with the same accounts and dates fail the second.
 - `-` or blank: no tier. `NIL` beside a threshold, an amount where a rate belongs
   (`A/C I- 100000`), an account the dealer does not have (`A/C 1`), or a threshold with no
   incentive: the row fails with the reason (item 7). Never mapped silently.
