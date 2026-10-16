@@ -215,8 +215,7 @@ PY
   and about 29 workflows call `<CRM_DOMAIN>`, which step 3 moves with no edit.
 - Any extra `names-origin`, `mcp-client`, `ignore-ssl`, `db-port` or `sorento-crm-db` line that
   the table does not have: add it to your step 4 list (same edit as its row), and tell crew on the
-  PR
-  (workflow and node name only, never the resolved URL).
+  PR (workflow and node name only, never the resolved URL).
   Test copies on credential `n8n_test-db` are not part of this runbook.
 - Rollback: nothing to roll back. Prefer the field rollbacks in 4.1 to 4.4. As a last resort only,
   undo a step 4 edit from this copy, one file at a time, never the folder:
