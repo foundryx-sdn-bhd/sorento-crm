@@ -16,8 +16,6 @@ import {
 import { Copy, Link2, MessageCircle, MessageCircleOff, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
@@ -46,7 +44,7 @@ import ContactTagsCell from './ContactTagsCell';
 import ContactTagSettingsCell from './ContactTagSettingsCell';
 import { contactTagBulkActions } from '../lib/contactTagBulkActions';
 import { regionLabel } from '@/lib/packing-list-regions';
-import ContactAccessFilters from './ContactAccessFilters';
+import { useContactFiltersToolbar } from './ContactFiltersPopover';
 import PortalLinkButton from '@/components/contacts/PortalLinkButton';
 import ContactOutboundCell from '@/components/contacts/ContactOutboundCell';
 import ContactOutboundDisableDialog from '@/components/contacts/ContactOutboundDisableDialog';
@@ -596,6 +594,16 @@ export default function ContactsList() {
 
   const clearSelection = () => setRowSelection({});
 
+  // Every filter except Tag and Tag settings lives in the toolbar Filters popover.
+  const filtersToolbar = useContactFiltersToolbar({
+    accessFilters,
+    customersNone,
+    noTags,
+    setAccessFilters,
+    setCustomersNone,
+    setNoTags,
+  });
+
   // Reset selection whenever the result set changes.
   useEffect(() => {
     setRowSelection({});
@@ -659,25 +667,15 @@ export default function ContactsList() {
             onRefresh={() => void refetch()}
             isRefreshing={isFetching && !isLoading}
             primaryAction={listPrimaryAction}
+            filters={filtersToolbar}
             leftActions={
               <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
-                <Checkbox
-                  id="contacts-no-customers"
-                  checked={customersNone}
-                  onCheckedChange={(v) => setCustomersNone(v === true)}
-                />
-                <Label htmlFor="contacts-no-customers" className="text-sm font-normal">
-                  No customers linked
-                </Label>
                 <ContactTagFilters
                   tagIds={tagIds}
-                  noTags={noTags}
                   onTagIdsChange={setTagIds}
-                  onNoTagsChange={setNoTags}
                   tagSettings={tagSettings}
                   onTagSettingsChange={setTagSettings}
                 />
-                <ContactAccessFilters value={accessFilters} onChange={setAccessFilters} />
               </div>
             }
             bulkActions={[
