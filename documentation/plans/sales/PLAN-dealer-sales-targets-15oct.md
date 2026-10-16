@@ -1,9 +1,14 @@
 # PLAN: dealer sales targets and incentive schemes (lane SALES-TARGET-DEALER)
 
-Status: **built, review READY, waiting on the owner's hand test** (16 Oct; L track). Code review
-fix round done: a rate typed on some rows of a merged target is those accounts' rate (ruling 2),
-accounts group per scheme kind, codes match loosely incl. PAY TO, kill tests for the ratio day and
-the default pay-to; agent and team targets keep the plain achievement statement. Owner OK on v2 (00:19: "make sure we can configure all
+Status: **gate-fail round built, reviewed; waiting on crew's re-run of the real-file gate** (16 Oct;
+L track). Crew's gate on the real files failed (the importer could not read them as delivered);
+this round reads them as delivered (stacked headers, per-column units, rate grammar, yearly-only
+windows, nothing dropped), matches dealers BY NAME + account (owner ruling 16 Oct 09:12, picks
+and skips in the preview, optional CUSTOMER CODE column, template download), fails a rate above
+20% (crew ruling). Layout: `dealer-targets-import-layout.md`. Reviewer READY; security fixes B1
+to B5 in. Earlier code review fix round: a rate typed on some rows of a merged target is those
+accounts' rate (ruling 2), accounts group per scheme kind; agent and team targets keep the plain
+achievement statement. Owner OK on v2 (00:19: "make sure we can configure all
 the sales targets in the excel using this architecture"), with the gate that every row of both
 Excel files is representable. Slices 1 to 3 built on PR #1715: the one engine
 (`commission_service.payout_for`), migration `sales_0006_dealer_targets`, dealer credit in
