@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -104,7 +106,12 @@ export default function ContactAccessTypesAdmin() {
     keywords: '',
   });
 
+  // Set by a Save that found the sort order wrong; the sentence then follows the typing.
+  const [sortChecked, setSortChecked] = useState(false);
+  const sortError = numberFieldError(typeForm.sort_order, { integer: true, optional: true });
+
   function resetTypeForm() {
+    setSortChecked(false);
     setTypeForm({
       code: '',
       name: '',
@@ -123,6 +130,7 @@ export default function ContactAccessTypesAdmin() {
 
   function openEditType(row: ContactAccessTypeAdmin) {
     setEditingType(row);
+    setSortChecked(false);
     setTypeForm({
       code: row.code,
       name: row.name,
@@ -147,9 +155,12 @@ export default function ContactAccessTypesAdmin() {
 
   function saveType() {
     const keywords = parseKeywords(typeForm.keywords);
+    if (sortError) {
+      setSortChecked(true);
+      return;
+    }
     if (editingType) {
       const sort = typeForm.sort_order === '' ? undefined : Number(typeForm.sort_order);
-      if (Number.isNaN(sort)) return;
       updateTypeMutation.mutate({
         code: editingType.code,
         body: {
@@ -166,7 +177,6 @@ export default function ContactAccessTypesAdmin() {
         toast.error('Code and name are required');
         return;
       }
-      if (typeForm.sort_order !== '' && Number.isNaN(Number(typeForm.sort_order))) return;
       createTypeMutation.mutate({
         code: typeForm.code.trim(),
         name: typeForm.name.trim(),
@@ -390,16 +400,11 @@ export default function ContactAccessTypesAdmin() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="type-sort">Sort order (optional)</Label>
-              <Input
+              <NumberInput
                 id="type-sort"
-                type="number"
                 value={typeForm.sort_order}
-                onChange={(e) =>
-                  setTypeForm((f) => ({
-                    ...f,
-                    sort_order: e.target.value === '' ? '' : Number(e.target.value),
-                  }))
-                }
+                onChange={(e) => setTypeForm((f) => ({ ...f, sort_order: e.target.value }))}
+                error={sortChecked ? sortError : undefined}
                 placeholder="0"
               />
             </div>

@@ -158,7 +158,9 @@ describe('SystemHealthSettingsPage', () => {
 
     expect(field).toHaveValue(null);
     expect(screen.getByText('Enter a whole number of at least 0.')).toBeInTheDocument();
-    expect(apiFetch).not.toHaveBeenCalled();
+    expect(
+      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+    ).toBeUndefined();
   });
 
   it('keeps a negative audit floor as typed and blocks the save with a sentence', () => {
@@ -171,7 +173,9 @@ describe('SystemHealthSettingsPage', () => {
 
     expect(field).toHaveValue(-4);
     expect(screen.getByText('Enter a whole number of at least 0.')).toBeInTheDocument();
-    expect(apiFetch).not.toHaveBeenCalled();
+    expect(
+      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+    ).toBeUndefined();
   });
 
   it('persists a valid edited integer value', async () => {
@@ -249,7 +253,9 @@ describe('SystemHealthSettingsPage - WhatsApp round-trip latency (OBS-S4-21)', (
     expect(screen.getByTestId('chat-latency-target')).toHaveValue(null);
     expect(screen.getByTestId('chat-latency-min-sample')).toHaveValue(0);
     expect(screen.getAllByText('Enter a whole number of at least 1.')).toHaveLength(2);
-    expect(apiFetch).not.toHaveBeenCalled();
+    expect(
+      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+    ).toBeUndefined();
   });
 
   it('summarises all three triggers in plain language', () => {

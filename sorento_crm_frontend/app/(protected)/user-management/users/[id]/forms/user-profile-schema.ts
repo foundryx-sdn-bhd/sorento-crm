@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { requiredNumber } from '@/lib/number-field-schema';
 
 export const UserProfileSchema = z.object({
   name: z.string().min(1, { message: 'Name is required.' }),
@@ -7,13 +8,12 @@ export const UserProfileSchema = z.object({
   status: z.string().min(1, { message: 'Status is required.' }),
   respond_user_id: z.string().optional().nullable(),
   contact_number: z.string().optional().nullable(),
-  tier: z
-    .union([z.number().int(), z.literal(''), z.null(), z.undefined()])
-    .optional()
-    .nullable()
-    .transform((v): number | null | undefined =>
-      v === '' || v === null || v === undefined ? null : typeof v === 'number' ? v : Number(v)
-    ),
+  // Blank clears the tier (null); a typed value must be a whole number of at least 1.
+  tier: requiredNumber({ min: 1, integer: true, optional: true }) as unknown as z.ZodType<
+    number | null | undefined,
+    z.ZodTypeDef,
+    number | null | undefined
+  >,
   agent_ids: z.array(z.string()).optional(),
   superior_id: z.string().optional().nullable(),
   companyIds: z.array(z.string()).default([]),
