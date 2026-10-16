@@ -78,7 +78,8 @@ date or Cancel, remark, the line it sits on). Never "tranche" in UI or copy.
 
 - AC-E1 When a line's AutoCount qty went down and staff linked part of it (a split sitting on
   another line of the same SO whose AutoCount qty went up), Confirm moves that qty with its
-  purchasing links and acknowledgement to the target line's OI row: no CANCEL BALANCE for the
+  purchasing links and acknowledgement to the target line's OI row (a moved row whose delivery date
+  changes goes back to To confirm, the 17 Sep handshake rule): no CANCEL BALANCE for the
   linked qty on the origin, no new ORDER for it on the target. Only what is left is told (SO402757:
   line 2 51 -> 2 with 49 linked to line 18; line 18 82 -> 121 is told as CANCEL BALANCE 10 only).
 - AC-E2 With no stored splits Confirm behaves exactly as today (existing pure-split and netting
