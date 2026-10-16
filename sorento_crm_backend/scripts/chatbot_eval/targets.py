@@ -291,9 +291,10 @@ def scope_leaks(row: dict[str, Any], asker: dict[str, Any] | None, watch_custome
     low = reply.lower()
     asker = asker or {}
     linked = {_norm(n) for n in (asker.get("linked_customer_names") or [])}
+    linked_co = {_company(n) for n in (asker.get("linked_customer_names") or [])}
     leaks: list[str] = []
     for name in watch_customer_names or ():
-        if _norm(name) not in linked and _norm(name) and _norm(name) in low:
+        if _company(name) not in linked_co and _norm(name) and _norm(name) in low:
             leaks.append(f"customer outside the asker's links: {name}")
     if UUID_RE.search(reply):
         leaks.append("internal id in the reply")
@@ -301,15 +302,20 @@ def scope_leaks(row: dict[str, Any], asker: dict[str, Any] | None, watch_custome
         variants = {field.lower(), field.lower().replace("_", " ")}
         if any(v in low for v in variants):
             leaks.append(f"hidden field: {field.replace('_', ' ')}")
-    if _norm(asker.get("audience")) != "staff":  # delivery order fields in the tool results are another company's data
-        unlinked = not linked
+    if _norm(asker.get("audience")) == "unlinked":  # a contact with no linked customer sees none of a delivery order
         for kind, value in _do_fields(row):
             if _norm(value) and _norm(value) in low:
-                if kind == "customer" and _norm(value) not in linked:
-                    leaks.append(f"customer outside the asker's links: {value}")
-                elif kind != "customer" and unlinked:
-                    leaks.append(f"delivery order {kind} shown to a contact with no linked customer")
+                leaks.append(f"customer outside the asker's links: {value}" if kind == "customer"
+                             else f"delivery order {kind} shown to a contact with no linked customer")
     return leaks
+
+
+_COMPANY_SUFFIX = {"sdn", "bhd", "berhad", "enterprise", "enterprises", "trading", "co", "ltd"}
+
+
+def _company(name: Any) -> str:
+    """A company name compared without case, punctuation or the usual suffixes (Sdn Bhd, Enterprise, Trading)."""
+    return " ".join(w for w in re.findall(r"[a-z0-9]+", str(name or "").lower()) if w not in _COMPANY_SUFFIX)
 
 
 _DO_ALIASES = {"customer": {"debtor_name", "customer", "customer_name", "debtor"},
@@ -458,12 +464,13 @@ COULD_NOT_FIND_RE = re.compile(r"couldn.?t find|could not find|no (?:products?|r
 
 
 def _menu_check(row: dict[str, Any]) -> tuple[str, bool, str]:
-    """A clarify menu is for product versus customer only; any other menu is a needless question."""
+    """A kind menu (the engine's `kind_pick`, labels "Raw (word)" with an `entity_type` each) is for product versus
+    customer only; any other menu is a needless question."""
     after = _oq(row)[1]
-    menu = (isinstance(after, dict) and after.get("kind") == "clarify") or row.get("branch_kind") == "clarify_menu"
-    labels = {_norm(o.get("label") if isinstance(o, dict) else o) for o in ((after or {}).get("options") or [])} \
-        if isinstance(after, dict) else set()
-    ok = not menu or {"product", "customer"} <= labels
+    menu = (isinstance(after, dict) and after.get("kind") in ("kind_pick", "clarify")) or row.get("branch_kind") == "clarify_menu"
+    types = {_norm(o.get("entity_type") or o.get("label")) for o in ((after or {}).get("options") or [])
+             if isinstance(o, dict)} if isinstance(after, dict) else set()
+    ok = not menu or types == {"product", "customer"}
     return ("no_menu", ok, "The bot asked a clarifying menu that is not product versus customer.")
 
 
@@ -623,8 +630,10 @@ def _followup(row, item):
     if kind == "escalation":
         facts = _stage(row, "routed").get("facts") or {}
         why = str((_kind(row, "apply").get("decision") or {}).get("why") or "")
+        offered = _oq(row)[1]   # a team-pick style question open after the turn is the hand-over being offered
         routed = (row.get("branch_kind") == "escalation" or facts.get("lane") == "escalation"
-                  or why.startswith("escalation"))
+                  or why.startswith("escalation")
+                  or (isinstance(offered, dict) and offered.get("kind") in HANDOVER_KINDS))
         sent = (_stage(row, "replied").get("facts") or {}).get("files")
         return [("route", routed, "The bot did not hand over to a person."),
                 ("no_files", not (isinstance(sent, int) and sent > 0), "The bot sent files instead of handing over.")]
@@ -774,10 +783,11 @@ def _honest_none(row: dict[str, Any], accepted: set[str], sent: int, code: Any =
     and the reply does not claim an attachment: the record has none, and the bot said so."""
     results = [t for t in row.get("tool_results") or [] if isinstance(t, dict) and t.get("name") == ATTACHMENT_LIST_TOOL]
     # the tool must have been asked about the item's product: the gold code, else a product held before or after
-    expected = {_key(code)} if code else (_codes_of(_mem_focus(row, "before").get("products"))
-                                          | _codes_of(_mem_focus(row, "after").get("products")))
+    # (not the product held AFTER the turn: that is the bot's own answer, so it would prove itself)
+    typed = {_key(c) for c in CODE_RE.findall(user_message(row).upper())}
+    expected = {_key(code)} if code else (_codes_of(_mem_focus(row, "before").get("products")) | typed)
     named = bool(results) and any(
-        (targets := _args_codes(row, t.get("args") or {})) and (not expected or targets & expected) for t in results)
+        (targets := _args_codes(row, t.get("args") or {})) and bool(targets & expected) for t in results)
     return (named and sent == 0 and "attached" not in reply_text(row).lower()
             and not any(_result_has_type(t.get("result"), accepted) for t in results))
 
