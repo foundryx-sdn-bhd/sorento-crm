@@ -88,6 +88,12 @@ def of_pending(pending: Pending | None) -> dict[str, Any] | None:
         # A stock pick needs a quantity too; one given already rides on the pick.
         owed = ["pick", "quantity"] if stock and qty is None else ["pick"]
     obj: dict[str, Any] = {"kind": kind, "options": options, "owed": owed}
+    answered_positions = set(pending.answered_positions)
+    if answered_positions and kind not in (FREE, CONFIRM):
+        # A sticky roster after a pick (contract 36): the picked rows are named, the pick is
+        # no longer owed, and the options stay so "2 also" still picks number 2.
+        obj["owed"] = [o for o in owed if o != "pick"]
+        obj["answered"] = [o["code"] for o in options if o["position"] in answered_positions]
     if qty is not None:
         obj["qty"] = qty
     return obj

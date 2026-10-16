@@ -4520,7 +4520,12 @@ def _run_stages_body(  # noqa: PLR0915
         earlier_messages=memory_intake["earlier_messages"],
         previous_response=previous_reply,
         current_subject=current_subject,
-        pending_kind=state_in.pending.kind if state_in.pending is not None else None,
+        # PR-C AC-C2: nothing owed (a pick already answered) means no "waiting for" line.
+        pending_kind=(
+            state_in.pending.kind
+            if state_in.pending is not None and (open_question is None or open_question["owed"])
+            else None
+        ),
         pending_options=pending_options,
         settings_profile_line=memory_mod.profile_block(state_in.profile),
         current_message=latest_user_message,

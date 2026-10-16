@@ -96,7 +96,8 @@ class TestEveryMemoryLevelCarriesTheBrandLine:
         assert BRANDS_LINE in text
         l2 = next(row for row in report["layers"] if row["layer"] == "L2")
         assert l2["dropped"] is True
-        assert l2["est_tokens"] <= context.CAPS["L2"]
+        # PR-C AC-C1: the vocabulary line is outside the L2 cap, so the layer is cap + the line.
+        assert l2["est_tokens"] <= context.CAPS["L2"] + context.est_tokens(BRANDS_LINE)
 
 
 def test_build_user_block_and_assemble_share_one_brand_line() -> None:
