@@ -107,3 +107,29 @@ slice brief when it nears its limit (298 sites will not fit one context).
 - One SNAP screen per slice from the audit (ProductForm Reorder Level, GRNForm Qty Received,
   NumberingRuleEditDialog, PlanOrderQtyLedger): clear -> stays empty; save empty -> message, no call.
 - Census test (above).
+
+## Fix round 1 (17 Oct: crew audit of de6d8f4b1 + reviewer NOT READY)
+
+Crew audit: CI never ran (all heads `[skip ci]`), 2 tsc errors (SubmissionForm.tsx:2595, RuleBuilder.tsx:604),
+message clipped in narrow cells (reserve dialog, SO edit at 375), SO edit blank qty counted as 0 in Outstanding and
+totals. Browser pass: PR26-0385 edit saved a blank line quantity as NULL (crew restored the row to 28.00); the backend
+accepted it.
+
+Decisions:
+- The field message always wraps under the field (`whitespace-normal`, word break) in the shared component.
+- A blank or invalid qty never feeds a computed figure as 0: its line cells and every total that includes it show
+  "-" until valid (SO edit, opportunity line amounts).
+- Purchase request line Quantity is REQUIRED, > 0, in the UI and on the server (PUT/POST purchase requests); dev data
+  has 0 of 1231 lines blank or <= 0. Other line-qty write endpoints get the same server check where a blank makes no
+  sense (backend sweep).
+- ONE live-commit component (`LiveNumberInput` in components/ui/number-input.tsx) replaces the scm
+  CommittedNumberInput, the dealer-kit LiveNumberInput and the inline copies (PlanOrderQtyLedger, SpoPlannerTable):
+  valid keystrokes commit, blank/invalid never commit and never rewrite the box, message at blur then live.
+- Bad input ("1e") is invalid, never "no value", even on optional fields (`onValueChange(NaN)`).
+- `minExclusive` rule: "Enter a number above 0." from the shared helper, no hand-written copies.
+- OrderLinesCard add-line Quantity stays OPTIONAL (Q3; backend schemas/order.py:314).
+- ConvertToPackingListDialog "Quantity to place" is required (blank used to place the full remaining silently).
+- System-health field rules equal the backend bounds; packing list quantity_shipped is a whole number.
+- `lib/whole-number-range.ts` keeps its stricter format check and takes its sentence from `numberFieldError`.
+- Browser-pass rule (crew): a save in a browser pass uses data created for the test or is reverted in the same run,
+  and every write is logged in the crew-note.
