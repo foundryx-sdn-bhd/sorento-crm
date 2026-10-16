@@ -22,9 +22,6 @@ from .test_order_inquiry_worklist import LIST
 
 SUMMARY = f"{LIST}/summary"
 
-# v4 is not built yet: this PR merges as v3. Strict, so the build commit must drop this mark.
-pytestmark = pytest.mark.xfail(reason="v4, awaiting owner OK of mock v4", strict=True)
-
 
 def _rows_of(world, inquiry) -> list:
     return [
@@ -84,3 +81,27 @@ def test_reserve_filter_composes_with_inquiry_and_summary(sn, monkeypatch):
 def test_unknown_reserve_status_is_422(sn):
     client, _world = sn
     assert client.get(LIST, params={"reserve": "bogus"}).status_code == 422
+
+
+def test_list_rows_carry_the_open_request_rows_warehouse_and_code(sn, monkeypatch):
+    """B2: `reserve_warehouse_id` / `reserve_location` = the OPEN request row's warehouse and
+    its code; null with no request and on an answered row."""
+    client, world = sn
+    _register()
+    _captured_dispatches(monkeypatch)
+    w = _status_world(client, world)
+    needs_row = _rows_of(world, w["needs"])[0]
+    none_row = _rows_of(world, w["none"])[0]
+    reserved_row = _rows_of(world, w["reserved"])[0]
+    mixed_first, mixed_second = _rows_of(world, w["mixed"])
+
+    body = _ok(client.get(LIST, params={"limit": 100}))
+    by_id = {row["id"]: row for row in body["data"]}
+
+    for open_id in (needs_row, mixed_second):
+        assert by_id[open_id]["reserve_warehouse_id"] == world.site.id
+        assert by_id[open_id]["reserve_location"] == world.site.warehouse_code
+    for closed_id in (none_row, reserved_row, mixed_first):
+        assert "reserve_warehouse_id" in by_id[closed_id], "field must be declared on the schema"
+        assert by_id[closed_id]["reserve_warehouse_id"] is None
+        assert by_id[closed_id]["reserve_location"] is None
