@@ -2085,7 +2085,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           timeout: 1m
-          command_timeout: 2m
+          command_timeout: 3m
           script: |
             set -e
             # Frontend / backend via host nginx (public domain), with a WAIT.
@@ -2097,7 +2097,8 @@ jobs:
             # entirely fine (blue healthy, nginx swapped, worker recreated, alembic at
             # 511). So it now polls for up to 90 seconds, prints each attempt's code and
             # the elapsed time, and only then tries local nginx and gives up. 90s plus
-            # the MCP check below sits inside this step's own `command_timeout: 2m`.
+            # the two MCP checks below (the in-backend call has a 15s client timeout) sit inside
+            # this step's own `command_timeout: 3m`.
             started=$(date +%s)
             ok=""
             while [ $(( $(date +%s) - started )) -lt 90 ]; do

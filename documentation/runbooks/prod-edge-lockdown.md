@@ -270,7 +270,9 @@ direct to the origin.
 
 - Check: from the n8n box,
   `curl -s -o /dev/null -w '%{http_code}\n' http://<CRM_ORIGIN>:8765/mcp` prints `401`: the
-  MCP bearer gate answered (SEC-MCP-AUTH), so MCP was reached. Before that release it printed
+  MCP bearer gate answered (SEC-MCP-AUTH), so MCP was reached. While `MCP_AUTH_MODE=permit`
+  (the first release), a call with no header is let through and this prints `406` instead; add
+  `-H 'Authorization: Bearer x'` to get `401` in both modes. Before that release it printed
   `200`, `405` or `406`. The release check sends a wrong token and accepts only `401`
   (`.github/workflows/deploy.yml`, "Verify public endpoints").
 - Check: step 7's `/mcp` lines do not reach MCP.
