@@ -4776,7 +4776,16 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     Only on a turn that TYPES nothing but a document word (reviewer should-fix): a new
     ask that names another axis ("outstanding DO for hanlim" after a stock answer) still
     carries the echoed product through `apply._focus_rules` exactly as today, where the
-    echo is what keeps the product on a new ask that starts fresh."""
+    echo is what keeps the product on a new ask that starts fresh.
+
+    QTY-CARRIED (owner, 13 Oct 2026): an echo the parser put a QUANTITY on is not a bare
+    restatement. "HAVE 10??" after "SRTWT5880-CR picture" comes back as the carried
+    product with quantity 10 (`current_message: false`); dropping it dropped the 10, and
+    the stock tool asked "How many units of SRTWT5880-CR?". Such an echo is kept, with the
+    settled row's uuid on it, so the axis keeps the settled product and the fetch sends
+    the quantity this message stated, one echo per settled row of that code (a code two
+    companies' products share is two rows, and the axis keeps both). Parser output only:
+    nothing reads the message."""
     # CARRY-ATTACH (reviewer S1): the key is the engine's own, never the parser's; one the
     # emission carried is dropped before any exit, so it cannot keep a kind a NEW ASK drops.
     verdict = {k: v for k, v in verdict.items() if k != RESTATED_KINDS_KEY}
@@ -4784,7 +4793,22 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     typed = [e for e in entities if e.get("current_message") is not False]
     if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in typed):
         return verdict
-    restated = [e for e in entities if _restates_a_settled_row(e, focus)]
+    kept: list[Any] = []
+    restated: list[dict[str, Any]] = []
+    for e in verdict.get("entities") or []:
+        rows = _settled_rows_restated(e, focus) if isinstance(e, dict) else []
+        if not rows:
+            kept.append(e)
+            continue
+        restated.append(e)
+        if _int(e.get("quantity")) is not None:
+            # The settled row as placed (its uuid and catalogue code, never the parser's
+            # spelling), with the stated quantity on the FIRST copy only:
+            # `_spec_quantities` sums per code and gives that total to every row of it.
+            kept.extend(
+                {**e, **row, "current_message": False, "quantity": e["quantity"] if i == 0 else None}
+                for i, row in enumerate(rows)
+            )
     if not restated:
         return verdict
     # CARRY-ATTACH (prod, 13 Oct 2026): the kinds the echoes restated ride on the verdict,
@@ -4792,34 +4816,31 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     # a NEW ASK) keeps the settled rows instead of evicting the subject it was asked about
     # ("Drawing" answering "which attachment type for Srt8313?").
     kinds = sorted({str(e.get("hint") or "").strip().lower() for e in restated})
-    return {
-        **verdict,
-        "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)],
-        RESTATED_KINDS_KEY: kinds,
-    }
+    return {**verdict, "entities": kept, RESTATED_KINDS_KEY: kinds}
 
 
-def _restates_a_settled_row(entity: dict[str, Any], focus: Focus) -> bool:
-    """Is this parser entity an ECHO of a row the focus already holds settled: carried
-    (`current_message: false`), of a kind the focus has a field for, with a focus row of
-    that kind carrying a uuid and the same code? (`without_restated_rows`)"""
+def _settled_rows_restated(entity: dict[str, Any], focus: Focus) -> list[dict[str, Any]]:
+    """The focus rows this parser entity ECHOES, else []: carried (`current_message:
+    false`), of a kind the focus has a field for, matching focus rows of that kind that
+    carry a uuid and the same code (`without_restated_rows`)."""
     from app.services.chatbot.turn.state import token_key
 
     if entity.get("current_message") is not False:
-        return False
+        return []
     kind = str(entity.get("hint") or "").strip().lower()
     attr = KIND_FIELD_MAP.get(kind)
     if not attr:
-        return False
+        return []
     code = token_key(entity.get("canonical_code") or entity.get("raw"))
     if not code:
-        return False
-    for row in getattr(focus, attr, None) or []:
-        if not isinstance(row, dict) or not row.get("uuid"):
-            continue
-        if code in {token_key(row.get("canonical_code")), token_key(row.get("raw"))}:
-            return True
-    return False
+        return []
+    return [
+        row
+        for row in getattr(focus, attr, None) or []
+        if isinstance(row, dict)
+        and row.get("uuid")
+        and code in {token_key(row.get("canonical_code")), token_key(row.get("raw"))}
+    ]
 
 
 def with_carried_entities(
