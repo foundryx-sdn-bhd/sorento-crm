@@ -105,9 +105,12 @@ broaden (12, 21, 23, 37, 86), never-an-entity (18, 19, 20), and 10 banner sectio
 <li><b>Two bugs in the text.</b> Section 43 says a typed option code gives "reference_positions AND the code in
 entities" (v94:891-893), then "Never emit BOTH" (v94:900). The OUTPUT block is missing a comma after
 <code>requested_attributes</code> (v94:765).</li>
-<li><b>One dead section.</b> REFERENCE TARGET (29) only applies when a "[N did-you-mean suggestions active]" marker is
-present; no code prints that marker (it survives only in the old in-code prompt constant,
-<code>chatbot_parser_prompt.py:684</code>).</li>
+<li><b>Correction (16 Oct, reviewer): REFERENCE TARGET (29) is NOT dead.</b> No code prints its "[N did-you-mean
+suggestions active]" marker (only the old in-code constant, <code>chatbot_parser_prompt.py:684</code>), but the model
+emits <code>reference_target</code> anyway: recorded verdicts in <code>tests/chatbot/replay_turns</code> carry "dym" 107
+times and "result" 42 times with no marker, and <code>chatbot/lanes/business/answer.py:1996</code> relies on "dym" (the
+"reply with a number between 1 and 1" fix). It stays. Its trigger text should describe what the model actually
+reads (a did-you-mean list in the previous reply), a later-stage edit.</li>
 <li><b>Lists already exist as variables.</b> The 3.6k-token policy block is a snapshot pasted in at publish time
 (<code>chatbot_parser_prompt.py:1220</code>), and has already drifted (the <code>has_massage</code> spec created 16 Oct is
 missing; the domain list in section 6 lacks <code>purchase_order</code>). <code>wording_layer()</code> already swaps it
@@ -648,9 +651,9 @@ depends on. Grey rows are banners.</p>
 <td>reference_target values: 3</td>
 <td>28: positions; 43: open numbered question; 91: did-you-mean on per entity kind</td>
 <td><details><summary>26 items</summary><span class=ids>G001 G002 G004 G017 G041 G043 G044 G047 G054 G061 G063 G072 G087 G088 G090 G110 G114 G115 G116 G117 G122 G124 G129 G132 G136 G137</span></details></td>
-<td><span class="v del">DELETE</span><div class=m>stage 1</div></td>
-<td class=num>0</td>
-<td>Dead: its trigger &#x27;[N did-you-mean suggestions active]&#x27; is printed by no code (only the old in-code constant, chatbot_parser_prompt.py:684). reference_target stays in OUTPUT as null; bare positions still flow (answer_bridge.py:1476).<div class=risk>Risk: low</div></td>
+<td><span class="v keep">KEEP</span><div class=m>corrected 16 Oct</div></td>
+<td class=num>178</td>
+<td><b>Corrected: not dead.</b> The model emits reference_target without the marker (107 "dym" verdicts in tests/chatbot/replay_turns) and chatbot/lanes/business/answer.py:1996 reads it. Original note: its trigger &#x27;[N did-you-mean suggestions active]&#x27; is printed by no code (only the old in-code constant, chatbot_parser_prompt.py:684). reference_target stays in OUTPUT as null; bare positions still flow (answer_bridge.py:1476).<div class=risk>Risk: low</div></td>
 </tr>
 <tr id="s30" class="">
 <td class=num>30</td>
