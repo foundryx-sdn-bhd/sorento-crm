@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from 'react-hook-form';
 import { NumberInput } from './number-input';
@@ -165,5 +165,34 @@ describe('NumberInput message wrapping (fix round 1, finding A)', () => {
     expect(el).toHaveClass('whitespace-normal');
     const cls = el.className;
     expect(/break-words|wrap-break-word|\[overflow-wrap:anywhere\]/.test(cls)).toBe(true);
+  });
+});
+
+describe('NumberInput round 1b', () => {
+  it('S3: browser bad input (empty value, validity.badInput) reports NaN, not null', () => {
+    const spy = vi.fn();
+    render(<Harness initial={5} spy={spy} />);
+    const input = screen.getByLabelText('Qty') as HTMLInputElement;
+    Object.defineProperty(input, 'validity', { value: { badInput: true }, configurable: true });
+    fireEvent.change(input, { target: { value: '' } });
+    expect(spy).toHaveBeenLastCalledWith(NaN);
+  });
+
+  it('S3: a plain empty box (no badInput) still reports null', () => {
+    const spy = vi.fn();
+    render(<Harness initial={5} spy={spy} />);
+    const input = screen.getByLabelText('Qty') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+    expect(spy).toHaveBeenLastCalledWith(null);
+  });
+
+  it('S10 UAC1.5: an arrow-key / spinner step reports the stepped value', () => {
+    const spy = vi.fn();
+    render(<Harness initial={5} spy={spy} />);
+    const input = screen.getByLabelText('Qty') as HTMLInputElement;
+    input.stepUp();
+    fireEvent.input(input);
+    expect(spy).toHaveBeenLastCalledWith(6);
+    expect(input.value).toBe('6');
   });
 });

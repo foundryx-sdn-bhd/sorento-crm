@@ -747,6 +747,31 @@ describe('PurchaseOrderDetail - correcting the order in place', () => {
     expect(updatePurchaseOrderMutateAsync).not.toHaveBeenCalled();
   });
 
+  it('S9: a negative unit price marks the price box itself, with the sentence, and writes nothing', () => {
+    renderDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    openTab('Lines');
+    const box = screen.getByLabelText('Unit price on CW-BASIN-450');
+    fireEvent.change(box, { target: { value: '-5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save purchase order' }));
+
+    expect(updatePurchaseOrderMutateAsync).not.toHaveBeenCalled();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a number of at least 0, or leave it blank.')).toBeInTheDocument();
+  });
+
+  it('S9: a negative discount marks the discount box itself', () => {
+    renderDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    openTab('Lines');
+    const box = screen.getByLabelText('Discount on CW-BASIN-450');
+    fireEvent.change(box, { target: { value: '-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save purchase order' }));
+
+    expect(updatePurchaseOrderMutateAsync).not.toHaveBeenCalled();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('leaves the record alone on Cancel', () => {
     renderDetail();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));

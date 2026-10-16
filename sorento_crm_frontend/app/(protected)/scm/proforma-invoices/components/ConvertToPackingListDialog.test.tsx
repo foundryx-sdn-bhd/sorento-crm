@@ -310,3 +310,17 @@ describe('ConvertToPackingListDialog', () => {
     expect(carryLine?.textContent).toContain('BL BL123');
   });
 });
+
+describe('ConvertToPackingListDialog Quantity to place (B4)', () => {
+  it('a blank Quantity to place sends nothing and shows the sentence under the box', () => {
+    const { onConvert } = renderDialog();
+    const box = screen.getByLabelText('Quantity to place for CWCY604') as HTMLInputElement;
+    fireEvent.change(box, { target: { value: '' } });
+    expect(box.value).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+    expect(onConvert).not.toHaveBeenCalled();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a number above 0 and up to 40.')).toBeVisible();
+  });
+});
+

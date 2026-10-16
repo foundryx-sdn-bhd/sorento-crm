@@ -157,7 +157,7 @@ describe('SystemHealthSettingsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
 
     expect(field).toHaveValue(null);
-    expect(screen.getByText('Enter a whole number of at least 0.')).toBeInTheDocument();
+    expect(screen.getByText('Enter a whole number between 1 and 100000.')).toBeInTheDocument();
     expect(
       apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
     ).toBeUndefined();
@@ -172,7 +172,7 @@ describe('SystemHealthSettingsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
 
     expect(field).toHaveValue(-4);
-    expect(screen.getByText('Enter a whole number of at least 0.')).toBeInTheDocument();
+    expect(screen.getByText('Enter a whole number between 0 and 1000000.')).toBeInTheDocument();
     expect(
       apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
     ).toBeUndefined();
@@ -252,7 +252,8 @@ describe('SystemHealthSettingsPage - WhatsApp round-trip latency (OBS-S4-21)', (
 
     expect(screen.getByTestId('chat-latency-target')).toHaveValue(null);
     expect(screen.getByTestId('chat-latency-min-sample')).toHaveValue(0);
-    expect(screen.getAllByText('Enter a whole number of at least 1.')).toHaveLength(2);
+    expect(screen.getByText('Enter a whole number between 1 and 3600.')).toBeInTheDocument();
+    expect(screen.getByText('Enter a whole number between 1 and 100000.')).toBeInTheDocument();
     expect(
       apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
     ).toBeUndefined();
@@ -286,3 +287,32 @@ describe('SystemHealthSettingsPage - WhatsApp round-trip latency (OBS-S4-21)', (
     expect((screen.getByTestId('chat-latency-target') as HTMLInputElement).value).toBe('10');
   });
 });
+
+describe('system-health field rules equal the backend bounds (S6)', () => {
+  it('refuses a fail threshold of 0 (backend ge=1, le=100000) on the field and sends nothing', () => {
+    stubApiFetch();
+    wrap(<SystemHealthSettingsPage />);
+    const field = screen.getByTestId('health-integration-fail-threshold');
+    fireEvent.change(field, { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a whole number between 1 and 100000.')).toBeInTheDocument();
+    expect(
+      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+    ).toBeUndefined();
+  });
+
+  it('refuses a latency target above 3600 (backend le=3600) on the field and sends nothing', () => {
+    stubApiFetch();
+    wrap(<SystemHealthSettingsPage />);
+    const field = screen.getByTestId('chat-latency-target');
+    fireEvent.change(field, { target: { value: '5000' } });
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a whole number between 1 and 3600.')).toBeInTheDocument();
+    expect(
+      apiFetch.mock.calls.find(([url]: [string]) => String(url).includes('/settings/general')),
+    ).toBeUndefined();
+  });
+});
+

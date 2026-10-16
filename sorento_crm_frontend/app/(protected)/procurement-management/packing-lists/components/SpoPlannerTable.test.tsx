@@ -2243,3 +2243,18 @@ describe('SpoPlannerTable - review round 1', () => {
     expect(take('SO-3001')).toHaveValue(0);
   });
 });
+
+describe('S10 - a refused SPO quantity marks the box and sends nothing', () => {
+  it('a typed -3 keeps -3, Create SPO shows the sentence on the box and calls nothing', async () => {
+    state.suggestion = suggestion({ lines: [unbackedLine()] });
+    state.create = vi.fn().mockResolvedValue({});
+    renderTable();
+    const box = await screen.findByTestId('spo-qty-input');
+    fireEvent.change(box, { target: { value: '-3' } });
+    fireEvent.click(screen.getByRole('button', { name: /create spo/i }));
+    expect(state.create).not.toHaveBeenCalled();
+    expect(box).toHaveValue(-3);
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a number of at least 0.')).toBeInTheDocument();
+  });
+});

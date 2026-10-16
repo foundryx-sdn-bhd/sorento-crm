@@ -85,3 +85,21 @@ describe('numberFieldError', () => {
     expect(numberFieldError('x', { optional: true })).toBe('Enter a number, or leave it blank.');
   });
 });
+
+describe('numberFieldError round 1b', () => {
+  it('S3: NaN (browser bad input) is invalid, never "no value", even when optional', () => {
+    expect(numberFieldError(NaN, { optional: true })).toBe('Enter a number, or leave it blank.');
+    expect(numberFieldError(NaN, {})).toBe('Enter a number.');
+  });
+  it('S4: minExclusive says "above"', () => {
+    expect(numberFieldError(0, { min: 0, minExclusive: true })).toBe('Enter a number above 0.');
+    expect(numberFieldError('0', { min: 0, minExclusive: true, integer: true })).toBe(
+      'Enter a whole number above 0.',
+    );
+    expect(numberFieldError('150', { min: 0, max: 100, minExclusive: true })).toBe(
+      'Enter a number above 0 and up to 100.',
+    );
+    expect(numberFieldError('0.5', { min: 0, minExclusive: true })).toBeUndefined();
+  });
+});
+
