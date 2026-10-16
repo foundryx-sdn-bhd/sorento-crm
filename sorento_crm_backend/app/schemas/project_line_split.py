@@ -8,10 +8,9 @@ sends them.
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, condecimal
 
 
 class LineSplitOut(BaseModel):
@@ -48,18 +47,26 @@ class LineSplitsOut(BaseModel):
     lines: List[LineSplitLineOut] = []
 
 
+#: Caps on one save (review round 1): a malformed or oversized body is a 422, never a 500.
+MAX_SPLITS_PER_LINE = 50
+MAX_LINES_PER_SAVE = 500
+MAX_REMARK_LENGTH = 500
+
+
 class LineSplitIn(BaseModel):
-    qty: Decimal
+    # The column's own precision. "Above 0" is checked by the service, so its 422 names the
+    # line (UAC B3).
+    qty: condecimal(max_digits=15, decimal_places=4)  # type: ignore[valid-type]
     delivery_date: Optional[date] = None
     is_cancel: bool = False
     sits_on_line_id: Optional[str] = None
-    remark: Optional[str] = None
+    remark: Optional[str] = Field(default=None, max_length=MAX_REMARK_LENGTH)
 
 
 class LineSplitLineIn(BaseModel):
     line_id: str
-    splits: List[LineSplitIn] = []
+    splits: List[LineSplitIn] = Field(default_factory=list, max_length=MAX_SPLITS_PER_LINE)
 
 
 class LineSplitsBody(BaseModel):
-    lines: List[LineSplitLineIn] = []
+    lines: List[LineSplitLineIn] = Field(default_factory=list, max_length=MAX_LINES_PER_SAVE)

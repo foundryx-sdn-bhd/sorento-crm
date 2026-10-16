@@ -375,8 +375,21 @@ class LineSplitService:
         """
         facts = self.line_facts(order)
         plans: List[Tuple[LineFacts, Decimal, Optional[date], List[Dict[str, Any]]]] = []
+        named: set = set()
         for entry in lines:
             line_id = str(entry.line_id)
+            if line_id in named:
+                line = facts.get(line_id)
+                raise AppException(
+                    status_code=422,
+                    message=(
+                        f"Line {line.line.line_no} is named twice in this save."
+                        if line is not None
+                        else "A line is named twice in this save."
+                    ),
+                    code="line_split_line_named_twice",
+                )
+            named.add(line_id)
             f = facts.get(line_id)
             if f is None:
                 raise AppException(
