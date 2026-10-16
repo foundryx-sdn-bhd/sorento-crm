@@ -300,6 +300,46 @@ def _change(cat: Catalog, item: dict) -> dict:
     }
 
 
+_SIBLINGS = {
+    ("stock_visibility", "warehouse_ids"): "excluded_warehouse_ids",
+    ("stock_visibility", "excluded_warehouse_ids"): "warehouse_ids",
+    ("spec_visibility", "spec_keys"): "excluded_spec_keys",
+    ("spec_visibility", "excluded_spec_keys"): "spec_keys",
+}
+
+
+def _cleared_sibling_changes(db: Session, contact, cat: Catalog, items: list[dict], todo: list[dict]) -> list[dict]:
+    """The one-rule CHECK clears the sibling list when a tag sets the other one (the writer does it), so
+    the preview must list that clearing too: the contact's inherited list goes away (R2)."""
+    present = {(i["section"], i["key"]) for i in items}
+    reader = None
+    out: list[dict] = []
+    for item in todo:
+        sibling = _SIBLINGS.get((item["section"], item["key"]))
+        if sibling is None or (item["section"], sibling) in present:
+            continue
+        if not item["_raw"]["expected"]:
+            continue  # an empty list sets nothing, so nothing is cleared
+        if reader is None:
+            reader = cts._Reader(db, [contact])
+        before = reader.current(str(contact.id), item["section"], sibling, cat)
+        if isinstance(before, cts._AllSet) or not before:
+            continue  # nothing held on that side
+        out.append(
+            {
+                "section": item["section"],
+                "key": sibling,
+                "label": cts._label(cat, item["section"], sibling),
+                "before": cts._display(cat, item["section"], sibling, before),
+                "after": "All" if sibling in ("warehouse_ids", "spec_keys") else [],
+                "decided_by": item["decided_by"],
+                "added": [],
+                "removed": cts._fmt(cat, item["section"], sibling, before),
+            }
+        )
+    return out
+
+
 def _row(contact_id: str, label: Optional[str], status: str, changes=None, conflicts=None, not_applied=None, error=None):
     return {
         "contact_id": contact_id, "label": label, "status": status, "changes": changes or [],
@@ -357,6 +397,7 @@ def apply_settings(
                 title = cts.SECTION_TITLES[i["section"]]
                 not_applied.append({"label": title, "reason": f"You may not change {title}."})
         changes = [_change(cat, i) for i in todo]
+        changes += _cleared_sibling_changes(db, contact, cat, items, todo)
         if not todo:
             results.append(_row(cid, label, "unchanged", conflicts=conflicts, not_applied=not_applied))
             continue
