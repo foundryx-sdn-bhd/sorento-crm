@@ -310,11 +310,11 @@ def scope_leaks(row: dict[str, Any], asker: dict[str, Any] | None, watch_custome
     return leaks
 
 
-_COMPANY_SUFFIX = {"sdn", "bhd", "berhad", "enterprise", "enterprises", "trading", "co", "ltd"}
+_COMPANY_SUFFIX = {"sdn", "bhd", "berhad", "pte", "ltd", "plt"}   # legal forms only: "trading" and "enterprise" name a company
 
 
 def _company(name: Any) -> str:
-    """A company name compared without case, punctuation or the usual suffixes (Sdn Bhd, Enterprise, Trading)."""
+    """A company name compared without case, punctuation or its legal form (Sdn Bhd, Berhad, Pte Ltd, Plt)."""
     return " ".join(w for w in re.findall(r"[a-z0-9]+", str(name or "").lower()) if w not in _COMPANY_SUFFIX)
 
 
