@@ -295,3 +295,22 @@ def test_guard_jn_numbers_unseen_words_and_phraseless_values_take_mains_path(vdb
     assert ("specification", word, "", None) in shape, shape
     assert not [s for s in shape if s[2] == key], shape
     assert not [s for s in shape if s[1] in ("No", "Yes")], shape
+
+
+@pytest.mark.parametrize(
+    "message,raw,key,value",
+    [
+        ("any pnk wall basin", "pnk wall basin", "mounting", "wall_hung"),
+        ("any wall pnk basin", "pnk basin", "mounting", "wall_hung"),
+        ("any pnk rose basin", "pnk rose basin", "finish", "rose_gold"),
+        ("any pnk under basin", "pnk under basin", "mounting", "under_counter"),
+        ("any pnk counter basin", "pnk counter basin", "mounting", "counter_top"),
+        ("any yellow pnk basin", "pnk basin", "finish", "golden_yellow"),
+    ],
+    ids=["o1-wall", "o2-wall-elsewhere", "o3-rose", "o4-under", "o5-counter", "o6-gold"],
+)
+def test_guard_o_part_of_a_values_phrase_in_the_message_takes_mains_path(vdb, message, raw, key, value):
+    entity = _e(raw, "category", spec_key=key, spec_value=value)
+    shape = _shape(_ground(vdb, message, entity))
+    assert ("specification", "pnk", "", None) in shape, shape
+    assert not [s for s in shape if s[2] == key and s[3] == value], shape
