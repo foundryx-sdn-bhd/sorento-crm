@@ -46,11 +46,16 @@ export interface MoveTarget {
 
 export type ChangeWord = 'REMAIN' | 'DELAY' | 'ADVANCE' | 'CANCEL';
 
-let counter = 0;
-/** A client-only id for a split made in this view; the server never sees it. */
-export function newSplitId(): string {
-  counter += 1;
-  return `new-${Date.now().toString(36)}-${counter}`;
+/**
+ * A client-only id for a split made in this view (the server never sees it), derived from
+ * the line and the splits it already has: the same input always gives the same id, so a
+ * function called twice (React StrictMode) answers the same both times.
+ */
+export function nextSplitId(lineId: string, splits: readonly SplitDraft[]): string {
+  const taken = new Set(splits.map((split) => split.id));
+  let index = splits.length + 1;
+  while (taken.has(`${lineId}:${index}`)) index += 1;
+  return `${lineId}:${index}`;
 }
 
 /** The id of a line's implicit split (its base, unsplit). */
@@ -185,7 +190,7 @@ export function moveSplit(
     if (existing) existing.qty += moving;
     else
       splits.push({
-        id: newSplitId(),
+        id: nextSplitId(lineId, splits),
         qty: moving,
         deliveryDate: date,
         isCancel,
@@ -211,7 +216,7 @@ export function splitInTwo(
     split.qty = first;
     splits.splice(index + 1, 0, {
       ...split,
-      id: newSplitId(),
+      id: nextSplitId(lineId, splits),
       qty: second,
       remark: '',
     });
@@ -333,15 +338,16 @@ export function addSplit(
   lines: SplitLine[],
   lineId: string,
 ): { lines: SplitLine[]; id: string } {
-  const id = newSplitId();
+  const line = lines.find((candidate) => candidate.lineId === lineId);
+  const id = nextSplitId(lineId, line ? splitsOf(line) : []);
   return {
     id,
-    lines: editLine(lines, lineId, (splits, line) => [
+    lines: editLine(lines, lineId, (splits, current) => [
       ...splits,
       {
         id,
         qty: 0,
-        deliveryDate: line.baseDate,
+        deliveryDate: current.baseDate,
         isCancel: false,
         sitsOnLineId: lineId,
         remark: '',
