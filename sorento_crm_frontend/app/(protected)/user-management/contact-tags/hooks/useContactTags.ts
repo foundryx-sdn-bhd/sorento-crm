@@ -133,7 +133,6 @@ export function useApplyPreview(
     retry: false,
     staleTime: Infinity,
     gcTime: 0,
-    refetchOnWindowFocus: false,
   });
 }
 
