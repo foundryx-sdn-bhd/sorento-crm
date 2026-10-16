@@ -19,7 +19,7 @@ in full; the parser outputs CHANGES to it; code applies them and logs before/aft
 | # | User does | State change | Ruling (memory / source) |
 |---|---|---|---|
 | R1 | Refines with a fragment: a brand, filter, spec, channel, period ("sorento", "dealer sales only", "under counter") | Keep subject; add or replace that one axis | feedback-live-check-follow-ups (refine last answer); #1720 probe: "sorento" after a set narrows the set |
-| R2 | Code-less domain ask ("stock", "eta", "have incoming?", "size?") | Keep products and customer; switch domain only | feedback-live-check-follow-ups (topic switch); real traffic top code-less follow-ups `stock` 76, `eta` 53 (CHATBOT-SCALE-C:271) |
+| R2 | Code-less domain ask ("stock", "eta", "have incoming?", "size?") | Keep products and customer; switch domain; the held period stays (R16); status, sort and report frame belong to the old domain and drop | feedback-live-check-follow-ups (topic switch); real traffic top code-less follow-ups `stock` 76, `eta` 53 (CHATBOT-SCALE-C:271); owner 16 Oct ~23:00 (period retained in follow-ups) |
 | R3 | "and X?" (swaps one subject item) | Replace that item; keep the ask: domain, qty, period, filters | 15 Oct "qty carries" (#1617: "5件" then "SRTWC286-SH-NEW 呢？" -> 5) |
 | R4 | New full ask that names its own subject and measure ("top 3 sales agents" again, "any stock for sorento undermount basin") | New subject = only what this message names; basis / measure / channel / period / filters only from this message. Customer still carries (R6) | #1721 step 7 + REPORT-ENGINE-L AC-HT8 (no carried channel); feedback-chatbot-clarify-not-assume |
 | R5 | Answers the bot's open question (a position, an offered name, yes/no, a value) | Fills ONLY the asked slot; the question closes | feedback-live-check-follow-ups (reply to bot question); REPORT-ENGINE-L ("an answer fills only the asked slot"); #1572 "sorento" |
@@ -113,5 +113,8 @@ owner's own probes and prod incidents already in crew reports. Crew can attach m
 - Owner, 16 Oct ~23:00 (closes Q3, replaces the unclear-customer ask): period kept on follow-ups, a new stated period
   replaces it, brand-new topic = parser judges (R16); an unclear held customer is settled by the entity's type from
   the registry (customer = delivery, supplier = incoming/PO), ask only when the type cannot settle it (R15, R11).
+- Lead ruling 17 Oct (applying R16 to the reviewer's B2): a domain switch is a follow-up, so the held period carries
+  unless the parser says `skip` / `clear` period; a period the message states replaces it even without a `set` op.
+  A dry-run mock emission turns the state path on only when it carries the `state_changes` key.
 - Crew, 16 Oct ~23:10: the default is ONE named constant `ask` in code, one place, pinned by a test; storage and UI
   come later behind the clarify-policy work (#1570). An owner change of default is a one-line change.

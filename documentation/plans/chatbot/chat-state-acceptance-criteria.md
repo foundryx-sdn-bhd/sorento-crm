@@ -37,8 +37,8 @@ Plan: `PLAN-chat-state-16oct.md`. Card: `chat-state-behaviour-card.md` (rules R1
 - C5. When the parse carries the field, no other code path changes the carried subject in that turn.
 - C6. When the parse does not carry the field, the turn runs exactly as on main (the $0 L1 replay gate shows zero
   unintended diffs on `--split dev`).
-- C7. (R16, owner 16 Oct ~23:00) A held period is kept on follow-ups and on a new subject unless the parse says
-  `skip` / `clear` period; a period the message states replaces it.
+- C7. (R16, owner 16 Oct ~23:00) A held period is kept on follow-ups (domain switches included) and on a new subject
+  unless the parse says `skip` / `clear` period; a period the message states replaces it, with or without a `set`.
 - C9. (R14, owner 16 Oct ~22:45) When the State holds a customer or period, the parse's `keep` / `skip` / `clear` /
   `unclear` for that axis decides it: keep applies it to this ask; skip does not apply it and it stays held; clear
   drops it. No per-domain table and no word rule decide it. No statement = applies as today.

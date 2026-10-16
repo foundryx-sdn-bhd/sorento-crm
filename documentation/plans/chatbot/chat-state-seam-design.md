@@ -121,8 +121,8 @@ Carry, on a deepcopy of the focus, keyed off the op, never the message:
   (so #1721 step 7 asks the basis). Period dropped (Q3b).
 - clear axis: drop that axis.
 - switch_domain, or a domain_hint differing from the held domain (implied switch, logged): `focus.domains` = new;
-  drop domain-bound axes status, document, sort, period, top_selling, sales_ranking_frame, low_stock, set_page; keep
-  products, customers, brands, specs (R2). Replaces today's wipes at apply.py:1173-1186, :1200-1213, :1222-1232.
+  drop domain-bound axes status, document, sort, top_selling, sales_ranking_frame, low_stock, set_page; keep
+  products, customers, brands, specs and the held period (R2, R16: the period carries unless skip/clear period). Replaces today's wipes at apply.py:1173-1186, :1200-1213, :1222-1232.
 
 Verdict edits (deterministic):
 - (a) No `answer` op and no roster pick: `question.without_phantom_answer(verdict, open_question=None,
