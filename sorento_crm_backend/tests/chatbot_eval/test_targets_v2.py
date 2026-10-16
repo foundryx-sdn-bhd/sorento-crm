@@ -1620,3 +1620,28 @@ def test_a_different_product_list_left_open_with_nothing_shown_still_fails():
     r = row2(reply="Thanks.", oq={"before": VARIANT_Q, "after": other, "writer": "engine"})
     res = grade_turn(r, dict(item("scope"), asker=STAFF_ASKER))
     assert res["checks"].get("no_picker") is False, res["checks"]
+
+
+# ------------------------------------------------------------------ review round 26 (a follow-up on a stock answer is a stock ask)
+# The domain before the turn lives at memory `focus.before.domains` (the session focus slot `domains`, session_state.py).
+def _refine_how_many(before_domain, message="black only"):
+    tool = {"name": "crm_inventory_list", "args": {"product_ids": [UA], "scope_terms": ["black"]},
+            "envelope": {"stock_visibility": {"mode": "availability"}, "items": [{"code": "SRTA100", "qty": 40}]}}
+    v = {"entities": [{"raw": "black", "hint": "specification", "spec_key": "colour", "spec_value": "black"}],
+         "reference_positions": []}
+    r = row2(message=message, verdict=v, mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[tool],
+             prev_bot="Stock of SRTA100 and SRTA200.", reply="Black SRTA100 is available. How many units?")
+    for rec in r["trace"]:
+        if rec.get("kind") == "memory":
+            rec["focus"]["before"]["domains"] = [before_domain]
+    return grade_turn(r, item("followup", "refine", subject_after=["SRTA100"], filter={"kind": "spec", "value": "black"}))
+
+
+def test_a_refine_of_a_stock_answer_may_ask_how_many_in_availability_mode():
+    res = _refine_how_many("inventory")
+    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+
+
+def test_a_refine_of_a_promo_answer_may_not_ask_how_many():
+    res = _refine_how_many("promotion")
+    assert res["checks"].get("no_qty_ask") is False, res["checks"]
