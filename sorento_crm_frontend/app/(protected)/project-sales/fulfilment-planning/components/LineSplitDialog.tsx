@@ -108,12 +108,14 @@ function isTyping(target: EventTarget | null): boolean {
   return Boolean(element && /^(INPUT|SELECT|TEXTAREA)$/.test(element.tagName));
 }
 
-function focusCard(splitId: string) {
-  window.requestAnimationFrame(() => {
-    document
-      .querySelector<HTMLElement>(`[data-split-card="${splitId}"]`)
-      ?.focus({ preventScroll: true });
-  });
+/** Focus a card by split id; true once it holds the focus. */
+function focusCardNow(splitId: string): boolean {
+  const card = document.querySelector<HTMLElement>(
+    `[data-split-card="${splitId}"]`,
+  );
+  if (!card) return false;
+  card.focus({ preventScroll: true });
+  return document.activeElement === card;
 }
 
 /**
@@ -154,6 +156,28 @@ export function LineSplitDialog({
   const [openKeys, setOpenKeys] = React.useState<ReadonlySet<string>>(
     new Set(),
   );
+
+  // After a keyboard move the card remounts under its new cell: focus follows it by split
+  // id once that commit is on screen (the layout effect below), retried for a few frames
+  // in case the cell paints later, so the next arrow works without re-tabbing.
+  const focusTargetRef = React.useRef<string | null>(null);
+  const focusCard = React.useCallback((splitId: string) => {
+    focusTargetRef.current = splitId;
+    let tries = 0;
+    const retry = () => {
+      if (focusTargetRef.current !== splitId) return;
+      if (focusCardNow(splitId) || (tries += 1) > 10) {
+        if (focusTargetRef.current === splitId) focusTargetRef.current = null;
+        return;
+      }
+      window.requestAnimationFrame(retry);
+    };
+    window.requestAnimationFrame(retry);
+  }, []);
+  React.useLayoutEffect(() => {
+    const target = focusTargetRef.current;
+    if (target && focusCardNow(target)) focusTargetRef.current = null;
+  });
 
   const commit = React.useCallback((next: Draft | null) => {
     draftRef.current = next;
@@ -303,9 +327,23 @@ export function LineSplitDialog({
           }),
         `${qty} to ${whereText(lineId, col, on)}`,
       );
-      if (moved) focusCard(splitId);
+      if (!moved) return;
+      // The card that now holds the moved qty: the split itself, the new part, or the
+      // split it merged into.
+      const line = draftRef.current?.lines.find(
+        (candidate) => candidate.lineId === lineId,
+      );
+      const landed = line
+        ? splitsOf(line).find(
+            (split) =>
+              split.isCancel === cancel &&
+              split.deliveryDate === (cancel ? null : col) &&
+              split.sitsOnLineId === on,
+          )
+        : undefined;
+      focusCard(landed?.id ?? splitId);
     },
-    [apply, whereText],
+    [apply, whereText, focusCard],
   );
 
   const openMoveBox = React.useCallback(

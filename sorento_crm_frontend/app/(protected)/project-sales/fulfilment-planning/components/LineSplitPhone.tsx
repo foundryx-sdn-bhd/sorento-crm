@@ -69,7 +69,8 @@ export function LineSplitPhone({
             className="shrink-0 rounded-full"
             onClick={() => onPick(candidate.lineId)}
           >
-            {`${candidate.itemCode} ${candidate.baseQty}`}
+            {/* A line AutoCount added (base 0) reads its AutoCount qty. */}
+            {`${candidate.itemCode} ${candidate.baseQty || candidate.nowQty}`}
             {gapOf(candidate) !== 0 ? (
               <TriangleAlert aria-label="Does not add up" />
             ) : null}
