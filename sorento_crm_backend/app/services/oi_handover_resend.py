@@ -117,8 +117,15 @@ class OrderInquiryHandoverResend:
             )
             for row in rows
         ]
-        # OI-LINE-SPLIT (UAC D1): a split line reads one line per split, as on Confirm.
-        items = service.split_handover_items(items)
+        # OI-LINE-SPLIT (UAC D1): a split line reads one line per split, as on Confirm -
+        # while its splits still act. A plan AutoCount has since moved on from is not
+        # purchasing's instruction any more: that line prints its current row.
+        from app.services.project_line_split_service import LineSplitService
+
+        acting = LineSplitService(self.db).acting_origin_ids(
+            item.get("so_line_id") for item in items
+        )
+        items = service.split_handover_items(items, line_ids=acting)
         context, _source_id = build_handover_email(self.db, items, store_excel=False)
         handover = context["handover"]
         handover["subject_scope"] = f"{handover['subject_scope']} (Resent)"
