@@ -1236,8 +1236,8 @@ def open_question(tasks: Any) -> dict[str, Any] | None:
     """The stock question as the structured object the parser reads (PR #1247 round 8).
 
     `kind` is "quantities" while the quantities are still asked and "last_answer"
-    once the check is answered (a follow-up may revise it, "3 for all of them"); a parked
-    check is not offered. `asked_qty` is present only after "Is N for all K products, or
+    once a check of two or more lines is answered (a follow-up may revise it, "3 for all of
+    them"); a one-line answer is not offered (F3), nor is a parked check. `asked_qty` is present only after "Is N for all K products, or
     for one of them?". `items`
     are the question's numbered lines in their fixed order, `qty` null while owed, and
     `owed` names those positions. The parser answers it in `open_question_answer`.
@@ -1249,6 +1249,11 @@ def open_question(tasks: Any) -> dict[str, Any] | None:
         task = row if isinstance(row, Task) else task_from_wire(row)
         if task is None or not task.slots or task.status == PARKED:
             # A parked check is not the question on the table (review S3).
+            continue
+        if task.status == ANSWERED and len(task.slots) == 1:
+            # F3 (16 Oct 2026): a one-line answer is stated once, by the "Last answered:"
+            # line; the object made the parser answer the delivered answer as a question.
+            # A bare number revises it from demand_qty (`_revised`), no object needed.
             continue
         items = [
             {"position": i, "code": slot.label, "qty": _number(slot.value)}
