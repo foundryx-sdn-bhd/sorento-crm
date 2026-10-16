@@ -74,3 +74,15 @@ found"; the others still apply.
 - `BulkTagDialog` step 2 (add mode): radio "Apply tag settings now" (default, preview of setting changes
   shown) / "Don't apply now" (labels only); button "Add tag to N contacts". Remove mode has no apply step.
 - After apply: invalidate the contacts list, the contact detail, tag list and tag detail queries; toast.
+
+## Captain rulings (16 Oct, after the first S3 coder pass)
+
+- A row whose only issue is a conflict answers `unchanged`. `bulk-tags` row `settings` uses the apply row shape.
+- Agents: no write when current already equals expected (a Deny on a contact with no grant row is
+  already denied: no row created). An allowed row is upserted to `is_allowed = false`.
+- Stock / spec visibility hold one rule per row (CHECK): a tag may not set both the include and the
+  exclude list (422 naming the section on save); across tags, an include list from one tag and an
+  exclude list from another is a CONFLICT (not applied, never `failed`).
+- Writers: the contact-page service functions that commit inside (`set_field_access`,
+  `set_contact_outbound`) would end the per-contact savepoint, so apply writes the same rows with ORM /
+  Core inside the savepoint, keeping the same validation. Reviewer checks parity with those services.
