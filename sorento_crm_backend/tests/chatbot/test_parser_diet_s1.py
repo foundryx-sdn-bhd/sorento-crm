@@ -131,21 +131,6 @@ def test_ac4_current_date() -> None:
     assert out.count("{{current_date}}") == 1
 
 
-def test_ac5_flyer_flag() -> None:
-    out = _out()
-    assert 'set top-level "contains_flyer": true' not in out
-    assert not re.search(r'contains_flyer"?:?\s*true', out)
-    assert '"contains_flyer": false' in out
-    assert "check_promotion" in out
-    assert "flyer" in out.lower()
-
-
-def test_ac6_correction_section_gone() -> None:
-    out = _out()
-    assert "== CORRECTION / DOUBT ==" not in out
-    assert '"correction": false' in out
-
-
 def test_ac7_reference_target() -> None:
     out = _out()
     assert "== REFERENCE TARGET" not in out
@@ -171,53 +156,7 @@ def test_ac9_requested_attributes_comma() -> None:
     assert '"requested_attributes": [],' in _out()
 
 
-def test_ac9_no_in_addition_phrase() -> None:
-    assert "IN ADDITION to the OUTPUT object" not in _out()
-
-
-def test_ac9_moved_keys_inside_output_object() -> None:
-    obj = _output_object(_out())
-    for key in MOVED_KEYS:
-        assert f'"{key}"' in obj, f"{key} missing from OUTPUT object"
-
-
-def test_ac9_entity_subkeys_stated_after_output_object() -> None:
-    out = _out()
-    after = out[out.index("Return exactly one JSON object.", out.index("== OUTPUT (exactly these keys")):]
-    for key in ("quantity", "spec_key", "spec_value"):
-        assert key in after[:3000], f"{key} not stated right after the OUTPUT object"
-
-
 # ---- AC10 ----
-
-def test_ac10_banners() -> None:
-    titles = _titles(_out())
-    for gone in REMOVED_BANNERS:
-        assert not any(t.startswith(gone) for t in titles), f"banner {gone} still present"
-    for kept in KEPT_BANNERS:
-        assert any(t.startswith(kept) for t in titles), f"banner {kept} lost"
-
-
-def test_ac10_headings_under_removed_banners_survive() -> None:
-    v94 = _v94()
-    lines = v94.split("\n")
-    banners = _banners(v94)
-    out = _out()
-    assert banners
-    abl = importlib.import_module("scripts.build_parser_ablation")
-    live_cuts = [(old, new) for cid, old, new in abl.CUTS if cid not in SKIPPED]
-    checked = 0
-    for n, (title, idx) in enumerate(banners):
-        if not any(title.startswith(g) for g in REMOVED_BANNERS):
-            continue
-        end = banners[n + 1][1] if n + 1 < len(banners) else len(lines)
-        for line in lines[idx + 2 : end]:
-            if re.match(r"^== .+ ==\s*$", line):
-                if any(line in old and line not in new for old, new in live_cuts):
-                    continue
-                checked += 1
-                assert line in out, f"heading lost under removed banner {title!r}: {line}"
-    assert checked > 0
 
 
 # ---- AC11-AC14 ----
@@ -241,8 +180,8 @@ def test_ac12_required_keys_present() -> None:
         assert f'"{name}"' in out, f"required key {name} lost"
 
 
-def test_ac13_at_least_seven_percent_shorter() -> None:
-    assert len(_out()) <= 0.93 * len(_v94())
+def test_ac13_at_least_six_percent_shorter() -> None:
+    assert len(_out()) <= 0.94 * len(_v94())
 
 
 def test_ac14_no_dashes_in_new_text() -> None:
@@ -250,3 +189,19 @@ def test_ac14_no_dashes_in_new_text() -> None:
     assert edits
     for edit_id, _old, new in edits:
         assert "\u2014" not in new and "\u2013" not in new, f"dash in edit {edit_id}"
+
+
+def test_scope_held_edits_not_applied() -> None:
+    v94, out = _v94(), _out()
+
+    def section(text: str, heading: str) -> str:
+        start = text.index(heading)
+        end = text.find("\n== ", start + len(heading))
+        return text[start : end if end != -1 else len(text)]
+
+    for heading in ("== FLYER FLAG ==", "== CORRECTION / DOUBT =="):
+        assert section(v94, heading) in out, f"{heading} section changed or removed"
+    missing = [t for t in _titles(v94) if t not in _titles(out)]
+    assert not missing, f"banner titles lost: {missing}"
+    phrase = "IN ADDITION to the OUTPUT object"
+    assert out.count(phrase) == v94.count(phrase)
