@@ -29,6 +29,10 @@ vi.mock('@/app/(protected)/user-management/market-segments/services/marketSegmen
   ...(await orig<object>()),
   setContactMarketSegments: vi.fn().mockResolvedValue([]),
 }));
+vi.mock('@/services/contactBrandScopeService', async (orig) => ({
+  ...(await orig<object>()),
+  saveContactBrandScope: vi.fn().mockResolvedValue({ brand_ids: [] }),
+}));
 vi.mock('@/services/stockVisibilityService', async (orig) => ({
   ...(await orig<object>()),
   saveStockVisibility: vi.fn().mockResolvedValue({}),
@@ -60,6 +64,7 @@ vi.mock('../components/CopyAccessAgentsFromContactDialog', () => ({
 vi.mock('../../../access-agents/components/ContactFieldAccessDialog', () => ({ default: () => null }));
 
 import { useSetContactMarketSegments } from '@/app/(protected)/user-management/market-segments/hooks/useMarketSegments';
+import { useContactBrandScopeMutations } from '@/hooks/useContactBrandScope';
 import { useStockVisibilityMutations } from '@/hooks/useStockVisibility';
 import { useSpecVisibilityMutations } from '@/hooks/useSpecVisibility';
 import { useRespondContactOutboundMutations } from '@/hooks/useRespondContactOutbound';
@@ -104,6 +109,8 @@ describe('hook writers refresh the Tags section', () => {
     expectMutationInvalidates(() => useSpecVisibilityMutations({ kind: 'contact', contactId: 'c1' }).save as never, {}));
   it('spec visibility remove', () =>
     expectMutationInvalidates(() => useSpecVisibilityMutations({ kind: 'contact', contactId: 'c1' }).remove as never, undefined));
+  it('brands save', () =>
+    expectMutationInvalidates(() => useContactBrandScopeMutations('c1').save as never, ['b1']));
   it('outbound (messaging) toggle', () =>
     expectMutationInvalidates(() => useRespondContactOutboundMutations().setOne as never, { contactId: 'c1', enabled: false }));
 });
