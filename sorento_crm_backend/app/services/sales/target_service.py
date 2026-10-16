@@ -1314,6 +1314,18 @@ def period_payout(
     )
 
 
+def _achieved_by_account(
+    db: Session, company_id: str, pairs: List[Tuple[SalesTarget, SalesTargetPeriod]]
+) -> Dict[str, Dict[Optional[str], Decimal]]:
+    """`{period_id: {customer_id: achieved}}`, split by account only when a dealer target is
+    among `pairs` (its per-account rates need it); agent and team targets run the plain
+    statement under one `None` key, which is all `period_payout` reads for them."""
+    specs = _specs(db, company_id, pairs)
+    if any(target.subject_kind == "dealer" for target, _ in pairs):
+        return ach.achieved_by_period_and_account(db, specs, company_id)
+    return {pid: {None: total} for pid, total in ach.achieved_by_period(db, specs, company_id).items()}
+
+
 def _num(value) -> Optional[float]:
     return None if value is None else float(value)
 
@@ -1522,7 +1534,7 @@ def list_all_targets(
         ):
             periods_by_target.setdefault(period.target_id, []).append(period)
     pairs = [(t, p) for t in targets for p in periods_by_target.get(t.id, [])]
-    by_account = ach.achieved_by_period_and_account(db, _specs(db, company_id, pairs), company_id)
+    by_account = _achieved_by_account(db, company_id, pairs)
     achieved = {pid: sum(v.values(), Decimal("0")) for pid, v in by_account.items()}
     scopes = _scope_labels(db, {t.id for t in targets})
     tiers_of = _tiers_by_target(db, [t.id for t in targets])
@@ -1630,9 +1642,7 @@ def target_detail(db: Session, target: SalesTarget, *, on: Optional[date] = None
     on = on or _today()
     company_id = target.company_id
     periods = _periods(db, target.id)
-    by_account = ach.achieved_by_period_and_account(
-        db, _specs(db, company_id, [(target, p) for p in periods]), company_id
-    )
+    by_account = _achieved_by_account(db, company_id, [(target, p) for p in periods])
     achieved = {pid: sum(v.values(), Decimal("0")) for pid, v in by_account.items()}
 
     tiers = _tiers(db, target.id)

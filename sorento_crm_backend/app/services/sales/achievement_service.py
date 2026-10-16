@@ -73,6 +73,7 @@ from sqlalchemy import (
     literal,
     literal_column,
     not_,
+    null,
     or_,
     select,
     true,
@@ -236,17 +237,26 @@ def _credit_groups(
 
 def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) -> Dict[str, Decimal]:
     """`{period_id: achieved}` for every spec, one statement for all of them."""
-    out: Dict[str, Decimal] = {s.period_id: Decimal("0") for s in specs}
-    for period_id, by_customer in achieved_by_period_and_account(db, specs, company_id).items():
-        out[period_id] = sum(by_customer.values(), Decimal("0"))
-    return out
+    return {
+        period_id: sum(by_customer.values(), Decimal("0"))
+        for period_id, by_customer in _achieved(db, specs, company_id, split=False).items()
+    }
 
 
 def achieved_by_period_and_account(
     db: Session, specs: List[PeriodSpec], company_id: str
 ) -> Dict[str, Dict[Optional[str], Decimal]]:
     """`{period_id: {customer_id: achieved}}` for every spec, one statement for all of them
-    (the customer of the line's sales order; None when the order has none).
+    (the customer of the line's sales order; None when the order has none). Only a dealer's
+    per-account rates need the split; agent and team callers use `achieved_by_period`, whose
+    statement carries no customer (the split costs the perf budget its plan, #1715)."""
+    return _achieved(db, specs, company_id, split=True)
+
+
+def _achieved(
+    db: Session, specs: List[PeriodSpec], company_id: str, *, split: bool
+) -> Dict[str, Dict[Optional[str], Decimal]]:
+    """`{period_id: {customer_id or None: achieved}}`, split by customer only when `split`.
 
     Steps (review round 2, B1; #1319), each reading a small VALUES, one earlier step once, or an
     index: `period_days` (every day of every period), `agent_lines` (the credited agents' live
@@ -356,7 +366,7 @@ def achieved_by_period_and_account(
                 SO.order_date.label("order_date"),
                 credit_key.label("agent_id"),
                 literal(kind, Integer).label("ckind"),
-                SO.customer_id.label("customer_id"),
+                (SO.customer_id if split else null().cast(_UUID)).label("customer_id"),
             )
             .select_from(SalesOrder.__table__)
             .join(SalesOrderLine.__table__, SOL.sales_order_id == SO.id)
