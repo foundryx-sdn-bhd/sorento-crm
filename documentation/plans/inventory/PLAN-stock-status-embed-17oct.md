@@ -1,6 +1,6 @@
 # PLAN: Available stock status, embedded in every process (STOCK-STATUS)
 
-Status: Mock round 3 on crew's masked data (Forecast reconciled, Transferable F, PL fix); waiting on owner OK of the mock (lane STOCK-STATUS, size L, standard track; build only after the owner OKs the mock)
+Status: Mock round 3 on crew's masked data (Forecast reconciled, Transferable F, PL fix, Q6 answered: inactive locations count); waiting on owner OK of the mock (lane STOCK-STATUS, size L, standard track; build only after the owner OKs the mock)
 
 ## Owner request (17 Oct)
 
@@ -93,9 +93,13 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 
 ### Rules (round 3: owner answers + crew's masked rows of 17 Oct applied)
 
-- R1. One panel, one product. Rows = every ACTIVE location carrying any nonzero figure, minus the
-  locations the viewer's stock visibility policy excludes (`app/services/stock_visibility.py:364`).
-  A location with all zeros is hidden (AutoCount's report does the same).
+- R1. One panel, one product. Rows = every location of the company carrying any nonzero figure,
+  **active or not in the CRM** (Q6 b: AutoCount lists and counts them), minus the locations the
+  viewer's stock visibility policy excludes (`app/services/stock_visibility.py:364`). A location the
+  CRM marks inactive (`warehouses.is_active`, `app/models/inventory.py:38`) carries a small "Inactive
+  in CRM" tag and counts in every total like any other. A location with all zeros is hidden
+  (AutoCount's report does the same). This departs from `location_stock_for_product`, which reads
+  active warehouses only (`app/services/scm/location_stock_service.py:61-65`).
 - R2. Columns, in this order: On hand, SO (shown negative, AutoCount style), PO, Incoming PL, SPO,
   then Forecast only if Q1 confirms it is AutoCount's formula. Footer = totals of every column.
   **No status / health column** (owner, 17 Oct: "dint need the health level column"). Negative
@@ -152,11 +156,14 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 - SO line with no warehouse (`sales_order_lines.warehouse_id` nullable, `order.py:758`): one
   "No location" row, so the total still matches.
 - SPO past its ETA: still counted (`spo_supply.py:9-22`), the doc row shows days late.
-- Inactive warehouse holding stock: not listed and not counted (same cut as the replenishment page).
-  SRTWB1515 has 35 there (CON 32, JB SHOWR 1, PJ-SR 1, REJ100% 1); AutoCount's report lists
-  JB SHOWR / PJ-SR / REJ100% / CON, and the CRM's on hand is 495 against AutoCount's 499, with the 4
-  not located (the screenshot moment differs from the copy). Open point for the build: whether
-  AutoCount counts some inactive CRM locations (see Q6).
+- Location inactive in the CRM but holding stock: listed, tagged "Inactive in CRM", counted (R1,
+  Q6 b). SRTWB1515 per AutoCount's screenshot: REJ100% 1, JB SHOWR 1, PJ-SR 1, CON 1 (all four inactive
+  in the CRM), so AutoCount's 499 = the CRM's active 495 + 4, exactly. The replenishment page and
+  the board still leave these out; the panel does not.
+- **Data timing, not a rule:** CON is 32 in the CRM's 15 Oct copy but 1 in AutoCount's screenshot
+  (date unknown, likely 16 Oct). The panel prints whatever the last stock push holds, stamped "On
+  hand as of <push time>" (R9); a difference against an AutoCount screenshot taken at another moment
+  is not a defect.
 - Warehouses are not company-scoped (`warehouses` has no company cut in `location_stock_for_product`),
   so another company's pools (HOLD, HQ, 2nd REWORK) appear as zero rows; the panel scopes them out
   and hides all-zero rows (R1).
@@ -169,9 +176,11 @@ Backend paths are under `sorento_crm_backend/`, frontend paths under
 
 ### Examples (crew's masked rows, dev DB = 15 Oct prod copy)
 
-- SRTWB1515, panel rules applied: On hand 495 (AutoCount 499), SO 10,390 (= AutoCount, after
-  dropping 193 Transferable F at BRW-BB), PO 2,438, SPO 459, Forecast 495 - 10,390 + 2,438 + 459 =
-  -6,998 (AutoCount -6,994, the 4 of on hand). BRW-BB: 0 - 7,312 + 1,734 + 50 = -5,528, equal to
+- SRTWB1515, panel rules applied: On hand at active locations 495; AutoCount's 499 adds REJ100% 1,
+  JB SHOWR 1, PJ-SR 1, CON 1 (inactive in the CRM, counted per Q6 b), so the panel's on hand matches
+  AutoCount when both read the same moment (the 15 Oct copy holds CON 32, so the panel on that copy
+  reads 530: data timing). SO 10,390 (= AutoCount, after dropping 193 Transferable F at BRW-BB), PO
+  2,438, SPO 459, Forecast 499 - 10,390 + 2,438 + 459 = -6,994 = AutoCount. BRW-BB: 0 - 7,312 + 1,734 + 50 = -5,528, equal to
   AutoCount. Incoming PL 227 (PL-2610-001 118, PL-2610-010 109); Forecast incl. PL -6,771.
 - CWCX605-RL: On hand 1,030, SO 12,081, PO 1,820, SPO 0, Forecast -9,231; Incoming PL 641
   (PL-2610-014, on no SPO); Forecast incl. PL -8,590. (Transferable F not measured for this item.)
@@ -199,10 +208,11 @@ The 459 is SPO (crew's rows, 17 Oct): AutoCount's Forecast = On hand - SO + PO +
   (b) customer only. Recommendation: (a). **Answered (a).**
 - Q6 (new, from the crew's rows). Inactive CRM locations that hold stock (SRTWB1515: CON 32,
   JB SHOWR 1, PJ-SR 1, REJ100% 1): (a) leave them out, the CRM's existing cut; (b) list them, counted,
-  because AutoCount's report lists those locations. Recommendation: (a) for now, with a footnote
-  "35 more at inactive locations" under the total, because 499 - 495 = 4 does not match any
-  combination of them cleanly; crew to read AutoCount's JB SHOWR / PJ-SR / REJ100% / CON rows for
-  SRTWB1515 at one moment to settle it.
+  because AutoCount's report lists those locations. Recommendation was (a). **Answered (b)** (crew,
+  from the owner's AutoCount screenshot: REJ100% 1, BRW-BB 0, DC1-BB 191, JB SHOWR 1, PJ-SR 1,
+  MWH-IB 140, RESERVE 0, BRW 0, BRW-IR 11, CON 1, MWH-SMC 24, MWH-BB 108, BRW-IB 6, BRW-SMC 15 = 499).
+  Every location AutoCount shows is listed, inactive ones tagged. The mock's footnote ("35 not
+  counted") is superseded by R1; per crew, no new mock round for this.
 
 ## 3. Mock
 
@@ -217,7 +227,8 @@ characters as crew sent them.
 ## 4. Build sketch (after the mock is OK'd)
 
 - BE: one read endpoint `GET /api/v1/inventory/stock-status?product_id=&so_due_by=` composing
-  `location_stock_for_product`'s on hand / PO / SPO readers (rows; its SO reader uses the board's
+  `location_stock_for_product`'s on hand / PO / SPO readers, widened to inactive warehouses (R1)
+  (rows; its SO reader uses the board's
   `demand.py` rule, so the panel's SO comes from the AutoCount-shaped
   `open_so_qty_by_product_warehouse` instead, R4), the stock-detail SO / SPO readers plus a PO reader
   (documents), the R3 Incoming PL reader (NOT `PL_UNALLOCATED_SQL`) and a project grouping; SO adds
