@@ -28,7 +28,7 @@ axis (entities with that hint; `sales_channel`; `date_mode` / `date_filter_start
 | `keep` | the message continues the subject as it is | null | null |
 | `keep` / `skip` / `clear` / `unclear` | the State holds a customer or a period: say what this message does with it (rules below) | `customer` or `period` | null |
 | `new_subject` | the message is a full ask with its own subject and measure; the held customer (see the held-slot rules), the access tier and the brand carry, nothing else | null | null |
-| `set` | the message adds or replaces ONE part of the subject; one `set` per value the message states, a stated value without its `set` is not used | one of: product, customer, warehouse, brand, tier, channel, period, status, sort, quantity, or an entity kind listed in the prompt | null |
+| `set` | the message adds or replaces ONE part of the subject; one `set` per value the message states, a stated value without its `set` is not used | the entity's own kind (its hint), or one of: customer, warehouse, brand, tier, channel, period, status, document, sort, quantity | null |
 | `clear` | the message removes one part of the subject | one of the same names | null |
 | `pick` | the message points at an item of the `last list` (its number, its position, or its name as listed); one `pick` per picked position ("1 and 3" is two picks); only product rows of the `last list` can be picked | null | the item's number |
 | `answer` | the message answers the `open question` (one of its options, yes or no, or the value it asked for) | null | null |
@@ -36,6 +36,7 @@ axis (entities with that hint; `sales_channel`; `date_mode` / `date_filter_start
 | `close_question` | the `open question` is still owed (it asked for something) and the message leaves it unanswered; never for a question that was already answered | null | null |
 
 Business rules:
+- Several items of one axis (several products, several brands) are ONE `set` for that axis.
 - "and <another item>?" replaces only that item (`set product` or `set customer`); the ask, quantity, period and
   filters stay.
 - A quantity said for the held item is `set quantity`.

@@ -4771,9 +4771,11 @@ def _run_stages_body(  # noqa: PLR0915
             verdict, latest_user_message, carried=state_in.focus.set_clarify
         )
         verdict = _with_account_answer(verdict, state_in.focus.set_clarify)
-        verdict = turn_runtime.with_set_count_from_text(
-            verdict, latest_user_message, carried=state_in.focus.set_page
-        )
+        # CHAT-STATE: an option the parser declared picked is not a row count.
+        if not (state_led and (verdict.get("open_question_answer") or {}).get("mode") == "pick"):
+            verdict = turn_runtime.with_set_count_from_text(
+                verdict, latest_user_message, carried=state_in.focus.set_page
+            )
         # Round 7 on PR #833 (owner hand test, item 6): a brand the last set answer offered
         # narrows that set.
         verdict = turn_runtime.with_brand_from_offer(

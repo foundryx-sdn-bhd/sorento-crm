@@ -16,6 +16,7 @@ from uuid import UUID
 
 from app.services.chatbot.turn import question as question_mod
 from app.services.chatbot.turn import task as task_mod
+from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS
 from app.services.chatbot.turn.pending import ask as pending_ask
 from app.services.chatbot.turn.pending import option_entities
 from app.services.chatbot.turn.state import Focus, State
@@ -26,8 +27,11 @@ OPS: tuple[str, ...] = (
 
 #: The fixed axes; every `policy.kinds` kind is an axis too.
 FIXED_AXES: tuple[str, ...] = (
-    "product", "customer", "warehouse", "brand", "tier", "channel", "period", "status", "sort", "quantity",
+    "product", "customer", "warehouse", "brand", "tier", "channel", "period", "status", "document", "sort", "quantity",
 )
+
+#: Subject keys the State block prints that only a `clear` can act on.
+CLEAR_ONLY_AXES: tuple[str, ...] = ("domain", "report", "relation")
 
 #: Owner ruling 16 Oct 2026 ~23:00 (R16): a follow-up keeps the held period; a new subject keeps
 #: it too unless the parser says `skip` / `clear` / `set` for the period. The one spot.
@@ -69,7 +73,8 @@ _SCALARS: dict[str, dict[str, Any]] = {
     "channel": {"sales_channel": None},
     "period": {"date_mode": None, "date_filter_start": None, "date_filter_end": None},
     "sort": {"sort_by": None, "sort_dir": None},
-    "status": {"status": None, "order_status": None, "document": []},
+    "status": {"status": None, "order_status": None},
+    "document": {"document": []},
     "tier": {"access_levels": []},
     "quantity": {"demand_qty": None},
 }
@@ -200,8 +205,15 @@ def _same_list(items: list[dict[str, Any]], oq: dict[str, Any] | None) -> bool:
     return {key(i) for i in items} == {key(o) for o in options if isinstance(o, dict)}
 
 
-def _open_question(focus: Focus, oq: dict[str, Any] | None) -> dict[str, Any] | None:
+def _open_question(focus: Focus, oq: dict[str, Any] | None, pending: Any = None) -> dict[str, Any] | None:
     obj = _plain(oq) if oq else {}
+    if obj and pending is not None and getattr(pending, "kind", None) in ESCALATION_OFFER_KINDS:
+        # A hand-over offer states its kind and the team it would go to (a name, never an id),
+        # so a yes or a no can be read as accepting or declining it.
+        obj["offer"] = pending.kind
+        team = _clean(getattr(pending, "team", None))
+        if team:
+            obj["hand_over_to"] = team.replace("_", " ")
     extras: dict[str, Any] = {}
     if focus.set_clarify:
         extras["clarify"] = _plain(focus.set_clarify)
@@ -221,7 +233,7 @@ def _open_question(focus: Focus, oq: dict[str, Any] | None) -> dict[str, Any] | 
 def view(state: State, open_question: dict[str, Any] | None) -> dict[str, Any]:
     """The state as one plain, key-free dict: what the parser is shown and what the trace logs."""
     focus = state.focus
-    oq = _open_question(focus, open_question)
+    oq = _open_question(focus, open_question, state.pending)
     items = [i for i in (_list_item(r) for r in (focus.last_list or []) if isinstance(r, dict)) if i]
     stock_is_question = question_mod.is_the_stock_question(open_question)
     task = None if stock_is_question else task_mod.open_question(focus.tasks)
@@ -309,7 +321,9 @@ def _has_field(verdict: dict[str, Any], axis: str) -> bool:
     if axis == "period":
         return any(verdict.get(k) for k in ("date_mode", "date_filter_start", "date_filter_end"))
     if axis == "status":
-        return any(verdict.get(k) for k in ("status", "order_status", "document"))
+        return any(verdict.get(k) for k in ("status", "order_status"))
+    if axis == "document":
+        return bool(verdict.get("document"))
     if axis == "sort":
         return bool(verdict.get("sort_by") or verdict.get("sort_dir"))
     if axis == "quantity":
@@ -331,7 +345,14 @@ def _clear_axis(focus: Focus, axis: str) -> None:
         focus.date_window = None
     elif axis == "status":
         focus.status = None
+    elif axis == "document":
         focus.document = []
+    elif axis == "domain":
+        focus.domains = []
+    elif axis == "report":
+        focus.top_selling = focus.sales_ranking_frame = focus.low_stock = None
+    elif axis == "relation":
+        focus.relation = None
     elif axis == "sort":
         focus.sort = None
     elif axis == "tier":
@@ -356,8 +377,8 @@ def _write_set(focus: Focus, axis: str, verdict: dict[str, Any]) -> None:
         focus.sort = {k: verdict.get(f"sort_{k}") for k in ("by", "dir") if verdict.get(f"sort_{k}")}
     elif axis == "status":
         focus.status = verdict.get("status") or verdict.get("order_status") or focus.status
-        if verdict.get("document"):
-            focus.document = list(verdict["document"])
+    elif axis == "document":
+        focus.document = list(verdict.get("document") or [])
     elif axis == "period":
         window = {k: verdict.get(f"date_filter_{k}") for k in ("start", "end") if verdict.get(f"date_filter_{k}")}
         if window:
@@ -398,7 +419,15 @@ def _held(focus: Focus, axis: str) -> bool:
     if axis == "channel":
         return bool(focus.sales_channel)
     if axis == "status":
-        return bool(focus.status or focus.document)
+        return bool(focus.status)
+    if axis == "document":
+        return bool(focus.document)
+    if axis == "domain":
+        return bool(focus.domains)
+    if axis == "report":
+        return bool(focus.top_selling or focus.sales_ranking_frame or focus.low_stock)
+    if axis == "relation":
+        return bool(focus.relation)
     if axis == "sort":
         return bool(focus.sort)
     if axis == "tier":
@@ -531,8 +560,18 @@ def apply_changes(
     if not isinstance(changes, list) or not changes:
         return _reject(state, verdict, log, [{"op": None, "reason": "no changes declared"}])
 
-    axes = set(FIXED_AXES) | set(kinds)
+    axes = set(FIXED_AXES) | set(kinds) | set(CLEAR_ONLY_AXES) | {k for k, v in (state.focus.extra or {}).items() if v}
     focus = copy.deepcopy(state.focus)
+    # The same op stated twice (several `set product`) is one op.
+    seen_ops: list[Any] = []
+    deduped = []
+    for c in changes:
+        key = json.dumps(c, sort_keys=True, default=str)
+        if key not in seen_ops:
+            seen_ops.append(key)
+            deduped.append(c)
+    changes = deduped
+    ignored: list[dict[str, Any]] = []
     ops = [c.get("op") if isinstance(c, dict) else None for c in changes]
     rejected: list[dict[str, Any]] = []
 
@@ -566,7 +605,8 @@ def apply_changes(
                 seen_axes.add(axis)
                 if op == "set":
                     if not _has_field(verdict, axis):
-                        fail(op, f"no value for {axis} in the parse")
+                        # A set the parse carries no value for changes nothing; the rest applies.
+                        ignored.append({"axis": axis, "reason": f"no value for {axis} in the parse"})
                     else:
                         set_axes.append(axis)
                 elif axis in SLOT_AXES:
@@ -586,6 +626,11 @@ def apply_changes(
             target = _message_domains(verdict)
             if not target or any(d not in domains for d in target):
                 fail(op, "no known domain in the parse")
+
+    if ignored and all(c.get("op") == "set" for c in changes if isinstance(c, dict)) and not set_axes:
+        # Nothing but sets the parse gives no value for: there is no change to apply.
+        for item in ignored:
+            fail("set", item["reason"])
 
     if brands and "brand" in set_axes:
         known = _brand_words(brands)
@@ -632,7 +677,7 @@ def apply_changes(
         axis = change.get("axis")
         if change["op"] == "clear":
             _clear_axis(focus, axis)
-        elif change["op"] == "set":
+        elif change["op"] == "set" and axis in set_axes:
             _write_set(focus, axis, verdict)
 
     slot_ask = None
@@ -718,6 +763,7 @@ def apply_changes(
     )
     log["rejected"] = []
     log["slots"] = slots
+    log["ignored"] = ignored
     return Applied(
         True, replace(state, focus=focus, pending=pending, state_led=led, slot_ask=slot_ask), out, log
     )
