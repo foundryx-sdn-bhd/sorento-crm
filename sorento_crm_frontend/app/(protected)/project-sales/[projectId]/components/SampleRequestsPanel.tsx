@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
 import { useHasPermission } from '@/hooks/usePermissions';
-import { formatDate } from '@/lib/helpers';
+import { formatDateInMalaysia } from '@/lib/helpers';
 import { STATUS_PILL_BASE, statusPillClass } from '@/lib/status-pill';
 import { DELIVERY_MODE_LABELS, type SampleRequestRow } from '@/types/sampleRequest';
 import { useProjectSampleRequestsQuery } from '../../sample-requests/hooks/useSampleRequests';
@@ -42,7 +42,7 @@ export function SampleRequestsPanel({ project }: { project: Project }) {
         accessorFn: (row) => row.submitted_at ?? '',
         header: ({ column }) => <DataGridColumnHeader title="Submitted" column={column} />,
         cell: ({ row }) =>
-          row.original.submitted_at ? formatDate(new Date(row.original.submitted_at)) : '-',
+          row.original.submitted_at ? formatDateInMalaysia(row.original.submitted_at) : '-',
         size: 120,
         meta: { headerTitle: 'Submitted' },
       },

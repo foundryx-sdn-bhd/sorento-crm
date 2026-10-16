@@ -17,6 +17,7 @@ export type SampleRequestListParams = DataGridApiFetchParams & {
   /** Comma list of status keys; empty means the server default (open requests). */
   status?: string;
   projectId?: string;
+  salespersonId?: string;
 };
 
 /** A refusal that names a field arrives as `{message, code, details: {field}}`. */
@@ -45,7 +46,12 @@ async function read<T>(res: Response, fallback: string): Promise<T> {
 export async function getSampleRequests(params: SampleRequestListParams): Promise<SampleRequestPage> {
   const sp = buildDataGridParams(
     { ...params, searchQuery: undefined },
-    { q: params.searchQuery, status: params.status, project_id: params.projectId },
+    {
+      q: params.searchQuery,
+      status: params.status,
+      project_id: params.projectId,
+      salesperson_id: params.salespersonId,
+    },
   );
   const res = await apiFetch(`${BASE}/sample-requests?${sp.toString()}`);
   return read<SampleRequestPage>(res, 'Failed to load sample requests');

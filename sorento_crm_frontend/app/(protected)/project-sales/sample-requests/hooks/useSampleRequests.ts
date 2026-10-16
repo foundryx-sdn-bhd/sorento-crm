@@ -27,6 +27,7 @@ export function sampleRequestsListQueryKey(params: SampleRequestListParams): Que
     params.searchQuery,
     params.status,
     params.projectId,
+    params.salespersonId,
   ];
 }
 
@@ -38,6 +39,7 @@ function listParamsFromUrl(params: ListPagerParams): SampleRequestListParams {
     searchQuery: params.searchQuery,
     status: params.filters.status,
     projectId: params.filters.project_id,
+    salespersonId: params.filters.salesperson_id,
   };
 }
 

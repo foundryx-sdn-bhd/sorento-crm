@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import {
   type ColumnDef,
@@ -13,6 +14,7 @@ import {
   getPaginationRowModel,
 } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
 import { DataGrid } from '@/components/ui/data-grid';
@@ -30,7 +32,8 @@ import { useListStateFromUrl } from '@/hooks/useListStateFromUrl';
 import { useResetPageOnFilterChange } from '@/hooks/useResetPageOnFilterChange';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { buildDetailSearch } from '@/lib/listNavQuery';
-import { formatDate } from '@/lib/helpers';
+import { formatDate, formatDateInMalaysia } from '@/lib/helpers';
+import { getUserLookup } from '@/services/userSelectService';
 import { STATUS_PILL_BASE, statusPillClass } from '@/lib/status-pill';
 import {
   DELIVERY_MODE_LABELS,
@@ -68,6 +71,12 @@ function statusParam(filter: string): string | undefined {
   return filter;
 }
 
+/** The inverse of {@link statusParam}: the URL carries the `status` param `rowHref` wrote. */
+function statusFilterFromParam(param: string | undefined): string {
+  if (!param) return 'open';
+  return param === ALL_KEYS.join(',') ? 'all' : param;
+}
+
 export function deliveryText(row: Pick<SampleRequestRow, 'deliver_immediately' | 'delivery_date'>) {
   if (row.deliver_immediately) return 'Immediate';
   return row.delivery_date ? formatDate(new Date(row.delivery_date)) : '-';
@@ -86,16 +95,25 @@ export default function SampleRequestsList() {
     reset: resetSearch,
   } = useDebouncedSearch();
   const [statusFilter, setStatusFilter] = useState('open');
+  const [salespersonFilter, setSalespersonFilter] = useState('__all__');
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   useListStateFromUrl((state) => {
     setPagination({ pageIndex: state.pageIndex, pageSize: state.pageSize });
     setSorting(state.sorting);
     resetSearch(state.searchQuery);
-    setStatusFilter(state.filters.status_filter ?? 'open');
+    setStatusFilter(statusFilterFromParam(state.filters.status));
+    setSalespersonFilter(state.filters.salesperson_id ?? '__all__');
+  });
+
+  const { data: salespeople = [] } = useQuery({
+    queryKey: ['user-lookup', 'with-inactive'],
+    queryFn: () => getUserLookup({ include_inactive: true }),
+    staleTime: 5 * 60_000,
   });
 
   const status = statusParam(statusFilter);
+  const salespersonId = salespersonFilter !== '__all__' ? salespersonFilter : undefined;
   const { data, isLoading, isPlaceholderData, refetch, isFetching, error } =
     useSampleRequestsQuery({
       pageIndex: pagination.pageIndex,
@@ -103,9 +121,10 @@ export default function SampleRequestsList() {
       sorting,
       searchQuery,
       status,
+      salespersonId,
     });
 
-  useResetPageOnFilterChange(setPagination, [statusFilter, searchQuery]);
+  useResetPageOnFilterChange(setPagination, [statusFilter, salespersonFilter, searchQuery]);
 
   const rowHref = (row: SampleRequestRow) => {
     const search = buildDetailSearch(
@@ -115,7 +134,7 @@ export default function SampleRequestsList() {
         sorting,
         searchQuery,
       },
-      { status },
+      { status, salesperson_id: salespersonId },
     );
     return `${BASE_PATH}/${row.id}${search ? `?${search}` : ''}`;
   };
@@ -135,12 +154,14 @@ export default function SampleRequestsList() {
         meta: { headerTitle: 'Number', skeleton: <Skeleton className="h-4 w-20" /> },
       },
       {
-        accessorKey: 'request_date',
-        header: ({ column }) => <DataGridColumnHeader title="Requested" column={column} />,
+        accessorKey: 'submitted_at',
+        header: ({ column }) => <DataGridColumnHeader title="Submitted" column={column} />,
         size: 120,
+        enableSorting: false,
+        // A naive UTC stamp: shown as the Malaysia calendar day, like every other form.
         cell: ({ row }) =>
-          row.original.request_date ? formatDate(new Date(row.original.request_date)) : '-',
-        meta: { headerTitle: 'Requested', skeleton: <Skeleton className="h-4 w-20" /> },
+          row.original.submitted_at ? formatDateInMalaysia(row.original.submitted_at) : '-',
+        meta: { headerTitle: 'Submitted', skeleton: <Skeleton className="h-4 w-20" /> },
       },
       {
         id: 'status',
@@ -167,9 +188,14 @@ export default function SampleRequestsList() {
         header: ({ column }) => <DataGridColumnHeader title="Customer" column={column} />,
         size: 200,
         cell: ({ row }) => (
-          <span className="truncate" title={row.original.customer_name ?? undefined}>
-            {row.original.customer_name || '-'}
-          </span>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="truncate" title={row.original.customer_name ?? undefined}>
+              {row.original.customer_name || '-'}
+            </span>
+            {!row.original.customer_code && row.original.customer_name && (
+              <Badge variant="secondary">No debtor code</Badge>
+            )}
+          </div>
         ),
         meta: { headerTitle: 'Customer', skeleton: <Skeleton className="h-4 w-28" /> },
       },
@@ -230,7 +256,8 @@ export default function SampleRequestsList() {
     manualFiltering: true,
   });
 
-  const filtersActiveCount = statusFilter !== 'open' ? 1 : 0;
+  const filtersActiveCount =
+    (statusFilter !== 'open' ? 1 : 0) + (salespersonFilter !== '__all__' ? 1 : 0);
 
   return (
     <DataGrid
@@ -273,9 +300,33 @@ export default function SampleRequestsList() {
                       options={STATUS_OPTIONS}
                     />
                   </div>
+                  <div>
+                    <Label>Salesperson</Label>
+                    <SearchableSelect
+                      value={salespersonFilter}
+                      onChange={setSalespersonFilter}
+                      placeholder="Salesperson"
+                      triggerClassName="mt-1 w-full"
+                      options={[
+                        { value: '__all__', label: 'All salespeople' },
+                        ...salespeople.map((u) => ({
+                          value: u.id,
+                          label: u.name?.trim() || 'Unnamed user',
+                          searchText: u.name ?? '',
+                        })),
+                      ]}
+                    />
+                  </div>
                   {filtersActiveCount > 0 && (
                     <div className="flex justify-end">
-                      <Button variant="ghost" size="sm" onClick={() => setStatusFilter('open')}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setStatusFilter('open');
+                          setSalespersonFilter('__all__');
+                        }}
+                      >
                         Clear filters
                       </Button>
                     </div>

@@ -292,7 +292,7 @@ export default function SampleRequestForm({
     [state.immediate, state.delivery_date, state.delivery_mode, state.ship_to_name],
   );
   const summaries: Record<SectionKey, string> = {
-    customer: [state.customer_label, state.project_label || state.project_title]
+    customer: [state.customer_label || state.customer_name, state.project_label || state.project_title]
       .filter(Boolean)
       .join(' · '),
     lines: [
@@ -407,6 +407,9 @@ export default function SampleRequestForm({
                         <span className="block truncate" title={codeWithName(l.product_code, l.product_name)}>
                           {codeWithName(l.product_code, l.product_name)}
                         </span>
+                        {l.product_active === false && (
+                          <span className="block text-xs text-muted-foreground">Inactive</span>
+                        )}
                         {l.alt_product_code && (
                           <span className="block truncate text-xs text-muted-foreground">
                             OR {l.alt_product_code}
@@ -479,13 +482,15 @@ export default function SampleRequestForm({
         onOpenChange={(v) => setOpen((p) => ({ ...p, customer: v }))}
       >
         <div className="space-y-1.5">
-          <Label htmlFor="sr-customer">Customer *</Label>
+          <Label htmlFor="sr-customer">Customer</Label>
           <AsyncCombobox<DebtorLookupItem>
             id="sr-customer"
             value={state.customer_id}
             onChange={(v, item) => {
               set('customer_id', v);
               set('customer_label', item?.debtor_name ?? '');
+              // A debtor that has no customer record yet is kept as a typed name.
+              if (!v && item?.debtor_name) set('customer_name', item.debtor_name);
             }}
             fetchOptions={(q) => lookupDebtors(q)}
             optionValue={(o) => o.customer_id}
@@ -497,6 +502,16 @@ export default function SampleRequestForm({
           />
           <FieldError message={errors.customer_id} />
         </div>
+        {!state.customer_id && (
+          <div className="space-y-1.5">
+            <Label htmlFor="sr-customer-name">Customer name (no debtor code)</Label>
+            <Input
+              id="sr-customer-name"
+              value={state.customer_name}
+              onChange={(e) => set('customer_name', e.target.value)}
+            />
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="sr-project">Registered project</Label>
           <AsyncCombobox<ProjectLookupItem>
@@ -592,6 +607,9 @@ export default function SampleRequestForm({
                       <span className="block truncate text-sm" title={line.label}>
                         {line.label}
                       </span>
+                      {line.inactive && (
+                        <span className="block text-xs text-muted-foreground">Inactive</span>
+                      )}
                     </td>
                     <td className="px-2 py-2">
                       <SearchableSelect

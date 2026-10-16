@@ -2,11 +2,13 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { type ColumnDef } from '@tanstack/react-table';
-import { Printer } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { type ColumnDef, type ExpandedState } from '@tanstack/react-table';
+import { ChevronDown, ChevronRight, Printer, Settings2, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogBody,
@@ -25,9 +27,10 @@ import DetailActions from '@/components/common/DetailActions';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
+import { useDeferredAction } from '@/hooks/useDeferredAction';
+import { useEffectiveUserId } from '@/hooks/useEffectiveUserId';
 import { useHasPermission } from '@/hooks/usePermissions';
-import { formatDate } from '@/lib/helpers';
-import { codeWithName } from '@/lib/product-display';
+import { formatDateInMalaysia } from '@/lib/helpers';
 import { STATUS_PILL_BASE, statusPillClass } from '@/lib/status-pill';
 import {
   DELIVERY_MODE_LABELS,
@@ -36,6 +39,7 @@ import {
   type SampleRequestLine,
   type SampleRequestStatus,
 } from '@/types/sampleRequest';
+import { OrderInquiryStockGrid } from '../../_shared/components/OrderInquiryStockGrid';
 import {
   sampleRequestsPagerQuery,
   useSampleRequestMutations,
@@ -48,46 +52,67 @@ const BASE_PATH = '/project-sales/sample-requests';
 interface Move {
   to: SampleRequestStatus;
   label: string;
-  /** Who may make it: `process` holders, or the request's owner (a `create` holder). */
-  needs: 'process' | 'owner' | 'either';
+  /** Who may make it: `process` holders, or the request's owner too (`either`). */
+  needs: 'process' | 'either';
   ask?: 'date' | 'reason';
+  tone: 'emerald' | 'primary' | 'destructive';
 }
 
 /** The moves the card allows from each status (rule 10); the server is the authority. */
 const MOVES: Record<SampleRequestStatus, Move[]> = {
-  draft: [{ to: 'cancelled', label: 'Cancel', needs: 'either' }],
+  draft: [{ to: 'cancelled', label: 'Cancel request', needs: 'either', tone: 'destructive' }],
   submitted: [
-    { to: 'processing', label: 'Start processing', needs: 'process' },
-    { to: 'cancelled', label: 'Cancel', needs: 'either' },
+    { to: 'processing', label: 'Change to processing', needs: 'process', tone: 'emerald' },
+    { to: 'cancelled', label: 'Cancel request', needs: 'either', tone: 'destructive' },
   ],
   processing: [
-    { to: 'customer_confirmed', label: 'Customer confirmed', needs: 'process', ask: 'date' },
-    { to: 'cancelled', label: 'Cancel', needs: 'process', ask: 'reason' },
+    {
+      to: 'customer_confirmed',
+      label: 'Customer confirmed',
+      needs: 'process',
+      ask: 'date',
+      tone: 'primary',
+    },
+    {
+      to: 'cancelled',
+      label: 'Cancel request',
+      needs: 'process',
+      ask: 'reason',
+      tone: 'destructive',
+    },
   ],
-  customer_confirmed: [{ to: 'delivered', label: 'Delivered', needs: 'process', ask: 'date' }],
+  customer_confirmed: [
+    { to: 'delivered', label: 'Mark delivered', needs: 'process', ask: 'date', tone: 'primary' },
+  ],
   delivered: [],
   cancelled: [],
 };
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="min-w-0 space-y-0.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <div className="break-words text-sm">{children || '-'}</div>
-    </div>
-  );
-}
+const MOVE_CLASS: Record<Move['tone'], string> = {
+  emerald: 'bg-emerald-600 text-white hover:bg-emerald-700',
+  primary: '',
+  destructive: 'border-destructive text-destructive hover:bg-destructive/10',
+};
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+const day = (value: string | null | undefined) => (value ? formatDateInMalaysia(value) : '');
+
+/** One label / value cell of the document card; an empty value reads as `empty`. */
+function Field({
+  label,
+  children,
+  empty = 'None',
+  wide = false,
+}: {
+  label: string;
+  children?: ReactNode;
+  empty?: string;
+  wide?: boolean;
+}) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-4 sm:grid-cols-2">{children}</div>
-      </CardContent>
-    </Card>
+    <div className={wide ? 'sm:col-span-2' : undefined}>
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="font-medium whitespace-pre-wrap">{children || empty}</p>
+    </div>
   );
 }
 
@@ -146,48 +171,167 @@ function AskDialog({
   );
 }
 
+function InternalDialog({
+  request,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  request: Detail;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (value: { consignment_no: string | null; po_no: string | null }) => void;
+}) {
+  const [consignment, setConsignment] = useState(request.consignment_no ?? '');
+  const [poNo, setPoNo] = useState(request.po_no ?? '');
+  return (
+    <Dialog open onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent className="w-full max-w-md">
+        <DialogHeader>
+          <DialogTitle>Set consignment / PO no</DialogTitle>
+        </DialogHeader>
+        <DialogBody className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="sr-consignment">Consignment no</Label>
+            <Input
+              id="sr-consignment"
+              value={consignment}
+              onChange={(e) => setConsignment(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="sr-po">PO no</Label>
+            <Input id="sr-po" value={poNo} onChange={(e) => setPoNo(e.target.value)} />
+          </div>
+        </DialogBody>
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={onCancel}>
+            Back
+          </Button>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              onSave({ consignment_no: consignment.trim() || null, po_no: poNo.trim() || null })
+            }
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function SampleRequestDetail({ requestId }: { requestId: string }) {
+  const router = useRouter();
   const { data: request, isLoading, isError, error } = useSampleRequestQuery(requestId);
   const { submit, move, saveInternal } = useSampleRequestMutations();
   const canProcess = useHasPermission('projects.sample_requests.process');
   const canCreate = useHasPermission('projects.sample_requests.create');
+  const userId = useEffectiveUserId();
   const [asking, setAsking] = useState<Move | null>(null);
-  const [consignment, setConsignment] = useState<string | null>(null);
-  const [poNo, setPoNo] = useState<string | null>(null);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const [expanded, setExpanded] = useState<ExpandedState>({});
+
+  // Delete draft asks nothing (D7): a countdown takes the primary area, Cancel is the way back.
+  const deletion = useDeferredAction({
+    actionKey: 'sample_request.delete',
+    entityType: 'sample_request',
+    entityId: requestId,
+    verb: 'Deleting',
+    subject: request?.request_no ?? 'this draft',
+    surface: 'inline',
+    watchFromMount: true,
+    successMessage: 'Draft deleted',
+    invalidateKeys: [['sample-requests']],
+    onCommitted: () => router.push(BASE_PATH),
+  });
 
   const lineColumns = useMemo<ColumnDef<SampleRequestLine>[]>(
     () => [
       {
         id: 'line_no',
         accessorKey: 'line_no',
-        header: ({ column }) => <DataGridColumnHeader title="#" column={column} />,
-        size: 60,
-        cell: ({ row }) => row.original.line_no,
-        meta: { headerTitle: '#' },
-      },
-      {
-        id: 'item',
-        accessorFn: (row) => codeWithName(row.product_code, row.product_name),
-        header: ({ column }) => <DataGridColumnHeader title="Item" column={column} />,
-        size: 320,
-        cell: ({ row }) => {
-          const text = codeWithName(row.original.product_code, row.original.product_name);
-          return (
-            <span className="truncate" title={text}>
-              {text}
-              {row.original.alt_product_code ? ` OR ${row.original.alt_product_code}` : ''}
-            </span>
-          );
+        header: ({ column }) => <DataGridColumnHeader title="No" column={column} />,
+        size: 80,
+        cell: ({ row }) => (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1"
+            aria-label={`Stock for line ${row.original.line_no}`}
+            aria-expanded={row.getIsExpanded()}
+            onClick={(event) => {
+              event.stopPropagation();
+              row.toggleExpanded();
+            }}
+          >
+            {row.getIsExpanded() ? (
+              <ChevronDown className="size-4" />
+            ) : (
+              <ChevronRight className="size-4" />
+            )}
+            {row.original.line_no}
+          </button>
+        ),
+        meta: {
+          headerTitle: 'No',
+          expandedContent: (line: SampleRequestLine) => (
+            <div className="px-2 pb-3">
+              <OrderInquiryStockGrid productId={line.product_id} location="BRW" />
+            </div>
+          ),
         },
-        meta: { headerTitle: 'Item' },
       },
       {
         id: 'brand_name',
         accessorFn: (row) => row.brand_name ?? '',
         header: ({ column }) => <DataGridColumnHeader title="Brand" column={column} />,
         size: 140,
-        cell: ({ row }) => row.original.brand_name || '-',
+        cell: ({ row }) => (
+          <span className="truncate" title={row.original.brand_name ?? undefined}>
+            {row.original.brand_name || '-'}
+          </span>
+        ),
         meta: { headerTitle: 'Brand' },
+      },
+      {
+        id: 'model',
+        accessorFn: (row) => row.product_code ?? '',
+        header: ({ column }) => <DataGridColumnHeader title="Model" column={column} />,
+        size: 170,
+        cell: ({ row }) => (
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="truncate" title={row.original.product_code ?? undefined}>
+              {row.original.product_code || '-'}
+            </span>
+            {!row.original.product_active && <Badge variant="secondary">Inactive</Badge>}
+          </div>
+        ),
+        meta: { headerTitle: 'Model' },
+      },
+      {
+        id: 'description',
+        accessorFn: (row) => row.product_name ?? '',
+        header: ({ column }) => <DataGridColumnHeader title="Description" column={column} />,
+        size: 240,
+        cell: ({ row }) => (
+          <span className="truncate" title={row.original.product_name ?? undefined}>
+            {row.original.product_name || '-'}
+          </span>
+        ),
+        meta: { headerTitle: 'Description' },
+      },
+      {
+        id: 'alt',
+        accessorFn: (row) => row.alt_product_code ?? '',
+        header: ({ column }) => <DataGridColumnHeader title="Or (alternative)" column={column} />,
+        size: 150,
+        cell: ({ row }) => (
+          <span className="truncate" title={row.original.alt_product_code ?? undefined}>
+            {row.original.alt_product_code || '-'}
+          </span>
+        ),
+        meta: { headerTitle: 'Or (alternative)' },
       },
       {
         id: 'qty',
@@ -200,14 +344,14 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
       {
         id: 'remark',
         accessorFn: (row) => row.remark ?? '',
-        header: ({ column }) => <DataGridColumnHeader title="Remarks" column={column} />,
-        size: 220,
+        header: ({ column }) => <DataGridColumnHeader title="Remark" column={column} />,
+        size: 200,
         cell: ({ row }) => (
           <span className="truncate" title={row.original.remark ?? undefined}>
             {row.original.remark || '-'}
           </span>
         ),
-        meta: { headerTitle: 'Remarks' },
+        meta: { headerTitle: 'Remark' },
       },
     ],
     [],
@@ -231,9 +375,10 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
 
   const r: Detail = request;
   const isDraft = r.status === 'draft';
+  const isOwner = Boolean(userId) && r.salesperson_id === userId;
+  const ownerActs = isOwner && canCreate;
   const busy = move.isPending || submit.isPending;
-  const allowed = (m: Move) =>
-    m.needs === 'process' ? canProcess : m.needs === 'owner' ? canCreate : canProcess || canCreate;
+  const allowed = (m: Move) => canProcess || (m.needs === 'either' && ownerActs);
   const moves = MOVES[r.status].filter(allowed);
 
   const run = async (m: Move, value?: string) => {
@@ -252,10 +397,14 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
     }
   };
 
-  const internalValue = (current: string | null, edited: string | null) => edited ?? current ?? '';
-  const internalDirty =
-    (consignment !== null && consignment !== (r.consignment_no ?? '')) ||
-    (poNo !== null && poNo !== (r.po_no ?? ''));
+  const stamp = r.submitted_at ?? r.created_at;
+  const project = r.project_id
+    ? [r.project_code, r.project_name].filter(Boolean).join(' - ')
+    : r.project_name;
+  const shipTo = [r.ship_to_name, r.ship_to_address].filter(Boolean).join(', ');
+  const siteContact = [r.site_contact_name, r.site_contact_phone, r.site_contact_note]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <div className="space-y-6">
@@ -263,7 +412,7 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
         <div className="min-w-0 space-y-1">
           <h2 className="break-words text-2xl font-bold">Sample Request - {r.request_no}</h2>
           <p className="text-sm text-muted-foreground">
-            Created: {r.created_at ? formatDate(new Date(r.created_at)) : '-'}
+            {r.submitted_at ? 'Submitted' : 'Created'}: {stamp ? formatDateInMalaysia(stamp) : '-'}
             {' · '}
             <span className={`${STATUS_PILL_BASE} ${statusPillClass(r.status)}`}>
               {r.status_label}
@@ -277,6 +426,8 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
             currentId: requestId,
             ariaLabel: 'sample request',
           }}
+          gearLabel="Sample request actions"
+          pendingAction={deletion.countdown}
           gear={
             <DetailActionsMenu ariaLabel="Sample request actions">
               <DropdownMenuItem
@@ -289,11 +440,27 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
                 <Printer className="size-4" />
                 Print
               </DropdownMenuItem>
+              {canProcess && r.status !== 'cancelled' && (
+                <DropdownMenuItem onSelect={() => setInternalOpen(true)}>
+                  <Settings2 className="size-4" />
+                  Set consignment / PO no
+                </DropdownMenuItem>
+              )}
+              {isDraft && ownerActs && (
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={deletion.isBlocked}
+                  onSelect={() => deletion.start()}
+                >
+                  <Trash2 className="size-4" />
+                  Delete draft
+                </DropdownMenuItem>
+              )}
             </DetailActionsMenu>
           }
           primary={
             <div className="flex flex-wrap items-center gap-2">
-              {isDraft && canCreate && (
+              {isDraft && ownerActs && (
                 <Button disabled={busy} onClick={() => submit.mutate(r.id)}>
                   Submit
                 </Button>
@@ -301,14 +468,15 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
               {moves.map((m) => (
                 <Button
                   key={m.to}
-                  variant={m.to === 'cancelled' ? 'outline' : 'primary'}
+                  variant={m.tone === 'destructive' ? 'outline' : 'primary'}
+                  className={MOVE_CLASS[m.tone]}
                   disabled={busy}
                   onClick={() => (m.ask ? setAsking(m) : void run(m))}
                 >
                   {m.label}
                 </Button>
               ))}
-              {isDraft && canCreate && (
+              {isDraft && ownerActs && (
                 <Button variant="outline" asChild>
                   <Link href={`${BASE_PATH}/${r.id}/edit`}>Edit</Link>
                 </Button>
@@ -318,124 +486,87 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
         />
       </div>
 
-      <Section title="Customer & project">
-        <Field label="Customer">
-          {[r.customer_code, r.customer_name].filter(Boolean).join(' - ')}
-        </Field>
-        <Field label="Project">
-          {r.project_id
-            ? [r.project_code, r.project_name].filter(Boolean).join(' - ')
-            : r.project_name}
-        </Field>
-        <Field label="Quotation">{r.quotation_label}</Field>
-        <Field label="For (scope)">{r.scope_note}</Field>
-        <Field label="Salesperson">{r.salesperson_name}</Field>
-        <Field label="Requested">
-          {r.request_date ? formatDate(new Date(r.request_date)) : null}
-        </Field>
-      </Section>
-
-      <PanelDataGrid
-        title="Lines"
-        toolbar={
-          r.board_mounting ? (
-            <span className="text-sm text-muted-foreground">Board: {r.board_label || '-'}</span>
-          ) : undefined
-        }
-        columns={lineColumns}
-        rows={r.lines}
-        getRowId={(row) => row.id}
-        listingKey="projects.sample_requests.view::sample-request-lines"
-        emptyTitle="No items"
-        paginate={false}
-      />
-
-      <Section title="Delivery">
-        <Field label="Delivery">
-          {r.deliver_immediately
-            ? 'Immediate'
-            : r.delivery_date
-              ? formatDate(new Date(r.delivery_date))
-              : null}
-        </Field>
-        <Field label="Delivery mode">
-          {r.delivery_mode ? DELIVERY_MODE_LABELS[r.delivery_mode] : null}
-        </Field>
-        <Field label="Ship to">{r.ship_to_name}</Field>
-        <Field label="Shipping address">{r.ship_to_address}</Field>
-        <Field label="Site contact">
-          {[r.site_contact_name, r.site_contact_phone].filter(Boolean).join(' · ')}
-        </Field>
-        <Field label="Contact note">{r.site_contact_note}</Field>
-      </Section>
-
-      <Section title="Additional Information">
-        <Field label="Loan period">
-          {r.loan_value ? `${r.loan_value} ${r.loan_unit}` : null}
-        </Field>
-        <Field label="Goods from">{r.goods_from ? GOODS_FROM_LABELS[r.goods_from] : null}</Field>
-        <Field label="Purpose">{r.purpose}</Field>
-        <Field label="Return due">
-          {r.return_due ? formatDate(new Date(r.return_due)) : null}
-        </Field>
-        {r.cancel_reason && <Field label="Cancel reason">{r.cancel_reason}</Field>}
-      </Section>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Consignment</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {canProcess && r.status !== 'cancelled' ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="sr-consignment">Consignment no</Label>
-                <Input
-                  id="sr-consignment"
-                  value={internalValue(r.consignment_no, consignment)}
-                  onChange={(e) => setConsignment(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="sr-po">PO no</Label>
-                <Input
-                  id="sr-po"
-                  value={internalValue(r.po_no, poNo)}
-                  onChange={(e) => setPoNo(e.target.value)}
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <Button
-                  variant="outline"
-                  disabled={!internalDirty || saveInternal.isPending}
-                  onClick={() =>
-                    saveInternal.mutate(
-                      {
-                        id: r.id,
-                        body: {
-                          consignment_no: internalValue(r.consignment_no, consignment).trim() || null,
-                          po_no: internalValue(r.po_no, poNo).trim() || null,
-                        },
-                      },
-                      {
-                        onSuccess: () => {
-                          setConsignment(null);
-                          setPoNo(null);
-                        },
-                      },
-                    )
-                  }
-                >
-                  Save
-                </Button>
-              </div>
+      <Card className="border-2 shadow-sm">
+        <CardContent className="px-5 pb-8 pt-6 sm:px-10">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{r.source === 'portal' ? 'Portal' : 'Staff'}</Badge>
+            <span className={`${STATUS_PILL_BASE} ${statusPillClass(r.status)}`}>
+              {r.status_label}
+            </span>
+          </div>
+          <h2 className="mb-6 border-b border-border pb-4 text-center text-xl font-semibold tracking-tight">
+            Sample Request
+          </h2>
+          <div className="grid grid-cols-1 gap-x-10 gap-y-5 sm:grid-cols-2 [&>div]:min-w-0 [&_p]:break-words">
+            <Field label="Salesperson">{r.salesperson_name}</Field>
+            <div>
+              <p className="text-sm text-muted-foreground">Customer</p>
+              <p className="flex flex-wrap items-center gap-2 font-medium">
+                {[r.customer_code, r.customer_name].filter(Boolean).join(' - ') || 'None'}
+                {!r.customer_id && r.customer_name && (
+                  <Badge variant="secondary">No debtor code</Badge>
+                )}
+              </p>
             </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Consignment no">{r.consignment_no}</Field>
-              <Field label="PO no">{r.po_no}</Field>
-            </div>
-          )}
+            <Field label="Project" wide>
+              {project}
+              {!r.project_id && r.project_name ? ' (not registered)' : ''}
+            </Field>
+            <Field label="Quotation">{r.quotation_label}</Field>
+            <Field label="For (scope)">{r.scope_note}</Field>
+            <Field label="Requested delivery">
+              {r.deliver_immediately ? 'Immediate arrangement' : day(r.delivery_date)}
+            </Field>
+            <Field label="Delivery mode">
+              {r.delivery_mode ? DELIVERY_MODE_LABELS[r.delivery_mode] : null}
+            </Field>
+            <Field label="Ship to" wide>
+              {shipTo}
+            </Field>
+            <Field label="Site contact" wide>
+              {siteContact}
+            </Field>
+            <Field label="Sample board" wide>
+              {r.board_mounting ? `Mount & label: ${r.board_label ?? ''}` : null}
+            </Field>
+            <Field label="Loan period">
+              {r.loan_value ? `${r.loan_value} ${r.loan_unit}` : null}
+            </Field>
+            <Field label="Goods from">
+              {r.goods_from ? GOODS_FROM_LABELS[r.goods_from] : null}
+            </Field>
+            <Field label="Purpose" wide>
+              {r.purpose}
+            </Field>
+            {r.confirmed_at && <Field label="Customer confirmed">{day(r.confirmed_at)}</Field>}
+            {r.delivered_at && <Field label="Delivered">{day(r.delivered_at)}</Field>}
+            {r.return_due && <Field label="Return due">{day(r.return_due)}</Field>}
+            {r.cancel_reason && (
+              <Field label="Cancel reason" wide>
+                {r.cancel_reason}
+              </Field>
+            )}
+            <Field label="Consignment No (internal)" empty="Not set">
+              {r.consignment_no}
+            </Field>
+            <Field label="PO No (internal)" empty="Not set">
+              {r.po_no}
+            </Field>
+          </div>
+
+          <div className="mt-8">
+            <p className="mb-3 text-sm font-medium">Line items</p>
+            <PanelDataGrid
+              columns={lineColumns}
+              rows={r.lines}
+              getRowId={(row) => row.id}
+              listingKey="projects.sample_requests.view::sample-request-lines"
+              emptyTitle="No items"
+              paginate={false}
+              expanded={expanded}
+              onExpandedChange={setExpanded}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -447,6 +578,16 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
           busy={move.isPending}
           onCancel={() => setAsking(null)}
           onConfirm={(value) => void run(asking, value)}
+        />
+      )}
+      {internalOpen && (
+        <InternalDialog
+          request={r}
+          busy={saveInternal.isPending}
+          onCancel={() => setInternalOpen(false)}
+          onSave={(body) =>
+            saveInternal.mutate({ id: r.id, body }, { onSuccess: () => setInternalOpen(false) })
+          }
         />
       )}
     </div>

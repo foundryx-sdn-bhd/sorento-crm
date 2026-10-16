@@ -22,11 +22,15 @@ export interface DraftLine {
   alt_label: string | null;
   qty: string;
   remark: string;
+  /** The product went inactive after it was put on the request (kept, shown as Inactive). */
+  inactive?: boolean;
 }
 
 export interface FormState {
   customer_id: string;
   customer_label: string;
+  /** Typed when the customer has no debtor code; used only while no debtor is picked. */
+  customer_name: string;
   project_id: string;
   project_label: string;
   project_title: string;
@@ -53,6 +57,7 @@ export interface FormState {
 export const EMPTY_FORM: FormState = {
   customer_id: '',
   customer_label: '',
+  customer_name: '',
   project_id: '',
   project_label: '',
   project_title: '',
@@ -79,6 +84,7 @@ export const EMPTY_FORM: FormState = {
 /** Which section holds the field a refusal is about. */
 export const FIELD_SECTION: Record<string, SectionKey> = {
   customer_id: 'customer',
+  customer_name: 'customer',
   project_id: 'customer',
   quotation_version_id: 'customer',
   lines: 'lines',
@@ -97,6 +103,7 @@ export function stateFromDetail(d: SampleRequestDetail): FormState {
   return {
     customer_id: d.customer_id ?? '',
     customer_label: d.customer_name ?? '',
+    customer_name: d.customer_id ? '' : (d.customer_name ?? ''),
     project_id: d.project_id ?? '',
     project_label: d.project_id ? [d.project_code, d.project_name].filter(Boolean).join(' - ') : '',
     project_title: d.project_id ? '' : (d.project_title ?? ''),
@@ -111,6 +118,7 @@ export function stateFromDetail(d: SampleRequestDetail): FormState {
       alt_label: l.alt_product_code,
       qty: String(l.qty),
       remark: l.remark ?? '',
+      inactive: l.product_active === false,
     })),
     board_mounting: Boolean(d.board_mounting),
     board_label: d.board_label ?? '',
@@ -132,6 +140,7 @@ export function stateFromDetail(d: SampleRequestDetail): FormState {
 export function payloadFromState(s: FormState): SampleRequestWrite {
   return {
     customer_id: s.customer_id || null,
+    customer_name: s.customer_id ? null : clean(s.customer_name),
     project_id: s.project_id || null,
     project_title: s.project_id ? null : clean(s.project_title),
     quotation_version_id: s.project_id ? s.quotation_version_id || null : null,
@@ -165,7 +174,9 @@ export function validate(
   rules: { requireProject?: boolean; requireQuotation?: boolean } = {},
 ): Record<string, string> {
   const errors: Record<string, string> = {};
-  if (!s.customer_id) errors.customer_id = 'Pick the customer';
+  if (!s.customer_id && !s.customer_name.trim()) {
+    errors.customer_id = 'Pick the customer, or type the customer name';
+  }
   if (rules.requireProject) {
     if (!s.project_id) errors.project_id = 'Pick a registered project';
   } else if (!s.project_id && !s.project_title.trim()) {

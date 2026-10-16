@@ -5,10 +5,11 @@
  * sections in the same order as the detail card (SR-CORE).
  */
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronRight, Loader2, Trash2 } from 'lucide-react';
+import { Loader2, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -40,7 +41,6 @@ import {
   type SectionKey,
 } from '@/lib/sample-request-form';
 import { searchCustomersSelect } from '@/app/(protected)/order-management/customers/services/customerService';
-import { OrderInquiryStockGrid } from '../../_shared/components/OrderInquiryStockGrid';
 import { getProject, listProjects, listQuotations } from '../../_shared/services/projectService';
 import {
   useSampleRequestMutations,
@@ -119,7 +119,6 @@ export default function SampleRequestForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverMessage, setServerMessage] = useState<string | null>(null);
   const [missed, setMissed] = useState('');
-  const [stockOpen, setStockOpen] = useState<Record<string, boolean>>({});
   const [quoteOptions, setQuoteOptions] = useState<SearchableSelectOption[]>([]);
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({
     customer: true,
@@ -304,7 +303,7 @@ export default function SampleRequestForm({
     <div className="mx-auto w-full max-w-5xl space-y-4">
       <FormSection title="Customer & project" {...section('customer')}>
         <div className="space-y-1.5">
-          <Label htmlFor="sr-customer">Customer *</Label>
+          <Label htmlFor="sr-customer">Customer</Label>
           <SearchableSelect
             id="sr-customer"
             value={state.customer_id}
@@ -326,6 +325,16 @@ export default function SampleRequestForm({
           />
           <FieldError message={errors.customer_id} />
         </div>
+        {!state.customer_id && (
+          <div className="space-y-1.5">
+            <Label htmlFor="sr-customer-name">Customer name (no debtor code)</Label>
+            <Input
+              id="sr-customer-name"
+              value={state.customer_name}
+              onChange={(e) => set('customer_name', e.target.value)}
+            />
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="sr-project">Registered project{requireProject ? ' *' : ''}</Label>
           <SearchableSelect
@@ -442,96 +451,75 @@ export default function SampleRequestForm({
               </thead>
               <tbody>
                 {state.lines.map((line, index) => (
-                  <Fragment key={line.key}>
-                    <tr data-testid="sample-request-line" className="border-t align-top">
-                      <td className="px-2 py-2 text-muted-foreground">
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1"
-                          aria-label={`Stock for line ${index + 1}`}
-                          aria-expanded={Boolean(stockOpen[line.key])}
-                          onClick={() =>
-                            setStockOpen((p) => ({ ...p, [line.key]: !p[line.key] }))
-                          }
-                        >
-                          {stockOpen[line.key] ? (
-                            <ChevronDown className="size-4" />
-                          ) : (
-                            <ChevronRight className="size-4" />
-                          )}
-                          {index + 1}
-                        </button>
-                      </td>
-                      <td className="px-2 py-2">
-                        <span className="block truncate" title={line.label}>
-                          {line.label}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2">
-                        <SearchableSelect
-                          aria-label="Alternative"
-                          value={line.alt_product_id ?? ''}
-                          onChange={(v) => {
-                            if (!v) updateLine(line.key, { alt_product_id: null, alt_label: null });
-                          }}
-                          onOptionChange={(opt) =>
-                            updateLine(line.key, {
-                              alt_product_id: opt ? opt.value : null,
-                              alt_label: opt ? opt.label : null,
-                            })
-                          }
-                          fetchOptions={fetchProducts}
-                          selectedOption={
-                            line.alt_product_id
-                              ? { value: line.alt_product_id, label: line.alt_label ?? '' }
-                              : undefined
-                          }
-                          placeholder="Optional"
-                          clearable
-                          truncateTriggerLabel
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          min={1}
-                          aria-label="Quantity"
-                          value={line.qty}
-                          onChange={(e) => updateLine(line.key, { qty: e.target.value })}
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <Input
-                          aria-label="Remarks"
-                          value={line.remark}
-                          onChange={(e) => updateLine(line.key, { remark: e.target.value })}
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          aria-label="Remove line"
-                          onClick={() =>
-                            setState((prev) => ({
-                              ...prev,
-                              lines: prev.lines.filter((l) => l.key !== line.key),
-                            }))
-                          }
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                    {stockOpen[line.key] && (
-                      <tr>
-                        <td colSpan={6} className="px-2 pb-3">
-                          <OrderInquiryStockGrid productId={line.product_id} location="BRW" />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
+                  <tr key={line.key} data-testid="sample-request-line" className="border-t align-top">
+                    <td className="px-2 py-2 text-muted-foreground">{index + 1}</td>
+                    <td className="px-2 py-2">
+                      <span className="block truncate" title={line.label}>
+                        {line.label}
+                      </span>
+                      {line.inactive && (
+                        <Badge variant="secondary" className="mt-1">
+                          Inactive
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      <SearchableSelect
+                        aria-label="Alternative"
+                        value={line.alt_product_id ?? ''}
+                        onChange={(v) => {
+                          if (!v) updateLine(line.key, { alt_product_id: null, alt_label: null });
+                        }}
+                        onOptionChange={(opt) =>
+                          updateLine(line.key, {
+                            alt_product_id: opt ? opt.value : null,
+                            alt_label: opt ? opt.label : null,
+                          })
+                        }
+                        fetchOptions={fetchProducts}
+                        selectedOption={
+                          line.alt_product_id
+                            ? { value: line.alt_product_id, label: line.alt_label ?? '' }
+                            : undefined
+                        }
+                        placeholder="Optional"
+                        clearable
+                        truncateTriggerLabel
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        aria-label="Quantity"
+                        value={line.qty}
+                        onChange={(e) => updateLine(line.key, { qty: e.target.value })}
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <Input
+                        aria-label="Remarks"
+                        value={line.remark}
+                        onChange={(e) => updateLine(line.key, { remark: e.target.value })}
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label="Remove line"
+                        onClick={() =>
+                          setState((prev) => ({
+                            ...prev,
+                            lines: prev.lines.filter((l) => l.key !== line.key),
+                          }))
+                        }
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </td>
+                  </tr>
                 ))}
               </tbody>
             </table>
