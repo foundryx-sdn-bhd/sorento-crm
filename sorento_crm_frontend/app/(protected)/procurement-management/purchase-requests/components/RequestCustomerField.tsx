@@ -9,16 +9,14 @@ import type { PurchaseRequestSchemaType } from '../forms/purchase-request-schema
 
 /**
  * The Customer Name field of the PR / SF form, shared by the create form and the edit card
- * so the two screens cannot drift. A pick links the customer (and, on a PR, fills Sales type
- * from the server's mapping); typed text unlinks it.
+ * so the two screens cannot drift. A pick links the customer and fills Sales type from the
+ * server's mapping (PR and SF alike); typed text unlinks it.
  */
 export function RequestCustomerField({
   form,
-  isSponsorship,
   label,
 }: {
   form: UseFormReturn<PurchaseRequestSchemaType>;
-  isSponsorship: boolean;
   /** Rendered as the field's label; the edit card draws its own caption instead. */
   label?: string;
 }) {
@@ -35,7 +33,7 @@ export function RequestCustomerField({
               onChange={(v, item) => {
                 field.onChange(v);
                 form.setValue('customer_id', item?.customer_id ?? null, { shouldDirty: true });
-                if (!isSponsorship && item?.sales_type) {
+                if (item?.sales_type) {
                   form.setValue('sales_type', item.sales_type, { shouldDirty: true });
                 }
               }}

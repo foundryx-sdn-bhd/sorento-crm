@@ -467,8 +467,10 @@ def test_history_carries_the_full_form_per_version(db, kind):
         for absent in ("sponsor_subject", "delivery_address", "total_project_value"):
             assert absent not in by_field
     elif kind == "sponsorship_form":
-        for absent in ("purpose", "sales_type", "expected_po_date", "external_reference"):
+        for absent in ("purpose", "expected_po_date", "external_reference"):
             assert absent not in by_field
+        # SF-SALES-TYPE: the SF carries a sales type too (the one field both forms show).
+        assert "sales_type" in by_field
 
     # Line items ride along for the types that have them, and last, as on the form.
     if kind == "stock_inquiry":
