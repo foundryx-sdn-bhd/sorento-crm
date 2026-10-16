@@ -21,12 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { toast } from '@/lib/toast';
 import { useLineSplits } from '../../_shared/hooks/useLineSplits';
 import {
@@ -37,6 +31,7 @@ import {
   formatSplitDate,
   fromPayload,
   gapOf,
+  groupKeyOf,
   groupsOf,
   isSplit,
   lineLabel,
@@ -50,7 +45,6 @@ import {
   splitsOf,
   toPayload,
   type SplitDraft,
-  type SplitGroup,
   type SplitLine,
 } from '../lib/lineSplitModel';
 import {
@@ -58,12 +52,15 @@ import {
   LineSplitGrid,
   NEW_DATE_COL,
   NEW_LINE_ROW,
+  OPEN_ALL_GROUPS_UP_TO,
   SplitCardBody,
   placedOf,
   type CardData,
+  type CardHandlers,
   type CellData,
   type Placed,
 } from './LineSplitGrid';
+import { LineSplitMoveBox, type MoveTarget } from './LineSplitMoveBox';
 import { LineSplitPhone } from './LineSplitPhone';
 import { LineSplitZoom, type SplitRowHandlers } from './LineSplitZoom';
 import {
@@ -75,17 +72,6 @@ import {
 interface Draft {
   lines: SplitLine[];
   history: SplitLine[][];
-}
-
-interface MoveBox {
-  lineId: string;
-  splitId: string;
-  row: string;
-  col: string;
-  x: number;
-  y: number;
-  qty: string;
-  date: string;
 }
 
 const HISTORY_LIMIT = 80;
@@ -160,8 +146,14 @@ export function LineSplitDialog({
     null,
   );
   const [zoomOpen, setZoomOpen] = React.useState(true);
-  const [moveBox, setMoveBox] = React.useState<MoveBox | null>(null);
+  const [moveTarget, setMoveTarget] = React.useState<MoveTarget | null>(null);
   const [active, setActive] = React.useState<CardData | null>(null);
+  const activeRef = React.useRef<CardData | null>(null);
+  // The focused line's group leads; a big order opens it alone (`OPEN_ALL_GROUPS_UP_TO`).
+  const [leadKey, setLeadKey] = React.useState<string | null>(null);
+  const [openKeys, setOpenKeys] = React.useState<ReadonlySet<string>>(
+    new Set(),
+  );
 
   const commit = React.useCallback((next: Draft | null) => {
     draftRef.current = next;
@@ -171,8 +163,9 @@ export function LineSplitDialog({
   React.useEffect(() => {
     if (!open) {
       commit(null);
-      setMoveBox(null);
+      setMoveTarget(null);
       setActive(null);
+      activeRef.current = null;
       return;
     }
     if (query.data && !query.isFetching && !draftRef.current) {
@@ -183,18 +176,43 @@ export function LineSplitDialog({
         focusLineId && lines.some((line) => line.lineId === focusLineId)
           ? focusLineId
           : null;
-      setSelectedLineId(focus ?? lines[0]?.lineId ?? null);
+      const lead = lines.find(
+        (line) => line.lineId === (focus ?? lines[0]?.lineId),
+      );
+      const leadGroup = lead ? groupKeyOf(lead) : null;
+      setSelectedLineId(lead?.lineId ?? null);
       setSelectedSplitId(null);
       setZoomOpen(true);
+      setLeadKey(leadGroup);
+      setOpenKeys(
+        new Set(
+          lines.length <= OPEN_ALL_GROUPS_UP_TO
+            ? lines.map(groupKeyOf)
+            : leadGroup
+              ? [leadGroup]
+              : [],
+        ),
+      );
     }
   }, [open, query.data, query.isFetching, focusLineId, commit]);
 
   const lines = draft?.lines ?? null;
-  const groups = React.useMemo(() => (lines ? groupsOf(lines) : []), [lines]);
+  const groups = React.useMemo(() => {
+    if (!lines) return [];
+    const all = groupsOf(lines);
+    const lead = all.find((group) => group.key === leadKey);
+    return lead ? [lead, ...all.filter((group) => group !== lead)] : all;
+  }, [lines, leadKey]);
   const byId = React.useCallback(
     (lineId: string | null | undefined) =>
       lines?.find((line) => line.lineId === lineId),
     [lines],
+  );
+  /** The latest lines, for callbacks that must stay stable across edits. */
+  const liveLine = React.useCallback(
+    (lineId: string | null | undefined) =>
+      draftRef.current?.lines.find((line) => line.lineId === lineId),
+    [],
   );
 
   const undo = React.useCallback(() => {
@@ -261,9 +279,9 @@ export function LineSplitDialog({
       if (col === CANCEL_COL) return 'Cancel';
       const date = formatSplitDate(col);
       if (on === lineId) return date;
-      return `${date}, ${on ? lineShort(byId(on)) : 'new line'}`;
+      return `${date}, ${on ? lineShort(liveLine(on)) : 'new line'}`;
     },
-    [byId],
+    [liveLine],
   );
 
   /** Move `qty` of a split to a cell (`row` is the line it sits on, or the New line row). */
@@ -298,7 +316,7 @@ export function LineSplitDialog({
       col: string,
       at?: { x: number; y: number },
     ) => {
-      const line = byId(lineId);
+      const line = liveLine(lineId);
       const split = line
         ? splitsOf(line).find((candidate) => candidate.id === splitId)
         : undefined;
@@ -312,18 +330,25 @@ export function LineSplitDialog({
           ? { x: rect.right + 6, y: rect.top }
           : { x: window.innerWidth / 2, y: window.innerHeight / 3 };
       }
-      setMoveBox({
+      const on =
+        col === CANCEL_COL ? lineId : row === NEW_LINE_ROW ? null : row;
+      setMoveTarget({
         lineId,
         splitId,
         row,
         col,
         x: point.x,
         y: point.y,
-        qty: String(split.qty),
-        date: '',
+        max: split.qty,
+        lineText:
+          col === CANCEL_COL || on === lineId
+            ? null
+            : on
+              ? lineShort(liveLine(on))
+              : 'new line',
       });
     },
-    [byId],
+    [liveLine],
   );
 
   const rowOf = (origin: SplitLine, split: SplitDraft) =>
@@ -381,19 +406,47 @@ export function LineSplitDialog({
     [apply, moveTo, openMoveBox],
   );
 
-  const zoomTo = React.useCallback((lineId: string) => {
-    setSelectedLineId(lineId);
-    setZoomOpen(true);
+  const zoomTo = React.useCallback(
+    (lineId: string) => {
+      setSelectedLineId(lineId);
+      setZoomOpen(true);
+      // Zooming a line of a closed group opens that group (alone, on a big order).
+      const line = liveLine(lineId);
+      if (!line) return;
+      const key = groupKeyOf(line);
+      setOpenKeys((current) => {
+        if (current.has(key)) return current;
+        const big =
+          (draftRef.current?.lines.length ?? 0) > OPEN_ALL_GROUPS_UP_TO;
+        return new Set(big ? [key] : [...current, key]);
+      });
+    },
+    [liveLine],
+  );
+
+  const onToggleGroup = React.useCallback((key: string) => {
+    setOpenKeys((current) => {
+      if (current.has(key)) {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      }
+      const big = (draftRef.current?.lines.length ?? 0) > OPEN_ALL_GROUPS_UP_TO;
+      return new Set(big ? [key] : [...current, key]);
+    });
   }, []);
 
   const onCardKey = React.useCallback(
-    (
-      event: React.KeyboardEvent<HTMLDivElement>,
-      placed: Placed,
-      group: SplitGroup,
-    ) => {
-      if (active || event.metaKey || event.ctrlKey || event.altKey) return;
+    (event: React.KeyboardEvent<HTMLDivElement>, placed: Placed) => {
+      if (activeRef.current || event.metaKey || event.ctrlKey || event.altKey)
+        return;
       const { split, origin, row, col } = placed;
+      // The card's own group, read live: a card only ever moves inside it.
+      const key = groupKeyOf(origin);
+      const group = groupsOf(draftRef.current?.lines ?? []).find(
+        (candidate) => candidate.key === key,
+      );
+      if (!group) return;
       const amount = event.shiftKey ? Math.min(10, split.qty) : split.qty;
       const cols = [...datesOf(group), CANCEL_COL];
       const rows = [...group.lines.map((line) => line.lineId), NEW_LINE_ROW];
@@ -462,7 +515,19 @@ export function LineSplitDialog({
         default:
       }
     },
-    [active, actionsFor, moveTo, openMoveBox, zoomTo],
+    [actionsFor, moveTo, openMoveBox, zoomTo],
+  );
+
+  const onPickCard = React.useCallback(
+    (placed: Placed) => {
+      zoomTo(placed.origin.lineId);
+      setSelectedSplitId(placed.split.id);
+    },
+    [zoomTo],
+  );
+  const cardHandlers = React.useMemo<CardHandlers>(
+    () => ({ onKey: onCardKey, onPick: onPickCard }),
+    [onCardKey, onPickCard],
   );
 
   const removeEmpty = React.useCallback(
@@ -563,11 +628,14 @@ export function LineSplitDialog({
   );
 
   const onDragStart = (event: DragStartEvent) => {
-    setActive((event.active.data.current as CardData | undefined) ?? null);
+    activeRef.current =
+      (event.active.data.current as CardData | undefined) ?? null;
+    setActive(activeRef.current);
   };
   const onDragEnd = (event: DragEndEvent) => {
     const from = event.active.data.current as CardData | undefined;
     const to = event.over?.data.current as CellData | undefined;
+    activeRef.current = null;
     setActive(null);
     if (!from || !to || !event.over) return;
     if (
@@ -591,17 +659,6 @@ export function LineSplitDialog({
       : null;
   }, [active, lines, groups]);
 
-  const submitMove = (event?: React.FormEvent) => {
-    event?.preventDefault();
-    if (!moveBox) return;
-    const date = moveBox.col === NEW_DATE_COL ? moveBox.date : moveBox.col;
-    if (!date) return;
-    const qty = Number(moveBox.qty.replace(/[^0-9]/g, '')) || 0;
-    const box = moveBox;
-    setMoveBox(null);
-    if (qty > 0) moveTo(box.lineId, box.splitId, qty, date, box.row);
-  };
-
   const gaps = lines ? lines.filter((line) => gapOf(line) !== 0) : [];
   const splitCount = lines ? lines.filter(isSplit).length : 0;
   const dirty =
@@ -624,17 +681,7 @@ export function LineSplitDialog({
     ? groups.find((group) => group.lines.includes(selected))
     : undefined;
   const position = selected && lines ? lines.indexOf(selected) + 1 : 0;
-  const moveLine = moveBox ? byId(moveBox.lineId) : undefined;
-  const moveSplitDraft = moveLine
-    ? splitsOf(moveLine).find((split) => split.id === moveBox?.splitId)
-    : undefined;
-  const moveOn = moveBox
-    ? moveBox.col === CANCEL_COL
-      ? moveBox.lineId
-      : moveBox.row === NEW_LINE_ROW
-        ? null
-        : moveBox.row
-    : null;
+  const closeMoveBox = React.useCallback(() => setMoveTarget(null), []);
 
   const gapText = (line: SplitLine) => {
     const gap = gapOf(line);
@@ -725,25 +772,23 @@ export function LineSplitDialog({
                 sensors={sensors}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
-                onDragCancel={() => setActive(null)}
+                onDragCancel={() => {
+                  activeRef.current = null;
+                  setActive(null);
+                }}
               >
                 <div className="min-w-0 flex-1 overflow-auto p-3.5">
                   <LineSplitGrid
                     groups={groups}
                     lines={lines}
+                    openKeys={openKeys}
                     selectedLineId={
                       zoomOpen ? (selected?.lineId ?? null) : null
                     }
                     selectedSplitId={selectedSplitId}
-                    activeGroupKey={active?.groupKey ?? null}
-                    actionsFor={(placed) =>
-                      actionsFor(placed.origin, placed.split)
-                    }
-                    onKey={onCardKey}
-                    onPick={(placed) => {
-                      zoomTo(placed.origin.lineId);
-                      setSelectedSplitId(placed.split.id);
-                    }}
+                    handlers={cardHandlers}
+                    actionsFor={actionsFor}
+                    onToggle={onToggleGroup}
                     onZoom={zoomTo}
                   />
                 </div>
@@ -827,86 +872,13 @@ export function LineSplitDialog({
           </div>
         </div>
 
-        <Popover
-          open={Boolean(moveBox)}
-          onOpenChange={(next) => !next && setMoveBox(null)}
-        >
-          {moveBox && typeof document !== 'undefined'
-            ? createPortal(
-                <PopoverTrigger asChild>
-                  <span
-                    aria-hidden
-                    className="pointer-events-none fixed size-px"
-                    style={{ left: moveBox.x, top: moveBox.y }}
-                  />
-                </PopoverTrigger>,
-                document.body,
-              )
-            : null}
-          <PopoverContent
-            align="start"
-            className="w-64 p-3"
-            aria-label="Move qty"
-          >
-            {moveBox && moveSplitDraft ? (
-              <form onSubmit={submitMove} className="space-y-2.5">
-                <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
-                  <span>Move to</span>
-                  {moveBox.col === NEW_DATE_COL ? (
-                    <Input
-                      type="date"
-                      variant="sm"
-                      aria-label="New date"
-                      autoFocus
-                      className="w-36"
-                      value={moveBox.date}
-                      onChange={(event) =>
-                        setMoveBox({ ...moveBox, date: event.target.value })
-                      }
-                    />
-                  ) : (
-                    <span>
-                      {moveBox.col === CANCEL_COL
-                        ? 'Cancel'
-                        : formatSplitDate(moveBox.col)}
-                    </span>
-                  )}
-                  {moveBox.col !== CANCEL_COL && moveOn !== moveBox.lineId ? (
-                    <span>{`· ${moveOn ? lineShort(byId(moveOn)) : 'new line'}`}</span>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    variant="sm"
-                    inputMode="decimal"
-                    aria-label="Qty to move"
-                    autoFocus={moveBox.col !== NEW_DATE_COL}
-                    onFocus={(event) => event.target.select()}
-                    className="w-24 text-right tabular-nums"
-                    value={moveBox.qty}
-                    onChange={(event) =>
-                      setMoveBox({ ...moveBox, qty: event.target.value })
-                    }
-                  />
-                  <span className="text-xs text-muted-foreground">{`of ${moveSplitDraft.qty}`}</span>
-                </div>
-                <div className="flex justify-end gap-1.5">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setMoveBox(null)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" size="sm">
-                    Move
-                  </Button>
-                </div>
-              </form>
-            ) : null}
-          </PopoverContent>
-        </Popover>
+        <LineSplitMoveBox
+          target={moveTarget}
+          onClose={closeMoveBox}
+          onMove={(target, qty, date) =>
+            moveTo(target.lineId, target.splitId, qty, date, target.row)
+          }
+        />
       </DialogContent>
     </Dialog>
   );

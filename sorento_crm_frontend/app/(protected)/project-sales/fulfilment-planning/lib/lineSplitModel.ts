@@ -51,7 +51,10 @@ export type ChangeWord = 'REMAIN' | 'DELAY' | 'ADVANCE' | 'CANCEL';
  * the line and the splits it already has: the same input always gives the same id, so a
  * function called twice (React StrictMode) answers the same both times.
  */
-export function nextSplitId(lineId: string, splits: readonly SplitDraft[]): string {
+export function nextSplitId(
+  lineId: string,
+  splits: readonly SplitDraft[],
+): string {
   const taken = new Set(splits.map((split) => split.id));
   let index = splits.length + 1;
   while (taken.has(`${lineId}:${index}`)) index += 1;
@@ -430,10 +433,15 @@ export interface SplitGroup {
   lines: SplitLine[];
 }
 
+/** The key of the group a line belongs to (item code and location). */
+export function groupKeyOf(line: SplitLine): string {
+  return `${line.itemCode}|${line.location}`;
+}
+
 export function groupsOf(lines: SplitLine[]): SplitGroup[] {
   const groups: SplitGroup[] = [];
   for (const line of lines) {
-    const key = `${line.itemCode}|${line.location}`;
+    const key = groupKeyOf(line);
     let group = groups.find((candidate) => candidate.key === key);
     if (!group) {
       group = {
