@@ -135,8 +135,21 @@ def session_payload(state: State, answer: Any, ctx: Any) -> dict[str, Any]:
     """
     if getattr(state, "quoted_live", None):
         state = carry_live_state(state, getattr(answer, "question", None) is not None, state.quoted_live)
+    focus = state.focus
+    if getattr(state, "state_led", None):
+        # CHAT-STATE: only a turn the parser's `state_changes` led records the list it showed.
+        from dataclasses import replace
+
+        focus = replace(
+            focus,
+            last_list=last_list_after(
+                focus.last_list,
+                question=getattr(answer, "question", None),
+                sections=getattr(answer, "sections", None) or [],
+            ),
+        )
     return {
-        "focus": focus_to_wire(state.focus),
+        "focus": focus_to_wire(focus),
         # `pending' = composer.question` exactly (AC-1532) - and when the composer asked
         # nothing, the roster that survived its OWN pick (contract 36) is still open, so
         # it is what stays. "No new question" is not "no question".

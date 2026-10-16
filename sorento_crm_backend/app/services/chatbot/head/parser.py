@@ -80,6 +80,8 @@ class ParserConfig:
     provider: str
     model: str
     api_key: str
+    # CHAT-STATE: the prompt in use asks for `state_changes` (set by `resolve_config` in S5).
+    state_block: bool = False
 
 
 def _build_json_schema() -> dict[str, Any]:
