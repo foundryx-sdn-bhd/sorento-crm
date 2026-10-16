@@ -792,3 +792,18 @@ def test_a_recorded_turn_without_a_prompt_text_event_still_uses_the_as_of_db_his
     block = live_env["parse_calls"][0]
     assert PRIOR_1 in block and PRIOR_2 in block
     assert DECOY_LATER not in block and DECOY_TEST not in block
+
+
+# ------------------------------------------------------------------ review round 10 (old prompt layout)
+def test_an_old_layout_prompt_with_exchanges_after_the_current_message_falls_back_to_the_as_of_history(
+        session_factory, recorded_with_history, live_env):
+    row = copy.deepcopy(recorded_with_history)
+    _prompt_event(row)["text"] = (
+        f"Previous response: {PRIOR_2}\\n".replace("\\n", "\n")
+        + "Product types: Tap, Shower\n"
+        + "Current user message: price for SRTWC8517\n"
+        + f"Recent exchanges, oldest first:\nUser: synthetic earlier question one\nAssistant: {PRIOR_1}\n")
+    go(session_factory, row)
+    block = live_env["parse_calls"][0]
+    assert PRIOR_1 in block, "the exchanges after the current message were lost (truncated slice used)"
+    assert "Recent exchanges" in block
