@@ -1,6 +1,6 @@
 # PLAN: lock the MCP endpoint + default-deny company scope
 
-Status: building (full track, size M: auth change on the MCP server, no migration, no UI change)
+Status: in review, reviewer READY, security-reviewer should-fixes applied (full track, size M: auth change on the MCP server, no migration, no UI change)
 UAC: `sec-mcp-auth-acceptance-criteria.md`
 Lane: SEC-MCP-AUTH (owner D7, 16 Oct). Supersedes the unmerged PR #1548 (MCP-LOCKDOWN), whose
 bearer gate and env name `MCP_AUTH_TOKEN` this lane ports unchanged.
