@@ -248,15 +248,52 @@ def test_a_period_looking_column_the_reader_cannot_place_fails_the_rows_holding_
     assert y.status == "mapped"
 
 
-# 3. per-account Tier 1-3 with dealer Tier 4-5: held for the owner's ruling ------------
 
 
-def test_per_account_tiers_with_merged_dealer_tiers_wait_on_the_ruling():
+# 3. ruling (b): per-account Tier 1-3 targets replaced by the dealer's Tier 4-5 target --------
+
+
+def test_per_account_tiers_and_merged_dealer_tiers_become_linked_targets():
     parsed, s_rows, _ = _parse()
-    for label in ("A/C I", "A/C III", "A/C IV"):
-        row = _row(parsed, S, s_rows[f"CHARLIE:{label}"])
-        assert row.status == "not_representable"
-        assert "waiting on a ruling" in row.reason
-    # The rest of the file maps.
-    assert _row(parsed, S, s_rows["ALPHA:A/C I"]).status == "mapped"
-    assert _row(parsed, S, s_rows["BRAVO:A/C I"]).status == "mapped"
+    keys = [_k(S, s_rows[f"CHARLIE:{label}"]) for label in ("A/C I", "A/C III", "A/C IV")]
+    for key in keys:
+        assert next(r for r in parsed.rows if r.key == key).status == "mapped"
+    yearly = [s for s in parsed.schemes if s.kind == "yearly" and set(s.codes) & set(keys)]
+    dealer = next(s for s in yearly if s.codes == keys)
+    assert [(t.threshold, t.rate, t.account_rates) for t in dealer.tiers] == [
+        (D("2000000"), None, dict(zip(keys, (D("2"), D("2.5"), D("3"))))),
+        (D("2500000"), None, dict(zip(keys, (D("3"), D("3.5"), D("4"))))),
+    ]
+    assert dealer.replaced_by is None
+    for i, key in enumerate(keys):
+        own = next(s for s in yearly if s.codes == [key])
+        assert [(t.threshold, t.rate) for t in own.tiers] == [
+            (D(100000 * n + 10000 * i), D("1")) for n in (1, 2, 3)
+        ]
+        assert own.replaced_by == dealer.key
+
+
+def test_apply_links_each_account_target_to_its_dealer_target(api):
+    from app.models.order import Customer
+
+    client, db, company_id = api
+    for label, level in (("A/C I", 1), ("A/C III", 3), ("A/C IV", 4)):
+        db.add(Customer(id=_uid(), company_id=company_id, customer_code=_code(),
+                        customer_name=f"CHARLIE ENTERPRISE - [{label}]", account_level=level))
+    db.flush()
+    data, _ = _book(sorento)
+    files = {"file": ("t.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    db.autoflush = False
+    try:
+        body = client.post(f"{BASE}/import", params={"dry_run": "false", "year": 2026}, files=files).json()
+    finally:
+        db.autoflush = True
+    charlie = [r for r in body["rows"] if r["row"] in (7, 8, 9)]
+    assert all(r["status"] == "mapped" for r in charlie), charlie
+    rows = client.get(BASE, params={"subject": "dealer", "all": "true"}).json()["rows"]
+    yearly = [r for r in rows if r["name"].startswith("CHARLIE") and r["name"].endswith("yearly")]
+    details = [client.get(f"{BASE}/{r['target_id']}").json() for r in yearly]
+    dealer = next(d for d in details if len(d["accounts"]) == 3)
+    owns = [d for d in details if len(d["accounts"]) == 1]
+    assert len(owns) == 3
+    assert all(d["replaced_by"]["target_no"] == dealer["target_no"] for d in owns)

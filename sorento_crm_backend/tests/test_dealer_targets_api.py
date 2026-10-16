@@ -515,3 +515,70 @@ def test_removing_an_account_drops_its_tier_rates(api):
     from app.models.sales import SalesTargetTierRate
 
     assert db.query(SalesTargetTierRate).filter(SalesTargetTierRate.customer_id == a3.id).count() == 0
+
+
+# --------------------------------------------------------------------------------------- #
+# Crew ruling 16 Oct (from owner ruling 4, "highest tier reached pays"): Tier 1-5 are one scale;
+# an account's own Tier 1-3 target is REPLACED by its dealer's Tier 4-5 target once the
+# dealer's combined sales reach it in the same year.
+# --------------------------------------------------------------------------------------- #
+
+
+def _yearly(accounts, tiers, **extra):
+    return _dealer_body(
+        accounts, name="ZZT yearly", split_every=None, split_unit=None, tiers_per_period=False,
+        tiers=tiers, **extra,
+    )
+
+
+def _replacing_pair(client, db, company_id, a3_sales):
+    pid = _product_id(db, company_id)
+    a1 = _customer(db, company_id, "ZZT REPL A/C I", level=1)
+    a3 = _customer(db, company_id, "ZZT REPL A/C III", level=3)
+    _sale(db, company_id, a1, 800000, date(2026, 3, 1), product_id=pid)
+    _sale(db, company_id, a3, a3_sales, date(2026, 3, 1), product_id=pid)
+    dealer = client.post(BASE, json=_yearly([a1, a3], [
+        {"threshold": 2000000, "rate": 0, "account_rates": [
+            {"customer_id": a1.id, "rate": 2}, {"customer_id": a3.id, "rate": 2.5},
+        ]},
+    ]))
+    assert dealer.status_code == 201, dealer.text
+    own = client.post(BASE, json=_yearly([a1], [
+        {"threshold": 300000, "rate": 0.5}, {"threshold": 700000, "rate": 1},
+    ], replaced_by_target_id=dealer.json()["id"]))
+    assert own.status_code == 201, own.text
+    return dealer.json(), own.json()
+
+
+def test_a_reached_dealer_tier_replaces_the_account_s_own_tier(api):
+    """A/C I sells 800k (its own Tier 2 at 1% = 8,000); the dealer sells 2.1M combined, past
+    its 2M tier: A/C I gets the dealer's 2% = 16,000, never 24,000."""
+    client, db, company_id = api
+    dealer, own = _replacing_pair(client, db, company_id, 1300000)
+    assert dealer["periods"][0]["commission_earned"] == 16000 + 32500
+    assert own["periods"][0]["commission_earned"] == 0
+    assert own["periods"][0]["replaced"] is True
+    assert own["replaced_by"]["target_no"] == dealer["target_no"]
+
+
+def test_below_the_dealer_tier_the_account_pays_its_own_tier(api):
+    client, db, company_id = api
+    dealer, own = _replacing_pair(client, db, company_id, 1000000)   # 1.8M combined
+    assert dealer["periods"][0]["commission_earned"] == 0
+    assert own["periods"][0]["commission_earned"] == 8000
+    assert own["periods"][0]["replaced"] is False
+
+
+def test_replaced_by_must_name_another_dealer_target(api):
+    client, db, company_id = api
+    a1 = _customer(db, company_id, "ZZT REPL X", level=1)
+    team_or_none = client.post(BASE, json=_yearly([a1], [{"threshold": 1, "rate": 1}],
+                                                   replaced_by_target_id=_uid()))
+    assert team_or_none.status_code in (404, 422), team_or_none.text
+    agent = _agent(db, company_id)
+    res = client.post(BASE, json={
+        "subject_kind": "agent", "sales_agent_id": agent.id, "name": "ZZT", "metric": "amount",
+        "start_date": "2026-01-01", "end_date": "2026-12-31", "target_value": 1,
+        "replaced_by_target_id": _uid(),
+    })
+    assert res.status_code == 422, res.text
