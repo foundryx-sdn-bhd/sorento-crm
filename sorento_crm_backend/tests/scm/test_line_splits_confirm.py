@@ -666,3 +666,33 @@ def test_row_notes_name_the_core_autocount_line_numbers(api, emails):
     text = " | ".join(split_notes)
     assert "608" in text or "480" in text, text
     assert "line 18" not in text and "line 2 " not in text and not text.endswith("line 2"), text
+
+
+def test_resend_after_the_applied_split_prints_no_plain_order_for_the_moved_in_lines(
+    api, emails, monkeypatch
+):
+    """SO424910 shape after its Confirm: lines 32 (4) and 48 (10) got their whole qty from line
+    16's moved splits. The Send to purchasing preview prints the origin's split rows (2 REMAIN,
+    4 and 10 DELAY, the 60 cancel) and no plain ORDER row for those added lines."""
+    from app.models.project_so import OrderInquiry
+    from app.services.oi_handover_resend import OrderInquiryHandoverResend
+    from tests.test_oi_handover_excel import _drain_on_test_connection, _enabled_handover
+    from tests.test_order_inquiry_handover_automation import _register
+
+    s = _so424910(api)
+    _client, world = api
+    _register(world)
+    _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
+    row = (
+        s.db.query(OrderInquiryRow)
+        .filter(OrderInquiryRow.so_line_id == s.l16.id)
+        .order_by(OrderInquiryRow.created_at.desc())
+        .first()
+    )
+    inquiry = s.db.get(OrderInquiry, row.order_inquiry_id)
+    out = OrderInquiryHandoverResend(s.db).preview([str(inquiry.id)], actor_user_id=world.actor)
+    assert out["emails"], out
+    # line 16: 2 REMAIN + 4 DELAY + 10 DELAY + 60 CANCEL BALANCE = 4 split rows; nothing else
+    assert out["emails"][0]["line_count"] == 4, (
+        "no plain ORDER row for the lines whose qty moved in", out["emails"][0]["line_count"])
