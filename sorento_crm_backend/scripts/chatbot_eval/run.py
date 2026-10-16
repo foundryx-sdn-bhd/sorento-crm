@@ -106,7 +106,7 @@ def _server_sha(base_url: str) -> str | None:
         sha = resp.json().get("git_sha")
     except (httpx.HTTPError, ValueError, AttributeError):
         return None
-    return sha if isinstance(sha, str) and sha.strip() else None
+    return sha.strip() if isinstance(sha, str) and sha.strip() and sha.strip().lower() != "unknown" else None
 
 
 PROVENANCE_FIELDS = ("code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_effort")
@@ -362,6 +362,10 @@ def main(argv: list[str] | None = None) -> int:
         selection={"topics": args.topics.split(",") if args.topics else None, "ids_file": args.ids_file, "cases": len(loaded.cases)},
         prompt=prompt, prompt_versions_seen=seen, git_sha=git_sha, git_dirty=git_dirty,
         runner_sha=runner_sha, provenance=provenance,
+        provenance_missing=not any(
+            ((r.trace_digest or {}).get("parser") or {}).get(f) is not None
+            for r in run.results for f in PROVENANCE_FIELDS
+        ),
         provenance_mixed=any(len(v) > 1 for v in provenance.values()),
         judge_stopped=judge.stopped if judge is not None else None,
         judge_usd=judge.budget.spent if judge is not None else 0.0,

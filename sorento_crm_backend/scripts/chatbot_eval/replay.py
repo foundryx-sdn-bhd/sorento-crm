@@ -20,6 +20,7 @@ import copy
 import hashlib
 import inspect
 import json
+import logging
 import os
 import sys
 from typing import Any, Callable, Iterator
@@ -200,11 +201,12 @@ def _patched(recorded: dict[tuple[str, str], Any], misses: list[dict[str, Any]])
 
 
 def _entity_key(ents: list[Any]) -> list[list[Any]]:
-    return sorted(
+    keys = [
         [e.get("hint"), e.get("canonical_code"), _sha(str(e.get("raw") or "").lower())[:12]]
         for e in ents
         if isinstance(e, dict)
-    )
+    ]
+    return sorted(keys, key=lambda k: tuple("" if x is None else str(x) for x in k))
 
 
 def _entities(trace: list[dict[str, Any]]) -> list[list[Any]]:
@@ -280,20 +282,28 @@ def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | No
         from app.services.chatbot.head import grounding
 
         db = factory()
+        g_misses: list[dict[str, Any]] = []
         try:
-            if vocab_box is not None and not vocab_box:
-                vocab_box.append(grounding.load_vocabulary(db))
-            vocab = vocab_box[0] if vocab_box else None
-            out["stages"] = {"grounded": _ground_one(row, parse, db, vocab)}
+            with _patched({}, g_misses):
+                if vocab_box is not None and not vocab_box:
+                    vocab_box.append(grounding.load_vocabulary(db))
+                vocab = vocab_box[0] if vocab_box else None
+                out["stages"] = {"grounded": _ground_one(row, parse, db, vocab)}
         except Exception as exc:  # noqa: BLE001 - the replay records, never raises
-            out["misses"] = [{"error": type(exc).__name__}]
+            g_misses.append({"error": type(exc).__name__})
         finally:
             db.rollback()
             db.close()
+        out["misses"] = g_misses
         return out
     payload = copy.deepcopy(row.get("envelope") or {})
     payload.update(is_test=True, mock_reformulator_output=parse,
                    previous_conversation_state=_recorded_memory(row))
+    # A fresh respond message id (deterministic per row, so base and head agree): the engine's
+    # duplicate check is keyed on contact + message id and must never match the recorded turn.
+    inner = payload.setdefault("message", {}) if isinstance(payload.get("message", {}), dict) else None
+    if inner is not None and isinstance(inner.setdefault("message", {}), dict):
+        inner["message"]["messageId"] = "replay-" + hashlib.sha256(str(row.get("id")).encode()).hexdigest()[:16]
     envelope = Envelope(**payload)
     misses: list[dict[str, Any]] = []
     with _patched(_recorded_tools(row), misses):
@@ -302,6 +312,10 @@ def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | No
         except Exception as exc:  # noqa: BLE001 - the replay records, never raises
             out["misses"] = misses + [{"error": type(exc).__name__}]
             return out
+    if getattr(result, "duplicate", False):
+        out["skipped"] = "duplicate"  # never read the recorded trace as if it had been replayed
+        out["misses"] = misses
+        return out
     db = factory()
     turn = db.query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
     trace = list(turn.trace or []) if turn is not None else []
@@ -325,11 +339,17 @@ def replay_rows(rows: list[dict[str, Any]], *, session_factory: Callable[[], Any
     and returns `stages.grounded` alone; None runs the whole turn."""
     results = []
     vocab_box: list[Any] = []
-    for row in rows:
-        with _rolled_back(session_factory) as factory:
-            results.append(_replay_one(row, factory, stage, vocab_box))
-        if on_row is not None:
-            on_row(results[-1])
+    # No log record may carry message or reply text (the engine and resolver log both on errors).
+    previous_disable = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+    try:
+        for row in rows:
+            with _rolled_back(session_factory) as factory:
+                results.append(_replay_one(row, factory, stage, vocab_box))
+            if on_row is not None:
+                on_row(results[-1])
+    finally:
+        logging.disable(previous_disable)
     return results
 
 
@@ -356,7 +376,7 @@ def diff_rows(base: list[dict[str, Any]], head: list[dict[str, Any]],
         key = (b["case_id"], b["turn_id"])
         h = head_by.get(key)
         if h is None:
-            skipped["unmatched"] = skipped.get("unmatched", 0) + 1
+            skipped["missing_in_head"] = skipped.get("missing_in_head", 0) + 1
             continue
         kind = b.get("skipped") or h.get("skipped")
         if kind:
@@ -369,7 +389,13 @@ def diff_rows(base: list[dict[str, Any]], head: list[dict[str, Any]],
                 diffs.append((key[0], key[1], stage))
                 stage_counts[stage] = stage_counts.get(stage, 0) + 1
                 break
-    unintended = [d for d in diffs if (d[0], d[2]) not in intended]
+    base_keys = {(b["case_id"], b["turn_id"]) for b in base}
+    for h in head:
+        key = (h["case_id"], h["turn_id"])
+        if key not in base_keys:
+            skipped["missing_in_base"] = skipped.get("missing_in_base", 0) + 1
+            diffs.append((key[0], key[1], "missing_in_base"))
+    unintended = [d for d in diffs if d[2] == "missing_in_base" or (d[0], d[2]) not in intended]
     return {"diffs": diffs, "unintended": unintended, "counts": {"stage": stage_counts, "skipped": skipped}}
 
 

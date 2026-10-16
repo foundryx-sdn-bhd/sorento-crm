@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 
 MIN_REPS = 3
+MIN_ITEMS = 10
 
 
 def _wmean(values: list[float], weights: list[float]) -> float:
@@ -31,6 +32,7 @@ def paired_compare(
     n_boot: int = 10000,
     seed: int = 0,
     min_reps: int = MIN_REPS,
+    min_items: int = MIN_ITEMS,
     weights: dict[str, float] | None = None,
 ) -> dict:
     """Items present in both arms are paired; each item's reps are averaged, then items are resampled."""
@@ -40,6 +42,9 @@ def paired_compare(
     out: dict = {"n_items": len(ids), "excluded": excluded, "reps": reps}
     if reps < min_reps:
         out.update(verdict="refused", reason=f"{reps} reps < {min_reps}")
+        return out
+    if len(ids) < min_items:
+        out.update(verdict="refused", reason=f"{len(ids)} items < {min_items}")
         return out
     b = [sum(base[i]) / len(base[i]) for i in ids]
     h = [sum(head[i]) / len(head[i]) for i in ids]
