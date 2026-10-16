@@ -5,8 +5,8 @@ the report engine. Chain numbers (#n) refer to the 25 real console chains (3-14 
 
 - AC-B1 A report ask missing more than one detail gets ONE reply listing every missing detail, numbered, each with its
   choices; no detail gets a default (4 Oct ruling). One missing detail is asked alone, as today.
-- AC-B2 One answer can settle several details: "2026, top 10, by quantity delivered" settles period, count, metric
-  and basis and runs the report (#8). Every detail is read from the parser's fields, never from the message words.
+- AC-B2 One answer can settle several details: one reply giving the period, the count, the metric and the basis
+  settles all four and runs the report (#8). Every detail is read from the parser's fields, never from the message words.
 - AC-B3 A partial answer is not a miss: the reply re-asks only the details still missing, and a later answer
   completes it.
 - AC-B4 An answer that says "delivered" (or "ordered") fills the basis and runs the same report; it never switches to
@@ -14,7 +14,7 @@ the report engine. Chain numbers (#n) refer to the 25 real console chains (3-14 
 - AC-B5 With a report on screen, a follow-up the parser marks as a refine changes only what the parser changed (e.g.
   the channel) and re-runs that report, for every report type, including a report that came from a multi-ask
   message (#23).
-- AC-B6 A follow-up naming another axis ("the top customer") is still asked (8 Oct rule), but the held period and
+- AC-B6 A follow-up naming another axis (e.g. customers instead of agents) is still asked (8 Oct rule), but the held period and
   product stay and are not asked again (#22).
 - AC-B7 A sales total that names a brand runs filtered to that brand, or says it cannot, never an unfiltered total
   presented as the brand's (#15).

@@ -23,7 +23,7 @@ guessed (`report_ask.py:604-606`); the parser decides follow-up vs new, the engi
   turn: `required_fields.py:310-318` returns on the first missing field.
 - Answers already come from the parser's fields (`report_ask.py:180-213`, no word reading), but an answering turn
   takes only the asked field plus metric/basis (`_reply_choices` :552-561); a period or count given early in the
-  same reply is dropped and asked again (#8 "2026, top 10, by quantity delivered").
+  same reply is dropped and asked again (chain #8: one answer giving period, count, metric and basis).
 - `answer_drops=("sales_channel", "report_ask_words")` (:242) does not hold the report type, so an answer that
   says "delivered" is re-routed by `turn_runtime.py:1894-1897` (`_DOCUMENT_STATUS_TO_ORDER_STATUS`) and returns the
   delivery-order list (#23).
@@ -51,10 +51,10 @@ guessed (`report_ask.py:604-606`); the parser decides follow-up vs new, the engi
   sales report).
 - Sales report with no subject (R03, R23): `crm_sales_report` is sent with no product or customer, the route answers
   HTTP 422 `subject_required`, and the reply is "I could not fetch sales just now".
-- An answer to the top selling basis question that the parser reads with another `order_status` (R12 "delivered" ->
-  sales_ranking; R17 "已送货" -> sales_ranking/category) leaves the top selling ask: a customer picker or "找不到
-  马桶". A new ask while a question is open (R22 "i want to see the top customer", parser top_selling, no basis) is
-  read as a failed answer: "I don't know 'i want to see the top customer' as a basis".
+- An answer to the top selling basis question that the parser reads with another `order_status` (R12, R17: a
+  one-word basis answer tagged sales_ranking) leaves the top selling ask: a customer picker or a "could not find"
+  reply. A new ask while a question is open (R22: a new ranking ask on another axis, parser top_selling, no basis)
+  is read as a failed answer: "I don't know '<the message>' as a basis".
 
 ## Changes (each its own red-first slice)
 
@@ -84,9 +84,9 @@ guessed (`report_ask.py:604-606`); the parser decides follow-up vs new, the engi
    fills the count, metric or basis is the answer and the slot's axis wins (R16 noise, see S2d).
    S2d DROPPED after measuring (built c408aee148, reverted): re-targeting the held ask to the parser's group_by on
    an answering turn. On 4 live runs, 14 answer turns carried a group_by different from the held axis and only 2
-   were a real axis change (R25 "how about by brand instead?"); 12 were noise on bare answers ("top 5" ->
-   sales_agent, "dealer only" -> customer, "delivered" -> category). The slot's axis wins on an answer (main's
-   behaviour, now pinned by a guard test). R25 moves to PR-C: why the parser emits group_by on a bare "top 5" is a
+   were a real axis change (R25: a switch to another axis); 12 were noise on bare answers (a bare count ->
+   sales_agent, a channel word -> customer, a basis word -> category). The slot's axis wins on an answer (main's
+   behaviour, now pinned by a guard test). R25 moves to PR-C: why the parser emits group_by on a bare count is a
    parser-input question.
 3. S3 P3-F2 engine applies the parser's refine: with a report held and `ranking_refine` true, apply the parser's
    changed keys to the held report whatever report type the parser picked; carry the frame for every report ask,
