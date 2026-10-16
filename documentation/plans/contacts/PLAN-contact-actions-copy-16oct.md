@@ -1,6 +1,6 @@
 # PLAN: contacts list Actions dropdown + copy access copies everything (CONTACT-ACTIONS-COPY)
 
-Status: in review (small fix track: FE swap to an existing component + extend an existing copy service; no migration, no auth/RBAC change)
+Status: in review (fix round 1 from reviewer applied) (small fix track: FE swap to an existing component + extend an existing copy service; no migration, no auth/RBAC change)
 
 Owner, 16 Oct 2026: "also please put these all actions under 'Actions' dropdown just like other list view,
 and when we copy, it doesn't copy things like brands, image access, voice note access, it doesn't copy all".
@@ -27,12 +27,18 @@ Copied (`app/services/contact_access_copy_service.py`), all through the one bulk
 | Stock check mode + locations | `stock_visibility_policies` contact row (needs `inventory.stock.edit`) | 4 Oct |
 | Companies | `respond_contact_companies` (superadmin/admin) | 4 Oct |
 | Market segments | `respond_contact_market_segments` | 4 Oct |
-| Brands | `respond_contacts.brand_ids` | **this lane** |
+| Brands | `respond_contacts.brand_ids` (empty = every brand, shown "All brands") | **this lane** |
 | Image access | `contact_media_limit` (image: on/off, monthly limit) | **this lane** |
 | Voice note access | `contact_media_limit` (voice: on/off, monthly limit, max clip seconds) | **this lane** |
+| Attachment types | `contact_attachment_types` (grants on top of the baseline) | **this lane** |
+| Portal forms | `contact_portal_form_overrides` (the contact's own on/off overrides; none = inherits) | **this lane** |
+| Spec visibility | `spec_visibility_policies` contact row (none = inherits) | **this lane** |
 
-Brands and media access are edited directly under `user_management.contacts.edit`, the permission the copy
-endpoint already requires, so no `facets_to_skip` entry. No media row reads as Off (the gate fails closed).
+Every new facet is edited directly under `user_management.contacts.edit` or less (attachment types only
+need a signed-in user, a pre-existing gap noted on the PR), so the copy's own permission covers them. Brands
+also follow the direct editor's company rule: a source brand outside the actor's company scope leaves the
+facet out and names it under "Not copied". No media row, or an Off row with stale limits, reads as Off (the
+gate fails closed).
 
 Not copied (identity or the person's own state): name, phone, Respond.io id, portal slug, workspace,
 linked customers, CS routing, memory level, chatbot language / ledgers / facts (rest of `chatbot_profile`),

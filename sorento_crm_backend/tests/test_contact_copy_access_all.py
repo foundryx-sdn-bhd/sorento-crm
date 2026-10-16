@@ -9,13 +9,19 @@ linked customers) are untouched. Same endpoint and fixtures as ``test_contact_bu
 """
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
-from app.models.access import RespondContact
+from app.models.access import ContactAttachmentType, RespondContact, SpecVisibilityPolicy
 from app.models.media import ContactMediaLimit
+from app.models.price_tag import ContactPortalFormOverride
+from app.models.product import Brand
+from app.models.resources import AttachmentType
 from app.services import contact_field_reveal_service
 
 from tests._brand_scope_seed import brand
+from tests._pg_fixture import unique_code
 from tests.test_contact_bulk_copy_access import (  # noqa: F401 - fixtures + helpers
     AGENTS_EDIT,
     COST,
@@ -85,6 +91,35 @@ def _media_of(db, contact_id):
     return {r.modality: (r.is_allowed, r.monthly_limit, r.max_clip_seconds) for r in rows}
 
 
+def _attachment_type(db, tag):
+    row = AttachmentType(
+        id=str(uuid.uuid4()), type_name=f"ZZT type {unique_code(tag)}", allowed_extensions="pdf"
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _attachments_of(db, contact_id):
+    db.expire_all()
+    return sorted(
+        str(r.attachment_type_id)
+        for r in db.query(ContactAttachmentType).filter(ContactAttachmentType.contact_id == contact_id)
+    )
+
+
+def _forms_of(db, contact_id):
+    db.expire_all()
+    rows = db.query(ContactPortalFormOverride).filter(ContactPortalFormOverride.contact_id == contact_id)
+    return {r.form_type: r.is_enabled for r in rows}
+
+
+def _spec_of(db, contact_id):
+    db.expire_all()
+    row = db.query(SpecVisibilityPolicy).filter(SpecVisibilityPolicy.contact_id == contact_id).first()
+    return None if row is None else (row.spec_keys, row.excluded_spec_keys)
+
+
 def _everything(db, contact_id):
     """Every access setting of one contact, read fresh."""
     db.expire_all()
@@ -98,6 +133,9 @@ def _everything(db, contact_id):
         "stock_policy": _stock(db, contact_id),
         "companies": _companies(db, contact_id),
         "segments": _segments(db, contact_id),
+        "attachment_types": _attachments_of(db, contact_id),
+        "portal_forms": _forms_of(db, contact_id),
+        "spec": _spec_of(db, contact_id),
     }
 
 
@@ -128,6 +166,11 @@ def rich(db):
     _policy(db, source, "compact", hide_zero=True)
     _grant(db, source, co)
     source.market_segments = [seg]
+    for t in (_attachment_type(db, "za1"), _attachment_type(db, "za2")):
+        db.add(ContactAttachmentType(contact_id=source.id, attachment_type_id=t.id))
+    db.add(ContactPortalFormOverride(contact_id=source.id, form_type="price_tag_request", is_enabled=True))
+    db.add(ContactPortalFormOverride(contact_id=source.id, form_type="complaint", is_enabled=False))
+    db.add(SpecVisibilityPolicy(contact_id=source.id, spec_keys=None, excluded_spec_keys=["zzt_thickness"]))
     db.flush()
     target = _contact(db, "all-target", language="en", memory="off")
     return source, target
@@ -155,9 +198,17 @@ def test_b1_new_facets_are_reported_as_changes_and_listed_in_the_summary(client,
     source, target = rich
     body = _post(client, source, [target], dry_run=True).json()
     facets = {c["facet"] for c in _by_id(body)[target.id]["changes"]}
-    assert {"brands", "image_access", "voice_access", "chatbot_files_as_links"} <= facets
+    assert {
+        "brands",
+        "image_access",
+        "voice_access",
+        "chatbot_files_as_links",
+        "attachment_types",
+        "portal_forms",
+        "spec_visibility",
+    } <= facets
     labels = {line["label"] for line in body["source"]["summary"]}
-    assert {"Brands", "Image access", "Voice note access"} <= labels
+    assert {"Brands", "Image access", "Voice note access", "Attachment types", "Portal forms", "Spec visibility"} <= labels
     assert "Media limits" not in body["source"]["not_copied"]
     # A dry run writes nothing.
     assert _media_of(db, target.id) == {}
@@ -180,6 +231,24 @@ def test_b2_an_off_row_and_no_row_are_the_same_access(client, db, full):  # noqa
     assert _by_id(body)[target.id]["status"] == "unchanged"
 
 
+def test_b2_an_off_row_with_stale_limits_is_still_off(client, db, full):  # noqa: F811
+    """The Media Access card keeps the old limits on a row it switches off."""
+    source, target = _contact(db, "s-src"), _contact(db, "s-tgt")
+    _media(db, source, "voice", allowed=False, limit=7, clip=45)
+    body = _post(client, source, [target], dry_run=True).json()
+    assert _by_id(body)[target.id]["status"] == "unchanged"
+
+
+def test_b2_media_is_not_rewritten_when_it_already_matches(client, db, full):  # noqa: F811
+    source, target = _contact(db, "u-src"), _contact(db, "u-tgt")
+    source.notify_salesman = True
+    db.flush()
+    resp = _post(client, source, [target])
+    assert resp.status_code == 200, resp.text
+    assert _by_id(resp.json())[target.id]["status"] == "changed"
+    assert _media_of(db, target.id) == {}
+
+
 def test_b3_an_empty_brand_list_clears_the_target_scope(client, db, full):  # noqa: F811
     source, target = _contact(db, "b-src"), _contact(db, "b-tgt")
     target.brand_ids = [brand(db, "zcab3").id]
@@ -187,10 +256,49 @@ def test_b3_an_empty_brand_list_clears_the_target_scope(client, db, full):  # no
     resp = _post(client, source, [target])
     assert resp.status_code == 200, resp.text
     change = next(c for c in _by_id(resp.json())[target.id]["changes"] if c["facet"] == "brands")
-    assert change["after"] == [] and change["removed"]
+    # Every brand is a widening, never shown as a struck-out list.
+    assert change["after"] == "All brands" and change["before"] == "ZZT zcab3"
+    assert change["added"] == [] and change["removed"] == []
     db.expire_all()
     assert not db.get(RespondContact, target.id).brand_ids
     # The reveal facet is untouched by brand writes.
     assert contact_field_reveal_service.granted_keys(db, target.id) == contact_field_reveal_service.granted_keys(
         db, source.id
     )
+
+
+def test_b3_a_brand_outside_the_actor_company_scope_is_not_copied(client, db, full):  # noqa: F811
+    """The direct editor refuses a brand id the actor cannot see; the copy leaves the facet out."""
+    other = _company(db, "ob")
+    hidden = Brand(id=str(uuid.uuid4()), brand_code=unique_code("zob")[:50], brand_name="ZZT hidden", company_id=other.id)
+    db.add(hidden)
+    db.flush()
+    source, target = _contact(db, "h-src"), _contact(db, "h-tgt")
+    source.brand_ids = [hidden.id]
+    source.notify_salesman = True
+    db.flush()
+    body = _post(client, source, [target]).json()
+    row = _by_id(body)[target.id]
+    assert row["status"] == "changed"
+    assert all(c["facet"] != "brands" for c in row["changes"])
+    assert "Brands" in body["source"]["not_copied"]
+    assert all(line["label"] != "Brands" for line in body["source"]["summary"])
+    assert "ZZT hidden" not in str(body)
+    db.expire_all()
+    assert not db.get(RespondContact, target.id).brand_ids
+
+
+def test_b4_inherited_portal_forms_and_spec_clear_the_target_overrides(client, db, full):  # noqa: F811
+    source, target = _contact(db, "i-src"), _contact(db, "i-tgt")
+    db.add(ContactPortalFormOverride(contact_id=target.id, form_type="price_tag_request", is_enabled=True))
+    db.add(SpecVisibilityPolicy(contact_id=target.id, spec_keys=["zzt_a"], excluded_spec_keys=None))
+    db.add(ContactAttachmentType(contact_id=target.id, attachment_type_id=_attachment_type(db, "zi").id))
+    db.flush()
+    resp = _post(client, source, [target])
+    assert resp.status_code == 200, resp.text
+    changes = {c["facet"]: c for c in _by_id(resp.json())[target.id]["changes"]}
+    assert changes["portal_forms"]["after"] == "Inherited"
+    assert changes["spec_visibility"]["after"] == "Inherited"
+    assert _forms_of(db, target.id) == {}
+    assert _spec_of(db, target.id) is None
+    assert _attachments_of(db, target.id) == []
