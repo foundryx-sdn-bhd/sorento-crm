@@ -12,6 +12,8 @@ event `{kind: "apply", note: "payload omitted"}`. `row["prev_bot_message"]` carr
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from scripts.chatbot_eval.targets import grade_turn, made_up_facts
@@ -1678,3 +1680,177 @@ def test_no_quantity_ask_is_reported_as_no_qty_ask_true():
     r = row2(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A], reply="SRTA100 has 40 pcs.")
     res = grade_turn(r, item("code_lookup", **GOLD_CL))
     assert res["checks"].get("no_qty_ask") is True and "qty_ask_ok" not in res["checks"], res["checks"]
+
+
+# round 28: owner CP0 rulings 3, 5, 7
+# ---- rule 3: an attribute ask answered "none on record" passes only when the record really holds none
+R28_CODE = "SRTKT1636SS-GM"
+R28_BASE_FIELDS = [
+    {"label": "Product Code", "value": R28_CODE},
+    {"label": "Description", "value": "SORENTO WALL MOUNTED KITCHEN TAP  SRTKT1636SS-GM"},
+    {"label": "List Price", "value": "MYR 285.00"},
+    {"label": "Dimensions", "value": "Not defined"},
+    {"key": "spec:class", "label": "Product class", "value": "Tap"},
+    {"key": "spec:mounting", "label": "Mounting", "value": "Wall hung"},
+]
+R28_SILENT = ("*Product Code:* SRTKT1636SS-GM\n*Description:* SORENTO WALL MOUNTED KITCHEN TAP SRTKT1636SS-GM\n"
+              "*List Price:* MYR 285.00\n*Dimensions:* Not defined\n*Specs:* Tap, Wall hung")
+
+
+def _r28_result(extra_fields=(), code=R28_CODE, as_json=False):
+    res = {"result_type": "products", "intro": "Here are the matching products.",
+           "items": [{"title": code, "fields": [dict(f, value=code) if f.get("label") == "Product Code" else f
+                                                for f in R28_BASE_FIELDS] + list(extra_fields)}],
+           "attachments": []}
+    return json.dumps(res) if as_json else res
+
+
+def _r28_attr_row(reply, result="default"):
+    tool = {"name": "crm_master_products_list", "args": {"product_ids": [UA]}}
+    r = row2(message=f"{R28_CODE} check weight ?", reply=reply, mem_after=[prod(R28_CODE, UA)], tools=[tool])
+    if result == "default":
+        result = _r28_result()
+    if result is not None:
+        r["tool_results"] = [{"name": "crm_master_products_list", "args": {"product_ids": [UA]}, "result": result}]
+    return r
+
+
+R28_GOLD = dict(code=R28_CODE, fact="inventory", fact_label="weight")
+
+
+@pytest.mark.parametrize("reply", [
+    "SRTKT1636SS-GM has no weight on record.",
+    "SRTKT1636SS-GM is a wall hung tap. There is no weight for this product.",
+    "SRTKT1636SS-GM\nWeight: not defined",
+    "For SRTKT1636SS-GM, we don't have the weight on record.",
+])
+@pytest.mark.parametrize("as_json", [False, True])
+def test_r28_a_human_none_on_record_reply_passes_when_the_record_has_no_such_field(reply, as_json):
+    res = grade_turn(_r28_attr_row(reply, _r28_result(as_json=as_json)), item("code_lookup", **R28_GOLD))
+    assert res["checks"]["attribute_value"] is True, res["checks"]
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+def test_r28_a_silent_product_block_still_has_no_value_for_the_attribute():
+    res = grade_turn(_r28_attr_row(R28_SILENT), item("code_lookup", **R28_GOLD))
+    assert res["checks"]["attribute_value"] is False, res["checks"]
+    assert res["passed"] is False and res["reason"] == "The reply has no value for the attribute asked.", res["reason"]
+
+
+def test_r28_a_none_on_record_reply_while_the_record_has_a_weight_field_is_not_honest():
+    result = _r28_result([{"key": "spec:weight", "label": "Weight", "value": "12 kg"}])
+    res = grade_turn(_r28_attr_row("SRTKT1636SS-GM has no weight on record.", result), item("code_lookup", **R28_GOLD))
+    assert res["checks"]["attribute_value"] is False, res["checks"]
+    assert res["passed"] is False
+
+
+def test_r28_a_none_on_record_reply_with_no_tool_results_for_the_code_is_not_honest():
+    for result in (None, _r28_result(code="SRTOTHER9")):
+        res = grade_turn(_r28_attr_row("SRTKT1636SS-GM has no weight on record.", result), item("code_lookup", **R28_GOLD))
+        assert res["checks"]["attribute_value"] is False, res["checks"]
+        assert res["passed"] is False
+
+
+# ---- rule 5: a set reply must show products, and a cut list says how to see more
+R28_BRAND_SUMMARY = ("Here's what you want: wash basins with stock (550)\n• Sorento wash basins: 282\n"
+                     "• Bravat wash basins: 81\n• Cabana wash basins: 59")
+
+
+def _r28_entries(n):
+    return "\n".join(f"{i}. *Product Code:* BRBC{22100 + i}W" for i in range(1, n + 1))
+
+
+def test_r28_a_brand_summary_set_reply_shows_no_product_and_fails_a_spec_item():
+    r = row2(verdict=SPEC_V, reply=R28_BRAND_SUMMARY)
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["checks"].get("set_list") is False, res["checks"]
+    assert res["passed"] is False and res["reason"] == "The set reply showed no product.", res["reason"]
+
+
+def test_r28_a_brand_summary_set_reply_fails_a_followup_item_too():
+    tool = {"name": "crm_inventory_list", "args": {"product_ids": [UA], "scope_terms": ["chrome"]}}
+    r = row2(verdict=REFINE_V, mem_after=[prod("SRTA100", UA)], tools=[tool], prev_bot=LIST_REPLY,
+             reply=R28_BRAND_SUMMARY)
+    res = grade_turn(r, item("followup", "refine", subject_after=["SRTA100"], filter={"kind": "spec", "value": "chrome"}))
+    assert res["passed"] is False and "The set reply showed no product." in res["reason"], (res["reason"], res["checks"])
+
+
+def test_r28_a_cut_list_with_no_see_more_cue_fails():
+    reply = "Here's what you want: kitchen sinks with length 860 mm (38)\n" + _r28_entries(33)
+    res = grade_turn(row2(verdict=SPEC_V, reply=reply), item("spec", **SPEC_ITEM))
+    assert res["checks"].get("set_list") is False, res["checks"]
+    assert res["passed"] is False and res["reason"] == "The list is cut short without saying how to see more.", res["reason"]
+
+
+def test_r28_a_header_that_says_showing_a_to_b_passes_the_set_list_check():
+    reply = "Here's what you want: kitchen sinks with length 860 mm (38, showing 1 to 33)\n" + _r28_entries(33)
+    res = grade_turn(row2(verdict=SPEC_V, reply=reply), item("spec", **SPEC_ITEM))
+    assert res["checks"].get("set_list") is True, res["checks"]
+    assert res["passed"] is True, (res["reason"], res["checks"])
+
+
+def test_r28_a_cut_list_with_a_see_more_cue_passes_the_set_list_check():
+    reply = "Here's what you want: kitchen sinks (38)\n" + _r28_entries(33) + "\nReply more to see more."
+    res = grade_turn(row2(verdict=SPEC_V, reply=reply), item("spec", **SPEC_ITEM))
+    assert res["checks"].get("set_list") is True, res["checks"]
+
+
+def test_r28_a_full_list_of_n_entries_passes_the_set_list_check():
+    reply = "Here's what you want: under counter wash basins with stock (23)\n" + _r28_entries(23)
+    res = grade_turn(row2(verdict=SPEC_V, reply=reply), item("spec", **SPEC_ITEM))
+    assert res["checks"].get("set_list") is True, res["checks"]
+
+
+def test_r28_a_reply_without_a_set_header_has_no_set_list_check():
+    reply = "Stock summary for the requested products.\n\n1. *Product Code:* SRT8303\n2. *Product Code:* SRT8304"
+    res = grade_turn(row2(verdict=SPEC_V, reply=reply), item("spec", **SPEC_ITEM))
+    assert "set_list" not in res["checks"], res["checks"]
+
+
+# ---- rule 7: a price-tier ask on a spec item is fine only when the products found match the spec
+R28_SPEC_CODES = ["MWB8051", "MWB8052", "MWB8053", "MWB8054"]
+R28_UUIDS = [f"{i}{i}{i}{i}{i}{i}{i}{i}-aaaa-4aaa-8aaa-aaaaaaaaaaaa" for i in "3456"]
+R28_TIER_ASK = ("Which access level do you need for basin, undermount?\n1. Office - no promotion\n"
+                "2. Dealer - has promotion\n3. End user - no promotion")
+
+
+def _r28_tier_row(uuids, codes, reply=R28_TIER_ASK, tools=True):
+    tool = {"name": "crm_promotion_products_list", "args": {"product_ids": list(uuids)}}
+    r = row2(message="any promo for undermount basin", verdict=SPEC_V, reply=reply, tools=[tool] if tools else [])
+    r["uuid_codes"] = dict(zip(uuids, codes))
+    return _with_oq(r, TIER_Q, asking="tier_pick")
+
+
+def test_r28_a_tier_ask_after_finding_only_spec_products_stays_unjudged():
+    r = _r28_tier_row(R28_UUIDS, R28_SPEC_CODES)
+    res = grade_turn(r, item("spec", spec_products=R28_SPEC_CODES, **SPEC_ITEM))
+    assert res["passed"] is None and res["checks"].get("tier_spec") is True, (res["reason"], res["checks"])
+    assert res["reason"] == "The bot asked an access question (price tier); the bench cannot judge it."
+
+
+def test_r28_a_tier_ask_after_finding_a_product_outside_the_spec_fails():
+    r = _r28_tier_row(R28_UUIDS, R28_SPEC_CODES[:3] + ["SRTWC8152"])
+    res = grade_turn(r, item("spec", spec_products=R28_SPEC_CODES, **SPEC_ITEM))
+    assert res["passed"] is False and res["checks"].get("tier_spec") is False, (res["reason"], res["checks"])
+    assert res["reason"] == "The products found do not match the spec asked.", res["reason"]
+
+
+def test_r28_a_tier_ask_before_finding_any_product_fails():
+    r = _r28_tier_row([], [], reply="Which one do you mean?\n1. dealer\n2. office\n3. end user", tools=False)
+    res = grade_turn(r, item("spec", spec_products=R28_SPEC_CODES, **SPEC_ITEM))
+    assert res["passed"] is False and res["checks"].get("tier_spec") is False, (res["reason"], res["checks"])
+    assert res["reason"] == "The bot asked which price tier before finding any product.", res["reason"]
+
+
+def test_r28_a_tier_ask_on_a_spec_item_without_spec_products_is_unchanged():
+    r = _r28_tier_row(R28_UUIDS, R28_SPEC_CODES)
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["passed"] is None and "tier_spec" not in res["checks"], (res["reason"], res["checks"])
+
+
+def test_r28_a_tier_ask_on_a_followup_item_is_unchanged():
+    tool = {"name": "crm_promotions_list", "args": {"product_ids": [UA]}, "envelope": {"items": []}}
+    r = _with_oq(row2(domains=("promotion",), mem_before=[prod("SRTOLD1", UB)], mem_after=[prod("SRTA100", UA)],
+                      tools=[tool], reply="Which price tier are you?"), TIER_Q, asking="tier_pick")
+    res = grade_turn(r, item("followup", "and_x", fact="promotion", subject_after=["SRTA100"]))
+    assert res["passed"] is None and "tier_spec" not in res["checks"], (res["reason"], res["checks"])
