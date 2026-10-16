@@ -35,6 +35,9 @@ class LineSplitLineOut(BaseModel):
     now_date: Optional[date] = None
     #: The line carries a pending AutoCount change (it is inside Confirm).
     pending_change: bool = False
+    #: The saved splits still act on Confirm: false once AutoCount moved on from the base
+    #: they were made against (the view then warns "AutoCount changed").
+    acting: bool = True
     delivered_qty: float = 0
     splits: List[LineSplitOut] = []
 

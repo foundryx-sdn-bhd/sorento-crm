@@ -338,6 +338,9 @@ class LineSplitService:
                     "now_qty": float(f.now_qty),
                     "now_date": f.now_date,
                     "pending_change": f.pending,
+                    # The saved splits still act on Confirm (`splits_act`); false once
+                    # AutoCount moved on from the base they were made against.
+                    "acting": (not f.splits) or f.splits_act,
                     "delivered_qty": float(f.delivered_qty),
                     "splits": [
                         {

@@ -137,6 +137,15 @@ export const SplitCardBody = React.memo(function SplitCardBody({
   );
 });
 
+/** A line whose saved splits AutoCount has since moved on from (they no longer act). */
+export function AutoCountChangedBadge() {
+  return (
+    <Badge variant="warning" appearance="light" size="sm">
+      AutoCount changed
+    </Badge>
+  );
+}
+
 /** Stable handlers the cells call with ids, so a cell re-renders only when its data moves. */
 export interface CardHandlers {
   onKey: (event: React.KeyboardEvent<HTMLDivElement>, placed: Placed) => void;
@@ -359,6 +368,7 @@ const RowHeader = React.memo(function RowHeader({
             {`Split ${splitsOf(line).length}`}
           </Badge>
         ) : null}
+        {line.acting === false ? <AutoCountChangedBadge /> : null}
         {gap > 0 ? (
           <span className="text-2xs font-semibold text-destructive">{`Gap ${gap}`}</span>
         ) : gap < 0 ? (

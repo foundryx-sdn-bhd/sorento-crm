@@ -27,6 +27,7 @@ import {
   SplitMenuItems,
   type SplitActions,
 } from './lineSplitParts';
+import { AutoCountChangedBadge } from './LineSplitGrid';
 
 const SEGMENT: Record<string, string> = {
   REMAIN: 'bg-muted text-foreground',
@@ -271,6 +272,11 @@ export function LineSplitZoom({
                 : ''
             }`}
           </div>
+          {line.acting === false ? (
+            <div className="mt-1">
+              <AutoCountChangedBadge />
+            </div>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           <Button

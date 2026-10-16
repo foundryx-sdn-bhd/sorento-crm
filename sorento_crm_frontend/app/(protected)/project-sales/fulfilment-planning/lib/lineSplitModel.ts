@@ -33,6 +33,8 @@ export interface SplitLine {
   nowQty: number;
   nowDate: string | null;
   pendingChange: boolean;
+  /** The saved splits still act on Confirm (false: AutoCount moved on from their base). */
+  acting?: boolean;
   deliveredQty?: number;
   /** Stored splits; empty = not split (one implicit split, `splitsOf`). */
   splits: SplitDraft[];
@@ -413,6 +415,7 @@ export function fromPayload(payload: LineSplitsPayload): SplitLine[] {
     nowQty: Number(line.now_qty) || 0,
     nowDate: line.now_date,
     pendingChange: Boolean(line.pending_change),
+    acting: line.acting !== false,
     deliveredQty: Number(line.delivered_qty) || 0,
     splits: line.splits.map((split) => ({
       id: split.id,

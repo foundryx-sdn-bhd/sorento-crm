@@ -27,6 +27,8 @@ export interface LineSplitLine {
   now_date: string | null;
   /** The line carries a pending AutoCount change (it is inside Confirm). */
   pending_change: boolean;
+  /** The saved splits still act on Confirm; false once AutoCount moved on from their base. */
+  acting?: boolean;
   delivered_qty: number;
   splits: LineSplit[];
 }
