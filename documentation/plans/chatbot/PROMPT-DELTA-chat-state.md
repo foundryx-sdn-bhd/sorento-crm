@@ -31,3 +31,9 @@ held), is dropped (clear), or you cannot tell (unclear). An ETA ask is about inc
 - `close_question`: only when the open question is still owed (it asked for something) and the message leaves it
   unanswered; not for a question that was already answered.
 - When the State block is absent or every line is none: output `[]` (nothing to change); do not output `new_subject`.
+- Period (owner 16 Oct ~23:00): a follow-up keeps the held period (no op needed, or `keep period`); a period this
+  message states replaces it (`set period`); for a brand-new topic with no period, judge it: `skip period` or
+  `clear period` when the held period does not belong to the new question.
+- Held customer: a delivery or "when will it arrive" ask with a held customer is delivery to that customer
+  (`keep customer`, delivery/order domain); a clearly ETA / incoming stock ask is product-level (`skip customer`).
+  Say `unclear customer` only when you cannot tell; the system then settles it from the customer record.
