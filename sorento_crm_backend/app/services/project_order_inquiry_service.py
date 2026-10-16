@@ -5744,8 +5744,17 @@ class ProjectOrderInquiryService:
         ):
             rows_by_line[str(row.so_line_id)].append(row)
 
-        def _movable(line_id: str) -> Tuple[bool, Optional[OrderInquiryRow]]:
-            """`(usable, its one live ORDER row or None)` under the pure split's guards."""
+        def _movable(
+            line_id: str, *, source: bool = False
+        ) -> Tuple[bool, Optional[OrderInquiryRow]]:
+            """`(usable, its one live ORDER row or None)` under the pure split's guards.
+
+            A SOURCE row is also declined where `_settle_row_in_place` would decline it, so a
+            split never moves off a row the settle would not restate: one whose links name a
+            fully received document (that cover is not carried; moving it would hand the
+            target a received link and a fresh order), or a PLACED row with no link (moving
+            off it re-reads it as raised, and purchasing loses that they placed it). Declined,
+            nothing moves and the netting tells the line as it would with no splits."""
             live = [
                 row for row in rows_by_line.get(line_id, [])
                 if row.state != INQUIRY_CANCELLED and row.verb != IV_CANCEL_BALANCE
@@ -5755,20 +5764,26 @@ class ProjectOrderInquiryService:
             if len(live) != 1:
                 return False, None
             row = live[0]
+            links = self._links_of(row.id)
             ok = (
                 row.verb == IV_ORDER
                 and row.state in (INQUIRY_RAISED, INQUIRY_PARTLY_LINKED, INQUIRY_PLACED)
                 and not row.redirected_to_pool
                 and row.ack_state != ACK_REJECTED
                 # A CS reserve link is tied to its reserve request row; it never moves.
-                and not any(link.reserve_request_row_id for link in self._links_of(row.id))
+                and not any(link.reserve_request_row_id for link in links)
             )
+            if ok and source:
+                if row.state == INQUIRY_PLACED and not links:
+                    ok = False
+                elif links and self._received_documents_for(links):
+                    ok = False
             return ok, row if ok else None
 
         for origin, views in linked_by_origin.items():
             if not views:
                 continue
-            usable, source = _movable(origin)
+            usable, source = _movable(origin, source=True)
             if not usable or source is None:
                 continue
             room = _dec(source.qty) - _dec(entries[origin].get("buy_qty"))
