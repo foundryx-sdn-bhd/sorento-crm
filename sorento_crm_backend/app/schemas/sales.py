@@ -802,15 +802,27 @@ class SalesPointRatioList(BaseModel):
     rows: List[SalesPointRatioOut]
 
 
+class SalesTargetImportSuggestion(BaseModel):
+    customer_id: str
+    code: str
+    name: str
+
+
 class SalesTargetImportRow(BaseModel):
     sheet: str
     row: int
+    #: "<sheet>!<row>": the key a pick names.
+    pick_key: str = ""
     code: Optional[str] = None
     name_in_file: Optional[str] = None
     account_in_file: Optional[str] = None
-    #: The CRM customer's name, when the code matched.
+    #: The CRM customer's name, once the row matched.
     customer: Optional[str] = None
-    #: `mapped` or `not_representable`.
+    #: auto (exact normalised name + account), code, or picked.
+    match: Optional[str] = None
+    #: Up to 3 customers to pick from, on a `needs_pick` row.
+    suggestions: List[SalesTargetImportSuggestion] = Field(default_factory=list)
+    #: `mapped`, `needs_pick`, `skipped` or `not_representable`.
     status: str
     reason: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
@@ -821,6 +833,10 @@ class SalesTargetImportRow(BaseModel):
 class SalesTargetImportSummary(BaseModel):
     rows: int
     mapped: int
+    #: Rows the name match linked on its own (owner ruling 16 Oct 09:12: reported per file).
+    auto_mapped: int = 0
+    needs_pick: int = 0
+    skipped: int = 0
     not_representable: int
     targets_new: int
     targets_updated: int

@@ -71,7 +71,7 @@ def _sorento(ws, c):
         [c["C1"], "Dealer C Enterprise", "A/C I", "-", "-", "-", "-",
          "DEC'25-NOV'26: 1,200,000 - 1%\n1,500,000 - 1.25%", None],
         # P11: name differs from the CRM; only Q2 has a scheme.
-        [c["D1"], "Dealer D S/B (old name)", "A/C I", None, "300,000 - 2%", None, None, None, None],
+        [c["D1"], "Dealer D Holdings (old name)", "A/C I", None, "300,000 - 2%", None, None, None, None],
         # P10: unknown code; and an unreadable cell.
         [UNKNOWN_CODE, "Dealer Z", "A/C I", "100,000 - 1%", None, None, None, None, None],
         [c["E1"], "Dealer E", "A/C I", "see note", None, None, None, None, None],

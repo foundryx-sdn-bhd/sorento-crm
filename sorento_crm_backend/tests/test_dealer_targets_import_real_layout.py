@@ -458,7 +458,10 @@ def test_template_downloads_and_reads_back(api):
         assert text in headers, text
     # The office fills one row; it reads back as one quarterly target.
     first = max(r for r in range(1, 10) if any(c.value for c in ws[r])) + 1
-    cols = {str(c.value).upper(): c.column for c in ws[first - 1] if c.value}
+    cols = {}
+    for c in ws[first - 1]:
+        if c.value:
+            cols.setdefault(str(c.value).upper(), c.column)
     name_col = next(c.column for row in ws.iter_rows(max_row=first - 1) for c in row if str(c.value).upper() == "DEALER NAME")
     code_col = next(c.column for row in ws.iter_rows(max_row=first - 1) for c in row if str(c.value).upper() == "CUSTOMER CODE")
     acc_col = next(c.column for row in ws.iter_rows(max_row=first - 1) for c in row if str(c.value).upper() == "ACCOUNT")
