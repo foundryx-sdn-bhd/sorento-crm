@@ -2027,3 +2027,63 @@ class ProjectSODivergenceLine(Base, CompanyScopedMixin):
         Index("ix_project_so_divergence_lines_so_line", "so_line_id"),
         {"schema": "projects"},
     )
+
+
+class SOLineSplit(Base, CompanyScopedMixin):
+    """One split of an SO line: a qty, its delivery date (or a cancel), and the line it sits on.
+
+    OI-LINE-SPLIT (`documentation/plans/scm/PLAN-oi-line-split-16oct.md`). AutoCount only
+    carries net figures per line, so when staff split one line into several deliveries the
+    plan is recorded here. A line with no rows is not split.
+
+    * `so_line_id` is the split's OWN (origin) line; `sits_on_line_id` is the line staff
+      placed it on (the own line, another line of the same item and location on this SO, or
+      NULL for a new line not in AutoCount yet). Only staff ever set it (UAC C1).
+    * `is_cancel` splits have no date and sit on their own line.
+    * `base_qty` / `base_date` are what the line read when the split was made, the same on
+      every row of one origin line: a saved split keeps the base it was made against (B2).
+    """
+
+    __tablename__ = "so_line_splits"
+    __audit_skip__ = "staff plan rows, replaced wholesale per line on every save"
+    # Born straight into `projects`, after the schema move (354): the `project_` prefix
+    # convention `so_supply_decisions` set.
+    __audit_entity_type__ = "project_so_line_splits"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    project_sales_order_id = Column(
+        UUID(as_uuid=False), ForeignKey("projects.sales_orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    so_line_id = Column(
+        UUID(as_uuid=False), ForeignKey("projects.sales_order_lines.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    seq = Column(Integer, nullable=False, server_default="0")
+    qty = Column(Numeric(15, 4), nullable=False)
+    delivery_date = Column(Date, nullable=True)
+    is_cancel = Column(Boolean, nullable=False, server_default="false", default=False)
+    sits_on_line_id = Column(
+        UUID(as_uuid=False), ForeignKey("projects.sales_order_lines.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    remark = Column(Text, nullable=True)
+    base_qty = Column(Numeric(15, 4), nullable=False)
+    base_date = Column(Date, nullable=True)
+    created_by = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("qty > 0", name="ck_so_line_splits_qty_positive"),
+        CheckConstraint(
+            "(is_cancel AND delivery_date IS NULL) OR (NOT is_cancel AND delivery_date IS NOT NULL)",
+            name="ck_so_line_splits_date_iff_not_cancel",
+        ),
+        Index("ix_so_line_splits_order", "project_sales_order_id"),
+        Index("ix_so_line_splits_line", "so_line_id"),
+        {"schema": "projects"},
+    )
