@@ -451,9 +451,6 @@ class SystemSetting(Base):
     sample_request_require_project = Column(
         Boolean, nullable=False, server_default="false", default=False
     )
-    sample_request_require_quotation = Column(
-        Boolean, nullable=False, server_default="false", default=False
-    )
     # How many days an untouched price tag collection waits before the sweep
     # closes it (r9 D10). 0 turns the sweep off; 7 is the shipped default.
     price_tag_auto_collect_days = Column(

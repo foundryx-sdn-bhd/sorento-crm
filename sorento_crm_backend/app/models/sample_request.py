@@ -72,11 +72,6 @@ class SampleRequest(Base, CompanyScopedMixin):
     )
     #: A typed title for a project that is not registered (the soft transition, card rule 2).
     project_title = Column(String(255), nullable=True)
-    quotation_version_id = Column(
-        UUID(as_uuid=False),
-        ForeignKey("projects.quotation_versions.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     customer_id = Column(
         UUID(as_uuid=False), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
     )
@@ -93,7 +88,6 @@ class SampleRequest(Base, CompanyScopedMixin):
 
     request_date = Column(Date, nullable=False, server_default=func.current_date())
     delivery_date = Column(Date, nullable=True)
-    deliver_immediately = Column(Boolean, nullable=False, server_default="false")
     scope_note = Column(String(255), nullable=True)
     ship_to_name = Column(String(255), nullable=True)
     ship_to_address = Column(Text, nullable=True)
@@ -145,10 +139,6 @@ class SampleRequest(Base, CompanyScopedMixin):
         ),
         CheckConstraint("source IN ('staff','portal')", name="ck_sample_requests_source"),
         CheckConstraint("loan_value >= 1", name="ck_sample_requests_loan_value"),
-        CheckConstraint(
-            "NOT (delivery_date IS NOT NULL AND deliver_immediately)",
-            name="ck_sample_requests_date_xor_immediate",
-        ),
         Index("ix_sample_requests_status", "status_id"),
         Index("ix_sample_requests_project", "project_id"),
         Index("ix_sample_requests_salesperson", "salesperson_id"),
@@ -171,10 +161,6 @@ class SampleRequestLine(Base):
     line_no = Column(Integer, nullable=False)
     product_id = Column(
         UUID(as_uuid=False), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
-    )
-    #: The "OR <alt>" product of the paper form; picked, never typed.
-    alt_product_id = Column(
-        UUID(as_uuid=False), ForeignKey("products.id", ondelete="RESTRICT"), nullable=True
     )
     qty = Column(Integer, nullable=False, server_default="1")
     remark = Column(String(255), nullable=True)

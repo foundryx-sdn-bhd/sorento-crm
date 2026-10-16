@@ -60,7 +60,6 @@ def upgrade() -> None:
             status_id UUID REFERENCES public.statuses(id) ON DELETE SET NULL,
             project_id UUID REFERENCES "{p}".projects(id) ON DELETE SET NULL,
             project_title VARCHAR(255),
-            quotation_version_id UUID REFERENCES "{p}".quotation_versions(id) ON DELETE SET NULL,
             customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL,
             customer_name VARCHAR(255),
             salesperson_id VARCHAR(100) REFERENCES public.users(id) ON DELETE SET NULL,
@@ -69,7 +68,6 @@ def upgrade() -> None:
             space_id TEXT,
             request_date DATE NOT NULL DEFAULT CURRENT_DATE,
             delivery_date DATE,
-            deliver_immediately BOOLEAN NOT NULL DEFAULT false,
             scope_note VARCHAR(255),
             ship_to_name VARCHAR(255),
             ship_to_address TEXT,
@@ -99,9 +97,7 @@ def upgrade() -> None:
             CONSTRAINT ck_sample_requests_loan_unit CHECK (loan_unit IN ('days','months')),
             CONSTRAINT ck_sample_requests_goods_from CHECK (goods_from IN ('demo','new','either')),
             CONSTRAINT ck_sample_requests_source CHECK (source IN ('staff','portal')),
-            CONSTRAINT ck_sample_requests_loan_value CHECK (loan_value >= 1),
-            CONSTRAINT ck_sample_requests_date_xor_immediate
-                CHECK (NOT (delivery_date IS NOT NULL AND deliver_immediately))
+            CONSTRAINT ck_sample_requests_loan_value CHECK (loan_value >= 1)
         )
         """,
         f'CREATE INDEX IF NOT EXISTS ix_projects_sample_requests_company_id ON "{p}".sample_requests (company_id)',
@@ -115,7 +111,6 @@ def upgrade() -> None:
             request_id UUID NOT NULL REFERENCES "{p}".sample_requests(id) ON DELETE CASCADE,
             line_no INTEGER NOT NULL,
             product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE RESTRICT,
-            alt_product_id UUID REFERENCES public.products(id) ON DELETE RESTRICT,
             qty INTEGER NOT NULL DEFAULT 1,
             remark VARCHAR(255),
             CONSTRAINT ck_sample_request_lines_qty CHECK (qty >= 1)
@@ -124,8 +119,6 @@ def upgrade() -> None:
         f'CREATE INDEX IF NOT EXISTS ix_sample_request_lines_request ON "{p}".sample_request_lines (request_id)',
         "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS "
         "sample_request_require_project BOOLEAN NOT NULL DEFAULT false",
-        "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS "
-        "sample_request_require_quotation BOOLEAN NOT NULL DEFAULT false",
     ):
         bind.execute(sa.text(statement))
 
@@ -198,9 +191,6 @@ def downgrade() -> None:
         {"slugs": slugs},
     )
     bind.execute(sa.text("DELETE FROM user_permissions WHERE slug = ANY(:slugs)"), {"slugs": slugs})
-    bind.execute(
-        sa.text("ALTER TABLE system_settings DROP COLUMN IF EXISTS sample_request_require_quotation")
-    )
     bind.execute(
         sa.text("ALTER TABLE system_settings DROP COLUMN IF EXISTS sample_request_require_project")
     )

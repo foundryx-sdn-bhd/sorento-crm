@@ -59,9 +59,7 @@ def build_html(d: Dict[str, Any]) -> str:
         if d.get("customer_code")
         else f"{escape(str(customer))} (No debtor code)"
     )
-    delivery = (
-        "Immediate arrangement" if d.get("deliver_immediately") else _date(d.get("delivery_date"))
-    )
+    delivery = _date(d.get("delivery_date"))
     ship_to = " ".join(x for x in (d.get("ship_to_name"), d.get("ship_to_address")) if x) or None
     site = " ".join(
         x for x in (d.get("site_contact_name"), d.get("site_contact_phone"), d.get("site_contact_note")) if x
@@ -91,8 +89,6 @@ def build_html(d: Dict[str, Any]) -> str:
         number += 1
     for line in d.get("lines") or []:
         model = escape(line["product_code"])
-        if line.get("alt_product_code"):
-            model += f" OR {escape(line['alt_product_code'])}"
         item_rows.append(
             f"<tr><td>{number}</td><td>{_fmt(line.get('brand_name'))}</td><td>{model}</td>"
             f"<td>{line['qty']}</td><td>{_fmt(line.get('remark'))}</td></tr>"

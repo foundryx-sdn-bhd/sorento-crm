@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 
 class SampleRequestLineIn(BaseModel):
     product_id: str
-    alt_product_id: Optional[str] = None
     qty: int = Field(1, ge=1)
     remark: Optional[str] = Field(None, max_length=255)
 
@@ -24,10 +23,8 @@ class SampleRequestWrite(BaseModel):
     customer_name: Optional[str] = Field(None, max_length=255)
     project_id: Optional[str] = None
     project_title: Optional[str] = Field(None, max_length=255)
-    quotation_version_id: Optional[str] = None
     scope_note: Optional[str] = Field(None, max_length=255)
     delivery_date: Optional[Date] = None
-    deliver_immediately: Optional[bool] = None
     delivery_mode: Optional[Literal["driver", "self_deliver", "self_collect"]] = None
     ship_to_name: Optional[str] = Field(None, max_length=255)
     ship_to_address: Optional[str] = None

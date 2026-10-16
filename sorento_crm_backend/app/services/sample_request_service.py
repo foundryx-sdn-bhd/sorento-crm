@@ -18,16 +18,11 @@ from datetime import date, datetime
 from typing import Any, Dict, Iterable, List, Optional
 
 from dateutil.relativedelta import relativedelta
-from sqlalchemy import case, func, or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.product import Brand, Product
-from app.models.projects import (
-    Project,
-    ProjectQuotation,
-    ProjectQuotationVersion,
-    ProjectSample,
-)
+from app.models.projects import Project
 from app.models.sample_request import SampleRequest, SampleRequestLine
 from app.models.status import Status, StatusTransition
 from app.models.user import SystemSetting, User
@@ -112,12 +107,9 @@ def assert_can_view(req: SampleRequest, actor: Actor) -> None:
         raise _forbidden()
 
 
-def settings_flags(db: Session) -> tuple[bool, bool]:
+def require_project_flag(db: Session) -> bool:
     row = db.query(SystemSetting).first()
-    return (
-        bool(getattr(row, "sample_request_require_project", False)),
-        bool(getattr(row, "sample_request_require_quotation", False)),
-    )
+    return bool(getattr(row, "sample_request_require_project", False))
 
 
 def _statuses(db: Session) -> Dict[str, Status]:
@@ -177,18 +169,17 @@ def illegal_move(frm: Optional[str], to: str) -> AppException:
 def _check_products(
     db: Session, lines: Iterable[Dict[str, Any]], kept: frozenset = frozenset()
 ) -> None:
-    """Every product and alternative must exist and be active (AC-SR-10). Ids already on
+    """Every product must exist and be active (AC-SR-10). Ids already on
     the request (`kept`) are accepted even if they went inactive since; only NEW ids must
     be active."""
     wanted: set[str] = set()
     for line in lines:
-        for key in ("product_id", "alt_product_id"):
-            value = line.get(key)
-            if value is None:
-                continue
-            if not _is_uuid(value):
-                raise _product_invalid()
-            wanted.add(str(value))
+        value = line.get("product_id")
+        if value is None:
+            continue
+        if not _is_uuid(value):
+            raise _product_invalid()
+        wanted.add(str(value))
     if not wanted:
         return
     found = {
@@ -211,27 +202,6 @@ def _product_invalid() -> AppException:
         code="SAMPLE_REQUEST_PRODUCT_INVALID",
         details={"field": "lines"},
     )
-
-
-def _check_quotation(db: Session, project_id: Optional[str], version_id: Optional[str]) -> None:
-    if not version_id:
-        return
-    bad = AppException(
-        status_code=422,
-        message="That quotation does not belong to the project.",
-        code="SAMPLE_REQUEST_QUOTATION_PROJECT",
-        details={"field": "quotation_version_id"},
-    )
-    if not _is_uuid(version_id) or not project_id:
-        raise bad
-    owner = (
-        db.query(ProjectQuotation.project_id)
-        .join(ProjectQuotationVersion, ProjectQuotationVersion.quotation_id == ProjectQuotation.id)
-        .filter(ProjectQuotationVersion.id == version_id)
-        .scalar()
-    )
-    if owner is None or str(owner) != str(project_id):
-        raise bad
 
 
 def _check_refs(db: Session, data: Dict[str, Any]) -> None:
@@ -308,7 +278,7 @@ def assert_portal_customer_allowed(db: Session, *, contact_id: str, customer_id:
 
 def validate_submit(db: Session, req: SampleRequest) -> None:
     """The refusals of AC-SR-02/03/06/21/22, in the contract's order."""
-    require_project, require_quotation = settings_flags(db)
+    require_project = require_project_flag(db)
 
     if not (req.customer_id or _clean(req.customer_name)):
         raise _incomplete("customer_id", "Pick the customer, or type the customer name.")
@@ -317,12 +287,8 @@ def validate_submit(db: Session, req: SampleRequest) -> None:
             raise _incomplete("project_id", "Pick the project.")
     elif not (req.project_id or _clean(req.project_title)):
         raise _incomplete("project_id", "Pick the project, or type the project title.")
-    if require_quotation and not req.quotation_version_id:
-        raise _incomplete("quotation_version_id", "Pick the quotation.")
-    if not (req.delivery_date or req.deliver_immediately):
-        raise _incomplete(
-            "delivery_date", "Pick a delivery date, or choose Immediate arrangement."
-        )
+    if not req.delivery_date:
+        raise _incomplete("delivery_date", "Enter the Request Delivery Date.")
     if not req.delivery_mode:
         raise _incomplete("delivery_mode", "Choose a delivery mode.")
     if not _clean(req.ship_to_name):
@@ -341,51 +307,31 @@ def _apply(db: Session, req: SampleRequest, data: Dict[str, Any]) -> None:
     data = dict(data)
     lines = data.pop("lines", None)
 
-    if data.get("delivery_date") and data.get("deliver_immediately"):
-        raise AppException(
-            status_code=422,
-            message="Choose a delivery date or Immediate arrangement, not both.",
-            code="SAMPLE_REQUEST_DELIVERY_BOTH",
-            details={"field": "delivery_date"},
-        )
-
     _check_refs(db, data)
     line_dicts: List[Dict[str, Any]] = [dict(line) for line in (lines or [])]
-    kept = frozenset(
-        str(pid)
-        for line in (req.lines or [])
-        for pid in (line.product_id, line.alt_product_id)
-        if pid
-    )
+    kept = frozenset(str(line.product_id) for line in (req.lines or []) if line.product_id)
     _check_products(db, line_dicts, kept)
 
     for field in HEADER_TEXT:
         if field in data:
             setattr(req, field, _clean(data[field]))
-    for field in ("customer_id", "project_id", "quotation_version_id", "delivery_mode"):
+    for field in ("customer_id", "project_id", "delivery_mode"):
         if field in data:
             setattr(req, field, data[field] or None)
     for field in HEADER_NOT_NULL:
         if data.get(field) is not None:
             setattr(req, field, data[field])
-    for field in ("deliver_immediately", "board_mounting"):
+    for field in ("board_mounting",):
         if field in data:
             setattr(req, field, bool(data[field]))
     if "delivery_date" in data:
         req.delivery_date = data["delivery_date"]
-        if data["delivery_date"] and "deliver_immediately" not in data:
-            req.deliver_immediately = False
-    if data.get("deliver_immediately"):
-        req.delivery_date = None
-
-    _check_quotation(db, req.project_id, req.quotation_version_id)
 
     if lines is not None:
         req.lines = [
             SampleRequestLine(
                 line_no=index,
                 product_id=line["product_id"],
-                alt_product_id=line.get("alt_product_id") or None,
                 qty=line.get("qty") or 1,
                 remark=_clean(line.get("remark")),
             )
@@ -413,7 +359,6 @@ def create_draft(
         loan_value=2,
         loan_unit="months",
         goods_from="either",
-        deliver_immediately=False,
         board_mounting=False,
     )
     _apply(db, req, data)
@@ -553,27 +498,11 @@ def move(
     elif to == DELIVERED:
         req.delivered_at = on
         req.return_due = _add_loan(on, req.loan_value, req.loan_unit)
-        _create_feedback_row(db, req, on)
     elif to == CANCELLED:
         req.cancelled_at = datetime.utcnow()
         req.cancel_reason = reason
     db.flush()
     _record(db, req, actor=actor, label=_label(db, to))
-
-
-def _create_feedback_row(db: Session, req: SampleRequest, on: date) -> None:
-    """Card rule 13: Delivered with a quotation version feeds the Samples tab."""
-    if not (req.quotation_version_id and req.project_id):
-        return
-    sample = ProjectSample(
-        company_id=req.company_id,
-        project_id=req.project_id,
-        quotation_version_id=req.quotation_version_id,
-        submitted_on=on,
-        submitted_by=req.salesperson_id,
-    )
-    db.add(sample)
-    db.flush()
 
 
 # ------------------------------------------------------------------ reads
@@ -691,9 +620,8 @@ def list_for(
         ordered = column.desc() if direction == "desc" else column.asc()
         query = query.order_by(ordered.nulls_last(), SampleRequest.request_no.asc())
     else:
-        # Immediate arrangement first, then the needed date, soonest first.
+        # The needed date, soonest first.
         query = query.order_by(
-            case((SampleRequest.deliver_immediately.is_(True), 0), else_=1),
             SampleRequest.delivery_date.asc().nulls_last(),
             SampleRequest.request_no.asc(),
         )
@@ -741,7 +669,6 @@ def _row_common(req: SampleRequest, ctx: Dict[str, Any]) -> Dict[str, Any]:
         "request_date": req.request_date,
         "submitted_at": req.submitted_at,
         "delivery_date": req.delivery_date,
-        "deliver_immediately": bool(req.deliver_immediately),
         "delivery_mode": req.delivery_mode,
         "customer_name": customer.customer_name if customer else req.customer_name,
         "customer_code": customer.customer_code if customer else None,
@@ -777,26 +704,10 @@ def serialize_detail(db: Session, req: SampleRequest) -> Dict[str, Any]:
     project = ctx["projects"].get(req.project_id) if req.project_id else None
     row = _row_common(req, ctx)
 
-    quotation_label = None
-    if req.quotation_version_id:
-        found = (
-            db.query(ProjectQuotation.scope_label, ProjectQuotationVersion.version_no)
-            .join(
-                ProjectQuotationVersion,
-                ProjectQuotationVersion.quotation_id == ProjectQuotation.id,
-            )
-            .filter(ProjectQuotationVersion.id == req.quotation_version_id)
-            .first()
-        )
-        if found:
-            quotation_label = f"{found[0]} v{found[1]}"
-
-    alt = Product.__table__.alias("alt_product")
     line_rows = (
-        db.query(SampleRequestLine, Product, Brand.brand_name, alt.c.product_code)
+        db.query(SampleRequestLine, Product, Brand.brand_name)
         .join(Product, Product.id == SampleRequestLine.product_id)
         .outerjoin(Brand, Brand.id == Product.brand_id)
-        .outerjoin(alt, alt.c.id == SampleRequestLine.alt_product_id)
         .filter(SampleRequestLine.request_id == req.id)
         .order_by(SampleRequestLine.line_no)
         .all()
@@ -810,12 +721,10 @@ def serialize_detail(db: Session, req: SampleRequest) -> Dict[str, Any]:
             "product_name": product.product_name,
             "brand_name": brand_name,
             "product_active": bool(product.is_active),
-            "alt_product_id": line.alt_product_id,
-            "alt_product_code": alt_code,
             "qty": line.qty,
             "remark": line.remark,
         }
-        for line, product, brand_name, alt_code in line_rows
+        for line, product, brand_name in line_rows
     ]
     row.update(
         {
@@ -824,8 +733,6 @@ def serialize_detail(db: Session, req: SampleRequest) -> Dict[str, Any]:
             "customer_id": req.customer_id,
             "project_title": req.project_title,
             "project_code": project.project_code if project else None,
-            "quotation_version_id": req.quotation_version_id,
-            "quotation_label": quotation_label,
             "scope_note": req.scope_note,
             "ship_to_address": req.ship_to_address,
             "site_contact_name": req.site_contact_name,
