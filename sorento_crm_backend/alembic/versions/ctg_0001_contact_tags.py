@@ -5,13 +5,13 @@ can take it in any order.
 Plan: documentation/plans/contacts/PLAN-contact-tags-16oct.md.
 
 Revision ID: ctg_0001_contact_tags
-Revises: sds_0001_stock_debt_snapshots
+Revises: cfs_0001_spec_registry_seed
 """
 from alembic import op
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "ctg_0001_contact_tags"
-down_revision = "sds_0001_stock_debt_snapshots"
+down_revision = "cfs_0001_spec_registry_seed"
 branch_labels = None
 depends_on = None
 
