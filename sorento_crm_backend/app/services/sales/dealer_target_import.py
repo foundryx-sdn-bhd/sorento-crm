@@ -475,8 +475,17 @@ def _columns(grid: "_Grid", first: int, last: int, year: int) -> List[_Column]:
     for col in cols:
         left = by_index.get(col.index - 1)
         if (
+            col.role == "period" and col.kind == "Q" and col.number == 0 and col.is_rate
+            and left is not None and left.role == "period" and left.kind == "Q"
+            and not left.is_rate and left.tier is None
+        ):
+            # Mocha F3 "INCENTIVE (<note with QUARTER>)": placed as every quarter's rate by its
+            # own words, it still pays the block on its left, points included (gate 4).
+            col.points = left.points
+            continue
+        if (
             col.role == "unplaced"
-            and col.header.split(" / ")[-1].strip().upper() == "INCENTIVE"
+            and re.match(r"INCENTIVE\b", col.header.split(" / ")[-1].strip().upper())
             and left is not None
             and left.role == "period"
             and left.kind == "Q"
@@ -1076,12 +1085,24 @@ def _group_schemes(
             merged_tiers.append(t)
     tiers = merged_tiers
     seen = set()
+    labels = {res.key: res.account_in_file or "" for res in results.values()}
+
+    def rate_text(t: SchemeTier) -> str:
+        if t.account_rates:
+            return " / ".join(f"{labels.get(k, '')} {v.normalize():f}%".strip() for k, v in t.account_rates.items())
+        return f"{(t.rate or Decimal(0)).normalize():f}%"
+
     for t in tiers:
         if t.is_additional:
             continue
         key = (t.period_start, t.threshold)
         if key in seen:
-            raise CellError(f"{_KIND_NAME[kind]}: the threshold {t.threshold:,.0f} repeats in one period")
+            # The repeated tiers' rates, quoted, so the masked dry run shows their shape (gate 4).
+            twins = [x for x in tiers if not x.is_additional and (x.period_start, x.threshold) == key]
+            raise CellError(
+                f"{_KIND_NAME[kind]}: the threshold {t.threshold:,.0f} repeats in one period "
+                f'(rates "{" | ".join(rate_text(x) for x in twins)}")'
+            )
         seen.add(key)
     if len(set(pay_to)) > 1:
         raise CellError(f"{_KIND_NAME[kind]}: the rates name two different accounts to pay")
@@ -1408,6 +1429,11 @@ def account_key(label: Optional[str]) -> Optional[str]:
     return key or None
 
 
+def name_accounts(name: str) -> set:
+    """The account keys a customer NAME itself states (markers and a bare suffix), level aside."""
+    return customer_account_keys(name, None)
+
+
 def customer_account_keys(name: str, level: Optional[int]) -> set:
     """The account labels a CRM customer answers to: its account level (`customers.account_level`,
     set by migration acct_ledger_0001 from the name's marker and edited by the office since) and
@@ -1486,6 +1512,13 @@ class _CustomerIndex:
             strict = [c for c in exact if branch_key(c.name) == branch_key(name)]
             if len(strict) == 1:
                 exact = strict
+        if len(exact) > 1 and acc is not None:
+            # Several ledgers answer to the account through `account_level`, but only one names
+            # it in its own name ("[A/C I]", "A/C I"): that one (gate 4). A level never outranks
+            # a name that says another account.
+            named = [c for c in exact if name_accounts(c.name) == {acc}]
+            if len(named) == 1:
+                exact = named
         if len(exact) == 1:
             return exact[0], [], False
         if len(exact) > 1:
