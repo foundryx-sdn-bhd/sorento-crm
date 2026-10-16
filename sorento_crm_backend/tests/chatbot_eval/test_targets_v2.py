@@ -598,3 +598,82 @@ def test_pick_tool_target_matches_codes_on_word_boundaries():
              tools=[{"name": "crm_inventory_list", "args": {"scope_terms": ["SRTA200"]}}], reply="SRTA200 has 5 pcs.")
     res = grade_turn(r, item("followup", "pick", position=2, code="SRTA20"))
     assert res["checks"]["tool_target"] is False and res["passed"] is False, res
+
+
+# ------------------------------------------------------------------ review round 5 (summarise)
+def _r5(slice_, kind, passed, made_up=(), growth=False):
+    x = {"item_id": "x", "slice": slice_, "kind": kind, "passed": passed, "reason": "r", "checks": {},
+         "leaks": [], "made_up": list(made_up)}
+    if growth:
+        x["growth"] = True
+    return x
+
+
+def test_summarise_unverifiable_findings_are_counted_apart_and_never_block_meets():
+    from scripts.chatbot_eval.targets import summarise
+    runs = [[_r5("code_lookup", None, True, made_up=["unverifiable: truncated envelope"]) for _ in range(10)]
+            for _ in range(3)]
+    s = summarise(runs, {"code_lookup": 0.97})
+    assert s["made_up"] == 0
+    assert s["unverifiable"] == 30
+    assert s["meets"] is True
+
+
+def test_summarise_counts_only_the_made_up_entries_among_unverifiable_ones():
+    from scripts.chatbot_eval.targets import summarise
+    runs = [[_r5("code_lookup", None, True) for _ in range(10)] for _ in range(3)]
+    runs[1][0] = _r5("code_lookup", None, True,
+                     made_up=["made up: 4321", "unverifiable: a", "unverifiable: b"])
+    s = summarise(runs, {"code_lookup": 0.97})
+    assert s["made_up"] == 1
+    assert s["unverifiable"] == 2
+    assert s["meets"] is False
+
+
+def test_summarise_slice_missing_from_one_run_is_left_out_of_rate_and_lowest():
+    from scripts.chatbot_eval.targets import summarise
+    run1 = [_r5("spec", None, True)] * 4 + [_r5("spec", None, False)] * 1   # 0.8
+    run3 = [_r5("spec", None, True)] * 3 + [_r5("spec", None, False)] * 1   # 0.75
+    run2 = [_r5("code_lookup", None, True)]                                 # no spec at all
+    s = summarise([run1, run2, run3], {})
+    assert s["slices"]["spec"]["rate"] == (0.8 + 0.75) / 2
+    assert s["slices"]["spec"]["lowest"] == 0.75
+
+
+def test_summarise_followup_kind_missing_from_one_run_is_left_out_of_rate_and_lowest():
+    from scripts.chatbot_eval.targets import summarise
+    run1 = [_r5("followup", "answer", True)] * 2 + [_r5("followup", "reject", True)]
+    run2 = [_r5("followup", "reject", True)]                                # no "answer" kind
+    run3 = [_r5("followup", "answer", True), _r5("followup", "answer", False), _r5("followup", "reject", True)]
+    s = summarise([run1, run2, run3], {})
+    k = s["slices"]["followup"]["kinds"]["answer"]
+    assert k["rate"] == (1.0 + 0.5) / 2
+    assert k["lowest"] == 0.5
+
+
+def test_summarise_growth_kind_missing_from_one_run_is_left_out_of_rate_and_lowest():
+    from scripts.chatbot_eval.targets import summarise
+    g = lambda p: _r5("followup", "answer", p, growth=True)  # noqa: E731
+    s = summarise([[g(True)], [_r5("spec", None, True)], [g(True), g(False)]], {})
+    k = s["growth"]["followup"]["kinds"]["answer"]
+    assert k["rate"] == (1.0 + 0.5) / 2
+    assert k["lowest"] == 0.5
+
+
+def test_summarise_run_with_only_unknown_results_is_left_out_of_rate_and_lowest():
+    from scripts.chatbot_eval.targets import summarise
+    run1 = [_r5("spec", None, True)] * 2
+    run2 = [_r5("spec", None, None)] * 3
+    run3 = [_r5("spec", None, True), _r5("spec", None, False)]
+    s = summarise([run1, run2, run3], {})
+    assert s["slices"]["spec"]["rate"] == (1.0 + 0.5) / 2
+    assert s["slices"]["spec"]["lowest"] == 0.5
+
+
+def test_summarise_slice_with_no_known_result_has_zero_rate_and_lowest_and_misses_its_bar():
+    from scripts.chatbot_eval.targets import summarise
+    runs = [[_r5("spec", None, None)] * 3 for _ in range(3)]
+    s = summarise(runs, {"spec": 0.9})
+    assert s["slices"]["spec"]["rate"] == 0.0
+    assert s["slices"]["spec"]["lowest"] == 0.0
+    assert s["meets"] is False
