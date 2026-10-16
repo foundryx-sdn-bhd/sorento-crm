@@ -1869,3 +1869,101 @@ def test_r28_a_digit_inside_a_product_code_is_not_an_attribute_value(reply):
 def test_r28_a_weight_value_after_the_word_still_passes():
     res = grade_turn(_r28_attr_row("SRTKT1636SS-GM weight: 2.5 kg"), item("code_lookup", **R28_GOLD))
     assert res["checks"]["attribute_value"] is True, res["checks"]
+
+
+# round 28b: review findings on the round 28 fix
+def _r28b_spec(reply):
+    return grade_turn(row2(verdict=SPEC_V, reply=reply), item("spec", **SPEC_ITEM))
+
+
+R28B_AVAIL = ("Here's what you want: Sorento wash basins with stock (3)\n\nBRBC22101W x 2: Available\n\n"
+              "BRBC22102W x 2: Available\n\nBRBC22103W x 2: Available")
+R28B_MEMBERS = ("Here's what you want: gunmetal wash basins (3)\n• BRBC22101W\n• BRBC22102W\n• BRBC22103W\n\n"
+                "But no incoming matched these.")
+
+
+@pytest.mark.parametrize("reply", [R28B_AVAIL, R28B_MEMBERS])
+def test_r28b_plain_code_rows_and_code_bullets_are_set_entries(reply):
+    res = _r28b_spec(reply)
+    assert res["checks"].get("set_list") is True, res["checks"]
+
+
+def test_r28b_a_bullet_without_a_code_is_still_not_an_entry():
+    res = _r28b_spec(R28_BRAND_SUMMARY)
+    assert res["checks"].get("set_list") is False and res["reason"] == "The set reply showed no product.", res["reason"]
+
+
+def test_r28b_warehouse_lines_are_not_counted_as_entries():
+    block = "{i}. *Product Code:* BRBC{n}W\n*DC1-SMC:* 0\n*WH3-IB:* 0"
+    reply = "Here's what you want: basins (38)\n" + "\n".join(block.format(i=i, n=22100 + i) for i in range(1, 34))
+    res = _r28b_spec(reply)
+    assert res["checks"].get("set_list") is False, res["checks"]
+    assert res["reason"] == "The list is cut short without saying how to see more.", res["reason"]
+
+
+def test_r28b_a_none_statement_takes_the_none_branch_only():
+    result = _r28_result([{"key": "spec:weight", "label": "Weight", "value": "12 kg"}])
+    reply = "SRTKT1636SS-GM has no weight on record, list price MYR 285.00."
+    res = grade_turn(_r28_attr_row(reply, result), item("code_lookup", **R28_GOLD))
+    assert res["checks"]["attribute_value"] is False, res["checks"]
+
+
+def _r28b_tier(extra_tool=None, result_codes=(), uuids=R28_UUIDS, codes=R28_SPEC_CODES, reply=R28_TIER_ASK):
+    r = _r28_tier_row(uuids, codes, reply=reply)
+    if extra_tool:
+        r["trace"].append({"kind": "tool", "name": "crm_promotions_list", "args": extra_tool, "envelope": {}})
+    if result_codes:
+        items = [{"title": c, "fields": [{"label": "Product Code", "value": c}]} for c in result_codes]
+        r["tool_results"] = [{"name": "crm_promotion_products_list", "args": {}, "result": {"items": items}}]
+    return r
+
+
+def test_r28b_scope_terms_are_not_found_product_codes():
+    r = _r28b_tier(extra_tool={"scope_terms": ["600mm undermount basin"]})
+    res = grade_turn(r, item("spec", spec_products=R28_SPEC_CODES, **SPEC_ITEM))
+    assert res["passed"] is None and res["checks"].get("tier_spec") is True, (res["reason"], res["checks"])
+
+
+def test_r28b_an_off_spec_code_only_in_a_tool_result_fails_the_tier_ask():
+    r = _r28b_tier(result_codes=["SRTWC8152"])
+    res = grade_turn(r, item("spec", spec_products=R28_SPEC_CODES, **SPEC_ITEM))
+    assert res["passed"] is False and res["reason"] == "The products found do not match the spec asked.", (res["reason"], res["checks"])
+
+
+def test_r28b_a_field_whose_value_is_a_none_word_is_absent():
+    gold = dict(code=R28_CODE, fact="inventory", fact_label="dimensions")
+    res = grade_turn(_r28_attr_row("SRTKT1636SS-GM has no dimensions on record."), item("code_lookup", **gold))
+    assert res["checks"]["attribute_value"] is True, res["checks"]
+
+
+@pytest.mark.parametrize("reply", [
+    "About the weight, nonetheless SRTKT1636SS-GM is a wall hung tap.",
+    "Weight of SRTKT1636SS-GM? Promotion: none.",
+])
+def test_r28b_a_none_word_unrelated_to_the_attribute_is_not_an_honest_none(reply):
+    res = grade_turn(_r28_attr_row(reply), item("code_lookup", **R28_GOLD))
+    assert res["checks"]["attribute_value"] is False, res["checks"]
+
+
+def test_r28b_a_thousands_comma_header_with_a_showing_range_is_a_complete_cut():
+    reply = "Here's what you want: basins (1,204, showing 1 to 10)\n" + _r28_entries(10)
+    assert _r28b_spec(reply)["checks"].get("set_list") is True
+
+
+def test_r28b_a_thousands_comma_count_is_read_whole_so_ten_entries_are_a_cut_list():
+    reply = "Here's what you want: basins (1,204)\n" + _r28_entries(10)
+    res = _r28b_spec(reply)
+    assert res["checks"].get("set_list") is False, res["checks"]
+
+
+def test_r28b_a_header_with_a_moved_count_note_after_it_is_still_a_set_header():
+    reply = "Here's what you want: basins (40, showing 11 to 20). It was 42 when you asked.\n" + _r28_entries(10)
+    assert _r28b_spec(reply)["checks"].get("set_list") is True
+
+
+def test_r28b_a_failed_tier_check_keeps_an_earlier_failure_reason():
+    leaky = f"SRTWC8152 options. Which one?\n1. dealer\n2. office {UA}"
+    r = _r28_tier_row([], [], reply=leaky, tools=False)
+    res = grade_turn(r, item("spec", spec_products=R28_SPEC_CODES, **SPEC_ITEM))
+    assert res["passed"] is False
+    assert res["reason"] == "The reply shows an internal id.", res["reason"]
