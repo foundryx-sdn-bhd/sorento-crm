@@ -56,3 +56,29 @@ No overlap with CHAT-ADVISOR-SPIKE (#1720/#1730/#1731/#1737, F5 `typed_as`).
 The static parser prompt is ~96% served from the provider prompt cache, so token count is not the main
 cost driver (`project_prompt_diet_dp1_11oct`). The diet's value is attention / instruction load and
 latency, judged by parser-gold pass rate, cost per turn and p95, not tokens alone.
+
+## Owner rulings on the page (16 Oct 16:31, relayed by crew)
+
+- Q1 order: stage 1 first, and "we already had a cut before" (#1574). Q2 attachment types: dynamic, a new variable
+  from `attachment_types` (option b). Q3 access levels: dynamic (a). Q4 stage 5 code: allowed (a). Q5 examples:
+  trim only 65 (a).
+
+## #1574 (PROMPT-ABLATION) and why prod is still 35.6k
+
+#1574 (merged 11 Oct, 75f142874) cut v50's language teaching with 118 exact cuts
+(`scripts/build_parser_ablation.py` CUTS; 37.9k to 34.9k tokens; DEV 82.2% vs 84.1%, hidden 83.2% vs 80.8%).
+Its migration `pab_0001_parser_ablation` published the text UNLABELLED (dev v84); the label never moved. Prod
+moved along the v50 line instead (v52, then v63 = v52 + `{{find_filters}}`), so 204 of the 235 lines #1574 cut
+are still in v91 (dev copy of prod v52). The ablation text is now stale, so it is ported, not labelled.
+
+## Stage 1 (in progress)
+
+Status: Build. Track: M (prompt text + build script + publish migration), lead pattern.
+UAC: `prompt-diet-s1-acceptance-criteria.md`.
+
+- Base: dev v94 stored verbatim as `alembic/data/chatbot_semantic_parser.v94.txt`.
+- `scripts/build_parser_diet.py`: v94 -> #1574 CUTS re-applied (100 of 118 match; 18 skipped by id) -> stage-1
+  edits (fixes, dead text, banners folded into OUTPUT) -> `alembic/data/chatbot_semantic_parser.diet-s1-20261016.txt`.
+- Migration `pdiet_s1_0001`: publishes it unlabelled (pattern of `pab_0001_parser_ablation.py`).
+- Gate: lead publishes the text as an unlabelled dev version on `sorento_cagent_stack` (crew ruling (a), 16 Oct);
+  crew runs parser-gold TRAIN x2 against today's fresh v94 baseline, then held-out. No label move without owner PASS.
