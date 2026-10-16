@@ -239,9 +239,14 @@ export function BoardDecideControl({
     () => contributions.filter((row) => selectedKeys.includes(row.key)),
     [contributions, selectedKeys],
   );
+  // OI-LINE-SPLIT (UAC A1): every ticked line on ONE sales order opens that order's split
+  // view, zoomed to the first ticked line.
   const splitOpener = useLineSplitOpener();
   const splitRow =
-    splitOpener && tickedRows.length === 1 && splitOpener.canOpen(tickedRows[0])
+    splitOpener &&
+    tickedRows.length > 0 &&
+    tickedRows.every((row) => row.sales_order_id === tickedRows[0].sales_order_id) &&
+    splitOpener.canOpen(tickedRows[0])
       ? tickedRows[0]
       : null;
 
@@ -567,7 +572,6 @@ export function BoardDecideControl({
           {splitOpener ? (
             <>
               <DropdownMenuSeparator />
-              {/* OI-LINE-SPLIT (UAC A1): one ticked line opens its order's split view. */}
               <DropdownMenuItem
                 disabled={!splitRow}
                 onSelect={() => splitRow && splitOpener.open(splitRow)}
