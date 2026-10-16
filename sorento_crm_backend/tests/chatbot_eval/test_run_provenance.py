@@ -14,7 +14,6 @@ import pytest
 from scripts.chatbot_eval.run import main
 from tests.chatbot_eval.fakes import RecordingEngine, case_dict, make_outcome, write_case
 
-ENGINE = "tests.chatbot_eval.test_run_provenance:ProvEngine"
 REPO = Path(__file__).resolve().parents[3]
 SERVER_SHA = "5e7ab1c"
 
@@ -46,6 +45,11 @@ def health(monkeypatch):
         raise AssertionError(f"unexpected HTTP call {request.url}")
 
     monkeypatch.setattr(httpx.Client, "send", fake_send)
+    # The /health check applies to `--engine http` only, so the run is started as http and
+    # the engine object is swapped for the local fake (no network turn calls).
+    import scripts.chatbot_eval.run as run_mod
+
+    monkeypatch.setattr(run_mod, "load_engine", lambda spec, **kw: ProvEngine())
     monkeypatch.delenv("EVAL_APP_SHA", raising=False)
     monkeypatch.delenv("EVAL_TRACE_DB_URL", raising=False)
     ProvEngine.calls_seen = []
@@ -57,7 +61,7 @@ def _run(tmp_path, n_cases=2):
     d, out = tmp_path / "data", tmp_path / "o"
     for i in range(n_cases):
         write_case(d, case_dict(f"k{i}"))
-    rc = main(["--data-dir", str(d), "--engine", ENGINE, "--base-url", "http://fake.invalid", "--out", str(out)])
+    rc = main(["--data-dir", str(d), "--engine", "http", "--base-url", "http://fake.invalid", "--out", str(out)])
     return rc, out
 
 

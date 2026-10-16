@@ -6,6 +6,7 @@ Synthetic data only; the parser is stubbed at the same seam as tests/chatbot/tes
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Any
 
 import pytest
@@ -29,6 +30,10 @@ KEYS = ("prompt_sha256", "prompt_version", "model", "provider", "reasoning_effor
 @pytest.fixture()
 def parser_stub(monkeypatch):
     def _install(*, error: Exception | None = None):
+        from app.services.ai_assistant_service import MCPRuntimeClient
+
+        monkeypatch.setattr(MCPRuntimeClient, "call_tool", lambda self, name, arguments: json.dumps({}))
+
         def fake_resolve_config(db, *, current_date, override_version_id=None):
             return parser_mod.ParserConfig(
                 system_prompt=PROMPT, prompt_version=7, provider="openai", model="gpt-test", api_key="sk-test"
