@@ -115,3 +115,12 @@ page shows the lowest run + CI. Q5 (a) review conversations from TRAIN. Drawings
 are filed under Technical Specifications; cards 02/03 stay out of the gold until then. The mock goes to the owner
 only at CP0 with real numbers. Baseline runs on the restored prod DB (`sorento_prod_20261015`) once crew says it is
 live.
+
+## Attachment gold rule: drawings (crew data check, 16 Oct)
+
+There is no separate drawing type: `technical_specifications` ("Technical Specifications / Spec / Drawing by
+Marketing"; synonyms include drawing, technical drawing, TD, CAD, 图纸, 尺寸图, lukisan; 988 of 989 files sit under
+the Marketing technical-drawing folders) IS the drawing type. Gold for a drawing ask = that product's Technical
+Specifications files, or "none on record" when it has none. Six products have their `*_TD` drawings typed Product
+Photos (SRTSCBD333-UF, SRTUB206-BI, SRTUB6201, SRTUB6503-BI-NEW, SRTUB668, SRTUB668-BI): they are kept out of the
+drawing items.
