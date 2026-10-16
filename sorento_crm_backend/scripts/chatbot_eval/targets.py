@@ -364,8 +364,16 @@ def _code_lookup(row, item):
     return checks
 
 
+def _subject_check(want: set[str], after: set[str]) -> tuple[str, bool | None, str]:
+    """The new subject is in memory after; with no gold subject the check is unknown (None), never a failure."""
+    return ("new_subject", (want <= after) if want else None, "The new subject was not picked up.")
+
+
 def _followup(row, item):
     kind, gold = item.get("kind"), item.get("gold") or {}
+    # real traces carry a memory event with `focus.after`; older / hand-built rows do not. The rules that only make
+    # sense against real traces (a stale old subject staying in memory, the lookup after a refine) apply to those.
+    real = bool(_mem_focus(row, "after"))
     before_subject, after_subject = _subject_before(row), _subject_after(row)
     want = {_key(c) for c in gold.get("subject_after") or []}
     _mem_before = _codes_of(_mem_focus(row, "before").get("products"))
@@ -412,26 +420,29 @@ def _followup(row, item):
         values |= {_norm(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "brand"}
         values |= {_norm(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
         values |= {_norm(b) for b in (_mem_focus(row, "after").get("brands") or [])}
-        return [
-            ("subject", want <= after_subject, "The subject was dropped when refining."),
+        checks = [
+            ("subject", (want <= after_subject) if want else None, "The subject was dropped when refining."),
             ("filter", _norm(flt.get("value")) in values, "The new filter was not applied."),
         ]
+        if real:  # asking instead of looking up is not a refine that worked
+            checks.append(("lookup", bool(_tools(row)), "The bot did not run a lookup after the filter."))
+        return checks
     if kind == "switch":
         return [
             ("old_dropped", not carried_old(), "The old subject was carried into the new ask."),
-            ("new_subject", want <= after_subject, "The new subject was not picked up."),
+            _subject_check(want, after_subject),
             ("changed", not (_mem_before and after_subject == _mem_before), "The subject did not change."),
         ]
     if kind == "and_x" and gold.get("variant") == "new_fact":
         return [
             ("fact", _fact_ok(row, gold.get("fact")), "The new fact asked was not looked up."),
-            ("subject", bool(want) and want <= after_subject, "The subject was dropped when a new fact was asked."),
+            ("subject", (want <= after_subject) if want else None, "The subject was dropped when a new fact was asked."),
         ]
     if kind == "and_x":
         return [
             ("fact", _fact_ok(row, gold.get("fact")), "The fact asked was not carried over to the new item."),
             ("old_dropped", not carried_old(), "The old item was carried into the new ask."),
-            ("new_subject", want <= after_subject, "The new item was not picked up."),
+            ("new_subject", (want <= after_subject) if want else None, "The new item was not picked up."),
         ]
     return [("known_kind", False, "Unknown follow-up kind.")]
 
@@ -529,7 +540,11 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     checks = _SLICES[item["slice"]](row, item)
     leaks = scope_leaks(row, item.get("asker"), item.get("watch_customer_names") or ())
     made_up = made_up_facts(row)
-    failed = next((msg for name, ok, msg in checks if not ok and name != "class"), None)  # `class` is reported only
+    # `class` is reported only; `old_dropped` is reported only on real traces (the old subject may stay in memory);
+    # a None check is unknown, never a failure
+    real = bool(_mem_focus(row, "after"))
+    informational = {"class"} | ({"old_dropped"} if real else set())
+    failed = next((msg for name, ok, msg in checks if ok is False and name not in informational), None)
     # Leaks and made-up facts are their own zero-tolerance bars, listed on every turn and counted by
     # `summarise`; they decide `passed` only for the scope slice, whose whole job is the leak check.
     if failed is None and item["slice"] == "scope" and leaks:
