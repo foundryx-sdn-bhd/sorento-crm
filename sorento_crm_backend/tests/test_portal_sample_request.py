@@ -447,3 +447,23 @@ def test_review_s3_other_company_product_is_not_listed_and_refused(portal):
     refused = c.post(BASE, json=body)
     assert refused.status_code == 422, refused.text
     assert refused.json().get("code") == "SAMPLE_REQUEST_PRODUCT_INVALID"
+
+
+def test_security_review_customer_picker_is_scoped_to_the_stamped_company(portal):
+    """Security review on 0ec1299e: a contact in two companies must not be offered the other
+    company's debtor, because submit checks inside the one company the request is stamped
+    with; listed and accepted stay the same set."""
+    from tests._portal_grant import link_contact_company
+
+    link_contact_company(portal.db, portal.granted, portal.other_company)
+    agent = _link_agent(portal, portal.granted)
+    mine = make_customer(portal.db, portal.company_id)
+    mine.sales_agent_id = agent.id
+    foreign = make_customer(portal.db, portal.other_company)
+    foreign.sales_agent_id = agent.id
+    portal.db.commit()
+
+    c = _as(portal, portal.granted)
+    ids = {r["customer_id"] for r in c.get(f"{PORTAL}/sample-request/customers").json()}
+    assert mine.id in ids
+    assert foreign.id not in ids
