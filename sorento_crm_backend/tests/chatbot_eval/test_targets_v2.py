@@ -1854,3 +1854,18 @@ def test_r28_a_tier_ask_on_a_followup_item_is_unchanged():
                       tools=[tool], reply="Which price tier are you?"), TIER_Q, asking="tier_pick")
     res = grade_turn(r, item("followup", "and_x", fact="promotion", subject_after=["SRTA100"]))
     assert res["passed"] is None and "tier_spec" not in res["checks"], (res["reason"], res["checks"])
+
+
+@pytest.mark.parametrize("reply", [
+    "There is no weight for SRTKT1636SS-GM.",
+    "Weight of SRTKT1636SS-GM: not on record.",
+])
+def test_r28_a_digit_inside_a_product_code_is_not_an_attribute_value(reply):
+    result = _r28_result([{"key": "spec:weight", "label": "Weight", "value": "12 kg"}])
+    res = grade_turn(_r28_attr_row(reply, result), item("code_lookup", **R28_GOLD))
+    assert res["checks"]["attribute_value"] is False, res["checks"]
+
+
+def test_r28_a_weight_value_after_the_word_still_passes():
+    res = grade_turn(_r28_attr_row("SRTKT1636SS-GM weight: 2.5 kg"), item("code_lookup", **R28_GOLD))
+    assert res["checks"]["attribute_value"] is True, res["checks"]
