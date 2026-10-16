@@ -151,6 +151,7 @@ function ForecastAddOnLine({
   value,
   onCommit,
   onValidityChange,
+  showMessage,
   label,
   cap,
   detail,
@@ -161,6 +162,7 @@ function ForecastAddOnLine({
   value: number;
   onCommit: (value: number) => void;
   onValidityChange?: (valid: boolean) => void;
+  showMessage?: boolean;
   /** The tick's own accessible name, built from the last valid figure. */
   label: string;
   cap: number;
@@ -189,6 +191,7 @@ function ForecastAddOnLine({
             value={value}
             onCommit={onCommit}
             onValidityChange={onValidityChange}
+            showMessage={showMessage}
             errorClassName="basis-full"
             className="h-6 w-20 tabular-nums"
             aria-label="Forecast add-on quantity"
@@ -652,6 +655,7 @@ export function OrderQtyLedger({
   // the buyer did not give.
   const [forecastQty, setForecastQty] = useState<number>(() => addOn?.qty ?? 0);
   const [forecastInvalid, setForecastInvalid] = useState(false);
+  const [forecastRefused, setForecastRefused] = useState(false);
   const forecastCap = forecastQtyCap(addOn?.qty ?? 0);
   // `qty` can be 0 (a falling trend ate the whole flat proposal) - that renders a disabled
   // line, never a checkbox, so it can never actually be toggled on.
@@ -727,7 +731,10 @@ export function OrderQtyLedger({
   const togglePo = () => commit({ stockOn, poOn: !poOn, forecastOn, forecastQty, edits: sourceEdits });
   const toggleForecast = () => {
     const next = !forecastOn;
-    if (next && forecastInvalid) return;
+    if (next && forecastInvalid) {
+      setForecastRefused(true);
+      return;
+    }
     setForecastOn(next);
     commit({ stockOn, poOn, forecastOn: next, forecastQty, edits: sourceEdits });
   };
@@ -955,6 +962,7 @@ export function OrderQtyLedger({
                 value={forecastQty}
                 onCommit={changeForecast}
                 onValidityChange={(valid) => setForecastInvalid(!valid)}
+                showMessage={forecastRefused}
                 label={forecastOn ? `Added ${fmtInt(forecastQty)}` : `Add ${fmtInt(forecastQty)}`}
                 cap={forecastCap}
                 detail={addOnDetail(addOn)}

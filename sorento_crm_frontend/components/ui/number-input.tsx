@@ -83,6 +83,8 @@ type LiveNumberInputProps = Omit<
   rules?: NumberFieldRules;
   /** Told after each edit whether the box now holds a usable entry (for a sibling toggle). */
   onValidityChange?: (valid: boolean) => void;
+  /** The screen refused an action because of this box: show its sentence now. */
+  showMessage?: boolean;
 };
 
 /**
@@ -92,11 +94,10 @@ type LiveNumberInputProps = Omit<
  * the field live until it is valid. If the screen moves the figure itself, that figure
  * replaces the typed text.
  */
-function LiveNumberInput({ value, onCommit, onClear, rules, onBlur, onValidityChange, ...props }: LiveNumberInputProps) {
+function LiveNumberInput({ value, onCommit, onClear, rules, onBlur, onValidityChange, showMessage, ...props }: LiveNumberInputProps) {
   const [draft, setDraft] = React.useState<string>(value === null ? '' : String(value));
   const [bad, setBad] = React.useState(false);
   const [show, setShow] = React.useState(false);
-  const [edited, setEdited] = React.useState(false);
   const [seen, setSeen] = React.useState<number | null>(value);
   if (value !== seen) {
     setSeen(value);
@@ -108,18 +109,11 @@ function LiveNumberInput({ value, onCommit, onClear, rules, onBlur, onValidityCh
   }
   const check = bad ? NaN : draft;
   const message = numberFieldError(check, rules);
-  // Some problems cannot be a prefix of a valid figure, so they show at once: text the
-  // browser cannot read, a box emptied by the operator, a figure past the maximum.
-  const parsed = parseNumberDraft(draft);
-  const final =
-    edited && (bad || draft.trim() === '' || (parsed !== null &&
-        ((rules?.max !== undefined && parsed > rules.max) ||
-          (parsed < 0 && (rules?.min ?? -1) >= 0))));
   return (
     <NumberInput
       {...props}
       value={draft}
-      error={show || final ? message : undefined}
+      error={show || showMessage ? message : undefined}
       onBlur={(e) => {
         if (message) setShow(true);
         onBlur?.(e);
@@ -129,7 +123,6 @@ function LiveNumberInput({ value, onCommit, onClear, rules, onBlur, onValidityCh
         const isBad = Boolean(e.target.validity?.badInput);
         setDraft(raw);
         setBad(isBad);
-        setEdited(true);
         const problem = numberFieldError(isBad ? NaN : raw, rules);
         onValidityChange?.(!problem);
         if (problem) return;
