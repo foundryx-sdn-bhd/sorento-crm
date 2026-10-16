@@ -92,6 +92,7 @@ describe('PurchaseRequestForm - round 1b', () => {
       id: 'req-1',
       request_number: 'PR-0002',
       request_type: 'purchase_request',
+      sales_type: 'project',
       customer_name: 'CUSTOMER A SDN BHD',
       project_title: 'Tower A',
       lines: [{ ...LINE, quantity: null }],

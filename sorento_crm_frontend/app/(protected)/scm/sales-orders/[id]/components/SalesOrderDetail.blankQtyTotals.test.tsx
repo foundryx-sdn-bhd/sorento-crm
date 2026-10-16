@@ -267,7 +267,8 @@ describe('SalesOrderDetail - a blank quantity is pending, never 0', () => {
 
     const row = cellTexts(tr);
     // Outstanding was 16; it must not become 0 (nor stay 16).
-    expect(row).not.toContain('0');
+    // Columns: ... Qty ordered, Qty delivered, Qty cancelled, Outstanding (index 6).
+    expect(row[6]).toBe('-');
     expect(row).toContain('-');
     const foot = footerTexts();
     // Qty ordered and Outstanding footers were 46; neither may read 30 (blank counted as 0).
