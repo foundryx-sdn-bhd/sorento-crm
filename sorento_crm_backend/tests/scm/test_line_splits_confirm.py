@@ -719,3 +719,98 @@ def test_resend_after_the_applied_split_prints_no_plain_order_for_the_moved_in_l
     # line 16: 2 REMAIN + 4 DELAY + 10 DELAY + 60 CANCEL BALANCE = 4 split rows; nothing else
     assert out["emails"][0]["line_count"] == 4, (
         "no plain ORDER row for the lines whose qty moved in", out["emails"][0]["line_count"])
+
+
+# ---------------------------------------------------------------------------
+# Reviewer re-check on 924b32561: resend lines after an applied split, target grew / was cut
+# ---------------------------------------------------------------------------
+
+
+def _applied_split_resend_lines(api, monkeypatch, *, qty_48, cut_48=None):
+    """SO424910 shape with line 48's AutoCount qty `qty_48` (10 of it moved in from line 16's
+    split); after the Confirm, optionally a later change cuts line 48 to `cut_48` and is
+    confirmed. Returns the handover lines the Send to purchasing preview would send."""
+    from app.models.project_so import OrderInquiry
+    from app.services.oi_handover_resend import OrderInquiryHandoverResend
+    from app.services.scm.outstanding_diff import ADDED, Change, Line
+    from tests.test_oi_handover_excel import _drain_on_test_connection, _enabled_handover
+    from tests.test_order_inquiry_handover_automation import _register
+
+    client, world = api
+    db = world.db
+    d16, d32, d48 = date(2026, 10, 7), date(2026, 10, 16), date(2026, 11, 15)
+    core_so = _core_so(db, world.company_id)
+    order = _project_so(db, world.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    c16 = _core_line(db, core_so, world.product, world.own_wh, qty_ordered="76", required_date=d16)
+    l16 = _project_line(db, order, line_no=16, product=world.product, core_line=c16)
+    db.commit()
+    assert _confirm(client, order.id, [_line_payload(l16.id, buy_qty="76")]).status_code == 200
+    c16.qty_ordered, l16.qty = Decimal("2"), Decimal("2")
+    m = {}
+    for no, qty, when in ((32, "4", d32), (48, qty_48, d48)):
+        core = _core_line(db, core_so, world.product, world.own_wh, qty_ordered=qty,
+                          required_date=when)
+        m[no] = (core, _project_line(db, order, line_no=no, product=world.product,
+                                     core_line=core))
+    db.commit()
+    code, loc = world.product.product_code, world.own_wh.warehouse_code
+    added = lambda qty, when: Change(  # noqa: E731
+        ADDED, core_so.so_number, code, loc, before=None,
+        after=Line(doc_number=core_so.so_number, item_code=code, location=loc,
+                   qty=float(qty), required_date=when, row_ref="1"))
+    batch = _build(world, [
+        _change(QTY_CHANGED, c16, so_number=core_so.so_number, old_date=d16, new_date=d16,
+                old_qty="76", new_qty="2"),
+        added(4, d32), added(qty_48, d48),
+    ], core_so, [str(c16.id), str(m[32][0].id), str(m[48][0].id)])
+    s = _S()
+    s.client, s.world, s.db, s.order = client, world, db, order
+    r = _put(s, [{"line_id": str(l16.id), "splits": [
+        _sp(2, d16, on=str(l16.id)), _sp(4, d32, on=str(m[32][1].id)),
+        _sp(10, d48, on=str(m[48][1].id)), _sp(60, None, on=str(l16.id), cancel=True)]}])
+    assert r.status_code == 200, r.text
+    r = _confirm(client, order.id, [
+        _line_payload(l16.id, buy_qty="2"), _line_payload(m[32][1].id, buy_qty="4"),
+        _line_payload(m[48][1].id, buy_qty=qty_48)], batch_id=str(batch.id))
+    assert r.status_code == 200, r.text
+    db.commit()
+    if cut_48:
+        c48 = m[48][0]
+        c48.qty_ordered, m[48][1].qty = Decimal(cut_48), Decimal(cut_48)
+        db.commit()
+        b2 = _build(world, [_change(QTY_CHANGED, c48, so_number=core_so.so_number,
+                                    old_date=d48, new_date=d48, old_qty=qty_48,
+                                    new_qty=cut_48)], core_so, [str(c48.id)])
+        assert b2 is not None, "premise: the later change exists"
+        r = _confirm(client, order.id, [_line_payload(m[48][1].id, buy_qty=cut_48)],
+                     batch_id=str(b2.id))
+        assert r.status_code == 200, r.text
+        db.commit()
+    db.expire_all()
+    _register(world)
+    _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
+    row = (
+        db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == l16.id)
+        .order_by(OrderInquiryRow.created_at.desc()).first()
+    )
+    inquiry = db.get(OrderInquiry, row.order_inquiry_id)
+    _auto, sendable, _skipped = OrderInquiryHandoverResend(db)._plan(
+        [str(inquiry.id)], world.actor, None)
+    return [(ln["qty"], ln["remark"]) for ln in sendable[0][1]["handover"]["lines"]]
+
+
+def test_resend_nets_a_target_that_also_grew_to_the_remainder(api, monkeypatch):
+    """Line 48 is 12 = 10 moved in + 2 own: the preview prints the origin's 10 DELAY row and for
+    the target only the remainder (ORDER 2), never "12 ORDER"."""
+    lines = _applied_split_resend_lines(api, monkeypatch, qty_48="12")
+    assert any(q == "10" and r.startswith("DELAY") for q, r in lines), lines
+    assert not [t for t in lines if t == ("12", "ORDER")], ("the Confirm email already netted it", lines)
+    assert any(r == "ORDER 2" for _q, r in lines), ("the remainder is told", lines)
+
+
+def test_resend_does_not_hide_a_target_cut_below_what_moved_in(api, monkeypatch):
+    """A later Confirm cut line 48 to 5 (below the 10 moved in): its row (5) is not hidden, a row
+    is hidden only when its qty EQUALS what moved in."""
+    lines = _applied_split_resend_lines(api, monkeypatch, qty_48="10", cut_48="5")
+    assert any(q == "5" for q, _r in lines), ("line 48's row of 5 must print", lines)

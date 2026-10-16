@@ -76,6 +76,32 @@ beforeEach(() => {
 });
 
 describe('split grid drag configuration', () => {
+  it('has a thin, slow autoscroll edge zone so a drop near an edge does not drift', async () => {
+    const path = './LineSplitDialog';
+    const mod = (await import(/* @vite-ignore */ path)) as {
+      LineSplitDialog: React.ComponentType<{
+        open: boolean; psoId: string; focusLineId?: string; onOpenChange: (o: boolean) => void;
+      }>;
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <mod.LineSplitDialog open psoId="pso-1" focusLineId="l1" onOpenChange={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await screen.findByTestId('line-split-row-l1');
+    const ctx = dnd.props.find((p) => 'autoScroll' in p) ?? dnd.props[0];
+    const auto = ctx.autoScroll as
+      | { threshold?: { x?: number; y?: number }; acceleration?: number }
+      | boolean
+      | undefined;
+    expect(typeof auto === 'object' && auto !== null, 'autoScroll is configured').toBe(true);
+    const cfg = auto as { threshold?: { x?: number; y?: number }; acceleration?: number };
+    expect(cfg.threshold?.x ?? 0.2).toBeLessThanOrEqual(0.1);
+    expect(cfg.threshold?.y ?? 0.2).toBeLessThanOrEqual(0.1);
+    expect(cfg.acceleration ?? 10).toBeLessThanOrEqual(5);
+  });
+
   it('uses pointer-based collision detection and measures droppables while dragging', async () => {
     const path = './LineSplitDialog';
     const mod = (await import(/* @vite-ignore */ path)) as {
