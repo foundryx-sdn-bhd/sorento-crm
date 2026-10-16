@@ -202,8 +202,8 @@ PY
 
   No workflow names port 6432 or 5432 directly (the DB is reached only through the credential),
   and about 29 workflows call `<CRM_DOMAIN>`, which step 3 moves with no edit.
-- Any extra `names-origin`, `mcp-client`, `ignore-ssl`, `db-port` or `sorento-crm-db` line that the table
-  does not have: add it to your step 4 list (same edit as its row), and tell crew on the PR
+- Any extra `names-origin`, `mcp-client`, `ignore-ssl`, `db-port` or `sorento-crm-db` line that
+  the table does not have: add it to your step 4 list (same edit as its row), and tell crew on the PR
   (workflow and node name only, never the resolved URL).
   Test copies on credential `n8n_test-db` are not part of this runbook.
 - Rollback: nothing to roll back. Prefer the field rollbacks in 4.1 to 4.4. As a last resort only,
@@ -442,8 +442,8 @@ path, but after step 6 a fork still on the raw address stops working.
   and `MCP Client1` shows output.
 - Rollback: set both endpoints back to `http://<CRM_ORIGIN>:8765/mcp` and save. Only if that is
   not possible, re-import the step 0.4 copy (step 0.4 rollback); the import comes back INACTIVE
-  and drops any edit since the export, so re-activate `sub-get-results` in the UI at once and
-  confirm its next execution is green.
+  and drops any edit since the export, so re-activate `sub-get-results` in the UI only if step
+  0.4 printed `active=True` for it, and confirm its next execution is green.
 
 ### 4.2 The `sorento-crm-db` credential
 
@@ -482,7 +482,9 @@ goes through Cloudflare either.
   shows output, and step 5.2's nginx `tail` shows the request arriving from `<N8N_TS_IP>` (if it
   is missing, step 3's `extra_hosts` line is missing for that container and the call went through
   Cloudflare). A certificate error here means the origin certificate fails step 0.2 (issuer, SAN or
-  expiry): roll back 4.3, rerun step 0.2's `s_client` check, and tell crew.
+  expiry): remove only the `<CRM_DOMAIN>` line from `extra_hosts` and `docker compose up -d` (as
+  in step 5.1), so the call goes through Cloudflare; then rerun step 0.2's `s_client` check and
+  tell crew.
 - Rollback: keep `https://<CRM_DOMAIN>` and Ignore SSL Issues OFF; rolling back step 3 sends the
   call through Cloudflare, which needs no URL change. Never turn Ignore SSL Issues back on.
 
@@ -616,10 +618,10 @@ Then tidy the two leftovers that named the n8n box's public address:
   it: `sudo ufw delete allow proto tcp from <N8N_HOST> to any port 8765,6432`. Rollback: the
   same command without `delete`.
 
-**Rollback order once step 6 is done.** Steps 3 and 4 roll back to `<CRM_ORIGIN>`, which only
-works while the public rules exist. So after step 6, a rollback of step 3 or 4 starts with step
-6's rollback. Prefer fixing the tailnet (`tailscale status`, `tailscale ping`) over reopening
-6432 / 8765: reopening brings back the clear-text, login-less MCP port on the internet.
+**Rollback order once step 6 is done.** Step 3 and steps 4.1 / 4.2 roll back to `<CRM_ORIGIN>`
+(4.3 and 4.4 never do), which only works while the public rules exist. So after step 6, a
+rollback of step 3, 4.1 or 4.2 starts with step 6's rollback. Prefer fixing the tailnet
+(`tailscale status`, `tailscale ping`) over reopening 6432 / 8765: reopening brings back the clear-text, login-less MCP port on the internet.
 
 Also, once `family-fetch` (step 4.3) no longer names `<CRM_ORIGIN>`, edge step 5.4 does not need its
 "443 from `<N8N_HOST>`" rule either.
@@ -756,7 +758,8 @@ grep -rnE '"type": *"@n8n/n8n-nodes-langchain\.mcpClient(Tool)?"' --include='*.j
 # 3. Every node that uses the Postgres credential, by credential name.
 grep -rln '"sorento-crm-db"' --include='*.json' .
 # 4. Nodes that wave the certificate through. After step 3 they get a real certificate, so the
-#    flag can go; with the raw IP (family-fetch, documentation/plans/chatbot/n8n-changes.md:929-932) they need repointing to
+#    flag can go; with the raw IP (family-fetch,
+#    documentation/plans/chatbot/n8n-changes.md:929-932) they need repointing to
 #    https://<CRM_DOMAIN>/... first.
 grep -rln '"allowUnauthorizedCerts": *true' --include='*.json' .
 # 5. Count of API calls through the hostname (expect about 151 files): these need NO change.
