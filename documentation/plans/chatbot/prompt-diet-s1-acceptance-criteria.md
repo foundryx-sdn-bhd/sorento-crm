@@ -6,6 +6,12 @@ the section 43 contradiction (AC8) and the missing comma (first sentence of AC9)
 writes the chatbot architecture. AC4 holds only because #1574 cut D03 already removes the line. AC13 becomes
 "at least 6% shorter". Dev v109 carries the held edits and is not gated; v110 is the stage 1 text.
 
+**Re-scope 2 (crew, 16 Oct, after review):** REFERENCE TARGET is KEPT unchanged. Its marker is printed by no code,
+but the model emits `reference_target` anyway (107 "dym" verdicts in `tests/chatbot/replay_turns`, no marker) and
+`app/services/chatbot/lanes/business/answer.py:1996` reads it. AC7 is replaced by AC7' below; AC9 covers BOTH
+missing commas; AC8 pins the exact new sentence; AC13 becomes "at least 5.5% shorter". v110 is voided; v111 is the
+stage 1 text.
+
 Plan: `PLAN-prompt-diet-audit-16oct.md` (Stage 1 section). Base text: dev v94 (= prod v63 text), stored verbatim
 as `sorento_crm_backend/alembic/data/chatbot_semantic_parser.v94.txt` and never edited. Output:
 `sorento_crm_backend/alembic/data/chatbot_semantic_parser.diet-s1-20261016.txt`, built by
@@ -31,13 +37,16 @@ as `sorento_crm_backend/alembic/data/chatbot_semantic_parser.v94.txt` and never 
   never an entity. The OUTPUT object still lists `"contains_flyer": false`.
 - HELD: AC6 CORRECTION / DOUBT (25): the section is gone; the OUTPUT object still lists `"correction": false`. Other
   mentions of correction in later sections are untouched.
-- AC7 REFERENCE TARGET (29): the section is gone; the text "suggestions active" appears nowhere; the OUTPUT line
+- REPLACED by AC7': AC7 REFERENCE TARGET (29): the section is gone; the text "suggestions active" appears nowhere; the OUTPUT line
   reads `"reference_target": null`; no "see REFERENCE TARGET" cross-reference remains (v94:216).
+- AC7' REFERENCE TARGET (29) is byte-identical to v94: the whole section, the OUTPUT `reference_target` line and the
+  "see REFERENCE TARGET" cross-reference (v94:216) all stay.
 - AC8 Section 43 contradiction: "Never emit BOTH an entity and a reference_position for the same message."
   (v94:900) is gone. In its place: a BARE number reply (no code or name typed) gives reference_positions only and
   never also copies the picked option into entities. The typed-code rule (v94:891-893, position AND entity)
-  is unchanged.
-- AC9 OUTPUT object: a comma follows `"requested_attributes": []` (v94:765). Every key a banner announced "IN
+  is unchanged. The new sentence is exactly: "A bare number reply (no code or name typed) gives reference_positions
+  only and never also copies the picked option into entities."
+- AC9 OUTPUT object: a comma follows `"requested_attributes": []` (v94:765) and `"asks": []` (OUTPUT block). Every key a banner announced "IN
   ADDITION to the OUTPUT object" is listed inside the OUTPUT object with the same values (HELD from here to the end of AC9): group_by (plus month,
   year), top_n, sales_channel, proceed_anyway, sales_basis, sales_company, rank_by, basis, rank_group,
   rank_direction, self_reference. The entity sub-keys quantity, spec_key and spec_value are stated once, right
@@ -53,7 +62,7 @@ as `sorento_crm_backend/alembic/data/chatbot_semantic_parser.v94.txt` and never 
   (`app/services/chatbot/head/parser.py`) that v94 quotes as `"key"` is still quoted in the output. (Amended 16 Oct:
   10 required keys, e.g. sort_by, sub_asks, find, are never quoted in v94; they reach the model only through the
   JSON schema, so they are out of scope here.)
-- AC13 The output is at least 6% shorter than v94 in characters (scope amended 16 Oct).
+- AC13 The output is at least 5.5% shorter than v94 in characters (scope amended twice, 16 Oct).
 - AC14 No em-dash or en-dash is added by any stage-1 edit's `new` text.
 
 ## Publish
