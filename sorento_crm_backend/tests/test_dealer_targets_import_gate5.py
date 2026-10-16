@@ -246,3 +246,20 @@ def test_a_monthly_repeat_warns_once_per_row():
     row = parse_workbook(_bytes(fill), year=2026).rows[0]
     assert row.status == "mapped", row.reason
     assert sum("written twice" in w for w in row.warnings) == 1, row.warnings
+
+
+def test_a_tie_where_every_ledger_names_another_account_stays_a_pick(api):
+    """Re-check B2: [CERAMIC] and [IBORN] both at level 1, the file asks A/C I."""
+    client, db, company_id = api
+    _customer(db, company_id, "TIP TOP SDN BHD [CERAMIC]", 1)
+    _customer(db, company_id, "TIP-TOP SDN BHD [IBORN]", 1)
+    row = _dry_run(client, db, "TIP TOP SDN BHD", "A/C I")
+    assert row["status"] == "needs_pick", row
+    assert row["reason"].startswith("more than one customer has this name and account")
+
+
+def test_an_account_marker_past_v_is_not_a_branch():
+    """Re-check nit: "(A/C VI)" reads RAWVI, still an account marker."""
+    from app.services.sales.dealer_target_import import branch_key
+
+    assert branch_key("ABC (A/C VI) SDN BHD") == "ABC"
