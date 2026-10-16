@@ -18,6 +18,7 @@ import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -56,6 +57,12 @@ interface PlacementRow {
  *  while the invoice is still loading. */
 const NO_ROWS: PlacementRow[] = [];
 
+/** Quantity to place is required, above 0 and no more than what is left. Untouched = the default. */
+function placeError(line: { remaining_qty?: number | null }, raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  return numberFieldError(raw, { min: 0, minExclusive: true, max: line.remaining_qty ?? 0 });
+}
+
 export function ConvertToPackingListDialog({
   open,
   onOpenChange,
@@ -80,6 +87,10 @@ export function ConvertToPackingListDialog({
   const packing = useProformaInvoicePacking(open ? invoice : undefined);
   const packingRows = useMemo(() => packing.data?.rows ?? [], [packing.data]);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  // Read by the Place cell below through a ref, so the columns keep one identity while the operator
+  // types (a new column array remounts the cell and drops the box under the cursor).
+  const quantitiesRef = useRef(quantities);
+  quantitiesRef.current = quantities;
   const containerSizes = useContainerSizes();
   const [containerSizeId, setContainerSizeId] = useState<string | null>(null);
   // A packing row placed whole or not at all (S4, AC-D2b) - every MATCHED row starts
@@ -327,7 +338,9 @@ export function ConvertToPackingListDialog({
               <NumberInput
                 min={0}
                 max={row.original.line.remaining_qty}
-                value={quantities[row.original.line.id] ?? String(row.original.line.remaining_qty)}
+                value={quantitiesRef.current[row.original.line.id] ?? String(row.original.line.remaining_qty)}
+                error={placeError(row.original.line, quantitiesRef.current[row.original.line.id])}
+                errorClassName="w-32 whitespace-normal"
                 onChange={(e) =>
                   setQuantities((prev) => ({ ...prev, [row.original.line.id]: e.target.value }))
                 }
@@ -344,7 +357,7 @@ export function ConvertToPackingListDialog({
         meta: { headerTitle: 'Place' },
       },
     ],
-    [placedRowIds, quantities],
+    [placedRowIds],
   );
 
   const table = useReactTable({
@@ -360,10 +373,8 @@ export function ConvertToPackingListDialog({
     const lineQuantities: Record<string, number> = {};
     for (const line of placeable) {
       const raw = quantities[line.id];
-      if (raw === undefined || raw === '') continue;
-      const parsed = Number(raw);
-      if (Number.isNaN(parsed)) continue;
-      lineQuantities[line.id] = parsed;
+      if (raw === undefined) continue;
+      lineQuantities[line.id] = Number(raw);
     }
     // The ticked rows, in the order the grid shows them (AC-D2b). Sent only when this
     // invoice HAS packing rows: an omitted list means "every row not already placed",
@@ -380,12 +391,7 @@ export function ConvertToPackingListDialog({
     });
   };
 
-  const invalid = placeable.some((line) => {
-    const raw = quantities[line.id];
-    if (raw === undefined || raw === '') return false;
-    const parsed = Number(raw);
-    return Number.isNaN(parsed) || parsed < 0 || parsed > (line.remaining_qty ?? 0);
-  });
+  const invalid = placeable.some((line) => placeError(line, quantities[line.id]) !== undefined);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
