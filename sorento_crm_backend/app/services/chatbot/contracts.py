@@ -66,10 +66,14 @@ UNDOMAINED_CHATBOT_TOOLS: tuple[str, ...] = (
     "crm_complaint_analytics",
     "crm_complaints_list",
     "crm_lookup_resolve",
+    # MULTI-ASK-PLAN S3: read by the per-ask runner (`turn/sub_asks.py`) for the
+    # received / last receipt sub-asks, never a domain's answer tool.
+    "crm_procurement_grn_summary",
     "crm_project_detail",
     "crm_project_forecast",
     "crm_project_quotations_list",
     "crm_projects_list",
+    "crm_purchase_request_by_number",
     "crm_sla_conversation_event_logs_list",
     "crm_sla_conversation_tracking_dashboard",
     "crm_sla_conversation_tracking_list",
@@ -105,6 +109,7 @@ BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
     "crm_complaint_analytics": "filtered",
     "crm_complaint_close": "no_products",
     "crm_complaints_list": "filtered",
+    "crm_find": "filtered",
     "crm_forms_management_forms_list": "filtered",
     "crm_ideation_turn": "no_products",
     "crm_incoming_stock_by_product": "filtered",
@@ -133,11 +138,15 @@ BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
     "crm_procurement_po_last_cost_list": "filtered",
     "crm_procurement_po_placed_list": "filtered",
     "crm_procurement_spo_allocations_last_receipt_list": "filtered",
+    # MULTI-ASK-PLAN S3: per-product rows of the products the runner asked for.
+    "crm_procurement_grn_summary": "filtered",
     "crm_project_detail": "filtered",
     "crm_project_forecast": "filtered",
     "crm_project_quotations_list": "filtered",
     "crm_projects_list": "filtered",
     "crm_purchase_request_approve": "no_products",
+    # REF-PROBES: a PR's lines name products, so a brand-scoped contact's are guarded.
+    "crm_purchase_request_by_number": "filtered",
     "crm_purchase_request_reject": "no_products",
     "crm_resource_attachments_catalogue": "filtered",
     "crm_resource_attachments_current_stock_list": "filtered",
@@ -273,6 +282,12 @@ ENTITY_HINTS = (
     "attachment",
     "form",
     "order",
+    # REF-PROBES: a reference number the asker NAMED the kind of ("PO 123", "SO 456").
+    "delivery_order",
+    "sales_order",
+    "customer_po_ref",
+    "purchase_order",
+    "purchase_request",
     "category",
     "brand",
     "attachment_type",
@@ -281,6 +296,34 @@ ENTITY_HINTS = (
     "specification",
 )
 EntityHint = Literal[ENTITY_HINTS]  # type: ignore[valid-type]
+
+# REF-PROBES: the resolver kinds a typed reference number may be. `order` is the unnamed
+# hint; the rest name a kind. Value = the kinds the word narrows to (None = any visible).
+REFERENCE_NARROW: dict[str, frozenset[str] | None] = {
+    "order": None,
+    "order_number": None,
+    "delivery_order": frozenset({"customer_order"}),
+    "customer_order": frozenset({"customer_order"}),
+    "sales_order": frozenset({"sales_order"}),
+    "customer_po_ref": frozenset({"customer_po_ref"}),
+    "purchase_order": frozenset({"purchase_order", "customer_po_ref"}),
+    "purchase_request": frozenset({"purchase_request"}),
+}
+
+_SO_GRANT = "sales_orders.outstanding"
+_PO_PLACED_GRANT = "purchase_orders.placed"
+
+
+def visible_reference_kinds(attributes: list[str] | None, is_staff: bool) -> list[str]:
+    """Reference kinds this asker may have probed: delivery orders always; sales orders and
+    customer PO refs with the SO grant; our PO / PR only for staff holding `placed`."""
+    granted = set(attributes or [])
+    kinds = ["customer_order"]
+    if _SO_GRANT in granted:
+        kinds += ["sales_order", "customer_po_ref"]
+    if is_staff and _PO_PLACED_GRANT in granted:
+        kinds += ["purchase_order", "purchase_request"]
+    return kinds
 
 # `selection_context` is written by compile-current-state and read by the head to decide
 # what an otherwise meaningless reply ("1", "dealer", "yes") refers to.
@@ -692,6 +735,10 @@ class Focus(BaseModel):
     # policy narrows on but the Focus never declared still has somewhere safe to sit
     # rather than being dropped on the way to the session.
     extra: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    # SEAT-AS-PRODUCT: which side of a fit answer `products` are ("covers" / "wcs", or
+    # "<kind>:<side>" for mirror / shelf), `turn/state.py::Focus.relation`. Optional, so a stored
+    # focus without it still reads.
+    relation: str | None = None
 
 
 class SessionVars(BaseModel):

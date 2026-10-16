@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
+import { sameDisplayText } from '@/lib/product-display';
 
 export interface AsyncComboboxProps<T> {
   value: string;
@@ -348,7 +349,7 @@ export function AsyncCombobox<T>({
                   }}
                 >
                   <div className="font-medium truncate">{label}</div>
-                  {meta && (
+                  {meta && !sameDisplayText(label, meta) && (
                     <div className="text-xs text-muted-foreground truncate">{meta}</div>
                   )}
                 </button>

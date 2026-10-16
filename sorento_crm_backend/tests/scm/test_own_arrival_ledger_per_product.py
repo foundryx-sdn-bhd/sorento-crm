@@ -397,6 +397,32 @@ def test_1362_item3_my_line_finds_a_fulfilled_line_in_the_stock_drawer():
         assert detail["so_qty"] == "30", detail["so_qty"]
 
 
+def test_the_stock_drawer_leaves_an_autocount_cancel_out_of_fulfilled():
+    """AC-CANCEL-CRM (review M15): TransferedQty 100 of which 40 is AutoCount Cancel SO. The
+    drawer's "My line" says 60 went out, not 100."""
+    with blank_session() as db:
+        group, product = own_arrival_group(db)
+        own = own_arrival_warehouse(db, group)
+        _board_stock(db, product, own, on_hand=100)
+        order, (done, _open) = order_with_lines(
+            db, product=product, warehouse=own,
+            lines=[
+                {"qty": "100", "required_date": date(2026, 6, 8), "source_ref": "LD",
+                 "delivered": "100"},
+                {"qty": "30", "required_date": FIRST_REQUIRED, "source_ref": "LO"},
+            ],
+        )
+        done.qty_cancelled = 40
+        db.flush()
+
+        detail = _service(db).stock_detail(
+            str(product.id), str(own.id), line_ids=[str(done.id)]
+        )
+
+        mine = [row for row in detail["sales_orders"] if row["is_this_line"]]
+        assert mine[0]["fulfilled_qty"] == "60", mine[0]
+
+
 # ============================================================================
 # #1362 fix round 4 (owner evidence, 29 Sep 2026). SO382618: PO 202607-S0077's B2154-NL
 # line bought 200 for SO line 1648 (from_so_line_ref = line 1648's source_ref 43495333,
@@ -698,27 +724,46 @@ def _ruling_confirm_world(db):
     return actor, company_id, project, product, own, order, early, later
 
 
-def test_1362_round5_the_confirm_recheck_refuses_an_earlier_line_reserving_landed_goods():
+def test_1362_round5_the_confirm_recheck_holds_only_the_free_part_and_spares_the_landed_goods():
     """Confirm recheck: the earlier line reserving 250 (what the old walk proposed) would
-    take 89 of the 100 that landed for the later line. Refused."""
-    with blank_session() as db:
-        actor, _c, _p, _product, own, order, early, _later = _ruling_confirm_world(db)
+    take 89 of the 100 that landed for the later line. It confirms as decided, holds only the
+    161 that are free and records 89 short; the landed 100 stay untouched for the later line.
 
-        with pytest.raises(AppException):
-            ProjectSupplyService(db).confirm(
-                order,
-                ConfirmSupplyBody(
-                    lines=[
-                        ConfirmLine(
-                            project_line_id=str(early.id),
-                            reserve=[
-                                ConfirmReserveComponent(warehouse_id=str(own.id), qty="250")
-                            ],
-                        )
-                    ]
-                ),
-                actor_user_id=actor,
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE, #1580): a stock shortfall is a warning, never a
+    refusal. Before it this was refused outright; #1580 restated its siblings and missed this
+    one, which then read DID NOT RAISE on main."""
+    from app.models.project_so import SOLineAllocation
+
+    with blank_session() as db:
+        actor, _c, _p, _product, own, order, early, later = _ruling_confirm_world(db)
+
+        result = ProjectSupplyService(db).confirm(
+            order,
+            ConfirmSupplyBody(
+                lines=[
+                    ConfirmLine(
+                        project_line_id=str(early.id),
+                        reserve=[
+                            ConfirmReserveComponent(warehouse_id=str(own.id), qty="250")
+                        ],
+                    )
+                ]
+            ),
+            actor_user_id=actor,
+        )
+
+        notices = result.get("stock_short_notices") or []
+        assert len(notices) == 1, result
+        assert "only 161 free at" in notices[0]["reason"], notices
+        assert ", 89 short" in notices[0]["reason"], notices
+        db.expire_all()
+        held = {
+            row.so_line_id: row.qty
+            for row in db.query(SOLineAllocation).filter(
+                SOLineAllocation.so_line_id.in_([early.id, later.id])
             )
+        }
+        assert held == {early.id: Decimal("161")}, held
 
 
 def test_1362_round5_the_confirm_recheck_accepts_the_free_part_and_the_landed_line_in_full():

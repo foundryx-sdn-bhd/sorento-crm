@@ -54,6 +54,17 @@ def list_stock_debt(
             "Ignored under `book=retail` - a site pool is nobody's ownership group."
         ),
     ),
+    location: List[str] = Query(
+        [],
+        description=(
+            "Warehouse ids to keep, repeatable: the read spans only these bins of the "
+            "book's span. An id outside the span matches nothing."
+        ),
+    ),
+    exclude_location: List[str] = Query(
+        [],
+        description="Warehouse ids to leave OUT, repeatable (\"all except X\"). Applied after `location`.",
+    ),
     only_debt: bool = Query(
         True, description="Drop products that owe nothing in any month."
     ),
@@ -91,6 +102,15 @@ def list_stock_debt(
             "and ignores `group`."
         ),
     ),
+    projected: bool = Query(
+        False,
+        description=(
+            "STOCK-DEBT-PROJECTION: month cells show the running projected balance - the "
+            "project lines' own month figure (pool supply only through a link) plus a "
+            "project reserve's unlinked incoming supply, carried to the earliest shortfall. "
+            "Display only; nothing is assigned."
+        ),
+    ),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
@@ -105,6 +125,8 @@ def list_stock_debt(
         return StockDebtService(db).list(
             query=query,
             group=group,
+            location=location,
+            exclude_location=exclude_location,
             only_debt=only_debt,
             date_from=date_from,
             date_to=date_to,
@@ -112,6 +134,7 @@ def list_stock_debt(
             book=book,
             page=page,
             limit=limit,
+            projected=projected,
         )
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
@@ -134,6 +157,17 @@ def stock_debt_cell(
             "cell that opened it."
         ),
     ),
+    location: List[str] = Query(
+        [],
+        description=(
+            "Warehouse ids to keep, repeatable: the read spans only these bins of the "
+            "book's span. An id outside the span matches nothing."
+        ),
+    ),
+    exclude_location: List[str] = Query(
+        [],
+        description="Warehouse ids to leave OUT, repeatable (\"all except X\"). Applied after `location`.",
+    ),
     date_from: Optional[date] = Query(
         None,
         description=(
@@ -152,6 +186,15 @@ def stock_debt_cell(
         "all",
         description="The BOARD's own book, echoed so the drill foots with the cell that opened it.",
     ),
+    projected: bool = Query(
+        False,
+        description=(
+            "STOCK-DEBT-PROJECTION: month cells show the running projected balance - the "
+            "project lines' own month figure (pool supply only through a link) plus a "
+            "project reserve's unlinked incoming supply, carried to the earliest shortfall. "
+            "Display only; nothing is assigned."
+        ),
+    ),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -159,7 +202,8 @@ def stock_debt_cell(
     try:
         validate_uuid_path(product_id, resource="Product")
         return StockDebtService(db).cell(
-            product_id, month, group, date_from=date_from, date_to=date_to, book=book
+            product_id, month, group, date_from=date_from, date_to=date_to, book=book,
+            projected=projected, location=location, exclude_location=exclude_location,
         )
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
@@ -212,6 +256,8 @@ def export_stock_debt(
         guard = StockDebtService(db).list(
             query=payload.query,
             group=payload.group,
+            location=payload.location,
+            exclude_location=payload.exclude_location,
             only_debt=payload.only_debt,
             date_from=payload.date_from,
             date_to=payload.date_to,
@@ -219,6 +265,7 @@ def export_stock_debt(
             book=payload.book,
             page=1,
             limit=1,
+            projected=payload.projected,
         )
         if guard["pagination"]["total"] > MAX_LOW_STOCK_ROWS:
             raise AppException(status_code=422, message="Narrow the filters first")

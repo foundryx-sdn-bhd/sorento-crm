@@ -566,6 +566,59 @@ def test_quantity_golden_capped(api):
     assert next(r for r in rows if r["target_id"] == delivered["id"])["achieved_value"] == 14  # least(12,10)+4, never 16
 
 
+def test_quantity_leaves_an_autocount_cancel_out(api):
+    """AC-CANCEL-CRM: 10 ordered, TransferedQty 10 of which 4 is AutoCount Cancel SO. Neither
+    basis credits the agent with the cancelled 4."""
+    client, db, company_id = api
+    a = _agent(db, "A")
+    category = _category(db, company_id)
+    product = _product(db, company_id, category.id)
+    _so, line = _so_line(db, company_id, agent_id=a.id, order_date=date(2026, 10, 5),
+                         line_total=Decimal("1000"), qty_ordered=10, qty_delivered=10,
+                         product_id=product.id)
+    line.qty_cancelled = 4
+    db.flush()
+    ids = {}
+    for basis in ("ordered", "delivered"):
+        ids[basis] = client.post(BASE, json={
+            "subject_kind": "agent", "sales_agent_id": a.id, "name": f"ZZT Qty {basis}",
+            "metric": "quantity", "basis": basis, "product_scope": "all",
+            "start_date": "2026-10-01", "end_date": "2026-10-31", "target_value": 0,
+        }).json()["id"]
+    rows = client.get(BASE, params={"on": "2026-10-15", "subject": "agent"}).json()["rows"]
+    got = {b: next(r for r in rows if r["target_id"] == i)["achieved_value"] for b, i in ids.items()}
+    assert got == {"ordered": 6, "delivered": 6}
+
+
+def test_a_consignment_never_counts_as_sold(api):
+    """AC-CONSIGN-CRM Q5 a: a consignment line is not a sale; the sale counts where the DO /
+    invoice already does. Neither basis credits the agent with it."""
+    client, db, company_id = api
+    a = _agent(db, "A")
+    category = _category(db, company_id)
+    product = _product(db, company_id, category.id)
+    _so_line(db, company_id, agent_id=a.id, order_date=date(2026, 10, 5),
+             line_total=Decimal("1000"), qty_ordered=10, qty_delivered=10, product_id=product.id)
+    consignment, _line = _so_line(db, company_id, agent_id=a.id, order_date=date(2026, 10, 6),
+                                  line_total=Decimal("500"), qty_ordered=5, qty_delivered=5,
+                                  product_id=product.id)
+    consignment.doc_type = "consignment"
+    db.flush()
+    ids = {}
+    for metric in ("amount", "quantity"):
+        for basis in ("ordered", "delivered"):
+            ids[(metric, basis)] = client.post(BASE, json={
+                "subject_kind": "agent", "sales_agent_id": a.id, "name": f"ZZT {metric} {basis}",
+                "metric": metric, "basis": basis, "product_scope": "all",
+                "start_date": "2026-10-01", "end_date": "2026-10-31", "target_value": 0,
+            }).json()["id"]
+    rows = client.get(BASE, params={"on": "2026-10-15", "subject": "agent"}).json()["rows"]
+    got = {k: next(r for r in rows if r["target_id"] == i)["achieved_value"]
+           for k, i in ids.items()}
+    assert got == {("amount", "ordered"): 1000, ("amount", "delivered"): 1000,
+                   ("quantity", "ordered"): 10, ("quantity", "delivered"): 10}
+
+
 def test_scope_subcategories_products_all(api):
     client, db, company_id = api
     a = _agent(db, "A")
@@ -1727,17 +1780,46 @@ def test_detail_query_stays_fast_at_scale(api):
     product = _product(db, company_id, category.id)
     warehouse = _warehouse(db, company_id)
 
-    for month in range(1, 13):
-        order_date = date(2026, month, 5)
-        for _ in range(300):
-            _, line = _so_line(
-                db, company_id, agent_id=agent.id, order_date=order_date, line_total=Decimal("100"),
-                qty_ordered=10, qty_delivered=10, product_id=product.id,
-            )
-            # No residual: the two DOs exactly cover qty_ordered.
-            _do_line(db, company_id, product.id, warehouse.id, line.id, quantity=6, order_date=order_date)
-            _do_line(db, company_id, product.id, warehouse.id, line.id, quantity=4, order_date=order_date)
+    # 12 months x 300 SO lines, each delivered by two DOs (6 + 4: no residual). Seeded in
+    # set-based SQL, the shape `_so_line` / `_do_line` write row by row: 18,000 rows through
+    # the ORM took about a minute of this test's 74 s (CI-LEAN, 10 Oct 2026).
     db.flush()
+    params = {"c": company_id, "a": agent.id, "p": product.id, "w": warehouse.id}
+    db.execute(text(
+        "insert into sales_orders (id, company_id, so_number, order_date, status, sales_agent_id) "
+        "select gen_random_uuid(), :c, 'ZZTF' || m || '-' || g || '-' || substr(md5(random()::text), 1, 6), "
+        "make_date(2026, m, 5), 'open', :a "
+        "from generate_series(1, 12) m cross join generate_series(1, 300) g"
+    ), params)
+    db.execute(text(
+        "insert into sales_order_lines (id, company_id, sales_order_id, product_id, qty_ordered, "
+        "qty_delivered, line_total, line_status, purchasing_status) "
+        "select gen_random_uuid(), :c, so.id, :p, 10, 10, 100, 'open', 'not_reviewed' "
+        "from sales_orders so where so.company_id = :c and so.so_number like 'ZZTF%'"
+    ), params)
+    db.execute(text(
+        "create temporary table zztf_do on commit drop as "
+        "select row_number() over () as n, sol.id as sol_id, so.order_date as d, q.qty "
+        "from sales_order_lines sol join sales_orders so on so.id = sol.sales_order_id "
+        "cross join (values (6), (4)) as q(qty) "
+        "where so.company_id = :c and so.so_number like 'ZZTF%'"
+    ), params)
+    db.execute(text(
+        "insert into orders (id, company_id, order_number, order_date, is_cancelled, kpi_warning, "
+        "subtotal_amount, discount_amount, tax_amount, total_amount, synced_to_excel) "
+        "select md5('zztf' || n)::uuid, :c, 'ZZTF' || n || '-' || substr(md5(random()::text), 1, 6), "
+        "d, false, false, 0, 0, 0, 0, false from zztf_do"
+    ), params)
+    db.execute(text(
+        "insert into order_lines (id, company_id, line_sequence, order_id, product_id, warehouse_id, "
+        "quantity, sales_order_line_id) "
+        "select gen_random_uuid(), :c, 1, md5('zztf' || n)::uuid, :p, :w, qty, sol_id from zztf_do"
+    ), params)
+    seeded = db.execute(text(
+        "select (select count(*) from sales_order_lines sol join sales_orders so on so.id = sol.sales_order_id "
+        "where so.so_number like 'ZZTF%'), (select count(*) from zztf_do)"
+    )).one()
+    assert tuple(seeded) == (3600, 7200), seeded
     # Plan against the rows just seeded, not against whatever an earlier test on this xdist
     # worker left in the shared scratch schema's pg_class. Autovacuum on a worker whose earlier
     # files rolled back a few hundred rows records reltuples = 0 over non-empty pages, and the

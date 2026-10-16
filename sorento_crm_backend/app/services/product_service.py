@@ -64,6 +64,7 @@ def _populate_field_attachments(db: Session, products: Iterable[Product]) -> Non
 # module and `tests/test_product_is_discontinued.py` - as thin delegates; the
 # one real body lives in product_rules.
 from app.services.rules import product_rules
+from app.services.product_family import family_code_for
 from app.services.rules.master_rules import resolve_master_by_code
 from app.services.rules.product_rules import (
     is_discontinued as _rules_is_discontinued,
@@ -862,6 +863,20 @@ class ProductService:
         )
         product._variant_children = children
         product._variant_child_count = len(children)
+        # CODE-VARIANTS AC-5: the other active products of the same family (detail only).
+        product._family_members = (
+            self.db.query(Product)
+            .filter(
+                Product.family_code == product.family_code,
+                Product.company_id == product.company_id,
+                Product.id != product.id,
+                Product.is_active.is_(True),
+            )
+            .order_by(Product.product_code.asc())
+            .all()
+            if product.family_code
+            else []
+        )
 
     def set_variant_parent(self, product_id: str, parent_id: str, updated_by: str):
         """Manually set/change a product's variant parent (D1 - sticky override).
@@ -958,6 +973,32 @@ class ProductService:
         product.updated_at = datetime.utcnow()
         self.db.commit()
         self._reconcile_variant_links(product.id)
+        self.db.refresh(product)
+        _populate_field_attachments(self.db, [product])
+        self._populate_variant_graph(product)
+        self._populate_product_sets(product)
+        return product
+
+    def set_family_code(self, product_id: str, family_code: Optional[str]):
+        """CODE-VARIANTS AC-4: store a hand-set family (trimmed, uppercased, empty = NULL)."""
+        product = self.get_product(product_id)  # 404 if the product is unknown
+        product.family_code = "".join((family_code or "").split()).upper() or None
+        product.family_code_manual = True
+        product.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(product)
+        _populate_field_attachments(self.db, [product])
+        self._populate_variant_graph(product)
+        self._populate_product_sets(product)
+        return product
+
+    def reset_family_code(self, product_id: str):
+        """CODE-VARIANTS AC-4: back to auto; the write hook re-derives it from the code."""
+        product = self.get_product(product_id)  # 404 if the product is unknown
+        product.family_code_manual = False
+        product.family_code = family_code_for(product.product_code)
+        product.updated_at = datetime.utcnow()
+        self.db.commit()
         self.db.refresh(product)
         _populate_field_attachments(self.db, [product])
         self._populate_variant_graph(product)
@@ -2405,6 +2446,19 @@ class ProductCategoryService:
         """Delete a category. Raises if any products use this category."""
         category = self.get_category(category_id)
         from sqlalchemy import func
+        from app.models.projects import ProjectSeries, ProjectSeriesCategory
+        series_names = [
+            row[0]
+            for row in self.db.query(ProjectSeries.name)
+            .join(ProjectSeriesCategory, ProjectSeriesCategory.series_id == ProjectSeries.id)
+            .filter(ProjectSeriesCategory.category_id == category_id)
+            .order_by(ProjectSeries.name)
+            .all()
+        ]
+        if series_names:
+            raise handle_conflict(
+                f"Used by series {', '.join(series_names)}; remove it there first."
+            )
         product_count = self.db.query(func.count(Product.id)).filter(
             Product.category_id == category_id
         ).scalar() or 0
@@ -2543,6 +2597,19 @@ class BrandService:
     def delete_brand(self, brand_id: str):
         """Delete a brand. Products using this brand have their brand_id set to null (brand is optional)."""
         brand = self.get_brand(brand_id)
+        from app.models.projects import ProjectSeries, ProjectSeriesBrand
+        series_names = [
+            row[0]
+            for row in self.db.query(ProjectSeries.name)
+            .join(ProjectSeriesBrand, ProjectSeriesBrand.series_id == ProjectSeries.id)
+            .filter(ProjectSeriesBrand.brand_id == brand_id)
+            .order_by(ProjectSeries.name)
+            .all()
+        ]
+        if series_names:
+            raise handle_conflict(
+                f"Used by series {', '.join(series_names)}; remove it there first."
+            )
         updated = (
             self.db.query(Product)
             .filter(Product.brand_id == brand_id)

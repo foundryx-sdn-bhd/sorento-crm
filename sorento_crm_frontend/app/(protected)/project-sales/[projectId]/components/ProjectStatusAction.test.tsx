@@ -17,6 +17,7 @@ function move(overrides: Partial<StatusMove> & { transitionId: string }): Status
     toStatusId: `to-${overrides.transitionId}`,
     label: 'Move',
     toLabel: 'Somewhere',
+    toKey: 'somewhere',
     toIsTerminal: false,
     isForward: true,
     ...overrides,

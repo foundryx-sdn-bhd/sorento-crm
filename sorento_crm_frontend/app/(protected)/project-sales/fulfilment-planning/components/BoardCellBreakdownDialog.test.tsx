@@ -23,7 +23,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
   useListingColumnPreferences: () => ({
@@ -48,7 +48,7 @@ vi.mock('../../_shared/services/fulfilmentPlanningService', () => ({
 
 import { BoardCellBreakdownDialog, sourceAt } from './BoardCellBreakdownDialog';
 import { suggestedDecisionFor } from '../../_shared/lib/boardAmend';
-import { LADDER_VERSION } from '../../_shared/lib/supplyVocabulary';
+import { borrowKinds, LADDER_VERSION } from '../../_shared/lib/supplyVocabulary';
 import {
   buildBoard,
   PREVIEW_POLICY,
@@ -3040,6 +3040,30 @@ describe('BoardCellBreakdownDialog: what purchasing has already been told', () =
     expect(within(row).getByText('On PO/SPO')).toBeInTheDocument();
   });
 
+  it('PR 1622 (mock v3): an open purchasing refusal reads as the Rejected badge, not the state word', () => {
+    renderDialog([
+      demand({
+        order_inquiry: {
+          inquiry_no: 'OI-000123',
+          state: 'raised',
+          ack_state: 'rejected',
+          rejected_by_name: 'Joey',
+          rejected_reason: 'DISCON',
+          rejected_at: '2026-10-13T08:32:00',
+        },
+      }),
+    ]);
+    openLines();
+
+    const row = contributionTable().querySelectorAll('tbody tr')[0] as HTMLElement;
+    expect(within(row).getByText('OI-000123')).toBeInTheDocument();
+    const badge = row.querySelector('[data-testid^="breakdown-oi-rejected-"]') as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge).toHaveTextContent(/^Rejected$/);
+    expect(badge.getAttribute('title')).toMatch(/^Rejected by Joey on 13\/10\/2026, 4:32\s?pm: DISCON$/i);
+    expect(within(row).queryByText('To buy')).toBeNull();
+  });
+
   it('prints a dash for a line nobody has been told anything about', () => {
     renderDialog([demand({ order_inquiry: null })]);
     openLines();
@@ -3252,6 +3276,7 @@ describe('BoardCellBreakdownDialog: how the Suggestion card names its sources', 
   });
 
   it('tells the two borrows apart by rung (AC-A3)', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     renderWithSources([
       // Names its donor SO: a donor-less one reads as a location borrow
       // (BORROW-LOCATION-ONLY D3).
@@ -4119,4 +4144,8 @@ describe('AC-B1/AC-B11: the Decision column carries the same Verdict trio as the
       screen.queryByRole('button', { name: /decision trail/i }),
     ).not.toBeInTheDocument();
   });
+});
+
+afterEach(() => {
+  borrowKinds.shownApart = false;
 });

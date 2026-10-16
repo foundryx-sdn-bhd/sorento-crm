@@ -90,6 +90,7 @@ import { clearPicks, readPicks } from '@/lib/dealer-kit/cataloguePicks';
 import { CollapsiblePanel, FocusShell, FocusToggle } from '../../components/FocusMode';
 import { RoomPlan } from './RoomPlan';
 import { DEFAULT_CEILING_MM, RoomScene } from './RoomScene';
+import { sameDisplayText } from '@/lib/product-display';
 
 /**
  * The room designer: pick products, shape the room, place them, confirm.
@@ -1173,9 +1174,11 @@ export function RoomDesigner() {
                   renderOption={(option) => (
                     <span className="min-w-0">
                       <span className="block truncate font-mono text-xs">{option.label}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {option.description}
-                      </span>
+                      {option.description && !sameDisplayText(option.label, option.description) ? (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {option.description}
+                        </span>
+                      ) : null}
                     </span>
                   )}
                   placeholder="Search products"

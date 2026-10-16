@@ -41,7 +41,8 @@ pytestmark = requires_pg
 
 AUX_KEYS = ("pool_on_hand", "pool_po_qty", "pool_incoming_qty", "dealer_outstanding")
 AUX_HEADERS = [
-    "BRW On Hand Qty", "BRW PO Qty", "BRW Incoming Qty", "Dealer O/standing Qty",
+    "BRW Retail On Hand Qty", "BRW Retail PO Qty", "BRW Retail Incoming Qty",
+    "Dealer O/standing Qty",
 ]
 D_FROM = date(2027, 3, 1)
 D_TO = date(2027, 3, 31)

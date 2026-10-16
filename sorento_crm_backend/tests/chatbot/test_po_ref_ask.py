@@ -488,3 +488,15 @@ def test_reads_customer_po_refs_by_tier_alone() -> None:
     assert reads_customer_po_refs(SimpleNamespace(tier="dealer")) is True
     assert reads_customer_po_refs(SimpleNamespace(tier=None)) is True
     assert reads_customer_po_refs(None) is True
+
+
+def test_staff_po_ref_lookup_unlinked_sees_cards(session_factory):
+    """REF-PROBES AC-16: staff carry no customer links (`linked=None`, no scope enforced) and
+    get the SO cards that carry the PO ref; today the lookup requires a link list."""
+    from app.services.chatbot import so_status
+
+    _seed_po_so(session_factory, "SOZZT100001", customer_id=None, po_ref=REF, po_ref_key=REF)
+    _seed_po_so(session_factory, "SOZZT100002", customer_id=None, po_ref=REF, po_ref_key=REF)
+    out = so_status.lookup_po_refs(_scoped(session_factory), [REF], linked=None)
+    assert out.missing == [], out
+    assert len(out.cards) == 2, out

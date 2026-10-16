@@ -27,6 +27,7 @@ from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
 from app.services.chatbot.turn import task as task_mod
+from app.services.product_compatibility_service import KINDS
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +305,9 @@ def _build_json_schema() -> dict[str, Any]:
             # for a word that fits no listed kind. Required for strict mode, tolerated
             # absent (no recorded emission carries it).
             "promotion_kind": string_or_null,
+            # DEV-FAILURES RC-B: the portal form a portal_link ask names (a
+            # `portal_service.SUPPORTED_TYPES` code), null for none. Tolerated absent.
+            "portal_form": string_or_null,
             "correction": {"type": ["boolean", "null"]},
             # PLAN-chatbot-customer-scope-29sep D2: "my" / "me" / "our" as the asker's own
             # account. Required for strict mode, tolerated absent (older prompt versions).
@@ -395,6 +399,39 @@ def _build_json_schema() -> dict[str, Any]:
             # `engine.run_turn` closes the conversation episode on it. Both readers shipped
             # with no way for the model to set it, so no live turn has ever reset a topic
             # or written an episode.
+            # MULTI-ASK-PLAN S2: every thing the message asks, in order, when it asks two
+            # or more (`turn/sub_asks.py` runs one query per entry), and whether a typed
+            # code means the exact code or its family. Tolerated absent: no prompt version
+            # before `maskp_0001_parser_sub_asks` emits them.
+            "sub_asks": {
+                "type": ["array", "null"],
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "measure": {
+                            "type": "string",
+                            "enum": [
+                                "stock", "incoming", "received_qty", "last_receipt", "supplier",
+                                "last_cost", "sold_total", "sold_by", "other",
+                            ],
+                        },
+                        "group_by": {
+                            "type": ["string", "null"],
+                            "enum": [
+                                "sales_agent", "customer", "product", "brand", "category",
+                                "location", "channel", "month", None,
+                            ],
+                        },
+                        "date_from": string_or_null,
+                        "date_to": string_or_null,
+                        "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", None]},
+                        "label": string_or_null,
+                    },
+                    "required": ["measure", "group_by", "date_from", "date_to", "basis", "label"],
+                },
+            },
+            "family": {"type": ["boolean", "null"]},
             "topic_reset": {"type": ["boolean", "null"]},
             # Ported from PR #1118 (not merged), D13/D15: "go ahead without answering
             # the open question" - said in any wording, in any language ("just
@@ -473,10 +510,68 @@ def _build_json_schema() -> dict[str, Any]:
                 },
                 "required": ["group_by", "categories", "all_categories", "brands", "suppliers"],
             },
+            # CA-3 (chat analytics): the chat report's own words, read by the parser and
+            # nowhere else. ONE nullable object (the `low_stock` pattern) so the shared
+            # `group_by` / `measure` enums gain nothing. The period is `date_filter_*`, the
+            # count `top_n`, the direction `rank_direction`; null on every other message.
+            # `subject` is a chatbot domain name, a free string: the domain list is data.
+            "chat_report": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "group_by": {
+                        "type": ["string", "null"],
+                        "enum": [
+                            "topic", "subject", "product", "customer", "outcome", "failure_reason",
+                            "week", "month", "day", "language", None,
+                        ],
+                    },
+                    "measure": {
+                        "type": ["string", "null"],
+                        "enum": ["asks", "failed", "failure_rate", "contacts", None],
+                    },
+                    "subject": {"type": ["string", "null"]},
+                },
+                "required": ["group_by", "measure", "subject"],
+            },
             # SO-PO-REF (owner, 7 Oct 2026): the PO number(s) the message gives, as typed
             # without the word PO. Read by the business lane for a non-staff profile only
             # (`so_status.lookup_po_refs`); no code detects a PO number in the text.
             "po_refs": {"type": ["array", "null"], "items": {"type": "string"}},
+            # CHAT-FIND: which products stand in a registered relation to the named product
+            # (`product_find.FILTERS`, vocabulary in the `{{find_filters}}` prompt variable).
+            # Keys are the registry's; the named product stays an ordinary entity.
+            "find": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "filters": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "key": {"type": "string"},
+                                # The filter's typed value (a code, a number, a listed word)
+                                # and the number's unit, when its line says it takes one.
+                                "value": {"type": ["string", "number", "null"]},
+                                "unit": {"type": ["string", "null"]},
+                                # SEAT-AS-PRODUCT (crew v94 check, 13 Oct): the word of THIS
+                                # message asking for a file, as typed, null when none. The
+                                # parser states it; `lanes/business/find.as_linked_products`
+                                # reads it so the relation's own word is never a file ask.
+                                "file_word": {"type": ["string", "null"]},
+                                # CHAT-FIT-LINE: which link kind the other side names, one of
+                                # `product_compatibility_service.KINDS` (generated, so a new
+                                # kind needs no edit here); null when no particular kind.
+                                "kind": {"type": ["string", "null"], "enum": [*KINDS, None]},
+                            },
+                            "required": ["key", "value", "unit", "file_word", "kind"],
+                        },
+                    },
+                },
+                "required": ["filters"],
+            },
             "anaphora": {
                 "type": "object",
                 "additionalProperties": False,
@@ -557,6 +652,7 @@ def _build_json_schema() -> dict[str, Any]:
             "sales_basis",
             "sales_company",
             "promotion_kind",
+            "portal_form",
             "correction",
             "self_reference",
             "routing",
@@ -570,7 +666,11 @@ def _build_json_schema() -> dict[str, Any]:
             "anaphora",
             "profile_statements",
             "low_stock",
+            "chat_report",
             "po_refs",
+            "sub_asks",
+            "family",
+            "find",
         ],
     }
 
@@ -622,6 +722,7 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         "sales_basis",
         "sales_company",
         "promotion_kind",
+        "portal_form",
         "proceed_anyway",
         "open_question_answer",
         "self_reference",
@@ -629,9 +730,19 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # LOWSTOCK-SEMANTIC: no recorded emission and no prompt version before
         # `lss_0001_parser_vocab` carries it; absent reads as "nothing placed".
         "low_stock",
+        # CA-3: no prompt version before `ca3_0001_chat_report_prompt` carries it; absent
+        # reads as "not a chat report".
+        "chat_report",
         # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
         # absent reads as "no PO number given".
         "po_refs",
+        # MULTI-ASK-PLAN S2: no prompt version before `maskp_0001_parser_sub_asks`
+        # emits either; absent reads as one ask, scope not said.
+        "sub_asks",
+        "family",
+        # CHAT-FIND: no prompt version before the `{{find_filters}}` publish carries it;
+        # absent reads as "not a find".
+        "find",
     }
 )
 

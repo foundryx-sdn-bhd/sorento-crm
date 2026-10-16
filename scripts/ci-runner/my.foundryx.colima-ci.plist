@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Starts the CI runners' colima VM at login. Install:
+     cp scripts/ci-runner/my.foundryx.colima-ci.plist ~/Library/LaunchAgents/
+     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/my.foundryx.colima-ci.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>my.foundryx.colima-ci</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/colima</string><string>start</string><string>ci</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/colima-ci.log</string>
+  <key>StandardErrorPath</key><string>/tmp/colima-ci.log</string>
+</dict>
+</plist>

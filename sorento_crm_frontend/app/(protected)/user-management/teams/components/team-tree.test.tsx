@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render as rtlRender, screen, fireEvent, within } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import TeamTree from './team-tree';
@@ -29,7 +29,7 @@ beforeEach(() => updateTeam.mockReset());
 
 describe('TeamTree hierarchy', () => {
   it('renders nested descendants when expanded (default)', () => {
-    render(<TeamTree teams={teams} query="" onEdit={vi.fn()} onDelete={vi.fn()} />);
+    render(<TeamTree teams={teams} query="" canEdit canDelete onEdit={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.getByText('Grandparent')).toBeInTheDocument();
     expect(screen.getByText('Parent')).toBeInTheDocument();
     expect(screen.getByText('Child')).toBeInTheDocument();
@@ -37,7 +37,7 @@ describe('TeamTree hierarchy', () => {
   });
 
   it('collapsing a parent hides its descendants', () => {
-    render(<TeamTree teams={teams} query="" onEdit={vi.fn()} onDelete={vi.fn()} />);
+    render(<TeamTree teams={teams} query="" canEdit canDelete onEdit={vi.fn()} onDelete={vi.fn()} />);
     // Grandparent row carries a Collapse control (it has children).
     fireEvent.click(screen.getAllByRole('button', { name: 'Collapse' })[0]);
     expect(screen.queryByText('Parent')).not.toBeInTheDocument();
@@ -46,7 +46,7 @@ describe('TeamTree hierarchy', () => {
   });
 
   it('search keeps the matched node and its ancestor path', () => {
-    render(<TeamTree teams={teams} query="child" onEdit={vi.fn()} onDelete={vi.fn()} />);
+    render(<TeamTree teams={teams} query="child" canEdit canDelete onEdit={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.getByText('Child')).toBeInTheDocument();
     expect(screen.getByText('Parent')).toBeInTheDocument(); // ancestor kept
     expect(screen.getByText('Grandparent')).toBeInTheDocument(); // ancestor kept
@@ -54,9 +54,60 @@ describe('TeamTree hierarchy', () => {
   });
 
   it('member count badge reflects member_count', () => {
-    render(<TeamTree teams={teams} query="" onEdit={vi.fn()} onDelete={vi.fn()} />);
+    render(<TeamTree teams={teams} query="" canEdit canDelete onEdit={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.getByRole('button', { name: /2 members in Grandparent/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /0 members in Parent/ })).toBeInTheDocument();
+  });
+});
+
+describe('TeamTree write gates (TEAMS-PERM)', () => {
+  const solo = [teams[3]];
+
+  it('a view-only caller gets no row actions and cannot drag a row', () => {
+    render(<TeamTree teams={solo} query="" canEdit={false} canDelete={false} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+    expect(screen.getByText('Solo').closest('[draggable]')).toBeNull();
+  });
+
+  it('teams.edit alone offers Edit team but not Delete team', async () => {
+    render(<TeamTree teams={solo} query="" canEdit canDelete={false} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions' }), { button: 0, ctrlKey: false });
+    expect(await screen.findByRole('menuitem', { name: 'Edit team' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Delete team' })).not.toBeInTheDocument();
+    expect(screen.getByText('Solo').closest('[draggable="true"]')).not.toBeNull();
+  });
+
+  it('teams.delete alone offers Delete team but not Edit team, and no drag', async () => {
+    render(<TeamTree teams={solo} query="" canEdit={false} canDelete onEdit={vi.fn()} onDelete={vi.fn()} />);
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions' }), { button: 0, ctrlKey: false });
+    expect(await screen.findByRole('menuitem', { name: 'Delete team' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Edit team' })).not.toBeInTheDocument();
+    expect(screen.getByText('Solo').closest('[draggable]')).toBeNull();
+  });
+});
+
+describe('TeamTree drag gate (TEAMS-PERM review)', () => {
+  // The Members link is natively draggable, and its dragstart bubbles to the row.
+  function dragSoloMembersOntoGrandparent() {
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn() };
+    const soloMembers = screen.getAllByRole('link', { name: 'Members' })[3];
+    const target = screen.getByText('Grandparent').closest('.group') as HTMLElement;
+    fireEvent.dragStart(soloMembers, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+  }
+
+  it('teams.edit: dragging a row onto another team re-parents it (control)', async () => {
+    render(<TeamTree teams={teams} query="" canEdit canDelete onEdit={vi.fn()} onDelete={vi.fn()} />);
+    dragSoloMembersOntoGrandparent();
+    await waitFor(() => expect(updateTeam).toHaveBeenCalledWith('root2', { parent_team_id: 'gp' }));
+  });
+
+  it('a view-only caller dragging the Members link onto another team re-parents nothing', async () => {
+    render(<TeamTree teams={teams} query="" canEdit={false} canDelete={false} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    dragSoloMembersOntoGrandparent();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(updateTeam).not.toHaveBeenCalled();
   });
 });
 

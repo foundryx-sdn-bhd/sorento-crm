@@ -1215,6 +1215,17 @@ describe('confirmLinesFor reads the engine’s numbers', () => {
     expect(lines[0].buy_qty).toBe('30');
   });
 
+  // PR 1622 (owner Q1): the planner's own note rides the confirm body as `cs_note`, on an
+  // approval and on an amendment alike; nothing else turns into one.
+  it('posts the cs_note an approved line carries, and only that', () => {
+    const lines = confirmLinesFor([base], 'so-a', {
+      [base.key]: { verdict: 'approved', reason: 'seeded text', cs_note: ' Customer agreed ' },
+    });
+    expect(lines[0].cs_note).toBe('Customer agreed');
+    const none = confirmLinesFor([base], 'so-a', { [base.key]: { verdict: 'approved', reason: 'seeded text' } });
+    expect(none[0].cs_note).toBeUndefined();
+  });
+
   it('posts the DOCUMENT a step-3 borrow names, on an approved line', () => {
     // The approval path never goes through the editor: it maps the source strip straight
     // into the confirm body. Dropping the address here turned a document borrow into a
@@ -2816,6 +2827,25 @@ describe('#1362 (owner, 29 Sep 2026): confirmNoticeLines', () => {
       'Line 2912, B2154-NL: Buy 100 confirmed as decided; 100 landed for this line on SPO-2026/06-0131 stay linked to it, for purchasing to adjust',
     ]);
     expect(confirmNoticeLines({})).toEqual([]);
+  });
+
+  it('OI-CLOSED-LINE (owner, 12 Oct 2026): names a Reserve confirmed short of free stock', async () => {
+    const { confirmNoticeLines } = await import('./fulfilmentBoard');
+    expect(
+      confirmNoticeLines({
+        stock_short_notices: [
+          {
+            line_no: 10,
+            so_line_no: 144,
+            item_code: 'ZZT-ITEM',
+            reason:
+              'Reserve 10 at BRW confirmed as decided; only 5 free at BRW when confirmed, 5 short',
+          },
+        ],
+      }),
+    ).toEqual([
+      'Line 144, ZZT-ITEM: Reserve 10 at BRW confirmed as decided; only 5 free at BRW when confirmed, 5 short',
+    ]);
   });
 });
 

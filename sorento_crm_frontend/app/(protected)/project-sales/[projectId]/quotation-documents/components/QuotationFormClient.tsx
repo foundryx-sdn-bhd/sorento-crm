@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, ListOrdered, Mail, Plus, ScrollText, Trash2 } from 'lucide-react';
+import { FileText, ListOrdered, Mail, Pencil, Plus, ScrollText, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,7 +12,6 @@ import { useHasPermission } from '@/hooks/usePermissions';
 import { projectCrumbs } from '../../../_shared/lib/crumbs';
 import {
   useProject,
-  useProjectSeries,
   useQuotations,
   useQuotationVersions,
 } from '../../../_shared/hooks/useProjects';
@@ -168,7 +167,6 @@ export function QuotationFormClient({
   const project = useProject(projectId);
   const saved = useQuotationDocument(projectId, documentId);
   const quotations = useQuotations(isEdit ? projectId : undefined);
-  const series = useProjectSeries();
   const mutations = useQuotationDocumentMutations(projectId, documentId);
   // The company's letter and terms, for the create form's own tabs. Edit reads the saved text.
   const letterTemplates = useQuotationLetterTemplates(projectId, !isEdit);
@@ -219,14 +217,17 @@ export function QuotationFormClient({
   React.useEffect(() => {
     if (header !== null) return;
     if (!isEdit && project.data) {
+      // Name, Phone and Attn come from the project's customer master data (owner, 13 Oct);
+      // with no customer known yet the letter still goes to the developer.
       setHeader({
         your_ref: '',
         doc_date: todayIso(),
-        attn_name: '',
+        attn_name: project.data.customer_attn ?? '',
         subject_title: project.data.title ?? '',
-        recipient_name_snapshot: project.data.developer_name ?? '',
+        recipient_name_snapshot:
+          project.data.customer_name ?? project.data.developer_name ?? '',
         recipient_address_snapshot: '',
-        recipient_phone_snapshot: '',
+        recipient_phone_snapshot: project.data.customer_phone ?? '',
       });
       setScopes([newScope()]);
     }
@@ -434,7 +435,7 @@ export function QuotationFormClient({
     <div className="space-y-6">
       <PageHeader
         title={title}
-        crumbs={projectCrumbs(projectId, { title })}
+        crumbs={projectCrumbs(projectId, { tab: 'quotations' }, { title })}
         actions={
           <>
             <Button
@@ -510,9 +511,6 @@ export function QuotationFormClient({
                 scopes={scopes ?? []}
                 savedScopes={savedScopes ?? []}
                 quotations={quotations.data ?? []}
-                seriesNames={
-                  new Map((series.data ?? []).map((row) => [row.id, row.name] as const))
-                }
                 activeKey={activeKey}
                 onSelect={setActiveKey}
                 scopeTotal={scopeTotal}
@@ -566,7 +564,8 @@ export function QuotationFormClient({
                     {
                       ...(savedRow ?? {}),
                       id: scope.id ?? '',
-                      scope_label: scope.scope_label,
+                      // The name the tab shows, so an unnamed scope opens as "Scope 2", not blank.
+                      scope_label: scopeTitle(scope, (scopes ?? []).indexOf(scope)),
                       series_id: scope.series_id || null,
                       notes: scope.notes !== undefined ? scope.notes : (savedRow?.notes ?? null),
                     } as ProjectQuotation
@@ -669,7 +668,7 @@ function placeholderDocument(projectId: string): QuotationDocument {
 /**
  * The Lines tab of the form: the quotation page's Lines tab from origin/main, moved here (#1341,
  * round 3). The same scope strip (`QuotationScopeTabs`, with Add a scope at its end), the same
- * scope card (name, outcome, series, Edit scope), and under it the same `QuotationVersionEditor`
+ * scope card (name with its Edit scope pen, outcome), and under it the same `QuotationVersionEditor`
  * in its staged edit mode, bound to the same `useQuotationEditSession` handlers the quotation
  * page's Edit used. Only one scope's editor is mounted at a time, exactly as there; the staged
  * lines live in the session, so switching scope or tab loses nothing.
@@ -679,7 +678,6 @@ function FormLines({
   scopes,
   savedScopes,
   quotations,
-  seriesNames,
   activeKey,
   onSelect,
   scopeTotal,
@@ -693,7 +691,6 @@ function FormLines({
   scopes: FormScope[];
   savedScopes: QuotationScope[];
   quotations: ProjectQuotation[];
-  seriesNames: Map<string, string>;
   activeKey: string | null;
   onSelect: (key: string) => void;
   scopeTotal: (scope: FormScope) => string;
@@ -755,7 +752,6 @@ function FormLines({
       scope_total: scopeTotal(scope),
     };
   });
-  const seriesName = active.series_id ? seriesNames.get(active.series_id) : null;
 
   return (
     <div className="space-y-5">
@@ -765,34 +761,51 @@ function FormLines({
         onSelect={onSelect}
         canEdit={project.can_edit}
         onAddScope={onAddScope}
+        onRename={onEditScope}
+        onRemove={(key) => {
+          const scope = scopes.find((row) => row.key === key);
+          if (scope) onRemove(scope);
+        }}
+        // The button's own rule for the open scope; another tab becomes the open one on the
+        // right-click, so a saved scope is only offered once its versions are known.
+        canRemove={(key) =>
+          key === active.key ? canRemove : !scopes.find((row) => row.key === key)?.id
+        }
       />
 
       <section aria-label={scopeTitle(active, scopes.indexOf(active))}>
         <Card>
           <CardHeader className="flex flex-col items-start gap-3 border-b border-border sm:flex-row sm:items-center sm:justify-between">
+            {/* Owner, 13 Oct: the pen beside the name opens the Edit scope popup (name and
+                series); the series itself is not shown out here. */}
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <CardTitle className="min-w-0 break-words text-sm">
                 {scopeTitle(active, scopes.indexOf(active))}
               </CardTitle>
-              {savedRow && <OutcomePill outcome={savedRow.outcome} />}
-              <span className="text-xs text-muted-foreground">{seriesName || 'No series'}</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 size="sm"
-                variant="outline"
+                variant="ghost"
+                mode="icon"
+                aria-label="Edit scope"
+                title="Edit scope"
                 onClick={() => onEditScope(active.key)}
               >
-                Edit scope
+                <Pencil className="size-4" aria-hidden />
               </Button>
-              {canRemove && (
-                <Button type="button" size="sm" variant="outline" onClick={() => onRemove(active)}>
-                  <Trash2 className="size-4" aria-hidden />
-                  Remove scope
-                </Button>
-              )}
+              {savedRow && <OutcomePill outcome={savedRow.outcome} />}
             </div>
+            {canRemove && (
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                onClick={() => onRemove(active)}
+              >
+                <Trash2 className="size-4" aria-hidden />
+                Remove scope
+              </Button>
+            )}
           </CardHeader>
           {/* min-w-0 is load-bearing: CardContent is a flex item, and without it the line table
               stretches the Card and the whole PAGE scrolls sideways at phone width. */}

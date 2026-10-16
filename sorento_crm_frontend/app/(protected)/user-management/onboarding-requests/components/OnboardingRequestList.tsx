@@ -155,15 +155,25 @@ export function OnboardingRequestList() {
         size: 180,
         enableSorting: false,
         meta: { headerTitle: 'From', skeleton: <Skeleton className="h-4 w-24" /> },
+        // One value per cell, one line per row (owner 14 Oct 2026): the email is
+        // its own column, not a second line under the name.
         cell: ({ row }) => (
-          <div className="min-w-0">
-            <p className="truncate" title={row.original.requester_name}>
-              {row.original.requester_name}
-            </p>
-            <p className="text-xs text-muted-foreground truncate" title={row.original.requester_email}>
-              {row.original.requester_email}
-            </p>
-          </div>
+          <span className="truncate block" title={row.original.requester_name}>
+            {row.original.requester_name}
+          </span>
+        ),
+      },
+      {
+        id: 'requester_email',
+        accessorFn: (row) => row.requester_email,
+        header: ({ column }) => <DataGridColumnHeader title="Email" column={column} />,
+        size: 200,
+        enableSorting: false,
+        meta: { headerTitle: 'Email', skeleton: <Skeleton className="h-4 w-32" /> },
+        cell: ({ row }) => (
+          <span className="truncate block" title={row.original.requester_email}>
+            {row.original.requester_email}
+          </span>
         ),
       },
       {

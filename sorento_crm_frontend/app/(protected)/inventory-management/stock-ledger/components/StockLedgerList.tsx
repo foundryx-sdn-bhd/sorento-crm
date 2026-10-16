@@ -30,6 +30,7 @@ import {
   stockLedgerTypeLabel,
   type StockLedgerEntry,
 } from '../types/stockLedger.types';
+import { distinctName } from '@/lib/product-display';
 
 export default function StockLedgerList() {
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
@@ -61,7 +62,9 @@ export default function StockLedgerList() {
         cell: ({ row }) => (
           <div className="flex flex-col">
             <span className="font-medium">{row.original.product?.product_code || row.original.product_id}</span>
-            <span className="text-muted-foreground text-xs">{row.original.product?.product_name || '-'}</span>
+            {distinctName(row.original.product?.product_code, row.original.product?.product_name) ? (
+              <span className="text-muted-foreground text-xs">{row.original.product?.product_name}</span>
+            ) : null}
           </div>
         ),
         size: 220,

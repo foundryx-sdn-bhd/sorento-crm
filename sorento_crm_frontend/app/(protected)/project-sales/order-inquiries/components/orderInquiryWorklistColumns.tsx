@@ -19,6 +19,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import {
   ackStateOf,
   bundledHostChangeLines,
@@ -45,6 +46,7 @@ import type {
 import { OrderInquiryBackingDocumentsDialog } from './OrderInquiryBackingDocumentsDialog';
 import { OrderInquiryDocumentLink } from './OrderInquiryDocumentDialog';
 import { OrderInquiryQtyAnnotationDialog } from './OrderInquiryQtyAnnotationDialog';
+import { sameDisplayText } from '@/lib/product-display';
 
 function Muted({ children }: { children: React.ReactNode }) {
   return <span className="text-muted-foreground">{children}</span>;
@@ -738,7 +740,7 @@ export function ItemCodeCell({
           was {row.previous_item_code}
         </span>
       )}
-      {!codeOnly && row.product_name && row.product_name !== row.item_code && (
+      {!codeOnly && row.product_name && !sameDisplayText(row.product_name, row.item_code) && (
         <span className="block truncate text-xs text-muted-foreground" title={row.product_name}>
           {row.product_name}
         </span>
@@ -1019,13 +1021,12 @@ export function useOrderInquiryWorklistColumns({
         cell: ({ row }) => {
           const label = orderInquirySoLineLabel(row.original);
           const href = orderInquirySoLineHref(row.original) ?? orderInquiryRowHref(row.original);
-          if (!href)
-            return (
-              <span className="block truncate" title={label}>
-                {label}
-              </span>
-            );
-          return (
+          // AC-CONSIGN-CRM: a consignment reads as one beside its number.
+          const text = !href ? (
+            <span className="block truncate" title={label}>
+              {label}
+            </span>
+          ) : (
             <Link
               href={href}
               className="block truncate font-medium text-primary hover:underline"
@@ -1033,6 +1034,12 @@ export function useOrderInquiryWorklistColumns({
             >
               {label}
             </Link>
+          );
+          return (
+            <div className="flex min-w-0 flex-col gap-0.5">
+              {text}
+              <ConsignmentBadge docType={row.original.so_doc_type} size="xs" />
+            </div>
           );
         },
       },

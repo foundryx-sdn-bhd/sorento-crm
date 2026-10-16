@@ -89,10 +89,17 @@ ALLOWED: dict[str, list[str]] = {
     # against the live `brands` table (`turn_runtime.active_brands`,
     # `resolve_gate.py`'s own pre-resolver intercept), never sent through the
     # shared resolver's order-domain fan-out to customer/transporter.
-    "order": ["order", "customer_order", "transporter", "customer", "product", "warehouse", "brand"],
+    "order": [
+        "order", "customer_order", "transporter", "customer", "product", "warehouse", "brand",
+        # REF-PROBES: a typed reference number the resolver placed as another kind.
+        "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
+    ],
     # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain gates exactly as its asks did
     # under `order`.
-    "sales": ["order", "customer_order", "transporter", "customer", "product", "warehouse", "brand"],
+    "sales": [
+        "order", "customer_order", "transporter", "customer", "product", "warehouse", "brand",
+        "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
+    ],
     "incoming": ["product", "inbound_shipment", "category", "brand"],
     "forms": ["form"],
     "portal_link": [],
@@ -127,7 +134,10 @@ ALLOWED: dict[str, list[str]] = {
     # the PO tool takes `warehouse_ids`; a customer or transporter token no longer rides into
     # it. Supersedes PLAN-chatbot-warehouse-entity-and-last-in line 47 ("purchase_order
     # stays as is"). `ALLOWS_EMPTY` below keeps a bare "PO" listing the open book.
-    "purchase_order": ["product", "warehouse", "category", "brand"],
+    "purchase_order": [
+        "product", "warehouse", "category", "brand",
+        "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
+    ],
 }
 
 #: PLAN-low-stock-report S6 (owner ruling, console round 2, 14 Sep 2026): INTENTS that
@@ -438,6 +448,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
     gate_passed = True
     gate_reason = "ok"
     gate_clarification = ""
+    customer_picker = False
     compatible_entities: list[dict[str, Any]] = entities
     # D10 (owner console pass, 8 Sep 2026, turn 69d9900e "srtwc8610-sh hav incoming?"):
     # per token, the incompatible types it ONLY matched - never populated for a token that
@@ -1153,9 +1164,11 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 f"'{domain}' customer token matches {len(bases)} different companies; "
                 "user must pick"
             )
-            gate_clarification = "Which customer do you mean? Please choose:\n" + "\n".join(
-                f"{i + 1}. {rep_labels[i]}" for i in range(len(reps))
-            )
+            # PICKER-ONE (owner, 13 Oct 2026): no picker TEXT here. The customer reads the
+            # one customer picker every roster prints (`answer_bridge._offer_answer` ->
+            # `narrow.customer_options` -> `compose_question`), built from the rows below;
+            # this arm's own "Which customer do you mean? Please choose:" was a second one.
+            customer_picker = True
             # The roster must be the SAME rows in the SAME order as the numbered lines or
             # the positional pick misresolves. `title` is what compile-current-state
             # labels the row with, so a reply by name resolves as well as one by number -
@@ -1367,6 +1380,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
             and len(entities) == 0
             and len(compatible_entities) > 0
             and not jsc.truthy(gate_clarification)
+            and not customer_picker
         ):
             gate_passed = True
             gate_reason = (
@@ -1576,13 +1590,18 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
         if len(df_lost) > 0:
             out["dropped_filter_tokens"] = df_lost
             # R3: when a picker is ALREADY being shown, the miss rides in the SAME message.
-            if jsc.truthy(gate_clarification):
+            if jsc.truthy(gate_clarification) or customer_picker:
                 df_lines = []
                 for t in df_lost:
                     h = _df_hint_of(t)
                     df_lines.append(f'"{jsc.js_string(_df_raw_of(t))}"' + (f" ({h.replace('_', ' ')})" if h else ""))
-                gate_clarification = f"Couldn't find: {', '.join(df_lines)}.\n\n{gate_clarification}"
-                out["gate_clarification"] = gate_clarification
+                dropped_line = f"Couldn't find: {', '.join(df_lines)}."
+                # PICKER-ONE: as data, for the customer picker the bridge composes
+                # through `compose_question` (it has no text of its own here).
+                out["dropped_filter_line"] = dropped_line
+                if jsc.truthy(gate_clarification):
+                    gate_clarification = f"{dropped_line}\n\n{gate_clarification}"
+                    out["gate_clarification"] = gate_clarification
 
     if cust_pin_kept:
         out["customer_pin_kept"] = True

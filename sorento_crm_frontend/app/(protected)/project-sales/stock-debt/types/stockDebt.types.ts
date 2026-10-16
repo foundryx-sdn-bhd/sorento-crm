@@ -119,6 +119,8 @@ export interface StockDebtListResponse {
   tba_month: string;
   /** Ownership groups the flag currently admits, for the toolbar's select. */
   groups: string[];
+  /** The book's warehouses (before any Location pick), for the toolbar's Location select. */
+  locations: { id: string; code: string; name: string | null }[];
   /** The whole filtered set's totals (AC-6), for the footer row. */
   totals: StockDebtTotals;
   /** Distinct last suppliers of the filtered set, sorted by name, for the toolbar's select (AC-7). */
@@ -284,6 +286,25 @@ export interface StockDebtSupplyEvent {
   assigned_to: { so_number: string; line_no?: number | null; qty: number }[];
 }
 
+/** One location and kind of project-reserve supply in a month (`HQ reserve PO`). */
+export interface StockDebtReserveSource {
+  label: string;
+  qty: number;
+}
+
+/** STOCK-DEBT-PROJECTION (option D): how one month's projected balance is made up
+ *  (`projected = month_balance + carried_in + reserve_supply`). `month_balance` is the
+ *  project lines' own figure, pool supply counted only through a link (as Covered by);
+ *  `carried_out` is the reserve surplus the next month starts with. */
+export interface StockDebtProjection {
+  carried_in: number;
+  month_balance: number;
+  reserve_supply: number;
+  reserve_sources: StockDebtReserveSource[];
+  projected: number;
+  carried_out: number;
+}
+
 /**
  * The cell drill (R28): the two tables behind one product x month.
  *
@@ -301,6 +322,8 @@ export interface StockDebtCell {
    */
   demand_total_qty?: number;
   supply_total_qty?: number;
+  /** Set only when the drill was opened with the "Projected balance" switch on. */
+  projection?: StockDebtProjection | null;
 }
 
 /**

@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import date as DateType
 from typing import Annotated, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.export_split import ExportSplit as ExportSplit
 
@@ -123,6 +123,14 @@ class StockDebtSheetCounts(BaseModel):
     supplier_category: int
 
 
+class StockDebtLocation(BaseModel):
+    """One warehouse of the book's span, for the toolbar's Location select."""
+
+    id: str
+    code: Optional[str] = None
+    name: Optional[str] = None
+
+
 class StockDebtList(BaseModel):
     """The list envelope: the repo's `{data, pagination}` plus the column axis.
 
@@ -136,6 +144,7 @@ class StockDebtList(BaseModel):
     months: List[str]
     tba_month: str
     groups: List[str]
+    locations: List[StockDebtLocation]
     totals: StockDebtTotals
     suppliers: List[StockDebtSupplier]
     sheet_counts: StockDebtSheetCounts
@@ -288,6 +297,28 @@ class StockDebtSupplyEvent(BaseModel):
     outstanding_qty: Optional[float] = None
 
 
+class StockDebtReserveSource(BaseModel):
+    """One location and kind of project-reserve supply in a month (`HQ reserve PO`)."""
+
+    label: str
+    qty: float
+
+
+class StockDebtProjection(BaseModel):
+    """STOCK-DEBT-PROJECTION (owner, 12 Oct 2026, option D): how one month's projected
+    balance is made up. `projected = month_balance + carried_in + reserve_supply`, where
+    `month_balance` is the project lines' own figure (pool supply counts only through a
+    link, as Covered by shows) and `reserve_supply` a project reserve's unlinked incoming
+    documents; `carried_out` is the reserve surplus the next month starts with."""
+
+    carried_in: float
+    month_balance: float
+    reserve_supply: float
+    reserve_sources: List[StockDebtReserveSource] = []
+    projected: float
+    carried_out: float
+
+
 class StockDebtCell(BaseModel):
     """The two tables behind one cell. `sum(supply.free_qty) - sum(demand.short_qty)` is the
     balance the cell that opened them prints (R37)."""
@@ -299,12 +330,44 @@ class StockDebtCell(BaseModel):
     #: (Outstanding for an SPO, the on-hand figure otherwise), never recomputed by the FE.
     demand_total_qty: float
     supply_total_qty: float
+    #: Set only when the drill was opened with `projected=true` on a month column.
+    projection: Optional[StockDebtProjection] = None
 
 
-class StockDebtExportIn(BaseModel):
-    """The export route's body (AC-12): every list filter except `page`/`limit`, plus the
-    workbook `split`. Every field optional/defaulted so `{"split": "none"}` alone is a
-    valid request - the same shape `list_stock_debt`'s own query params default to.
+class StockDebtFilters(BaseModel):
+    """Every list filter except `page`/`limit`: the board's own current filters. The export
+    body adds `split` to it; a snapshot stores it as taken. Every field
+    optional/defaulted, the same shape `list_stock_debt`'s own query params default to."""
+
+    query: Optional[str] = None
+    group: Optional[str] = None
+    location: List[str] = []
+    exclude_location: List[str] = []
+    only_debt: bool = True
+    date_from: Optional[DateType] = None
+    date_to: Optional[DateType] = None
+    supplier_ids: List[str] = []
+    book: Book = "all"
+    #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
+    projected: bool = False
+    #: The workbook's auxiliary columns (the board's "Show more" toggle). Not a filter, but
+    #: a snapshot keeps it so its page shows the columns the board was showing.
+    show_aux: bool = False
+
+    @field_validator("location", "exclude_location", mode="before")
+    @classmethod
+    def _location_as_list(cls, value):
+        """A bare string wraps and None is empty."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        return value
+
+
+class StockDebtExportIn(StockDebtFilters):
+    """The export route's body (AC-12): the list filters plus the workbook `split`, so
+    `{"split": "none"}` alone is a valid request.
 
     `date_from`/`date_to` replace `cutoff` and `supplier_ids` replaces `supplier_id`
     (R14/R15): both are REMOVED, not aliased - a caller still sending the old names sends
@@ -313,12 +376,4 @@ class StockDebtExportIn(BaseModel):
     by that ruling and stays for parity with `list()`'s own signature).
     """
 
-    query: Optional[str] = None
-    group: Optional[str] = None
-    only_debt: bool = True
-    date_from: Optional[DateType] = None
-    date_to: Optional[DateType] = None
-    supplier_ids: List[str] = []
-    book: Book = "all"
     split: ExportSplit = "none"
-    show_aux: bool = False

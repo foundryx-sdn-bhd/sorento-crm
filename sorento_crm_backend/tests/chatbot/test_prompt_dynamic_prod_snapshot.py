@@ -18,9 +18,14 @@ from sqlalchemy import text
 import app.main  # noqa: F401  isort:skip
 from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.services import ai_prompt_registry, chatbot_prompt_vars as pv
+from app.services.chatbot.turn.policy_rows import REFERENCE_KIND_ROWS
 from tests._pg_fixture import pg_session
 
 KEY = "chatbot_semantic_parser"
+#: The five REF-PROBES kinds (#1569, rows seeded by `rkind_0003_reference_kind_rows`, 12 Oct
+#: 2026). The 1 Oct file's entity-kind block predates them, so tables shaped like the file
+#: hold none of them.
+REFERENCE_KINDS = [row["kind"] for row in REFERENCE_KIND_ROWS]
 BACKEND = pathlib.Path(__file__).resolve().parents[2]
 VERSIONS = BACKEND / "alembic" / "versions"
 SNAPSHOT = BACKEND / "alembic" / "data" / "chatbot_semantic_parser.prod-20261001.txt"
@@ -98,10 +103,13 @@ def _row(db, version: int) -> AIPromptVersion:
 
 
 def _seed_registries_to_the_file(db) -> None:
-    """Tables shaped like the owner's text: the policy block's 14 domains (no `sales`, and
-    master_products narrowing product list_all), only the two order statuses, the five
-    agents and the seven access levels."""
-    db.execute(text("DELETE FROM chatbot_domains WHERE name = 'sales'"))
+    """Tables shaped like the owner's text: the policy block's 14 domains (no `sales` and no
+    `chat_analytics` (CA-3, 10 Oct 2026: a domain the 1 Oct file cannot carry), and
+    master_products narrowing product list_all), the entity kinds without the five
+    REF-PROBES reference kinds (same reason), only the two order statuses, the five agents
+    and the seven access levels."""
+    db.execute(text("DELETE FROM chatbot_domains WHERE name IN ('sales', 'chat_analytics')"))
+    db.execute(text("DELETE FROM chatbot_entity_kinds WHERE kind = ANY(:k)"), {"k": REFERENCE_KINDS})
     db.execute(
         text("UPDATE chatbot_domains SET narrowing = '{\"product\": \"list_all\"}'::jsonb WHERE name = 'master_products'")
     )
@@ -251,3 +259,7 @@ def test_no_production_label_writes_nothing():
         count = db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY).count()
         assert mod.apply(db.connection()) is None
         assert db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY).count() == count
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

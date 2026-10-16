@@ -205,3 +205,7 @@ class TestMigrationPublishesFirstRearchVersionUnlabelled:
                 "production still points at (the bootstrap v1) must not be the new "
                 "rendered-blocks version S4 published unlabelled"
             )
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

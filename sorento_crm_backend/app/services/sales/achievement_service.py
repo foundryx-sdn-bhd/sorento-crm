@@ -79,7 +79,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Session
 
-from app.models.order import Order, OrderLine, SalesOrder, SalesOrderLine
+from app.models.order import DOC_TYPE_CONSIGNMENT, Order, OrderLine, SalesOrder, SalesOrderLine
 from app.models.product import Product, ProductCategory
 from app.models.sales import SalesTargetScope, SalesTeamMember
 from app.models.sales_agent import SalesAgent
@@ -311,8 +311,12 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
             select(
                 SOL.id.label("sol_id"),
                 SOL.product_id.label("product_id"),
-                case((mine, SOL.qty_ordered), else_=0).label("qty_ordered"),
-                case((mine, SOL.qty_delivered), else_=0).label("qty_delivered"),
+                # AC-CANCEL-CRM: an AutoCount Cancel SO is neither sold nor delivered, though
+                # TransferedQty (`qty_delivered`) counts it; both leave it out.
+                case((mine, SOL.qty_ordered - func.coalesce(SOL.qty_cancelled, 0)),
+                     else_=0).label("qty_ordered"),
+                case((mine, func.greatest(SOL.qty_delivered - func.coalesce(SOL.qty_cancelled, 0),
+                                          0)), else_=0).label("qty_delivered"),
                 case((mine, SOL.line_total), else_=0).label("line_total"),
                 mine.label("mine"),
                 SO.order_date.label("order_date"),
@@ -325,6 +329,8 @@ def achieved_by_period(db: Session, specs: List[PeriodSpec], company_id: str) ->
                 SO.sales_agent_id.in_(agent_ids),
                 SO.status != "cancelled",
                 SOL.line_status != "cancelled",
+                # AC-CONSIGN-CRM Q5 a: a consignment is not a sale.
+                SO.doc_type != DOC_TYPE_CONSIGNMENT,
                 SO.order_date.isnot(None),
             )
         )
@@ -592,6 +598,7 @@ def unassigned_amount(db: Session, on: date, company_id: str) -> Decimal:
             SalesOrder.sales_agent_id.is_(None),
             SalesOrder.status != "cancelled",
             SalesOrderLine.line_status != "cancelled",
+            SalesOrder.doc_type != DOC_TYPE_CONSIGNMENT,
             SalesOrder.order_date >= month_start,
             SalesOrder.order_date < next_month,
         )

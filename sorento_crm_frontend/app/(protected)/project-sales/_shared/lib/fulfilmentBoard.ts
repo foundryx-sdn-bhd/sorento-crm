@@ -32,6 +32,7 @@ import type {
   ConfirmReserveComponent,
 } from '../types/fulfilmentPlanning.types';
 import {
+  awaitsCancelSo,
   borrowPassThrough,
   borrowReasonKeyOf,
   confirmLineFrom,
@@ -340,7 +341,7 @@ function pressRoleFor(
   // SO-CANCEL-LINE: a saved Transfer to Cancel SO rides its own body channel
   // (`cancelled_lines`), never `lines`, so the composition recheck never sees it.
   if (decision?.verdict === 'cancelled') {
-    if (!contribution.cancelled) {
+    if (!contribution.cancelled || awaitsCancelSo(contribution)) {
       if ((contribution.covered && contribution.decision) || !contribution.project_line_id) {
         return { kind: 'skip' };
       }
@@ -627,6 +628,7 @@ function lineFor(
     borrow: borrowComponents(contribution, decision?.borrow ?? []),
     buy_qty: fromMinor(buy),
     buy_reason: buyReason,
+    cs_note: decision?.cs_note?.trim() || undefined,
     // Present only on the legacy single-number amendment, which is still an override.
     amend_reason: decision?.verdict === 'amended' ? decision.reason : undefined,
     // An approved or untouched line can still carry the flag (R10).
@@ -883,6 +885,21 @@ export function confirmSummaryFor(
     // it, and Confirm retires it. Nobody saves a decision for it, so the untouched-line skip
     // below would drop it from the count and the press would silently do one thing more than
     // it said - which is the one thing the counter exists to stop.
+    // CANCEL-STOP-AT-SO: a saved Transfer to Cancel SO on a line AutoCount cancelled is
+    // what this press confirms, posted in `cancelled_lines` like any other transfer.
+    if (awaitsCancelSo(contribution)) {
+      if (
+        pressRoleFor(
+          contribution,
+          draft[contribution.key],
+          batchBlockedSalesOrderIds.has(contribution.sales_order_id),
+          options?.batchNamedKeys,
+        ).kind === 'cancel_so'
+      ) {
+        orderIds.add(contribution.sales_order_id);
+      }
+      continue;
+    }
     if (contribution.cancelled && contribution.cancelled_at) continue;
     if (contribution.cancelled) {
       orderIds.add(contribution.sales_order_id);
@@ -1625,10 +1642,18 @@ export function confirmNoticeLines(result: {
     item_code?: string | null;
     reason: string;
   }> | null;
+  /** OI-CLOSED-LINE (owner, 12 Oct 2026): a Reserve or Borrow confirmed short of stock. */
+  stock_short_notices?: Array<{
+    so_line_no?: number | null;
+    line_no?: number | null;
+    item_code?: string | null;
+    reason: string;
+  }> | null;
 }): string[] {
   const held = (result.lines_held_back ?? []).map((line) =>
     failingLineText({ ...line, reason: `held back, decision kept: ${line.reason}` }),
   );
   const landed = (result.landed_buy_notices ?? []).map((line) => failingLineText(line));
-  return [...held, ...landed];
+  const short = (result.stock_short_notices ?? []).map((line) => failingLineText(line));
+  return [...held, ...landed, ...short];
 }

@@ -1,13 +1,21 @@
 'use client';
 
 import * as React from 'react';
-import { Check, CheckCircle2, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
+import {
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Pencil,
+  Plus,
+  ShoppingCart,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -111,7 +119,7 @@ function seedReason(
  *
  * NO BALANCE EQUATION (R9). The line "24 outstanding = 0 incoming + 9 reserve + ..." restated
  * four inputs the planner had just typed. What they cannot see is whether it ADDS UP, so that
- * is all that is said, as "4 short" or "4 over", and only while it does not.
+ * is all that is said, as "Unassigned 4" or "Over by 4", and only while it does not.
  */
 export function BoardLineDecisionPanel({
   contribution,
@@ -153,6 +161,10 @@ export function BoardLineDecisionPanel({
   const [reason, setReason] = React.useState(
     () => seedReason(decision) || seedReason(contribution.decision) || '',
   );
+  // What the box was SEEDED with (PR 1622 review B1). The seed can be the engine's own borrow
+  // sentence, so only text the planner actually changed - or this line's own earlier Buy
+  // reason - is a reason CS gave for the Buy, the one purchasing reads on its new row.
+  const reasonSeed = React.useRef(reason);
   // The draft's own answer, false included: an untick is a decision, and reading past it to
   // the frozen `true` on a covered line put the tick straight back on screen.
   const [suspected, setSuspected] = React.useState(() =>
@@ -268,18 +280,38 @@ export function BoardLineDecisionPanel({
         .filter((id): id is string => Boolean(id)),
     [draft.reserve],
   );
+  // OI-CLOSED-LINE (owner, 12 Oct 2026): a line with goods already delivered may name the
+  // location they went out from even when it shows nothing free now.
+  const anyDelivered = toMinor(contribution.qty_delivered ?? '0') > 0;
   const reserveCandidates = React.useMemo(
     () =>
       locations.filter(
         (location) =>
           Boolean(location.warehouse_id) &&
           !reserveWarehouseIds.includes(location.warehouse_id as string) &&
-          toMinor(location.qty_free_remaining ?? location.qty_free ?? '0') > 0,
+          (anyDelivered ||
+            toMinor(location.qty_free_remaining ?? location.qty_free ?? '0') > 0),
       ),
-    [locations, reserveWarehouseIds],
+    [locations, reserveWarehouseIds, anyDelivered],
   );
 
   const balance = lineBalance(draft);
+  // OI-CLOSED-LINE: the delivered part of the line, credited front-first across the Reserve
+  // rows the way Confirm credits it (`delivered_credits`): after the Buy and incoming take
+  // their share, what the customer already received needs no free stock.
+  const reserveCredits = React.useMemo(() => {
+    let left = Math.max(
+      Math.min(toMinor(contribution.qty_delivered ?? '0'), toMinor(draft.open_qty)) -
+        toMinor(draft.buy_qty) -
+        toMinor(draft.timely_spo_qty),
+      0,
+    );
+    return draft.reserve.map((row) => {
+      const credit = Math.min(left, Math.max(toMinor(row.qty), 0));
+      left -= credit;
+      return credit;
+    });
+  }, [contribution.qty_delivered, draft]);
   /**
    * D5: the board CAN check the pool-share carve-out (R-C), because its own cell states each
    * pool's allowance and the pools' net. Without them this panel refused "BRW 62 + Buy 73" -
@@ -362,10 +394,18 @@ export function BoardLineDecisionPanel({
   const [buying, setBuyingState] = React.useState(
     () => toMinor(draft.buy_qty) > 0 && fromStockMinor === 0,
   );
+  /**
+   * BUY-FIRST-PANEL (owner, 14 Oct 2026): "I want to key in the BUY quantity first". Buy
+   * follows the remainder (D7) until the planner types it; from then on it is PINNED and no
+   * stock-side edit changes it - the hint says what is left instead ("Unassigned N" /
+   * "Over by N"), and the existing sum blocker keeps Save locked until it is 0. Cleared by the
+   * whole-line switch going OFF and by a re-seed from the decision.
+   */
+  const [buyPinned, setBuyPinned] = React.useState(false);
 
   /**
    * Everything that stops the Save EXCEPT the balance, which the hint beside the summary
-   * already states in two words. Printing both would say the same refusal twice.
+   * already states in a few words. Printing both would say the same refusal twice.
    */
   const otherBlockers = balance.balanced
     ? blockers
@@ -377,7 +417,8 @@ export function BoardLineDecisionPanel({
   };
 
   /**
-   * D7 (captain, 3 Sep): Buy is never typed on this panel, it FOLLOWS the remainder.
+   * D7 (captain, 3 Sep): Buy FOLLOWS the remainder until it is typed (BUY-FIRST-PANEL pins it,
+   * `buyPinned` above; a pinned Buy is never overwritten here).
    *
    * "BRW 62 · Buy 73" on SO419208 line 3 (open 135) used to leave `buy_qty` frozen at 73 the
    * instant the BRW reserve was edited down to 60 - the line read short by 2 and Save stayed
@@ -392,11 +433,34 @@ export function BoardLineDecisionPanel({
    * rows are already at zero, and deriving off zero rows hands the whole line straight back
    * to Buy, so the switch could never actually be turned off.
    */
-  const editComposition = (next: DraftLine) => {
+  const editComposition = (next: DraftLine, pinned: boolean = buyPinned) => {
+    if (pinned) {
+      edit(next);
+      return;
+    }
     const stockOnly = lineBalance({ ...next, buy_qty: '0' });
     edit({
       ...next,
       buy_qty: fromMinor(Math.max(stockOnly.openMinor - stockOnly.totalMinor, 0)),
+    });
+  };
+  /** The planner's own Buy: pinned from the first keystroke. */
+  const typeBuy = (value: string) => {
+    setBuyPinned(true);
+    edit({ ...draft, buy_qty: value });
+  };
+  /** What the parts leave uncovered, in minor units; 0 when they add up or run over. */
+  const unassignedMinor = Math.max(-balance.differenceMinor, 0);
+  const restToBuy = () => {
+    setBuyPinned(true);
+    edit({ ...draft, buy_qty: fromMinor(toMinor(draft.buy_qty) + unassignedMinor) });
+  };
+  const restToReserve = () => {
+    const [first, ...others] = draft.reserve;
+    if (!first) return;
+    editComposition({
+      ...draft,
+      reserve: [{ ...first, qty: fromMinor(toMinor(first.qty) + unassignedMinor) }, ...others],
     });
   };
   const setBorrow = (borrow: DraftBorrow[]) => editComposition({ ...draft, borrow });
@@ -438,12 +502,16 @@ export function BoardLineDecisionPanel({
    * there: the quantities, the donors and their reasons. The rows alone are not enough - a
    * planner who typed a 9, a 15 and two sentences and then tried the Buy switch got a form of
    * zeroes back, which is a composition they never wrote and the worst possible answer to
-   * "what happens if I press this".
+   * "what happens if I press this". A TYPED Buy comes back too, still pinned (crew ruling (a),
+   * BUY-FIRST-PANEL, 14 Oct 2026): the switch is a detour, and a typed number is never
+   * silently changed.
    */
-  const stockBefore = React.useRef<Pick<
-    DraftLine,
-    'reserve' | 'borrow' | 'timely_spo_qty'
-  > | null>(null);
+  const stockBefore = React.useRef<
+    | (Pick<DraftLine, 'reserve' | 'borrow' | 'timely_spo_qty' | 'buy_qty'> & {
+        buyPinned: boolean;
+      })
+    | null
+  >(null);
   const setBuying = (next: boolean) => {
     setBuyingState(next);
     if (next) {
@@ -451,7 +519,11 @@ export function BoardLineDecisionPanel({
         reserve: draft.reserve,
         borrow: draft.borrow,
         timely_spo_qty: draft.timely_spo_qty,
+        buy_qty: draft.buy_qty,
+        buyPinned,
       };
+      // ON is a Buy the planner chose: the whole line, pinned.
+      setBuyPinned(true);
       edit({
         ...draft,
         timely_spo_qty: '0',
@@ -465,12 +537,19 @@ export function BoardLineDecisionPanel({
     const held = stockBefore.current;
     stockBefore.current = null;
     if (held) {
+      const { buy_qty: heldBuy, buyPinned: heldPinned, ...stock } = held;
+      setBuyPinned(heldPinned);
+      if (heldPinned) {
+        edit({ ...draft, ...stock, buy_qty: heldBuy });
+        return;
+      }
       // D7: the remainder of whatever gets restored, not the flat 0 this used to force - that
       // used to drop the BRW-62/Buy-73 shape's own Buy to nothing the moment the switch was
       // tried and put back, when nothing about the stock side had actually changed.
-      editComposition({ ...draft, ...held });
+      editComposition({ ...draft, ...stock }, false);
       return;
     }
+    setBuyPinned(false);
     // Nothing was captured: the switch was never turned ON in this session, so the line opened
     // already wholly bought and its stock rows are already at zero. Buy explicitly to 0 - not
     // derived, or it would hand the whole line straight back - and let the now-empty rows be
@@ -511,7 +590,9 @@ export function BoardLineDecisionPanel({
     const next = draftFor(contribution, decision);
     const stock = lineBalance({ ...next, buy_qty: '0' });
     setDraft(next);
-    setReason(seedReason(decision) || seedReason(contribution.decision) || '');
+    const reseeded = seedReason(decision) || seedReason(contribution.decision) || '';
+    reasonSeed.current = reseeded;
+    setReason(reseeded);
     setSuspected(
       decision
         ? Boolean(decision.suspected_system_issue)
@@ -520,6 +601,7 @@ export function BoardLineDecisionPanel({
     setLocked(Boolean(contribution.covered) && !decision);
     stockBefore.current = null;
     setBuyingState(toMinor(next.buy_qty) > 0 && stock.totalMinor === 0);
+    setBuyPinned(false);
   }, [decision, contribution]);
 
   /**
@@ -563,6 +645,17 @@ export function BoardLineDecisionPanel({
     try {
       let ok: boolean | void;
       const approvingNow = approving && !covered;
+      // PR 1622 (owner Q1, review B1 x2): the planner's OWN words on a line that buys, sent as
+      // their own field (`cs_note`) and carried to purchasing's new order inquiry row. Never
+      // what the box was merely seeded with (it can be the engine's borrow sentence), so
+      // neither `amend_reason` nor `buy_reason` - both may hold that seed - is what travels.
+      const typed = reason.trim();
+      const csNote =
+        toMinor(draft.buy_qty) > 0 &&
+        typed !== '' &&
+        (typed !== reasonSeed.current.trim() || typed === (decision?.cs_note ?? '').trim())
+          ? typed
+          : undefined;
       if (approvingNow) {
         ok = await onDecide({
           ...suggestionWithReasons(contribution, {
@@ -572,18 +665,14 @@ export function BoardLineDecisionPanel({
             reason,
             buy_reason: foldedDraft.buy_reason,
             borrow: foldedDraft.borrow,
-            // S2 (fix round 2, reviewer): the Order back switch and Document cited box are on
-            // screen for this exact line - a wholly-bought approving save used to take them
-            // from the SUGGESTION draft (always false/'') and drop whatever the planner had
-            // actually ticked or typed.
-            order_back: draft.order_back,
-            cited_document: draft.cited_document,
           }),
+          cs_note: csNote,
           suspected_system_issue: suspected,
         });
       } else {
         ok = await onDecide({
           ...decisionFromAmendDraft(foldedDraft, reason),
+          cs_note: csNote,
           // THE BOOLEAN, never `|| undefined`: `false` is the planner's answer that the numbers
           // are fine, and dropping the key let the frozen `true` behind it read as current.
           suspected_system_issue: suspected,
@@ -607,14 +696,7 @@ export function BoardLineDecisionPanel({
         // `buy_reason` and every borrow reason now live, `foldReasonIntoDraft` reads it fresh
         // on every render, and clearing it the instant its own save landed would wipe the
         // reason off screen while it is still what was just saved.
-        const suggestion = suggestionDraftFrom(contribution);
-        setDraft({
-          ...suggestion,
-          // S2: the same reseed gap one field over - Order back and Document cited went back to
-          // the suggestion's own false/'' the instant the save that just carried them landed.
-          order_back: draft.order_back,
-          cited_document: draft.cited_document,
-        });
+        setDraft(suggestionDraftFrom(contribution));
       }
       // S4/AC-4.1: the button answers the click itself, within the interaction, before the
       // pill's own "Saved" and the toast even have to be looked at - and it keeps answering
@@ -810,12 +892,12 @@ export function BoardLineDecisionPanel({
                       row.warehouse_id,
                       row.location,
                     );
-                    // The SERVER's own guard refuses a reserve above on-hand at that
-                    // location (`_check_reserve_against_on_hand`); this is the same check
-                    // read off the same figure, so a planner sees it before Confirm does
-                    // (AC-3.3). The row is never removed for it - it stays here, editable.
+                    // OI-CLOSED-LINE (owner, 12 Oct 2026): only the part not yet delivered
+                    // needs free stock, and a shortfall there is a warning, never a block -
+                    // Confirm records it and tells purchasing. The row is never removed.
                     const over =
-                      available !== null && toMinor(row.qty) > toMinor(available);
+                      available !== null &&
+                      toMinor(row.qty) - (reserveCredits[index] ?? 0) > toMinor(available);
                     return (
                       <div
                         key={row.key}
@@ -844,7 +926,7 @@ export function BoardLineDecisionPanel({
                             data-testid={`line-reserve-available-${row.key}`}
                             className={cn(
                               'text-sm tabular-nums',
-                              over ? 'text-destructive' : 'text-muted-foreground',
+                              over ? 'text-warning' : 'text-muted-foreground',
                             )}
                           >
                             {over
@@ -945,81 +1027,49 @@ export function BoardLineDecisionPanel({
 
           <Block label="Buy">
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Switch
-                  id={`line-buy-switch-${contribution.key}`}
-                  aria-label="Buy the whole line"
-                  checked={buying}
-                  disabled={locked}
-                  onCheckedChange={setBuying}
-                />
-                <label
-                  htmlFor={`line-buy-switch-${contribution.key}`}
-                  className="text-sm text-muted-foreground"
-                >
-                  {buying
-                    ? `Buy the whole ${draft.open_qty}`
-                    : 'Buy the whole line'}
-                </label>
-                {/* D7: what the switch means while it is OFF - the remainder `edit()` derives,
-                    never a figure the planner types. Zero is still an answer ("Buy 0"), not a
-                    blank: it says the reserve, borrow and incoming already cover the line. */}
-                {!buying && (
-                  <span
-                    data-testid={`line-buy-derived-${contribution.key}`}
-                    className="text-sm tabular-nums text-muted-foreground"
-                  >
-                    {`Buy ${draft.buy_qty}`}
-                  </span>
-                )}
-              </div>
-              {/* An order back is a Buy whose supply is ALREADY on order or already shipped,
-                  so the row purchasing gets carries verb ORDER BACK. Offered only while the
-                  line is being bought: there is no row to mark otherwise. */}
-              {buying && (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Switch
-                      id={`line-order-back-${contribution.key}`}
-                      aria-label="Order back"
-                      checked={draft.order_back}
-                      disabled={locked}
-                      onCheckedChange={(next) =>
-                        edit({
-                          ...draft,
-                          order_back: next,
-                          cited_document: next ? draft.cited_document : '',
-                        })
-                      }
-                    />
-                    <label
-                      htmlFor={`line-order-back-${contribution.key}`}
-                      className="text-sm text-muted-foreground"
-                    >
-                      Order back
-                    </label>
-                  </div>
-                  {draft.order_back && (
-                    <div className="space-y-1">
-                      <label
-                        className="block text-2xs uppercase tracking-wide text-muted-foreground"
-                        htmlFor={`line-cited-document-${contribution.key}`}
-                      >
-                        Document cited
-                      </label>
-                      <Input
-                        id={`line-cited-document-${contribution.key}`}
-                        value={draft.cited_document}
-                        disabled={locked}
-                        placeholder="202604-S0083 or SPO-2026/08-0061"
-                        onChange={(event) =>
-                          edit({ ...draft, cited_document: event.target.value })
-                        }
-                      />
-                    </div>
-                  )}
+              {/* BUY-FIRST-PANEL: typed like a Reserve row. While the whole line is being
+                  bought the switch states the quantity, so the box steps aside. */}
+              {!buying && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={draft.buy_qty}
+                    disabled={locked}
+                    aria-label="Buy quantity"
+                    data-testid={`line-buy-qty-${contribution.key}`}
+                    onChange={(event) => typeBuy(event.target.value)}
+                    className="h-8 w-24 tabular-nums"
+                  />
                 </div>
               )}
+              {/* Under the box, where Reserve and Borrow keep their own secondary action (owner
+                  hand test, 14 Oct 2026: a switch squeezed beside the box read as clutter). The
+                  whole-line switch is drawn as the same outline button as "Add location",
+                  pressed while on; it keeps the switch role, so it still reads as on or off.
+                  No manual Order back (owner, 14 Oct 2026: "borrow = order back"): a Borrow
+                  already reads ORDER BACK to purchasing, so a Buy is always a plain ORDER. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  role="switch"
+                  aria-checked={buying}
+                  aria-label="Buy the whole line"
+                  selected={buying}
+                  disabled={locked}
+                  onClick={() => setBuying(!buying)}
+                >
+                  {buying ? (
+                    <Check className="size-4" aria-hidden />
+                  ) : (
+                    <ShoppingCart className="size-4" aria-hidden />
+                  )}
+                  {buying ? `Buy the whole ${draft.open_qty}` : 'Buy the whole line'}
+                </Button>
+              </div>
             </div>
           </Block>
         </div>
@@ -1036,16 +1086,37 @@ export function BoardLineDecisionPanel({
             >
               {summary}
             </p>
-            {/* Two words, and only while the composition does not add up (R9). */}
+            {/* A few words, and only while the composition does not add up (R9). The two
+                helpers settle what is unassigned in one click; a borrow needs a donor and a
+                reason, so there is no Rest to Borrow (BUY-FIRST-PANEL). */}
             {balance.balanced || cancelSaved ? null : (
-              <p
-                data-testid={`line-decision-hint-${contribution.key}`}
-                className="text-sm text-destructive tabular-nums"
-              >
-                {`${fromMinor(Math.abs(balance.differenceMinor))} ${
-                  balance.differenceMinor > 0 ? 'over' : 'short'
-                }`}
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p
+                  data-testid={`line-decision-hint-${contribution.key}`}
+                  className="text-sm text-destructive tabular-nums"
+                >
+                  {balance.differenceMinor > 0
+                    ? `Over by ${fromMinor(balance.differenceMinor)}`
+                    : `Unassigned ${fromMinor(unassignedMinor)}`}
+                </p>
+                {unassignedMinor > 0 && !locked && !buying && (
+                  <>
+                    <Button type="button" size="sm" variant="outline" onClick={restToBuy}>
+                      Rest to Buy
+                    </Button>
+                    {draft.reserve.length > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={restToReserve}
+                      >
+                        Rest to Reserve
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
             )}
             {otherBlockers.length > 0 && (
               <ul className="mt-1 space-y-0.5">
@@ -1266,12 +1337,17 @@ export function BoardLineDecisionPanel({
           lineNo={contribution.line_no}
           itemCode={contribution.item_code}
           locations={reserveCandidates}
-          // S-1 (fix round 7): NOT `open - total` - `total` now includes D7's derived Buy, so
-          // on an already-composed line (BRW 62 + Buy 73) it read 0 and the dialog fell back
-          // to the location's WHOLE free stock (`ReserveAddDialog.openingQty`). What is left
-          // to cover from STOCK is the open quantity minus everything except the Buy.
+          // S-1 (fix round 7): NOT `open - total` while Buy follows the remainder - `total`
+          // then includes D7's derived Buy, so on an already-composed line (BRW 62 + Buy 73) it
+          // read 0 and the dialog fell back to the location's WHOLE free stock
+          // (`ReserveAddDialog.openingQty`). A PINNED Buy (BUY-FIRST-PANEL) is the planner's
+          // own number, so what is left for stock is the open quantity minus everything.
           openRemainder={fromMinor(
-            Math.max(balance.openMinor - (balance.totalMinor - balance.buyMinor), 0),
+            Math.max(
+              balance.openMinor -
+                (buyPinned ? balance.totalMinor : balance.totalMinor - balance.buyMinor),
+              0,
+            ),
           )}
           onDone={() => setAddingReserve(false)}
           onAdd={(location, qty) =>
@@ -1308,7 +1384,14 @@ function draftFor(
   contribution: BoardContribution,
   decision: BoardDecision | null,
 ): DraftLine {
-  const base = amendDraftFrom(contribution);
+  // No manual Order back on this panel (owner, 14 Oct 2026: borrow = order back): a frozen or
+  // saved decision that carried one opens without it, so the next Save never re-sends a flag
+  // the planner can no longer see.
+  const base = {
+    ...amendDraftFrom(contribution),
+    order_back: false,
+    cited_document: '',
+  };
   // A saved Transfer to Cancel SO carries no composition: open on zeros, not the suggestion.
   if (decision?.verdict === 'cancelled') {
     return {
@@ -1375,8 +1458,6 @@ function draftFor(
     timely_spo_qty: decision.timely_spo_qty ?? base.timely_spo_qty,
     buy_qty: decision.buy_qty ?? '0',
     buy_reason: decision.buy_reason ?? '',
-    order_back: Boolean(decision.order_back),
-    cited_document: decision.cited_document ?? '',
   };
 }
 

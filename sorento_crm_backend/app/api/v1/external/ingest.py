@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, Path, Query, status
@@ -57,12 +58,19 @@ from app.services.autocount_doc_ingest_service import (
     AUTOCOUNT_BRANCH_ENTITIES,
     AUTOCOUNT_DOC_ENTITIES,
     BOOK_PATTERN,
+    DELIVERY_ORDERS_ENTITY,
     GOODS_RECEIVE_NOTES_ENTITY,
     AutocountDocIngestService,
     AutocountDocReadService,
     parse_deletion_body,
     link_waiting_grn_lines,
     run_grn_receipt_hook as _run_grn_receipt_hook,
+)
+from app.services.autocount_cancel_ingest_service import (
+    AUTOCOUNT_CANCEL_ENTITIES,
+    AutocountCancelIngestService,
+    relink_for_orders as relink_cancels_for_orders,
+    run_cancel_hooks as _run_cancel_hooks,
 )
 from app.services.document_ingest_service import (
     DOCUMENT_ENTITIES,
@@ -71,6 +79,7 @@ from app.services.document_ingest_service import (
 )
 from app.services.master_ingest_service import (
     ENTITY_SPECS,
+    IngestOutcome,
     MasterIngestService,
     UnsupportedIngestEntity,
 )
@@ -126,6 +135,13 @@ INGEST_PERMISSIONS = {
     "delivery_orders": "order_management.orders.edit",
     "goods_receive_notes": "procurement.grn.edit",
     "branches": "order_management.branches.edit",
+    # AC-CANCEL-CRM (contract 2.8): its own slugs (one per entity per door), granted by the
+    # migration to the role that already pushes the orders.
+    "cancel_sales_orders": "scm.cancel_sales_orders.edit",
+    "cancel_purchase_orders": "scm.cancel_purchase_orders.edit",
+    # AC-CONSIGN-CRM (2.9): a consignments push writes a sales order marked Consignment.
+    "consignments": "scm.consignments.edit",
+    "consignment_returns": "scm.consignment_returns.edit",
 }
 READ_PERMISSIONS = {
     "product_categories": "master_data.product_categories.view",
@@ -145,6 +161,11 @@ READ_PERMISSIONS = {
     "goods_receive_notes": "procurement.grn.view",
     # Mapped so every map covers every entity; the route itself answers 404 (no read door).
     "branches": "order_management.branches.view",
+    # Mapped for completeness; the route answers 404 (no read door, like branches).
+    "cancel_sales_orders": "scm.cancel_sales_orders.view",
+    "cancel_purchase_orders": "scm.cancel_purchase_orders.view",
+    "consignments": "scm.consignments.view",
+    "consignment_returns": "scm.consignment_returns.view",
 }
 # Deleting through the ESB is its own act, so it takes its own slug on top of the
 # ingest guard the router already carries (group A4 mounts the route). Declared
@@ -169,6 +190,11 @@ DELETE_PERMISSIONS = {
     "delivery_orders": "order_management.orders.delete",
     "goods_receive_notes": "procurement.grn.delete",
     "branches": "order_management.branches.delete",
+    # 2.8: the sweep's vanished cancel docs stop cancelling; nothing is removed.
+    "cancel_sales_orders": "scm.cancel_sales_orders.delete",
+    "cancel_purchase_orders": "scm.cancel_purchase_orders.delete",
+    "consignments": "scm.consignments.delete",
+    "consignment_returns": "scm.consignment_returns.delete",
 }
 
 # A batch cap the ESB can design against. Exceeding it errors rather than
@@ -242,6 +268,7 @@ SUPPORTED_ENTITIES = (
     | set(BILLING_DOCUMENT_ENTITIES)
     | set(AUTOCOUNT_DOC_ENTITIES)
     | set(AUTOCOUNT_BRANCH_ENTITIES)
+    | set(AUTOCOUNT_CANCEL_ENTITIES)
 )
 
 # Bumped whenever the wire shape of an entity changes in a way the ESB must gate
@@ -278,7 +305,20 @@ SUPPORTED_ENTITIES = (
 # the envelope adds a required `book`, the idempotency key is (company, book, DocKey), a DO / GRN
 # adopts an upload-created row by its number, and `/deletions` takes the sweep's vanished
 # `doc_keys` for a DocDate range and cancels them, never deletes. Additive.
-CONTRACT_VERSION = "2.7"
+# "2.8" (AC-CANCEL-CRM): `cancel_sales_orders` (AutoCount XS) and `cancel_purchase_orders` (XP)
+# join as push entities in the 2.7 vendor shape (envelope `book`, key (company, book, DocKey),
+# source_ref {book}:XS:{DocKey} / {book}:XP:{DocKey}). Each line is matched to the SO / PO / SPO
+# line it cancels and the line's cancelled qty is derived on every sync; `/deletions` marks the
+# vanished docs, which then cancel nothing. No read door. `cancel_line_waiting` and
+# `cancel_line_unmatched` join `warnings`. `consignments` / `consignment_returns` join in the
+# same shape, accepted and stored only (source_ref {book}:CSGN / CSGR:{DocKey}). Additive.
+# "2.9" (AC-CONSIGN-CRM): a consignment becomes a sales order marked consignment once every
+# item line states TransferedQty (a 2.8 record without it stays stored only); a
+# consignment_return derives qty_returned on the consignment line and is reporting only.
+# CONSIGN-DELIVERED-FIX (14 Oct): the order is delivered in full and closed at issue, and
+# TransferedQty is the returned qty, not delivered. Same wire shape.
+# Additive.
+CONTRACT_VERSION = "2.9"
 
 
 def _principal_may_delete(db: Session, current_user: dict, entity: str) -> bool:
@@ -334,15 +374,51 @@ def _run_document_hooks(
     if entity == "sales_orders":
         _run_plan_exception_hook(db, service, actor=actor)
         _run_planning_change_hook(db, service, actor=actor)
+        _run_cancel_relink_hook(db, service, service.so_numbers, actor=actor)
     elif entity == "purchase_orders":
         book_repair_moves_dropped = _run_supersede_and_relink_hooks(db, service, actor=actor)
         book_follow_rows_dropped = _run_follow_book_po_hook(db, service, actor=actor)
+        _run_cancel_relink_hook(db, service, service.po_numbers, actor=actor)
     elif entity == "shipping_orders":
         _run_shipping_order_forward_match_hook(db, service, actor=actor)
         _run_shipping_order_shipment_refresh_hook(db, service, actor=actor)
         book_repair_moves_dropped = _run_shipping_order_book_repair_hook(db, service, actor=actor)
         book_follow_rows_dropped = _run_follow_book_spo_hook(db, service, actor=actor)
+        _run_cancel_relink_hook(db, service, service.spo_numbers_touched, actor=actor)
     return book_repair_moves_dropped, book_follow_rows_dropped
+
+
+def _run_cancel_relink_hook(db: Session, service, numbers, *, actor: Optional[str]) -> None:
+    """AC-CANCEL-CRM: the orders this push wrote may be what a waiting Cancel SO / Cancel PO
+    line names, or their quantities moved what a cancel caps at or how a key-less one is
+    decided. Re-match those lines, derive again, then run the cancel hooks (a partial cancel's
+    planning change; a full cancel stops at the SO, CANCEL-STOP-AT-SO). Best effort, its own
+    commit, like every hook here."""
+    if not numbers:
+        return
+    from types import SimpleNamespace
+
+    try:
+        derived = relink_cancels_for_orders(
+            db, company_id=service.company_id, numbers=set(numbers)
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - best-effort, the ingest already succeeded
+        db.rollback()
+        logger.warning("ingest.cancel_relink_hook_failed", exc_info=True)
+        return
+    _run_cancel_hooks(db, SimpleNamespace(derived=derived), actor=actor)
+
+
+def _run_consignment_order_hooks(db: Session, service, *, actor: Optional[str]) -> None:
+    """AC-CONSIGN-CRM: a consignments batch writes its orders through the SO ingest
+    (`service.consignment_orders`), so the SO push's own reactions follow, the same way and
+    with the same best-effort rule: the plan exception batch and the planning change for CS."""
+    orders = getattr(service, "consignment_orders", None)
+    if orders is None:
+        return
+    _run_plan_exception_hook(db, orders, actor=actor)
+    _run_planning_change_hook(db, orders, actor=actor)
 
 
 def _run_plan_exception_hook(db: Session, service, *, actor: Optional[str]) -> None:
@@ -743,6 +819,89 @@ def _book(payload: dict) -> str:
     return book
 
 
+def _backfill(payload: dict, entity: str) -> bool:
+    """DO-HISTORY C3: the optional envelope flag a history replay sets (shared service only,
+    never its hourly poll). Delivery orders only; anywhere else, or not a boolean, is a 422
+    rather than a flag silently ignored."""
+    if "backfill" not in payload:
+        return False
+    value = payload.get("backfill")
+    if not isinstance(value, bool):
+        raise AppException(status_code=422, message="'backfill' must be true or false",
+                           code="INVALID_BODY")
+    if value and entity != DELIVERY_ORDERS_ENTITY:
+        raise AppException(status_code=422,
+                           message=f"'backfill' is accepted on {DELIVERY_ORDERS_ENTITY} only",
+                           code="INVALID_BODY")
+    return value
+
+
+# The audit entity type of `orders` (its table name), as the Order Tracking import names it.
+_ORDER_AUDIT_ENTITY = "orders"
+
+
+@contextmanager
+def _quiet_backfill(db: Session, on: bool):
+    """For a backfill batch only: no per-DO audit row and no embedding event for the DO or
+    its lines (about 270,000 DOs and 900,000 lines from 2023-09-01, plan section 5). Both
+    suppressions end with the block, so a later request on the same session is untouched."""
+    if not on:
+        yield
+        return
+    from app.services.embedding_change_listener import suppress_embedding_events
+
+    skip = db.info.setdefault("skip_audit_entity_types", set())
+    added = _ORDER_AUDIT_ENTITY not in skip
+    skip.add(_ORDER_AUDIT_ENTITY)
+    try:
+        with suppress_embedding_events("order", "order_line"):
+            yield
+    finally:
+        if added:
+            skip.discard(_ORDER_AUDIT_ENTITY)
+
+
+def _log_backfill_batch(db: Session, current_user: dict, company_id: Optional[str],
+                        book: Optional[str], records: list, result) -> None:
+    """The audit a backfill batch leaves instead of one row per DO (security review B1): ONE
+    `IMPORT` row that still leads to every order it stands for. `items` names each created or
+    updated DO (source ref, order id, outcome), so nothing the batch wrote is missing from the
+    trail. Written in the batch's own transaction, before its commit: a batch never lands
+    without it.
+
+    Nothing is queued for embedding (DO-BACKFILL-CRM): about 1.2M events of OpenAI spend
+    for history nobody searches."""
+    from app.services.audit_service import log_audit
+
+    written = [r for r in result.records
+               if r.outcome in (IngestOutcome.CREATED, IngestOutcome.UPDATED) and r.entity_id]
+    days = sorted(
+        str(raw.get("DocDate"))[:10] for raw in records
+        if isinstance(raw, dict) and raw.get("DocDate")
+    )
+    log_audit(
+        db,
+        _ORDER_AUDIT_ENTITY,
+        "",
+        "IMPORT",
+        new_values={
+            "backfill": True, "book": book, "records": len(records),
+            "doc_date_from": days[0] if days else None,
+            "doc_date_to": days[-1] if days else None,
+            "created": result.created, "updated": result.updated,
+            "unchanged": result.unchanged, "failed": result.failed,
+            "retryable": result.retryable,
+            "items": [
+                {"source_ref": r.source_ref, "order_id": r.entity_id, "outcome": r.outcome.value}
+                for r in written
+            ],
+        },
+        user_id=current_user.get("id"),
+        company_id=company_id,
+        description=f"AutoCount DO backfill ({book}), {len(records)} rows",
+    )
+
+
 def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, current_user: dict):
     """Contract 2.7 deletions: the sweep's vanished DocKeys for a DocDate range, cancelled in
     place and never deleted (plan 1.10)."""
@@ -761,7 +920,12 @@ def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, cur
             code="BATCH_TOO_LARGE",
         )
     company_id = resolve_company_anchor(db, payload, current_user)
-    service = AutocountDocIngestService(
+    service_class = (
+        AutocountCancelIngestService
+        if entity in AUTOCOUNT_CANCEL_ENTITIES
+        else AutocountDocIngestService
+    )
+    service = service_class(
         db, current_user.get("integration_id"), company_id=company_id, book=book
     )
     result = service.delete(entity, doc_keys, date_from, date_to, dry_run=dry_run)
@@ -771,6 +935,9 @@ def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, cur
         db.commit()
         if entity == GOODS_RECEIVE_NOTES_ENTITY:
             _run_grn_receipt_hook(db, service)
+        elif entity in AUTOCOUNT_CANCEL_ENTITIES:
+            _run_cancel_hooks(db, service, actor=current_user.get("id"))
+            _run_consignment_order_hooks(db, service, actor=current_user.get("id"))
     summary = result.as_dict()["summary"]
     logger.info(
         "deletion.batch entity=%s integration=%s company=%s dry_run=%s "
@@ -865,7 +1032,12 @@ def ingest_masters(
             code="BATCH_TOO_LARGE",
         )
 
-    book = _book(payload) if entity in AUTOCOUNT_DOC_ENTITIES | AUTOCOUNT_BRANCH_ENTITIES else None
+    book = (
+        _book(payload)
+        if entity in AUTOCOUNT_DOC_ENTITIES | AUTOCOUNT_BRANCH_ENTITIES | AUTOCOUNT_CANCEL_ENTITIES
+        else None
+    )
+    backfill = _backfill(payload, entity)
 
     company_id = resolve_company_anchor(db, payload, current_user)
 
@@ -898,6 +1070,10 @@ def ingest_masters(
         # Contract 2.7: the AutoCount record as the vendor API returned it, keyed per book.
         ingester = AutocountDocIngestService
         extra["book"] = book
+    elif entity in AUTOCOUNT_CANCEL_ENTITIES:
+        # Contract 2.8: Cancel SO / Cancel PO, same vendor shape and envelope as 2.7.
+        ingester = AutocountCancelIngestService
+        extra["book"] = book
     else:
         ingester = MasterIngestService
     service = ingester(
@@ -909,11 +1085,16 @@ def ingest_masters(
     # Unknown payload keys are dropped by every canonical schema (owner decision, 1 Oct
     # 2026); their NAMES, never their values, are logged once for the whole request so a
     # field the ESB believes it sends is not lost silently.
-    with collect_unknown_fields() as unknown_fields:
+    with _quiet_backfill(db, backfill), collect_unknown_fields() as unknown_fields:
         try:
             result = service.ingest(entity, records, dry_run=dry_run)
         except UnsupportedIngestEntity as exc:
             raise AppException(status_code=404, message=str(exc), code="UNKNOWN_ENTITY")
+        if not dry_run and backfill:
+            # Inside the quiet block: the summary row joins the batch's own transaction, and
+            # the commit flushes what the ingest left pending.
+            _log_backfill_batch(db, current_user, company_id, book, records, result)
+            db.commit()
     if unknown_fields:
         logger.info(
             "ingest.unknown_fields entity=%s integration=%s fields=%s",
@@ -946,8 +1127,18 @@ def ingest_masters(
                 result.book_repair_moves_dropped,
                 result.book_follow_rows_dropped,
             ) = _run_document_hooks(db, entity, service, actor=current_user.get("id"))
-        elif entity == GOODS_RECEIVE_NOTES_ENTITY:
+        elif entity in AUTOCOUNT_CANCEL_ENTITIES:
+            _run_cancel_hooks(db, service, actor=current_user.get("id"))
+            _run_consignment_order_hooks(db, service, actor=current_user.get("id"))
+        if entity == GOODS_RECEIVE_NOTES_ENTITY:
             _run_grn_receipt_hook(db, service)
+        # DO-BACKFILL-CRM (plan section 0b.3, Q4 (a)): old DO quantities must not re-decide
+        # key-less Cancel SO groups, so a backfill batch starts no relink and none of its
+        # reactions (OI retirement, handover, purchasing email, planning change).
+        if entity in AUTOCOUNT_DOC_ENTITIES and not backfill:
+            _run_cancel_relink_hook(
+                db, service, getattr(service, "order_numbers", set()), actor=current_user.get("id")
+            )
 
     logger.info(
         "ingest.batch entity=%s integration=%s company=%s dry_run=%s "
@@ -1004,7 +1195,7 @@ def delete_records(
     entity = _entity(entity)
     _no_branch_door(entity)
 
-    if entity in AUTOCOUNT_DOC_ENTITIES:
+    if entity in AUTOCOUNT_DOC_ENTITIES | AUTOCOUNT_CANCEL_ENTITIES:
         return _cancel_vanished(entity, payload, dry_run, db, current_user)
 
     source_refs = payload.get("source_refs")
@@ -1135,6 +1326,12 @@ def read_current_state(
     """
     entity = _entity(entity)
     _no_branch_door(entity)
+    if entity in AUTOCOUNT_CANCEL_ENTITIES:
+        raise AppException(
+            status_code=404,
+            message=f"'{entity}' has no read door",
+            code="UNKNOWN_ENTITY",
+        )
 
     source_refs = payload.get("source_refs")
     if not isinstance(source_refs, list):

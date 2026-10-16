@@ -432,40 +432,86 @@ def test_rejecting_demands_a_reason_and_keeps_it_where_the_salesperson_will_read
         )
 
 
-def test_a_rejected_quotation_goes_back_to_draft_on_the_salespersons_own_move():
-    """Trying again is not a privileged act - it is the salesperson editing their own
-    quotation - so `rejected -> draft` needs nothing beyond the edit rights they already have.
-    The manager's reason is cleared on the way, because it explains a state the document is no
-    longer in and leaving it would have the screen quoting a rejection that has been answered.
-    """
+def _rejected(db, *, reason: str = "Too low."):
+    """A below-floor quotation that a manager has sent back. Returns the parts a test needs."""
+    from app.services import project_quotation_approval_service as approval
+
+    _, owner, product, project, document, scope = _setup(db)
+    _price(db, scope, product, owner, BELOW_FLOOR)
+    manager = _user(db, f"{MARKER} Manager")
+    approval.move(
+        db,
+        document=document,
+        to_status_id=_status(db, "pending_approval").id,
+        actor_user_id=owner,
+    )
+    approval.reject(
+        db,
+        document=document,
+        actor_user_id=manager,
+        reason=reason,
+        permissions=EVERYTHING,
+    )
+    return owner, manager, product, project, document, scope
+
+
+def test_c2_a_rejected_quotation_has_no_back_to_draft_step():
+    """C2. Rejected -> Draft used to be the salesperson's own move; PR/SF have no such step
+    (the creator edits and presses Submit again), so the move is now refused for anyone and
+    the rung and the manager's reason are left exactly as they were."""
     from app.services import project_quotation_approval_service as approval
 
     with blank_session() as db:
-        _, owner, product, _, document, scope = _setup(db)
-        _price(db, scope, product, owner, BELOW_FLOOR)
-        manager = _user(db, f"{MARKER} Manager")
+        owner, manager, _, _, document, _ = _rejected(db)
+
+        for actor in (owner, manager):
+            with pytest.raises(AppException) as refused:
+                approval.move(
+                    db,
+                    document=document,
+                    to_status_id=_status(db, "draft").id,
+                    actor_user_id=actor,
+                )
+            assert refused.value.status_code == 422
+            assert refused.value.detail["code"] == "quotation_status_not_self_serve"
+
+        assert approval.current_key(db, document) == "rejected"
+        assert document.approval_rejected_reason == "Too low."
+
+
+def test_c1_a_rejected_quotation_resubmits_straight_to_pending_in_one_press():
+    """C1. The salesperson re-prices and presses Send for approval from Rejected. The service
+    walks the two existing edges (rejected -> draft -> pending) itself, clears the reason, and
+    writes exactly ONE quotation_approval_requested row for the press."""
+    from app.models.activities import ActivityEvent
+    from app.services import project_quotation_approval_service as approval
+
+    with blank_session() as db:
+        owner, _, _, project, document, _ = _rejected(db)
+
+        def _requested() -> int:
+            return (
+                db.query(ActivityEvent)
+                .filter(
+                    ActivityEvent.entity_type == "project",
+                    ActivityEvent.entity_id == str(project.id),
+                    ActivityEvent.system_template == "quotation_approval_requested",
+                )
+                .count()
+            )
+
+        assert _requested() == 1  # the first press, before the rejection
+
         approval.move(
             db,
             document=document,
             to_status_id=_status(db, "pending_approval").id,
             actor_user_id=owner,
         )
-        approval.reject(
-            db,
-            document=document,
-            actor_user_id=manager,
-            reason="Too low.",
-            permissions=EVERYTHING,
-        )
 
-        approval.move(
-            db,
-            document=document,
-            to_status_id=_status(db, "draft").id,
-            actor_user_id=owner,
-        )
-        assert approval.current_key(db, document) == "draft"
+        assert approval.current_key(db, document) == "pending_approval"
         assert document.approval_rejected_reason is None
+        assert _requested() == 2  # exactly one new row for the resubmit
 
 
 def test_approve_and_reject_are_refused_without_the_grant():
@@ -667,12 +713,7 @@ def test_every_approval_decision_is_written_to_the_project_activity_feed():
             reason="Too low.",
             permissions=EVERYTHING,
         )
-        approval.move(
-            db,
-            document=document,
-            to_status_id=_status(db, "draft").id,
-            actor_user_id=owner,
-        )
+        # C1: resubmit straight from Rejected, no back-to-draft step.
         approval.move(
             db,
             document=document,

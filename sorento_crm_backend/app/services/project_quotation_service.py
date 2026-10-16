@@ -18,15 +18,17 @@ Two alerts, computed on save and STORED on the line:
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence, Set
 
-from sqlalchemy import Integer, func
-from sqlalchemy.orm import Session
+from sqlalchemy import Integer, func, or_
+from sqlalchemy.orm import Session, aliased
 
 from app.models.lookup import LookupOption, LookupSet
 from app.models.product import Product
+from app.models.product_set import ProductSet
 from app.models.projects import (
     OUTCOME_LOST,
     OUTCOME_OPEN,
@@ -38,6 +40,7 @@ from app.models.projects import (
     UNIT_TYPES,
     Project,
     ProjectQuotation,
+    ProjectQuotationDocument,
     ProjectQuotationIssueScope,
     ProjectQuotationLine,
     ProjectQuotationVersion,
@@ -63,9 +66,11 @@ _BREACH_ATTR = "_breach_events"
 
 LINE_FIELDS = (
     "product_id",
+    "product_set_id",
     "product_code_snapshot",
     "description_snapshot",
     "image_attachment_id",
+    "drawing_attachment_id",
     "unit_price",
     "quantity",
     "uom",
@@ -158,6 +163,36 @@ def is_frozen(db: Session, version: ProjectQuotationVersion) -> bool:
     return is_issued(db, version)
 
 
+def frozen_version_ids(db: Session, version_ids: Sequence[Any]) -> Set[str]:
+    """``is_frozen`` for several versions in ONE query: superseded by a later version, or issued.
+
+    For a line table, which asks it once per render rather than once per line.
+    """
+    wanted = list(dict.fromkeys(str(v) for v in version_ids if v))
+    if not wanted:
+        return set()
+    later = aliased(ProjectQuotationVersion)
+    superseded = (
+        db.query(later.id)
+        .filter(
+            later.quotation_id == ProjectQuotationVersion.quotation_id,
+            later.version_no > ProjectQuotationVersion.version_no,
+        )
+        .exists()
+    )
+    issued = (
+        db.query(ProjectQuotationIssueScope.id)
+        .filter(ProjectQuotationIssueScope.version_id == ProjectQuotationVersion.id)
+        .exists()
+    )
+    rows = (
+        db.query(ProjectQuotationVersion.id)
+        .filter(ProjectQuotationVersion.id.in_(wanted), or_(superseded, issued))
+        .all()
+    )
+    return {str(row[0]) for row in rows}
+
+
 def is_issued(db: Session, version: ProjectQuotationVersion) -> bool:
     """Whether any issue of the parent document went out carrying this version."""
     return (
@@ -168,7 +203,28 @@ def is_issued(db: Session, version: ProjectQuotationVersion) -> bool:
     )
 
 
+def assert_scope_unlocked(db: Session, quotation: ProjectQuotation) -> None:
+    """The approval lock (D1) for a scope: its document may be pending or approved."""
+    if not getattr(quotation, "document_id", None):
+        return
+    from app.services import project_quotation_approval_service as approvals
+
+    document = (
+        db.query(ProjectQuotationDocument)
+        .filter(ProjectQuotationDocument.id == quotation.document_id)
+        .first()
+    )
+    approvals.assert_unlocked(db, document)
+
+
 def assert_editable(db: Session, version: ProjectQuotationVersion) -> None:
+    quotation = (
+        db.query(ProjectQuotation)
+        .filter(ProjectQuotation.id == version.quotation_id)
+        .first()
+    )
+    if quotation is not None:
+        assert_scope_unlocked(db, quotation)
     if not is_frozen(db, version):
         return
     # The two reasons read differently to a person: one says somebody moved on, the other says the
@@ -294,6 +350,7 @@ def update_quotation(
 ) -> ProjectQuotation:
     """Scope label, series and notes. Outcome has its own action, so it is not here:
     losing a quotation needs a reason and a decided-at stamp."""
+    assert_scope_unlocked(db, quotation)
     if "scope_label" in payload:
         scope_label = " ".join((payload.get("scope_label") or "").split())
         if not scope_label:
@@ -320,6 +377,7 @@ def revise(
     quotation with three prices moved", and re-keying forty lines is how people end up
     editing the frozen one in a spreadsheet instead.
     """
+    assert_scope_unlocked(db, quotation)
     live = current_version(db, quotation.id)
     live.frozen_at = datetime.utcnow()
 
@@ -340,10 +398,21 @@ def revise(
                 company_id=quotation.company_id,
                 version_id=nxt.id,
                 product_id=line.product_id,
+                product_set_id=line.product_set_id,
+                set_parts_snapshot=line.set_parts_snapshot,
                 product_code_snapshot=line.product_code_snapshot,
                 description_snapshot=line.description_snapshot,
                 list_price_snapshot=line.list_price_snapshot,
                 image_attachment_id=line.image_attachment_id,
+                drawing_attachment_id=line.drawing_attachment_id,
+                # The printed columns: a revision is the same quotation with some prices moved,
+                # and dropping these silently re-typed the bill-of-quantities layout to nothing.
+                item_label=line.item_label,
+                brand_snapshot=line.brand_snapshot,
+                technical_spec=line.technical_spec,
+                complete_set=line.complete_set,
+                band_label=line.band_label,
+                is_rate_only=line.is_rate_only,
                 unit_price=line.unit_price,
                 quantity=line.quantity,
                 uom=line.uom,
@@ -381,6 +450,7 @@ def revise(
 def delete_quotation(db: Session, quotation: ProjectQuotation) -> None:
     """Hard delete, cascading to versions and lines. The project's derived outcome is
     recomputed, because removing the only lost scope reopens the project."""
+    assert_scope_unlocked(db, quotation)
     project = db.query(Project).filter(Project.id == quotation.project_id).first()
     db.delete(quotation)
     db.flush()
@@ -470,6 +540,58 @@ def _snapshot_product(db: Session, line: ProjectQuotationLine, product: Product)
     # See project_quotation_image_service.freeze_version_images.
 
 
+def _snapshot_set(
+    db: Session,
+    line: ProjectQuotationLine,
+    product_set: ProductSet,
+    *,
+    new_pick: bool,
+) -> None:
+    """Freeze what the set looked like when it was quoted, as ONE line (SET-QUOTE-LINE).
+
+    Code, name and list price follow `_snapshot_product`. The PARTS are written only when the
+    set is newly picked: a later edit of the set master never rewrites what was quoted (Q5 a),
+    and the SO draft splits the line from this frozen copy. They are not shown on the line;
+    they fill a blank `complete_set` so the printed documents carry them.
+    """
+    from app.services import product_set_service
+
+    line.product_code_snapshot = product_set.set_code
+    line.description_snapshot = line.description_snapshot or product_set.name
+    line.list_price_snapshot = product_set_service.resolve_set_price(product_set).resolved
+    if line.uom is None:
+        line.uom = "SET"
+    if not new_pick:
+        return
+
+    driver = product_set_service.driver_member(db, product_set.id)
+    members = sorted(product_set.members, key=lambda m: m.sort_order or 0)
+    line.set_parts_snapshot = [
+        {
+            "product_id": m.product_id,
+            "product_code": m.product.product_code,
+            "description": m.product.description or m.product.product_name,
+            "quantity": format(Decimal(m.quantity).normalize(), "f"),
+            # The part's own unit, so the SO split does not stamp the PO's "SETS" on a pedestal.
+            "uom": _uom_code(db, m.product.base_uom_id),
+            "is_driver": driver is not None and m.id == driver.id,
+        }
+        for m in members
+    ]
+    if not line.brand_snapshot and driver is not None and driver.product.brand_id:
+        from app.models.product import Brand
+
+        brand = db.query(Brand.brand_name).filter(Brand.id == driver.product.brand_id).first()
+        line.brand_snapshot = brand[0] if brand else None
+    # Every set change rewrites Complete set to the new parts, whatever the write body carries.
+    line.complete_set = " + ".join(
+        m.product.product_code
+        if Decimal(m.quantity) == 1
+        else f"{Decimal(m.quantity).normalize():f} x {m.product.product_code}"
+        for m in members
+    )[:100]
+
+
 def _uom_code(db: Session, uom_id: Optional[str]) -> Optional[str]:
     if not uom_id:
         return None
@@ -503,6 +625,7 @@ def _apply_guardrails(
     line: ProjectQuotationLine,
     quotation: ProjectQuotation,
     product: Optional[Product],
+    product_set: Optional[ProductSet] = None,
     membership: Optional["pricing.SeriesMembership"] = None,
     series_pricing: Optional[Dict[str, tuple]] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -522,21 +645,42 @@ def _apply_guardrails(
     # Off-catalog is ALWAYS non-standard (AC-E5), series or no series: "we quoted
     # something that is not in our catalogue" is the case the alert exists for, and a
     # project that never nominated a series must not silently excuse it.
-    line.is_non_standard = product is None or not pricing.is_in_series(
-        db,
-        series_id=quotation.series_id,
-        product=product,
-        membership=membership,
-    )
-
-    floor = pricing.resolve_floor(
-        db,
-        company_id=quotation.company_id,
-        product=product,
-        list_price=line.list_price_snapshot,
-        series_id=quotation.series_id,
-        series_pricing=series_pricing,
-    )
+    if line.product_set_id:
+        # A set is standard only by its own `series_sets` row; its floor is the series row, else
+        # the company default alone (Q4 b).
+        line.is_non_standard = not pricing.is_set_in_series(
+            db, quotation.series_id, line.product_set_id
+        )
+        if product_set is None:
+            product_set = (
+                db.query(ProductSet).filter(ProductSet.id == line.product_set_id).first()
+            )
+        floor = (
+            pricing.resolve_set_floor(
+                db,
+                company_id=quotation.company_id,
+                product_set=product_set,
+                list_price=line.list_price_snapshot,
+                series_id=quotation.series_id,
+            )
+            if product_set is not None
+            else None
+        )
+    else:
+        line.is_non_standard = product is None or not pricing.is_in_series(
+            db,
+            series_id=quotation.series_id,
+            product=product,
+            membership=membership,
+        )
+        floor = pricing.resolve_floor(
+            db,
+            company_id=quotation.company_id,
+            product=product,
+            list_price=line.list_price_snapshot,
+            series_id=quotation.series_id,
+            series_pricing=series_pricing,
+        )
     if floor is None:
         line.floor_value_applied = None
         line.floor_level_applied = None
@@ -586,6 +730,95 @@ def _quotation_of(db: Session, version: ProjectQuotationVersion) -> ProjectQuota
     return quotation
 
 
+#: The picked-file columns a line write accepts, with the refusal each raises (AC-QLG09).
+_PICKS = (
+    ("image_attachment_id", False, "quotation_line_image_invalid", "photo"),
+    ("drawing_attachment_id", True, "quotation_line_drawing_invalid", "drawing"),
+)
+
+
+def assert_line_picks(
+    db: Session,
+    *,
+    quotation: ProjectQuotation,
+    payload: Dict[str, Any],
+    line: Optional[ProjectQuotationLine] = None,
+) -> None:
+    """Refuse a picked photo or drawing that is not one of the line's product's own files (422).
+
+    The ids arrive from the browser, so they are checked against `product_attachments` for the
+    product the line WILL have (the payload's, else the stored one): an image, not deleted, this
+    company's (or shared), and for a drawing also typed "Technical Specifications"; a photo is
+    never a drawing. Only a value that is unchanged together with an unchanged product is skipped,
+    so a stamp on a line whose file was deleted later does not block the next save of that line,
+    while the old product's file can never ride along onto a new product. A malformed id is the
+    same refusal, checked before any query. Clearing (null) is always allowed. The product's own
+    attachments are never written from here.
+    """
+    from app.services import product_image_service as images
+
+    product_id = payload["product_id"] if "product_id" in payload else (
+        line.product_id if line is not None else None
+    )
+    product_unchanged = line is not None and str(product_id or "") == str(line.product_id or "")
+    set_id = payload["product_set_id"] if "product_set_id" in payload else (
+        line.product_set_id if line is not None else None
+    )
+    if set_id:
+        # Before anything reads the set's members: another company's set is as absent as none,
+        # whatever picks ride along, so a pick cannot be used to probe for it.
+        if db.query(ProductSet.id).filter(ProductSet.id == str(set_id)).first() is None:
+            raise AppException(
+                status_code=404,
+                message="That product set was not found.",
+                code="product_set_not_found",
+            )
+    if set_id and not product_id:
+        # A set line's files are its DRIVER part's product's. A set that is being picked now
+        # (not yet frozen on the line) reads the driver live.
+        from app.services import product_set_service, project_quotation_image_service
+
+        stored = line is not None and str(line.product_set_id or "") == str(set_id)
+        if stored:
+            product_id = project_quotation_image_service.line_product_id(line)
+        else:
+            driver = product_set_service.driver_member(db, str(set_id))
+            product_id = driver.product_id if driver else None
+        product_unchanged = stored
+    for field, is_drawing, code, word in _PICKS:
+        if field not in payload or not payload[field]:
+            continue
+        value = str(payload[field])
+        if product_unchanged and str(getattr(line, field) or "") == value:
+            continue
+        refusal = AppException(
+            status_code=422,
+            message=f"That {word} is not one of this product's files.",
+            code=code,
+        )
+        # Canonical form only: `uuid.UUID` also accepts `urn:uuid:...`, braces and bare hex,
+        # none of which the database will take as an id.
+        if not _is_canonical_uuid(value) or (
+            product_id and not _is_canonical_uuid(str(product_id))
+        ):
+            raise refusal
+        if not product_id or not images.is_product_file(
+            db,
+            product_id=str(product_id),
+            attachment_id=value,
+            drawing=is_drawing,
+            company_id=quotation.company_id,
+        ):
+            raise refusal
+
+
+def _is_canonical_uuid(value: str) -> bool:
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
+
+
 def _write_line(
     db: Session,
     *,
@@ -600,6 +833,49 @@ def _write_line(
     same coercion, snapshotting and guardrails and then recompute the total ONCE. Both
     callers share this body, so the two ways of saving a line cannot drift apart.
     """
+    # A different product's photo or drawing cannot be this one's: a product change that does
+    # not send picks of its own clears the stored ones, in every path that writes a line.
+    if payload.get("product_id") and payload.get("product_set_id"):
+        raise AppException(
+            status_code=422,
+            message="A line is a product or a product set, not both.",
+            code="quotation_line_one_target",
+        )
+    # Naming one target moves the line off the other, so a product pick on a set line (or the
+    # reverse) cannot trip the one-target CHECK.
+    if payload.get("product_id") and "product_set_id" not in payload:
+        payload = {**payload, "product_set_id": None}
+    elif payload.get("product_set_id") and "product_id" not in payload:
+        payload = {**payload, "product_id": None}
+    prior_set_id = line.product_set_id if line is not None else None
+    # Checked BEFORE the line is added to the session, so a bad id never reaches the FK.
+    # Through the company-scoped session, so another company's set is as absent as none.
+    named_set = (
+        db.query(ProductSet).filter(ProductSet.id == str(payload["product_set_id"])).first()
+        if payload.get("product_set_id")
+        else None
+    )
+    if payload.get("product_set_id") and named_set is None:
+        raise AppException(
+            status_code=404,
+            message="That product set was not found.",
+            code="product_set_not_found",
+        )
+    if line is not None and (
+        (
+            "product_id" in payload
+            and str(payload["product_id"] or "") != str(line.product_id or "")
+        )
+        or (
+            "product_set_id" in payload
+            and str(payload["product_set_id"] or "") != str(line.product_set_id or "")
+        )
+    ):
+        payload = {
+            **{field: None for field, *_rest in _PICKS},
+            **payload,
+        }
+
     unit_type = payload.get("unit_type")
     if unit_type and unit_type not in UNIT_TYPES:
         raise AppException(
@@ -644,15 +920,36 @@ def _write_line(
         if line.product_id
         else None
     )
+    product_set = None
+    if line.product_set_id:
+        new_pick = str(line.product_set_id) != str(prior_set_id or "")
+        product_set = named_set or (
+            db.query(ProductSet).filter(ProductSet.id == line.product_set_id).first()
+        )
+        if product_set is None:
+            raise AppException(
+                status_code=404,
+                message="That product set was not found.",
+                code="product_set_not_found",
+            )
+        if new_pick and not product_set.is_active:
+            raise AppException(
+                status_code=422,
+                message="That product set is inactive.",
+                code="quotation_line_set_inactive",
+            )
+        _snapshot_set(db, line, product_set, new_pick=new_pick)
+    else:
+        line.set_parts_snapshot = None
+        # Off a set (to a product or to nothing): the parts text no longer describes the line.
+        if prior_set_id:
+            line.complete_set = None
     if product is not None:
         _snapshot_product(db, line, product)
-    elif not line.description_snapshot:
+    elif product_set is None and not line.description_snapshot:
         raise AppException(
             status_code=422,
-            message=(
-                "An off-catalog line needs a description -- it is what the customer "
-                "reads, and there is no product to fall back on."
-            ),
+            message="A non-standard item needs a description.",
             code="quotation_line_description_required",
         )
 
@@ -661,7 +958,9 @@ def _write_line(
     ).quantize(_CENTS)
 
     db.flush()
-    event = _apply_guardrails(db, line=line, quotation=quotation, product=product)
+    event = _apply_guardrails(
+        db, line=line, quotation=quotation, product=product, product_set=product_set
+    )
     setattr(line, _BREACH_ATTR, [event] if event else [])
 
     db.flush()
@@ -752,6 +1051,7 @@ def replace_lines(
                 )
             kept.add(line_id)
         payload["sort_order"] = index
+        assert_line_picks(db, quotation=quotation, payload=payload, line=target)
         written.append(
             _write_line(
                 db,
@@ -897,7 +1197,7 @@ def recompute_version(
 
         # Named by what a person calls the line. No id reaches the reader.
         report["changed_lines"].append(
-            line.product_code_snapshot or line.description_snapshot or "Off-catalog line"
+            line.product_code_snapshot or line.description_snapshot or "Non-standard item"
         )
 
     db.flush()
@@ -1197,17 +1497,26 @@ def serialize_lines(
     # runs to 52 lines and a query per row would be 52 round trips to draw one column.
     from app.services import project_quotation_image_service
 
-    pictures = project_quotation_image_service.line_images(db, lines)
+    # A frozen version is what the customer holds: nothing on it can be picked any more, so its
+    # lines carry no candidates (and nothing is signed for a picker that cannot open).
+    pictures = project_quotation_image_service.line_images(
+        db, lines, frozen_versions=frozen_version_ids(db, [line.version_id for line in lines])
+    )
+    no_cells: Dict[str, Any] = {}
     return [
         {
             "id": line.id,
             "version_id": line.version_id,
             "product_id": line.product_id,
+            "product_set_id": line.product_set_id,
+            "set_parts": list(line.set_parts_snapshot or []),
             "product_code": line.product_code_snapshot,
             "description": line.description_snapshot,
             "list_price": line.list_price_snapshot,
             "image_attachment_id": line.image_attachment_id,
-            "product_image": pictures.get(str(line.id)),
+            "product_image": pictures.get(str(line.id), no_cells).get("product_image"),
+            "drawing_attachment_id": line.drawing_attachment_id,
+            "technical_drawing": pictures.get(str(line.id), no_cells).get("technical_drawing"),
             "unit_price": line.unit_price,
             "quantity": line.quantity,
             "uom": line.uom,

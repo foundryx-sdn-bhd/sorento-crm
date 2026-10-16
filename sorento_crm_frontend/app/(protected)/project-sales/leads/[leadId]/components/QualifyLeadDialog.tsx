@@ -5,7 +5,6 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -64,13 +63,12 @@ export function QualifyLeadDialog({
 
   return (
     <Dialog open onOpenChange={(next) => !next && onDone()}>
-      <DialogContent className="max-h-[92vh] w-full max-w-lg overflow-hidden">
+      <DialogContent
+        className="max-h-[92vh] w-full max-w-lg overflow-hidden"
+        aria-describedby={undefined}
+      >
         <DialogHeader>
           <DialogTitle>Qualify {lead.lead_code}</DialogTitle>
-          <DialogDescription>
-            This registers the development and locks it to its owner. Everything the lead
-            already knows is carried over.
-          </DialogDescription>
         </DialogHeader>
 
         <form
@@ -99,9 +97,6 @@ export function QualifyLeadDialog({
                 onChange={(event) => setTitle(event.target.value)}
                 required
               />
-              <p className="text-xs text-muted-foreground">
-                Split a masterplan here. Qualify once per phase, each with its own name.
-              </p>
             </div>
 
             <ClashWarningPanel
@@ -127,10 +122,6 @@ export function QualifyLeadDialog({
                   placeholder="Search developers"
                   emptyMessage="No developers yet. Add one under Parties"
                 />
-                <p className="text-xs text-muted-foreground">
-                  The lock is per developer, so naming one here sharpens the duplicate
-                  check.
-                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -169,9 +160,6 @@ export function QualifyLeadDialog({
                   }))}
                   placeholder={typeId ? 'Select a template' : 'Pick a type first'}
                 />
-                <p className="text-xs text-muted-foreground">
-                  The template decides the stakeholder roles and copies in its checklist.
-                </p>
               </div>
             </div>
           </DialogBody>

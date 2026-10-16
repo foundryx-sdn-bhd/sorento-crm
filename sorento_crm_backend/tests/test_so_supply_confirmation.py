@@ -501,9 +501,41 @@ def test_a_bought_line_names_its_own_location_on_the_order_row_and_only_that_one
 # --------------------------------------------------------------------------- rollback
 
 
-def test_one_unbalanced_line_rolls_back_the_whole_confirmation(api):
-    """AC-C02: line 2's Buy is short of open qty by 10, so nothing commits, not even
-    line 1's otherwise-valid Reserve."""
+def _held_by_line(db, line_ids, *, active_only=False) -> dict:
+    """SOLineAllocation qty summed per (line, warehouse); a fresh read. `active_only` reads
+    just the active decision's holds (a superseded revision's rows stay for audit)."""
+    from app.models.project_so import SOLineAllocation, SOSupplyDecision
+
+    db.expire_all()
+    out: dict = {}
+    query = db.query(SOLineAllocation).filter(SOLineAllocation.so_line_id.in_(line_ids))
+    if active_only:
+        query = query.join(
+            SOSupplyDecision, SOSupplyDecision.id == SOLineAllocation.decision_id
+        ).filter(SOSupplyDecision.state == "active")
+    for row in query:
+        key = (row.so_line_id, row.warehouse_id)
+        out[key] = out.get(key, Decimal("0")) + row.qty
+    return out
+
+
+def _assert_short_notice(body, line, *, free, short, count=1):
+    """The Confirm result names the line and says how much was free and how much is short."""
+    notices = body.get("stock_short_notices") or []
+    assert len(notices) == count, body
+    notice = next(n for n in notices if n["line_no"] == line.line_no)
+    assert f"only {free} free at" in notice["reason"], notice
+    assert f", {short} short" in notice["reason"], notice
+    return notice
+
+
+def test_one_unbalanced_line_is_held_back_and_the_rest_of_the_order_confirms(api):
+    """AC-C02: line 2's Buy is short of open qty by 10, so that line is held back by name
+    while line 1's valid Reserve still confirms and holds its 50. Nothing is written for
+    line 2.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     client, world = api
     db = world.db
     _stock(db, world.product, world.own_wh, on_hand=100)
@@ -523,31 +555,33 @@ def test_one_unbalanced_line_rolls_back_the_whole_confirmation(api):
         ]
     }
     response = client.post(f"{BASE}/sales-orders/{order.id}/confirm", json=payload)
-    assert response.status_code in (409, 422), response.text
+    assert response.status_code == 200, response.text
     body = response.json()
-    failing_line_nos = {row["line_no"] for row in body["failing_lines"]}
-    assert 20 in failing_line_nos
+    assert [row["line_no"] for row in body["lines_held_back"]] == [20], body
 
-    from app.models.project_so import OrderInquiryRow, SOLineAllocation, SOSupplyDecision
+    from app.models.project_so import OrderInquiryRow, SOSupplyDecision
 
-    assert db.query(SOSupplyDecision).filter(
+    decisions = db.query(SOSupplyDecision).filter(
         SOSupplyDecision.project_sales_order_id == order.id
-    ).count() == 0
-    assert db.query(SOLineAllocation).filter(
-        SOLineAllocation.so_line_id.in_([line1.id, line2.id])
-    ).count() == 0
+    ).all()
+    assert len(decisions) == 1 and decisions[0].state == "active"
+    assert {s["project_line_id"] for s in decisions[0].line_snapshots} == {str(line1.id)}
+    assert _held_by_line(db, [line1.id, line2.id]) == {(line1.id, world.own_wh.id): Decimal("50")}
     assert db.query(OrderInquiryRow).filter(
-        OrderInquiryRow.so_line_id.in_([line1.id, line2.id])
+        OrderInquiryRow.so_line_id == line2.id
     ).count() == 0
 
 
 # --------------------------------------------------------------------------- recheck
 
 
-def test_confirmation_rechecks_stock_and_rejects_a_line_whose_free_stock_changed_after_the_sheet_was_read(api):
+def test_confirmation_rechecks_stock_and_holds_only_what_is_free_when_it_changed_after_the_sheet_was_read(api):
     """AC-C03: the sheet proposed Reserve 10 when 10 was free; another allocation then
-    claims it, so the recheck at confirmation time must fail the line, not trust the
-    payload."""
+    claims it, so the recheck at confirmation time reads the live figure, not the payload:
+    the line confirms as decided, holds nothing (0 free) and records the 10 short.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     client, world = api
     db = world.db
     stock = _stock(db, world.product, world.own_wh, on_hand=10, reserved=0)
@@ -563,15 +597,18 @@ def test_confirmation_rechecks_stock_and_rejects_a_line_whose_free_stock_changed
 
     payload = {"lines": [_line_payload(line.id, reserve=[{"warehouse_id": world.own_wh.id, "qty": "10"}])]}
     response = client.post(f"{BASE}/sales-orders/{order.id}/confirm", json=payload)
-    assert response.status_code in (409, 422), response.text
-    body = response.json()
-    assert any(row["line_no"] == 10 for row in body["failing_lines"])
+    assert response.status_code == 200, response.text
+    _assert_short_notice(response.json(), line, free=0, short=10)
 
     from app.models.project_so import SOSupplyDecision
 
-    assert db.query(SOSupplyDecision).filter(
-        SOSupplyDecision.project_sales_order_id == order.id
-    ).count() == 0
+    active = db.query(SOSupplyDecision).filter(
+        SOSupplyDecision.project_sales_order_id == order.id,
+        SOSupplyDecision.state == "active",
+    ).one()
+    snap = next(s for s in active.line_snapshots if s["project_line_id"] == str(line.id))
+    assert Decimal(str(snap["stock_short"][0]["short"])) == Decimal("10"), snap
+    assert _held_by_line(db, [line.id]) == {}
 
 
 # --------------------------------------------------------------------------- revision chain
@@ -1175,8 +1212,9 @@ def test_re_confirming_the_same_borrow_does_not_stack_a_second_shortfall_row(api
         .filter(OrderInquiryRow.verb == IV_BORROW_SHORTFALL)
         .all()
     )
-    assert [row.state for row in rows].count("raised") == 1
-    assert len(rows) == 2, "the first is cancelled and kept, never edited in place"
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): the unchanged hole is the same row, kept,
+    # not cancelled and raised again beside itself.
+    assert [row.state for row in rows] == ["raised"], [(r.state, r.note) for r in rows]
 
 
 # --------------------------------------------------------------------------- discontinued
@@ -1403,10 +1441,12 @@ def test_the_fulfilment_planning_list_filters_by_the_confirmed_review_state(api)
 def test_two_products_sharing_one_pool_warehouse_never_share_a_reserve_bucket(api):
     """The pool ledger is per PRODUCT per pool warehouse (AC-B07, AC-B12).
 
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+
     Product A has 40 free at the shared pool; product B has no stock anywhere. Keyed by
     warehouse alone, B's line would read A's remaining headroom as its own free stock:
     the proposal would offer B a Reserve out of a pile that holds none of B, and the
-    confirm-time recheck would let that over-Reserve commit.
+    confirm-time recheck would let that over-Reserve be held. It is now recorded short, holding nothing.
     """
     client, world = api
     db = world.db
@@ -1437,19 +1477,15 @@ def test_two_products_sharing_one_pool_warehouse_never_share_a_reserve_bucket(ap
             _line_payload(line_b.id, reserve=[{"warehouse_id": world.pool_wh.id, "qty": "15"}]),
         ]
     }
-    refused = client.post(f"{BASE}/sales-orders/{order.id}/confirm", json=payload)
-    assert refused.status_code in (409, 422), refused.text
-    failing = refused.json().get("failing_lines") or []
-    assert any(f["line_no"] == 20 for f in failing), refused.text
-
-    from app.models.project_so import SOSupplyDecision
-
-    assert (
-        db.query(SOSupplyDecision)
-        .filter(SOSupplyDecision.project_sales_order_id == order.id)
-        .count()
-        == 0
-    ), "the refused confirmation must write nothing"
+    response = client.post(f"{BASE}/sales-orders/{order.id}/confirm", json=payload)
+    assert response.status_code == 200, response.text
+    # B's line is short by its whole ask: the pile holds none of B, so 0 is free to it.
+    notice = _assert_short_notice(response.json(), line_b, free=0, short=15)
+    assert notice["line_no"] == 20
+    # A is held in full; nothing of A's 40 leaks into B's line.
+    assert _held_by_line(db, [line_a.id, line_b.id]) == {
+        (line_a.id, world.pool_wh.id): Decimal("10")
+    }
 
 
 def test_a_negative_component_beside_a_positive_one_is_refused_not_netted(api):
@@ -1533,7 +1569,7 @@ def _behind_ours(core_so):
     return core_so
 
 
-def test_a_pool_reserve_asking_more_than_the_pools_available_position_is_refused(api):
+def test_a_pool_reserve_asking_more_than_the_pools_available_position_holds_only_the_available_and_records_the_short(api):
     """Ladder v2 (`PLAN-demo-followups-19aug-ladder-v2.md` section E rule 2): pool capacity
     is now `max(min(free, available), 0)` for EVERY pool, not only a hot-selling one - so a
     SINGLE line can no longer oversell the pool through Reserve at all; the recheck refuses
@@ -1545,7 +1581,9 @@ def test_a_pool_reserve_asking_more_than_the_pools_available_position_is_refused
     from instead.
 
     The pool holds 100 with 90 of it already owed to its own book (ranked behind our line),
-    leaving `available` at 10 - and 20 is refused, not silently capped.
+    leaving `available` at 10 - and 20 holds only the 10 and records 10 short, never more.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     client, world = api
     db = world.db
@@ -1571,10 +1609,10 @@ def test_a_pool_reserve_asking_more_than_the_pools_available_position_is_refused
             ]
         },
     )
-    assert response.status_code in (409, 422), response.text
-    failing = response.json()["failing_lines"]
-    assert failing[0]["line_no"] == 20
-    assert "10" in failing[0]["reason"]
+    assert response.status_code == 200, response.text
+    notice = _assert_short_notice(response.json(), line, free=10, short=10)
+    assert notice["line_no"] == 20
+    assert _held_by_line(db, [line.id]) == {(line.id, world.pool_wh.id): Decimal("10")}
 
 
 def test_a_pool_reserve_up_to_the_pools_available_position_succeeds_and_raises_no_shortfall(api):
@@ -1685,11 +1723,14 @@ def test_an_own_location_reserve_is_confirmed_ladder_v3_gave_that_rung_back(api)
     assert response.status_code == 200, response.text
 
 
-def test_an_own_location_reserve_beyond_what_the_queue_ahead_leaves_is_refused(api):
+def test_an_own_location_reserve_beyond_what_the_queue_ahead_leaves_holds_nothing_and_records_the_short(api):
     """The other half of rung 2: the own location is capped at what the queue ranked AHEAD
     of this line leaves it, not at the raw pile. 20 on hand with an earlier order owing all
-    20 leaves nothing, so a Reserve naming the own location is refused by quantity - the
-    location is allowed, the stock is not."""
+    20 leaves nothing, so a Reserve naming the own location holds nothing and records the 20
+    short - the location is allowed, the stock is not.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     client, world = api
     db = world.db
     _stock(db, world.product, world.own_wh, on_hand=20)
@@ -1714,10 +1755,11 @@ def test_an_own_location_reserve_beyond_what_the_queue_ahead_leaves_is_refused(a
             ]
         },
     )
-    assert response.status_code in (409, 422), response.text
-    failing = response.json()["failing_lines"]
-    assert failing[0]["line_no"] == 20
-    assert world.own_wh.warehouse_code in failing[0]["reason"]
+    assert response.status_code == 200, response.text
+    notice = _assert_short_notice(response.json(), line, free=0, short=20)
+    assert notice["line_no"] == 20
+    assert world.own_wh.warehouse_code in notice["reason"]
+    assert _held_by_line(db, [line.id]) == {}
 
 
 def test_a_pool_reserve_across_two_lines_of_one_confirmation_shares_the_pools_available_capacity(api):
@@ -1731,7 +1773,10 @@ def test_a_pool_reserve_across_two_lines_of_one_confirmation_shares_the_pools_av
     capacity dict from live figures on every line and only ever carried the line's OWN
     site pool forward - so the confirmation wrote both Reserves and oversold the pool by 2,
     caught only afterwards by an order-back. Now the second line is refused outright: the
-    pool has nothing left to give it, so the confirmation writes nothing at all (AC-C01).
+    pool has only 4 left to give it, so the second line holds 4 and records 2 short, and
+    the two lines together hold exactly the pool's 10 (the ledger runs across lines).
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     from app.models.project_so import SOSupplyDecision
 
@@ -1764,19 +1809,19 @@ def test_a_pool_reserve_across_two_lines_of_one_confirmation_shares_the_pools_av
             ]
         },
     )
-    assert response.status_code == 409, response.text
+    assert response.status_code == 200, response.text
     body = response.json()
-    failing = {row["line_no"] for row in body["failing_lines"]}
-    assert failing == {2}, body
-    assert "4" in body["failing_lines"][0]["reason"]
-
-    # Atomic (AC-C01): the second line's refusal rolls the whole confirmation back, so
-    # the first line's own Reserve never lands either.
+    _assert_short_notice(body, line_two, free=4, short=2)
+    assert [n["line_no"] for n in body["stock_short_notices"]] == [2], body
+    assert _held_by_line(db, [line_one.id, line_two.id]) == {
+        (line_one.id, world.pool_wh.id): Decimal("6"),
+        (line_two.id, world.pool_wh.id): Decimal("4"),
+    }
     assert (
         db.query(SOSupplyDecision)
         .filter(SOSupplyDecision.project_sales_order_id == order.id)
-        .first()
-        is None
+        .count()
+        == 1
     )
 
 
@@ -1791,7 +1836,10 @@ def test_one_lending_groups_book_is_spent_once_across_a_confirmations_lines(api)
     and a line due on day 60 reserving 40 at the second both landed - 80 written out of a
     book with 40 in it, on the lending group's own short.
 
-    The second line is now refused, in the same wording every other exhausted location gets.
+    The second line now holds nothing and records the 40 short (0 free at its bin): the
+    group's 40 is spent once, by line 1.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     from app.models.project_so import SOSupplyDecision
 
@@ -1842,18 +1890,18 @@ def test_one_lending_groups_book_is_spent_once_across_a_confirmations_lines(api)
             ]
         },
     )
-    assert response.status_code == 409, response.text
+    assert response.status_code == 200, response.text
     body = response.json()
-    assert {row["line_no"] for row in body["failing_lines"]} == {2}, body
-    reason = body["failing_lines"][0]["reason"]
-    assert second.warehouse_code in reason and "now has 0 free" in reason, reason
-
-    # Atomic (AC-C01): nothing is written, the first line's own Reserve included.
+    notice = _assert_short_notice(body, line_two, free=0, short=40)
+    assert second.warehouse_code in notice["reason"], notice
+    assert _held_by_line(db, [line_one.id, line_two.id]) == {
+        (line_one.id, first.id): Decimal("40")
+    }
     assert (
         db.query(SOSupplyDecision)
         .filter(SOSupplyDecision.project_sales_order_id == order.id)
-        .first()
-        is None
+        .count()
+        == 1
     )
 
 # --------------------------------------------------- the donor's availability nets holds
@@ -1958,11 +2006,9 @@ def test_a_dealer_hot_selling_line_reserving_the_pool_still_opens_no_hole_when_i
     assert not [row for row in rows if row.verb == IV_BORROW_SHORTFALL]
 
 
-def test_a_dealer_hot_selling_line_may_not_borrow_its_own_location_as_free_stock(api):
-    """Ladder v2 (section E rule 7): naming the line's OWN location as a plain free-stock
-    Borrow source is refused - own-location stock is never Reserve-eligible any more
-    either, so the only way to reach it is a GROUP BORROW naming the donor SO line, never
-    a bare `other_location` ask."""
+def test_a_dealer_hot_selling_line_may_borrow_its_own_location_as_free_stock(api):
+    """BORROW-OWN-LOC (owner, 13 Oct 2026) reverses ladder v2's refusal: the line's OWN
+    location is a plain Borrow source. Confirm holds what is free there and passes."""
     client, world = api
     db = world.db
     _classification(db, world.product, world.pool_wh, abc_class_retail="A")
@@ -1990,15 +2036,12 @@ def test_a_dealer_hot_selling_line_may_not_borrow_its_own_location_as_free_stock
                     ],
                     buy_qty="10",
                 )
+                | {"amend_reason": "Borrow what our own bin has, buy the rest."}
             ]
         },
     )
-    assert response.status_code == 422, response.text
-    body = response.json()
-    assert any(
-        "own location" in (row.get("reason") or "")
-        for row in body["failing_lines"]
-    )
+    assert response.status_code == 200, response.text
+    assert not response.json().get("stock_short_notices"), response.text
 
 
 # ---------------------------------------------- a placed shortfall is not raised again
@@ -2141,17 +2184,20 @@ def test_re_confirming_an_unchanged_reserve_survives_a_rival_taking_the_rest_of_
     assert allocations[0].qty == Decimal("10")
 
 
-def test_re_confirming_a_larger_reserve_only_the_increase_competes_and_is_named_in_the_refusal(api):
+def test_re_confirming_a_larger_reserve_only_the_increase_competes_and_is_named_in_the_short_notice(api):
     """(b) Revision 1 holds Reserve 10 of an open qty of 10. The customer then orders 2
-    more, and the location has only 1 unit free for anyone beyond this order's own carried
-    10. Asking for 12 (an increase of 2) is refused - but only the 2 is checked and named,
-    not the 12 the order is resubmitting."""
+    more, and once this order's own carried 10 is counted the location has nothing left for
+    the increase. Asking for 12 (an increase of 2) confirms, keeps the carried 10 held and
+    records the short against the 2 increase only, never the 12 the order is resubmitting.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     client, world = api
     db = world.db
     # 20 on hand, deliberately: the subject here is the INCREASE accounting, and asking 12
-    # of a location that physically holds 10 is refused earlier by the R14 on-hand guard for
-    # a different (also true) reason. `quantity_reserved` is what leaves exactly 1 unit free
-    # beyond this order's own carried 10.
+    # of a location that physically holds 10 is short earlier, at the R14 on-hand guard, for
+    # a different (also true) reason. `quantity_reserved` below is what leaves nothing free
+    # for the increase once this order's own carried 10 is counted.
     stock = _stock(db, world.product, world.pool_wh, on_hand=20)
     order = _project_so(db, world.project)
     core_so = _core_so(db, world.company_id)
@@ -2172,8 +2218,8 @@ def test_re_confirming_a_larger_reserve_only_the_increase_competes_and_is_named_
     )
     assert first.status_code == 200, first.text
 
-    # The customer orders 2 more, and only 1 unit is free beyond this order's own carried
-    # 10 - not enough for the 2-unit increase.
+    # The customer orders 2 more, and nothing is free for the 2-unit increase beyond this
+    # order's own carried 10.
     core_line.qty_ordered = Decimal("12")
     stock.quantity_reserved = 19
     db.commit()
@@ -2189,36 +2235,25 @@ def test_re_confirming_a_larger_reserve_only_the_increase_competes_and_is_named_
             ]
         },
     )
-    assert second.status_code in (409, 422), second.text
-    body = second.json()
-    failing = body["failing_lines"]
-    assert len(failing) == 1 and failing[0]["line_no"] == 10
-    # Quote the exact phrase `_check_line` composes (`f"{warehouse} now has {room}
-    # free for this line, and {ask} was asked for."` in project_supply_service.py)
-    # rather than a bare digit search: a bare "12" (the whole resubmitted qty, which
-    # must NOT be named) is a substring a random warehouse code could also contain
-    # (`ZZT-BRW-712c`), which is exactly how this assertion flaked.
-    assert "and 2 was asked for" in failing[0]["reason"]
-    assert "and 12 was asked for" not in failing[0]["reason"]
-
-    from app.models.project_so import SOSupplyDecision
-
-    decisions = (
-        db.query(SOSupplyDecision)
-        .filter(SOSupplyDecision.project_sales_order_id == order.id)
-        .all()
-    )
-    assert len(decisions) == 1 and decisions[0].revision_no == 1  # nothing written
+    assert second.status_code == 200, second.text
+    # Only the 2-unit INCREASE competed: the short is 2 (never the whole resubmitted 12),
+    # and the 10 the order already carried stays held at the pool.
+    _assert_short_notice(second.json(), line, free=10, short=2)
+    assert _held_by_line(db, [line.id], active_only=True) == {
+        (line.id, world.pool_wh.id): Decimal("10")
+    }
 
 
 def test_re_confirming_the_reserve_at_a_different_location_competes_fully(api):
     """(c) Moving an already-held Reserve from one pool to a DIFFERENT (empty) pool is a
     real new ask there - the carried credit is keyed by (line, kind, WAREHOUSE), so it
-    carries nothing to a location this order never held, and it is refused for nothing
-    being free exactly as an ordinary first ask would be.
+    carries nothing to a location this order never held, and it is recorded short for the
+    full 10 (0 free) exactly as an ordinary first ask would be, holding nothing there.
 
     A second, unrelated site pool - ladder v2 reaches every active pool (section E rule
     2), not only this line's own, so any other pool is a real candidate to move to.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     client, world = api
     db = world.db
@@ -2242,18 +2277,10 @@ def test_re_confirming_the_reserve_at_a_different_location_competes_fully(api):
         f"{BASE}/sales-orders/{order.id}/confirm",
         json={"lines": [_line_payload(line.id, reserve=[{"warehouse_id": other_pool.id, "qty": "10"}])]},
     )
-    assert second.status_code in (409, 422), second.text
-    body = second.json()
-    assert any(row["line_no"] == 10 for row in body["failing_lines"])
-
-    from app.models.project_so import SOSupplyDecision
-
-    decisions = (
-        db.query(SOSupplyDecision)
-        .filter(SOSupplyDecision.project_sales_order_id == order.id)
-        .all()
-    )
-    assert len(decisions) == 1 and decisions[0].revision_no == 1  # nothing written
+    assert second.status_code == 200, second.text
+    _assert_short_notice(second.json(), line, free=0, short=10)
+    # Nothing is held at the new pool, and the carried credit is not handed across to it.
+    assert (line.id, other_pool.id) not in _held_by_line(db, [line.id])
 
 
 # ------------------------------------------ the whole-line rule, extended to Amend (AC-L5)
@@ -2397,15 +2424,17 @@ def test_a_line_wholly_from_stock_and_a_line_wholly_bought_both_confirm(api):
 # ------------------------ TEMPORARY LIFT (the captain, 8 Sep 2026): own-group bin ask
 
 
-def test_a_reserve_at_an_oversold_own_bin_without_a_reason_is_still_refused(api):
+def test_a_reserve_at_an_oversold_own_bin_without_a_reason_is_still_capped_and_recorded_short(api):
     """The 8 Sep 2026 ruling's baseline: without a stated reason, an oversold ownership
     group still caps a Reserve at the line's own location exactly as it always has.
 
     10 on hand at the own location, a competing earlier order (ranked ahead by date)
     owing 100 of it, and this line owing 5 - the group is deep in deficit, so this line's
-    own bin offers it nothing. `reserve 3 + buy 2` with no `amend_reason` fails on two
-    counts at once (the capacity refusal AND the AC-L5 mix-without-a-reason refusal), so
-    either capacity wording is asserted for, wherever it lands in `failing_lines`.
+    own bin offers it nothing. A plain `reserve 5` with no `amend_reason` confirms as
+    decided but holds nothing and records the 5 short. (The mix of stock with a Buy, which
+    needs a reason under AC-L5, is a structural refusal pinned by its own test.)
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     client, world = api
     db = world.db
@@ -2429,19 +2458,15 @@ def test_a_reserve_at_an_oversold_own_bin_without_a_reason_is_still_refused(api)
                 {
                     "project_line_id": str(line.id),
                     "timely_spo_qty": "0",
-                    "reserve": [{"warehouse_id": world.own_wh.id, "qty": "3"}],
-                    "buy_qty": "2",
+                    "reserve": [{"warehouse_id": world.own_wh.id, "qty": "5"}],
+                    "buy_qty": "0",
                 }
             ]
         },
     )
-    assert response.status_code == 422, response.text
-    failing = response.json()["failing_lines"]
-    assert any(
-        "has nothing free for this line now" in entry["reason"]
-        or "now has 0 free for this line" in entry["reason"]
-        for entry in failing
-    )
+    assert response.status_code == 200, response.text
+    _assert_short_notice(response.json(), line, free=0, short=5)
+    assert _held_by_line(db, [line.id]) == {}
 
 
 def test_a_reserve_at_an_oversold_own_bin_confirms_with_a_reason(api):
@@ -2488,15 +2513,17 @@ def test_a_reserve_at_an_oversold_own_bin_confirms_with_a_reason(api):
     assert snapshot["amend_reason"] == "customer collects 3 from the floor this week"
 
 
-def test_a_reason_does_not_push_a_reserve_past_on_hand(api):
+def test_a_reason_does_not_push_a_reserve_past_on_hand_and_records_the_short(api):
     """The ruling's floor: the reason lifts the GROUP-NET cap, never R14
     (`_check_reserve_against_on_hand`), which reads live on-hand less other lines'
     already-confirmed holds independent of any reason. An earlier order confirms 2 of the
     10 on hand at the own location; this line then asks for 15 more of it, with a reason -
     R14 still refuses, because 15 is more than what physically remains (10 - 2 = 8).
 
-    R14 raises its own `ReserveOverHand` at 409 (not the 422 `SupplyLinesRefused` the
-    balance/mix checks raise), matching `tests/test_confirm_reserve_guard.py`'s AC-E1/AC-E2.
+    R14 no longer refuses: the line holds only the 8 that physically remain and records
+    7 short, so the two orders together never hold more than the 10 on hand.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     client, world = api
     db = world.db
@@ -2544,8 +2571,14 @@ def test_a_reason_does_not_push_a_reserve_past_on_hand(api):
             ]
         },
     )
-    assert response.status_code == 409, response.text
-    assert "on hand" in response.json()["message"]
+    assert response.status_code == 200, response.text
+    _assert_short_notice(response.json(), line, free=8, short=7)
+    held = _held_by_line(db, [earlier_line.id, line.id])
+    assert held == {
+        (earlier_line.id, world.own_wh.id): Decimal("2"),
+        (line.id, world.own_wh.id): Decimal("8"),
+    }, held
+    assert sum(held.values()) <= Decimal("10")
 
 
 # ------------------------------------------------- AC-D1: what the engine had said
@@ -2909,7 +2942,10 @@ def test_a_pool_of_the_chain_is_still_judged_by_its_own_floor_at_confirm(api):
     """AC-N.9's other half: the chain widened WHAT may be composed, not by how much.
 
     The second pool holding 687 does not make the asking pool's 4 into 5: each pool of the
-    chain is admitted against its own free floor, and the refusal names that pool.
+    chain is admitted against its own free floor, and the short notice names that pool:
+    4 held of the 5 asked there, 1 short, while the far pool's 3 is held in full.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     client, world = api
     db = world.db
@@ -2939,7 +2975,10 @@ def test_a_pool_of_the_chain_is_still_judged_by_its_own_floor_at_confirm(api):
             ]
         },
     )
-    assert response.status_code in (409, 422), response.text
-    failing = response.json()["failing_lines"]
-    assert failing[0]["line_no"] == 10
-    assert world.pool_wh.warehouse_code in failing[0]["reason"], failing
+    assert response.status_code == 200, response.text
+    notice = _assert_short_notice(response.json(), line, free=4, short=1)
+    assert world.pool_wh.warehouse_code in notice["reason"], notice
+    assert _held_by_line(db, [line.id]) == {
+        (line.id, world.pool_wh.id): Decimal("4"),
+        (line.id, far_pool.id): Decimal("3"),
+    }

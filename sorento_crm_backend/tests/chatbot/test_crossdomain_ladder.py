@@ -744,13 +744,14 @@ class TestD11LinesFollowOneAnotherInToolOrder:
             po_response={"answers": rows, "has_result": True},
         )
         block = result["render"]["_xdBlock"]["block"]
+        # Owner ruling 13 Oct 2026 (STAFF-STOCK-ETA): the three open lines of
+        # 202607-S0054 share product, location and PO date, so they print as ONE row
+        # summed (42 + 12 + 3) at the first line's position; the SPO stays its own row.
         assert block == (
             "No stock and no incoming for SRTWC8517, but PO is placed:\n"
             + "\n\n".join([
-                _row_block(qty=42, po_date="2026-07-17"),
-                _row_block(qty=12, po_date="2026-07-17"),
+                _row_block(qty=57, po_date="2026-07-17"),
                 _row_block(qty=7, po_date="2026-08-20"),
-                _row_block(qty=3, po_date="2026-07-17"),
             ])
         )
         assert "202607-S0054" not in block

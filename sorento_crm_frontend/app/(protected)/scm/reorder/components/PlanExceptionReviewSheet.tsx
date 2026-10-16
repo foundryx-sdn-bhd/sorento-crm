@@ -28,6 +28,7 @@ import {
   type ReadingSignal,
   type TimelinePoint,
 } from '../types/planException.types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Reviewing one Plan Exception (UAC Group D), as a right slide-over off the row.
@@ -237,7 +238,7 @@ export function PlanExceptionReviewSheet({
         <SheetHeader className="border-b p-4 pe-12 sm:p-6 sm:pe-12">
           <SheetTitle className="break-words">
             {exception.product_code}
-            {exception.product_name ? (
+            {distinctName(exception.product_code, exception.product_name) ? (
               <>
                 {/* An explicit space, because the accessible NAME of the heading
                     concatenates its children and a margin is not a word break: without

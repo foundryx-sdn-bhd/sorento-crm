@@ -46,6 +46,7 @@ import {
   type PackingListRegion,
 } from '@/lib/packing-list-regions';
 import { getContact } from './contactService';
+import { codeWithName } from '@/lib/product-display';
 
 export type ChatbotMemoryLevel = 'off' | 'conversation' | 'episodes' | 'full';
 
@@ -314,9 +315,7 @@ export async function searchUsualProductOptions(query: string): Promise<Searchab
   return optionsByValue(
     products.map((product) => ({
       value: product.product_code,
-      label: product.product_name
-        ? `${product.product_code} - ${product.product_name}`
-        : product.product_code,
+      label: codeWithName(product.product_code, product.product_name),
       company: product.company_name,
     })),
   );

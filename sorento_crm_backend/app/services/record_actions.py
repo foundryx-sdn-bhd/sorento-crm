@@ -83,6 +83,12 @@ def _reset_product_alternatives(db: Session, payload: dict):
     return reset_auto(db, _entity_id(payload))
 
 
+def _unlink_product_compatibility(db: Session, payload: dict):
+    from app.services.product_compatibility_service import unlink
+
+    return unlink(db, _entity_id(payload))
+
+
 def _delete_product_combo(db: Session, payload: dict):
     from app.services.product_combo_service import ProductComboService
 
@@ -278,6 +284,28 @@ register(
     )
 )
 
+def _delete_llm_model_price(db: Session, payload: dict):
+    """The same delete `DELETE /system/ai-assistant/model-prices/{id}` runs, by id."""
+    from app.models.ai_assistant import LLMModelPrice
+
+    row = db.query(LLMModelPrice).filter(LLMModelPrice.id == _entity_id(payload)).first()
+    if row is None:
+        return None
+    db.delete(row)
+    return None
+
+
+register(
+    FormAction(
+        key="llm_model_price.delete",
+        entity_types=("llm_model_price",),
+        execute=_delete_llm_model_price,
+        window=WINDOW_DESTRUCTIVE,
+        permission="system.ai_assistant_settings.edit",
+        label="Delete model price",
+    )
+)
+
 register(
     FormAction(
         key="order.delete",
@@ -338,6 +366,20 @@ register(
         window=WINDOW_DESTRUCTIVE,
         permission="master_data.products.edit",
         label="Reset alternatives",
+    )
+)
+
+# WC-SEAT-COMPAT: unlink one seat cover <-> WC link from the product page's Compatible
+# section. Parked on the LINK row; reversible, both products survive and the link is one
+# pick away.
+register(
+    FormAction(
+        key="product_compatibility.unlink",
+        entity_types=("product_compatibility",),
+        execute=_unlink_product_compatibility,
+        window=WINDOW_REVERSIBLE,
+        permission="master_data.products.edit",
+        label="Unlink",
     )
 )
 
@@ -2065,6 +2107,30 @@ register(
 )
 
 
+def _delete_stock_debt_snapshot(db: Session, payload: dict):
+    from app.services.scm.stock_debt_snapshot_service import StockDebtSnapshotService
+
+    # `delete` answers 404 for a snapshot that is not the requester's own, so ownership IS
+    # the check - the same shape `saved_view.delete` above uses.
+    StockDebtSnapshotService(db).delete(
+        _entity_id(payload), str(payload.get("requested_by_id") or "")
+    )
+    return {"message": "Deleted"}
+
+
+register(
+    FormAction(
+        key="stock_debt_snapshot.delete",
+        entity_types=("stock_debt_snapshot",),
+        execute=_delete_stock_debt_snapshot,
+        # Destructive: the snapshot carries other people's decisions on its rows.
+        window=WINDOW_DESTRUCTIVE,
+        permission=OWN_RECORD,
+        label="Delete snapshot",
+    )
+)
+
+
 def _void_price_tag_request(db: Session, payload: dict):
     from app.services.price_tag_request_service import (
         PriceTagRequestService,
@@ -2372,5 +2438,44 @@ register(
         window=WINDOW_DESTRUCTIVE,
         permission="procurement.stock_inquiries.view",
         label="Delete comment",
+    )
+)
+
+
+def assert_quotation_deletable(db: Session, document_id: str, user_id) -> None:
+    """The DELETE route's checks (edit rights on the project, not issued), run at park time and
+    again when the window lapses. Raises 404 when the quotation is gone, 403 without edit rights
+    and 422 `quotation_document_issued` once anything has been sent."""
+    from app.models.projects import Project
+    from app.services import project_quotation_document_service as qdocs
+    from app.services import project_service
+    from app.services.error_handler import handle_not_found
+    from app.services.user_service import UserPermissionService
+
+    document = qdocs.get_document(db, document_id)
+    if document is None:
+        raise handle_not_found("Quotation", document_id)
+    project = db.query(Project).filter(Project.id == document.project_id).first()
+    slugs = set(UserPermissionService(db).get_user_permission_slugs(user_id)) if user_id else set()
+    project_service.assert_can_edit_project(db, project, user_id, slugs)
+    qdocs.assert_deletable(db, document)
+
+
+def _delete_quotation_document(db: Session, payload: dict):
+    from app.services import project_quotation_document_service as qdocs
+
+    document_id = _entity_id(payload)
+    assert_quotation_deletable(db, document_id, payload.get("requested_by_id"))
+    return qdocs.delete_document(db, qdocs.get_document(db, document_id))
+
+
+register(
+    FormAction(
+        key="quotation_document.delete",
+        entity_types=("quotation_document",),
+        execute=_delete_quotation_document,
+        window=WINDOW_DESTRUCTIVE,
+        permission="projects.projects.delete",
+        label="Delete quotation",
     )
 )

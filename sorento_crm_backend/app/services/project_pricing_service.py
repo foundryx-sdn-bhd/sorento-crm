@@ -11,22 +11,28 @@ stored, so there is one source of truth for it.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+import uuid
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 
-from sqlalchemy import text
+from sqlalchemy import and_, func, or_, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
-from app.models.product import Product, ProductCategory
+from app.models.product import Brand, Product, ProductCategory
+from app.models.product_set import ProductSet, ProductSetMember
 from app.models.projects import (
     FLOOR_MODE_ABSOLUTE,
     FLOOR_MODE_PERCENT,
     FLOOR_MODES,
     PriceFloorRule,
     ProjectSeries,
+    ProjectSeriesBrand,
     ProjectSeriesCategory,
     ProjectSeriesProduct,
+    ProjectSeriesSet,
 )
 from app.services.error_handler import AppException
 # The repo's ONE product-code normaliser (lowercased, dash/whitespace stripped), already
@@ -93,6 +99,10 @@ class SeriesMembership:
 
     categories: Set[str]
     products: Set[str]
+    #: The series' picked brands. Empty means every brand.
+    brand_ids: Set[str] = field(default_factory=set)
+    #: The series' company: scope products are the company's own, never another's.
+    company_id: Optional[str] = None
 
 
 # --------------------------------------------------------------- category walk
@@ -647,11 +657,82 @@ def series_pricing_map(db: Session, series_id: Optional[str]) -> Dict[str, tuple
     }
 
 
-def series_product_rows(db: Session, series_id: str) -> List[Dict[str, Any]]:
-    """The series' products as the screen reads them: code, name, price, percentage, floor.
+def series_brand_ids(db: Session, series_id: Optional[str]) -> Set[str]:
+    """The brands picked on the series. Empty means every brand."""
+    if not series_id:
+        return set()
+    return {
+        row[0]
+        for row in db.query(ProjectSeriesBrand.brand_id)
+        .filter(ProjectSeriesBrand.series_id == str(series_id))
+        .all()
+    }
 
-    ONE join for the whole set, not a lookup per row - the client's own series runs to 92
-    products and this is drawn on every visit to the page.
+
+def _scope_conditions(db: Session, series_id: str) -> List[Any]:
+    """SQL conditions for "an active product of the picked brands under the picked
+    categories". An empty brand or category pick adds no condition (empty means all).
+
+    The one definition of the scope for every query that reads it; the company scope comes
+    from querying ``Product`` through the ORM.
+    """
+    conditions: List[Any] = [Product.is_active == True]  # noqa: E712
+    # The series' own company, explicitly: a session spanning two companies must not widen it.
+    company_id = db.query(ProjectSeries.company_id).filter(ProjectSeries.id == str(series_id)).scalar()
+    if company_id:
+        conditions.append(Product.company_id == company_id)
+    brand_ids = series_brand_ids(db, series_id)
+    if brand_ids:
+        conditions.append(Product.brand_id.in_(brand_ids))
+    covered = series_category_ids(db, series_id)
+    if covered:
+        conditions.append(Product.category_id.in_(covered))
+    return conditions
+
+
+def product_in_series_scope(db: Session, series: ProjectSeries, product_id: str) -> bool:
+    """One product against the scope rule: a single indexed lookup, never the whole scope."""
+    return (
+        db.query(Product.id)
+        .filter(Product.id == str(product_id), *_scope_conditions(db, series.id))
+        .first()
+        is not None
+    )
+
+
+def _series_row(link: Optional[ProjectSeriesProduct], product: Product, in_scope: bool) -> Dict[str, Any]:
+    price = link.selling_price if link else None
+    pct = link.max_discount_pct if link else None
+    return {
+        "product_id": product.id,
+        "product_code": product.product_code,
+        "product_name": product.product_name,
+        "selling_price": price,
+        "max_discount_pct": pct,
+        "derived_floor": series_floor(price, pct),
+        "in_scope": in_scope,
+    }
+
+
+def series_product_rows(
+    db: Session,
+    series_id: str,
+    *,
+    page: int = 1,
+    limit: int = 50,
+    query: Optional[str] = None,
+    priced_only: bool = False,
+) -> tuple[List[Dict[str, Any]], int]:
+    """One page of the series' products and the total: code, name, price, percentage, floor.
+
+    The series is its named products plus every in-scope product (picked brands under picked
+    categories, empty meaning all), so the table opens preloaded. Each row says whether it
+    is ``in_scope``; a named row outside the scope stays listed, only removable.
+    ``priced_only`` keeps just the rows that carry a selling price (what a quotation line
+    opens at).
+
+    One count and one page query, both in SQL: a series can hold the whole catalogue and the
+    page must not load it. ``query`` matches code or name, case-insensitively.
 
     ``derived_floor`` is computed HERE rather than in the browser. It is the number a refusal
     is argued from, and the same function the pricing engine enforces with, so the figure on
@@ -660,24 +741,34 @@ def series_product_rows(db: Session, series_id: str) -> List[Dict[str, Any]]:
     Ordered by product code, because a list somebody checks against a spreadsheet has to be
     in an order they can follow; insertion order is meaningless to them.
     """
-    rows = (
-        db.query(ProjectSeriesProduct, Product)
-        .join(Product, Product.id == ProjectSeriesProduct.product_id)
-        .filter(ProjectSeriesProduct.series_id == str(series_id))
-        .order_by(Product.product_code)
+    in_scope = and_(*_scope_conditions(db, series_id))
+    base = (
+        db.query(Product, ProjectSeriesProduct, in_scope.label("in_scope"))
+        .outerjoin(
+            ProjectSeriesProduct,
+            and_(
+                ProjectSeriesProduct.product_id == Product.id,
+                ProjectSeriesProduct.series_id == str(series_id),
+            ),
+        )
+        .filter(or_(ProjectSeriesProduct.product_id.isnot(None), in_scope))
+    )
+    if priced_only:
+        base = base.filter(ProjectSeriesProduct.selling_price.isnot(None))
+    term = (query or "").strip()
+    if term:
+        like = f"%{term}%"
+        base = base.filter(
+            or_(Product.product_code.ilike(like), Product.product_name.ilike(like))
+        )
+    total = base.order_by(None).with_entities(func.count(Product.id)).scalar() or 0
+    found = (
+        base.order_by(Product.product_code.asc(), Product.id.asc())
+        .offset((max(page, 1) - 1) * limit)
+        .limit(limit)
         .all()
     )
-    return [
-        {
-            "product_id": link.product_id,
-            "product_code": product.product_code,
-            "product_name": product.product_name,
-            "selling_price": link.selling_price,
-            "max_discount_pct": link.max_discount_pct,
-            "derived_floor": series_floor(link.selling_price, link.max_discount_pct),
-        }
-        for link, product in rows
-    ]
+    return [_series_row(link, product, bool(flag)) for product, link, flag in found], total
 
 
 def set_series_product_pricing(
@@ -693,6 +784,9 @@ def set_series_product_pricing(
     Explicit about erasure in a way the importer deliberately is not: here ``None`` MEANS
     "clear it", because the person cleared the cell. The importer treats an absent value as
     silence instead, since a sheet that states no price is not asking for one to be deleted.
+
+    A product that is in scope but has no stored row yet (a derived row) gets its row on the
+    first number typed.
     """
     link = (
         db.query(ProjectSeriesProduct)
@@ -703,24 +797,21 @@ def set_series_product_pricing(
         .first()
     )
     if link is None:
-        raise AppException(
-            status_code=404,
-            message="That product is not in this series.",
-            code="series_product_not_found",
-        )
+        if not product_in_series_scope(db, series, product_id):
+            raise AppException(
+                status_code=404,
+                message="That product is not in this series.",
+                code="series_product_not_found",
+            )
+        link = ProjectSeriesProduct(series_id=series.id, product_id=str(product_id))
+        db.add(link)
     link.selling_price = selling_price
     link.max_discount_pct = max_discount_pct
     db.flush()
 
     product = db.query(Product).filter(Product.id == link.product_id).first()
-    return {
-        "product_id": link.product_id,
-        "product_code": product.product_code if product else None,
-        "product_name": product.product_name if product else None,
-        "selling_price": link.selling_price,
-        "max_discount_pct": link.max_discount_pct,
-        "derived_floor": series_floor(link.selling_price, link.max_discount_pct),
-    }
+    in_scope = product_in_series_scope(db, series, product_id)
+    return _series_row(link, product, in_scope)
 
 
 def remove_series_product(db: Session, *, series: ProjectSeries, product_id: str) -> bool:
@@ -737,6 +828,153 @@ def remove_series_product(db: Session, *, series: ProjectSeries, product_id: str
     return bool(deleted)
 
 
+# ------------------------------------------------------------ product sets in a series
+
+
+def is_set_in_series(db: Session, series_id: Optional[str], product_set_id: str) -> bool:
+    """Is this SET priced into the series? With no series nothing is an allowlist breach.
+
+    A set has no category, so unlike a product it is standard only by a ``series_sets`` row.
+    """
+    if not series_id:
+        return True
+    return (
+        db.query(ProjectSeriesSet.series_id)
+        .filter(
+            ProjectSeriesSet.series_id == str(series_id),
+            ProjectSeriesSet.product_set_id == str(product_set_id),
+        )
+        .first()
+        is not None
+    )
+
+
+def series_set_pricing_map(db: Session, series_id: Optional[str]) -> Dict[str, tuple]:
+    """``product_set_id -> (selling_price, max_discount_pct)`` for a whole series."""
+    if not series_id:
+        return {}
+    return {
+        row.product_set_id: (row.selling_price, row.max_discount_pct)
+        for row in db.query(ProjectSeriesSet)
+        .filter(ProjectSeriesSet.series_id == str(series_id))
+        .all()
+    }
+
+
+def resolve_set_floor(
+    db: Session,
+    *,
+    company_id: str,
+    product_set: ProductSet,
+    list_price: Optional[Decimal] = None,
+    series_id: Optional[str] = None,
+) -> Optional[ResolvedFloor]:
+    """The floor for one SET line, or None.
+
+    The series row wins when it states both numbers. Otherwise ONLY the company default
+    (system) rule applies, against the set list price: a set is not a product and has no
+    category, so product and category rules never reach it (owner answer Q4 b).
+    """
+    if series_id is not None:
+        stated = series_set_pricing_map(db, series_id).get(product_set.id)
+        if stated is not None:
+            floor = series_floor(stated[0], stated[1])
+            if floor is not None:
+                return ResolvedFloor(
+                    value=floor,
+                    mode=FLOOR_MODE_ABSOLUTE,
+                    level=LEVEL_SERIES,
+                    rule_id=str(series_id),
+                )
+    system = next(
+        (r for r in _active_rules(db, company_id) if not r.product_id and not r.category_id),
+        None,
+    )
+    if system is None:
+        return None
+    value = _floor_from_rule(system, list_price)
+    if value is None:
+        return None
+    return ResolvedFloor(value=value, mode=system.mode, level=LEVEL_SYSTEM, rule_id=system.id)
+
+
+def _series_set_row(link: ProjectSeriesSet, product_set: Optional[ProductSet]) -> Dict[str, Any]:
+    return {
+        "product_set_id": link.product_set_id,
+        "set_code": product_set.set_code if product_set else None,
+        "set_name": product_set.name if product_set else None,
+        "part_codes": [m.product.product_code for m in product_set.members]
+        if product_set
+        else [],
+        "selling_price": link.selling_price,
+        "max_discount_pct": link.max_discount_pct,
+        "derived_floor": series_floor(link.selling_price, link.max_discount_pct),
+    }
+
+
+def series_set_rows(db: Session, series_id: str) -> List[Dict[str, Any]]:
+    """The series' sets as the screen reads them, ordered by set code."""
+    rows = (
+        db.query(ProjectSeriesSet, ProductSet)
+        .join(ProductSet, ProductSet.id == ProjectSeriesSet.product_set_id)
+        .filter(ProjectSeriesSet.series_id == str(series_id))
+        .order_by(ProductSet.set_code)
+        .all()
+    )
+    return [_series_set_row(link, product_set) for link, product_set in rows]
+
+
+def set_series_set_pricing(
+    db: Session,
+    *,
+    series: ProjectSeries,
+    product_set_id: str,
+    selling_price: Any,
+    max_discount_pct: Any,
+) -> Dict[str, Any]:
+    """Upsert one set's price and percentage on a series; ``None`` clears the number.
+
+    The set is read through the company-scoped session, so another company's set is as
+    absent as one that never existed.
+    """
+    product_set = db.query(ProductSet).filter(ProductSet.id == str(product_set_id)).first()
+    if product_set is None:
+        raise AppException(
+            status_code=404,
+            message="That product set was not found.",
+            code="product_set_not_found",
+        )
+    link = (
+        db.query(ProjectSeriesSet)
+        .filter(
+            ProjectSeriesSet.series_id == series.id,
+            ProjectSeriesSet.product_set_id == product_set.id,
+        )
+        .first()
+    )
+    if link is None:
+        link = ProjectSeriesSet(series_id=series.id, product_set_id=product_set.id)
+        db.add(link)
+    link.selling_price = selling_price
+    link.max_discount_pct = max_discount_pct
+    db.flush()
+    return _series_set_row(link, product_set)
+
+
+def remove_series_set(db: Session, *, series: ProjectSeries, product_set_id: str) -> bool:
+    """Take one set off the series. False when it was not on it to begin with."""
+    deleted = (
+        db.query(ProjectSeriesSet)
+        .filter(
+            ProjectSeriesSet.series_id == series.id,
+            ProjectSeriesSet.product_set_id == str(product_set_id),
+        )
+        .delete(synchronize_session=False)
+    )
+    db.flush()
+    return bool(deleted)
+
+
 def series_membership(db: Session, series_id: Optional[str]) -> SeriesMembership:
     """The whole series, expanded ONCE (S18).
 
@@ -744,9 +982,16 @@ def series_membership(db: Session, series_id: Optional[str]) -> SeriesMembership
     fifty-two. Without this a version's guardrail pass costs a walk per line, which is the
     shape that makes a long quotation slow for no reason at all.
     """
+    company_id = (
+        db.query(ProjectSeries.company_id).filter(ProjectSeries.id == series_id).scalar()
+        if series_id
+        else None
+    )
     return SeriesMembership(
+        company_id=company_id,
         categories=series_category_ids(db, series_id),
         products=series_product_ids(db, series_id),
+        brand_ids=series_brand_ids(db, series_id),
     )
 
 
@@ -764,6 +1009,9 @@ def is_in_series(
     the other, because they answer different questions - "everything under Basins is fair
     game" and "these exact 142 codes are the standard range" - and a series may want
     either, both or neither.
+
+    Otherwise BOTH must hold: the product is active, its brand is one of the picked brands
+    (none picked = any) and its category is under a picked category (none picked = any).
 
     Direct membership is checked FIRST and needs no category at all, which also makes a
     product with a null ``category_id`` nominatable. Under category-only membership such a
@@ -784,7 +1032,58 @@ def is_in_series(
     resolved = membership if membership is not None else series_membership(db, series_id)
     if product.id in resolved.products:
         return True
-    return product.category_id in resolved.categories
+    if not product.is_active:
+        return False
+    if resolved.company_id and product.company_id != resolved.company_id:
+        return False
+    if resolved.brand_ids and product.brand_id not in resolved.brand_ids:
+        return False
+    return not resolved.categories or product.category_id in resolved.categories
+
+
+def _checked_ids(db: Session, model: Any, ids: Sequence[str], *, code: str, noun: str) -> Set[str]:
+    """The ids as a set, each a real row the acting company can see; else a 422.
+
+    Looked up through the company-scoped session, so another company's row reads as unknown
+    and its name never reaches the message. Runs before any write.
+    """
+    wanted = {str(i) for i in ids if i}
+    try:
+        for i in wanted:
+            if str(uuid.UUID(i)) != i.lower():
+                raise ValueError(i)
+        found = (
+            {row[0] for row in db.query(model.id).filter(model.id.in_(wanted)).all()}
+            if wanted
+            else set()
+        )
+    except ValueError:
+        found = set()
+        wanted = wanted | {""}
+    if found != wanted:
+        raise AppException(
+            status_code=422, message=f"One of the {noun} is not available.", code=code
+        )
+    return wanted
+
+
+def set_series_brands(
+    db: Session, *, series: ProjectSeries, brand_ids: Sequence[str]
+) -> None:
+    """Replace the picked brands. Sent whole, reconciled like ``set_series_categories``."""
+    wanted = _checked_ids(db, Brand, brand_ids, code="series_brand_invalid", noun="brands")
+    existing = {
+        row.brand_id: row
+        for row in db.query(ProjectSeriesBrand)
+        .filter(ProjectSeriesBrand.series_id == series.id)
+        .all()
+    }
+
+    for brand_id in wanted - set(existing):
+        db.add(ProjectSeriesBrand(series_id=series.id, brand_id=brand_id))
+    for brand_id in set(existing) - wanted:
+        db.delete(existing[brand_id])
+    db.flush()
 
 
 def set_series_categories(
@@ -795,7 +1094,9 @@ def set_series_categories(
     Reconciled rather than deleted-and-reinserted so an unchanged nomination keeps its
     row, which keeps the audit trail readable.
     """
-    wanted = {cid for cid in category_ids if cid}
+    wanted = _checked_ids(
+        db, ProductCategory, category_ids, code="series_category_invalid", noun="categories"
+    )
     existing = {
         row.category_id: row
         for row in db.query(ProjectSeriesCategory)
@@ -950,6 +1251,131 @@ def resolve_product_codes(
     return matched, unmatched
 
 
+def _compact_upper(raw: str) -> str:
+    """Whitespace removed, upper-cased: the spelling a family prefix is compared in."""
+    return re.sub(r"\s+", "", raw or "").upper()
+
+
+def _starts_with_any(column: Any, prefixes: Sequence[str]) -> Any:
+    """SQL: the column, whitespace removed and upper-cased, starts with one of ``prefixes``.
+
+    One ``LIKE ANY`` so the column is squashed once per row, not once per prefix. Each prefix
+    has ``\\``, ``%`` and ``_`` escaped, so a sheet code holding them is just text.
+    """
+    squashed = func.upper(func.regexp_replace(column, r"\s", "", "g"))
+    patterns = [
+        re.sub(r"([\\%_])", r"\\\1", prefix) + "%" for prefix in prefixes
+    ]
+    return squashed.like(func.any(postgresql.array(patterns)))
+
+
+def resolve_series_codes(
+    db: Session, codes: Sequence[str]
+) -> tuple[Dict[str, List[Product]], Dict[str, Dict[str, Any]], List[str]]:
+    """Sheet codes resolved as ``(exact, indirect, unmatched)``; first hit wins, never fuzzy.
+
+    1. exact product (``resolve_product_codes``);
+    2. an ACTIVE product set carrying the code, resolved to its members;
+    3. a family: ACTIVE products, and ACTIVE sets, whose code starts with the sheet code
+       plus a dash (`CWC1009` finds `CWC1009-SC`, never `CWC10091`), sets expanded to members.
+
+    ``indirect`` maps the normalised code to ``code`` (sheet spelling), ``via``, ``products``
+    and ``priced`` (ids the sheet price applies to: family products that are not parts of
+    any active set; set members are listed but never priced). Tiers 2 and 3 only see the
+    codes the tier before missed, in a handful of queries for the whole sheet.
+    """
+    exact, missed = resolve_product_codes(db, codes)
+    if not missed:
+        return exact, {}, []
+
+    spelling = {normalize_code(raw): raw for raw in missed}
+    indirect: Dict[str, Dict[str, Any]] = {}
+
+    def members_of(set_ids: Sequence[str]) -> Dict[str, List[Product]]:
+        out: Dict[str, List[Product]] = {}
+        if not set_ids:
+            return out
+        for set_id, product in (
+            db.query(ProductSetMember.product_set_id, Product)
+            .join(Product, Product.id == ProductSetMember.product_id)
+            .filter(
+                ProductSetMember.product_set_id.in_(list(set_ids)),
+                Product.is_active == True,  # noqa: E712
+            )
+            .all()
+        ):
+            out.setdefault(set_id, []).append(product)
+        return out
+
+    set_norm = func.lower(func.regexp_replace(ProductSet.set_code, r"[-\s]", "", "g"))
+    sets = (
+        db.query(ProductSet)
+        .filter(ProductSet.is_active == True, set_norm.in_(list(spelling)))  # noqa: E712
+        .all()
+    )
+    by_norm: Dict[str, List[ProductSet]] = {}
+    for ps in sets:
+        by_norm.setdefault(normalize_code(ps.set_code), []).append(ps)
+    set_members = members_of([ps.id for ps in sets])
+    for norm, found in by_norm.items():
+        products = {p.id: p for ps in found for p in set_members.get(ps.id, [])}
+        if not products:
+            continue
+        indirect[norm] = {
+            "code": spelling[norm],
+            "via": "set",
+            "products": list(products.values()),
+            "priced": set(),
+            "sets": list(found),
+        }
+
+    prefixes = {
+        norm: _compact_upper(raw) + "-" for norm, raw in spelling.items() if norm not in indirect
+    }
+    if prefixes:
+        wanted = list(prefixes.values())
+        fam_products = (
+            db.query(Product)
+            .filter(Product.is_active == True, _starts_with_any(Product.product_code, wanted))  # noqa: E712
+            .all()
+        )
+        fam_sets = (
+            db.query(ProductSet)
+            .filter(ProductSet.is_active == True, _starts_with_any(ProductSet.set_code, wanted))  # noqa: E712
+            .all()
+        )
+        fam_set_members = members_of([ps.id for ps in fam_sets])
+        set_parts = {
+            row[0]
+            for row in db.query(ProductSetMember.product_id)
+            .join(ProductSet, ProductSet.id == ProductSetMember.product_set_id)
+            .filter(
+                ProductSet.is_active == True,  # noqa: E712
+                ProductSetMember.product_id.in_([p.id for p in fam_products]),
+            )
+            .all()
+        } if fam_products else set()
+        for norm, prefix in prefixes.items():
+            direct = [p for p in fam_products if _compact_upper(p.product_code).startswith(prefix)]
+            via_sets = [ps for ps in fam_sets if _compact_upper(ps.set_code).startswith(prefix)]
+            products = {p.id: p for p in direct}
+            for ps in via_sets:
+                for p in fam_set_members.get(ps.id, []):
+                    products.setdefault(p.id, p)
+            if not products:
+                continue
+            indirect[norm] = {
+                "code": spelling[norm],
+                "via": "family",
+                "products": list(products.values()),
+                "priced": {p.id for p in direct if p.id not in set_parts},
+                "sets": list(via_sets),
+            }
+
+    unmatched = [raw for norm, raw in spelling.items() if norm not in indirect]
+    return exact, indirect, unmatched
+
+
 def apply_series_product_codes(
     db: Session,
     *,
@@ -992,8 +1418,8 @@ def apply_series_product_codes(
         entry if hasattr(entry, "code") else _SeriesRow(code=str(entry)) for entry in codes
     ]
     submitted = len(sheet_rows)
-    matched, unmatched = resolve_product_codes(db, [row.code for row in sheet_rows])
-    if not matched and not unmatched:
+    matched, indirect, unmatched = resolve_series_codes(db, [row.code for row in sheet_rows])
+    if not matched and not indirect and not unmatched:
         raise AppException(
             status_code=422,
             message=(
@@ -1004,15 +1430,25 @@ def apply_series_product_codes(
         )
 
     resolved_ids = {product.id for rows in matched.values() for product in rows}
+    for hit in indirect.values():
+        resolved_ids |= {product.id for product in hit["products"]}
     before = series_product_ids(db, series.id)
     wanted = resolved_ids if mode == "replace" else before | resolved_ids
 
     # What each product should now cost. Only rows that actually state something appear, so a
     # code-only paste never blanks a price an admin typed on this page.
     pricing: Dict[str, tuple[Any, Any]] = {}
-    for row in sheet_rows:
-        if row.selling_price is None and row.max_discount_pct is None:
-            continue
+    stated = [
+        row
+        for row in sheet_rows
+        if row.selling_price is not None or row.max_discount_pct is not None
+    ]
+    # Family variants take the sheet's numbers, set members never do (D3, D3b). Applied
+    # BEFORE the exact rows so an exact code's own price wins whatever the row order.
+    for row in stated:
+        for product_id in indirect.get(normalize_code(row.code), {}).get("priced", ()):
+            pricing[product_id] = (row.selling_price, row.max_discount_pct)
+    for row in stated:
         for product in matched.get(normalize_code(row.code), []):
             pricing[product.id] = (row.selling_price, row.max_discount_pct)
 
@@ -1020,13 +1456,47 @@ def apply_series_product_codes(
         db, series=series, product_ids=wanted, pricing=pricing
     )
 
+    # The SETS the sheet resolved get a series row of their own (a set is quoted as one line).
+    # Numbers come from the sheet row that named them, the last row winning; a code-only row
+    # creates the row empty if absent and never blanks numbers already there.
+    set_by_id: Dict[str, ProductSet] = {}
+    set_pricing: Dict[str, tuple[Any, Any]] = {}
+    for hit in indirect.values():
+        for ps in hit.get("sets", ()):
+            set_by_id[ps.id] = ps
+    # Family rows first, then the set's own code rows, so a set's own code wins whatever the
+    # sheet order (the same rule products follow above).
+    for tier in ("family", "set"):
+        for row in stated:
+            hit = indirect.get(normalize_code(row.code), {})
+            if hit.get("via") != tier:
+                continue
+            for ps in hit.get("sets", ()):
+                set_pricing[ps.id] = (row.selling_price, row.max_discount_pct)
+    existing_sets = {
+        link.product_set_id: link
+        for link in db.query(ProjectSeriesSet).filter(ProjectSeriesSet.series_id == series.id).all()
+    }
+    for set_id in set_by_id:
+        link = existing_sets.get(set_id)
+        if link is None:
+            link = ProjectSeriesSet(series_id=series.id, product_set_id=set_id)
+            db.add(link)
+        if set_id in set_pricing:
+            link.selling_price, link.max_discount_pct = set_pricing[set_id]
+    if mode == "replace":
+        for set_id, link in existing_sets.items():
+            if set_id not in set_by_id:
+                db.delete(link)
+    db.flush()
+
     return {
         "series_id": series.id,
         "series_name": series.name,
         "mode": mode,
         "submitted": submitted,
-        "unique_codes": len(matched) + len(unmatched),
-        "matched_codes": len(matched),
+        "unique_codes": len(matched) + len(indirect) + len(unmatched),
+        "matched_codes": len(matched) + len(indirect),
         "added": outcome["added"],
         # Counted against what was ALREADY on the series, so "you have imported this
         # sheet before" is distinguishable from "it added nothing because nothing matched".
@@ -1034,4 +1504,14 @@ def apply_series_product_codes(
         "removed": outcome["removed"],
         "product_count": len(wanted),
         "unmatched_codes": unmatched,
+        "resolved": [
+            {
+                "code": hit["code"],
+                "via": hit["via"],
+                "members": sorted(p.product_code for p in hit["products"]),
+                # Only when the sheet code reached sets, so an all-product family reads as before.
+                **({"sets": sorted(ps.set_code for ps in hit["sets"])} if hit.get("sets") else {}),
+            }
+            for hit in indirect.values()
+        ],
     }

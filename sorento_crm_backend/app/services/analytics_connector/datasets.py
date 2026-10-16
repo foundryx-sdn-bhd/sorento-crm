@@ -8,6 +8,7 @@ Anything outside the catalog raises `QueryError`, which the route answers with 4
 from __future__ import annotations
 
 import json
+import math
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -36,7 +37,7 @@ class QueryError(ValueError):
 @dataclass(frozen=True)
 class Col:
     key: str
-    type: str  # text | int | datetime | bool
+    type: str  # text | int | number | datetime | bool | json
     description: str
     filterable: bool = True
     groupable: bool = False
@@ -152,6 +153,91 @@ CATALOG: dict[str, Dataset] = {
             Col("summary", "text", "Episode summary"),
             Col("last_user_message", "text", "Last thing the customer wrote"),
             Col("last_assistant_summary", "text", "Summary of the bot's last answer"),
+        ),
+    ),
+    # CHAT-TURN-COST (plan documentation/plans/analytics/PLAN-chat-turn-cost-13oct.md).
+    "turn_costs": Dataset(
+        "turn_costs",
+        "One row per chatbot turn with what it cost: every LLM call of the turn summed, priced in USD"
+        " from the model price table, plus the conversation category (domain, intent, topic), outcome and"
+        " latency. Group by contact_name, episode_id, domain or created_at buckets for cost per contact,"
+        " conversation, category or day. Category columns are empty for a turn still open. cost_usd is NULL when a call used a model with no price (priced = false).",
+        "created_at",
+        (
+            Col("id", "text", "Turn id (the same id as bot_turns.id and llm_calls.chatbot_turn_id)"),
+            Col("created_at", "datetime", "Turn start (Malaysia time)"),
+            *_CONTACT_COLS,
+            Col("contact_phone", "text", "Contact's WhatsApp phone number (raw; this is the only dataset that"
+                " carries it)", groupable=True),
+            Col("contact_respond_id", "text", "Respond.io contact id", groupable=True),
+            Col("customer_name", "text", "Customer the turn's ask was recorded against; empty while the turn has"
+                " no fact row (still open)", groupable=True),
+            Col("episode_id", "text", "Conversation episode the turn belongs to (episodes.id); empty while the"
+                " episode is still open", groupable=True),
+            Col("inbound_text", "text", "What the customer wrote (sign-in codes masked)"),
+            Col("reply_text", "text", "What the bot answered (sign-in codes masked)"),
+            Col("status", "text", "queued, processing, delegated, done, failed", groupable=True),
+            Col("stage", "text", "Where the turn stopped", groupable=True),
+            Col("branch_kind", "text", "Reply branch (lane) the engine took, e.g. business, low_signal", groupable=True),
+            Col("domain", "text", "Conversation category: the domain the turn acted on (stock, order, ...),"
+                " the planner's first domain, else the parser's domain_hint", groupable=True),
+            Col("intent", "text", "Parser's intent_hint within the domain", groupable=True),
+            Col("topic_code", "text", "Topic the nightly labeller gave the ask (empty until labelled)", groupable=True),
+            Col("topic_label", "text", "Readable name of topic_code", groupable=True),
+            Col("outcome", "text", "How the ask ended: answered, answered_empty, clarified, handover, missed, cannot_do, refused_policy, off_topic, noise, technical", groupable=True),
+            Col("prompt_version", "int", "Parser prompt version the turn ran on", groupable=True),
+            Col("model", "text", "Model(s) the turn's LLM calls used, comma-separated", groupable=True),
+            Col("llm_calls", "int", "LLM calls the turn made (parser, plus the clarifier on small-talk turns)",
+                measurable=True),
+            Col("prompt_tokens", "int", "Input tokens over the turn's calls. Includes cached tokens for OpenAI and"
+                " Gemini, excludes them for Anthropic", measurable=True),
+            Col("cached_tokens", "int", "Input tokens served from the provider's prompt cache (billed at the"
+                " cached rate)", measurable=True),
+            Col("completion_tokens", "int", "Output tokens over the turn's calls", measurable=True),
+            Col("total_tokens", "int", "prompt_tokens + completion_tokens over the turn's calls", measurable=True),
+            Col("llm_ms", "int", "Milliseconds spent waiting on LLM calls", measurable=True),
+            Col("latency_ms", "int", "Milliseconds from turn start to finish", measurable=True),
+            Col("cost_usd", "number", "USD cost of the turn's LLM calls; 0 for a turn with no call, NULL when a"
+                " call's model has no price or a call's cache use was not recorded", measurable=True),
+            Col("priced", "bool", "false when some call has no price (no price row, or cached tokens with no"
+                " cached price) or an unrecorded cache use; cost_usd is then NULL. See cache_unknown for the"
+                " latter", groupable=True),
+            Col("cached_price_missing", "bool", "true when a call cached tokens on a model with no cached-input"
+                " price; the turn is then unpriced (cost_usd NULL, priced false)", groupable=True),
+            Col("cache_unknown", "bool", "true when some call on a priced model has no recorded cache use"
+                " (cached_tokens NULL, e.g. before 4 Oct 2026); cost_usd is then NULL. Not the same as"
+                " an unpriced model", groupable=True),
+        ),
+    ),
+    "llm_calls": Dataset(
+        "llm_calls",
+        "One row per LLM call the chatbot made (the parser on every turn, the clarifier on small talk), with"
+        " tokens, latency and USD cost. chatbot_turn_id links a call to turn_costs.",
+        "created_at",
+        (
+            Col("id", "text", "Usage log row id"),
+            Col("created_at", "datetime", "When the call was logged (Malaysia time)"),
+            Col("feature", "text", "What made the call: chatbot_parser or chatbot_clarifier", groupable=True),
+            Col("chatbot_turn_id", "text", "Chatbot turn the call belongs to (turn_costs.id)", groupable=True),
+            *_CONTACT_COLS,
+            Col("provider", "text", "openai, anthropic or gemini", groupable=True),
+            Col("model", "text", "Model name", groupable=True),
+            Col("prompt_tokens", "int", "Input tokens. Includes cached tokens for OpenAI and Gemini, excludes them"
+                " for Anthropic", measurable=True),
+            Col("cached_tokens", "int", "Input tokens served from the prompt cache (NULL when never recorded)", measurable=True),
+            Col("completion_tokens", "int", "Output tokens", measurable=True),
+            Col("total_tokens", "int", "Total tokens as the provider reported them", measurable=True),
+            Col("response_time_ms", "int", "Milliseconds the call took", measurable=True),
+            Col("was_answered", "bool", "The model returned a usable answer", groupable=True),
+            Col("cost_usd", "number", "USD cost from the model price table; NULL when the model has no price"
+                " or the call's cache use was not recorded", measurable=True),
+            Col("priced", "bool", "false when the model has no price row, cached tokens have no cached price,"
+                " or the cache use was not recorded (see cache_unknown)", groupable=True),
+            Col("cached_price_missing", "bool", "true when the call cached tokens and the model has no"
+                " cached-input price; cost_usd is then NULL and priced false", groupable=True),
+            Col("cache_unknown", "bool", "true when the model has a price but cached_tokens is NULL (cache use"
+                " never recorded); cost_usd is then NULL and priced false. Not an unpriced model",
+                groupable=True),
         ),
     ),
 }
@@ -270,6 +356,13 @@ def _coerce(col: Col, value: Any) -> Any:
             if isinstance(value, bool):
                 raise ValueError
             return int(value)
+        if col.type == "number":
+            if isinstance(value, bool):
+                raise ValueError
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError
+            return number
         if col.type == "bool":
             if isinstance(value, bool):
                 return value
@@ -309,12 +402,15 @@ def _filter_clause(ds: Dataset, v, f: Filter):
             raise QueryError("contains works on text columns only")
         return expr.ilike(f"%{_escape_like(str(f.value))}%", escape="\\")
     value = _coerce(col, f.value)
-    if op in ("gt", "gte", "lt", "lte") and col.type not in ("int", "datetime"):
+    if op in ("gt", "gte", "lt", "lte") and col.type not in ("int", "number", "datetime"):
         raise QueryError(f"{op} works on numbers and dates only")
+    # Only the requested operator is built: SQLAlchemy refuses `>` against True/False, so an eager
+    # table of every operator made any bool filter raise.
     return {
-        "eq": expr == value, "ne": expr != value,
-        "gt": expr > value, "gte": expr >= value, "lt": expr < value, "lte": expr <= value,
-    }[op]
+        "eq": lambda: expr == value, "ne": lambda: expr != value,
+        "gt": lambda: expr > value, "gte": lambda: expr >= value,
+        "lt": lambda: expr < value, "lte": lambda: expr <= value,
+    }[op]()
 
 
 def _group_expr(ds: Dataset, v, key: str):
@@ -476,12 +572,43 @@ def list_datasets(db: Any) -> dict:
     return {"datasets": out}
 
 
+COST_DATASETS = ("turn_costs", "llm_calls")
+PRICING_NOTE = (
+    "cost_usd comes from the llm_model_prices table (USD per 1M input, cached input and output tokens),"
+    " joined on the exact model name. A model listed in unpriced_models has no price row, or no cached-input"
+    " price while its calls cached tokens; its calls show cost_usd NULL and priced false until the owner"
+    " adds the price. Per-minute audio models (gpt-4o-transcribe) are not priced per token."
+)
+
+
+def _unpriced_models(db: Any) -> Optional[list[dict]]:
+    """The models with unpriced calls, or None when the lookup fails (a timeout on a large log
+    must not make the whole describe fail)."""
+    try:
+        return _unpriced_lookup(db)
+    except QueryError:
+        return None
+
+
+def _unpriced_lookup(db: Any) -> list[dict]:
+    res = run_query(db, QuerySpec(
+        dataset="llm_calls", group_by=["model"], measures=[Measure(fn="count")],
+        filters=[Filter(column="priced", op="eq", value=False)],
+        order_by=[OrderBy(column="count", dir="desc")], limit=100,
+    ))
+    return [{"model": r[0], "calls": r[1]} for r in res["rows"]]
+
+
 def describe_dataset(db: Any, key: str) -> Optional[dict]:
     ds = CATALOG.get(key)
     if ds is None:
         return None
     sample = run_query(db, QuerySpec(dataset=key, limit=3), default_order=False)
+    pricing = (
+        {"pricing_note": PRICING_NOTE, "unpriced_models": _unpriced_models(db)} if key in COST_DATASETS else {}
+    )
     return {
+        **pricing,
         "key": ds.key,
         "description": ds.description,
         "date_column": ds.date_column,

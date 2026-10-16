@@ -388,6 +388,15 @@ describe('the toolbar over the tabs', () => {
     ]);
   });
 
+  it('shows the same status pill as the list beside the supplier and shipment date (PL-STATUS-ROLLUP)', async () => {
+    state.packingList = mixedContainer({ shipment_status: 'fully_received' });
+    await renderTab(<DetailsPage />);
+
+    const subtitle = screen.getByText(/KAILU HARDWARE FACTORY, CAIZHOU SANITARY . Shipment date/);
+    const pill = within(subtitle.parentElement as HTMLElement).getByText('Fully Received');
+    expect(pill).toHaveAttribute('data-slot', 'badge');
+  });
+
   it('falls back to the shipment number when the container has no number', async () => {
     state.packingList = mixedContainer({ shipping_container_number: null });
     await renderTab(<DetailsPage />);

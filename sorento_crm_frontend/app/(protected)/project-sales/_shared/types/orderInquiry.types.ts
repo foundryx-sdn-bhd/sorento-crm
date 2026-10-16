@@ -527,6 +527,9 @@ export interface OrderInquiryWorklistRow extends OrderInquiryAckFields {
    * The Lines grid's `Request to reserve N` pill and the tick's default stage both
    * read N off this. */
   requested_qty?: string;
+  /** OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for - the
+   * server's own figure, so the screen never re-derives "received". A number. */
+  reserve_requestable_qty?: number;
   /** Who sold it (`sales_orders.sales_agent_id` -> `sales_agents`), off the same core
    * sales order the S/O no column reaches. Null when the row reaches no core order, or
    * that order carries no agent. */
@@ -568,6 +571,8 @@ export interface OrderInquiryWorklistRow extends OrderInquiryAckFields {
   project_id?: string | null;
   project_sales_order_id?: string | null;
   core_sales_order_id?: string | null;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type; null when there is no core order. */
+  so_doc_type?: string | null;
   /**
    * S6 (`PLAN-board-oi-mechanical-22sep.md`, AC-B6-1/AC-B6-7): the AutoCount line number,
    * for the "SO line" column's own text (`SO402757 · L5`, `orderInquirySoLineLabel`).
@@ -1305,6 +1310,8 @@ export interface OrderInquiryHeader {
   raised_by_name?: string | null;
   /** The CORE sales order id, for the S/O no link (AC-HL-06). Null when there is none. */
   sales_order_id?: string | null;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type; null when there is no core order. */
+  so_doc_type?: string | null;
   project_sales_order_id?: string | null;
   so_number?: string | null;
   so_date?: string | null;
@@ -1319,6 +1326,10 @@ export interface OrderInquiryHeader {
   qty_total: string;
   /** Derived, never stored (plan S2): `lines_to_confirm > 0` is outstanding. */
   status: OrderInquiryHeaderStatus;
+  /** The OI's earliest reserve status (AC-SN-30); null when it has no reserve requests. */
+  reserve_status?: 'parked' | 'needs_reserve' | 'notice_parked' | 'reserved' | null;
+  /** Who parked it, while it is parked. */
+  parked_by_name?: string | null;
 }
 
 /** One entry of the detail page's Raise history card (AC-DP-07). Newest first. */
@@ -1344,6 +1355,8 @@ export interface OrderInquiryHeaderListParams {
    * 2026) - never a `projects.id`: 0 of 738 headers on the prod copy carry a
    * registered project. */
   project?: string;
+  /** OIs with a reserve request row in this status (AC-SN-30). */
+  reserve?: 'parked' | 'needs_reserve' | 'notice_parked' | 'reserved';
   page?: number;
   limit?: number;
   sort?: string;

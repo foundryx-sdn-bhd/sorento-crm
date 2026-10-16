@@ -27,6 +27,7 @@ from app.schemas.projects import (
     ProjectQuotationDocumentCreate,
     QuotationApprovalMoveRequest,
     QuotationRejectRequest,
+    QuotationReviseRequest,
     QuotationSignatureRequest,
     QuotationSignatureResponse,
     ProjectQuotationDocumentResponse,
@@ -445,6 +446,8 @@ async def move_quotation_approval(
             actor_user_id=current_user["id"],
         )
         db.commit()
+        # After the commit, best effort: a notification fault never undoes the status.
+        approvals.notify_requested(db, document, current_user["id"])
         db.refresh(document)
         return svc.serialize_document(db, document)
     except Exception as exc:
@@ -481,6 +484,7 @@ async def approve_quotation_document(
             permissions=permission_slugs(db, current_user["id"]),
         )
         db.commit()
+        approvals.notify_decided(db, document, current_user["id"], approved=True)
         db.refresh(document)
         return svc.serialize_document(db, document)
     except Exception as exc:
@@ -518,6 +522,38 @@ async def reject_quotation_document(
             permissions=permission_slugs(db, current_user["id"]),
         )
         db.commit()
+        approvals.notify_decided(
+            db, document, current_user["id"], approved=False, reason=document.approval_rejected_reason
+        )
+        db.refresh(document)
+        return svc.serialize_document(db, document)
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.post(
+    "/projects/{project_id}/quotation-documents/{document_id}/approval-revise",
+    response_model=ProjectQuotationDocumentResponse,
+)
+async def revise_quotation_approval(
+    project_id: str,
+    document_id: str,
+    payload: QuotationReviseRequest,
+    current_user: dict = Depends(require_permission(EDIT)),
+    db: Session = Depends(get_db),
+):
+    """The creator reopens a pending or approved quotation, with a reason, to change it."""
+    try:
+        validate_uuid_path(document_id, resource="Quotation")
+        _editable_project(db, project_id, current_user)
+        document = svc.get_document_or_404(db, project_id, document_id)
+        was_pending = approvals.current_key(db, document) == approvals.STATUS_PENDING
+        approvals.revise_approval(db, document, current_user["id"], payload.reason)
+        reason = " ".join((payload.reason or "").split())
+        db.commit()
+        if was_pending:
+            approvals.notify_withdrawn(db, document, current_user["id"], reason)
         db.refresh(document)
         return svc.serialize_document(db, document)
     except Exception as exc:

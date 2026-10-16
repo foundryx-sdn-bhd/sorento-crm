@@ -33,6 +33,7 @@ from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import low_stock_ask
+from app.services.chatbot.lanes.business import chat_report
 from app.services.chatbot.lanes.business import report_ask
 from app.services.chatbot.lanes.business import ranking_ask
 from app.services.chatbot.lanes.business import resolve_gate
@@ -219,6 +220,7 @@ def _low_stock_not_enabled() -> dict[str, Any]:
         "outcome": "not_found",
         "escalate": True,
         "response": LOW_STOCK_NOT_ENABLED_MESSAGE,
+        "refused": True,
     }
 
 
@@ -604,13 +606,19 @@ def _nothing_live_of_kind(
 
 
 def _fixed_reply(
-    text: str, *, top_selling_asked: str | None = None, required_ask: dict[str, Any] | None = None
+    text: str,
+    *,
+    top_selling_asked: str | None = None,
+    required_ask: dict[str, Any] | None = None,
+    refused: bool = False,
 ) -> dict[str, Any]:
     """One fixed line and nothing else, before any fetch: the refusal and the top
     selling questions. `has_result: True` and no `outstanding_ask` keep it OFF the miss
     lane (no escalate offer) and arm nothing; the carried `focus.status` is what makes
     the next message land on the same ask. `outstanding_report` skips the generic
-    search-scope header."""
+    search-scope header. `refused` marks a refusal (grant, scope, audience): the envelope carries
+    it as its own `refused` key (not `denied`, which has its own composer line), so no fit line
+    opens the reply (CHAT-FIT-LINE AC-23)."""
     structured: dict[str, Any] = {
         "response": text,
         "answers": [],
@@ -637,6 +645,7 @@ def _fixed_reply(
         "delegate": DELEGATE,
         "delegate_payload": {"fetch": item},
         "fetch": item,
+        "refused": refused,
     }
 
 
@@ -681,6 +690,7 @@ def _sales_report_not_enabled() -> dict[str, Any]:
         "delegate": DELEGATE,
         "delegate_payload": {"fetch": item},
         "fetch": item,
+        "refused": True,
     }
 
 
@@ -887,6 +897,9 @@ def run_until_exit(
     sales_analysis_ask = (
         jsc.js_string(parse_output_peek.get("order_status") or "") == "sales_analysis"
     )
+    # CA-3: a chat report names no order subject for the gate to resolve; the lane resolves its
+    # customer and product words itself (`chat_report.settle`) and says a miss in one line.
+    chat_report_ask = chat_report.is_chat_report(parse_output_peek)
     if (
         isinstance(parse_output_peek.get("outstanding_reask_filters"), dict)
         or isinstance(parse_output_peek.get("outstanding_detail_reask"), dict)
@@ -896,6 +909,7 @@ def run_until_exit(
         or carried_subject_answer
         or sales_report_ungranted
         or sales_analysis_ask
+        or chat_report_ask
     ):
         return {
             "delegate": DELEGATE,
@@ -1404,10 +1418,21 @@ def run_fetch(
     }
     for key, values in narrow.items():
         semantic_input[key] = list(values)
+    submission_type = fetch_mod.portal_submission_type(parse_output)
+    if submission_type:
+        semantic_input["submission_type"] = submission_type
     # PLAN-chatbot-customer-scope-29sep.md D3/D4: a customer-scoped contact's turn
     # (`engine._customer_scope_gate`). The engine refuses a customer word outside its links (one fixed line, before any
     # fetch); here the links ride to `entity_ids_transformer`, which forces them on every customer-scoped tool.
     customer_scope = ctx.get("customer_scope") if isinstance(ctx.get("customer_scope"), dict) else {}
+    if chat_report.is_chat_report(parse_output) and db is not None:
+        # CA-3: THIS fetch is a chat report, scoped by the asker rule (dealer only), not by customer
+        # links; applied here, at fetch time, so no other fetch of the turn sees the relaxation.
+        customer_scope = chat_report.scope_for(
+            chat_report.DOMAIN, customer_scope,
+            asker=chat_report.asker_of(db, contact_id, space_id),
+            granted=chat_report.GRANT in set((ctx.get("access") or {}).get("attributes") or []),
+        )
     scoped_to_links = bool(customer_scope.get("enforced") and customer_scope.get("ids"))
     if scoped_to_links:
         semantic_input["scope_customer_ids"] = list(customer_scope["ids"])
@@ -1437,7 +1462,7 @@ def run_fetch(
         if _OUTSTANDING_SO_GRANT not in granted:
             if trace is not None:
                 trace.add("so_status", {"refused": "not_granted", "needs": _OUTSTANDING_SO_GRANT})
-            return _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            return _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE, refused=True)
         if db is not None:
             from app.services.chatbot import so_status
 
@@ -1454,7 +1479,11 @@ def run_fetch(
                     },
                 )
             fragment = _fixed_reply(
-                so_status.reply_text(looked, refusal=str(customer_scope.get("refusal") or ""))
+                so_status.reply_text(
+                    looked,
+                    refusal=str(customer_scope.get("refusal") or ""),
+                    kind_word="Sales order" if parse_output.get("so_placed") is True else None,
+                )
             )
             # The reply names its own missing numbers, so the resolver's own `not_found`
             # exit (nothing placed the SO words) is not a second miss to compose
@@ -1473,14 +1502,15 @@ def run_fetch(
         if _OUTSTANDING_SO_GRANT not in granted:
             if trace is not None:
                 trace.add("so_status", {"refused": "not_granted", "needs": _OUTSTANDING_SO_GRANT})
-            refusal = _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            refusal = _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE, refused=True)
             # The refusal is the whole answer: the miss ladder (escalation offer) stands down.
             refusal["fetch"]["so_status"] = True
             return refusal
         if db is not None:
             from app.services.chatbot import so_status
 
-            linked = list(customer_scope.get("linked") or [])
+            # REF-PROBES: staff carry no customer links and no enforced scope (`ref_staff`).
+            linked = None if parse_output.get("ref_staff") is True else list(customer_scope.get("linked") or [])
             looked = so_status.lookup_po_refs(db, po_refs, linked=linked)
             if trace is not None:
                 trace.add(
@@ -1497,6 +1527,29 @@ def run_fetch(
                 texts.append(so_status.po_ref_reply_text(looked, ref))
             if texts:
                 fragment = _fixed_reply("\n\n".join(texts))
+                fragment["fetch"]["so_status"] = True
+                return fragment
+    # REF-PROBES: our own PO number and a purchase request number the resolver placed, answered
+    # in process (`chatbot/ref_status.py`) for staff holding `purchase_orders.placed` only. The
+    # resolver never probes these kinds for anyone else, so this is the second lock.
+    po_numbers = [w for w in jsc.array(parse_output.get("po_numbers")) if isinstance(w, str) and w.strip()]
+    pr_numbers = [w for w in jsc.array(parse_output.get("pr_numbers")) if isinstance(w, str) and w.strip()]
+    if (po_numbers or pr_numbers) and db is not None and parse_output.get("ref_staff") is True:
+        access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
+        granted_raw = access_ctx.get("attributes")
+        granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
+        if "purchase_orders.placed" in granted:
+            from app.services.chatbot import ref_status
+
+            cards: list[str] = []
+            if po_numbers:
+                cards += ref_status.lookup_purchase_orders(db, po_numbers).cards
+            if pr_numbers:
+                cards += ref_status.lookup_purchase_requests(db, pr_numbers).cards
+            if trace is not None:
+                trace.add("ref_status", {"po": po_numbers, "pr": pr_numbers, "cards": len(cards)})
+            if cards:
+                fragment = _fixed_reply("\n\n".join(cards))
                 fragment["fetch"]["so_status"] = True
                 return fragment
     # SO-NUMBER-ASK, the SO list ("all my sales orders"): the customers in scope (the
@@ -1524,7 +1577,7 @@ def run_fetch(
         if _OUTSTANDING_SO_GRANT not in granted:
             if trace is not None:
                 trace.add("so_list", {"refused": "not_granted", "needs": _OUTSTANDING_SO_GRANT})
-            return _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            return _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE, refused=True)
         from app.services.chatbot import so_status
         from app.services.ledger_family import family_words
 
@@ -1644,7 +1697,7 @@ def run_fetch(
                             "dropped": violation.dropped,
                         },
                     )
-                return _fixed_reply(str(customer_scope.get("refusal") or ""))
+                return _fixed_reply(str(customer_scope.get("refusal") or ""), refused=True)
             except Exception:  # noqa: BLE001 - an unprobed tier is "unknown", never "none"
                 logger.warning("chatbot: tier probe did not run", exc_info=True)
                 probe_results.append(None)
@@ -1690,6 +1743,10 @@ def run_fetch(
         if need not in granted:
             if trace is not None:
                 trace.add("domain_grant", {"domain": domain, "skipped": "not_granted", "needs": need})
+            if need == chat_report.GRANT:
+                # CA-3: a contact without the Chat analytics reveal is turned away in one line
+                # before any call (the route refuses again, `chat_analytics_not_enabled`).
+                return _fixed_reply(chat_report.NOT_ENABLED, refused=True)
             if need == _SALES_REPORT_GRANT:
                 # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain is refused in the
                 # words every sales figure ask was refused in under `order`.
@@ -2047,7 +2104,7 @@ def run_fetch(
             # ledgers (`engine._top_selling_dealer_scope`). No picker, no fetch.
             if trace is not None:
                 trace.add("top_selling", {"refused": "customer_not_permitted"})
-            return _fixed_reply(TOP_SELLING_REFUSED_OTHER_CUSTOMER)
+            return _fixed_reply(TOP_SELLING_REFUSED_OTHER_CUSTOMER, refused=True)
         if slot.get("unclear"):
             # Owner retest of round 4 (27 Sep 2026, R6/R8): a message inside a ranking
             # the parser could not place is asked about in one short line, never sent to
@@ -2095,6 +2152,34 @@ def run_fetch(
             semantic_input["top_selling_drop"] = ["category_words", "category_code"]
         semantic_input["top_selling_notes"] = notes
         semantic_input["top_selling_category_ids"] = category_ids
+    elif domain == chat_report.DOMAIN and chat_report.is_chat_report(parse_output):
+        # CA-3 (PLAN-chat-analytics-ca3-chat-dataset-10oct.md slice 5): what customers ask
+        # the bot, `crm_report_ask` with `dataset=chat`. The reveal was checked above; every
+        # other gate (a dealer's or a salesman's customers) is the route's, from
+        # `contact_id`. Nothing runs until the period, and how many for a ranking, are
+        # settled (`required_fields`; both missing are asked in one reply).
+        tool_name = chat_report.TOOL
+        tool_item = {"name": tool_name, "_tool_pick": {"source": "chat_report_override"}}
+        settled, line = chat_report.settle(
+            db, parse_output, entities, dealer=bool(customer_scope.get("enforced")),
+            own_ids=customer_scope.get("ids"),
+            message_text=jsc.js_string(
+                jsc.get(jsc.get(jsc.get(jsc.get(ctx, "text"), "message"), "message"), "text") or ""
+            ),
+        )
+        if trace is not None:
+            trace.add(
+                "required_ask",
+                {"ask": chat_report.ASK_NAME, "done": bool(settled and settled.done),
+                 "values": settled.values if settled else None, "line": line},
+            )
+        if settled is None:
+            return _fixed_reply(line or "", refused=line == report_ask.DEALER_REFUSAL)
+        if not settled.done:
+            return _fixed_reply(settled.reply or "", required_ask=settled.slot)
+        semantic_input["report_ask_args"] = chat_report.route_args(settled)
+        # The args carry every id the ask settled; nothing the session carried rides beside them.
+        entities = []
     elif domain in contracts.ORDER_OR_SALES_DOMAINS and order_status_raw == report_ask.ASK_NAME:
         # REPORT-ENGINE slice 1b (PLAN-report-engine.md section 11): sales ranked or
         # totalled by one dimension, `crm_report_ask`. The grant was checked above for
@@ -2115,7 +2200,7 @@ def run_fetch(
                  "values": settled.values if settled else None, "line": line},
             )
         if settled is None:
-            return _fixed_reply(line or "")
+            return _fixed_reply(line or "", refused=line == report_ask.DEALER_REFUSAL)
         if not settled.done:
             return _fixed_reply(settled.reply or "", required_ask=settled.slot)
         semantic_input["report_ask_args"] = report_ask.route_args(settled)
@@ -2147,7 +2232,7 @@ def run_fetch(
         if any(isinstance(e, dict) and e.get("entity_type") == "transporter" for e in entities):
             if trace is not None:
                 trace.add("field_reveal", {"refused": "transporter_filter", "tool": tool_name})
-            return _fixed_reply(do_ask.TRANSPORTER_REFUSED)
+            return _fixed_reply(do_ask.TRANSPORTER_REFUSED, refused=True)
 
     trigger = {
         "tool": tool_name,
@@ -2172,6 +2257,13 @@ def run_fetch(
         # stay byte-inert for every non-HAS turn.
         "predicate": gate.get("predicate"),
     }
+    if tool_name == "crm_portal_link_get":
+        # DEV-FAILURES RC-B: the intro names the form the link opens, in the reply language.
+        templates = reply_copy.resolve(db) if db is not None else reply_copy.fallback_copy()
+        trigger["portal_intro"] = templates.render_in(
+            fetch_mod.PORTAL_LINK_COPY.get(submission_type or "", "portal_link"),
+            getattr(ctx.get("localizer"), "language", None),
+        )
     predicate = gate.get("predicate")
     if isinstance(predicate, dict) and not predicate.get("qualifying_total"):
         # Reviewer B2 on PR #833: a described set with nothing in it has no product to
@@ -2194,7 +2286,7 @@ def run_fetch(
                     "dropped": violation.dropped,
                 },
             )
-        return _fixed_reply(str(customer_scope.get("refusal") or ""))
+        return _fixed_reply(str(customer_scope.get("refusal") or ""), refused=True)
     # DO-ASK-SIMPLIFY rules 3-4 (owner, 2 Oct 2026; every contact, owner 4 Oct): a DO list ask with no
     # range, or a range over 31 days, is answered with one line and fetches nothing.
     # After the customer-scope backstop above (security S2), so the question never
@@ -2339,7 +2431,7 @@ def run_fetch(
         if refusal:
             if trace is not None:
                 trace.add("report_ask", {"refused": envelope.get("status_code")})
-            return _fixed_reply(refusal)
+            return _fixed_reply(refusal, refused=True)
         return _error_fragment(envelope["error"])
 
     # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product

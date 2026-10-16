@@ -316,6 +316,12 @@ def test_a_line_names_the_inquiry_covering_it_and_the_revision_that_decided_it(s
         "state": INQUIRY_PLACED,
         "inquiry_id": str(inquiry.id),
         "row_id": str(row.id),
+        # PR 1622 (mock v3): the refusal fields are declared on the schema, so they always
+        # serialise; nobody has refused this placed row, so each one is null.
+        "ack_state": None,
+        "rejected_reason": None,
+        "rejected_by_name": None,
+        "rejected_at": None,
     }
     assert line["decision_revision"] == 2
 

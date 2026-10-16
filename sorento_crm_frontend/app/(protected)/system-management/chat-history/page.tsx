@@ -35,6 +35,7 @@ import { stageLabel } from './turnPresentation';
 import { ChatThreadDrawer } from './components/ChatThreadDrawer';
 import { TurnDetailDrawer } from './components/TurnDetailDrawer';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
+import { stripWhatsAppMarkup } from '@/lib/whatsappText';
 import type {
   ChatHistoryFilters,
   ChatHistoryGroupBy,
@@ -215,8 +216,9 @@ export default function ChatHistoryPage() {
         enableSorting: false,
         header: ({ column }) => <DataGridColumnHeader title="Message" column={column} />,
         cell: ({ row }) => (
-          <span className="truncate block" title={row.original.message}>
-            {row.original.message}
+          // A one-line preview cannot carry WhatsApp styling, so the markers go.
+          <span className="truncate block" title={stripWhatsAppMarkup(row.original.message)}>
+            {stripWhatsAppMarkup(row.original.message)}
           </span>
         ),
         size: 640,

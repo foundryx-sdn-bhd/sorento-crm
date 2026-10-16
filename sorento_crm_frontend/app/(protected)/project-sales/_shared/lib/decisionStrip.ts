@@ -15,7 +15,6 @@
  * decides what a kind is called or what colour it is: this file is arithmetic.
  */
 import {
-  ORDER,
   contributionDecision,
   contributionSuggestion,
   rowOf,
@@ -41,6 +40,30 @@ export interface DecisionStripTotal {
   changed: boolean;
 }
 
+/**
+ * The strip's FOUR cards, in the bulk Decide menu's order (owner, 12 Oct 2026,
+ * `PLAN-plan-four-options-12oct.md`): Use own location, Borrow, Use BRW, Buy.
+ *
+ * The planner no longer suggests the other kinds, but a decision frozen before that, or a
+ * saved draft, still carries them. Display only: every borrow counts under Borrow, and old
+ * water (`incoming`) counts on no card. `rowOf` itself is untouched, so a line's own bar
+ * and legend still say what the stored composition is.
+ */
+export const STRIP_ORDER: SupplyKind[] = ['own', 'borrow_other', 'shared', 'buy'];
+
+function stripKindOf(kind: SupplyKind | null): SupplyKind | null {
+  switch (kind) {
+    case 'borrow_order':
+    case 'borrow_incoming':
+    case 'borrow_other':
+      return 'borrow_other';
+    case 'incoming':
+      return null;
+    default:
+      return kind;
+  }
+}
+
 /** Sum a composition into `{kind: minor units}`, resolved against the line's own location. */
 function byKind(
   parts: SupplyPart[] | null,
@@ -48,7 +71,7 @@ function byKind(
   into: Map<SupplyKind, number>,
 ): void {
   for (const part of parts ?? []) {
-    const kind = rowOf(part, ownLocation);
+    const kind = stripKindOf(rowOf(part, ownLocation));
     if (!kind) continue;
     into.set(kind, (into.get(kind) ?? 0) + toMinor(part.qty));
   }
@@ -72,7 +95,7 @@ function byKind(
  * Resolved PER LINE, because two lines of one board need not share an ownership group:
  * `DC1-BB` is the agent's own group on a `BRW-BB` line and somebody else's on a `BRW-IB` one.
  *
- * Every kind in `ORDER` gets a card whether or not it has a quantity. What makes two boards
+ * Every kind in `STRIP_ORDER` gets a card whether or not it has a quantity. What makes two boards
  * comparable is that Buy is always in the same place; a card that came and went would move
  * every card beside it, and a strip is read by glancing at a position.
  */
@@ -91,7 +114,7 @@ export function decisionStripTotals(
       decided,
     );
   }
-  return ORDER.map((kind) => {
+  return STRIP_ORDER.map((kind) => {
     const left = suggested.get(kind) ?? 0;
     const right = decided.get(kind) ?? 0;
     return {
@@ -125,7 +148,7 @@ export function contributionCarriesKind(
   ];
   for (const parts of sides) {
     for (const part of parts ?? []) {
-      if (rowOf(part, where) !== kind) continue;
+      if (stripKindOf(rowOf(part, where)) !== kind) continue;
       if (toMinor(part.qty) !== 0) return true;
     }
   }

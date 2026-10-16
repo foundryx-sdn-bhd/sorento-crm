@@ -6,6 +6,7 @@ import { Check, ImageOff, Package } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { ResolvedTile, TileField } from '@/lib/dealer-kit/types';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * A resolved collection, rendered as tiles.
@@ -194,7 +195,7 @@ export function ProductTile({
       )}
       <TileImage tile={tile} show={show.has('image')} />
 
-      {show.has('name') && (
+      {show.has('name') && (!show.has('code') || distinctName(tile.productCode, tile.productName)) && (
         <p className="truncate text-xs font-medium text-foreground" title={tile.productName}>
           {tile.productName}
         </p>

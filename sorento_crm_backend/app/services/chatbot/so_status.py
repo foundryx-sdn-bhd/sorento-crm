@@ -106,13 +106,21 @@ def _in_scope_so_ids(db: Session, so_ids: list[str]) -> set[str] | None:
     }
 
 
+def _net_of_cancel(ordered: Any, delivered: Any, cancelled: Any) -> tuple[Any, Any]:
+    """AC-CANCEL-CRM: an AutoCount Cancel SO is in TransferedQty (`qty_delivered`) but was
+    never delivered, and it is no longer ordered either; both leave it out."""
+    c = cancelled or 0
+    return (max((ordered or 0) - c, 0), max((delivered or 0) - c, 0))
+
+
 def _lines_by_so(db: Session, so_ids: list[Any]) -> dict[str, list[tuple[Any, Any]]]:
     """`(qty_ordered, qty_delivered)` over each SO's live, in-brand-scope lines."""
     out: dict[str, list[tuple[Any, Any]]] = {}
     if not so_ids:
         return out
-    for so_id, ordered, delivered in (
-        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered)
+    for so_id, ordered, delivered, cancelled in (
+        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered,
+                 SalesOrderLine.qty_cancelled)
         .filter(
             SalesOrderLine.sales_order_id.in_(so_ids),
             func.coalesce(SalesOrderLine.line_status, "") != "cancelled",
@@ -120,7 +128,7 @@ def _lines_by_so(db: Session, so_ids: list[Any]) -> dict[str, list[tuple[Any, An
         )
         .all()
     ):
-        out.setdefault(str(so_id), []).append((ordered, delivered))
+        out.setdefault(str(so_id), []).append(_net_of_cancel(ordered, delivered, cancelled))
     return out
 
 
@@ -172,7 +180,7 @@ def lookup(
     rows = (
         db.query(SalesOrder, Customer.customer_name)
         .outerjoin(Customer, Customer.id == SalesOrder.customer_id)
-        .filter(SalesOrder.so_number.in_(keys))
+        .filter(func.upper(func.regexp_replace(SalesOrder.so_number, r"[\s-]+", "", "g")).in_(keys))
         .all()
     )
     allowed = _in_scope_so_ids(db, [so.id for so, _ in rows])
@@ -180,7 +188,7 @@ def lookup(
         rows = [(so, name) for so, name in rows if str(so.id) in allowed]
     by_number: dict[str, list[tuple[SalesOrder, str | None]]] = {}
     for so, master_name in rows:
-        by_number.setdefault(so.so_number.upper(), []).append((so, master_name))
+        by_number.setdefault(so_key(so.so_number), []).append((so, master_name))
     lines_by_so = _lines_by_so(db, [so.id for so, _ in rows])
     _in_scope = _scope_check(db, [so for so, _ in rows], linked)
 
@@ -219,11 +227,12 @@ def lookup_po_refs(
     db: Session,
     refs: Iterable[str],
     *,
-    linked: Iterable[tuple[str, str, str]],
+    linked: Iterable[tuple[str, str, str]] | None,
 ) -> PoRefLookup:
     """Answer a dealer/customer's PO number from `sales_orders.po_ref_key` (the same fold at
     write and here, `scm.po_ref.po_ref_key`; exact, never partial), inside their own links.
-    `linked` is the contact's customer scope: none linked sees nothing."""
+    `linked` is the contact's customer scope: none linked sees nothing. `linked=None` is no
+    scope enforced (staff), as in `lookup`."""
     typed = [r.strip() for r in refs if isinstance(r, str) and po_ref_key(r)]
     out = PoRefLookup()
     if not typed:
@@ -239,7 +248,7 @@ def lookup_po_refs(
     allowed = _in_scope_so_ids(db, [so.id for so, _ in rows])
     if allowed is not None:
         rows = [(so, name) for so, name in rows if str(so.id) in allowed]
-    in_scope = _scope_check(db, [so for so, _ in rows], list(linked))
+    in_scope = _scope_check(db, [so for so, _ in rows], None if linked is None else list(linked))
     rows = [(so, name) for so, name in rows if in_scope(so)]
     lines_by_so = _lines_by_so(db, [so.id for so, _ in rows])
     for so, master_name in rows:
@@ -271,9 +280,11 @@ def po_ref_reply_text(result: PoRefLookup, ref: str) -> str:
     return "\n\n".join([head, *cards])
 
 
-def reply_text(result: SoLookup, *, refusal: str) -> str:
-    """Cards, then the scope refusal, then one miss line - each its own paragraph."""
-    parts = list(result.cards)
+def reply_text(result: SoLookup, *, refusal: str, kind_word: str | None = None) -> str:
+    """Cards, then the scope refusal, then one miss line - each its own paragraph.
+    `kind_word` ("Sales order") names the kind in each card's head when the resolver placed
+    the number (REF-PROBES): `*Sales order SO421624* - NAME`."""
+    parts = [c.replace("*", f"*{kind_word} ", 1) if kind_word and c.startswith("*") else c for c in result.cards]
     if result.refused and refusal:
         parts.append(refusal)
     if result.missing:
@@ -386,8 +397,9 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any, li
             return f"No sales orders for {header_names} from {_day(start)}."
         return f"No sales orders for {header_names} from {_day(start)} to {_day(end)}."
     lines_by_so: dict[str, list[tuple[Any, Any]]] = {}
-    for so_id, ordered, delivered in (
-        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered)
+    for so_id, ordered, delivered, cancelled in (
+        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered,
+                 SalesOrderLine.qty_cancelled)
         .filter(
             SalesOrderLine.sales_order_id.in_([so.id for so in rows]),
             func.coalesce(SalesOrderLine.line_status, "") != "cancelled",
@@ -395,7 +407,7 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any, li
         )
         .all()
     ):
-        lines_by_so.setdefault(str(so_id), []).append((ordered, delivered))
+        lines_by_so.setdefault(str(so_id), []).append(_net_of_cancel(ordered, delivered, cancelled))
     several_groups = len(group_names(list(names_by_id.values()))) > 1
     if window == "latest":
         window = f"latest {len(rows)}"
@@ -423,7 +435,8 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any, li
 
 _WORDS_RE = re.compile(r"[0-9a-z]+")
 _UPPER_SO_RE = re.compile(r"(?<![0-9A-Za-z])SOs?(?![0-9A-Za-z])")
-_TYPED_SO_NUMBER_RE = re.compile(r"(?<![0-9A-Za-z])SO[\s-]*\d{4,}", re.IGNORECASE)
+# The trailing `(?:-\d+)?` is AutoCount's dashed number ("SO2610-0127").
+_TYPED_SO_NUMBER_RE = re.compile(r"(?<![0-9A-Za-z])SO[\s-]*\d{4,}(?:-\d+)?", re.IGNORECASE)
 
 
 def says_outstanding(text: str) -> bool:

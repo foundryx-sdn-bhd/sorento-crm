@@ -53,9 +53,9 @@ const GAP_PX = 4;
  * pill markup for that reason.
  *
  * A QUANTITY IS NEVER CUT (S3b fix). Pill 0 always renders at its own natural width - never
- * capped below its content to leave room for "+N" beside it. When the two do not both fit on
- * one line, "+N" wraps to a second line instead (`flex-wrap` on the visible row); pill 0's
- * text is never the thing that gives.
+ * capped below its content to leave room for "+N" beside it. Later pills fold to keep "+N" on
+ * the same line; only when pill 0 alone leaves no room does "+N" wrap to a second line
+ * (`flex-wrap` on the visible row). Pill 0's text is never the thing that gives.
  *
  * ONE POPOVER FOR THE WHOLE ROW. Every pill, "+N" included, is a plain, unlabelled trigger for
  * the SAME popover (`renderPopover` renders every item, not only the folded ones) - the
@@ -93,6 +93,7 @@ export function PillOverflow({
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const pillRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
+  const overflowRef = React.useRef<HTMLSpanElement | null>(null);
   const [open, setOpen] = React.useState(false);
   const [visibleCount, setVisibleCount] = React.useState(items.length);
 
@@ -107,15 +108,22 @@ export function PillOverflow({
     for (let i = 0; i < pillWidths.length; i += 1) {
       const withThis = used + (count > 0 ? GAP_PX : 0) + pillWidths[i];
       // The first pill always shows, WHOLE (AC-3b.4, S3b fix: a quantity is never
-      // truncated) - even at a width narrower than the pill itself. There is nothing here
-      // reserving room for a "+N" beside it: `flex-wrap` on the visible row (below) lets
-      // "+N" drop to its own line instead, so pill 0's own text is never capped below its
-      // content to make room for it.
+      // truncated) - even at a width narrower than the pill itself. Room for "+N" is made
+      // below by folding LATER pills, never by capping pill 0's own text.
       if (count === 0 || withThis <= width) {
         used = withThis;
         count += 1;
       } else {
         break;
+      }
+    }
+    // Something folds, so "+N" needs room on the same line: drop pills from the end until it
+    // fits, but never pill 0 (its own width is never given up, per the rule above).
+    if (count < pillWidths.length) {
+      const overflowWidth = overflowRef.current?.offsetWidth ?? 0;
+      while (count > 1 && used + GAP_PX + overflowWidth > width) {
+        count -= 1;
+        used -= GAP_PX + pillWidths[count];
       }
     }
     setVisibleCount(count);
@@ -181,6 +189,14 @@ export function PillOverflow({
             }}
           />
         ))}
+        {/* The widest "+N" this row can show, so the fit above can leave room for it. */}
+        <Pill
+          label={`+${items.length}`}
+          tone="neutral"
+          measureRef={(el) => {
+            overflowRef.current = el;
+          }}
+        />
       </div>
 
       <Popover open={open} onOpenChange={setOpen}>

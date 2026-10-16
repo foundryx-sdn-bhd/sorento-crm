@@ -47,6 +47,7 @@ import { productsPagerQuery } from '../../lib/listQuery';
 import AuditTrail from '@/components/audit/AuditTrail';
 import FieldAttachmentTooltip from './FieldAttachmentTooltip';
 import { NO_CURRENCY_NOTE, formatUnitCost } from '../lib/cost';
+import { distinctName, sameDisplayText } from '@/lib/product-display';
 
 interface ProductDetailProps {
   productId: string;
@@ -162,9 +163,11 @@ export default function ProductDetail({ productId }: ProductDetailProps) {
               {product.is_active ? 'Active' : 'Inactive'}
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground break-words">
-            Product Code: {product.product_code}
-          </p>
+          {!sameDisplayText(product.product_code, product.product_name) ? (
+            <p className="text-sm text-muted-foreground break-words">
+              Product Code: {product.product_code}
+            </p>
+          ) : null}
         </div>
         <DetailActions
           pager={{
@@ -349,7 +352,9 @@ export default function ProductDetail({ productId }: ProductDetailProps) {
                       </div>
                       <div>
                         <p className="text-muted-foreground">Product Name</p>
-                        <p className="font-medium">{product.product_name || '-'}</p>
+                        <p className="font-medium">
+                          {distinctName(product.product_code, product.product_name) || '-'}
+                        </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Category</p>
@@ -612,6 +617,9 @@ export default function ProductDetail({ productId }: ProductDetailProps) {
                 variantOf={product.variant_of}
                 variants={product.variants}
                 variantLinkManual={product.variant_link_manual}
+                familyCode={product.family_code}
+                familyCodeManual={product.family_code_manual}
+                familyMembers={product.family_members ?? []}
               />
             </TabsContent>
 

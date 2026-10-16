@@ -12,7 +12,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-sorento_ai_automation}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Loopback only: docker publishes ahead of ufw, so a bare "5432:5432" is on the internet.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -38,6 +39,8 @@ services:
       # JWT Authentication
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      # Stored-secret encryption keys, current first (app/utils/field_encryption.py).
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
       
       # API Server
       API_HOST: 0.0.0.0
@@ -63,7 +66,8 @@ services:
       AWS_REGION: ${AWS_REGION:-}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
     ports:
-      - "${BACKEND_PORT:-8000}:${API_PORT:-8000}"
+      # Loopback only: the frontend nginx (the edge) reaches it as backend:8000.
+      - "127.0.0.1:${BACKEND_PORT:-8000}:${API_PORT:-8000}"
     depends_on:
       db:
         condition: service_healthy
@@ -137,6 +141,7 @@ volumes:
 #
 #    # Backend
 #    JWT_SECRET=<set me>
+#    FIELD_ENCRYPTION_KEY=<set me>   # Fernet key; never JWT_SECRET
 #    JWT_ALGORITHM=HS256
 #    CORS_ORIGINS=http://localhost,http://localhost:80
 #    ENVIRONMENT=production

@@ -2,9 +2,13 @@
 
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { toast } from '@/lib/toast';
+import { isSuperadminUser } from '@/lib/is-superadmin';
 import {
   ArrowLeft,
+  FlaskConical,
+  History,
   LayoutGrid,
   List,
   PackageSearch,
@@ -50,13 +54,19 @@ import {
   PLANNING_BOARD_KEY,
   useConfirmManyMutation,
   usePreviewConfirmManyMutation,
+  useSimulateConfirmMutation,
   useFulfilmentPlanningMutations,
   useLineDraftMutation,
   usePlanningBoard,
 } from '../../_shared/hooks/useFulfilmentPlanning';
 import { usePlanningChangeBatchesByIds } from '../../_shared/hooks/usePlanningChanges';
 import { useSoLineAttachmentLookup } from '../../_shared/hooks/useSoLineAttachments';
-import { canQuickSave, suggestedDecisionFor } from '../../_shared/lib/boardAmend';
+import { formatQty } from '../../_shared/lib/money';
+import {
+  awaitsCancelSo,
+  canQuickSave,
+  suggestedDecisionFor,
+} from '../../_shared/lib/boardAmend';
 import {
   annotationsByCell,
   annotationsByLine,
@@ -100,12 +110,22 @@ import type {
 import { BoardCellBreakdownDialog } from './BoardCellBreakdownDialog';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { BoardScopeToggle, type BoardScope } from './BoardScopeToggle';
-import { isPreMarkOnly, VERDICT_FILTER_OPTIONS, verdictOf } from './BoardDecisionPill';
+import {
+  isPreMarkOnly,
+  matchesStatusFilter,
+  VERDICT_FILTER_OPTIONS,
+} from './BoardDecisionPill';
 import { BoardTransfersPanel } from './BoardTransfersPanel';
+import { PlanningHistorySheet } from './PlanningHistorySheet';
+import { PlanningRefusalTable, hasReasonCode } from './PlanningRefusalTable';
 import { FulfilmentBoardListView } from './FulfilmentBoardListView';
 import { FulfilmentBoardMatrix } from './FulfilmentBoardMatrix';
 import { DecisionStrip } from './DecisionStrip';
-import { cellCarriesKind, contributionCarriesKind } from '../../_shared/lib/decisionStrip';
+import {
+  cellCarriesKind,
+  contributionCarriesKind,
+  rejectedLineCount,
+} from '../../_shared/lib/decisionStrip';
 import type { SupplyKind } from '../../_shared/lib/supplyVocabulary';
 
 /**
@@ -200,6 +220,25 @@ const ROW_AXIS_NOUNS: Record<BoardRowAxis, string> = {
 };
 
 const ROW_AXES: BoardRowAxis[] = ['product', 'sales_order', 'customer', 'project'];
+
+/**
+ * Whether an order's answer holds anything the press would act on: lines confirmed or
+ * withdrawn, a Cancel SO, already-fulfilled lines whose stale decision it clears, or a
+ * pending planning change it applies. The real press and Simulate share this one predicate.
+ */
+function pressHasSomething(
+  answer: ConfirmManyOrderResult | undefined,
+  order: { cancelled_lines: unknown[]; batch_id: string | null },
+): boolean {
+  return (
+    (answer?.lines_confirmed?.length ?? 0) > 0 ||
+    (answer?.lines_withdrawn?.length ?? 0) > 0 ||
+    (answer?.lines_cancelled?.length ?? 0) > 0 ||
+    order.cancelled_lines.length > 0 ||
+    (answer?.lines_fulfilled_skipped ?? 0) > 0 ||
+    Boolean(order.batch_id)
+  );
+}
 
 function rowAxisFrom(value: string | null): BoardRowAxis {
   return ROW_AXES.includes(value as BoardRowAxis) ? (value as BoardRowAxis) : 'product';
@@ -617,6 +656,10 @@ export function FulfilmentBoardPanel({
     () => board.data?.contributions ?? [],
     [board.data],
   );
+  const purchasingRejected = React.useMemo(
+    () => rejectedLineCount(allContributions),
+    [allContributions],
+  );
 
   /**
    * #1312 (AC-U2, fix round 1 should-fix 3): ONE lookup call for the WHOLE
@@ -743,7 +786,8 @@ export function FulfilmentBoardPanel({
    * sees the first planner's saved lines") needs a later fetch to bring in a save nobody
    * here made. `!next[key]` is what keeps this from clobbering THIS session's own edit - the
    * same guard `preMarked` uses, and for the same reason: a verdict already given here is
-   * never overwritten by what the server happened to say a moment before. `pendingDeletes`
+   * never overwritten by what the server happened to say a moment before. A bare pre-mark is
+   * the one local entry this does replace, since it is no verdict at all. `pendingDeletes`
    * is the other half of that guard: a key whose Undo is still in flight is ALSO missing
    * from `draft`, and without the skip a same-tick refetch racing that DELETE puts the pill
    * straight back to Saved a moment after the click cleared it.
@@ -767,7 +811,13 @@ export function FulfilmentBoardPanel({
       const next = { ...current };
       for (const contribution of serverDrafts) {
         if (pendingDeletes.current.has(contribution.key)) continue;
-        if (!next[contribution.key] && contribution.draft) {
+        // A bare pre-mark is the board's own suggestion, never a decision, so the saved
+        // server draft replaces it (hotfix, SO422492): with the batch already cached, the
+        // pre-mark effect above runs first on the same render and would otherwise hide every
+        // saved line the batch names from Saved and Confirm, and offer it to "Save all
+        // suggested" to be overwritten.
+        const local = next[contribution.key];
+        if ((!local || local.preMarked) && contribution.draft) {
           next[contribution.key] = contribution.draft.decision;
           changed = true;
         }
@@ -1229,6 +1279,21 @@ export function FulfilmentBoardPanel({
 
   const confirmMany = useConfirmManyMutation();
   const previewConfirmMany = usePreviewConfirmManyMutation();
+  const simulateConfirm = useSimulateConfirmMutation();
+  const { data: session } = useSession();
+  const canSimulate = isSuperadminUser(session?.user);
+  // PLANNING-WHY: the admin History sheet. `soId` aims it at one order (the refusal block's
+  // link); null opens it on every order on the board.
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [historySoId, setHistorySoId] = React.useState<string | undefined>(undefined);
+  const historyOrders = React.useMemo(() => {
+    // An order nobody has adopted has no planning record, so no history yet.
+    const orders = (board.data?.orders ?? []).filter((order) => order.project_sales_order_id);
+    return {
+      ids: orders.map((order) => order.project_sales_order_id as string),
+      numbers: orders.map((order) => order.so_number),
+    };
+  }, [board.data]);
   // The lines each order's press posted, by planning record, so the results block can set
   // them beside what the server says it wrote.
   const [postedLines, setPostedLines] = React.useState<
@@ -1244,15 +1309,21 @@ export function FulfilmentBoardPanel({
   const [undoAllOpen, setUndoAllOpen] = React.useState(false);
   const [confirmingAll, setConfirmingAll] = React.useState(false);
   const [batchResults, setBatchResults] = React.useState<BoardBatchResult[] | null>(null);
+  // True while `batchResults` holds an admin Simulate confirm: nothing in it was saved.
+  const [simulated, setSimulated] = React.useState(false);
 
   /**
    * The body of ONE press, built once for both Preview and Confirm so the two can never drift:
    * adopts any order not yet adopted (the body needs the mirror ids), re-reads the board once
    * afterwards, and returns the per-order `orders` plus the orders left out with a reason.
    * `excludeKeys` are the lines the planner unticked in the preview; Preview itself passes none.
+   * `adopt: 'defer'` (the admin Simulate) never adopts here: a never-planned order is named
+   * by its core `sales_order_id` and its lines carry `pending-adoption:<core line id>`, and
+   * the server adopts it inside the simulation.
    */
   const buildConfirmOrders = React.useCallback(
-    async (excludeKeys: ReadonlySet<string>) => {
+    async (excludeKeys: ReadonlySet<string>, options: { adopt?: 'now' | 'defer' } = {}) => {
+      const adoptFirst = options.adopt !== 'defer';
       if (!board.data) return null;
       let liveBoard = board.data;
       let contributions = allContributions;
@@ -1306,6 +1377,7 @@ export function FulfilmentBoardPanel({
       // Confirm (1) posting nothing at all.
       const adoptedPsoIds = new Map<string, string>();
       for (const order of liveBoard.orders) {
+        if (!adoptFirst) break;
         if (!wantedOrders.has(order.sales_order_id) || order.project_sales_order_id) continue;
         try {
           const adopted = await adopt.mutateAsync(order.sales_order_id);
@@ -1338,8 +1410,22 @@ export function FulfilmentBoardPanel({
         psoIdBySalesOrder.set(salesOrderId, psoId);
       }
 
+      if (!adoptFirst) {
+        // The board already reads a not-yet-adopted order's lines as `pending-adoption` for
+        // its counts; Simulate posts the same placeholder carrying the core line id.
+        contributions = contributions.map((contribution) =>
+          !contribution.project_line_id &&
+          contribution.line_id &&
+          !psoIdBySalesOrder.has(contribution.sales_order_id)
+            ? { ...contribution, project_line_id: `pending-adoption:${contribution.line_id}` }
+            : contribution,
+        );
+      }
+
       const orders: {
         pso_id: string;
+        /** Deferred adoption only: the core order the server adopts. */
+        sales_order_id?: string;
         lines: ReturnType<typeof confirmLinesFor>;
         batch_id: string | null;
         rejected_line_ids: string[];
@@ -1359,7 +1445,8 @@ export function FulfilmentBoardPanel({
         // answered without an id). There is nothing to post against, so the order is left
         // out - but it is left out OUT LOUD, beside every other order's outcome, because the
         // silent `continue` here ended the whole press with an empty screen.
-        if (!psoId) {
+        const deferred = !psoId && !adoptFirst;
+        if (!psoId && !deferred) {
           skipped.push({
             pso_id: '',
             so_number: soNumber,
@@ -1369,9 +1456,10 @@ export function FulfilmentBoardPanel({
           } as BoardBatchResult);
           continue;
         }
+        const orderPsoId = psoId ?? '';
         if (soNumber && appliedSoNumbers.has(soNumber)) {
           skipped.push({
-            pso_id: psoId,
+            pso_id: orderPsoId,
             ok: false,
             error: 'This planning change was already applied to this sales order.',
           } as ConfirmManyOrderResult);
@@ -1422,7 +1510,7 @@ export function FulfilmentBoardPanel({
                 ((contribution.covered &&
                   draftWithoutPreMark[contribution.key]?.verdict === 'rejected') ||
                   (!contribution.covered &&
-                    !contribution.cancelled &&
+                    (!contribution.cancelled || awaitsCancelSo(contribution)) &&
                     batchNamedKeys.has(contribution.key) &&
                     draftWithoutPreMark[contribution.key]?.verdict === 'cancelled')),
             )
@@ -1455,7 +1543,7 @@ export function FulfilmentBoardPanel({
                 ? 'saved Cancel SO'
                 : 'staged rejection';
           skipped.push({
-            pso_id: psoId,
+            pso_id: orderPsoId,
             so_number: soNumber,
             ok: false,
             heldBack: true,
@@ -1486,7 +1574,7 @@ export function FulfilmentBoardPanel({
           const everyLineOffTheRecord =
             blocked.length > 0 && blocked.every((entry) => entry.reason === 'no_mirror');
           skipped.push({
-            pso_id: psoId,
+            pso_id: orderPsoId,
             so_number: soNumber,
             ok: false,
             error: everyLineOffTheRecord
@@ -1496,7 +1584,8 @@ export function FulfilmentBoardPanel({
           continue;
         }
         orders.push({
-          pso_id: psoId,
+          pso_id: orderPsoId,
+          ...(deferred ? { sales_order_id: salesOrderId } : {}),
           lines,
           batch_id: orderBatchId,
           rejected_line_ids: rejectedLineIds,
@@ -1557,6 +1646,7 @@ export function FulfilmentBoardPanel({
     if (!board.data) return;
     setConfirmingAll(true);
     setBatchResults(null);
+    setSimulated(false);
     // AC-6: the count as the banner above stated it the moment Confirm was pressed - the
     // owner's own words were "confirming silently is dangerous", so a press that leaves lines
     // out says so in the SAME toast that says what it did commit, not only in a banner that
@@ -1593,16 +1683,9 @@ export function FulfilmentBoardPanel({
             } as BoardBatchResult);
             return false;
           }
-          const ids = [...(dryRun?.lines_confirmed ?? []), ...(dryRun?.lines_withdrawn ?? [])];
           // An order whose named lines are all already fulfilled confirms nothing new, but the REAL
           // press clears their stale decisions (the dry run rolled that back), so it is still posted.
-          if (
-            ids.length > 0 ||
-            (dryRun?.lines_cancelled?.length ?? 0) > 0 ||
-            order.cancelled_lines.length > 0 ||
-            (dryRun?.lines_fulfilled_skipped ?? 0) > 0 ||
-            Boolean(order.batch_id)
-          ) {
+          if (pressHasSomething(dryRun, order)) {
             return true;
           }
           refusals.push({
@@ -1699,6 +1782,11 @@ export function FulfilmentBoardPanel({
         (total, entry) => total + (entry.landed_buy_notices?.length ?? 0),
         0,
       );
+      // OI-CLOSED-LINE (owner, 12 Oct 2026): confirmed as decided while short of stock.
+      const stockShort = ok.reduce(
+        (total, entry) => total + (entry.stock_short_notices?.length ?? 0),
+        0,
+      );
       // The server's own echo of the lines it wrote; only a server that predates the field
       // falls back to what this press posted.
       const linesConfirmed = ok.reduce((total, entry) => {
@@ -1730,11 +1818,12 @@ export function FulfilmentBoardPanel({
           (heldBack > 0 ? ` · ${heldBack} held back` : '') +
           (landedBuys > 0
             ? ` · ${landedBuys} Buy${landedBuys === 1 ? '' : 's'} kept over landed goods`
-            : '');
+            : '') +
+          (stockShort > 0 ? ` · ${stockShort} short of stock` : '');
         // S4 (fix round 2, reviewer): a press that left something out is not an unqualified
         // success, the owner's own words on SO420745 were "confirming silently is dangerous" -
         // so the toast that SAYS so reads amber, not the plain green every other Confirm gets.
-        if (leftOutAtConfirm > 0 || heldBack > 0 || landedBuys > 0) {
+        if (leftOutAtConfirm > 0 || heldBack > 0 || landedBuys > 0 || stockShort > 0) {
           toast.warning(summary);
         } else {
           toast.success(summary);
@@ -1791,6 +1880,59 @@ export function FulfilmentBoardPanel({
     previewConfirmMany,
     confirmSummary,
   ]);
+
+  /**
+   * SIMULATE CONFIRM (admin): the body Confirm would post, sent to the server's dry run. A
+   * never-planned order is adopted by the server inside the simulation (adoption deferred
+   * here), so nothing is adopted for real. It never touches a draft and needs no board
+   * refetch: nothing was saved.
+   */
+  const runSimulate = React.useCallback(async () => {
+    if (!board.data) return;
+    setConfirmingAll(true);
+    setBatchResults(null);
+    try {
+      const built = await buildConfirmOrders(new Set(), { adopt: 'defer' });
+      if (!built) {
+        toast.error('Nothing could be sent for this press');
+        return;
+      }
+      const { skipped } = built;
+      // A never-planned order goes by its core id alone: it has no planning record yet.
+      const orders = built.orders.map(({ pso_id, ...rest }) =>
+        rest.sales_order_id ? rest : { pso_id, ...rest },
+      );
+      const answered =
+        orders.length > 0
+          ? (await simulateConfirm.mutateAsync({ ...built.body, orders })).results
+          : [];
+      // The server answers in the order posted; an adopted order's record exists only inside
+      // the simulation, so its result is named by the board's own sales order number.
+      const named = answered.map((result, index) => {
+        const salesOrderId = built.orders[index]?.sales_order_id;
+        const standing = salesOrderId
+          ? board.data?.orders.find((order) => order.sales_order_id === salesOrderId)
+          : board.data?.orders.find((order) => order.project_sales_order_id === result.pso_id);
+        const labelled = standing ? { ...result, so_number: standing.so_number } : result;
+        const posted = built.orders[index];
+        // The same "nothing to confirm" reading the real press gives an ok order.
+        return result.ok && posted && !pressHasSomething(result, posted)
+          ? ({
+              ...labelled,
+              ok: false,
+              heldBack: true,
+              error: 'has nothing to confirm',
+            } as BoardBatchResult)
+          : labelled;
+      });
+      setSimulated(true);
+      setBatchResults([...skipped, ...named]);
+    } catch {
+      // The mutation's own `onError` already toasted the message.
+    } finally {
+      setConfirmingAll(false);
+    }
+  }, [board, buildConfirmOrders, simulateConfirm]);
 
   /**
    * The rows on screen, and the rows the selection holds.
@@ -1934,8 +2076,7 @@ export function FulfilmentBoardPanel({
           (linesByRow.get(row.key) ?? []).some((line) => {
             return (
               (scope === 'all' || isSavedLine(line) === (scope === 'saved')) &&
-              (statusFilter.length === 0 ||
-                statusFilter.includes(verdictOf(line, draft[line.key] ?? null)))
+              matchesStatusFilter(line, draft[line.key] ?? null, statusFilter)
             );
           }),
       ),
@@ -2138,6 +2279,10 @@ export function FulfilmentBoardPanel({
               className="text-sm text-muted-foreground tabular-nums"
             >
               {`${confirmSummary.toConfirm} to confirm · ${confirmSummary.rejected} rejected`}
+              {/* PR 1622 owner hand test: a line purchasing refused is back with CS, and the
+                  header said "0 rejected" over it. Counted apart from CS's own rejections
+                  (which Confirm acts on), and only while one is open. */}
+              {purchasingRejected > 0 ? ` · ${purchasingRejected} rejected by purchasing` : ''}
               {/* C4 (code review round 3 batch 2): a saved line the engine has re-suggested
                   is dropped from Confirm with no trace beyond the pill itself - stated here
                   too, and only while it applies, the same rule the two figures beside it
@@ -2205,6 +2350,26 @@ export function FulfilmentBoardPanel({
                 <Undo2 className="size-4" aria-hidden />
                 Undo all
               </DropdownMenuItem>
+              {canSimulate && (
+                <DropdownMenuItem
+                  disabled={confirmingAll}
+                  onSelect={confirmingAll ? undefined : () => void runSimulate()}
+                >
+                  <FlaskConical className="size-4" aria-hidden />
+                  Simulate confirm
+                </DropdownMenuItem>
+              )}
+              {canSimulate && (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setHistorySoId(undefined);
+                    setHistoryOpen(true);
+                  }}
+                >
+                  <History className="size-4" aria-hidden />
+                  History
+                </DropdownMenuItem>
+              )}
               {/* Undo last confirm, one entry per order the newest revision can be undone
                   for (R6): below Undo all, same permission as Confirm, hidden entirely when
                   nothing on the board is undoable (AC-UC-04). A refused order keeps its
@@ -2384,7 +2549,10 @@ export function FulfilmentBoardPanel({
                 that in fact confirmed everything it could. */}
             {(() => {
               const countable = batchResults.filter((r) => !r.heldBack);
-              return `${countable.filter((r) => r.ok).length} of ${countable.length} orders confirmed`;
+              const okCount = countable.filter((r) => r.ok).length;
+              return simulated
+                ? `Simulation, nothing was saved: ${okCount} of ${countable.length} orders would confirm`
+                : `${okCount} of ${countable.length} orders confirmed`;
             })()}
           </p>
           <ul className="space-y-1">
@@ -2396,6 +2564,10 @@ export function FulfilmentBoardPanel({
               // A refusal names the LINES it refused, not just the order: the fix is on one
               // row, and "SO404352: refused" sends a planner to read thirty of them.
               const failing = result.failing_lines ?? [];
+              // PLANNING-WHY AC-W13: an admin's refusal names each line in a table; a line
+              // without a reason code reads as it always did.
+              const coded = canSimulate ? failing.filter(hasReasonCode) : [];
+              const plain = canSimulate ? failing.filter((line) => !hasReasonCode(line)) : failing;
               // #1362: a confirmed order can still name lines - held back, or a Buy kept
               // over landed goods - and each one is something to act on.
               const notices = result.ok ? confirmNoticeLines(result) : [];
@@ -2413,18 +2585,59 @@ export function FulfilmentBoardPanel({
                     {result.ok && (result.lines_cancelled?.length ?? 0) > 0 &&
                     (result.lines_confirmed?.length ?? 0) === 0 &&
                     (result.inquiry_rows_created ?? 0) === 0
-                      ? `${label}: ${result.lines_cancelled?.length} line${result.lines_cancelled?.length === 1 ? '' : 's'} transferred to Cancel SO`
+                      ? `${label}: ${simulated ? 'would transfer ' : ''}${result.lines_cancelled?.length} line${result.lines_cancelled?.length === 1 ? '' : 's'}${simulated ? '' : ' transferred'} to Cancel SO`
                       : result.ok
-                      ? `${label}: confirmed as revision ${result.decision_revision} (${result.inquiry_rows_created ?? 0} purchase row${(result.inquiry_rows_created ?? 0) === 1 ? '' : 's'} handed over)`
+                      ? simulated
+                        ? `${label}: would confirm as revision ${result.decision_revision}`
+                        : `${label}: confirmed as revision ${result.decision_revision} (${result.inquiry_rows_created ?? 0} purchase row${(result.inquiry_rows_created ?? 0) === 1 ? '' : 's'} handed over)`
                       : `${label}: ${result.error ?? 'refused'}`}
                   </span>
+                  {simulated &&
+                    result.ok &&
+                    (result.inquiry_rows?.length ?? 0) + (result.transfers?.length ?? 0) > 0 && (
+                    <ul
+                      data-testid={`board-simulate-writes-${result.pso_id}`}
+                      className="space-y-0.5"
+                    >
+                      <li className="text-sm font-medium">Would write</li>
+                      {(result.inquiry_rows ?? []).map((row, index) => (
+                        <li key={`row-${index}`} className="text-sm break-words">
+                          {`line ${row.line_no ?? '?'} ${row.item_code ?? ''}: ${row.verb} ${formatQty(String(row.qty))}${
+                            row.stock_location ? ` at ${row.stock_location}` : ''
+                          }${row.is_new === false ? ' (settles an existing row)' : ''}`}
+                        </li>
+                      ))}
+                      {(result.transfers ?? []).map((move, index) => (
+                        <li key={`move-${index}`} className="text-sm break-words">
+                          {`line ${move.line_no ?? '?'}: ${move.kind} ${formatQty(String(move.qty))} ${
+                            move.from_location ?? '?'
+                          } -> ${move.to_location ?? '?'}`}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {simulated && (result.simulated_errors?.length ?? 0) > 0 && (
+                    <ul
+                      data-testid={`board-simulate-errors-${result.pso_id}`}
+                      className="space-y-0.5 rounded-md bg-destructive/5 px-2 py-1.5"
+                    >
+                      {(result.simulated_errors ?? []).map((entry) => (
+                        <li
+                          key={entry.project_line_id}
+                          className="text-sm break-words text-destructive"
+                        >
+                          {`${`line ${entry.line_no ?? '?'} ${entry.item_code ?? ''}`.trim()}: ${entry.error}`}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {result.ok && result.lines_cancelled && result.lines_cancelled.length > 0 && (
                     <ul
                       data-testid={`board-cancelled-lines-${result.pso_id}`}
                       className="space-y-0.5"
                     >
                       <li className="text-sm break-words">
-                        {`Transferred to Cancel SO: ${result.lines_cancelled
+                        {`${simulated ? 'Would transfer' : 'Transferred'} to Cancel SO: ${result.lines_cancelled
                           .map((line) => `line ${line.line_no ?? '?'} ${line.item_code ?? ''}`.trim())
                           .join(' · ')}`}
                       </li>
@@ -2436,19 +2649,19 @@ export function FulfilmentBoardPanel({
                       className="space-y-0.5"
                     >
                       <li className="text-sm break-words">
-                        {`Confirmed: ${result.lines_confirmed
+                        {`${simulated ? 'Would confirm' : 'Confirmed'}: ${result.lines_confirmed
                           .map((line) => `line ${line.line_no ?? '?'} ${line.item_code ?? ''}`.trim())
                           .join(' · ')}`}
                       </li>
                       {(result.lines_carried ?? 0) > 0 && (
                         <li className="text-sm text-muted-foreground">
-                          {`${result.lines_carried} carried forward unchanged`}
+                          {`${result.lines_carried} ${simulated ? 'would carry' : 'carried'} forward unchanged`}
                         </li>
                       )}
                     </ul>
                   )}
                   {(() => {
-                    if (!result.ok) return null;
+                    if (!result.ok || simulated) return null;
                     if (!result.lines_confirmed) {
                       return (
                         <p className="text-sm text-muted-foreground">
@@ -2473,13 +2686,41 @@ export function FulfilmentBoardPanel({
                       </p>
                     );
                   })()}
-                  {failing.length > 0 && (
+                  {coded.length > 0 && (
+                    <PlanningRefusalTable
+                      lines={coded}
+                      onGoToLine={(line) => {
+                        const target = allContributions.find(
+                          (candidate) =>
+                            candidate.so_number === label &&
+                            (candidate.so_line_no ?? candidate.line_no) === line.so_line_no,
+                        );
+                        if (target) focusLeftOutLine(target);
+                        else setView('list');
+                      }}
+                      onReload={() => void board.refetch()}
+                    />
+                  )}
+                  {canSimulate && !result.ok && !result.heldBack && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      onClick={() => {
+                        setHistorySoId(result.pso_id);
+                        setHistoryOpen(true);
+                      }}
+                    >
+                      History
+                    </Button>
+                  )}
+                  {plain.length > 0 && (
                     <ul
                       className={`space-y-0.5 rounded-md px-2 py-1.5 ${
                         result.heldBack ? 'bg-muted/50' : 'bg-destructive/5'
                       }`}
                     >
-                      {failing.map((line, index) => (
+                      {plain.map((line, index) => (
                         <li
                           key={`${line.line_no ?? 'order'}-${line.item_code ?? ''}-${index}`}
                           className={`text-sm break-words ${
@@ -2495,7 +2736,7 @@ export function FulfilmentBoardPanel({
                     <p data-testid={`board-confirm-fulfilled-${result.pso_id}`} className="text-sm break-words text-muted-foreground">
                       {`${result.lines_fulfilled_skipped} line${
                         result.lines_fulfilled_skipped === 1 ? '' : 's'
-                      } already fulfilled, decision cleared`}
+                      } already fulfilled, decision ${simulated ? 'would be ' : ''}cleared`}
                       {(() => {
                         const echoed = new Set((result.lines_confirmed ?? []).map((line) => line.project_line_id));
                         const held = new Set((result.lines_held_back ?? []).map((line) => line.line_no));
@@ -2579,7 +2820,7 @@ export function FulfilmentBoardPanel({
                   No lines to plan on these sales orders
                 </h3>
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                  Every line is cancelled or marked no purchase needed.
+                  Every line is cancelled, fully returned or marked no purchase needed.
                 </p>
               </>
             )}
@@ -2647,7 +2888,7 @@ export function FulfilmentBoardPanel({
                 order it was for. */}
             <BoardTransfersPanel
               soNumbers={soNumbers}
-              justConfirmed={batchResults !== null}
+              justConfirmed={batchResults !== null && !simulated}
               inquiryRows={(batchResults ?? [])
                 .filter((result) => result.ok)
                 .reduce((total, result) => total + (result.inquiry_rows_created ?? 0), 0)}
@@ -2924,6 +3165,15 @@ export function FulfilmentBoardPanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {canSimulate && (
+        <PlanningHistorySheet
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          psoIds={historyOrders.ids}
+          soNumbers={historyOrders.numbers}
+          initialSoId={historySoId}
+        />
+      )}
     </div>
   );
 }

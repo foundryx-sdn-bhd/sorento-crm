@@ -393,3 +393,7 @@ def test_rev2_b3_a_real_sql_failure_neither_blanks_the_others_nor_aborts_the_tur
         assert out["domains"] == ""
         assert '"outstanding"' in out["statuses"]
         assert db.execute(text("SELECT 1")).scalar() == 1
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

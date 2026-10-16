@@ -605,7 +605,18 @@ def test_every_company_id_table_is_registered():
     # + 1 (PRODUCT-ALTERNATIVES, #1533): `product_alternatives`, one company's own "use this
     #   instead" link between two of its products; the product page and the chatbot read it
     #   by product, so the mixin's filter is what hides another company's links = 158.
-    expected_owned = 158
+    # + 1 (WC-SEAT-COMPAT): `product_compatibility`, one company's own "seat cover fits WC"
+    #   link between two of its products, read by product like the alternatives = 159.
+    # + 2 (AC-CANCEL-CRM): `autocount_cancel_docs` and `autocount_cancel_lines`, AutoCount
+    #   Cancel SO / PO (and stored-only consignment) documents of ONE company's book. The lines are owned
+    #   too, not left to their parent: the waiting retry and the order-push relink read them
+    #   directly, by company, without the doc = 161.
+    # + 1 (OI-RESERVE-RECEIVED): `order_inquiry_released_links`, one company's own released
+    #   received link per reserve = 162.
+    # + 2 (STOCK-DEBT-SNAPSHOT): `stock_debt_snapshots` and `stock_debt_snapshot_rows`, one
+    #   company's frozen Stock Debt view and its rows (customer demand, OI numbers and
+    #   decisions); every read is by snapshot within the company = 164.
+    expected_owned = 164
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"
     )

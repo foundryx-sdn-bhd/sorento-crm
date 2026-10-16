@@ -13,10 +13,21 @@ import type { QuotationDocument } from '../services/quotationDocumentService';
  */
 export type QuotationStanding = {
   label: string;
-  variant: 'success' | 'warning' | 'secondary';
+  variant: 'success' | 'warning' | 'secondary' | 'primary' | 'destructive';
 };
 
 export function quotationStanding(document: QuotationDocument): QuotationStanding {
+  // The approval rungs come first (A1-A5): the next revision's standing outranks what the
+  // customer said about the one they hold.
+  if (document.approval_status_key === 'pending_approval') {
+    return { label: 'Pending approval', variant: 'warning' };
+  }
+  if (document.approval_status_key === 'approved') {
+    return { label: 'Approved', variant: 'primary' };
+  }
+  if (document.approval_status_key === 'rejected') {
+    return { label: 'Rejected', variant: 'destructive' };
+  }
   if (document.customer_decision === 'accepted') {
     return { label: 'Accepted', variant: 'success' };
   }
@@ -37,4 +48,45 @@ export function quotationStanding(document: QuotationDocument): QuotationStandin
  */
 export function hasOpenChangeRequest(document: QuotationDocument): boolean {
   return document.customer_decision === 'changes_requested';
+}
+
+/**
+ * Whether this quotation is currently blocked from being sent: a line is below its floor and no
+ * manager has approved it. One expression, read by the next-action choice and the banner.
+ */
+export function isBlockedByApproval(document: QuotationDocument): boolean {
+  return Boolean(document.requires_approval) && document.approval_status_key !== 'approved';
+}
+
+/** Pending or approved: nobody edits the quotation until the creator revises it (D1, D2). */
+export function isLockedForApproval(document: QuotationDocument): boolean {
+  return (
+    document.approval_status_key === 'pending_approval' ||
+    document.approval_status_key === 'approved'
+  );
+}
+
+export type NextAction = {
+  kind: 'send_for_approval' | 'approve' | 'sign' | 'send' | 'none';
+  /** One short sentence for the header when there is no button to press. */
+  hint?: string;
+};
+
+/**
+ * The ONE next step the header leads with. A manager on a pending quotation decides it; a
+ * salesperson signs first, then sends for approval when a line is below its floor, otherwise
+ * sends to the customer. Everything else lives behind the gear.
+ */
+export function nextAction(
+  document: QuotationDocument,
+  { canEdit, canApprove, isSigned }: { canEdit: boolean; canApprove: boolean; isSigned: boolean },
+): NextAction {
+  if (document.approval_status_key === 'pending_approval') {
+    if (canApprove) return { kind: 'approve' };
+    if (canEdit && !isSigned) return { kind: 'sign', hint: 'With a manager for approval' };
+    return { kind: 'none', hint: 'With a manager for approval' };
+  }
+  if (!canEdit) return { kind: 'none' };
+  if (isBlockedByApproval(document)) return { kind: 'send_for_approval' };
+  return { kind: isSigned ? 'send' : 'sign' };
 }

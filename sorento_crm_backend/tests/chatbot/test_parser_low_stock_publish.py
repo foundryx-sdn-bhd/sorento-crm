@@ -135,3 +135,9 @@ class TestPublishBehaviour:
                 .count()
                 == 3
             ), "the two new bodies must be ADDED beside the labelled one, not replace it"
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

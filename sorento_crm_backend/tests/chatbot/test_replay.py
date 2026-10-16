@@ -172,18 +172,11 @@ def _run_annotate_incoming(fixture: _corpus.Fixture) -> list:
     ]
 
 
-def _run_annotate_customer(fixture: _corpus.Fixture) -> list:
-    from app.services.chatbot.lanes.business import pickers
-
-    return [
-        {
-            "json": pickers.annotate_customer(
-                _corpus.json_round_trip(_sub_gate(fixture)),
-                probe=_sub_upstream(fixture, "probe-customer-orders"),
-                parser=_sub_parser(fixture),
-            )
-        }
-    ]
+# `_run_annotate_customer` (`pickers.annotate_customer`) is RETIRED, not ported any more
+# (PICKER-ONE, owner 13 Oct 2026): the customer picker no longer rewrites the gate's text,
+# so the `annotate-customer-picker` node has no Python counterpart to grade. The customer
+# arm records its probe's answer as data (`resolve_gate.measure_customer_picker`) and the
+# roster prints through `compose_question`, pinned by `test_picker_one.py`.
 
 
 # `resolve-exit-access-ask` is listed but NOT registered in `RUNNERS`: no execution of that
@@ -477,7 +470,7 @@ RUNNERS = {
     "tier-gate": _run_tier_gate,
     "build-ctx-resolved": _run_build_ctx_resolved,
     "annotate-incoming-picker": _run_annotate_incoming,
-    "annotate-customer-picker": _run_annotate_customer,
+    # "annotate-customer-picker" retired - PICKER-ONE, see the note above `_EXIT_KIND_BY_NODE`.
     "resolve-exit-continue": _run_resolve_exit,
     "resolve-exit-not-found": _run_resolve_exit,
     "resolve-exit-offer": _run_resolve_exit,

@@ -121,6 +121,7 @@ class Customer(Base, CompanyScopedMixin):
         "sales_agent_id",
         "account_level",
         "customer_group_id",
+        "debtor_type",
     ]
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -180,6 +181,9 @@ class Customer(Base, CompanyScopedMixin):
     # ledger at level 1). NULL = not a numbered account. A setting the office edits; the
     # name marker is read once, by migration acct_ledger_0001's seed, never again.
     account_level = Column(SmallInteger, nullable=True)
+    # project | project_cash | cash_sales (app/services/debtor_type.py). NULL = not set; the
+    # insert listener below fills it on create, so only a hand-cleared row stays blank.
+    debtor_type = Column(String(20), nullable=True)
     # The group this ledger belongs to (see `CustomerGroup`). NULL = ungrouped.
     customer_group_id = Column(
         UUID(as_uuid=False),
@@ -236,6 +240,10 @@ class Customer(Base, CompanyScopedMixin):
         Index("ix_customers_account_owner_user_id", "account_owner_user_id"),
         Index("ix_customers_customer_group_id", "customer_group_id"),
         CheckConstraint("account_level >= 1", name="ck_customers_account_level"),
+        CheckConstraint(
+            "debtor_type IS NULL OR debtor_type IN ('project', 'project_cash', 'cash_sales')",
+            name="ck_customers_debtor_type",
+        ),
         # Composite uniqueness - see column docstring. Created as a functional
         # UNIQUE INDEX by migration 220 so case + whitespace differences don't
         # produce silent duplicates, then re-created WITH company_id by migration
@@ -268,6 +276,16 @@ def _assign_customer_id(target, args, kwargs):  # noqa: ANN001
     A caller that supplies its own id keeps it.
     """
     kwargs.setdefault("id", str(uuid.uuid4()))
+
+
+@event.listens_for(Customer, "before_insert")
+def _fill_customer_debtor_type(mapper, connection, target):  # noqa: ANN001
+    """Every creation path is ORM, so one listener gives a new customer its default debtor
+    type (DT-3). Insert only: an update never re-derives it."""
+    if target.debtor_type is None:
+        from app.services.debtor_type import default_debtor_type
+
+        target.debtor_type = default_debtor_type(target.customer_code, target.customer_name)
 
 
 class CustomerContact(Base, CompanyScopedMixin):
@@ -476,6 +494,11 @@ class Order(Base, CompanyScopedMixin):
     currency_code = Column(String(10), nullable=True)
     currency_rate = Column(Numeric(18, 8), nullable=True)
     local_net_total = Column(Numeric(15, 2), nullable=True)
+    # DO-HISTORY: set when the DO ingest assumed this pre-cutover DO delivered because it had
+    # no Order Tracking (delivered status, NO delivery date, owner 13 Oct 2026); the delivered
+    # rule accepts it in place of the date. Cleared by a later Overall Tracking row for it.
+    # Migration do_hist_0001.
+    tracking_assumed_at = Column(DateTime(timezone=True), nullable=True)
 
     customer = relationship("Customer", back_populates="orders")
     order_status = relationship("OrderStatus", back_populates="orders")
@@ -587,6 +610,7 @@ class OrderLine(Base, CompanyScopedMixin):
         ),
         UniqueConstraint("order_id", "line_sequence", name="uq_order_lines_order_id_line_sequence"),
         Index("ix_order_lines_sales_order_line_id", "sales_order_line_id"),
+        Index("ix_order_lines_company_from_doc_no", "company_id", "from_doc_no"),
         Index(
             "uq_order_lines_order_dtl_key",
             "order_id", "dtl_key",
@@ -594,6 +618,11 @@ class OrderLine(Base, CompanyScopedMixin):
             postgresql_where=text("dtl_key IS NOT NULL"),
         ),
     )
+
+
+# `sales_orders.doc_type` (AC-CONSIGN-CRM).
+DOC_TYPE_SALES_ORDER = "sales_order"
+DOC_TYPE_CONSIGNMENT = "consignment"
 
 
 class SalesOrder(Base, CompanyScopedMixin):
@@ -674,6 +703,12 @@ class SalesOrder(Base, CompanyScopedMixin):
     # only by the ESB ingest, never touches `project_label`. Migration sopr_0001.
     po_ref = Column(String(255), nullable=True)
     po_ref_key = Column(String(255), nullable=True)
+    # AC-CONSIGN-CRM (owner ruling 1, 13 Oct): `consignment` is an AutoCount Consignment (CG)
+    # written as demand by the consignments ingest; every other order is `sales_order`. It
+    # labels the order "Consignment" and keeps it out of the SO-based sales figures (Q5 a).
+    # Migration ac_consign_0001_doc_type.
+    doc_type = Column(String(20), nullable=False, default=DOC_TYPE_SALES_ORDER,
+                      server_default=DOC_TYPE_SALES_ORDER)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -690,6 +725,8 @@ class SalesOrder(Base, CompanyScopedMixin):
         Index(
             "uq_sales_orders_company_so_number", "company_id", "so_number", unique=True
         ),
+        CheckConstraint("doc_type IN ('sales_order', 'consignment')",
+                        name="ck_sales_orders_doc_type"),
         Index("ix_sales_orders_customer_id", "customer_id"),
         Index("ix_sales_orders_debtor_code", "debtor_code"),
         Index("ix_sales_orders_so_number", "so_number"),
@@ -721,6 +758,18 @@ class SalesOrderLine(Base, CompanyScopedMixin):
     warehouse_id = Column(UUID(as_uuid=False), ForeignKey("warehouses.id", ondelete="RESTRICT"), nullable=True)
     qty_ordered = Column(Numeric(15, 4), default=0, nullable=False)
     qty_delivered = Column(Numeric(15, 4), default=0, nullable=False)
+    # AC-CANCEL-CRM: what AutoCount Cancel SO (XS) documents cancelled on this line, derived on
+    # every sync from `autocount_cancel_lines` (never hand-written). `qty_delivered` stays
+    # AutoCount's TransferedQty, which INCLUDES this; delivered shown = qty_delivered - this.
+    qty_cancelled = Column(Numeric(15, 4), default=0, server_default="0", nullable=False)
+    # AC-CANCEL-CRM: True while the line is `cancelled` because cancel documents cancelled all
+    # of it. Only such a line reopens when the cancel lowers (a removed, CRM-cancelled or
+    # header-cancelled line never does).
+    cancelled_by_cancel_doc = Column(Boolean, default=False, server_default="false", nullable=False)
+    # AC-CONSIGN-CRM (ruling 2): on a consignment line, what live AutoCount Consignment Returns
+    # matched to it add up to, capped at ordered, derived on every sync. Reporting only: no
+    # planned, delivered or status reader looks at it.
+    qty_returned = Column(Numeric(15, 4), default=0, server_default="0", nullable=False)
     # What the customer pays for this line. The column has always been on the table and
     # was simply never mapped (same as `source_doc_no` / `internal_note` on the header
     # above), so every read through the ORM dropped it and a schema built from the models

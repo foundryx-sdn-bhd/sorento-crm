@@ -8,7 +8,11 @@ import {
   getStockDebtCell,
   getStockDebtList,
 } from '../services/stockDebtService';
-import type { StockDebtExportParams, StockDebtListParams } from '../services/stockDebtService';
+import type {
+  StockDebtExportParams,
+  StockDebtLocationsMode,
+  StockDebtListParams,
+} from '../services/stockDebtService';
 import type { StockDebtBook } from '../types/stockDebt.types';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 
@@ -32,8 +36,11 @@ export function useStockDebtQuery(params: StockDebtListParams) {
       params.onlyDebt,
       params.book,
       params.supplierIds,
+      params.locations ?? [],
+      params.locationsMode ?? 'include',
       params.dateFrom,
       params.dateTo,
+      Boolean(params.projected),
     ],
     queryFn: () => getStockDebtList(params),
     staleTime: 60_000,
@@ -70,9 +77,8 @@ export function useExportStockDebt() {
  *
  * `dateFrom`, `dateTo` and `book` are part of the KEY, not just of the request: the same
  * product and month answer differently under a narrowed board, so a shared cache entry
- * would hand the narrowed board the whole book's drill. R16 retired the Ownership group
- * this hook used to take instead - a straight pass-through to `getStockDebtCell`, no
- * `group` anywhere.
+ * would hand the narrowed board the whole book's drill. `locations` (Location, owner 14 Oct
+ * 2026) is part of the key for the same reason.
  */
 export function useStockDebtCellQuery(
   productId: string | null,
@@ -80,14 +86,31 @@ export function useStockDebtCellQuery(
   dateFrom?: string,
   dateTo?: string,
   book?: StockDebtBook,
+  projected?: boolean,
+  locations?: string[],
+  locationsMode?: StockDebtLocationsMode,
 ) {
   return useQuery({
     queryKey: [
       'project-sales', 'stock-debt', 'cell', productId, month, dateFrom ?? '', dateTo ?? '',
-      book ?? 'all',
+      book ?? 'all', Boolean(projected), locations ?? [],
+      locationsMode ?? 'include',
     ],
-    queryFn: () =>
-      getStockDebtCell(productId as string, month as string, dateFrom, dateTo, book),
+    // The projection rides only when the switch is on, so the month view's request is
+    // exactly what it was before the switch existed.
+    queryFn: () => {
+      const id = productId as string;
+      const key = month as string;
+      if (locations?.length) {
+        return getStockDebtCell(
+          id, key, dateFrom, dateTo, book, projected, locations,
+          locationsMode === 'exclude' ? 'exclude' : 'include',
+        );
+      }
+      return projected
+        ? getStockDebtCell(id, key, dateFrom, dateTo, book, true)
+        : getStockDebtCell(id, key, dateFrom, dateTo, book);
+    },
     enabled: Boolean(productId && month),
     staleTime: 60_000,
     retry: 1,

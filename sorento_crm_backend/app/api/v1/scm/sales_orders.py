@@ -6,7 +6,7 @@ SCM operator capability). No UUIDs surfaced - SO by so_number.
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel
@@ -19,6 +19,7 @@ from app.schemas.scm_orders import (
     CreateDoResponse,
     SalesAgentOption,
     SalesOrder,
+    SalesOrderDeliveries,
     SalesOrderFormData,
     SalesOrderListResponse,
     SalesOrderUpdate,
@@ -110,6 +111,11 @@ def list_sales_orders(
         description="AutoCount's Transferable flag: yes | no | unknown (never stated). "
                     "Omit for all.",
     ),
+    doc_type: Literal["sales_order", "consignment"] = Query(
+        "sales_order",
+        description="Which documents to list: sales orders (default) or consignments, "
+                    "which have their own page.",
+    ),
     db: Session = Depends(get_db),
     _user: dict = Depends(_READ),
 ):
@@ -128,7 +134,7 @@ def list_sales_orders(
         page, limit, sort, dir, query, status, priority, source,
         date_from=date_from, date_to=date_to, customer_code=customer_code,
         outstanding=outstanding, sales_agent_id=sales_agent_id,
-        demand_class=demand_class, transferable=transferable,
+        demand_class=demand_class, transferable=transferable, doc_type=doc_type,
     )
     out["data"] = svc.with_planning_state(
         svc.with_planning_changes(
@@ -176,6 +182,20 @@ def list_sales_order_uoms(
 @router.get("/sales-orders/{so_id}", response_model=SalesOrder)
 def get_sales_order(so_id: str, db: Session = Depends(get_db), _user: dict = Depends(_READ)):
     return SalesOrderService(db).get(so_id)
+
+
+@router.get("/sales-orders/{so_id}/deliveries", response_model=SalesOrderDeliveries)
+def get_sales_order_deliveries(so_id: str, db: Session = Depends(get_db), _user: dict = Depends(_READ)):
+    import uuid
+
+    from app.services.error_handler import AppException
+    from app.services.scm.so_line_history import so_line_history
+
+    try:
+        uuid.UUID(str(so_id))
+    except ValueError:
+        raise AppException(404, "Sales order not found", code="SO_NOT_FOUND")
+    return so_line_history(db, SalesOrderService(db)._get_or_404(so_id))
 
 
 @router.post("/sales-orders", response_model=SalesOrder, status_code=status.HTTP_201_CREATED)

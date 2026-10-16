@@ -95,6 +95,8 @@ export interface FulfilmentPlanningRow {
   sales_order_id?: string | null;
   /** The AutoCount / core sales-order number. The human key of an arm-1 row. */
   so_number?: string | null;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type ('consignment' / 'sales_order'). */
+  so_doc_type?: string | null;
   /** Whether the planning record was authored here or adopted from the core book. */
   origin?: 'authored' | 'adopted' | null;
   provisional_ref?: string | null;
@@ -515,7 +517,19 @@ export interface SupplyFailingLine {
   so_line_no?: number | null;
   item_code?: string | null;
   reason: string;
+  /**
+   * PLANNING-WHY: why a planning change row stopped a Confirm, and what the book did to it.
+   * Sent to an admin only; absent on every other refusal.
+   */
+  reason_code?: PlanningRefusalReason | null;
+  change?: string | null;
 }
+
+export type PlanningRefusalReason =
+  | 'not_decided'
+  | 'changed_again'
+  | 'already_confirmed'
+  | 'line_cancelled';
 
 /** `GET /project-sales/sales-orders/{pso_id}/supply`. */
 export interface SupplyProposal {
@@ -603,6 +617,8 @@ export interface ConfirmLine {
   buy_qty: string;
   /** Why this line still buys a discontinued product, when the product is discontinued and `buy_qty > 0`. Optional. */
   buy_reason?: string | null;
+  /** PR 1622: what the planner typed, carried to purchasing's new order inquiry row. */
+  cs_note?: string | null;
   /**
    * Why this composition is not the engine's, in the planner's own words. Frozen with the
    * line: every other component carries the sentence of the RULE that produced it, and those
@@ -710,6 +726,13 @@ export interface ConfirmResult {
   lines_fulfilled_skipped?: number | null;
   /** Buys confirmed as decided over goods that landed for their line (#1362). */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /**
+   * OI-CLOSED-LINE (owner, 12 Oct 2026): a Reserve or Borrow confirmed as decided while short
+   * of free stock on its undelivered part. Only what exists is held; purchasing is told.
+   */
+  stock_short_notices?: SupplyFailingLine[] | null;
+  /** Lines this press could not write, left out so the rest of the order confirmed. */
+  lines_held_back?: SupplyFailingLine[] | null;
 }
 
 export interface FulfilmentPlanningListEnvelope {
@@ -1166,6 +1189,8 @@ export interface BoardContribution {
    */
   product_id?: string | null;
   so_number: string;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type ('consignment' / 'sales_order'). */
+  so_doc_type?: string | null;
   customer_name?: string | null;
   /**
    * The customer's own id, for GROUPING only - never rendered (no UUIDs in the UI).
@@ -1308,6 +1333,11 @@ export interface BoardContribution {
   cancelled_at?: string | null;
   cancelled_by?: string | null;
   cancel_reason?: string | null;
+  /**
+   * CANCEL-STOP-AT-SO: live order inquiry rows on a line an AutoCount Cancel SO cancelled
+   * (`cancelled_by` "AutoCount"). CS still has to handle them, so the pill reads Cancelled.
+   */
+  cancel_open_oi_rows?: number;
   /** `sales_order_lines.priority`, when anybody stated one. Almost nobody does. */
   priority?: 'high' | 'medium' | 'low' | null;
   /**
@@ -1486,6 +1516,8 @@ export interface BoardLineOrderInquiry {
    */
   rejected_reason?: string | null;
   rejected_by_name?: string | null;
+  /** When purchasing refused it: naive UTC ISO, like every stamp on the wire. */
+  rejected_at?: string | null;
   /**
    * AC-RL-07 (`PLAN-oi-replan-received-links.md`): what backs the instruction - the
    * winning row's own documents, the SAME reader (`links_for_rows`) the OI worklist
@@ -2084,6 +2116,8 @@ export interface BoardDecision {
   buy_qty?: string;
   /** Why this line still buys a discontinued product, when the product is discontinued and `buy_qty > 0`. Optional. */
   buy_reason?: string;
+  /** PR 1622: the planner's OWN words on this line (never a seeded engine sentence). */
+  cs_note?: string;
   /** The server's incoming cover, carried through unedited: it is dated supply, not a choice. */
   timely_spo_qty?: string;
   /**
@@ -2555,6 +2589,20 @@ export interface ConfirmManyOrderBody {
   only_line_ids?: string[];
 }
 
+/**
+ * One order of a Simulate confirm: a never-planned order is named by its CORE
+ * `sales_order_id` (no `pso_id`) and its lines carry `pending-adoption:<core line id>`; the
+ * server adopts it inside the simulation and swaps each placeholder for the new mirror line.
+ */
+export type SimulateOrderBody = Omit<ConfirmManyOrderBody, 'pso_id'> & {
+  pso_id?: string;
+  sales_order_id?: string;
+};
+
+export interface SimulateConfirmBody extends Omit<ConfirmManyBody, 'orders'> {
+  orders: SimulateOrderBody[];
+}
+
 export interface ConfirmManyBody {
   orders: ConfirmManyOrderBody[];
   /**
@@ -2591,8 +2639,20 @@ export interface PreviewTransfer {
   to_location?: string | null;
 }
 
+/** One line the admin Simulate probe found failing on its own, with the server's raw reason. */
+export interface SimulatedLineError {
+  line_no?: number | null;
+  item_code?: string | null;
+  project_line_id: string;
+  error: string;
+}
+
 /** One order's outcome. `ok` decides which half is populated. */
 export interface ConfirmManyOrderResult {
+  /** Simulate confirm only: the simulation adopted this never-planned order first. */
+  adopted?: boolean | null;
+  /** Simulate confirm only: lines that fail when run alone. */
+  simulated_errors?: SimulatedLineError[] | null;
   /** True on a preview: nothing below was committed. */
   preview?: boolean | null;
   inquiry_rows?: PreviewInquiryRow[] | null;
@@ -2636,6 +2696,8 @@ export interface ConfirmManyOrderResult {
    * purchasing adjusts it off the Buy's order inquiry row.
    */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /** The per-order twin of `ConfirmResult.stock_short_notices` (OI-CLOSED-LINE). */
+  stock_short_notices?: SupplyFailingLine[] | null;
   error?: string | null;
   failing_lines?: SupplyFailingLine[] | null;
 }
@@ -2643,4 +2705,52 @@ export interface ConfirmManyOrderResult {
 /** `POST /project-sales/fulfilment-planning/confirm-all`. */
 export interface ConfirmManyResult {
   results: ConfirmManyOrderResult[];
+}
+
+
+/** One line of a History event. Which keys are set depends on the event kind. */
+export interface PlanningHistoryLine {
+  so_line_no?: number | null;
+  item_code?: string | null;
+  action?: 'ordered' | 'cancelled' | 'reduced' | 'order_back' | null;
+  qty?: number | null;
+  previous_qty?: number | null;
+  cause?: string | null;
+  change?: string | null;
+  reason_code?: string | null;
+  reason?: string | null;
+  kind?: string | null;
+  state?: string | null;
+  remark?: string | null;
+}
+
+export type PlanningHistoryKind =
+  | 'confirm_refused'
+  | 'revision_confirmed'
+  | 'oi_cancelled'
+  | 'autocount_update'
+  | 'email_sent';
+
+/** `GET /project-sales/fulfilment-planning/history` (admin only). Newest first. */
+export interface PlanningHistoryEvent {
+  id: string;
+  kind: PlanningHistoryKind;
+  at: string | null;
+  actor: string | null;
+  pso_id: string;
+  so_no: string;
+  lines: PlanningHistoryLine[];
+  preview?: boolean;
+  revision_no?: number;
+  reissued_unchanged?: number;
+  counts?: Record<string, number>;
+  subject?: string;
+  status?: string;
+  sent_at?: string | null;
+  recipients?: string[];
+  body_text?: string | null;
+}
+
+export interface PlanningHistory {
+  events: PlanningHistoryEvent[];
 }

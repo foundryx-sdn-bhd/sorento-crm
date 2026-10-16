@@ -679,11 +679,13 @@ def test_g_1011_round_7_session(session_factory, monkeypatch, stub_access):
     assert c.say("5", reply(demand_qty=5, open_question_answer=answer("fill", items=[(1, None, 5)]))) == _answered(
         ("SRTWC286-SH-150", 5)
     )
-    # Row 8: a did-you-mean of three; "3" picks SRTWC286-SH; 50; "howa bout 30".
+    # Row 8: a did-you-mean of three; "2" picks SRTWC286-SH; 50; "howa bout 30".
+    # CODE-VARIANTS (#1573, owner card Q1/Q2): the typed code's own family (SRTWC286)
+    # leads the suggestions, so another model's SRTWC287-S-150 no longer makes the three.
     assert c.say("SRTWC286-150", stock(product("SRTWC286-150"))) == numbered(
-        "Couldn't find SRTWC286150. Did you mean:", ["SRTWC286-SH-150", "SRTWC287-S-150", "SRTWC286-SH"]
+        "Couldn't find SRTWC286150. Did you mean:", ["SRTWC286-SH-150", "SRTWC286-SH", "SRTWC286-SH-NEW-150"]
     )
-    assert c.say("3", reply(reference_positions=[3], open_question_answer=answer("pick", picked=[3]))) == (
+    assert c.say("2", reply(reference_positions=[2], open_question_answer=answer("pick", picked=[2]))) == (
         "How many units of SRTWC286-SH?"
     )
     assert c.say("50", reply(demand_qty=50, open_question_answer=answer("fill", items=[(1, None, 50)]))) == _answered(
@@ -1017,3 +1019,7 @@ def test_j_the_migration_publishes_the_contract_unlabelled_and_is_idempotent():
         module.publish(bind)
         again = db.query(AIPromptVersion).filter(AIPromptVersion.name == "chatbot_semantic_parser").count()
         assert again == len(rows)
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

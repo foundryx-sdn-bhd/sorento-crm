@@ -232,6 +232,15 @@ def _restore_stubbed_module_symbols():
         if getattr(module, attr, None) is not original:
             setattr(module, attr, original)
 
+
+# runtime_settings binds `SessionLocal` by name when it is first imported, and its readers
+# (the connector's `verify_token`, among others) import it lazily. A test that stubs
+# `app.database.SessionLocal` before that first import handed the stub to it: the read failed,
+# secrets failed closed, and the connector answered 503 "not configured" in place of 401 - only
+# on an xdist worker that had not imported it yet (release run 38287204810). The stub also
+# outlived the test's monkeypatch. Importing it here binds the real session once, for every test.
+import app.services.runtime_settings  # noqa: E402,F401
+
 # ---------------------------------------------------------------------------
 # Company-scope test default (multi-company isolation).
 #
@@ -501,6 +510,44 @@ def pytest_configure(config):
         "the xdist pool. CI deselects it with `-m \"not serial_ddl\"` and runs it "
         "afterwards with `-p no:xdist`. See .github/workflows/deploy.yml.",
     )
+    config.addinivalue_line(
+        "markers",
+        "parser_prompt_rows: this test writes the `chatbot_semantic_parser` rows of "
+        "ai_prompt_versions / ai_prompt_labels inside its rolled-back transaction, so it "
+        "takes the parser_prompt_rows advisory lock and runs alone among such tests.",
+    )
+
+
+# Arbitrary but fixed, like _SWEEP_LOCK_KEY.
+_PARSER_PROMPT_ROWS_LOCK_KEY = 727327002
+
+
+@pytest.fixture(autouse=True)
+def _parser_prompt_rows_lock(request):
+    """One `parser_prompt_rows` test at a time, across xdist workers.
+
+    Those tests move the parser's production label and add or delete its versions in an
+    open transaction. Two workers doing it at once deadlock: one updates the label row and
+    waits on the FK check of a version the other holds, which waits on the label row
+    (DeadlockDetected in test_prompt_dynamic_prod_snapshot and test_prompt_dynamic_drift,
+    PR #1632). The lock is a session-level advisory lock on its own connection, taken
+    before the test body opens its transaction and released after it rolled back.
+    """
+    if request.node.get_closest_marker("parser_prompt_rows") is None:
+        yield
+        return
+    from sqlalchemy import text
+    from app.database import engine
+
+    lock = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+    try:
+        lock.execute(text("SELECT pg_advisory_lock(:key)"), {"key": _PARSER_PROMPT_ROWS_LOCK_KEY})
+        yield
+    finally:
+        try:
+            lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": _PARSER_PROMPT_ROWS_LOCK_KEY})
+        finally:
+            lock.close()
 
 
 @pytest.fixture
@@ -547,3 +594,18 @@ def no_live_llm(monkeypatch, request):
         if module is not None and getattr(module, "get_provider", None) is original:
             monkeypatch.setattr(module, "get_provider", _raise, raising=True)
     yield
+
+
+@pytest.fixture()
+def ladder_steps_on(monkeypatch):
+    """Turn the three planner steps the owner disabled on 12 Oct 2026 back on
+    (`app.services.scm.ladder_steps`, `PLAN-plan-four-options-12oct.md`).
+
+    For the tests that pin those steps' own behaviour: the code is kept behind the flags so
+    it can be switched back on, and these keep it honest. The four-option planner itself is
+    pinned in `test_plan_four_options.py`."""
+    from app.services.scm import ladder_steps
+
+    monkeypatch.setattr(ladder_steps, "USE_INCOMING", True)
+    monkeypatch.setattr(ladder_steps, "SUPPLY_BORROW", True)
+    monkeypatch.setattr(ladder_steps, "ORDER_BORROW_NAMES_DONOR", True)

@@ -66,7 +66,9 @@ def _domain_words(db: Session) -> list[str]:
     for row in db.execute(sql("SELECT switch_words FROM chatbot_domains ORDER BY sort_order, name")):
         words.extend(row[0] or [])
     for row in _status_rows(db):
-        words.extend(row["trigger_words"] or [])
+        # The sub-ask measure words are not domain words (MULTI-ASK-PLAN2).
+        if "sub_ask_measures" not in (row.get("prompt_lists") or []):
+            words.extend(row["trigger_words"] or [])
     return _dedupe(words)
 
 
@@ -235,6 +237,18 @@ def render_statuses(db: Session) -> str:
     return "\n".join(_status_line(row, pad) for row in rows)
 
 
+def render_sub_ask_measures(db: Session) -> str:
+    """The words people use for each sub-ask measure (MULTI-ASK-PLAN2): one line per tagged
+    row, its value then its words. The meanings live in SUB_ASKS_ADDENDUM itself, so the
+    prompt still defines every measure when this table holds no rows."""
+    lines = []
+    for row in _listed(db, "sub_ask_measures"):
+        words = [_quoted(w) for w in row["trigger_words"] or []]
+        tokens = [f"    {_quoted(row['value'])}:"] + [w + "," for w in words[:-1]] + words[-1:]
+        lines.append(_wrap(tokens, indent="      "))
+    return "\n".join(lines)
+
+
 def render_domain_words(db: Session) -> str:
     words = [_one_line(w) for w in _domain_words(db)]
     return _wrap([w + "," for w in words[:-1]] + words[-1:])
@@ -271,6 +285,18 @@ def _render_specs(db: Session) -> str:
     from app.services.chatbot_parser_prompt import specification_lines
 
     return "\n".join(_one_line(line) for line in specification_lines(db))
+
+
+def _render_find_filters(db: Session) -> str:
+    from app.services.product_find import parser_vocabulary
+
+    return parser_vocabulary(db)
+
+
+def _find_filter_count() -> int:
+    from app.services.product_find import FILTERS
+
+    return len(FILTERS)
 
 
 def _count(query: str) -> Callable[[Session], int]:
@@ -324,6 +350,12 @@ VARIABLES: dict[str, RegistryVariable] = {
             lambda db: sum(1 for r in _status_rows(db) if r["domain"] == "order"),
         ),
         RegistryVariable(
+            # MULTI-ASK-PLAN2: the sub-ask measures and their words, read by SUB_ASKS_ADDENDUM.
+            "sub_ask_measures", "Sub-ask measures", "Chatbot Status Words", _STATUS_HREF,
+            ("chatbot_status_words",), render_sub_ask_measures,
+            lambda db: len(_listed(db, "sub_ask_measures")),
+        ),
+        RegistryVariable(
             "entity_kinds", "Entity kinds", "Chatbot Entity Kinds", "/system-management/chatbot-entity-kinds",
             ("chatbot_entity_kinds",), lambda db: "|".join(_one_line(k) for k in _entity_kinds(db)),
             lambda db: len(_entity_kinds(db)),
@@ -337,6 +369,13 @@ VARIABLES: dict[str, RegistryVariable] = {
             "specs", "Specifications", "Product Specifications", "/master-data-management/product-specifications",
             ("product_spec_registry",), _render_specs,
             _count("SELECT count(*) FROM product_spec_registry WHERE is_active"),
+        ),
+        RegistryVariable(
+            # CHAT-FIND: the generic find rule plus one line per registered filter. The
+            # registry is code (`app/services/product_find.py`), so there is no admin page and
+            # no table; a filter registered there reaches the parser with no new version.
+            "find_filters", "Find filters", "Find filter registry (code list)", "",
+            (), _render_find_filters, lambda db: _find_filter_count(),
         ),
         RegistryVariable(
             "brands", "Brands", "Brands", "/master-data-management/brands", ("brands",),
@@ -678,11 +717,20 @@ def with_account_block(text: str) -> str:
 # Publishing after the wording layer exists (R1: republishing never overwrites it).
 # --------------------------------------------------------------------------- #
 
-_TOKEN_RE = _re.compile(r"\{\{\s*(" + "|".join(VARIABLE_NAMES) + r")\s*\}\}")
+# Variables an ADD-ON block brings, not the wording layer: the code constant itself carries
+# them (SUB_ASKS_ADDENDUM, FIND_ADDENDUM in `chatbot_parser_prompt`), so a version seeded or
+# republished from that constant holds them while its lists are still literal. Counting them
+# would read every such version as the wording layer and stand every code publish down.
+ADDON_VARIABLES: frozenset[str] = frozenset({"sub_ask_measures", "find_filters"})
+
+_TOKEN_RE = _re.compile(
+    r"\{\{\s*(" + "|".join(n for n in VARIABLE_NAMES if n not in ADDON_VARIABLES) + r")\s*\}\}"
+)
 
 
 def is_wording_layer(template: str | None) -> bool:
-    """A template that carries at least one registry variable."""
+    """A template that carries at least one registry variable other than an add-on's
+    (`ADDON_VARIABLES`)."""
     return bool(_TOKEN_RE.search(template or ""))
 
 

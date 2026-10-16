@@ -30,7 +30,7 @@ surfaced through a separate, explicit method only when the user asks.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import and_, case, func, or_, true
@@ -178,8 +178,13 @@ def _attachment_payload(attachment: Optional[Attachment]) -> Optional[dict[str, 
     }
 
 
+def today_myt() -> date:
+    """Today in Malaysia time (UTC+8, no DST)."""
+    return (datetime.now(timezone.utc) + timedelta(hours=8)).date()
+
+
 def earliest_packing_list_shipment(
-    db: Session, product_ids: list[str], regions=None
+    db: Session, product_ids: list[str], regions=None, not_before: Optional[date] = None
 ) -> dict[str, tuple[str, date, str]]:
     """R5 (chatbot stock ask v2 S3): the earliest still-incoming shipment WITH a
     packing list, for each product id, at ANY location (AC-SA304 to AC-SA309).
@@ -188,23 +193,32 @@ def earliest_packing_list_shipment(
     quantity > 0) on a `_not_draft_shipment_filter()` shipment that carries an
     `attachment_id` (the packing list) AND a non-NULL `estimated_arrival_date` -
     lavish review R10: a shipment lacking a date never qualifies, there is no
-    "ETA to be confirmed" answer. `eta_delay_date` is never read (R5). No warehouse
+    "ETA to be confirmed" answer. The date read is the one the shipment is now promised
+    for: its revised `eta_delay_date` when it has one, else its ETA (`eta_policy._told`'s
+    rule; R5 amended by crew ruling, 13 Oct 2026, owner truthful rule: a delayed shipment
+    that is still coming is never "no incoming"). No warehouse
     join: `spo_allocations` and purchase order lines are never a source for this
     read, so a shipment's line landing outside the asking contact's policy
     locations still qualifies (AC-SA307 - this read has no location dimension to
     filter by in the first place).
 
-    Returns `{product_id: (shipment_id, estimated_arrival_date, attachment_id)}` -
+    `not_before` (CHAT-FIND round 3, crew live check 13 Oct 2026): a shipment whose promised
+    date is before that day does not qualify. A past date cannot be told to a dealer as the day it
+    comes (R10 has no "to be confirmed" answer), so the next dated one answers, else none.
+    The dealer availability read passes today (`StockService._shipments_from_today`).
+
+    Returns `{product_id: (shipment_id, promised date, attachment_id)}` -
     one entry per product id with a qualifying shipment; a product id with none is
     simply absent.
     """
     if not product_ids:
         return {}
+    told = func.coalesce(InboundShipment.eta_delay_date, InboundShipment.estimated_arrival_date)
     rows = (
         db.query(
             InboundShipmentLine.product_id,
             InboundShipment.id,
-            InboundShipment.estimated_arrival_date,
+            told,
             InboundShipment.attachment_id,
         )
         .join(InboundShipment, InboundShipment.id == InboundShipmentLine.shipment_id)
@@ -216,10 +230,15 @@ def earliest_packing_list_shipment(
             *product_in_scope_clauses(db, InboundShipmentLine.product_id),
             InboundShipment.attachment_id.isnot(None),
             InboundShipment.estimated_arrival_date.isnot(None),
+            *(
+                (told >= not_before,)
+                if not_before is not None
+                else ()
+            ),
         )
         .order_by(
             InboundShipmentLine.product_id,
-            InboundShipment.estimated_arrival_date.asc(),
+            told.asc(),
             # Nit, review round 1: two qualifying shipments on the same
             # `estimated_arrival_date` otherwise pick an arbitrary one (Postgres
             # makes no promise about which `DISTINCT ON` row wins a tie) - id is

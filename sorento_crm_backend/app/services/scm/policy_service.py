@@ -34,6 +34,7 @@ from app.schemas.scm_policy import (
     ReorderPolicyWrite,
     SupplierScoringWrite,
 )
+from app.utils.product_display import code_with_name
 from app.services.error_handler import AppException
 from app.services.scm.analytics_service import (
     DEFAULT_XYZ_X_MAX,
@@ -102,7 +103,7 @@ def _label(m) -> str:
         return "-"
     if st == "sku":
         if m["product_code"]:
-            return f'{m["product_code"]} · {m["product_name"]}'
+            return code_with_name(m["product_code"], m["product_name"], " · ")
         return m["scope_ref"] or ""
     if st == "product_class":
         return m["category_name"] or m["category_code"] or m["scope_ref"] or ""
@@ -490,7 +491,7 @@ def resolve(db: Session, product_id: str, warehouse_ref: Optional[str]) -> dict:
     ref_by_scope = {"sku": product_id, "abc_xyz_cell": cell,
                     "product_class": category, "global": None}
     label_by_scope = {
-        "sku": f'{prod["product_code"]} · {prod["product_name"]}',
+        "sku": code_with_name(prod["product_code"], prod["product_name"], " · "),
         "abc_xyz_cell": cell or "-",
         "product_class": (category_name or category or "-"),
         "global": "-",

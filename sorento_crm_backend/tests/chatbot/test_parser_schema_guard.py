@@ -148,10 +148,23 @@ MEASURED_VERDICT_READS: dict[str, str] = {
     # ("scoped" to the rows above, "global", "unsure"), read by `turn_runtime` (frame carry)
     # and `lanes/business/report_ask.settle`. 50 -> 51.
     "ranking_drill": "app/services/chatbot/lanes/business/report_ask.py",
+    # 9 Oct 2026 (MULTI-ASK-PLAN): every thing a message asks, in order, and whether a typed
+    # code means the exact code or its family, read by the per-ask runner. 51 -> 53.
+    "sub_asks": "app/services/chatbot/turn/sub_asks.py",
+    "family": "app/services/chatbot/turn/sub_asks.py",
+    # 10 Oct 2026 (CA-3-CHAT-DATASET): the chat report's group_by / measure / subject, read by
+    # `lanes/business/chat_report.settle`. 53 -> 54.
+    "chat_report": "app/services/chatbot/lanes/business/chat_report.py",
+    # 12 Oct 2026 (DEV-FAILURES RC-B): the portal form a portal_link ask names, read by
+    # `lanes/business/fetch.portal_submission_type`. 52 -> 53.
+    "portal_form": "app/services/chatbot/lanes/business/fetch.py",
+    # CHAT-FIND: the generic find filters, read by the lane override in `run_fetch` through
+    # `lanes/business/find.filter_items`. 53 -> 54.
+    "find": "app/services/chatbot/lanes/business/find.py",
 }
 
 
-def test_measured_read_set_matches_the_51_declared_keys():
+def test_measured_read_set_matches_the_59_declared_keys():
     """The table above is complete and has no typo - every declared key is measured read
     exactly once, and the table names nothing DECLARED_KEYS does not also carry. Catches a
     stale table before it can hide a real drift in the two tests below."""

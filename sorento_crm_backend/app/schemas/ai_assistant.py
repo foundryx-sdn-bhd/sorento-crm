@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AIAssistantConfigUpdate(BaseModel):
@@ -165,12 +165,18 @@ class UsageSummaryResponse(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cost_usd: float = 0.0
+    unpriced_calls: int = 0
+    unknown_cache_calls: int = 0
 
 
 class UsageByDayItem(BaseModel):
     date: str
     messages: int
     tokens: int
+    cost_usd: float = 0.0
+    unpriced_calls: int = 0
+    unknown_cache_calls: int = 0
 
 
 class TopUserItem(BaseModel):
@@ -178,6 +184,9 @@ class TopUserItem(BaseModel):
     name: Optional[str] = None
     messages: int
     tokens: int
+    cost_usd: float = 0.0
+    unpriced_calls: int = 0
+    unknown_cache_calls: int = 0
 
 
 class TopContactItem(BaseModel):
@@ -186,6 +195,9 @@ class TopContactItem(BaseModel):
     phone_number: Optional[str] = None
     messages: int
     tokens: int
+    cost_usd: float = 0.0
+    unpriced_calls: int = 0
+    unknown_cache_calls: int = 0
 
 
 class RecentQueryItem(BaseModel):
@@ -199,6 +211,11 @@ class RecentQueryItem(BaseModel):
     response_time_ms: int = 0
     tokens: int = 0
     created_at: Optional[datetime] = None
+    model: Optional[str] = None
+    cost_usd: Optional[float] = None
+    priced: bool = False
+    cached_price_missing: bool = False
+    cache_unknown: bool = False
 
 
 class QueryDetailResponse(BaseModel):
@@ -275,3 +292,45 @@ class WishlistClusterItem(BaseModel):
     count: int
     last_seen_at: Optional[datetime] = None
     created_at: datetime
+
+
+_MAX_PRICE = 999999.999999
+
+
+class ModelPriceBody(BaseModel):
+    """Update body. A price row's model never changes, so a `model` sent here is ignored."""
+
+    model: Optional[str] = None
+    # NUMERIC(12, 6) holds up to 999999.999999; a larger value would be a 500, not a 422.
+    input_usd_per_1m: float = Field(ge=0, le=_MAX_PRICE)
+    cached_input_usd_per_1m: Optional[float] = Field(default=None, ge=0, le=_MAX_PRICE)
+    output_usd_per_1m: float = Field(ge=0, le=_MAX_PRICE)
+    note: Optional[str] = None
+
+
+class ModelPriceCreate(ModelPriceBody):
+    model: str = Field(min_length=1, max_length=128)
+
+    @field_validator("model")
+    @classmethod
+    def _strip_model(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("model must not be blank")
+        return value
+
+
+class ModelPriceResponse(BaseModel):
+    id: str
+    model: str
+    input_usd_per_1m: float
+    cached_input_usd_per_1m: Optional[float] = None
+    output_usd_per_1m: float
+    note: Optional[str] = None
+    updated_at: datetime
+
+
+class UnpricedModelItem(BaseModel):
+    model: str
+    calls: int
+    last_seen_at: datetime

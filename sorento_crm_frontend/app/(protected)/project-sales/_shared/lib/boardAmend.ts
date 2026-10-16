@@ -627,6 +627,7 @@ export function confirmLineFrom(
     borrow,
     buy_qty: fromMinor(toMinor(decision.buy_qty ?? '0')),
     buy_reason: decision.buy_reason?.trim() || undefined,
+    cs_note: decision.cs_note?.trim() || undefined,
     // Frozen with the line. Every other component carries the sentence of the RULE that
     // produced it, and those explain a decision nobody took once a person overrode them.
     amend_reason: decision.reason,
@@ -713,13 +714,27 @@ function sumSources(sources: BoardSource[], kind: string): number {
 }
 
 /**
+ * CANCEL-STOP-AT-SO (owner, 14 Oct 23:20): an AutoCount Cancel SO cancelled this line and
+ * order inquiry rows still rest on it. The sync saved Transfer to Cancel SO for it; CS confirms
+ * that (the same cancel as any board transfer) or dismisses it. The one cancelled line the
+ * board still decides, and Transfer to Cancel SO is all it can be decided as.
+ */
+export function awaitsCancelSo(
+  contribution: Pick<BoardContribution, 'cancelled' | 'cancel_open_oi_rows'>,
+): boolean {
+  return Boolean(contribution.cancelled && contribution.cancel_open_oi_rows);
+}
+
+/**
  * S3 (D1): which rows the Decide strip may tick, widened from `canQuickSave` - a Confirmed or
  * already-saved row is decidable here too (R3, the owner's own case is amendments), so only an
  * unplannable line (no fulfilment location, `lineFor` returns null for it) or a cancelled one
  * (the book removed it, R3) is refused.
  */
 export function canDecide(contribution: BoardContribution): boolean {
-  return !contribution.unplannable && !contribution.cancelled;
+  return (
+    !contribution.unplannable && (!contribution.cancelled || awaitsCancelSo(contribution))
+  );
 }
 
 /** The Decide menu's six items (R14), the vocabulary's own kinds plus the non-supply pick. */
@@ -744,6 +759,11 @@ export type DecideWay =
  */
 export interface DecideComposition {
   skip?: string;
+  /**
+   * OI-CLOSED-LINE (owner, 12 Oct 2026): composed as decided, but short of free stock on the
+   * part not yet delivered ("only 2 free at BRW"). Saved anyway; never a skip.
+   */
+  warning?: string;
   reserve?: BoardReserveComponent[];
   borrow?: BoardBorrowComponent[];
   timely_spo_qty?: string;
@@ -779,6 +799,23 @@ export function drawAcross<T>(
 }
 
 /**
+ * The line's own location offered as a plain Borrow (BORROW-OWN-LOC): always listed, at 0
+ * free, and never capped - what is not free there is confirmed short (owner, 13 and 14 Oct).
+ */
+export function isOwnLocationBorrow(
+  contribution: BoardContribution,
+  candidate: BorrowCandidate,
+): boolean {
+  return (
+    candidate.source === 'other_location' &&
+    !candidate.donor_so_number &&
+    !candidate.donor_core_line_id &&
+    Boolean(contribution.fulfilment_warehouse_id) &&
+    candidate.warehouse_id === contribution.fulfilment_warehouse_id
+  );
+}
+
+/**
  * R9/AC-10: several ticked rows can contest the SAME pile (one location, one donor order, one
  * donor location) - the list's current sort order claims it, top first. `claimed` is that
  * running tally, in minor units, kept by the CALLER (the strip's save loop walks ticked rows in
@@ -794,7 +831,18 @@ export function decideComposition(
   pick?: string,
   claimed?: Map<string, number>,
 ): DecideComposition {
+  // CANCEL-STOP-AT-SO: AutoCount cancelled the line; transferring it is all that is left.
+  if (way !== 'cancel_so' && awaitsCancelSo(contribution)) {
+    return { skip: 'cancelled in AutoCount, transfer it to Cancel SO' };
+  }
   const openMinor = toMinor(contribution.qty);
+  // OI-CLOSED-LINE (owner Q1 (a)): what the customer already received needs no free stock,
+  // the same credit Confirm gives. Only the rest is drawn from what is free.
+  const deliveredMinor = Math.min(
+    Math.max(toMinor(contribution.qty_delivered ?? '0'), 0),
+    openMinor,
+  );
+  const needMinor = openMinor - deliveredMinor;
 
   // Nit (review round 1): no 'suggested' branch here - As suggested never reaches this
   // function. `BoardDecideControl` short-circuits it through `suggestedDecisionFor` (behind
@@ -803,7 +851,11 @@ export function decideComposition(
 
   if (way === 'cancel_so') {
     // SO-CANCEL-LINE: a whole-line cancel carries no composition. A confirmed line must be
-    // rejected first, and an already cancelled one has nothing left to cancel.
+    // rejected first, and an already cancelled one has nothing left to cancel - except a
+    // line AutoCount cancelled, which waits for exactly this transfer (CANCEL-STOP-AT-SO).
+    if (awaitsCancelSo(contribution)) {
+      return { reserve: [], borrow: [], timely_spo_qty: '0', buy_qty: '0', order_back: false };
+    }
     if (contribution.cancelled) return { skip: 'already cancelled' };
     // `covered` with no `decision` is a live inquiry row only: the server allows that cancel.
     if (contribution.covered && contribution.decision) {
@@ -842,7 +894,7 @@ export function decideComposition(
     const rows: BoardReserveComponent[] = [];
     let takenMinor = 0;
     for (const location of locations) {
-      if (!location.warehouse_id || takenMinor >= openMinor) continue;
+      if (!location.warehouse_id || takenMinor >= needMinor) continue;
       const freeMinor = toMinor(location.qty_free_remaining ?? location.qty_free ?? '0');
       // R6/D1: the same pool-share limit `poolShareLimitsOf` bounds a manual composition by,
       // never re-implemented - `availableForProjectOf` is the identical per-row reading
@@ -854,7 +906,7 @@ export function decideComposition(
       const claimKey = `${way}|${contribution.item_code ?? ''}|${location.warehouse_id}`;
       const left = Math.max(bounded - (claimed?.get(claimKey) ?? 0), 0);
       if (left <= 0) continue;
-      const take = Math.min(left, openMinor - takenMinor);
+      const take = Math.min(left, needMinor - takenMinor);
       if (take <= 0) continue;
       rows.push({
         warehouse_id: location.warehouse_id,
@@ -864,12 +916,31 @@ export function decideComposition(
       claimed?.set(claimKey, (claimed.get(claimKey) ?? 0) + take);
       takenMinor += take;
     }
-    if (takenMinor < openMinor) {
-      return {
-        skip: `only ${fromMinor(takenMinor)} free at ${way === 'shared' ? 'BRW' : 'own location'}`,
-      };
+    const where = way === 'shared' ? 'BRW' : 'own location';
+    // The delivered part, and any shortfall, sit on the first location the rung offers: the
+    // line is composed as decided. With no location at all there is nothing to name.
+    const first = locations.find((location) => location.warehouse_id);
+    if (!first) return { skip: `only 0 free at ${where}` };
+    const restMinor = openMinor - takenMinor;
+    if (restMinor > 0) {
+      const at = rows.find((row) => row.warehouse_id === first.warehouse_id);
+      if (at) at.qty = fromMinor(toMinor(at.qty) + restMinor);
+      else
+        rows.unshift({
+          warehouse_id: first.warehouse_id as string,
+          location: first.location ?? null,
+          qty: fromMinor(restMinor),
+        });
     }
-    return { reserve: rows, borrow: [], timely_spo_qty: '0', buy_qty: '0' };
+    return {
+      reserve: rows,
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '0',
+      ...(takenMinor < needMinor
+        ? { warning: `only ${fromMinor(takenMinor)} free at ${where}` }
+        : {}),
+    };
   }
 
   // way === 'borrow_order' | 'borrow_other' (R8): one donor, picked, for the whole line.
@@ -904,19 +975,35 @@ export function decideComposition(
     // left. The server still checks each line on its own, so no row over-claims one.
     const rows = drawAcross(
       candidates,
-      openMinor,
+      needMinor,
       claimKeyOf,
       (candidate) => toMinor(candidate.free_qty) - (claimed?.get(claimKeyOf(candidate)) ?? 0),
     );
     const drawn = rows.reduce((sum, row) => sum + row.minor, 0);
-    if (drawn < openMinor) {
+    // The line's own location is never capped (owner, 14 Oct): what is not free there rides
+    // on its plain row and the line is saved short, as "Add a borrow" saves it.
+    const own = candidates.find((candidate) => isOwnLocationBorrow(contribution, candidate));
+    if (drawn < needMinor && !own) {
       return { skip: `only ${fromMinor(drawn)} free at ${donorLabel}` };
     }
     for (const { item, minor } of rows) {
       const key = claimKeyOf(item);
       claimed?.set(key, (claimed.get(key) ?? 0) + minor);
     }
+    // The delivered part rides on the first line drawn (or the first candidate when the
+    // whole line is delivered): it needs no free stock, Confirm credits it the same way.
+    if (deliveredMinor > 0) {
+      if (rows.length > 0) rows[0] = { ...rows[0], minor: rows[0].minor + deliveredMinor };
+      else rows.push({ item: candidates[0], minor: deliveredMinor });
+    }
+    const shortMinor = needMinor - drawn;
+    if (shortMinor > 0 && own) {
+      const at = rows.findIndex((row) => row.item === own);
+      if (at >= 0) rows[at] = { ...rows[at], minor: rows[at].minor + shortMinor };
+      else rows.push({ item: own, minor: shortMinor });
+    }
     return {
+      ...(shortMinor > 0 ? { warning: `only ${fromMinor(drawn)} free at ${donorLabel}` } : {}),
       reserve: [],
       borrow: rows.map(({ item: candidate, minor }) => ({
         source: candidate.source,
@@ -941,7 +1028,7 @@ export function decideComposition(
       0,
     );
     if (left > bestLeft) bestLeft = left;
-    if (left >= openMinor) {
+    if (left >= needMinor) {
       donor = candidate;
       break;
     }
@@ -955,7 +1042,7 @@ export function decideComposition(
     };
   }
   const donorKey = `${pickKey}|${donor.donor_core_line_id ?? donor.warehouse_id}`;
-  claimed?.set(donorKey, (claimed.get(donorKey) ?? 0) + openMinor);
+  claimed?.set(donorKey, (claimed.get(donorKey) ?? 0) + needMinor);
   return {
     reserve: [],
     borrow: [

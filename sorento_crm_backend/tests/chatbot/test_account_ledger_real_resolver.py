@@ -86,7 +86,7 @@ def test_real_resolver_account_1_lists_only_level_one_ledgers(session_factory, m
     _seed_book(session_factory)
     reply, captured = _real(session_factory, monkeypatch, _acct("Soon Heng", 1), "soon heng account 1 outstanding")
     assert captured == [], captured
-    assert "Which customer do you mean?" in reply, reply
+    assert "Which one do you mean?" in reply, reply
     lines = _picker_lines(reply)
     for wanted in ("SOON HENG TRADING [A/C I]", "SOON HENG HARDWARE CO.SDN.BHD. [A/C I]"):
         assert any(wanted in line for line in lines), (wanted, reply)

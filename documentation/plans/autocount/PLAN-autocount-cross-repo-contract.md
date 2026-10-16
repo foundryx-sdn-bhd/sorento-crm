@@ -608,6 +608,16 @@ branch deleted in AutoCount that must disappear from the CRM.
   `[A-Za-z0-9_-]`, else 422 `INVALID_BODY`.
 - `records`: up to 1000 (413 `BATCH_TOO_LARGE` above). A body without a `records` array is 422
   `INVALID_BODY`.
+- `backfill` (DO-HISTORY, additive, optional, `delivery_orders` only): `true` on a history
+  replay batch (the 2023-09-01 DocDate backfill), never on the hourly poll. The batch is ingested
+  exactly as without it, but writes no per-DO audit row and no per-row embedding event for the
+  DO or its lines. Instead, in the batch's own transaction, it writes one `IMPORT` audit row
+  (`entity_type` `orders`, the company, `new_values` with `backfill`, `book`, `records`,
+  `doc_date_from` / `doc_date_to`, the verdict counts and `items`: source ref, order id and
+  outcome of every created or updated DO), and queues one embedding event per written DO in one
+  insert. Absent or `false` = today's behaviour. Not a boolean, or `true` on another entity: 422
+  `INVALID_BODY`. The contract version string is not bumped for it (optional key;
+  PLAN-do-history-backfill-13oct.md section 5).
 
 ### 13.3 Record = the AutoCount record exactly as the vendor API returned it
 

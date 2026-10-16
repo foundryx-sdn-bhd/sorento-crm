@@ -36,6 +36,7 @@ import {
   borrowCandidatesOf,
   canQuickSave,
   decideComposition,
+  isOwnLocationBorrow,
   suggestedDecisionFor,
   type DecideComposition,
   type DecideWay,
@@ -137,7 +138,13 @@ function pickerOptions(
     for (const candidate of borrowCandidatesOf(row)) {
       if (way === 'borrow_order') {
         if (candidate.donor_so_number) seen.add(candidate.donor_so_number);
-      } else if (candidate.source === 'other_location' && !candidate.donor_so_number) {
+      } else if (
+        candidate.source === 'other_location' &&
+        !candidate.donor_so_number &&
+        // The line's own location is always listed, at 0 free and never capped (owner, 14
+        // Oct, overriding BORROW-OWN-LOC review S5); any other location only with stock.
+        (toMinor(candidate.free_qty) > 0 || isOwnLocationBorrow(row, candidate))
+      ) {
         // K8: a donor-named candidate is an order borrow, never a location's.
         seen.add(candidate.warehouse_code);
       }
@@ -164,6 +171,8 @@ function sameAgentCandidate(rows: BoardContribution[], donorSo: string) {
 interface SkippedEntry {
   label: string;
   why: string;
+  /** The row's own key, when the entry is about a row this press saved. */
+  key?: string;
 }
 
 /**
@@ -171,14 +180,21 @@ interface SkippedEntry {
  * nothing was saved at all (AC-17), the neutral "0 saved · n skipped: ..." with no Label to
  * name - saving nothing "as Buy" reads like a Buy that landed.
  */
-function toastMessage(saved: number, label: string, skipped: SkippedEntry[]): string {
+function toastMessage(
+  saved: number,
+  label: string,
+  skipped: SkippedEntry[],
+  short: SkippedEntry[] = [],
+): string {
   const head = saved > 0 ? `${saved} saved as ${label}` : `${saved} saved`;
-  if (skipped.length === 0) return head;
-  const named = skipped
-    .slice(0, 3)
-    .map((entry) => `${entry.label} (${entry.why})`);
-  const more = skipped.length > 3 ? `, and ${skipped.length - 3} more` : '';
-  return `${head} · ${skipped.length} skipped: ${named.join(', ')}${more}`;
+  const listed = (entries: SkippedEntry[], word: string) => {
+    if (entries.length === 0) return '';
+    const named = entries.slice(0, 3).map((entry) => `${entry.label} (${entry.why})`);
+    const more = entries.length > 3 ? `, and ${entries.length - 3} more` : '';
+    return ` · ${entries.length} ${word}: ${named.join(', ')}${more}`;
+  };
+  // OI-CLOSED-LINE: a short line is SAVED as decided, so it is named as short, never skipped.
+  return `${head}${listed(short, 'short')}${listed(skipped, 'skipped')}`;
 }
 
 export function BoardDecideControl({
@@ -250,16 +266,28 @@ export function BoardDecideControl({
   // Preview only, for the Save button's own count and disabled state - a fresh tally each
   // render, never the tally the actual save below commits to.
   const preview = React.useMemo(() => {
-    if (!way) return { coverable: 0, skipped: [] as [string, number][] };
+    if (!way)
+      return {
+        coverable: 0,
+        skipped: [] as [string, number][],
+        short: [] as [string, number][],
+      };
     const claimed = new Map<string, number>();
     let coverable = 0;
     const skippedBy = new Map<string, number>();
+    const shortBy = new Map<string, number>();
     for (const row of tickedRows) {
       const result = decideComposition(row, way, pick || undefined, claimed);
       if (!result.skip) coverable += 1;
       else skippedBy.set(result.skip, (skippedBy.get(result.skip) ?? 0) + 1);
+      if (result.warning)
+        shortBy.set(result.warning, (shortBy.get(result.warning) ?? 0) + 1);
     }
-    return { coverable, skipped: [...skippedBy.entries()] };
+    return {
+      coverable,
+      skipped: [...skippedBy.entries()],
+      short: [...shortBy.entries()],
+    };
   }, [way, pick, tickedRows]);
 
   // Should fix 5 (review round 1): only `dialogOpen` closes the dialog now - `way`, `pick`,
@@ -282,6 +310,7 @@ export function BoardDecideControl({
         const claimed = new Map<string, number>();
         const saves: { key: string; decision: BoardDecision }[] = [];
         const skipped: SkippedEntry[] = [];
+        const short: SkippedEntry[] = [];
         const labelFor = (row: BoardContribution) =>
           `${row.item_code} line ${row.line_no}`;
 
@@ -329,6 +358,8 @@ export function BoardDecideControl({
             skipped.push({ label: labelFor(row), why: result.skip });
             continue;
           }
+          if (result.warning)
+            short.push({ label: labelFor(row), why: result.warning, key: row.key });
           const trimmedReason = chosenReason.trim();
           if (chosenWay === 'cancel_so') {
             saves.push({
@@ -409,8 +440,17 @@ export function BoardDecideControl({
           });
         }
         onSaved(savedKeys);
-        const message = toastMessage(savedKeys.length, labelOf(chosenWay), skipped);
-        if (savedKeys.length > 0) toast.success(message);
+        const savedSet = new Set(savedKeys);
+        const savedShort = short.filter((entry) => entry.key && savedSet.has(entry.key));
+        const message = toastMessage(
+          savedKeys.length,
+          labelOf(chosenWay),
+          skipped,
+          savedShort,
+        );
+        // A line saved short of stock reads amber, the way the board's Confirm summary does.
+        if (savedKeys.length > 0 && savedShort.length > 0) toast.warning(message);
+        else if (savedKeys.length > 0) toast.success(message);
         else toast(message);
       } finally {
         setSaving(false);
@@ -437,7 +477,7 @@ export function BoardDecideControl({
       const allMatch = tickedRows.every((row) => {
         if (row.covered) return false;
         const result = decideComposition(row, chosen, undefined, claimed);
-        if (result.skip) return false;
+        if (result.skip || result.warning) return false;
         return matchesSuggestion(row, {
           timely_spo_qty: result.timely_spo_qty ?? '0',
           reserve: (result.reserve ?? []).map((entry) => ({
@@ -574,6 +614,11 @@ export function BoardDecideControl({
                 />
               </div>
             )}
+            {(isBorrow && !pick ? [] : preview.short).map(([why, count]) => (
+              <p key={`short-${why}`} className="text-sm text-warning">
+                {`${count} line${count === 1 ? '' : 's'} short: ${why}`}
+              </p>
+            ))}
             {(isBorrow && !pick ? [] : preview.skipped).map(([why, count]) => (
               <p key={why} className="text-sm text-muted-foreground">
                 {`${count} line${count === 1 ? '' : 's'} will be skipped: ${why}`}

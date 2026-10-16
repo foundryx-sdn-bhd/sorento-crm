@@ -7,10 +7,12 @@ import {
   adoptSalesOrder,
   confirmMany,
   previewConfirmMany,
+  simulateConfirm,
   deleteLineDraft,
   getClassificationEvidence,
   getPileQueue,
   getPlanningBoard,
+  getPlanningHistory,
   confirmSupply,
   getReconciliation,
   getStockDetail,
@@ -30,6 +32,7 @@ import type {
   BoardLineDraft,
   BoardSource,
   ConfirmManyBody,
+  SimulateConfirmBody,
   ConfirmSupplyBody,
   FulfilmentPlanningListParams,
   PlanListParams,
@@ -57,6 +60,8 @@ import { BOARD_TRANSFERS_KEY } from './useBoardTransfers';
 // (applied_at, applied_by, the per-row applied state) is stale the moment it returns.
 import { PLANNING_CHANGE_BATCH_KEY } from './usePlanningChanges';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
+import { getWarehouses } from '@/app/(protected)/inventory-management/warehouses/services/warehouseService';
+import { groupOfWarehouseCode } from '../lib/supplyVocabulary';
 
 export const FULFILMENT_PLANNING_KEY = 'project-fulfilment-planning';
 export const PLANNING_BOARD_KEY = 'project-fulfilment-board';
@@ -281,6 +286,14 @@ export function useReconciliationMutations() {
       for (const notice of result.landed_buy_notices ?? []) {
         toast.warning(failingLineText(notice));
       }
+      // OI-CLOSED-LINE (owner, 12 Oct 2026): confirmed short of stock, or held back so the
+      // rest of the order confirmed. Never silent.
+      for (const notice of result.stock_short_notices ?? []) {
+        toast.warning(failingLineText(notice));
+      }
+      for (const notice of result.lines_held_back ?? []) {
+        toast.warning(failingLineText({ ...notice, reason: `held back, decision kept: ${notice.reason}` }));
+      }
       // Only when something went wrong. The successful count is on the Transfers page and
       // does not need saying twice; an unwritten movement has no other way to be noticed.
       const failed = result.transfers_failed ?? 0;
@@ -394,7 +407,8 @@ export function useClassificationEvidence(productId?: string | null, enabled = t
 export function useStockDetail(
   productId: string,
   warehouseId: string | null,
-  lineIds: string[] = [],
+  /** Null or empty: read on nobody's behalf (the quotation's stock chip has no order line). */
+  lineIds: string[] | null = [],
   /** A whole SET instead of one bin: the group suffix (`IB`), or `pools`. */
   group?: string | null,
   /**
@@ -406,12 +420,40 @@ export function useStockDetail(
    */
   enabled = true,
 ) {
-  const key = lineIds.join(',');
+  const key = (lineIds ?? []).join(',');
   return useQuery({
     queryKey: [STOCK_DETAIL_KEY, productId, group ?? warehouseId, key],
-    queryFn: () => getStockDetail(productId, warehouseId, lineIds, group),
+    queryFn: () => getStockDetail(productId, warehouseId, lineIds ?? [], group),
     enabled: enabled && Boolean(warehouseId || group),
     retry: 1,
+  });
+}
+
+/**
+ * The ownership groups stock can be read over (`IB`, `BB`, ...): the group suffix of every active
+ * warehouse that takes part in fulfilment planning, in warehouse-code order, each once. The
+ * quotation's "Stock at" picker lists these, and `useStockDetail` reads a group by the same name.
+ * A site pool (`BRW`, no suffix) is not a group; it is read through `pools`.
+ */
+export function useStockGroups() {
+  return useQuery({
+    queryKey: ['fulfilment-planning-stock-groups'],
+    queryFn: async () => {
+      const response = await getWarehouses({
+        pageIndex: 0,
+        pageSize: 500,
+        sorting: [{ id: 'warehouse_code', desc: false }],
+        is_active: true,
+      });
+      const groups: string[] = [];
+      (response.data ?? []).forEach((warehouse) => {
+        if (warehouse.fulfilment_planning === false) return;
+        const group = groupOfWarehouseCode(warehouse.warehouse_code);
+        if (group && !groups.includes(group)) groups.push(group);
+      });
+      return groups;
+    },
+    staleTime: Infinity,
   });
 }
 
@@ -491,6 +533,28 @@ export function useConfirmManyMutation() {
 export function usePreviewConfirmManyMutation() {
   return useMutation({
     mutationFn: (body: ConfirmManyBody) => previewConfirmMany(body),
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+}
+
+export const PLANNING_HISTORY_KEY = 'planning-history';
+
+/** The admin History of the named orders; read only while the sheet is open. */
+export function usePlanningHistory(psoIds: string[], enabled = true) {
+  return useQuery({
+    queryKey: [PLANNING_HISTORY_KEY, [...psoIds].sort().join(',')],
+    queryFn: () => getPlanningHistory(psoIds),
+    enabled: enabled && psoIds.length > 0,
+    retry: 1,
+  });
+}
+
+/** Admin Simulate confirm: writes nothing, so like the preview it invalidates nothing. */
+export function useSimulateConfirmMutation() {
+  return useMutation({
+    mutationFn: (body: SimulateConfirmBody) => simulateConfirm(body),
     onError: (error: Error) => {
       toast.error(error.message);
     },

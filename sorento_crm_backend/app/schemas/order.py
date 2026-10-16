@@ -1,6 +1,6 @@
 """Order management schemas."""
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
 from decimal import Decimal
 import uuid
@@ -33,6 +33,9 @@ class OrderStatusResponse(OrderStatusBase):
         from_attributes = True
 
 
+DebtorTypeValue = Literal["project", "project_cash", "cash_sales"]
+
+
 class CustomerBase(BaseModel):
     customer_code: str
     customer_name: str
@@ -47,6 +50,8 @@ class CustomerCreate(CustomerBase):
     sales_agent_id: Optional[str] = None
     account_level: Optional[int] = Field(default=None, ge=1, le=9)
     customer_group_id: Optional[str] = None
+    # None on create = the default rule fills it (app/services/debtor_type.py).
+    debtor_type: Optional[DebtorTypeValue] = None
 
 
 class CustomerUpdate(BaseModel):
@@ -61,6 +66,8 @@ class CustomerUpdate(BaseModel):
     account_level: Optional[int] = Field(default=None, ge=1, le=9)
     # `null` clears the group; omitted leaves it alone.
     customer_group_id: Optional[str] = None
+    # `null` clears the type; omitted leaves it alone.
+    debtor_type: Optional[DebtorTypeValue] = None
 
 
 class CustomerSimple(BaseModel):
@@ -85,6 +92,7 @@ class CustomerResponse(CustomerBase):
     account_level: Optional[int] = None
     customer_group_id: Optional[str] = None
     customer_group_name: Optional[str] = None
+    debtor_type: Optional[DebtorTypeValue] = None
     # Shown as columns on a sales agent's Customers tab.
     region: Optional[str] = None
     market_segment_code: Optional[str] = None
@@ -200,6 +208,8 @@ class OrderSimpleRef(BaseModel):
     order_date: Optional[datetime] = None
     actual_delivery_date: Optional[datetime] = None
     debtor_name: Optional[str] = None
+    # DO-BRANCH-NAME: the by-product DO list prints the branch too (`OrderResponse.branch_name`).
+    branch_name: Optional[str] = None
     matched_products: list[OrderLineProductMatch] = []
 
     @field_validator('company_id', mode='before')
@@ -228,6 +238,10 @@ class OrderResponse(OrderBase):
     # form shows them read-only (DO-OWNERSHIP-GUARD). Stamped on the single-order GET / PUT
     # like `remarks_cs_locked`; empty on list rows and on every row AutoCount does not own.
     autocount_owned_fields: list[str] = []
+    # The AutoCount branch name the DO ingest resolves (`orders.branch_name`). Read-only, so on
+    # the response only, never on create/update: the chatbot DO list and the DO screens show it
+    # (DO-BRANCH-NAME).
+    branch_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

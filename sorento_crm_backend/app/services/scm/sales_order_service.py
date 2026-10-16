@@ -409,9 +409,10 @@ class SalesOrderService:
 
         ``line_planning`` attaches, per LINE, what has already been planned about it: the
         order inquiry covering it, the revision that decided it, and the documents its Buy
-        is linked to. Three reads for the WHOLE order, and off by default - the list
-        renders none of them, and paying for them across a page of 50 orders would be 150
-        reads for facts nothing there prints.
+        is linked to, plus any open purchasing refusal (PR 1622, the board's own rule). A
+        fixed handful of reads for the WHOLE order, and off by default - the list renders
+        none of them, and paying for them across a page of 50 orders would multiply them by
+        50 for facts nothing there prints.
         """
         customer = so.customer
         inquiries = self._line_inquiries(so) if line_planning else {}
@@ -434,6 +435,15 @@ class SalesOrderService:
         # cell), so this is the detail screen's own seam onto the same "where it went"
         # fact the board's dialog reads. Same gate: the list has no column for it.
         planning_changes = self._line_planning_changes(so) if line_planning else {}
+        # AC-CANCEL-CRM (owner hand test): which AutoCount Cancel SO documents make up each
+        # line's `qty_cancelled`, and how each was matched. One read for the order.
+        from app.models.autocount_cancel import AutocountCancelLine
+        from app.services.autocount_cancel_ingest_service import cancel_sources
+
+        cancels = cancel_sources(
+            self.db, AutocountCancelLine.sales_order_line_id,
+            [ln.id for ln in so.lines if getattr(ln, "qty_cancelled", None)],
+        )
         total_qty = 0.0
         committed = 0.0
         lines = []
@@ -447,6 +457,10 @@ class SalesOrderService:
         for ln in sorted(so.lines, key=_line_sort_key):
             qo = float(ln.qty_ordered or 0)
             qd = float(ln.qty_delivered or 0)
+            # AC-CANCEL-CRM: AutoCount Cancel SO adds to TransferedQty (`qty_delivered`), so
+            # what is SHOWN as delivered leaves the cancelled part out. Outstanding keeps
+            # `ordered - TransferedQty`, which already treats a cancelled unit as not owed.
+            qc = float(getattr(ln, "qty_cancelled", None) or 0)
             saved_entry = saved.get(str(ln.id))
             # A CLOSED line is outstanding NOTHING, whatever its two quantities say. When a
             # re-uploaded book closes a line by absence, what actually shipped is unknown, so
@@ -463,7 +477,8 @@ class SalesOrderService:
             # it never shipped and nothing about it is still owed, so it reads the same as
             # a line that was never there rather than inflating "Total qty".
             if (ln.line_status or "open") != CANCELLED:
-                total_qty += qo
+                # AC-CANCEL-CRM: a partly cancelled line counts what is still on order.
+                total_qty += max(qo - qc, 0.0)
             committed += outstanding
             if ln.line_status == "open" and outstanding > 0:
                 open_lines += 1
@@ -481,7 +496,10 @@ class SalesOrderService:
                 "sku": ln.product.product_code if ln.product else "",
                 "product_name": ln.product.product_name if ln.product else "",
                 "qty_ordered": qo,
-                "qty_delivered": qd,
+                "qty_delivered": max(qd - qc, 0.0),
+                "qty_cancelled": qc,
+                "qty_returned": float(getattr(ln, "qty_returned", None) or 0),
+                "cancels": cancels.get(str(ln.id), []),
                 # What is still to go out on THIS line, stated rather than left to be
                 # recomputed. The grid, its footer and the header total all read this one
                 # figure, so a closed line cannot read Completed beside a full outstanding
@@ -622,6 +640,8 @@ class SalesOrderService:
             # (often blank, since AutoCount rarely states one); this is the answer people
             # actually asked for on this screen.
             "demand_class": so.demand_class,
+            # AC-CONSIGN-CRM: lets the screens mark a consignment order.
+            "doc_type": so.doc_type,
             # AutoCount's Transferable flag; None when the source never stated it.
             "is_transferable": so.is_transferable,
             "po_ref": so.po_ref or None,
@@ -670,7 +690,7 @@ class SalesOrderService:
             .order_by(OrderInquiryRow.created_at.asc(), OrderInquiryRow.id.asc())
             .all()
         )
-        return {
+        out = {
             str(core_id): {
                 "inquiry_no": inquiry_no,
                 "state": state,
@@ -679,6 +699,25 @@ class SalesOrderService:
             }
             for core_id, inquiry_no, state, inquiry_id, row_id in rows
         }
+        # PR 1622 (owner, mock v3): a refusal purchasing made and CS has not answered is the
+        # inquiry's status on this line - read by the planning board's own rules, so the two
+        # screens never disagree about whether it is still open.
+        from app.services.project_fulfilment_board_service import FulfilmentBoardService
+
+        for core_id, entry in FulfilmentBoardService(self.db).open_refusals(
+            list(out.keys())
+        ).items():
+            out[core_id] = {
+                "inquiry_no": entry.get("inquiry_no"),
+                "state": entry.get("state"),
+                "inquiry_id": entry.get("inquiry_id"),
+                "row_id": entry.get("row_id"),
+                "ack_state": entry.get("ack_state"),
+                "rejected_reason": entry.get("rejected_reason"),
+                "rejected_by_name": entry.get("rejected_by_name"),
+                "rejected_at": entry.get("rejected_at"),
+            }
+        return out
 
     def _line_planning_changes(self, so: SalesOrder) -> dict[str, dict]:
         """The latest planning-change row for each of this order's lines, WITHIN the
@@ -1244,7 +1283,8 @@ class SalesOrderService:
              customer_code: Optional[str] = None, outstanding: bool = False,
              sales_agent_id: Optional[str] = None,
              demand_class: Optional[str] = None,
-             transferable: Optional[str] = None) -> dict:
+             transferable: Optional[str] = None,
+             doc_type: str = "sales_order") -> dict:
         q = self.db.query(SalesOrder).options(
             joinedload(SalesOrder.lines).joinedload(SalesOrderLine.product),
             joinedload(SalesOrder.lines).joinedload(SalesOrderLine.warehouse),
@@ -1253,6 +1293,8 @@ class SalesOrderService:
         # "Show me the orders the Order Inquiry sheet created" is a filter on this list, not a
         # second screen: a separate list of the same entity is how two screens start
         # disagreeing about the same order.
+        # AC-CONSIGN-CRM: a consignment has its own page; this list is one kind at a time.
+        q = q.filter(SalesOrder.doc_type == doc_type)
         if source:
             if source == "manual":
                 # Everything neither feed wrote: keyed in, or from a system we have no name

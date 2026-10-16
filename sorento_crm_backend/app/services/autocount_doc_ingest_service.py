@@ -22,7 +22,9 @@ table itself; there is no `integration_references` row, because the row can pred
 **Links are resolved, never waited for.** A line names the SO / PO / SPO line it came from
 exactly when the vendor sends a real `FromDocDtlKey` (today it sends 0, which names nothing).
 Without one, a DO line that names its SO (`FromDocNo`) links to the one line of its product in
-that SO (PLAN-do-so-line-link-1oct.md), and its header links by `RefDocNo` (Q10 a). A GRN line
+that SO (PLAN-do-so-line-link-1oct.md); when several, it links to the SO + product group (its own
+`FromDocNo` + product) and to no line, never one picked by warehouse (owner 14 Oct,
+PLAN-do-history-backfill-13oct.md section 3), and its header links by `RefDocNo` (Q10 a). A GRN line
 links to ONE line of the PO or SPO its `FromDocNo` (else `OurPONo`) names, by product and
 position (PLAN-autocount-grn-pull-crm-02oct.md 1.3: AutoCount writes one GRN line per SPO line
 in the SPO's Seq order). A link once made is never unset by a later push that cannot resolve
@@ -91,6 +93,9 @@ MAX_LINES = 2000
 MAX_RECORD_BYTES = 1_000_000
 # A branchbypage row is one address record; 32 KB is far above any real one.
 MAX_BRANCH_BYTES = 32_000
+# Order numbers a batch hands the cancel relink hook (AC-CANCEL-CRM); the rest are re-decided
+# by their own next sync.
+MAX_ORDER_NUMBERS = 1000
 # Waiting links re-tried per kind at the end of a batch; the rest wait for the next batch.
 MAX_WAITING_LINKS = 500
 
@@ -205,7 +210,12 @@ def _dec(value: Any, exp: Decimal) -> Optional[Decimal]:
         raise ValueError("not a number") from None
     if not out.is_finite():
         raise ValueError("not a number")
-    return out.quantize(exp, rounding=ROUND_HALF_UP)
+    try:
+        return out.quantize(exp, rounding=ROUND_HALF_UP)
+    except ArithmeticError:
+        # A value too large to quantize (about 1e24 and up) is a field error, not a crash that
+        # fails the whole batch (AC-CANCEL-CRM security review).
+        raise ValueError("out of range") from None
 
 
 def _parse_dt(value: Any) -> Optional[datetime]:
@@ -597,6 +607,13 @@ class AutocountDocIngestService(MasterRefResolver):
         self.touched_allocation_ids: set[str] = set()
         self.released_allocation_ids: set[str] = set()
         self.live_records: list[RecordResult] = []
+        # AC-CANCEL-CRM: the SO / PO / SPO numbers this batch's lines came from. A DO or GRN
+        # moves those lines' unexplained transfer, which decides key-less cancel lines, so the
+        # route re-matches the cancel lines naming them after the commit.
+        self.order_numbers: set[str] = set()
+        self.order_numbers_capped = False
+        # (the batch's DO-HISTORY cutover,), read on first use by `_assume_delivered_before`.
+        self._cutover: Optional[tuple[Optional[date]]] = None
 
     #: How often `on_progress` fires mid-batch - the same cadence `MasterIngestService`
     #: uses (B3): a pull snapshot can run to thousands of documents.
@@ -662,6 +679,22 @@ class AutocountDocIngestService(MasterRefResolver):
         except Exception:  # pragma: no cover - defensive by design
             logger.warning("ingest progress callback failed", exc_info=True)
 
+    def _note_order_numbers(self, doc: "_Doc", outcome: IngestOutcome) -> None:
+        """AC-CANCEL-CRM: the order numbers a document that LANDED names, capped (security
+        review: one number per line of a 1000 x 2000 batch must not reach one IN list)."""
+        if outcome == IngestOutcome.UNCHANGED:
+            return
+        for number in [doc.values.get("ref_doc_no"), *(l.from_doc_no for l in doc.lines)]:
+            if not number or number in self.order_numbers:
+                continue
+            if len(self.order_numbers) >= MAX_ORDER_NUMBERS:
+                if not self.order_numbers_capped:
+                    logger.warning("ingest.order_numbers_capped company=%s cap=%d",
+                                   self.company_id, MAX_ORDER_NUMBERS)
+                self.order_numbers_capped = True
+                return
+            self.order_numbers.add(number)
+
     def _ingest_one(self, entity: str, raw: Any) -> RecordResult:
         source_ref = _source_ref(self.book, entity, raw.get("DocKey")) if isinstance(raw, dict) else None
         if not isinstance(raw, dict):
@@ -687,6 +720,7 @@ class AutocountDocIngestService(MasterRefResolver):
                     self._apply_do(doc) if entity == DELIVERY_ORDERS_ENTITY else self._apply_grn(doc)
                 )
             savepoint.commit()
+            self._note_order_numbers(doc, verdict.outcome)
             return RecordResult(
                 source_ref=source_ref,
                 outcome=verdict.outcome,
@@ -828,6 +862,39 @@ class AutocountDocIngestService(MasterRefResolver):
         warnings.append(WARN_BRANCH_UNRESOLVED)
         return None
 
+    def _delivered_status_id(self) -> Optional[str]:
+        key = ("order_statuses", "code", "delivered")
+        if key not in self._memo:
+            row = (
+                self.db.query(OrderStatus.id)
+                .filter(OrderStatus.status_code.ilike("delivered"))
+                .first()
+            )
+            self._memo[key] = str(row[0]) if row else None
+        return self._memo[key]
+
+    def _assume_delivered_before(self):
+        """The DO-HISTORY cutover for this batch: Settings > Integrations > AutoCount, else env
+        `DO_ASSUME_DELIVERED_BEFORE` (DO-BACKFILL-SETTING, owner 15 Oct 2026). Read once per
+        batch on the batch's own session, so a save applies to the next push or pull apply in
+        every process with no restart."""
+        if self._cutover is None:
+            from app.services import runtime_settings
+
+            self._cutover = (runtime_settings.get("do_assume_delivered_before", self.db),)
+        return self._cutover[0]
+
+    def _assumed_delivered_status(self, doc_date) -> Optional[str]:
+        """DO-HISTORY: the delivered status when a DO dated `doc_date` has no tracking to come
+        (before `_assume_delivered_before`, owner 13 Oct 2026), else None."""
+        cutover = self._assume_delivered_before()
+        if cutover is None or doc_date is None or doc_date >= cutover:
+            return None
+        status_id = self._delivered_status_id()
+        if status_id is None:
+            logger.warning("ingest.assume_delivered_skipped: no 'delivered' order status")
+        return status_id
+
     def _new_status_id(self) -> Optional[str]:
         key = ("order_statuses", "code", "new")
         if key not in self._memo:
@@ -858,10 +925,12 @@ class AutocountDocIngestService(MasterRefResolver):
 
     def _do_so_line(self, dtl_key: Optional[int], doc_no: Optional[str],
                     product_id: Optional[str]) -> Optional[str]:
-        """The SO line a DO line came from: by its exact DtlKey when AutoCount sends one,
-        else the one line of this product inside the SO numbered `FromDocNo`. Several lines
-        of the product in that SO resolve to none: no guess by position, because SO lines
-        carry no `line_no` yet (#1400)."""
+        """The SO line a DO line came from, only when it is provable (DO-HISTORY, owner
+        13 + 14 Oct: never a guessed line): by its exact DtlKey when AutoCount sends one; else
+        the one line of this product inside the SO numbered `FromDocNo`. When the product sits
+        on several lines the DO line links to the SO + product group, which is its own
+        `from_doc_no` + `product_id`, and to no line: no warehouse, position, Seq or quantity
+        pick (a DO line's warehouse can differ from its SO line's)."""
         if dtl_key is not None:
             return self._so_line(dtl_key, doc_no)
         if not doc_no or not product_id:
@@ -1107,9 +1176,15 @@ class AutocountDocIngestService(MasterRefResolver):
 
         counts = _line_counts()
         counts["skipped"] = sum(1 for line in doc.lines if line.item_code is None)
+        # DO-HISTORY: only the first landing assumes delivery; an update never does.
+        assumed_status = self._assumed_delivered_status(doc.doc_date)
         if existing is None:
-            order = Order(company_id=self.company_id, order_status_id=self._new_status_id(),
+            order = Order(company_id=self.company_id,
+                          order_status_id=assumed_status or self._new_status_id(),
                           last_synced_at=datetime.utcnow(), **header)
+            if assumed_status:
+                # Delivered by assumption: status only, `actual_delivery_date` stays empty.
+                order.tracking_assumed_at = datetime.now(timezone.utc)
             self.db.add(order)
             self.db.flush()
             for values in lines:
@@ -1121,6 +1196,13 @@ class AutocountDocIngestService(MasterRefResolver):
 
         if adopted:
             warnings.append(WARN_ADOPTED)
+            # An adopted Order Tracking row with no tracking yet (no date, status empty or
+            # new) is assumed delivered like a created one; any tracking it holds wins.
+            if (assumed_status and existing.actual_delivery_date is None
+                    and (existing.order_status_id is None
+                         or str(existing.order_status_id) == self._new_status_id())):
+                existing.order_status_id = assumed_status
+                existing.tracking_assumed_at = datetime.now(timezone.utc)
         if existing.source_vanished_at is not None:
             warnings.append(WARN_RESTORED)
         changed = self._write_lines(

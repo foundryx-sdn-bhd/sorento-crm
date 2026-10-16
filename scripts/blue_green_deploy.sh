@@ -2,9 +2,11 @@
 # Blue/green orchestration. Run from the server checkout containing docker-compose.yml.
 #
 # Public endpoints stay stable across deploys:
-#   n8n  -> http://72.62.195.20:8765/mcp                (host nginx -> sorento_mcp upstream)
-#   API  -> https://fe-sorento.foundryx.my/api/v1/*     (host nginx -> sorento_backend upstream)
-#   UI   -> https://fe-sorento.foundryx.my/             (host nginx -> sorento_frontend upstream)
+#   n8n  -> http://<CRM_ORIGIN>:8765/mcp                (host nginx -> sorento_mcp upstream)
+#   API  -> https://<CRM_DOMAIN>/api/v1/*     (Cloudflare -> host nginx -> sorento_backend upstream)
+#   UI   -> https://<CRM_DOMAIN>/             (Cloudflare -> host nginx -> sorento_frontend upstream)
+# 8765 is not a Cloudflare port, so it is direct to the origin: allow the n8n host only
+# (documentation/runbooks/prod-edge-lockdown.md, step 2).
 #
 # Container loopback ports alternate per color:
 #   blue:  backend 127.0.0.1:8000 | frontend 127.0.0.1:3000 | mcp 127.0.0.1:8766
@@ -69,6 +71,11 @@ for svc in backend frontend mcp; do
   if [ "$state" != "healthy" ]; then
     echo "ERROR: ${svc}_${NEW} not healthy after $((HEALTH_WAIT_TICKS * TICK_SECONDS))s"
     docker compose logs --tail=200 "${svc}_${NEW}" || true
+    # Stop the new color so a hung `alembic upgrade` in start.sh is ended rather than left
+    # running (and committing) after the release has already been reported failed. OLD keeps
+    # serving; nginx was never swapped.
+    echo "==> Stopping ${NEW} color after the failed health check"
+    docker compose stop "backend_${NEW}" "frontend_${NEW}" "mcp_${NEW}" || true
     exit 1
   fi
 done

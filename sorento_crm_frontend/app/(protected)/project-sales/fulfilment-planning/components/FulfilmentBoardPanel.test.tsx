@@ -1563,7 +1563,7 @@ describe('FulfilmentBoardPanel: states', () => {
       await screen.findByText('No lines to plan on these sales orders'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('Every line is cancelled or marked no purchase needed.'),
+      screen.getByText('Every line is cancelled, fully returned or marked no purchase needed.'),
     ).toBeInTheDocument();
     // The retired wording is gone from the component AND from this file.
     expect(screen.queryByText(/Nothing is outstanding/)).not.toBeInTheDocument();
@@ -4028,23 +4028,17 @@ describe('FulfilmentBoardPanel: the strip and the views agree', () => {
     renderPanel(['SO403340']);
     await screen.findByTestId('fulfilment-board-matrix');
 
-    // Nothing here is borrowed, so that card reads 0 / 0 and cannot be pressed - it keeps
-    // its place, because it stands for a step of the ladder's walk and a card that came
-    // and went would move every card beside it.
-    expect(screen.getByTestId('decision-strip-borrow_order')).toBeDisabled();
+    // Nothing here is borrowed, so the Borrow card reads 0 / 0 and cannot be pressed - it
+    // keeps its place among the four (owner, 12 Oct 2026), because a card that came and went
+    // would move every card beside it.
+    expect(screen.getByTestId('decision-strip-borrow_other')).toBeDisabled();
     expect(screen.getByTestId('decision-strip-buy')).not.toBeDisabled();
-    // The same is true of the two steps split out on 30 August 2026: the group's water and
-    // the document borrow. `borrow_incoming` reads 0 on every board until S4 lands its
-    // candidates, and it is rendered anyway - a step nobody can see is a step nobody knows
-    // was asked.
-    expect(screen.getByTestId('decision-strip-incoming')).toBeInTheDocument();
-    expect(screen.getByTestId('decision-strip-borrow_incoming')).toBeDisabled();
-    // `borrow_other` is the exception (re-ruled 30 August 2026): it is not a step, it is
-    // the retired `cross_group_borrow` a decision frozen under an older ladder carries, so
-    // at 0 / 0 it is not shown at all.
-    expect(
-      screen.queryByTestId('decision-strip-borrow_other'),
-    ).not.toBeInTheDocument();
+    // The kinds the planner no longer suggests have no card at all.
+    for (const gone of ['incoming', 'borrow_order', 'borrow_incoming']) {
+      expect(
+        screen.queryByTestId(`decision-strip-${gone}`),
+      ).not.toBeInTheDocument();
+    }
   });
 });
 
@@ -5415,5 +5409,41 @@ describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 12 inquiry-decided cancels 
     await screen.findByTestId('fulfilment-board-matrix');
     expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (0)');
     expect(confirmMany).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * PR 1622 (owner hand test 13 Oct, mock v3): a line purchasing refused is counted in the header.
+ */
+describe('Purchasing refusals on the board (PR 1622)', () => {
+  const refused = (entry: BoardContribution): BoardContribution => ({
+    ...entry,
+    project_line_id: 'pl-1',
+    order_inquiry: {
+      inquiry_no: 'OI-2610-0007',
+      state: 'raised',
+      ack_state: 'rejected',
+      rejected_reason: 'Supplier discontinued this finish',
+      rejected_by_name: 'Joey',
+      rejected_at: '2026-10-13T06:05:00',
+    } as BoardContribution['order_inquiry'],
+  });
+
+  it('adds "· N rejected by purchasing" to the header while a refusal is open', async () => {
+    getPlanningBoard.mockResolvedValue(
+      withContribution(boardOf([demand()]), () => true, refused),
+    );
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    expect(screen.getByTestId('board-confirm-summary')).toHaveTextContent(
+      '1 rejected by purchasing',
+    );
+  });
+
+  it('says nothing about purchasing when no line is refused', async () => {
+    getPlanningBoard.mockResolvedValue(boardOf([demand()]));
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    expect(screen.getByTestId('board-confirm-summary')).not.toHaveTextContent('by purchasing');
   });
 });

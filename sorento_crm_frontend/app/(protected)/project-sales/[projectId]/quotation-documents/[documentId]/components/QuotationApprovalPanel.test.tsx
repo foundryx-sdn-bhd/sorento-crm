@@ -9,11 +9,10 @@
  *
  * The rest are the gate's own promises:
  *
- * - a block NAMES the reason and offers the next action as a click, never a dead end
- * - the next action is the graph's own edge, by the label the admin gave it, taken through the
- *   shared `availableStatusMoves` / `splitStatusMoves` helpers rather than hardcoded here
- * - Approve and Reject appear only for somebody holding `projects.quotations.approve`
- * - Reject cannot be sent without a reason, and the reason comes back on screen afterwards
+ * - a block NAMES the reason and the state (QUOTE-APPROVAL-UX E8: information only)
+ * - it carries NO buttons: every action (Send for approval, Approve, Reject) lives in the
+ *   header's single primary slot, and there is no "Back to draft" anywhere (C3). The header's
+ *   own behaviour is pinned in QuotationDocumentClient.test.tsx.
  */
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -130,14 +129,7 @@ function renderPanel(
   canEdit = true,
 ) {
   return render(
-    <QuotationApprovalPanel
-      document={document}
-      graph={graph()}
-      canEdit={canEdit}
-      onMove={handlers.onMove ?? vi.fn()}
-      onApprove={handlers.onApprove ?? vi.fn()}
-      onReject={handlers.onReject ?? vi.fn()}
-    />,
+    <QuotationApprovalPanel document={document} />,
   );
 }
 
@@ -168,21 +160,13 @@ describe('QuotationApprovalPanel: the ordinary quotation', () => {
 });
 
 describe('QuotationApprovalPanel: the block', () => {
-  it('names the reason and offers the graph edge as the next action', () => {
-    granted = new Set();
-    const onMove = vi.fn();
-    renderPanel(
-      quotationDocument({ requires_approval: true, below_floor_line_count: 2 }),
-      { onMove },
-    );
+  it('E8: names the reason in a sentence and renders no buttons at all', () => {
+    granted = new Set(['projects.quotations.approve']);
+    renderPanel(quotationDocument({ requires_approval: true, below_floor_line_count: 2 }));
 
-    expect(
-      screen.getByText(/2 lines are priced below their floor/i),
-    ).toBeInTheDocument();
-    // The label comes off the graph, so an admin renaming the edge renames the button.
-    const ask = screen.getByRole('button', { name: 'Send for approval' });
-    fireEvent.click(ask);
-    expect(onMove).toHaveBeenCalledWith('s-pending_approval');
+    expect(screen.getByText(/2 lines are priced below their floor/i)).toBeInTheDocument();
+    // The next action moved to the header; the banner only states the situation.
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('counts one line in the singular', () => {
@@ -223,9 +207,8 @@ describe('QuotationApprovalPanel: the block', () => {
     expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
   });
 
-  it('shows the manager reason on a rejected quotation and offers the way back', () => {
+  it('C3: shows the manager reason on a rejected quotation, with no Back to draft and no buttons', () => {
     granted = new Set();
-    const onMove = vi.fn();
     renderPanel(
       quotationDocument({
         approval_status_id: 's-rejected',
@@ -234,16 +217,12 @@ describe('QuotationApprovalPanel: the block', () => {
         requires_approval: true,
         below_floor_line_count: 1,
       }),
-      { onMove },
     );
 
     expect(screen.getByText(/A manager sent this back/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Bring the WC suite back to RM 240\./i),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Back to draft' }));
-    expect(onMove).toHaveBeenCalledWith('s-draft');
+    expect(screen.getByText(/Bring the WC suite back to RM 240\./i)).toBeInTheDocument();
+    expect(screen.queryByText(/Back to draft/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('says an approved quotation can be issued', () => {
@@ -273,31 +252,13 @@ describe('QuotationApprovalPanel: the manager', () => {
       below_floor_line_count: 1,
     });
 
-  it('offers Approve and Reject only to a holder of the approve grant', () => {
+  it('E8: a holder of the approve grant still sees sentences only - Approve and Reject are in the header', () => {
     granted = new Set(['projects.quotations.approve']);
-    const onApprove = vi.fn();
-    renderPanel(pending(), { onApprove });
+    renderPanel(pending());
 
-    fireEvent.click(screen.getByRole('button', { name: /Approve/ }));
-    expect(onApprove).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /Reject/ })).toBeInTheDocument();
-  });
-
-  it('will not send a rejection without a reason', () => {
-    granted = new Set(['projects.quotations.approve']);
-    const onReject = vi.fn();
-    renderPanel(pending(), { onReject });
-
-    fireEvent.click(screen.getByRole('button', { name: /Reject/ }));
-    const send = screen.getByRole('button', { name: 'Send it back' });
-    expect(send).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText(/Why/i), {
-      target: { value: '  Bring it back to RM 240.  ' },
-    });
-    expect(screen.getByRole('button', { name: 'Send it back' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Send it back' }));
-    // Trimmed on the way out: leading whitespace is not part of what the manager said.
-    expect(onReject).toHaveBeenCalledWith('Bring it back to RM 240.');
+    expect(screen.getByText(/with a manager for approval/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Approve/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reject/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 });

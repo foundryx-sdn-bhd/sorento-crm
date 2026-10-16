@@ -855,6 +855,100 @@ every other key as you would without it. A message with no PO number: null. Neve
 a number, never take one from an earlier turn.
 """
 
+# MULTI-ASK-PLAN S2 (owner, 9 Oct 2026; PROD turn 8 Oct 19:50, six asks about one code
+# answered with dozens of messages and four asks missing). The parser names EVERY thing a
+# message asks, in order, so the engine runs one query per ask (`turn/sub_asks.py`), and
+# says whether a typed code means that exact code or its whole family. No code rule
+# decides either (owner: semantic parser, no keyword code). MULTI-ASK-PLAN2 (owner, 12 Oct
+# 2026): output keys plus a short English definition of each, no worked examples and no
+# word lists. The measures and their words are data, `chatbot_status_words` rows read
+# through `{{sub_ask_measures}}` (`maskp_0002_measure_words`; crew decision 12 Oct). Published
+# on the trimmed base as a new UNLABELLED version (`maskp_0001_parser_sub_asks`).
+SUB_ASKS_ADDENDUM = """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUB ASKS AND FAMILY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Two more OUTPUT keys, on every object:
+  "sub_asks": [{"measure", "group_by", "date_from", "date_to", "basis", "label"}] or null
+  "family": true | false | null
+
+sub_asks: count the measures below that the CURRENT message asks about, however short the
+message: each one is one thing asked. TWO OR MORE: one object per thing, in the order asked,
+whatever they are ("stock and purchase price" is stock then last_cost). One thing asked: null.
+A count AND its breakdown are two things: "how many sold, by salesman" is sold_total then
+sold_by. The date and quantity of the last receipt are ONE last_receipt ask.
+  measure, ONE of:
+    "received_qty": HOW MANY came in, a quantity received over a period; never goods still
+      on the way.
+    "last_receipt": WHEN it last came in, a date (the last SPO line's delivery date), with
+      that delivery's quantity.
+    "incoming": only goods NOT yet arrived (on the way, ETA).
+    "stock": how many are on hand now.
+    "supplier": WHO supplies it.
+    "last_cost": the purchase price.
+    "sold_total": how many were sold in all.
+    "sold_by": how many were sold per group (salesman, customer, ...).
+    "other": anything else asked, such as margin or profit; the label says what.
+  Words people use for each measure, in any language:
+{{sub_ask_measures}}
+  group_by: sold_by only, "sales_agent" | "customer" | "product" | "brand" | "category" |
+    "location" | "channel" | "month"; else null.
+  date_from / date_to: YYYY-MM-DD, only a period the CURRENT message names; it covers every
+    received_qty, sold_total, sold_by and incoming ask. Other measures: null. None named:
+    null, never this calendar year by default.
+  basis: sold_total / sold_by only, "delivered" or "ordered" when the message says which; a
+    plain "sold" is null, never the top selling default.
+  label: the asker's own words for this ask, short.
+A message that only names a product and asks nothing about it: domain_hint, intent_hint, asks
+and sub_asks null.
+
+family: true when the message's own words ask for the code's whole family of variants, false
+when they ask for only that exact code; a code typed with neither said is null (nearly always).
+
+A reply that chooses an option of the variant question ("just this code" / "all variants") or
+the sold basis question ("delivered" / "ordered") is open_question_answer mode "pick" with that
+option's position, never yes, no or a new question.
+"""
+
+
+# CA-3 (chat analytics, `documentation/plans/chatbot/PLAN-chat-analytics-ca3-chat-dataset-10oct.md`
+# "Parser output"): what customers ASK THE BOT, ranked or counted. ADDITIVE ONLY, beneath
+# PO_REFS_ADDENDUM (MEMORY_ADDENDUM stays the tail), published as a new UNLABELLED version by
+# migration `ca3_0001_chat_report_prompt`. Every example is synthetic.
+CHAT_REPORT_ADDENDUM = """
+
+== CHAT REPORT: a ranking, split, trend or count of what customers ASK THE BOT (questions, topics,
+outcomes, failures, how many asked): domain_hint "chat_analytics" and intent_hint "chat_report",
+BOTH always set; business_query, domain_in_message true. Not sales, stock or orders.
+  "chat_report": {"group_by": "topic|subject|product|customer|outcome|failure_reason|week|month|day|language"|null,
+    "measure": "asks|failed|failure_rate|contacts"|null, "subject": null} or null
+Fill chat_report only to flag a new chat report (group_by when an axis is named); null on every
+other message and on a reply to "Which period?" / "How many?". A period goes into
+date_filter_start/end; top_n null unless a number is named.
+"""
+
+# REF-PROBES (owner, 11 Oct 2026): the KIND a typed reference number is, read from the words
+# HERE and nowhere else. The code never pattern-matches a number's shape; the resolver reads
+# the data. ADDITIVE ONLY, right beneath PO_REFS_ADDENDUM, published as a new UNLABELLED
+# version by migration `rkind_0001_parser_ref_kinds`.
+REF_KINDS_ADDENDUM = """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFERENCE KINDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This section is ONLY about document numbers (DO, SO, PO, PR, invoice). Product codes, sizes, specs, quantities and names are unchanged and read as the rest of this prompt says.
+When a document number comes WITH a kind word, put the document number without the kind word in "raw" and the kind in "hint", in any language or mix:
+  "DO" / "delivery order" -> "delivery_order"
+  "SO" / "sales order" -> "sales_order"
+  "PO ref" / "customer PO" / "their PO" -> "customer_po_ref"
+  "PO" / "purchase order" / "our PO" -> "purchase_order"
+  "PR" / "purchase request" -> "purchase_request"
+("PO 4500123" -> raw "4500123", hint "purchase_order".) A document number with NO kind word keeps hint "order". Do not guess a kind from a number's shape. A status-of-a-number ask ("status of DO 202610-0838", "SO2610-0127 status", "where is PR12") is domain_hint "order" whatever the kind word, and keep every other key as you would without it.
+"""
+
 # Main's literal now carries ESCALATION_CONFIRMATION_ADDENDUM as its tail (#1323), so it
 # is peeled off, TOP_SELLING_ADDENDUM goes on beneath it, and it is put back as the tail.
 SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(ESCALATION_CONFIRMATION_ADDENDUM)
@@ -866,6 +960,17 @@ SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += REPORT_ASK_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_REFS_ADDENDUM
+SEMANTIC_PARSER_PROMPT += SUB_ASKS_ADDENDUM
+SEMANTIC_PARSER_PROMPT += CHAT_REPORT_ADDENDUM
+SEMANTIC_PARSER_PROMPT += REF_KINDS_ADDENDUM
+# CHAT-FIND (`documentation/plans/chatbot/PLAN-chat-generic-find-12oct.md`): the generic find
+# rule and the registry's filter lines arrive through the live `{{find_filters}}` variable
+# (`chatbot_prompt_vars.VARIABLES["find_filters"]`, filled by `ai_prompt_registry.render` for the
+# code fallback as for a published version), so the constant grows by the token only and a
+# filter registered later needs no prompt edit. Published versions get it from
+# `chatbot_find_prompt.publish_find_block`.
+FIND_ADDENDUM = '\n\nOne more OUTPUT key, on every object: "find" (below), null when it does not apply.\n{{find_filters}}\n'
+SEMANTIC_PARSER_PROMPT += FIND_ADDENDUM
 # RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
 # line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608
 # exists). The parser emitted ONE product entity, raw "TAP SRTWT5608", canonical_code
@@ -992,6 +1097,16 @@ TRAP_SPECS_FALLBACK_BLOCK = (
 )
 SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM)
 SEMANTIC_PARSER_PROMPT += TRAP_SPECS_FALLBACK_BLOCK
+SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
+
+# DEV-FAILURES RC-B (PLAN-dev-failures-12oct.md): the `portal_form` output key, so the strict
+# schema and this fallback declare the same keys. MEMORY_ADDENDUM stays the tail, as above. The
+# published version (`devf_0001_parser_data_rules`) carries it on the v56 text instead.
+PORTAL_FORM_ADDENDUM = (_ADDENDA_DIR / "chatbot_semantic_parser.portal-form.addendum.txt").read_text(
+    encoding="utf-8"
+)
+SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM)
+SEMANTIC_PARSER_PROMPT += PORTAL_FORM_ADDENDUM
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the

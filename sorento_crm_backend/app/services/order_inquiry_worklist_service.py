@@ -770,6 +770,7 @@ _COLUMNS = (
     ProjectSalesOrder.id.label("project_sales_order_id"),
     ProjectSalesOrder.is_pre_order.label("is_pre_order"),
     SalesOrder.id.label("core_sales_order_id"),
+    SalesOrder.doc_type.label("so_doc_type"),
     # AC-B6-7 (`PLAN-board-oi-mechanical-22sep.md`, S6): the "SO line" cell resolves
     # `/scm/sales-orders/<core_sales_order_id>?tab=lines&line=<core_line_id>`, so the only
     # NEW column the deep link needs is the core LINE's own id - the sales-order half is
@@ -976,9 +977,14 @@ class OrderInquiryWorklistService:
     # -------------------------------------------------------------- derived SPO
 
     def _derived_spo_query(self, *columns: Any, extra_where: tuple = ()) -> Any:
-        """S5 (R-D/R-E/R-F): every OPEN SPO allocation this row's own PO links reach -
-        `from_po_number = po_number AND product_id = po_line.product_id`, open per
-        `derived_spo_open_clauses()` (shared with `links_for_rows`'s display entries).
+        """S5 (R-D/R-E/R-F): every OPEN SPO allocation this row's own PO LINKS' LINES
+        became - `from_po_number = po_number AND trim(from_po_line_ref) =
+        trim(po_line.source_ref) AND product_id = po_line.product_id`, open per
+        `derived_spo_open_clauses()` (shared with `links_for_rows`'s display entries,
+        which apply the same line key). OI-SPO-EXACT (owner 13 Oct): an allocation of the
+        same PO and product that quotes ANOTHER line was bought for another sales order
+        line and is not this row's incoming stock; a PO line with no `source_ref` reaches
+        nothing.
 
         ONE ROW PER ALLOCATION. The links are reached through an EXISTS rather than a
         join, which is the whole of AC-D12: a row holding two PO links on the SAME
@@ -1008,6 +1014,9 @@ class OrderInquiryWorklistService:
             .where(
                 OrderInquiryLink.row_id == OrderInquiryRow.id,
                 SPOAllocation.from_po_number == PurchaseOrder.po_number,
+                func.btrim(SPOAllocation.from_po_line_ref)
+                == func.btrim(PurchaseOrderLine.source_ref),
+                func.coalesce(func.btrim(PurchaseOrderLine.source_ref), "") != "",
                 SPOAllocation.product_id == PurchaseOrderLine.product_id,
             )
             .correlate(OrderInquiryRow, SPOAllocation)
@@ -1575,6 +1584,15 @@ class OrderInquiryWorklistService:
         anchor_headline_by_id = self._anchor_headline_by_id(rows, links)
         host_changes_by_row_id = self._host_changes_for_rows(rows, bundle_map)
         raise_events_by_row = self._raise_events_by_row(rows)
+        # AC-RR-6: one query for every PO line on the page that has an open SPO chained from it.
+        blocked = ProjectOrderInquiryService(self.db).po_lines_with_open_chained_spo(
+            [
+                link.get("po_line_id")
+                for row_links in links.values()
+                for link in row_links
+                if link.get("received") and link.get("po_line_id")
+            ]
+        )
         return {
             "data": [
                 self._serialize(
@@ -1588,6 +1606,7 @@ class OrderInquiryWorklistService:
                     host_changes_by_row_id,
                     suggested_links,
                     raise_events_by_row,
+                    blocked,
                 )
                 for row in rows
             ],
@@ -2209,6 +2228,7 @@ class OrderInquiryWorklistService:
         host_changes_by_row_id: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         suggested_links: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         raise_events_by_row: Optional[Dict[str, Dict[str, Any]]] = None,
+        blocked: Optional[set] = None,
     ) -> Dict[str, Any]:
         line_flow = (flow or {}).get(row.so_line_id, {})
         row_links = (links or {}).get(row.id, [])
@@ -2220,8 +2240,28 @@ class OrderInquiryWorklistService:
         linked_qty = sum(
             (_dec(link["qty"]) for link in row_links if not link.get("derived")), _ZERO
         )
+        # OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for -
+        # `order_inquiry_reserve_service._requestable`, worked off the links already
+        # loaded: qty less the OPEN links, the reserve links and the bundle (a link on a
+        # fully received document does not count against it).
+        open_linked = sum(
+            (
+                _dec(link["qty"])
+                for link in row_links
+                if not link.get("derived")
+                and (not link.get("received") or link.get("po_line_id") in (blocked or ()))
+            ),
+            _ZERO,
+        )
+        requestable = (
+            _dec(row.qty)
+            - open_linked
+            - _dec(getattr(row, "reserved_qty", None))
+            - _dec(row.bundled_qty)
+        )
         return {
             "id": row.id,
+            "reserve_requestable_qty": float(max(requestable, _ZERO)),
             "inquiry_no": row.inquiry_no,
             "so_date": row.so_date,
             "so_number": row.so_number,
@@ -2352,6 +2392,7 @@ class OrderInquiryWorklistService:
             "project_id": row.project_id,
             "project_sales_order_id": row.project_sales_order_id,
             "core_sales_order_id": row.core_sales_order_id,
+            "so_doc_type": row.so_doc_type,
             # AC-B6-7 (`PLAN-board-oi-mechanical-22sep.md`, S6): the core LINE's own id,
             # which the "SO line" cell puts on
             # `/scm/sales-orders/<core_sales_order_id>?tab=lines&line=<core_line_id>`

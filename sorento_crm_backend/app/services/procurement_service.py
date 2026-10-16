@@ -497,6 +497,48 @@ def _apportion(total: int, lines: list) -> dict[str, int]:
     return out
 
 
+#: Header states the line rollup never overwrites: `closed` is a person's word and `draft`
+#: is a PI convert not yet published (`proforma_invoice_service._DRAFT_SHIPMENT_STATUS`).
+_ROLLUP_UNTOUCHED_HEADER_STATUSES = ("closed", "draft")
+#: Header states that only the rollup itself writes, so a rollup that finds no receipt
+#: takes them back to `in_transit`.
+_ROLLUP_RECEIPT_HEADER_STATUSES = ("received", "fully_received", "partially_received")
+
+
+def rollup_shipment_status(current: Optional[str], total_lines: int, received_lines: int, receiving_lines: int) -> Optional[str]:
+    """The packing-list header status its stored line statuses add up to (PL-STATUS-ROLLUP).
+
+    `received_lines` counts lines `received`; `receiving_lines` counts lines with any
+    receipt at all (`received` or `partially_received`). Every line received ->
+    `fully_received`; some receipt -> `partially_received` (both already in the
+    `inbound_shipments_shipment_status_check` vocabulary, `coverage_service.py`); no
+    receipt -> the header as it was (`in_transit`, `arrived_at_port`, `at_warehouse` are
+    not the lines' to judge), except a receipt state the lines no longer back, which
+    falls back to `in_transit`. A container with no lines has nothing to roll up.
+    """
+    status = (current or "").strip().lower()
+    if status in _ROLLUP_UNTOUCHED_HEADER_STATUSES or total_lines <= 0:
+        return current
+    if received_lines >= total_lines:
+        return "fully_received"
+    if receiving_lines > 0:
+        return "partially_received"
+    if status in _ROLLUP_RECEIPT_HEADER_STATUSES:
+        return "in_transit"
+    return current
+
+
+def line_status_counts(line_statuses) -> tuple[int, int, int]:
+    """`(total, received, any receipt)` over these line statuses, the three figures
+    `rollup_shipment_status` takes."""
+    statuses = [(status or "").strip().lower() for status in line_statuses]
+    return (
+        len(statuses),
+        sum(1 for s in statuses if s == "received"),
+        sum(1 for s in statuses if s in ("received", "partially_received")),
+    )
+
+
 def shipment_supplier_predicate(supplier_id):
     """Containers this supplier is ON: the header names them, or any of their lines does.
 
@@ -955,7 +997,8 @@ class InboundShipmentService:
 
         shipment_ids = [s.id for s in shipments]
         line_counts: dict[str, int] = {}
-        non_received_counts: dict[str, int] = {}
+        received_counts: dict[str, int] = {}
+        receiving_counts: dict[str, int] = {}
         spo_counts: dict[str, int] = {}
         if shipment_ids:
             # Counted per CONTAINER, over the line TABLE rather than the ORM entity:
@@ -981,7 +1024,10 @@ class InboundShipmentService:
                 }
 
             line_counts = _line_counts()
-            non_received_counts = _line_counts(lines_table.c.line_status != "received")
+            received_counts = _line_counts(lines_table.c.line_status == "received")
+            receiving_counts = _line_counts(
+                lines_table.c.line_status.in_(("received", "partially_received"))
+            )
             from app.services.scm import spo_supply
 
             spo_counts = {
@@ -1004,13 +1050,14 @@ class InboundShipmentService:
         for shipment in shipments:
             shipment_id = str(shipment.id)
             total_lines = line_counts.get(shipment_id, 0)
-            non_received_lines = non_received_counts.get(shipment_id, 0)
             setattr(shipment, "lines_count", total_lines)
             setattr(shipment, "spo_allocations_count", spo_counts.get(shipment_id, 0))
-            if total_lines > 0 and non_received_lines == 0:
-                shipment.shipment_status = "fully_received"
-            elif (shipment.shipment_status or "").strip().lower() in ("received", "fully_received"):
-                shipment.shipment_status = "in_transit"
+            shipment.shipment_status = rollup_shipment_status(
+                shipment.shipment_status,
+                total_lines,
+                received_counts.get(shipment_id, 0),
+                receiving_counts.get(shipment_id, 0),
+            )
 
         return {
             "data": shipments,
@@ -1158,6 +1205,13 @@ class InboundShipmentService:
         line-set that replaced it states the same goods again - counting both would
         call a container received that is still on the water. Its picks, if any,
         are already in the total above.
+
+        AC-CONSIGN-CRM: AutoCount's TransferedQty already includes a quantity an XP
+        cancelled, but a pick never does. When a sibling's statement lags, that cancel
+        would read as still incoming, so the per-product figure is the larger of
+        (picks + the cancelled qty, each capped at its line's allocated) and the
+        stated sum: the cancelled goods and the received goods together account for
+        the line.
         """
         stated_rows = (
             self.db.query(
@@ -1184,10 +1238,51 @@ class InboundShipmentService:
             .group_by(SPOAllocation.product_id)
             .all()
         )
+        # Each allocation's cancel term is bounded by what is not already accounted for by
+        # picks on that same line (AC-CONSIGN-CRM security fix): a cancel can never stand for
+        # goods a sibling line holds, so it is capped per allocation, then summed per product.
+        own_picks = dict(
+            self.db.query(
+                PickingLine.spo_allocation_id,
+                func.coalesce(func.sum(PickingLine.quantity_picked), 0),
+            )
+            .join(PickingHeader, PickingLine.picking_header_id == PickingHeader.id)
+            .join(SPOAllocation, SPOAllocation.id == PickingLine.spo_allocation_id)
+            .filter(
+                SPOAllocation.inbound_shipment_id == shipment_id,
+                PickingHeader.picking_type == "goods_received",
+                PickingHeader.picking_status == "approved",
+            )
+            .group_by(PickingLine.spo_allocation_id)
+            .all()
+        )
+        cancelled_by_product: dict[str, int] = {}
+        for alloc_id, product_id, allocated, cancelled in (
+            self.db.query(
+                SPOAllocation.id,
+                SPOAllocation.product_id,
+                SPOAllocation.allocated_quantity,
+                SPOAllocation.qty_cancelled,
+            )
+            .filter(
+                SPOAllocation.inbound_shipment_id == shipment_id,
+                SPOAllocation.retired_at.is_(None),
+            )
+            .all()
+        ):
+            allocated = int(allocated or 0)
+            term = min(int(cancelled or 0), allocated)
+            term = max(min(term, allocated - int(own_picks.get(alloc_id, 0) or 0)), 0)
+            if term:
+                key = str(product_id)
+                cancelled_by_product[key] = cancelled_by_product.get(key, 0) + term
+        with_cancels = dict(received_totals)
+        for key, cancelled in cancelled_by_product.items():
+            with_cancels[key] = with_cancels.get(key, 0) + cancelled
         for product_id, stated in stated_rows:
             key = str(product_id)
-            received_totals[key] = max(received_totals.get(key, 0), int(stated or 0))
-        return received_totals
+            with_cancels[key] = max(with_cancels.get(key, 0), int(stated or 0))
+        return with_cancels
 
     def open_shipment_ids(self, company_id: Optional[str] = None) -> list[str]:
         """Shipments with at least one line whose stored status is not `received`,
@@ -1241,38 +1336,56 @@ class InboundShipmentService:
             line.spo_allocated_quantity = alloc
             line.quantity_received = recv
             line.line_status = status
-        all_lines_received = all((line.line_status or "").strip().lower() == "received" for line in lines)
-        if all_lines_received:
-            shipment.shipment_status = "fully_received"
-        elif (shipment.shipment_status or "").strip().lower() in ("received", "fully_received"):
-            shipment.shipment_status = "in_transit"
+        shipment.shipment_status = rollup_shipment_status(
+            shipment.shipment_status, *line_status_counts(line.line_status for line in lines)
+        )
         self.db.commit()
 
     def compute_shipment_line_figures(self, shipment: InboundShipment) -> dict[str, tuple[int, int, str]]:
         """`line id -> (spo_allocated_quantity, quantity_received, line_status)` as
         `refresh_shipment_line_statuses` would store them, without writing anything
         (the dry run of `scripts/oneoff/refresh_container_received.py` prints these
-        beside the stored figures)."""
+        beside the stored figures).
+
+        The STATUS is judged against the VISIBLE allocation total, the one the packing
+        list page shows (`packing_lists.get_packing_list`, `spo_supply.
+        visible_line_clauses`), while `spo_allocated_quantity` stays the unfiltered
+        total its purchasing readers (`container_request_service.PL_UNALLOCATED_SQL`,
+        the allocation suggestion) were built on (PL-STATUS-ROLLUP). A retired
+        allocation AutoCount stopped naming used to double a product's allocated
+        figure here, so the page said Received 529/529 while the stored line said
+        `partially_received` and the header never rolled up (TCLU8176397)."""
+        from app.services.scm import spo_supply
+
         shipment_id = shipment.id
         lines = list(shipment.shipment_lines)
-        totals_alloc = (
-            self.db.query(SPOAllocation.product_id, func.sum(SPOAllocation.allocated_quantity).label("total"))
-            .filter(SPOAllocation.inbound_shipment_id == shipment_id)
-            .group_by(SPOAllocation.product_id)
-            .all()
-        )
-        spo_by_product = {str(p): int(t) for p, t in totals_alloc}
+
+        def _alloc_by_product(*extra_filters) -> dict[str, int]:
+            rows = (
+                self.db.query(SPOAllocation.product_id, func.sum(SPOAllocation.allocated_quantity).label("total"))
+                .filter(SPOAllocation.inbound_shipment_id == shipment_id, *extra_filters)
+                .group_by(SPOAllocation.product_id)
+                .all()
+            )
+            return {str(p): int(t) for p, t in rows}
+
+        spo_by_product = _alloc_by_product()
+        visible_spo_by_product = _alloc_by_product(*spo_supply.visible_line_clauses())
         received_by_product = self.get_received_quantities_by_product(shipment_id)
 
         lines_by_product: dict[str, list] = {}
         for line in lines:
             lines_by_product.setdefault(str(line.product_id), []).append(line)
         alloc_by_line: dict[str, int] = {}
+        visible_alloc_by_line: dict[str, int] = {}
         recv_by_line: dict[str, int] = {}
         for product_id, product_lines in lines_by_product.items():
             product_lines.sort(key=lambda l: (l.created_at or datetime.min, str(l.id)))
             alloc_by_line.update(
                 _apportion(spo_by_product.get(product_id, 0), product_lines)
+            )
+            visible_alloc_by_line.update(
+                _apportion(visible_spo_by_product.get(product_id, 0), product_lines)
             )
             recv_by_line.update(
                 _apportion(received_by_product.get(product_id, 0), product_lines)
@@ -1285,7 +1398,9 @@ class InboundShipmentService:
             figures[str(line.id)] = (
                 alloc,
                 recv,
-                compute_inbound_shipment_line_status(line.quantity_shipped or 0, alloc, recv),
+                compute_inbound_shipment_line_status(
+                    line.quantity_shipped or 0, visible_alloc_by_line.get(str(line.id), 0), recv
+                ),
             )
         return figures
 
@@ -4788,6 +4903,20 @@ class PickingHeaderService:
 
         computed = self.get_computed_received_map(member_ids)
 
+        def _cancelled(member: SPOAllocation) -> int:
+            return int(member.qty_cancelled or 0)
+
+        def _open_capacity(member: SPOAllocation) -> int:
+            return max(int(member.allocated_quantity or 0) - _cancelled(member), 0)
+
+        def _with_cancel(member: SPOAllocation, own: int) -> int:
+            # `max(allocated, own)`: the remainder rule may leave more than the line holds on
+            # the last line (AC-X32); the cap must not take that back.
+            cancelled = _cancelled(member)
+            if not cancelled:
+                return own
+            return min(own + cancelled, max(int(member.allocated_quantity or 0), own))
+
         def _stated(member: SPOAllocation) -> int:
             # NULL reads 0: a row written before migration 488 stated nothing.
             return int(member.stated_received or 0)
@@ -4806,7 +4935,7 @@ class PickingHeaderService:
             # the line whose GRN was just taken away (MB1).
             self._write_received(
                 member,
-                max(_stated(member), computed.get(str(member.id), 0)),
+                max(_stated(member), _with_cancel(member, computed.get(str(member.id), 0))),
                 may_reopen=True,
             )
 
@@ -4818,11 +4947,17 @@ class PickingHeaderService:
         # live lines reported one GRN twice, once on the retired line that
         # still shows it and once redistributed onto the standing ones.
         kept_total = sum(computed.get(str(member.id), 0) for member in live_targets)
+        # AC-CONSIGN-CRM: a member's XP-cancelled qty is not capacity for a pick, so the
+        # spread runs over what is left to receive; each member is then written with its
+        # cancel added back (received INCLUDES the cancel, as TransferedQty does), capped
+        # at what the line was ordered for.
         shares = shipping_order_rules.distribute_received(
-            kept_total, [int(member.allocated_quantity or 0) for member in live_targets]
+            kept_total, [_open_capacity(member) for member in live_targets]
         )
         for member, share in zip(live_targets, shares):
-            self._write_received(member, max(_stated(member), share), may_reopen=True)
+            self._write_received(
+                member, max(_stated(member), _with_cancel(member, share)), may_reopen=True
+            )
 
     def _sync_received_for_allocations(
         self, allocations: list[SPOAllocation], *, released: Optional[set] = None
@@ -8063,7 +8198,7 @@ class PurchaseRequestService:
             "contact_id",
             "space_id",
             "products",
-            "sales_type",  # project / cash_sales - required for PR (SF omits it); routes CS
+            "sales_type",  # project / cash_sales - required for PR (optional on SF); routes CS
         ),
         "sponsorship_form": (
             "sponsor_subject",
@@ -9172,6 +9307,19 @@ class PurchaseRequestService:
             "current_index": idx + 1,
         }
 
+    def _apply_customer_link(self, header, payload: dict) -> None:
+        """Validate a payload's customer_id in place (PC-3): "" unlinks, a link stores the
+        customer's own name as customer_name."""
+        if "customer_id" not in payload:
+            return
+        from app.services.debtor_type import link_customer
+
+        payload["customer_id"], linked_name = link_customer(
+            self.db, payload["customer_id"], current_id=getattr(header, "customer_id", None)
+        )
+        if linked_name:
+            payload["customer_name"] = linked_name
+
     def create_request(self, data: PurchaseRequestHeaderCreate):
         """Create purchase request header + lines (internal API)."""
         dump = data.model_dump(exclude={"products"})
@@ -9199,6 +9347,12 @@ class PurchaseRequestService:
         if respond_inbox_url is not None:
             dump["respond_inbox_url"] = respond_inbox_url
         requestor_value = dump.pop("requested_by_contact_id", None)
+        if "customer_id" in dump:
+            from app.services.debtor_type import link_customer
+
+            dump["customer_id"], linked_name = link_customer(self.db, dump["customer_id"])
+            if linked_name:
+                dump["customer_name"] = linked_name
         header = PurchaseRequestHeader(**{k: v for k, v in dump.items() if hasattr(PurchaseRequestHeader, k)})
         if requestor_value:
             # Validated + label-derived, never a bare setattr: the document, the
@@ -9271,6 +9425,7 @@ class PurchaseRequestService:
             payload["respond_inbox_url"] = None
         self._apply_sponsor_subject_to_payload(payload, header)
         requestor_value = payload.pop("requested_by_contact_id", _UNSET_REQUESTOR)
+        self._apply_customer_link(header, payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)
@@ -9355,6 +9510,7 @@ class PurchaseRequestService:
             payload["respond_inbox_url"] = None
 
         self._apply_sponsor_subject_to_payload(payload, header)
+        self._apply_customer_link(header, payload)
         for key, value in payload.items():
             if hasattr(header, key):
                 setattr(header, key, value)

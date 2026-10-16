@@ -425,9 +425,13 @@ class TestGateKeepsWarehouseOnPurchaseOrder:
     def test_the_matrix_rows_exist(self) -> None:
         from app.services.chatbot.lanes.business.gate import ALLOWED, ALLOWS_EMPTY
 
+        # REF-PROBES (#1569): the row also admits the four reference kinds the resolver
+        # may place a typed number as. A customer or transporter token still never rides in.
         assert set(ALLOWED.get("purchase_order") or []) == {
             "product", "warehouse", "category", "brand",
+            "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
         }
+        assert not {"customer", "transporter"} & set(ALLOWED["purchase_order"])
         assert ALLOWS_EMPTY.get("purchase_order") is True
 
     def test_the_miss_line_has_a_scope_word(self) -> None:

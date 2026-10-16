@@ -347,6 +347,8 @@ def test_confirm_reads_the_same_claim_netting_as_the_proposal_did():
     OTHERS and seeds the ledger unclaimed, and the line that owns the pool then reads that
     stale figure back instead of its own claim-netted one. Same world as the proposal-time
     test above, checked at the write path the board actually calls.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     near = date.today() + timedelta(days=10)
     far = date.today() + timedelta(days=17)
@@ -373,27 +375,36 @@ def test_confirm_reads_the_same_claim_netting_as_the_proposal_did():
             line.line_no: line for line in ProjectSupplyService(db).lines_of(str(order.id))
         }
 
-        # Asking for the whole 8 must be REFUSED at 7, the line's own netted floor - not
-        # silently accepted off the ledger's stale, unclaimed 10.
-        with pytest.raises(AppException) as refused:
-            ProjectSupplyService(db).confirm(
-                order,
-                ConfirmSupplyBody(
-                    lines=[
-                        ConfirmLine(project_line_id=lines_by_no[1].id, buy_qty="1"),
-                        ConfirmLine(
-                            project_line_id=lines_by_no[2].id,
-                            reserve=[{"warehouse_id": str(pool2.id), "qty": "8"}],
-                        ),
-                    ]
-                ),
-                actor_user_id=eling,
-            )
-        failing = refused.value.detail["failing_lines"]
-        assert len(failing) == 1
-        assert failing[0]["reason"] == (
-            f"{pool2.warehouse_code} now has 7 free for this line, and 8 was asked for."
+        # Asking for the whole 8 holds only 7, the line's own netted floor - not the
+        # ledger's stale, unclaimed 10 - and records the 1 unit short on that line.
+        result = ProjectSupplyService(db).confirm(
+            order,
+            ConfirmSupplyBody(
+                lines=[
+                    ConfirmLine(project_line_id=lines_by_no[1].id, buy_qty="1"),
+                    ConfirmLine(
+                        project_line_id=lines_by_no[2].id,
+                        reserve=[{"warehouse_id": str(pool2.id), "qty": "8"}],
+                    ),
+                ]
+            ),
+            actor_user_id=eling,
         )
+        [notice] = result["stock_short_notices"]
+        assert notice["line_no"] == 2, notice
+        assert notice["reason"] == (
+            f"Reserve 8 at {pool2.warehouse_code} confirmed as decided; only 7 free at "
+            f"{pool2.warehouse_code} when confirmed, 1 short"
+        ), notice
+        from app.models.project_so import SOLineAllocation
+
+        held = [
+            (str(a.so_line_id), str(a.warehouse_id), Decimal(str(a.qty)))
+            for a in db.query(SOLineAllocation)
+            .filter(SOLineAllocation.so_line_id == lines_by_no[2].id)
+            .all()
+        ]
+        assert held == [(str(lines_by_no[2].id), str(pool2.id), Decimal("7"))], held
 
     with blank_session() as db:
         company_id, eling, project, product = _world(db)
@@ -1782,6 +1793,7 @@ def _spo_line(db, product, warehouse, *, qty, arrives, spo_number=None, line_no=
     return row
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_spo_arriving_before_the_required_date_covers_its_line_through_the_group():
     """AC-K4, as ladder v5 answers it (section 1e). The SPO has no shipment and no ETA of
     its own beyond the line's `expected_date`, which is the only date an imported shipping
@@ -1818,6 +1830,7 @@ def test_an_spo_arriving_before_the_required_date_covers_its_line_through_the_gr
     assert "group" in components[0]["reason"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_late_spo_is_inside_the_groups_net_and_outside_what_the_line_may_draw():
     """THE TWO HALVES OF THE WATER RULE (captain, 27 August 2026), in one fixture.
 
@@ -1899,6 +1912,7 @@ def test_a_dead_promise_is_still_inside_the_groups_net_and_still_draws_nothing()
     assert components[0]["qty"] == "40"
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_promise_dated_today_covers_its_line():
     """The boundary, said out loud: a row dated today arrives today, and an arrival on the
     required date itself is cover. An exclusive comparison on either would look like a
@@ -1941,6 +1955,7 @@ def test_a_fully_received_line_is_not_supply_however_open_its_date_looks():
     assert [c["kind"] for c in components] == ["buy"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_shipment_backed_row_is_supply_the_group_holds():
     """Once a container is booked the arrival is tracked. Under v5 the arrival date no
     longer decides whether the row is cover - the group's net counts every open incoming -
@@ -2044,6 +2059,7 @@ def test_another_groups_free_pile_stands_where_that_groups_book_is_whole():
     assert short == {}
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_one_lending_groups_book_is_spent_once_across_the_whole_walk():
     """R-M's cap is a statement about the GROUP, so a BOARD spends it once (3 Sep 2026).
 
