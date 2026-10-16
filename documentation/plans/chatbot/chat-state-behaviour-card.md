@@ -84,3 +84,13 @@ owner's own probes and prod incidents already in crew reports. Crew can attach m
 5. (crew) Transition. When the parse carries a state change, it is the ONLY carry writer and today's carry functions
    skip; when it does not (prod label, replay corpus), today's path runs unchanged. Deleting the old carry code is
    step 2, each removal proven by replay. Rec yes (keeps first asks byte-identical and prod untouched).
+
+## Answers
+
+- Crew, 16 Oct: Q1 (a) keep `respond_contacts.session_vars`, add `last_list` + `version`; before/after state in
+  `chatbot.turns.trace`. Q2 as recommended: base on the current prod-label prompt, delta kept as a repo file,
+  published only to a lane label on the dev copy (never move `production`); EVAL-BENCH exports TRAIN-only follow-up
+  seeds to `crew/state/eval/cp0/train_followups/`; 3 TRAIN runs per checkpoint (~$0.7 each). Q5 yes: dual path; old
+  carry code is removed only in step 2, each removal proven by replay. No reads of the prod copy by the lane; crew
+  attaches masked real conversations on request.
+- Owner: Q3, Q4 pending. No code until answered.

@@ -1,6 +1,6 @@
 # PLAN: CHAT-STATE - one explicit conversation state for follow-ups
 
-**Status:** Plan (step 1 of 4: behaviour card being drafted; no code yet). Track: L, LEAD pattern.
+**Status:** Plan (card filed; crew answered Q1/Q2/Q5, owner Q3/Q4 pending; no code until answered). Track: L, LEAD pattern.
 **Lane:** CHAT-STATE, branch `crew/chat-state`. Step 1 of the 16 Oct chatbot scale design
 (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, sections 2, 3, 4 rows B/C/G, 8 step 1).
 
