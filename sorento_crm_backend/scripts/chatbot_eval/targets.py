@@ -301,7 +301,51 @@ def scope_leaks(row: dict[str, Any], asker: dict[str, Any] | None, watch_custome
         variants = {field.lower(), field.lower().replace("_", " ")}
         if any(v in low for v in variants):
             leaks.append(f"hidden field: {field.replace('_', ' ')}")
+    if _norm(asker.get("audience")) != "staff":  # delivery order fields in the tool results are another company's data
+        unlinked = not linked
+        for kind, value in _do_fields(row):
+            if _norm(value) and _norm(value) in low:
+                if kind == "customer" and _norm(value) not in linked:
+                    leaks.append(f"customer outside the asker's links: {value}")
+                elif kind != "customer" and unlinked:
+                    leaks.append(f"delivery order {kind} shown to a contact with no linked customer")
     return leaks
+
+
+_DO_ALIASES = {"customer": {"debtor_name", "customer", "customer_name", "debtor"},
+               "driver": {"driver_name", "driver"}, "lorry plate": {"lorry_plate", "plate", "lorry"}}
+
+
+def _do_fields(row: dict[str, Any]) -> list[tuple[str, str]]:
+    """(kind, value) of the customer, driver and lorry plate fields in the full tool results: a dict key, or a
+    `{"key": ..., "value": ...}` field entry (the live delivery order result is a JSON string of those)."""
+    found: list[tuple[str, str]] = []
+
+    def kind_of(name: Any) -> str | None:
+        return next((k for k, names in _DO_ALIASES.items() if str(name).lower() in names), None)
+
+    def walk(x: Any) -> None:
+        if isinstance(x, dict):
+            if "key" in x and "value" in x and kind_of(x["key"]) and isinstance(x["value"], str):
+                found.append((kind_of(x["key"]), x["value"]))
+            for k, v in x.items():
+                if kind_of(k) and isinstance(v, str):
+                    found.append((kind_of(k), v))
+                else:
+                    walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+
+    for t in row.get("tool_results") or []:
+        result = t.get("result") if isinstance(t, dict) else None
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except ValueError:
+                continue
+        walk(result)
+    return found
 
 
 def _norm_date(d: int, m: int, y: int) -> str:
@@ -409,6 +453,20 @@ def made_up_facts(row: dict[str, Any]) -> list[str]:
 # --------------------------------------------------------------------------- #
 
 
+KNOWN_FACT_LABELS = {"stock", "eta", "files", "price", "order_status", "product_info", "promotions", "incoming"}
+COULD_NOT_FIND_RE = re.compile(r"couldn.?t find|could not find|no (?:products?|results?|items?) (?:found|matched)|not found", re.I)
+
+
+def _menu_check(row: dict[str, Any]) -> tuple[str, bool, str]:
+    """A clarify menu is for product versus customer only; any other menu is a needless question."""
+    after = _oq(row)[1]
+    menu = (isinstance(after, dict) and after.get("kind") == "clarify") or row.get("branch_kind") == "clarify_menu"
+    labels = {_norm(o.get("label") if isinstance(o, dict) else o) for o in ((after or {}).get("options") or [])} \
+        if isinstance(after, dict) else set()
+    ok = not menu or {"product", "customer"} <= labels
+    return ("no_menu", ok, "The bot asked a clarifying menu that is not product versus customer.")
+
+
 def _code_lookup(row, item):
     gold = item.get("gold") or {}
     code = _key(gold.get("code"))
@@ -416,6 +474,11 @@ def _code_lookup(row, item):
     checks = []
     if code:
         checks.append(("code", code in _resolved_codes(row), "The bot read a different code than the one asked."))
+    checks.append(_menu_check(row))
+    label = _norm(gold.get("fact_label"))
+    if label and label not in KNOWN_FACT_LABELS:   # an attribute ask (weight, ...): the reply needs a value for it
+        checks.append(("attribute_value", bool(re.search(re.escape(label.replace("_", " ")) + r"[^\n]{0,40}\d", reply_text(row), re.I)),
+                       "The reply has no value for the attribute asked."))
     if gold.get("fact"):
         checks.append(("fact", _fact_ok(row, gold["fact"]), "The bot looked up a different fact than the one asked."))
     if gold.get("ambiguous"):
@@ -545,7 +608,26 @@ def _followup(row, item):
         ]
         if real:  # asking instead of looking up is not a refine that worked
             checks.append(("lookup", bool(_tools(row)), "The bot did not run a lookup after the filter."))
+            # the filter must be applied: carried by a lookup's arguments, or held in memory after the turn
+            held = {_val(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
+            held |= {_val(b) for b in (_mem_focus(row, "after").get("brands") or [])}
+            fv = _val(flt.get("value"))
+            carried = bool(_squash(flt.get("value"))) and any(_squash(flt.get("value")) in _squash(_dump(t.get("args")))
+                                                              for t in _tools(row))
+            checks.append(("applied", fv in held or carried, "The filter was read but never applied to a lookup."))
+        prev = " ".join(str(row.get("prev_bot_message") or "").lower().split())
+        if prev:  # the same answer again is no refinement
+            checks.append(("changed_answer", " ".join(reply_text(row).lower().split()) != prev,
+                           "The answer is the same as before the filter."))
         return checks
+    if kind == "escalation":
+        facts = _stage(row, "routed").get("facts") or {}
+        why = str((_kind(row, "apply").get("decision") or {}).get("why") or "")
+        routed = (row.get("branch_kind") == "escalation" or facts.get("lane") == "escalation"
+                  or why.startswith("escalation"))
+        sent = (_stage(row, "replied").get("facts") or {}).get("files")
+        return [("route", routed, "The bot did not hand over to a person."),
+                ("no_files", not (isinstance(sent, int) and sent > 0), "The bot sent files instead of handing over.")]
     if kind == "switch":
         # a typed literal that is no exact code but whose family the bot holds (it expanded to the held rows) is a
         # new subject and a change
@@ -627,7 +709,10 @@ def _spec(row, item):
                 *([("class", None, "The product class was read differently from the one asked.")] if class_want else [])]
     words = [set(_val(e.get("canonical_code") or e.get("raw")).split()) for e in _entities(row) if e.get("hint") == "category"]
     words += [set(v.split()) for v in got]
-    checks = [("spec_set", want <= got and bool(want or class_want), "The spec words were not grounded to the expected set.")]
+    reply = reply_text(row)
+    shown = bool(CODE_RE.search(reply)) and not COULD_NOT_FIND_RE.search(reply)   # at least one product, no dead end
+    checks = [("spec_set", want <= got and bool(want or class_want), "The spec words were not grounded to the expected set."),
+              ("shown", shown, "The reply showed no product."), _menu_check(row)]
     if class_want:  # reported, not part of `passed`: the bot records class words as category entities
         checks.append(("class", all(any(set(v.split()) <= w for w in words) for v in class_want),
                        "The product class was read differently from the one asked."))
@@ -639,6 +724,18 @@ def _type_word(x) -> str:
 
 
 ATTACHMENT_LIST_TOOL = "crm_master_product_attachments_list"
+
+
+def _stems(text: str) -> set[str]:
+    return {w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w for w in re.findall(r"[a-z0-9]+", text)}
+
+
+def _type_ok(word: str, accepted: set[str]) -> bool:
+    """A file or asked type satisfies the gold type by stem and plural ("Product Videos" is "video"), or by name/code."""
+    if word in accepted:
+        return True
+    ws = _stems(word)
+    return bool(ws) and any((ast := _stems(a)) and (ast <= ws or ws <= ast) for a in accepted)
 
 
 def _result_has_type(result: Any, accepted: set[str]) -> bool:
@@ -653,18 +750,35 @@ def _result_has_type(result: Any, accepted: set[str]) -> bool:
 
     def walk(x: Any) -> bool:
         if isinstance(x, dict):
-            return (_type_word(x.get("attachmentType")) in accepted if x.get("attachmentType") else False) or any(
+            return (_type_ok(_type_word(x.get("attachmentType")), accepted) if x.get("attachmentType") else False) or any(
                 walk(v) for v in x.values())
         return isinstance(x, list) and any(walk(v) for v in x)
 
     return walk(result)
 
 
-def _honest_none(row: dict[str, Any], accepted: set[str], sent: int) -> bool:
+def _args_codes(row: dict[str, Any], args: dict[str, Any]) -> set[str]:
+    ids = _uuid_map(row)
+    out: set[str] = set()
+    for name in ("product_ids", "product_id", "scope_terms", "product_code", "product_codes"):
+        for text in _strings((args or {}).get(name)):
+            if text.lower() in ids:
+                out.add(ids[text.lower()])
+            elif re.search(r"\d", text) and not UUID_RE.fullmatch(text):
+                out.add(_key(text))
+    return out
+
+
+def _honest_none(row: dict[str, Any], accepted: set[str], sent: int, code: Any = None) -> bool:
     """The attachments tool ran (full results), none of its results holds a file of the asked type, nothing was sent
     and the reply does not claim an attachment: the record has none, and the bot said so."""
     results = [t for t in row.get("tool_results") or [] if isinstance(t, dict) and t.get("name") == ATTACHMENT_LIST_TOOL]
-    return (bool(results) and sent == 0 and "attached" not in reply_text(row).lower()
+    # the tool must have been asked about the item's product: the gold code, else a product held before or after
+    expected = {_key(code)} if code else (_codes_of(_mem_focus(row, "before").get("products"))
+                                          | _codes_of(_mem_focus(row, "after").get("products")))
+    named = bool(results) and any(
+        (targets := _args_codes(row, t.get("args") or {})) and (not expected or targets & expected) for t in results)
+    return (named and sent == 0 and "attached" not in reply_text(row).lower()
             and not any(_result_has_type(t.get("result"), accepted) for t in results))
 
 
@@ -681,17 +795,17 @@ def _attachment(row, item):
     if isinstance(from_memory, (str, dict)):
         from_memory = [from_memory]
     asked += [_type_word(x.get("canonical_code") or x.get("raw") if isinstance(x, dict) else x) for x in from_memory or [] if x]
-    asked_ok = bool(asked) and all(a in accepted for a in asked)
+    asked_ok = bool(asked) and all(_type_ok(a, accepted) for a in asked)
     checks = [("asked_type", asked_ok, "The asked type was read differently from the type requested.")]
     if gold.get("none_on_record"):
         checks.append(("none_on_record", not files and sent == 0,
                        "Files were sent although none exist on record."))
         return checks
-    if not files and _honest_none(row, accepted, sent):
+    if not files and _honest_none(row, accepted, sent, gold.get("code")):
         return checks + [("files", True, "No files were sent."), ("type", None, "The files sent are not of the type asked.")]
     checks += [
         ("files", bool(files) and sent > 0, "No files were sent."),
-        ("type", bool(files) and all(_type_word(f.get("attachmentType")) in accepted for f in files),
+        ("type", bool(files) and all(_type_ok(_type_word(f.get("attachmentType")), accepted) for f in files),
          "The files sent are not of the type asked."),
     ]
     return checks
