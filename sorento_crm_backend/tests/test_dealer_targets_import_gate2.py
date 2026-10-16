@@ -5,8 +5,8 @@ it found, copied here with masked names and shape-only figures:
 
 1. No ACCOUNT column: the account is a SUFFIX of the dealer name cell ("<dealer> A/C I").
 2. Mocha: "TIER n" next to a plain "INCENTIVE" column (no tier number on it).
-3. Sorento yearly: Tier 1-3 per account, Tier 4-5 merged over the dealer's accounts (owner
-   ruling pending: those rows fail with a reason until it lands).
+3. Sorento yearly: Tier 1-3 per account, Tier 4-5 merged over the dealer's accounts (crew ruling
+   (b), 16 Oct: the dealer target replaces each account's own target once it reaches a tier).
 4. Columns must never be dropped silently: a "Monthly" block with tiers but no months, and
    "QUARTERLY (POINT)" over JAN-MAR .. OCT-DEC plus one INCENTIVE column.
 """
@@ -314,3 +314,87 @@ def test_the_account_suffix_reader_is_linear():
     assert time.monotonic() - started < 0.5
     assert split_account_suffix("X - A/C III ") == ("X", "A/C III")
     assert split_account_suffix("Y (A/C 2)") == ("Y", "A/C 2")
+
+
+
+# review (gate 2): the split goes by MERGE, never by equal values -------------------------
+
+
+def _charlie_equal(tiers):
+    """Sorento with CHARLIE's per-account `tiers` (1-3) typed the same on every account row."""
+
+    def fill(ws):
+        rows = sorento(ws)
+        for i in range(3):
+            for n in tiers:
+                ws.cell(row=7 + i, column=3 + 2 * n, value=100000 * n)
+        return rows
+
+    return fill
+
+
+def _split(parsed, s_rows):
+    keys = [_k(S, s_rows[f"CHARLIE:{label}"]) for label in ("A/C I", "A/C III", "A/C IV")]
+    yearly = [s for s in parsed.schemes if s.kind == "yearly" and set(s.codes) & set(keys)]
+    dealer = next(s for s in yearly if s.codes == keys)
+    owns = [s for s in yearly if len(s.codes) == 1]
+    return dealer, owns
+
+
+def test_an_account_tier_equal_on_every_row_by_chance_stays_the_account_s():
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    for tiers in ((1,), (1, 2, 3)):
+        data, (s_rows,) = _book(_charlie_equal(tiers))
+        dealer, owns = _split(parse_workbook(data, year=2026), s_rows)
+        assert [t.threshold for t in dealer.tiers] == [D("2000000"), D("2500000")], tiers
+        assert len(owns) == 3
+        assert all(len(o.tiers) == 3 for o in owns)
+
+
+def test_account_targets_with_another_window_than_their_dealer_fail():
+    """Review should-fix 4: the replacement needs the dealer's period to cover the account's."""
+    from openpyxl import Workbook
+
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"], ws["B1"] = "DEALER NAME", "Yearly"
+    ws.merge_cells("B1:F1")
+    for col, text in zip("BCDEF", ("PERIOD", "TIER 1", "INCENTIVE", "TIER 4", "INCENTIVE")):
+        ws[f"{col}2"] = text
+    ws["A3"], ws["B3"], ws["C3"], ws["D3"], ws["F3"] = "X A/C I", "JAN-DEC'26", 100000, 0.01, 0.02
+    ws["A4"], ws["B4"], ws["C4"], ws["D4"], ws["F4"] = "X A/C III", "DEC'25-NOV'26", 200000, 0.01, 0.02
+    ws["E3"] = 1000000
+    ws.merge_cells("E3:E4")
+    buf = io.BytesIO()
+    wb.save(buf)
+    parsed = parse_workbook(buf.getvalue(), year=2026)
+    assert all(r.status == "not_representable" and "window" in r.reason for r in parsed.rows), [
+        (r.status, r.reason) for r in parsed.rows
+    ]
+
+
+def test_apply_writes_a_monthly_block_with_no_months(api):
+    """Review should-fix 1: tiers with no period of their own are every month's tiers."""
+    from app.models.order import Customer
+
+    client, db, company_id = api
+    db.add(Customer(id=_uid(), company_id=company_id, customer_code=_code(),
+                    customer_name="BRAVO TRADING - [A/C I]", account_level=1))
+    db.flush()
+    data, _ = _book(sorento)
+    files = {"file": ("t.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    db.autoflush = False
+    try:
+        body = client.post(f"{BASE}/import", params={"dry_run": "false", "year": 2026}, files=files).json()
+    finally:
+        db.autoflush = True
+    bravo = next(r for r in body["rows"] if r["row"] == 6)
+    assert bravo["status"] == "mapped", bravo
+    rows = client.get(BASE, params={"subject": "dealer", "all": "true"}).json()["rows"]
+    monthly = next(r for r in rows if r["target_no"] in bravo["target_nos"] and r["name"].endswith("monthly"))
+    detail = client.get(f"{BASE}/{monthly['target_id']}").json()
+    assert detail["tiers_per_period"] is False
+    assert [t["threshold"] for t in detail["tiers"]] == [80000, 100000]

@@ -922,11 +922,15 @@ def _account_and_dealer_columns(ctx: "_Ctx", cols: List[_Column]):
     per_account: List[_Column] = []
     dealer: List[_Column] = []
     for threshold, rate in pairs:
-        values = ctx.per_row(threshold)
-        if not values:
+        if not ctx.per_row(threshold):
             continue
-        same = len(values) == len(ctx.rows) and len({_text(v) for v in values.values()}) == 1
-        (dealer if same else per_account).extend(c for c in (threshold, rate) if c is not None)
+        # By MERGE, never by equal values (review gate 2 B1): per-account thresholds that happen
+        # to be the same number stay the accounts'.
+        boxes = {ctx.grid.box(r, threshold.index) for r in ctx.rows}
+        merged = len(boxes) == 1 and None not in boxes and all(
+            next(iter(boxes))[0] <= r <= next(iter(boxes))[2] for r in ctx.rows
+        )
+        (dealer if merged else per_account).extend(c for c in (threshold, rate) if c is not None)
     if not per_account or not dealer:
         return None
     return per_account, dealer
@@ -948,12 +952,17 @@ def _group_schemes(ctx: _Ctx, kind: str, points: bool, kind_cols, window_col, by
             for r in ctx.rows:
                 single = _Ctx(grid, ctx.sheet, [r], results, ctx.dealer_labels, ctx.year)
                 for scheme in _group_schemes(single, kind, points, per_account, window_col, by_role):
+                    if (scheme.start, scheme.end) != (dealer[0].start, dealer[0].end):
+                        # The replacement needs the dealer's period to cover the account's.
+                        raise CellError(
+                            f"yearly: an account's window ({scheme.start:%b %Y} to {scheme.end:%b %Y}) "
+                            f"differs from its dealer's ({dealer[0].start:%b %Y} to {dealer[0].end:%b %Y})"
+                        )
                     scheme.replaced_by = dealer[0].key
                     account = results[r].account_in_file
-                    if account:
-                        scheme.name = scheme.name.replace(
-                            results[r].name_in_file or "", f"{results[r].name_in_file} {account}", 1
-                        )
+                    name = (results[r].name_in_file or "")[:80]
+                    if account and name:
+                        scheme.name = scheme.name.replace(name, f"{name} {account}", 1)
                     out.append(scheme)
             return out
     codes = ctx.keys
@@ -1137,8 +1146,8 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind, shared_rates=()) -> Tuple
     merged = [t for t, _ in pairs if shared(t, every_row=False)[0] is not None]
     if per_account and merged:
         raise CellError(
-            f"{name}: waiting on a ruling: per-account {per_account[0].header} with dealer "
-            f"{merged[0].header} (PR #1715)"
+            f"{name}: per-account {per_account[0].header} beside dealer {merged[0].header} is read "
+            "on yearly targets only"
         )
     previous_threshold: Optional[Decimal] = None
     for thr_col, rate_col in pairs:

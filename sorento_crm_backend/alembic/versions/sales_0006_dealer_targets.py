@@ -294,8 +294,10 @@ def downgrade() -> None:
     op.drop_column("target_commission_tiers", "threshold", schema=schema)
     op.alter_column("target_commission_tiers", "from_pct", nullable=False, schema=schema)
 
+    # A database that ran sales_0006 before replaced_by_target_id was added has neither object.
+    op.execute(f'ALTER TABLE "{schema}".targets DROP CONSTRAINT IF EXISTS ck_sales_targets_replaced_by_dealer')
+    op.execute(f'ALTER TABLE "{schema}".targets DROP COLUMN IF EXISTS replaced_by_target_id')
     for name in (
-        "ck_sales_targets_replaced_by_dealer",
         "ck_sales_targets_payout_dealer",
         "ck_sales_targets_rounding",
         "ck_sales_targets_threshold_unit",
@@ -317,4 +319,3 @@ def downgrade() -> None:
     op.drop_column("targets", "rounding", schema=schema)
     op.drop_column("targets", "threshold_unit", schema=schema)
     op.drop_column("targets", "payout_customer_id", schema=schema)
-    op.drop_column("targets", "replaced_by_target_id", schema=schema)
