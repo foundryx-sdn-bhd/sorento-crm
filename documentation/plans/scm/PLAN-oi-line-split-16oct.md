@@ -39,6 +39,52 @@ delivery date + remark), before Confirm or inside Confirm.
   `ContextMenu`, `DatePicker`, `Badge`, `Kbd`; quotation lines grid pattern
   (`[projectId]/components/QuotationLinesGrid.tsx`).
 
+## Design draft (pending owner answers on Q1, Q2, Q4, Q5; BE = sorento_crm_backend/)
+
+Storage (migration, company-scoped, UUID ids):
+- `projects.so_line_splits`: id, company_id, so_line_id (mirror `projects.sales_order_lines.id`, UNIQUE,
+  FK CASCADE), base_qty (the qty the split was made against), balance_mode remain|cancel, updated_by/at.
+  Keyed on the mirror line: OI rows, `buy_lines["line"]`, `_split_row` and planning-change
+  `project_line_id` all use it (`app/models/project_so.py:1011-1014`); it survives AutoCount re-sync
+  (in-place update by DtlKey, `app/services/document_ingest_service.py:1527-1594`). Not in the board
+  draft: drafts are deleted at Confirm (`app/services/project_supply_service.py:7425`).
+- `projects.so_line_split_tranches`: id, split_id (FK CASCADE), qty > 0, delivery_date, remark,
+  target_so_line_id (FK mirror, ON DELETE SET NULL; NULL = not in AutoCount yet; = origin = kept on
+  its own line). Save validates same SO, product and location.
+- Cancelled target line: hook `flag_rows_for_cancelled_lines` (`project_order_inquiry_service.py:738`)
+  to null the link.
+
+Engine (the move, explicit links only):
+- New pre-pass `_apply_tranche_links` before `_apply_pure_splits` in `refresh_for_decision`
+  (`project_order_inquiry_service.py:1323`): moves each linked tranche's qty + placement links + ack
+  from the origin row to the target line's row via `_split_row` (no date rule inside it, :5428), with a
+  merge branch when the target already has a row, tranche qty instead of the target's Buy, previous_*
+  + changed ack when the date moves (as `_settle_row_in_place` :2522-2547), latest tranche first.
+  Keeps the pure split's single-live-ORDER / not-redirected / no-reserve-link guards; no date or
+  exact-sum rule. The normal netting then tells only what is left (the mock's "left to tell").
+- Planning-change apply: `_oi_demand_rows` drop = from - to - linked_out
+  (`planning_change_service.py:3889-3892`), else a false CANCEL BALANCE stays.
+- Both origin and target must be named in the same Confirm (pure split has the same limit, :5326-5332);
+  the panel's Save names both lines.
+
+Purchasing view (tranches as a read-only child view; `row.delivery_date` stays the line date so
+cascade windows and filters are unchanged):
+- Email: `_queue_saved_line` (:4530-4560), `handover_item` (:4229), `_build_handover_context`
+  (:12419), resend (`oi_handover_resend.py:86,109,194`); template sub-rows need migration oihr_0009.
+- Excel: `_all_rows` (`order_inquiry_worklist_service.py:3387-3409`) expands tranches, month sheets
+  follow; REMARK appended at the END of EXPORT_HEADINGS (:195-222; `tests/scm/test_oi_worksheet_writer.py`
+  pins the first 10).
+- Lines tab: `serialize_rows` (:6372/:6433) adds `tranches`.
+
+Tests that pin today (must stay green): `tests/test_oi_cancel_bugs_so422492.py` (test_review_2_5_6
+:467 "a date move declines the split" stays true without stored links), `tests/scm/test_oi_email_so_line_changes.py`,
+`tests/test_oi_saved_line_email.py`, `tests/scm/test_oi_date_move_settle.py`, `tests/test_planning_changes.py`,
+`tests/test_oi_handover_excel.py`. Global guards: `tests/test_schema_uuid_id_principle.py`,
+`tests/test_list_pagination_limit.py`.
+
+Risks: origin and target not in the same Confirm; ack mix when merging into a row with another
+handshake; an unlinked late tranche is placed against the line date (cascade reads the row date).
+
 ## Open
 
 - Card Q3 = (a) (crew, owner standing rules). Q1, Q2, Q4, Q5 with the owner. Mock v1 filed (defaults Q1a Q2a Q4a Q5a).
