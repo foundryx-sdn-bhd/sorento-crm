@@ -446,6 +446,10 @@ def test_a_put_leaves_an_audit_row_naming_the_actor(api):
         .all()
     )
     assert rows, "no audit_logs row for the split table names the actor"
+    assert all(str(r.company_id) == str(s.world.company_id) for r in rows), (
+        "the audit row carries the SO's company, so no other company's admin lists it",
+        [r.company_id for r in rows],
+    )
 
 
 def test_get_now_qty_is_the_open_qty_of_a_partly_delivered_line(api):
