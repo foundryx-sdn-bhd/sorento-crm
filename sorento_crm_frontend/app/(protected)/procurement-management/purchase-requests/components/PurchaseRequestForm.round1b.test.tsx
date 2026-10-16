@@ -130,3 +130,22 @@ describe('PurchaseRequestForm - round 1b', () => {
     expect(box('total').value).toBe('');
   });
 });
+
+describe('PurchaseRequestForm - round 2b narrow cell', () => {
+  it('the line Quantity sentence wraps under the box (not clipped by the cell)', async () => {
+    mockRequest = {
+      id: 'req-1',
+      request_number: 'PR-0002',
+      request_type: 'purchase_request',
+      sales_type: 'project',
+      customer_name: 'CUSTOMER A SDN BHD',
+      project_title: 'Tower A',
+      lines: [{ ...LINE, quantity: null }],
+    };
+    renderForm(true);
+    await screen.findByRole('button', { name: /^Update$/ });
+    const el = screen.getByText(MESSAGE);
+    expect(el).toHaveClass('whitespace-normal');
+    expect(/break-words|wrap-break-word|\[overflow-wrap:anywhere\]/.test(el.className)).toBe(true);
+  });
+});
