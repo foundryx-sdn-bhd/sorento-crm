@@ -469,3 +469,39 @@ def test_aa_a_correctly_typed_word_the_catalogue_knows_is_said_as_typed(vdb, mes
     out = _ground(vdb, message, _e("basin", "category"), _e(raw, "specification", spec_key=key, spec_value=value))["entities"]
     [spec] = _specs(out)
     assert (spec["spec_key"], spec["spec_value"], spec["raw"]) == (key, value, raw), spec
+
+
+# --------------------------------------------------------------------------- #
+# Sixth review: cross-entity shapes that take main's path (the word is said back)  #
+# --------------------------------------------------------------------------- #
+
+
+def _no_current(entity: dict[str, Any]) -> dict[str, Any]:
+    return {**entity, "current_message": False}
+
+
+def test_w_the_measured_pnk_shape_keeps_pnk_as_an_unknown_finish(vdb):
+    out = _ground(vdb, "any pnk basin", _e("basin", "category"), _e("pink", "specification", spec_key="finish", spec_value=None))["entities"]
+    [spec] = _specs(out)
+    assert (spec["spec_key"], spec["spec_value"], spec["raw"]) == ("finish", None, "pnk"), spec
+
+
+@pytest.mark.parametrize(
+    "message,entities,said",
+    [
+        ("any pnk basin also got?", [_e("pnk basin", "category"), _no_current(_spec_entity("under counter", "mounting", "under_counter"))], ["pnk"]),
+        ("any undrmount basin", [_e("undrmount basin", "category"), _no_current(_spec_entity("gunmetal", "finish", "gunmetal"))], ["undrmount"]),
+        (
+            "any undrmount basin and pnk water closet",
+            [_e("undrmount basin", "category"), _e("pnk water closet", "category"), _spec_entity("under counter", "mounting", "under_counter")],
+            ["undrmount", "pnk"],
+        ),
+        ("any pnk inset basin", [_e("pnk basin", "category"), _spec_entity("inset", "mounting", "under_counter")], ["pnk"]),
+        ("any pnk basin undrmount", [_e("pnk basin", "category"), _spec_entity("undrmount", "mounting", "under_counter")], ["pnk"]),
+    ],
+    ids=["a-carried-flag", "b-other-key", "c-two-class-entities", "d-spec-word-is-another-word", "e-spec-word-in-message"],
+)
+def test_guard_sixth_review_a_typed_word_a_spec_entity_cannot_account_for_is_said_back(vdb, message, entities, said):
+    shape = _shape(_ground(vdb, message, *entities))
+    for word in said:
+        assert ("specification", word, "", None) in shape, shape
