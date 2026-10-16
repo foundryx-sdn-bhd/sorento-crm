@@ -1,7 +1,7 @@
 # PLAN: PROMPT-DIET audit of the production parser prompt (16 Oct 2026)
 
-Status: Deliverable 1 DONE, filed for owner annotation (`PROMPT-DIET-16oct.html`); stages wait on the owner's
-annotations. Track: docs only (no product code, no LLM spend).
+Status: Deliverable 1 DONE (owner annotated 16 Oct). Stage 1 gate PASS on dev v111, hand test pending (PR #1739).
+Stages 2-5 HELD for crew's chatbot architecture. Track: deliverable 1 docs only; stage 1 M (see below).
 
 Result: 91 sections, 35,585 tokens today, about 20,435 after the proposed five stages (-43%). Two text bugs
 (v94:891-893 vs :900; missing comma v94:765), one dead section (REFERENCE TARGET), two stored-only keys
@@ -71,9 +71,20 @@ Its migration `pab_0001_parser_ablation` published the text UNLABELLED (dev v84)
 moved along the v50 line instead (v52, then v63 = v52 + `{{find_filters}}`), so 204 of the 235 lines #1574 cut
 are still in v91 (dev copy of prod v52). The ablation text is now stale, so it is ported, not labelled.
 
-## Stage 1 (in progress)
+## Stage 1 (gate PASS 16 Oct; PR #1739, hand test next)
 
-Status: Build. Track: M (prompt text + build script + publish migration), lead pattern.
+Status: gate PASS on dev v111 (4f48d7a5); hand test, then owner PASS before any label move. Stages 2-5 HELD (crew is
+writing the chatbot architecture: fast/slow path, catalogue-constrained parser output, per-domain prompts).
+Scope after two crew re-scopes: the #1574 cut port (100 of 118 cuts), the section 43 contradiction fix and the two
+missing OUTPUT commas (requested_attributes, asks). REFERENCE TARGET kept: the model emits reference_target with no
+marker (107 "dym" verdicts in tests/chatbot/replay_turns) and lanes/business/answer.py:1996 reads it. v109 and v110
+were voided builds.
+
+Gate (crew, v111 vs v94): TRAIN 91/90 vs 92/90 (noise); held-out 83/80 vs 79/80; cost per parse $0.00544 vs $0.00620
+(-12%); cached-token share 0.971 vs 0.951; same-hour latency not slower. Watch items: G178, G174 (picked_option),
+G165 (reference_target lost).
+
+Track: M (prompt text + build script + publish migration), lead pattern.
 UAC: `prompt-diet-s1-acceptance-criteria.md`.
 
 - Base: dev v94 stored verbatim as `alembic/data/chatbot_semantic_parser.v94.txt`.
