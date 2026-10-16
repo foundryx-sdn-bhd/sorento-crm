@@ -65,6 +65,19 @@ dealer. For document scope it is staff:
   make the core `contact_customer_scope.enforced` exclude a salesperson so the order routes,
   report_ask and complaints agree with the chatbot.
 
+## Owner ruling 16 Oct: any active staff CRM user is staff
+
+Crew's read-only run of the check SQL on the owner's 15 Oct prod backup found 120 contacts BLOCKED, 26 of
+them real staff with active CRM logins but no salesperson role (customer service, project customer
+service, warehouse, purchasing, project sales, marketing, technical). Ruling (crew (b)): document staff is
+an ACTIVE, not trashed CRM user linked to the contact holding at least one not-trashed role outside
+`user_service.NON_STAFF_ROLE_SLUGS` (portal_user, guest), whatever that role is: the people lookups' own
+staff definition (`_holds_staff_role`). `contact_asker.is_staff_user` replaces `is_salesperson_user`. A
+dealer's portal login (`user_contact_link.suggested_role_slug` pre-selects portal_user for a contact that
+is not a salesperson), a roleless or inactive / trashed user and a sales agent link grant nothing. The
+check SQL lists every active linked user failing the rule with its roles, and (part 2) every
+customer-linked contact whose user holds a staff role, for the owner to confirm none is a dealer.
+
 ## Slice 3: the customer picker (crew audit at 54740870f, 15 Oct)
 
 `engine._customer_scope_gate` left every unlinked contact untouched, so an unlinked non-staff

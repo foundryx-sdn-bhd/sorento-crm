@@ -10,14 +10,16 @@
 - AC-5: Staff behaviour unchanged: any customer's documents as today. Staff = tier office OR an
   active office access type; either alone is enough.
 - AC-6: No new reply text.
-- AC-7 (V1-DOC-SCOPE-SALES): An unlinked salesperson (an ACTIVE, not trashed CRM user linked to
-  the contact, holding the role `salesperson`) sees any customer's DO / SO by number, the DO list
-  and the outstanding report, as today.
+- AC-7 (V1-DOC-SCOPE-SALES, owner ruling 16 Oct): An unlinked contact with an ACTIVE, not trashed
+  CRM user holding any staff role (anything but portal_user / guest: customer service, warehouse,
+  purchasing, project, marketing, technical, salesperson...) sees any customer's DO / SO by number,
+  the DO list and the outstanding report, as today.
 - AC-8: A linked salesperson naming another customer's SO number gets that SO's card; for
   customer words and lists it stays on its links as today.
-- AC-9: An inactive or trashed user, a user whose only salesperson role is trashed, a user with
-  other roles, or a sales agent linked to the contact is no salesperson: still blocked when
-  unlinked. Deactivating the user revokes access; a sales agent link never makes a dealer staff.
+- AC-9: An inactive or trashed user, a user whose only live roles are portal_user / guest or none
+  (a dealer's portal login, a trashed role), or a sales agent linked to the contact is not staff:
+  still blocked when unlinked, and a linked dealer with a portal login stays held to its links.
+  Deactivating the user revokes access.
 - AC-10: A salesperson never sees another customer's PO ref (lane, resolver and clarifier), as
   today.
 - AC-11 (slice 3): An unlinked non-staff contact typing another customer's (partial) name gets the
