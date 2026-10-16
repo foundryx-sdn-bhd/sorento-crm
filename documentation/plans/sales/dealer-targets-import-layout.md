@@ -103,3 +103,15 @@ mapped and every sheet was read (`gate_passes`).
   plus one target per account (Tier 1-3, its own sales) that names the dealer target in
   `replaced_by_target_id`. In a period the dealer target reaches a tier, the account target
   pays nothing; below it, the account target pays its own tier.
+
+## Fifth real-file gate (16 Oct, round 4 on the 15 Oct prod backup)
+
+- A name whose ledgers hold none of the file's account (Mocha A/C II / A/C III beside "[A/C I]",
+  "[CERAMIC]", "[IBORN]") waits on a pick with "no ledger of this name has the account" and that
+  dealer's ledgers as the suggestions. It is never called "more than one customer". A/C II is not
+  read as [CERAMIC] unless the owner rules so.
+- Ledgers of one name and account whose names differ only in punctuation or spacing: the one the
+  file writes letter for letter wins (case and runs of spaces aside, markers dropped). When the
+  file writes neither way, the row stays a pick.
+- The same threshold written twice in one period with the same rate is one tier, with a warning
+  on the row. Different rates at one threshold still fail with "repeats in one period".

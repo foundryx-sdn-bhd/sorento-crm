@@ -31,6 +31,7 @@ _CATEGORIES = (
     ("not read: no DEALER NAME", "SHEET_NOT_READ"),
     ("no dealer name or customer code", "NO_NAME_OR_CODE"),
     ("no customer has this name", "NO_NAME_MATCH"),
+    ("no ledger of this name has the account", "NAME_WITHOUT_ACCOUNT"),
     ("which has no row in the file", "PAY_TO_ACCOUNT_NOT_FOUND"),
     ("looks wrong: Excel", "RATE_ABOVE_LIMIT"),
     ("more than 200 characters", "CELL_TOO_LONG"),

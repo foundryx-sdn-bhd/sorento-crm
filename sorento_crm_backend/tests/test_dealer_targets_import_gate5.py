@@ -109,9 +109,10 @@ def test_the_ledger_the_file_writes_letter_for_letter_wins_a_punctuation_tie(api
 
 def test_a_spacing_tie_breaks_the_same_way(api):
     client, db, company_id = api
-    spaced = _customer(db, company_id, "HOME & DECO SDN BHD", 1)
+    # Runs of spaces in the CRM name count as one (the reader already collapses the file's).
+    spaced = _customer(db, company_id, "HOME  &  DECO  SDN BHD", 1)
     _customer(db, company_id, "HOME&DECO SDN BHD", 1)
-    row = _dry_run(client, db, "home  &  deco sdn bhd", "A/C I")
+    row = _dry_run(client, db, "home & deco sdn bhd", "A/C I")
     assert row["match"] == "auto" and row["customer"] == spaced.customer_name
 
 

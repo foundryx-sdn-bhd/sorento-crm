@@ -104,7 +104,8 @@ def test_two_ledgers_both_marked_with_the_account_stay_a_pick(api):
     client, db, company_id = api
     _customer(db, company_id, "ECHO HOME SDN BHD - [A/C I]", 1)
     _customer(db, company_id, "ECHO HOME SDN. BHD. [A/C I]", 1)
-    row = _dry_run(client, db, "ECHO HOME SDN BHD A/C I")
+    # "S/B" is written by neither ledger, so the letter-for-letter tie-break (gate 5) is out too.
+    row = _dry_run(client, db, "ECHO HOME S/B A/C I")
     assert row["status"] == "needs_pick"
 
 

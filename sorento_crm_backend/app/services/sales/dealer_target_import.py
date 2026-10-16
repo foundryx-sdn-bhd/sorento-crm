@@ -1070,6 +1070,22 @@ def _group_schemes(
     # "A/C III- 2%" in Tier 2, both at 300,000) is one tier with a rate per account (gate 3).
     merged_tiers: List[SchemeTier] = []
     for t in tiers:
+        same = next(
+            (
+                m for m in merged_tiers
+                if (m.period_start, m.threshold, m.is_additional, m.rate) == (t.period_start, t.threshold, t.is_additional, t.rate)
+                and (m.account_rates or {}) == (t.account_rates or {})
+            ),
+            None,
+        )
+        if same is not None:
+            # The same threshold and rate written twice in one period is one tier (gate 5:
+            # "A/C I 9% | A/C I 9%"), said on the row so it is never silent.
+            for r in ctx.rows:
+                results[r].warnings.append(
+                    f"{_KIND_NAME[kind]}: the threshold {t.threshold:,.0f} is written twice with the same rate; read once"
+                )
+            continue
         twin = next(
             (
                 m for m in merged_tiers
@@ -1383,6 +1399,16 @@ def branch_key(name: Optional[str]) -> str:
     return dealer_key(text)
 
 
+def literal_name(name: Optional[str]) -> str:
+    """A name as written, letter for letter: case and runs of spaces ignored, punctuation kept,
+    the account markers and suffix dropped. The tie-break between ledgers whose names differ only
+    in punctuation or spacing (gate 5): the one the file writes the same way is the exact match."""
+    text = re.sub(r"\[[^\]]*\]", " ", (name or "").upper())
+    text = re.sub(r"\([^)]*\)", lambda m: " " if (account_key(m.group(0)[1:-1]) or "").startswith(("L", "RAW")) else m.group(0), text)
+    text = split_account_suffix(text)[0]
+    return " ".join(text.split()).strip(" -\u2013")
+
+
 def split_account_suffix(name: str) -> Tuple[str, Optional[str]]:
     """("<dealer>", "A/C <n>") from "<dealer> A/C <n>" (also "- A/C III", "(A/C I)"); the name
     whole and None when it carries no such suffix."""
@@ -1482,10 +1508,12 @@ class _CustomerIndex:
 
     def match(
         self, name: Optional[str], account: Optional[str]
-    ) -> Tuple[Optional[_Candidate], List[_Candidate], bool]:
+    ) -> Tuple[Optional[_Candidate], List[_Candidate], bool, Optional[str]]:
         """(the one exact match or None, up to 3 suggestions when there is none, whether the
-        near-match was skipped for being past `MAX_FUZZY_LOOKUPS`). Cached per name and account,
-        so a dealer's many rows cost one lookup."""
+        near-match was skipped for being past `MAX_FUZZY_LOOKUPS`, why there is no match:
+        `several` ledgers answer to the name and account, the name is there but `no_account` of
+        its ledgers has the account, or `no_name`). Cached per name and account, so a dealer's
+        many rows cost one lookup."""
         # By `branch_key`, not `dealer_key`: two branches of one name are two lookups (review B1).
         key = (branch_key(name), account_key(account) or (name or "").upper())
         if key not in self._cache:
@@ -1519,14 +1547,26 @@ class _CustomerIndex:
             named = [c for c in exact if name_accounts(c.name) == {acc}]
             if len(named) == 1:
                 exact = named
-        if len(exact) == 1:
-            return exact[0], [], False
         if len(exact) > 1:
-            return None, exact[:_MAX_SUGGESTIONS], False
+            # Names that differ only in punctuation or spacing: the one the file writes the same
+            # way (gate 5). When the file writes neither, the row stays a pick.
+            written = [c for c in exact if literal_name(c.name) == literal_name(name)]
+            if len(written) == 1:
+                exact = written
+        if len(exact) == 1:
+            return exact[0], [], False, None
+        if len(exact) > 1:
+            return None, exact[:_MAX_SUGGESTIONS], False, "several"
+        # The name is there, but none of its ledgers has the file's account (Mocha A/C II rows
+        # beside "[A/C I]", "[CERAMIC]", "[IBORN]", gate 5): its ledgers are the suggestions.
+        why = "no_account" if same and acc is not None else "no_name"
+        if why == "no_account":
+            ranked = sorted(same, key=lambda c: c.name)
+            return None, ranked[:_MAX_SUGGESTIONS], False, why
         if not family:
-            return None, [], False
+            return None, [], False, why
         if self.fuzzy_lookups >= MAX_FUZZY_LOOKUPS:
-            return None, [], True
+            return None, [], True, why
         self.fuzzy_lookups += 1
         near = difflib.get_close_matches(family, self.families, n=10, cutoff=0.6)
         ranked = []
@@ -1535,7 +1575,7 @@ class _CustomerIndex:
             for c in self.by_family[fam]:
                 ranked.append((-(score + (0.1 if acc and acc in c.accounts else 0)), c.name, c))
         ranked.sort(key=lambda x: (x[0], x[1]))
-        return None, [c for _, _, c in ranked[:_MAX_SUGGESTIONS]], False
+        return None, [c for _, _, c in ranked[:_MAX_SUGGESTIONS]], False, why
 
 
 def _same_name(a: Optional[str], b: Optional[str]) -> bool:
@@ -1639,15 +1679,16 @@ def run(
                     f'name differs: the file says "{res.name_in_file}", the CRM "{chosen.customer_name}"'
                 )
             continue
-        exact, suggestions, capped = index.match(res.name_in_file, res.account_in_file)
+        exact, suggestions, capped, why = index.match(res.name_in_file, res.account_in_file)
         if exact is None:
             res.status = "needs_pick"
-            res.reason = (
-                "more than one customer has this name and account"
-                if suggestions and all(dealer_key(s.name) == dealer_key(res.name_in_file) for s in suggestions)
-                and len(suggestions) > 1
-                else "no customer has this name and account"
-            )
+            if why == "several":
+                res.reason = "more than one customer has this name and account"
+            elif why == "no_account":
+                shown = res.account_in_file or split_account_suffix(res.name_in_file or "")[1] or ""
+                res.reason = f'no ledger of this name has the account "{shown}"; pick one of its ledgers or skip'
+            else:
+                res.reason = "no customer has this name and account"
             if capped:
                 res.reason += "; too many unmatched names for suggestions, add a CUSTOMER CODE column"
             if (account_key(res.account_in_file) or "").startswith("RAW"):
@@ -1665,7 +1706,7 @@ def run(
     # Accounts paid by dealer name + account (no row of their own): one exact CRM match each.
     by_name_customer: Dict[ByName, Customer] = {}
     for payee in set(by_name_payouts):
-        exact, _suggestions, _capped = index.match(payee.dealer, payee.label)
+        exact, _suggestions, _capped, _why = index.match(payee.dealer, payee.label)
         if exact is not None:
             found = db.query(Customer).filter(Customer.id == exact.id).first()
             if found is not None:
