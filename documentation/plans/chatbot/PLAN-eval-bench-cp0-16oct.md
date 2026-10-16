@@ -198,3 +198,27 @@ dev DB (`chatbot.turns`, console, 16 Oct 04:01-04:03Z, #1720 copy), so the follo
 - Output per item: `{item_id, run, provenance, usage: {calls, prompt_tokens, cached_tokens, completion_tokens, usd},
   turn: {envelope, trace, response, branch_kind}}`, the full turn (crew-only file), so `targets.grade_turn` can grade
   it; replay's ids-only rule does not apply to this crew-only output, but stdout/stderr stay text-free.
+
+## Grader v2: sources that exist in real traces (16 Oct, measured on 723 recorded prod turns + current-code eval traces)
+
+Grader v1 read `apply.verdict.entities[*].canonical_code`; real product entities carry it on 1 of 484 (prod) and 7 of
+288 (eval). Sanity run on recorded prod turns: code_lookup 0/246, made-up 674 + unverifiable 793. v2 sources:
+
+| check | source (first that exists wins; codes compared after upper + strip non-alphanumerics) |
+|---|---|
+| code / subject after | `memory` event `focus.after.products[].canonical_code`; else `looked_up.raw.envelopes[].entities` / `product_codes` (strings); else verdict entity `canonical_code` or `raw` |
+| subject before | `state` event `focus.products` (or `memory.focus.before`) |
+| fact | routed/understood domains, `apply.plan.domains`, named tool names, `memory.focus.after.domains` |
+| tool target | named tool events only (`name` set); `product_ids` etc. mapped uuid -> code through the state + memory product lists; literal `scope_terms` / `product_code(s)` |
+| pick | `engine_pick.positions`, else `verdict.reference_positions`, else `verdict.open_question_answer.picked` |
+| answer | the question = `state.open_question`; answered = `open_question_answer.picked`/`mode`, `is_affirmative`, `continuation`, or `memory.open_question` before -> after changed or cleared; `mode` is not required |
+| refine | verdict entities (`spec_key`/`spec_value`; brand `canonical_code`) + `memory.focus.after.extra.specification` / `brands`; subject kept = after products |
+| switch | `memory.focus.before` vs `after` products / domains (not set equality with gold) |
+| spec | verdict entities with `hint == specification` (`spec_key`, `spec_value`, `raw`) + `memory.focus.after.extra.specification`; match on value strings, key may be empty |
+| attachment | verdict entity `hint == attachment_type` (`canonical_code`), `memory.focus.after.extra.attachment_type`, attachment tool `attachment_type_ids`, envelope `attachments[].attachmentType` |
+| made-up | sources = user message + bot's previous message + every tool envelope + every `looked_up` envelope field + state/memory product codes + the `prompt_text` event; any `truncated: true` envelope -> `unverifiable`, never a failure |
+
+Every check tolerates a missing `apply` payload (omitted at 32 KB) and falls back to memory / looked_up. The live runner
+additionally records full tool results (no 8 KB cap) beside the turn, crew-only, for the made-up check.
+Acceptance: re-grade the 723 recorded prod turns; the lead hand-checks 20 random verdicts against the conversation
+before any baseline number is posted.
