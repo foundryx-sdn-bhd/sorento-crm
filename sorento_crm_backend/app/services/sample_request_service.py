@@ -511,14 +511,14 @@ def _create_feedback_row(db: Session, req: SampleRequest, on: date) -> None:
     """Card rule 13: Delivered with a quotation version feeds the Samples tab."""
     if not (req.quotation_version_id and req.project_id):
         return
-    db.add(
-        ProjectSample(
-            project_id=req.project_id,
-            quotation_version_id=req.quotation_version_id,
-            submitted_on=on,
-            submitted_by=req.salesperson_id,
-        )
+    sample = ProjectSample(
+        company_id=req.company_id,
+        project_id=req.project_id,
+        quotation_version_id=req.quotation_version_id,
+        submitted_on=on,
+        submitted_by=req.salesperson_id,
     )
+    db.add(sample)
     db.flush()
 
 
