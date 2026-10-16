@@ -31,6 +31,16 @@ from tests.chatbot_eval.test_replay import ChatbotTurn, recorded, _turn_count  #
 
 VARIANT = "price of the white one please"
 PER_CALL = cost_usd({"prompt": 1000, "cached": 800, "output": 100}, "gpt-5.4-mini")
+KEY = "sk-synthetic-not-a-real-key-WXYZ"
+LAST4 = "WXYZ"
+WRONG_LAST4 = "ABCD"
+
+
+class _Keyed:
+    """Stands in for a provider instance: the metering wrapper reads `self.api_key`."""
+    api_key = KEY
+
+
 PROV_KEYS = {"code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_effort"}
 
 
@@ -38,6 +48,8 @@ PROV_KEYS = {"code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_
 def live_env(monkeypatch):
     """Test-level stubs the runner must leave alone: the parser, the MCP client and the provider's `chat`."""
     seen = {"parse_calls": [], "mcp_calls": [], "envelopes": [], "kwargs": []}
+    from app.config import settings
+    monkeypatch.setattr(settings, "openai_api_key", KEY)
 
     def fake_chat(self, messages, **kw):
         return llm_provider.ChatResult(content="{}", prompt_tokens=1000, completion_tokens=100, total_tokens=1100,
@@ -45,7 +57,7 @@ def live_env(monkeypatch):
 
     def fake_parse(config, user_block):
         seen["parse_calls"].append(user_block)
-        llm_provider.OpenAIProvider.chat(object(), [{"role": "user", "content": "x"}], model="gpt-5.4-mini")
+        llm_provider.OpenAIProvider.chat(_Keyed(), [{"role": "user", "content": "x"}], model="gpt-5.4-mini")
         return _parser_output()
 
     def fake_tool(self, name, arguments):
@@ -74,7 +86,8 @@ def items_for(recorded_row, n=1, run=2):
 
 def go(session_factory, recorded_row, n=1, max_calls=50, max_usd=10.0):
     return replay_mod.live_rows(items_for(recorded_row, n), [recorded_row], session_factory=session_factory,
-                                max_calls=max_calls, max_usd=max_usd)
+                                max_calls=max_calls, max_usd=max_usd,
+                                require_key_last4=LAST4)
 
 
 def text_of(envelope):
@@ -156,7 +169,8 @@ def test_cli_live_writes_the_file_and_prints_no_message_text(tmp_path, session_f
     rec.write_text(json.dumps(recorded) + "\n")
     out = tmp_path / "out.jsonl"
     rc = replay_mod.main(["live", "--items", str(items), "--recorded", str(rec), "--out", str(out),
-                          "--max-calls", "10", "--max-usd", "5"])
+                          "--max-calls", "10", "--max-usd", "5",
+                          "--require-key-last4", LAST4])
     cap = capsys.readouterr()
     assert rc == 0
     rows = [json.loads(l) for l in out.read_text().splitlines()]
@@ -237,7 +251,7 @@ def test_live_mode_blocks_the_ideation_tool_and_runs_the_engine_without_offload(
 def _parse_with(monkeypatch, model, calls_per_turn=1):
     def fake_parse(config, user_block):
         for _ in range(calls_per_turn):
-            llm_provider.OpenAIProvider.chat(object(), [{"role": "user", "content": "x"}], model=model)
+            llm_provider.OpenAIProvider.chat(_Keyed(), [{"role": "user", "content": "x"}], model=model)
         return _parser_output()
 
     monkeypatch.setattr(parser_mod, "parse", fake_parse)
@@ -300,7 +314,7 @@ def test_a_recorded_envelope_without_a_text_slot_is_skipped(session_factory, rec
             node.pop("text")
             break
         node = node.get("message")
-    out = replay_mod.live_rows(items_for(row), [row], session_factory=session_factory, max_calls=5, max_usd=5)
+    out = replay_mod.live_rows(items_for(row), [row], session_factory=session_factory, max_calls=5, max_usd=5, require_key_last4=LAST4)
     assert out[0].get("skipped") == "no_text_slot"
 
 
@@ -308,7 +322,7 @@ def test_recorded_prompt_overrides_and_result_set_keys_are_stripped(session_fact
     row = copy.deepcopy(recorded)
     row["envelope"]["prompt_overrides"] = {"parser": "some-version"}
     row["envelope"]["referenced_result_set"] = {"rows": [1]}
-    replay_mod.live_rows(items_for(row), [row], session_factory=session_factory, max_calls=5, max_usd=5)
+    replay_mod.live_rows(items_for(row), [row], session_factory=session_factory, max_calls=5, max_usd=5, require_key_last4=LAST4)
     extras = live_env["envelopes"][0].model_extra or {}
     assert "prompt_overrides" not in extras and "referenced_result_set" not in extras
 
@@ -366,10 +380,70 @@ def test_embeddings_use_their_own_bucket_and_do_not_consume_max_calls(session_fa
     def embed_then_chat(config, user_block):
         for _ in range(3):
             embedding_worker._embed_text_chunks(["x"])
-        llm_provider.OpenAIProvider.chat(object(), [{"role": "user", "content": "x"}], model="gpt-5.4-mini")
+        llm_provider.OpenAIProvider.chat(_Keyed(), [{"role": "user", "content": "x"}], model="gpt-5.4-mini")
         return _parser_output()
 
     monkeypatch.setattr(parser_mod, "parse", embed_then_chat)
     out = go(session_factory, recorded, n=1, max_calls=1)[0]
     assert "stopped" not in out and "turn" in out, out
     assert out["usage"]["embed_calls"] >= 3 and out["usage"]["calls"] == 1
+
+
+# ------------------------------------------------------------------ review round 5 (only the dev key may spend)
+def test_cli_live_without_require_key_last4_exits_2(tmp_path, session_factory, recorded, live_env):
+    items = tmp_path / "items.jsonl"
+    items.write_text(json.dumps(items_for(recorded)[0]) + "\n")
+    rec = tmp_path / "recorded.jsonl"
+    rec.write_text(json.dumps(recorded) + "\n")
+    with pytest.raises(SystemExit) as exc:
+        replay_mod.main(["live", "--items", str(items), "--recorded", str(rec), "--out", str(tmp_path / "o.jsonl"),
+                         "--max-calls", "10", "--max-usd", "5"])
+    assert exc.value.code == 2
+
+
+def _go_with(session_factory, recorded_row, last4, n=2):
+    return replay_mod.live_rows(items_for(recorded_row, n), [recorded_row], session_factory=session_factory,
+                                max_calls=50, max_usd=10.0, require_key_last4=last4)
+
+
+def test_a_provider_key_that_does_not_match_never_reaches_the_real_chat(session_factory, recorded, live_env, monkeypatch):
+    real_calls = []
+    monkeypatch.setattr(llm_provider.OpenAIProvider, "chat", lambda self, messages, **kw: real_calls.append(1) or
+                        llm_provider.ChatResult(content="{}", prompt_tokens=1, completion_tokens=1, total_tokens=2,
+                                                cached_tokens=0))
+    out = _go_with(session_factory, recorded, WRONG_LAST4)
+    assert real_calls == [], "a model call went out on a key that is not the dev key"
+    assert out[0].get("stopped") == "wrong_key"
+    assert out[1].get("stopped") == "wrong_key"
+
+
+def test_an_embedding_key_that_does_not_match_never_reaches_the_real_embed(session_factory, recorded, live_env, monkeypatch):
+    from app.config import settings
+    from app.services import embedding_worker
+
+    real_embeds = []
+    monkeypatch.setattr(embedding_worker, "_embed_text_chunks", lambda chunks: real_embeds.append(1) or [[0.0]])
+    monkeypatch.setattr(settings, "openai_api_key", "sk-synthetic-other-key-QQQQ")
+
+    def parse_embeds(config, user_block):
+        embedding_worker._embed_text_chunks(["x"])
+        return _parser_output()
+
+    monkeypatch.setattr(parser_mod, "parse", parse_embeds)
+    out = _go_with(session_factory, recorded, LAST4)
+    assert real_embeds == [], "an embedding call went out on a key that is not the dev key"
+    assert out[0].get("stopped") == "wrong_key"
+
+
+def test_a_matching_key_runs_the_item_with_no_stop(session_factory, recorded, live_env):
+    out = _go_with(session_factory, recorded, LAST4, n=1)
+    assert "turn" in out[0] and "stopped" not in out[0]
+
+
+def test_the_key_never_appears_in_output_rows_or_printed_lines(session_factory, recorded, live_env, monkeypatch, capsys):
+    ok = _go_with(session_factory, recorded, LAST4, n=1)
+    bad = _go_with(session_factory, recorded, WRONG_LAST4, n=1)
+    cap = capsys.readouterr()
+    assert KEY not in json.dumps(ok, default=str) + json.dumps(bad, default=str)
+    assert KEY not in cap.out + cap.err
+    assert LAST4 not in json.dumps(bad, default=str).replace("wrong_key", "")
