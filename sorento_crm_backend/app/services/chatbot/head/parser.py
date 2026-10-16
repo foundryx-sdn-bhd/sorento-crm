@@ -110,9 +110,11 @@ def _build_json_schema() -> dict[str, Any]:
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "message_type": {"type": "string"},
             "intent_hint": string_or_null,
             "domain_hint": string_or_null,
+            # Written after the two hints it is derived from (prompt v94): the model
+            # emits keys in schema order.
+            "message_type": {"type": "string"},
             "scope_intent": string_or_null,
             "is_affirmative": {"type": ["boolean", "null"]},
             "user_goal": string_or_null,
