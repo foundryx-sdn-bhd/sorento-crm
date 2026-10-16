@@ -194,3 +194,68 @@ def test_replay_blocks_every_provider_chat_and_records_it():
             with pytest.raises(RuntimeError, match=f"llm_blocked: provider.{name}"):
                 cls.chat(object())
     assert {m.get("llm_blocked") for m in misses} >= {f"provider.{n}" for n in classes}
+
+
+@pytest.fixture()
+def no_real_network(monkeypatch):
+    """Safety net UNDER the replay guard: nothing here may leave the machine, guard or no guard.
+
+    Non-local names resolve to a TEST-NET address and a non-local connect is recorded, then refused, so a
+    missing guard shows up as `reached` being non-empty instead of a packet.
+    """
+    import socket
+
+    reached: list = []
+    local = {"127.0.0.1", "localhost", "::1"}
+    real_connect, real_gai = socket.socket.connect, socket.getaddrinfo
+
+    def gai(host, *a, **k):
+        if host in local:
+            return real_gai(host, *a, **k)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("203.0.113.9", a[0] if a else 0))]
+
+    def connect(self, addr):
+        if addr[0] in local:
+            return real_connect(self, addr)
+        reached.append(addr[0])
+        raise OSError("sentinel: would have reached the network")
+
+    monkeypatch.setattr(socket, "getaddrinfo", gai)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    return reached
+
+
+def _blocked_text(call):
+    try:
+        call()
+    except (RuntimeError, OSError) as exc:
+        return str(exc)
+    return None
+
+
+def test_replay_blocks_non_local_network_and_allows_localhost(no_real_network):
+    import socket
+
+    misses: list = []
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    port = server.getsockname()[1]
+    try:
+        with replay_mod._patched({}, misses):
+            t1 = _blocked_text(lambda: socket.create_connection(("api.openai.com", 443), timeout=1))
+            raw = socket.socket()
+            try:
+                t2 = _blocked_text(lambda: raw.connect(("8.8.8.8", 53)))
+            finally:
+                raw.close()
+            local = socket.create_connection(("127.0.0.1", port), timeout=1)  # the DB path must keep working
+            local.close()
+    finally:
+        server.close()
+    assert t1 and t1.startswith("network_blocked:"), t1
+    assert t2 and t2.startswith("network_blocked:"), t2
+    assert no_real_network == [], "a connect got past the replay guard"
+    hosts = {m.get("network_blocked") for m in misses}
+    assert {"api.openai.com", "8.8.8.8"} <= hosts
+    assert "127.0.0.1" not in hosts
