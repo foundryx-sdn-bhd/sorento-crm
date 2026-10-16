@@ -740,11 +740,6 @@ export function OrderQtyLedger({
   };
   // Editing a location re-applies immediately, exactly as the forecast input does: the
   // input IS the edit, there is no separate Record step in this ledger (UAC B4).
-  const sourceRules = (warehouseId: string) => ({
-    min: 0,
-    max: maxSourceEdit(cover, warehouseId, sourceEdits),
-    integer: true,
-  });
   const changeSource = (warehouseId: string, figure: number) => {
     const edits = { ...sourceEdits, [warehouseId]: figure };
     setSourceEdits(edits);

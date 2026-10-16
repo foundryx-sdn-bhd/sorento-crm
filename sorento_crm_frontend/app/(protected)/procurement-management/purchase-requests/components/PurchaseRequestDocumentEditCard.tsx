@@ -154,7 +154,7 @@ export function PurchaseRequestDocumentEditCard({
                     className="h-8 w-24"
                   />
                 </FormControl>
-                <FormMessage />
+                <FormMessage className="whitespace-normal break-words" />
               </FormItem>
             )}
           />

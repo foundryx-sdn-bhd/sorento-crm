@@ -400,6 +400,12 @@ export function SpoPlannerTable({
    */
   const stateRef = useRef(state);
   stateRef.current = state;
+  /** A send (Create SPO / Save changes) was refused on a quantity box: from then on the boxes
+   *  show their sentence, live, until every figure is usable. Read by the cells through a ref
+   *  for the same reason as `stateRef`. */
+  const [qtyRefused, setQtyRefused] = useState(false);
+  const qtyRefusedRef = useRef(qtyRefused);
+  qtyRefusedRef.current = qtyRefused;
   /** Which lines have their destinations open (R22). Closed to start with: the table is a
    *  ranked reading first, and every row open turns it into a form. */
   const [expanded, setExpanded] = useState<ExpandedState>({});
@@ -668,8 +674,12 @@ export function SpoPlannerTable({
     return !ln.cannot_convert && (st.qtyText !== undefined || st.splits.some((sp) => sp.qtyText !== undefined));
   });
   const sendIfUsable = (send: () => void) => {
-    // The refused boxes already show their sentence (blank or negative is told at once).
-    if (hasUnusableQty) return;
+    // A refused send is what makes the boxes tell their sentence; nothing is said while typing.
+    if (hasUnusableQty) {
+      setQtyRefused(true);
+      return;
+    }
+    setQtyRefused(false);
     send();
   };
 
@@ -772,7 +782,7 @@ export function SpoPlannerTable({
           : 'h-8 w-24 tabular-nums'
       }
       value={stateFor(ln).qtyText ?? qtyFor(ln)}
-      error={quantityMessage(stateFor(ln).qtyText)}
+      error={qtyRefusedRef.current ? quantityMessage(stateFor(ln).qtyText) : undefined}
       disabled={ln.cannot_convert}
       aria-label="SPO qty"
       // A test hook, not a live tooltip (the `title` this used to carry was the explanatory
@@ -1204,6 +1214,7 @@ export function SpoPlannerTable({
               qty={qtyFor(ln)}
               disabled={cannotSplit(ln)}
               mismatch={splitMismatchRef.current.has(ln.shipment_line_id)}
+              showQtyMessage={qtyRefusedRef.current}
               onChange={(next) => setSplits(ln, next)}
             />
           ),
@@ -1473,7 +1484,7 @@ export function SpoPlannerTable({
               disabled={
                 // S5: an SPO cannot be emptied by a revision - Delete is the action for
                 // that, and the server refuses it (422) for the same reason.
-                !includedCount ||
+                (!includedCount && !hasUnusableQty) ||
                 splitMismatch.size > 0 ||
                 soTakeMismatch.size > 0 ||
                 takesWithoutLocation.size > 0 ||
@@ -1497,7 +1508,7 @@ export function SpoPlannerTable({
             // to confirm - no review dialog.
             onClick={() => sendIfUsable(() => create.mutate(confirmLines))}
             disabled={
-              !includedCount ||
+              (!includedCount && !hasUnusableQty) ||
               splitMismatch.size > 0 ||
               soTakeMismatch.size > 0 ||
               takesWithoutLocation.size > 0 ||
@@ -1767,6 +1778,7 @@ function LocationSplitPanel({
   qty,
   disabled,
   mismatch,
+  showQtyMessage,
   onChange,
 }: {
   line: SpoSuggestionLine;
@@ -1775,6 +1787,7 @@ function LocationSplitPanel({
   disabled: boolean;
   mismatch: boolean;
   /** A send was refused on a quantity: the boxes now show their message. */
+  showQtyMessage: boolean;
   onChange: (splits: SplitState[]) => void;
 }) {
   const options = line.location_options.map((o: SpoLocationOption) => ({
@@ -1846,7 +1859,7 @@ function LocationSplitPanel({
                         className="h-8 w-20 tabular-nums"
                         aria-label={`Quantity for destination ${i + 1}`}
                         value={split.qtyText ?? split.qty}
-                        error={quantityMessage(split.qtyText)}
+                        error={showQtyMessage ? quantityMessage(split.qtyText) : undefined}
                         errorClassName="w-24 whitespace-normal"
                         onChange={(e) => {
                           const text = e.target.value;

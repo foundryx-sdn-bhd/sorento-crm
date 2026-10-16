@@ -57,10 +57,10 @@ interface PlacementRow {
  *  while the invoice is still loading. */
 const NO_ROWS: PlacementRow[] = [];
 
-/** Quantity to place is required, above 0 and no more than what is left. Untouched = the default. */
+/** Quantity to place is required, 0 or more (0 holds the line back) and no more than what is left. Untouched = the default. */
 function placeError(line: { remaining_qty?: number | null }, raw: string | undefined): string | undefined {
   if (raw === undefined) return undefined;
-  return numberFieldError(raw, { min: 0, minExclusive: true, max: line.remaining_qty ?? 0 });
+  return numberFieldError(raw, { min: 0, max: line.remaining_qty ?? 0 });
 }
 
 export function ConvertToPackingListDialog({

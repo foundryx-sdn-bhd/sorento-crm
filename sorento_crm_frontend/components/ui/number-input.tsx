@@ -19,6 +19,19 @@ type NumberInputProps = Omit<InputProps, 'type' | 'value' | 'onChange'> & {
   errorClassName?: string;
 };
 
+function withNaNValue(e: React.ChangeEvent<HTMLInputElement>): React.ChangeEvent<HTMLInputElement> {
+  const read = (obj: object, key: string | symbol, special?: unknown) => {
+    const v = Reflect.get(obj, key, obj);
+    return typeof v === 'function' ? v.bind(obj) : special !== undefined ? special : v;
+  };
+  const target = new Proxy(e.target, {
+    get: (t, key) => read(t, key, key === 'value' ? 'NaN' : undefined),
+  });
+  return new Proxy(e, {
+    get: (t, key) => (key === 'target' || key === 'currentTarget' ? target : read(t, key)),
+  });
+}
+
 /**
  * The one number field. Holds what the operator typed (empty and partial drafts
  * included) and never rewrites it; the screen checks the final value on save.
@@ -38,13 +51,20 @@ function NumberInput({ value, onValueChange, onChange, error, errorClassName, cl
     setDraft(external === null ? '' : String(external));
   }
 
-  const shown = numeric ? draft : value === null ? '' : value;
+  // 'NaN' is what a screen stores for bad input: never write it into the box, so the typed text stays.
+  const shown = numeric ? draft : value === null || value === 'NaN' ? '' : value;
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (numeric) {
       const raw = e.target.value;
       setDraft(raw);
       // A type=number box reports '' for bad input ("1e"): that is invalid, not "no value".
       onValueChange?.(e.target.validity?.badInput ? NaN : parseNumberDraft(raw));
+    }
+    if (!numeric && onChange) {
+      // String mode: a box the browser flags as bad input reads '' ("1e"), which a screen would
+      // take as "no value". Hand it the string 'NaN' instead (invalid in numberFieldError).
+      onChange(e.target.validity?.badInput ? withNaNValue(e) : e);
+      return;
     }
     onChange?.(e);
   };
@@ -98,6 +118,7 @@ function LiveNumberInput({ value, onCommit, onClear, rules, onBlur, onValidityCh
   const [draft, setDraft] = React.useState<string>(value === null ? '' : String(value));
   const [bad, setBad] = React.useState(false);
   const [show, setShow] = React.useState(false);
+  const [touched, setTouched] = React.useState(false);
   const [seen, setSeen] = React.useState<number | null>(value);
   if (value !== seen) {
     setSeen(value);
@@ -105,6 +126,7 @@ function LiveNumberInput({ value, onCommit, onClear, rules, onBlur, onValidityCh
       setDraft(value === null ? '' : String(value));
       setBad(false);
       setShow(false);
+      setTouched(false);
     }
   }
   const check = bad ? NaN : draft;
@@ -115,13 +137,14 @@ function LiveNumberInput({ value, onCommit, onClear, rules, onBlur, onValidityCh
       value={draft}
       error={show || showMessage ? message : undefined}
       onBlur={(e) => {
-        if (message) setShow(true);
+        if (message && touched) setShow(true);
         onBlur?.(e);
       }}
       onChange={(e) => {
         const raw = e.target.value;
         const isBad = Boolean(e.target.validity?.badInput);
         setDraft(raw);
+        setTouched(true);
         setBad(isBad);
         const problem = numberFieldError(isBad ? NaN : raw, rules);
         onValidityChange?.(!problem);

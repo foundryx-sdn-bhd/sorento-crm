@@ -56,7 +56,8 @@ export const clearanceSchema = z.object({
   coa_permit_no: z.string().optional(),
   // Empty string when cleared, so coerce would turn "" into 0 - a real "0 free
   // days" and "not recorded" must stay distinguishable.
-  free_days_available: z.union([z.literal(''), z.coerce.number().int({ message: FREE_DAYS_SENTENCE }).min(0, { message: FREE_DAYS_SENTENCE })]).optional(),
+  // 'NaN' is what NumberInput hands a screen for bad input ("5-"): refused with the sentence.
+  free_days_available: z.union([z.literal(''), z.literal('NaN').refine(() => false, { message: FREE_DAYS_SENTENCE }), z.coerce.number().int({ message: FREE_DAYS_SENTENCE }).min(0, { message: FREE_DAYS_SENTENCE })]).optional(),
 });
 
 export type ClearanceSchemaType = z.infer<typeof clearanceSchema>;

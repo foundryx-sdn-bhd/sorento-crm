@@ -383,6 +383,11 @@ function lineAmount(
 }
 
 /** A quantity cell's text: the figure, or "-" while the qty is blank or invalid. */
+/** An edit-session qty that is blank or unusable (below 0) is pending ("-"), never a figure. */
+function qtyIsPending(raw: string): boolean {
+  return numberFieldError(raw, { min: 0 }) !== undefined;
+}
+
 function fmtQtyCell(value: number | null): string {
   return value === null ? '-' : fmtInt(value);
 }
@@ -641,10 +646,10 @@ export function SalesOrderDetail({
       if (!isEditing && row.outstanding_qty !== undefined && row.outstanding_qty !== null) {
         return row.outstanding_qty;
       }
-      const ordered = isEditing
-        ? parseNumberDraft(draftOrRow(lineDrafts, row).qty_ordered)
-        : Number(row.qty_ordered);
+      const draftQty = draftOrRow(lineDrafts, row).qty_ordered;
       // A blank or invalid draft qty is pending ("-"), never 0.
+      if (isEditing && qtyIsPending(draftQty)) return null;
+      const ordered = isEditing ? parseNumberDraft(draftQty) : Number(row.qty_ordered);
       if (ordered === null || !Number.isFinite(ordered)) return null;
       return Math.max(ordered - Number(row.qty_delivered), 0);
     },
@@ -659,7 +664,7 @@ export function SalesOrderDetail({
         );
       }
       const draft = draftOrRow(lineDrafts, row);
-      if (parseNumberDraft(draft.qty_ordered) === null) return null;
+      if (qtyIsPending(draft.qty_ordered)) return null;
       // The stated `line_total` is what the source document charged, so it wins - until one
       // of the figures it was charged ON is edited, at which point it no longer describes
       // what is on the screen and the arithmetic does.
@@ -751,6 +756,7 @@ export function SalesOrderDetail({
     () =>
       countedLines.reduce<number | null>((sum, l) => {
         if (sum === null) return null;
+        if (isEditing && qtyIsPending(draftOrRow(lineDrafts, l).qty_ordered)) return null;
         const qty = isEditing
           ? parseNumberDraft(draftOrRow(lineDrafts, l).qty_ordered)
           : Number(l.qty_ordered);
@@ -775,7 +781,7 @@ export function SalesOrderDetail({
     // A blank qty on any counted line makes the total pending, not a sum that skips it.
     if (
       isEditing &&
-      countedLines.some((l) => parseNumberDraft(draftOrRow(lineDrafts, l).qty_ordered) === null)
+      countedLines.some((l) => qtyIsPending(draftOrRow(lineDrafts, l).qty_ordered))
     ) {
       return null;
     }

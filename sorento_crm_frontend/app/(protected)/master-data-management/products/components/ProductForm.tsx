@@ -118,7 +118,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
       chatbot_eta_offset_days: null,
       base_uom_id: '',
     },
-    mode: 'onTouched',
+    mode: 'onSubmit',
   });
 
   // The category the form currently has selected, refetched in full (the select

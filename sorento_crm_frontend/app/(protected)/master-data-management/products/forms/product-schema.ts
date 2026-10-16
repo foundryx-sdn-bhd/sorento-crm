@@ -1,9 +1,6 @@
 import { z } from 'zod';
-import { requiredNumber } from '@/lib/number-field-schema';
+import { nullableNumber, requiredNumber } from '@/lib/number-field-schema';
 import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
-
-// The shared sentence for an optional whole count (zero or more).
-const COUNT_OR_BLANK = numberFieldError(-1, { min: 0, integer: true, optional: true }) as string;
 
 // An optional number: blank is "not set" (null), never 0. A typed figure outside the range
 // keeps `message`; anything else unreadable gets the shared sentence.
@@ -76,8 +73,8 @@ export const ProductSchema = z.object({
   // input (which ProductForm's onChange already turns into null, never '')
   // stays null instead of coercing to 0 (R2: unset must stay unset so the
   // category can inherit).
-  chatbot_max_qty: z.coerce.number().int({ message: COUNT_OR_BLANK }).min(0, { message: COUNT_OR_BLANK }).nullable(),
-  chatbot_eta_offset_days: z.coerce.number().int({ message: COUNT_OR_BLANK }).min(0, { message: COUNT_OR_BLANK }).nullable(),
+  chatbot_max_qty: nullableNumber({ min: 0, integer: true }),
+  chatbot_eta_offset_days: nullableNumber({ min: 0, integer: true }),
 
   // Tab 4: Unit of Measure
   base_uom_id: z.string().uuid({ message: 'Base unit of measure is required.' }),

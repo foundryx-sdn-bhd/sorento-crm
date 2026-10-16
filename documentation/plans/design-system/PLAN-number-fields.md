@@ -1,6 +1,6 @@
 # PLAN: NUMBER-FIELDS
 
-Status: Build (size M, full track: frontend only, no migration, no auth change). Lane NUMBER-FIELDS, branch
+Status: Build (size M, full track: frontend plus backend write-schema validators, no migration, no auth change). Lane NUMBER-FIELDS, branch
 `crew/number-fields`. Behaviour card answered 17 Oct (crew, from owner standing rules): Q1-Q5 all (a); no
 owner mock review needed (reuses existing components + wording). SO blank-qty-cancels case goes first.
 

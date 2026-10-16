@@ -79,7 +79,7 @@ import type {
 } from '../../../types/scm.types';
 import BackToList from '@/components/common/BackToList';
 import { codeWithName, distinctName } from '@/lib/product-display';
-import { numberFieldError } from '@/lib/number-field';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { useStableColumns } from '@/hooks/useStableColumns';
 
 /**
@@ -229,6 +229,19 @@ function draftOrRow(
  * footer and the header total cannot disagree - and `null` rather than 0 when nobody priced
  * it, because an unpriced line is not a line worth nothing.
  */
+/** Qty ordered must be above 0 (the server refuses a zero or blank line). */
+const QTY_ORDERED_RULES = { min: 0, minExclusive: true } as const;
+
+/** An edit-session qty that is blank or unusable is pending ("-"), never 0. */
+function qtyIsPending(raw: string): boolean {
+  return numberFieldError(raw, QTY_ORDERED_RULES) !== undefined;
+}
+
+/** A quantity cell: the figure, or "-" while the figure is pending. */
+function fmtQtyCell(value: number | null): string {
+  return value === null ? '-' : fmtInt(value);
+}
+
 function lineAmount(
   qty: string,
   unitPrice: string,
@@ -299,6 +312,8 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
   const [expectedDate, setExpectedDate] = useState('');
   const [lineDrafts, setLineDrafts] = useState<Record<string, LineDraft>>({});
   const [error, setError] = useState<string | null>(null);
+  // Set by a refused Save; from then on each quantity box re-checks itself live.
+  const [showQtyErrors, setShowQtyErrors] = useState(false);
   // Which LINE's "Placed" figure was pressed (R5, AC-L1) - one dialog for the whole grid,
   // replacing the "Allocated to" card that used to sit under it (AC-L3).
   const [placementsLineId, setPlacementsLineId] = useState<string | null>(null);
@@ -315,12 +330,14 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
     setLineDrafts(drafts);
     originalLineSignatureRef.current = lineSignature(po.lines.map(seedDraft));
     setError(null);
+    setShowQtyErrors(false);
     setIsEditing(true);
   };
 
   const cancelEdit = () => {
     setIsEditing(false);
     setError(null);
+    setShowQtyErrors(false);
   };
 
   // `?edit=1` opens the session on arrival, so a bookmarked link lands in the same place a
@@ -380,9 +397,9 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
       if (!isEditing && row.outstanding_qty !== undefined && row.outstanding_qty !== null) {
         return row.outstanding_qty;
       }
-      const ordered = isEditing
-        ? Number(draftOrRow(lineDrafts, row).qty_ordered)
-        : Number(row.qty_ordered);
+      const draftQty = draftOrRow(lineDrafts, row).qty_ordered;
+      if (isEditing && qtyIsPending(draftQty)) return null;
+      const ordered = isEditing ? (parseNumberDraft(draftQty) as number) : Number(row.qty_ordered);
       if (!Number.isFinite(ordered)) return 0;
       // The received figure on screen is net of an AutoCount Cancel PO; the cancelled qty
       // is not coming either, so it is added back before the subtraction (AC-CONSIGN-CRM).
@@ -400,6 +417,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         );
       }
       const draft = draftOrRow(lineDrafts, row);
+      if (qtyIsPending(draft.qty_ordered)) return null;
       // The stated `line_total` is what the supplier's document charged, so it wins - until
       // one of the figures it was charged ON is edited, at which point it no longer
       // describes what is on the screen and the arithmetic does.
@@ -416,7 +434,9 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
 
   const qtyOrderedTotal = useMemo(
     () =>
-      lines.reduce((sum, l) => {
+      lines.reduce<number | null>((sum, l) => {
+        if (sum === null) return null;
+        if (isEditing && qtyIsPending(draftOrRow(lineDrafts, l).qty_ordered)) return null;
         const qty = isEditing
           ? Number(draftOrRow(lineDrafts, l).qty_ordered)
           : Number(l.qty_ordered);
@@ -429,7 +449,11 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
     [lines],
   );
   const outstandingTotal = useMemo(
-    () => lines.reduce((sum, l) => sum + outstandingOf(l), 0),
+    () =>
+      lines.reduce<number | null>((sum, l) => {
+        const out = outstandingOf(l);
+        return sum === null || out === null ? null : sum + out;
+      }, 0),
     [lines, outstandingOf],
   );
 
@@ -451,9 +475,11 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
   );
 
   const amountTotal = useMemo(() => {
+    // A blank or unusable qty on any line makes the total pending, not a sum that skips it.
+    if (isEditing && lines.some((l) => qtyIsPending(draftOrRow(lineDrafts, l).qty_ordered))) return null;
     const amounts = lines.map(amountOf).filter((a): a is string => a !== null);
     return amounts.length ? sumMoney(amounts) : null;
-  }, [lines, amountOf]);
+  }, [lines, amountOf, isEditing, lineDrafts]);
 
   /** The money cell's text, in the order's own currency: the figure, or a plain "-" for a
    *  line nobody priced. */
@@ -534,6 +560,11 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                 min={0}
                 aria-label={`Qty ordered on ${row.original.sku}`}
                 value={draft?.qty_ordered ?? String(row.original.qty_ordered)}
+                error={
+                  showQtyErrors
+                    ? numberFieldError(draft?.qty_ordered ?? String(row.original.qty_ordered), QTY_ORDERED_RULES)
+                    : undefined
+                }
                 onChange={(e) =>
                   setLineDrafts((prev) => ({
                     ...prev,
@@ -551,7 +582,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         },
         size: 130,
         // One `td` per column, so the sum sits UNDER the column it sums and needs no label.
-        footer: () => fmtInt(qtyOrderedTotal),
+        footer: () => fmtQtyCell(qtyOrderedTotal),
         meta: {
           headerTitle: 'Qty ordered',
           headerClassName: 'text-right',
@@ -610,9 +641,9 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
             0,
           ),
         header: ({ column }) => <DataGridColumnHeader title="Outstanding qty" column={column} />,
-        cell: ({ row }) => fmtInt(outstandingOf(row.original)),
+        cell: ({ row }) => fmtQtyCell(outstandingOf(row.original)),
         size: 140,
-        footer: () => fmtInt(outstandingTotal),
+        footer: () => fmtQtyCell(outstandingTotal),
         meta: {
           headerTitle: 'Outstanding qty',
           headerClassName: 'text-right',
@@ -885,6 +916,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
     [
       isEditing,
       lineDrafts,
+      showQtyErrors,
       warehouseSelectOptions,
       uomSelectOptions,
       outstandingOf,
@@ -980,7 +1012,8 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         ...(draft ?? {}),
       };
     });
-    if (cleanedLines.some((l) => !l.sku || !(Number(l.qty_ordered) > 0))) {
+    if (cleanedLines.some((l) => qtyIsPending(l.qty_ordered))) setShowQtyErrors(true);
+    if (cleanedLines.some((l) => !l.sku || qtyIsPending(l.qty_ordered))) {
       return setError('Every line needs a product and a quantity above zero.');
     }
     // The price and discount may stay blank (blank clears the figure), but a typed one is
@@ -1229,11 +1262,11 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
             <section aria-label="Totals" className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
               {/* A dash, never RM 0.00, for an order nobody priced. */}
               <Field label="Total amount">{fmtMoneyCell(amountTotal)}</Field>
-              <Field label="Total qty">{fmtInt(qtyOrderedTotal)}</Field>
+              <Field label="Total qty">{fmtQtyCell(qtyOrderedTotal)}</Field>
               {/* ALWAYS shown, even when it equals the total. On a wholly outstanding order
                   the two agree, and a reader who cannot see the figure at all has to work
                   out from its absence that nothing has arrived. */}
-              <Field label="Outstanding qty">{fmtInt(outstandingTotal)}</Field>
+              <Field label="Outstanding qty">{fmtQtyCell(outstandingTotal)}</Field>
               <Field label="Lines">{fmtInt(lineCount)}</Field>
             </section>
           </Card>
@@ -1319,8 +1352,8 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                 </div>
               ) : qtyReceivedTotal > 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  {fmtInt(qtyReceivedTotal)} of {fmtInt(qtyOrderedTotal)} received.{' '}
-                  {fmtInt(outstandingTotal)} still to arrive.
+                  {fmtInt(qtyReceivedTotal)} of {fmtQtyCell(qtyOrderedTotal)} received.{' '}
+                  {fmtQtyCell(outstandingTotal)} still to arrive.
                 </p>
               ) : (
                 // No CTA back to the list: the Create GR button that lived there is gone,

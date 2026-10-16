@@ -5,7 +5,7 @@ export const QUANTITY_RULES = { min: 0, minExclusive: true } as const;
 
 /** Accepts number or string (e.g. from API or input) so "Expected number, received string" is avoided. */
 const quantitySchema = z
-  .union([z.number(), z.string()])
+  .union([z.number(), z.nan(), z.string()])
   .optional()
   .nullable();
 
