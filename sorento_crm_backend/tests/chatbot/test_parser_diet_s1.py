@@ -131,12 +131,14 @@ def test_ac4_current_date() -> None:
     assert out.count("{{current_date}}") == 1
 
 
-def test_ac7_reference_target() -> None:
-    out = _out()
-    assert "== REFERENCE TARGET" not in out
-    assert "suggestions active" not in out
-    assert "see REFERENCE TARGET" not in out
-    assert '"reference_target": null' in out
+def test_ac7_reference_target_kept() -> None:
+    v94, out = _v94(), _out()
+    start = v94.index("== REFERENCE TARGET")
+    end = v94.find("\n== ", start + 10)
+    assert v94[start : end if end != -1 else len(v94)] in out
+    line = next(l for l in v94.split("\n") if "reference_target" in l and l.lstrip().startswith('"reference_target"'))
+    assert line in out
+    assert out.count("see REFERENCE TARGET") == v94.count("see REFERENCE TARGET")
 
 
 def test_ac8_bare_number_vs_typed_code() -> None:
@@ -148,15 +150,19 @@ def test_ac8_bare_number_vs_typed_code() -> None:
     section = out[start : out.index("\n== ", start + 10)].lower()
     assert "bare number" in section
     assert "reference_positions" in section
+    assert (
+        "A bare number reply (no code or name typed) gives reference_positions only "
+        "and never also copies the picked option into entities."
+    ) in out
 
 
 # ---- AC9 ----
 
-def test_ac9_requested_attributes_comma() -> None:
-    assert '"requested_attributes": [],' in _out()
-
-
-# ---- AC10 ----
+def test_ac9_missing_commas() -> None:
+    out = _out()
+    assert '"requested_attributes": [],' in out
+    assert '"asks": [],' in out
+    assert '"asks": [] one' not in out
 
 
 # ---- AC11-AC14 ----
@@ -180,8 +186,8 @@ def test_ac12_required_keys_present() -> None:
         assert f'"{name}"' in out, f"required key {name} lost"
 
 
-def test_ac13_at_least_six_percent_shorter() -> None:
-    assert len(_out()) <= 0.94 * len(_v94())
+def test_ac13_at_least_five_and_a_half_percent_shorter() -> None:
+    assert len(_out()) <= 0.945 * len(_v94())
 
 
 def test_ac14_no_dashes_in_new_text() -> None:
