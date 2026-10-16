@@ -326,8 +326,13 @@ def apply_settings(
             {"label": i["label"], "tags": i["conflict_tags"]} for i in items if i["conflict"]
         ]
         todo, not_applied = [], []
+        # Stock / spec are one row per contact: a conflict inside the section holds the whole section back.
+        held_back = {i["section"] for i in items if i["conflict"] and i["section"] in ("stock_visibility", "spec_visibility")}
         for i in items:
             if i["conflict"] or not i["differs"]:
+                continue
+            if i["section"] in held_back:
+                not_applied.append({"label": i["label"], "reason": "Held back: another setting in this group has a conflict."})
                 continue
             if _can_write(i["section"], can, is_superadmin):
                 todo.append(i)
@@ -335,22 +340,7 @@ def apply_settings(
                 word = _GATE_WORDS.get(i["section"], i["section"])
                 not_applied.append({"label": i["label"], "reason": f"You may not change {word} settings."})
         changes = [_change(cat, i) for i in todo]
-        # A deny the contact already reads as (no grant row) is stored as an explicit row, so a
-        # later grant by hand cannot silently undo it. Silent: it changes no value, so no change row.
-        explicit = [
-            i for i in items
-            if i["section"] == "agents" and not i["conflict"] and not i["differs"] and i["_raw"]["expected"] is False
-            and _can_write("agents", can, is_superadmin) and not _has_deny_row(db, contact, i["key"])
-        ]
         if not todo:
-            if explicit and not dry_run:
-                savepoint = db.begin_nested()
-                try:
-                    _w_agents(db, contact, explicit, actor_id)
-                    savepoint.commit()
-                except Exception as exc:  # noqa: BLE001
-                    savepoint.rollback()
-                    logger.warning("explicit deny for contact %s failed: %s", cid, exc, exc_info=True)
             results.append(_row(cid, label, "unchanged", conflicts=conflicts, not_applied=not_applied))
             continue
         if not dry_run:
@@ -374,26 +364,6 @@ def apply_settings(
         counts[r["status"]] += 1
     counts["conflicts"] = sum(len(r["conflicts"]) for r in results)
     return {"dry_run": dry_run, "results": results, "counts": counts}
-
-
-def _has_deny_row(db: Session, contact, agent_id: str) -> bool:
-    from sqlalchemy import or_
-
-    from app.models.access import ContactAgentAccess as A
-
-    return (
-        db.query(A.id)
-        .filter(
-            A.agent_id == agent_id,
-            A.is_allowed.is_(False),
-            or_(
-                A.respond_contact_id == str(contact.id),
-                A.respond_contact_id.is_(None) & (A.respond_contact_phone == contact.phone_number),
-            ),
-        )
-        .first()
-        is not None
-    )
 
 
 def _audit(db: Session, contact_id: str, actor_id: Optional[str], todo: list[dict]) -> None:

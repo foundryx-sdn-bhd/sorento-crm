@@ -327,6 +327,8 @@ def _v_stock(db, cat, section, value):
 
     if not isinstance(value, dict):
         raise _bad(section, "must be an object")
+    if value.get("warehouse_ids") is not None and value.get("excluded_warehouse_ids") is not None:
+        raise _bad(section, "set either the include list or the exclude list, not both")
     for k, v in value.items():
         if k not in _STOCK_KEYS:
             raise _bad(k, "unknown setting")
@@ -349,6 +351,8 @@ def _v_spec(db, cat, section, value):
 
     if not isinstance(value, dict):
         raise _bad(section, "must be an object")
+    if value.get("spec_keys") is not None and value.get("excluded_spec_keys") is not None:
+        raise _bad(section, "set either the show list or the hide list, not both")
     for k, v in value.items():
         if k not in _SPEC_KEYS:
             raise _bad(k, "unknown setting")
@@ -661,8 +665,32 @@ class _Reader:
         if cid not in self._agent_codes:
             from app.services.field_access import contact_agent_codes
 
-            self._agent_codes[cid] = contact_agent_codes(self.db, cid)
+            self._agent_codes[cid] = contact_agent_codes(self.db, cid) | self._legacy_codes(cid)
         return self._agent_codes[cid]
+
+    def _legacy_codes(self, cid: str) -> set[str]:
+        """Agents granted on a phone-only legacy row count as this contact's own grant."""
+        from datetime import datetime
+
+        from sqlalchemy import or_
+
+        from app.models.access import AccessAgent, ContactAgentAccess as A
+
+        now = datetime.utcnow()
+        rows = (
+            self.db.query(AccessAgent.code)
+            .join(A, A.agent_id == AccessAgent.id)
+            .filter(
+                A.respond_contact_id.is_(None),
+                A.respond_contact_phone == self.contacts[cid].phone_number,
+                A.is_allowed.is_(True),
+                AccessAgent.is_active.is_(True),
+                or_(A.valid_from.is_(None), A.valid_from <= now),
+                or_(A.valid_to.is_(None), A.valid_to >= now),
+            )
+            .all()
+        )
+        return {c for (c,) in rows}
 
     def _media(self, cid: str, key: str) -> Any:
         from app.services import media_access_service as m
@@ -771,18 +799,36 @@ def evaluate(
         for tag in tags:
             for section, key, value in leaves(tag):
                 groups.setdefault((section, key), []).append((tag, value))
+        # One rule per contact row: an include list on one tag against an exclude list on another
+        # cannot be stored, so it is a conflict naming both tags (the exclude group folds into it).
+        forced: dict[tuple[str, str], list[tuple[TagRef, Any, str]]] = {}
+        for sec, inc, exc in (
+            ("stock_visibility", "warehouse_ids", "excluded_warehouse_ids"),
+            ("spec_visibility", "spec_keys", "excluded_spec_keys"),
+        ):
+            if (sec, inc) in groups and (sec, exc) in groups:
+                forced[(sec, inc)] = [(t, v, inc) for t, v in groups[(sec, inc)]] + [
+                    (t, v, exc) for t, v in groups.pop((sec, exc))
+                ]
         items = []
         for (section, key), entries in sorted(
             groups.items(), key=lambda kv: (_SECTION_RANK[kv[0][0]], kv[0][1])
         ):
             if only_tags is not None and not any(t.id in only_tags for t, _ in entries):
                 continue
-            expected, conflict = _MERGE[_merge_kind(section, key)]([v for _, v in entries])
-            if conflict:
-                decided = []
+            if (section, key) in forced:
+                expected, conflict = None, True
+                conflict_tags = [
+                    {"name": t.name, "value": _display(cat, section, k, v)} for t, v, k in forced[(section, key)]
+                ]
+                entries = [(t, v) for t, v, _k in forced[(section, key)]]
+            else:
+                expected, conflict = _MERGE[_merge_kind(section, key)]([v for _, v in entries])
                 conflict_tags = [
                     {"name": t.name, "value": _display(cat, section, key, v)} for t, v in entries
-                ]
+                ] if conflict else []
+            if conflict:
+                decided = []
                 differs = True
                 current = reader.current(cid, section, key, cat)
             else:
