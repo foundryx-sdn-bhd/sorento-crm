@@ -1,8 +1,9 @@
 # PLAN: split one SO line into delivery tranches in Order Inquiries (OI-LINE-SPLIT)
 
-Status: Plan. Discovery done; behaviour card filed to crew (ask); Lavish mock next; build only after the owner OKs the mock. Size L (new interactive flow on the OI, likely a
-migration for tranche rows). Track: standard (L), lead pattern (tester red tests, coder, reviewer,
-security-reviewer only if auth/RBAC is touched, browser pass 1280/375).
+Status: Build (owner OK on mock v2, 16 Oct 23:47 "Ok proceed"). Track: full (L): migration, new
+endpoint with RBAC, engine change. Lead pattern: tester red tests, one coder (Opus: tangled engine in
+a 13k-line service), reviewer + security-reviewer, browser pass 1280/375. Stacked on #1748
+(OI Excel one sheet; merged into this branch at c1f8f57d8).
 
 Card: `oi-line-split-behaviour-card.md` (alongside, after discovery). UAC:
 `oi-line-split-16oct-acceptance-criteria.md` (after the card is answered). Mock:
@@ -39,51 +40,89 @@ delivery date + remark), before Confirm or inside Confirm.
   `ContextMenu`, `DatePicker`, `Badge`, `Kbd`; quotation lines grid pattern
   (`[projectId]/components/QuotationLinesGrid.tsx`).
 
-## Design draft (pending owner answers on Q1, Q2, Q4, Q5; BE = sorento_crm_backend/)
+## Build design (final)
 
-Storage (migration, company-scoped, UUID ids):
-- `projects.so_line_splits`: id, company_id, so_line_id (mirror `projects.sales_order_lines.id`, UNIQUE,
-  FK CASCADE), base_qty (the qty the split was made against), updated_by/at.
-  Keyed on the mirror line: OI rows, `buy_lines["line"]`, `_split_row` and planning-change
-  `project_line_id` all use it (`app/models/project_so.py:1011-1014`); it survives AutoCount re-sync
-  (in-place update by DtlKey, `app/services/document_ingest_service.py:1527-1594`). Not in the board
-  draft: drafts are deleted at Confirm (`app/services/project_supply_service.py:7425`).
-- `projects.so_line_split_tranches`: id, split_id (FK CASCADE), qty > 0, delivery_date, remark,
-  target_so_line_id (FK mirror, ON DELETE SET NULL; NULL = not in AutoCount yet; = origin = kept on
-  its own line). Save validates same SO, product and location.
-- Cancelled target line: hook `flag_rows_for_cancelled_lines` (`project_order_inquiry_service.py:738`)
-  to null the link.
+### Storage: one table, migration `ols_0001_so_line_splits` (down_revision = current head)
 
-Engine (the move, explicit links only):
-- New pre-pass `_apply_tranche_links` before `_apply_pure_splits` in `refresh_for_decision`
-  (`project_order_inquiry_service.py:1323`): moves each linked tranche's qty + placement links + ack
-  from the origin row to the target line's row via `_split_row` (no date rule inside it, :5428), with a
-  merge branch when the target already has a row, tranche qty instead of the target's Buy, previous_*
-  + changed ack when the date moves (as `_settle_row_in_place` :2522-2547), latest tranche first.
-  Keeps the pure split's single-live-ORDER / not-redirected / no-reserve-link guards; no date or
-  exact-sum rule. The normal netting then tells only what is left (the mock's "left to tell").
-- Planning-change apply: `_oi_demand_rows` drop = from - to - linked_out
-  (`planning_change_service.py:3889-3892`), else a false CANCEL BALANCE stays.
-- Both origin and target must be named in the same Confirm (pure split has the same limit, :5326-5332);
-  the panel's Save names both lines.
+`projects.so_line_splits` (CompanyScopedMixin, uuid `id`): `project_sales_order_id` (FK
+projects.sales_orders CASCADE), `so_line_id` = own/origin line (FK projects.sales_order_lines
+CASCADE), `seq` int, `qty` numeric(15,4) > 0, `delivery_date` date NULL (NULL iff `is_cancel`),
+`is_cancel` bool, `sits_on_line_id` (FK projects.sales_order_lines SET NULL; NULL = new line not in
+AutoCount yet; = own line for a cancel), `remark` text, `base_qty` numeric(15,4), `base_date` date
+NULL (the base the split was made against, same on every row of one origin), `created_by` /
+`updated_by` (users SET NULL), `created_at` / `updated_at`. Index (project_sales_order_id),
+(so_line_id). A line with no rows = not split. A sits-on line that is cancelled reads as NULL.
 
-Purchasing view (tranches as a read-only child view; `row.delivery_date` stays the line date so
-cascade windows and filters are unchanged):
-- Email: `_queue_saved_line` (:4530-4560), `handover_item` (:4229), `_build_handover_context`
-  (:12419), resend (`oi_handover_resend.py:86,109,194`); template sub-rows need migration oihr_0009.
-- Excel: `_all_rows` (`order_inquiry_worklist_service.py:3387-3409`) expands tranches, month sheets
-  follow; REMARK appended at the END of EXPORT_HEADINGS (:195-222; `tests/scm/test_oi_worksheet_writer.py`
-  pins the first 10).
-- Lines tab: `serialize_rows` (:6372/:6433) adds `tranches`.
+### API (router `BE/app/api/v1/projects/line_splits.py`, included in `projects/__init__.py`)
 
-Tests that pin today (must stay green): `tests/test_oi_cancel_bugs_so422492.py` (test_review_2_5_6
-:467 "a date move declines the split" stays true without stored links), `tests/scm/test_oi_email_so_line_changes.py`,
-`tests/test_oi_saved_line_email.py`, `tests/scm/test_oi_date_move_settle.py`, `tests/test_planning_changes.py`,
-`tests/test_oi_handover_excel.py`. Global guards: `tests/test_schema_uuid_id_principle.py`,
-`tests/test_list_pagination_limit.py`.
+- `GET /api/v1/project-sales/sales-orders/{pso_id}/line-splits` (VIEW `projects.projects.view`, api
+  key allowed) -> `{pso_id, so_number, customer, project, lines: [{line_id, line_no, item_code,
+  location, base_qty, base_date, now_qty, now_date, pending_change, delivered_qty, splits: [{id,
+  qty, delivery_date, is_cancel, sits_on_line_id, remark}]}]}`. Lines = the SO's open mirror lines
+  ordered by item_code, location, line_no. base = stored base when split; else the pending change's
+  `from` (qty, required_date) when a pending planning-change row exists for the line; else the
+  line's open qty and date. now = current mirror qty / delivery_date.
+- `PUT` same path (EDIT `projects.projects.edit` + `_assert_can_act_on`) body `{lines: [{line_id,
+  splits: [...]}]}`: replaces the splits of every named line in one transaction; a line with an
+  empty list or one split equal to its base on its own line and date with no remark = unsplit
+  (rows deleted). 422 (AppException, message names the line) when: sum != base, qty <= 0,
+  non-cancel without date, sits_on line not on this SO or different item/location, line not on this
+  SO. Returns the GET payload. Server owns base (client never sends it).
+- Company scoping by `CompanyScopedMixin`; SO loaded via `ProjectSupplyService(db).get_order`.
 
-Risks: origin and target not in the same Confirm; ack mix when merging into a row with another
-handshake; an unlinked late tranche is placed against the line date (cascade reads the row date).
+### Purchasing outputs
+
+- Email (`record_saved_lines` / `_queue_saved_line`, `project_order_inquiry_service.py:4280-4560`;
+  resend `oi_handover_resend.py`): a split origin line becomes one email line per split (LOCATION,
+  ITEM CODE, QTY = base qty and DELIVERY = base date via `was`, NEW QTY = split qty, NEW DATE =
+  split date, REMARK = change word + remark); inside Confirm the origin's "left to tell" adds a line.
+  Uses the existing template (REMARK column since oihr_0008): no template migration.
+- OI Excel (`export_xlsx`, one sheet): REMARK appended after the existing headings (the worksheet
+  `[:10]` slice is unchanged). An OI row whose line has splits sitting on it expands into one row
+  per split sitting on that line (QTY = split qty, DELIVERY DATE = split date, REMARK = change word,
+  "from line N" when another line's, + remark) only when those splits add up to the row's printed
+  QTY; otherwise the row prints as today with the split plan in REMARK. TOTAL QTY stays right.
+- OI Lines tab (`serialize_rows`, :6372/:6433): `splits` of the row's line (origin view) for the
+  read-only expand.
+
+### Engine (Confirm honours staff links)
+
+- Pre-pass `_apply_split_links` before `_apply_pure_splits` in `refresh_for_decision`
+  (`project_order_inquiry_service.py:1323`): for each stored split whose sits-on line differs from
+  its own line, both lines in this Confirm, own line's AutoCount qty went down: move that qty with
+  its placement links and ack from the own line's live ORDER row to the sits-on line's row via
+  `_split_row` (merge branch when the target already has a row; split qty instead of the target's
+  Buy; latest split first). Same guards as the pure split (single live ORDER, not redirected, no
+  reserve link). Does not add lines to handled/settled sets: netting tells only what is left.
+- `_oi_demand_rows` (`planning_change_service.py:3889-3892`): drop = from - to - linked_out.
+- No stored splits = today's behaviour exactly.
+
+### FE (PS = sorento_crm_frontend/app/(protected)/project-sales/)
+
+- `PS/_shared/types/lineSplit.types.ts`, `PS/_shared/services/lineSplitService.ts` (lib/api-client,
+  extractApiError), `PS/_shared/hooks/useLineSplits.ts` (query + save mutation; toast; invalidate
+  board + OI queries).
+- Pure model `PS/fulfilment-planning/lib/lineSplitModel.ts`: moveSplit, splitInTwo, backToOwn,
+  cancelSplit, gaps, plan/left per line, isSplit (all vitest-able).
+- `PS/fulfilment-planning/components/LineSplitDialog.tsx` (full-screen Dialog): grid grouped by
+  item + location, @dnd-kit DndContext (Pointer + Touch + Keyboard sensors as
+  `resource-management/attachment-directories/components/AttachmentDirectoriesView.tsx`),
+  useDraggable cards, useDroppable cells, DragOverlay, move popover, ContextMenu, zoom pane (SupplyBar
+  style bar with dividers, table), footer gaps + Save; phone (< md) one line at a time.
+- Entry: "Split delivery…" in the line action menu (`BoardDecideControl.tsx` dropdown) and a footer
+  button in the `BoardChangeTable.tsx` lightbox; an SO group header button if the list view has one.
+- OI Lines read-only expand: `orderInquiryHeaderLinesColumns.tsx` expandedContent.
+
+### Slices (commit per behaviour; red tests first)
+
+1. BE storage + API (tests: API shape, base rules, validation 422s, unsplit, RBAC 403, company
+   scope, sits-on cancelled -> NULL; `tests/test_schema_uuid_id_principle.py`,
+   `tests/test_list_pagination_limit.py`).
+2. BE purchasing outputs (email lines, Excel expansion + REMARK, Lines serialize).
+3. BE engine (SO402757 shape: 51 -> 2 with 49 linked to line 18; no CANCEL 49, links moved, no
+   ORDER for 49; no splits = unchanged).
+4. FE phase 1 against a mock service, then vitest red (model + dialog: Save blocked on gap,
+   keyboard move across lines records sits_on, failed save keeps values) and wiring.
 
 ## Open
 
