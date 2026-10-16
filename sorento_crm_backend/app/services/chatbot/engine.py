@@ -4517,6 +4517,12 @@ def _run_stages_body(  # noqa: PLR0915
     current_subject = (
         subject_full[len(subject_prefix) :] if subject_full and subject_full.startswith(subject_prefix) else subject_full
     )
+    # CHAT-STATE: the same render the S4 state log keeps as `shown`, so what the parser was
+    # given and what the trace says it was given cannot differ. `open_question` stays the one
+    # source for the block and for `without_phantom_answer`.
+    state_block = (
+        chat_state.render(chat_state.view(state_in, open_question)) if parser_config.state_block else None
+    )
     context_layers = context_mod.ContextLayers(
         level=effective_level,
         profile_facts=memory_intake["profile_facts"],
@@ -4537,6 +4543,7 @@ def _run_stages_body(  # noqa: PLR0915
         product_types=product_types,
         product_details=product_details,
         recent_exchanges=recent,
+        state_block=state_block,
     )
     user_block, context_report = context_mod.assemble(context_layers)
     # AC-MEM052/056 (round 3): where the level itself came from, alongside what it
