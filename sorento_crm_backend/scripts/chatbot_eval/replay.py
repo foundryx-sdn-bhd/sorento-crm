@@ -136,6 +136,7 @@ def _guard_network(stack: contextlib.ExitStack, misses: list[dict[str, Any]], al
     from unittest import mock
 
     real_connect, real_connect_ex, real_gai = socket.socket.connect, socket.socket.connect_ex, socket.getaddrinfo
+    resolved: set[str] = set()  # the IPs an allowed host's lookup returned: the only public addresses admitted
 
     def refuse(host: Any) -> NetworkBlocked:
         misses.append({"network_blocked": str(host)})
@@ -144,7 +145,7 @@ def _guard_network(stack: contextlib.ExitStack, misses: list[dict[str, Any]], al
     def check(sock: Any, addr: Any) -> None:
         if getattr(sock, "family", None) == getattr(socket, "AF_UNIX", None) or not isinstance(addr, tuple):
             return
-        if not _is_local(addr[0]) and str(addr[0]) not in allow:
+        if not _is_local(addr[0]) and str(addr[0]) not in allow and str(addr[0]) not in resolved:
             raise refuse(addr[0])
 
     def connect(self: Any, addr: Any) -> Any:
@@ -158,7 +159,10 @@ def _guard_network(stack: contextlib.ExitStack, misses: list[dict[str, Any]], al
     def getaddrinfo(host: Any, *a: Any, **k: Any) -> Any:
         if not _is_local(host) and str(host) not in allow:
             raise refuse(host)
-        return real_gai(host, *a, **k)
+        infos = real_gai(host, *a, **k)
+        if str(host) in allow:
+            resolved.update(str(info[4][0]) for info in infos)
+        return infos
 
     stack.enter_context(mock.patch.object(socket.socket, "connect", connect))
     stack.enter_context(mock.patch.object(socket.socket, "connect_ex", connect_ex))
@@ -363,9 +367,20 @@ MODEL_HOSTS = ("api.openai.com", "api.anthropic.com", "generativelanguage.google
 PROVENANCE_KEYS = ("code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_effort")
 
 
+class _CapStop(BaseException):
+    """A spend or call cap reached INSIDE an item: not an Exception, so the engine's own `except Exception`
+    handlers cannot swallow it and turn it into a failed parse."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 @contextlib.contextmanager
 def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
-    """Pass-through wrapper on every provider `chat`: counts calls and tokens and prices them from the `model` kwarg."""
+    """Pass-through wrapper on every provider `chat`: checks the caps BEFORE the call, then counts calls and tokens
+    and prices them (`LLM_MODEL_OVERRIDE` wins over the `model` kwarg, as in the engine). A model with no price row
+    is counted at 0 and stops the run (`total["stop"]`) after the item."""
     from unittest import mock
 
     from app.services import llm_provider
@@ -373,15 +388,21 @@ def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
 
     def wrap(original: Callable[..., Any]) -> Callable[..., Any]:
         def chat(self: Any, *args: Any, **kwargs: Any) -> Any:
+            if total.get("max_calls") is not None and total["calls"] >= total["max_calls"]:
+                raise _CapStop("max_calls")
+            if total.get("max_usd") is not None and total["usd"] >= total["max_usd"]:
+                raise _CapStop("max_usd")
             res = original(self, *args, **kwargs)
             prompt = int(getattr(res, "prompt_tokens", 0) or 0)
             cached = int(getattr(res, "cached_tokens", 0) or 0)
             out = int(getattr(res, "completion_tokens", 0) or 0)
-            model = kwargs.get("model") or getattr(self, "default_model", None) or "gpt-5.4-mini"
+            model = os.environ.get("LLM_MODEL_OVERRIDE") or kwargs.get("model") or getattr(self, "default_model", None) \
+                or "gpt-5.4-mini"
             try:
-                usd = cost_usd({"prompt": prompt, "cached": cached, "output": out}, model)
-            except KeyError:  # a model with no price row: counted, not priced
+                usd = max(0.0, cost_usd({"prompt": prompt, "cached": cached, "output": out}, model))
+            except KeyError:
                 usd = 0.0
+                total["stop"] = "unpriced_model"
             for bucket in (usage, total):
                 bucket["calls"] += 1
                 bucket["prompt_tokens"] += prompt
@@ -435,13 +456,14 @@ def _new_usage() -> dict[str, Any]:
     return {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0, "usd": 0.0}
 
 
-def _set_text(payload: dict[str, Any], text: str) -> None:
+def _set_text(payload: dict[str, Any], text: str) -> bool:
     node: Any = payload
     for _ in range(8):
         if isinstance(node, dict) and isinstance(node.get("text"), str):
             node["text"] = text
-            return
+            return True
         node = node.get("message") if isinstance(node, dict) else None
+    return False
 
 
 def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], Any],
@@ -453,8 +475,10 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     out: dict[str, Any] = {"item_id": item["item_id"], "run": item.get("run")}
     payload = copy.deepcopy(row.get("envelope") or {})
     payload.update(is_test=True, previous_conversation_state=_recorded_memory(row))
-    payload.pop("mock_reformulator_output", None)
-    _set_text(payload, item["message"])
+    for key in ("mock_reformulator_output", "prompt_overrides", "referenced_result_set"):
+        payload.pop(key, None)  # recorded harness keys never carry into a live item
+    if not _set_text(payload, item["message"]):
+        return {**out, "skipped": "no_text_slot"}
     inner = payload.setdefault("message", {}) if isinstance(payload.get("message", {}), dict) else None
     if inner is not None and isinstance(inner.setdefault("message", {}), dict):
         key = f"{item['item_id']}|{item.get('run')}"
@@ -465,7 +489,20 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
         _guard_network(stack, misses, MODEL_HOSTS)
         stack.enter_context(_metered(usage, total))
         stack.enter_context(_tool_capture(tool_results))
-        result = engine.run_turn(envelope, session_factory=factory)
+        from unittest import mock
+
+        from app.services.chatbot.lanes import ideate
+
+        def ideation_blocked(**kwargs: Any) -> Any:
+            misses.append({"llm_blocked": "ideate"})
+            raise RuntimeError("llm_blocked: ideate")
+
+        stack.enter_context(mock.patch.object(ideate, "call_ideation_tool", ideation_blocked))
+        try:
+            result = engine.run_turn(envelope, session_factory=factory, offload=False)
+        except _CapStop as stop:
+            total["stop"] = total.get("stop") or stop.reason
+            return {**out, "stopped": stop.reason}
     if getattr(result, "duplicate", False):
         return {**out, "skipped": "duplicate"}
     db = factory()
@@ -493,12 +530,14 @@ def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], 
     """Run each item's message through the engine on its recorded state; stop cleanly at a call or spend cap."""
     by_id = {str(r["id"]): r for r in recorded_rows}
     total = _new_usage()
+    total.update(max_calls=max_calls, max_usd=max_usd, stop=None)
     results: list[dict[str, Any]] = []
     stopped: str | None = None
     previous_disable = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
     try:
         for item in items:
+            stopped = stopped or total.get("stop")
             if stopped is None:
                 if total["calls"] >= max_calls:
                     stopped = "max_calls"
@@ -509,8 +548,11 @@ def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], 
             elif str(item.get("recorded_turn_id")) not in by_id:
                 res = {"item_id": item["item_id"], "run": item.get("run"), "skipped": "no_recorded_row"}
             else:
-                with _rolled_back(session_factory) as factory:
-                    res = _live_one(item, by_id[str(item["recorded_turn_id"])], factory, total)
+                try:
+                    with _rolled_back(session_factory) as factory:
+                        res = _live_one(item, by_id[str(item["recorded_turn_id"])], factory, total)
+                except Exception as exc:  # noqa: BLE001 - record the type only; never message text
+                    res = {"item_id": item["item_id"], "run": item.get("run"), "error": type(exc).__name__}
             results.append(res)
             if on_row is not None:
                 on_row(res)

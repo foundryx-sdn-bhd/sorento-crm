@@ -165,8 +165,14 @@ def _tool_subjects(row: dict[str, Any]) -> set[str]:
 
 def _subject_after(row: dict[str, Any]) -> set[str]:
     codes = _codes_of(_mem_focus(row, "after").get("products"))
-    # the first source that names anything wins; the tool args are the last resort (a lookup that answered with
-    # entities of its own outranks the literal terms the tool was called with)
+    memory_focus = _kind(row, "memory").get("focus")
+    if isinstance(memory_focus, dict) and isinstance(memory_focus.get("after"), dict):
+        # the memory event exists: its after focus is the truth, and an empty one means the bot dropped the subject.
+        # The state event (the subject BEFORE the turn) and the tool args must not stand in for it; only the lookup's
+        # own strings (an order or delivery number is no product) can name a non-product subject.
+        return codes or _lookup_subjects(row)
+    # older / hand-built rows: the first source that names anything wins; the tool args are the last resort (a lookup
+    # that answered with entities of its own outranks the literal terms the tool was called with)
     return (codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products"))
             or _lookup_subjects(row) or _tool_subjects(row))
 
@@ -310,8 +316,6 @@ def _num(token: str) -> float | None:
 
 
 def made_up_facts(row: dict[str, Any]) -> list[str]:
-    if _kind(row, "apply").get("note") == "payload omitted":
-        return []  # a payload omitted at 32 KB leaves nothing to check against: waived, not failed
     reply = ORDINAL_RE.sub("", reply_text(row))
     full_results = row.get("tool_results")
     envelopes = ([_dump(t.get("result")) for t in full_results] if full_results
@@ -336,7 +340,10 @@ def made_up_facts(row: dict[str, Any]) -> list[str]:
     findings: list[str] = []
     # without the full tool results an absent token cannot be called made up when a named tool ran
     named_ran = not full_results and bool(_tools(row))
-    label = "unverifiable" if (truncated or named_ran) else "made up"
+    omitted = _kind(row, "apply").get("note") == "payload omitted" and not full_results  # nothing to check against
+    if omitted and _tools(row):
+        return []  # tools ran and their results were not recorded: nothing to check against, waived (test_a_missing_apply_payload)
+    label = "unverifiable" if (truncated or named_ran or omitted) else "made up"
 
     def add(token: str) -> None:
         finding = f"{label}: {token}"
@@ -381,7 +388,9 @@ def _code_lookup(row, item):
         for t in _tools(row)))
     if code:
         checks.append(("tool_ran", ran, "The lookup tool did not run for that code."))
-        checks.append(("named", code in _key(reply_text(row)), "The reply does not name the code."))
+        # a whole code token, compared dash and case blind: SRT10 is not named by "SRT105"
+        named = any(_key(tok) == code for tok in re.findall(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", reply_text(row)))
+        checks.append(("named", named, "The reply does not name the code."))
     # asking only counts against the bot when it asked INSTEAD of looking the code up
     # a code that matches nothing in the data (a typo) may be answered with a did-you-mean: the loader flags it
     unresolved = bool(gold.get("code_unresolved"))
@@ -431,8 +440,12 @@ def _followup(row, item):
         picked = [options[p - 1] for p in (ans.get("picked") or []) if isinstance(p, int) and 0 < p <= len(options)]
         if ans.get("mode") in ("yes", "no"):
             picked.append(ans["mode"])
-        answered = bool(ans.get("picked") or ans.get("mode") or verdict.get("is_affirmative") or verdict.get("continuation")
-                        or (question and after_q != question))
+        # a cancel is no answer; a question cleared by an arm (casual, escalation) is no answer either: the clear
+        # reads as one only when the apply payload was omitted, so the verdict cannot say otherwise
+        omitted = _kind(row, "apply").get("note") == "payload omitted"
+        changed = bool(question) and after_q != question and (after_q is not None or omitted)
+        answered = bool(ans.get("picked") or ans.get("mode") not in (None, "", "cancel") or verdict.get("is_affirmative")
+                        or verdict.get("continuation") or (changed and ans.get("mode") != "cancel"))
         checks = [
             ("not_reasked", not (question and question == after_q), "The bot asked the same question again."),
             ("answered", answered, "The bot did not read the message as an answer to its question."),
@@ -526,6 +539,9 @@ def _spec(row, item):
     gold_spec = (item.get("gold") or {}).get("spec") or []
     want = {_val(s.get("value")) for s in gold_spec if s.get("key") not in CLASS_KEYS}
     class_want = {_val(s.get("value")) for s in gold_spec if s.get("key") in CLASS_KEYS}
+    if not want and not got and not any(e.get("hint") == "category" for e in _entities(row)):
+        return [("spec_set", None, "The spec words were not grounded to the expected set."),
+                *([("class", None, "The product class was read differently from the one asked.")] if class_want else [])]
     words = [set(_val(e.get("canonical_code") or e.get("raw")).split()) for e in _entities(row) if e.get("hint") == "category"]
     words += [set(v.split()) for v in got]
     checks = [("spec_set", want <= got and bool(want or class_want), "The spec words were not grounded to the expected set.")]
@@ -588,7 +604,9 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
         failed = ("The reply shows an internal id." if any(x.startswith("internal id") for x in leaks)
                   else "The reply shows a field hidden from the asker." if any(x.startswith("hidden") for x in leaks)
                   else "The reply shows a customer outside the asker's linked customers.")
-    passed = failed is None
+    passed: bool | None = failed is None
+    if passed and checks and all(ok is None for _, ok, _ in checks):
+        passed, failed = None, "The bench could not confirm what the bot understood."
     return {
         "item_id": item.get("item_id"), "slice": item["slice"], "kind": item.get("kind"), "passed": passed,
         "reason": "The bot did what the message needed." if passed else failed,
@@ -603,9 +621,15 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _stats(runs: list[list[dict[str, Any]]]) -> dict[str, Any]:
+    """Unknown turns (passed None) are counted apart and stay out of the rate's denominator."""
+    def known(r: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [x for x in r if x["passed"] is not None]
+
     ns = [len(r) for r in runs]
-    rates = [(sum(1 for x in r if x["passed"]) / len(r)) if r else 0.0 for r in runs]
-    return {"n": round(sum(ns) / len(ns)) if ns else 0, "passed": round(sum(sum(1 for x in r if x["passed"]) for r in runs) / len(runs)) if runs else 0,
+    rates = [(sum(1 for x in known(r) if x["passed"]) / len(known(r))) if known(r) else 0.0 for r in runs]
+    return {"n": round(sum(ns) / len(ns)) if ns else 0,
+            "passed": round(sum(sum(1 for x in r if x["passed"]) for r in runs) / len(runs)) if runs else 0,
+            "unknown": round(sum(len(r) - len(known(r)) for r in runs) / len(runs)) if runs else 0,
             "rate": sum(rates) / len(rates) if rates else 0.0, "lowest": min(rates) if rates else 0.0}
 
 
