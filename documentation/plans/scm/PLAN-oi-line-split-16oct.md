@@ -41,4 +41,4 @@ delivery date + remark), before Confirm or inside Confirm.
 
 ## Open
 
-- Card Q1-Q5 (owner); mock v1 after the card.
+- Card Q3 = (a) (crew, owner standing rules). Q1, Q2, Q4, Q5 with the owner. Mock v1 filed (defaults Q1a Q2a Q4a Q5a).
