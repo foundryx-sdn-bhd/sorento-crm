@@ -558,3 +558,50 @@ def test_pma_scope_a_junk_auth_header_never_widens_to_another_agents_company(jun
         assert in_b.customer_name not in names
         assert in_a.customer_name in names
         assert created.status_code == 422, created.text
+
+
+def test_pma4_order_debtors_match_the_agent_code_in_the_agents_own_company():
+    """Codes are unique per company only (`uq_sales_agents_company_sales_agent`): the order
+    debtors of a same-code agent in ANOTHER company are not this contact's. A shared agent
+    (no company) still matches its code in every company."""
+    from app.models.company import Company
+    from app.services.price_tag_request_service import PriceTagRequestService
+
+    with blank_session() as db:
+        company_a = Company(id=_uid(), name="ZZT PMA Debtor A", code=f"ZZT{_uid()[:6].upper()}")
+        company_c = Company(id=_uid(), name="ZZT PMA Debtor C", code=f"ZZT{_uid()[:6].upper()}")
+        db.add_all([company_a, company_c])
+        db.flush()
+        set_company_scope(db, None)
+        me = _contact(db, "Agent Alan")
+        code = f"ZZTALAN{_uid()[:4]}".upper()
+        shared_code = f"ZZTSHARED{_uid()[:4]}".upper()
+        db.add_all(
+            [
+                SalesAgent(id=_uid(), sales_agent=code, contact_id=me, company_id=company_c.id),
+                SalesAgent(id=_uid(), sales_agent=code, contact_id=None, company_id=company_a.id),
+                SalesAgent(id=_uid(), sales_agent=shared_code, contact_id=me, company_id=None),
+            ]
+        )
+        recent = date.today() - timedelta(days=30)
+        for company, agent_code, debtor in (
+            (company_c, code, "ZZT-DEB-MINE-C"),
+            (company_a, code, "ZZT-DEB-OTHER-ALAN-A"),
+            (company_a, shared_code, "ZZT-DEB-SHARED-A"),
+            (company_c, shared_code, "ZZT-DEB-SHARED-C"),
+        ):
+            db.add(
+                Order(
+                    order_number=f"ZZT-{_uid()[:8]}",
+                    order_date=recent,
+                    debtor_code=debtor,
+                    debtor_name=debtor,
+                    agent=agent_code,
+                    company_id=company.id,
+                )
+            )
+        db.flush()
+
+        codes = {d["debtor_code"] for d in PriceTagRequestService.lookup_debtors_for_agent(db, me)}
+        assert {"ZZT-DEB-MINE-C", "ZZT-DEB-SHARED-A", "ZZT-DEB-SHARED-C"} <= codes
+        assert "ZZT-DEB-OTHER-ALAN-A" not in codes
