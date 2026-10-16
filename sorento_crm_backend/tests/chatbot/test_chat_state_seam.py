@@ -222,7 +222,7 @@ def test_an_emission_without_state_changes_runs_as_on_main_and_records_no_list(s
     )
     assert seam.rules_fired == ["reuse_alive", "domains_from_asks"]
     assert seam.stock_ids(seam.turn_calls[-1]) == [seam.uuid_of["SRT1"]]
-    assert seam.state["focus"]["last_list"] is None
+    assert seam.state["focus"].get("last_list") is None
     state = _mem_state(seam, out)
     assert not state.get("changes")
     assert set(state) >= {"shown", "before", "changes", "after"}
@@ -354,47 +354,202 @@ def test_a_turn_that_showed_a_list_records_it_in_the_stored_focus_when_the_state
 
 
 # --------------------------------------------------------------------------- #
-# S4 item 7 (C9, R14, example 5): a slot applies only where the domain takes it
+# S4b (C9, R14 rewritten, owner 16 Oct ~22:45): the PARSER says which held slot
+# applies (keep / skip / clear); no per-domain table, no word rule.
 # --------------------------------------------------------------------------- #
 
 HELD_WINDOW = {"start": "2026-10-01", "end": "2026-10-07"}
 
 
-def _incoming_ask() -> dict[str, Any]:
+def _incoming_ask(*slots: dict[str, Any]) -> dict[str, Any]:
     return _emit(
         domain_hint="incoming", intent_hint="check_incoming", domain_in_message=True,
-        entities=[_product("SRT391-GM")], state_changes=[_op("new_subject")],
+        entities=[_product("SRT391-GM")], state_changes=[_op("new_subject"), *slots],
     )
 
 
-def test_r14_an_incoming_ask_gets_no_customer_and_no_held_period(seam):
+def _order_ask(*changes: dict[str, Any]) -> dict[str, Any]:
+    return _emit(
+        domain_hint="order", intent_hint="check_order", domain_in_message=True,
+        state_changes=list(changes),
+    )
+
+
+def _blob(seam: Seam) -> str:
+    return json.dumps(seam.turn_calls[-1], default=str)
+
+
+def _held_codes(seam: Seam) -> list[Any]:
+    return [c.get("canonical_code") for c in seam.state["focus"]["customers"]]
+
+
+def test_s4b_skip_customer_and_period_keep_them_out_of_the_args_and_in_the_stored_focus(seam):
     prev = _held_customer_state(window=HELD_WINDOW)
-    seam.say("SRT391-GM eta", _incoming_ask(), previous=prev)
+    out = seam.say(
+        "SRT391-GM eta", _incoming_ask(_op("skip", "customer"), _op("skip", "period")), previous=prev
+    )
     calls = seam.turn_calls[-1]
     incoming = [(n, a) for n, a in calls if n in INCOMING_TOOLS]
-    assert incoming, [n for n, _ in calls]
-    assert any(seam.uuid_of["SRT391-GM"] in a.get("product_ids", []) for _, a in incoming)
-    blob = json.dumps(calls, default=str)
+    assert incoming and any(seam.uuid_of["SRT391-GM"] in a.get("product_ids", []) for _, a in incoming)
+    blob = _blob(seam)
     assert CUSTOMER_UUID not in blob and "Customer X" not in blob
     assert "2026-10-01" not in blob and "2026-10-07" not in blob
+    state = _mem_state(seam, out)
+    assert not state.get("rejected"), state.get("rejected")
+    assert _held_codes(seam) == ["C0001"], f"skip must leave it held; rules {seam.rules_fired}"
+    assert seam.state["focus"]["date_window"] == HELD_WINDOW
 
 
-def test_r14_the_customer_the_domain_does_not_take_stays_in_the_stored_focus(seam):
+def test_s4b_a_following_keep_customer_applies_the_customer_to_the_order_ask(seam):
     prev = _held_customer_state(window=HELD_WINDOW)
-    seam.say("SRT391-GM eta", _incoming_ask(), previous=prev)
-    held = seam.state["focus"]["customers"]
-    assert [c.get("canonical_code") for c in held] == ["C0001"], (
-        f"main drops it (new_ask_drops_customer: {seam.rules_fired}); R14 keeps it"
-    )
-
-
-def test_r14_a_following_order_ask_applies_the_customer_again(seam):
-    prev = _held_customer_state(window=HELD_WINDOW)
-    seam.say("SRT391-GM eta", _incoming_ask(), previous=prev)
-    out = seam.say(
-        "delivery?",
-        _emit(domain_hint="order", intent_hint="check_order", domain_in_message=True,
-              state_changes=[_op("switch_domain")]),
-    )
+    seam.say("SRT391-GM eta", _incoming_ask(_op("skip", "customer")), previous=prev)
+    out = seam.say("delivery?", _order_ask(_op("switch_domain"), _op("keep", "customer")))
     reply = (out.reply or {}).get("text") or ""
-    assert "Customer X" in reply, f"the customer was not held for the order ask: {reply!r}"
+    assert CUSTOMER_UUID in _blob(seam) or "Customer X" in reply, (
+        f"the customer was not applied to the order ask: {reply!r}"
+    )
+
+
+def test_s4b_clear_customer_drops_it_from_the_stored_focus(seam):
+    prev = _held_customer_state(window=HELD_WINDOW)
+    seam.say("delivery?", _order_ask(_op("switch_domain"), _op("clear", "customer")), previous=prev)
+    assert _held_codes(seam) == []
+    assert CUSTOMER_UUID not in _blob(seam)
+
+
+def test_s4b_clear_period_drops_it_from_the_stored_focus(seam):
+    prev = _held_customer_state(window=HELD_WINDOW)
+    seam.say("SRT391-GM eta", _incoming_ask(_op("skip", "customer"), _op("clear", "period")), previous=prev)
+    assert seam.state["focus"]["date_window"] is None
+    assert _held_codes(seam) == ["C0001"]
+
+
+def test_s4b_keep_period_applies_the_held_window_to_the_order_ask(seam):
+    prev = _held_customer_state(window=HELD_WINDOW)
+    out = seam.say(
+        "delivery?", _order_ask(_op("keep"), _op("keep", "period")), previous=prev
+    )
+    assert "2026-10-01" in _blob(seam), (_blob(seam), (out.reply or {}).get("text"))
+    assert not _mem_state(seam, out).get("rejected")
+
+
+def test_s4b_no_statement_about_a_held_slot_applies_it_as_on_main(seam):
+    """Regression: [keep] says nothing about the customer, so the order ask names it."""
+    prev = _held_customer_state(window=HELD_WINDOW)
+    out = seam.say("delivery?", _order_ask(_op("keep")), previous=prev)
+    assert CUSTOMER_UUID in _blob(seam) or "Customer X" in ((out.reply or {}).get("text") or "")
+    assert _held_codes(seam) == ["C0001"]
+
+
+def test_s4b_the_engine_does_not_consult_domain_narrowing_for_the_customer(seam):
+    """`order` takes a customer per `chatbot_domains.narrowing`; the parser's skip still wins."""
+    prev = _held_customer_state(window=HELD_WINDOW)
+    out = seam.say("delivery?", _order_ask(_op("keep"), _op("skip", "customer")), previous=prev)
+    reply = (out.reply or {}).get("text") or ""
+    assert CUSTOMER_UUID not in _blob(seam) and "Customer X" not in reply, reply
+    assert _held_codes(seam) == ["C0001"]
+
+
+# --------------------------------------------------------------------------- #
+# Security LOW: a stored last-list pick is re-resolved, never trusted by its stored uuid
+# --------------------------------------------------------------------------- #
+
+
+def _stored_list_state(seam: Seam) -> dict[str, Any]:
+    rows = [
+        {"position": 1, "label": "SRT1", "code": "SRT1", "entity_type": "product",
+         "uuid": seam.uuid_of["SRT1"], "uuids": [seam.uuid_of["SRT1"]]},
+        {"position": 2, "label": "SRT391-GM", "code": "SRT391-GM", "entity_type": "product",
+         "uuid": seam.uuid_of["SRT391-GM"], "uuids": [seam.uuid_of["SRT391-GM"]]},
+    ]
+    return {"focus": focus_to_wire(Focus(domains=["inventory"], last_list=rows)), "open_question": None}
+
+
+def _drop_company_scope(seam: Seam) -> None:
+    from sqlalchemy import text
+
+    db = seam.session_factory()
+    db.execute(
+        text("DELETE FROM respond_contact_companies WHERE respond_contact_id IN "
+             "(SELECT id FROM respond_contacts WHERE respond_io_id = :c)"),
+        {"c": str(CONTACT_ID)},
+    )
+    db.commit()
+
+
+def test_a_stored_list_pick_after_the_scope_changed_does_not_fetch_the_out_of_scope_product(seam):
+    prev = _stored_list_state(seam)
+    _drop_company_scope(seam)
+    out = seam.say(
+        "1",
+        _emit(domain_hint="inventory", intent_hint="check_stock", reference_positions=[1],
+              state_changes=[_op("pick", position=1)]),
+        previous=prev,
+    )
+    assert seam.stock_ids(seam.turn_calls[-1]) == [], "the stored uuid reached a tool call"
+    assert seam.uuid_of["SRT1"] not in json.dumps(seam.turn_calls[-1], default=str)
+    picked = [e for e in out.ctx["parse"]["output"]["entities"] if e.get("canonical_code") == "SRT1"]
+    assert picked, "the pick must still inject the code as an entity"
+    assert all(not e.get("uuid") and not e.get("uuids") for e in picked), picked
+
+
+def test_a_stored_list_pick_in_scope_resolves_the_code_fresh(seam):
+    prev = _stored_list_state(seam)
+    out = seam.say(
+        "1",
+        _emit(domain_hint="inventory", intent_hint="check_stock", reference_positions=[1],
+              state_changes=[_op("pick", position=1)]),
+        previous=prev,
+    )
+    picked = [e for e in out.ctx["parse"]["output"]["entities"] if e.get("canonical_code") == "SRT1"]
+    assert picked and all(not e.get("uuid") or e.get("resolved_fresh", True) for e in picked)
+    assert [e for e in picked if e.get("uuids")] == [], "the stored uuids must not ride along"
+    assert seam.stock_ids(seam.turn_calls[-1]) == [seam.uuid_of["SRT1"]], "still found, by a fresh resolve"
+
+
+# --------------------------------------------------------------------------- #
+# Reviewer findings (round 4), engine level
+# --------------------------------------------------------------------------- #
+
+
+def test_b1_close_question_on_an_answered_stock_check_does_not_stop_the_incoming_ask(seam):
+    from app.services.chatbot.turn import task as task_mod
+
+    task = task_mod.Task(
+        kind="stock_qty", domain="inventory", status=task_mod.ANSWERED,
+        slots=(task_mod.Slot(seam.uuid_of["SRT1"], "SRT1", 5),),
+    )
+    row = {"raw": "SRT1", "canonical_code": "SRT1", "hint": "product", "uuid": seam.uuid_of["SRT1"],
+           "current_message": False}
+    prev = {"focus": focus_to_wire(Focus(products=[row], domains=["inventory"], tasks=(task,))), "open_question": None}
+    seam.say(
+        "eta",
+        _emit(domain_hint="incoming", intent_hint="check_incoming", domain_in_message=True,
+              state_changes=[_op("switch_domain"), _op("close_question")]),
+        previous=prev,
+    )
+    incoming = [a for n, a in seam.turn_calls[-1] if n in INCOMING_TOOLS]
+    assert incoming and seam.uuid_of["SRT1"] in incoming[0].get("product_ids", []), seam.turn_calls[-1]
+    assert not any("reset" in r for r in seam.rules_fired), seam.rules_fired
+    assert [p["canonical_code"] for p in seam.state["focus"]["products"]] == ["SRT1"]
+
+
+def test_s1_a_rejected_change_that_shows_a_new_list_still_records_it_and_a_pick_uses_it(seam):
+    for bad in ([_op("bogus")], [], None):
+        v = _stock("STWC2867")
+        v["state_changes"] = bad
+        seam.say("check stock STWC2867", v, previous={})
+        last = seam.state["focus"].get("last_list")
+        assert last and len(last) == 2, (bad, last)
+        assert [i["code"] for i in last] == ["SRTWC286-SH", "SRTWC286-SH-P"]
+
+
+def test_s6_new_subject_on_an_empty_state_runs_exactly_as_the_same_emission_without_it(seam):
+    def ranking(**extra):
+        return _emit(domain_hint="sales", intent_hint="check_sales", domain_in_message=True,
+                     status="top_selling", top_n=10, group_by="product", **extra)
+
+    seam.say("top 10 hot selling", ranking(), previous={})
+    plain = (seam.rules_fired, [n for n, _ in seam.turn_calls[-1]], seam.state["focus"])
+    seam.say("top 10 hot selling", ranking(state_changes=[_op("new_subject")]), previous={})
+    assert (seam.rules_fired, [n for n, _ in seam.turn_calls[-1]], seam.state["focus"]) == plain

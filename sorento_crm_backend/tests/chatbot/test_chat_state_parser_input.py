@@ -114,25 +114,52 @@ def test_a_block_over_350_estimated_tokens_is_never_trimmed(level):
 # --------------------------------------------------------------------------- #
 
 
-def _resolve(monkeypatch, prompt_text: str):
-    monkeypatch.setattr(parser_mod, "render", lambda db, key, **kw: (prompt_text, 7))
-    monkeypatch.setattr(parser_mod, "agent_model", lambda db, key: (None, None))
+HEADING_LINE = "## Conversation state and state_changes"
+
+
+def _resolve(monkeypatch, session_factory, raw_template: str, *, current_date: str = "2026-10-16"):
+    """The real registry: a seeded production version whose RAW template is `raw_template`."""
+    from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
     from app.services import ai_assistant_service, llm_provider
 
+    db = session_factory()
+    version = AIPromptVersion(
+        id=str(uuid.uuid4()), name=parser_mod.PROMPT_KEY, version=1, type="text",
+        template=raw_template, variables=["current_date"],
+    )
+    db.add(version)
+    db.flush()
+    db.add(AIPromptLabel(id=str(uuid.uuid4()), name=parser_mod.PROMPT_KEY, label="production", version_id=version.id))
+    db.flush()
     cfg = types.SimpleNamespace(provider="openai", model="gpt-test")
     monkeypatch.setattr(
-        ai_assistant_service, "AIAssistantConfigService", lambda db: types.SimpleNamespace(get=lambda: cfg)
+        ai_assistant_service, "AIAssistantConfigService", lambda d: types.SimpleNamespace(get=lambda: cfg)
     )
     monkeypatch.setattr(llm_provider, "resolve_api_key", lambda config, provider: "sk-test")
-    return parser_mod.resolve_config(None, current_date="2026-10-16")
+    return parser_mod.resolve_config(db, current_date=current_date)
 
 
-def test_resolve_config_opts_in_only_when_the_prompt_text_names_state_changes(monkeypatch):
-    assert _resolve(monkeypatch, "Rules.\n## Conversation state and state_changes\nFill state_changes.").state_block is True
+def test_resolve_config_opts_in_when_the_raw_template_carries_the_section_heading(monkeypatch, session_factory):
+    config = _resolve(monkeypatch, session_factory, f"Rules {{{{current_date}}}}\n{HEADING_LINE}\nFill state_changes.")
+    assert config.state_block is True
 
 
-def test_resolve_config_stays_off_for_a_prompt_without_state_changes(monkeypatch):
-    config = _resolve(monkeypatch, "Rules. Current subject and Open question lines as today.")
+def test_resolve_config_stays_off_for_a_template_without_the_heading(monkeypatch, session_factory):
+    config = _resolve(monkeypatch, session_factory, "Rules {{current_date}}. Current subject and Open question lines.")
+    assert config.state_block is False
+
+
+def test_a_rendered_value_that_says_state_changes_does_not_turn_the_path_on(monkeypatch, session_factory):
+    """The gate reads the RAW template, never the text after {{variable}} rendering."""
+    config = _resolve(
+        monkeypatch, session_factory, "Rules {{current_date}}.", current_date="2026-10-16 state_changes " + HEADING_LINE
+    )
+    assert "state_changes" in config.system_prompt
+    assert config.state_block is False
+
+
+def test_the_bare_word_in_a_raw_template_without_the_heading_stays_off(monkeypatch, session_factory):
+    config = _resolve(monkeypatch, session_factory, "Rules {{current_date}}. Never mention state_changes.")
     assert config.state_block is False
 
 
