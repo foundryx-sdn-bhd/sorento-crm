@@ -79,7 +79,8 @@ def _domains(row: dict[str, Any]) -> list[str]:
 
 
 def _asking(row: dict[str, Any]) -> Any:
-    return (_stage(row, "replied").get("facts") or {}).get("asking")
+    asking = (_stage(row, "replied").get("facts") or {}).get("asking")
+    return None if asking == "team_pick" else asking  # offering to hand over to a team is not a clarify
 
 
 def _focus_codes(row: dict[str, Any]) -> set[str]:
@@ -164,6 +165,8 @@ def _uuid_map(row: dict[str, Any]) -> dict[str, str]:
     for p in products:
         if p.get("uuid") and (p.get("canonical_code") or p.get("raw")):
             out[str(p["uuid"]).lower()] = _key(p.get("canonical_code") or p.get("raw"))
+    # the loader reads product codes for the uuids in the tool args (a pick lands there, not in memory)
+    out.update({str(u).lower(): _key(c) for u, c in (row.get("uuid_codes") or {}).items()})
     return out
 
 
@@ -292,7 +295,9 @@ def made_up_facts(row: dict[str, Any]) -> list[str]:
     codes = CODE_RE.findall(rep_rest)
     rep_rest = CODE_RE.sub(" ", rep_rest)
     findings: list[str] = []
-    label = "unverifiable" if truncated else "made up"
+    # without the full tool results an absent token cannot be called made up when a named tool ran
+    named_ran = not full_results and bool(_tools(row))
+    label = "unverifiable" if (truncated or named_ran) else "made up"
 
     def add(token: str) -> None:
         finding = f"{label}: {token}"
@@ -332,13 +337,14 @@ def _code_lookup(row, item):
     if gold.get("ambiguous"):
         checks.append(("clarified", clarified, "The code was ambiguous but the bot did not ask which one."))
         return checks
+    ran = bool(code) and (code in _tool_targets(row) or any(
+        str(gold["code"]).upper() in _dump(t.get("args")).upper() or str(gold["code"]).upper() in _dump(t.get("envelope")).upper()
+        for t in _tools(row)))
     if code:
-        ran = code in _tool_targets(row) or any(
-            str(gold["code"]).upper() in _dump(t.get("args")).upper() or str(gold["code"]).upper() in _dump(t.get("envelope")).upper()
-            for t in _tools(row))
         checks.append(("tool_ran", ran, "The lookup tool did not run for that code."))
         checks.append(("named", code in _key(reply_text(row)), "The reply does not name the code."))
-    checks.append(("no_clarify", not clarified, "The bot asked a clarifying question although the code was clear."))
+    # asking only counts against the bot when it asked INSTEAD of looking the code up
+    checks.append(("no_clarify", not (clarified and not ran), "The bot asked a clarifying question although the code was clear."))
     return checks
 
 
@@ -354,8 +360,9 @@ def _followup(row, item):
     if kind == "pick":
         positions = _positions(row)
         # a resolver "Did you mean" pick records no position: the pick was honoured when the subject after is the item
-        honoured = gold.get("position") in positions or (not positions and bool(gold.get("code"))
-                                                         and _key(gold["code"]) in after_subject)
+        honoured = gold.get("position") in positions or (
+            not positions and bool(gold.get("code"))
+            and (_key(gold["code"]) in after_subject or _key(gold["code"]) in _tool_targets(row)))
         checks = [("position", honoured, "The bot picked a different position than the one chosen.")]
         if gold.get("code"):
             code = _key(gold["code"])
@@ -438,14 +445,30 @@ def _ideas_answer(row, gold):
     ]
 
 
+CLASS_KEYS = ("class", "product_type", "furniture_type")
+
+
+def _val(x: Any) -> str:
+    return re.sub(r"\s+", " ", _norm(x).replace("_", " "))
+
+
 def _spec(row, item):
     extra = _mem_focus(row, "after").get("extra") or {}
-    got = {_norm(e.get("spec_value") or e.get("raw")) for e in _entities(row)
+    got = {_val(e.get("spec_value") if e.get("spec_value") is not None else e.get("raw")) for e in _entities(row)
            if e.get("hint") == "specification" or e.get("spec_key")}
-    got |= {_norm(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
+    got |= {_val(e.get("spec_value") if e.get("spec_value") is not None else e.get("raw"))
+            for e in extra.get("specification") or [] if isinstance(e, dict)}
     got.discard("")
-    want = {_norm(s.get("value")) for s in (item.get("gold") or {}).get("spec") or []}
-    return [("spec_set", bool(want) and want <= got, "The spec words were not grounded to the expected set.")]
+    gold_spec = (item.get("gold") or {}).get("spec") or []
+    want = {_val(s.get("value")) for s in gold_spec if s.get("key") not in CLASS_KEYS}
+    class_want = {_val(s.get("value")) for s in gold_spec if s.get("key") in CLASS_KEYS}
+    words = [set(_val(e.get("canonical_code") or e.get("raw")).split()) for e in _entities(row) if e.get("hint") == "category"]
+    words += [set(v.split()) for v in got]
+    checks = [("spec_set", want <= got and bool(want or class_want), "The spec words were not grounded to the expected set.")]
+    if class_want:  # reported, not part of `passed`: the bot records class words as category entities
+        checks.append(("class", all(any(set(v.split()) <= w for w in words) for v in class_want),
+                       "The product class was read differently from the one asked."))
+    return checks
 
 
 def _type_word(x) -> str:
@@ -490,7 +513,7 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     checks = _SLICES[item["slice"]](row, item)
     leaks = scope_leaks(row, item.get("asker"), item.get("watch_customer_names") or ())
     made_up = made_up_facts(row)
-    failed = next((msg for _name, ok, msg in checks if not ok), None)
+    failed = next((msg for name, ok, msg in checks if not ok and name != "class"), None)  # `class` is reported only
     # Leaks and made-up facts are their own zero-tolerance bars, listed on every turn and counted by
     # `summarise`; they decide `passed` only for the scope slice, whose whole job is the leak check.
     if failed is None and item["slice"] == "scope" and leaks:
