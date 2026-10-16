@@ -144,16 +144,41 @@ def _patched(recorded: dict[tuple[str, str], Any], misses: list[dict[str, Any]])
         yield
 
 
+def _entity_key(ents: list[Any]) -> list[list[Any]]:
+    return sorted(
+        [e.get("hint"), e.get("canonical_code"), _sha(str(e.get("raw") or "").lower())[:12]]
+        for e in ents
+        if isinstance(e, dict)
+    )
+
+
 def _entities(trace: list[dict[str, Any]]) -> list[list[Any]]:
     for rec in trace:
         if isinstance(rec, dict) and rec.get("kind") == "apply":
-            ents = ((rec.get("verdict") or {}).get("entities") or [])
-            return sorted(
-                [e.get("hint"), e.get("canonical_code"), _sha(str(e.get("raw") or "").lower())[:12]]
-                for e in ents
-                if isinstance(e, dict)
-            )
+            return _entity_key((rec.get("verdict") or {}).get("entities") or [])
     return []
+
+
+def _message_first_line(envelope: dict[str, Any]) -> str | None:
+    m: Any = envelope
+    for _ in range(6):
+        if isinstance(m, dict) and isinstance(m.get("text"), str):
+            return m["text"].split("\n", 1)[0]
+        m = m.get("message") if isinstance(m, dict) else None
+    return None
+
+
+def _ground_one(row: dict[str, Any], parse: dict[str, Any], db: Any, vocab: Any) -> list[list[Any]]:
+    """`grounding.ground()` alone, the way the engine calls it (held ranking words go back on after)."""
+    from app.services.chatbot.head import grounding
+    from app.services.chatbot.lanes.business import report_ask
+
+    verdict, held = report_ask.hold_words(copy.deepcopy(parse))
+    grounded, _notes = grounding.ground(db, verdict, vocab=vocab, message=_message_first_line(row.get("envelope") or {}))
+    ents = grounded.get("entities") or []
+    if held:
+        ents = [*ents, *held]
+    return _entity_key(ents)
 
 
 def _decision(trace: list[dict[str, Any]], branch_kind: Any) -> list[Any]:
@@ -177,7 +202,8 @@ def _tools(trace: list[dict[str, Any]]) -> list[list[str]]:
     ]
 
 
-def _replay_one(row: dict[str, Any], factory: Callable[[], Any]) -> dict[str, Any]:
+def _replay_one(row: dict[str, Any], factory: Callable[[], Any], stage: str | None = None,
+                vocab_box: list[Any] | None = None) -> dict[str, Any]:
     from app.models.chatbot_turn import ChatbotTurn
     from app.services.chatbot import engine
     from app.services.chatbot.contracts import Envelope
@@ -195,6 +221,21 @@ def _replay_one(row: dict[str, Any], factory: Callable[[], Any]) -> dict[str, An
     # an incomplete emission, so the missing declared keys are set to None (never invented).
     for key in parser_mod.DECLARED_KEYS - parser_mod.TOLERATED_ABSENT - set(parse):
         parse[key] = None
+    if stage == "grounding":
+        from app.services.chatbot.head import grounding
+
+        db = factory()
+        try:
+            if vocab_box is not None and not vocab_box:
+                vocab_box.append(grounding.load_vocabulary(db))
+            vocab = vocab_box[0] if vocab_box else None
+            out["stages"] = {"grounded": _ground_one(row, parse, db, vocab)}
+        except Exception as exc:  # noqa: BLE001 - the replay records, never raises
+            out["misses"] = [{"error": type(exc).__name__}]
+        finally:
+            db.rollback()
+            db.close()
+        return out
     payload = copy.deepcopy(row.get("envelope") or {})
     payload.update(is_test=True, mock_reformulator_output=parse,
                    previous_conversation_state=_recorded_memory(row))
@@ -223,11 +264,15 @@ def _replay_one(row: dict[str, Any], factory: Callable[[], Any]) -> dict[str, An
     return out
 
 
-def replay_rows(rows: list[dict[str, Any]], *, session_factory: Callable[[], Any]) -> list[dict[str, Any]]:
+def replay_rows(rows: list[dict[str, Any]], *, session_factory: Callable[[], Any],
+                stage: str | None = None) -> list[dict[str, Any]]:
+    """`stage="grounding"` runs only `grounding.ground()` per row (vocabulary loaded once per call)
+    and returns `stages.grounded` alone; None runs the whole turn."""
     results = []
+    vocab_box: list[Any] = []
     for row in rows:
         with _rolled_back(session_factory) as factory:
-            results.append(_replay_one(row, factory))
+            results.append(_replay_one(row, factory, stage, vocab_box))
     return results
 
 
@@ -290,7 +335,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     from app.database import SessionLocal
 
     rows = [r for path in args.traces for r in _read(path)]
-    results = replay_rows(rows, session_factory=SessionLocal)
+    results = replay_rows(rows, session_factory=SessionLocal, stage=args.stage)
     with open(args.out, "w") as fh:
         for r in results:
             fh.write(json.dumps(r) + "\n")
@@ -319,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     run = sub.add_parser("run")
     run.add_argument("--traces", nargs="+", required=True)
     run.add_argument("--out", required=True)
+    run.add_argument("--stage", choices=["grounding"], default=None)
     diff = sub.add_parser("diff")
     diff.add_argument("base")
     diff.add_argument("head")
