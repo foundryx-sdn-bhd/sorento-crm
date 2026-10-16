@@ -285,7 +285,6 @@ export default function Page() {
     borrowFromOrderEnabled: Boolean(settings?.borrowFromOrderEnabled),
     // Off is the shipped state (SR-CORE).
     sampleRequestRequireProject: Boolean(settings?.sampleRequestRequireProject),
-    sampleRequestRequireQuotation: Boolean(settings?.sampleRequestRequireQuotation),
     priceTagGuardedClasses: settings?.priceTagGuardedClasses ?? [],
     purchaseRequestDefaultApproverUserId:
       settings?.purchaseRequestDefaultApproverUserId &&
@@ -357,7 +356,6 @@ export default function Page() {
       localBuyRoutingEnabled: Boolean(settings.localBuyRoutingEnabled),
       borrowFromOrderEnabled: Boolean(settings.borrowFromOrderEnabled),
       sampleRequestRequireProject: Boolean(settings.sampleRequestRequireProject),
-      sampleRequestRequireQuotation: Boolean(settings.sampleRequestRequireQuotation),
       priceTagGuardedClasses: settings.priceTagGuardedClasses ?? [],
       purchaseRequestDefaultApproverUserId:
         settings.purchaseRequestDefaultApproverUserId &&
@@ -411,7 +409,6 @@ export default function Page() {
         local_buy_routing_enabled: values.localBuyRoutingEnabled,
         borrow_from_order_enabled: values.borrowFromOrderEnabled,
         sample_request_require_project: values.sampleRequestRequireProject,
-        sample_request_require_quotation: values.sampleRequestRequireQuotation,
         price_tag_guarded_classes: values.priceTagGuardedClasses,
         purchase_request_default_approver_user_id:
           values.purchaseRequestDefaultApproverUserId ===
@@ -1251,28 +1248,6 @@ export default function Page() {
                         />
                         <Label htmlFor="sample-request-require-project">
                           Sample requests need a registered project
-                        </Label>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="sampleRequestRequireQuotation"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <div className="flex items-center space-x-2 rounded-lg bg-accent/60 p-4">
-                        <Switch
-                          id="sample-request-require-quotation"
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                        <Label htmlFor="sample-request-require-quotation">
-                          Sample requests need a quotation
                         </Label>
                       </div>
                     </FormControl>

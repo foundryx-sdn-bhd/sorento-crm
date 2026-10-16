@@ -16,21 +16,20 @@ export type SampleRequestLoanUnit = 'days' | 'months';
 export type SampleRequestGoodsFrom = 'demo' | 'new' | 'either';
 
 export const DELIVERY_MODE_LABELS: Record<SampleRequestDeliveryMode, string> = {
-  driver: 'Deliver by driver',
-  self_deliver: 'Self-deliver',
-  self_collect: 'Customer collects',
+  driver: 'Deliver-Van',
+  self_deliver: 'Self-Deliver',
+  self_collect: 'Self-Collection',
 };
 
 export const GOODS_FROM_LABELS: Record<SampleRequestGoodsFrom, string> = {
-  demo: 'Demo set',
-  new: 'New goods',
+  demo: 'Demo Sets',
+  new: 'New Goods',
   either: 'Either',
 };
 
 /** One line as written (create and draft update replace all lines). */
 export interface SampleRequestLineInput {
   product_id: string;
-  alt_product_id: string | null;
   qty: number;
   remark: string | null;
 }
@@ -41,10 +40,8 @@ export interface SampleRequestWrite {
   customer_name?: string | null;
   project_id?: string | null;
   project_title?: string | null;
-  quotation_version_id?: string | null;
   scope_note?: string | null;
   delivery_date?: string | null;
-  deliver_immediately?: boolean;
   delivery_mode?: SampleRequestDeliveryMode | null;
   ship_to_name?: string | null;
   ship_to_address?: string | null;
@@ -68,8 +65,6 @@ export interface SampleRequestLine {
   product_name: string | null;
   brand_name: string | null;
   product_active: boolean;
-  alt_product_id: string | null;
-  alt_product_code: string | null;
   qty: number;
   remark: string | null;
 }
@@ -85,7 +80,6 @@ export interface SampleRequestDetail extends SampleRequestWrite {
   customer_code: string | null;
   project_code: string | null;
   project_name: string | null;
-  quotation_label: string | null;
   request_date: string | null;
   submitted_at: string | null;
   confirmed_at: string | null;
@@ -109,7 +103,6 @@ export interface SampleRequestRow {
   request_date: string | null;
   submitted_at: string | null;
   delivery_date: string | null;
-  deliver_immediately: boolean;
   delivery_mode: SampleRequestDeliveryMode | null;
   customer_name: string | null;
   customer_code: string | null;

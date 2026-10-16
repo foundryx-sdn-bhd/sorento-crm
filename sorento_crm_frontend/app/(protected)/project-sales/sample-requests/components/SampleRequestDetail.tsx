@@ -332,18 +332,6 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
         meta: { headerTitle: 'Description' },
       },
       {
-        id: 'alt',
-        accessorFn: (row) => row.alt_product_code ?? '',
-        header: ({ column }) => <DataGridColumnHeader title="Or (alternative)" column={column} />,
-        size: 150,
-        cell: ({ row }) => (
-          <span className="truncate" title={row.original.alt_product_code ?? undefined}>
-            {row.original.alt_product_code || '-'}
-          </span>
-        ),
-        meta: { headerTitle: 'Or (alternative)' },
-      },
-      {
         id: 'qty',
         accessorKey: 'qty',
         header: ({ column }) => <DataGridColumnHeader title="Qty" column={column} />,
@@ -533,12 +521,11 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
               {project}
               {!r.project_id && r.project_name ? ' (not registered)' : ''}
             </Field>
-            <Field label="Quotation">{r.quotation_label}</Field>
             <Field label="For (scope)">{r.scope_note}</Field>
-            <Field label="Requested delivery">
-              {r.deliver_immediately ? 'Immediate arrangement' : day(r.delivery_date)}
+            <Field label="Request Delivery Date">
+              {day(r.delivery_date)}
             </Field>
-            <Field label="Delivery mode">
+            <Field label="Delivery">
               {r.delivery_mode ? DELIVERY_MODE_LABELS[r.delivery_mode] : null}
             </Field>
             <Field label="Ship to" wide>
@@ -550,10 +537,10 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
             <Field label="Sample board" wide>
               {r.board_mounting ? `Mount & label: ${r.board_label ?? ''}` : null}
             </Field>
-            <Field label="Loan period">
+            <Field label="Loan Period">
               {r.loan_value ? `${r.loan_value} ${r.loan_unit}` : null}
             </Field>
-            <Field label="Goods from">
+            <Field label="Goods Taken From">
               {r.goods_from ? GOODS_FROM_LABELS[r.goods_from] : null}
             </Field>
             <Field label="Purpose" wide>

@@ -1,47 +1,42 @@
 'use client';
 
 /**
- * Staff new / edit sample request: a full page, like New Purchase Request, with the same
- * sections in the same order as the detail card (SR-CORE).
+ * Staff new / edit sample request (SR-CORE): the Consignment Requisition Form as one document
+ * card, the way New Purchase Request / Sponsorship Form draws its paper form. The detail page
+ * shows the same fields in the same order.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { FormSection } from '@/components/common/FormSection';
-import {
-  SearchableSelect,
-  type SearchableSelectOption,
-} from '@/components/common/SearchableSelect';
-import { codeWithName } from '@/lib/product-display';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { SampleRequestLines } from '@/components/common/SampleRequestLines';
+import { SampleRequestFooterFields } from '@/components/common/SampleRequestFooterFields';
+import { AsyncCombobox } from '@/app/(auth)/portal/components/AsyncCombobox';
+import { formatDateInMalaysia } from '@/lib/helpers';
+import { STATUS_PILL_BASE, statusPillClass } from '@/lib/status-pill';
 import { cn } from '@/lib/utils';
-import {
-  DELIVERY_MODE_LABELS,
-  GOODS_FROM_LABELS,
-  SampleRequestError,
-  type SampleRequestDeliveryMode,
-  type SampleRequestGoodsFrom,
-  type SampleRequestProductHit,
-} from '@/types/sampleRequest';
+import { SampleRequestError } from '@/types/sampleRequest';
 import {
   EMPTY_FORM,
-  FIELD_SECTION,
-  nextKey,
+  blankLine,
   payloadFromState,
   stateFromDetail,
   validate,
   type FormState,
-  type SectionKey,
 } from '@/lib/sample-request-form';
-import { searchCustomersSelect } from '@/app/(protected)/order-management/customers/services/customerService';
-import { getProject, listProjects, listQuotations } from '../../_shared/services/projectService';
+import { lookupCustomersForRequest } from '@/app/(protected)/procurement-management/purchase-requests/services/customerLookupService';
+import type { CustomerLookupItem } from '@/app/(protected)/procurement-management/purchase-requests/types/purchaseRequest.types';
+import { searchProjectsForLink } from '@/app/(protected)/complaint-management/complaints/services/complaintService';
+import { getProject } from '../../_shared/services/projectService';
 import {
   useSampleRequestMutations,
   useSampleRequestQuery,
@@ -51,55 +46,37 @@ import { searchSampleRequestProducts } from '../services/sampleRequestService';
 
 const BASE_PATH = '/project-sales/sample-requests';
 
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
+function DocField({
   label,
+  htmlFor,
+  className,
+  error,
+  children,
 }: {
-  value: T | '';
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
   label: string;
+  htmlFor?: string;
+  className?: string;
+  error?: string;
+  children: ReactNode;
 }) {
   return (
-    <div
-      role="radiogroup"
-      aria-label={label}
-      className="inline-flex flex-wrap items-center rounded-md border p-0.5"
-    >
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={value === o.value}
-          className={cn(
-            'rounded px-3 py-1.5 text-sm transition-colors',
-            value === o.value
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:bg-muted',
-          )}
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </button>
-      ))}
+    <div className={cn('min-w-0', className)}>
+      {htmlFor ? (
+        <Label htmlFor={htmlFor} className="text-sm font-normal text-muted-foreground">
+          {label}
+        </Label>
+      ) : (
+        <p className="text-sm text-muted-foreground">{label}</p>
+      )}
+      <div className="mt-1.5">{children}</div>
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
   );
 }
 
-function FieldError({ message }: { message?: string }) {
-  return message ? <p className="text-xs text-destructive">{message}</p> : null;
-}
-
-const productOptions = (hits: SampleRequestProductHit[]): SearchableSelectOption[] =>
-  hits.map((h) => ({
-    value: h.id,
-    label: codeWithName(h.product_code, h.product_name),
-    description: h.brand_name ?? undefined,
-    code: h.product_code,
-  }));
+const ReadValue = ({ children }: { children: ReactNode }) => (
+  <p className="min-h-9 break-words py-2 text-sm">{children || '-'}</p>
+);
 
 export default function SampleRequestForm({
   requestId,
@@ -114,28 +91,25 @@ export default function SampleRequestForm({
   const { create, update, submit } = useSampleRequestMutations();
   const existing = useSampleRequestQuery(requestId ?? null);
   const { data: switches } = useSampleRequestSwitches();
-  const [state, setState] = useState<FormState>(EMPTY_FORM);
+  const [state, setState] = useState<FormState>({ ...EMPTY_FORM, lines: [blankLine()] });
   const [hydrated, setHydrated] = useState(!requestId);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverMessage, setServerMessage] = useState<string | null>(null);
-  const [missed, setMissed] = useState('');
-  const [quoteOptions, setQuoteOptions] = useState<SearchableSelectOption[]>([]);
-  const [open, setOpen] = useState<Record<SectionKey, boolean>>({
-    customer: true,
-    lines: true,
-    delivery: true,
-    additional: true,
-  });
 
   const set = useCallback(
     <K extends keyof FormState>(key: K, value: FormState[K]) =>
       setState((prev) => ({ ...prev, [key]: value })),
     [],
   );
+  const patch = useCallback(
+    (next: Partial<FormState>) => setState((prev) => ({ ...prev, ...next })),
+    [],
+  );
 
   useEffect(() => {
     if (requestId && existing.data && !hydrated) {
-      setState(stateFromDetail(existing.data));
+      const loaded = stateFromDetail(existing.data);
+      setState(loaded.lines.length ? loaded : { ...loaded, lines: [blankLine()] });
       setHydrated(true);
     }
   }, [requestId, existing.data, hydrated]);
@@ -163,90 +137,11 @@ export default function SampleRequestForm({
     };
   }, [projectId, requestId]);
 
-  // The quotation picker offers the picked project's quotations, current version each.
-  useEffect(() => {
-    if (!state.project_id) {
-      setQuoteOptions([]);
-      return;
-    }
-    let cancelled = false;
-    listQuotations(state.project_id)
-      .then((rows) => {
-        if (cancelled) return;
-        setQuoteOptions(
-          rows
-            .filter((q) => q.current_version_id)
-            .map((q) => ({
-              value: q.current_version_id as string,
-              label: `${q.scope_label} v${q.current_version_no ?? 1}`,
-            })),
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setQuoteOptions([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [state.project_id]);
-
-  const fetchProducts = useCallback(async (q: string) => {
-    const hits = await searchSampleRequestProducts(q);
-    setMissed(hits.length === 0 ? q.trim() : '');
-    return productOptions(hits);
-  }, []);
-
-  const fetchCustomers = useCallback(
-    (q: string, page: number) => searchCustomersSelect(q, page),
-    [],
-  );
-
-  const fetchProjects = useCallback(async (q: string) => {
-    const body = await listProjects({ query: q || undefined, limit: 30 });
-    return body.data.map((p) => ({
-      value: p.id,
-      label: [p.project_code, p.title].filter(Boolean).join(' - '),
-      description: p.developer_name ?? undefined,
-    }));
-  }, []);
-
-  const showErrors = (found: Record<string, string>) => {
-    setErrors(found);
-    const keys = Object.keys(found)
-      .map((f) => FIELD_SECTION[f])
-      .filter((k): k is SectionKey => Boolean(k));
-    setOpen((prev) => ({ ...prev, ...Object.fromEntries(keys.map((k) => [k, true])) }));
-  };
-
-  const addLine = (opt: SearchableSelectOption | null) => {
-    if (!opt) return;
-    setState((prev) => ({
-      ...prev,
-      lines: [
-        ...prev.lines,
-        {
-          key: nextKey(),
-          product_id: opt.value,
-          label: opt.label,
-          alt_product_id: null,
-          alt_label: null,
-          qty: '1',
-          remark: '',
-        },
-      ],
-    }));
-    setErrors((prev) => ({ ...prev, lines: '' }));
-  };
-
-  const updateLine = (key: string, patch: Partial<FormState['lines'][number]>) =>
-    setState((prev) => ({
-      ...prev,
-      lines: prev.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)),
-    }));
-
   const explain = (e: unknown) => {
     const message = e instanceof Error ? e.message : 'Failed to save the sample request';
-    if (e instanceof SampleRequestError && e.field) showErrors({ [e.field]: message });
+    if (e instanceof SampleRequestError && e.field) {
+      setErrors((prev) => ({ ...prev, [e.field as string]: message }));
+    }
     setServerMessage(message);
   };
 
@@ -261,6 +156,7 @@ export default function SampleRequestForm({
 
   const handleSaveDraft = async () => {
     setServerMessage(null);
+    setErrors({});
     try {
       const saved = await save();
       toast.success('Draft saved');
@@ -272,11 +168,8 @@ export default function SampleRequestForm({
 
   const handleSubmit = async () => {
     setServerMessage(null);
-    const found = validate(state, {
-      requireProject: switches?.requireProject,
-      requireQuotation: switches?.requireQuotation,
-    });
-    showErrors(found);
+    const found = validate(state, { requireProject: switches?.requireProject });
+    setErrors(found);
     if (Object.keys(found).length > 0) return;
     try {
       const saved = await save();
@@ -289,422 +182,227 @@ export default function SampleRequestForm({
 
   if (requestId && (existing.isLoading || !hydrated)) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-40 w-full" />
+      <div className="mx-auto w-full max-w-5xl space-y-4">
+        <Skeleton className="h-64 w-full" />
         <Skeleton className="h-40 w-full" />
       </div>
     );
   }
 
-  const problemCount = Object.values(errors).filter(Boolean).length;
+  const record = existing.data;
   const requireProject = Boolean(switches?.requireProject);
-  const section = (key: SectionKey) => ({
-    open: open[key],
-    onOpenChange: (v: boolean) => setOpen((p) => ({ ...p, [key]: v })),
-  });
+  const projectTitle = state.project_id
+    ? state.project_label.split(' - ').slice(1).join(' - ') || state.project_label
+    : state.project_title;
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4">
-      <FormSection title="Customer & project" {...section('customer')}>
-        <div className="space-y-1.5">
-          <Label htmlFor="sr-customer">Customer</Label>
-          <SearchableSelect
-            id="sr-customer"
-            value={state.customer_id}
-            onChange={(v) => {
-              set('customer_id', v);
-              if (!v) set('customer_label', '');
-            }}
-            onOptionChange={(opt) => opt && set('customer_label', opt.label)}
-            fetchOptions={fetchCustomers}
-            paginated
-            pageSize={50}
-            selectedOption={
-              state.customer_id
-                ? { value: state.customer_id, label: state.customer_label }
-                : undefined
-            }
-            placeholder="Select a customer..."
-            clearable
-          />
-          <FieldError message={errors.customer_id} />
-        </div>
-        {!state.customer_id && (
-          <div className="space-y-1.5">
-            <Label htmlFor="sr-customer-name">Customer name (no debtor code)</Label>
-            <Input
-              id="sr-customer-name"
-              value={state.customer_name}
-              onChange={(e) => set('customer_name', e.target.value)}
-            />
+    <div className="mx-auto w-full max-w-5xl">
+      <Card className="border-2 shadow-sm">
+        <CardContent className="px-5 pb-8 pt-6 sm:px-10">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">Sample Request</Badge>
+            <span className={`${STATUS_PILL_BASE} ${statusPillClass('draft')}`}>
+              {record?.status_label ?? 'Draft'}
+            </span>
           </div>
-        )}
-        <div className="space-y-1.5">
-          <Label htmlFor="sr-project">Registered project{requireProject ? ' *' : ''}</Label>
-          <SearchableSelect
-            id="sr-project"
-            value={state.project_id}
-            onChange={(v) => {
-              set('project_id', v);
-              if (!v) {
-                set('project_label', '');
-                set('quotation_version_id', '');
-                set('quotation_label', '');
-              }
-            }}
-            onOptionChange={(opt) => {
-              if (opt) {
-                set('project_label', opt.label);
-                set('quotation_version_id', '');
-                set('quotation_label', '');
-              }
-            }}
-            fetchOptions={fetchProjects}
-            selectedOption={
-              state.project_id
-                ? { value: state.project_id, label: state.project_label }
-                : undefined
-            }
-            placeholder="Search your registered projects..."
-            clearable
-          />
-          <FieldError message={errors.project_id} />
-        </div>
-        {!requireProject && !state.project_id && (
-          <div className="space-y-1.5">
-            <Label htmlFor="sr-project-title">Project title (if not registered)</Label>
-            <Input
-              id="sr-project-title"
-              value={state.project_title}
-              onChange={(e) => set('project_title', e.target.value)}
-            />
-          </div>
-        )}
-        {state.project_id && (
-          <div className="space-y-1.5">
-            <Label htmlFor="sr-quotation">Quotation{switches?.requireQuotation ? ' *' : ''}</Label>
-            <SearchableSelect
-              id="sr-quotation"
-              value={state.quotation_version_id}
-              onChange={(v) => set('quotation_version_id', v)}
-              onOptionChange={(opt) => set('quotation_label', opt?.label ?? '')}
-              options={quoteOptions}
-              selectedOption={
-                state.quotation_version_id
-                  ? { value: state.quotation_version_id, label: state.quotation_label }
-                  : undefined
-              }
-              placeholder="Select a quotation..."
-              clearable
-            />
-            <FieldError message={errors.quotation_version_id} />
-          </div>
-        )}
-        <div className="space-y-1.5">
-          <Label htmlFor="sr-scope">For (scope)</Label>
-          <Input
-            id="sr-scope"
-            value={state.scope_note}
-            placeholder="e.g. Tower A & B"
-            onChange={(e) => set('scope_note', e.target.value)}
-          />
-        </div>
-      </FormSection>
+          <h2 className="mb-6 border-b border-border pb-4 text-center text-xl font-semibold tracking-tight">
+            Consignment Requisition Form
+          </h2>
 
-      <FormSection title="Lines" {...section('lines')}>
-        <div className="space-y-1.5">
-          <Label>Mount &amp; label sample board</Label>
-          <div>
-            <Segmented
-              label="Mount and label sample board"
-              value={state.board_mounting ? 'yes' : 'no'}
-              options={[
-                { value: 'no', label: 'No' },
-                { value: 'yes', label: 'Yes' },
-              ]}
-              onChange={(v) => set('board_mounting', v === 'yes')}
-            />
-          </div>
-        </div>
-        {state.board_mounting && (
-          <div className="space-y-1.5">
-            <Label htmlFor="sr-board-label">Board label *</Label>
-            <Input
-              id="sr-board-label"
-              value={state.board_label}
-              onChange={(e) => set('board_label', e.target.value)}
-            />
-            <FieldError message={errors.board_label} />
-          </div>
-        )}
+          <div className="grid grid-cols-1 gap-x-10 gap-y-5 sm:grid-cols-2">
+            <DocField label="Sales Person">
+              <ReadValue>{record?.salesperson_name ?? 'You'}</ReadValue>
+            </DocField>
+            <DocField label="Date">
+              <ReadValue>
+                {formatDateInMalaysia(record?.request_date ?? new Date()) || '-'}
+              </ReadValue>
+            </DocField>
 
-        {state.lines.length > 0 && (
-          <div className="relative overflow-x-auto">
-            <table className="w-full min-w-[640px] table-fixed text-sm">
-              <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="w-14 px-2 py-2 text-left">#</th>
-                  <th className="w-[32%] px-2 py-2 text-left">Item</th>
-                  <th className="w-[26%] px-2 py-2 text-left">Or (alternative)</th>
-                  <th className="w-20 px-2 py-2 text-left">Qty</th>
-                  <th className="px-2 py-2 text-left">Remarks</th>
-                  <th className="w-10 px-2 py-2">
-                    <span className="sr-only">Remove</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {state.lines.map((line, index) => (
-                  <tr key={line.key} data-testid="sample-request-line" className="border-t align-top">
-                    <td className="px-2 py-2 text-muted-foreground">{index + 1}</td>
-                    <td className="px-2 py-2">
-                      <span className="block truncate" title={line.label}>
-                        {line.label}
-                      </span>
-                      {line.inactive && (
-                        <Badge variant="secondary" className="mt-1">
-                          Inactive
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="px-2 py-2">
-                      <SearchableSelect
-                        aria-label="Alternative"
-                        value={line.alt_product_id ?? ''}
-                        onChange={(v) => {
-                          if (!v) updateLine(line.key, { alt_product_id: null, alt_label: null });
-                        }}
-                        onOptionChange={(opt) =>
-                          updateLine(line.key, {
-                            alt_product_id: opt ? opt.value : null,
-                            alt_label: opt ? opt.label : null,
-                          })
-                        }
-                        fetchOptions={fetchProducts}
-                        selectedOption={
-                          line.alt_product_id
-                            ? { value: line.alt_product_id, label: line.alt_label ?? '' }
-                            : undefined
-                        }
-                        placeholder="Optional"
-                        clearable
-                        truncateTriggerLabel
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        min={1}
-                        aria-label="Quantity"
-                        value={line.qty}
-                        onChange={(e) => updateLine(line.key, { qty: e.target.value })}
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <Input
-                        aria-label="Remarks"
-                        value={line.remark}
-                        onChange={(e) => updateLine(line.key, { remark: e.target.value })}
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label="Remove line"
-                        onClick={() =>
-                          setState((prev) => ({
-                            ...prev,
-                            lines: prev.lines.filter((l) => l.key !== line.key),
-                          }))
-                        }
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+            <DocField
+              label="Customer Name *"
+              htmlFor="sr-customer"
+              className="sm:col-span-2"
+              error={errors.customer_id}
+            >
+              <AsyncCombobox<CustomerLookupItem>
+                id="sr-customer"
+                value={state.customer_id ? state.customer_label : state.customer_name}
+                onChange={(v, item) => {
+                  if (item && item.customer_id) {
+                    patch({
+                      customer_id: item.customer_id,
+                      customer_label: item.debtor_name,
+                      customer_name: '',
+                    });
+                  } else {
+                    patch({ customer_id: '', customer_label: '', customer_name: v });
+                  }
+                }}
+                fetchOptions={lookupCustomersForRequest}
+                optionValue={(o) => o.debtor_name}
+                optionLabel={(o) => o.debtor_name}
+                optionMeta={(o) => o.customer_code}
+                placeholder="Customer name"
+              />
+            </DocField>
 
-        <div className="space-y-1.5">
-          <Label>Add item</Label>
-          <SearchableSelect
-            aria-label="Product"
-            value=""
-            onChange={() => undefined}
-            onOptionChange={addLine}
-            fetchOptions={fetchProducts}
-            placeholder="Search a product code or name..."
-            emptyMessage={
-              missed
-                ? `${missed} is not in the product list. Pick the product you mean, or ask purchasing to add it as a new product before you request it.`
-                : 'Type a product code or name.'
-            }
-          />
-          <FieldError message={errors.lines} />
-        </div>
-      </FormSection>
+            <DocField label="Project Title" htmlFor="sr-project-title">
+              <Input
+                id="sr-project-title"
+                value={projectTitle}
+                disabled={Boolean(state.project_id)}
+                onChange={(e) => set('project_title', e.target.value)}
+              />
+            </DocField>
+            <DocField
+              label={requireProject ? 'Registered project *' : 'Registered project (optional)'}
+              htmlFor="sr-project"
+              error={errors.project_id}
+            >
+              <SearchableSelect
+                id="sr-project"
+                value={state.project_id}
+                onChange={(v) => {
+                  if (!v) patch({ project_id: '', project_label: '' });
+                }}
+                onOptionChange={(opt) =>
+                  opt && patch({ project_id: opt.value, project_label: opt.label })
+                }
+                selectedOption={
+                  state.project_id
+                    ? { value: state.project_id, label: state.project_label }
+                    : undefined
+                }
+                fetchOptions={(query, pageIndex) => searchProjectsForLink(query, pageIndex + 1)}
+                paginated
+                pageSize={25}
+                clearable
+                placeholder="Search a project by code or title"
+                emptyMessage="No project matches that."
+              />
+            </DocField>
 
-      <FormSection title="Delivery" {...section('delivery')}>
-        <div className="space-y-1.5">
-          <Label>Delivery *</Label>
-          <div>
-            <Segmented
-              label="Delivery timing"
-              value={state.immediate ? 'immediate' : 'date'}
-              options={[
-                { value: 'date', label: 'On a date' },
-                { value: 'immediate', label: 'Immediate arrangement' },
-              ]}
-              onChange={(v) => set('immediate', v === 'immediate')}
-            />
-          </div>
-          {!state.immediate && (
-            <Input
-              type="date"
-              aria-label="Delivery date"
-              value={state.delivery_date}
-              onChange={(e) => set('delivery_date', e.target.value)}
-            />
-          )}
-          <FieldError message={errors.delivery_date} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Delivery mode *</Label>
-          <div>
-            <Segmented
-              label="Delivery mode"
-              value={state.delivery_mode}
-              options={(Object.keys(DELIVERY_MODE_LABELS) as SampleRequestDeliveryMode[]).map(
-                (k) => ({ value: k, label: DELIVERY_MODE_LABELS[k] }),
-              )}
-              onChange={(v) => set('delivery_mode', v)}
-            />
-          </div>
-          <FieldError message={errors.delivery_mode} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="sr-ship-to">Ship to *</Label>
-          <Input
-            id="sr-ship-to"
-            value={state.ship_to_name}
-            onChange={(e) => set('ship_to_name', e.target.value)}
-          />
-          <FieldError message={errors.ship_to_name} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="sr-ship-address">Shipping address</Label>
-          <Textarea
-            id="sr-ship-address"
-            rows={2}
-            value={state.ship_to_address}
-            onChange={(e) => set('ship_to_address', e.target.value)}
-          />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="sr-site-contact">Site contact</Label>
-            <Input
-              id="sr-site-contact"
-              value={state.site_contact_name}
-              onChange={(e) => set('site_contact_name', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sr-site-phone">Contact phone</Label>
-            <Input
-              id="sr-site-phone"
-              inputMode="tel"
-              value={state.site_contact_phone}
-              onChange={(e) => set('site_contact_phone', e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="sr-site-note">Contact note</Label>
-          <Input
-            id="sr-site-note"
-            value={state.site_contact_note}
-            onChange={(e) => set('site_contact_note', e.target.value)}
-          />
-        </div>
-      </FormSection>
+            <DocField label="For" htmlFor="sr-scope">
+              <Input
+                id="sr-scope"
+                value={state.scope_note}
+                onChange={(e) => set('scope_note', e.target.value)}
+              />
+            </DocField>
+            <DocField
+              label="Request Delivery Date *"
+              htmlFor="sr-delivery-date"
+              error={errors.delivery_date}
+            >
+              <Input
+                id="sr-delivery-date"
+                type="date"
+                value={state.delivery_date}
+                onChange={(e) => set('delivery_date', e.target.value)}
+              />
+            </DocField>
 
-      <FormSection title="Additional Information" {...section('additional')}>
-        <div className="space-y-1.5">
-          <Label htmlFor="sr-loan">Loan period</Label>
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              id="sr-loan"
-              type="number"
-              inputMode="numeric"
-              min={1}
-              className="w-24"
-              value={state.loan_value}
-              onChange={(e) => set('loan_value', e.target.value)}
-            />
-            <Segmented
-              label="Loan unit"
-              value={state.loan_unit}
-              options={[
-                { value: 'days', label: 'Days' },
-                { value: 'months', label: 'Months' },
-              ]}
-              onChange={(v) => set('loan_unit', v)}
-            />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Goods from</Label>
-          <div>
-            <Segmented
-              label="Goods from"
-              value={state.goods_from}
-              options={(Object.keys(GOODS_FROM_LABELS) as SampleRequestGoodsFrom[]).map((k) => ({
-                value: k,
-                label: GOODS_FROM_LABELS[k],
-              }))}
-              onChange={(v) => set('goods_from', v)}
-            />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="sr-purpose">Purpose</Label>
-          <Textarea
-            id="sr-purpose"
-            rows={3}
-            value={state.purpose}
-            onChange={(e) => set('purpose', e.target.value)}
-          />
-        </div>
-      </FormSection>
+            <DocField label="Ship To *" htmlFor="sr-ship-to" error={errors.ship_to_name}>
+              <Input
+                id="sr-ship-to"
+                value={state.ship_to_name}
+                onChange={(e) => set('ship_to_name', e.target.value)}
+              />
+            </DocField>
 
-      {(problemCount > 0 || serverMessage) && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {problemCount > 0 && (
-            <p>
-              {problemCount} thing{problemCount === 1 ? '' : 's'} need
-              {problemCount === 1 ? 's' : ''} attention.
+            <DocField label="Shipping Address" htmlFor="sr-address" className="sm:col-span-2">
+              <Textarea
+                id="sr-address"
+                rows={3}
+                value={state.ship_to_address}
+                onChange={(e) => set('ship_to_address', e.target.value)}
+              />
+            </DocField>
+
+            <DocField label="Contact Person" htmlFor="sr-contact-person">
+              <Input
+                id="sr-contact-person"
+                value={state.site_contact_name}
+                onChange={(e) => set('site_contact_name', e.target.value)}
+              />
+            </DocField>
+
+            <DocField label="Contact Phone / Note" htmlFor="sr-contact-phone">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Input
+                  id="sr-contact-phone"
+                  inputMode="tel"
+                  placeholder="Phone"
+                  value={state.site_contact_phone}
+                  onChange={(e) => set('site_contact_phone', e.target.value)}
+                />
+                <Input
+                  aria-label="Contact note"
+                  placeholder="Note"
+                  value={state.site_contact_note}
+                  onChange={(e) => set('site_contact_note', e.target.value)}
+                />
+              </div>
+            </DocField>
+
+            <DocField label="Consignment No">
+              <ReadValue>{record?.consignment_no}</ReadValue>
+            </DocField>
+            <DocField label="PO No">
+              <ReadValue>{record?.po_no}</ReadValue>
+            </DocField>
+          </div>
+
+          <div className="mb-3 mt-8 flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold">Line items</h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => patch({ lines: [...state.lines, blankLine()] })}
+            >
+              <Plus className="size-4" />
+              Add row
+            </Button>
+          </div>
+          <SampleRequestLines
+            value={state}
+            onChange={patch}
+            search={searchSampleRequestProducts}
+            captions={{ no: 'No.', item: 'Item Code', qty: 'Qty' }}
+            errors={errors}
+          />
+
+          <div className="mt-8">
+            <SampleRequestFooterFields state={state} set={set} errors={errors} />
+          </div>
+
+          {serverMessage && (
+            <p className="mt-6 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {serverMessage}
             </p>
           )}
-          {serverMessage && <p className="mt-0.5">{serverMessage}</p>}
-        </div>
-      )}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-        <Button variant="outline" onClick={handleSaveDraft} disabled={saving}>
-          {saving && <Loader2 className="size-4 mr-1 animate-spin" />}
-          Save Draft
-        </Button>
-        <Button onClick={handleSubmit} disabled={saving}>
-          {saving && <Loader2 className="size-4 mr-1 animate-spin" />}
-          Submit
-        </Button>
-      </div>
+          <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.push(requestId ? `${BASE_PATH}/${requestId}` : BASE_PATH)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" variant="outline" onClick={handleSaveDraft} disabled={saving}>
+              {saving && <Loader2 className="mr-1 size-4 animate-spin" />}
+              Save as draft
+            </Button>
+            <Button type="button" onClick={handleSubmit} disabled={saving}>
+              {saving && <Loader2 className="mr-1 size-4 animate-spin" />}
+              Submit
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

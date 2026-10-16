@@ -9,7 +9,7 @@ const complete = (over: Partial<FormState> = {}): FormState => ({
   delivery_mode: 'driver',
   ship_to_name: 'Site',
   lines: [
-    { key: 'l1', product_id: 'p1', label: 'P1', alt_product_id: null, alt_label: null, qty: '1', remark: '' },
+    { key: 'l1', product_id: 'p1', label: 'P1', qty: '1', remark: '' },
   ],
   ...over,
 });
@@ -38,7 +38,7 @@ describe('sample request form: customer', () => {
 
   it('keeps the inactive flag of a line whose product went inactive', () => {
     const detail = {
-      lines: [{ id: 'x', line_no: 1, product_id: 'p', product_code: 'A', product_name: 'a', brand_name: null, product_active: false, alt_product_id: null, alt_product_code: null, qty: 1, remark: null }],
+      lines: [{ id: 'x', line_no: 1, product_id: 'p', product_code: 'A', product_name: 'a', brand_name: null, product_active: false, qty: 1, remark: null }],
     } as unknown as SampleRequestDetail;
     expect(stateFromDetail(detail).lines[0].inactive).toBe(true);
   });

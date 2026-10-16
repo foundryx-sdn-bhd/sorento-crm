@@ -135,18 +135,15 @@ export async function searchSampleRequestProducts(q: string): Promise<SampleRequ
   return read<SampleRequestProductHit[]>(res, 'Failed to search products');
 }
 
-/** Whether the two System Settings switches are on; read from the open app-config projection. */
+/** Whether the System Settings switch is on; read from the open app-config projection. */
 export async function getSampleRequestSwitches(): Promise<{
   requireProject: boolean;
-  requireQuotation: boolean;
 }> {
   const res = await apiFetch('/api/user-management/settings/app-config');
   const body = await read<{
     sample_request_require_project?: boolean;
-    sample_request_require_quotation?: boolean;
   }>(res, 'Failed to load settings');
   return {
     requireProject: Boolean(body.sample_request_require_project),
-    requireQuotation: Boolean(body.sample_request_require_quotation),
   };
 }

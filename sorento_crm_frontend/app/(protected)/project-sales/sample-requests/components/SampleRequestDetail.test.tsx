@@ -103,7 +103,6 @@ function detail(over: Partial<Detail> = {}): Detail {
     project_id: null,
     project_code: null,
     project_name: null,
-    quotation_label: null,
     request_date: null,
     submitted_at: null,
     confirmed_at: null,
@@ -124,8 +123,6 @@ function detail(over: Partial<Detail> = {}): Detail {
         product_name: 'Tile One',
         brand_name: 'Brand',
         product_active: true,
-        alt_product_id: null,
-        alt_product_code: null,
         qty: 2,
         remark: null,
       },
@@ -142,6 +139,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('SampleRequestDetail', () => {
+  it('shows no quotation, alternative product or immediate arrangement', () => {
+    render(<Page />);
+    const text = document.body.textContent ?? '';
+    expect(text).not.toMatch(/quotation/i);
+    expect(text).not.toMatch(/alternative/i);
+    expect(text).not.toMatch(/immediate/i);
+    expect(screen.getByText('Request Delivery Date')).toBeTruthy();
+  });
+
   it('expands a line into the stock grid for its product', () => {
     render(<Page />);
     expect(screen.queryByTestId('stock-grid')).toBeNull();

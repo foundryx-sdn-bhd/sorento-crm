@@ -77,8 +77,7 @@ function statusFilterFromParam(param: string | undefined): string {
   return param === ALL_KEYS.join(',') ? 'all' : param;
 }
 
-export function deliveryText(row: Pick<SampleRequestRow, 'deliver_immediately' | 'delivery_date'>) {
-  if (row.deliver_immediately) return 'Immediate';
+export function deliveryText(row: Pick<SampleRequestRow, 'delivery_date'>) {
   return row.delivery_date ? formatDateInMalaysia(row.delivery_date) : '-';
 }
 
