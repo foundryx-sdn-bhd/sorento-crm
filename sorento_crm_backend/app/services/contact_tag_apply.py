@@ -384,7 +384,7 @@ def apply_settings(
     # and no values or names (conflict tags included).
     redact = cts.unreadable_sections(can, is_superadmin)
     evaluated = cts.evaluate(db, list(found.values()), only_tags=only_tags, redact=redact)
-    cat = Catalog(db)
+    cat = Catalog(db, scope_brands=True)
     results: list[dict] = []
     for cid in ids:
         contact = found.get(cid)

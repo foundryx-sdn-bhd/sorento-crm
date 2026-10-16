@@ -754,6 +754,7 @@ export default function ContactsList() {
       outboundBusy,
       canViewUsers,
       canAddUsers,
+      canEditContacts,
     ],
   );
 

@@ -30,6 +30,7 @@ import { useListStateFromUrl } from '@/hooks/useListStateFromUrl';
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import { CONTACT_TAG_PERMS } from '../lib/permissions';
 import { useContactTagsQuery } from '../hooks/useContactTags';
+import { settingsCount } from '../lib/settingsCount';
 import type { ContactTag } from '../types/contactTag.types';
 import ContactTagFormDialog from './ContactTagFormDialog';
 
@@ -117,7 +118,7 @@ export default function ContactTagsAdmin() {
         header: ({ column }) => (
           <DataGridColumnHeader title="Name" column={column} />
         ),
-        size: 220,
+        size: 180,
         meta: {
           headerTitle: 'Name',
           skeleton: <Skeleton className="h-4 w-28" />,
@@ -136,7 +137,7 @@ export default function ContactTagsAdmin() {
         header: ({ column }) => (
           <DataGridColumnHeader title="Description" column={column} />
         ),
-        size: 300,
+        size: 200,
         enableSorting: false,
         meta: {
           headerTitle: 'Description',
@@ -152,12 +153,38 @@ export default function ContactTagsAdmin() {
           ),
       },
       {
-        id: 'differs_count',
-        accessorFn: (row) => row.differs_count ?? 0,
-        header: ({ column }) => <DataGridColumnHeader title="Differs" column={column} />,
+        id: 'settings',
+        accessorFn: (row) => settingsCount(row.settings),
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Settings" column={column} />
+        ),
         size: 110,
         enableSorting: false,
-        meta: { headerTitle: 'Differs', skeleton: <Skeleton className="h-4 w-10" /> },
+        meta: {
+          headerTitle: 'Settings',
+          skeleton: <Skeleton className="h-4 w-14" />,
+        },
+        cell: ({ row }) => {
+          const n = settingsCount(row.original.settings);
+          return n === 0 ? (
+            <span className="text-muted-foreground">None</span>
+          ) : (
+            <span>{`${n} setting${n === 1 ? '' : 's'}`}</span>
+          );
+        },
+      },
+      {
+        id: 'differs_count',
+        accessorFn: (row) => row.differs_count ?? 0,
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Differs" column={column} />
+        ),
+        size: 90,
+        enableSorting: false,
+        meta: {
+          headerTitle: 'Differs',
+          skeleton: <Skeleton className="h-4 w-10" />,
+        },
         cell: ({ row }) =>
           row.original.differs_count == null ? (
             <span className="text-muted-foreground">-</span>
@@ -182,7 +209,7 @@ export default function ContactTagsAdmin() {
         header: ({ column }) => (
           <DataGridColumnHeader title="Contacts" column={column} />
         ),
-        size: 110,
+        size: 90,
         enableSorting: false,
         meta: {
           headerTitle: 'Contacts',
@@ -197,7 +224,7 @@ export default function ContactTagsAdmin() {
         header: ({ column }) => (
           <DataGridColumnHeader title="Sort order" column={column} />
         ),
-        size: 120,
+        size: 90,
         meta: {
           headerTitle: 'Sort order',
           skeleton: <Skeleton className="h-4 w-10" />,
@@ -211,7 +238,7 @@ export default function ContactTagsAdmin() {
         header: ({ column }) => (
           <DataGridColumnHeader title="Status" column={column} />
         ),
-        size: 120,
+        size: 100,
         meta: {
           headerTitle: 'Status',
           skeleton: <Skeleton className="h-5 w-16" />,
@@ -232,7 +259,7 @@ export default function ContactTagsAdmin() {
             {
               id: 'actions',
               header: '',
-              size: 100,
+              size: 90,
               enableSorting: false,
               enableHiding: false,
               enableResizing: false,

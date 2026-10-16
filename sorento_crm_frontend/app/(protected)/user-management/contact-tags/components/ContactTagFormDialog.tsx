@@ -8,6 +8,7 @@ import {
   DialogBody,
   DialogContent,
   DialogFooter,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -72,6 +73,9 @@ export default function ContactTagFormDialog({
           <DialogTitle>
             {tag ? 'Edit contact tag' : 'Add contact tag'}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Contact tag details
+          </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="grid gap-4">

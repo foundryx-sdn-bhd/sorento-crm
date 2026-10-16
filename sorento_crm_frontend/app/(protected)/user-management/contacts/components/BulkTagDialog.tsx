@@ -9,6 +9,7 @@ import {
   DialogBody,
   DialogContent,
   DialogFooter,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -196,8 +197,13 @@ export default function BulkTagDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {preview ? `Preview: ${title.toLowerCase()}` : title}
+            {applied
+              ? `Tags ${mode === 'add' ? 'added to' : 'removed from'} ${n} contact${n === 1 ? '' : 's'}`
+              : preview
+                ? `Preview: ${title.toLowerCase()}`
+                : title}
           </DialogTitle>
+          <DialogDescription className="sr-only">{title}</DialogDescription>
         </DialogHeader>
         <DialogBody>
           {applied ? (

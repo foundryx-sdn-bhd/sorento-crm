@@ -115,7 +115,29 @@ export function useBulkTagContacts() {
   });
 }
 
-/** Preview and apply of tag settings are one call with a flag; the lists refresh after an apply only. */
+/**
+ * The apply dialog's preview: the server's dry run, driven by react-query so it survives React
+ * StrictMode's double mount (a ref-guarded effect left the dialog on "Reading..." in `next dev`).
+ */
+export function useApplyPreview(
+  target: { contactIds: string[]; tagId?: string },
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['apply-tag-preview', target.tagId ?? null, target.contactIds],
+    queryFn: () =>
+      target.tagId
+        ? applyContactTagSettings(target.tagId, { dryRun: true })
+        : applyTagSettings({ contactIds: target.contactIds, dryRun: true }),
+    enabled,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Apply of tag settings; the lists refresh after it. */
 export function useApplyTagSettings(target: {
   contactIds: string[];
   tagId?: string;

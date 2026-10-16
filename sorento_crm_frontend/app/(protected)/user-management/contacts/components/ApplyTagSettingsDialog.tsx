@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { LoaderCircleIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,11 +9,15 @@ import {
   DialogBody,
   DialogContent,
   DialogFooter,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from '@/lib/toast';
-import { useApplyTagSettings } from '../../contact-tags/hooks/useContactTags';
+import {
+  useApplyPreview,
+  useApplyTagSettings,
+} from '../../contact-tags/hooks/useContactTags';
 import type {
   ApplyChange,
   ApplyResult,
@@ -204,35 +208,23 @@ export default function ApplyTagSettingsDialog({
   onApplied,
 }: Props) {
   const run = useApplyTagSettings({ contactIds, tagId });
-  const [preview, setPreview] = useState<ApplyResult | null>(null);
   const [result, setResult] = useState<ApplyResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const started = useRef(false);
-
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const previewQuery = useApplyPreview(
+    { contactIds, tagId },
+    open && result === null,
+  );
+  const preview = previewQuery.data ?? null;
+  const error =
+    applyError ??
+    (previewQuery.error ? (previewQuery.error as Error).message : null);
   const doPreview = () => {
-    setError(null);
-    run.mutate(true, {
-      onSuccess: (r) => setPreview(r),
-      onError: (e: Error) => setError(e.message),
-    });
+    setApplyError(null);
+    void previewQuery.refetch();
   };
 
-  useEffect(() => {
-    if (!open) {
-      started.current = false;
-      setPreview(null);
-      setResult(null);
-      setError(null);
-      return;
-    }
-    if (started.current) return;
-    started.current = true;
-    doPreview();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
   const runApply = () => {
-    setError(null);
+    setApplyError(null);
     run.mutate(false, {
       onSuccess: (r) => {
         setResult(r);
@@ -245,7 +237,7 @@ export default function ApplyTagSettingsDialog({
           );
         onApplied?.();
       },
-      onError: (e: Error) => setError(e.message),
+      onError: (e: Error) => setApplyError(e.message),
     });
   };
 
@@ -261,6 +253,9 @@ export default function ApplyTagSettingsDialog({
           <DialogTitle>
             {done ? 'Tag settings applied' : 'Apply tag settings'}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Apply tag settings to contacts
+          </DialogDescription>
         </DialogHeader>
         <DialogBody>
           {!shown && !error ? (
@@ -296,7 +291,7 @@ export default function ApplyTagSettingsDialog({
               {!preview ? (
                 <Button
                   variant="outline"
-                  disabled={run.isPending}
+                  disabled={previewQuery.isFetching}
                   onClick={doPreview}
                 >
                   Retry
