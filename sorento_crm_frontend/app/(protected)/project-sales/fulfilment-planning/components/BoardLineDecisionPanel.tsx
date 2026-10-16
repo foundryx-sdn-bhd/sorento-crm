@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -121,6 +122,11 @@ function seedReason(
  * four inputs the planner had just typed. What they cannot see is whether it ADDS UP, so that
  * is all that is said, as "Unassigned 4" or "Over by 4", and only while it does not.
  */
+/** The sentence for a quantity box that was typed into but cannot be read; a cleared box is "none". */
+function quantityError(raw: string): string | undefined {
+  return raw.trim() ? numberFieldError(raw, { min: 0 }) : undefined;
+}
+
 export function BoardLineDecisionPanel({
   contribution,
   decision,
@@ -372,8 +378,14 @@ export function BoardLineDecisionPanel({
    * still a change to what was decided, so it alone must be enough to unlock Save.
    */
   const alreadyConfirmed = covered && !needsReason && !suspectedChanged;
+  // A quantity box holding something unreadable (bad input) is never read as 0: it is told on
+  // the box and Save waits for it. A cleared box stays "none".
+  const badQuantities =
+    draft.reserve.some((row) => quantityError(row.qty)) ||
+    draft.borrow.some((row) => quantityError(row.qty)) ||
+    Boolean(quantityError(draft.buy_qty));
   const canSave =
-    blockers.length === 0 && (!needsReason || reason.trim().length > 0);
+    blockers.length === 0 && (!needsReason || reason.trim().length > 0) && !badQuantities;
   const fromStockMinor =
     balance.timelyMinor + balance.reserveMinor + balance.borrowMinor;
   /**
@@ -907,6 +919,7 @@ export function BoardLineDecisionPanel({
                           min="0"
                           step="any"
                           value={row.qty}
+                          error={quantityError(row.qty)}
                           disabled={locked}
                           aria-label={`Reserve at ${row.location ?? 'the fulfilment location'}`}
                           onChange={(event) => {
@@ -969,6 +982,7 @@ export function BoardLineDecisionPanel({
                         min="0"
                         step="any"
                         value={row.qty}
+                        error={quantityError(row.qty)}
                         disabled={locked}
                         aria-label={`Borrow from ${row.donor_project_ref ?? row.warehouse_code}`}
                         onChange={(event) => {
@@ -1033,6 +1047,7 @@ export function BoardLineDecisionPanel({
                     min="0"
                     step="any"
                     value={draft.buy_qty}
+                    error={quantityError(draft.buy_qty)}
                     disabled={locked}
                     aria-label="Buy quantity"
                     data-testid={`line-buy-qty-${contribution.key}`}
@@ -1214,7 +1229,7 @@ export function BoardLineDecisionPanel({
                         // the row, so it needs the same in-flight guard the plain Save has -
                         // a double-click here fired two `onDecide` calls.
                         disabled={
-                          saved || pending || alreadyConfirmed || (!approving && !canSave)
+                          saved || pending || alreadyConfirmed || badQuantities || (!approving && !canSave)
                         }
                         onClick={save}
                       >
@@ -1243,7 +1258,7 @@ export function BoardLineDecisionPanel({
                   // a live button under the word "Saved" invites a second write of the same
                   // row. `pending` (fix round 1, S4): the write this same click just started
                   // is still on the wire.
-                  disabled={saved || pending || (!approving && !canSave)}
+                  disabled={saved || pending || badQuantities || (!approving && !canSave)}
                   onClick={save}
                 >
                   {saveButtonLabel}
