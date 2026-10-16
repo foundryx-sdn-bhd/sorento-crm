@@ -90,8 +90,8 @@ export type PortalLandingKind =
 /** Every kind an access type may be granted, in the order the admin sees them. */
 export const LANDING_KINDS: readonly PortalLandingKind[] = [
   ...SUBMISSION_KINDS,
-  GATED_FORM_TYPE,
   SAMPLE_REQUEST_KIND,
+  GATED_FORM_TYPE,
   SALES_OPPORTUNITY_KIND,
   CUSTOMER_ASKS_KIND,
   CONVERSATION_KIND,
