@@ -86,7 +86,7 @@ def test_random_flipping_across_reps_is_within_noise():
 def test_per_arm_means_and_cis_are_reported():
     base = _arm([True, True, False, False])
     head = _arm([True, True, True, False])
-    r = paired_compare(base, head, n_boot=500, seed=1)
+    r = paired_compare(base, head, n_boot=500, seed=1, min_items=1)
     assert r["base_mean"] == 0.5 and r["head_mean"] == 0.75
     assert r["base_ci"][0] <= 0.5 <= r["base_ci"][1]
     assert r["reps"] == 3
@@ -96,7 +96,16 @@ def test_weights_give_weighted_means():
     # a: weight 3, passes both arms; b: weight 1, fails base and passes head.
     base = {"a": [True] * 3, "b": [False] * 3}
     head = {"a": [True] * 3, "b": [True] * 3}
-    r = paired_compare(base, head, n_boot=500, seed=1, weights={"a": 3.0, "b": 1.0})
+    r = paired_compare(base, head, n_boot=500, seed=1, weights={"a": 3.0, "b": 1.0}, min_items=1)
     assert abs(r["base_mean"] - 0.75) < 1e-9
     assert abs(r["head_mean"] - 1.0) < 1e-9
     assert abs(r["delta"] - 0.25) < 1e-9
+
+
+def test_fewer_than_min_items_is_refused_with_the_count():
+    base = _arm([True, False, True, False, True])
+    head = _arm([True] * 5)
+    r = paired_compare(base, head, n_boot=500, seed=1)
+    assert r["verdict"] == "refused"
+    assert r["reason"] == "5 items < 10"
+    assert "verdict refused: 5 items < 10" in format_compare(r)

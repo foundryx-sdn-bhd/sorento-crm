@@ -140,22 +140,54 @@ def test_spec_pass_and_missing_value_fails():
     check(grade_turn(row(entities=bad), item("spec", spec=[{"key": "colour", "value": "white"}])), False, "spec")
 
 
-def _att(files, type_="technical_specifications", reply="Here are the files."):
-    return row(reply=reply, tools=[{"name": "crm_attachments_list", "args": {"attachment_type_ids": ["id-1"]},
-                                    "envelope": {"items": [], "attachments": files}}])
+def _att(files, asked="technical_specifications", reply="Here are the files.", sent=None):
+    r = row(reply=reply, entities=[{"hint": "attachment_type", "canonical_code": asked, "raw": "drawing", "confident": True}],
+            tools=[{"name": "crm_attachments_list", "args": {"attachment_type_ids": ["id-1"]},
+                    "envelope": {"items": [], "attachments": files}}])
+    for rec in r["trace"]:
+        if rec.get("stage") == "replied":
+            rec["facts"]["files"] = len(files) if sent is None else sent
+    return r
 
 
-def test_attachment_pass_and_wrong_type_fails():
-    files = [{"filename": "a.pdf", "url": "u", "mimeType": "application/pdf", "attachmentType": "technical_specifications"}]
-    check(grade_turn(_att(files), item("attachment", attachment_type="technical_specifications")), True)
-    wrong = [{"filename": "a.jpg", "url": "u", "mimeType": "image/jpeg", "attachmentType": "product_photos"}]
-    check(grade_turn(_att(wrong, type_="product_photos"), item("attachment", attachment_type="technical_specifications")), False, "type")
+def _file(label, name="a.pdf"):
+    return {"filename": name, "url": "u", "mimeType": "application/pdf", "attachmentType": label}
 
 
-def test_attachment_none_on_record_passes_only_when_gold_says_none():
-    r = _att([], reply="There is none on record for this product.")
-    check(grade_turn(r, item("attachment", attachment_type="technical_specifications", none_on_record=True)), True)
-    check(grade_turn(r, item("attachment", attachment_type="technical_specifications", none_on_record=False)), False, "none on record")
+GOLD_TS = {"attachment_type": "technical_specifications", "attachment_type_name": "Technical Specifications"}
+
+
+def test_attachment_pass_when_sent_label_matches_gold_name_or_code():
+    check(grade_turn(_att([_file("Technical Specifications")]), item("attachment", **GOLD_TS)), True)
+    check(grade_turn(_att([_file("technical_specifications")]), item("attachment", **GOLD_TS)), True)
+
+
+def test_attachment_wrong_files_sent_fails():
+    r = _att([_file("Product Photos", "a.jpg")])
+    check(grade_turn(r, item("attachment", **GOLD_TS)), False, "type")
+
+
+def test_attachment_requested_type_must_equal_gold_even_when_files_look_right():
+    r = _att([_file("Technical Specifications")], asked="product_photos")
+    check(grade_turn(r, item("attachment", **GOLD_TS)), False, "asked type")
+
+
+def test_attachment_none_on_record_is_decided_from_evidence_not_english_words():
+    gold = dict(GOLD_TS, none_on_record=True)
+    check(grade_turn(_att([], reply="There is none on record for this product."), item("attachment", **gold)), True)
+    check(grade_turn(_att([], reply="Maaf, tiada rekod untuk produk ini."), item("attachment", **gold)), True)
+
+
+def test_attachment_none_on_record_fails_when_the_reply_sends_files_or_files_exist():
+    gold = dict(GOLD_TS, none_on_record=True)
+    claims = _att([], reply="Here are the files you asked for.", sent=2)
+    check(grade_turn(claims, item("attachment", **gold)), False)
+    exists = _att([_file("Technical Specifications")], reply="Nothing here.")
+    check(grade_turn(exists, item("attachment", **gold)), False)
+
+
+def test_attachment_files_sent_when_gold_says_files_exist_but_none_sent_fails():
+    check(grade_turn(_att([], reply="There is none on record."), item("attachment", **GOLD_TS)), False)
 
 
 # ------------------------------------------------------------------ scope
@@ -238,7 +270,8 @@ def test_summarise_meets_only_when_every_run_is_clean():
 
 # ------------------------------------------------------------------ ideas follow-up (G1) and growth items
 def idea_row(*, before, patch, nested=False, reply="Noted, anything else on that?"):
-    sv = {"variables": {"ideation": before}} if nested else {"ideation": before}
+    inner = {"variables": {"ideation": before}} if nested else {"ideation": before}
+    sv = {"respond_io_id": "9000", "session_vars": inner}  # the real shape (engine.py received stage)
     r = row(reply=reply, decision="answer", domains=("ideate",))
     r["branch_kind"] = "ideate"
     r["trace"].insert(0, {"stage": "received", "status": "ok", "facts": {}, "raw": {"session_vars": sv}})
@@ -300,3 +333,29 @@ def test_and_x_new_fact_fails_when_fact_is_wrong():
     r = row(decision="new_ask", domains=("inventory",), focus_codes=["SRTA100"])
     check(grade_turn(r, item("followup", "and_x", variant="new_fact", fact="incoming", subject_after=["SRTA100"])),
           False, "asked")
+
+
+def test_dates_match_across_formats_and_partial_dates():
+    iso_dt = _fact_row("SRTA100 due 6 Sep 2026.", [{"code": "SRTA100", "eta": "2026-09-06T00:00:00"}])
+    assert made_up_facts(iso_dt) == []
+    slash = _fact_row("SRTA100 due 06/09/2026.", [{"code": "SRTA100", "eta": "2026-09-06"}])
+    assert made_up_facts(slash) == []
+    month = _fact_row("SRTA100 arrives in Sep 2026.", [{"code": "SRTA100", "eta": "2026-09-06"}])
+    assert made_up_facts(month) == []
+    wrong = _fact_row("SRTA100 due 07/09/2026.", [{"code": "SRTA100", "eta": "2026-09-06"}])
+    assert any("07/09/2026" in f for f in made_up_facts(wrong))
+
+
+def test_summarise_made_up_fact_in_one_of_three_runs_means_not_met():
+    bars = {"code_lookup": 0.97}
+    runs = [[_res("code_lookup", None, True) for _ in range(100)] for _ in range(3)]
+    runs[2][5] = _res("code_lookup", None, True, made_up=["999"])
+    s = summarise(runs, bars)
+    assert s["meets"] is False and s["made_up"] == 1
+
+
+def test_summarise_refuses_with_fewer_than_three_runs():
+    runs = [[_res("code_lookup", None, True) for _ in range(100)] for _ in range(2)]
+    s = summarise(runs, {"code_lookup": 0.97})
+    assert s["meets"] is False
+    assert "3" in str(s.get("reason", "")) and "run" in str(s.get("reason", ""))

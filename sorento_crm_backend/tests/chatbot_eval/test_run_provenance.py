@@ -105,3 +105,29 @@ def test_ac1_5_refuses_to_start_without_health_git_sha(tmp_path, health):
         rc = "raised"
     assert rc not in (0, None), "runner started although /health reported no git_sha"
     assert ProvEngine.calls_seen == [], "a turn was sent before the provenance check"
+
+
+@pytest.mark.parametrize("sha", ["unknown", "", "  "])
+def test_health_git_sha_unknown_or_empty_is_refused_like_missing(tmp_path, health, sha):
+    health["body"] = {"status": "healthy", "git_sha": sha}
+    try:
+        rc, _ = _run(tmp_path)
+    except SystemExit as exc:
+        rc = exc.code
+    except Exception:  # noqa: BLE001
+        rc = "raised"
+    assert rc not in (0, None), f"runner started on git_sha={sha!r}"
+    assert ProvEngine.calls_seen == []
+
+
+def test_provenance_missing_flag_when_no_digest_carries_provenance(tmp_path, health):
+    ProvEngine.digests = [{}]
+    rc, out = _run(tmp_path)
+    rep = json.loads((out / "report.json").read_text())
+    assert rep.get("provenance_missing") is True
+
+
+def test_provenance_missing_flag_is_false_when_digests_carry_it(tmp_path, health):
+    rc, out = _run(tmp_path)
+    rep = json.loads((out / "report.json").read_text())
+    assert rep.get("provenance_missing") is False

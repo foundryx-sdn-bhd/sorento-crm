@@ -33,9 +33,7 @@ MESSAGE = "price for SRTWC8517"
 TOOL_ENV = {"ok": True, "items": [{"code": "SRTWC8517", "label": "synthetic recorded product row"}], "total": 1}
 
 
-@pytest.fixture()
-def recorded(session_factory, seeded, stub_access, monkeypatch):
-    """One recorded row, plus a DB left with no chatbot.turns rows so a replay may run the same message id."""
+def _record(session_factory, stub_access, monkeypatch, *, keep_turn: bool):
 
     def fake_resolve_config(db, *, current_date, override_version_id=None):
         return parser_mod.ParserConfig(system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="k")
@@ -53,13 +51,26 @@ def recorded(session_factory, seeded, stub_access, monkeypatch):
         "trace": copy.deepcopy(turn.trace),
         "response": copy.deepcopy(turn.response),
     }
-    db = session_factory()
-    db.execute(text("DELETE FROM chatbot.turns"))
-    db.commit()
+    if not keep_turn:
+        db = session_factory()
+        db.execute(text("DELETE FROM chatbot.turns"))
+        db.commit()
     # the replay must not reach a live parser or the real MCP server
     monkeypatch.setattr(parser_mod, "parse", lambda *a, **k: (_ for _ in ()).throw(AssertionError("live parser called")))
     monkeypatch.setattr(MCPRuntimeClient, "call_tool", lambda self, name, arguments: (_ for _ in ()).throw(AssertionError("live MCP")))
     return row
+
+
+@pytest.fixture()
+def recorded(session_factory, seeded, stub_access, monkeypatch):
+    """One recorded row, plus a DB left with no chatbot.turns rows so a replay may run the same message id."""
+    return _record(session_factory, stub_access, monkeypatch, keep_turn=False)
+
+
+@pytest.fixture()
+def recorded_kept(session_factory, seeded, stub_access, monkeypatch):
+    """One recorded row while the DB STILL holds that turn (same contact + message id)."""
+    return _record(session_factory, stub_access, monkeypatch, keep_turn=True)
 
 
 def _turn_count(session_factory) -> int:
@@ -283,7 +294,7 @@ def test_replay_run_cli_writes_no_message_or_reply_text_to_stdout_or_stderr(tmp_
     traces = tmp_path / "rows.jsonl"
     traces.write_text(json.dumps(row) + "\n")
     out = tmp_path / "out.jsonl"
-    env = {**os.environ, "SORENTO_ENV_FILE": ".env.ci-tests"}
+    env = dict(os.environ)
     p = subprocess.run([sys.executable, "scripts/chatbot_eval/replay.py", "run", "--traces", str(traces),
                         "--out", str(out)], capture_output=True, text=True, cwd=BACKEND, env=env)
     assert p.returncode == 0, p.stderr[-500:]
@@ -312,3 +323,38 @@ def test_replay_rows_emits_no_log_record_carrying_the_message_words(session_fact
     assert not out[0].get("skipped")
     leaked = [r.getMessage() for r in caplog.records if any(t in r.getMessage().lower() for t in phrase.split())]
     assert leaked == [], f"log lines carry the message words: {leaked[:1]}"
+
+
+def test_replay_runs_the_engine_even_when_the_db_still_holds_the_recorded_turn(session_factory, recorded_kept):
+    # precondition: the DB really would short-circuit this message as a duplicate
+    assert engine_mod.run_turn(_envelope(), session_factory=session_factory).duplicate
+    row = copy.deepcopy(recorded_kept)
+    bogus = [{"hint": "product", "canonical_code": "BOGUSCODE9", "raw": "bogus-recorded-entity"}]
+    for rec in row["trace"]:
+        if rec.get("kind") == "apply":
+            rec["verdict"]["entities"] = bogus
+    out = replay_mod.replay_rows([row], session_factory=session_factory)[0]
+    grounded = out["stages"]["grounded"]
+    assert grounded != replay_mod._entity_key(bogus), "the replay returned the recorded trace, not the engine's"
+    assert any(e[2] == replay_mod._sha("srtwc8517")[:12] for e in grounded), grounded
+
+
+def test_grounding_stage_runs_inside_the_llm_block(session_factory, recorded, monkeypatch):
+    from app.services import llm_provider
+    from app.services.chatbot.head import grounding
+
+    def ground_calling_a_model(*a, **k):
+        llm_provider.OpenAIProvider.chat(object())
+
+    monkeypatch.setattr(grounding, "ground", ground_calling_a_model)
+    out = replay_mod.replay_rows([recorded], session_factory=session_factory, stage="grounding")[0]
+    assert {"llm_blocked": "provider.OpenAIProvider"} in out["misses"], out["misses"]
+
+
+def test_head_only_rows_are_counted_missing_in_base_and_unintended():
+    base = {"case_id": "c1", "turn_id": "t1", "skipped": None, "misses": [],
+            "stages": {"grounded": "g", "decision": "d", "tools": [], "reply": {"sha256": "r", "branch_kind": "b"}}}
+    extra = dict(base, case_id="c2", turn_id="t2")
+    res = replay_mod.diff_rows([base], [base, extra])
+    assert res["counts"]["skipped"].get("missing_in_base") == 1
+    assert ("c2", "t2", "missing_in_base") in res["unintended"]
