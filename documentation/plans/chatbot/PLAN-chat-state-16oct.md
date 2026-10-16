@@ -1,7 +1,8 @@
 # PLAN: CHAT-STATE - one explicit conversation state for follow-ups
 
-**Status:** Build (card answered: crew Q1/Q2/Q5, owner Q4(a) confirmed; Q3 working rule (b), period-on-new-ask code
-held until the owner answers). Track: L, LEAD pattern.
+**Status:** Build: S1-S4 green (66bc3b6cf, c7d17f8c7), replay gate clean; S5 next (prompt base waits for the
+00:30 prod-copy swap). Card answered: crew Q1/Q2/Q5, owner Q4(a), owner ETA ruling (R14); Q3 working rule (b),
+period-on-new-ask code held. Track: L, LEAD pattern.
 **Lane:** CHAT-STATE, branch `crew/chat-state`. Step 1 of the 16 Oct chatbot scale design
 (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, sections 2, 3, 4 rows B/C/G, 8 step 1).
 **Docs:** card `chat-state-behaviour-card.md` (rules R1-R13), UAC `chat-state-acceptance-criteria.md`, coder-facing
@@ -21,7 +22,10 @@ step 1), first asks not worse; crew's held-out bar for the owner hand test is >=
   close_question, each with `axis` / `position`; values stay in today's parse fields). Pure `apply_changes` applies
   them at one engine seam; when present it is the only carry writer; when absent (prod label, replay corpus) the
   turn is byte-identical to main.
-- Gate: the parser prompt in use contains `state_changes` (lane label on the dev copy only, never `production`).
+- Gate: the parser prompt in use contains `state_changes`. Prompt labels are limited to production/staging
+  (`app/services/ai_prompt_service.py:23`), so the lane prompt is an UNLABELLED version on the dev copy, pinned per
+  run via the dry-run `prompt_overrides` key (`engine.py:1308`); `production` is never moved. Delta text:
+  `PROMPT-DELTA-chat-state.md`.
 - Every turn's trace `memory` event carries state shown / before / changes / after / rejected.
 
 ## Contract (what tests code against)
@@ -110,8 +114,9 @@ unresolved turn offers the hand-over (feedback-chatbot-clarify-not-assume loop b
 - Every slice: `crew/state/eval/bin/replay-gate.sh <main worktree> <this worktree> --split dev` -> zero unintended
   diffs (first asks unchanged; the recorded corpus has no `state_changes`).
 - S5 onward: 3 TRAIN runs on `crew/state/eval/cp0/train_followups/` (crew exports; ~$0.7 each) against the lane
-  label; report TRAIN follow-up + first-ask numbers with error bars. Held-out is crew's.
-- Note: the shared dev DB becomes the 15 Oct prod copy ~00:30 17 Oct; republish the lane label after the swap.
+  pinned lane version; report TRAIN follow-up + first-ask numbers with error bars. Held-out is crew's.
+- The shared dev DB `production` label is v60 (4 Oct) today, not prod's; the base is read from the 15 Oct prod copy
+  after the ~00:30 17 Oct swap, and the lane version is published only after it.
 
 ## Open
 
