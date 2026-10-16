@@ -128,7 +128,9 @@ def _blank(value: Any) -> bool:
 def _numeric(value: Any) -> bool:
     if isinstance(value, bool):
         return False
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):
+        return True
+    if isinstance(value, float):
         return math.isfinite(value)
     if isinstance(value, str):
         try:

@@ -570,6 +570,8 @@ class SPOAllocationUpdate(BaseModel):
         # null would hit a NOT NULL column (500), so refuse it here.
         if v is None:
             raise ValueError("Quantity cannot be blank.")
+        if v > 2147483647:
+            raise ValueError("Quantity is too large.")
         return v
 
     # The document form view's Lines-tab editors (PLAN-spo-investigation-grid.md UAT
@@ -1206,6 +1208,8 @@ class PurchaseRequestLineCreate(PurchaseRequestLineBase):
     def _quantity_required_above_zero(self) -> "PurchaseRequestLineCreate":
         if self.quantity is None or self.quantity <= 0:
             raise ValueError("Quantity must be a number above 0.")
+        if self.quantity >= 10**13:
+            raise ValueError("Quantity is too large.")
         return self
 
 

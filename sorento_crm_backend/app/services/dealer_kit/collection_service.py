@@ -44,6 +44,20 @@ def get_collection(db: Session, collection_id: str) -> Collection:
     return row
 
 
+def _validate_conditions(conditions: Optional[dict]) -> None:
+    """Refuse a rule tree the builder could not have produced (non-finite or non-numeric
+    number values). An empty tree is the unconditional case and is not checked."""
+    if not conditions or not conditions.get("rules"):
+        return
+    from app.rule_engine.schemas import validate_tree
+    from app.services.dealer_kit.product_facts import SOURCE, register_product_facts
+
+    register_product_facts()
+    problems = validate_tree(conditions, [SOURCE])
+    if problems:
+        raise AppException(status_code=422, message=problems[0])
+
+
 def create_collection(
     db: Session,
     *,
@@ -65,6 +79,7 @@ def create_collection(
     if scope == LIBRARY and not (name or "").strip():
         raise AppException(status_code=422, message="A reusable collection needs a name")
 
+    _validate_conditions(conditions)
     row = Collection(
         scope=scope,
         page_id=page_id,
@@ -83,6 +98,8 @@ def create_collection(
 
 def update_collection(db: Session, collection_id: str, **changes) -> Collection:
     row = get_collection(db, collection_id)
+    if "conditions_json" in changes:
+        _validate_conditions(changes["conditions_json"])
     for field in (
         "name",
         "conditions_json",
