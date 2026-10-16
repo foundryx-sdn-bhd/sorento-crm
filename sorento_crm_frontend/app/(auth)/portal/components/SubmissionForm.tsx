@@ -2592,7 +2592,7 @@ function StockInquiryFormSection({
             disabled={!isEditable}
             numberError={
               invalidFields?.has('quantity')
-                ? numberFieldError(fields.quantity ?? '', { min: 0 })
+                ? numberFieldError(String(fields.quantity ?? ''), { min: 0 })
                 : undefined
             }
           />

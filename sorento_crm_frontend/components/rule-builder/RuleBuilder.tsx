@@ -601,7 +601,7 @@ function ValueInput({
   ...props
 }: { inputType: 'number' | 'date' | 'text' } & Omit<ComponentProps<typeof Input>, 'type'>) {
   return inputType === 'number' ? (
-    <NumberInput {...props} />
+    <NumberInput {...props} value={Array.isArray(props.value) ? undefined : (props.value as string | number | undefined)} />
   ) : (
     <Input type={inputType} {...props} />
   );
