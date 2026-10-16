@@ -21,6 +21,7 @@ import copy
 import json
 
 import pytest
+from sqlalchemy import text
 
 from app.services import llm_provider
 from app.services.ai_assistant_service import MCPRuntimeClient
@@ -30,7 +31,7 @@ from scripts.chatbot_eval import replay as replay_mod
 from scripts.chatbot_eval.budget import cost_usd
 from tests.chatbot.conftest import session_factory  # noqa: F401
 from tests.chatbot.test_engine import _parser_output, seeded, stub_access  # noqa: F401
-from tests.chatbot_eval.test_replay import ChatbotTurn, recorded, _turn_count  # noqa: F401
+from tests.chatbot_eval.test_replay import ChatbotTurn, recorded, _record, _turn_count  # noqa: F401
 
 VARIANT = "price of the white one please"
 PER_CALL = cost_usd({"prompt": 1000, "cached": 800, "output": 100}, "gpt-5.4-mini")
@@ -475,3 +476,111 @@ def test_live_rows_refuses_an_invalid_require_key_last4_before_any_call(session_
         replay_mod.live_rows(items_for(recorded, 2), [recorded], session_factory=session_factory,
                              max_calls=50, max_usd=10.0, require_key_last4=bad)
     assert real_calls == [], "a model call went out under an invalid key guard"
+
+
+# ------------------------------------------------------------------ review round 7 (history as of the recorded turn)
+PRIOR_1 = "PRIORREPLY-ONE synthetic earlier answer"
+PRIOR_2 = "PRIORREPLY-TWO synthetic latest answer"
+DECOY_LATER = "DECOYLATER-MARKER later prod turn"
+DECOY_TEST = "DECOYTEST-MARKER is_test turn"
+FRAME_SUMMARY = "Asked about stock for SRTWC-SYN and got an answer."
+
+
+def _walk(node):
+    if isinstance(node, dict):
+        yield node
+        for v in node.values():
+            yield from _walk(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _walk(v)
+
+
+def _layer_tokens(trace):
+    """{"L3": n, "L4": n} from the `context` trace record (found by its `layers` list)."""
+    for rec in _walk(trace):
+        layers = rec.get("layers")
+        if isinstance(layers, list) and layers and all(isinstance(x, dict) and "layer" in x for x in layers):
+            return {x["layer"]: x["est_tokens"] for x in layers}
+    raise AssertionError("no context record with layers in the trace")
+
+
+def _prompt_text(trace):
+    return next(rec["text"] for rec in _walk(trace) if isinstance(rec.get("text"), str) and "Recent conversations" in rec["text"]
+                or False) if any(isinstance(r.get("text"), str) and "Recent conversations" in r["text"] for r in _walk(trace)) else ""
+
+
+@pytest.fixture()
+def recorded_with_history(session_factory, seeded, stub_access, monkeypatch):
+    """A synthetic contact at memory level `full` with two prior prod answers and one closed prod frame, a recorded
+    prod turn made on top of them, then (frame removed, as the stack DB may lack it) a LATER prod turn and an
+    is_test turn that carry unique markers. The recorded row's trace holds the real `context` and `prompt_text`."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.conversation_frame import ConversationFrame
+    from tests.chatbot.test_engine import CONTACT_ID, _envelope
+
+    cid = str(CONTACT_ID)
+    t0 = datetime.now(timezone.utc) - timedelta(hours=2)
+    db = seeded
+    db.execute(text("UPDATE respond_contacts SET chatbot_memory_level = 'full' WHERE respond_io_id = :c"), {"c": cid})
+
+    def add_turn(message_id, message, reply, minutes, is_test=False):
+        env = _envelope().model_dump(mode="json", exclude_none=False)
+        env["message"]["message"]["messageId"] = message_id
+        env["message"]["message"]["message"]["text"] = message
+        db.add(ChatbotTurn(contact_respond_id=cid, message_id=message_id, envelope=env, status="done", stage="sent",
+                           is_test=is_test, response={"reply": {"text": reply}}, trace=[],
+                           created_at=t0 + timedelta(minutes=minutes), started_at=t0 + timedelta(minutes=minutes)))
+
+    add_turn("SYN-P1", "synthetic earlier question one", PRIOR_1, 0)
+    add_turn("SYN-P2", "synthetic earlier question two", PRIOR_2, 10)
+    db.add(ConversationFrame(contact_id=cid, space_id="364817", channel="whatsapp", contact_respond_id=cid,
+                             domain="inventory", summary=FRAME_SUMMARY, status="closed", is_test=False,
+                             last_activity_at=datetime.now() - timedelta(days=3)))
+    db.commit()
+    row = _record(session_factory, stub_access, monkeypatch, keep_turn=True)
+    db = session_factory()
+    db.query(ConversationFrame).delete()
+    turn = db.query(ChatbotTurn).filter(ChatbotTurn.id == row["id"]).first()
+    turn.created_at = t0 + timedelta(minutes=20)
+    db.commit()
+    seen = _layer_tokens(row["trace"])
+    assert seen["L3"] > 0 and seen["L4"] > 0, f"the synthetic recording has no history layers: {seen}"
+    assert PRIOR_2 in _prompt_text(row["trace"]) and "Recent conversations" in _prompt_text(row["trace"])
+    for k, (marker, minutes, is_test) in enumerate([(DECOY_LATER, 30, False), (DECOY_TEST, 15, True)]):
+        env = _envelope().model_dump(mode="json", exclude_none=False)
+        env["message"]["message"]["messageId"] = f"SYN-D{k}"
+        env["message"]["message"]["message"]["text"] = marker
+        db.add(ChatbotTurn(contact_respond_id=cid, message_id=f"SYN-D{k}", envelope=env, status="done", stage="sent",
+                           is_test=is_test, response={"reply": {"text": marker}}, trace=[],
+                           created_at=t0 + timedelta(minutes=minutes), started_at=t0 + timedelta(minutes=minutes)))
+    db.commit()
+    return row
+
+
+def test_live_context_layers_equal_the_recorded_ones_chosen_exact_because_the_rows_and_times_are_fixed(
+        session_factory, recorded_with_history, live_env):
+    # Exact equality: the history rows, their timestamps and the recorded prompt are all fixed synthetic data,
+    # and est_tokens is a pure function of the rendered text, so any difference is a real history difference.
+    out = go(session_factory, recorded_with_history)[0]
+    live = _layer_tokens(out["turn"]["trace"])
+    rec = _layer_tokens(recorded_with_history["trace"])
+    assert live["L3"] > 0 and live["L4"] > 0, live
+    assert (live["L3"], live["L4"]) == (rec["L3"], rec["L4"])
+
+
+def test_the_parser_input_has_the_prod_history_as_of_the_recorded_turn_and_no_decoys(
+        session_factory, recorded_with_history, live_env):
+    go(session_factory, recorded_with_history)
+    block = live_env["parse_calls"][0]
+    assert PRIOR_1 in block and PRIOR_2 in block
+    assert FRAME_SUMMARY.split(" and ")[0] in block, "the recorded Recent conversations line is missing"
+    assert DECOY_LATER not in block, "a prod turn created after the recorded turn leaked in"
+    assert DECOY_TEST not in block, "an is_test turn leaked in"
+
+
+def test_reading_the_history_writes_nothing(session_factory, recorded_with_history, live_env):
+    before = _turn_count(session_factory)
+    go(session_factory, recorded_with_history, n=2)
+    assert _turn_count(session_factory) == before
