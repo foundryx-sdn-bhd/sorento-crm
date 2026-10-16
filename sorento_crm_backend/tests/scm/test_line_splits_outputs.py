@@ -231,3 +231,34 @@ def test_the_lines_tab_serializer_carries_the_splits_of_a_split_line(api):
     assert [x["delivery_date"] for x in split_row["splits"]] == [
         D_A.isoformat(), D_B.isoformat()]
     assert plain_row["splits"] == []
+
+
+# ---------------------------------------------------------------------------
+# (d) the worklist list endpoint (what the OI Lines tab reads)
+# ---------------------------------------------------------------------------
+
+
+def test_the_worklist_list_row_of_a_split_line_carries_its_splits(api):
+    from tests.test_planning_changes import BASE
+
+    s = _order(api, [(10, 10, D_A), (20, 6, D_B)])
+    _confirm_all(s)
+    _save(s, {10: [
+        _sp(4, D_A, on=_on(s, 10)),
+        _sp(4, D_B, on=_on(s, 20), remark="site not ready"),
+        _sp(2, None, on=_on(s, 10), cancel=True),
+    ]})
+    listed = s.client.get(f"{BASE}/order-inquiries", params={"query": s.core_so.so_number})
+    assert listed.status_code == 200, listed.text
+    rows = {r["id"]: r for r in listed.json()["data"]}
+    split_row = rows[str(_order_row(s.world, s.line[10]).id)]
+    plain_row = rows[str(_order_row(s.world, s.line[20]).id)]
+
+    got = split_row["splits"]
+    assert [Decimal(str(x["qty"])) for x in got] == [4, 4, 2], got
+    assert [x["delivery_date"] for x in got] == [D_A.isoformat(), D_B.isoformat(), None]
+    assert [x["is_cancel"] for x in got] == [False, False, True]
+    assert [x["sits_on_line_no"] for x in got] == [10, 20, 10]
+    assert got[1]["remark"] == "site not ready"
+    assert [x["change"] for x in got] == ["REMAIN", "DELAY", "CANCEL BALANCE"]
+    assert plain_row["splits"] == []
