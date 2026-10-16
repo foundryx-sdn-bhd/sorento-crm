@@ -1301,7 +1301,9 @@ def period_payout(
     if not mine and tiers and (target.commission_method or "none") != "none":
         # A period with no tiers of its own on a per-period target pays nothing, not "no tiers".
         zero = Decimal("0")
-        return commission_service.Payout(zero, zero, [], None, False)
+        # A points target with no ratio on file is still flagged, tiers or not.
+        missing = target.threshold_unit == "points" and ratio_on(ratios, period.period_end) is None
+        return commission_service.Payout(zero, zero, [], None, missing)
     return commission_service.payout_for(
         target.commission_method or "none",
         mine,

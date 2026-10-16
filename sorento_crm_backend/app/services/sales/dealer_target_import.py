@@ -25,6 +25,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.services.error_handler import AppException
@@ -523,26 +524,34 @@ def _parse_sheet(grid: _Grid, sheet: str, header: int, year: int, notes: List[st
         results[r] = res
 
     data_rows = [r for r, res in results.items() if res.code]
-    groups = {r: r for r in data_rows}
-    for col in periods:
-        for r in data_rows:
-            box = grid.box(r, col.index)
-            if box:
-                for other in data_rows:
-                    if other != r and box[0] <= other <= box[2]:
-                        _union(groups, r, other)
-    members: Dict[int, List[int]] = {}
-    for r in data_rows:
-        members.setdefault(_root(groups, r), []).append(r)
-
     schemes: List[Scheme] = []
-    for root, group_rows in sorted(members.items()):
-        group_rows.sort()
-        try:
-            schemes.extend(_group_schemes(grid, sheet, group_rows, results, periods, by_role, year))
-        except CellError as exc:
-            for r in group_rows:
-                results[r].status, results[r].reason = "not_representable", str(exc)
+    # Rows are grouped per scheme kind: a yearly threshold merged over two accounts makes one
+    # yearly target over both, and their own quarterly thresholds stay two quarterly targets
+    # (rule 2: two thresholds, two targets).
+    for kind in ("Q", "M", "Y"):
+        kind_cols = [c for c in periods if c.kind == kind]
+        if not kind_cols:
+            continue
+        groups = {r: r for r in data_rows}
+        for col in kind_cols:
+            for r in data_rows:
+                box = grid.box(r, col.index)
+                if box:
+                    for other in data_rows:
+                        if other != r and box[0] <= other <= box[2]:
+                            _union(groups, r, other)
+        members: Dict[int, List[int]] = {}
+        for r in data_rows:
+            members.setdefault(_root(groups, r), []).append(r)
+        for root, group_rows in sorted(members.items()):
+            group_rows.sort()
+            try:
+                schemes.extend(
+                    _group_schemes(grid, sheet, group_rows, results, periods, by_role, year, kind)
+                )
+            except CellError as exc:
+                for r in group_rows:
+                    results[r].status, results[r].reason = "not_representable", str(exc)
     for scheme in schemes:
         for r in scheme.rows:
             results[r].target_keys.append(scheme.key)
@@ -552,7 +561,8 @@ def _parse_sheet(grid: _Grid, sheet: str, header: int, year: int, notes: List[st
     return [results[r] for r in sorted(results)], schemes
 
 
-def _group_schemes(grid, sheet, group_rows, results, periods, by_role, year) -> List[Scheme]:
+def _group_schemes(grid, sheet, group_rows, results, periods, by_role, year, kind) -> List[Scheme]:
+    """The one target of `kind` (Q, M or Y) over `group_rows`, or none."""
     codes = [results[r].code for r in group_rows]
     labels = {}
     for r in group_rows:
@@ -582,64 +592,61 @@ def _group_schemes(grid, sheet, group_rows, results, periods, by_role, year) -> 
         for r in group_rows:
             payto = payto or _text(grid.value(r, by_role["payto"].index)) or None
 
-    out: List[Scheme] = []
-    for kind in ("Q", "M", "Y"):
-        kind_cols = [c for c in periods if c.kind == kind]
-        if not kind_cols:
-            continue
-        header_window = next((c.window for c in kind_cols if c.window), None)
-        window = stated or header_window or (date(year, 1, 1), date(year, 12, 31))
-        if kind == "Y":
-            start, end, split = window[0], window[1], (None, None)
-        else:
-            start, end = window
-            split = (3, "month") if kind == "Q" else (1, "month")
-        tiers: List[SchemeTier] = []
-        numbers = sorted({c.number or 0 for c in kind_cols})
-        for number in numbers:
-            cols = [c for c in kind_cols if (c.number or 0) == number]
-            period_start = _period_start(kind, number, start)
-            tiers.extend(_period_tiers(grid, cols, group_rows, results, labels, period_start, kind))
-        if not tiers:
-            continue
-        seen = set()
+    kind_cols = [c for c in periods if c.kind == kind]
+    if not kind_cols:
+        return []
+    header_window = next((c.window for c in kind_cols if c.window), None)
+    window = stated or header_window or (date(year, 1, 1), date(year, 12, 31))
+    if kind == "Y":
+        start, end, split = window[0], window[1], (None, None)
+    else:
+        start, end = window
+        split = (3, "month") if kind == "Q" else (1, "month")
+    tiers: List[SchemeTier] = []
+    numbers = sorted({c.number or 0 for c in kind_cols})
+    for number in numbers:
+        cols = [c for c in kind_cols if (c.number or 0) == number]
+        period_start = _period_start(kind, number, start)
+        tiers.extend(_period_tiers(grid, cols, group_rows, results, labels, period_start, kind))
+    if not tiers:
+        return []
+    seen = set()
+    for t in tiers:
+        key = (t.period_start, t.is_additional, t.threshold)
+        if key in seen:
+            raise CellError(f"{_KIND_NAME[kind]}: the threshold {t.threshold:,.0f} repeats in one period")
+        seen.add(key)
+    payout = payto
+    if payout is None:
         for t in tiers:
-            key = (t.period_start, t.is_additional, t.threshold)
-            if key in seen:
-                raise CellError(f"{_KIND_NAME[kind]}: the threshold {t.threshold:,.0f} repeats in one period")
-            seen.add(key)
-        payout = payto
-        if payout is None:
-            for t in tiers:
-                if t.account_rates:
-                    payout = next(iter(t.account_rates))
-                    break
-        payout = payout or codes[0]
-        span = (
-            str(start.year)
-            if (start.month, start.day, end.month, end.day) == (1, 1, 12, 31) and start.year == end.year
-            else f"{start:%b %Y} to {end:%b %Y}"
+            if t.account_rates:
+                payout = next(iter(t.account_rates))
+                break
+    payout = payout or codes[0]
+    span = (
+        str(start.year)
+        if (start.month, start.day, end.month, end.day) == (1, 1, 12, 31) and start.year == end.year
+        else f"{start:%b %Y} to {end:%b %Y}"
+    )
+    return [
+        Scheme(
+            key=f"{_KIND_NAME[kind]} {start:%Y-%m} {'+'.join(codes)}",
+            kind=_KIND_NAME[kind],
+            sheet=sheet,
+            rows=list(group_rows),
+            codes=list(codes),
+            names=[results[r].name_in_file or "" for r in group_rows],
+            payout_code=payout,
+            start=start,
+            end=end,
+            split_every=split[0],
+            split_unit=split[1],
+            threshold_unit="points" if any(c.points for c in kind_cols) else "amount",
+            rounding=rounding,
+            tiers=tiers,
+            name=f"{first_name[:80]} {span} {_KIND_NAME[kind]}",
         )
-        out.append(
-            Scheme(
-                key=f"{_KIND_NAME[kind]} {start:%Y-%m} {'+'.join(codes)}",
-                kind=_KIND_NAME[kind],
-                sheet=sheet,
-                rows=list(group_rows),
-                codes=list(codes),
-                names=[results[r].name_in_file or "" for r in group_rows],
-                payout_code=payout,
-                start=start,
-                end=end,
-                split_every=split[0],
-                split_unit=split[1],
-                threshold_unit="points" if any(c.points for c in kind_cols) else "amount",
-                rounding=rounding,
-                tiers=tiers,
-                name=f"{first_name[:80]} {span} {_KIND_NAME[kind]}",
-            )
-        )
-    return out
+    ]
 
 
 def _period_start(kind: str, number: int, start: date) -> date:
@@ -673,9 +680,12 @@ def _period_tiers(grid, cols, group_rows, results, labels, period_start, kind) -
             raise CellError(f"{name}: the threshold {cell.threshold:,.0f} has no rate")
         return SchemeTier(period_start, cell.threshold, None if rates else cell.rate, cell.is_additional, rates)
 
-    def group_value(col) -> Tuple[object, Dict[str, object]]:
+    def group_value(col, *, every_row: bool = False) -> Tuple[object, Dict[str, object]]:
         """The value the target reads: the merged cell, or the one row holding a value; and the
-        per-row values when rows differ (a rate per account)."""
+        per-row values when rows differ (a rate per account). With `every_row` (a rate), the
+        value is the target's only when every row carries it (a merge over the rows, or the
+        same figure typed on each); a rate on some rows only is those accounts' rate (ruling 2:
+        "A/C I - 3%" pays A/C I only)."""
         per_row = {}
         for r in group_rows:
             v = grid.value(r, col.index)
@@ -684,7 +694,7 @@ def _period_tiers(grid, cols, group_rows, results, labels, period_start, kind) -
         distinct = {_text(v) for v in per_row.values()}
         if not per_row:
             return None, {}
-        if len(distinct) == 1:
+        if len(distinct) == 1 and (not every_row or len(per_row) == len(group_rows)):
             return next(iter(per_row.values())), {}
         return None, per_row
 
@@ -699,7 +709,7 @@ def _period_tiers(grid, cols, group_rows, results, labels, period_start, kind) -
             # A threshold / rate pair: the threshold cell, and a rate per row or for all.
             if per_row:
                 raise CellError(f"{name}: the accounts of one target give different thresholds")
-            rate_value, rate_rows = group_value(rate_col)
+            rate_value, rate_rows = group_value(rate_col, every_row=True)
             threshold = _number(value) if value is not None else None
             if value is not None and threshold is None:
                 raise CellError(f'{name}: cannot read "{_text(value)}"')
@@ -747,9 +757,16 @@ def run(db: Session, data: bytes, *, year: int, dry_run: bool, user_id: Optional
 
     parsed = parse_workbook(data, year=year)
     rows_by_key = {(r.sheet, r.row): r for r in parsed.rows}
-    codes = {r.code for r in parsed.rows if r.code}
-    customers = {c.customer_code: c for c in db.query(Customer).filter(Customer.customer_code.in_(codes))} if codes else {}
+    # Every row's code and every PAY TO code: a payee needs no row of its own (E6).
+    codes = {r.code for r in parsed.rows if r.code} | {s.payout_code for s in parsed.schemes if s.payout_code}
+    wanted = sorted({code.strip().upper() for code in codes})
+    found = (
+        db.query(Customer).filter(func.upper(func.trim(Customer.customer_code)).in_(wanted)).all()
+        if wanted
+        else []
+    )
     # Codes are matched exactly, then without regard to case or surrounding spaces.
+    customers = {c.customer_code: c for c in found}
     loose = {code.strip().upper(): c for code, c in customers.items()}
 
     def customer_of(code: Optional[str]):

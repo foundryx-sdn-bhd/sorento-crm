@@ -271,6 +271,39 @@ def test_points_target_uses_ratio_on_period_last_day(api):
     assert q3["ratio_missing"] is False
 
 
+def test_points_ratio_is_read_on_the_period_last_day_not_its_first_or_today(api):
+    """UAC D1-5 (review kill test M3a/M3b): the ratio changes mid-quarter (15 Aug) and again
+    after the quarter (5 Oct, before today). Q3's 125,000 sits between the converted
+    thresholds: 120,000 at the first-day ratio, 130,000 at the last-day ratio, 110,000 at
+    today's. Only the last day's ratio leaves it unreached."""
+    client, db, company_id = api
+    pid = _product_id(db, company_id)
+    c = _customer(db, company_id, "ZZT CERAMIC")
+    _sale(db, company_id, c, 125000, date(2026, 8, 1), product_id=pid)
+    for effective_from, ratio in (("2026-01-01", 1.20), ("2026-08-15", 1.30), ("2026-10-05", 1.10)):
+        res = client.post(RATIOS, json={"effective_from": effective_from, "rm_per_point": ratio})
+        assert res.status_code in (200, 201), res.text
+    res = client.post(BASE, json=_dealer_body([c], threshold_unit="points", tiers=[
+        {"period_start": "2026-07-01", "threshold": 100000, "rate": 4},
+    ]))
+    assert res.status_code == 201, res.text
+    q3 = _period(res.json(), "2026-07-01")
+    assert q3["point_ratio"] == 1.3
+    assert q3["target_value"] == 130000
+    assert q3["commission_earned"] == 0
+
+
+def test_points_target_with_no_tiers_this_period_still_flags_a_missing_ratio(api):
+    client, db, company_id = api
+    c = _customer(db, company_id, "ZZT CERAMIC")
+    res = client.post(BASE, json=_dealer_body([c], threshold_unit="points", tiers=[
+        {"period_start": "2026-07-01", "threshold": 1, "rate": 4},
+    ]))
+    assert res.status_code == 201, res.text
+    # Q1 has no tiers of its own and no ratio is on file at all.
+    assert _period(res.json(), "2026-01-01")["ratio_missing"] is True
+
+
 def test_points_target_without_ratio_flags_it(api):
     client, db, company_id = api
     c = _customer(db, company_id, "ZZT CERAMIC")

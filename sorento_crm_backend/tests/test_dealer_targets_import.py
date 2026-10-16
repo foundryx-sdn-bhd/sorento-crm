@@ -385,3 +385,96 @@ def test_import_code_of_another_company_is_not_representable(api):
     body = _upload(client, _workbook(fill), dry_run=True, db=db).json()
     assert body["rows"][0]["status"] == "not_representable"
     assert "no customer with code" in body["rows"][0]["reason"]
+
+
+# --------------------------------------------------------------------------------------- #
+# review round (continuation): rates on one row, groups per scheme kind, code matching
+# --------------------------------------------------------------------------------------- #
+
+
+def test_parse_rate_on_one_row_of_a_merged_target_is_that_accounts_rate():
+    """Ruling 2: the threshold merged over A/C III and A/C I, the rate typed on A/C I's row
+    only, pays A/C I only; with A/C III listed first, the payout defaults to A/C I, the first
+    account given a rate (not the first code)."""
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    def fill(ws):
+        # A threshold / % pair under one Q1 header (the monthly layout, P7).
+        ws["A1"], ws["B1"], ws["C1"], ws["D1"] = "CODE", "ACCOUNT", "Q1", "Q1"
+        ws["C2"], ws["D2"] = "TARGET", "%"
+        ws["A3"], ws["B3"] = "C-A3", "A/C III"
+        ws["A4"], ws["B4"] = "C-A1", "A/C I"
+        ws["C3"] = 200000
+        ws.merge_cells("C3:C4")
+        ws["D4"] = 3
+
+    parsed = parse_workbook(_workbook(fill), year=2026)
+    assert all(r.status == "mapped" for r in parsed.rows), [(r.code, r.reason) for r in parsed.rows]
+    q = _scheme(parsed, "C-A3", "quarterly")
+    assert q.codes == ["C-A3", "C-A1"]
+    assert _tiers(q, date(2026, 1, 1)) == [(D("200000"), None, False, {"C-A1": D("3")})]
+    assert q.payout_code == "C-A1"
+
+
+def test_parse_merge_in_one_scheme_kind_does_not_join_the_other_kinds():
+    """A yearly threshold merged over two accounts with a quarterly threshold per account is
+    one yearly target over both and one quarterly target per account (rule 2)."""
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    def fill(ws):
+        for col, text in enumerate(["CODE", "ACCOUNT", "Q1", "JAN-DEC'26"], start=1):
+            ws.cell(row=1, column=col, value=text)
+        ws["A2"], ws["B2"], ws["C2"] = "C-X1", "A/C I", "100,000 - 2%"
+        ws["A3"], ws["B3"], ws["C3"] = "C-X3", "A/C III", "80,000 - 2%"
+        ws["D2"] = "500,000 - 1%"
+        ws.merge_cells("D2:D3")
+
+    parsed = parse_workbook(_workbook(fill), year=2026)
+    assert all(r.status == "mapped" for r in parsed.rows), [(r.code, r.reason) for r in parsed.rows]
+    quarterly = sorted((s.codes, _tiers(s, date(2026, 1, 1))) for s in parsed.schemes if s.kind == "quarterly")
+    assert quarterly == [
+        (["C-X1"], [(D("100000"), D("2"), False, None)]),
+        (["C-X3"], [(D("80000"), D("2"), False, None)]),
+    ]
+    yearly = [s for s in parsed.schemes if s.kind == "yearly"]
+    assert [s.codes for s in yearly] == [["C-X1", "C-X3"]]
+
+
+def test_import_matches_codes_without_regard_to_case_or_spaces(api):
+    client, db, company_id = api
+    from app.models.order import Customer
+
+    customer = Customer(id=_uid(), company_id=company_id, customer_code=_code(), customer_name="ZZT CASE")
+    db.add(customer)
+    db.flush()
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "CODE", "Q1"
+        ws["A2"], ws["B2"] = f"  {customer.customer_code.lower()} ", "100,000 - 1%"
+
+    body = _upload(client, _workbook(fill), dry_run=True, db=db).json()
+    assert body["rows"][0]["status"] == "mapped", body["rows"][0]
+    assert body["rows"][0]["customer"] == "ZZT CASE"
+
+
+def test_import_pay_to_code_without_a_row_of_its_own_resolves(api):
+    """E6: a target counting A/C III pays to A/C I, and A/C I has no row in the file."""
+    client, db, company_id = api
+    from app.models.order import Customer
+
+    counted = Customer(id=_uid(), company_id=company_id, customer_code=_code(), customer_name="ZZT A3")
+    payee = Customer(id=_uid(), company_id=company_id, customer_code=_code(), customer_name="ZZT A1")
+    db.add_all([counted, payee])
+    db.flush()
+
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"] = "CODE", "Q1", "PAY TO"
+        ws["A2"], ws["B2"], ws["C2"] = counted.customer_code, "100,000 - 1%", payee.customer_code
+
+    res = _upload(client, _workbook(fill), dry_run=False, db=db)
+    assert res.status_code == 200, res.text
+    row = res.json()["rows"][0]
+    assert row["status"] == "mapped", row
+    rows = client.get(BASE, params={"subject": "dealer", "all": "true"}).json()["rows"]
+    mine = next(r for r in rows if r["target_no"] in row["target_nos"])
+    assert mine["payout_label"] and "ZZT A1" in mine["payout_label"]
