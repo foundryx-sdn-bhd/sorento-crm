@@ -343,3 +343,26 @@ describe('ConvertToPackingListDialog Quantity to place (B4)', () => {
   });
 });
 
+
+describe('ConvertToPackingListDialog Quantity to place shows its sentence on press (round 3b)', () => {
+  it('clearing the box stays quiet until Convert is pressed, then the sentence stays live until valid', () => {
+    const { onConvert } = renderDialog();
+    const sentence = 'Enter a number between 0 and 40.';
+    const box = screen.getByLabelText('Quantity to place for CWCY604') as HTMLInputElement;
+    const convert = screen.getByRole('button', { name: /convert/i });
+
+    fireEvent.change(box, { target: { value: '' } });
+    expect(screen.queryByText(sentence)).toBeNull();
+    expect(box).not.toHaveAttribute('aria-invalid', 'true');
+    expect(convert).toBeEnabled();
+
+    fireEvent.click(convert);
+    expect(onConvert).not.toHaveBeenCalled();
+    expect(screen.getByText(sentence)).toBeInTheDocument();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.change(box, { target: { value: '5' } });
+    expect(screen.queryByText(sentence)).toBeNull();
+    expect(box).not.toHaveAttribute('aria-invalid', 'true');
+  });
+});
