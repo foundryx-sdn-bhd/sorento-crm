@@ -228,3 +228,20 @@ Activity: one project activity row per status move when `project_id` is set.
 Red-round decisions (16 Oct, after the tester's report): another contact's portal request is 404 (loaded by id + contact,
 no existence leak; UAC AC-SR-41 updated). `ProjectDetailClient.tsx` exports `TABS`. Portal service module is
 `app/(auth)/portal/lib/sample-request-service.ts`; delivery-mode error text "Choose a delivery mode".
+
+## Review round 1 rulings (16 Oct, reviewer NOT READY + security PASS with should-fix)
+
+- Grants: the migration copies only `create` to holders of `projects.projects.edit`; `view` and `process` go to the
+  admin roles, which grant them to the coordinator. A salesperson sees own requests only (card rule 11).
+- Portal `customer_id` must be one of the contact's `debtors-for-agent`; anything else 422
+  `SAMPLE_REQUEST_CUSTOMER_INVALID`. A typed `customer_name` (no debtor) stays allowed on both forms (card rule 4).
+- The `products/select` folded clause is reverted: the staff form uses `/sample-requests/products`, so the shared
+  endpoint gets no unindexed OR for no caller. Its test goes with it.
+- An inactive product already on a draft line is kept on update and shown as inactive; only NEW product ids must be
+  active.
+- Request numbering takes a per-company advisory lock; `company_id` is NOT NULL.
+- Detail page follows mock v2 frame 4 exactly (one document card, Consignment No / PO No in the same grid set through
+  a gear-menu dialog by `process`, line columns and labels as drawn, stock grid in an expanded line row, "No debtor
+  code" badge, Salesperson filter). Delete draft is the deferred pending-action delete (owner, draft only), as the
+  mock's gear menu shows.
+- Portal requests are loaded by contact (the price tag precedent); AC-SR-41 reads "contact".

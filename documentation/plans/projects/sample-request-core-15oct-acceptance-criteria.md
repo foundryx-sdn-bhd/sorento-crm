@@ -50,7 +50,7 @@ Each criterion names the test that proves it (BE = pytest, FE = vitest, BR = bro
 
 - AC-SR-40 `sample_request` is grantable, not default: a contact without the grant gets 403 on list, new and submit;
   a granted contact sees the form on the portal landing. BE, FE
-- AC-SR-41 A portal contact lists and opens only own requests (contact + space); another contact's id gives 404 (no existence leak). BE
+- AC-SR-41 A portal contact lists and opens only own requests (by contact); another contact's id gives 404 (no existence leak). BE
 - AC-SR-42 A project picked in the portal must be one the contact's project lookup returns; anything else is 422. BE
 - AC-SR-43 The portal shows the request read-only after submit with its status, and offers Cancel while Submitted. FE, BR
 
