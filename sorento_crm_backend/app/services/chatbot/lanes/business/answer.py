@@ -2867,9 +2867,9 @@ def near_miss_reply(predicate: Any, team: Any) -> str:
 
 def unknown_values_reply(unknown: Any, predicate: Any, team: Any, *, subject: str = "") -> str:
     """A value the registry does not know ("pink" as a finish or colour), in
-    `what_you_want_reply`: the subject with the value as asked, the subject broken down
-    by that key (`predicate.members.breakdown`), then "Couldn't find: pink (finish or
-    colour)". No list of the registry's choices and no typo said back."""
+    `what_you_want_reply`: the subject with the value as asked, then "Couldn't find: pink
+    (finish or colour)". No list of the registry's choices, no typo said back, and no
+    breakdown lines (SET-STOCK-RENDER, owner 16 Oct 2026)."""
     members = jsc.get(predicate, "members") if isinstance(predicate, dict) else None
     labels = [jsc.js_string(c) for c in jsc.array(jsc.get(members, "class_labels")) if jsc.truthy(c)]
     noun = set_noun_for(labels)
@@ -2892,8 +2892,7 @@ def unknown_values_reply(unknown: Any, predicate: Any, team: Any, *, subject: st
             if w
         ]
     )
-    lines = breakdown_lines(jsc.get(members, "breakdown"), noun) if members is not None else []
-    return what_you_want_reply(asked, lines, missing=missing, team=team)
+    return what_you_want_reply(asked, [], missing=missing, team=team)
 
 
 def _value_words(value: str) -> str:
@@ -2952,7 +2951,6 @@ def build_set_header(
     offset: int = 0,
     previous_total: int | None = None,
     exhausted: bool = False,
-    breakdown: Any = None,
 ) -> str:
     """A counted set's ONE intro line, the same opener a set that qualified nothing has
     (`what_you_want_reply`), with the described set, what it has and its count; the rows
@@ -2963,8 +2961,8 @@ def build_set_header(
     Fix round 12 on PR #833: the leg's word is in the phrase and nowhere else, so a stock,
     incoming, certificate or promotion ask gets one shape and the leg picks only the rows.
     No paging (owner ruling, 26 Sep 2026): every qualifying product listed says the count
-    alone; a named count says which ones; none listed (a set longer than `SET_LIST_MAX`)
-    gives the breakdown by the next attribute.
+    alone; a named count, or a set longer than `SET_LIST_MAX`, says which ones
+    (SET-STOCK-RENDER, owner 16 Oct 2026: no breakdown by the next attribute).
 
     A pure string function: `qualifying_total` and `shown` are counts the caller already
     has, never re-derived here."""
@@ -2983,13 +2981,6 @@ def build_set_header(
     if exhausted:
         # Round 3 W2: a count after the last page; every product was already listed.
         header += f"{'' if header.endswith('.') else '.'} That is all {qualifying_total:,}."
-    elif withheld:
-        # Fix round 9 on PR #833 (owner: "no cap", "always break it down"): the full count
-        # and the set broken down by the next attribute, one line each, never a paging
-        # question.
-        lines = breakdown_lines(breakdown, set_noun)
-        if lines:
-            header += "\n" + "\n".join(lines)
     return header
 
 
@@ -4409,8 +4400,8 @@ def not_found_error_message(
     unknown_values = jsc.array(jsc.get(predicate, "unknown_values")) if isinstance(predicate, dict) else []
     unknown_values = unknown_values or jsc.array(jsc.get(r, "unknown_spec_values"))
     if unknown_values:
-        # Fix round 9 on PR #833: the one reply structure, the subject broken down by the
-        # unknown value's key; the escalate offer stands, so it is not a clarify.
+        # Fix round 9 on PR #833: the one reply structure, the subject as asked (no
+        # breakdown, SET-STOCK-RENDER); the escalate offer stands, so it is not a clarify.
         subject = next(
             (
                 words

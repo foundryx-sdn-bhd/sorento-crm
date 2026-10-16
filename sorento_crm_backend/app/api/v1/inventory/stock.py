@@ -321,6 +321,15 @@ def get_stock_balance(
             "caller that does not ask. Never attached in `availability` mode."
         ),
     ),
+    hide_zero_locations: bool = Query(
+        False,
+        description=(
+            "Drop the locations holding none of the product for this call, as the "
+            "contact's policy flag of the same name does (the compact total is "
+            "unchanged). Only read with a `contact_id`. The chatbot sends it for a "
+            "set asked with stock (SET-STOCK-RENDER)."
+        ),
+    ),
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db)
 ):
@@ -374,6 +383,7 @@ def get_stock_balance(
             space_id=space_id,
             requested_qty=requested_qty,
             requested_quantities=parsed_requested_quantities,
+            hide_zero_locations=hide_zero_locations,
         )
         # Data-miss path (§3.3): when the service attached `alternatives` /
         # `relaxed_axis` (only on an empty result), bypass the strict

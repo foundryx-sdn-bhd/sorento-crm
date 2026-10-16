@@ -1229,16 +1229,38 @@ def entity_ids_transformer(
     # per warehouse, a cert answer a row per file), so it is left alone and the list is
     # cut by slicing `product_ids` itself - to the count the customer named (`top_n`),
     # else to `answer.SET_LIST_MAX` (owner ruling, 26 Sep 2026: a set that fits one
-    # message is listed in full; a longer one is answered with its count and a question,
-    # `output_structurer` below). No paging: nothing is kept for a "more".
+    # message is listed in full; SET-STOCK-RENDER, 16 Oct 2026: a longer one lists its
+    # first `SET_LIST_MAX`, `output_structurer` below).
     if trig.get("predicate") is not None and isinstance(out.get("product_ids"), list):
-        out["product_ids"] = out["product_ids"][: _set_list_size(semantic_input)]
+        # Counted in product codes: the same code in another company rides with it
+        # (SET-STOCK-RENDER R4).
+        code_of = {jsc.get(e, "uuid"): jsc.get(e, "code") for e in jsc.array(entities)}
+        listed_codes: list[Any] = []
+        kept: list[Any] = []
+        for pid in out["product_ids"]:
+            code = code_of.get(pid) or pid
+            if code not in listed_codes:
+                if len(listed_codes) >= _set_list_size(semantic_input):
+                    continue
+                listed_codes.append(code)
+            kept.append(pid)
+        out["product_ids"] = kept
         # Reviewer B3 on PR #833: the tool's own DEFAULT row cap (50) cut a listed set
         # short - a stock row per location, a cert row per file - so 40 basins came back
         # as about 8. The listed products need all their rows: ask for the tool's
         # maximum. The header still counts what actually rendered (`output_structurer`).
         if tool_name in SET_ROW_LIMIT:
             out["limit"] = SET_ROW_LIMIT[tool_name]
+        # SET-STOCK-RENDER (owner, 16 Oct 2026): a DESCRIBED set asked "with stock"
+        # prints no location holding none; every other answer, a typed code's included,
+        # keeps the contact's policy.
+        set_predicate = trig.get("predicate")
+        if (
+            tool_name == "crm_inventory_stock_balance_list"
+            and jsc.get(jsc.get(set_predicate, "require"), "stock")
+            and jsc.array(jsc.get(set_predicate, "description"))
+        ):
+            out["hide_zero_locations"] = True
 
     # R29/AC-1354: a scheme-narrowed certificate leg's own certificate ids
     # ride the SAME predicate block, straight through under the SAME arg
@@ -3591,10 +3613,6 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     # would render with no leading count/attribute line at all.
     predicate = ctx.get("predicate") if isinstance(ctx.get("predicate"), dict) else None
     set_header: str | None = None
-    # A set too long for one message is answered with its count and a question, and no
-    # rows (owner ruling, 26 Sep 2026) - `answers` and the files go with them below, so
-    # neither a positional pick nor an attachment send can reach a row nobody was shown.
-    set_withheld = False
     if predicate is not None:
         from app.services.chatbot.lanes.business import answer as answer_mod
 
@@ -3622,26 +3640,20 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # W4: a page that continues a list starts past what was already listed.
         offset = int(jsc.get(predicate, "offset") or 0)
         remaining = max(qualifying_total - offset, 0)
-        if named is None and qualifying_total > answer_mod.SET_LIST_MAX and jsc.get(predicate, "breakdown"):
-            # Fix round 9 on PR #833: the count and the breakdown by the next attribute.
-            shown = 0
-            set_withheld = True
-        elif named is None and qualifying_total > answer_mod.SET_LIST_MAX:
-            # Nothing splits the set (one brand, every key alike): list what fits rather
-            # than a bare count with nothing to pick from.
+        if named is None:
+            # SET-STOCK-RENDER (owner, 16 Oct 2026: "it should be unified" with the code
+            # answer): a set longer than one reply lists its first `SET_LIST_MAX`, never a
+            # breakdown by the next attribute; the header says "showing 1 to 50".
             shown = min(answer_mod.SET_LIST_MAX, remaining)
-        elif named is None:
-            shown = remaining
         else:
             shown = min(named, answer_mod.SET_LIST_MAX, remaining)
-        if not set_withheld:
-            # Reviewer B3 on PR #833 (R8/AC-1330 restored): the header states what the
-            # rows show, never what was asked for. A tool that still cut rows at its
-            # cap rendered fewer PRODUCTS than were sent, and the header must say
-            # "Here are the first N" over those, never claim the list is complete.
-            rendered = _rendered_product_count(e.get("items") or [])
-            if rendered is not None and rendered < shown:
-                shown = rendered
+        # Reviewer B3 on PR #833 (R8/AC-1330 restored): the header states what the
+        # rows show, never what was asked for. A tool that still cut rows at its
+        # cap rendered fewer PRODUCTS than were sent, and the header must say
+        # "Here are the first N" over those, never claim the list is complete.
+        rendered = _rendered_product_count(e.get("items") or [])
+        if rendered is not None and rendered < shown:
+            shown = rendered
         header = answer_mod.build_set_header(
             qualifying_total,
             shown,
@@ -3651,7 +3663,6 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             not_understood=jsc.get(predicate, "unrecognized_terms"),
             offset=offset,
             previous_total=jsc.get(predicate, "previous_total"),
-            breakdown=jsc.get(predicate, "breakdown"),
         )
         set_header = header
         # Round 3 W4: the default brand answered, so the reply closes with the others -
@@ -3666,19 +3677,14 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             )
             if line
         )
-        if set_withheld:
-            msg = header
-        else:
-            body = msg.strip()
-            footer = f"_{loc.text(f'Data last updated: {ts}')}_" if ts else ""
-            if other_brands:
-                if footer and body.endswith(footer):
-                    body = f"{body[: -len(footer)].strip()}\n\n{other_brands}\n\n{footer}"
-                else:
-                    body = f"{body}\n\n{other_brands}"
-            msg = f"{header}\n\n{body}"
-        if set_withheld and other_brands:
-            msg = f"{msg.strip()}\n\n{other_brands}"
+        body = msg.strip()
+        footer = f"_{loc.text(f'Data last updated: {ts}')}_" if ts else ""
+        if other_brands:
+            if footer and body.endswith(footer):
+                body = f"{body[: -len(footer)].strip()}\n\n{other_brands}\n\n{footer}"
+            else:
+                body = f"{body}\n\n{other_brands}"
+        msg = f"{header}\n\n{body}"
 
     final_response = msg.strip()
     if so_bucket_refusal:
@@ -3700,7 +3706,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # numbered 2 on screen (review, should-fix 4). Flattened in RENDER order, which is
         # the only order the customer can be talking about. Ungrouped, this is `items`
         # unchanged, so nothing else moves.
-        "answers": [] if set_withheld else (_rendered_answers(e) if groups_render else e.get("items")),
+        "answers": _rendered_answers(e) if groups_render else e.get("items"),
     }
     # Spread-in, not defaulted: a reply with no summary keeps EXACTLY the keys it has today.
     if qs_render:
@@ -3709,7 +3715,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         out["groups"] = e["groups"]
     out.update(
         {
-            "attachments": [] if set_withheld else (e.get("attachments") or []),
+            "attachments": e.get("attachments") or [],
             "action_links": e.get("action_links") or [],
             "last_updated_at": e.get("last_updated_at") or None,
             "has_result": bool(jsc.truthy(e.get("has_result"))),

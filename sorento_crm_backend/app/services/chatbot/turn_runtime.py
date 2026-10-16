@@ -4295,8 +4295,8 @@ def set_page_carry(
 
     No paging (owner ruling, 26 Sep 2026): the carry exists only so the answer to "how
     many should I show?" - the parser's own count key, `top_n` - can list that many of
-    the SAME set. The engine writes it only when the rows were withheld (more than
-    `answer.SET_LIST_MAX` qualifying, no count named) and clears it on the next turn
+    the SAME set. The engine writes it only when the set was listed in part (more than
+    `answer.SET_LIST_MAX` qualifying, or fewer named) and clears it on the next turn
     whatever that turn is. `{set_key}` and nothing more: the set is RE-DESCRIBED from
     `set_key` rather than carried as a list of ids, so a session never holds two hundred
     uuids and the answer is counted over live data.

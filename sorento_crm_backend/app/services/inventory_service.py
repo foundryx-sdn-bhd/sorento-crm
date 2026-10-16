@@ -2,6 +2,7 @@
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy import func, or_, and_, tuple_, select
 from typing import Optional, TYPE_CHECKING
+import dataclasses
 import time
 import uuid
 from datetime import datetime
@@ -667,6 +668,7 @@ class StockService:
         space_id: Optional[str] = None,
         requested_qty: Optional[int] = None,
         requested_quantities: Optional[dict] = None,
+        hide_zero_locations: bool = False,
     ):
         """List stock with product and warehouse info.
 
@@ -699,6 +701,8 @@ class StockService:
                 wins; `requested_qty` fills any product it does not name. A mapped
                 value below 1 is read as NOT PROVIDED, the same rule `requested_qty`
                 follows above and for the same reason.
+            hide_zero_locations: The policy's own flag, set for this call (a set asked
+                "with stock"). Only read when a policy resolved.
         """
         from sqlalchemy import or_, func
         from app.services.stock_visibility import resolve_policy, warehouse_criterion
@@ -715,6 +719,10 @@ class StockService:
         resolved_contact_id = None
         if contact_id:
             policy = resolve_policy(self.db, contact_id, space_id)
+            if policy is not None and hide_zero_locations and not policy.hide_zero_locations:
+                # SET-STOCK-RENDER (owner, 16 Oct 2026): a set asked "with stock" drops
+                # its empty locations for this call only; the policy row is untouched.
+                policy = dataclasses.replace(policy, hide_zero_locations=True)
             self.resolved_policy = policy
             # Chatbot stock ask v2 S3, R7: the SAME internal id `resolve_policy`
             # itself resolves `contact_id`/`space_id` against - resolved again here
