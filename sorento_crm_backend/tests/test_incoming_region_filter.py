@@ -15,7 +15,7 @@ assertion is scoped to the rows this test seeded.
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -38,6 +38,7 @@ from app.services import eta_policy
 from app.services.incoming_stock_service import (
     IncomingStockService,
     earliest_packing_list_shipment,
+    today_myt,
 )
 from app.services.inventory_service import StockService
 from app.services.user_service import UserPermissionService
@@ -475,18 +476,21 @@ def _stock_ask(db, p, contact, expect_branch="incoming"):
 
 def test_ac_rpl_13_stock_ask_for_a_west_contact_ignores_an_earlier_east_only_shipment(db):
     p = product(db, company_id=DEFAULT_COMPANY_ID)
-    _ship(db, p, EAST, eta=date(2026, 10, 1), with_attachment=True)
-    _ship(db, p, WEST, eta=date(2026, 10, 20), with_attachment=True)
+    # The stock ask only reads shipments due today or later (MYT), so both ETAs
+    # sit in the future: the East one must be skipped for its region, not its date.
+    _ship(db, p, EAST, eta=today_myt() + timedelta(days=1), with_attachment=True)
+    west_eta = today_myt() + timedelta(days=20)
+    _ship(db, p, WEST, eta=west_eta, with_attachment=True)
 
     entry = _stock_ask(db, p, _contact(db))
     assert entry["branch"] == "incoming"
-    assert entry["eta"] == "20/10/2026"
+    assert entry["eta"] == west_eta.strftime("%d/%m/%Y")
     assert entry["packing_list"]
 
 
 def test_ac_rpl_13_stock_ask_gives_no_eta_from_an_east_only_container(db):
     p = product(db, company_id=DEFAULT_COMPANY_ID)
-    _ship(db, p, EAST, eta=date(2026, 10, 1), with_attachment=True)
+    _ship(db, p, EAST, eta=today_myt() + timedelta(days=1), with_attachment=True)
 
     # An East-only container is invisible to a West-only contact: the answer is
     # "no_incoming" (saying "incoming" would leak that the East shipment exists).
@@ -497,7 +501,8 @@ def test_ac_rpl_13_stock_ask_gives_no_eta_from_an_east_only_container(db):
 
 def test_ac_rpl_13_stock_ask_still_answers_from_a_west_plus_east_container(db):
     p = product(db, company_id=DEFAULT_COMPANY_ID)
-    _ship(db, p, BOTH, eta=date(2026, 10, 15), with_attachment=True)
+    eta = today_myt() + timedelta(days=15)
+    _ship(db, p, BOTH, eta=eta, with_attachment=True)
 
     entry = _stock_ask(db, p, _contact(db))
-    assert entry["eta"] == "15/10/2026"
+    assert entry["eta"] == eta.strftime("%d/%m/%Y")

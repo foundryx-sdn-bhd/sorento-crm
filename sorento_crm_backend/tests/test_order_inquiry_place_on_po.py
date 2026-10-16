@@ -22,7 +22,7 @@ existing row (CI's database is empty).
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -1221,8 +1221,11 @@ def test_a_decision_confirm_raises_the_buy_row_awaiting_with_a_firm_link():
 
         supplier = _supplier(db, company_id, f"{MARKER} Confirm Supplier")
         po = _po(db, company_id, supplier, f"ZZT-PO-{_uid()[:8]}")
+        # 61 days before the line's delivery (`REQUIRED_DATE`, today + 30): inside the
+        # cascade's 90-day lead-time window, which a fixed date leaves once today moves on.
         po_line = _po_line(
-            db, company_id, po, product, warehouse, qty_ordered="30", expected_date=date(2026, 9, 15),
+            db, company_id, po, product, warehouse, qty_ordered="30",
+            expected_date=date.today() - timedelta(days=31),
         )
         db.commit()
 

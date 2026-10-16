@@ -314,7 +314,6 @@ def _portal_token_scope(request: Request, db: Session) -> Optional[CompanyScope]
     from app.services.company_scope import DEFAULT_COMPANY_ID
 
     try:
-        from app.models.company import RespondContactCompany
         from app.models.portal import PortalToken
 
         row = (
@@ -323,22 +322,30 @@ def _portal_token_scope(request: Request, db: Session) -> Optional[CompanyScope]
             .first()
         )
         if row and row[0]:
-            company_ids = {
-                str(cid)
-                for (cid,) in db.query(RespondContactCompany.company_id)
-                .filter(RespondContactCompany.respond_contact_id == str(row[0]))
-                .all()
-                if cid
-            }
-            if company_ids:
-                return frozenset(company_ids)
+            return portal_contact_scope(db, str(row[0]))
     except Exception as exc:  # noqa: BLE001 - resolver must never 500
         logger.warning("portal token company resolve failed: %s", exc)
 
-    # Unknown / unverified token, or a contact with no company membership: the
-    # route's own auth still 401s an invalid token, so this is not an
-    # authorisation decision - only which company's rows a valid one reads.
+    # Unknown / unverified token: the route's own auth still 401s an invalid
+    # token, so this is not an authorisation decision - only which company's
+    # rows a valid one reads.
     return frozenset({DEFAULT_COMPANY_ID})
+
+
+def portal_contact_scope(db: Session, contact_id: str) -> frozenset:
+    """A portal contact's own companies (`respond_contact_companies`), or the
+    incumbent company when it has none (the rule `_portal_token_scope` states)."""
+    from app.models.company import RespondContactCompany
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    company_ids = {
+        str(cid)
+        for (cid,) in db.query(RespondContactCompany.company_id)
+        .filter(RespondContactCompany.respond_contact_id == str(contact_id))
+        .all()
+        if cid
+    }
+    return frozenset(company_ids or {DEFAULT_COMPANY_ID})
 
 
 def resolve_company_scope(request: Request, db: Session) -> CompanyScope:

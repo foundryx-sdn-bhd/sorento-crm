@@ -106,26 +106,18 @@ _DOC_NUMBER_ATTEMPTS = 5
 _DEFAULT_GUARDED_CLASSES = ("Bathroom Furniture", "Kitchen Sink")
 
 
-def sales_agent_for_contact(db: Session, contact_id: str):
-    """The SalesAgent a portal contact is linked to, or None.
+def sales_agents_for_contact(db: Session, contact_id: str) -> list:
+    """Every active SalesAgent a portal contact is linked to, by code; empty when none.
 
-    `sales_agents.contact_id` carries no unique constraint, so an unordered `.first()`
-    let Postgres return either row: the same salesperson could open the form twice and
-    be offered two different debtor books with nothing on screen to explain it. Ordered
-    by the agent code and then the id, so the answer is the same every time, and a
-    second link is logged rather than hidden - linking one contact to two agents is a
-    data problem for a human, not something to guess at here.
-
-    Extracted from `PriceTagRequestService.lookup_debtors_for_agent` (chatbot stock ask
-    v2 S6, AC-SA601): the debtor lookup and the portal's Customer asks page both call it.
-
-    Main's `app.services.sales.portal_agent.agent_for_contact` (sales plan 3.5) lifted
-    the same rule for the portal opportunity form; this delegates to it so there is one
-    copy of the rule, and stays as the module-level seam both S6 callers read at call time.
+    PORTAL-MULTI-AGENT (owner, 16 Oct 2026): a contact linked to several agents sees the
+    customers of all of them together, so this answers every link instead of the first
+    one by code. Delegates to `app.services.sales.portal_agent.agents_for_contact`, so
+    there is one copy of the rule, and stays as the module-level seam the debtor lookup,
+    Customer asks, Conversations and the form visibility read at call time.
     """
-    from app.services.sales.portal_agent import agent_for_contact
+    from app.services.sales.portal_agent import agents_for_contact
 
-    return agent_for_contact(db, contact_id)
+    return agents_for_contact(db, contact_id)
 
 
 class PriceTagRequestService:
@@ -2398,25 +2390,25 @@ Marketing's own work is not part of the form's payload, so it is captured
     ) -> list[dict]:
         """Scoped debtor lookup for a portal contact.
 
-        Returns customers assigned to the contact's linked SalesAgent, plus
-        distinct debtors from orders for that agent within the last 24 months.
-        Returns an empty list if the contact has no linked agent.
+        Returns customers assigned to any of the contact's linked active SalesAgents,
+        plus distinct debtors from orders for those agents within the last 24 months.
+        Returns an empty list if the contact has no linked active agent.
         """
         from app.models.order import Customer, Order
 
-        # Chatbot stock ask v2 S6 (AC-SA601): the one agent resolution, shared with the
-        # portal's Customer asks page. Module-level lookup so both callers read the same
+        # Chatbot stock ask v2 S6 (AC-SA601): the agent resolution, shared with the
+        # portal's Customer asks page. Module-level lookup so every caller reads the same
         # function at call time.
-        agent = sales_agent_for_contact(db, contact_id)
-        if agent is None:
+        agents = sales_agents_for_contact(db, contact_id)
+        if not agents:
             return []
 
         debtors: dict[str, dict] = {}
 
-        # Source 1: customers assigned to this agent (customers.sales_agent_id).
+        # Source 1: customers assigned to these agents (customers.sales_agent_id).
         customers = (
             db.query(Customer)
-            .filter(Customer.sales_agent_id == agent.id)
+            .filter(Customer.sales_agent_id.in_([a.id for a in agents]))
             .all()
         )
         for c in customers:
@@ -2430,12 +2422,23 @@ Marketing's own work is not part of the form's payload, so it is captured
                 "source": "customer",
             }
 
-        # Source 2: debtors from orders for this agent within last 24 months.
+        # Source 2: debtors from orders for these agents within last 24 months. A code is
+        # unique per company only, so an agent with a company matches its code there; a
+        # shared agent (no company) matches its code in every company.
+        from sqlalchemy import and_, or_
+
         cutoff = date.today() - timedelta(days=730)  # ~24 months
         orders = (
             db.query(Order.debtor_code, Order.debtor_name)
             .filter(
-                Order.agent == agent.sales_agent,
+                or_(
+                    *(
+                        Order.agent == a.sales_agent
+                        if a.company_id is None
+                        else and_(Order.agent == a.sales_agent, Order.company_id == a.company_id)
+                        for a in agents
+                    )
+                ),
                 Order.order_date >= cutoff,
                 Order.debtor_code.isnot(None),
             )

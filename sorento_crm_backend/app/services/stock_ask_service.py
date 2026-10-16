@@ -813,15 +813,15 @@ def _agent_scope(db: Session, agent_id: Optional[str | Iterable[str]]) -> Any:
 
 def list_for_agent(
     db: Session,
-    agent_id: str,
+    agent_id: str | Iterable[str],
     *,
     page: int,
     limit: int,
     q: Optional[str] = None,
     state: Optional[str] = None,
 ) -> dict[str, Any]:
-    """The portal's Customer asks page, newest first. `q` matches the customer name or
-    code, or the product code."""
+    """The portal's Customer asks page, newest first. `agent_id` is every active agent the
+    portal contact is linked to. `q` matches the customer name or code, or the product code."""
     from sqlalchemy import or_
 
     from app.models.order import Customer
@@ -851,7 +851,7 @@ def list_for_agent(
 
 def update_for_agent(
     db: Session,
-    agent_id: str,
+    agent_id: str | Iterable[str],
     ask_id: str,
     data: dict[str, Any],
     *,
