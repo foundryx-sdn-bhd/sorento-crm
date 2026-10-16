@@ -137,9 +137,9 @@ def test_c3_row_ids_scoped_undated_row_stays_on_the_one_sheet(db, chain):
 
 def test_the_oi_worksheet_is_one_sheet_across_delivery_months(db, chain):
     """Owner, 16 Oct 2026: "our OI excel cannot split by month, this applies to all places
-    where OI excel is printed". The handover attachment (Confirm and resend) is this call
-    with `columns=WORKSHEET_HEADINGS` (`store_handover_excel`); three months and an undated
-    row print on ONE sheet, dated rows in date order and the undated one last."""
+    where OI excel is printed". This is the reorder run's OI worksheet call
+    (`columns=WORKSHEET_HEADINGS`, `app/tasks/export_tasks.py`); three months and an
+    undated row print on ONE sheet, dated rows in date order and the undated one last."""
     f = chain
     october = _scope_row(db, product=f["product"], qty=5, delivery=date(2026, 10, 1))
     december = _scope_row(db, product=f["product"], qty=7, delivery=date(2026, 12, 20))

@@ -11,8 +11,9 @@ order raised rows that were reachable only from the one sales order that raised 
 `JAN - DEC 2026 ORDER.xlsx`, sheet title `ORDER INQUIRY`, columns SO DATE / S/O NO / ITEM
 CODE / QTY / TOTAL QTY / DELIVERY DATE / PROJECT/CUSTOMER / SUPPLIER / PO NO, one sheet
 per delivery MONTH plus a tab per day showing what was raised that day. The columns are
-read off that file rather than retyped, the month is the primary axis rather than one
-filter among many, and the export writes the same workbook back out.
+read off that file rather than retyped, and on screen the month is the primary axis rather
+than one filter among many. The export prints those columns on ONE sheet, never split by
+month (owner, 16 Oct 2026).
 
 **SUPPLIER and PO NO are never guessed.** On their sheet a blank in those two columns
 means "not placed yet", and that is exactly what the system knows: the only link the
@@ -3329,7 +3330,8 @@ class OrderInquiryWorklistService:
         Owner, 16 Oct 2026: "our OI excel cannot split by month, this applies to all
         places where OI excel is printed" - the list export, the export tasks and the
         handover attachment (Confirm and resend, `store_handover_excel`) all print
-        through here, so every delivery month and the undated rows share one sheet.
+        through here, so every delivery month and the undated rows share one
+        sheet.
         A row with no date is still an instruction and is never dropped from the file.
 
         Within the sheet the rows go SUPPLIER then ITEM CODE then delivery date, which is the order their own
