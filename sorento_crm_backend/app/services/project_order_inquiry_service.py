@@ -1320,6 +1320,9 @@ class ProjectOrderInquiryService:
         #: OI-PRODUCT-FOLLOW (review S2): product moves made on the DECLINED-settle path,
         #: told to purchasing once the line's own handover lines are queued.
         product_moves: List[Tuple[List[OrderInquiryRow], str]] = []
+        # OI-LINE-SPLIT (UAC E1): what staff linked moves first, so the settle below sees
+        # each row already holding the quantity its own line keeps.
+        self._apply_split_links(inquiry, decision, buy_lines, line_changes=line_changes)
         split_line_ids = self._apply_pure_splits(inquiry, decision, buy_lines)
         settled_in_place.extend(sorted(split_line_ids))
         for entry in buy_lines:
@@ -4377,84 +4380,138 @@ class ProjectOrderInquiryService:
                 # what purchasing must order is what the rows raised, never need - held.
                 raised=raised if same_kind and lines_told > 1 else None,
             )
-        self._tell_splits(pso_id, [line for line, _now, _before in saved])
+        self._tell_splits(
+            pso_id, [line for line, _now, _before in saved], actor_user_id=actor_user_id
+        )
 
-    def _tell_splits(self, pso_id: str, lines: Sequence[ProjectSalesOrderLine]) -> None:
+    def _tell_splits(
+        self,
+        pso_id: str,
+        lines: Sequence[ProjectSalesOrderLine],
+        *,
+        actor_user_id: Optional[str] = None,
+    ) -> None:
         """OI-LINE-SPLIT (UAC D1): a SPLIT line this Confirm tells purchasing about reads one
-        email line per split instead of what it queued (`split_handover_items`). A split
-        line this Confirm tells nothing about stays untold (Q3)."""
+        email line per split instead of what it queued, each queued through
+        `_record_handover` like every other line (`split_handover_items`). A split line this
+        Confirm tells nothing about stays untold (Q3)."""
         queue = self.db.info.get(_HANDOVER_PENDING_KEY)
         if not queue:
             return
-        queue[:] = self.split_handover_items(
-            queue, line_ids={str(line.id) for line in lines}
+        self.split_handover_items(
+            queue, line_ids={str(line.id) for line in lines}, actor_user_id=actor_user_id,
+            queued=True,
         )
 
     def split_handover_items(
-        self, items: Sequence[Dict[str, Any]], *, line_ids: Optional[set] = None
+        self,
+        items: List[Dict[str, Any]],
+        *,
+        line_ids: Optional[set] = None,
+        actor_user_id: Optional[str] = None,
+        queued: bool = False,
     ) -> List[Dict[str, Any]]:
-        """OI-LINE-SPLIT (UAC D1): every handover item of a SPLIT line (its own splits,
-        the origin view) is replaced, at the place of its first item, by one item per
-        split, each reading alone in the same template: QTY / DELIVERY = the base the line
-        was split from (`was`), NEW QTY / NEW DATE = the split's (blank date for a cancel),
-        REMARK = its change word and remark. Read by Confirm (`_tell_splits`) and by Send to
-        purchasing (`oi_handover_resend`). `line_ids` narrows which lines may expand."""
+        """OI-LINE-SPLIT (UAC D1): every handover item of a SPLIT line (its own splits, the
+        origin view) is replaced by one line per split, each reading alone in the same
+        template: QTY / DELIVERY = the base the line was split from (`was`), NEW QTY / NEW
+        DATE = the split's (blank date for a cancel), REMARK = its change word and remark.
+
+        Send to purchasing (`oi_handover_resend`) passes its built items and gets the new
+        list back. Confirm (`_tell_splits`) passes the pending queue with `queued=True`:
+        the line's items leave the queue and each split is queued by `_record_handover`.
+        `line_ids` narrows which lines may expand."""
         from app.services.project_line_split_service import SplitOutputs
 
         candidates = {str(i.get("so_line_id")) for i in items if i.get("so_line_id")}
         if line_ids is not None:
             candidates &= {str(i) for i in line_ids}
         splits = SplitOutputs(self.db, candidates)
-        if not splits.by_origin:
+        expanding = {line_id for line_id in candidates if splits.by_origin.get(line_id)}
+        if not expanding:
             return list(items)
+        templates: Dict[str, Dict[str, Any]] = {}
         out: List[Dict[str, Any]] = []
-        done: set = set()
         for item in items:
             line_id = str(item.get("so_line_id") or "")
-            views = splits.by_origin.get(line_id) if line_id in candidates else None
-            if not views:
+            if line_id in expanding:
+                templates.setdefault(line_id, item)
+            else:
                 out.append(item)
-                continue
-            if line_id in done:
-                continue
-            done.add(line_id)
+        if queued:
+            items[:] = out
+        for line_id, template in templates.items():
             line = self.db.get(ProjectSalesOrderLine, line_id)
-            own_location = line.stock_location if line is not None else None
-            out.extend(self._split_item(item, view, own_location) for view in views)
+            for view in splits.by_origin[line_id]:
+                stand_in = self._split_stand_in(template, view, line)
+                was = {"qty": view.split.base_qty, "delivery_date": view.split.base_date}
+                if queued:
+                    self._record_handover(
+                        stand_in, kind="settled", was=was,
+                        actor_user_id=actor_user_id, qty=_dec(view.split.qty),
+                    )
+                    item = self.db.info[_HANDOVER_PENDING_KEY][-1]
+                else:
+                    item = self.handover_item(
+                        stand_in, kind="settled", was=was,
+                        actor_user_id=actor_user_id, qty=_dec(view.split.qty),
+                    )
+                    out.append(item)
+                self._read_as_split(item, template, view)
         return out
 
     @staticmethod
-    def _split_item(
-        template: Mapping[str, Any], view: Any, own_location: Optional[str]
-    ) -> Dict[str, Any]:
-        """One split's handover item, built off the item its line queued."""
+    def _split_stand_in(
+        template: Mapping[str, Any], view: Any, line: Optional[ProjectSalesOrderLine]
+    ) -> SimpleNamespace:
+        """What `handover_item` reads, for one split of the line `template` was told for:
+        the split's own qty and date on the line's own location."""
+        return SimpleNamespace(
+            id=template.get("row_id"),
+            order_inquiry_id=template.get("order_inquiry_id"),
+            so_line_id=view.split.so_line_id,
+            item_code=template.get("item_code"),
+            stock_location=(line.stock_location if line is not None else None)
+            or template.get("stock_location"),
+            verb=IV_ORDER,
+            covered_by=None,
+            cited_document=None,
+            note=None,
+            qty=_dec(view.split.qty),
+            delivery_date=view.split.delivery_date,
+        )
+
+    @staticmethod
+    def _read_as_split(item: Dict[str, Any], template: Mapping[str, Any], view: Any) -> None:
+        """A split line's own words: REMARK = change word (and remark), `was` = the base
+        (both figures, so the line reads alone), the headline verb of its change."""
         from app.services.project_line_split_service import WORD_CANCEL
 
         split = view.split
         word = view.word
-        entry = dict(template.get("line") or {})
-        entry.update(
-            qty=_qty_str(_dec(split.qty)),
-            delivery_date=_handover_fmt_date(split.delivery_date),
-            location=own_location or entry.get("location") or "",
-            remark=f"{word}, {split.remark}" if split.remark else word,
-            was=_format_handover_was({"qty": split.base_qty, "delivery_date": split.base_date}),
+        entry = item["line"]
+        # The order's facts as the line's own item carried them, where the stand-in's
+        # header could not be read (a saved line queued before any header existed).
+        for key in ("pso_id", "so_number", "customer", "project"):
+            if not item.get(key):
+                item[key] = template.get(key)
+        for key in ("so_date", "so_number", "customer", "project"):
+            if not entry.get(key):
+                entry[key] = (template.get("line") or {}).get(key)
+        entry["remark"] = f"{word}, {split.remark}" if split.remark else word
+        entry["was"] = _format_handover_was(
+            {"qty": split.base_qty, "delivery_date": split.base_date}
         )
         if word == WORD_CANCEL:
-            keys = [IV_CANCEL_BALANCE]
+            item["verb_keys"] = [IV_CANCEL_BALANCE]
         elif word == REMARK_SPELLING[IV_DELAY]:
-            keys = [IV_DELAY]
+            item["verb_keys"] = [IV_DELAY]
         elif word == REMARK_SPELLING[IV_ADVANCE]:
-            keys = [IV_ADVANCE]
+            item["verb_keys"] = [IV_ADVANCE]
         else:
-            keys = list(template.get("verb_keys") or ["QTY_CHANGE"])
-        return {
-            **template,
-            "stock_location": entry["location"] or template.get("stock_location"),
-            "verb_keys": keys,
-            "told_for_saved_line": True,
-            "line": entry,
-        }
+            item["verb_keys"] = list(template.get("verb_keys") or ["QTY_CHANGE"])
+        if template.get("actor") and not item.get("actor"):
+            item["actor"] = template.get("actor")
+        item["told_for_saved_line"] = True
 
     def forget_rows_told_for_saved_lines(self, pso_id: str) -> None:
         """A planning-change apply confirms its lines first (one decision line each, which
@@ -5474,6 +5531,139 @@ class ProjectOrderInquiryService:
             handled.update(str(e["line"].id) for e in fresh)
         return handled
 
+    def _apply_split_links(
+        self,
+        inquiry: OrderInquiry,
+        decision: Any,
+        buy_lines: Sequence[Dict[str, Any]],
+        *,
+        line_changes: Optional[Mapping[str, Dict[str, Any]]] = None,
+    ) -> None:
+        """OI-LINE-SPLIT (UAC E1, `PLAN-oi-line-split-16oct.md` Engine): Confirm honours the
+        splits staff linked. A stored split of line A that sits on line B of the same order
+        moves its quantity, with the links that cover it and purchasing's acknowledgement,
+        from A's live ORDER row to B's (`_split_row`), so A is not told CANCEL for it and B
+        is not told ORDER for it. What is left on each line is told by the settle and
+        netting that run after this, as today.
+
+        Only where both lines are in this Confirm and AutoCount took A's quantity down
+        (`line_changes`), and under the pure split's own guards: A has one live ORDER row
+        (not redirected, not rejected, no CS reserve link) holding more than A's new Buy,
+        and B has one such row (the quantity merges into it) or none (a row is made for
+        it). Latest split first. Nothing is added to the handled or settled lines: the
+        lines still settle and net as they would. No stored splits, nothing moves."""
+        entries = {
+            str(entry["line"].id): entry
+            for entry in buy_lines
+            if entry.get("line") is not None
+            and not entry.get("carried")
+            and entry.get("origin") != "local"
+            and not entry.get("order_back")
+        }
+        if len(entries) < 2 or not line_changes:
+            return
+        went_down = [
+            line_id
+            for line_id in entries
+            if (line_changes.get(line_id) or {}).get("from_qty") is not None
+            and (line_changes.get(line_id) or {}).get("to_qty") is not None
+            and _dec(line_changes[line_id]["to_qty"]) < _dec(line_changes[line_id]["from_qty"])
+        ]
+        if not went_down:
+            return
+        from app.services.project_line_split_service import SplitOutputs
+
+        splits = SplitOutputs(self.db, went_down)
+        linked_by_origin = {
+            origin: [
+                view
+                for view in views
+                if not view.split.is_cancel
+                and view.sits_on
+                and view.sits_on != origin
+                and view.sits_on in entries
+            ]
+            for origin, views in splits.by_origin.items()
+        }
+        if not any(linked_by_origin.values()):
+            return
+        line_ids = sorted(
+            set(linked_by_origin)
+            | {view.sits_on for views in linked_by_origin.values() for view in views}
+        )
+        rows_by_line: Dict[str, List[OrderInquiryRow]] = defaultdict(list)
+        for row in self.db.query(OrderInquiryRow).filter(
+            OrderInquiryRow.order_inquiry_id == inquiry.id,
+            OrderInquiryRow.so_line_id.in_(line_ids),
+        ):
+            rows_by_line[str(row.so_line_id)].append(row)
+
+        def _movable(line_id: str) -> Tuple[bool, Optional[OrderInquiryRow]]:
+            """`(usable, its one live ORDER row or None)` under the pure split's guards."""
+            live = [
+                row for row in rows_by_line.get(line_id, [])
+                if row.state != INQUIRY_CANCELLED and row.verb != IV_CANCEL_BALANCE
+            ]
+            if not live:
+                return True, None
+            if len(live) != 1:
+                return False, None
+            row = live[0]
+            ok = (
+                row.verb == IV_ORDER
+                and row.state in (INQUIRY_RAISED, INQUIRY_PARTLY_LINKED, INQUIRY_PLACED)
+                and not row.redirected_to_pool
+                and row.ack_state != ACK_REJECTED
+                # A CS reserve link is tied to its reserve request row; it never moves.
+                and not any(link.reserve_request_row_id for link in self._links_of(row.id))
+            )
+            return ok, row if ok else None
+
+        for origin, views in linked_by_origin.items():
+            if not views:
+                continue
+            usable, source = _movable(origin)
+            if not usable or source is None:
+                continue
+            room = _dec(source.qty) - _dec(entries[origin].get("buy_qty"))
+            for view in sorted(views, key=lambda v: v.split.seq, reverse=True):
+                if room <= _ZERO:
+                    break
+                target_id = view.sits_on
+                usable, target = _movable(target_id)
+                if not usable:
+                    continue
+                if target is not None and (
+                    (target.item_code or None, target.stock_location or None)
+                    != (source.item_code or None, source.stock_location or None)
+                ):
+                    continue
+                take = min(_dec(view.split.qty), room)
+                self._split_row(
+                    source,
+                    _dec(source.qty) - take,
+                    [
+                        {
+                            "line": entries[target_id]["line"],
+                            "buy_qty": take,
+                            "required_date": view.split.delivery_date
+                            or entries[target_id].get("required_date"),
+                            "row": target,
+                        }
+                    ],
+                    decision,
+                )
+                room -= take
+                if target is None:
+                    # The row just made is the target's one live row from here on.
+                    rows_by_line[target_id] = [
+                        row
+                        for row in self.db.query(OrderInquiryRow).filter(
+                            OrderInquiryRow.order_inquiry_id == inquiry.id,
+                            OrderInquiryRow.so_line_id == target_id,
+                        )
+                    ]
+
     def _split_row(
         self,
         source: OrderInquiryRow,
@@ -5482,7 +5672,12 @@ class ProjectOrderInquiryService:
         decision: Any,
     ) -> None:
         """`_apply_pure_splits`' write: `source` keeps `keep`, each fresh line gets a row for
-        its own Buy, and the links above `keep` follow the quantity."""
+        its own Buy, and the links above `keep` follow the quantity.
+
+        OI-LINE-SPLIT (`_apply_split_links`): an entry carrying `"row"` names the target's
+        existing row, and its `buy_qty` (the split's quantity) is ADDED to that row rather
+        than raised as a new one. A new row whose date differs from the source's reads as
+        a moved instruction, the way `_settle_row_in_place` stamps one."""
         source_line = self.db.get(ProjectSalesOrderLine, source.so_line_id)
         source_no = source_line.line_no if source_line is not None else None
         links = sorted(
@@ -5497,26 +5692,48 @@ class ProjectOrderInquiryService:
         new_rows: List[OrderInquiryRow] = []
         for entry in fresh:
             qty = _dec(entry.get("buy_qty"))
-            row = OrderInquiryRow(
-                company_id=source.company_id,
-                order_inquiry_id=source.order_inquiry_id,
-                so_line_id=entry["line"].id,
-                item_code=source.item_code,
-                qty=qty,
-                delivery_date=entry.get("required_date") or source.delivery_date,
-                stock_location=source.stock_location,
-                verb=IV_ORDER,
-                covered_by=None,
-                supply_decision_id=decision.id,
-                state=INQUIRY_RAISED,
-                # Purchasing already holds this quantity: the split moves their
-                # acknowledgement with it, it does not ask them to confirm it again.
-                ack_state=source.ack_state,
-                acknowledged_by=source.acknowledged_by,
-                acknowledged_at=source.acknowledged_at,
-                note=f"Split from line {source_no}" if source_no is not None else "Split",
-            )
-            self.db.add(row)
+            row = entry.get("row")
+            if row is not None:
+                # The target already holds a row: the quantity, its links and purchasing's
+                # acknowledgement join the row they already read.
+                row.qty = _dec(row.qty) + qty
+                row.supply_decision_id = decision.id
+                stamp = (
+                    f"Split: {_qty_str(qty)} from line {source_no}"
+                    if source_no is not None
+                    else f"Split: {_qty_str(qty)} moved in"
+                )
+                row.note = f"{row.note}; {stamp}" if row.note else stamp
+            else:
+                when = entry.get("required_date") or source.delivery_date
+                row = OrderInquiryRow(
+                    company_id=source.company_id,
+                    order_inquiry_id=source.order_inquiry_id,
+                    so_line_id=entry["line"].id,
+                    item_code=source.item_code,
+                    qty=qty,
+                    delivery_date=when,
+                    stock_location=source.stock_location,
+                    verb=IV_ORDER,
+                    covered_by=None,
+                    supply_decision_id=decision.id,
+                    state=INQUIRY_RAISED,
+                    # Purchasing already holds this quantity: the split moves their
+                    # acknowledgement with it, it does not ask them to confirm it again.
+                    ack_state=source.ack_state,
+                    acknowledged_by=source.acknowledged_by,
+                    acknowledged_at=source.acknowledged_at,
+                    note=f"Split from line {source_no}" if source_no is not None else "Split",
+                )
+                if when != source.delivery_date:
+                    # The quantity moved date too: the Was / Now columns say from what, and
+                    # a row purchasing had taken on goes back to them, as a settle does.
+                    row.previous_qty = qty
+                    row.previous_delivery_date = source.delivery_date
+                    if row.ack_state in (ACK_ACKNOWLEDGED, ACK_CHANGED):
+                        row.changed_at = datetime.utcnow()
+                        row.ack_state = ACK_CHANGED
+                self.db.add(row)
             self.db.flush()
             new_rows.append(row)
             room = qty

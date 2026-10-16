@@ -3827,6 +3827,17 @@ def _oi_demand_rows(
             elif not held_row.redirected_to_pool:
                 cancellable_by_line[line_key] += _dec(held_row.qty)
 
+    # OI-LINE-SPLIT (UAC E1): what staff linked from a cut line onto another line of the
+    # order is not a cancel - it moved (`_apply_split_links`), and is told as its split.
+    linked_out_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    if qty_down_line_ids:
+        from app.services.project_line_split_service import SplitOutputs
+
+        for line_id, views in SplitOutputs(db, qty_down_line_ids).by_origin.items():
+            for view in views:
+                if not view.split.is_cancel and view.sits_on and view.sits_on != line_id:
+                    linked_out_by_line[line_id] += _dec(view.split.qty)
+
     out: List[dict] = []
     counts: Dict[str, int] = {}
     for r in live_rows:
@@ -3889,7 +3900,10 @@ def _oi_demand_rows(
         elif r.kind == "qty_down":
             from_qty = _dec((r.from_json or {}).get("qty"))
             to_qty = _dec((r.to_json or {}).get("qty"))
-            drop = min(from_qty - to_qty, cancellable_by_line[str(r.project_line_id)])
+            drop = min(
+                from_qty - to_qty - linked_out_by_line[str(r.project_line_id)],
+                cancellable_by_line[str(r.project_line_id)],
+            )
             if drop <= _ZERO:
                 continue
             out.append(
