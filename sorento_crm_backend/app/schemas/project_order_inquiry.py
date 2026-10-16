@@ -353,6 +353,8 @@ class OrderInquiryWorklistRow(BaseModel):
     """
 
     id: str
+    #: OI-BULK-RESERVE v4: the header this row belongs to, for the Lines page's per-inquiry commit.
+    order_inquiry_id: Optional[str] = None
     #: `OI-000123` - the number of the inquiry this row belongs to, off its own header.
     #: Optional only so a record written before the column existed still reads; every
     #: inquiry raised since carries one. The S/O no beside it does not answer the same
@@ -542,6 +544,10 @@ class OrderInquiryWorklistRow(BaseModel):
     #: read N off this, not off a second lookup. Declared here because `response_model`
     #: silently drops a field it has not been told about.
     requested_qty: str = "0"
+    #: OI-BULK-RESERVE v4 (B2): the open request row's warehouse id and code, null when no
+    #: request is open. Declared here because `response_model` drops undeclared fields.
+    reserve_warehouse_id: Optional[str] = None
+    reserve_location: Optional[str] = None
     #: OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for - a NUMBER (AC-RR-5): qty less
     #: open links, reserve links and the bundle; links on a fully received PO/SPO line do
     #: not count. The screen never re-derives "received". Declared here because
@@ -736,6 +742,8 @@ class AcknowledgeFilter(BaseModel):
     #: md`): "Select all N matching" narrowed to one header, so pressing Confirm with
     #: nothing ticked means exactly that OI and nothing else.
     inquiry_id: Optional[str] = Field(None, pattern=UUID_PATTERN)
+    #: OI-BULK-RESERVE v4: keep a line when one of its own request rows is in this status.
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = None
 
 
 class AcknowledgeRowsRequest(BaseModel):
@@ -1183,6 +1191,8 @@ class OrderInquiryWorklistExportRequest(BaseModel):
     spo_number: Optional[str] = Field(None, max_length=WORKLIST_FILTER_MAX_LENGTH)
     delivery_from: Optional[str] = None
     delivery_to: Optional[str] = None
+    #: OI-BULK-RESERVE v4: keep a line when one of its own request rows is in this status.
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = None
 
 
 class UnplaceAllResult(BaseModel):

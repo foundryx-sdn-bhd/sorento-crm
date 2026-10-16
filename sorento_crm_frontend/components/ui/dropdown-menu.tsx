@@ -137,7 +137,9 @@ function DropdownMenuContent({
             forceMount
             data-slot="dropdown-menu-content"
             sideOffset={sideOffset}
-            className="z-50"
+            // Bounded by the room Radix measures, so a tall menu (the contacts Filters popover at 375px)
+            // scrolls instead of running off the screen.
+            className="z-50 max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto"
             {...props}
           >
             <motion.div

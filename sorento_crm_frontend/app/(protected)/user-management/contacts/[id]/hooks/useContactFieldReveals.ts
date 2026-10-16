@@ -38,6 +38,7 @@ export function useSetContactFieldReveals(contactId: string) {
     mutationFn: (granted: string[]) => setContactFieldReveals(contactId, granted),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: contactFieldRevealsQueryKey(contactId) });
+      queryClient.invalidateQueries({ queryKey: ['contact-tag-settings', contactId] });
       toast.success('Field reveals updated');
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to save field reveals'),

@@ -42,6 +42,13 @@ def world(r7world):
     sorento = r7world["sorento"]
     uom = r7world["srt_tubs"][0].base_uom_id
     ba = _class_category(db, "BA")
+    # The real BA categories carry the class (dev: class_label "Bathroom Accessory", searchable);
+    # `_class_category` only codes the category, so give this one what backfill gives the real rows.
+    from app.models.product import ProductCategory
+
+    db.query(ProductCategory).filter(ProductCategory.id == ba).update(
+        {"class_label": "Bathroom Accessory", "is_searchable": True}
+    )
 
     def trap(code, name, description):
         return _make(db, code=code, name=name, description=description, brand=sorento, category_id=ba, uom_id=uom)

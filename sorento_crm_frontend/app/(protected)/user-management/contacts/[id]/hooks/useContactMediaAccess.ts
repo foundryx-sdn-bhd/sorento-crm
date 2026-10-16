@@ -31,6 +31,7 @@ export function useUpdateContactMediaAccess(contactId: string) {
     }) => updateContactMediaAccess(contactId, modality, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: contactMediaAccessKey(contactId) });
+      queryClient.invalidateQueries({ queryKey: ['contact-tag-settings', contactId] });
       toast.success('Media access updated');
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to save media access'),

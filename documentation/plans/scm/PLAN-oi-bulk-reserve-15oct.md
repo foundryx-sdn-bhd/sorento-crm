@@ -1,6 +1,6 @@
 # PLAN: one-button bulk reserve on the OI Lines tab (OI-BULK-RESERVE)
 
-Status: Build. Part 1 (v3, inside one OI) built and green on `crew/oi-bulk-reserve` (PR #1713), in review + cloud browser pass. Part 2 (v4, cross-OI Lines page) mock committed, crew decisions in, waiting on the owner's OK on the mock; backend red test committed. Track: standard (M), no migration, no auth/RBAC change.
+Status: Build. Part 1 (v3, inside one OI) on `crew/oi-bulk-reserve` (PR #1713), owner hand-testing 04f3634ca. Part 2 (v4, cross-OI Lines page): owner OK 16 Oct 09:08, built in the final v3 shape (Decide saves drafts, Reserve (N) confirms) as a stacked PR on `claude/oi-bulk-reserve-a4-xrcfkd` (base `crew/oi-bulk-reserve`); UAC AC-BR-20..28. Track: standard (M), no migration, no auth/RBAC change.
 Size M per crew, frontend only (expected diff small, no migration, no auth/RBAC change, no new
 endpoint). Lead pattern: tester red tests, coder, reviewer, browser pass on the changed screen.
 

@@ -110,6 +110,7 @@ class ContactService:
         include_linked_users: bool = False,
         no_customers_only: bool = False,
         access_filters: Optional[dict] = None,
+        redact_sections: frozenset = frozenset(),
     ):
         """List contacts with pagination and filtering.
 
@@ -185,6 +186,17 @@ class ContactService:
 
         brands_map = brand_refs_by_contact(self.db, [str(c.id) for c in contacts])
 
+        from app.services.contact_tag_service import tags_by_contact
+
+        tags_map = tags_by_contact(self.db, [str(c.id) for c in contacts])
+
+        from app.services import contact_tag_settings
+
+        only = set((access_filters or {}).get("tag_ids") or []) or None
+        tag_settings_map = contact_tag_settings.evaluate(
+            self.db, contacts, only_tags=only, redact=redact_sections
+        )
+
         # Validate and convert contacts to response models
         # Explicitly convert UUID to string to ensure Pydantic validation works
         contact_responses = []
@@ -196,6 +208,8 @@ class ContactService:
                 data["linked_user_name"] = linked["name"] if linked else None
                 data["customer_codes"] = codes_map.get(str(contact.id), [])
                 data["brands"] = brands_map.get(str(contact.id), [])
+                data["tags"] = tags_map.get(str(contact.id), [])
+                data["tag_settings"] = contact_tag_settings.row_summary(tag_settings_map[str(contact.id)])
                 data["cost_visible"] = str(contact.id) in cost_ids
                 contact_responses.append(RespondContactResponse.model_validate(data))
             except Exception as e:
@@ -270,6 +284,19 @@ class ContactService:
                 q = q.filter(column.is_(value))
         if f.get("region") in ("west", "east"):
             q = q.filter(RespondContact.regions.contains([f["region"]]))
+        if f.get("tag_ids"):
+            from app.models.access import respond_contact_tags as tag_pivot
+
+            q = q.filter(
+                exists().where(
+                    tag_pivot.c.contact_id == RespondContact.id,
+                    tag_pivot.c.tag_id.in_(f["tag_ids"]),
+                )
+            )
+        if f.get("no_tags"):
+            from app.models.access import respond_contact_tags as tag_pivot
+
+            q = q.filter(~exists().where(tag_pivot.c.contact_id == RespondContact.id))
         if f.get("customer_id"):
             from app.models.base import get_company_scope
             from app.services.company_scope import build_company_predicate
@@ -299,7 +326,35 @@ class ContactService:
                 self.db, source, q.all(), f.get("access_differs_skip") or frozenset()
             )
             q = q.filter(RespondContact.id.in_(ids))
+        # Last, so the candidate cap counts the set the other filters left (N1).
+        if f.get("tag_settings") in ("differs", "matches"):
+            q = self._filter_tag_settings(q, f)
         return q
+
+    def _filter_tag_settings(self, q, f: dict):
+        """Contacts whose tag settings differ / match, over the holders of a tag that sets something."""
+        from app.models.access import ContactTag, respond_contact_tags as pivot
+        from app.services import contact_tag_settings
+        from app.services.contact_access_copy_service import MAX_DIFF_CANDIDATES
+        from app.services.error_handler import handle_unprocessable
+
+        setting_tags = [
+            tid for tid, st in self.db.query(ContactTag.id, ContactTag.settings)
+            if contact_tag_settings.leaves_of(st)
+        ]
+        q = q.filter(
+            exists().where(pivot.c.contact_id == RespondContact.id, pivot.c.tag_id.in_(setting_tags or [None]))
+        )
+        if q.count() > MAX_DIFF_CANDIDATES:
+            raise handle_unprocessable(
+                f"Tag settings compare at most {MAX_DIFF_CANDIDATES} contacts; narrow the list with "
+                "another filter or a search first."
+            )
+        only = set(f.get("tag_ids") or []) or None
+        results = contact_tag_settings.evaluate(self.db, q.all(), only_tags=only)
+        want = f["tag_settings"]
+        ids = [cid for cid, r in results.items() if r["status"] == want]
+        return q.filter(RespondContact.id.in_(ids))
 
     def assign_default_agents_to_contact(self, contact: RespondContact) -> None:
         """Assign all agents with assign_to_new_internal_contacts=True to this contact. Idempotent per agent (skips if access already exists).
@@ -768,10 +823,14 @@ class ContactService:
         access_types = list(getattr(contact, "access_types", []) or [])
         chatbot_profile = dict(getattr(contact, "chatbot_profile", None) or {})
         brands: list = []
+        tags: list = []
         if db is not None:
             from app.services.contact_brand_scope import brand_refs_by_contact
 
             brands = brand_refs_by_contact(db, [str(contact.id)]).get(str(contact.id), [])
+            from app.services.contact_tag_service import tags_by_contact
+
+            tags = tags_by_contact(db, [str(contact.id)]).get(str(contact.id), [])
             # AC-MEM041: both dict builders carry facts, the live CRM ones (never
             # stored) merged in the same way the memory GET does. Skipped entirely
             # when there is nothing to add - a contact with no stored facts and no
@@ -833,6 +892,7 @@ class ContactService:
             # CONTACT-BRAND-SCOPE: listed by hand like every field above. The list endpoint
             # fills it for a whole page in one query; here, one contact when a session is given.
             "brands": brands,
+            "tags": tags,
             "created_at": contact.created_at,
             "updated_at": contact.updated_at,
             "created_by": contact.created_by,

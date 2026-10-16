@@ -66,17 +66,27 @@ export function FocusToggle({
 export function FocusShell({
   active,
   onExit,
+  keepMounted = false,
   children,
 }: {
   active: boolean;
   onExit: () => void;
+  /**
+   * Keep one wrapper element in both states, so toggling never remounts the
+   * children (a text editor keeps its caret, scroll and open Find). Inactive,
+   * the wrapper is `display: contents`; a parent that spaces its children
+   * with `space-y-*` should use `gap-*` instead, which still reaches them.
+   */
+  keepMounted?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
     if (!active) return undefined;
 
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onExit();
+      // An Escape something inside already used (closing a Find bar, a
+      // popover, a dialog) is not also a request to leave full screen.
+      if (event.key === 'Escape' && !event.defaultPrevented) onExit();
     };
     document.addEventListener('keydown', onKey);
 
@@ -91,12 +101,16 @@ export function FocusShell({
     };
   }, [active, onExit]);
 
-  if (!active) return <>{children}</>;
+  if (!active && !keepMounted) return <>{children}</>;
 
+  // The same element in both states when `keepMounted`, and the children in
+  // the same slot, so React reconciles instead of remounting.
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col gap-3 overflow-auto bg-background p-3"
-      data-dk-focus-mode
+      className={
+        active ? 'fixed inset-0 z-50 flex flex-col gap-3 overflow-auto bg-background p-3' : 'contents'
+      }
+      data-dk-focus-mode={active ? true : undefined}
     >
       {/*
         Say how to get out, on the screen, once.
@@ -105,9 +119,11 @@ export function FocusShell({
         right, because top right is where the toolbar lives and a hint that
         covers Save is worse than no hint.
       */}
-      <div className="pointer-events-none absolute bottom-3 end-3 z-10 rounded-md bg-foreground/80 px-2 py-1 text-xs text-background shadow-sm">
-        Press Esc to exit full screen
-      </div>
+      {active ? (
+        <div className="pointer-events-none absolute bottom-3 end-3 z-10 rounded-md bg-foreground/80 px-2 py-1 text-xs text-background shadow-sm">
+          Press Esc to exit full screen
+        </div>
+      ) : null}
       {children}
     </div>
   );

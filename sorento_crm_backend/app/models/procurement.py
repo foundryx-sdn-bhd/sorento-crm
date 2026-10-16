@@ -1124,7 +1124,7 @@ class PurchaseRequestHeader(Base):
     total_project_value_text = Column(Text, nullable=True)  # descriptive e.g. "BULK ORDER EST RM1.6MIL"
     sponsor_subject = Column(Text, nullable=True)  # sponsorship: showroom/mockup/others (lookup-bound)
     sponsor_subject_other = Column(Text, nullable=True)  # sponsorship: free-text detail when sponsor_subject='others'
-    sales_type = Column(String(50), nullable=True)  # PR: project/cash_sales (lookup-bound); routes CS assignment. SF leaves NULL.
+    sales_type = Column(String(50), nullable=True)  # project/cash_sales (lookup-bound), filled from the picked customer's debtor type; required on PR (routes CS), optional on SF.
     expected_delivery_date = Column(Date, nullable=True)
     expected_po_date = Column(Date, nullable=True)
     expected_po_date_text = Column(Text, nullable=True)

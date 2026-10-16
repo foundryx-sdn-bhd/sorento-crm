@@ -1,4 +1,15 @@
-import { Copy, Download, Link2, MessageCircle, MessageCircleOff, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Copy,
+  Download,
+  Link2,
+  MessageCircle,
+  MessageCircleOff,
+  RefreshCw,
+  Tag,
+  Tags,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { ToolbarAction } from '@/components/ui/data-grid-list-toolbar';
 
 /**
@@ -24,6 +35,9 @@ export interface ContactBulkActionHandlers {
   onDisableMessaging: () => void;
   onSync: () => void;
   onCopyAccess: () => void;
+  onAddTag: () => void;
+  onRemoveTag: () => void;
+  onApplyTagSettings: () => void;
   onDelete: () => void;
 }
 
@@ -54,6 +68,19 @@ export function buildContactBulkActions(
     },
     ...(state.canEdit
       ? [{ key: 'copy-access', label: `Copy access from contact (${n})`, icon: Copy, onClick: handlers.onCopyAccess }]
+      : []),
+    // CONTACT-TAGS S4b: after Copy access, before the destructive items (edit only).
+    ...(state.canEdit
+      ? [
+          { key: 'tag-add', label: `Add tag (${n})`, icon: Tag, onClick: handlers.onAddTag },
+          { key: 'tag-remove', label: `Remove tag (${n})`, icon: X, onClick: handlers.onRemoveTag },
+          {
+            key: 'tag-apply',
+            label: `Apply tag settings (${n})`,
+            icon: Tags,
+            onClick: handlers.onApplyTagSettings,
+          },
+        ]
       : []),
     {
       key: 'outbound-disable',

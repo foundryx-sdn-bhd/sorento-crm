@@ -71,6 +71,7 @@ import PurchaseRequestForm from './PurchaseRequestForm';
 
 type Kind = 'purchase_request' | 'sponsorship_form';
 
+let salesOnSf = true;
 function loaded(kind: Kind) {
   return {
     id: 'req-1',
@@ -78,7 +79,7 @@ function loaded(kind: Kind) {
     request_number: 'PR-0001',
     customer_name: 'CUSTOMER A SDN BHD',
     customer_id: 'cust-A',
-    sales_type: kind === 'purchase_request' ? 'project' : null,
+    sales_type: kind === 'purchase_request' || salesOnSf ? 'project' : null,
     project_title: 'Tower A',
     lines: [{ item_code: 'ITEM-A', quantity: 2, remark: null, unit_price: 15, total: 30 }],
   };
@@ -153,9 +154,67 @@ it('PR edit: picking a cash_sales customer changes the VISIBLE Sales Type, which
   expect(data.sales_type).toBe('project');
 });
 
-it('SF edit: there is no Sales Type field', async () => {
+it('SF edit: the Sales Type field shows the loaded value', async () => {
+  salesOnSf = true;
   renderEdit('sponsorship_form');
   await customerInput();
+  expect(await salesTypeSelect()).toHaveTextContent('Project');
+});
 
-  expect(screen.queryByText(/^Sales Type/)).toBeNull();
+it('SF edit: picking a cash_sales customer changes the visible Sales Type and saving sends it', async () => {
+  salesOnSf = true;
+  renderEdit('sponsorship_form');
+  const input = await customerInput();
+
+  fireEvent.focus(input);
+  fireEvent.change(input, { target: { value: 'ZZT' } });
+  fireEvent.click(await screen.findByRole('option', { name: /CUSTOMER B SDN BHD/ }));
+  await waitFor(async () => expect(await salesTypeSelect()).toHaveTextContent('Cash Sales'));
+  const data = await save();
+
+  expect(data.customer_id).toBe('cust-B');
+  expect(data.sales_type).toBe('cash_sales');
+});
+
+it('SF edit: a blank Sales Type still saves (not required)', async () => {
+  salesOnSf = false;
+  renderEdit('sponsorship_form');
+  await customerInput();
+  expect(await salesTypeSelect()).toBeTruthy();
+  const data = await save();
+
+  expect(data.sales_type ?? null).toBeNull();
+  salesOnSf = true;
+});
+
+/** The "Clear selection" button inside the "Sales Type" field, or null. */
+async function salesTypeClear(): Promise<HTMLElement | null> {
+  const select = await salesTypeSelect();
+  let node: HTMLElement | null = select.parentElement;
+  for (let i = 0; node && i < 4; i += 1, node = node.parentElement) {
+    const btn = node.querySelector('[aria-label="Clear selection"]');
+    if (btn) return btn as HTMLElement;
+  }
+  return null;
+}
+
+it('SF edit: an optional Sales Type can be cleared, and saving then sends none', async () => {
+  salesOnSf = true;
+  renderEdit('sponsorship_form');
+  await customerInput();
+  expect(await salesTypeSelect()).toHaveTextContent('Project');
+  const clear = await salesTypeClear();
+  expect(clear, 'no clear button on the SF Sales Type').toBeTruthy();
+
+  fireEvent.pointerDown(clear!); // SearchableSelect clears on pointer down
+  const data = await save();
+
+  expect(data.sales_type ?? null).toBeNull();
+});
+
+it('PR edit: the required Sales Type has no clear button', async () => {
+  renderEdit('purchase_request');
+  expect(await salesTypeSelect()).toHaveTextContent('Project');
+
+  expect(await salesTypeClear()).toBeNull();
 });

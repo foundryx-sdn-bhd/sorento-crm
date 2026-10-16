@@ -2068,7 +2068,9 @@ jobs:
           # already on the new colour by then (the nginx swap is step 4), so the
           # only thing at risk is this job's exit code. 70m = the grace plus the
           # pull, the 4-minute health wait, the 30s drain and the 90s scheduler check.
-          command_timeout: 70m
+          # 100m since HA-MEM-DEPLOY-GUARD: + up to 20m waiting on the shared deploy lock
+          # (the weekly restore test) + the pre-migration pg_dump (runbook, step 3).
+          command_timeout: 100m
           script: |
             set -e
             cd /opt/sorento-crm2

@@ -1,3 +1,4 @@
+import { invalidateContactTagSettings } from '@/app/(protected)/user-management/contacts/[id]/hooks/useContactTagSettings';
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
@@ -40,6 +41,7 @@ export function useStockVisibilityMutations(scope: StockVisibilityScope) {
     onSuccess: (data) => {
       queryClient.setQueryData(key, data);
       queryClient.invalidateQueries({ queryKey: ['stock-visibility'] });
+      if (scope.kind === 'contact') invalidateContactTagSettings(queryClient, scope.contactId);
       toast.success('Stock visibility saved');
     },
     onError: (error) => toast.error(error.message || 'Failed to save stock visibility'),
@@ -52,6 +54,7 @@ export function useStockVisibilityMutations(scope: StockVisibilityScope) {
     onSuccess: (data) => {
       queryClient.setQueryData(key, data);
       queryClient.invalidateQueries({ queryKey: ['stock-visibility'] });
+      if (scope.kind === 'contact') invalidateContactTagSettings(queryClient, scope.contactId);
     },
   });
 

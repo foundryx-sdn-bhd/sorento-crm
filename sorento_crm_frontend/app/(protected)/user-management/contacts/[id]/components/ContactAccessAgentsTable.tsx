@@ -1,5 +1,6 @@
 'use client';
 
+import { invalidateContactTagSettings } from '@/app/(protected)/user-management/contacts/[id]/hooks/useContactTagSettings';
 import { useMemo, useState } from 'react';
 import {
   ColumnDef,
@@ -106,6 +107,7 @@ export default function ContactAccessAgentsTable({ contactId }: ContactAccessAge
     setEditingContactAccess(null);
     setSelectedAgentId('');
     queryClient.invalidateQueries({ queryKey: ['contact-access-agents', contactId] });
+    invalidateContactTagSettings(queryClient, contactId);
   };
 
   const columns = useMemo<ColumnDef<ContactAgentAccess>[]>(
@@ -269,6 +271,7 @@ export default function ContactAccessAgentsTable({ contactId }: ContactAccessAge
             setDeleteDialogOpen(false);
             setContactAccessToDelete(null);
             queryClient.invalidateQueries({ queryKey: ['contact-access-agents', contactId] });
+            invalidateContactTagSettings(queryClient, contactId);
           }}
           accessAgentId={contactAccessToDelete.agent_id}
           contactAccess={contactAccessToDelete}
@@ -283,7 +286,10 @@ export default function ContactAccessAgentsTable({ contactId }: ContactAccessAge
           currentContactId={contactId}
           currentContactPhone={contact.phone_number}
           currentContactName={contact.name ?? undefined}
-          onSuccess={() => queryClient.invalidateQueries({ queryKey: ['contact-access-agents', contactId] })}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['contact-access-agents', contactId] });
+            invalidateContactTagSettings(queryClient, contactId);
+          }}
         />
       )}
 

@@ -393,6 +393,11 @@ class PurchaseRequestPDFService:
                 _field("Project Title:", _blank(get("project_title"))),
                 _field("Total Project Value:", _blank(tpv)),
                 _field("Sponsor Subject:", _blank(subject)),
+                # SF-SALES-TYPE: the SF carries a sales type too, printed by label as on the PR.
+                _field(
+                    "Sales Type:",
+                    _blank(self._lookup_label("sales_type", get("sales_type"))),
+                ),
                 _field("Date of Delivery:", _date_long(get("expected_delivery_date"))),
             ]
         else:
