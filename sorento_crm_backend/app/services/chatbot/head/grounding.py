@@ -662,7 +662,9 @@ def _as_typed(grounded: list[Grounded], entity: dict[str, Any], message: str | N
 
     Reversed for a registry-valid value (owner ruling 16 Oct 2026, CHAT-FIX F4): when the
     parser's key and value are among the registry's, that value binds whatever was typed
-    ("gunmetl" -> gunmetal), and it is said in the registry's words, never the typo. Only a
+    ("gunmetl" -> gunmetal). It is said as typed when every word of it is in the message and
+    known to the vocabulary (plurals count), and in the registry's words only when it holds a
+    word the vocabulary does not know (a typo). Only a
     value the registry does not hold (value None) keeps the exact-only handling above."""
     if not message or not grounded or entity.get("current_message") is False:
         return grounded
@@ -673,9 +675,11 @@ def _as_typed(grounded: list[Grounded], entity: dict[str, Any], message: str | N
     for g in grounded:
         words = _words(g.said)
         if g.value is not None:
-            entry = next((k for k in vocab.keys if k.key == g.key), None)
-            # a correctly typed synonym of the key keeps its words; only a typo is put right
-            spoken = words == _words(g.words or "") or (entry is not None and " ".join(words) in entry.phrases)
+            # Said as typed when every word is in the message and known to the vocabulary
+            # (plurals count); put into the registry's words only when it holds an unknown word.
+            spoken = bool(words) and all(
+                any(_same(w, t) for t in said) and any(_same(w, k) for k in vocab.known_words) for w in words
+            )
             out.append(g if spoken or not g.words else Grounded(g.key, g.label, g.words, g.value, g.unit, g.known, g.words))
             continue
         if not words or any(any(_same(w, t) for t in said) for w in words):
@@ -830,7 +834,11 @@ def ground(
                 # under_counter), said in the registry's phrase. Anything else takes the path below.
                 bound, phrase = own
                 grounded = [*grounded, Grounded(bound.key, bound.label, phrase, bound.value, bound.unit, bound.known, bound.words)]
-            elif solo and len([e for e in entities if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() in _SPEC_HINTS and correction(e)]) == 1:
+            elif (
+                solo
+                and len([e for e in entities if isinstance(e, dict) and str(e.get("hint") or "").strip().lower() in _CLASS_HINTS | {_PRODUCT_HINT}]) == 1
+                and len([e for e in entities if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() in _SPEC_HINTS and e.get("current_message") is not False and not any(not _same(w, unheard[0]) and any(_same(w, t) for t in _words(message)) for w in _words(e.get("raw"))) and correction(e)]) == 1
+            ):
                 # Same ruling, the split shape: one other spec entity is the correction, so the
                 # word is accounted for and not said back.
                 accounted = True
