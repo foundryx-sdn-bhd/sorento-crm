@@ -166,8 +166,8 @@ async def get_promotions(
     contact_id: Optional[str] = Query(
         None,
         description=(
-            "Respond.io contact id when reading on behalf of a contact. With it, an empty "
-            "or absent access_levels returns nothing instead of every access level."
+            "Respond.io contact id when reading on behalf of a contact. With it, an empty or "
+            "absent access_levels reads the contact's own access levels, never every level."
         ),
     ),
     current_user: dict = Depends(require_any_permission_with_api_key(PROMOTION_LIST_READERS)),
@@ -277,8 +277,8 @@ async def get_promotion(
     contact_id: Optional[str] = Query(
         None,
         description=(
-            "Respond.io contact id when reading on behalf of a contact. With it, an empty "
-            "or absent access_levels returns nothing instead of every access level."
+            "Respond.io contact id when reading on behalf of a contact. With it, an empty or "
+            "absent access_levels reads the contact's own access levels, never every level."
         ),
     ),
     current_user: dict = Depends(require_permission_with_api_key("marketing.promotions.view")),
@@ -566,8 +566,8 @@ async def get_promotion_products_nested(
     contact_id: Optional[str] = Query(
         None,
         description=(
-            "Respond.io contact id when reading on behalf of a contact. With it, an empty "
-            "or absent access_levels returns nothing instead of every access level."
+            "Respond.io contact id when reading on behalf of a contact. With it, an empty or "
+            "absent access_levels reads the contact's own access levels, never every level."
         ),
     ),
     current_user: dict = Depends(require_permission_with_api_key("marketing.promotions.view")),

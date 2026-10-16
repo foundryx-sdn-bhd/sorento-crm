@@ -13,7 +13,7 @@ import {
   useReactTable,
   getCoreRowModel,
 } from '@tanstack/react-table';
-import { Copy, Link2, MessageCircle, MessageCircleOff, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -39,6 +39,8 @@ import ContactCreateDialog from './ContactCreateDialog';
 import ContactDeleteDialog from './ContactDeleteDialog';
 import ContactBulkDeleteDialog from './ContactBulkDeleteDialog';
 import BulkCopyAccessDialog from './BulkCopyAccessDialog';
+import { BulkActionsMenu } from '@/app/(protected)/scm/components/BulkActionsMenu';
+import { buildContactBulkActions } from '../lib/contactBulkActions';
 import { regionLabel } from '@/lib/packing-list-regions';
 import ContactAccessFilters from './ContactAccessFilters';
 import PortalLinkButton from '@/components/contacts/PortalLinkButton';
@@ -623,57 +625,30 @@ export default function ContactsList() {
                 <ContactAccessFilters value={accessFilters} onChange={setAccessFilters} />
               </div>
             }
-            bulkActions={[
-              ...(canEditContacts
-                ? [
-                    {
-                      key: 'link-customers',
-                      label: `Link customers (${selectedContactIds.length})`,
-                      icon: Link2,
-                      onClick: () => setBulkLinkOpen(true),
-                    },
-                  ]
-                : []),
-              {
-                key: 'outbound-enable',
-                label: `Enable messaging (${selectedContactIds.length})`,
-                icon: MessageCircle,
-                disabled: outboundBusy,
-                onClick: () => runOutboundBulk(true),
-              },
-              {
-                key: 'outbound-disable',
-                label: `Disable messaging (${selectedContactIds.length})`,
-                icon: MessageCircleOff,
-                destructive: true,
-                disabled: outboundBusy,
-                onClick: () => setBulkDisableOutboundOpen(true),
-              },
-              {
-                key: 'sync',
-                label: `Sync from Respond (${selectedContactIds.length})`,
-                icon: RefreshCw,
-                disabled: bulkSyncMutation.isPending || syncContactMutation.isPending,
-                onClick: handleBulkSync,
-              },
-              ...(canEditContacts
-                ? [
-                    {
-                      key: 'copy-access',
-                      label: `Copy access from contact (${selectedContactIds.length})`,
-                      icon: Copy,
-                      onClick: () => setBulkCopyDialogOpen(true),
-                    },
-                  ]
-                : []),
-              {
-                key: 'delete',
-                label: `Delete (${selectedContactIds.length})`,
-                icon: Trash2,
-                destructive: true,
-                onClick: () => setBulkDeleteDialogOpen(true),
-              },
-            ]}
+            bulkActionsSlot={({ openExport }) => (
+              <BulkActionsMenu
+                actions={buildContactBulkActions(
+                  {
+                    selectedCount: selectedContactIds.length,
+                    canEdit: canEditContacts,
+                    outboundBusy,
+                    syncBusy: bulkSyncMutation.isPending || syncContactMutation.isPending,
+                  },
+                  {
+                    onExport: openExport,
+                    onLinkCustomers: () => setBulkLinkOpen(true),
+                    onEnableMessaging: () => runOutboundBulk(true),
+                    onDisableMessaging: () => setBulkDisableOutboundOpen(true),
+                    onSync: handleBulkSync,
+                    onCopyAccess: () => setBulkCopyDialogOpen(true),
+                    onDelete: () => setBulkDeleteDialogOpen(true),
+                  },
+                )}
+                modal={false}
+                // Most items open a dialog: focus belongs to it, not back on the menu trigger.
+                onCloseAutoFocus={(event) => event.preventDefault()}
+              />
+            )}
           />
         </CardHeader>
         <CardTable>
