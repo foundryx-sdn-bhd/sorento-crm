@@ -1,6 +1,6 @@
 # PLAN: EVAL-BENCH CP0, the bench check against the owner's targets (16 Oct)
 
-Status: Build (card answered 16 Oct). Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
+Status: Build, CP0 PROVISIONAL (2 of 3 runs, 17 Oct); run 3 waits for the owner's OK (spend $9.41 of $12). Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
 gold and the review page live under `crew/state/eval/` (crew-only).
 
 ## The owner's bar (crew relay, 16 Oct)
@@ -222,3 +222,29 @@ Every check tolerates a missing `apply` payload (omitted at 32 KB) and falls bac
 additionally records full tool results (no 8 KB cap) beside the turn, crew-only, for the made-up check.
 Acceptance: re-grade the 723 recorded prod turns; the lead hand-checks 20 random verdicts against the conversation
 before any baseline number is posted.
+
+## Runner fidelity and bench fixes (16-17 Oct, review rounds 5-16 on #1745)
+
+Found by the run-1 sanity check and CHAT-STATE's TRAIN root cause; every fix red-first with kill proof (PR comments).
+
+- Live runner (`replay.py live`): runs only on the dev key (`--require-key-last4`, fails closed); the turn reads the
+  PROD history as of the recorded turn (is_test=false rows before its created_at), the recorded prompt's L3 / L4 / L5
+  blocks verbatim when recorded (old-layout prompts fall back to the as-of history), quoted replies and turn number as
+  of the recorded turn. Before this, live turns ran in the test world with no or unrelated history (all pre-fix rows
+  discarded, $0.98).
+- Grader (`targets.py`): question and subject before the turn come from memory only, never the post-turn `state`
+  record (unknown instead); numeric gold options map to the option at that position (label first); boolean spec
+  values match through `raw`; omitted payloads are unknown; a typed code that the resolver expands (prefix family)
+  satisfies the new subject only when gold says `code_unresolved`; picker option codes are made-up sources; an honest
+  "none on record" (attachment tool ran, no file of the type, nothing sent or claimed) passes; summaries count
+  unverifiable apart, leave runs without known results out of a rate, and need every run for `meets`.
+- Gold (crew tooling `apply_gold_fixes.py`, from the original 759 items): 110 excluded as bench errors: answer items
+  that select no option of the question before the turn (thanks, greetings, new asks), legacy `variables` session
+  state the engine no longer reads (follow-ups only), refine items that are really new asks / reports / fit asks /
+  quantities or whose filter is not in the message; answer gold options now come from the question before.
+- Known gaps: the made-up check cannot see engine-side reads (crossdomain PO lines, spec grouping) or render counts,
+  so every automatic finding is hand-checked (0 confirmed in runs 1-2); honest none does not check the product the
+  tool was asked about (13 of 14 flips verified by hand); held-out refine has only 10 items.
+- Prod finding: since #1527 (9 Oct) the parser context layer L2 always overflows its cap (a ~630-token catalogue block
+  kept whole), so `Current subject` is cut on 169 of 171 recorded prod turns since 10 Oct.
+
