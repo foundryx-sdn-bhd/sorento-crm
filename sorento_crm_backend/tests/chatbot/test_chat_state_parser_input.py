@@ -117,6 +117,17 @@ def test_a_block_over_350_estimated_tokens_is_never_trimmed(level):
 HEADING_LINE = "## Conversation state and state_changes"
 
 
+@pytest.fixture(autouse=True)
+def _fresh_prompt_cache():
+    """The registry caches a prompt per (name, label) for a minute; a text left by an earlier
+    test would answer these."""
+    from app.services import ai_prompt_registry
+
+    ai_prompt_registry.bust_cache()
+    yield
+    ai_prompt_registry.bust_cache()
+
+
 def _resolve(monkeypatch, session_factory, raw_template: str, *, current_date: str = "2026-10-16"):
     """The real registry: a seeded production version whose RAW template is `raw_template`."""
     from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
