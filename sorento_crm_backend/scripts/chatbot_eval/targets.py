@@ -103,6 +103,15 @@ def _key(x: Any) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(x).upper()) if x is not None else ""
 
 
+_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+
+
+def _mentions(text: Any, code: Any) -> bool:
+    """The code appears as a whole token (dash and case blind): SRT10 is not in "SRT105"."""
+    want = _key(code)
+    return bool(want) and any(_key(tok) == want for tok in _TOKEN_RE.findall(str(text)))
+
+
 def _strings(x: Any):
     if isinstance(x, str):
         yield x
@@ -163,10 +172,15 @@ def _tool_subjects(row: dict[str, Any]) -> set[str]:
     return out
 
 
+def _has_memory_after(row: dict[str, Any]) -> bool:
+    """The memory event carries a `focus.after` key (even a None or empty one): the bot's own record of the subject."""
+    focus = _kind(row, "memory").get("focus")
+    return isinstance(focus, dict) and "after" in focus
+
+
 def _subject_after(row: dict[str, Any]) -> set[str]:
     codes = _codes_of(_mem_focus(row, "after").get("products"))
-    memory_focus = _kind(row, "memory").get("focus")
-    if isinstance(memory_focus, dict) and isinstance(memory_focus.get("after"), dict):
+    if _has_memory_after(row):
         # the memory event exists: its after focus is the truth, and an empty one means the bot dropped the subject.
         # The state event (the subject BEFORE the turn) and the tool args must not stand in for it; only the lookup's
         # own strings (an order or delivery number is no product) can name a non-product subject.
@@ -245,6 +259,16 @@ def _oq(row: dict[str, Any]) -> tuple[Any, Any]:
     return state_q, mem
 
 
+HANDOVER_KINDS = frozenset({"team_pick", "member_offer", "company_pick"})  # turn/pending.py ESCALATION_OFFER_KINDS
+
+
+def _oq_sig(q: Any) -> Any:
+    """An open question by kind and option labels: `asked_at_turn` differs on a re-ask, so whole dicts never match."""
+    if not isinstance(q, dict):
+        return q
+    return (q.get("kind"), tuple(_norm(o.get("label") if isinstance(o, dict) else o) for o in q.get("options") or []))
+
+
 def _dump(x: Any) -> str:
     return json.dumps(x, default=str, ensure_ascii=False)
 
@@ -315,10 +339,18 @@ def _num(token: str) -> float | None:
         return None
 
 
+def _result_text(result: Any) -> str:
+    """A tool result as text to check against: a string as it is (real newlines), a structure string by string
+    plus its JSON dump (the numbers)."""
+    if isinstance(result, str):
+        return result
+    return _dump(result) + "\n" + "\n".join(_strings(result))
+
+
 def made_up_facts(row: dict[str, Any]) -> list[str]:
     reply = ORDINAL_RE.sub("", reply_text(row))
     full_results = row.get("tool_results")
-    envelopes = ([_dump(t.get("result")) for t in full_results] if full_results
+    envelopes = ([_result_text(t.get("result")) for t in full_results] if full_results
                  else [_dump(t.get("envelope")) for t in _tools(row)])
     source_parts = [user_message(row), str(row.get("prev_bot_message") or ""), *envelopes,
                     _dump([e for e in _looked_up_envelopes(row)]),
@@ -384,12 +416,12 @@ def _code_lookup(row, item):
         checks.append(("clarified", clarified, "The code was ambiguous but the bot did not ask which one."))
         return checks
     ran = bool(code) and (code in _tool_targets(row) or any(
-        str(gold["code"]).upper() in _dump(t.get("args")).upper() or str(gold["code"]).upper() in _dump(t.get("envelope")).upper()
+        _mentions(_dump(t.get("args")), gold["code"]) or _mentions(_dump(t.get("envelope")), gold["code"])
         for t in _tools(row)))
     if code:
         checks.append(("tool_ran", ran, "The lookup tool did not run for that code."))
         # a whole code token, compared dash and case blind: SRT10 is not named by "SRT105"
-        named = any(_key(tok) == code for tok in re.findall(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", reply_text(row)))
+        named = _mentions(reply_text(row), code)
         checks.append(("named", named, "The reply does not name the code."))
     # asking only counts against the bot when it asked INSTEAD of looking the code up
     # a code that matches nothing in the data (a typo) may be answered with a did-you-mean: the loader flags it
@@ -408,7 +440,7 @@ def _followup(row, item):
     kind, gold = item.get("kind"), item.get("gold") or {}
     # real traces carry a memory event with `focus.after`; older / hand-built rows do not. The rules that only make
     # sense against real traces (a stale old subject staying in memory, the lookup after a refine) apply to those.
-    real = bool(_mem_focus(row, "after"))
+    real = _has_memory_after(row)
     before_subject, after_subject = _subject_before(row), _subject_after(row)
     want = {_key(c) for c in gold.get("subject_after") or []}
     _mem_before = _codes_of(_mem_focus(row, "before").get("products"))
@@ -426,9 +458,9 @@ def _followup(row, item):
         if gold.get("code"):
             code = _key(gold["code"])
             # no named tool ran (the bot asked its next question): the target is unknown, not wrong
-            targeted = code in _tool_targets(row) or any(
-                str(gold["code"]).upper() in _dump(t.get("args")).upper() for t in _tools(row))
-            checks.append(("tool_target", targeted if _tools(row) else None, "The lookup tool did not target the chosen item."))
+            targeted = code in _tool_targets(row) or any(_mentions(_dump(t.get("args")), gold["code"]) for t in _tools(row))
+            unknown = not _tools(row) and bool(_asking(row))
+            checks.append(("tool_target", None if unknown else targeted, "The lookup tool did not target the chosen item."))
         return checks
     if kind == "answer" and gold.get("idea_ref"):
         return _ideas_answer(row, gold)
@@ -443,11 +475,14 @@ def _followup(row, item):
         # a cancel is no answer; a question cleared by an arm (casual, escalation) is no answer either: the clear
         # reads as one only when the apply payload was omitted, so the verdict cannot say otherwise
         omitted = _kind(row, "apply").get("note") == "payload omitted"
-        changed = bool(question) and after_q != question and (after_q is not None or omitted)
+        same = _oq_sig(question) == _oq_sig(after_q)
+        offer = isinstance(after_q, dict) and after_q.get("kind") in HANDOVER_KINDS and not (
+            isinstance(question, dict) and question.get("kind") in HANDOVER_KINDS)
+        changed = bool(question) and not same and not offer and (after_q is not None or omitted)
         answered = bool(ans.get("picked") or ans.get("mode") not in (None, "", "cancel") or verdict.get("is_affirmative")
                         or verdict.get("continuation") or (changed and ans.get("mode") != "cancel"))
         checks = [
-            ("not_reasked", not (question and question == after_q), "The bot asked the same question again."),
+            ("not_reasked", not (question and same), "The bot asked the same question again."),
             ("answered", answered, "The bot did not read the message as an answer to its question."),
         ]
         if picked:  # the mode is not always recorded, so the option is checked only when it is
@@ -595,7 +630,7 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     made_up = made_up_facts(row)
     # `class` is reported only; `old_dropped` is reported only on real traces (the old subject may stay in memory);
     # a None check is unknown, never a failure
-    real = bool(_mem_focus(row, "after"))
+    real = _has_memory_after(row)
     informational = {"class"} | ({"old_dropped"} if real else set())
     failed = next((msg for name, ok, msg in checks if ok is False and name not in informational), None)
     # Leaks and made-up facts are their own zero-tolerance bars, listed on every turn and counted by

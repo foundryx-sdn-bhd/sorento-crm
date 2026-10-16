@@ -364,6 +364,13 @@ def replay_rows(rows: list[dict[str, Any]], *, session_factory: Callable[[], Any
 # --------------------------------------------------------------------------- #
 
 MODEL_HOSTS = ("api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com")
+# MCP tools that write or send: low stock report (reorder run + download row + jobs), portal link (persists a token),
+# ticket create, complaint close, order cancel, purchase request approve / reject, and the ideation turn (a model call
+# outside the metered providers). A dry-run turn must never reach them.
+SIDE_EFFECT_TOOLS = frozenset({
+    "crm_low_stock_report", "crm_portal_link_get", "crm_it_support_ticket_create", "crm_complaint_close",
+    "crm_order_cancel", "crm_purchase_request_approve", "crm_purchase_request_reject", "crm_ideation_turn",
+})
 PROVENANCE_KEYS = ("code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_effort")
 
 
@@ -376,6 +383,16 @@ class _CapStop(BaseException):
         self.reason = reason
 
 
+def _check_caps(total: dict[str, Any]) -> None:
+    """Before every model call: an unpriced model already seen, a call cap or a spend cap ends the item cleanly."""
+    if total.get("stop"):
+        raise _CapStop(total["stop"])
+    if total.get("max_calls") is not None and total["calls"] >= total["max_calls"]:
+        raise _CapStop("max_calls")
+    if total.get("max_usd") is not None and total["usd"] >= total["max_usd"]:
+        raise _CapStop("max_usd")
+
+
 @contextlib.contextmanager
 def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
     """Pass-through wrapper on every provider `chat`: checks the caps BEFORE the call, then counts calls and tokens
@@ -384,14 +401,11 @@ def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
     from unittest import mock
 
     from app.services import llm_provider
-    from scripts.chatbot_eval.budget import cost_usd
+    from scripts.chatbot_eval.budget import PRICES, cost_usd
 
     def wrap(original: Callable[..., Any]) -> Callable[..., Any]:
         def chat(self: Any, *args: Any, **kwargs: Any) -> Any:
-            if total.get("max_calls") is not None and total["calls"] >= total["max_calls"]:
-                raise _CapStop("max_calls")
-            if total.get("max_usd") is not None and total["usd"] >= total["max_usd"]:
-                raise _CapStop("max_usd")
+            _check_caps(total)
             res = original(self, *args, **kwargs)
             prompt = int(getattr(res, "prompt_tokens", 0) or 0)
             cached = int(getattr(res, "cached_tokens", 0) or 0)
@@ -413,7 +427,27 @@ def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
 
         return chat
 
+    def wrap_embed(original: Callable[..., Any]) -> Callable[..., Any]:
+        def embed(chunks: Any) -> Any:  # counted, never capped: a query embedding is tiny next to a chat call
+            res = original(chunks)
+            from app.config import settings
+
+            tokens = sum(len(str(c)) for c in chunks) // 4  # an estimate: the endpoint's own count is not returned
+            model = str(getattr(settings, "embedding_model_name", ""))
+            usd = max(0.0, cost_usd({"prompt": tokens, "cached": 0, "output": 0}, model)) if model in PRICES else 0.0
+            for bucket in (usage, total):
+                bucket["calls"] += 1
+                bucket["prompt_tokens"] += tokens
+                bucket["usd"] += usd
+            return res
+
+        return embed
+
+    from app.services import embedding_worker
+
     with contextlib.ExitStack() as stack:
+        stack.enter_context(mock.patch.object(embedding_worker, "_embed_text_chunks",
+                                              wrap_embed(embedding_worker._embed_text_chunks)))
         for name, cls in vars(llm_provider).items():
             if inspect.isclass(cls) and cls is not llm_provider.LLMProvider and name.endswith("Provider") and "chat" in vars(cls):
                 stack.enter_context(mock.patch.object(cls, "chat", wrap(cls.chat)))
@@ -421,8 +455,9 @@ def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def _tool_capture(into: list[dict[str, Any]]) -> Iterator[None]:
-    """Pass-through on `MCPRuntimeClient.call_tool`: records name, args and the FULL result (no cap)."""
+def _tool_capture(into: list[dict[str, Any]], misses: list[dict[str, Any]] | None = None) -> Iterator[None]:
+    """Pass-through on `MCPRuntimeClient.call_tool`: records name, args and the FULL result (no cap). A tool with a
+    side effect is refused (recorded in `misses`) and never reaches the client."""
     from unittest import mock
 
     from app.services.ai_assistant_service import MCPRuntimeClient
@@ -430,6 +465,10 @@ def _tool_capture(into: list[dict[str, Any]]) -> Iterator[None]:
     original = MCPRuntimeClient.call_tool
 
     def call_tool(self: Any, name: str, arguments: dict[str, Any]) -> Any:
+        if name in SIDE_EFFECT_TOOLS:
+            if misses is not None:
+                misses.append({"blocked_tool": name})
+            raise RuntimeError(f"blocked_tool: {name}")
         result = original(self, name, arguments)
         into.append({"name": name, "args": copy.deepcopy(dict(arguments)), "result": result})
         return result
@@ -488,7 +527,7 @@ def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], A
     with contextlib.ExitStack() as stack:
         _guard_network(stack, misses, MODEL_HOSTS)
         stack.enter_context(_metered(usage, total))
-        stack.enter_context(_tool_capture(tool_results))
+        stack.enter_context(_tool_capture(tool_results, misses))
         from unittest import mock
 
         from app.services.chatbot.lanes import ideate
