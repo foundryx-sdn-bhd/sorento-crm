@@ -9,16 +9,20 @@ Public checks on 14 Oct found three problems:
 - The CRM origin answers direct traffic, so Cloudflare can be bypassed.
 - MCP 8765 is plain http on the raw origin address.
 
-**MCP 8765 has no login of its own.** The MCP server checks nothing on an incoming call. It adds
+**MCP 8765 login (since SEC-MCP-AUTH, 16 Oct).** Every call needs `Authorization: Bearer <MCP_AUTH_TOKEN>`
+(`sorento_crm_mcp/sorento_crm_mcp/auth.py`), and a company-scoped tool without a contact answers nothing
+(`documentation/plans/security/PLAN-sec-mcp-auth-16oct.md`). Before that lane the MCP server checked nothing on
+an incoming call. It adds
 the integration key itself on every backend call (`sorento_crm_mcp/sorento_crm_mcp/http_client.py:56`).
 It also always registers write tools: close complaint, cancel order, approve or reject a purchase
 request (`sorento_crm_mcp/sorento_crm_mcp/record_actions.py:115-177`). So anyone who reaches 8765
-can read the CRM and run those actions as the integration user. The firewall is the only control
-there today. That is why 8765 is closed tonight together with 6432.
+could read the CRM and run those actions as the integration user, and the firewall was the only control.
+That is why 8765 was closed together with 6432, and the firewall rule stays as the outer guard (an image
+rollback to before SEC-MCP-AUTH removes the token check).
 
 Status on 14 Oct: an outside connect test already found 8765 closed; 6432 was the one answering.
 Step 1 still writes the 8765 rule down explicitly, so it stays closed whatever else changes in the
-firewall. Inbound auth on the MCP server itself is PR #1548.
+firewall. Inbound auth on the MCP server itself is SEC-MCP-AUTH (it supersedes PR #1548).
 
 Prod runs on a **Hostinger VPS**, so "provider firewall" below means the hPanel VPS firewall.
 

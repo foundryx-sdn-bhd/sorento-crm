@@ -43,11 +43,20 @@ def is_staff_request(ctx: Any) -> bool:
     return str(headers.get(STAFF_HEADER) or "").strip().lower() == STAFF_VALUE
 
 
+def _present(value: Any) -> bool:
+    """A scope id counts only as one non-blank scalar. A list (`[""]`, `["x", ""]`) is refused:
+    httpx sends every element and the backend reads the LAST one, so a blank tail would
+    resolve to every company."""
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        return False
+    return bool(str(value).strip())
+
+
 def _missing_scope(query: dict[str, Any] | None, body: Any) -> list[str]:
     sources = [query or {}]
     if isinstance(body, dict):
         sources.append(body)
-    return [p for p in SCOPE_PARAMS if not any(str(src.get(p) or "").strip() for src in sources)]
+    return [p for p in SCOPE_PARAMS if not any(_present(src.get(p)) for src in sources)]
 
 
 def check_scope(spec: Any, query: dict[str, Any] | None, body: Any, ctx: Any) -> str | None:

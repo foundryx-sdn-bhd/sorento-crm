@@ -2123,6 +2123,18 @@ jobs:
               401) echo "MCP reachable via nginx and refusing a wrong token (HTTP $code)";;
               *) echo "ERROR: MCP via nginx returned $code (expected 401 from the bearer gate)"; exit 1;;
             esac
+            # SEC-MCP-AUTH: the CRM's own MCP call, from inside the live backend, at the URL and
+            # with the token the chatbot uses. Catches a backend holding a different
+            # MCP_AUTH_TOKEN than MCP (401 in both modes), which the wrong-token probe above
+            # cannot see. Prints only the last error line (an httpx status line, never a header).
+            cd /opt/sorento-crm2
+            be=$(docker compose ps --status running --services | grep -E '^backend_(blue|green)$' | head -1)
+            if out=$(docker compose exec -T "$be" python -c "from app.config import settings; from app.services.ai_assistant_service import MCPRuntimeClient; MCPRuntimeClient(settings.ai_assistant_mcp_url, timeout_seconds=15).list_tools()" 2>&1); then
+              echo "backend ($be) -> MCP authenticated call OK"
+            else
+              echo "ERROR: backend ($be) cannot call MCP, so the chatbot cannot fetch: $(printf '%s' "$out" | tail -1)"
+              exit 1
+            fi
 
       # The owner mail, a step of this job since CI-LEAN (10 Oct 2026): as a
       # job of its own it billed a minute per release, and on run

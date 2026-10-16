@@ -74,10 +74,12 @@ follow-up, not changed here: there is no contact to scope them by.
 ### 2. Default-deny scope
 
 One check, `require_contact_scope(spec, query, body, request_headers)` in
-`sorento_crm_mcp/sorento_crm_mcp/scope.py`, called at the top of `_execute_tool_request_with_body`,
-the one function every catalog tool's call goes through (GET and POST). A tool is scoped when its
+`sorento_crm_mcp/sorento_crm_mcp/scope.py` (`check_scope`), called in the tool body `_compile_tool` generates,
+right before `_execute_tool_request_with_body`: every catalog tool's call goes through it (GET and POST), and it is
+the only place that holds the request context the staff header is read from. A tool is scoped when its
 spec declares both `contact_id` and `space_id`, read from the catalog itself rather than a second
-list. A scoped call with either value blank gets
+list. A scope id counts only as one non-blank string or integer (a list such as `[""]` is refused: httpx repeats it and
+the backend reads the last, blank value). A scoped call with either value blank gets
 `{"error": "scope_required", "data": [], "total": 0, ...}` and no backend request is made. The
 contact to company resolution stays where it is (`resolve_contact_company_scope`); MCP only
 refuses to ask without an identity.
@@ -97,14 +99,17 @@ The products fan-out forwards the caller's `contact_id` + `space_id` to its chil
 - mcp_blue, mcp_green: `MCP_AUTH_TOKEN`, and `MCP_AUTH_MODE=permit` for the first release.
 - n8n: the heartbeat workflow and the 6 dormant `MCP Client` nodes, Bearer credential (owner step).
 - Release post-check: sends a deliberately wrong token and expects 401, which proves the gate is
-  there in both modes (an ungated image answers 406).
+  there in both modes (an ungated image answers 406). Then it makes the CRM's own `list_tools` call from inside the
+  live backend container, which catches a backend holding a different token (401 in both modes).
+  `rollback.yml` accepts 406 with a warning, since a rollback to a pre-gate image is still a working rollback.
 
 ## Rollout (owner runs every prod step)
 
 1. Before dispatching the release: `openssl rand -hex 32`; put it in the prod `.env` as
    `MCP_AUTH_TOKEN`. In the server compose add `MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?}` to the MCP env
    (`x-mcp-env`) and to backend_blue, backend_green, worker, worker_fast; add `MCP_AUTH_MODE: permit`
-   to the MCP env only. If the MCP container healthcheck calls `/mcp`, point it at `/healthz`.
+   to the MCP env only. Confirm the MCP container healthcheck in the server compose: if it calls `/mcp`, point it
+   at `/healthz` now (otherwise it turns unhealthy once enforce is on and the NEXT release aborts at the health wait).
 2. Dispatch the release. During the colour swap the old backend sends no token; `permit` lets it
    through, so the chatbot never sees a 401.
 3. n8n: credential Bearer Auth `sorento-mcp-bearer` with the token; attach it to the heartbeat
@@ -117,8 +122,18 @@ The products fan-out forwards the caller's `contact_id` + `space_id` to its chil
 Rollback: an image from before this PR removes the gate. The firewall rule on 8765 stays the
 outer guard either way.
 
+## Shared token (security review, 16 Oct)
+
+n8n and the CRM backend share one `MCP_AUTH_TOKEN`, so any holder can send `X-MCP-Scope: staff` and read every
+company on scoped tools. That grants nothing new: n8n already holds `EXTERNAL_API_KEY`, which reads every company
+straight from the backend. Not a blocker. A backend-only token that alone unlocks the staff header is a follow-up,
+triggered by n8n losing `EXTERNAL_API_KEY` or by the assistant-scoping follow-up, whichever comes first.
+
 ## Follow-ups (not this lane)
 
 - Scope the staff AI assistant to the staff user's active company, then drop `X-MCP-Scope`.
 - `crm_project_forecast`, `crm_purchase_request_by_number`: company-owned, no contact param.
-- Per-caller tokens (n8n vs CRM) if a caller ever needs revoking alone.
+- Per-caller tokens (n8n vs CRM): see Shared token above.
+- The four record-action write tools (`record_actions.py`) act on any company's record by UUID for any token
+  holder; they need a contact or staff gate of their own.
+- If a `*_get` tool returns to the catalog, `_resolve_product_reference` (`server.py`) must forward the contact.

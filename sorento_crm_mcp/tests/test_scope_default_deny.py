@@ -354,3 +354,27 @@ def test_scoped_staff_call_with_a_contact_is_not_logged(http_app, caplog):
     with caplog.at_level(logging.INFO, logger="sorento_crm_mcp.scope"):
         _call(client, "crm_master_brands_list", {"contact_id": CONTACT, "space_id": SPACE}, {"X-MCP-Scope": "staff"})
     assert not [r for r in caplog.records if "staff-scope" in r.getMessage()]
+
+
+# --- security review should-fix 1: a list must not pass for a scope id --------------------------
+
+
+@pytest.mark.parametrize(
+    "contact, space",
+    [([""], [""]), (["x", ""], SPACE), (CONTACT, ["", ""]), ([CONTACT], [SPACE]), ({"a": 1}, SPACE), (True, SPACE)],
+)
+def test_a_list_or_object_scope_value_is_refused(contact, space):
+    refusal = scope_refusal(_spec("crm_order_management_orders_list"), {"contact_id": contact, "space_id": space}, None, staff=False)
+    assert refusal is not None
+    assert json.loads(refusal)["error"] == "scope_required"
+
+
+def test_a_blank_list_through_the_tool_makes_no_backend_request():
+    client = _Client()
+    out = _run("crm_order_management_orders_list", client, contact_id=[""], space_id=[""])
+    assert out["error"] == "scope_required"
+    assert client.calls == []
+
+
+def test_an_integer_contact_still_counts():
+    assert scope_refusal(_spec("crm_order_management_orders_list"), {"contact_id": 900000008, "space_id": 364817}, None, staff=False) is None
