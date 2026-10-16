@@ -3,6 +3,7 @@
 their JSON column; a non-empty problem list = 422. Runtime stays fail-closed
 (D5) for trees that go stale AFTER save.
 """
+import math
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.rule_engine.evaluator import _MAX_DEPTH, CROSS_FACT_OPERATORS
@@ -128,11 +129,10 @@ def _numeric(value: Any) -> bool:
     if isinstance(value, bool):
         return False
     if isinstance(value, (int, float)):
-        return True
+        return math.isfinite(value)
     if isinstance(value, str):
         try:
-            float(value)
-            return True
+            return math.isfinite(float(value))
         except ValueError:
             return False
     return False

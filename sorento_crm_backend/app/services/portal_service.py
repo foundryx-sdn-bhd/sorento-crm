@@ -1726,12 +1726,13 @@ class PortalService:
     def _coerce_decimal(value: Any) -> Optional[Decimal]:
         if value is None or value == "":
             return None
-        if isinstance(value, Decimal):
-            return value
         try:
-            return Decimal(str(value))
+            number = value if isinstance(value, Decimal) else Decimal(str(value))
         except (InvalidOperation, ValueError):
             return None
+        if not number.is_finite():
+            raise handle_validation_error("Enter a valid number.")
+        return number
 
     # ---------- Requestor ("requested by" / "salesperson") options ----------
     #
