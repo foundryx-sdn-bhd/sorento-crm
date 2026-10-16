@@ -463,7 +463,7 @@ KNOWN_FACT_LABELS = {"stock", "eta", "files", "price", "order_status", "product_
 COULD_NOT_FIND_RE = re.compile(r"couldn.?t find|could not find|no (?:products?|results?|items?) (?:found|matched)|not found", re.I)
 
 
-def _menu_check(row: dict[str, Any]) -> tuple[str, bool, str]:
+def _menu_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tuple[str, bool, str] | None:
     """A kind menu (the engine's `kind_pick`, labels "Raw (word)" with an `entity_type` each) is for product versus
     customer only; any other menu is a needless question."""
     after = _oq(row)[1]
@@ -471,7 +471,23 @@ def _menu_check(row: dict[str, Any]) -> tuple[str, bool, str]:
     types = {_norm(o.get("entity_type") or o.get("label")) for o in ((after or {}).get("options") or [])
              if isinstance(o, dict)} if isinstance(after, dict) else set()
     ok = not menu or types == {"product", "customer"}
+    if (gold or {}).get("ambiguous"):   # a which-one menu is right for an ambiguous code
+        return None
     return ("no_menu", ok, "The bot asked a clarifying menu that is not product versus customer.")
+
+
+def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tuple[str, bool, str] | None:
+    """A trailing "how many?" after a lookup, spec, attachment or promo answer is a needless question: the open question
+    after the turn is a stock pick that still owes a quantity (its `owed`, or a stock pick with no quantity yet)."""
+    if (gold or {}).get("ambiguous"):
+        return None
+    after = _oq(row)[1]
+    if not isinstance(after, dict):
+        return ("no_qty_ask", True, "The bot asked how many although the question was answered.")
+    payload = after.get("payload") if isinstance(after.get("payload"), dict) else {}
+    owed = list(after.get("owed") or []) + list(payload.get("owed") or [])
+    asks = bool(payload.get("stock_pick")) and ("quantity" in owed or ("stock_qty" in payload and payload["stock_qty"] is None))
+    return ("no_qty_ask", not asks, "The bot asked how many although the question was answered.")
 
 
 def _code_lookup(row, item):
@@ -481,7 +497,9 @@ def _code_lookup(row, item):
     checks = []
     if code:
         checks.append(("code", code in _resolved_codes(row), "The bot read a different code than the one asked."))
-    checks.append(_menu_check(row))
+    for extra in (_menu_check(row, gold), _quantity_check(row, gold)):
+        if extra:
+            checks.append(extra)
     label = _norm(gold.get("fact_label"))
     if label and label not in KNOWN_FACT_LABELS:   # an attribute ask (weight, ...): the reply needs a value for it
         checks.append(("attribute_value", bool(re.search(re.escape(label.replace("_", " ")) + r"[^\n]{0,40}\d", reply_text(row), re.I)),
@@ -523,6 +541,14 @@ def _subject_check(want: set[str], after: set[str]) -> tuple[str, bool | None, s
 
 def _followup(row, item):
     kind, gold = item.get("kind"), item.get("gold") or {}
+    if kind in ("and_x", "switch"):
+        menu = _menu_check(row, gold)
+        rest = _followup_checks(row, item, kind, gold)
+        return rest + ([menu] if menu else [])
+    return _followup_checks(row, item, kind, gold)
+
+
+def _followup_checks(row, item, kind, gold):
     # real traces carry a memory event with `focus.after`; older / hand-built rows do not. The rules that only make
     # sense against real traces (a stale old subject staying in memory, the lookup after a refine) apply to those.
     real = _has_memory_after(row)
@@ -609,7 +635,9 @@ def _followup(row, item):
         values |= {_val(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
         values |= {_val(b) for b in (_mem_focus(row, "after").get("brands") or [])}
         checks = [
-            ("subject", (want <= after_subject) if want else None, "The subject was dropped when refining."),
+            # narrowing may keep a part of the list: a non-empty subset of the gold subject or of what was held before
+            ("subject", (want <= after_subject or bool(after_subject and (after_subject <= want or after_subject <= before_subject)))
+             if want else None, "The subject was dropped when narrowing down."),
             ("filter", True if _val(flt.get("value")) in values else (None if payload_omitted else False),
              "The new filter was not applied."),
         ]
@@ -721,7 +749,7 @@ def _spec(row, item):
     reply = reply_text(row)
     shown = bool(CODE_RE.search(reply)) and not COULD_NOT_FIND_RE.search(reply)   # at least one product, no dead end
     checks = [("spec_set", want <= got and bool(want or class_want), "The spec words were not grounded to the expected set."),
-              ("shown", shown, "The reply showed no product."), _menu_check(row)]
+              ("shown", shown, "The reply showed no product."), _menu_check(row), _quantity_check(row, {})]
     if class_want:  # reported, not part of `passed`: the bot records class words as category entities
         checks.append(("class", all(any(set(v.split()) <= w for w in words) for v in class_want),
                        "The product class was read differently from the one asked."))
@@ -806,13 +834,15 @@ def _attachment(row, item):
         from_memory = [from_memory]
     asked += [_type_word(x.get("canonical_code") or x.get("raw") if isinstance(x, dict) else x) for x in from_memory or [] if x]
     asked_ok = bool(asked) and all(_type_ok(a, accepted) for a in asked)
-    checks = [("asked_type", asked_ok, "The asked type was read differently from the type requested.")]
+    checks = [("asked_type", asked_ok, "The asked type was read differently from the type requested."),
+              _menu_check(row, gold), _quantity_check(row, gold)]
+    checks = [c for c in checks if c]
     if gold.get("none_on_record"):
         checks.append(("none_on_record", not files and sent == 0,
                        "Files were sent although none exist on record."))
         return checks
     if not files and _honest_none(row, accepted, sent, gold.get("code")):
-        return checks + [("files", True, "No files were sent."), ("type", None, "The files sent are not of the type asked.")]
+        return checks + [("none_on_record", True, "Files were sent although none exist on record.")]
     checks += [
         ("files", bool(files) and sent > 0, "No files were sent."),
         ("type", bool(files) and all(_type_ok(_type_word(f.get("attachmentType")), accepted) for f in files),
@@ -836,10 +866,11 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     # a None check is unknown, never a failure
     real = _has_memory_after(row)
     informational = {"class"} | ({"old_dropped"} if real else set())
-    failed = next((msg for name, ok, msg in checks if ok is False and name not in informational), None)
-    # Leaks and made-up facts are their own zero-tolerance bars, listed on every turn and counted by
-    # `summarise`; they decide `passed` only for the scope slice, whose whole job is the leak check.
-    if failed is None and item["slice"] == "scope" and leaks:
+    info = {name: ok for name, ok, _ in checks if name in informational}   # reported, never deciding
+    checks = [c for c in checks if c[0] not in informational]
+    failed = next((msg for name, ok, msg in checks if ok is False), None)
+    # A leak fails the item on any slice; made-up facts stay their own bar, counted by `summarise`.
+    if failed is None and leaks:
         failed = ("The reply shows an internal id." if any(x.startswith("internal id") for x in leaks)
                   else "The reply shows a field hidden from the asker." if any(x.startswith("hidden") for x in leaks)
                   else "The reply shows a customer outside the asker's linked customers.")
@@ -849,7 +880,7 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     return {
         "item_id": item.get("item_id"), "slice": item["slice"], "kind": item.get("kind"), "passed": passed,
         "reason": "The bot did what the message needed." if passed else failed,
-        "checks": {name: ok for name, ok, _ in checks}, "leaks": leaks, "made_up": made_up,
+        "checks": {name: ok for name, ok, _ in checks}, "info": info, "leaks": leaks, "made_up": made_up,
         **({"growth": True} if item.get("growth") else {}),
     }
 
