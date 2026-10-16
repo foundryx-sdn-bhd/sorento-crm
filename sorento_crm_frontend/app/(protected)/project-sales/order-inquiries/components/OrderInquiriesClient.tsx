@@ -71,7 +71,6 @@ import {
   useOrderInquiryMatrix,
   useOrderInquiryWorklist,
   useOrderInquiryWorklistSummary,
-  useReserveStatusSummary,
   useUnplaceAllPreview,
   useUploadedBook,
   type InquiryCommitResult,
@@ -244,10 +243,10 @@ const ORDER_INQUIRY_ACTION_PERMISSION = 'projects.order_inquiry.action';
  * and the book uploads. CS holds the read and sees the column and the filter; taking an
  * instruction on is purchasing's, and they may not do it for themselves.
  */
-/** R1 (`PLAN-oi-request-cs-reserve.md`): only the CS head answers a reserve request. */
-const ORDER_INQUIRY_RESERVE_PERMISSION = 'projects.order_inquiries.reserve';
 const ORDER_INQUIRY_ACKNOWLEDGE_PERMISSION =
   'projects.order_inquiries.acknowledge';
+/** R1 (`PLAN-oi-request-cs-reserve.md`): only the CS head answers a reserve request. */
+const ORDER_INQUIRY_RESERVE_PERMISSION = 'projects.order_inquiries.reserve';
 
 /**
  * An absent `?ack=` now opens on To confirm (PLAN-oi-confirm-per-so, AC-CF-11: G4/G5
@@ -428,7 +427,6 @@ export function OrderInquiriesClient({
   const [reserveFilter, setReserveFilter] = React.useState<OrderInquiryReserveStatus | ''>(
     () => reserveFilterFrom(searchParams.get('reserve')),
   );
-  const reserveSummary = useReserveStatusSummary(canReserve);
   const {
     value: poNumberInput,
     setValue: setPoNumberInput,
@@ -970,8 +968,8 @@ export function OrderInquiriesClient({
   });
   const unplaceCount = unplacePreview.data?.count ?? 0;
 
-  // Purchasing's page: the acknowledge grant is what marks purchasing, and CS (action
-  // grant only) ticks nothing here.
+  // The link presses are purchasing's: the acknowledge grant is what marks purchasing.
+  // CS ticks lines too, but only to answer reserve requests (reserve grant).
   const canBulkLink = canAcknowledge && canActOnOrderInquiry;
 
   // OI-BULK-RESERVE v4 (F3): CS's drafted answers, keyed by line. A draft keeps its row (it
@@ -1000,10 +998,12 @@ export function OrderInquiriesClient({
 
   const stageAnswers = React.useCallback(
     (targets: OrderInquiryWorklistRow[], reason: string | null) => {
-      if (targets.length === 0) return;
+      // A row that names no order inquiry cannot be committed, so it is never drafted.
+      const draftable = targets.filter((row) => row.order_inquiry_id);
+      if (draftable.length === 0) return;
       setDrafts((previous) => {
         const next = { ...previous };
-        for (const row of targets) {
+        for (const row of draftable) {
           next[row.id] = {
             row,
             entry: {
@@ -1204,6 +1204,9 @@ export function OrderInquiriesClient({
   }, [drafts]);
 
   function closeReserveConfirm(next: boolean) {
+    // Escape, the overlay and the X are ignored while the commits are in flight, so the
+    // outcome always lands in a dialog that is still open.
+    if (!next && commitReserve.isPending) return;
     setReserveConfirmOpen(next);
     if (!next) setCommitOutcome(null);
   }
@@ -1529,8 +1532,7 @@ export function OrderInquiriesClient({
           placeholder="Every state"
         />
       </div>
-      {canReserve ? (
-        <div className="space-y-1.5">
+      <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Reserve</Label>
           <SearchableSelect
             value={reserveFilter}
@@ -1538,12 +1540,11 @@ export function OrderInquiriesClient({
             clearable
             options={ORDER_INQUIRY_RESERVE_STATUSES.map((status) => ({
               value: status,
-              label: `${orderInquiryReserveStatusLabel(status)} (${reserveSummary.data?.[status] ?? 0})`,
+              label: orderInquiryReserveStatusLabel(status),
             }))}
-            placeholder="Any"
+            placeholder="Every status"
           />
         </div>
-      ) : null}
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Supplier</Label>
         <SearchableSelect
@@ -1661,9 +1662,19 @@ export function OrderInquiriesClient({
         activeCount: filtersActiveCount,
         // The page opens narrowed to what purchasing has not confirmed, and a
         // list that is short for a reason nobody stated reads as missing data.
-        activeSummary: ackChipLabel
-          ? { label: ackChipLabel, onClear: () => setAckFilter(ACK_ANY) }
-          : undefined,
+        activeSummary: [
+          ...(ackChipLabel
+            ? [{ label: ackChipLabel, onClear: () => setAckFilter(ACK_ANY) }]
+            : []),
+          ...(reserveFilter
+            ? [
+                {
+                  label: `Reserve: ${orderInquiryReserveStatusLabel(reserveFilter)}`,
+                  onClear: () => setReserveFilter(''),
+                },
+              ]
+            : []),
+        ],
         content: filtersContent,
       }}
       // Their own workbook, with their own headings and a sheet per delivery
@@ -1800,7 +1811,7 @@ export function OrderInquiriesClient({
       ]}
       // AC-CF-7: the header tick is the current page only - this is what offers the
       // WHOLE matching set once every loaded row is ticked. Purchasing's own affordance;
-      // CS (no acknowledge grant) never ticks a row here at all.
+      // it feeds Confirm, which is theirs alone.
       selectAllMatching={
         canAcknowledge
           ? {

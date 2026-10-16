@@ -553,6 +553,7 @@ def export_order_inquiry_worklist(
             "Excel - exactly this header's own rows."
         ),
     ),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(None),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -584,6 +585,7 @@ def export_order_inquiry_worklist(
                 delivery_to,
                 project=project,
                 inquiry_id=inquiry_id,
+                reserve=reserve,
             )
         )
         return Response(
@@ -747,6 +749,7 @@ def order_inquiry_worklist_matrix(
     spo_number: Optional[str] = Query(None, max_length=_MAX_FILTER_LENGTH),
     delivery_from: Optional[str] = Query(None),
     delivery_to: Optional[str] = Query(None),
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = Query(None),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -781,6 +784,7 @@ def order_inquiry_worklist_matrix(
                 delivery_from,
                 delivery_to,
                 project=project,
+                reserve=reserve,
             ),
         )
         return {"data": cells}

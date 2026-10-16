@@ -12,7 +12,7 @@
  */
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MOCK_WORKLIST_ROWS,
@@ -703,5 +703,75 @@ describe('AC-BR-27 / F10 the Actions menu', () => {
     expect(
       screen.queryByRole('menuitem', { name: /Send all parked reserves to purchasing/ }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('review round 1: the Reserve filter chip, count and labels, and the pending close', () => {
+  const filtersButton = () => screen.getByRole('button', { name: /filters/i });
+
+  it('shows plain labels (no counts) to a viewer without the reserve grant', async () => {
+    granted = new Set([ACTION, ACK]);
+    await ready();
+    openFilters();
+    const select = (await screen.findAllByRole('combobox')).find((candidate) =>
+      within(candidate).queryByRole('option', { name: 'Needs reserve' }),
+    ) as HTMLElement;
+    expect(select).toBeTruthy();
+    const labels = within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+      .filter((label) => label && label !== 'Every status');
+    expect(labels).toEqual([
+      'Parked request to reserve',
+      'Needs reserve',
+      'Parked reserve',
+      'Reserved',
+    ]);
+  });
+
+  it('adds a Reserve chip that clears the filter, and counts the filter in Filters', async () => {
+    await ready();
+    const baseline = Number(/\d+/.exec(filtersButton().textContent ?? '')?.[0] ?? '0');
+    cleanup();
+
+    currentSearchParams = new URLSearchParams('reserve=needs_reserve');
+    await ready();
+    expect(Number(/\d+/.exec(filtersButton().textContent ?? '')?.[0] ?? '0')).toBe(baseline + 1);
+
+    const clear = screen.getByRole('button', { name: 'Clear filter: Reserve: Needs reserve' });
+    listOrderInquiryWorklist.mockClear();
+    fireEvent.click(clear);
+    await waitFor(() =>
+      expect(listOrderInquiryWorklist).toHaveBeenCalledWith(
+        expect.objectContaining({ reserve: undefined }),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Clear filter: Reserve: Needs reserve' }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it('ignores a close while the commits are in flight, then shows the outcome', async () => {
+    let release: () => void = () => undefined;
+    commitSpy.mockImplementation(
+      () => new Promise((resolve) => (release = () => resolve([{ id: 'rr-1' }]))),
+    );
+    await ready();
+    tick('CB313', 'SO-A1');
+    await reserveAsRequested();
+    await screen.findByText('Reserve 88 @ BRW');
+    fireEvent.click(reserveButton(1));
+    const dialog = await screen.findByRole('dialog', { name: 'Reserve 1 line on 1 order inquiry' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reserve and send' }));
+    await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    release();
+    await waitFor(() => expect(within(dialog).getByText('Saved')).toBeInTheDocument());
+    expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
 });

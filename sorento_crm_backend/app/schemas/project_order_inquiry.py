@@ -742,6 +742,8 @@ class AcknowledgeFilter(BaseModel):
     #: md`): "Select all N matching" narrowed to one header, so pressing Confirm with
     #: nothing ticked means exactly that OI and nothing else.
     inquiry_id: Optional[str] = Field(None, pattern=UUID_PATTERN)
+    #: OI-BULK-RESERVE v4: keep a line when one of its own request rows is in this status.
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = None
 
 
 class AcknowledgeRowsRequest(BaseModel):
@@ -1189,6 +1191,8 @@ class OrderInquiryWorklistExportRequest(BaseModel):
     spo_number: Optional[str] = Field(None, max_length=WORKLIST_FILTER_MAX_LENGTH)
     delivery_from: Optional[str] = None
     delivery_to: Optional[str] = None
+    #: OI-BULK-RESERVE v4: keep a line when one of its own request rows is in this status.
+    reserve: Optional[Literal["parked", "needs_reserve", "notice_parked", "reserved"]] = None
 
 
 class UnplaceAllResult(BaseModel):
