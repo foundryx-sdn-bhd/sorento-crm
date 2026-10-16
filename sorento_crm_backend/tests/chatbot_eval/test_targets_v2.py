@@ -1572,17 +1572,33 @@ def test_a_how_many_after_a_non_stock_pick_still_fails():
 
 
 # 2. a reply that shows 2+ product codes and leaves a list open is not a needless picker, on every slice and kind
-def test_a_shown_list_left_open_is_not_a_needless_picker_on_an_answer_followup():
+def test_a_shown_list_left_open_is_a_picker_on_an_answer_followup():
     r = row2(verdict=_picks([1]), state_oq=COLOUR_Q, oq={"before": COLOUR_Q, "after": VARIANT_Q, "writer": "engine"},
              reply=TWO_CODES_REPLY)
     res = grade_turn(r, item("followup", "answer", option="white"))
-    assert res["checks"].get("no_picker") is not False, res["checks"]
+    assert res["checks"].get("no_picker") is False, res["checks"]
 
 
-def test_a_shown_list_left_open_is_not_a_needless_picker_on_a_scope_item():
+def test_a_shown_list_left_open_is_a_picker_on_a_scope_item():
     r = _with_oq(row2(reply=TWO_CODES_REPLY), VARIANT_Q)
     res = grade_turn(r, dict(item("scope"), asker=STAFF_ASKER))
-    assert res["checks"].get("no_picker") is not False and res["passed"] is not False, res["checks"]
+    assert res["checks"].get("no_picker") is False and res["passed"] is False, res["checks"]
+
+
+def test_a_product_pick_with_no_sections_listing_three_codes_is_a_picker_on_a_code_lookup():
+    r = _with_oq(row2(state_products=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)], tools=[TOOL_A],
+                      reply="Did you mean SRTA100, SRTA101 or SRTA102?"), VARIANT_Q, asking="product_pick")
+    for rec in r["trace"]:
+        if rec.get("stage") == "replied":
+            rec["facts"]["sections"] = 0
+    res = grade_turn(r, item("code_lookup", **GOLD_CL))
+    assert res["checks"].get("no_picker") is False and res["passed"] is False, res["checks"]
+
+
+def test_a_spec_answer_showing_products_with_a_list_open_still_passes_the_picker_check():
+    r = _with_oq(row2(verdict=SPEC_V, reply="Here are white taps: SRTKT100 and SRTKT200."), VARIANT_Q)
+    res = grade_turn(r, item("spec", **SPEC_ITEM))
+    assert res["checks"].get("no_picker") is not False, res["checks"]
 
 
 def test_a_picker_with_nothing_shown_still_fails_on_a_scope_item():
