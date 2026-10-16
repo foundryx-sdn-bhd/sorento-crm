@@ -373,3 +373,31 @@ def test_refine_needs_a_named_tool_after_the_filter():
     res = grade_turn(asked, item("followup", "refine", **gold))
     assert res["passed"] is False and "lookup" in res["reason"].lower(), res["reason"]
     check(grade_turn(row2(tools=[TOOL_A], **base), item("followup", "refine", **gold)), True)
+
+
+def test_spec_and_filter_values_normalise_units_and_spacing():
+    v = {"entities": [], "reference_positions": []}
+    bot = [{"spec_key": "length", "spec_value": 300, "raw": "300"}]
+    for gold_value in ("300mm", "300 mm", "300", "300MM"):
+        r = row2(verdict=v, mem_extra={"specification": bot})
+        check(grade_turn(r, item("spec", spec=[{"key": "length", "value": gold_value}])), True)
+    check(grade_turn(row2(verdict=v, mem_extra={"specification": bot}),
+                     item("spec", spec=[{"key": "length", "value": "400mm"}])), False, "spec")
+    refine = row2(verdict=v, mem_before=[prod("SRTA100", UA)], mem_after=[prod("SRTA100", UA)],
+                  mem_extra={"specification": bot}, tools=[TOOL_A])
+    gold = dict(subject_after=["SRTA100"], filter={"kind": "size", "value": "300mm"})
+    check(grade_turn(refine, item("followup", "refine", **gold)), True)
+
+
+def _lookup_row(env):
+    return row2(message=f"status of {DO}", reply=f"{DO} is delivered.", domains=("order",), mem_after=[],
+                looked=[env], tools=[{"name": "crm_orders_list", "args": {"scope_terms": [DO]}}])
+
+
+def test_looked_up_envelopes_that_report_a_miss_do_not_count_as_the_subject():
+    gold = dict(code=DO, fact="order")
+    answered = {"tool": "crm_orders_list", "outcome": "answered", "entities": [DO], "product_codes": []}
+    check(grade_turn(_lookup_row(answered), item("code_lookup", **gold)), True)
+    for miss in ({"outcome": "not_found"}, {"miss": ["x"]}, {"unresolved": [DO]}):
+        env = {"tool": "crm_orders_list", "entities": [DO], "product_codes": [], **miss}
+        check(grade_turn(_lookup_row(env), item("code_lookup", **gold)), False, "code")
