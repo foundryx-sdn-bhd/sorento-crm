@@ -9,11 +9,15 @@ Gates, in order (section 16): the `sales` module off under strict mode (403
 the role bypass a portal contact has no role to claim), the kind not visible (403
 ``FORM_TYPE_NOT_VISIBLE``, ``require_form_visible``), no active linked agent (403
 ``NOT_A_SALES_AGENT``). Another agent's id is 404, never 403, so ids cannot be probed.
+
+PORTAL-MULTI-AGENT (owner, 16 Oct 2026): a contact linked to several active agents works for
+all of them together - the list, the customer options and the targets cover every one, and
+a new opportunity goes to the agent whose customer it is (a prospect: the first by code).
 """
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -33,7 +37,7 @@ from app.schemas.sales import (
 from app.services.error_handler import AppException, handle_internal_error
 from app.services.portal_form_visibility_service import require_form_visible
 from app.services.sales import opportunity_service as svc
-from app.services.sales.portal_agent import agent_for_contact
+from app.services.sales.portal_agent import agents_for_contact
 from app.services.uuid_path_param import validate_uuid_path
 
 router = APIRouter(tags=["public-portal-sales-opportunity"])
@@ -64,11 +68,12 @@ def _require_module_enabled(db: Session) -> None:
         )
 
 
-def _require_agent(db: Session, token: PortalToken) -> SalesAgent:
+def _require_agents(db: Session, token: PortalToken) -> List[SalesAgent]:
+    """Every active agent the contact is linked to, by code (never empty)."""
     _require_module_enabled(db)
     require_form_visible(db, token.contact_id, _FORM_TYPE)
-    agent = agent_for_contact(db, token.contact_id)
-    if agent is None or not agent.is_active:
+    agents = agents_for_contact(db, token.contact_id)
+    if not agents:
         raise AppException(
             status_code=status.HTTP_403_FORBIDDEN,
             message="You are not set up as a sales agent yet.",
@@ -91,23 +96,36 @@ def _require_agent(db: Session, token: PortalToken) -> SalesAgent:
     # CONTACT'S OWN companies (`respond_contact_companies`) before this ever runs - an
     # unconditional overwrite used to set the scope to `None` ("no predicate", i.e. every
     # company - see `app/models/base.py`'s four-state table) for a SHARED agent
-    # (`company_id` is `None`), clobbering whatever the contact was actually scoped to. An
-    # agent WITH a `company_id` may narrow the request to just that company, but only when
-    # the existing scope already permits it; a shared agent, or one whose own company
-    # disagrees with the contact's scope, leaves the existing (already correct) scope
-    # untouched rather than widen it.
+    # (`company_id` is `None`), clobbering whatever the contact was actually scoped to.
+    # Agents that ALL carry a `company_id` may narrow the request to those companies, but
+    # only to the ones the existing scope already permits; a shared agent among them, or
+    # companies that all disagree with the contact's scope, leave the existing (already
+    # correct) scope untouched rather than widen it.
+    companies = {agent.company_id for agent in agents}
     existing_scope = get_company_scope(db)
-    if agent.company_id and (
-        existing_scope is None
-        or existing_scope is UNSET
-        or (isinstance(existing_scope, frozenset) and agent.company_id in existing_scope)
-    ):
-        set_company_scope(db, frozenset({agent.company_id}))
-    return agent
+    if None not in companies:
+        if existing_scope is None or existing_scope is UNSET:
+            set_company_scope(db, frozenset(companies))
+        elif isinstance(existing_scope, frozenset) and companies & existing_scope:
+            set_company_scope(db, frozenset(companies & existing_scope))
+    return agents
+
+
+def _agent_for_customer(
+    db: Session, agents: List[SalesAgent], customer_id: Optional[str]
+) -> Optional[SalesAgent]:
+    """The linked agent whose customer this is, or ``None`` (no customer, or somebody
+    else's - the service's `CUSTOMER_NOT_YOURS` answers that one)."""
+    from app.models.order import Customer
+
+    if not customer_id:
+        return None
+    owner_id = db.query(Customer.sales_agent_id).filter(Customer.id == customer_id).scalar()
+    return next((agent for agent in agents if agent.id == owner_id), None)
 
 
 def _resolve_company(db: Session, *, customer_id: Optional[str], agent: SalesAgent) -> str:
-    """Never widens past what `_require_agent` already scoped this request to (Phase 3
+    """Never widens past what `_require_agents` already scoped this request to (Phase 3
     fix S2): the customer's own company (a SCOPED lookup - `Customer` is
     `CompanyScopedMixin`, so a customer outside the current scope resolves to nothing
     rather than to its real, out-of-scope company), else the agent's own company but
@@ -158,8 +176,8 @@ def portal_list_sales_opportunities(
     # The gate runs unwrapped (LESSONS: a bare `db.rollback()` on a savepoint-mode test
     # session discards every uncommitted fixture the caller set up, not just this
     # request's own writes - reads never write, so there is nothing here to roll back).
-    agent = _require_agent(db, token)
-    rows, _total = svc.list_opportunities(db, sales_agent_id=agent.id, limit=1000)
+    agents = _require_agents(db, token)
+    rows, _total = svc.list_opportunities(db, sales_agent_id=[a.id for a in agents], limit=1000)
     return {"items": svc.serialize_list(db, rows)}
 
 
@@ -169,7 +187,7 @@ def portal_opportunity_meta(
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
-    _require_agent(db, token)
+    _require_agents(db, token)
     return svc.meta(db)
 
 
@@ -178,12 +196,16 @@ def portal_my_targets(
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
-    """The logging agent's own active targets with achieved, gap and the open opportunities
-    closing before each end date (fix lane round 2, F2)."""
+    """The logging agents' own active targets with achieved, gap and the open opportunities
+    closing before each end date (fix lane round 2, F2), every linked agent's together."""
     from app.services.sales import target_service
 
-    agent = _require_agent(db, token)
-    return target_service.agent_progress(db, agent.id)
+    progress = [target_service.agent_progress(db, agent.id) for agent in _require_agents(db, token)]
+    targets = sorted(
+        (target for one in progress for target in one["targets"]),
+        key=lambda target: (target["end_date"], target["name"]),
+    )
+    return {"today": progress[0]["today"], "targets": targets}
 
 
 @router.get(
@@ -194,8 +216,8 @@ def portal_customer_options(
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
-    agent = _require_agent(db, token)
-    return svc.customer_options(db, q=q, sales_agent_id=agent.id)
+    agents = _require_agents(db, token)
+    return svc.customer_options(db, q=q, sales_agent_id=[a.id for a in agents])
 
 
 @router.post("/sales-opportunities", status_code=status.HTTP_201_CREATED)
@@ -206,9 +228,11 @@ def portal_create_sales_opportunity(
 ):
     # Gated before the try: same reasoning as the reads above - nothing has been
     # written yet, so a gate failure must never roll the session back.
-    agent = _require_agent(db, token)
+    agents = _require_agents(db, token)
     try:
         body = payload.model_dump(exclude_unset=True)
+        # The agent whose customer it is; a prospect (no customer) goes to the first by code.
+        agent = _agent_for_customer(db, agents, body.get("customer_id")) or agents[0]
         company_id = _resolve_company(db, customer_id=body.get("customer_id"), agent=agent)
         with company_scope(db, frozenset({company_id})):
             opportunity = svc.create_opportunity(
@@ -218,7 +242,7 @@ def portal_create_sales_opportunity(
                 sales_agent_id=agent.id,
                 source="portal",
                 created_by_contact_id=token.contact_id,
-                restrict_customer_to_agent_id=agent.id,
+                restrict_customer_to_agent_id=[a.id for a in agents],
             )
         db.commit()
         db.refresh(opportunity)
@@ -234,8 +258,8 @@ def portal_get_sales_opportunity(
     db: Session = Depends(get_db),
 ):
     opportunity_id = validate_uuid_path(opportunity_id, resource="Sales Opportunity")
-    agent = _require_agent(db, token)
-    opportunity = svc.get_opportunity_for_agent_or_404(db, opportunity_id, agent.id)
+    agents = _require_agents(db, token)
+    opportunity = svc.get_opportunity_for_agent_or_404(db, opportunity_id, [a.id for a in agents])
     return svc.serialize(db, opportunity)
 
 
@@ -247,15 +271,22 @@ def portal_update_sales_opportunity(
     db: Session = Depends(get_db),
 ):
     opportunity_id = validate_uuid_path(opportunity_id, resource="Sales Opportunity")
-    agent = _require_agent(db, token)
-    opportunity = svc.get_opportunity_for_agent_or_404(db, opportunity_id, agent.id)
+    agents = _require_agents(db, token)
+    agent_ids = [a.id for a in agents]
+    opportunity = svc.get_opportunity_for_agent_or_404(db, opportunity_id, agent_ids)
     try:
+        body = payload.model_dump(exclude_unset=True)
+        # Moved to another linked agent's customer: the opportunity follows the customer to
+        # that agent, the same rule a create stamps by.
+        owner = _agent_for_customer(db, agents, body.get("customer_id"))
+        if owner is not None and owner.id != opportunity.sales_agent_id:
+            body["sales_agent_id"] = owner.id
         with company_scope(db, frozenset({opportunity.company_id})):
             svc.update_opportunity(
                 db,
                 opportunity,
-                payload.model_dump(exclude_unset=True),
-                restrict_customer_to_agent_id=agent.id,
+                body,
+                restrict_customer_to_agent_id=agent_ids,
             )
         db.commit()
         db.refresh(opportunity)
