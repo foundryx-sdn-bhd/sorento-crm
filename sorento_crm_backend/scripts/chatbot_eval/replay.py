@@ -18,6 +18,7 @@ import argparse
 import contextlib
 import copy
 import hashlib
+import inspect
 import json
 import os
 import sys
@@ -117,7 +118,7 @@ def _rolled_back(session_factory: Callable[[], Any]) -> Iterator[Callable[[], An
 def _patched(recorded: dict[tuple[str, str], Any], misses: list[dict[str, Any]]) -> Iterator[None]:
     from unittest import mock
 
-    from app.services import embedding_worker
+    from app.services import embedding_worker, llm_provider
     from app.services.ai_assistant_service import MCPRuntimeClient
     from app.services.chatbot import llm_call
     from app.services.chatbot.lanes import ideate
@@ -141,6 +142,11 @@ def _patched(recorded: dict[tuple[str, str], Any], misses: list[dict[str, Any]])
         stack.enter_context(mock.patch.object(llm_call, "chat", blocked("llm_call.chat")))
         stack.enter_context(mock.patch.object(ideate, "call_ideation_tool", blocked("ideate")))
         stack.enter_context(mock.patch.object(embedding_worker, "_embed_text_chunks", blocked("embedding")))
+        # Every provider's `chat` (spec-phrase understanding and the code reader call it through
+        # `get_provider()`, not through `llm_call`): a replay never spends or depends on a live model.
+        for name, cls in vars(llm_provider).items():
+            if inspect.isclass(cls) and cls is not llm_provider.LLMProvider and name.endswith("Provider") and "chat" in vars(cls):
+                stack.enter_context(mock.patch.object(cls, "chat", blocked(f"provider.{name}")))
         yield
 
 
