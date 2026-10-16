@@ -310,7 +310,7 @@ const FIELDS: Record<PortalSubmissionKind, FieldDef[]> = {
   ],
   // Field order mirrors the system document view (PurchaseRequestDocumentEditCard /
   // detail): Customer → Delivery Address → Project Title → Total Project Value →
-  // Sponsor Subject → Date of Delivery → Request date → Requested by.
+  // Sponsor Subject → Sales type → Date of Delivery → Request date → Requested by.
   sponsorship_form: [
     { name: 'customer_name', label: 'Customer name', widget: 'debtor-async' },
     { name: 'customer_id', label: 'Customer', widget: 'hidden' },
@@ -350,6 +350,13 @@ const FIELDS: Record<PortalSubmissionKind, FieldDef[]> = {
       showWhen: (f) =>
         (typeof f.sponsor_subject === 'string' ? f.sponsor_subject : '') ===
         'others',
+    },
+    // SF-SALES-TYPE: the PR field, optional here; a customer pick fills it.
+    {
+      name: 'sales_type',
+      label: 'Sales type',
+      widget: 'lookup-select',
+      setKey: 'procurement_sales_type',
     },
     {
       name: 'expected_delivery_date',
@@ -1441,7 +1448,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // section prop is kept for signature compatibility with the other sections.
   const handleProductItemSelected = () => {};
 
-  // A picked customer links the form and (PR only) fills Sales type from the lookup item;
+  // A picked customer links the form and fills Sales type from the lookup item (PR and SF);
   // free text unlinks it. The mapping itself lives on the server (item.sales_type).
   const handleDebtorChange = (item?: DebtorLookupItem) => {
     setFields((prev) => {
@@ -1449,7 +1456,9 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         ...prev,
         customer_id: item?.customer_id ?? '',
       };
-      if (kind === 'purchase_request' && item?.sales_type) next.sales_type = item.sales_type;
+      if ((kind === 'purchase_request' || kind === 'sponsorship_form') && item?.sales_type) {
+        next.sales_type = item.sales_type;
+      }
       return next;
     });
   };

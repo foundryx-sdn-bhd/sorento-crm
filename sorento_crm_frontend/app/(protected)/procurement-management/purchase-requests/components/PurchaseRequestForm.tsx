@@ -481,8 +481,8 @@ export default function PurchaseRequestForm({
         total_project_value_text: data.total_project_value_text?.trim()
           ? data.total_project_value_text.trim()
           : undefined,
-        // Sales type applies to purchase requests only; clear it on sponsorship forms.
-        sales_type: !isSponsorship ? (data.sales_type ?? undefined) : undefined,
+        // A cleared (optional, SF) select gives ''; send none rather than an empty code.
+        sales_type: data.sales_type || undefined,
         sponsor_subject: data.sponsor_subject ?? undefined,
         // Only carry the "Others" detail when the sponsor subject is 'others';
         // sending '' otherwise clears any stale parked text on the backend.
@@ -627,7 +627,7 @@ export default function PurchaseRequestForm({
                     )}
                   />
                 )}
-                <RequestCustomerField form={form} isSponsorship={isSponsorship} label="Customer Name" />
+                <RequestCustomerField form={form} label="Customer Name" />
                 <FormField
                   control={form.control}
                   name="pic"
@@ -727,41 +727,6 @@ export default function PurchaseRequestForm({
                     )}
                   />
                 )}
-                {!isSponsorship && (
-                  <FormField
-                    control={form.control}
-                    name="sales_type"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          Sales Type <span className="text-destructive">*</span>
-                        </FormLabel>
-                        <FormControl>
-                          <LookupBoundField
-                            table="purchase_requests"
-                            column="sales_type"
-                            value={field.value}
-                            onChange={field.onChange}
-                            placeholder="Select sales type"
-                            renderFallback={() => (
-                              <SearchableSelect
-                                key={field.value || "empty"}
-                                onChange={field.onChange}
-                                value={field.value || ""}
-                                placeholder="Select sales type"
-                                options={[
-                                  { value: "project", label: "Project" },
-                                  { value: "cash_sales", label: "Cash Sales" },
-                                ]}
-                              />
-                            )}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
                 {isSponsorship && (
                   <>
                     <FormField
@@ -842,6 +807,44 @@ export default function PurchaseRequestForm({
                     )}
                   </>
                 )}
+                {/* Required on a purchase request (it routes CS); kept, optional, on a sponsorship
+                    form (SF-SALES-TYPE). After Purpose on a PR, after Sponsor Subject on an SF. */}
+                <FormField
+                  control={form.control}
+                  name="sales_type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Sales Type{" "}
+                        {!isSponsorship && <span className="text-destructive">*</span>}
+                      </FormLabel>
+                      <FormControl>
+                        <LookupBoundField
+                          table="purchase_requests"
+                          column="sales_type"
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Select sales type"
+                          clearable={isSponsorship}
+                          renderFallback={() => (
+                            <SearchableSelect
+                              key={field.value || "empty"}
+                              onChange={field.onChange}
+                              value={field.value || ""}
+                              placeholder="Select sales type"
+                              clearable={isSponsorship}
+                              options={[
+                                { value: "project", label: "Project" },
+                                { value: "cash_sales", label: "Cash Sales" },
+                              ]}
+                            />
+                          )}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="expected_delivery_date"

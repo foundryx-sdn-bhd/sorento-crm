@@ -1433,6 +1433,20 @@ export default function PurchaseRequestDetail({
                     </p>
                   </div>
                   <div className="sm:col-span-2">
+                    <p className="text-sm text-muted-foreground">Sales Type</p>
+                    <p className="font-medium">
+                      {request.sales_type ? (
+                        <LookupBoundLabel
+                          table="purchase_requests"
+                          column="sales_type"
+                          value={request.sales_type}
+                        />
+                      ) : (
+                        ' - '
+                      )}
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
                     <p className="text-sm text-muted-foreground">Date of Delivery</p>
                     <p className="font-medium">
                       {request.expected_delivery_date
