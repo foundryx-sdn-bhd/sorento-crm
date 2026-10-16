@@ -993,7 +993,6 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier]
         return "%" in (ctx.grid.fmt(r, col.index) or "")
 
     previous_threshold: Optional[Decimal] = None
-    main_thresholds: set = set()
     for thr_col, rate_col in _pairs(cols):
         if rate_col is None:
             # One cell per tier text ("150,000 - 2%"), or a bare figure paying the header's rate.
@@ -1059,13 +1058,11 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier]
                 entries = [(None, RateEntry(None, thr_col.default_rate))]
             else:
                 raise CellError(f"{name}: the threshold {threshold:,.0f} has no incentive")
-        # Item 6: a second MAIN tier at a threshold already paid is that tier's additional line.
-        promote = threshold in main_thresholds
         main: Dict[str, Decimal] = {}
         main_rate: Optional[Decimal] = None
         extras: List[Tuple[Optional[Dict[str, Decimal]], Optional[Decimal]]] = []
         for r, e in entries:
-            additional = e.is_additional or promote
+            additional = e.is_additional
             target_key = None
             rate_for_all = None
             if e.label:
@@ -1089,7 +1086,6 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier]
             if main and main_rate is not None:
                 raise CellError(f"{name}: one tier pays both every account and named accounts")
             out.append(SchemeTier(period_start, threshold, main_rate, False, main or None))
-            main_thresholds.add(threshold)
         for rates, rate in extras:
             out.append(SchemeTier(period_start, threshold, rate, True, rates))
         previous_threshold = threshold

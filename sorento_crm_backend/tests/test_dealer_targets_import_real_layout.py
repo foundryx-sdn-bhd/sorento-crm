@@ -478,3 +478,24 @@ def test_template_downloads_and_reads_back(api):
     assert [r.status for r in parsed.rows] == ["mapped"]
     assert [s.kind for s in parsed.schemes] == ["quarterly"]
     assert parsed.schemes[0].codes == ["ZZT-1"]
+
+
+def test_a_plain_second_tier_at_the_same_threshold_is_reported_not_guessed():
+    """Item 6 covers "+ Additional x%" at a repeated threshold; a repeated threshold with a
+    plain rate has no reading, so its row fails with the reason instead of a guess."""
+    from openpyxl import Workbook
+
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "ACCOUNT", "Q1"
+    ws.merge_cells("C1:F1")
+    for col, text in zip("CDEF", ("Tier 1", "Tier 1 Incentive", "Tier 2", "Tier 2 Incentive")):
+        ws[f"{col}2"] = text
+    ws["A3"], ws["B3"], ws["C3"], ws["D3"], ws["E3"], ws["F3"] = "X", "A/C I", 500000, 0.02, 500000, 0.01
+    buf = io.BytesIO()
+    wb.save(buf)
+    parsed = parse_workbook(buf.getvalue(), year=2026)
+    assert parsed.rows[0].status == "not_representable"
+    assert "repeats" in parsed.rows[0].reason
