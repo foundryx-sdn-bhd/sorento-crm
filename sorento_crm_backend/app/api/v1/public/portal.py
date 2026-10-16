@@ -489,7 +489,10 @@ def lookup_products(
 
 
 class DebtorLookupItem(BaseModel):
+    customer_id: str
     debtor_name: str
+    customer_code: str
+    sales_type: Optional[str] = None
 
 
 @router.get("/lookups/debtors", response_model=list[DebtorLookupItem])
@@ -499,13 +502,9 @@ def lookup_debtors(
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
-    from app.models.order import Order
-    qs = (q or "").strip()
-    query = db.query(Order.debtor_name).filter(Order.debtor_name.isnot(None))
-    if qs:
-        query = query.filter(Order.debtor_name.ilike(f"%{qs}%"))
-    rows = query.distinct().order_by(Order.debtor_name).limit(limit).all()
-    return [DebtorLookupItem(debtor_name=r[0]) for r in rows if r[0]]
+    from app.services.debtor_type import lookup_customers
+
+    return lookup_customers(db, q, limit)
 
 
 class ProjectLookupItem(BaseModel):

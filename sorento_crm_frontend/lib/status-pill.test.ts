@@ -45,3 +45,16 @@ describe('statusTextClass', () => {
     expect(statusTextClass('made-up-status')).toBe('text-muted-foreground');
   });
 });
+
+// QUOTE-APPROVAL-UX: the quotation chip reads this shared palette (header and list).
+describe('statusPillClass: quotation customer outcomes', () => {
+  it('issued and accepted are the emerald "done" colour', () => {
+    expect(statusPillClass('issued')).toBe('bg-emerald-100 text-emerald-800');
+    expect(statusPillClass('accepted')).toBe('bg-emerald-100 text-emerald-800');
+  });
+
+  it('changes_requested is the amber "waiting on you" colour', () => {
+    expect(statusPillClass('changes_requested')).toBe('bg-amber-100 text-amber-800');
+    expect(statusPillClass('Changes requested')).toBe('bg-amber-100 text-amber-800');
+  });
+});

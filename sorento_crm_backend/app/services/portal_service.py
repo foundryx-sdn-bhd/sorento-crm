@@ -1483,6 +1483,14 @@ class PortalService:
                             "Pick a registered project from the list - the project field "
                             "does not take free text."
                         )
+                if field == "customer_id":
+                    from app.services.debtor_type import link_customer
+
+                    value, linked_name = link_customer(
+                        self.db, value, current_id=getattr(row, "customer_id", None)
+                    )
+                    if linked_name:
+                        row.customer_name = linked_name
                 setattr(row, field, value)
         if requestor_field and requestor_field in payload:
             self._apply_requestor_contact(kind, row, payload.get(requestor_field))
@@ -1652,6 +1660,7 @@ class PortalService:
             )
         return (
             "customer_name",
+            "customer_id",  # the picked customer; None = free text (FORM-ROUTING-CONDITIONS)
             "pic",
             "project_title",
             # AC-F3: the link itself. Ownership and the per-contact requirement are
@@ -1665,7 +1674,7 @@ class PortalService:
             "total_project_value_text",
             "sponsor_subject",
             "sponsor_subject_other",
-            "sales_type",  # PR: project/cash_sales (lookup-bound); required for PR, routes CS
+            "sales_type",  # project/cash_sales (lookup-bound); required for PR (routes CS), optional on SF
             "expected_delivery_date",
             "expected_po_date",
             "requested_by",
@@ -2104,6 +2113,7 @@ class PortalService:
                 # portal shows, because a UUID in the UI is never the answer.
                 "project_id": str(row.project_id) if row.project_id else None,
                 "project_code": self._project_code(row.project_id),
+                "customer_id": str(row.customer_id) if row.customer_id else None,
                 "products": [
                     {
                         "id": str(line.id),

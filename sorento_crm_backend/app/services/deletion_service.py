@@ -380,6 +380,14 @@ class DeletionService:
                     via_code_rung = entity_id is not None
             else:
                 entity_id = self.refs.resolve(entity_type=entity_type, source_ref=ref)
+            if (
+                entity_id is not None
+                and entity_type == "sales_orders"
+                and self._is_non_sales_order_doc(entity_id)
+            ):
+                # AC-CONSIGN-CRM: a consignment leaves only through the consignments door;
+                # the sales-orders door reads it as not there.
+                entity_id = None
             if entity_id is None or not self._in_anchor_company(entity_type, entity_id):
                 # Another company's row reads exactly like a row that is not
                 # there. It is not this caller's to delete, and telling it the
@@ -468,6 +476,12 @@ class DeletionService:
         code another company owns reads exactly like no match.
         """
         return resolve_master_by_code(self.db, Product, code, self.company_id)
+
+    def _is_non_sales_order_doc(self, entity_id: str) -> bool:
+        doc_type = self.db.execute(
+            text("SELECT doc_type FROM sales_orders WHERE id = :id"), {"id": str(entity_id)}
+        ).scalar()
+        return doc_type is not None and doc_type != "sales_order"
 
     def _in_anchor_company(self, entity_type: str, entity_id: str) -> bool:
         """Whether the resolved row belongs to the company this call anchored to.

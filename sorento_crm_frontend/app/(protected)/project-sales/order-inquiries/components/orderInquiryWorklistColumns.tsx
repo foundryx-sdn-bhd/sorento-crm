@@ -19,6 +19,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import {
   ackStateOf,
   bundledHostChangeLines,
@@ -42,9 +43,14 @@ import type {
   OrderInquiryLinkSuggestion,
   OrderInquiryWorklistRow,
 } from '../../_shared/types/orderInquiry.types';
+import {
+  ReserveActionsCell,
+  type StagedReserveEntry,
+} from '../[id]/components/orderInquiryHeaderLinesColumns';
 import { OrderInquiryBackingDocumentsDialog } from './OrderInquiryBackingDocumentsDialog';
 import { OrderInquiryDocumentLink } from './OrderInquiryDocumentDialog';
 import { OrderInquiryQtyAnnotationDialog } from './OrderInquiryQtyAnnotationDialog';
+import { sameDisplayText } from '@/lib/product-display';
 
 function Muted({ children }: { children: React.ReactNode }) {
   return <span className="text-muted-foreground">{children}</span>;
@@ -738,7 +744,7 @@ export function ItemCodeCell({
           was {row.previous_item_code}
         </span>
       )}
-      {!codeOnly && row.product_name && row.product_name !== row.item_code && (
+      {!codeOnly && row.product_name && !sameDisplayText(row.product_name, row.item_code) && (
         <span className="block truncate text-xs text-muted-foreground" title={row.product_name}>
           {row.product_name}
         </span>
@@ -953,8 +959,22 @@ export function RaisedCell({ row }: { row: OrderInquiryWorklistRow }) {
  * either sees the same columns in the same order rather than a second, looser table
  * invented for the calendar.
  */
+/**
+ * OI-BULK-RESERVE v4 (F6): what the Lines page hands the Instruction cell so it can draw the
+ * OI Lines tab's own `ReserveActionsCell`. Absent (the calendar drilldown), no controls.
+ * `canAmend={false}` on purpose: the cross-OI page has no Amend.
+ */
+export interface WorklistReserveControls {
+  stagedByRowId: Record<string, StagedReserveEntry>;
+  onTickReserve: (row: OrderInquiryWorklistRow) => void;
+  onRejectReserve: (row: OrderInquiryWorklistRow) => void;
+  onEditReserve: (row: OrderInquiryWorklistRow) => void;
+  onUndoStaged: (rowId: string) => void;
+}
+
 export function useOrderInquiryWorklistColumns({
   selectable = false,
+  reserveControls,
 }: {
   /**
    * Draw the row checkboxes (AC-H2). Only where a bulk bar can act on them: the calendar
@@ -962,6 +982,7 @@ export function useOrderInquiryWorklistColumns({
    * select rows nothing could be done with.
    */
   selectable?: boolean;
+  reserveControls?: WorklistReserveControls;
 } = {}): ColumnDef<OrderInquiryWorklistRow>[] {
   return React.useMemo<ColumnDef<OrderInquiryWorklistRow>[]>(() => {
     const columns: ColumnDef<OrderInquiryWorklistRow>[] = [
@@ -1019,13 +1040,12 @@ export function useOrderInquiryWorklistColumns({
         cell: ({ row }) => {
           const label = orderInquirySoLineLabel(row.original);
           const href = orderInquirySoLineHref(row.original) ?? orderInquiryRowHref(row.original);
-          if (!href)
-            return (
-              <span className="block truncate" title={label}>
-                {label}
-              </span>
-            );
-          return (
+          // AC-CONSIGN-CRM: a consignment reads as one beside its number.
+          const text = !href ? (
+            <span className="block truncate" title={label}>
+              {label}
+            </span>
+          ) : (
             <Link
               href={href}
               className="block truncate font-medium text-primary hover:underline"
@@ -1033,6 +1053,12 @@ export function useOrderInquiryWorklistColumns({
             >
               {label}
             </Link>
+          );
+          return (
+            <div className="flex min-w-0 flex-col gap-0.5">
+              {text}
+              <ConsignmentBadge docType={row.original.so_doc_type} size="xs" />
+            </div>
           );
         },
       },
@@ -1289,6 +1315,17 @@ export function useOrderInquiryWorklistColumns({
               reserveState={row.original.reserve_state}
               reservedQty={row.original.reserved_qty}
             />
+            {reserveControls ? (
+              <ReserveActionsCell
+                row={row.original}
+                staged={reserveControls.stagedByRowId[row.original.id]}
+                onTickReserve={reserveControls.onTickReserve}
+                onRejectReserve={reserveControls.onRejectReserve}
+                onEditReserve={reserveControls.onEditReserve}
+                onUndoStaged={reserveControls.onUndoStaged}
+                canAmend={false}
+              />
+            ) : null}
             {/* AC-DT-5 (`PLAN-oi-decision-trail-ui.md`, round 2): the decision trail
                 icon, beside the row's own state-ish marks - there is no separate "State"
                 column on this worklist (the Lines tab has one; see the note there), so
@@ -1401,5 +1438,5 @@ export function useOrderInquiryWorklistColumns({
     // never touched by that wrapper either: a redirected row still has to be tickable
     // like any other (AC-A1..: only `cancelled` is ever excluded from selection).
     return columns;
-  }, [selectable]);
+  }, [selectable, reserveControls]);
 }

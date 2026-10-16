@@ -2,6 +2,9 @@
 
 Status: Merge-ready (owner hand test PASS 14 Oct on the crew copy after the re-decide; reviewer and security reviewer READY). Track: full (migration, RBAC slugs).
 Lane: AC-CANCEL-CRM. Sibling: AC-CANCEL-PULL (the shared service that reads the cancel docs; payload agreed via crew).
+Follow-up lane CANCEL-STOP-AT-SO (14 Oct, owner ruling, small fix track, no migration): R5 revised below; UAC
+`cancel-stop-at-so-acceptance-criteria.md`; owner repair SQL `SQL-cancel-so-retired-oi-rows-14oct.sql` (read
+only) and `SQL-cancel-so-restore-oi-rows-14oct.sql`. Status: PR open, in review.
 
 ## Goal
 
@@ -106,6 +109,16 @@ R2. Matching, per cancel line, from stored state only (never arrival order):
          no extra list and no line change; it lives only in the sync log and the stored documents.
        Every decision re-decides the groups its lines are in now AND the groups they were last decided
        in (through the target or `candidate_line_ids`); a removed line queues its group's other lines.
+       **Amended 14 Oct (owner, DO-HISTORY Q2 (a)):** a Cancel SO group is one SO + item, whatever
+       the location: its lines are every line of the item on the SO, its cancels every key-less
+       cancel line naming the SO and item, and D every live DO line linked to a group line or
+       naming the SO and item, at any location. A cancel or DO line's location can differ from
+       its SO line's (dev: 570 of 9,828 single-match DO lines), so it proves nothing. Cancel PO
+       and SPO groups keep the location. Built on the DO-HISTORY follow-up PR (branch
+       `claude/do-history-group-links`). After its deploy, lines stored under the per-location
+       rule are re-decided with `scripts/autocount_cancel_redecide.py --company SRT` (dry run,
+       then `--apply` on the owner's go), then the same for MCH; until then a group is re-keyed
+       only when one of its documents is pushed again.
        Locations are compared in Python only (`_loc`), never against a SQL upper / trim.
        The SO / PO Lines tooltip lists a `group_whole` document once per line with no qty.
 R3. `qty_cancelled` = sum of matched lines of live docs (not void, not vanished), or the line's own
@@ -114,10 +127,20 @@ R3. `qty_cancelled` = sum of matched lines of live docs (not void, not vanished)
     and order push.
 R4. Delivered shown = TransferedQty - cancelled. Planned = coalesce(required, ordered) - cancelled.
     Outstanding / incoming unchanged (TransferedQty already counts the cancel).
-R5. Fully cancelled (cancelled >= ordered): SO / PO line `cancelled`; SO OI rows retired by the #1530 path
-    ("Transferred to Cancel SO <XS no>") and flagged. Partial: a `qty_down` planning change for CS (Q4 a).
+R5. Fully cancelled (cancelled >= ordered): SO / PO line `cancelled`. **Effects stop at the SO** (owner
+    ruling 14 Oct, lane CANCEL-STOP-AT-SO, reversing the original R5): no OI row is retired, no
+    handover is queued, no purchasing email goes out. Open OI rows / pins on a cancelled line stay as they
+    are and CS handles them in Fulfilment Planning (owner 14 Oct 23:20: "when SO is cancelled, we
+    trigger the transfer to cancel SO action in fulfilment planning and let the CS confirm
+    themselves"): the sync saves the board's own Transfer to Cancel SO as the line's pending decision
+    while a live OI row remains; CS confirms it (the existing cancel: OI rows cancelled, the same
+    handover to purchasing) or dismisses it. A cancel that reopens the line withdraws it.
+    Superseded original text: "SO OI rows retired by the
+    #1530 path ("Transferred to Cancel SO <XS no>") and flagged". Partial: a `qty_down` planning change for
+    CS (Q4 a).
 R6. Cancel lowers: a line this lane cancelled returns to the status its quantities give; board-cancelled
-    lines and cancelled orders stay cancelled. OI rows already retired stay retired.
+    lines and cancelled orders stay cancelled. OI rows already retired stay retired (since R5's revision a
+    Cancel SO retires none).
 R7. Every cancel line ends matched, waiting or unmatched with a reason; each batch logs the counts per
     reason (`ingest.cancel_match ...`). No screen, nothing spins.
 

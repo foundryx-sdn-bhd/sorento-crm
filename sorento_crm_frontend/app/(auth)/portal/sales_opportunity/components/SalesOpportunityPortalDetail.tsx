@@ -50,6 +50,7 @@ import {
   sumLineDraftAmounts,
   type LineDraft,
 } from './PortalOpportunityLineRow';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 export default function SalesOpportunityPortalDetail({ id, slug }: { id: string; slug?: string }) {
   const [opportunity, setOpportunity] = useState<PortalSalesOpportunity | null>(null);
@@ -163,7 +164,7 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
     const nextLines: LineDraft[] = lines_.map((line) => ({
       key: nextLineKey(),
       productId: line.product_id,
-      productLabel: `${line.product_code ?? ''} - ${line.product_name ?? ''}`,
+      productLabel: codeWithName(line.product_code ?? '', line.product_name),
       qty: String(line.qty),
       // B1: the portal routes send Decimals as JSON numbers (1000, not "1000.00") -
       // normalize before comparing/displaying, or a number-vs-string comparison never
@@ -447,7 +448,13 @@ export default function SalesOpportunityPortalDetail({ id, slug }: { id: string;
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="min-w-0 flex-1 truncate">
-                        <span>{line.product_code}</span> - <span>{line.product_name}</span>
+                        <span>{line.product_code}</span>
+                        {distinctName(line.product_code, line.product_name) ? (
+                          <>
+                            {' - '}
+                            <span>{line.product_name}</span>
+                          </>
+                        ) : null}
                       </span>
                       <span className="text-muted-foreground">{line.qty}</span>
                     </div>

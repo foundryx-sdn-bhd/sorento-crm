@@ -106,6 +106,12 @@ TEMPLATE_DEFAULT_USE_CASES = (
     # rejected) and their 24h window is closed. Map params to ``message`` at
     # minimum; ``entity_number`` / ``portal_url`` when the template carries them.
     "price_tag_update",
+    # Quotation approval (QUOTE-APPROVAL-UX). Sent to the approvers when a below-floor
+    # quotation is sent for approval, and again when the creator withdraws it, and their 24h
+    # window is closed. Map params to ``contact_name`` (the approver) + ``message`` at
+    # minimum; ``entity_number`` (the quotation number) / ``portal_url`` when the template
+    # carries them.
+    "quotation_approval",
     # Chat reply templates (PLAN-unified-conversation-composer-smart-send). Sent when
     # an admin types a free message in an entity's chat composer while the contact's
     # 24h window is CLOSED - the typed text is wrapped into these per-form templates

@@ -21,7 +21,10 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OrderInquiryHeaderDetail, OrderInquiryWorklistRow } from '../../../_shared/types/orderInquiry.types';
+import type {
+  OrderInquiryHeaderDetail,
+  OrderInquiryWorklistRow,
+} from '../../../_shared/types/orderInquiry.types';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -33,34 +36,67 @@ vi.mock('@/hooks/usePermissions', () => ({
   useHasPermission: () => true,
 }));
 
+// OI-RESEND-PURCHASING: the single-OI entry point.
+const previewHandoverResendSpy = vi.fn(async () => ({
+  emails: [],
+  inquiry_total: 0,
+  unresolved: [],
+  skipped: [],
+  automation_enabled: true,
+}));
+vi.mock('../../../_shared/services/orderInquiryHandoverResendService', () => ({
+  previewHandoverResend: (ids: string[]) => previewHandoverResendSpy(ids),
+  sendHandoverResend: vi.fn(),
+}));
+
 // S1 (reviewer round): `OrderInquiryDetail` reads `useSession` directly now, to gate
 // the reserve-request Cancel control on the actual signed-in user, not only a
 // permission flag.
 vi.mock('next-auth/react', () => ({
-  useSession: () => ({ data: { user: { id: 'test-current-user' } }, status: 'authenticated' }),
+  useSession: () => ({
+    data: { user: { id: 'test-current-user' } },
+    status: 'authenticated',
+  }),
 }));
 
 // Under jsdom nothing answers the column-preferences fetch `DataGrid` starts, so the
 // Lines tab grid renders skeletons forever and no row is assertable
 // (project_datagrid_jsdom_rows_mockable.md).
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
-  useListingColumnPreferences: () => ({ resetToDefaults: vi.fn(), isLoading: false }),
+  useListingColumnPreferences: () => ({
+    resetToDefaults: vi.fn(),
+    isLoading: false,
+  }),
 }));
 
-const acknowledgeFilterSpy = vi.fn(async () => ({ acknowledged: 0, results: [] }));
-const acknowledgeRowsSpy = vi.fn(async () => ({ acknowledged: 0, results: [] }));
+const acknowledgeFilterSpy = vi.fn(async () => ({
+  acknowledged: 0,
+  results: [],
+}));
+const acknowledgeRowsSpy = vi.fn(async () => ({
+  acknowledged: 0,
+  results: [],
+}));
 const autoPlaceSpy = vi.fn(async () => ({ linked: 0, results: [] }));
-const unacknowledgeSpy = vi.fn<(rowIds: unknown) => Promise<{ unacknowledged: number }>>(
-  async () => ({ unacknowledged: 0 }),
-);
+const unacknowledgeSpy = vi.fn<
+  (rowIds: unknown) => Promise<{ unacknowledged: number }>
+>(async () => ({ unacknowledged: 0 }));
 // Lane B (`PLAN-order-sheet-oi-reports-22sep.md`, AC-B1/AC-B5): Export Excel goes
 // async (My Downloads), never a blob save - and the gear gets a "Download history" item.
-const exportOrderInquiryXlsxSpy = vi.hoisted(() => vi.fn(async () => ({
-  id: 'dl-1', kind: 'order_inquiry_xlsx', status: 'pending', filename: 'OI-2609-0001.xlsx',
-})));
+const exportOrderInquiryXlsxSpy = vi.hoisted(() =>
+  vi.fn(async () => ({
+    id: 'dl-1',
+    kind: 'order_inquiry_xlsx',
+    status: 'pending',
+    filename: 'OI-2609-0001.xlsx',
+  })),
+);
 
 const toastSpy = vi.hoisted(() => ({
-  success: vi.fn(), error: vi.fn(), warning: vi.fn(), dismiss: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  dismiss: vi.fn(),
 }));
 vi.mock('@/lib/toast', () => ({ toast: toastSpy }));
 
@@ -126,47 +162,64 @@ const LINKED_LINE: OrderInquiryWorklistRow = {
   links: [{ kind: 'po', document: 'PO-1', po_id: 'po-1', qty: '10' }],
 } as unknown as OrderInquiryWorklistRow;
 
-vi.mock('../../../_shared/services/orderInquiryService', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../../_shared/services/orderInquiryService')>();
-  return {
-    ...actual,
-    getOrderInquiryHeader: vi.fn(async () => HEADER),
-    getOrderInquiryHeaderLines: vi.fn(async () => [LINKED_LINE]),
-    getOrderInquiryHeaderRelatedDocuments: vi.fn(async () => ({
-      purchase_orders: [],
-      spos: [],
-    })),
-    listOrderInquiryHeaders: vi.fn(async () => ({ data: [], total: 0, page: 1, limit: 25 })),
-    exportOrderInquiryXlsx: (...args: unknown[]) =>
-      exportOrderInquiryXlsxSpy(...(args as [string])),
-    acknowledgeOrderInquiryRowsByFilter: (...args: unknown[]) =>
-      acknowledgeFilterSpy(...(args as [unknown])),
-    acknowledgeOrderInquiryRows: (...args: unknown[]) =>
-      acknowledgeRowsSpy(...(args as [unknown])),
-    autoPlaceOrderInquiryRows: (...args: unknown[]) => autoPlaceSpy(...(args as [unknown])),
-    unacknowledgeOrderInquiryRows: (...args: unknown[]) =>
-      unacknowledgeSpy(...(args as [unknown])),
-  };
-});
+vi.mock(
+  '../../../_shared/services/orderInquiryService',
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import('../../../_shared/services/orderInquiryService')
+      >();
+    return {
+      ...actual,
+      getOrderInquiryHeader: vi.fn(async () => HEADER),
+      getOrderInquiryHeaderLines: vi.fn(async () => [LINKED_LINE]),
+      getOrderInquiryHeaderRelatedDocuments: vi.fn(async () => ({
+        purchase_orders: [],
+        spos: [],
+      })),
+      listOrderInquiryHeaders: vi.fn(async () => ({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 25,
+      })),
+      exportOrderInquiryXlsx: (...args: unknown[]) =>
+        exportOrderInquiryXlsxSpy(...(args as [string])),
+      acknowledgeOrderInquiryRowsByFilter: (...args: unknown[]) =>
+        acknowledgeFilterSpy(...(args as [unknown])),
+      acknowledgeOrderInquiryRows: (...args: unknown[]) =>
+        acknowledgeRowsSpy(...(args as [unknown])),
+      autoPlaceOrderInquiryRows: (...args: unknown[]) =>
+        autoPlaceSpy(...(args as [unknown])),
+      unacknowledgeOrderInquiryRows: (...args: unknown[]) =>
+        unacknowledgeSpy(...(args as [unknown])),
+    };
+  },
+);
 
 // UL: the deferred Unlink parks a real pending action through this service - mocked so
 // the countdown `useDeferredBulkAction` builds is exercised for real, with a window long
 // enough (10s) that a synchronous test never sees it lapse.
-const createPendingActionSpy = vi.fn(async ({ entityId }: { entityId: string }) => ({
-  id: `pa-${entityId}`,
-  action_key: 'order_inquiry_row.unlink',
-  entity_type: 'order_inquiry_row',
-  entity_id: entityId,
-  commit_at: new Date(Date.now() + 10_000).toISOString(),
-  window_seconds: 10,
-}));
+const createPendingActionSpy = vi.fn(
+  async ({ entityId }: { entityId: string }) => ({
+    id: `pa-${entityId}`,
+    action_key: 'order_inquiry_row.unlink',
+    entity_type: 'order_inquiry_row',
+    entity_id: entityId,
+    commit_at: new Date(Date.now() + 10_000).toISOString(),
+    window_seconds: 10,
+  }),
+);
 const cancelPendingActionSpy = vi.fn(async () => undefined);
 vi.mock('@/services/pendingActionService', () => ({
   createPendingAction: (...args: unknown[]) =>
     createPendingActionSpy(...(args as [{ entityId: string }])),
-  cancelPendingAction: (...args: unknown[]) => cancelPendingActionSpy(...(args as [string])),
-  getCurrentPendingAction: vi.fn(async () => ({ pending: null, last_outcome: null })),
+  cancelPendingAction: (...args: unknown[]) =>
+    cancelPendingActionSpy(...(args as [string])),
+  getCurrentPendingAction: vi.fn(async () => ({
+    pending: null,
+    last_outcome: null,
+  })),
 }));
 
 import { pendingEntityStore } from '@/lib/pending-entity-store';
@@ -176,7 +229,8 @@ import {
 } from '../../../_shared/services/orderInquiryService';
 import { OrderInquiryDetail } from './OrderInquiryDetail';
 
-const mockGetOrderInquiryHeader = getOrderInquiryHeader as unknown as ReturnType<typeof vi.fn>;
+const mockGetOrderInquiryHeader =
+  getOrderInquiryHeader as unknown as ReturnType<typeof vi.fn>;
 
 function renderDetail(id: string) {
   const client = new QueryClient({
@@ -212,12 +266,16 @@ afterEach(() => {
 describe('Confirm / Auto link never widen without a real page id (S1)', () => {
   it('with nothing ticked, Confirm sends exactly { filter: { inquiry_id: id } }', async () => {
     renderDetail('oi-1');
-    const confirmButton = await screen.findByRole('button', { name: 'Confirm' });
+    const confirmButton = await screen.findByRole('button', {
+      name: 'Confirm',
+    });
 
     fireEvent.click(confirmButton);
 
     await waitFor(() => expect(acknowledgeFilterSpy).toHaveBeenCalledTimes(1));
-    expect(acknowledgeFilterSpy.mock.calls[0][0]).toEqual({ inquiry_id: 'oi-1' });
+    expect(acknowledgeFilterSpy.mock.calls[0][0]).toEqual({
+      inquiry_id: 'oi-1',
+    });
     expect(acknowledgeRowsSpy).not.toHaveBeenCalled();
   });
 
@@ -230,7 +288,9 @@ describe('Confirm / Auto link never widen without a real page id (S1)', () => {
     // call with a widened/empty scope, whether by the button not rendering or by a
     // future change guarding the click. Both are asserted.
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /confirm/i })).not.toBeInTheDocument(),
+      expect(
+        screen.queryByRole('button', { name: /confirm/i }),
+      ).not.toBeInTheDocument(),
     );
     expect(acknowledgeFilterSpy).not.toHaveBeenCalled();
     expect(acknowledgeRowsSpy).not.toHaveBeenCalled();
@@ -240,13 +300,20 @@ describe('Confirm / Auto link never widen without a real page id (S1)', () => {
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Order inquiry options' }), {
-      button: 0,
-    });
-    fireEvent.click(await screen.findByRole('menuitem', { name: /auto link/i }));
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Order inquiry options' }),
+      {
+        button: 0,
+      },
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /auto link/i }),
+    );
 
     await waitFor(() => expect(autoPlaceSpy).toHaveBeenCalledTimes(1));
-    expect(autoPlaceSpy.mock.calls[0][0]).toEqual({ filter: { inquiry_id: 'oi-1' } });
+    expect(autoPlaceSpy.mock.calls[0][0]).toEqual({
+      filter: { inquiry_id: 'oi-1' },
+    });
   });
 });
 
@@ -255,9 +322,13 @@ describe('Confirm label / disabled follow the ticked scope (AC-DP-05, S5)', () =
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
 
-    fireEvent.click(await screen.findByLabelText(`Select ${LINKED_LINE.item_code}`));
+    fireEvent.click(
+      await screen.findByLabelText(`Select ${LINKED_LINE.item_code}`),
+    );
 
-    expect(await screen.findByRole('button', { name: 'Confirm (1)' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Confirm (1)' }),
+    ).toBeInTheDocument();
   });
 
   // `PLAN-oi-no-double-count-25sep.md` AC-ND-12 + G6 (owner ruling 26 Sep 2026): the
@@ -276,7 +347,12 @@ describe('Confirm label / disabled follow the ticked scope (AC-DP-05, S5)', () =
         ...over,
       }) as OrderInquiryWorklistRow;
     vi.mocked(getOrderInquiryHeaderLines).mockResolvedValueOnce([
-      lineRow({ id: 'row-used', state: 'placed', redirected_to_pool: true, ack_state: 'changed' }),
+      lineRow({
+        id: 'row-used',
+        state: 'placed',
+        redirected_to_pool: true,
+        ack_state: 'changed',
+      }),
       lineRow({ id: 'row-a', state: 'raised', ack_state: 'changed' }),
       lineRow({ id: 'row-b', state: 'raised', ack_state: 'awaiting' }),
       lineRow({ id: 'row-old', state: 'cancelled', ack_state: 'changed' }),
@@ -313,7 +389,9 @@ describe('Confirm label / disabled follow the ticked scope (AC-DP-05, S5)', () =
       acknowledged_at: '2026-09-26T11:20:00Z',
     } as OrderInquiryWorklistRow;
     vi.mocked(getOrderInquiryHeaderLines).mockResolvedValueOnce([rowAwaiting]);
-    vi.mocked(getOrderInquiryHeaderLines).mockResolvedValueOnce([rowAcknowledged]);
+    vi.mocked(getOrderInquiryHeaderLines).mockResolvedValueOnce([
+      rowAcknowledged,
+    ]);
 
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
@@ -334,7 +412,9 @@ describe('Confirm label / disabled follow the ticked scope (AC-DP-05, S5)', () =
     });
     renderDetail('oi-1');
 
-    const confirmButton = await screen.findByRole('button', { name: 'Confirm' });
+    const confirmButton = await screen.findByRole('button', {
+      name: 'Confirm',
+    });
     expect(confirmButton).toBeDisabled();
   });
 });
@@ -359,7 +439,12 @@ describe('Review S2: a line whose only waiting row is used confirms from the lin
   it('shape a: live rows confirmed, the used row changed - Confirm (1) sends both', async () => {
     vi.mocked(getOrderInquiryHeaderLines).mockResolvedValueOnce([
       lineRow({ id: 'row-live', state: 'placed', ack_state: 'acknowledged' }),
-      lineRow({ id: 'row-used', state: 'placed', redirected_to_pool: true, ack_state: 'changed' }),
+      lineRow({
+        id: 'row-used',
+        state: 'placed',
+        redirected_to_pool: true,
+        ack_state: 'changed',
+      }),
     ]);
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
@@ -376,7 +461,12 @@ describe('Review S2: a line whose only waiting row is used confirms from the lin
 
   it('shape b: a line with only a used row - it ticks, and Confirm (1) sends that row', async () => {
     vi.mocked(getOrderInquiryHeaderLines).mockResolvedValueOnce([
-      lineRow({ id: 'row-used', state: 'placed', redirected_to_pool: true, ack_state: 'changed' }),
+      lineRow({
+        id: 'row-used',
+        state: 'placed',
+        redirected_to_pool: true,
+        ack_state: 'changed',
+      }),
     ]);
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
@@ -385,23 +475,35 @@ describe('Review S2: a line whose only waiting row is used confirms from the lin
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm (1)' }));
 
     await waitFor(() => expect(acknowledgeRowsSpy).toHaveBeenCalledTimes(1));
-    expect((acknowledgeRowsSpy.mock.calls[0] as unknown[])[0]).toEqual(['row-used']);
+    expect((acknowledgeRowsSpy.mock.calls[0] as unknown[])[0]).toEqual([
+      'row-used',
+    ]);
     expect(acknowledgeFilterSpy).not.toHaveBeenCalled();
   });
 
   it('shape b: a ticked used-only line never widens Auto link to the whole OI', async () => {
     vi.mocked(getOrderInquiryHeaderLines).mockResolvedValueOnce([
-      lineRow({ id: 'row-used', state: 'placed', redirected_to_pool: true, ack_state: 'changed' }),
+      lineRow({
+        id: 'row-used',
+        state: 'placed',
+        redirected_to_pool: true,
+        ack_state: 'changed',
+      }),
     ]);
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
     fireEvent.click(await screen.findByLabelText('Select ZZT-USED'));
     await screen.findByRole('button', { name: 'Confirm (1)' });
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Order inquiry options' }), {
-      button: 0,
-    });
-    fireEvent.click(await screen.findByRole('menuitem', { name: /auto link/i }));
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Order inquiry options' }),
+      {
+        button: 0,
+      },
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /auto link/i }),
+    );
     expect(autoPlaceSpy).not.toHaveBeenCalled();
   });
 });
@@ -413,23 +515,55 @@ describe('Review S2: a line whose only waiting row is used confirms from the lin
 describe('Review S3: whole-OI Unconfirm sends only live acknowledged rows', () => {
   it('with nothing ticked, Unconfirm skips the cancelled and the used acknowledged rows', async () => {
     const lineRow = (over: Partial<OrderInquiryWorklistRow>) =>
-      ({ ...LINKED_LINE, verb: 'ORDER', links: [], ...over }) as OrderInquiryWorklistRow;
+      ({
+        ...LINKED_LINE,
+        verb: 'ORDER',
+        links: [],
+        ...over,
+      }) as OrderInquiryWorklistRow;
     vi.mocked(getOrderInquiryHeaderLines).mockResolvedValueOnce([
-      lineRow({ id: 'row-live', item_code: 'ZZT-A', core_line_id: 'cl-a', line_no: 1, ack_state: 'acknowledged' }),
-      lineRow({ id: 'row-old', item_code: 'ZZT-A', core_line_id: 'cl-a', line_no: 1, state: 'cancelled', ack_state: 'acknowledged' }),
-      lineRow({ id: 'row-used', item_code: 'ZZT-B', core_line_id: 'cl-b', line_no: 2, redirected_to_pool: true, ack_state: 'acknowledged' }),
+      lineRow({
+        id: 'row-live',
+        item_code: 'ZZT-A',
+        core_line_id: 'cl-a',
+        line_no: 1,
+        ack_state: 'acknowledged',
+      }),
+      lineRow({
+        id: 'row-old',
+        item_code: 'ZZT-A',
+        core_line_id: 'cl-a',
+        line_no: 1,
+        state: 'cancelled',
+        ack_state: 'acknowledged',
+      }),
+      lineRow({
+        id: 'row-used',
+        item_code: 'ZZT-B',
+        core_line_id: 'cl-b',
+        line_no: 2,
+        redirected_to_pool: true,
+        ack_state: 'acknowledged',
+      }),
     ]);
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
     await screen.findByLabelText('Select ZZT-A');
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Order inquiry options' }), {
-      button: 0,
-    });
-    fireEvent.click(await screen.findByRole('menuitem', { name: /unconfirm/i }));
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Order inquiry options' }),
+      {
+        button: 0,
+      },
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /unconfirm/i }),
+    );
 
     await waitFor(() => expect(unacknowledgeSpy).toHaveBeenCalledTimes(1));
-    expect((unacknowledgeSpy.mock.calls[0] as unknown[])[0]).toEqual(['row-live']);
+    expect((unacknowledgeSpy.mock.calls[0] as unknown[])[0]).toEqual([
+      'row-live',
+    ]);
   });
 });
 
@@ -438,11 +572,18 @@ describe('Unlink selected is a server-deferred pending action, not a confirm dia
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
 
-    fireEvent.click(await screen.findByLabelText(`Select ${LINKED_LINE.item_code}`));
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Order inquiry options' }), {
-      button: 0,
-    });
-    fireEvent.click(await screen.findByRole('menuitem', { name: /unlink selected/i }));
+    fireEvent.click(
+      await screen.findByLabelText(`Select ${LINKED_LINE.item_code}`),
+    );
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Order inquiry options' }),
+      {
+        button: 0,
+      },
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /unlink selected/i }),
+    );
 
     // Target behaviour: no confirmation dialog at all, a deferred countdown instead.
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
@@ -453,19 +594,30 @@ describe('Unlink selected is a server-deferred pending action, not a confirm dia
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
 
-    const checkbox = await screen.findByLabelText(`Select ${LINKED_LINE.item_code}`);
+    const checkbox = await screen.findByLabelText(
+      `Select ${LINKED_LINE.item_code}`,
+    );
     fireEvent.click(checkbox);
     expect(checkbox).toHaveAttribute('aria-checked', 'true');
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Order inquiry options' }), {
-      button: 0,
-    });
-    fireEvent.click(await screen.findByRole('menuitem', { name: /unlink selected/i }));
-    await waitFor(() => expect(createPendingActionSpy).toHaveBeenCalledTimes(1));
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Order inquiry options' }),
+      {
+        button: 0,
+      },
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /unlink selected/i }),
+    );
+    await waitFor(() =>
+      expect(createPendingActionSpy).toHaveBeenCalledTimes(1),
+    );
 
     fireEvent.click(await screen.findByRole('button', { name: /cancel/i }));
 
-    await waitFor(() => expect(cancelPendingActionSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(cancelPendingActionSpy).toHaveBeenCalledTimes(1),
+    );
     // The selection is untouched by Cancel - only a commit clears it.
     expect(checkbox).toHaveAttribute('aria-checked', 'true');
   });
@@ -473,9 +625,12 @@ describe('Unlink selected is a server-deferred pending action, not a confirm dia
 
 describe('Export Excel goes async, tied to this OI (Lane B, AC-B1/AC-B5)', () => {
   function openGear() {
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Order inquiry options' }), {
-      button: 0,
-    });
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Order inquiry options' }),
+      {
+        button: 0,
+      },
+    );
   }
 
   it('Export Excel calls exportOrderInquiryXlsx(id) and toasts My Downloads, never saveBlobAs', async () => {
@@ -483,9 +638,13 @@ describe('Export Excel goes async, tied to this OI (Lane B, AC-B1/AC-B5)', () =>
     await screen.findByRole('button', { name: 'Confirm' });
 
     openGear();
-    fireEvent.click(await screen.findByRole('menuitem', { name: /export excel/i }));
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /export excel/i }),
+    );
 
-    await waitFor(() => expect(exportOrderInquiryXlsxSpy).toHaveBeenCalledWith('oi-1'));
+    await waitFor(() =>
+      expect(exportOrderInquiryXlsxSpy).toHaveBeenCalledWith('oi-1'),
+    );
     await waitFor(() => expect(toastSpy.success).toHaveBeenCalled());
     expect(toastSpy.success.mock.calls[0][0]).toMatch(/my downloads/i);
     expect(saveBlobAsSpy).not.toHaveBeenCalled();
@@ -494,13 +653,18 @@ describe('Export Excel goes async, tied to this OI (Lane B, AC-B1/AC-B5)', () =>
   it('disables Export Excel while the export is pending', async () => {
     let resolveExport: (v: unknown) => void = () => {};
     exportOrderInquiryXlsxSpy.mockImplementationOnce(
-      () => new Promise((resolve) => { resolveExport = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          resolveExport = resolve;
+        }),
     );
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
 
     openGear();
-    fireEvent.click(await screen.findByRole('menuitem', { name: /export excel/i }));
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /export excel/i }),
+    );
 
     await waitFor(() => expect(exportOrderInquiryXlsxSpy).toHaveBeenCalled());
     openGear();
@@ -508,18 +672,25 @@ describe('Export Excel goes async, tied to this OI (Lane B, AC-B1/AC-B5)', () =>
     expect(item).toHaveAttribute('aria-disabled', 'true');
 
     resolveExport({
-      id: 'dl-1', kind: 'order_inquiry_xlsx', status: 'pending', filename: 'x.xlsx',
+      id: 'dl-1',
+      kind: 'order_inquiry_xlsx',
+      status: 'pending',
+      filename: 'x.xlsx',
     });
     await waitFor(() => expect(toastSpy.success).toHaveBeenCalled());
   });
 
   it('shows an error toast when the export fails to start', async () => {
-    exportOrderInquiryXlsxSpy.mockRejectedValueOnce(new Error('An export is already queued'));
+    exportOrderInquiryXlsxSpy.mockRejectedValueOnce(
+      new Error('An export is already queued'),
+    );
     renderDetail('oi-1');
     await screen.findByRole('button', { name: 'Confirm' });
 
     openGear();
-    fireEvent.click(await screen.findByRole('menuitem', { name: /export excel/i }));
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /export excel/i }),
+    );
 
     await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
     expect(toastSpy.error.mock.calls[0][0]).toMatch(/already queued/i);
@@ -530,13 +701,43 @@ describe('Export Excel goes async, tied to this OI (Lane B, AC-B1/AC-B5)', () =>
     await screen.findByRole('button', { name: 'Confirm' });
 
     openGear();
-    fireEvent.click(await screen.findByRole('menuitem', { name: /download history/i }));
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /download history/i }),
+    );
 
     await waitFor(() =>
       expect(entityDownloadsButtonSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ entityType: 'order_inquiry', entityId: 'oi-1', open: true }),
+        expect.objectContaining({
+          entityType: 'order_inquiry',
+          entityId: 'oi-1',
+          open: true,
+        }),
       ),
     );
-    expect(await screen.findByTestId('entity-downloads-dialog')).toBeInTheDocument();
+    expect(
+      await screen.findByTestId('entity-downloads-dialog'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('Send to purchasing from the detail page (OI-RESEND-PURCHASING)', () => {
+  it('the options menu opens the preview for this one order inquiry', async () => {
+    renderDetail('oi-1');
+    await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Order inquiry options' }),
+      {
+        button: 0,
+      },
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: 'Send to purchasing' }),
+    );
+    await waitFor(() =>
+      expect(previewHandoverResendSpy).toHaveBeenCalledWith(['oi-1']),
+    );
+    expect(
+      await screen.findByRole('dialog', { name: 'Send to purchasing' }),
+    ).toBeInTheDocument();
   });
 });

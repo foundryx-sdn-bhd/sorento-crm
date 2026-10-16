@@ -1090,6 +1090,29 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
     ]);
   });
 
+  it('owner 14 Oct: a Borrow off the line\'s own location is never capped, saved short', () => {
+    const own = {
+      source: 'other_location' as const,
+      warehouse_code: 'BRW-BB',
+      warehouse_id: 'wh-own',
+      free_qty: '0',
+      donor_impact: { free_before: '0', free_after_full_borrow: '0', committed_qty: '0' },
+      donor_so_number: null,
+      donor_core_line_id: null,
+    };
+    const result = decideComposition(
+      decideRow({ qty: '2', borrow_candidates: [own] }),
+      'borrow_other',
+      'BRW-BB',
+    );
+
+    expect(result.skip).toBeUndefined();
+    expect(result.borrow).toEqual([
+      expect.objectContaining({ warehouse_id: 'wh-own', warehouse_code: 'BRW-BB', qty: '2' }),
+    ]);
+    expect(result.warning).toBe('only 0 free at BRW-BB');
+  });
+
   it('AC-9: skips a location short of the whole line', () => {
     const row = decideRow({
       borrow_candidates: [

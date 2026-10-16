@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.projects._common import acting_company_id, permission_slugs
 from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
-from app.schemas.common import ListResponse
+from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.schemas.projects import (
     PriceFloorEffectiveResponse,
     PriceFloorRuleResponse,
@@ -48,6 +48,7 @@ from app.schemas.projects import (
     QuotationRecomputeResponse,
     SeriesProductPricingUpdate,
     SeriesProductRowResponse,
+    SeriesSetRowResponse,
 )
 from app.services import project_pricing_service as pricing
 from app.services.error_handler import AppException
@@ -67,10 +68,14 @@ CONFIG_VIEW = "projects.types.view"
 CONFIG_EDIT = "projects.types.edit"
 
 
-def _envelope(data: List[dict]):
+def _envelope(data: List[dict], *, total: Optional[int] = None, page: int = 1, limit: Optional[int] = None):
     return {
         "data": data,
-        "pagination": {"total": len(data), "page": 1, "limit": max(len(data), 1)},
+        "pagination": {
+            "total": len(data) if total is None else total,
+            "page": page,
+            "limit": limit if limit is not None else max(len(data), 1),
+        },
         "empty": not data,
     }
 
@@ -274,6 +279,7 @@ def _quotation_for_edit(db: Session, quotation_id: str, current_user: dict):
 async def judge_draft_line(
     quotation_id: str,
     product_id: Optional[str] = Query(None),
+    product_set_id: Optional[str] = Query(None, pattern=UUID_PATTERN),
     unit_price: Optional[str] = Query(None),
     _user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),
@@ -309,6 +315,46 @@ async def judge_draft_line(
                 status_code=404, message="Quotation not found.", code="quotation_not_found"
             )
 
+        price: Optional[Decimal] = None
+        if unit_price:
+            try:
+                price = Decimal(unit_price)
+            except InvalidOperation:
+                price = None
+
+        if product_set_id:
+            # A set draft: the same two rules the save runs, on the set's own series row and
+            # the company default. A set the company scope cannot see judges as not in series.
+            from app.models.product_set import ProductSet
+            from app.services import product_set_service
+
+            product_set = (
+                db.query(ProductSet).filter(ProductSet.id == product_set_id).first()
+            )
+            in_series = product_set is not None and pricing.is_set_in_series(
+                db, quotation.series_id, product_set.id
+            )
+            if product_set is None and not quotation.series_id:
+                in_series = True
+            floor = (
+                pricing.resolve_set_floor(
+                    db,
+                    company_id=acting_company_id(db),
+                    product_set=product_set,
+                    list_price=product_set_service.resolve_set_price(product_set).resolved,
+                    series_id=quotation.series_id,
+                )
+                if product_set is not None
+                else None
+            )
+            below = bool(floor and price is not None and price < floor.value)
+            return {
+                "is_non_standard": not in_series,
+                "is_below_floor": below,
+                "floor_value": floor.value if floor else None,
+                "floor_level": floor.level if floor else None,
+            }
+
         product = (
             db.query(Product).filter(Product.id == product_id).first()
             if product_id
@@ -319,13 +365,6 @@ async def judge_draft_line(
         in_series = pricing.is_in_series(
             db, series_id=quotation.series_id, product=product
         )
-
-        price: Optional[Decimal] = None
-        if unit_price:
-            try:
-                price = Decimal(unit_price)
-            except InvalidOperation:
-                price = None
 
         floor = pricing.resolve_floor(
             db,
@@ -727,9 +766,11 @@ async def create_series(
 
         body = payload.model_dump(exclude_unset=True)
         category_ids = body.pop("category_ids", []) or []
+        brand_ids = body.pop("brand_ids", []) or []
         series = ProjectSeries(company_id=acting_company_id(db), **body)
         db.add(series)
         db.flush()
+        pricing.set_series_brands(db, series=series, brand_ids=brand_ids)
         pricing.set_series_categories(db, series=series, category_ids=category_ids)
         db.commit()
         db.refresh(series)
@@ -760,8 +801,11 @@ async def update_series(
 
         body = payload.model_dump(exclude_unset=True)
         category_ids = body.pop("category_ids", None)
+        brand_ids = body.pop("brand_ids", None)
         for field, value in body.items():
             setattr(series, field, value)
+        if brand_ids is not None:
+            pricing.set_series_brands(db, series=series, brand_ids=brand_ids)
         if category_ids is not None:
             pricing.set_series_categories(db, series=series, category_ids=category_ids)
         db.commit()
@@ -832,10 +876,14 @@ def _series_or_404(db: Session, series_id: str):
 )
 async def list_series_product_rows(
     series_id: str,
+    page: int = Query(1, ge=1, le=1000000),
+    limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
+    query: Optional[str] = Query(None, max_length=200),
+    priced: bool = Query(False),
     _user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),
 ):
-    """The series' products with their price, percentage and derived floor (T2).
+    """One page of the series' products with their price, percentage and derived floor (T2).
 
     `/rows` rather than replacing the POST on `/products`: that path already means "load a
     list of codes onto this series" and quietly giving the same path a second meaning by
@@ -844,7 +892,10 @@ async def list_series_product_rows(
     try:
         validate_uuid_path(series_id, resource="Series")
         _series_or_404(db, series_id)
-        return _envelope(pricing.series_product_rows(db, series_id))
+        rows, total = pricing.series_product_rows(
+            db, series_id, page=page, limit=limit, query=query, priced_only=priced
+        )
+        return _envelope(rows, total=total, page=page, limit=limit)
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
 
@@ -899,6 +950,82 @@ async def remove_series_product(
                 status_code=404,
                 message="That product is not in this series.",
                 code="series_product_not_found",
+            )
+        db.commit()
+        return Response(status_code=204)
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.get(
+    "/config/series/{series_id}/sets/rows",
+    response_model=ListResponse[SeriesSetRowResponse],
+)
+async def list_series_set_rows(
+    series_id: str,
+    _user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    """The series' product sets with their price, percentage and derived floor."""
+    try:
+        validate_uuid_path(series_id, resource="Series")
+        _series_or_404(db, series_id)
+        return _envelope(pricing.series_set_rows(db, series_id))
+    except Exception as exc:
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.patch(
+    "/config/series/{series_id}/sets/{product_set_id}",
+    response_model=SeriesSetRowResponse,
+)
+async def update_series_set_pricing(
+    series_id: str,
+    product_set_id: str,
+    payload: SeriesProductPricingUpdate,
+    _user: dict = Depends(require_permission(CONFIG_EDIT)),
+    db: Session = Depends(get_db),
+):
+    """Add a set to the series or set its price and percentage (an upsert)."""
+    try:
+        validate_uuid_path(series_id, resource="Series")
+        validate_uuid_path(product_set_id, resource="Product set")
+        series = _series_or_404(db, series_id)
+        row = pricing.set_series_set_pricing(
+            db,
+            series=series,
+            product_set_id=product_set_id,
+            selling_price=payload.selling_price,
+            max_discount_pct=payload.max_discount_pct,
+        )
+        db.commit()
+        return row
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+@router.delete(
+    "/config/series/{series_id}/sets/{product_set_id}",
+    status_code=204,
+)
+async def remove_series_set(
+    series_id: str,
+    product_set_id: str,
+    _user: dict = Depends(require_permission(CONFIG_EDIT)),
+    db: Session = Depends(get_db),
+):
+    """Take one set off the series."""
+    try:
+        validate_uuid_path(series_id, resource="Series")
+        validate_uuid_path(product_set_id, resource="Product set")
+        series = _series_or_404(db, series_id)
+        if not pricing.remove_series_set(db, series=series, product_set_id=product_set_id):
+            raise AppException(
+                status_code=404,
+                message="That set is not in this series.",
+                code="series_set_not_found",
             )
         db.commit()
         return Response(status_code=204)
@@ -1062,6 +1189,7 @@ def _serialize_series(
     from app.models.projects import (
         ProjectQuotation,
         ProjectSeries,
+        ProjectSeriesBrand,
         ProjectSeriesCategory,
         ProjectSeriesProduct,
     )
@@ -1109,15 +1237,18 @@ def _serialize_series(
     for link_series_id, product_code in product_links:
         nominated_products.setdefault(link_series_id, []).append(product_code)
 
-    brand_ids = {row.brand_id for row in rows if row.brand_id}
-    brand_names = {}
-    if brand_ids:
-        from app.models.product import Brand
+    # Picked brands, in brand-name order, for every series on the page in one query.
+    from app.models.product import Brand
 
-        brand_names = {
-            row.id: row.brand_name
-            for row in db.query(Brand).filter(Brand.id.in_(brand_ids)).all()
-        }
+    picked_brands: dict = {}
+    for link_series_id, brand_id, brand_name in (
+        db.query(ProjectSeriesBrand.series_id, Brand.id, Brand.brand_name)
+        .join(Brand, Brand.id == ProjectSeriesBrand.brand_id)
+        .filter(ProjectSeriesBrand.series_id.in_(ids))
+        .order_by(Brand.brand_name.asc(), Brand.id.asc())
+        .all()
+    ):
+        picked_brands.setdefault(link_series_id, []).append((brand_id, brand_name))
 
     from sqlalchemy import func
 
@@ -1136,8 +1267,8 @@ def _serialize_series(
             {
                 "id": row.id,
                 "name": row.name,
-                "brand_id": row.brand_id,
-                "brand_name": brand_names.get(row.brand_id or ""),
+                "brand_ids": [b[0] for b in picked_brands.get(row.id, [])],
+                "brand_names": [b[1] for b in picked_brands.get(row.id, [])],
                 "description": row.description,
                 "is_active": row.is_active,
                 "category_ids": mine,

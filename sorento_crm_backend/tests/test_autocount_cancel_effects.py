@@ -4,8 +4,9 @@ Plan: documentation/plans/autocount/PLAN-autocount-cancel-crm-13oct.md (R4-R6, o
 
 - The SO push (canonical `sales_orders`) keeps a fully Cancel-SO'd line `cancelled` and links a
   cancel line that was waiting for that SO.
-- A full cancel retires the line's OI rows through the #1530 path; a partial one raises the
-  AutoCount planning change for CS (#1599 flow), never a silent trim.
+- A full cancel stops at the SO (owner ruling 14 Oct, CANCEL-STOP-AT-SO; real OI rows in
+  `tests/test_autocount_cancel_stops_at_so.py`): the #1530 retire path is never called; a
+  partial one raises the AutoCount planning change for CS (#1599 flow), never a silent trim.
 - Readers: planned qty and the delivered figure leave the cancelled part out; outstanding
   (ordered - TransferedQty) does not change. The chatbot reader's net-of-cancel check lives in
   `tests/chatbot/test_so_status_net_of_cancel.py` (the chatbot import boundary, AC-002).
@@ -80,7 +81,7 @@ def test_so_push_keeps_a_fully_cancelled_line_cancelled(env, monkeypatch):
     _push_so(env, "ZZ-CX-SO1", ordered=10, delivered=10)
     _push_xs(env, "ZZ-CX-SO1", 10)
     assert _line(env, "ZZ-CX-SO1").line_status == "cancelled"
-    assert len(retired) == 1
+    assert retired == [] and flagged == []  # CANCEL-STOP-AT-SO
     retired.clear(), flagged.clear(), diffs.clear()
     # AutoCount pushes the SO again (TransferedQty 10 of 10): the line must not read closed.
     _push_so(env, "ZZ-CX-SO1", ordered=10, delivered=10)
@@ -91,9 +92,10 @@ def test_so_push_keeps_a_fully_cancelled_line_cancelled(env, monkeypatch):
     assert all(changes == [] for changes in diffs)
 
 
-def test_an_so_push_that_lowers_ordered_onto_the_cancel_retires_the_rows(env, monkeypatch):
+def test_an_so_push_that_lowers_ordered_onto_the_cancel_stops_at_the_so(env, monkeypatch):
     """Review should-fix 1: 4 of 10 cancelled, then AutoCount lowers ordered to 4: the line
-    is now fully cancelled and its OI rows are retired like any full cancel."""
+    is now fully cancelled, and like any full cancel it stops at the SO (CANCEL-STOP-AT-SO):
+    its OI rows are not retired."""
     import app.services.project_order_inquiry_service as oi
 
     retired = []
@@ -106,7 +108,7 @@ def test_an_so_push_that_lowers_ordered_onto_the_cancel_retires_the_rows(env, mo
     _push_so(env, "ZZ-CX-SO8", ordered=4, delivered=4)
     line = _line(env, "ZZ-CX-SO8")
     assert line.line_status == "cancelled"
-    assert retired == [[(str(line.id), "ZZXS-950001")]]
+    assert retired == []
 
 
 def test_the_so_push_planning_diff_reads_the_planned_basis(env, monkeypatch):
@@ -144,7 +146,8 @@ def test_so_push_raising_ordered_recaps_and_reopens(env):
 
 
 # ======================================================================= OI reactions
-def test_full_cancel_retires_the_oi_rows_by_the_board_cancel_path(env, monkeypatch):
+def test_full_cancel_never_calls_the_board_cancel_retire_path(env, monkeypatch):
+    """CANCEL-STOP-AT-SO (owner, 14 Oct): reverses the original R5."""
     from app.services.project_order_inquiry_service import ProjectOrderInquiryService
 
     calls = []
@@ -154,11 +157,10 @@ def test_full_cancel_retires_the_oi_rows_by_the_board_cancel_path(env, monkeypat
     )
     _push_so(env, "ZZ-CX-SO4", ordered=36, delivered=36)
     _push_xs(env, "ZZ-CX-SO4", 36)
-    line = _line(env, "ZZ-CX-SO4")
-    assert calls == [[(str(line.id), "ZZXS-950001")]]
-    # a second sync of the same cancel retires nothing new
+    assert _line(env, "ZZ-CX-SO4").line_status == "cancelled"
+    assert calls == []
     _push_xs(env, "ZZ-CX-SO4", 36, modified="2026-10-02T10:00:00")
-    assert len(calls) == 1
+    assert calls == []
 
 
 def test_partial_cancel_raises_a_planning_change_not_a_trim(env, monkeypatch):
@@ -217,8 +219,8 @@ def test_so_detail_shows_delivered_without_the_cancel(env):
 def test_a_full_cancel_after_the_push_raised_ordered_still_cancels(env, monkeypatch):
     """Review N1: XS 10 + XS 2 on 10 ordered (capped, cancelled), then AutoCount raises the line
     to 12 ordered / 12 transferred: the push reopens it, the relink derives 12 of 12 and the
-    line must read cancelled again, not stay closed. N1b: that re-cancel is not a NEW one, so
-    the OI rows are retired and flagged once over the whole story, never again."""
+    line must read cancelled again, not stay closed. CANCEL-STOP-AT-SO: the OI rows are never
+    retired or flagged over the whole story."""
     import app.services.project_order_inquiry_service as oi
 
     retired, flagged = [], []
@@ -233,8 +235,7 @@ def test_a_full_cancel_after_the_push_raised_ordered_still_cancels(env, monkeypa
     _push_so(env, "ZZ-CX-SN1", ordered=12, delivered=12)
     line = _line(env, "ZZ-CX-SN1")
     assert (line.qty_cancelled, line.line_status) == (Decimal("12"), "cancelled")
-    assert len(retired) == 1
-    assert flagged == [[str(line.id)]]
+    assert retired == [] and flagged == []
 
 
 def test_the_partial_cancel_change_reads_the_cs_required_basis(env, monkeypatch):
@@ -345,3 +346,50 @@ def test_so_detail_lists_the_cancel_documents_oldest_first(env):
     so_id = str(_line(env, "ZZ-CX-SQ3").sales_order_id)
     line = SalesOrderService(env.db).get(so_id)["lines"][0]
     assert [c["doc_no"] for c in line["cancels"]] == ["ZZXS-950002", "ZZXS-950009"]
+
+
+# ======================================================================= CONSIGN-PLAN
+def test_one_batch_moving_cancelled_and_returned_on_a_line_raises_one_change(env, monkeypatch):
+    """CONSIGN-PLAN S4: two plan moves for one line (cancelled 0->2, returned 0->3) are merged
+    into one: first `was`, last `now`, so the diff pairs them as ONE change 10 -> 5."""
+    from app.services import planning_change_service
+    from app.services.autocount_cancel_ingest_service import _raise_planning_change
+
+    seen = []
+    monkeypatch.setattr(planning_change_service, "build_batch",
+                        lambda db, diff, **kw: seen.append(diff) or None)
+    _push_so(env, "ZZ-CX-SO20", ordered=10, delivered=0)
+    line_id = str(_line(env, "ZZ-CX-SO20").id)
+    seen.clear()
+    _raise_planning_change(
+        env.db,
+        [(line_id, Decimal("10"), Decimal("8")), (line_id, Decimal("8"), Decimal("5"))],
+        actor=None,
+    )
+    changes = [c for d in seen for c in d.changes if c.kind != "unchanged"]
+    assert len(changes) == 1, changes
+    assert (changes[0].before.qty, changes[0].after.qty) == (10.0, 5.0)
+    assert changes[0].qty_delta == -5.0
+
+
+def test_a_partial_cancel_on_a_line_with_returns_moves_the_plan_net_of_returned(env, monkeypatch):
+    """CONSIGN-PLAN S5(b): ordered 10, 3 returned, 4 cancelled: the plan moves 7 -> 3."""
+    from app.services import planning_change_service
+
+    seen = []
+    monkeypatch.setattr(planning_change_service, "build_batch",
+                        lambda db, diff, **kw: seen.append(diff) or None)
+    import app.services.autocount_cancel_ingest_service as cancel_ingest
+
+    # No return document backs the 3 here, so the returns recompute (which would zero it) is
+    # held still: this test is about the cancel's own basis only.
+    monkeypatch.setattr(cancel_ingest, "recompute_returned", lambda *a, **k: [])
+    _push_so(env, "ZZ-CX-SO21", ordered=10, delivered=4)
+    row = _line(env, "ZZ-CX-SO21")
+    row.qty_returned = Decimal("3")
+    env.db.commit()
+    seen.clear()
+    _push_xs(env, "ZZ-CX-SO21", 4)
+    changes = [c for d in seen for c in d.changes if c.kind != "unchanged"]
+    assert len(changes) == 1, changes
+    assert (changes[0].before.qty, changes[0].after.qty) == (7.0, 3.0)

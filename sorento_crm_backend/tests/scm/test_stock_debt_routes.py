@@ -52,6 +52,11 @@ def _months_ahead(count: int) -> date:
     return date(TODAY.year + month // 12, month % 12 + 1, 15)
 
 
+def _month_end(count: int) -> date:
+    """The last day of the month `count` months out."""
+    return _months_ahead(count + 1).replace(day=1) - timedelta(days=1)
+
+
 def _client(scm_app, *, permission: str | None = VIEW):
     app, db, gcu, gcuak = scm_app
     ensure_reference_data(db)
@@ -2344,60 +2349,63 @@ def test_cutoff_drops_demand_due_after_it(scm_app):
     inside = _product(db, f"{marker}-INSIDE")
     outside = _product(db, f"{marker}-OUTSIDE")
     _demand(
-        db, inside, warehouse, qty=10, required_date=date(2026, 11, 10),
+        db, inside, warehouse, qty=10, required_date=_months_ahead(1).replace(day=10),
         so_number=f"{marker}-SO1",
     )
     _demand(
-        db, outside, warehouse, qty=10, required_date=date(2026, 12, 5),
+        db, outside, warehouse, qty=10, required_date=_months_ahead(2).replace(day=5),
         so_number=f"{marker}-SO2",
     )
     # AC-1 (reviewer round): supply landing well past date_to is still supply (AC-3) and
     # would otherwise stretch a row's own `months` past it - the axis cap must clamp the
     # COLUMN, not merely rely on there being no later demand to draw one out.
-    _spo(db, inside, warehouse, qty=5, arrives=date(2027, 1, 15))
+    _spo(db, inside, warehouse, qty=5, arrives=_months_ahead(3))
     db.flush()
 
     with TestClient(app) as c:
         body = c.get(
-            BASE, params={"query": marker, "date_to": "2026-11-30", "only_debt": True}
+            BASE,
+            params={"query": marker, "date_to": _month_end(1).isoformat(), "only_debt": True},
         ).json()
 
     codes = [row["product_code"] for row in body["data"]]
     assert inside.product_code in codes
     assert outside.product_code not in codes
-    assert body["months"][-1] == "2026-11"
+    assert body["months"][-1] == month_key(_months_ahead(1))
 
 
 def test_date_from_drops_demand_due_before_it(scm_app):
     """AC-1b/R14: `date_from` drops every line due BEFORE it, the mirror of `date_to`. A
-    line due 20 Oct 2026 is dropped under `date_from=2026-11-01`, and the axis (a property
-    of the whole filtered set) STARTS at `date_from`'s month rather than the current
-    month - `max(current month, date_from's month)`, so a range that starts in the future
-    does not draw an empty run of months nothing in it needs."""
+    line due this month is dropped under a `date_from` on the 1st of next month, and the
+    axis (a property of the whole filtered set) STARTS at `date_from`'s month rather than
+    the current month - `max(current month, date_from's month)`, so a range that starts in
+    the future does not draw an empty run of months nothing in it needs."""
     app, db = _client(scm_app)
     marker = f"ZZTSD{_u()[:6]}".upper()
     warehouse = _warehouse(db, f"ZZTBRW{_u()[:4]}-BB")
     early = _product(db, f"{marker}-EARLY")
     late = _product(db, f"{marker}-LATE")
     _demand(
-        db, early, warehouse, qty=10, required_date=date(2026, 10, 20),
+        db, early, warehouse, qty=10, required_date=_months_ahead(0).replace(day=20),
         so_number=f"{marker}-SO1",
     )
     _demand(
-        db, late, warehouse, qty=10, required_date=date(2026, 11, 10),
+        db, late, warehouse, qty=10, required_date=_months_ahead(1).replace(day=10),
         so_number=f"{marker}-SO2",
     )
     db.flush()
+    date_from = _months_ahead(1).replace(day=1)
 
     with TestClient(app) as c:
         body = c.get(
-            BASE, params={"query": marker, "date_from": "2026-11-01", "only_debt": True}
+            BASE,
+            params={"query": marker, "date_from": date_from.isoformat(), "only_debt": True},
         ).json()
 
     codes = [row["product_code"] for row in body["data"]]
     assert early.product_code not in codes
     assert late.product_code in codes
-    assert body["months"][0] == "2026-11"
+    assert body["months"][0] == month_key(date_from)
 
 
 def test_cutoff_keeps_undated_and_unlocated(scm_app):
@@ -2435,33 +2443,35 @@ def test_cutoff_keeps_undated_and_unlocated(scm_app):
 
 
 def test_cutoff_supply_after_due_still_covers(scm_app):
-    """AC-3/A2/R14: a line due 10 Nov and an SPO landing 20 Nov. R37 books the shortfall in
-    the line's OWN month, and R45 (30 Sep 2026) leaves the unlinked SPO free in its own
-    month (`test_supply_arriving_after_the_debt_is_spare_in_its_own_month` proves the same
-    rule), so November reads -20 + 20 = 0 whether or not `date_to` is applied. AC-3's
-    actual claim: `date_to` must not change how the walk ASSIGNS - the range leaves the
-    Nov balance and the line exactly as they are without one."""
+    """AC-3/A2/R14: a line due the 10th of next month and an SPO landing the 20th. R37
+    books the shortfall in the line's OWN month, and R45 (30 Sep 2026) leaves the unlinked
+    SPO free in its own month (`test_supply_arriving_after_the_debt_is_spare_in_its_own_month`
+    proves the same rule), so that month reads -20 + 20 = 0 whether or not `date_to` is
+    applied. AC-3's actual claim: `date_to` must not change how the walk ASSIGNS - the
+    range leaves the month's balance and the line exactly as they are without one."""
     app, db = _client(scm_app)
     marker = f"ZZTSD{_u()[:6]}".upper()
     warehouse = _warehouse(db, f"ZZTBRW{_u()[:4]}-BB")
     product = _product(db, f"{marker}-A")
     _demand(
-        db, product, warehouse, qty=20, required_date=date(2026, 11, 10),
+        db, product, warehouse, qty=20, required_date=_months_ahead(1).replace(day=10),
         so_number=f"{marker}-SO1",
     )
-    _spo(db, product, warehouse, qty=20, arrives=date(2026, 11, 20))
+    _spo(db, product, warehouse, qty=20, arrives=_months_ahead(1).replace(day=20))
     db.flush()
+    month = month_key(_months_ahead(1))
+    date_to = _month_end(1).isoformat()
 
     with TestClient(app) as c:
         with_date_to = c.get(
-            BASE, params={"query": marker, "date_to": "2026-11-30", "only_debt": False}
+            BASE, params={"query": marker, "date_to": date_to, "only_debt": False}
         ).json()
         without_date_to = c.get(
             BASE, params={"query": marker, "only_debt": False}
         ).json()
         cell = c.get(
             f"{BASE}/{product.id}/cell",
-            params={"month": "2026-11", "date_to": "2026-11-30"},
+            params={"month": month, "date_to": date_to},
         ).json()
 
     balances_with = {
@@ -2472,9 +2482,9 @@ def test_cutoff_supply_after_due_still_covers(scm_app):
         m["key"]: m["balance"]
         for m in _row_of(without_date_to, product.product_code)["months"]
     }
-    assert balances_with["2026-11"] == 0
-    assert balances_without["2026-11"] == 0
-    assert balances_with["2026-11"] == balances_without["2026-11"]
+    assert balances_with[month] == 0
+    assert balances_without[month] == 0
+    assert balances_with[month] == balances_without[month]
 
     assert len(cell["demand"]) == 1
     line = cell["demand"][0]
@@ -2938,7 +2948,7 @@ def test_book_all_project_retail(scm_app):
     bb.pool_warehouse_id = pool.id
     db.flush()
     product = _product(db, f"{marker}-A")
-    due = date(2026, 11, 10)
+    due = _months_ahead(1)
     _demand(db, product, bb, qty=30, required_date=due, so_number=f"{marker}-SO-PROJECT")
     _demand(db, product, pool, qty=20, required_date=due, so_number=f"{marker}-SO-POOL")
     _stock(db, product, pool, 500)
@@ -3003,7 +3013,7 @@ def test_pool_seal_both_directions(scm_app):
     pool = _warehouse(db, f"ZZTPOOL{_u()[:5]}", planning=False)
     project_bin.pool_warehouse_id = pool.id
     db.flush()
-    due = date(2026, 11, 10)
+    due = _months_ahead(1)
 
     # First half: stock only at the pool.
     product_a = _product(db, f"{marker}-A")
@@ -3131,8 +3141,8 @@ def test_cell_drill_takes_cutoff_and_book(scm_app):
     bb.pool_warehouse_id = pool.id
     db.flush()
     product = _product(db, f"{marker}-A")
-    due = date(2026, 11, 10)
-    after_range = date(2026, 12, 5)
+    due = _months_ahead(1)
+    after_range = _months_ahead(2)
     _demand(db, product, bb, qty=10, required_date=due, so_number=f"{marker}-SO-INSIDE")
     _demand(
         db, product, bb, qty=10, required_date=after_range,
@@ -3144,7 +3154,7 @@ def test_cell_drill_takes_cutoff_and_book(scm_app):
     with TestClient(app) as c:
         date_to_cell = c.get(
             f"{BASE}/{product.id}/cell",
-            params={"month": month_key(after_range), "date_to": "2026-11-30"},
+            params={"month": month_key(after_range), "date_to": _month_end(1).isoformat()},
         ).json()
         retail_cell = c.get(
             f"{BASE}/{product.id}/cell",

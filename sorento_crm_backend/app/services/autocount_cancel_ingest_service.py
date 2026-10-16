@@ -15,7 +15,8 @@ AutoCount simply drops out of the sum on the next sync.
 **Exact, or say why not (R2, R7; owner rule 13 Oct).** A line with a `FromDocDtlKey` matches
 that exact line; a key naming a line that is not there while its document is stays unmatched
 (`dangling_line_key`), never an item match. Without a key, the line is decided with its whole
-group (one document + item + location) by `autocount_cancel_matching.resolve_group`, by
+group (one document + item, plus the location for a PO / SPO; owner rule 14 Oct: a Cancel SO
+groups on SO + item whatever the location) by `autocount_cancel_matching.resolve_group`, by
 arithmetic only: the group's one line, or, when nothing moved and the cancels are every
 transfer, each line's own transfer (`group_whole`: the cancel names the group, and each line's
 cancelled qty is its transfer). Anything else is `undetermined`: kept at document + item level,
@@ -55,7 +56,14 @@ from app.models.autocount_cancel import (
 )
 from app.models.base import company_scope
 from app.models.inventory import Warehouse
-from app.models.order import Order, OrderLine, SalesOrder, SalesOrderLine
+from app.models.order import (
+    DOC_TYPE_CONSIGNMENT,
+    DOC_TYPE_SALES_ORDER,
+    Order,
+    OrderLine,
+    SalesOrder,
+    SalesOrderLine,
+)
 from app.models.procurement import (
     PickingHeader,
     PickingLine,
@@ -78,6 +86,15 @@ from app.services.autocount_doc_ingest_service import (
     _safe_error,
     _text,
     _truthy,
+)
+from app.services.autocount_consignment import (
+    ReturnGroup,
+    carries_transfers,
+    consignment_payload,
+    group_of_line,
+    recompute_returned,
+    resolve_return_group,
+    return_line_answer,
 )
 from app.services.autocount_cancel_matching import (
     REASON_GROUP_WHOLE,
@@ -116,7 +133,12 @@ _KIND = {CANCEL_SALES_ORDERS_ENTITY: KIND_CANCEL_SO, CANCEL_PURCHASE_ORDERS_ENTI
          CONSIGNMENT_RETURNS_ENTITY: KIND_CONSIGNMENT_RETURN}
 _PREFIX = {CANCEL_SALES_ORDERS_ENTITY: "XS", CANCEL_PURCHASE_ORDERS_ENTITY: "XP",
            CONSIGNMENTS_ENTITY: "CSGN", CONSIGNMENT_RETURNS_ENTITY: "CSGR"}
-_STORED_ONLY = frozenset({KIND_CONSIGNMENT, KIND_CONSIGNMENT_RETURN})
+# AC-CONSIGN-CRM: a consignment's own lines are never matched (the document IS the order, see
+# `_project_consignment`); a consignment return's lines are matched to consignment lines by
+# `autocount_consignment.match_return_line`. Only Cancel SO / Cancel PO lines ever count as
+# cancelled: every cancel sum below filters on `_CANCEL_KINDS`.
+_STORED_ONLY = frozenset({KIND_CONSIGNMENT})
+_CANCEL_KINDS = (KIND_CANCEL_SO, KIND_CANCEL_PO)
 
 # Why a cancel line matched nothing (R2, R7). `waiting` lines are retried every batch.
 REASON_ORDER_NOT_FOUND = "order_not_found"
@@ -263,10 +285,23 @@ def _live_doc():
     return and_(AutocountCancelDoc.is_void.is_(False), AutocountCancelDoc.source_vanished_at.is_(None))
 
 
+def _a_cancel():
+    """A Cancel SO / Cancel PO document, never a consignment return (AC-CONSIGN-CRM): a return
+    is matched to the same SO line column but is reporting only."""
+    return AutocountCancelDoc.kind.in_(_CANCEL_KINDS)
+
+
 def _loc(value: Optional[str]) -> str:
     """The location a group is keyed on. Compared in Python only, never against a SQL upper /
     trim, which normalise some characters differently (security review should-fix 1)."""
     return (value or "").strip().upper()
+
+
+def _group_location(target: str, value: Optional[str]) -> str:
+    """The location part of a group key: none for an SO, the normalised location for a PO /
+    SPO. Owner rule 14 Oct: a Cancel SO links to its SO by document + item, because a cancel or
+    DO line's location can differ from its SO line's (dev: 570 of 9,828 single-match DO lines)."""
+    return "" if target == "so" else _loc(value)
 
 
 def _names_any(ids: list[str]):
@@ -277,13 +312,14 @@ def _names_any(ids: list[str]):
 
 @dataclass(frozen=True)
 class _Group:
-    """One document + item + location: the unit the exact arithmetic is decided over."""
+    """One document + item (+ location for a PO / SPO): the unit the exact arithmetic is
+    decided over."""
     kind: str  # cancel_so / cancel_po
     target: str  # so / po / spo
     doc: str  # SO / PO header id, or the SPO match key
     number: str  # the number the cancel lines name
     item_code: str
-    location: str  # normalised (`_loc`)
+    location: str  # `_group_location`: "" for an SO
 
 
 class CancelLineMatcher:
@@ -299,7 +335,8 @@ class CancelLineMatcher:
         if not number:
             return None
         rows = (self.db.query(SalesOrder.id)
-                .filter(SalesOrder.company_id == self.company_id, SalesOrder.so_number == number)
+                .filter(SalesOrder.company_id == self.company_id, SalesOrder.so_number == number,
+                        SalesOrder.doc_type == DOC_TYPE_SALES_ORDER)
                 .limit(2).all())
         return str(rows[0][0]) if len(rows) == 1 else None
 
@@ -334,6 +371,7 @@ class CancelLineMatcher:
             query = (self.db.query(SalesOrderLine.id)
                      .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
                      .filter(SalesOrderLine.company_id == self.company_id,
+                             SalesOrder.doc_type == DOC_TYPE_SALES_ORDER,
                              _ref_matches(SalesOrderLine.source_ref, line.from_dtl_key)))
             if line.from_doc_no:
                 query = query.filter(SalesOrder.so_number == line.from_doc_no)
@@ -364,31 +402,25 @@ class CancelLineMatcher:
     def _candidates(self, group: _Group) -> tuple[list[CandidateIn], Decimal]:
         """The group's lines with T_i (TransferedQty less the live cancels matched to the line by
         line key) and the group's moved qty D: DO qty for an SO (linked to a group line, or
-        naming the SO, item and location as sent, since a repeated item's DO line is never
-        linked), GRN qty on the group's lines for a PO / SPO."""
+        naming the SO and item at any location, since a repeated item's DO line links to the
+        SO + item group and no line), GRN qty on the group's lines for a PO / SPO."""
         if group.target == "so":
-            rows = (self.db.query(SalesOrderLine.id, Warehouse.warehouse_code,
-                                  SalesOrderLine.qty_delivered)
+            rows = (self.db.query(SalesOrderLine.id, SalesOrderLine.qty_delivered)
                     .join(Product, Product.id == SalesOrderLine.product_id)
-                    .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
                     .filter(SalesOrderLine.sales_order_id == group.doc,
                             Product.product_code == group.item_code).all())
-            rows = [r for r in rows if _loc(r[1]) == group.location]
             ids = [str(r[0]) for r in rows]
             named = and_(OrderLine.from_doc_no == group.number,
                          OrderLine.item_code == group.item_code)
-            dos = (self.db.query(OrderLine.quantity, OrderLine.sales_order_line_id,
-                                 OrderLine.location_code)
+            dos = (self.db.query(OrderLine.quantity)
                    .join(Order, Order.id == OrderLine.order_id)
                    # company_id: defence in depth over the ORM company scope, not instead of it
                    .filter(Order.company_id == self.company_id, Order.is_cancelled.is_(False),
                            or_(OrderLine.sales_order_line_id.in_(ids), named) if ids else named)
                    .all())
-            moved = sum((as_decimal(q) for q, linked, loc in dos
-                         if (linked and str(linked) in ids) or _loc(loc) == group.location),
-                        _ZERO)
+            moved = sum((as_decimal(q) for (q,) in dos), _ZERO)
             keyed = self._keyed(AutocountCancelLine.sales_order_line_id, ids)
-            return [CandidateIn(str(r[0]), as_decimal(r[2]) - keyed.get(str(r[0]), _ZERO))
+            return [CandidateIn(str(r[0]), as_decimal(r[1]) - keyed.get(str(r[0]), _ZERO))
                     for r in rows], moved
         if group.target == "po":
             rows = (self.db.query(PurchaseOrderLine.id, Warehouse.warehouse_code,
@@ -440,11 +472,12 @@ class CancelLineMatcher:
             self.db.query(column, func.sum(AutocountCancelLine.qty))
             .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
             .filter(column.in_(ids), AutocountCancelLine.match_status == MATCH_MATCHED,
-                    AutocountCancelLine.from_dtl_key.isnot(None), _live_doc())
+                    AutocountCancelLine.from_dtl_key.isnot(None), _live_doc(), _a_cancel())
             .group_by(column))
 
     def _group_lines(self, group: _Group) -> list[tuple[AutocountCancelLine, AutocountCancelDoc]]:
-        """Every key-less cancel line of a LIVE doc naming this document, item and location."""
+        """Every key-less cancel line of a LIVE doc naming this document and item (and, for a
+        PO / SPO, location)."""
         query = (self.db.query(AutocountCancelLine, AutocountCancelDoc)
                  .join(AutocountCancelDoc,
                        AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
@@ -459,7 +492,8 @@ class CancelLineMatcher:
             query = query.filter(_spo_match_key_sql(AutocountCancelLine.from_doc_no) == group.doc)
         else:
             query = query.filter(AutocountCancelLine.from_doc_no == group.number)
-        return [(l, d) for l, d in query.all() if _loc(l.location_code) == group.location]
+        return [(l, d) for l, d in query.all()
+                if _group_location(group.target, l.location_code) == group.location]
 
     def _resolve(self, group: _Group) -> dict[str, tuple[AutocountCancelLine, _Match, str]]:
         members = self._group_lines(group)
@@ -475,16 +509,15 @@ class CancelLineMatcher:
         return out
 
     def _target_group(self, kind: str, target: str, target_id: str) -> Optional[_Group]:
-        """The group a line-key match lands in: its document, item and location (keyed matches
-        change the T_i the group is decided on)."""
+        """The group a line-key match lands in: its document and item, plus the location for a
+        PO / SPO (keyed matches change the T_i the group is decided on)."""
         if target == "so":
-            row = (self.db.query(SalesOrder.id, SalesOrder.so_number, Product.product_code,
-                                 Warehouse.warehouse_code)
+            row = (self.db.query(SalesOrder.id, SalesOrder.so_number, Product.product_code)
                    .join(SalesOrderLine, SalesOrderLine.sales_order_id == SalesOrder.id)
                    .join(Product, Product.id == SalesOrderLine.product_id)
-                   .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
                    .filter(SalesOrderLine.id == target_id).first())
-            return _Group(kind, "so", str(row[0]), row[1], row[2], _loc(row[3])) if row else None
+            return (_Group(kind, "so", str(row[0]), row[1], row[2], _group_location("so", None))
+                    if row else None)
         if target == "po":
             row = (self.db.query(PurchaseOrder.id, PurchaseOrder.po_number, Product.product_code,
                                  Warehouse.warehouse_code)
@@ -528,8 +561,21 @@ class CancelLineMatcher:
     def groups_of(self, kind: str, line: AutocountCancelLine) -> set[_Group]:
         """Every group a line counts in, before it is removed: the one it was decided in and
         the one it names now."""
-        out = self._old_groups(kind, line) if kind not in _STORED_ONLY else set()
-        current = self._key_less_group(kind, line) if kind not in _STORED_ONLY else None
+        if kind == KIND_CONSIGNMENT_RETURN:
+            out: set = set()
+            for old in (line.sales_order_line_id, *(line.candidate_line_ids or [])[:1]):
+                group = group_of_line(self.db, str(old), self.company_id) if old else None
+                if group:
+                    out.add(group)
+            if line.from_dtl_key is None and line.from_doc_no and line.item_code:
+                _, current = return_line_answer(self.db, self.company_id, line)
+                if current:
+                    out.add(current)
+            return out
+        if kind not in _CANCEL_KINDS:
+            return set()
+        out = self._old_groups(kind, line)
+        current = self._key_less_group(kind, line)
         return out | ({current} if current else set())
 
     def _key_less_group(self, kind: str, line: AutocountCancelLine) -> Optional[_Group]:
@@ -540,7 +586,7 @@ class CancelLineMatcher:
         if target is None:
             return None
         return _Group(kind, target, doc, line.from_doc_no, line.item_code,
-                      _loc(line.location_code))
+                      _group_location(target, line.location_code))
 
     # ------------------------------------------------------------- the pass
     def match_all(self, lines: Iterable[AutocountCancelLine], kinds: dict[str, str],
@@ -553,11 +599,37 @@ class CancelLineMatcher:
         group's unexplained transfer subtracts them; deciding a group before they land would
         make the answer depend on which document arrived first."""
         answers: dict[str, tuple[AutocountCancelLine, _Match, str]] = {}
-        groups: set[_Group] = set(extra_groups)
+        extra_groups = list(extra_groups)
+        groups: set[_Group] = {g for g in extra_groups if isinstance(g, _Group)}
+        return_groups: set[ReturnGroup] = {g for g in extra_groups if isinstance(g, ReturnGroup)}
         for line in lines:
             kind = kinds[str(line.cancel_doc_id)]
             if kind in _STORED_ONLY:
                 answers[str(line.id)] = (line, _Match(MATCH_UNMATCHED, REASON_STORED_ONLY), "")
+                continue
+            if kind == KIND_CONSIGNMENT_RETURN:
+                # Exact or undetermined (ruling 3). The group the line was last decided in is
+                # decided again, as for a cancel (a void, an edit or a sweep moves its sum).
+                for old in (line.sales_order_line_id, *(line.candidate_line_ids or [])[:1]):
+                    group = group_of_line(self.db, str(old), self.company_id) if old else None
+                    if group:
+                        return_groups.add(group)
+                if not live.get(str(line.cancel_doc_id), True):
+                    answers[str(line.id)] = (line, _Match(MATCH_UNMATCHED, REASON_DOC_NOT_LIVE),
+                                             "")
+                    continue
+                final, group = return_line_answer(self.db, self.company_id, line)
+                if group is not None:
+                    return_groups.add(group)
+                else:
+                    status, reason, target = final
+                    answers[str(line.id)] = (line, _Match(status, reason, so_line_id=target), "")
+                    # A keyed match changes what its group's key-less members add up to, so
+                    # they are decided again whichever order the two arrived in.
+                    if target:
+                        keyed_group = group_of_line(self.db, str(target), self.company_id)
+                        if keyed_group:
+                            return_groups.add(keyed_group)
                 continue
             # The group the line USED to count in is decided again too (review B1): leaving it,
             # by a void, a sweep or an edit, changes what the rest of that group adds up to.
@@ -596,6 +668,10 @@ class CancelLineMatcher:
                                                    g.location)):
             for line, match, doc_no in self._resolve(group).values():
                 assign(line, match, doc_no)
+        for group in sorted(return_groups, key=lambda g: (g.header_id, g.item_code, g.location)):
+            for line, status, reason, target, candidates in resolve_return_group(
+                    self.db, self.company_id, group):
+                assign(line, _Match(status, reason, so_line_id=target, candidates=candidates), "")
         self.db.flush()
 
 
@@ -634,7 +710,7 @@ def _live_sums(db: Session, column, ids: Iterable[str]) -> dict[str, Decimal]:
         .filter(column.in_(list(ids)),
                 AutocountCancelLine.match_status == MATCH_MATCHED,
                 AutocountCancelDoc.is_void.is_(False),
-                AutocountCancelDoc.source_vanished_at.is_(None))
+                AutocountCancelDoc.source_vanished_at.is_(None), _a_cancel())
         .group_by(column)
         .all()
     )
@@ -650,7 +726,7 @@ def _whole_group_lines(db: Session, ids: set[str]) -> set[str]:
     rows = (db.query(AutocountCancelLine.candidate_line_ids)
             .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
             .filter(AutocountCancelLine.match_status == MATCH_MATCHED, _names_any(wanted),
-                    _live_doc())
+                    _live_doc(), _a_cancel())
             .all())
     return {str(i) for (members,) in rows for i in (members or [])} & set(wanted)
 
@@ -663,18 +739,24 @@ def _settled_status(ordered: Any, transferred: Any) -> str:
 
 @dataclass
 class Derived:
-    """What a recompute moved, for the post-commit hooks: SO lines that BECAME fully cancelled
-    (`(line id, cancel doc no)`, R5) and SO lines whose planned qty moved while they stayed
+    """What a recompute moved, for the post-commit hooks and the redecide summary: SO lines
+    that BECAME fully cancelled (`(line id, cancel doc no)`, R5: counted, no hook acts on them
+    since CANCEL-STOP-AT-SO) and SO lines whose planned qty moved while they stayed
     live (`(line id, planned before, planned after)`, Q4 a)."""
     newly_cancelled: list[tuple[str, str]] = field(default_factory=list)
     plan_moves: list[tuple[str, Decimal, Decimal]] = field(default_factory=list)
+    #: SO lines a cancel no longer covers in full that this rule had cancelled (R6), whose
+    #: pending Transfer to Cancel SO the hook withdraws.
+    reopened: list[str] = field(default_factory=list)
 
     def extend(self, other: "Derived") -> None:
         self.newly_cancelled.extend(other.newly_cancelled)
         self.plan_moves.extend(other.plan_moves)
+        self.reopened.extend(other.reopened)
 
 
-def recompute_cancelled(db: Session, touched: Touched) -> Derived:
+def recompute_cancelled(db: Session, touched: Touched,
+                        company_id: Optional[str] = None) -> Derived:
     """R3/R5/R6: write `qty_cancelled` (capped at ordered) on every touched line and move the
     status of SO / PO lines that became, or stopped being, fully cancelled. In the caller's
     transaction."""
@@ -691,16 +773,24 @@ def recompute_cancelled(db: Session, touched: Touched) -> Derived:
         )
         for row, header_status in rows:
             before_c, before_status = Decimal(row.qty_cancelled or 0), row.line_status
+            before_flag = bool(row.cancelled_by_cancel_doc)
             total = (as_decimal(row.qty_delivered) if str(row.id) in whole
                      else sums.get(str(row.id), _ZERO))
-            if _apply(row, total, row.qty_delivered, header_status):
+            newly = _apply(row, total, row.qty_delivered, header_status)
+            if before_flag and not row.cancelled_by_cancel_doc:
+                # Independent of the planned-qty move below (review nit): a reopened line can
+                # need both its proposal withdrawn and a planning change.
+                derived.reopened.append(str(row.id))
+            if newly:
                 newly_cancelled.append((str(row.id), _latest_doc_no(db, str(row.id))))
             elif (row.qty_cancelled != before_c and before_status != CANCELLED
                   and row.line_status != CANCELLED):
                 # The planned basis `plan_qty_of` reads (review should-fix 5).
                 base = Decimal(row.qty_ordered if row.qty_required is None else row.qty_required)
-                derived.plan_moves.append((str(row.id), max(base - before_c, _ZERO),
-                                           max(base - Decimal(row.qty_cancelled), _ZERO)))
+                returned = Decimal(row.qty_returned or 0)  # CONSIGN-PLAN Q3
+                derived.plan_moves.append((str(row.id), max(base - before_c - returned, _ZERO),
+                                           max(base - Decimal(row.qty_cancelled) - returned,
+                                               _ZERO)))
     if touched.po_line_ids:
         sums = _live_sums(db, AutocountCancelLine.purchase_order_line_id, touched.po_line_ids)
         rows = (
@@ -722,8 +812,31 @@ def recompute_cancelled(db: Session, touched: Touched) -> Derived:
             value = max(min(total, cap), _ZERO)
             if row.qty_cancelled != value:
                 row.qty_cancelled = value
+    # AC-CONSIGN-CRM: a return touches the consignment line it was (or is) matched to.
+    derived.plan_moves.extend(
+        return_plan_moves(db, recompute_returned(db, touched.so_line_ids, company_id))
+    )
     db.flush()
     return derived
+
+
+def return_plan_moves(db: Session, moved: list[tuple[str, Decimal, Decimal]]
+                      ) -> list[tuple[str, Decimal, Decimal]]:
+    """CONSIGN-PLAN Q3: a return lowers a live consignment line's plan the way a partial cancel
+    does, so the same `(line id, planned before, planned after)` shape goes to the hook."""
+    if not moved:
+        return []
+    rows = {str(r.id): r for r in db.query(SalesOrderLine)
+            .filter(SalesOrderLine.id.in_([m[0] for m in moved]))}
+    out = []
+    for line_id, was, now in moved:
+        row = rows.get(line_id)
+        if row is None or row.line_status == CANCELLED:
+            continue
+        base = Decimal(row.qty_ordered if row.qty_required is None else row.qty_required)
+        base -= Decimal(row.qty_cancelled or 0)
+        out.append((line_id, max(base - was, _ZERO), max(base - now, _ZERO)))
+    return [m for m in out if m[1] != m[2]]
 
 
 def _apply(row, total: Decimal, transferred: Any, header_status: Optional[str]) -> bool:
@@ -741,8 +854,8 @@ def _apply(row, total: Decimal, transferred: Any, header_status: Optional[str]) 
     if now_full:
         if row.line_status != CANCELLED:
             # A flag left set on a line something reopened (an SO push raising ordered, a
-            # relink that failed) is re-cancelled here, but it is not a NEW cancellation: its
-            # OI rows were retired the first time (review N1).
+            # relink that failed) is re-cancelled here, but it is not a NEW cancellation
+            # (review N1).
             newly = not row.cancelled_by_cancel_doc
             row.line_status = CANCELLED
             row.cancelled_by_cancel_doc = True
@@ -764,7 +877,7 @@ def _latest_doc_no(db: Session, so_line_id: str) -> str:
         .filter(or_(AutocountCancelLine.sales_order_line_id == so_line_id,
                     _names_any([so_line_id])),
                 AutocountCancelLine.match_status == MATCH_MATCHED,
-                _live_doc())
+                _live_doc(), _a_cancel())
         .order_by(AutocountCancelDoc.doc_date.desc(), AutocountCancelDoc.doc_no.desc())
         .first()
     )
@@ -815,8 +928,15 @@ class AutocountCancelIngestService:
         self.book = book
         # What this batch's derivation moved, for the post-commit hooks (R5, Q4 a).
         self.derived = Derived()
+        #: Plan moves a consignment push's TransferedQty made, folded into the batch's
+        #: `derived` once it lands (CONSIGN-PLAN Q3).
+        self.consignment_moves: list[tuple[str, Decimal, Decimal]] = []
         # status:reason -> lines decided in the last batch (the sync log line).
         self.match_counts: dict[str, int] = {}
+        # AC-CONSIGN-CRM: the SO ingest that writes consignments as sales orders, one per batch
+        # so the route's SO hooks (plan exception, planning change) read one batch's state.
+        self.consignment_orders = None
+        self.consignment_numbers: set[str] = set()
 
     # ------------------------------------------------------------------ the batch
     def ingest(self, entity_type: str, records: list[Any], *, dry_run: bool = False,
@@ -827,6 +947,7 @@ class AutocountCancelIngestService:
         touched = Touched()
         to_match: list[AutocountCancelLine] = []
         self._removed_groups: set = set()
+        self.consignment_moves = []  # a reused service carries nothing over (CONSIGN-PLAN)
         try:
             for raw in records:
                 result.records.append(self._ingest_one(entity_type, raw, touched, to_match))
@@ -866,10 +987,16 @@ class AutocountCancelIngestService:
                 counts: dict[str, int] = {}
                 rematch_lines(self.db, self.company_id, lines, kinds, touched, counts,
                               self._removed_groups)
-                derived = recompute_cancelled(self.db, touched)
+                derived = recompute_cancelled(self.db, touched, self.company_id)
+                if self.consignment_numbers:
+                    # A consignment that just landed (or moved) is what a waiting return names.
+                    derived.extend(relink_for_orders(self.db, company_id=self.company_id,
+                                                     numbers=set(self.consignment_numbers)))
                 self._warn_unmatched(entity, result)
             savepoint.commit()
             # Only a derivation that landed reaches the post-commit hooks (review nit).
+            derived.plan_moves.extend(self.consignment_moves)
+            self.consignment_moves = []
             self.derived = derived
             self.match_counts = counts
             if counts:
@@ -936,12 +1063,27 @@ class AutocountCancelIngestService:
                                 errors=exc.errors)
         savepoint = self.db.begin_nested()
         try:
+            warnings: list[str] = []
+            lines = None
             with company_scope(self.db, frozenset({self.company_id})):
                 outcome, entity_id, matched = self._apply(_KIND[entity], doc, touched)
+                if entity == CONSIGNMENTS_ENTITY and self._projects(entity_id) and (
+                        outcome is not IngestOutcome.UNCHANGED
+                        or not self._has_order(doc.doc_no)):
+                    projected = self._project_consignment(entity_id)
+                    if projected.outcome in (IngestOutcome.FAILED, IngestOutcome.RETRYABLE):
+                        # The record is not taken in part: AutoCount re-pushes it, and the
+                        # stored copy and the order land together.
+                        savepoint.rollback()
+                        return RecordResult(source_ref=source_ref, outcome=projected.outcome,
+                                            errors=projected.errors)
+                    outcome = _merged(outcome, projected.outcome)
+                    warnings = list(projected.warnings or [])
+                    lines = projected.lines
             savepoint.commit()
             to_match.extend(matched)
             return RecordResult(source_ref=source_ref, outcome=outcome, entity_id=entity_id,
-                                warnings=[])
+                                warnings=warnings, lines=lines)
         except IntegrityError as exc:
             savepoint.rollback()
             logger.warning("ingest.integrity_conflict entity=%s source_ref=%s errors=%s",
@@ -954,6 +1096,49 @@ class AutocountCancelIngestService:
                            entity, source_ref, _safe_error(exc))
             return RecordResult(source_ref=source_ref, outcome=IngestOutcome.FAILED,
                                 errors={"_": INTERNAL_ERROR_MESSAGE})
+
+    # ================================================================== consignments
+    def _orders(self):
+        if self.consignment_orders is None:
+            from app.services.document_ingest_service import DocumentIngestService
+
+            self.consignment_orders = DocumentIngestService(
+                self.db, self.integration_id, company_id=self.company_id,
+                sales_doc_type=DOC_TYPE_CONSIGNMENT)
+        return self.consignment_orders
+
+    def _projects(self, doc_id: str) -> bool:
+        """The crew gate (14 Oct): only a record that states TransferedQty becomes demand."""
+        return carries_transfers(self.db.get(AutocountCancelDoc, doc_id))
+
+    def _has_order(self, doc_no: str) -> bool:
+        """Whether this CG already has its order. An unchanged re-push of a document stored
+        before consignments became orders (#1623 stored them only) still writes it."""
+        return self.db.query(
+            self.db.query(SalesOrder.id)
+            .filter(SalesOrder.company_id == self.company_id, SalesOrder.so_number == doc_no,
+                    SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT)
+            .exists()
+        ).scalar()
+
+    def _project_consignment(self, doc_id: str) -> RecordResult:
+        """AC-CONSIGN-CRM (ruling 1): the stored CG document, written as a consignment sales
+        order through the SO ingest. From the stored copy, so a stale push re-states the newer
+        document and a void or a sweep cancels the order."""
+        doc = self.db.get(AutocountCancelDoc, doc_id)
+        result = self._orders().ingest("sales_orders", [consignment_payload(self.book, doc)])
+        record = result.records[0]
+        if record.outcome not in (IngestOutcome.FAILED, IngestOutcome.RETRYABLE):
+            self.consignment_numbers.add(doc.doc_no)
+            # CONSIGN-DELIVERED-FIX: the CG's TransferedQty is its returned qty.
+            line_ids = [r[0] for r in self.db.query(SalesOrderLine.id)
+                        .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
+                        .filter(SalesOrder.company_id == self.company_id,
+                                SalesOrder.so_number == doc.doc_no,
+                                SalesOrder.doc_type == DOC_TYPE_CONSIGNMENT).all()]
+            self.consignment_moves.extend(return_plan_moves(
+                self.db, recompute_returned(self.db, line_ids, self.company_id)))
+        return record
 
     def _apply(self, kind: str, doc: _CancelDoc, touched: Touched):
         """(outcome, doc id, lines to match). Lines are kept by DtlKey; a removed line's target
@@ -1026,6 +1211,11 @@ class AutocountCancelIngestService:
                     kind, line)
                 self.db.delete(line)
                 changed = True
+        if kind in _STORED_ONLY and row.source_record != doc.raw:
+            # AC-CONSIGN-CRM: a consignment's order is built from the stored record, so a push
+            # that adds a field the comparison above does not read (TransferedQty, contract
+            # 2.9) still replaces it and reads `updated`.
+            changed = True
         if changed:
             row.source_record = doc.raw
             row.last_synced_at = datetime.utcnow()
@@ -1043,13 +1233,16 @@ class AutocountCancelIngestService:
             raise UnsupportedIngestEntity(f"Unsupported AutoCount entity {entity!r}")
         result = DeletionResult(dry_run=dry_run)
         touched = Touched()
+        self.consignment_moves = []
         try:
             with company_scope(self.db, frozenset({self.company_id})):
                 for value in doc_keys:
                     result.records.append(
                         self._delete_one(entity, value, date_from, date_to, touched))
                 self.db.flush()
-                self.derived = recompute_cancelled(self.db, touched)
+                self.derived = recompute_cancelled(self.db, touched, self.company_id)
+                self.derived.plan_moves.extend(self.consignment_moves)
+                self.consignment_moves = []
         finally:
             if dry_run:
                 self.db.rollback()
@@ -1082,8 +1275,25 @@ class AutocountCancelIngestService:
             lines = self.db.query(AutocountCancelLine).filter(
                 AutocountCancelLine.cancel_doc_id == row.id).all()
             rematch_lines(self.db, self.company_id, lines, {str(row.id): row.kind}, touched)
+            if row.kind == KIND_CONSIGNMENT and (carries_transfers(row)
+                                                 or self._has_order(row.doc_no)):
+                # A vanished CG is a cancelled order, never a deleted one (2.7 sweep rule).
+                projected = self._project_consignment(str(row.id))
+                if projected.outcome in (IngestOutcome.FAILED, IngestOutcome.RETRYABLE):
+                    logger.warning("ingest.consignment_sweep_unprojected doc=%s errors=%s",
+                                   row.id, sorted((projected.errors or {}).keys()))
         return DeletionRecordResult(source_ref=ref, outcome=DeletionOutcome.DEACTIVATED,
                                     entity_id=str(row.id))
+
+
+def _merged(stored: IngestOutcome, projected: IngestOutcome) -> IngestOutcome:
+    """A CG record's verdict: created when the stored copy is new, updated when either the
+    stored copy or its order moved, else unchanged."""
+    if stored is IngestOutcome.CREATED:
+        return stored
+    if IngestOutcome.UPDATED in (stored, projected) or projected is IngestOutcome.CREATED:
+        return IngestOutcome.UPDATED
+    return stored
 
 
 def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> Derived:
@@ -1117,7 +1327,7 @@ def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> Der
             .filter(AutocountCancelDoc.id.in_({str(l.cancel_doc_id) for l in lines})).all()
         }
         rematch_lines(db, str(company_id), lines, kinds, touched)
-        return recompute_cancelled(db, touched)
+        return recompute_cancelled(db, touched, str(company_id))
 
 
 def cancel_sources(db: Session, column, line_ids: Iterable[str]) -> dict[str, list[dict]]:
@@ -1134,7 +1344,7 @@ def cancel_sources(db: Session, column, line_ids: Iterable[str]) -> dict[str, li
                  AutocountCancelLine.qty, AutocountCancelLine.match_reason)
         .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
         .filter(or_(column.in_(ids), _names_any(ids)),
-                AutocountCancelLine.match_status == MATCH_MATCHED, _live_doc())
+                AutocountCancelLine.match_status == MATCH_MATCHED, _live_doc(), _a_cancel())
         .order_by(AutocountCancelDoc.doc_date, AutocountCancelDoc.doc_no,
                   AutocountCancelLine.dtl_key)
         .all()
@@ -1157,31 +1367,29 @@ def run_cancel_hooks(db: Session, service: Any, *, actor: Optional[str]) -> None
     """After the batch's own commit, each reaction best effort with its own commit (a failure
     costs that reaction only, logged, never the ingest):
 
-    - R5: the order inquiry rows of every SO line that just became fully cancelled are retired
-      the way a board Cancel SO retires them (#1530: rows cancelled, links removed, handover
-      queued, "Transferred to Cancel SO: <XS no>") and the acknowledged ones flagged. Rows
-      already retired stay retired (owner, 13 Oct).
+    - R5 (owner rulings 14 Oct, CANCEL-STOP-AT-SO): the effects stop at the SO. A line that
+      just became fully cancelled and still has a live order inquiry row gets the board's own
+      Transfer to Cancel SO saved as its pending decision ("we trigger the transfer to cancel
+      SO action in fulfilment planning and let the CS confirm themselves"): no OI row is
+      retired or flagged, nothing is queued or emailed until CS confirms it on the board
+      (`ProjectSupplyService.cancel_lines`). A line the cancel no longer covers in full loses
+      the proposal the sync made.
     - Q4 a: a partial cancel moved a live line's planned qty, so the AutoCount planning change
       is raised for CS on the board exactly as an SO push's qty edit raises it (#1599 flow;
       `planning_change_service.build_batch` keeps its own gate: held or inquired lines only).
     """
     derived = getattr(service, "derived", None) or Derived()
-    if derived.newly_cancelled:
+    if derived.newly_cancelled or derived.reopened:
         try:
-            from app.services.project_order_inquiry_service import (
-                ProjectOrderInquiryService,
-                flag_rows_for_cancelled_lines,
-            )
+            from app.services import project_line_draft_service as drafts
 
-            ProjectOrderInquiryService(db).retire_rows_for_cancelled_lines(
-                [(line_id, doc_no or "AutoCount") for line_id, doc_no in derived.newly_cancelled],
-                actor_user_id=actor,
-            )
-            flag_rows_for_cancelled_lines(db, [line_id for line_id, _ in derived.newly_cancelled])
+            for line_id, doc_no in derived.newly_cancelled:
+                drafts.propose_autocount_cancel(db, line_id, doc_no or "", actor_user_id=actor)
+            drafts.withdraw_autocount_cancel(db, derived.reopened)
             db.commit()
         except Exception as exc:  # noqa: BLE001 - the ingest itself already committed
             db.rollback()
-            logger.warning("ingest.cancel_oi_hook_failed error=%s", _safe_error(exc))
+            logger.warning("ingest.cancel_proposal_failed error=%s", _safe_error(exc))
     if derived.plan_moves:
         try:
             _raise_planning_change(db, derived.plan_moves, actor=actor)
@@ -1207,7 +1415,12 @@ def _raise_planning_change(db: Session, moves: list[tuple[str, Decimal, Decimal]
     )
     by_id = {str(r[0].id): r for r in rows}
     before, after, order_ids = [], [], {}
+    # One move per line: a batch that cancelled AND returned units on a line reports two, and
+    # a diff fed both would pair them as two changes. First `was`, last `now`.
+    merged: dict[str, list[Decimal]] = {}
     for line_id, was, now in moves:
+        merged.setdefault(line_id, [was, now])[1] = now
+    for line_id, (was, now) in merged.items():
         found = by_id.get(line_id)
         if found is None:
             continue

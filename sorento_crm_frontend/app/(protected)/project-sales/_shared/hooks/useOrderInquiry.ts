@@ -39,10 +39,20 @@ import {
   getDecisionTrail,
   getOrderInquiryReserveRequests,
   getOrderInquiryRowHistory,
+  getReserveNoticeRecipients,
+  getReserveStatusSummary,
+  previewParkedReserveNotices,
+  previewParkedReserveRequests,
+  sendParkedReserveNotices,
+  sendParkedReserveRequests,
   type CommitReservePayload,
   type CreateReserveRequestPayload,
 } from '../services/orderInquiryReserveService';
 import { getOrderInquiryMatrix } from '../services/orderInquiryMatrixService';
+import {
+  previewHandoverResend,
+  sendHandoverResend,
+} from '../services/orderInquiryHandoverResendService';
 import { PLANNING_BOARD_KEY } from './useFulfilmentPlanning';
 import type { LinkHorizonRequest } from '../lib/linkHorizon';
 import { acknowledgeOutcomeText, linkOutcomeText } from '../lib/linkHorizon';
@@ -75,6 +85,10 @@ export const ORDER_INQUIRY_HEADER_LINES_KEY = 'order-inquiry-header-lines';
 export const ORDER_INQUIRY_HEADER_RELATED_DOCUMENTS_KEY =
   'order-inquiry-header-related-documents';
 export const ORDER_INQUIRY_RESERVE_REQUESTS_KEY = 'order-inquiry-reserve-requests';
+export const ORDER_INQUIRY_RESERVE_SUMMARY_KEY = 'order-inquiry-reserve-summary';
+export const ORDER_INQUIRY_PARKED_PREVIEW_KEY = 'order-inquiry-parked-preview';
+export const ORDER_INQUIRY_HANDOVER_RESEND_PREVIEW_KEY = 'order-inquiry-handover-resend-preview';
+export const ORDER_INQUIRY_NOTICE_RECIPIENTS_KEY = 'order-inquiry-notice-recipients';
 export const ORDER_INQUIRY_ROW_HISTORY_KEY = 'order-inquiry-row-history';
 export const DECISION_TRAIL_KEY = 'order-inquiry-decision-trail';
 
@@ -112,6 +126,7 @@ function orderInquiryHeaderListParamsFromUrl(
     raised_by: params.filters.raised_by || undefined,
     agent: params.filters.agent || undefined,
     project: params.filters.project || undefined,
+    reserve: (params.filters.reserve as OrderInquiryHeaderListParams['reserve']) || undefined,
   };
 }
 
@@ -179,21 +194,24 @@ export function useOrderInquiryReserveRequests(inquiryId: string | undefined) {
 }
 
 /**
- * S5 (reviewer round): `ReserveRequestDialog` used to call `createOrderInquiryReserve
- * Request` straight from the component, skipping the hooks layer every other write in
- * this file goes through. The mutate function is what the caller hands the dialog as
- * `onSend` - the dialog stays free of `QueryClientProvider` (its own vitest suite
- * renders it with no providers), and this hook is what supplies the invalidate + toast
- * the layering rule asks for.
+ * Send a "Request CS to reserve" (or park it). `RequestReserveDialog`
+ * (`_shared/components`) calls this hook, which supplies the invalidate + toast the
+ * layering rule asks for; the OI page and the Stock Debt snapshot drill share it.
  */
 export function useCreateOrderInquiryReserveRequest(inquiryId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: CreateReserveRequestPayload) =>
       createOrderInquiryReserveRequest(inquiryId as string, payload),
-    onSuccess: (response) => {
-      toast.success(`Request #${response.ordinal} sent to ${response.first_to_name ?? 'CS'}`);
+    onSuccess: (response, variables) => {
+      toast.success(
+        variables.park
+          ? `Request #${response.ordinal} parked. Send it from Order inquiries > Actions.`
+          : `Request #${response.ordinal} sent to ${response.first_to_name ?? 'CS'}`,
+      );
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY, inquiryId] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -215,18 +233,96 @@ export function useCommitOrderInquiryReserve(inquiryId: string | undefined) {
       payload: CommitReservePayload;
       /** The requester's own name, for the toast alone - never read by `mutationFn`. */
       requesterName?: string | null;
+      /** The notice recipient named in the parked toast. */
+      noticeName?: string | null;
     }) => commitOrderInquiryReserve(inquiryId as string, payload),
     onSuccess: (data, variables) => {
       // Every staged line was a no-op on the server: nothing was written or mailed.
       toast.success(
         data.length === 0
           ? 'Nothing to change'
-          : `Reserved, ${variables.requesterName ?? 'the requester'} notified`,
+          : variables.payload.park_notice
+            ? `Reserved. Notice to ${variables.noticeName ?? 'purchasing'} parked; send it from Order inquiries > Actions.`
+            : `Reserved, ${variables.noticeName ?? variables.requesterName ?? 'the requester'} notified`,
       );
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADER_LINES_KEY, inquiryId] });
       queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY, inquiryId] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY] });
     },
     onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+/** Most reserve commits the cross-OI Lines page keeps in flight at once. */
+const RESERVE_COMMIT_CONCURRENCY = 3;
+
+export interface InquiryCommitResult {
+  inquiryId: string;
+  ok: boolean;
+  /** The server's message when the commit failed. */
+  message?: string;
+}
+
+/**
+ * OI-BULK-RESERVE v4 (F9): the cross-OI Lines page's Reserve (N) - one
+ * `commitOrderInquiryReserve` per order inquiry (the route is keyed by inquiry), at most
+ * three in flight. Never rejects as a whole: it resolves with one result per order inquiry
+ * so the confirmation can show which saved, and the toast sums them up. Refreshes the same
+ * keys `useCommitOrderInquiryReserve` does plus the Lines page's own list and counts.
+ */
+export function useCommitReserveAcrossInquiries() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      commits: { inquiryId: string; payload: CommitReservePayload }[],
+    ): Promise<InquiryCommitResult[]> => {
+      const results: InquiryCommitResult[] = new Array(commits.length);
+      let next = 0;
+      async function worker() {
+        while (next < commits.length) {
+          const index = next;
+          next += 1;
+          const { inquiryId, payload } = commits[index];
+          try {
+            await commitOrderInquiryReserve(inquiryId, payload);
+            results[index] = { inquiryId, ok: true };
+          } catch (error) {
+            results[index] = {
+              inquiryId,
+              ok: false,
+              message: error instanceof Error ? error.message : 'Failed to reserve those lines',
+            };
+          }
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(RESERVE_COMMIT_CONCURRENCY, commits.length) }, worker),
+      );
+      return results;
+    },
+    onSuccess: (results) => {
+      const saved = results.filter((result) => result.ok).length;
+      const failed = results.length - saved;
+      if (failed === 0) {
+        toast.success(`Reserved on ${saved} order ${saved === 1 ? 'inquiry' : 'inquiries'}`);
+      } else {
+        toast.error(`Reserved on ${saved} of ${results.length} order inquiries; ${failed} failed`);
+      }
+      for (const result of results) {
+        if (!result.ok) continue;
+        queryClient.invalidateQueries({
+          queryKey: [ORDER_INQUIRY_HEADER_LINES_KEY, result.inquiryId],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY, result.inquiryId],
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_WORKLIST_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_WORKLIST_SUMMARY_KEY] });
+    },
   });
 }
 
@@ -758,4 +854,101 @@ export function useOrderInquiryHandshake() {
   });
 
   return { acknowledge, reject, rejectRows, linkNow, unacknowledge };
+}
+
+/** OI counts per reserve status and the caller's own parked items (AC-SN-31). */
+export function useReserveStatusSummary(enabled = true) {
+  return useQuery({
+    queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY],
+    queryFn: getReserveStatusSummary,
+    enabled,
+  });
+}
+
+/** Who the reserve confirmation's notice goes to (AC-SN-27); read while it is open. */
+export function useReserveNoticeRecipients(
+  inquiryId: string | undefined,
+  enabled: boolean,
+  rowIds?: string[],
+) {
+  return useQuery({
+    queryKey: [ORDER_INQUIRY_NOTICE_RECIPIENTS_KEY, inquiryId, rowIds ?? []],
+    queryFn: () => getReserveNoticeRecipients(inquiryId as string, rowIds),
+    enabled: enabled && Boolean(inquiryId),
+    staleTime: 0,
+  });
+}
+
+export type ParkedKind = 'requests' | 'notices';
+
+/** The send-all dialog's preview, fetched fresh each time it opens (AC-SN-44). */
+export function useParkedPreview(kind: ParkedKind | null) {
+  return useQuery({
+    queryKey: [ORDER_INQUIRY_PARKED_PREVIEW_KEY, kind],
+    queryFn: () =>
+      kind === 'notices' ? previewParkedReserveNotices() : previewParkedReserveRequests(),
+    enabled: kind !== null,
+    gcTime: 0,
+    staleTime: 0,
+  });
+}
+
+/** Send all of the caller's parked requests / notices; toast + invalidate (AC-SN-44). */
+export function useSendParked(kind: ParkedKind) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => (kind === 'notices' ? sendParkedReserveNotices() : sendParkedReserveRequests()),
+    onSuccess: (result) => {
+      if (result.emails_sent === 0) {
+        toast.success('Nothing left to send: someone already sent these.');
+      } else {
+        toast.success(
+          `${result.emails_sent} ${result.emails_sent === 1 ? 'email' : 'emails'} sent (${result.items_sent} order ${result.items_sent === 1 ? 'inquiry' : 'inquiries'})`,
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_SUMMARY_KEY] });
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_RESERVE_REQUESTS_KEY] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+}
+
+/** Send to purchasing: the preview for these order inquiries, loaded while `ids` is set. */
+export function useHandoverResendPreview(ids: string[] | null, rowIds?: string[] | null) {
+  return useQuery({
+    queryKey: [ORDER_INQUIRY_HANDOVER_RESEND_PREVIEW_KEY, ids, rowIds ?? null],
+    queryFn: () => previewHandoverResend(ids ?? [], rowIds ?? undefined),
+    enabled: ids !== null && ids.length > 0,
+    // Re-ticking a line keeps the last email on screen while the new one loads.
+    placeholderData: (previous) => previous,
+    gcTime: 0,
+    staleTime: 0,
+  });
+}
+
+/** Send to purchasing: one email per order inquiry; toast what went and what did not. */
+export function useSendHandoverResend() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, rowIds }: { ids: string[]; rowIds?: string[] | null }) =>
+      sendHandoverResend(ids, rowIds ?? undefined),
+    onSuccess: (result) => {
+      const failed = result.skipped.filter((skip) => skip.reason === 'failed');
+      if (result.emails_sent > 0) {
+        toast.success(
+          `Sent to purchasing: ${result.emails_sent} ${result.emails_sent === 1 ? 'email' : 'emails'}`,
+        );
+      }
+      if (failed.length > 0) {
+        toast.error(
+          `Not sent: ${failed.map((skip) => skip.inquiry_no ?? 'order inquiry').join(', ')}. Try again.`,
+        );
+      } else if (result.emails_sent === 0) {
+        toast.error('Nothing was sent: no open lines or no purchasing recipient.');
+      }
+      queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HANDOVER_RESEND_PREVIEW_KEY] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 }

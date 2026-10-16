@@ -63,6 +63,7 @@ import { apiFetch } from '@/lib/api';
 import { buildDataGridParams, extractApiError } from '@/lib/api-client';
 import type { DataGridApiFetchParams, DataGridApiResponse } from '@/components/ui/data-grid';
 import type { Certificate, CertificateFormData } from '../types/certificate.types';
+import { codeWithName } from '@/lib/product-display';
 
 const BASE = '/api/v1/master-data/certificates';
 
@@ -194,6 +195,6 @@ export async function getCertificateProductOptions(): Promise<
   };
   return (body.data ?? []).map((p) => ({
     value: p.id,
-    label: p.product_name ? `${p.product_code} - ${p.product_name}` : p.product_code,
+    label: codeWithName(p.product_code, p.product_name),
   }));
 }

@@ -42,6 +42,7 @@ import {
   SAFETY_STOCK_HINT,
   StateChip,
 } from './HealthIndicators';
+import { distinctName } from '@/lib/product-display';
 
 const PAGE_SIZE = 50;
 
@@ -488,9 +489,9 @@ export function ProductListDialog({
                       <div className="font-medium">{p.sku}</div>
                       <div
                         className="truncate text-xs text-muted-foreground"
-                        title={`${p.product_name} · ${p.warehouse_name}`}
+                        title={[distinctName(p.sku, p.product_name), p.warehouse_name].filter(Boolean).join(' · ')}
                       >
-                        {p.product_name} · {p.warehouse_name}
+                        {[distinctName(p.sku, p.product_name), p.warehouse_name].filter(Boolean).join(' · ')}
                       </div>
                     </td>
                     <td className="px-2 py-2">

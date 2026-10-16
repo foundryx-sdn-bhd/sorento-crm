@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
+import { sameDisplayText } from '@/lib/product-display';
 
 export interface MultiPillOption {
   value: string;
@@ -260,7 +261,7 @@ export function MultiPillInput({
                   onClick={() => addPills(opt.value, opt)}
                 >
                   <div className="font-medium truncate">{opt.label ?? opt.value}</div>
-                  {opt.meta && (
+                  {opt.meta && !sameDisplayText(opt.label ?? opt.value, opt.meta) && (
                     <div className="text-xs text-muted-foreground truncate">{opt.meta}</div>
                   )}
                 </button>

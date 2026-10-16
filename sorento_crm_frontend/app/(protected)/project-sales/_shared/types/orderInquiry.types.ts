@@ -416,6 +416,8 @@ export interface OrderInquiryListEnvelope {
 
 export interface OrderInquiryWorklistRow extends OrderInquiryAckFields {
   id: string;
+  /** OI-BULK-RESERVE v4: the header this row belongs to; the Lines page commits per order inquiry. */
+  order_inquiry_id?: string | null;
   /**
    * `OI-000123` - the number of the inquiry this row belongs to, off its own header.
    * What a person calls the instruction: "the inquiry on SO414033" stops being an answer
@@ -527,6 +529,13 @@ export interface OrderInquiryWorklistRow extends OrderInquiryAckFields {
    * The Lines grid's `Request to reserve N` pill and the tick's default stage both
    * read N off this. */
   requested_qty?: string;
+  /** OI-BULK-RESERVE v4: the open request row's warehouse id and code; null with no open
+   * request. The Lines page's Decide drafts read them. */
+  reserve_warehouse_id?: string | null;
+  reserve_location?: string | null;
+  /** OI-RESERVE-RECEIVED (AC-RR-5): what a reserve request may still ask for - the
+   * server's own figure, so the screen never re-derives "received". A number. */
+  reserve_requestable_qty?: number;
   /** Who sold it (`sales_orders.sales_agent_id` -> `sales_agents`), off the same core
    * sales order the S/O no column reaches. Null when the row reaches no core order, or
    * that order carries no agent. */
@@ -568,6 +577,8 @@ export interface OrderInquiryWorklistRow extends OrderInquiryAckFields {
   project_id?: string | null;
   project_sales_order_id?: string | null;
   core_sales_order_id?: string | null;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type; null when there is no core order. */
+  so_doc_type?: string | null;
   /**
    * S6 (`PLAN-board-oi-mechanical-22sep.md`, AC-B6-1/AC-B6-7): the AutoCount line number,
    * for the "SO line" column's own text (`SO402757 · L5`, `orderInquirySoLineLabel`).
@@ -667,6 +678,8 @@ export interface OrderInquiryWorklistParams {
   po_number?: string;
   /** Prefix, case-insensitive (S1, R-K): a row's SPO link (own or derived, S5). */
   spo_number?: string;
+  /** OI-BULK-RESERVE v4: keep a line when one of its own request rows is in this status. */
+  reserve?: 'parked' | 'needs_reserve' | 'notice_parked' | 'reserved';
   /**
    * The bounds of one schedule-matrix cell's own period (S3): a click's drilldown asks
    * the list for exactly this cell's axis + period rather than reading rows back out of
@@ -1305,6 +1318,8 @@ export interface OrderInquiryHeader {
   raised_by_name?: string | null;
   /** The CORE sales order id, for the S/O no link (AC-HL-06). Null when there is none. */
   sales_order_id?: string | null;
+  /** AC-CONSIGN-CRM: the core sales order's doc_type; null when there is no core order. */
+  so_doc_type?: string | null;
   project_sales_order_id?: string | null;
   so_number?: string | null;
   so_date?: string | null;
@@ -1319,6 +1334,10 @@ export interface OrderInquiryHeader {
   qty_total: string;
   /** Derived, never stored (plan S2): `lines_to_confirm > 0` is outstanding. */
   status: OrderInquiryHeaderStatus;
+  /** The OI's earliest reserve status (AC-SN-30); null when it has no reserve requests. */
+  reserve_status?: 'parked' | 'needs_reserve' | 'notice_parked' | 'reserved' | null;
+  /** Who parked it, while it is parked. */
+  parked_by_name?: string | null;
 }
 
 /** One entry of the detail page's Raise history card (AC-DP-07). Newest first. */
@@ -1344,6 +1363,8 @@ export interface OrderInquiryHeaderListParams {
    * 2026) - never a `projects.id`: 0 of 738 headers on the prod copy carry a
    * registered project. */
   project?: string;
+  /** OIs with a reserve request row in this status (AC-SN-30). */
+  reserve?: 'parked' | 'needs_reserve' | 'notice_parked' | 'reserved';
   page?: number;
   limit?: number;
   sort?: string;

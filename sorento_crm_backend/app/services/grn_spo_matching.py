@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.models.procurement import PickingHeader, PickingLine, SPOAllocation
 from app.services.procurement_service import _spo_match_key
+from app.services.rules import shipping_order_rules
 
 logger = logging.getLogger(__name__)
 
@@ -276,8 +277,23 @@ def _measure(
             continue
         linked_other = linked_all - linked_excluded
         stated = int(allocation.stated_received or 0)
-        external_received = max(0, int(allocation.quantity_received or 0) - stated - linked_all)
-        consumed = linked_other + external_received
+        # AC-CONSIGN-CRM: on an AutoCount row, while stated lags, received carries picks plus
+        # the cancel (`_sync_group_received` is the only writer that folds it in); the part of
+        # the cancel not yet inside stated is already explained, so it is not an external
+        # receipt and is consumed once, below.
+        cancelled = int(allocation.qty_cancelled or 0)
+        folded = (
+            max(0, cancelled - stated)
+            if allocation.source_system == shipping_order_rules.AUTOCOUNT_SOURCE_SYSTEM
+            else 0
+        )
+        external_received = max(
+            0, int(allocation.quantity_received or 0) - stated - linked_all - folded
+        )
+        # AC-CONSIGN-CRM part C: an AutoCount Cancel PO sits inside `stated_received`
+        # (TransferedQty), which the mirror rule above leaves as capacity; the cancelled
+        # part never arrives, so it is consumed here and no later GRN can draw it.
+        consumed = linked_other + external_received + cancelled
         entries.append(
             PoolEntry(
                 allocation_id=str(allocation.id),

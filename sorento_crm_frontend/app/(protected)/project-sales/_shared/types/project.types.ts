@@ -695,10 +695,23 @@ export interface QuotationLineImages {
   technical_drawing: QuotationLineDrawing;
 }
 
+/** One part of a set, as FROZEN on the line when the set was picked. */
+export interface QuotationSetPart {
+  product_id: string;
+  product_code: string;
+  description?: string | null;
+  /** A server decimal string. */
+  quantity: string;
+  is_driver: boolean;
+}
+
 export interface QuotationLine {
   id: string;
   version_id: string;
   product_id?: string | null;
+  /** A product SET quoted as one line. Never together with `product_id`. */
+  product_set_id?: string | null;
+  set_parts?: QuotationSetPart[];
   product_code?: string | null;
   description?: string | null;
   list_price?: string | null;
@@ -738,6 +751,7 @@ export interface QuotationLine {
 
 export interface QuotationLineBody {
   product_id?: string | null;
+  product_set_id?: string | null;
   description_snapshot?: string | null;
   unit_price?: string;
   quantity?: string;
@@ -796,8 +810,9 @@ export interface QuotationOutcomeBody {
 export interface ProjectSeries {
   id: string;
   name: string;
-  brand_id?: string | null;
-  brand_name?: string | null;
+  /** Picked brands, in brand-name order. Empty means every brand. */
+  brand_ids: string[];
+  brand_names: string[];
   description?: string | null;
   is_active: boolean;
   category_ids: string[];
@@ -832,6 +847,20 @@ export interface SeriesProductRow {
    * second implementation in the browser could disagree with the one that blocks a save.
    */
   derived_floor?: string | null;
+  /** Of the series' brand and under one of its categories. Out-of-scope rows can only be removed. */
+  in_scope: boolean;
+}
+
+/** One product SET priced on a series; the twin of `SeriesProductRow`. */
+export interface SeriesSetRow {
+  product_set_id: string;
+  set_code?: string | null;
+  set_name?: string | null;
+  part_codes: string[];
+  selling_price?: string | null;
+  max_discount_pct?: string | null;
+  /** Computed on the SERVER, null unless both numbers are set. */
+  derived_floor?: string | null;
 }
 
 /** A list of product codes to load onto a series (S18). */
@@ -860,6 +889,8 @@ export interface SeriesProductImportResult {
   removed: number;
   product_count: number;
   unmatched_codes: string[];
+  /** Codes that were a set or a family rather than a product, with the products they stand for. */
+  resolved?: { code: string; via: 'set' | 'family'; members: string[] }[];
 }
 
 /**

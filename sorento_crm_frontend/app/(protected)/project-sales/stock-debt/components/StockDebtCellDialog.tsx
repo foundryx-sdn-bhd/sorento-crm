@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { ColumnDef } from '@tanstack/react-table';
 import {
   Dialog,
@@ -14,22 +13,21 @@ import {
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
-import { formatDateInMalaysia } from '@/lib/helpers';
 import { STATUS_PILL_BASE } from '@/lib/status-pill';
 import { cn } from '@/lib/utils';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
 import { OrderInquiryDocumentLink } from '../../order-inquiries/components/OrderInquiryDocumentDialog';
 import { useStockDebtCellQuery } from '../hooks/useStockDebtQuery';
+import type { StockDebtLocationsMode } from '../services/stockDebtService';
 import type {
-  StockDebtAssignedFrom,
   StockDebtBook,
   StockDebtDemandLine,
-  StockDebtDemandStatus,
   StockDebtProjection,
   StockDebtSupplyEvent,
   StockDebtSupplyKind,
 } from '../types/stockDebt.types';
+import { distinctName } from '@/lib/product-display';
+import { PoLineLink, buildDemandColumns, dateOrDash as date, sumDemand } from '../lib/stockDebtDemandColumns';
 
 /**
  * The two tables behind one cell (R28, AC-S2-11): what is DUE in that month, and what
@@ -53,24 +51,6 @@ import type {
  * balance in the title, because a month states its own month and nothing carries into it.
  */
 
-/**
- * The shared soft-pastel status palette (ADR 1d), paired with `STATUS_PILL_BASE` - the
- * shape `BoardDecisionPill` uses for the board's own verdicts. A local map rather than
- * `statusPillClass`, for the same reason that pill keeps one: these four words are this
- * screen's vocabulary, and the shared map is keyed on form/document statuses that mean
- * something else. What is shared is the LOOK, so a status here and a status on the board
- * read as the same kind of thing.
- */
-const STATUS_CLASS: Record<StockDebtDemandStatus, string> = {
-  covered: 'bg-emerald-100 text-emerald-800',
-  pinned: 'bg-sky-100 text-sky-800',
-  late: 'bg-amber-100 text-amber-800',
-  short: 'bg-red-100 text-red-800',
-  // STOCK-DEBT-LENDABLE: a planned re-buy, neither short (the goods exist, lent to a
-  // nearer line) nor pinned (they are not this line's any more) - its own colour.
-  order_back: 'bg-violet-100 text-violet-800',
-};
-
 const KIND_LABEL: Record<StockDebtSupplyKind, string> = {
   on_hand: 'On hand',
   spo: 'SPO',
@@ -82,98 +62,6 @@ const KIND_LABEL: Record<StockDebtSupplyKind, string> = {
  *  invalidating them for no reason. */
 const EMPTY_DEMAND: StockDebtDemandLine[] = [];
 const EMPTY_SUPPLY: StockDebtSupplyEvent[] = [];
-
-function date(value: string | null): string {
-  return value ? formatDateInMalaysia(value) : '-';
-}
-
-/**
- * ONE `assigned_from` entry, as R31a's single "Covered by" column prints it: an on-hand
- * bin is plain text with NO quantity suffix (R30's had one), a document is the SAME
- * `OrderInquiryDocumentLink` the OI screens use with NO "line N (qty)" beside it (R30's
- * had one too) - the drill states WHERE a line drew from, `Assigned` already states how
- * much. `highlightLines` marks the document's own line when the dialog opens from here
- * (R31b), so a reader can jump straight to it.
- */
-/** R42: a PO line - the document link, then its line number, muted. */
-function PoLineLink({
-  poNumber,
-  poLineNumber,
-  poId,
-  poLineId,
-}: {
-  poNumber: string;
-  poLineNumber: number | null;
-  poId: string | null;
-  poLineId: string | null;
-}) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1">
-      <OrderInquiryDocumentLink kind="po" document={poNumber} poId={poId} poLineId={poLineId} />
-      {poLineNumber != null && (
-        <span className="shrink-0 text-muted-foreground">line {poLineNumber}</span>
-      )}
-    </span>
-  );
-}
-
-function CoveredByEntry({ entry }: { entry: StockDebtAssignedFrom }) {
-  if (entry.kind === 'on_hand') {
-    // STOCK-DEBT-LENDABLE: the server's own wording carries the lender's name when the
-    // take was lent ("On hand BRW-BB (from SO381065)"); a free take stays plain.
-    return (
-      <span className="truncate text-muted-foreground" title={entry.ref}>
-        {entry.ref}
-      </span>
-    );
-  }
-  if (entry.kind === 'lent') {
-    // STOCK-DEBT-LENDABLE: a line that lent its landed goods names each receiver,
-    // linked to the receiving order the way the Sales order cell links its own.
-    return entry.sales_order_id ? (
-      <Link
-        href={`/scm/sales-orders/${entry.sales_order_id}`}
-        target="_blank"
-        rel="noreferrer"
-        className="truncate text-muted-foreground hover:underline"
-        title={entry.ref}
-      >
-        {entry.ref}
-      </Link>
-    ) : (
-      <span className="truncate text-muted-foreground" title={entry.ref}>
-        {entry.ref}
-      </span>
-    );
-  }
-  if (entry.kind === 'po') {
-    // R42: a purchase order covers a line too. The same link, kind `po`, opened on the
-    // PO line itself (`poLineId` marks it and offers the jump). The line number rides
-    // beside it, unlike an SPO's (R31a): one PO often covers one order from two lines
-    // (PO 202609-S0029's 1,305 and 4 both name SO419208), and two identical numbers
-    // side by side read as one document listed twice.
-    return entry.po_number ? (
-      <PoLineLink
-        poNumber={entry.po_number}
-        poLineNumber={entry.po_line_number ?? null}
-        poId={entry.po_id ?? null}
-        poLineId={entry.po_line_id ?? null}
-      />
-    ) : (
-      <span className="truncate text-muted-foreground">{entry.ref}</span>
-    );
-  }
-  if (!entry.spo_number) {
-    return null;
-  }
-  return (
-    <OrderInquiryDocumentLink
-      kind={entry.kind}
-      document={entry.spo_number}
-      highlightLines={entry.spo_line_number != null ? [entry.spo_line_number] : undefined}
-    />
-  );
-}
 
 function signedQty(value: number): string {
   return value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString();
@@ -211,6 +99,8 @@ export function StockDebtCellDialog({
   dateTo,
   book,
   projected = false,
+  locations,
+  locationsMode,
   onClose,
 }: {
   productId: string;
@@ -222,20 +112,22 @@ export function StockDebtCellDialog({
   monthLabel: string;
   balance: number;
   /** The board's own due date range (AC-11/AC-11b, R14), echoed so the drill foots with
-   *  the cell that opened it. R16 retired the Ownership group this dialog used to take
-   *  instead - there is no `group` prop any more. */
+   *  the cell that opened it. */
   dateFrom?: string;
   dateTo?: string;
   /** The board's own book (AC-11), same reason. */
   book?: StockDebtBook;
   /** STOCK-DEBT-PROJECTION: the board's "Projected balance" switch, same reason. */
   projected?: boolean;
+  /** The board's Location pick (owner, 14 Oct 2026), same reason. */
+  locations?: string[];
+  locationsMode?: StockDebtLocationsMode;
   onClose: () => void;
 }) {
   // The board's own narrowing travels with the request AND with the cache key: the same
   // product and month answer differently under a due date range / a book, so the
   // drill has to be recomputed over the span the cell that opened it was.
-  const cell = useStockDebtCellQuery(productId, month, dateFrom, dateTo, book, projected);
+  const cell = useStockDebtCellQuery(productId, month, dateFrom, dateTo, book, projected, locations, locationsMode);
   const projection = cell.data?.projection ?? null;
 
   const demand = cell.data?.demand ?? EMPTY_DEMAND;
@@ -278,20 +170,7 @@ export function StockDebtCellDialog({
   // lines that used to sit under them - summed over the SAME rows the tab itself is
   // showing (the filtered set on Demand while a search narrows it, never the unfiltered
   // total the search left behind).
-  const demandTotals = React.useMemo(
-    () =>
-      filteredDemand.reduce(
-        (totals, row) => ({
-          ordered: totals.ordered + (row.qty_ordered ?? 0),
-          delivered: totals.delivered + (row.qty_delivered ?? 0),
-          outstanding: totals.outstanding + row.open_qty,
-          assigned: totals.assigned + row.assigned_qty,
-          short: totals.short + row.short_qty,
-        }),
-        { ordered: 0, delivered: 0, outstanding: 0, assigned: 0, short: 0 },
-      ),
-    [filteredDemand],
-  );
+  const demandTotals = React.useMemo(() => sumDemand(filteredDemand), [filteredDemand]);
   const supplyTotals = React.useMemo(
     () =>
       supply.reduce(
@@ -306,205 +185,7 @@ export function StockDebtCellDialog({
     [supply],
   );
 
-  const demandColumns = React.useMemo<ColumnDef<StockDebtDemandLine>[]>(
-    () => [
-      {
-        id: 'so_number',
-        accessorKey: 'so_number',
-        header: ({ column }) => <DataGridColumnHeader title="Sales order" column={column} />,
-        size: 130,
-        // R24: the Total footer row's own label, in the leftmost column - the same
-        // convention the board's own footer row uses.
-        footer: () => 'Total',
-        // R29: linked to the sales order's own page - new tab, so a reader keeps this
-        // drill open beside it.
-        cell: ({ row }) =>
-          row.original.sales_order_id ? (
-            <Link
-              href={`/scm/sales-orders/${row.original.sales_order_id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="truncate font-medium text-primary hover:underline"
-              title={row.original.so_number}
-            >
-              {row.original.so_number}
-            </Link>
-          ) : (
-            <span className="truncate font-medium" title={row.original.so_number}>
-              {row.original.so_number}
-            </span>
-          ),
-      },
-      {
-        id: 'agent_code',
-        accessorKey: 'agent_code',
-        header: ({ column }) => <DataGridColumnHeader title="Agent" column={column} />,
-        size: 110,
-        cell: ({ row }) => (
-          <span className="truncate" title={row.original.agent_code ?? ''}>
-            {row.original.agent_code ?? '-'}
-          </span>
-        ),
-      },
-      {
-        // Before the date, because "which bin" is what decides whether this line and the
-        // supply beside it are even the same pile (the ownership group is the code's suffix).
-        id: 'warehouse_code',
-        accessorKey: 'warehouse_code',
-        header: ({ column }) => <DataGridColumnHeader title="Bin" column={column} />,
-        size: 110,
-        cell: ({ row }) => (
-          <span className="truncate" title={row.original.warehouse_code ?? ''}>
-            {row.original.warehouse_code ?? '-'}
-          </span>
-        ),
-      },
-      {
-        id: 'required_date',
-        accessorKey: 'required_date',
-        header: ({ column }) => <DataGridColumnHeader title="Due" column={column} />,
-        size: 120,
-        cell: ({ row }) => <span>{date(row.original.required_date)}</span>,
-      },
-      {
-        // R22: CS's own Order Inquiry statement when set, else the sales-order book's
-        // own `qty_ordered` - `plan_qty()` server-side, echoed here rather than
-        // re-derived. Optional on the wire TYPE (not on the real response, which always
-        // carries it) only so a fixture built before this round still type-checks.
-        id: 'qty_ordered',
-        accessorKey: 'qty_ordered',
-        header: ({ column }) => <DataGridColumnHeader title="Ordered" column={column} />,
-        size: 100,
-        meta: { headerClassName: 'text-end', cellClassName: 'text-end' },
-        footer: () => demandTotals.ordered.toLocaleString(),
-        cell: ({ row }) => (
-          <span className="tabular-nums">
-            {(row.original.qty_ordered ?? 0).toLocaleString()}
-          </span>
-        ),
-      },
-      {
-        id: 'qty_delivered',
-        accessorKey: 'qty_delivered',
-        header: ({ column }) => <DataGridColumnHeader title="Delivered" column={column} />,
-        size: 100,
-        meta: { headerClassName: 'text-end', cellClassName: 'text-end' },
-        footer: () => demandTotals.delivered.toLocaleString(),
-        cell: ({ row }) => (
-          <span className="tabular-nums">
-            {(row.original.qty_delivered ?? 0).toLocaleString()}
-          </span>
-        ),
-      },
-      {
-        // R22: renamed from "Open" - the same figure (`open_qty`), unchanged.
-        id: 'open_qty',
-        accessorKey: 'open_qty',
-        header: ({ column }) => <DataGridColumnHeader title="Outstanding" column={column} />,
-        size: 100,
-        meta: { headerClassName: 'text-end', cellClassName: 'text-end' },
-        footer: () => demandTotals.outstanding.toLocaleString(),
-        cell: ({ row }) => (
-          <span className="tabular-nums">{row.original.open_qty.toLocaleString()}</span>
-        ),
-      },
-      {
-        id: 'assigned_qty',
-        accessorKey: 'assigned_qty',
-        header: ({ column }) => <DataGridColumnHeader title="Assigned" column={column} />,
-        size: 100,
-        meta: { headerClassName: 'text-end', cellClassName: 'text-end' },
-        footer: () => demandTotals.assigned.toLocaleString(),
-        cell: ({ row }) => (
-          <span className="tabular-nums">{row.original.assigned_qty.toLocaleString()}</span>
-        ),
-      },
-      {
-        // R31a (owner, 25 Sep) supersedes R30's three columns (From/SPO/OI) with ONE:
-        // on-hand entries print plain text, a document entry the SAME
-        // `OrderInquiryDocumentLink` the OI screens use, both together when a line drew
-        // from both, and a dash when nothing did. Neither carries a quantity or line
-        // number any more - `Assigned` already states how much, and the document's own
-        // dialog (opened with `highlightLines`, R31b) is where a reader learns which line.
-        id: 'covered_by',
-        header: ({ column }) => <DataGridColumnHeader title="Covered by" column={column} />,
-        size: 220,
-        cell: ({ row }) => {
-          const entries = row.original.assigned_from ?? [];
-          if (!entries.length) {
-            return <span className="text-muted-foreground">-</span>;
-          }
-          return (
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-              {entries.map((entry, index) => (
-                <CoveredByEntry key={`${entry.kind}:${entry.ref}:${index}`} entry={entry} />
-              ))}
-            </div>
-          );
-        },
-      },
-      {
-        id: 'status',
-        accessorKey: 'status',
-        header: ({ column }) => <DataGridColumnHeader title="Status" column={column} />,
-        size: 120,
-        // R24 addendum: the Total row's own Short - sum of `short_qty` - sits here rather
-        // than a standalone "Uncovered N" line under the grid (R37 still foots the SAME
-        // number, just relocated).
-        footer: () => `Short ${demandTotals.short.toLocaleString()}`,
-        cell: ({ row }) => {
-          // `short_qty` is the SERVER's own figure - what the line went without ON ITS OWN
-          // DATE (R37), which is also what its month books and what the footer below sums.
-          // Re-deriving it as `open - assigned` disagreed with the payload the moment later
-          // supply cleared the shortfall: a `late` line ended fully assigned and printed
-          // "short 0" beside a cell the same line had put in debt.
-          //
-          // A LATE line is exactly that case - later supply cleared it, so Open and Assigned
-          // read the same - and it STILL books its shortfall in this month (R37, AC-S2-7).
-          // Printing only the word "late" left the figure the cell was made of unsaid, so
-          // the row is stated as `late . short 40`: what happened, and how much of it.
-          const { status, short_qty: shortQty, lent_qty: lentQty = 0 } = row.original;
-          const pill = cn(STATUS_PILL_BASE, STATUS_CLASS[status]);
-          const shortLabel = `short ${shortQty.toLocaleString()}`;
-          // STOCK-DEBT-LENDABLE: a line that lent its landed goods reads "order back N"
-          // (its own status), N being what it is still OWED for the lend - never more
-          // than its own shortfall, so a line that re-covered part of it elsewhere does
-          // not read as owed the whole lend. When it is short beyond that, short outranks
-          // and the two halves are said apart: "short 12 · order back 88" adds up to the
-          // 100 the month books, where "short 100 · order back 88" read as 188.
-          const orderBack = Math.min(lentQty, shortQty);
-          const orderBackLabel = `order back ${orderBack.toLocaleString()}`;
-          if (status === 'order_back') {
-            return <span className={pill}>{orderBackLabel}</span>;
-          }
-          if (shortQty > 0 && status === 'short' && orderBack > 0) {
-            return (
-              <span className={cn(pill, 'gap-1')}>
-                {`short ${(shortQty - orderBack).toLocaleString()}`}
-                <span aria-hidden="true">&middot;</span>
-                <span>{orderBackLabel}</span>
-              </span>
-            );
-          }
-          if (shortQty > 0 && status === 'short') {
-            // "short 16" already says both, so the word is not repeated.
-            return <span className={pill}>{shortLabel}</span>;
-          }
-          if (shortQty > 0 && status === 'late') {
-            return (
-              <span className={cn(pill, 'gap-1')}>
-                {status}
-                <span aria-hidden="true">&middot;</span>
-                <span>{shortLabel}</span>
-              </span>
-            );
-          }
-          return <span className={pill}>{status}</span>;
-        },
-      },
-    ],
-    [demandTotals],
-  );
+  const demandColumns = React.useMemo(() => buildDemandColumns(demandTotals), [demandTotals]);
 
   const supplyColumns = React.useMemo<ColumnDef<StockDebtSupplyEvent>[]>(
     () => [
@@ -674,8 +355,7 @@ export function StockDebtCellDialog({
   // R27: the muted description line under the title repeats nothing - it renders only
   // when the name is SET and actually differs from the code, the same guard the board's
   // own list rows apply server-side (AC-9) but this dialog was never given.
-  const distinctProductName =
-    productName && productName !== productCode ? productName : null;
+  const distinctProductName = distinctName(productCode, productName);
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>

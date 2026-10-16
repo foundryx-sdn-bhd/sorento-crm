@@ -21,6 +21,15 @@ describe('buildPlanActions', () => {
     expect(action.disabledReason).toContain('Tick the sales orders');
   });
 
+  it('names what the calling list holds in its refusal (CONSIGN-PLAN)', () => {
+    const [action] = buildPlanActions(
+      { selectedCount: 0, canPlan: true, max: 50, noun: 'consignments' },
+      handlers,
+    );
+
+    expect(action.disabledReason).toBe('Tick the consignments to plan first.');
+  });
+
   it('offers nothing without the permission the board itself requires', () => {
     // Hidden, not disabled: a door that answers 403 is worse than no door.
     expect(buildPlanActions({ selectedCount: 3, canPlan: false, max: 50 }, handlers)).toEqual([]);

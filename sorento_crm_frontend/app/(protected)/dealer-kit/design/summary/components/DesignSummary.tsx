@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getQuote, getSelection } from '../../../services/selectionService';
 import { boxesForSelection } from '@/lib/dealer-kit/roomBoxes';
 import { RoomPlan } from '../../components/RoomPlan';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * The design as a figure somebody can hand to a customer.
@@ -192,9 +193,11 @@ export function DesignSummary() {
                           <span className="block font-mono text-xs">
                             {line.productCode ?? line.productName}
                           </span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {line.productName}
-                          </span>
+                          {distinctName(line.productCode, line.productName) ? (
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {line.productName}
+                            </span>
+                          ) : null}
                           {!line.isAvailable && (
                             <Badge variant="destructive" className="mt-1 text-xs">
                               {line.unavailableReason ?? 'Cannot be ordered'}

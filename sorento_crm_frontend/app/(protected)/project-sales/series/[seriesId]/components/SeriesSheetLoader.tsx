@@ -250,6 +250,7 @@ function ImportProgress({
  */
 function ImportReport({ result }: { result: SeriesProductImportResult }) {
   const misses = result.unmatched_codes;
+  const resolved = result.resolved ?? [];
 
   // The tick on the button is the confirmation; only a refusal needs saying (S7-05).
   const { isCopied, copyToClipboard } = useCopyToClipboard();
@@ -283,6 +284,30 @@ function ImportReport({ result }: { result: SeriesProductImportResult }) {
           </p>
         </div>
       </div>
+
+      {resolved.length > 0 ? (
+        <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-border p-2.5">
+          {resolved.map((item) => (
+            <div key={item.code} className="space-y-1">
+              <p className="flex min-w-0 items-center gap-2 text-sm">
+                <span className="min-w-0 truncate font-medium" title={item.code}>
+                  {item.code}
+                </span>
+                <Badge variant="outline" className="shrink-0">
+                  {item.via}
+                </Badge>
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {item.members.map((member) => (
+                  <Badge key={member} variant="secondary" className="max-w-full truncate" title={member}>
+                    {member}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {misses.length > 0 ? (
         <div className="rounded-md border border-amber-300/60 bg-amber-50/60 p-2.5 dark:border-amber-500/30 dark:bg-amber-500/10">

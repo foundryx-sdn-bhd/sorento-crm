@@ -82,6 +82,7 @@ export type UseCase =
   | 'product_discontinued'
   | 'ticket_resolved'
   | 'price_tag_update'
+  | 'quotation_approval'
   | 'ideation_draft_reminder'
   | 'ideation_status_update'
   | 'supplier_request_chat'
@@ -353,6 +354,12 @@ export const USE_CASES: {
     label: 'Price Tag Request - Update',
     description:
       'Sent to the salesperson when their price tag request moves (received, design ready, changes requested, approved, PDF ready, ready for collection, collected, rejected) and their 24h window is closed. Map params to "Full update message" at minimum; add "Entity number" and "Portal URL" when the template carries them.',
+  },
+  {
+    key: 'quotation_approval',
+    label: 'Quotation - Approval',
+    description:
+      'Sent to the approvers when a below-floor quotation is sent for approval or withdrawn, and their 24h window is closed. Map params to "Contact name" and "Full update message" at minimum; add "Entity number" and "Portal URL" when the template carries them.',
   },
   {
     key: 'ideation_draft_reminder',

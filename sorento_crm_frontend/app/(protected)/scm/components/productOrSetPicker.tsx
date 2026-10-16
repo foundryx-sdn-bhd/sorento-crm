@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import type { SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { getProducts } from '@/app/(protected)/master-data-management/products/services/productService';
 import { getProductSets } from '@/app/(protected)/master-data-management/product-sets/services/productSetService';
+import { codeWithName } from '@/lib/product-display';
 
 /**
  * One list holding products AND product sets, for every place a person answers "what does
@@ -78,7 +79,7 @@ export async function fetchProductOrSetOptions(
   );
   const productOptions: SearchableSelectOption[] = (products.data ?? []).map((p) => ({
     value: p.id,
-    label: `${p.product_code} - ${p.product_name}`,
+    label: codeWithName(p.product_code, p.product_name),
     searchText: `${p.product_code} ${p.product_name}`,
     code: p.product_code,
   }));
@@ -97,7 +98,7 @@ export async function fetchProductOrSetOptions(
     });
     setOptions = (sets.data ?? []).map((s) => ({
       value: `${SET_OPTION_PREFIX}${s.id}`,
-      label: `${s.set_code} - ${s.name}`,
+      label: codeWithName(s.set_code, s.name),
       searchText: `${s.set_code} ${s.name}`,
       description: 'Set',
       code: s.set_code,

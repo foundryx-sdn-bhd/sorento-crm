@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Check, ChevronDown, ChevronRight, ExternalLink, Info, X } from 'lucide-react';
 import { ColumnDef, RowSelectionState } from '@tanstack/react-table';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -540,6 +541,7 @@ export function BoardCellBreakdownDialog({
               >
                 {row.original.so_number}
               </div>
+              <ConsignmentBadge docType={row.original.so_doc_type} size="xs" />
               <div className="truncate text-xs text-muted-foreground">
                 {soLineLabel(row.original)}
               </div>

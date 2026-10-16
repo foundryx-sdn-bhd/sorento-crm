@@ -211,7 +211,7 @@ def test_fix2_4c_shared_agent_removing_the_narrowing_guard_turns_4b_red(api):
     from app.api.v1.public import portal_sales_opportunity as mod
     from app.models.base import set_company_scope
 
-    original = mod._require_agent
+    original = mod._require_agents
 
     def _old_broken_require_agent(db_, token_):
         from app.services.portal_form_visibility_service import require_form_visible
@@ -223,9 +223,9 @@ def test_fix2_4c_shared_agent_removing_the_narrowing_guard_turns_4b_red(api):
         db_.info["actor_contact_id"] = str(token_.contact_id)
         # The pre-fix behaviour: unconditional overwrite, `None` for a shared agent.
         set_company_scope(db_, frozenset({agent.company_id}) if agent.company_id else None)
-        return agent
+        return [agent]
 
-    mod._require_agent = _old_broken_require_agent
+    mod._require_agents = _old_broken_require_agent
     try:
         with TestClient(app) as c:
             res = c.get(f"{BASE}/customer-options", headers={"X-Portal-Token": token.token})
@@ -233,7 +233,7 @@ def test_fix2_4c_shared_agent_removing_the_narrowing_guard_turns_4b_red(api):
         names = {item["customer_name"] for item in res.json()["items"]}
         assert customer_in_b.customer_name in names, (
             "with the old unconditional overwrite restored, the out-of-scope customer "
-            "leaks back in - proving the real fix in `_require_agent` is what fix2-4b pins"
+            "leaks back in - proving the real fix in `_require_agents` is what fix2-4b pins"
         )
     finally:
-        mod._require_agent = original
+        mod._require_agents = original

@@ -269,15 +269,17 @@ def test_an_unbound_sales_type_still_prints_something(db):
     assert "mystery_type" in PurchaseRequestPDFService(db)._html(row)
 
 
-def test_the_sponsorship_form_has_no_sales_type_row(db):
-    """The field is Purchase Request only - an empty row on the SF would imply a
-    sales type nobody filled in."""
+def test_the_sponsorship_form_prints_its_sales_type(db):
+    """SF-SALES-TYPE: the SF carries a sales type too (tests/test_sf_sales_type.py pins
+    its position); an unbound value still prints, as on the PR."""
     from app.services.purchase_request_pdf_service import PurchaseRequestPDFService
 
-    row = _make(db, request_type="sponsorship_form", sales_type="cash_sales")
+    row = _make(db, request_type="sponsorship_form", sales_type="mystery_type")
     db.commit()
 
-    assert "Sales Type:" not in PurchaseRequestPDFService(db)._html(row)
+    html = PurchaseRequestPDFService(db)._html(row)
+    assert "Sales Type:" in html
+    assert "mystery_type" in html
 
 
 @pytest.mark.parametrize("request_type", BOTH_TYPES)

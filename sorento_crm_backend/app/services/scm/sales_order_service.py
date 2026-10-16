@@ -498,6 +498,7 @@ class SalesOrderService:
                 "qty_ordered": qo,
                 "qty_delivered": max(qd - qc, 0.0),
                 "qty_cancelled": qc,
+                "qty_returned": float(getattr(ln, "qty_returned", None) or 0),
                 "cancels": cancels.get(str(ln.id), []),
                 # What is still to go out on THIS line, stated rather than left to be
                 # recomputed. The grid, its footer and the header total all read this one
@@ -639,6 +640,8 @@ class SalesOrderService:
             # (often blank, since AutoCount rarely states one); this is the answer people
             # actually asked for on this screen.
             "demand_class": so.demand_class,
+            # AC-CONSIGN-CRM: lets the screens mark a consignment order.
+            "doc_type": so.doc_type,
             # AutoCount's Transferable flag; None when the source never stated it.
             "is_transferable": so.is_transferable,
             "po_ref": so.po_ref or None,
@@ -1280,7 +1283,8 @@ class SalesOrderService:
              customer_code: Optional[str] = None, outstanding: bool = False,
              sales_agent_id: Optional[str] = None,
              demand_class: Optional[str] = None,
-             transferable: Optional[str] = None) -> dict:
+             transferable: Optional[str] = None,
+             doc_type: str = "sales_order") -> dict:
         q = self.db.query(SalesOrder).options(
             joinedload(SalesOrder.lines).joinedload(SalesOrderLine.product),
             joinedload(SalesOrder.lines).joinedload(SalesOrderLine.warehouse),
@@ -1289,6 +1293,8 @@ class SalesOrderService:
         # "Show me the orders the Order Inquiry sheet created" is a filter on this list, not a
         # second screen: a separate list of the same entity is how two screens start
         # disagreeing about the same order.
+        # AC-CONSIGN-CRM: a consignment has its own page; this list is one kind at a time.
+        q = q.filter(SalesOrder.doc_type == doc_type)
         if source:
             if source == "manual":
                 # Everything neither feed wrote: keyed in, or from a system we have no name

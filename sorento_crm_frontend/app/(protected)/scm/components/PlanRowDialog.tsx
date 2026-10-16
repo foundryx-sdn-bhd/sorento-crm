@@ -48,6 +48,7 @@ import type {
   ContainerRequestDrillPoRow,
   ContainerRequestDrillSpoRow,
 } from '../services/containerRequestDrillService';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * ONE lightbox for the SCM family (R7, AC-B1/AC-B7).
@@ -99,7 +100,9 @@ export type PlanRowDialogKind =
   // that is the SUM of several documents on one line - the "Allocated to" card these replace
   // is gone (AC-L3).
   | 'placements'
-  | 'links';
+  | 'links'
+  // SO-DELIVERIES-VIEW: the DOs and Cancel SO documents under one sales-order line.
+  | 'deliveries';
 
 /** The word in front of the product code. Kept here so the titles cannot drift. */
 export const PLAN_ROW_DIALOG_TITLES: Record<PlanRowDialogKind, string> = {
@@ -115,6 +118,7 @@ export const PLAN_ROW_DIALOG_TITLES: Record<PlanRowDialogKind, string> = {
   blocks: 'Packed',
   placements: 'Placed on',
   links: 'Linked to',
+  deliveries: 'Deliveries',
 };
 
 // ---------------------------------------------------------------------------
@@ -2116,7 +2120,7 @@ export function PlanRowDialog({
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
 }) {
-  const showName = !!productName && productName.trim().toLowerCase() !== productCode.trim().toLowerCase();
+  const showName = distinctName(productCode, productName) !== null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[85vh] w-full flex-col overflow-hidden p-0 sm:max-w-[95vw]">

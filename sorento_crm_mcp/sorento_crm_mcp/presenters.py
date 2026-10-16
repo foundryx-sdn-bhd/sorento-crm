@@ -205,11 +205,14 @@ def _distinct_name(code: Any, name: Any) -> str | None:
     """Product name only when it differs from the code.
 
     Sorento usually sets product_name == product_code, so showing both is
-    redundant. Surface the name only when it carries extra info (code != name).
+    redundant. Surface the name only when it carries extra info. Equal means
+    the same after trim, whitespace-run collapse and lower-casing (same rule
+    as the backend's ``app.utils.product_display``; inlined because this
+    package cannot import the backend).
     """
     if not _filled(name):
         return None
-    if _filled(code) and str(name).strip() == str(code).strip():
+    if _filled(code) and " ".join(str(name).split()).lower() == " ".join(str(code).split()).lower():
         return None
     return name
 
@@ -1883,6 +1886,16 @@ def _http_error_envelope(tool_name: str, data: dict) -> dict:
     }
 
 
+def _set_total(data: dict, shown: int) -> int | None:
+    """The route's `pagination.total` when it is more than the page holds, else None (a
+    complete list has no total to state)."""
+    pagination = data.get("pagination")
+    total = pagination.get("total") if isinstance(pagination, dict) else None
+    if isinstance(total, bool) or not isinstance(total, int):
+        return None
+    return total if total > shown else None
+
+
 def present_response(tool_name: str, raw: str) -> str:
     """Transform a sanitized tool JSON string into the render envelope JSON string.
 
@@ -2041,6 +2054,11 @@ def present_response(tool_name: str, raw: str) -> str:
         intro = "Here is the outstanding SO I found."
     else:
         intro = _DEFAULT_INTRO.get(tool_name, "Here are the results I found.")
+        total = _set_total(data, len(rows)) if tool_name == "crm_master_products_list" else None
+        if total is not None:
+            # Chat fix PR-A (AC-A11): a page of a larger product set says how many there
+            # are, so "any bathtub?" never reads as if the page were the whole range.
+            intro = f"Here are {len(rows):,} of the {total:,} matching products."
 
     envelope: dict[str, Any] = {
         "result_type": (

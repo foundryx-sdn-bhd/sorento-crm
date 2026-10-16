@@ -150,7 +150,9 @@ def _synonyms(db, cid: str) -> list[str]:
 
 
 def test_class_synonyms_in_code_carry_the_water_words():
-    from app.services.product_class_signal import CLASS_SYNONYMS
+    from app.services.product_spec_registry import shipped_class_synonyms
+
+    CLASS_SYNONYMS = shipped_class_synonyms()
 
     for label, word in WATER_WORDS.items():
         assert word in CLASS_SYNONYMS[label], (label, CLASS_SYNONYMS[label])
