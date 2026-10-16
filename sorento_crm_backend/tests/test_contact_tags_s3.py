@@ -20,6 +20,7 @@ from app.dependencies import get_current_user
 from app.models.access import (
     ContactAgentAccess,
     ContactAccessType,
+    StockVisibilityPolicy,
     RespondContact,
     RespondContactCustomer,
 )
@@ -181,7 +182,7 @@ def test_t3_7_portal_override_only_where_resolved_visibility_differs(client, db,
     assert db.query(ContactPortalFormOverride).filter_by(contact_id=already.id).count() == 0
 
 
-def test_t3_8_agents_update_only_the_agents_set_and_reuse_the_legacy_row(client, db, all_perms):
+def test_t3_8_agents_update_only_the_agents_set_and_collapse_the_legacy_row(client, db, all_perms):
     a, b = _agent(db), _agent(db)
     tag = _stag(client, db, {"agents": {a.id: False}})
     contact = _holder(client, db, [tag])
@@ -189,17 +190,22 @@ def test_t3_8_agents_update_only_the_agents_set_and_reuse_the_legacy_row(client,
                               agent_id=a.id, is_allowed=True))
     db.add(ContactAgentAccess(respond_contact_id=contact.id, respond_contact_phone=contact.phone_number,
                               agent_id=b.id, is_allowed=True))
+    # a phone-only row beside the contact row: the runtime ignores it, apply leaves one row for A
+    db.add(ContactAgentAccess(respond_contact_id=None, respond_contact_phone=contact.phone_number,
+                              agent_id=a.id, is_allowed=True))
+    # a phone-only-only allowed row: the runtime already denies, so Deny writes nothing
     legacy = _holder(client, db, [tag])
     db.add(ContactAgentAccess(respond_contact_id=None, respond_contact_phone=legacy.phone_number,
                               agent_id=a.id, is_allowed=True))
     db.flush()
     _rows(_apply(client, [contact.id, legacy.id], dry_run=False))
     db.expire_all()
-    a_row = db.query(ContactAgentAccess).filter_by(agent_id=a.id, respond_contact_id=contact.id).one()
-    assert a_row.is_allowed is False
+    a_rows = [r for r in db.query(ContactAgentAccess).filter_by(agent_id=a.id).all()
+              if r.respond_contact_id == contact.id or r.respond_contact_phone == contact.phone_number]
+    assert len(a_rows) == 1 and a_rows[0].is_allowed is False
     assert db.query(ContactAgentAccess).filter_by(agent_id=b.id, respond_contact_id=contact.id).one().is_allowed is True
     legacy_rows = db.query(ContactAgentAccess).filter_by(agent_id=a.id, respond_contact_phone=legacy.phone_number).all()
-    assert len(legacy_rows) == 1 and legacy_rows[0].is_allowed is False
+    assert len(legacy_rows) == 1 and legacy_rows[0].is_allowed is True and legacy_rows[0].respond_contact_id is None
 
 
 def test_t3_8_deny_on_a_contact_with_no_grant_row_is_already_denied_so_no_row_is_created(client, db, all_perms):
@@ -252,9 +258,11 @@ def test_t3_9_one_audit_row_per_changed_contact_naming_actor_and_tag(client, db,
     db.expire_all()
 
     def named(contact):
+        # F4 also writes "Tag added" rows; count only the APPLY rows (they name the changed labels).
         return [
             r for r in db.query(AuditLog).filter(AuditLog.entity_id == contact.id).all()
-            if "ZZT-audited" in (r.description or "")
+            if "ZZT-audited" in (r.description or "") and "Tag added" not in (r.description or "")
+            and "Tag removed" not in (r.description or "")
         ]
 
     (row,) = named(changed)
@@ -383,3 +391,53 @@ def test_include_on_one_tag_and_exclude_on_another_is_a_stock_conflict_not_writt
     assert any("tock" in c["label"] for c in row["conflicts"]), row["conflicts"]
     assert db.execute(text("SELECT count(*) FROM stock_visibility_policies WHERE contact_id = :c"),
                       {"c": contact.id}).scalar() == 0
+
+
+# ---------------------------------------------------------------- R2: sibling keys in the preview
+
+
+def test_r2_stock_preview_lists_the_include_list_cleared_by_the_one_rule_and_apply_equals_it(client, db, all_perms):
+    w1, w2 = _wh(db), _wh(db)
+    atype = _atype(db, "stk2")
+    db.add(StockVisibilityPolicy(access_type_code=atype.code, mode="compact", warehouse_ids=[w1.id],
+                                 excluded_warehouse_ids=None, hide_zero_locations=False))
+    db.flush()
+    tag = _stag(client, db, {"stock_visibility": {"excluded_warehouse_ids": [w2.id]}})
+    contact = _holder(client, db, [tag])
+    contact.access_types = [atype]
+    db.flush()
+
+    preview = _rows(_apply(client, [contact.id], dry_run=True))["results"][0]
+    keys = {c["key"] for c in preview["changes"] if c["section"] == "stock_visibility"}
+    assert keys == {"excluded_warehouse_ids", "warehouse_ids"}, preview["changes"]
+    include = next(c for c in preview["changes"] if c["key"] == "warehouse_ids")
+    assert w1.warehouse_name in json.dumps(include["before"])
+
+    applied = _rows(_apply(client, [contact.id], dry_run=False))["results"][0]
+    assert applied["changes"] == preview["changes"]
+    db.expire_all()
+    row = db.query(StockVisibilityPolicy).filter_by(contact_id=contact.id).one()
+    assert row.warehouse_ids is None and list(row.excluded_warehouse_ids) == [w2.id]
+
+
+def test_r2_spec_preview_lists_the_include_list_cleared_by_the_one_rule_and_apply_equals_it(client, db, all_perms):
+    from app.models.access import MarketSegment, SpecVisibilityPolicy
+
+    seg = MarketSegment(code=unique_code("zseg")[:50], name="ZZT seg2")
+    db.add(seg)
+    db.flush()
+    db.add(SpecVisibilityPolicy(segment_code=seg.code, spec_keys=["board_thickness"]))
+    tag = _stag(client, db, {"spec_visibility": {"excluded_spec_keys": ["board_thickness"]}})
+    contact = _holder(client, db, [tag])
+    db.execute(text("INSERT INTO respond_contact_market_segments (contact_id, segment_code) VALUES (:c, :s)"),
+               {"c": contact.id, "s": seg.code})
+
+    preview = _rows(_apply(client, [contact.id], dry_run=True))["results"][0]
+    keys = {c["key"] for c in preview["changes"] if c["section"] == "spec_visibility"}
+    assert keys == {"excluded_spec_keys", "spec_keys"}, preview["changes"]
+
+    applied = _rows(_apply(client, [contact.id], dry_run=False))["results"][0]
+    assert applied["changes"] == preview["changes"]
+    db.expire_all()
+    row = db.query(SpecVisibilityPolicy).filter_by(contact_id=contact.id).one()
+    assert row.spec_keys is None and list(row.excluded_spec_keys) == ["board_thickness"]

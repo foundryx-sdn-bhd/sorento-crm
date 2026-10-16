@@ -281,7 +281,8 @@ def test_t3_4_disjoint_regions_conflict(client, db):
     assert _item(_read(client, _holder(client, db, [a, b])), "regions")["conflict"] is True
 
 
-def test_t3_4_stock_visibility_merge(client, db):
+def test_t3_4_stock_visibility_merge(client, db, perms):
+    perms["granted"] = {VIEW, EDIT, "inventory.stock.view"}  # F1: stock values need stock view
     w1, w2, w3, w4, w5 = (_wh(db) for _ in range(5))
     a = _stag(client, db, {"stock_visibility": {"mode": "compact", "warehouse_ids": [w1.id, w2.id],
                                                 "excluded_warehouse_ids": None, "hide_zero_locations": False}})
