@@ -1542,3 +1542,65 @@ def test_a_non_stock_gold_fact_stays_not_a_stock_ask_whatever_the_message_says()
              tools=[_stock_tool("availability")], reply="Promo price for SRTA100 is RM 90. How many units?")
     res = grade_turn(r, item("code_lookup", code="srta100", fact="promotion"))
     assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+# ------------------------------------------------------------------ review round 24
+STOCK_PICK_Q = {"kind": "product_pick", "expects": "choice", "payload": {"stock_pick": True, "stock_qty": None},
+                "asked_at_turn": 1, "options": [{"label": "SRTA100", "code": "SRTA100"}, {"label": "SRTA200", "code": "SRTA200"}]}
+PLAIN_PICK_Q = dict(STOCK_PICK_Q, payload={})
+TWO_CODES_REPLY = "Here are SRTA100 and SRTA200."
+
+
+def _pick_two(before_q):
+    v = {"entities": [], "reference_positions": [2], "open_question_answer": {"mode": None, "items": [], "picked": []}}
+    return row2(message="2", verdict=v, state_oq=before_q, oq={"before": before_q, "after": None, "writer": "engine"},
+                state_products=[prod("SRTA200", UA)], mem_after=[prod("SRTA200", UA)], tools=[_stock_tool("availability")],
+                reply="SRTA200 is available. How many units?")
+
+
+# 1. a pick on a stock picker is a stock ask
+def test_a_pick_on_a_stock_picker_may_ask_how_many_in_availability_mode():
+    res = grade_turn(_pick_two(STOCK_PICK_Q), item("followup", "pick", position=2, code="SRTA200"))
+    assert res["checks"].get("no_qty_ask") is True, res["checks"]
+    check(res, True)
+
+
+def test_a_how_many_after_a_non_stock_pick_still_fails():
+    res = grade_turn(_pick_two(PLAIN_PICK_Q), item("followup", "pick", position=2, code="SRTA200"))
+    assert res["checks"]["position"] is True, res["checks"]
+    assert res["checks"].get("no_qty_ask") is False and res["passed"] is False, res["checks"]
+
+
+# 2. a reply that shows 2+ product codes and leaves a list open is not a needless picker, on every slice and kind
+def test_a_shown_list_left_open_is_not_a_needless_picker_on_an_answer_followup():
+    r = row2(verdict=_picks([1]), state_oq=COLOUR_Q, oq={"before": COLOUR_Q, "after": VARIANT_Q, "writer": "engine"},
+             reply=TWO_CODES_REPLY)
+    res = grade_turn(r, item("followup", "answer", option="white"))
+    assert res["checks"].get("no_picker") is not False, res["checks"]
+
+
+def test_a_shown_list_left_open_is_not_a_needless_picker_on_a_scope_item():
+    r = _with_oq(row2(reply=TWO_CODES_REPLY), VARIANT_Q)
+    res = grade_turn(r, dict(item("scope"), asker=STAFF_ASKER))
+    assert res["checks"].get("no_picker") is not False and res["passed"] is not False, res["checks"]
+
+
+def test_a_picker_with_nothing_shown_still_fails_on_a_scope_item():
+    r = _with_oq(row2(reply="Which one do you mean?"), VARIANT_Q)
+    res = grade_turn(r, dict(item("scope"), asker=STAFF_ASKER))
+    assert res["checks"].get("no_picker") is False and res["passed"] is False, res["checks"]
+
+
+# 3. the same list left open as the question before is not a new question
+def test_the_same_product_list_left_open_as_the_question_before_is_not_needless():
+    after = dict(VARIANT_Q, asked_at_turn=3)
+    r = row2(reply="Thanks.", oq={"before": VARIANT_Q, "after": after, "writer": "engine"})
+    res = grade_turn(r, dict(item("scope"), asker=STAFF_ASKER))
+    assert res["checks"].get("no_picker") is not False, res["checks"]
+
+
+def test_a_different_product_list_left_open_with_nothing_shown_still_fails():
+    other = dict(VARIANT_Q, options=[{"label": "SRTZ900", "code": "SRTZ900"}, {"label": "SRTZ901", "code": "SRTZ901"}])
+    r = row2(reply="Thanks.", oq={"before": VARIANT_Q, "after": other, "writer": "engine"})
+    res = grade_turn(r, dict(item("scope"), asker=STAFF_ASKER))
+    assert res["checks"].get("no_picker") is False, res["checks"]
