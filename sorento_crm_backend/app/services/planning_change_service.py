@@ -3831,14 +3831,13 @@ def _oi_demand_rows(
     # of the order (`_apply_split_links`) is not a cancel - it is told as its split. Only
     # what actually moved, never every split sitting elsewhere: a split whose target was
     # not in the Confirm, did not grow, or that no longer acts moved nothing.
-    from app.services.project_order_inquiry_service import SPLIT_MOVED_KEY
+    from app.services.project_order_inquiry_service import explained_by_splits
 
-    moved_by_origin = db.info.get(SPLIT_MOVED_KEY) or {}
     linked_out_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
     for line_id in qty_down_line_ids:
-        moved = moved_by_origin.pop(line_id, None)
-        if moved and _dec(moved.get("qty")) > _ZERO:
-            linked_out_by_line[line_id] = _dec(moved.get("qty"))
+        moved_out, _moved_in = explained_by_splits(db, line_id)
+        if moved_out > _ZERO:
+            linked_out_by_line[line_id] = moved_out
 
     out: List[dict] = []
     counts: Dict[str, int] = {}

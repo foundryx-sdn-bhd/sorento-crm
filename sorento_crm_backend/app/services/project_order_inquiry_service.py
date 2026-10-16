@@ -172,6 +172,21 @@ _SAVED_TOLD_KEY = "oi_saved_lines_told"
 #: splits named here beside the line's own.
 SPLIT_MOVED_KEY = "oi_split_moved_by_origin"
 
+
+def explained_by_splits(db: Session, line_id: str) -> Tuple[Decimal, Decimal]:
+    """OI-LINE-SPLIT: `(moved out, moved in)` for one line in the running Confirm, read off
+    `SPLIT_MOVED_KEY` - the qty of its cut (or growth) the splits explain, which nobody is
+    told to cancel (or to order). The one reader the email's saved lines and the planning
+    change's cancel netting share."""
+    moved = db.info.get(SPLIT_MOVED_KEY) or {}
+    line_id = str(line_id)
+    out = _dec((moved.get(line_id) or {}).get("qty"))
+    into = sum(
+        (_dec((record.get("to") or {}).get(line_id)) for record in moved.values()),
+        _ZERO,
+    )
+    return out, into
+
 #: `Session.info` key holding the transactions THIS session has actually committed
 #: (never rolled back), so `_fire_pending_handover` - which listens on
 #: `after_transaction_end` because that is the only event carrying the concluded
@@ -4416,7 +4431,7 @@ class ProjectOrderInquiryService:
         # of a split sitting elsewhere that did not move - that qty is the netting's CANCEL.
         moved = self.db.info.get(SPLIT_MOVED_KEY) or {}
         splits = SplitOutputs(self.db, sorted(acting))
-        honoured: Dict[str, Tuple[Dict[str, Decimal], Decimal]] = {}
+        honoured: Dict[str, Dict[str, Decimal]] = {}
         for origin in acting:
             moved_splits = (moved.get(origin) or {}).get("splits") or {}
             printed: Dict[str, Decimal] = {}
@@ -4434,7 +4449,9 @@ class ProjectOrderInquiryService:
             if left > _ZERO and not moved_splits:
                 # Nothing moved: the line's own told line (its CANCEL) stands as it is.
                 continue
-            honoured[origin] = (printed, left)
+            # What the netting itself told (a CANCEL left after the moves, already net of
+            # what moved) stays as told; the honoured splits print beside it.
+            honoured[origin] = printed
         if not honoured:
             return
         self.split_handover_items(
@@ -4449,7 +4466,7 @@ class ProjectOrderInquiryService:
         line_ids: Optional[set] = None,
         actor_user_id: Optional[str] = None,
         queued: bool = False,
-        honoured: Optional[Mapping[str, Tuple[Mapping[str, Decimal], Decimal]]] = None,
+        honoured: Optional[Mapping[str, Mapping[str, Decimal]]] = None,
     ) -> List[Dict[str, Any]]:
         """OI-LINE-SPLIT (UAC D1): every handover item of a SPLIT line (its own splits, the
         origin view) is replaced by one line per split, each reading alone in the same
@@ -4460,8 +4477,8 @@ class ProjectOrderInquiryService:
         list back. Confirm (`_tell_splits`) passes the pending queue with `queued=True`:
         the line's items leave the queue and each split is queued by `_record_handover`.
         `line_ids` narrows which lines may expand. `honoured` (Confirm only): per line, the
-        splits to print with the qty each prints, and a qty left over that reads as one
-        CANCEL BALANCE line; without it every saved split prints (the saved plan)."""
+        splits to print with the qty each prints, beside the CANCEL the netting told for the
+        line; without it every saved split prints (the saved plan)."""
         from app.services.project_line_split_service import SplitOutputs
 
         candidates = {str(i.get("so_line_id")) for i in items if i.get("so_line_id")}
@@ -4477,12 +4494,14 @@ class ProjectOrderInquiryService:
             line_id = str(item.get("so_line_id") or "")
             if line_id in expanding:
                 templates.setdefault(line_id, item)
+                if honoured is not None and IV_CANCEL_BALANCE in (item.get("verb_keys") or ()):
+                    # Inside a Confirm, the cancel the netting told for the line stands: it
+                    # is what the OI rows did with the qty no split explains.
+                    out.append(item)
             else:
                 out.append(item)
         if queued:
             items[:] = out
-        from app.services.project_line_split_service import WORD_CANCEL
-
         for line_id, template in templates.items():
             line = self.db.get(ProjectSalesOrderLine, line_id)
             plan = honoured.get(line_id) if honoured is not None else None
@@ -4490,29 +4509,8 @@ class ProjectOrderInquiryService:
             for view in splits.by_origin[line_id]:
                 if plan is None:
                     views.append((view, _dec(view.split.qty)))
-                elif str(view.split.id) in plan[0]:
-                    views.append((view, _dec(plan[0][str(view.split.id)])))
-            if plan is not None and plan[1] > _ZERO and splits.by_origin[line_id]:
-                # What did not move reads as the cancel the netting made of it.
-                first = splits.by_origin[line_id][0].split
-                views.append(
-                    (
-                        SimpleNamespace(
-                            word=WORD_CANCEL,
-                            split=SimpleNamespace(
-                                id=f"{line_id}:left",
-                                so_line_id=line_id,
-                                qty=plan[1],
-                                delivery_date=None,
-                                is_cancel=True,
-                                remark="",
-                                base_qty=first.base_qty,
-                                base_date=first.base_date,
-                            ),
-                        ),
-                        plan[1],
-                    )
-                )
+                elif str(view.split.id) in plan:
+                    views.append((view, _dec(plan[str(view.split.id)])))
             for view, qty in views:
                 stand_in = self._split_stand_in(template, view, line)
                 stand_in.qty = qty
@@ -4693,18 +4691,32 @@ class ProjectOrderInquiryService:
                 date_word = IV_DELAY if date_now > date_before else IV_ADVANCE
                 keys.append(date_word)
                 pieces.append(REMARK_SPELLING[date_word])
+            # OI-LINE-SPLIT: what the splits moved out of (or into) this line in this
+            # Confirm is explained, never a cancel (or an order) of its own.
+            moved_out, moved_in = (
+                explained_by_splits(self.db, str(line.id)) if not explicit else (_ZERO, _ZERO)
+            )
+            net = (qty_now - qty_before) + moved_out - moved_in
+            if (
+                moved_in > _ZERO
+                and net == _ZERO
+                and same_kinds
+                and "delivery_date" not in was
+            ):
+                # A target whose whole growth is what moved in: nothing left to tell.
+                return
             if held_before and qty_before != qty_now:
                 was["qty"] = qty_before
                 if raised is not None:
                     if raised > _ZERO:
                         pieces.append(f"ORDER {_qty_str(raised)}")
                         keys.append(IV_ORDER)
-                elif qty_now < qty_before:
+                elif net < _ZERO:
                     # Today's form for a cut (owner: "QTY 2 / QTY CHANGE TO 1 / CANCEL 1").
-                    pieces.append(f"CANCEL {_qty_str(qty_before - qty_now)}")
+                    pieces.append(f"CANCEL {_qty_str(-net)}")
                     keys.append(IV_CANCEL_BALANCE)
-                else:
-                    grown = _buy_qty(now) - _buy_qty(before)
+                elif net > _ZERO:
+                    grown = _buy_qty(now) - _buy_qty(before) + moved_out - moved_in
                     if grown > _ZERO:
                         pieces.append(f"ORDER {_qty_str(grown)}")
                         keys.append(IV_ORDER)
@@ -5736,9 +5748,12 @@ class ProjectOrderInquiryService:
                 ):
                     continue
                 take = min(_dec(view.split.qty), room)
-                record = moved_by_origin.setdefault(origin, {"qty": _ZERO, "splits": {}})
+                record = moved_by_origin.setdefault(
+                    origin, {"qty": _ZERO, "splits": {}, "to": {}}
+                )
                 record["qty"] += take
                 record["splits"][str(view.split.id)] = take
+                record["to"][target_id] = record["to"].get(target_id, _ZERO) + take
                 self._split_row(
                     source,
                     _dec(source.qty) - take,
