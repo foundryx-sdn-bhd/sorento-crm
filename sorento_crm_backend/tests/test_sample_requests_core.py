@@ -9,7 +9,6 @@ Postgres only (tests/_pg_fixture.py). Every test seeds its own chain.
 """
 from __future__ import annotations
 
-from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -153,13 +152,14 @@ def world():
         api = Api(client, state)
         try:
             with company_scope(db, frozenset({company_id})):
-                # A quotation version on each project, through the HTTP surface.
-                def version_for(proj):
-                    q = api.as_(admin).post(
-                        f"{BASE}/projects/{proj.id}/quotations", json={"scope_label": "Units"}
-                    )
-                    assert q.status_code == 201, q.text
-                    return q.json()["current_version_id"]
+                # A quotation version on the project, through the HTTP surface. The sample
+                # request no longer links to it; it is only the old feed's trigger, used to
+                # prove Delivered no longer writes a Samples row.
+                q = api.as_(admin).post(
+                    f"{BASE}/projects/{project.id}/quotations", json={"scope_label": "Units"}
+                )
+                assert q.status_code == 201, q.text
+                version = q.json()["current_version_id"]
 
                 yield SimpleNamespace(
                     api=api,
@@ -171,11 +171,10 @@ def world():
                     coord=coord,
                     stranger=stranger,
                     cat=cat,
+                    version=version,
                     customer=customer,
                     project=project,
                     other_project=other_project,
-                    version=version_for(project),
-                    foreign_version=version_for(other_project),
                     perms=perms,
                 )
         finally:
@@ -292,31 +291,52 @@ def test_ac_sr_02_complete_request_submits(world):
 # ------------------------------------------------------------------ AC-SR-03
 
 
-def test_ac_sr_03_date_and_immediate_together_is_422(world):
-    """AC-SR-03: both at once is refused on any write."""
-    res = world.api.as_(world.sales).post(
-        SR,
-        json=full_payload(
-            product_id=world.cat.plain.id, delivery_date="2026-12-01", deliver_immediately=True
-        ),
-    )
-    assert res.status_code == 422, res.text
-
-
-def test_ac_sr_03_neither_date_nor_immediate_refused_on_submit(world):
-    """AC-SR-03: neither is a draft but cannot submit."""
-    d = _draft(world, delivery_date=None, deliver_immediately=False)
+def test_ac_sr_03_submit_refuses_without_delivery_date(world):
+    """AC-SR-03: a draft may lack the date, but submit is refused naming delivery_date."""
+    d = _draft(world, delivery_date=None)
     res = _submit(world, d["id"])
     assert res.status_code == 422, res.text
     body = res.json()
-    assert body.get("code") == "SAMPLE_REQUEST_INCOMPLETE"
-    assert body["details"]["field"] in {"delivery_date", "deliver_immediately"}
+    assert body.get("code") == "SAMPLE_REQUEST_INCOMPLETE", body
+    assert body["details"]["field"] == "delivery_date", body
 
 
-def test_ac_sr_03_immediate_alone_submits(world):
-    """AC-SR-03: Immediate arrangement satisfies the delivery rule."""
-    d = _draft(world, delivery_date=None, deliver_immediately=True)
+def test_ac_sr_03_with_a_delivery_date_submits(world):
+    """AC-SR-03: a plain date satisfies the rule."""
+    d = _draft(world, delivery_date="2026-12-01")
     assert _submit(world, d["id"]).status_code in (200, 201)
+
+
+def test_ac_sr_03_removed_keys_are_not_in_the_detail(world):
+    """16 Oct: quotation, alternative product and the immediate tick are gone from reads,
+    even when an old client still sends them (they must not persist or come back)."""
+    # An old client still sends the alternative product (valid today) and the immediate flag
+    # off. Either the API ignores them or refuses them; it must never echo them back.
+    res = world.api.as_(world.sales).post(
+        SR,
+        json=full_payload(
+            product_id=world.cat.plain.id,
+            deliver_immediately=False,
+            lines=[
+                {
+                    "product_id": world.cat.plain.id,
+                    "alt_product_id": world.cat.plain2.id,
+                    "qty": 1,
+                }
+            ],
+        ),
+    )
+    if res.status_code == 422:  # a strict schema refusing the old keys is also fine
+        return
+    assert res.status_code == 201, res.text
+    d = res.json()
+    for got in (d, _get(world, d["id"])):
+        assert "quotation_version_id" not in got, sorted(got)
+        assert "deliver_immediately" not in got, sorted(got)
+        for line in got["lines"]:
+            assert "alt_product_id" not in line, sorted(line)
+            assert "alt_product_code" not in line, sorted(line)
+            assert "alt_product_name" not in line, sorted(line)
 
 
 # ------------------------------------------------------------------ AC-SR-04
@@ -422,15 +442,6 @@ def test_ac_sr_10_bad_product_is_422_with_code(world, which):
     assert res.json().get("code") == "SAMPLE_REQUEST_PRODUCT_INVALID"
 
 
-@pytest.mark.parametrize("which", ["unknown", "inactive"])
-def test_ac_sr_10_bad_alternative_product_is_422(world, which):
-    """AC-SR-10: the alternative product fails the same check."""
-    alt = uid() if which == "unknown" else world.cat.inactive.id
-    res = _bad_line(world, product_id=world.cat.plain.id, alt_product_id=alt, qty=1)
-    assert res.status_code == 422, res.text
-    assert res.json().get("code") == "SAMPLE_REQUEST_PRODUCT_INVALID"
-
-
 def test_ac_sr_10_missing_product_id_is_422(world):
     """AC-SR-10: a line with no product (free text) is refused."""
     res = _bad_line(world, remark="CB2829SS-CR", qty=1)
@@ -448,23 +459,16 @@ def test_ac_sr_10_update_also_checks_products(world):
     assert res.json().get("code") == "SAMPLE_REQUEST_PRODUCT_INVALID"
 
 
-def test_ac_sr_10_good_line_with_alternative_round_trips(world):
-    """AC-SR-10: an 'X OR Y' line is product X + alternative Y, both active."""
+def test_ac_sr_10_good_line_round_trips(world):
+    """AC-SR-10: a line is one active product with brand and qty."""
     d = _draft(
         world,
-        lines=[
-            {
-                "product_id": world.cat.plain.id,
-                "alt_product_id": world.cat.plain2.id,
-                "qty": 3,
-                "remark": "blue",
-            }
-        ],
+        lines=[{"product_id": world.cat.plain.id, "qty": 3, "remark": "blue"}],
     )
     line = _get(world, d["id"])["lines"][0]
     assert line["product_code"] == world.cat.plain.product_code
-    assert line["alt_product_code"] == world.cat.plain2.product_code
     assert line["qty"] == 3
+    assert line["remark"] == "blue"
     assert line["brand_name"]
     assert line["product_active"] is True
     assert line["line_no"] == 1
@@ -525,21 +529,21 @@ def _settings_row(w):
 
 
 def test_ac_sr_20_settings_default_false_and_round_trip(world):
-    """AC-SR-20: both switches returned, OFF on deploy, saved by PUT /settings/general."""
+    """AC-SR-20: the one project switch is returned, OFF on deploy, saved by PUT /settings/general."""
     first = _settings_row(world)
     assert first.status_code == 200, first.text
     got = first.json()["settings"]
     assert got["sample_request_require_project"] is False
-    assert got["sample_request_require_quotation"] is False
+    assert "sample_request_require_quotation" not in got
 
     put = world.api.as_(world.admin).put(
         "/api/v1/user-management/settings/general",
-        json={"sample_request_require_project": True, "sample_request_require_quotation": True},
+        json={"sample_request_require_project": True},
     )
     assert put.status_code == 200, put.text
     after = _settings_row(world).json()["settings"]
     assert after["sample_request_require_project"] is True
-    assert after["sample_request_require_quotation"] is True
+    assert "sample_request_require_quotation" not in after
 
 
 def test_ac_sr_20_app_config_carries_the_switches_for_non_admins(world):
@@ -551,7 +555,7 @@ def test_ac_sr_20_app_config_carries_the_switches_for_non_admins(world):
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["sample_request_require_project"] is True
-    assert body["sample_request_require_quotation"] is False
+    assert "sample_request_require_quotation" not in body
 
 
 def test_ac_sr_21_project_switch_off_typed_title_submits(world):
@@ -585,48 +589,6 @@ def test_ac_sr_21_project_switch_on_registered_project_submits(world):
     )
     d = _draft(world, project_id=world.project.id, project_title=None)
     assert _submit(world, d["id"]).status_code in (200, 201)
-
-
-def test_ac_sr_22_quotation_switch_on_refuses_without_version(world):
-    """AC-SR-22: ON, submit refuses without a quotation version."""
-    world.api.as_(world.admin).put(
-        "/api/v1/user-management/settings/general", json={"sample_request_require_quotation": True}
-    )
-    d = _draft(world, project_id=world.project.id, project_title=None)
-    res = _submit(world, d["id"])
-    assert res.status_code == 422, res.text
-    body = res.json()
-    assert body["code"] == "SAMPLE_REQUEST_INCOMPLETE"
-    assert body["details"]["field"] == "quotation_version_id"
-
-
-def test_ac_sr_22_quotation_switch_on_with_own_version_submits(world):
-    """AC-SR-22: a version of the request's project passes."""
-    world.api.as_(world.admin).put(
-        "/api/v1/user-management/settings/general", json={"sample_request_require_quotation": True}
-    )
-    d = _draft(
-        world,
-        project_id=world.project.id,
-        project_title=None,
-        quotation_version_id=world.version,
-    )
-    assert _submit(world, d["id"]).status_code in (200, 201)
-
-
-def test_ac_sr_22_foreign_version_refused_at_any_setting(world):
-    """AC-SR-22: a version of another project is 422 SAMPLE_REQUEST_QUOTATION_PROJECT."""
-    res = world.api.as_(world.sales).post(
-        SR,
-        json=full_payload(
-            product_id=world.cat.plain.id,
-            project_id=world.project.id,
-            project_title=None,
-            quotation_version_id=world.foreign_version,
-        ),
-    )
-    assert res.status_code == 422, res.text
-    assert res.json().get("code") == "SAMPLE_REQUEST_QUOTATION_PROJECT"
 
 
 # ------------------------------------------------------------------ AC-SR-30
@@ -803,47 +765,40 @@ def test_ac_sr_32_draft_edit_replaces_lines(world):
     ]
 
 
-# ------------------------------------------------------------------ AC-SR-33 / 34
+# ------------------------------------------------------------------ AC-SR-34
 
 
 # Through the ORM, not raw SQL: a schema-qualified `projects.samples` in text() bypasses the
 # scratch schema's translate map and reads the real (empty) `projects` schema instead.
-def _samples_for_version(w, version_id):
-    from app.models.projects import ProjectSample
-
-    return (
-        w.db.query(ProjectSample.submitted_on)
-        .filter(ProjectSample.quotation_version_id == version_id)
-        .all()
-    )
-
-
 def _sample_count(w):
     from app.models.projects import ProjectSample
 
     return w.db.query(ProjectSample).count()
 
 
-def test_ac_sr_33_delivered_with_version_creates_a_sample_row(world):
-    """AC-SR-33: Delivered + version -> one Samples row, submitted_on = delivered date."""
-    _delivered(
-        world,
-        project_id=world.project.id,
-        project_title=None,
-        quotation_version_id=world.version,
-    )
-    rows = _samples_for_version(world, world.version)
-    assert len(rows) == 1
-    assert rows[0][0] == date(2026, 3, 1)
-
-
-def test_ac_sr_33_delivered_without_version_creates_no_sample(world):
-    """AC-SR-33: no version, no row."""
+def test_delivered_no_longer_touches_project_samples(world):
+    """16 Oct (AC-SR-33 removed): Delivered writes no Samples row, with or without a project,
+    even when an old client still sends the quotation version the old feed keyed on."""
     before = _sample_count(world)
     assert before == 0
     _delivered(world)
-    after = _sample_count(world)
-    assert after == before
+    # Old client: project + quotation_version_id. Today that makes a Samples row on Delivered.
+    res = world.api.as_(world.sales).post(
+        SR,
+        json=full_payload(
+            product_id=world.cat.plain.id,
+            project_id=world.project.id,
+            project_title=None,
+            quotation_version_id=world.version,
+        ),
+    )
+    if res.status_code == 201:
+        rid = res.json()["id"]
+        assert _submit(world, rid).status_code in (200, 201)
+        assert _move(world, rid, "processing").status_code == 200
+        assert _move(world, rid, "customer_confirmed", date="2026-02-20").status_code == 200
+        assert _move(world, rid, "delivered", date="2026-03-01").status_code == 200
+    assert _sample_count(world) == before
 
 
 def test_ac_sr_34_each_move_writes_a_project_activity_row(world):
@@ -877,12 +832,12 @@ def test_ac_sr_34_no_project_no_project_activity(world):
 # ------------------------------------------------------------------ AC-SR-51 / 54
 
 
-def test_ac_sr_51_queue_defaults_to_open_statuses_immediate_first(world):
-    """AC-SR-51: default Submitted+Processing+Customer confirmed; immediate first, then date asc."""
+def test_ac_sr_51_queue_defaults_to_open_statuses_delivery_date_ascending(world):
+    """AC-SR-51: default Submitted+Processing+Customer confirmed; delivery date ascending."""
     later = _submitted(world, delivery_date="2026-12-20")
     sooner = _submitted(world, delivery_date="2026-12-05")
-    immediate = _submitted(world, delivery_date=None, deliver_immediately=True)
-    draft = _draft(world)["id"]
+    soonest = _submitted(world, delivery_date="2026-11-30")
+    draft = _draft(world, delivery_date="2026-11-01")["id"]
 
     res = world.api.as_(world.coord).get(SR)
     assert res.status_code == 200, res.text
@@ -890,7 +845,18 @@ def test_ac_sr_51_queue_defaults_to_open_statuses_immediate_first(world):
     assert set(body) >= {"data", "pagination", "empty"}
     ids = [r["id"] for r in body["data"]]
     assert draft not in ids
-    assert ids == [immediate, sooner, later]
+    assert ids == [soonest, sooner, later]
+
+
+def test_ac_sr_51_default_sort_puts_a_missing_date_last(world):
+    """AC-SR-51: a request with no delivery date (a draft) sorts after dated ones."""
+    dated = _draft(world, delivery_date="2026-12-20")["id"]
+    undated = _draft(world, delivery_date=None)["id"]
+    earlier = _draft(world, delivery_date="2026-12-01")["id"]
+    res = world.api.as_(world.coord).get(SR, params={"status": "draft"})
+    assert res.status_code == 200, res.text
+    ids = [r["id"] for r in res.json()["data"]]
+    assert ids == [earlier, dated, undated]
 
 
 def test_ac_sr_51_status_filter_and_project_filter(world):
@@ -989,20 +955,19 @@ def test_ac_sr_60_pdf_is_a_pdf(world):
     assert res.content.startswith(b"%PDF")
 
 
-def test_ac_sr_60_pdf_text_has_board_row_first_and_or_alt(world):
-    """AC-SR-60: board label is row 1, a line shows brand/model and 'OR <alt>'."""
+def test_ac_sr_60_pdf_text_has_board_row_first_no_or_and_the_date(world):
+    """AC-SR-60: board label is row 1, a line shows its one model (no OR), the delivery
+    date prints dd/mm/yyyy."""
     import fitz  # PyMuPDF, already a backend dependency
 
     d = _draft(
         world,
         board_mounting=True,
         board_label="TOWER A & B",
+        delivery_date="2026-12-01",
+        # An old client still sends the alternative; it must not print as "OR <code>".
         lines=[
-            {
-                "product_id": world.cat.plain.id,
-                "alt_product_id": world.cat.plain2.id,
-                "qty": 2,
-            }
+            {"product_id": world.cat.plain.id, "alt_product_id": world.cat.plain2.id, "qty": 2}
         ],
     )
     res = world.api.as_(world.sales).get(f"{SR}/{d['id']}/pdf")
@@ -1014,7 +979,10 @@ def test_ac_sr_60_pdf_text_has_board_row_first_and_or_alt(world):
     text_ = " ".join(text_.split())
     assert "TOWER A & B" in text_
     assert text_.index("TOWER A & B") < text_.index(world.cat.plain.product_code)
-    assert "OR" in text_ and world.cat.plain2.product_code in text_
+    assert " OR " not in text_
+    assert world.cat.plain2.product_code not in text_
+    assert "01/12/2026" in text_
+    assert "Immediate" not in text_
 
 
 def test_ac_sr_61_stranger_cannot_print(world):

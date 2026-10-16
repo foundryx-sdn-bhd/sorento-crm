@@ -39,22 +39,22 @@ def test_ac_sr_70_sample_request_tables_exist():
         lines = _columns(db, "sample_request_lines")
     assert {
         "id", "company_id", "request_no", "status_id", "project_id", "project_title",
-        "quotation_version_id", "customer_id", "customer_name", "salesperson_id", "source",
-        "contact_id", "space_id", "request_date", "delivery_date", "deliver_immediately",
+        "customer_id", "customer_name", "salesperson_id", "source",
+        "contact_id", "space_id", "request_date", "delivery_date",
         "scope_note", "ship_to_name", "ship_to_address", "site_contact_name",
         "site_contact_phone", "site_contact_note", "delivery_mode", "loan_value", "loan_unit",
         "goods_from", "purpose", "board_mounting", "board_label", "consignment_no", "po_no",
         "submitted_at", "confirmed_at", "delivered_at", "return_due", "cancelled_at",
         "cancel_reason",
     } <= header
-    assert {"id", "request_id", "line_no", "product_id", "alt_product_id", "qty", "remark"} <= lines
+    assert {"id", "request_id", "line_no", "product_id", "qty", "remark"} <= lines
 
 
 def test_ac_sr_70_settings_columns_exist():
-    """AC-SR-70 / AC-SR-20: the two switches are columns on system_settings."""
+    """AC-SR-70 / AC-SR-20: the project switch is a column on system_settings."""
     with blank_session() as db:
         cols = _columns(db, "system_settings")
-    assert {"sample_request_require_project", "sample_request_require_quotation"} <= cols
+    assert "sample_request_require_project" in cols
 
 
 def test_ac_sr_70_settings_columns_default_false():
@@ -67,7 +67,6 @@ def test_ac_sr_70_settings_columns_default_false():
         db.flush()
         db.refresh(row)
         assert row.sample_request_require_project is False
-        assert row.sample_request_require_quotation is False
 
 
 def test_ac_sr_70_a_migration_creates_the_tables_and_grants_the_slugs():
@@ -81,7 +80,6 @@ def test_ac_sr_70_a_migration_creates_the_tables_and_grants_the_slugs():
     for slug in SLUGS:
         assert slug in body
     assert "sample_request_require_project" in body
-    assert "sample_request_require_quotation" in body
 
 
 def test_ac_sr_70_revision_id_fits_and_alembic_has_one_head():
@@ -103,3 +101,42 @@ def test_ac_sr_70_revision_id_fits_and_alembic_has_one_head():
     assert len(mine) == 1
     assert len(mine[0].revision) <= 32
     assert mine[0].down_revision
+
+
+# ---------------------------------------------------------------- form rebuild (16 Oct)
+
+
+def _sr_migration_text() -> str:
+    hits = [
+        f for f in VERSIONS.glob("*.py")
+        if "sample_requests" in f.read_text() and "sample_request_lines" in f.read_text()
+    ]
+    assert len(hits) == 1, [f.name for f in hits]
+    return hits[0].read_text()
+
+
+def test_ac_sr_03_20_removed_columns_are_gone_from_the_models():
+    """Owner 16 Oct: no quotation, no alternative product, no immediate tick (models)."""
+    with blank_session() as db:
+        header = _columns(db, "sample_requests")
+        lines = _columns(db, "sample_request_lines")
+        settings = _columns(db, "system_settings")
+    assert "quotation_version_id" not in header
+    assert "deliver_immediately" not in header
+    assert "alt_product_id" not in lines
+    assert "sample_request_require_quotation" not in settings
+    assert "sample_request_require_project" in settings
+
+
+def test_ac_sr_70_edited_migration_no_longer_creates_the_removed_columns():
+    """AC-SR-70: sr_0001 is edited in place, so its text names none of the three columns
+    nor the quotation setting."""
+    body = _sr_migration_text()
+    for removed in (
+        "quotation_version_id",
+        "deliver_immediately",
+        "alt_product_id",
+        "sample_request_require_quotation",
+    ):
+        assert removed not in body, removed
+    assert "sample_request_require_project" in body

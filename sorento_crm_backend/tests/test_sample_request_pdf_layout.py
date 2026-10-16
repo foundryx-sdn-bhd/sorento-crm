@@ -1,6 +1,6 @@
 """AC-SR-60 / card rule 12 / mock v2 frame 5: the print follows the paper Consignment
 Requisition Form - title with the request number, board row first, Brand and Model columns,
-"X OR Y" alternatives, the paper's footer ticks and the internal box."""
+one model per line (no alternative), the paper's footer ticks and the internal box."""
 from __future__ import annotations
 
 from app.services.sample_request_pdf_service import build_html
@@ -14,8 +14,7 @@ DETAIL = {
     "customer_code": "300-J099",
     "project_name": "52 double-storey terraces, Taman Nusa Duta Fasa 10",
     "scope_note": "FOR UNIT - TOWER A & B",
-    "deliver_immediately": True,
-    "delivery_date": None,
+    "delivery_date": "2026-11-05",
     "ship_to_name": "CHENXIN PLUMBING SDN BHD",
     "ship_to_address": "Johor Bahru",
     "site_contact_name": "Site supervisor",
@@ -31,9 +30,9 @@ DETAIL = {
     "consignment_no": "CSGN-1",
     "po_no": None,
     "lines": [
-        {"brand_name": "CABANA", "product_code": "CB2829", "alt_product_code": "CB2805A",
+        {"brand_name": "CABANA", "product_code": "CB2829",
          "product_name": "Basin", "qty": 1, "remark": None},
-        {"brand_name": "SORENTO", "product_code": "SRT73-CR", "alt_product_code": None,
+        {"brand_name": "SORENTO", "product_code": "SRT73-CR",
          "product_name": "Tap", "qty": 1, "remark": None},
     ],
 }
@@ -53,7 +52,7 @@ def test_board_is_row_one_then_brand_and_model_columns():
     html = _cells(build_html(DETAIL))
     assert ">Brand</th>" in html and ">Model</th>" in html
     board = html.index("MOUNT &amp; LABEL SAMPLE BOARD - NUSA DUTA FASA 10")
-    first_line = html.index("CB2829 OR CB2805A")
+    first_line = html.index("CB2829")
     assert board < first_line
     assert "<td>CABANA</td>" in html
 
@@ -94,3 +93,21 @@ def test_either_ticks_no_goods_box():
 def test_free_text_that_looks_like_a_date_is_printed_as_typed():
     html = _cells(build_html({**DETAIL, "purpose": "2026-10-10"}))
     assert "<b>Purpose:</b> 2026-10-10" in html
+
+
+def test_ac_sr_60_no_or_alternative_is_printed():
+    """16 Oct: a line is one product. Even a stale alt key in the dict prints no OR."""
+    stale = {**DETAIL, "lines": [{**DETAIL["lines"][0], "alt_product_code": "CB2805A"}]}
+    for detail in (DETAIL, stale):
+        html = _cells(build_html(detail))
+        assert " OR " not in html
+        assert "CB2805A" not in html
+
+
+def test_ac_sr_03_request_delivery_date_prints_dd_mm_yyyy():
+    """AC-SR-03: Request Delivery Date is a plain date, printed dd/mm/yyyy."""
+    html = _cells(build_html(DETAIL))
+    assert "Request Delivery Date" in html
+    assert "05/11/2026" in html
+    assert "2026-11-05" not in html
+    assert "Immediate" not in html
