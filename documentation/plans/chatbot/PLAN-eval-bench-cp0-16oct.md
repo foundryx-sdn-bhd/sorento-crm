@@ -1,6 +1,6 @@
 # PLAN: EVAL-BENCH CP0, the bench check against the owner's targets (16 Oct)
 
-Status: Plan (card to crew). Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
+Status: Build (card answered 16 Oct). Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
 gold and the review page live under `crew/state/eval/` (crew-only).
 
 ## The owner's bar (crew relay, 16 Oct)
@@ -105,3 +105,13 @@ than the phone.
    tests on synthetic rows; it reuses the replay driver's turn loading (S3).
 4. Runner mode that feeds recorded state (harness keys) and scores the targets; 3 baseline runs on main.
 5. The review page generator; 30 cards picked by a fixed seed from train.
+
+## Crew answers (16 Oct)
+
+Q1 staged spend: run 1 first (~$3), check the bench is sane (scoring bugs, flip rate), then runs 2-3 without
+asking again; about $12 total; post the spend per run. Q2 (a) growth line beside each bar. Q3 (a) recorded prod bot
+state, only the scored turn live. Q4 (a) mean of 3 runs >= bar per slice, 0 leaks and 0 made-up facts in EVERY run,
+page shows the lowest run + CI. Q5 (a) review conversations from TRAIN. Drawings: crew checks whether drawing files
+are filed under Technical Specifications; cards 02/03 stay out of the gold until then. The mock goes to the owner
+only at CP0 with real numbers. Baseline runs on the restored prod DB (`sorento_prod_20261015`) once crew says it is
+live.
