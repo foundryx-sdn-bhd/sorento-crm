@@ -15,12 +15,16 @@ Structure:
 * UAC1 - per route, a caller without `.edit` gets 403 and nothing changes: the
   contact still exists, no contact is created, segments and attachment grants
   are untouched, and the Respond.io sync is never called.
-* UAC2 - per route, a caller with `.edit` succeeds. The five DB-only routes run
+* UAC2 - per route, a caller with `.edit` succeeds. The four DB-only routes run
   for real against a scratch schema; the two sync routes stub the
-  `ContactService` method that would call Respond.io (tests never call it).
-* UAC3 - structural: every non-GET route in `contacts.py` carries a
-  `require_permission` dependency or sits in a commented allowlist, so a write
-  added tomorrow without a gate fails here.
+  `ContactService` method that would call Respond.io (tests never call it), and
+  attachment-types records its `set_grants` call.
+* `PUT /{id}/companies` is gated in the handler body (superadmin), so it is
+  pinned behaviourally: `.edit` alone gets 403, a superadmin succeeds.
+* UAC3 - structural: every non-GET route on the three routers mounted at
+  /contacts is gated by plain `require_permission` on `contacts.edit` (or the
+  named portal-link slug, or the body-gated companies PUT), so a new write that
+  is ungated, gated on `.view`, or opened to X-API-Key fails here.
 
 Dependency-override + `allow`-set monkeypatch pattern copied from
 tests/test_user_management_read_gates.py.
@@ -40,6 +44,7 @@ from app.main import app
 from app.models.access import MarketSegment, RespondContact
 from app.models.base import set_company_scope
 from app.services.company_scope_resolver import apply_company_scope
+from app.services import contact_attachment_access
 from app.services.contact_service import ContactService
 from tests._pg_fixture import blank_session, unique_code
 
@@ -56,7 +61,8 @@ def db():
 @pytest.fixture
 def api(db, monkeypatch):
     """A caller whose permission set is controlled by the returned `allow` set,
-    plus a record of every Respond.io sync the routes attempted."""
+    plus a record of every Respond.io sync (and attachment-grant write) the
+    routes attempted."""
     from app.services.user_service import UserPermissionService
 
     allow: set[str] = set()
@@ -78,6 +84,12 @@ def api(db, monkeypatch):
         sync_calls.append(("bulk", list(contact_ids)))
         return {"synced": len(contact_ids), "failed": 0}
 
+    # An empty grant set is the baseline, so a real attachment-types PUT leaves
+    # no visible trace either way; record the call instead.
+    def _fake_set_grants(_db, contact_id, attachment_type_ids, actor=None):
+        sync_calls.append(("grants", contact_id))
+        return {"contact_id": contact_id, "attachment_type_ids": list(attachment_type_ids)}
+
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_user] = lambda: caller
     app.dependency_overrides[apply_company_scope] = _override_scope
@@ -88,6 +100,7 @@ def api(db, monkeypatch):
     )
     monkeypatch.setattr(ContactService, "sync_contact_name", _fake_sync_one)
     monkeypatch.setattr(ContactService, "bulk_sync_contacts_from_respond", _fake_sync_bulk)
+    monkeypatch.setattr(contact_attachment_access, "set_grants", _fake_set_grants)
     try:
         yield TestClient(app), allow, sync_calls
     finally:
@@ -195,8 +208,8 @@ ROUTES = [
         lambda r, db, c, s: r.json() == {"codes": [c["code"]]} and _segment_codes(db, c["cid"]) == {c["code"]},
         lambda db, c, s: _segment_codes(db, c["cid"]) == set()),
     ("PUT /contacts/{id}/attachment-types", "PUT", _attachment_types,
-        lambda r, db, c, s: _contact_exists(db, c["cid"]),
-        lambda db, c, s: _contact_exists(db, c["cid"])),
+        lambda r, db, c, s: s == [("grants", c["cid"])],
+        lambda db, c, s: s == []),
 ]
 
 ROUTE_IDS = [r[0] for r in ROUTES]
@@ -227,65 +240,107 @@ def test_write_route_succeeds_with_contacts_edit(api, db, label, method, build, 
     assert succeeded(resp, db, ctx, sync_calls), f"{label}: succeeded without doing its work"
 
 
-def test_attachment_types_put_403_leaves_grants_alone(api, db, monkeypatch):
-    """The attachment-types table case above cannot see a write on its own (an
-    empty set is the baseline), so pin the handler body directly."""
-    from app.services import contact_attachment_access
-
+def test_companies_put_403_for_non_superadmin_holding_contacts_edit(api, db, monkeypatch):
+    """`PUT /{id}/companies` is exempt from the structural sweep because it is
+    gated in the handler body. Pin that body gate: `.edit` alone is not enough,
+    and the company grants are never rewritten."""
     calls = []
-    monkeypatch.setattr(contact_attachment_access, "set_grants", lambda *a, **k: calls.append(a) or {})
+    monkeypatch.setattr(
+        ContactService, "set_contact_companies", lambda self, cid, ids: calls.append(cid) or {}
+    )
     client, allow, _ = api
+    allow.add(CONTACTS_EDIT)
     cid = _seed_contact(db)
 
-    resp = client.put(f"{BASE}/{cid}/attachment-types", json={"attachment_type_ids": []})
+    resp = client.put(f"{BASE}/{cid}/companies", json={"company_ids": []})
 
-    assert resp.status_code == 403
+    assert resp.status_code == 403, resp.text
     assert calls == []
+
+
+def test_companies_put_succeeds_for_superadmin(api, db, monkeypatch):
+    from app.services.user_service import UserPermissionService
+
+    calls = []
+    monkeypatch.setattr(
+        ContactService, "set_contact_companies", lambda self, cid, ids: calls.append(cid) or {}
+    )
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_role_slugs", lambda self, uid: {UserPermissionService.SUPERADMIN_ROLE_SLUG}
+    )
+    client, _, _ = api
+    cid = _seed_contact(db)
+
+    resp = client.put(f"{BASE}/{cid}/companies", json={"company_ids": []})
+
+    assert resp.status_code == 200, resp.text
+    assert calls == [cid]
 
 
 # ------------------------------------------------------------- structural
 
 
-# Non-GET routes that are gated in the handler body instead of by dependency.
-# Each entry needs its reason.
+# Every write on the routers mounted at /contacts must be gated on exactly this
+# slug, except the entries below, each with its reason.
+_EXPECTED_SLUG = CONTACTS_EDIT
+_OTHER_SLUG_WRITES = {
+    # Portal links have their own slug (migration 160): generating or sending a
+    # link is a separate authority from editing the contact.
+    ("POST", "/{contact_id}/portal-link"): "user_management.contacts.portal_link",
+    ("POST", "/{contact_id}/portal-link/send"): "user_management.contacts.portal_link",
+}
+# Gated in the handler body instead of by dependency, pinned by the
+# test_companies_put_* tests above.
 _BODY_GATED_WRITES = {
     # Superadmin-only via `_require_superadmin(db, current_user)` in the handler.
     ("PUT", "/{contact_id}/companies"),
 }
 
 
-def _has_permission_dependency(route) -> bool:
-    """True when a `require_permission(...)` dependency sits anywhere in the
-    route's Dependant tree (same walk as the read-gates structural sweep)."""
+def _permission_slugs(route) -> set[str]:
+    """The slug of every plain `require_permission(...)` dependency in the
+    route's Dependant tree. The `_with_api_key` variant is deliberately NOT
+    matched: it opens the route to X-API-Key callers, which these operator
+    writes must not be."""
+    slugs: set[str] = set()
     seen: set[int] = set()
 
-    def _walk(dependant) -> bool:
+    def _walk(dependant) -> None:
         if id(dependant) in seen:
-            return False
+            return
         seen.add(id(dependant))
-        qualname = getattr(getattr(dependant, "call", None), "__qualname__", "") or ""
-        if "require_permission" in qualname or "require_any_permission" in qualname:
-            return True
-        return any(_walk(sub) for sub in getattr(dependant, "dependencies", []) or [])
+        call = getattr(dependant, "call", None)
+        if (getattr(call, "__qualname__", "") or "") == "require_permission.<locals>._require":
+            for cell in call.__closure__ or ():
+                if isinstance(cell.cell_contents, str):
+                    slugs.add(cell.cell_contents)
+        for sub in getattr(dependant, "dependencies", []) or []:
+            _walk(sub)
 
-    return _walk(route.dependant)
+    _walk(route.dependant)
+    return slugs
 
 
-def test_every_contacts_write_route_is_permission_gated():
-    write_routes = [
-        r for r in contacts_module.router.routes
-        if set(getattr(r, "methods", set())) - {"GET", "HEAD"}
-    ]
-    # Not vacuous: the router carries at least the seven routes this lane gated
-    # plus the eleven that were already gated.
-    assert len(write_routes) >= 18
+def _contacts_write_routes():
+    from app.api.v1.user_management import contact_media_access, contact_portal_forms
 
-    ungated = []
-    for route in write_routes:
-        methods = set(getattr(route, "methods", set())) - {"GET", "HEAD"}
-        for method in methods:
-            if (method, route.path) in _BODY_GATED_WRITES:
-                continue
-            if not _has_permission_dependency(route):
-                ungated.append(f"{method} {route.path}")
-    assert ungated == [], f"contact write routes with no permission dependency: {sorted(ungated)}"
+    for module in (contacts_module, contact_media_access, contact_portal_forms):
+        for route in module.router.routes:
+            for method in set(getattr(route, "methods", set())) - {"GET", "HEAD"}:
+                yield method, route
+
+
+def test_every_contacts_write_route_is_gated_on_contacts_edit():
+    writes = list(_contacts_write_routes())
+    # Not vacuous: the seven routes this lane gated plus the ones already gated.
+    assert len(writes) >= 20
+
+    wrong = []
+    for method, route in writes:
+        key = (method, route.path)
+        if key in _BODY_GATED_WRITES:
+            continue
+        expected = _OTHER_SLUG_WRITES.get(key, _EXPECTED_SLUG)
+        if expected not in _permission_slugs(route):
+            wrong.append(f"{method} {route.path} -> {sorted(_permission_slugs(route)) or 'no permission'}")
+    assert wrong == [], f"contact write routes not gated on the expected slug: {sorted(wrong)}"

@@ -1,6 +1,6 @@
 # PLAN: permission gates on the respond-contact write routes
 
-Status: in progress (full track, size S: RBAC change, no migration, no UI change)
+Status: review passed (reviewer READY, security-reviewer CLEAN); awaiting owner merge (full track, size S: RBAC change, no migration, no UI change)
 UAC: `sec-contact-write-perms-acceptance-criteria.md`
 Lane: SEC-CONTACT-WRITE-PERMS
 
