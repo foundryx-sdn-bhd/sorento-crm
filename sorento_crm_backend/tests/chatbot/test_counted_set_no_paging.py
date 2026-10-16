@@ -165,9 +165,11 @@ def test_every_leg_past_the_list_limit_states_the_count_and_asks(require, base):
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026: "no cap", "always break it
     # down"): the full count and the resolver's breakdown by the next attribute, one line
     # each, never a paging question.
-    breakdown = {"key": "brand", "label": "Brand", "rows": [{"value": "Sorento", "count": 1000}, {"value": "Mocha", "count": 256}]}
-    header = build_set_header(1256, 0, "taps", require, breakdown=breakdown)
-    assert header == f"{base} (1,256)\n• Sorento taps: 1,000\n• Mocha taps: 256", header
+    # SET-STOCK-RENDER (SSR-5/6): no breakdown; the first SET_LIST_MAX products are listed and
+    # the header says so, "(1,256, showing 1 to 50)".
+    header = build_set_header(1256, SET_LIST_MAX, "taps", require)
+    assert header == f"{base} (1,256, showing 1 to 50)", header
+    assert "•" not in header, header
     assert "How many" not in header and "too many" not in header, header
     assert "Showing" not in header
 

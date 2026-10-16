@@ -319,7 +319,9 @@ def test_item1_a_stock_set_reads_exactly_like_the_product_code_answer(chat, worl
     first = chat.say(M1A, _ask("stock", "basin", M1A))
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): too many is the count and a breakdown by the next
     # attribute (every brand, no default), never a paging question.
-    assert re.match(r"Here's what you want: wash basins with stock \(\d+\)\n• ", first), first
+    # SET-STOCK-RENDER (SSR-5): no breakdown lines; the first 3 are listed.
+    assert re.match(r"Here's what you want: wash basins with stock \(\d+, showing 1 to 3\)", first), first
+    assert not [ln for ln in first.split("\n") if ln.startswith("• ")], first
     assert "too many to list" not in first, first
     text = chat.say(M1B, _ask("stock", "basin", M1B, top_n=2, entities=[]))
     total = int(re.search(r"\((\d+), showing 1 to 2\)", text).group(1))
@@ -379,7 +381,10 @@ def test_item2_a_finish_no_basin_has_incoming_says_what_it_looked_for_never_a_ca
     assert "Could not find" not in text and "category" not in text, text
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no explanation of how it searched: the one reply
     # structure: the finishes the basins with incoming do come in, one line each.
-    assert text.startswith("Here's what you want: rose gold wash basins with incoming stock\n• Gunmetal wash basins: 3\n"), text
+    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the unknown word is listed
+    # above the Couldn't find line.
+    assert text.startswith("Here's what you want: "), text
+    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
     assert text.endswith("Couldn't find: rose gold (finish or colour). Would you like me to escalate to purchasing team?"), text
 
 
@@ -426,7 +431,10 @@ def test_a_one_word_stock_follow_up_answers_as_the_described_set(compact, world)
 def test_item3_f_trap_is_an_unknown_trap(compact, world):
     text = compact.say(M3, _v3())
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): the one reply structure, broken down by the key.
-    assert text.startswith("Here's what you want: f trap water closets\n• P trap water closets: "), text
+    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the unknown word is listed
+    # above the Couldn't find line.
+    assert text.startswith("Here's what you want: "), text
+    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
     assert "Couldn't find: f trap (trap). Would you like me to escalate to" in text, text
     assert "document type" not in text.lower(), text
 
@@ -434,7 +442,10 @@ def test_item3_f_trap_is_an_unknown_trap(compact, world):
 def test_item4_pink_colour_is_an_unknown_finish_or_colour_never_a_document_type(compact, world):
     text = compact.say(M4, _v4())
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no list of known choices; what the set does come in.
-    assert text.startswith("Here's what you want: pink water closets\n• White water closets: "), text
+    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the unknown word is listed
+    # above the Couldn't find line.
+    assert text.startswith("Here's what you want: "), text
+    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
     assert "Couldn't find: pink (finish or colour)." in text, text
     assert "document type" not in text.lower(), text
 

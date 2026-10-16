@@ -393,7 +393,9 @@ def test_w2_a_count_after_a_listed_page_continues_the_same_set(chat, world, smal
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no brand named means every
     # brand, never a silent default, and too many is the count and a breakdown
     # by the next attribute, never a paging question. A count typed after it still lists.
-    assert ask.startswith("Here's what you want: P trap water closets with stock (6)\n• "), ask
+    # SET-STOCK-RENDER (SSR-5/6): no breakdown lines; the first SET_LIST_MAX products are listed under "(N, showing 1 to LIMIT)".
+    assert ask.startswith("Here's what you want: P trap water closets with stock (6, showing 1 to 3)"), ask
+    assert not [ln for ln in ask.split("\n") if ln.startswith("• ")], ask
     assert "How many" not in ask, ask
 
     page1 = chat.say("2", _bare(top_n=2))
@@ -461,12 +463,10 @@ def test_w3_which_basin_has_cert_after_a_water_closet_set_is_a_new_certificate_s
     # header is the product-code answer's own intro naming the described set and its count.
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no brand named means every
     # brand, never a silent default.
-    assert one_line_header(text) == "Here's what you want: wash basins with certificates (4)", text
-    # With the list limit of 3 the 4 basins are too many for one reply: the count and the
-    # brand breakdown, and nothing of the old water closet set.
-    sorento, mocha = _display(world["sorento"].brand_name), _display(world["mocha"].brand_name)
-    assert text.splitlines()[1:] == [f"• {sorento} wash basins: 3", f"• {mocha} wash basins: 1"], text
-    assert not _codes_in(text, world), text
+    # SET-STOCK-RENDER (SSR-6): with the list limit of 3 the 4 basins are listed 3 at a time
+    # under "(4, showing 1 to 3)", no breakdown lines.
+    assert one_line_header(text) == "Here's what you want: wash basins with certificates (4, showing 1 to 3)", text
+    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
     assert not text.startswith("Product:"), text
     calls = chat.calls[before:]
     assert "crm_master_products_list" not in [c["name"] for c in calls], calls
@@ -499,12 +499,9 @@ def test_w3_a_new_class_word_replaces_the_carried_set_whatever_the_parser_carrie
     # header is the product-code answer's own intro naming the described set and its count.
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no brand named means every
     # brand, never a silent default.
-    assert "Here's what you want: wash basins with certificates (4)" == one_line_header(text), text
-    # With the list limit of 3 the 4 basins are too many for one reply: the count and the
-    # brand breakdown, and nothing of the old water closet set.
-    sorento, mocha = _display(world["sorento"].brand_name), _display(world["mocha"].brand_name)
-    assert text.splitlines()[1:] == [f"• {sorento} wash basins: 3", f"• {mocha} wash basins: 1"], text
-    assert not _codes_in(text, world), text
+    # SET-STOCK-RENDER (SSR-6): the 4 basins are listed 3 at a time, no breakdown lines.
+    assert "Here's what you want: wash basins with certificates (4, showing 1 to 3)" == one_line_header(text), text
+    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
 
 
 def test_w3_a_new_attribute_word_on_the_same_class_starts_a_new_set(chat, world, small_list):
@@ -572,12 +569,9 @@ def test_w4_a_withheld_set_still_closes_with_the_other_brands(chat, world, small
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no brand named means every
     # brand, never a silent default; a set too long for one reply is the
     # count and a breakdown by the brand, one line each.
-    sorento, mocha = _display(world["sorento"].brand_name), _display(world["mocha"].brand_name)
-    assert text == (
-        "Here's what you want: P trap water closets with stock (6)\n"
-        f"• {sorento} water closets: 5\n"
-        f"• {mocha} water closets: 1"
-    ), text
+    # SET-STOCK-RENDER (SSR-5): no breakdown lines; the first 3 of 6 are listed.
+    assert one_line_header(text).startswith("Here's what you want: P trap water closets with stock (6, showing 1 to 3)"), text
+    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
 
 
 def test_w4_a_named_brand_answers_that_brand_only(chat, world):

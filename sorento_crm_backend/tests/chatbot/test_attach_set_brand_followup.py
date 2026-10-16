@@ -284,8 +284,9 @@ def test_the_brand_follow_up_fetches_the_same_document_type(chat, world, small_l
     sorento, mocha = _display(world["sorento"].brand_name), _display(world["mocha"].brand_name)
     # Turn 1 as the owner saw it: the count and the breakdown by brand, fetched under the
     # resolved document type.
-    assert one_line_header(first) == "Here's what you want: taps with technical drawing (5)", first
-    assert f"• {sorento} taps: 4" in first and f"• {mocha} taps: 1" in first, first
+    # SET-STOCK-RENDER (SSR-6): the first 3 of 5 are listed, no breakdown lines.
+    assert one_line_header(first) == "Here's what you want: taps with technical drawing (5, showing 1 to 3)", first
+    assert not [ln for ln in first.split("\n") if ln.startswith("• ")], first
     assert chat.attachment_calls()[-1].get("attachment_type_ids") == [world["drawing"].id], chat.calls
 
     second = chat.say(world["sorento"].brand_name.lower(), _turn_2_brand(world["sorento"].brand_name.lower()))
