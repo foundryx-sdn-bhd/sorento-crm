@@ -12,6 +12,7 @@ Row built by running ONE synthetic turn through the real engine; no real data, n
 from __future__ import annotations
 
 import copy
+import os
 import json
 import subprocess
 import sys
@@ -259,3 +260,55 @@ def test_replay_blocks_non_local_network_and_allows_localhost(no_real_network):
     hosts = {m.get("network_blocked") for m in misses}
     assert {"api.openai.com", "8.8.8.8"} <= hosts
     assert "127.0.0.1" not in hosts
+
+
+def test_entity_key_sorts_none_hints_next_to_str_hints_in_any_order():
+    ents = [{"hint": None, "canonical_code": "X1", "raw": "a"}, {"hint": "product", "canonical_code": None, "raw": "b"}]
+    forward = replay_mod._entity_key(ents)
+    assert forward == replay_mod._entity_key(list(reversed(ents)))
+    assert len(forward) == 2
+
+
+def test_replay_run_cli_writes_no_message_or_reply_text_to_stdout_or_stderr(tmp_path, recorded):
+    phrase = "zqx probe phrase undermount"
+    row = copy.deepcopy(recorded)
+    # every place the recorded message appears, so the engine can only know the phrase from this row
+    node = row["envelope"]
+    while isinstance(node, dict) and "text" not in node:
+        node = node.get("message")
+    node["text"] = phrase
+    raw = row["response"]["ctx"]["parse"]["_parser_raw"]
+    for e in raw.get("entities") or []:
+        e["raw"] = phrase
+    traces = tmp_path / "rows.jsonl"
+    traces.write_text(json.dumps(row) + "\n")
+    out = tmp_path / "out.jsonl"
+    env = {**os.environ, "SORENTO_ENV_FILE": ".env.ci-tests"}
+    p = subprocess.run([sys.executable, "scripts/chatbot_eval/replay.py", "run", "--traces", str(traces),
+                        "--out", str(out)], capture_output=True, text=True, cwd=BACKEND, env=env)
+    assert p.returncode == 0, p.stderr[-500:]
+    assert out.read_text().strip(), "the run wrote no row"
+    seen = (p.stdout + p.stderr).lower()
+    for token in [phrase, *phrase.split()]:
+        assert token.lower() not in seen, f"{token!r} leaked into the logs"
+    reply_text = [s for s in _leaves(recorded["response"].get("reply")) if len(s) >= 12]
+    for s in reply_text:
+        assert s.lower() not in seen
+
+
+def test_replay_rows_emits_no_log_record_carrying_the_message_words(session_factory, recorded, caplog):
+    import logging
+
+    phrase = "zqx probe phrase undermount"
+    row = copy.deepcopy(recorded)
+    node = row["envelope"]
+    while isinstance(node, dict) and "text" not in node:
+        node = node.get("message")
+    node["text"] = phrase
+    for e in row["response"]["ctx"]["parse"]["_parser_raw"].get("entities") or []:
+        e["raw"] = phrase
+    with caplog.at_level(logging.DEBUG):
+        out = replay_mod.replay_rows([row], session_factory=session_factory)
+    assert not out[0].get("skipped")
+    leaked = [r.getMessage() for r in caplog.records if any(t in r.getMessage().lower() for t in phrase.split())]
+    assert leaked == [], f"log lines carry the message words: {leaked[:1]}"
