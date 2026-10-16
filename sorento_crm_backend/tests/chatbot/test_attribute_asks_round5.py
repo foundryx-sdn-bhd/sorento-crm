@@ -152,11 +152,12 @@ def test_s1_a_set_whose_only_other_finish_is_a_dual_finish_says_it(chat, world):
     )
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026: no explanations, the one reply structure): the other finishes are the
     # breakdown lines; the dual-finish product is listed under each of its finishes.
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the unknown word is listed
-    # above the Couldn't find line.
-    assert text.startswith("Here's what you want: "), text
-    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
-    assert text.endswith("Couldn't find: gunmetal (finish or colour). Would you like me to escalate to purchasing team?"), text
+    assert text == (
+        "Here's what you want: gunmetal water closets with incoming stock\n"
+        "• Black water closets: 1\n"
+        "• Rose gold water closets: 1\n\n"
+        "Couldn't find: gunmetal (finish or colour). Would you like me to escalate to purchasing team?"
+    ), text
 
 
 def test_s1_a_dual_finish_product_is_counted_once_beside_the_scalar_ones(chat, world):
@@ -178,10 +179,7 @@ def test_s1_a_dual_finish_product_is_counted_once_beside_the_scalar_ones(chat, w
         _ask("incoming", "gunmetal bathtub", "any gunmetal bathtub has incoming"),
     )
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026: no explanations, the one reply structure): one line per other finish.
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the unknown word is listed
-    # above the Couldn't find line.
-    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
-    assert "Couldn't find: gunmetal (finish or colour)." in text, text
+    assert "• White products: 2\n• Black products: 1\n• Rose gold products: 1\n" in text, text
 
 
 # --------------------------------------------------------------------------- #

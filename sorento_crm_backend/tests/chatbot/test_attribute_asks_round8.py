@@ -274,7 +274,7 @@ def _blocks(text: str) -> dict[str, str]:
         if not _ROW.match(block):
             continue
         body = _ROW.sub("", block, count=1)
-        m = re.search(r"\*Product Code:\* ([A-Z0-9-]+)", body)
+        m = re.search(r"\*Product Code:\* ([A-Za-z0-9-]+)", body)
         if m:
             out[m.group(1)] = body
     return out
@@ -324,12 +324,13 @@ def test_item1_a_stock_set_reads_exactly_like_the_product_code_answer(chat, worl
     assert not [ln for ln in first.split("\n") if ln.startswith("• ")], first
     assert "too many to list" not in first, first
     text = chat.say(M1B, _ask("stock", "basin", M1B, top_n=2, entities=[]))
-    # SET-STOCK-RENDER (SSR-5/6): the ask listed 1 to 3, so the named 2 are 4 to 5.
-    total = int(re.search(r"\((\d+), showing 4 to 5\)", text).group(1))
-    assert _intro(text) == f"Here's what you want: wash basins with stock ({total}, showing 4 to 5)", text
+    # SET-STOCK-RENDER (SSR-5/6): the ask listed 1 to 3; the typed "10" is read from the text and
+    # capped at the list limit, so the next page is 4 to 6.
+    total = int(re.search(r"\((\d+), showing 4 to 6\)", text).group(1))
+    assert _intro(text) == f"Here's what you want: wash basins with stock ({total}, showing 4 to 6)", text
     assert re.search(r"\n\n_Data last updated: 21/09/2026 \d\d:32:45_$", text.rstrip()), text
     blocks = _blocks(text)
-    assert len(blocks) == 2, text
+    assert len(blocks) == 3, text
     for code, block in blocks.items():
         single = _blocks(_by_code(chat, code, "stock"))
         assert block == single[code], (block, single[code])
@@ -382,10 +383,7 @@ def test_item2_a_finish_no_basin_has_incoming_says_what_it_looked_for_never_a_ca
     assert "Could not find" not in text and "category" not in text, text
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): no explanation of how it searched: the one reply
     # structure: the finishes the basins with incoming do come in, one line each.
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the unknown word is listed
-    # above the Couldn't find line.
-    assert text.startswith("Here's what you want: "), text
-    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
+    assert text.startswith("Here's what you want: rose gold wash basins with incoming stock\n• Gunmetal wash basins: 3\n"), text
     assert text.endswith("Couldn't find: rose gold (finish or colour). Would you like me to escalate to purchasing team?"), text
 
 

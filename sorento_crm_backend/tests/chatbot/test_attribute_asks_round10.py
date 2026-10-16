@@ -134,9 +134,8 @@ def test_gunmetal_basin_is_wash_basins_only_never_the_flexible_trap(chat, world,
     text = chat.say(G1, verdict())
     print(text)
     lines = text.split("\n")
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the word is listed.
-    assert lines[0].startswith("Here's what you want: "), text
-    assert not [ln for ln in lines if re.fullmatch(r"• .+: [\d,]+", ln)], text
+    assert lines[0] == f"Here's what you want: gunmetal wash basins{leg}", text
+    assert all(re.fullmatch(r"• \w+ wash basins: \d+", line) for line in lines[1:-2]), text
     assert lines[-2] == "", text
     assert lines[-1].startswith("Couldn't find: gunmetal (finish or colour)."), text
     assert _ESCALATE.search(lines[-1]), text
@@ -223,8 +222,8 @@ def test_pnk_inside_the_category_token_is_said_back_never_searched(chat, world):
     text = chat.say(P1, _code_ask(P1, _entity("pnk water closet", "category")))
     print(text)
     lines = text.split("\n")
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the word is listed.
-    assert lines[0].startswith("Here's what you want: "), text
+    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the typed header and the miss line stay.
+    assert lines[0] == "Here's what you want: pnk water closets", text
     assert not [ln for ln in lines if re.fullmatch(r"• .+: [\d,]+", ln)], text
     assert 'Couldn\'t find: "pnk".' in text, text
     assert "*Product Code:*" not in text and "product:" not in text, text

@@ -389,11 +389,11 @@ def test_r4_a_miss_names_the_value_searched_and_the_count_in_other_values(chat, 
     )
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026: "no explanations", the one
     # reply structure): what the set does come in, line by line, then what did not match.
-    # SET-STOCK-RENDER (SSR-7): no breakdown lines; the set without the unknown word is listed
-    # above the Couldn't find line.
-    assert text.startswith("Here's what you want: "), text
-    assert not [ln for ln in text.split("\n") if ln.startswith("• ")], text
-    assert text.endswith("Couldn't find: gunmetal (finish or colour). Would you like me to escalate to purchasing team?"), text
+    assert text == (
+        "Here's what you want: gunmetal wash basins with incoming stock\n"
+        "• White wash basins: 1\n\n"
+        "Couldn't find: gunmetal (finish or colour). Would you like me to escalate to purchasing team?"
+    ), text
 
 
 def test_r4_a_miss_with_nothing_in_any_value_says_so(chat, world):

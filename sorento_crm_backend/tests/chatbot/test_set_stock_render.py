@@ -459,35 +459,30 @@ def test_ssr_6_over_fifty_product_ask_lists_the_first_fifty_with_no_breakdown(
     _clean(reply)
 
 
-def test_ssr_7_misspelt_word_answers_the_set_without_it_and_says_couldnt_find(
+def test_ssr_7_misspelt_word_keeps_the_miss_shape_with_no_breakdown_and_no_rows(
     session_factory, monkeypatch, stub_parser, stub_access, world
 ):
-    """SSR-7: "sorento undrmount basin" with stock. The word the set reader cannot use gives
-    no breakdown line; the set without it is answered as SSR-1 to 5 (the rows, with their
-    stock); the reply ends, above the footer, with `Couldn't find: "undrmount".`"""
+    """SSR-7: "sorento undrmount basin" with stock. A word the set reader cannot use keeps
+    today's miss shape minus the breakdown: the typed header (no count), no rows,
+    `Couldn't find: "undrmount".` and the escalate offer. Never a different set."""
     _fifty_two(world, colours=True)
     chat = make_chat(session_factory, monkeypatch, stub_parser, stub_access, world, mode="detailed")
     brand = world.sorento.brand_name.lower()
     verdict = _stock_verdict(
-        [
-            {"raw": brand, "hint": "brand"},
-            {"raw": "undrmount basin", "hint": "product_type"},
-        ],
+        [{"raw": brand, "hint": "brand"}, {"raw": "undrmount basin", "hint": "product_type"}],
         f"any stock for {brand} undrmount basin",
     )
 
     reply = chat.say(f"any stock for {brand} undrmount basin", verdict)
 
     assert not [ln for ln in reply.split("\n") if ln.startswith("• ")], reply
-    assert _codes_shown(reply), reply
-    first = reply.split("\n", 1)[0]
     brand_name = world.sorento.brand_name
     brand_name = brand_name.title() if brand_name.isupper() else brand_name
-    assert first.startswith(f"Here's what you want: {brand_name} wash basins"), reply
-    assert "undrmount" not in first, reply
-    assert re.search(r"\(\d[\d,]*(, showing 1 to \d+)?\)$", first), reply
-    body = [ln for ln in reply.split("\n") if ln.strip() and not ln.startswith("_Data last updated")]
-    assert re.fullmatch(r"Couldn't find: \"?undrmount\"?.*", body[-1]), reply
+    assert reply.split("\n", 1)[0] == f"Here's what you want: {brand_name} undrmount wash basins", reply
+    assert _codes_shown(reply) == [], reply
+    assert "*Product Code:*" not in reply, reply
+    assert 'Couldn\'t find: "undrmount".' in reply, reply
+    assert "escalate" in reply, reply
     _clean(reply)
 
 
