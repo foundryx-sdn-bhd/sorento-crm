@@ -124,3 +124,21 @@ the Marketing technical-drawing folders) IS the drawing type. Gold for a drawing
 Specifications files, or "none on record" when it has none. Six products have their `*_TD` drawings typed Product
 Photos (SRTSCBD333-UF, SRTUB206-BI, SRTUB6201, SRTUB6503-BI-NEW, SRTUB668, SRTUB668-BI): they are kept out of the
 drawing items.
+
+## Grader contract (`sorento_crm_backend/scripts/chatbot_eval/targets.py`, pure, stdlib only)
+
+- `grade_turn(row, item) -> dict`. `row` = a `chatbot.turns` row (recorded or replayed: `envelope`, `trace`,
+  `response`, `branch_kind`). `item` = `{item_id, slice, kind, message, gold, asker}`; `slice` in {code_lookup,
+  followup, spec, attachment, scope}; `kind` (follow-ups) in {pick, answer, refine, switch, and_x}; `gold` holds
+  only the keys the slice needs: `code`, `fact`, `position`, `option`, `filter`, `subject_after`, `spec` (list of
+  `{key, value}`), `attachment_type` (code), `none_on_record` (bool), `ambiguous` (bool); `asker` =
+  `{audience, linked_customer_ids, hidden_fields}`. Returns `{item_id, slice, kind, passed, reason, checks,
+  leaks, made_up}`: `checks` = name -> bool for each rule of the slice, `reason` = one plain sentence for the
+  review page (no ids, no internal field names), `leaks` / `made_up` = lists of short findings (empty = clean).
+- `scope_leaks(row, asker) -> list[str]` and `made_up_facts(row) -> list[str]` run on every graded turn.
+  Made-up rule: every product-code-like token, quantity, date and container number in the reply must appear in the
+  turn's tool envelopes or the user's message; list ordinals ("1.", "2.") are not facts; numbers and dates are
+  compared after normalising (`1,200` = `1200`, `6 Sep 2026` = `2026-09-06`); a truncated envelope makes the
+  finding `unverifiable: <token>` rather than a pass.
+- `summarise(results, bars) -> dict`: per slice and follow-up kind: n, passed, rate; leaks and made-up counts;
+  `meets` per the crew rule (mean of runs >= bar; 0 leaks and 0 made-up in every run).
