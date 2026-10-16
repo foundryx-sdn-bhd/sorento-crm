@@ -100,3 +100,61 @@ Crew tooling wiring (tests under `crew/state/eval/tooling/tests/`, synthetic fil
   (exit 2, names the field), grades each row with the existing grade logic, then prints `format_compare`.
 - `tooling/compare.py --reps RUN... --ref-reps REF...` does the same over E2E run dirs (pass = label in
   {correct, good_clarify}; provenance from `report.json.provenance`).
+
+## S3 contract (D2 L1 replay)
+
+Repo, `sorento_crm_backend/scripts/chatbot_eval/replay.py`. It imports only the stdlib and `app.*`, so crew runs
+the SAME file under each worktree's own venv with that worktree's backend as cwd (`<wt>/venv/bin/python
+<runner>/scripts/chatbot_eval/replay.py run ...`); the main worktree does not need to contain it. It asserts
+`app.__file__` is under the cwd.
+
+- `run --traces FILE... --out OUT.jsonl [--workers N]`: each input line is a recorded `chatbot.turns` row (+
+  `case_id`). For each row, call the real `engine.run_turn(envelope, session_factory=...)` with:
+  - `dry_run=True` and `mock_reformulator_output` = recorded `response.ctx.parse._parser_raw`
+    (`engine.py:1296-1301, 4543-4547`); recorded session vars (`trace[received].raw.session_vars`) and
+    `previous_conversation_state` passed through the existing harness keys where the engine supports them;
+  - `MCPRuntimeClient.call_tool` patched: return the recorded envelope of the trace event with the same tool
+    name and the same canonical args (volatile keys such as `_diagnostics` ignored); otherwise record a miss and
+    return an empty error envelope;
+  - any other LLM call (e.g. `lanes/casual.call_clarifier`) patched to fail loudly and recorded as `llm_blocked`;
+    no non-localhost network;
+  - a session factory that wraps the turn in an outer transaction (inner commits become savepoints) and rolls
+    it back, so the DB is never written.
+- Output, one line per input row, ids and hashes only (no message or reply text): `case_id`, `turn_id`,
+  `skipped` (`no_parse` when the row has no parse), `stages`: `grounded` (normalised entities from the
+  `understood`/`routed` facts), `decision` (branch kind, plan kind, lane), `tools` (list of `[name, args_sha]`),
+  `reply` (`sha256` of the reply text + `branch_kind`), and `misses` (tool misses, `llm_blocked`). When a tool
+  miss occurred, `reply` is omitted for that row.
+- `diff BASE.jsonl HEAD.jsonl [--intended FILE]`: matches rows by (`case_id`, `turn_id`); prints `case_id turn_id
+  stage` per differing stage (first differing stage per row in stage order grounded, decision, tools, reply),
+  then counts per stage and per skip kind; exit 0 when every diff is in `--intended` (lines `case_id stage`),
+  else 1.
+
+Crew, `crew/state/eval/bin/replay-gate.sh BASE_WT HEAD_WT [--split dev|hidden|all] [--intended FILE]`: picks
+`runs/*/traces.jsonl` rows whose `results.jsonl` split matches, dedupes identical (parse, envelope) inputs, runs
+`replay.py run` in both worktrees (2 processes) against `sorento_eval_base`, then `replay.py diff`.
+
+## S5 contract (D4 weights + restore recipe + refresh), crew tooling only
+
+- `crew/state/eval/weights.json` (written by the lead, 16 Oct): gate strata and shares from corpus section 6e,
+  growth slices, `min_n` 10. `score.py --compare` and `compare.py --reps` gain `--weights FILE`: headline =
+  weighted gate (`paired_compare(..., weights=...)`), then one line per growth slice with n, means, delta CI;
+  `stratum missing: <name>` / `stratum thin: <name> n=<n>` warnings.
+- `crew/state/eval/tooling/corpus/restore_chat_slice.sh DUMP DB`: refuses (exit 2, one-line reason, nothing
+  created) when DUMP is not a `pg_dump -Fc` archive, DB already exists, `PGHOST` is set to anything but
+  localhost/127.0.0.1/a socket path, or free space on the data volume minus 3x the dump's listed table-data size
+  would fall under `MIN_FREE_GIB` (default 30). Otherwise: `createdb`, `pg_restore -l` filtered to an allowlist
+  (schema `chatbot`: turns, chat_ask_facts, chat_ask_items, chat_episode_facts, chat_topics; public:
+  chat_histories, conversation_frames, ai_assistant_usage_logs, llm_model_prices, respond_contacts,
+  respond_contact_customers, respond_contact_companies, users, sales_agents, customers) incl. their sequences,
+  defaults, PKs and indexes, FKs only where both ends are in the list; `pg_restore -L <list> --no-owner
+  --no-privileges -d DB`; prints row count per table and `pg_database_size`. Never `createdb -T`, never a full
+  restore.
+- `crew/state/eval/tooling/corpus/refresh.py --db DB --out DIR [--since DATE]`: read-only connection; writes
+  `DIR/<UTC date>/mix.json` (audience, language, position/shape shares as in corpus 6c-6e, top-shape shares) and
+  `candidates.jsonl` (one line per candidate: `turn_id`, `contact_respond_id` hash, `signals`, `audience`,
+  `language`, `shape`; no message text), dir chmod 700. Signals: clarify / not-found / hand-over branch kinds,
+  failed or errored turn, user follow-up within 120 s after a clarify or not-found reply. Pure classifier
+  functions (`classify_language`, `classify_shape(position, text, has_code)`, `candidate_signals(turn,
+  next_user_msg_gap_s)`) are unit-tested on synthetic rows; reuse the parser-gold builder's language helper
+  (`parser-gold/tooling/build_pool.py`) if one exists rather than writing a new one.
