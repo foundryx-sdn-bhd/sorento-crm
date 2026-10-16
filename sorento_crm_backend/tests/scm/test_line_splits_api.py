@@ -386,3 +386,84 @@ def test_put_without_the_edit_permission_is_403_and_saves_nothing(api, monkeypat
     assert r.status_code == 403, r.text
     assert s.client.get(_url(s.order.id)).status_code == 200  # view still allowed
     assert _line(_get(s), s.l200.id)["splits"] == []
+
+
+# ---------------------------------------------------------------------------
+# Review round 1
+# ---------------------------------------------------------------------------
+
+
+def test_put_naming_the_same_line_twice_is_422_and_saves_nothing(api):
+    s = _seed(api)
+    again = {"line_id": str(s.l100.id), "splits": [
+        _sp(200, D_301, on=str(s.l100.id)), _sp(101, D_NEW, on=str(s.l100.id))]}
+    r = _put(s, [again, dict(again)])
+    assert r.status_code == 422, r.text
+    assert _line(_get(s), s.l100.id)["splits"] == []
+
+
+def test_a_remark_over_500_characters_is_422_not_500(api):
+    s = _seed(api)
+    bad = {"line_id": str(s.l100.id), "splits": [
+        _sp(200, D_301, on=str(s.l100.id), remark="x" * 501),
+        _sp(101, D_NEW, on=str(s.l100.id))]}
+    assert _put(s, [bad]).status_code == 422
+    ok = {"line_id": str(s.l100.id), "splits": [
+        _sp(200, D_301, on=str(s.l100.id), remark="x" * 500),
+        _sp(101, D_NEW, on=str(s.l100.id))]}
+    assert _put(s, [ok]).status_code == 200
+
+
+def test_more_than_50_splits_on_one_line_is_422(api):
+    s = _seed(api)
+    fifty = [_sp(6, D_301, on=str(s.l100.id)) for _ in range(49)] + [_sp(7, D_NEW, on=str(s.l100.id))]
+    assert sum(x["qty"] for x in fifty) == 301
+    assert _put(s, [{"line_id": str(s.l100.id), "splits": fifty}]).status_code == 200
+    fifty_one = [_sp(6, D_301, on=str(s.l100.id)) for _ in range(50)] + [_sp(1, D_NEW, on=str(s.l100.id))]
+    assert sum(x["qty"] for x in fifty_one) == 301
+    assert _put(s, [{"line_id": str(s.l100.id), "splits": fifty_one}]).status_code == 422
+
+
+def test_a_qty_with_more_than_four_decimals_is_422_not_500(api):
+    s = _seed(api)
+    bad = {"line_id": str(s.l100.id), "splits": [
+        _sp(150.12345, D_301, on=str(s.l100.id)), _sp(150.87655, D_NEW, on=str(s.l100.id))]}
+    assert _put(s, [bad]).status_code == 422
+
+
+def test_a_put_leaves_an_audit_row_naming_the_actor(api):
+    from app.models.audit import AuditLog
+    from app.services.audit_service import register_audit_listeners
+
+    register_audit_listeners()
+    s = _seed(api)
+    assert _put(s, [_valid_200(s)]).status_code == 200
+    s.db.commit()
+    rows = (
+        s.db.query(AuditLog)
+        .filter(AuditLog.entity_type == "project_so_line_splits")
+        .filter(AuditLog.user_id == s.world.actor)
+        .all()
+    )
+    assert rows, "no audit_logs row for the split table names the actor"
+
+
+def test_get_now_qty_is_the_open_qty_of_a_partly_delivered_line(api):
+    s = _seed(api)
+    s.c200.qty_delivered = Decimal("4")
+    s.db.commit()
+    l200 = _line(_get(s), s.l200.id)
+    assert Decimal(str(l200["delivered_qty"])) == Decimal("4")
+    assert Decimal(str(l200["now_qty"])) == Decimal("10"), "14 ordered, 4 delivered: 10 open"
+
+
+def test_a_user_who_may_not_act_on_the_order_gets_403_and_nothing_is_saved(api):
+    from tests.test_planning_changes import _user
+
+    s = _seed(api)
+    other = _user(s.db, "zzt other salesperson")
+    s.world.project.owner_user_id = other
+    s.db.commit()
+    r = _put(s, [_valid_200(s)])
+    assert r.status_code == 403, r.text
+    assert _line(_get(s), s.l200.id)["splits"] == []

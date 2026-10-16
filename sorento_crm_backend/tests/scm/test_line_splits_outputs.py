@@ -24,10 +24,14 @@ from app.services.project_order_inquiry_service import (
 from tests.scm.test_line_splits_api import _put, _sp, _url  # noqa: F401
 from tests.test_planning_change_apply_on_board import (  # noqa: F401 - fixtures reused
     _confirm,
+    _link,
     _order_row,
+    _po_line,
+    _supplier,
     api,
     world,
 )
+from tests.test_oi_handover_excel import stored  # noqa: F401 - autouse storage stub
 from tests.test_planning_changes import (
     _core_line,
     _core_so,
@@ -160,8 +164,8 @@ def test_a_row_whose_splits_do_not_add_up_prints_once_with_the_plan_in_remark(ap
     assert len(rows) == 2, rows
     assert sorted(r[3] for r in rows) == [6.0, 8.0]
     by_qty = {r[3]: r for r in rows}
-    assert by_qty[8.0][col] and "5" in by_qty[8.0][col] and "3" in by_qty[8.0][col]
-    assert by_qty[6.0][col] and "3" in by_qty[6.0][col]
+    assert by_qty[8.0][col] == "SPLIT 5 REMAIN 02/11/2026; 3 DELAY 09/11/2026 to line 30"
+    assert by_qty[6.0][col] == "SPLIT 3 DELAY 09/11/2026 from line 20"
 
 
 # ---------------------------------------------------------------------------
@@ -262,3 +266,40 @@ def test_the_worklist_list_row_of_a_split_line_carries_its_splits(api):
     assert got[1]["remark"] == "site not ready"
     assert [x["change"] for x in got] == ["REMAIN", "DELAY", "CANCEL BALANCE"]
     assert plain_row["splits"] == []
+
+
+def test_taken_remaining_and_suggested_print_once_on_the_expanded_rows(api):
+    s = _order(api, [(10, 10, D_A)])
+    _confirm_all(s)
+    _po, po_line = _po_line(s.world, _supplier(s.world), qty=4, expected_date=date(2026, 10, 20))
+    _link(s.world, _order_row(s.world, s.line[10]), po_line, qty=4, document="202610-S0004")
+    s.db.commit()
+    _save(s, {10: [_sp(4, D_A, on=_on(s, 10)), _sp(6, D_B, on=_on(s, 10))]})
+    heads, rows = _sheet_rows(s)
+    assert len(rows) == 2, rows
+    cols = [heads.index(h) for h in ("TAKEN", "REMAINING", "SUGGESTED")]
+    first, second = rows[0], rows[1]
+    assert _day(first[5]) == D_A, "the first split row is the earliest date"
+    assert first[cols[0]] not in (None, ""), "TAKEN prints on the first split row"
+    assert first[cols[1]] not in (None, ""), "REMAINING prints on the first split row"
+    for c in cols:
+        assert second[c] in (None, ""), f"{heads[c]} is blank on the other split rows: {second[c]!r}"
+
+
+def test_the_send_to_purchasing_preview_lists_one_line_per_split(api, monkeypatch, stored):
+    from app.models.project_so import OrderInquiry
+    from app.services.oi_handover_resend import OrderInquiryHandoverResend
+    from tests.test_oi_handover_excel import _drain_on_test_connection, _enabled_handover
+    from tests.test_order_inquiry_handover_automation import _register
+
+    _client, world = api
+    _register(world)
+    _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
+    s = _order(api, [(10, 10, D_A)])
+    _confirm_all(s)
+    _save(s, {10: [_sp(4, D_A, on=_on(s, 10)), _sp(6, D_B, on=_on(s, 10))]})
+    inquiry = world.db.get(OrderInquiry, _order_row(world, s.line[10]).order_inquiry_id)
+    out = OrderInquiryHandoverResend(world.db).preview([str(inquiry.id)], actor_user_id=world.actor)
+    assert out["emails"], out
+    assert out["emails"][0]["line_count"] == 2, "one email line per split of the split line"

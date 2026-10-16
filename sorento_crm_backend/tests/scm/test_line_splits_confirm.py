@@ -60,7 +60,7 @@ class _S:
     pass
 
 
-def _so402757(api, *, with_splits: bool):
+def _so402757(api, *, with_splits: bool, line18_now="121", batch_18: bool = True):
     client, world = api
     db = world.db
     core_so = _core_so(db, world.company_id)
@@ -87,20 +87,24 @@ def _so402757(api, *, with_splits: bool):
 
     # AutoCount: line 2 51 -> 2, line 18 82 -> 121, dates unchanged
     core_2.qty_ordered, line_2.qty = Decimal("2"), Decimal("2")
-    core_18.qty_ordered, line_18.qty = Decimal("121"), Decimal("121")
+    core_18.qty_ordered, line_18.qty = Decimal(line18_now), Decimal(line18_now)
     db.commit()
-    batch = _build(world, [
-        _change(QTY_CHANGED, core_2, so_number=core_so.so_number,
-                old_date=D_2, new_date=D_2, old_qty="51", new_qty="2"),
-        _change(QTY_CHANGED, core_18, so_number=core_so.so_number,
-                old_date=D_18, new_date=D_18, old_qty="82", new_qty="121"),
-    ], core_so, [str(core_2.id), str(core_18.id)])
+    changes = [_change(QTY_CHANGED, core_2, so_number=core_so.so_number,
+                       old_date=D_2, new_date=D_2, old_qty="51", new_qty="2")]
+    ids = [str(core_2.id)]
+    if batch_18:
+        changes.append(_change(QTY_CHANGED, core_18, so_number=core_so.so_number,
+                               old_date=D_18, new_date=D_18, old_qty="82", new_qty=line18_now))
+        ids.append(str(core_18.id))
+    batch = _build(world, changes, core_so, ids)
+    s_core = (core_so, core_2, core_18)
     assert batch is not None, "premise: the pending change batch exists"
 
     s = _S()
     s.client, s.world, s.db, s.order, s.batch = client, world, db, order, batch
     s.line_2, s.line_18, s.row_2, s.row_18 = line_2, line_18, row_2, row_18
     s.po_line = po_line
+    s.core_so, s.core_2, s.core_18 = s_core
     if with_splits:
         r = _put(s, [{"line_id": str(line_2.id), "splits": [
             _sp(2, D_2, on=str(line_2.id)),
@@ -110,11 +114,11 @@ def _so402757(api, *, with_splits: bool):
     return s
 
 
-def _confirm_both(s):
+def _confirm_both(s, buy_18="121"):
     before = len(_TOLD)
     r = _confirm(s.client, s.order.id, [
         _line_payload(s.line_2.id, buy_qty="2"),
-        _line_payload(s.line_18.id, buy_qty="121"),
+        _line_payload(s.line_18.id, buy_qty=buy_18),
     ], batch_id=str(s.batch.id))
     assert r.status_code == 200, r.text
     s.db.commit()
@@ -238,3 +242,79 @@ def test_a_move_alone_does_not_ask_purchasing_again(api):
     assert len(live_b) == 1
     assert _linked(s, live_b[0]) == Decimal("403"), "B holds A's moved links"
     assert live_b[0].ack_state == ACK_ACKNOWLEDGED, "nothing left to tell, no re-confirm"
+
+
+def test_stale_splits_do_not_act_on_a_later_change(api):
+    """A stored split only acts while the origin's pending change starts from the split's
+    stored base. After the first Confirm AutoCount cuts line 2 again (2 -> 1) and raises line
+    18 (121 -> 130): CANCEL 1 on line 2, nothing more moves, the old split lines are not
+    told again."""
+    s = _so402757(api, with_splits=True)
+    _confirm_both(s)
+    db, world = s.db, s.world
+    s.core_2.qty_ordered, s.line_2.qty = Decimal("1"), Decimal("1")
+    s.core_18.qty_ordered, s.line_18.qty = Decimal("130"), Decimal("130")
+    db.commit()
+    batch = _build(world, [
+        _change(QTY_CHANGED, s.core_2, so_number=s.core_so.so_number,
+                old_date=D_2, new_date=D_2, old_qty="2", new_qty="1"),
+        _change(QTY_CHANGED, s.core_18, so_number=s.core_so.so_number,
+                old_date=D_18, new_date=D_18, old_qty="121", new_qty="130"),
+    ], s.core_so, [str(s.core_2.id), str(s.core_18.id)])
+    assert batch is not None, "premise: the second change batch exists"
+    before = len(_TOLD)
+    r = _confirm(s.client, s.order.id, [
+        _line_payload(s.line_2.id, buy_qty="1"), _line_payload(s.line_18.id, buy_qty="130"),
+    ], batch_id=str(batch.id))
+    assert r.status_code == 200, r.text
+    db.commit()
+    db.expire_all()
+    told = [(h.get("line_no"), h["line"]["remark"], h["line"]["qty"]) for h in _TOLD[before:]]
+    line_2 = [t for t in told if t[0] == 2]
+    assert any(t[1].startswith("CANCEL") for t in line_2), told
+    assert not [t for t in line_2 if t[1].split(",")[0].split(" ")[0] in ("REMAIN", "DELAY", "ADVANCE")], (
+        "the old split lines are not told again", told)
+    live_18 = _live(s, s.line_18, IV_ORDER)
+    assert _linked(s, live_18[0]) == Decimal("49"), "nothing more moves"
+
+
+@pytest.mark.parametrize("line18_now", ["82", "60"])
+def test_a_target_whose_autocount_qty_did_not_go_up_receives_nothing(api, line18_now):
+    s = _so402757(api, with_splits=True, line18_now=line18_now, batch_18=(line18_now != "82"))
+    _confirm_both(s, buy_18=line18_now)
+    row_2 = s.db.get(OrderInquiryRow, s.row_2.id)
+    assert _linked(s, row_2) == Decimal("2")
+    for row in _live(s, s.line_18, IV_ORDER):
+        assert _linked(s, row) == Decimal("0"), "no link moved to a line that did not grow"
+
+
+def test_oi_demand_rows_leaves_the_cancel_when_the_target_is_not_in_the_confirm(api):
+    from app.services.planning_change_service import _oi_demand_rows
+
+    s = _so402757(api, with_splits=True)
+    rows = (
+        s.db.query(PlanningChangeRow)
+        .filter(PlanningChangeRow.batch_id == s.batch.id,
+                PlanningChangeRow.project_line_id == s.line_2.id)
+        .all()
+    )
+    assert len(rows) == 1
+    out, counts = _oi_demand_rows(s.db, rows, s.core_so.so_number)
+    assert counts == {"CANCEL_BALANCE": 1}, counts
+    assert out[0]["qty"] == Decimal("49"), "nothing linked moves: the full CANCEL is still told"
+
+
+def test_oi_demand_rows_leaves_the_cancel_when_the_target_did_not_go_up(api):
+    from app.services.planning_change_service import _oi_demand_rows
+
+    s = _so402757(api, with_splits=True, line18_now="60")
+    rows = (
+        s.db.query(PlanningChangeRow)
+        .filter(PlanningChangeRow.batch_id == s.batch.id,
+                PlanningChangeRow.project_line_id.in_([s.line_2.id, s.line_18.id]))
+        .all()
+    )
+    assert len(rows) == 2
+    out, _counts = _oi_demand_rows(s.db, rows, s.core_so.so_number)
+    cancels = [o for o in out if o["qty"] == Decimal("49")]
+    assert cancels, [(o["qty"], o.get("line_no")) for o in out]
