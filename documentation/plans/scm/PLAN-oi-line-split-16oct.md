@@ -1,6 +1,6 @@
 # PLAN: split one SO line into delivery tranches in Order Inquiries (OI-LINE-SPLIT)
 
-Status: Build (owner OK on mock v2, 16 Oct 23:47 "Ok proceed"). Track: full (L): migration, new
+Status: Review (owner OK on mock v2, 16 Oct 23:47 "Ok proceed"); reviewer READY round 4, hand test next. Track: full (L): migration, new
 endpoint with RBAC, engine change. Lead pattern: tester red tests, one coder (Opus: tangled engine in
 a 13k-line service), reviewer + security-reviewer, browser pass 1280/375. Stacked on #1748
 (OI Excel one sheet; merged into this branch at c1f8f57d8).
@@ -87,14 +87,21 @@ NULL (the base the split was made against, same on every row of one origin), `cr
 
 ### Engine (Confirm honours staff links)
 
-- Pre-pass `_apply_split_links` before `_apply_pure_splits` in `refresh_for_decision`
-  (`project_order_inquiry_service.py:1323`): for each stored split whose sits-on line differs from
-  its own line, both lines in this Confirm, own line's AutoCount qty went down: move that qty with
-  its placement links and ack from the own line's live ORDER row to the sits-on line's row via
-  `_split_row` (merge branch when the target already has a row; split qty instead of the target's
-  Buy; latest split first). Same guards as the pure split (single live ORDER, not redirected, no
-  reserve link). Does not add lines to handled/settled sets: netting tells only what is left.
-- `_oi_demand_rows` (`planning_change_service.py:3889-3892`): drop = from - to - linked_out.
+- Pre-pass `_apply_split_links` before `_apply_pure_splits` in `refresh_for_decision`: for each
+  ACTING split whose sits-on line differs from its own line, both lines in this Confirm, own line's
+  AutoCount qty went down and the target's went up: move that qty with its placement links and ack
+  to the target's row via `_split_row` (merge branch; split qty, not the target's Buy; latest
+  first; pure-split guards). Moved qty is recorded per origin and target in `SPLIT_MOVED_KEY`
+  (session; popped only on the outermost rollback and after each order's apply).
+- `split_state` per split line: `acting` (pending change from == stored base, or no pending change
+  and open qty/date == stored base: Confirm applies it), `applied` (no pending change and open qty
+  == own-line plan: the normal state after the Confirm that applied it; stored base kept, resend
+  prints the plan), `stale` (anything else: current base, "AutoCount changed", engine ignores,
+  resend prints the current row, a PUT re-bases). A line ADDED in the pending change has base 0.
+- Sent email (`explained_by_splits`): the origin prints honoured split rows next to the netting's
+  own CANCEL; a target excludes moved-in qty (a fully moved-in added line tells nothing); a cancel
+  split is told once. `_oi_demand_rows` needs no change: a moved origin always settles in place
+  (fa01e5f84 removed an unreachable subtraction).
 - No stored splits = today's behaviour exactly.
 
 ### FE (PS = sorento_crm_frontend/app/(protected)/project-sales/)
