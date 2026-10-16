@@ -91,8 +91,17 @@ interface MoveBox {
 const HISTORY_LIMIT = 80;
 
 /** Below Tailwind's `md`: the phone layout (UAC F1). */
+function belowMdNow(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    Boolean(window.matchMedia('(max-width: 767px)').matches)
+  );
+}
+
 function useBelowMd(): boolean {
-  const [below, setBelow] = React.useState(false);
+  // Read at first render, so a phone never paints the desktop grid first.
+  const [below, setBelow] = React.useState(belowMdNow);
   React.useEffect(() => {
     if (
       typeof window === 'undefined' ||
