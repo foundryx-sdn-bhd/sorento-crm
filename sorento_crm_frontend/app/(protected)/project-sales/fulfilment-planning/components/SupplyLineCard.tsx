@@ -18,6 +18,7 @@ import {
   fromMinor,
   lineBalance,
   lineBlockers,
+  quantityError,
   toMinor,
   type DraftBorrow,
   type DraftLine,
@@ -251,6 +252,7 @@ export function SupplyLineCard({
                       min="0"
                       step="any"
                       value={row.qty}
+                      error={quantityError(row.qty)}
                       aria-label={`Reserve at ${row.location ?? 'the fulfilment location'} on line ${line.line_no}`}
                       onChange={(event) => {
                         const next = [...draft.reserve];
@@ -285,6 +287,7 @@ export function SupplyLineCard({
                         min="0"
                         step="any"
                         value={row.qty}
+                        error={quantityError(row.qty)}
                         aria-label={`Borrow from ${row.donor_project_ref ?? row.warehouse_code} on line ${line.line_no}`}
                         onChange={(event) => {
                           const next = [...draft.borrow];
@@ -362,6 +365,7 @@ export function SupplyLineCard({
                   min="0"
                   step="any"
                   value={draft.buy_qty}
+                  error={quantityError(draft.buy_qty)}
                   aria-label={`Buy on line ${line.line_no}`}
                   onChange={(event) => onChange({ ...draft, buy_qty: event.target.value })}
                   className="h-8 w-28 tabular-nums"
