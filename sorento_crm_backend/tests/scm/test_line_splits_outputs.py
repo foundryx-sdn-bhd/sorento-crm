@@ -293,12 +293,13 @@ def test_the_send_to_purchasing_preview_lists_one_line_per_split(api, monkeypatc
     from tests.test_order_inquiry_handover_automation import _register
 
     _client, world = api
-    _register(world)
-    _drain_on_test_connection(monkeypatch, world)
-    _enabled_handover(world)
     s = _order(api, [(10, 10, D_A)])
     _confirm_all(s)
     _save(s, {10: [_sp(4, D_A, on=_on(s, 10)), _sp(6, D_B, on=_on(s, 10))]})
+    # the preview does not need the confirm's handover: set the automation up only now
+    _register(world)
+    _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
     inquiry = world.db.get(OrderInquiry, _order_row(world, s.line[10]).order_inquiry_id)
     out = OrderInquiryHandoverResend(world.db).preview([str(inquiry.id)], actor_user_id=world.actor)
     assert out["emails"], out
@@ -329,9 +330,6 @@ def test_resend_of_a_split_line_that_no_longer_acts_prints_the_current_row(api, 
     from tests.test_order_inquiry_handover_automation import _register
 
     _client, world = api
-    _register(world)
-    _drain_on_test_connection(monkeypatch, world)
-    _enabled_handover(world)
     s = _order(api, [(10, 10, D_A)])
     _confirm_all(s)
     _save(s, {10: [_sp(4, D_A, on=_on(s, 10)), _sp(6, D_B, on=_on(s, 10))]})
@@ -340,6 +338,10 @@ def test_resend_of_a_split_line_that_no_longer_acts_prints_the_current_row(api, 
 
     s.db.get(SalesOrderLine, core).qty_delivered = Decimal("3")
     s.db.commit()
+    # set the handover automation up only now (CI: no storage/SMTP)
+    _register(world)
+    _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
     inquiry = world.db.get(OrderInquiry, _order_row(world, s.line[10]).order_inquiry_id)
     out = OrderInquiryHandoverResend(world.db).preview([str(inquiry.id)], actor_user_id=world.actor)
     assert out["emails"], out
@@ -358,9 +360,6 @@ def test_resend_after_the_confirm_that_applied_the_split_still_prints_one_line_p
     from tests.test_order_inquiry_handover_automation import _register
 
     _client, world = api
-    _register(world)
-    _drain_on_test_connection(monkeypatch, world)
-    _enabled_handover(world)
     s = _order(api, [(10, 10, D_A)])
     _confirm_all(s)
     _save(s, {10: [_sp(4, D_A, on=_on(s, 10)), _sp(6, D_B, on=None)]})
@@ -369,6 +368,10 @@ def test_resend_after_the_confirm_that_applied_the_split_still_prints_one_line_p
     s.db.get(SalesOrderLine, line.core_sales_order_line_id).qty_ordered = Decimal("4")
     line.qty = Decimal("4")
     s.db.commit()
+    # set the handover automation up only now (CI: no storage/SMTP)
+    _register(world)
+    _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
     inquiry = world.db.get(OrderInquiry, _order_row(world, line).order_inquiry_id)
     out = OrderInquiryHandoverResend(world.db).preview([str(inquiry.id)], actor_user_id=world.actor)
     assert out["emails"], out
