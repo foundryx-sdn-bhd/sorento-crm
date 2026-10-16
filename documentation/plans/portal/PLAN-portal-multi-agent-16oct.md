@@ -24,7 +24,7 @@ customers of ALL those agents together, everywhere in the portal. Nothing silent
     403s when that one agent is inactive, even if another linked agent is active).
   - Form visibility: `portal_form_visibility_service.resolve_visible_form_types` hides the
     agent-only kinds when no agent is linked.
-- Dev case (sorento_cagent_stack, read-only): contact "Jayson" +60166753328 is linked to
+- Dev case (sorento_cagent_stack, read-only): one test contact is linked to
   JAYDEN I (customers 300-4001, 300-H070) and WT I (300-I057, 300-J017). Today the portal shows
   only JAYDEN I's two.
 
