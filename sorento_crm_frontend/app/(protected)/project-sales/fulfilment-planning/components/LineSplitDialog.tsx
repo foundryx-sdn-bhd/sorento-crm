@@ -642,13 +642,21 @@ export function LineSplitDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && onOpenChange(false)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (next) return;
+        // Escape and the X never throw edits away; the footer's Cancel does (UAC B5).
+        if (dirty) {
+          toast('Unsaved changes: Save or Cancel');
+          return;
+        }
+        onOpenChange(false);
+      }}
+    >
       <DialogContent
         variant="fullscreen"
         className="gap-0 overflow-hidden p-0 max-md:inset-0 max-md:rounded-none"
-        onEscapeKeyDown={(event) => {
-          if (dirty) event.preventDefault();
-        }}
       >
         <div
           data-testid="line-split-dialog"
