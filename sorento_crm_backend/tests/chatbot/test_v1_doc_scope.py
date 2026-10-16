@@ -626,6 +626,17 @@ def _make_salesperson(
     db.commit()
 
 
+def _seed_bystander_staff(session_factory) -> None:
+    """Another contact's ACTIVE customer_service user: an unrelated staff role assignment, so a
+    lost user / role join in `contact_asker.is_staff_user` would make anyone staff (reviewer,
+    16 Oct: the blank schema otherwise holds no other assignment to find)."""
+    from tests._chat_asker_seed import _respond_contact, give_role, link_user
+
+    db = session_factory()
+    give_role(db, link_user(db, _respond_contact(db, f"bystander-{uuid.uuid4().hex[:6]}"), name="ZZT Bystander"), "customer_service")
+    db.commit()
+
+
 def _link_agent(session_factory) -> None:
     """A sales agent linked to the seeded contact (`sales_agents.contact_id`)."""
     from tests._chat_asker_seed import link_agent
@@ -748,9 +759,9 @@ _NOT_A_SALESPERSON = {
     "inactive_customer_service_user": lambda sf: _make_salesperson(sf, status="INACTIVE", role="customer_service"),
     "inactive_user": lambda sf: _make_salesperson(sf, status="INACTIVE"),
     "trashed_role": lambda sf: _make_salesperson(sf, role_trashed=True),
-    "portal_user_only": lambda sf: _make_salesperson(sf, role="portal_user"),
-    "guest_only": lambda sf: _make_salesperson(sf, role="guest"),
-    "no_role": lambda sf: _make_salesperson(sf, role=None),
+    "portal_user_only": lambda sf: (_seed_bystander_staff(sf), _make_salesperson(sf, role="portal_user")),
+    "guest_only": lambda sf: (_seed_bystander_staff(sf), _make_salesperson(sf, role="guest")),
+    "no_role": lambda sf: (_seed_bystander_staff(sf), _make_salesperson(sf, role=None)),
 }
 
 #: Owner ruling 16 Oct: any staff role makes an ACTIVE, not trashed linked user staff (the roles
@@ -789,6 +800,7 @@ class TestAnyActiveCrmUserIsStaff:
 
         _seed_contact(session_factory, variables={})
         _link_customers(session_factory, OWN)
+        _seed_bystander_staff(session_factory)
         _make_salesperson(session_factory, role="portal_user")
 
         scope, staff = services.customer_scope_and_staff(session_factory(), CONTACT_ID, None)
