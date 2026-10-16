@@ -582,3 +582,22 @@ def test_replaced_by_must_name_another_dealer_target(api):
         "replaced_by_target_id": _uid(),
     })
     assert res.status_code == 422, res.text
+
+
+def test_replaced_by_refuses_an_agent_target_itself_and_a_chain(api):
+    client, db, company_id = api
+    agent = _agent(db, company_id)
+    agent_target = client.post(BASE, json={
+        "subject_kind": "agent", "sales_agent_id": agent.id, "name": "ZZT A", "metric": "amount",
+        "start_date": "2026-01-01", "end_date": "2026-12-31", "target_value": 1,
+    })
+    assert agent_target.status_code == 201, agent_target.text
+    a1 = _customer(db, company_id, "ZZT CHAIN 1", level=1)
+    tiers = [{"threshold": 1, "rate": 1}]
+    res = client.post(BASE, json=_yearly([a1], tiers, replaced_by_target_id=agent_target.json()["id"]))
+    assert res.status_code == 422, res.text
+    top = client.post(BASE, json=_yearly([a1], tiers)).json()
+    mid = client.post(BASE, json=_yearly([a1], tiers, replaced_by_target_id=top["id"])).json()
+    assert client.patch(f"{BASE}/{top['id']}", json={"replaced_by_target_id": top["id"]}).status_code == 422
+    chained = client.post(BASE, json=_yearly([a1], tiers, replaced_by_target_id=mid["id"]))
+    assert chained.status_code == 422, chained.text
