@@ -61,3 +61,14 @@ Paths under `sorento_crm_backend/app/` or `sorento_crm_frontend/app/(protected)/
   `ContactTagSettingsSection.tsx:80`, `ContactEditDialog.tsx:183`).
 - N9 (C) Remove the unused `holder_order` parameter; one Edit button on the tag detail header; tags shown
   once on the contact page.
+
+## Follow-up rulings (after coder 081b93681)
+
+- Read gates for withheld sections accept the matching edit slug too (`user_management.access_agents.edit`
+  reads agents, `inventory.stock.edit` reads stock): edit implies read, as elsewhere in the app.
+- F5: the deferred-action engine (`app/services/form_action_service.py`) now passes the parking actor as
+  `payload["requested_by_id"]` to `execute`, so `contact_tag.delete` re-checks the section gates at commit
+  time. Shared engine change: security re-check covers the other registered actions.
+- Three older tests (S3 t3_8, S3 t3_9, S2 stock merge) follow R3 / F4 / F1 (test-only alignment).
+- R2 preview must also list a sibling list the one-rule CHECK clears (inherited include list cleared
+  when a tag sets an exclude list, and the reverse; stock and spec).
