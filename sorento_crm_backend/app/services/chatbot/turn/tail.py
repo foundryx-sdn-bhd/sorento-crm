@@ -64,6 +64,66 @@ def carry_live_state(
     return replace(state, focus=focus, pending=state.pending if asked else live["pending"], quoted_live=None)
 
 
+_ITEM_KEYS = ("entity_type", "uuid", "uuids", "name")
+
+
+def _option_item(option: dict[str, Any]) -> dict[str, Any] | None:
+    position = option.get("position")
+    if not isinstance(position, int) or isinstance(position, bool):
+        return None
+    payload = option.get("payload") if isinstance(option.get("payload"), dict) else {}
+    code = option.get("code") or payload.get("value")
+    item: dict[str, Any] = {
+        "position": position,
+        "label": option.get("label") or option.get("name") or code,
+        "code": code,
+    }
+    for key in _ITEM_KEYS:
+        if option.get(key):
+            item[key] = option[key]
+    if payload.get("value") is not None:
+        item["value"] = payload["value"]
+    return item
+
+
+def _row_item(position: int, row: dict[str, Any]) -> dict[str, Any]:
+    fields = [f for f in row.get("fields") or [] if isinstance(f, dict)]
+    code = next(
+        (str(f["value"]).strip() for f in fields if f.get("label") == "Product Code" and f.get("value")), None
+    )
+    first = next((str(f["value"]).strip() for f in fields if f.get("value") not in (None, "")), None)
+    label = code or row.get("title") or first or str(position)
+    item: dict[str, Any] = {"position": position, "label": label, "code": code}
+    if code:
+        item["entity_type"] = "product"
+    return item
+
+
+def last_list_after(previous: Any, *, question: Any, sections: Any) -> list[dict[str, Any]] | None:
+    """The numbered list this turn showed, for `Focus.last_list`. Question options keep
+    their position, label, code and keys; the rows of the one section that has rows are
+    numbered by their order. Options win a position clash; several sections with rows
+    record no list; nothing shown keeps `previous`."""
+    options = [
+        item
+        for item in (_option_item(o) for o in (getattr(question, "options", None) or []) if isinstance(o, dict))
+        if item is not None
+    ]
+    with_rows = [s for s in (sections or []) if getattr(s, "figures", None)]
+    if len(with_rows) > 1:
+        return options or None
+    rows: list[dict[str, Any]] = []
+    if with_rows:
+        rows = [
+            _row_item(i, fig) for i, fig in enumerate(with_rows[0].figures, start=1) if isinstance(fig, dict)
+        ]
+    merged = {item["position"]: item for item in rows}
+    merged.update({item["position"]: item for item in options})
+    if not merged:
+        return previous
+    return [merged[p] for p in sorted(merged)]
+
+
 def session_payload(state: State, answer: Any, ctx: Any) -> dict[str, Any]:
     """The five-key state this turn leaves behind - what `persist` writes.
 

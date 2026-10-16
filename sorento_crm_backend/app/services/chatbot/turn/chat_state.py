@@ -1,0 +1,508 @@
+# CHAT-STATE: the one explicit conversation state the parser is shown and answers.
+#
+# `view` / `render` state the focus, the open question, the last list and the pending task
+# as a fixed four line block. `apply_changes` validates the parser's `state_changes` and
+# carries the prior state accordingly (CARRY only: what this message names is still
+# written by `apply._focus_rules`). Pure: no I/O, no word of the customer's message is
+# ever read here; an op carries no value, the value is the parse's own existing field.
+from __future__ import annotations
+
+import copy
+import json
+from dataclasses import dataclass, replace
+from typing import Any
+from uuid import UUID
+
+from app.services.chatbot.turn import question as question_mod
+from app.services.chatbot.turn import task as task_mod
+from app.services.chatbot.turn.pending import option_entities
+from app.services.chatbot.turn.state import Focus, State
+
+OPS: tuple[str, ...] = (
+    "keep", "new_subject", "set", "clear", "pick", "answer", "switch_domain", "close_question",
+)
+
+#: The fixed axes; every `policy.kinds` kind is an axis too.
+FIXED_AXES: tuple[str, ...] = (
+    "product", "customer", "warehouse", "brand", "tier", "channel", "period", "status", "sort", "quantity",
+)
+
+#: Owner ruling Q3 is pending (S3b): does the report period survive a new full ask while the
+#: customer carries? Working rule (b): no. The one spot to flip.
+NEW_SUBJECT_KEEPS_PERIOD = False
+
+#: Axes tied to the domain they were asked in; a domain switch drops them.
+_DOMAIN_BOUND = ("status", "document", "sort", "date_window", "top_selling", "sales_ranking_frame", "low_stock", "set_page")
+
+#: Keys that are machine identity, never printed.
+_HIDDEN_KEYS = frozenset({"uuid", "uuids", "id", "key", "payload"})
+
+#: Verdict scalars per axis, nulled when the axis is not named by a `set`.
+_SCALARS: dict[str, dict[str, Any]] = {
+    "channel": {"sales_channel": None},
+    "period": {"date_mode": None, "date_filter_start": None, "date_filter_end": None},
+    "sort": {"sort_by": None, "sort_dir": None},
+    "status": {"status": None, "order_status": None, "document": []},
+    "tier": {"access_levels": []},
+    "quantity": {"demand_qty": None},
+}
+
+
+# --------------------------------------------------------------------------- #
+# view / render
+# --------------------------------------------------------------------------- #
+
+
+def _is_key(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        UUID(value.strip())
+    except ValueError:
+        return False
+    return True
+
+
+def _clean(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return None if not text or _is_key(text) else text
+
+
+def _plain(value: Any) -> Any:
+    """A copy with machine identity (keys, uuid-shaped strings) taken out."""
+    if isinstance(value, dict):
+        return {
+            k: _plain(v) for k, v in value.items()
+            if k not in _HIDDEN_KEYS and not _is_key(v) and _plain(v) not in (None, "", [], {})
+        }
+    if isinstance(value, (list, tuple)):
+        return [p for p in (_plain(v) for v in value if not _is_key(v)) if p not in (None, "", [], {})]
+    return value
+
+
+def _names(rows: Any, *order: str) -> list[str]:
+    out: list[str] = []
+    for row in rows or ():
+        if isinstance(row, dict):
+            text = next((t for t in (_clean(row.get(k)) for k in order) if t), None)
+        else:
+            text = _clean(row)
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
+def _products(rows: Any) -> list[str]:
+    out: list[str] = []
+    for row in rows or ():
+        name = next(iter(_names([row], "canonical_code", "raw", "name")), None)
+        if not name:
+            continue
+        qty = row.get("quantity") if isinstance(row, dict) else None
+        out.append(f"{name} x{qty:g}" if isinstance(qty, (int, float)) and not isinstance(qty, bool) else name)
+    return out
+
+
+def _pairs(slot: Any) -> str | None:
+    """A report slot as `key value` pairs, scalars only, machine identity left out."""
+    if not isinstance(slot, dict):
+        return None
+    parts = []
+    for key, value in _plain(slot).items():
+        if isinstance(value, (list, tuple)):
+            value = ",".join(str(v) for v in value if isinstance(v, (str, int, float)))
+        if isinstance(value, (str, int, float, bool)) and value != "":
+            parts.append(f"{key} {value}")
+    return ", ".join(parts) or None
+
+
+def _subject(focus: Focus) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "domain": _names([{"d": d} for d in focus.domains or ()], "d"),
+        "customer": _names(focus.customers, "name", "raw", "canonical_code"),
+        "product": _products(focus.products),
+        "warehouse": _names(focus.warehouse, "name", "raw", "canonical_code"),
+        "brand": _names(focus.brands),
+        "tier": _names(focus.tier),
+        "channel": _clean(focus.sales_channel),
+        "period": [
+            t for t in (_clean((focus.date_window or {}).get(k)) for k in ("start", "end")) if t
+        ] if isinstance(focus.date_window, dict) else [],
+        "status": _clean(focus.status),
+        "document": _names(focus.document),
+        "sort": [
+            t for t in (_clean((focus.sort or {}).get(k)) for k in ("by", "dir")) if t
+        ] if isinstance(focus.sort, dict) else [],
+        "report": [
+            f"{label} {pairs}".strip()
+            for label, pairs in (
+                ("top_selling", _pairs(focus.top_selling)),
+                ("sales_ranking_frame", _pairs(focus.sales_ranking_frame)),
+                ("low_stock", _pairs(focus.low_stock)),
+            )
+            if pairs or (label == "top_selling" and focus.status == "top_selling")
+        ],
+        "relation": _clean(focus.relation),
+    }
+    for kind, rows in sorted((focus.extra or {}).items()):
+        names = _names(rows, "name", "raw", "canonical_code")
+        if names and kind not in out:
+            out[kind] = names
+    return {k: v for k, v in out.items() if v}
+
+
+def _list_item(row: dict[str, Any]) -> dict[str, Any] | None:
+    position = row.get("position")
+    if not isinstance(position, int) or isinstance(position, bool):
+        return None
+    item: dict[str, Any] = {"position": position}
+    code, label = _clean(row.get("code")), _clean(row.get("label"))
+    if code:
+        item["code"] = code
+    if label and label != code:
+        item["label"] = label
+    return item
+
+
+def _same_list(items: list[dict[str, Any]], oq: dict[str, Any] | None) -> bool:
+    options = (oq or {}).get("options")
+    if not options:
+        return False
+    def key(row: dict[str, Any]) -> tuple[Any, Any]:
+        return row.get("position"), row.get("code") or row.get("label")
+    return {key(i) for i in items} == {key(o) for o in options if isinstance(o, dict)}
+
+
+def _open_question(focus: Focus, oq: dict[str, Any] | None) -> dict[str, Any] | None:
+    obj = _plain(oq) if oq else {}
+    extras: dict[str, Any] = {}
+    if focus.set_clarify:
+        extras["clarify"] = _plain(focus.set_clarify)
+    if isinstance(focus.set_page, dict) and focus.set_page.get("other_brands"):
+        extras["other_brands"] = _plain(focus.set_page["other_brands"])
+    asked = (focus.top_selling or {}).get("asked") if isinstance(focus.top_selling, dict) else None
+    if asked:
+        extras["asked"] = _plain(asked)
+    extras = {k: v for k, v in extras.items() if v}
+    if not obj and not extras:
+        return None
+    if not obj:
+        obj = {"kind": question_mod.FREE, "owed": ["answer"]}
+    return {**obj, **extras}
+
+
+def view(state: State, open_question: dict[str, Any] | None) -> dict[str, Any]:
+    """The state as one plain, key-free dict: what the parser is shown and what the trace logs."""
+    focus = state.focus
+    oq = _open_question(focus, open_question)
+    items = [i for i in (_list_item(r) for r in (focus.last_list or []) if isinstance(r, dict)) if i]
+    stock_is_question = question_mod.is_the_stock_question(open_question)
+    task = None if stock_is_question else task_mod.open_question(focus.tasks)
+    return {
+        "subject": _subject(focus),
+        "open_question": oq,
+        "last_list": items or None,
+        "last_list_is_question": bool(items) and _same_list(items, oq),
+        "task": _plain(task) if task else None,
+        "task_is_question": stock_is_question,
+    }
+
+
+def _list_text(items: list[dict[str, Any]]) -> str:
+    return "; ".join(
+        " ".join(str(p) for p in (i["position"], i.get("code"), i.get("label")) if p is not None)
+        for i in items
+    )
+
+
+def _subject_text(subject: dict[str, Any]) -> str:
+    parts = []
+    for key, value in subject.items():
+        if key == "period" and value:
+            value = [" to ".join(value)]
+        elif key == "sort":
+            value = [" ".join(value)]
+        parts.append(f"{key} {', '.join(value) if isinstance(value, list) else value}")
+    return "; ".join(parts)
+
+
+def render(v: dict[str, Any]) -> str | None:
+    """The fixed four line block, or None when the state is empty (nothing is added)."""
+    if not (v["subject"] or v["open_question"] or v["last_list"] or v["task"] or v["task_is_question"]):
+        return None
+    subject = f"- subject: {_subject_text(v['subject'])}" if v["subject"] else "- subject: none"
+    oq = v["open_question"]
+    question = "- open question: " + (json.dumps(oq, ensure_ascii=False) if oq else "none")
+    items = v["last_list"]
+    if not items:
+        last = "- last list: none"
+    else:
+        domain = ", ".join(v["subject"].get("domain") or [])
+        head = f"- last list ({domain + ', ' if domain else ''}{len(items)}): "
+        last = head + ("the open question's options" if v["last_list_is_question"] else _list_text(items))
+    if v["task_is_question"]:
+        task = "- pending task: the open question"
+    elif v["task"]:
+        task = "- pending task: " + json.dumps(v["task"], ensure_ascii=False)
+    else:
+        task = "- pending task: none"
+    return "\n".join(["State:", subject, question, last, task])
+
+
+# --------------------------------------------------------------------------- #
+# apply_changes
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class Applied:
+    valid: bool
+    state: State
+    verdict: dict[str, Any]
+    log: dict[str, Any]
+
+
+def _entities(verdict: dict[str, Any]) -> list[dict[str, Any]]:
+    return [e for e in (verdict.get("entities") or []) if isinstance(e, dict)]
+
+
+def _named_kinds(verdict: dict[str, Any]) -> set[str]:
+    return {
+        str(e.get("hint")) for e in _entities(verdict)
+        if e.get("hint") and e.get("current_message") is not False
+    }
+
+
+def _has_field(verdict: dict[str, Any], axis: str) -> bool:
+    """Does this message's own parse carry a value for the axis (one value, one place)?"""
+    if axis == "tier":
+        return bool(verdict.get("access_levels")) or "tier" in _named_kinds(verdict)
+    if axis == "channel":
+        return bool(verdict.get("sales_channel"))
+    if axis == "period":
+        return any(verdict.get(k) for k in ("date_mode", "date_filter_start", "date_filter_end"))
+    if axis == "status":
+        return any(verdict.get(k) for k in ("status", "order_status", "document"))
+    if axis == "sort":
+        return bool(verdict.get("sort_by") or verdict.get("sort_dir"))
+    if axis == "quantity":
+        return verdict.get("demand_qty") is not None or any(e.get("quantity") is not None for e in _entities(verdict))
+    return axis in _named_kinds(verdict)
+
+
+def _message_domains(verdict: dict[str, Any]) -> list[str]:
+    asks = [a.get("domain") for a in (verdict.get("asks") or []) if isinstance(a, dict) and a.get("domain")]
+    if asks:
+        return asks
+    return [verdict["domain_hint"]] if verdict.get("domain_hint") else []
+
+
+def _clear_axis(focus: Focus, axis: str) -> None:
+    if axis == "channel":
+        focus.sales_channel = None
+    elif axis == "period":
+        focus.date_window = None
+    elif axis == "status":
+        focus.status = None
+        focus.document = []
+    elif axis == "sort":
+        focus.sort = None
+    elif axis == "tier":
+        focus.tier = []
+    elif axis == "brand":
+        focus.brands = []
+    elif axis == "quantity":
+        for row in focus.products:
+            row.pop("quantity", None)
+    elif axis in ("product", "customer", "warehouse"):
+        setattr(focus, {"product": "products", "customer": "customers", "warehouse": "warehouse"}[axis], [])
+    else:
+        focus.extra.pop(axis, None)
+
+
+def _write_set(focus: Focus, axis: str, verdict: dict[str, Any]) -> None:
+    """The scalar axes a `set` writes onto the focus; entity axes are written by the
+    existing kind rules from the parse's entities."""
+    if axis == "channel":
+        focus.sales_channel = verdict.get("sales_channel")
+    elif axis == "sort":
+        focus.sort = {k: verdict.get(f"sort_{k}") for k in ("by", "dir") if verdict.get(f"sort_{k}")}
+    elif axis == "status":
+        focus.status = verdict.get("status") or verdict.get("order_status") or focus.status
+        if verdict.get("document"):
+            focus.document = list(verdict["document"])
+    elif axis == "period":
+        window = {k: verdict.get(f"date_filter_{k}") for k in ("start", "end") if verdict.get(f"date_filter_{k}")}
+        if window:
+            focus.date_window = window
+    elif axis == "tier":
+        if verdict.get("access_levels"):
+            focus.tier = [t for t in verdict["access_levels"] if isinstance(t, str)]
+
+
+def _drop_domain_bound(focus: Focus) -> None:
+    for name in _DOMAIN_BOUND:
+        setattr(focus, name, [] if name == "document" else None)
+
+
+def _reject(state: State, verdict: dict[str, Any], log: dict[str, Any], reasons: list[dict[str, Any]]) -> Applied:
+    log["rejected"] = reasons
+    return Applied(False, state, {k: v for k, v in verdict.items() if k != "state_changes"}, log)
+
+
+def apply_changes(
+    state: State,
+    verdict: dict[str, Any],
+    *,
+    open_question: dict[str, Any] | None,
+    domains: list[str],
+    kinds: list[str],
+    brands: list[str],
+    positions_read_elsewhere: bool,
+) -> Applied:
+    """Validate the parser's `state_changes` and carry the prior state by them.
+
+    Returns the new `State` (with `state_led` set) and the verdict with `state_changes`
+    popped; an invalid change returns the inputs unchanged with the reasons in the log."""
+    changes = verdict.get("state_changes")
+    shown = view(state, open_question)
+    log: dict[str, Any] = {
+        "shown": render(shown),
+        "before": shown,
+        "changes": copy.deepcopy(changes),
+        "rejected": [],
+    }
+    if not isinstance(changes, list) or not changes:
+        return _reject(state, verdict, log, [{"op": None, "reason": "no changes declared"}])
+
+    axes = set(FIXED_AXES) | set(kinds)
+    focus = copy.deepcopy(state.focus)
+    ops = [c.get("op") if isinstance(c, dict) else None for c in changes]
+    rejected: list[dict[str, Any]] = []
+
+    def fail(op: Any, reason: str) -> None:
+        rejected.append({"op": op, "reason": reason})
+
+    if sum(1 for o in ops if o in ("keep", "new_subject")) > 1:
+        fail("keep", "keep and new_subject are exclusive")
+    seen_axes: set[str] = set()
+    set_axes: list[str] = []
+    picks: list[int] = []
+    for change in changes:
+        op = change.get("op") if isinstance(change, dict) else None
+        axis, position = (change.get("axis"), change.get("position")) if isinstance(change, dict) else (None, None)
+        if op not in OPS:
+            fail(op, "unknown op")
+        elif op in ("set", "clear"):
+            if axis not in axes:
+                fail(op, f"unknown axis {axis}")
+            elif axis in seen_axes:
+                fail(op, f"axis {axis} repeated")
+            else:
+                seen_axes.add(axis)
+                if op == "set":
+                    if not _has_field(verdict, axis):
+                        fail(op, f"no value for {axis} in the parse")
+                    else:
+                        set_axes.append(axis)
+        elif op == "pick":
+            if not isinstance(position, int) or isinstance(position, bool):
+                fail(op, "pick needs a position")
+            else:
+                picks.append(position)
+        elif op == "answer":
+            mode = (verdict.get("open_question_answer") or {}).get("mode")
+            if open_question is None or mode is None:
+                fail(op, "no open question to answer" if open_question is None else "no answer declared")
+        elif op == "switch_domain":
+            target = _message_domains(verdict)
+            if not target or any(d not in domains for d in target):
+                fail(op, "no known domain in the parse")
+
+    if brands and "brand" in set_axes:
+        known = {b.casefold() for b in brands}
+        for e in _entities(verdict):
+            if e.get("hint") == "brand" and e.get("current_message") is not False:
+                if not ({str(e.get("canonical_code") or "").casefold(), str(e.get("raw") or "").casefold()} & known):
+                    fail("set", f"unknown brand {e.get('canonical_code') or e.get('raw')}")
+
+    options = {
+        o.get("position"): o for o in (open_question or {}).get("options") or [] if isinstance(o, dict)
+    }
+    rows = {r.get("position"): r for r in (focus.last_list or []) if isinstance(r, dict)}
+    roster_pick = data_pick = None
+    for position in picks:
+        if position in options:
+            roster_pick = position
+        elif position in rows and rows[position].get("code"):
+            data_pick = rows[position]
+        else:
+            fail("pick", f"position {position} is not in the list")
+
+    if rejected:
+        return _reject(state, verdict, log, rejected)
+
+    # ---- carry, on the copy, keyed off the ops ----
+    pending = state.pending
+    out = {k: v for k, v in verdict.items() if k != "state_changes"}
+    new_subject = "new_subject" in ops
+    if new_subject:
+        window = focus.date_window if NEW_SUBJECT_KEEPS_PERIOD else None
+        focus = Focus(
+            customers=focus.customers, tier=focus.tier, brands=focus.brands,
+            tasks=focus.tasks, last_list=focus.last_list, date_window=window,
+        )
+        pending = None
+    switch_to = _message_domains(verdict)
+    held = list(focus.domains or [])
+    if "switch_domain" in ops or (held and switch_to and not any(d in held for d in switch_to)):
+        _drop_domain_bound(focus)
+        if switch_to:
+            focus.domains = list(switch_to)
+    for change in changes:
+        axis = change.get("axis")
+        if change["op"] == "clear":
+            _clear_axis(focus, axis)
+        elif change["op"] == "set":
+            _write_set(focus, axis, verdict)
+    answering = "answer" in ops or roster_pick is not None
+    if not answering:
+        out, _ = question_mod.without_phantom_answer(
+            out, open_question=None, positions_read_elsewhere=positions_read_elsewhere, focus_has_product=False
+        )
+    if roster_pick is not None:
+        out[question_mod.ANSWER_KEY] = {
+            **question_mod.NO_ANSWER,
+            "mode": "pick",
+            "picked": [roster_pick],
+            "qty_for_all": (verdict.get(question_mod.ANSWER_KEY) or {}).get("qty_for_all"),
+        }
+        out[question_mod.POSITIONS_KEY] = [roster_pick]
+    if "close_question" in ops and open_question is not None:
+        if question_mod.is_the_stock_question(open_question) and not (set_axes or new_subject):
+            out[question_mod.ANSWER_KEY] = {**question_mod.NO_ANSWER, "mode": "cancel"}
+        else:
+            pending, focus.required_ask, focus.set_clarify = None, None, None
+    if not new_subject and "answer" not in ops:
+        for axis, nulls in _SCALARS.items():
+            if axis not in set_axes:
+                out.update(copy.deepcopy(nulls))
+    held_products = list(state.focus.products)
+    entities = [copy.deepcopy(e) for e in _entities(out) if e.get("current_message") is not False]
+    if "product" in set_axes and len(held_products) == 1 and held_products[0].get("quantity") is not None:
+        mine = [e for e in entities if e.get("hint") == "product"]
+        if len(mine) == 1 and mine[0].get("quantity") is None and out.get("demand_qty") is None:
+            mine[0]["quantity"] = held_products[0]["quantity"]
+    if data_pick is not None:
+        entities.extend(option_entities(data_pick))
+        out[question_mod.POSITIONS_KEY] = []
+    out["entities"] = entities
+
+    led = (
+        "answer" if answering
+        else "new_ask" if new_subject
+        else "refine" if (set_axes or "clear" in ops or data_pick is not None)
+        else "carry"
+    )
+    log["rejected"] = []
+    return Applied(True, replace(state, focus=focus, pending=pending, state_led=led), out, log)
