@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.public.portal import get_portal_token
 from app.database import get_db
-from app.models.base import UNSET, company_scope, get_company_scope, set_company_scope
+from app.models.base import company_scope, get_company_scope, set_company_scope
 from app.models.portal import PortalToken
 from app.models.sales_agent import SalesAgent
 from app.schemas.sales import (
@@ -34,6 +34,7 @@ from app.schemas.sales import (
     SalesOpportunityCustomerOptionsResponse,
     SalesOpportunityMeta,
 )
+from app.services.company_scope_resolver import portal_contact_scope
 from app.services.error_handler import AppException, handle_internal_error
 from app.services.portal_form_visibility_service import require_form_visible
 from app.services.sales import opportunity_service as svc
@@ -98,16 +99,22 @@ def _require_agents(db: Session, token: PortalToken) -> List[SalesAgent]:
     # company - see `app/models/base.py`'s four-state table) for a SHARED agent
     # (`company_id` is `None`), clobbering whatever the contact was actually scoped to.
     # Agents that ALL carry a `company_id` may narrow the request to those companies, but
-    # only to the ones the existing scope already permits; a shared agent among them, or
+    # only to the ones the contact's scope already permits; a shared agent among them, or
     # companies that all disagree with the contact's scope, leave the existing (already
-    # correct) scope untouched rather than widen it.
+    # correct) scope untouched rather than widen it. A scope that is not a set (UNSET: a
+    # junk Bearer or X-API-Key sent beside the portal token, security review 16 Oct 2026)
+    # is bounded by the contact's OWN companies, never by the agents' alone.
     companies = {agent.company_id for agent in agents}
-    existing_scope = get_company_scope(db)
     if None not in companies:
-        if existing_scope is None or existing_scope is UNSET:
-            set_company_scope(db, frozenset(companies))
-        elif isinstance(existing_scope, frozenset) and companies & existing_scope:
-            set_company_scope(db, frozenset(companies & existing_scope))
+        existing_scope = get_company_scope(db)
+        allowed = (
+            existing_scope
+            if isinstance(existing_scope, frozenset)
+            else portal_contact_scope(db, token.contact_id)
+        )
+        narrowed = companies & allowed
+        if narrowed:
+            set_company_scope(db, frozenset(narrowed))
     return agents
 
 
