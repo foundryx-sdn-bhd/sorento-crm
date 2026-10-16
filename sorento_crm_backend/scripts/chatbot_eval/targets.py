@@ -518,8 +518,11 @@ def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> 
     g = gold or {}
     if g.get("fact") or g.get("fact_label"):
         stock_ask = g.get("fact") == "inventory" or _norm(g.get("fact_label")) == "stock"
-    else:
-        stock_ask = bool(STOCK_WORDS_RE.search(user_message(row)))
+    else:   # the user's words, or a stock picker (product_pick with stock_pick) the turn was answering
+        before = _oq(row)[0]
+        picked_stock = isinstance(before, dict) and before.get("kind") == "product_pick" and bool(
+            (before.get("payload") or {}).get("stock_pick"))
+        stock_ask = bool(STOCK_WORDS_RE.search(user_message(row))) or picked_stock
     if not stock_ask:
         return ("no_qty_ask", False, "The bot asked how many although it was not needed.")
     mode = _stock_mode(row)
@@ -533,9 +536,16 @@ def _picker_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tu
     question unless the gold code is ambiguous."""
     if (gold or {}).get("ambiguous"):
         return None
-    after = _oq(row)[1]
-    return ("no_picker", not (isinstance(after, dict) and after.get("kind") == "product_pick"),
-            "The bot left a list of products open to pick from instead of answering.")
+    before, after = _oq(row)
+    if not (isinstance(after, dict) and after.get("kind") == "product_pick"):
+        return ("no_picker", True, "The bot left a list of products open to pick from instead of answering.")
+
+    def codes(q: Any) -> set[str]:
+        return {_key(o.get("code") or o.get("label")) for o in (q.get("options") or []) if isinstance(o, dict)} if isinstance(q, dict) else set()
+
+    listed = len(set(CODE_RE.findall(reply_text(row)))) >= 2          # the answer itself shows the products
+    same_list = isinstance(before, dict) and before.get("kind") == "product_pick" and codes(before) == codes(after)
+    return ("no_picker", listed or same_list, "The bot left a list of products open to pick from instead of answering.")
 
 
 def _needless(row: dict[str, Any], gold: dict[str, Any], menu: bool = True,
