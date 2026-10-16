@@ -122,9 +122,22 @@ class OrderInquiryHandoverResend:
         # (AutoCount moved on) is not purchasing's instruction: that line prints its row.
         from app.services.project_line_split_service import LineSplitService
 
-        printable = LineSplitService(self.db).printable_origin_ids(
-            item.get("so_line_id") for item in items
-        )
+        splits = LineSplitService(self.db)
+        printable = splits.printable_origin_ids(item.get("so_line_id") for item in items)
+        # A line whose row holds only qty other lines' splits moved onto it is told by those
+        # origins' split rows: no plain ORDER row of its own beside them.
+        planned_in = splits.planned_in_by_printable(item.get("so_line_id") for item in items)
+        items = [
+            item
+            for item in items
+            if not (
+                item.get("so_line_id")
+                and str(item["so_line_id"]) not in printable
+                and planned_in.get(str(item["so_line_id"]), Decimal("0")) > 0
+                and planned_in[str(item["so_line_id"])]
+                >= Decimal(str((item.get("line") or {}).get("qty") or "0"))
+            )
+        ]
         items = service.split_handover_items(items, line_ids=printable)
         context, _source_id = build_handover_email(self.db, items, store_excel=False)
         handover = context["handover"]

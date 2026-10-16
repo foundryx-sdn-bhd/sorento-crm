@@ -287,6 +287,32 @@ class LineSplitService:
         facts = self._facts_for(ProjectSalesOrderLine.id.in_(wanted))
         return {line_id for line_id, f in facts.items() if f.splits_act}
 
+    def planned_in_by_printable(self, line_ids: Iterable[str]) -> Dict[str, Decimal]:
+        """Per line, the qty other lines' printable splits (acting or applied) sit on it:
+        what Send to purchasing already tells as those origins' split rows."""
+        wanted = sorted({str(i) for i in line_ids if i})
+        if not wanted:
+            return {}
+        sitting = (
+            self.db.query(SOLineSplit)
+            .filter(
+                SOLineSplit.sits_on_line_id.in_(wanted),
+                SOLineSplit.is_cancel.is_(False),
+                SOLineSplit.so_line_id != SOLineSplit.sits_on_line_id,
+            )
+            .all()
+        )
+        if not sitting:
+            return {}
+        printable = self.printable_origin_ids(str(split.so_line_id) for split in sitting)
+        sits = self.effective_sits_on(sitting)
+        out: Dict[str, Decimal] = {}
+        for split in sitting:
+            target = sits.get(str(split.id))
+            if target and str(split.so_line_id) in printable:
+                out[target] = out.get(target, _ZERO) + _dec(split.qty)
+        return out
+
     def printable_origin_ids(self, line_ids: Iterable[str]) -> set:
         """Which of these ORIGIN lines print their saved splits as purchasing's record:
         `acting` or `applied`, never `stale` (Send to purchasing)."""
