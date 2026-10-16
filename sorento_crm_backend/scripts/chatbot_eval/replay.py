@@ -558,6 +558,8 @@ def _recorded_l3(row: dict[str, Any]) -> tuple[str, bool] | None:
     if start is None:
         return "", False
     end = next((i for i in range(start, len(lines)) if lines[i].startswith(_AFTER_L3)), len(lines))
+    if any(x.startswith(_L3_STARTS) for x in lines[end:]):
+        return None  # an old layout (L3 lines after L2/L1): the as-of DB history serves instead
     dropped = False
     for e in events:
         layers = e.get("layers") if isinstance(e.get("layers"), list) else []
