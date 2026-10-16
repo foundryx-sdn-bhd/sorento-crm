@@ -48,6 +48,8 @@ SLOT_OPS: tuple[str, ...] = ("keep", "skip", "clear", "unclear")
 
 #: The question this module raises for an unclear period (a Pending kind of its own).
 PERIOD_ASK = "period_ask"
+CUSTOMER_ASK = "held_customer_ask"
+_SLOT_ASKS = (PERIOD_ASK, CUSTOMER_ASK)
 HAND_OVER_TEXT = "I am not sure which period you mean. Would you like me to hand this to our team?"
 
 
@@ -435,6 +437,18 @@ def _period_ask(state: State, window: dict[str, Any], domain: str | None) -> Any
     )
 
 
+def _customer_ask(state: State, rows: list[dict[str, Any]], domain: str | None) -> Any:
+    name = next(iter(_names(rows, "name", "raw", "canonical_code")), None) or "The same customer"
+    options = [
+        {"position": 1, "label": name, "entity_type": "customer", "payload": {"keep": True}},
+        {"position": 2, "label": "All customers", "entity_type": "customer", "payload": {"keep": False}},
+    ]
+    return pending_ask(
+        CUSTOMER_ASK, options, asked_at_turn=state.turn_no, expects="pick",
+        payload={"domain": domain, "slot": "customer"},
+    )
+
+
 def _hand_over(state: State) -> Any:
     option = {
         "position": 1, "label": "Customer service", "entity_type": "team",
@@ -623,7 +637,7 @@ def apply_changes(
 
     slot_ask = None
     period_answer = (
-        "answer" in ops and pending is not None and getattr(pending, "kind", None) == PERIOD_ASK
+        "answer" in ops and pending is not None and getattr(pending, "kind", None) in _SLOT_ASKS
     )
     answering = ("answer" in ops or bool(roster_picks)) and not period_answer
     if period_answer:
@@ -631,8 +645,10 @@ def apply_changes(
         declared = verdict.get(question_mod.ANSWER_KEY) or {}
         chosen = (declared.get("picked") or verdict.get(question_mod.POSITIONS_KEY) or [None])[0]
         option = next((o for o in pending.options if o.get("position") == chosen), None)
-        if option is not None:
+        if option is not None and pending.kind == PERIOD_ASK:
             focus.date_window = (option.get("payload") or {}).get("window")
+        elif option is not None and not (option.get("payload") or {}).get("keep"):
+            focus.customers = []
         pending = None
         out[question_mod.ANSWER_KEY] = dict(question_mod.NO_ANSWER)
         out[question_mod.POSITIONS_KEY] = []
@@ -665,8 +681,14 @@ def apply_changes(
         mapped = [KIND_DOMAIN.get(str(row.get("hint"))) for row in focus.customers if isinstance(row, dict)]
         if mapped and all(mapped):
             out["domain_hint"] = mapped[0]
+        elif focus.customers and unclear_slot_default() == "ask":
+            # The type cannot settle it (R11): ask once, real names.
+            if pending is not None and getattr(pending, "kind", None) in _SLOT_ASKS:
+                slot_ask, pending = _hand_over(state), None
+            else:
+                slot_ask = _customer_ask(state, focus.customers, (switch_to or focus.domains or [None])[0])
     if slots.get("period") == "unclear" and focus.date_window and unclear_slot_default() == "ask":
-        if pending is not None and getattr(pending, "kind", None) == PERIOD_ASK:
+        if pending is not None and getattr(pending, "kind", None) in _SLOT_ASKS:
             slot_ask, pending = _hand_over(state), None
         else:
             slot_ask = _period_ask(state, focus.date_window, (switch_to or focus.domains or [None])[0])
