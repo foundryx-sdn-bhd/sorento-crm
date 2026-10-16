@@ -418,3 +418,19 @@ def test_subject_after_includes_the_tool_targets_resolved_through_uuid_codes():
     sw = dict(subject_after=["cb88ss-diy"])
     check(grade_turn(_tool_only_row(UA), item("followup", "switch", **sw)), True)
     check(grade_turn(_tool_only_row(UB), item("followup", "switch", **sw)), False)
+
+
+def test_pick_followed_by_a_question_passes_with_tool_target_unknown():
+    gold = dict(position=2, code="SRTA200")
+    v = {"entities": [], "reference_positions": [2], "open_question_answer": {"mode": None, "items": [], "picked": []}}
+    asked = _asking(row2(verdict=v, mem_after=[prod("SRTA200", UA)], tools=[], reply="Which period?"), "period_pick")
+    res = grade_turn(asked, item("followup", "pick", **gold))
+    check(res, True)
+    assert "tool_target" in res["checks"] and res["checks"]["tool_target"] is None
+    v3 = dict(v, reference_positions=[3])
+    wrong_pos = _asking(row2(verdict=v3, mem_after=[prod("SRTA200", UA)], tools=[], reply="Which period?"), "period_pick")
+    check(grade_turn(wrong_pos, item("followup", "pick", **gold)), False, "position")
+    other_tool = row2(verdict=v, mem_after=[prod("SRTA200", UA)], tools=[TOOL_B], reply="SRTB200 has 5 pcs.")
+    other_tool["uuid_codes"] = {UB: "SRTB200"}
+    res2 = grade_turn(other_tool, item("followup", "pick", **gold))
+    assert res2["passed"] is False and res2["checks"]["tool_target"] is False
