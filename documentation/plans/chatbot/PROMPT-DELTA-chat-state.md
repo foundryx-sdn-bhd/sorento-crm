@@ -13,3 +13,9 @@ lane. The single source of the prompt text is the repo constant `STATE_SECTION` 
 
 Rules taught are business rules (what carries), not language: no word lists, no example phrases from any eval set.
 
+
+## Pending text change (S4b/S6, owner 16 Oct ~22:45)
+
+Add to the op table: `keep` / `skip` / `clear` / `unclear` with axis `customer` or `period`. Rule: when the State holds
+a customer or a period, say for each one whether it applies to THIS message (keep), does not apply (skip, it stays
+held), is dropped (clear), or you cannot tell (unclear). An ETA ask is about incoming stock (meaning, not a word).

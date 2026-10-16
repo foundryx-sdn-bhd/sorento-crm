@@ -51,7 +51,8 @@ step 1), first asks not worse; crew's held-out bar for the owner hand test is >=
 | S3 | `apply_changes` (pure), all rules except the period-on-new-ask row | `tests/chatbot/test_chat_state_apply.py` | no |
 | S4 | engine seam + carry skips + trace log | `tests/chatbot/test_chat_state_seam.py` (+ `test_memory_trace_and_usage.py`) | no |
 | S5 | block into context + schema variant + gate + prompt delta (repo file) | `tests/chatbot/test_chat_state_parser_input.py` | YES (lane label live check, 3 TRAIN runs) |
-| S6 | R11/R7 real-name clarify on `[]` / invalid changes | `tests/chatbot/test_chat_state_clarify.py` | trigger needs live parses |
+| S4b | held-slot ops keep/skip/clear/unclear for customer + period; remove static R14 projection | `test_chat_state_seam.py` (R14 tests rewritten) + `test_chat_state_apply.py` | no |
+| S6 | R15 unclear held slot -> one real-name ask (policy default `ask`) | `tests/chatbot/test_chat_state_clarify.py` | trigger needs live parses |
 | S3b | Q3 period rule on new_subject (after owner answer) | add to `test_chat_state_apply.py` | no |
 
 ### Test list (captain's; the tester writes from this + the UAC)
@@ -94,9 +95,15 @@ S4 seam (stub parser / dry-run mock emission, $0):
 4. APPLY re-entry gives the same focus as the first pass.
 5. Invalid change -> today's path, `memory.state.rejected` filled.
 6. `memory` trace event carries `state.shown/before/changes/after`; before = the view the parser was shown.
-7. R14: held customer then an incoming/inventory ask -> tool args carry no customer and no held period; the stored
-   focus still holds the customer; a following order ask applies it (slots from `chatbot_domains.narrowing` /
-   `takes_date_filter`, no word rule).
+7. (replaced by S4b) R14 static domain projection: removed on owner ruling 16 Oct ~22:45.
+
+S4b held slots (owner 16 Oct ~22:45; replaces the static R14 projection):
+1. Held customer + parse `skip customer` (e.g. an incoming ask): tool args carry no customer; stored focus keeps it.
+2. Held customer + `keep customer` (a delivery ask): the customer applies.
+3. Held customer + `clear customer`: dropped from the stored focus.
+4. Held customer + no statement: applies as today (main-identical).
+5. Same four for a held period (`date_window`).
+6. Static projection gone: no reader of `chatbot_domains.narrowing` added by this lane remains.
 
 S5 parser input:
 1. Flag off: `assemble()` byte-identical to main at levels off / conversation / full (golden).
@@ -106,8 +113,10 @@ S5 parser input:
 5. `parse()` sends `PARSE_OUTPUT_JSON_SCHEMA` (identity) when off, WITH_STATE when on; the extended schema is strict-
    valid; base schema and `DECLARED_KEYS` unchanged.
 
-S6 clarify: `[]` or an invalid change asks "<held subject> or something else" with real names, never ids; a second
-unresolved turn offers the hand-over (feedback-chatbot-clarify-not-assume loop breaker).
+S6 unclear held slot (R15, now required): `unclear customer` with policy default `ask` -> one question with the held
+customer's display name vs all customers, as an open question whose answer fills only that slot (R5); no ids;
+default `assume` -> the slot applies; a second `unclear` right after the bot asked -> hand-over offer, never a guess.
+`[]` / invalid changes stay on today's path until TRAIN shows how often they occur.
 
 ## Measurement
 
@@ -120,5 +129,8 @@ unresolved turn offers the hand-over (feedback-chatbot-clarify-not-assume loop b
 
 ## Open
 
-- Q3 (owner): period on a new full ask while the customer carries. Working rule (b). S3b waits.
+- Q3 (owner): period rule (refine keeps it, a new question uses its own). Working rule (b). S3b waits.
+- Owner: unclear default ask vs assume (crew rec: ask once). Built as one named default `ask`; storage of the setting
+  (system_settings column like `chatbot_stock_denial_enabled`, app/models/user.py:641, or the CLARIFY-POLICY #1570
+  table) is a crew/owner call.
 - Security review items: stored last-list pick after a scope change (seam design risk 6).

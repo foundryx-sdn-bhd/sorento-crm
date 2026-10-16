@@ -161,15 +161,16 @@ Edit budget: state.py 1 field; apply.py 1 override, 1 kwarg at 2 sites, 4 guards
 one-line guards, block pass-through; move `_answer_pending`'s option-to-entity builder (apply.py:795-850) into a
 helper `option_entities(option)` (turn/pending.py), no behaviour change.
 
-### A4. R14 slot applies by domain (owner 16 Oct ~21:45)
+### A4. Held slots (owner 16 Oct ~22:45; replaces the static per-domain projection)
 
-A held customer / period is APPLIED to this turn's ask only when the answer domain takes it: `chatbot_domains.narrowing`
-keys (customer is a key only for `order` and `sales` in the seeded rows) and `takes_date_filter` (`turn/policy.py:25`,
-read at `lanes/business/answer.py:2415-2425`). A held slot the domain does not take stays in the stored focus (not
-dropped) and is not projected into the lane / tool args for this turn. Existing precedent for reading `narrowing` by
-kind: `turn/apply.py:286`, `:1831`. S4 decides the projection point (likely where the focus reaches the resolver and
-lanes: `with_carried_entities` turn_runtime.py:4825, `outstanding_carry` :3360) so the tail still writes the full
-focus back. Period on a domain switch is already dropped by A2 (switch_domain).
+The static R14 projection (`engine._without_slots_the_domain_does_not_take`, reading `chatbot_domains.narrowing`) is
+removed. New ops, axis `customer` or `period` only: `keep` (applies to this ask), `skip` (not applied this ask, stays
+in the stored focus), `clear` (dropped), `unclear` (policy default: `ask` -> one real-name question as an open
+question whose answer fills only that slot; `assume` -> applies). A held slot with no statement applies as today.
+`skip` needs the same projection point S4 found (after `with_carried_entities` ~engine.py:5372) but driven by the
+op, so the tail still writes the full focus. The ask reuses the existing clarify/question composer (find the one that
+asks "same or all" today) rather than a new answer path. The default lives behind one function / named constant until
+the owner picks the storage.
 
 ## B. Changes onto existing consumers (no new answer path)
 

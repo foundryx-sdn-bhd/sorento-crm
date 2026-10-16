@@ -23,7 +23,7 @@ in full; the parser outputs CHANGES to it; code applies them and logs before/aft
 | R3 | "and X?" (swaps one subject item) | Replace that item; keep the ask: domain, qty, period, filters | 15 Oct "qty carries" (#1617: "5件" then "SRTWC286-SH-NEW 呢？" -> 5) |
 | R4 | New full ask that names its own subject and measure ("top 3 sales agents" again, "any stock for sorento undermount basin") | New subject = only what this message names; basis / measure / channel / period / filters only from this message. Customer still carries (R6) | #1721 step 7 + REPORT-ENGINE-L AC-HT8 (no carried channel); feedback-chatbot-clarify-not-assume |
 | R5 | Answers the bot's open question (a position, an offered name, yes/no, a value) | Fills ONLY the asked slot; the question closes | feedback-live-check-follow-ups (reply to bot question); REPORT-ENGINE-L ("an answer fills only the asked slot"); #1572 "sorento" |
-| R6 | Customer first, then a product | Customer stays in state; it APPLIES only when the new ask's domain takes a customer (R14): a delivery/order ask for that customer only, never widened; a product-level ask (stock, incoming/ETA, files, specs, price) ignores it | feedback-chatbot-clarify-not-assume (owner 15 Oct direction); owner 16 Oct ~21:45 (ETA is incoming, not customer delivery) |
+| R6 | Customer first, then a product | The parser says whether the held customer applies to this ask (R14). A delivery/order ask for that customer only, never widened; a clearly product-level ask (stock, incoming/ETA) does not apply it; the customer stays held either way | feedback-chatbot-clarify-not-assume (owner 15 Oct); owner 16 Oct ~21:45 (ETA is incoming) and ~22:45 (no per-domain table) |
 | R7 | Product first, then a customer named with no reference to the product | Ask "same product or all products?" with real names. Explicit reference ("delivery for this") = use the held product | feedback-chatbot-clarify-not-assume (Q9), feedback-chatbot-rules-know-dont-ask |
 | R8 | States a quantity on the held item ("HAVE 10??" after an answer) | Quantity attaches to the held item; it rides on R3 and on a pick | 15 Oct "qty carries" (#1617 QTY-CARRIED) |
 | R9 | Points at the last list ("2", "the 2nd one", a label from it) | That item from the last list shown; a short reply to a bot list keeps the held item | IDEA-CAPTURE G1 (brief); #1352 (roster survives "check stock") |
@@ -31,7 +31,8 @@ in full; the parser outputs CHANGES to it; code applies them and logs before/aft
 | R11 | Unclear: no reference, could be the held subject or a new one | Ask with real-name options, never guess; loop breaker = hand-over offer, never a guess | feedback-chatbot-clarify-not-assume, feedback-chatbot-never-leak-ids |
 | R12 | (mechanism) | Parser outputs the change in registry values / list positions; code validates and keeps a registry-valid value; no word, regex or fuzzy rules on the message | feedback-semantic-no-hardcoded-rules, feedback-no-code-fuzzy-matching, feedback-trust-parser-registry-output |
 | R13 | (truth + scope) | State holds only items an answer actually showed to this contact; replies never show ids/UUIDs | feedback-truthful-no-fabricated-replies, feedback-chatbot-never-leak-ids, SEC-MCP-AUTH #1742 |
-| R14 | (slot applies by domain, owner 16 Oct ~21:45) | A held customer or period applies to an ask only when the answer domain takes that slot, read from data: `chatbot_domains.narrowing` keys (customer only in `order`, `sales`) and `chatbot_domains.takes_date_filter`. A held slot the domain does not take is not applied and STAYS in state for the next ask that takes it. The parser picks the domain; code applies only that domain's slots; no word rule | owner 16 Oct ~21:45 verbatim: "ETA is like the incoming ... not related to the delivery to the customer" |
+| R14 | (held slots, owner 16 Oct ~22:45) | When the State holds a customer or a period, the parser states for each, per message: `keep` (applies to this ask), `skip` (does not apply to this ask; stays held), `clear` (drop it), or `unclear`. Code validates and applies; no per-domain table, no word rule. A held slot the parser says nothing about applies as today | owner 16 Oct ~22:45 verbatim: "delivery can be both customer scope and product scope"; ~21:45 "ETA is like the incoming" |
+| R15 | Parser says `unclear` for a held slot (e.g. a held customer plus a bare delivery ask) | The bot asks ONCE with real names ("for <customer> or all customers?"); never ids. Ask vs assume is a policy default (today `ask`, one named setting; owner decides the storage/default). A second unresolved turn offers the hand-over, never a guess | feedback-chatbot-clarify-not-assume, feedback-chatbot-never-leak-ids |
 
 ## Real examples (target behaviour)
 
@@ -46,8 +47,9 @@ in full; the parser outputs CHANGES to it; code applies them and logs before/aft
 4. Prod, #1617 (QTY-CARRIED.md): "SRT5733 HAVE 5 NOS??" got the type ask ~10 times; after a photo, "HAVE 10??"
    re-sent the photo. Target R8: stock check for 10 units of the held item.
 5. Owner 15 Oct: "HANLIM 7/10 有送货吗" -> "SRT391-GM几时送货". Target (owner ruling 16 Oct ~21:45, R6 + R14):
-   incoming ETA for SRT391-GM with no customer filter and no held period (incoming takes no customer); the customer
-   stays in state, so a following "delivery?" is for that customer again. Reverse order (product, then
+   incoming ETA for SRT391-GM with no customer filter and no held period (the parser reads an ETA ask as incoming,
+   meaning not keyword, and says `skip` for the held customer); the customer stays held, so a later delivery ask
+   reads it again (keep, or unclear -> one ask with real names). Reverse order (product, then
    "delivery for <customer>") -> R7 ask.
 
 Note: reading `sorento_prod_20261015` was refused by this session's permission guard (PII), so the examples are the
@@ -102,3 +104,7 @@ owner's own probes and prod incidents already in crew reports. Crew can attach m
 - Owner, 16 Oct ~21:45: ETA is incoming stock arrival, a product-level answer; a held customer (and a held period) does
   not apply to it; the customer stays in state. Made general as R14 (slot applies by domain data). Q3 (b) stays the
   working rule for customer-scoped asks.
+- Owner, 16 Oct ~22:45: DROP the per-domain scope table ("delivery can be both customer scope and product scope").
+  The parser states per message which held slots apply (R14 rewritten); unclear -> ask once with real names, default
+  ask vs assume is a configurable policy (R15). Pending with the owner: period rule (refine keeps it, a new question
+  uses its own) and the unclear default (crew rec: ask once). Build with `ask`; S3b stays open.

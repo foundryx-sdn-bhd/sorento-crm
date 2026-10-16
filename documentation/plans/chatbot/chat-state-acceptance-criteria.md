@@ -38,10 +38,12 @@ Plan: `PLAN-chat-state-16oct.md`. Card: `chat-state-behaviour-card.md` (rules R1
 - C6. When the parse does not carry the field, the turn runs exactly as on main (the $0 L1 replay gate shows zero
   unintended diffs on `--split dev`).
 - C7. (Q3 working rule b, owner answer pending; not built yet) On a new ask, the period comes only from the current message even while the customer carries.
-- C9. (R14, owner 16 Oct ~21:45) A held customer or period applies only when the answer domain takes it
-  (`chatbot_domains.narrowing` has the kind; `takes_date_filter` for the period). Customer then "SRT391-GM eta":
-  the incoming answer carries no customer filter and no held period; the customer stays in state, and a following
-  delivery ask applies it again.
+- C9. (R14, owner 16 Oct ~22:45) When the State holds a customer or period, the parse's `keep` / `skip` / `clear` /
+  `unclear` for that axis decides it: keep applies it to this ask; skip does not apply it and it stays held; clear
+  drops it. No per-domain table and no word rule decide it. No statement = applies as today.
+- C10. (R15) `unclear` for a held slot, with the policy default `ask`: the bot asks once with real names (the held
+  customer's display name vs all customers; the held period vs another), no ids; the reply fills that slot (R5). With
+  the default set to `assume`, the held slot applies and the reply says which one was used.
 - C8. (Q4 a, owner confirmed 16 Oct) A new ask closes the bot's open question; the last list stays pickable until a new list replaces it.
 
 ## D. The log (design row G)
