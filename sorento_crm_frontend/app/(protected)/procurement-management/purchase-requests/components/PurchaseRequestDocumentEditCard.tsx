@@ -394,7 +394,7 @@ export function PurchaseRequestDocumentEditCard({
             </DocField>
 
             <DocField label="Customer Name" className="sm:col-span-2">
-              <RequestCustomerField form={form} isSponsorship={isSponsorship} />
+              <RequestCustomerField form={form} />
             </DocField>
 
             <DocField label="PIC" className="sm:col-span-2">
@@ -466,41 +466,6 @@ export function PurchaseRequestDocumentEditCard({
                           placeholder="e.g. Showroom, Mock up, Others"
                           {...field}
                           value={field.value ?? ''}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </DocField>
-            )}
-
-            {!isSponsorship && (
-              <DocField label="Sales Type" className="sm:col-span-2">
-                <FormField
-                  control={control}
-                  name="sales_type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <LookupBoundField
-                          table="purchase_requests"
-                          column="sales_type"
-                          value={field.value}
-                          onChange={field.onChange}
-                          placeholder="Select sales type"
-                          renderFallback={() => (
-                            <SearchableSelect
-                              key={field.value || 'empty'}
-                              onChange={field.onChange}
-                              value={field.value || ''}
-                              placeholder="Select sales type"
-                              options={[
-                                { value: 'project', label: 'Project' },
-                                { value: 'cash_sales', label: 'Cash Sales' },
-                              ]}
-                            />
-                          )}
                         />
                       </FormControl>
                       <FormMessage />
@@ -591,6 +556,46 @@ export function PurchaseRequestDocumentEditCard({
                 )}
               </>
             )}
+
+            {/* Required on a PR (routes CS), optional on an SF (SF-SALES-TYPE): after Purpose on a PR,
+                after Sponsor Subject on an SF, as on the detail page. */}
+            <DocField label="Sales Type" className="sm:col-span-2">
+              <FormField
+                control={control}
+                name="sales_type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <LookupBoundField
+                        table="purchase_requests"
+                        column="sales_type"
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="Select sales type"
+                        clearable={isSponsorship}
+                        // An existing SF with no sales type stays blank: the edit card mounts
+                        // before the form reset, so the new-form default would otherwise fill it.
+                        applyDefault={!isSponsorship}
+                        renderFallback={() => (
+                          <SearchableSelect
+                            key={field.value || 'empty'}
+                            onChange={field.onChange}
+                            value={field.value || ''}
+                            placeholder="Select sales type"
+                            clearable={isSponsorship}
+                            options={[
+                              { value: 'project', label: 'Project' },
+                              { value: 'cash_sales', label: 'Cash Sales' },
+                            ]}
+                          />
+                        )}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </DocField>
 
             <DocField label={isSponsorship ? 'Date of Delivery' : 'Expected date of delivery'}>
               <FormField

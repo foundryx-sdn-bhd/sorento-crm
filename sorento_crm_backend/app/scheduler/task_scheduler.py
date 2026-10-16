@@ -1,5 +1,6 @@
 """General background task scheduler (imports, integrations, notifications, summaries)."""
 import logging
+import os
 from contextlib import contextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -12,6 +13,7 @@ from app.services.scheduled_task_service import (
     run_due_tasks,
     register_handler,
 )
+from app.services import healthchecks_ping
 from app.services.respond_sync_handler import run_respond_contacts_sync
 from app.services.attachment_storage_audit_service import run_attachment_storage_audit
 from app.services.n8n_liveness_service import run_n8n_liveness_ping
@@ -23,6 +25,10 @@ from app.config import settings
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+# Healthchecks.io period for the scheduler heartbeat (HA-MONITOR). The check's schedule in
+# documentation/runbooks/monitoring.md must match this.
+HC_SCHEDULER_PING_MINUTES = 5
 
 
 @contextmanager
@@ -686,6 +692,32 @@ def _autocount_pull_advance_tick():
         logger.error("AutoCount pull advance tick failed: %s", e, exc_info=True)
 
 
+def _healthchecks_scheduler_tick():
+    """APScheduler tick (HA-MONITOR): prove to Healthchecks.io that this scheduler runs.
+
+    Does nothing unless HC_SCHEDULER_URL is set (read per tick). Reads the DB once, the way
+    every other tick needs it, then pings success; a failed read pings `/fail` so the alert
+    fires at once instead of after the grace period. A stopped scheduler sends nothing,
+    which Healthchecks reports when the period runs out. Never raises.
+    """
+    url = os.getenv("HC_SCHEDULER_URL", "").strip()
+    if not url:
+        return
+    db_ok = True
+    try:
+        from sqlalchemy import text
+
+        with scheduler_session("healthchecks_scheduler_ping") as db:
+            db.execute(text("SELECT 1"))
+    except Exception as e:
+        db_ok = False
+        logger.error("Healthchecks scheduler tick: DB read failed: %s", e)
+    try:
+        healthchecks_ping.ping(url, fail=not db_ok)
+    except Exception as e:
+        logger.error("Healthchecks scheduler tick: ping failed: %s", type(e).__name__)
+
+
 def _run_queue_jobs_impl(queue_name: str, max_jobs_per_run: int) -> dict:
     """Generic queue processor used by scheduled task heartbeat."""
     return run_sync_rq_jobs(queue_name, max_jobs_per_run)
@@ -877,11 +909,23 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    # Outside heartbeat (HA-MONITOR): pings HC_SCHEDULER_URL every few minutes so a dead
+    # scheduler pages the owner through Healthchecks.io, not through our own WhatsApp path.
+    scheduler.add_job(
+        _healthchecks_scheduler_tick,
+        trigger=IntervalTrigger(minutes=HC_SCHEDULER_PING_MINUTES),
+        id="healthchecks_scheduler_ping",
+        name="Healthchecks scheduler heartbeat",
+        replace_existing=True,
+    )
+
     scheduler.start()
     logger.info(
         "Scheduler started: scheduled tasks heartbeat (every 10s), email outbox drainer "
         "(every %ds), AI trace sweep (daily), chatbot delegated sweep (every minute), "
-        "SPO container relink sweep (daily), AutoCount pull advance (every 30s)",
+        "SPO container relink sweep (daily), AutoCount pull advance (every 30s), "
+        "Healthchecks heartbeat (every %dm, only when HC_SCHEDULER_URL is set)",
         max(1, drain_seconds),
+        HC_SCHEDULER_PING_MINUTES,
     )
     return scheduler
