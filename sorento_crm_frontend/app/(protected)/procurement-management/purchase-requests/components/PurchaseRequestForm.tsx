@@ -481,7 +481,8 @@ export default function PurchaseRequestForm({
         total_project_value_text: data.total_project_value_text?.trim()
           ? data.total_project_value_text.trim()
           : undefined,
-        sales_type: data.sales_type ?? undefined,
+        // A cleared (optional, SF) select gives ''; send none rather than an empty code.
+        sales_type: data.sales_type || undefined,
         sponsor_subject: data.sponsor_subject ?? undefined,
         // Only carry the "Others" detail when the sponsor subject is 'others';
         // sending '' otherwise clears any stale parked text on the backend.
@@ -824,12 +825,14 @@ export default function PurchaseRequestForm({
                           value={field.value}
                           onChange={field.onChange}
                           placeholder="Select sales type"
+                          clearable={isSponsorship}
                           renderFallback={() => (
                             <SearchableSelect
                               key={field.value || "empty"}
                               onChange={field.onChange}
                               value={field.value || ""}
                               placeholder="Select sales type"
+                              clearable={isSponsorship}
                               options={[
                                 { value: "project", label: "Project" },
                                 { value: "cash_sales", label: "Cash Sales" },

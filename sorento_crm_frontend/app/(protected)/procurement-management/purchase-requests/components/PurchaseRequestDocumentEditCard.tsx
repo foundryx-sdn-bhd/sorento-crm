@@ -573,12 +573,14 @@ export function PurchaseRequestDocumentEditCard({
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Select sales type"
+                        clearable={isSponsorship}
                         renderFallback={() => (
                           <SearchableSelect
                             key={field.value || 'empty'}
                             onChange={field.onChange}
                             value={field.value || ''}
                             placeholder="Select sales type"
+                            clearable={isSponsorship}
                             options={[
                               { value: 'project', label: 'Project' },
                               { value: 'cash_sales', label: 'Cash Sales' },

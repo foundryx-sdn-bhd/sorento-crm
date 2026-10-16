@@ -11,6 +11,8 @@ export interface LookupBoundFieldProps {
   onChange: (next: string) => void;
   placeholder?: string;
   renderFallback: () => React.ReactNode;
+  /** Show a clear (x) button; set it on an optional field. */
+  clearable?: boolean;
 }
 
 export default function LookupBoundField({
@@ -20,6 +22,7 @@ export default function LookupBoundField({
   onChange,
   placeholder,
   renderFallback,
+  clearable = false,
 }: LookupBoundFieldProps) {
   const { data, isLoading } = useLookupOptionsByBinding(table, column);
 
@@ -69,6 +72,7 @@ export default function LookupBoundField({
         ...options.map((o) => ({ value: o.value, label: o.label })),
       ]}
       placeholder={placeholder ?? 'Select…'}
+      clearable={clearable}
     />
   );
 }
