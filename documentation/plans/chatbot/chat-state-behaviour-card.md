@@ -93,4 +93,6 @@ owner's own probes and prod incidents already in crew reports. Crew can attach m
   seeds to `crew/state/eval/cp0/train_followups/`; 3 TRAIN runs per checkpoint (~$0.7 each). Q5 yes: dual path; old
   carry code is removed only in step 2, each removal proven by replay. No reads of the prod copy by the lane; crew
   attaches masked real conversations on request.
-- Owner: Q3, Q4 pending. No code until answered.
+- Owner, 16 Oct: Q4 (a) CONFIRMED. Q3: asked why (b); crew explained (period carries on refines and on "and X?";
+  on a new full ask it comes only from the new message, customer carries). (b) is the working rule until he answers;
+  no code on the period rule until then.

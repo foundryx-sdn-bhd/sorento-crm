@@ -37,8 +37,8 @@ Plan: `PLAN-chat-state-16oct.md`. Card: `chat-state-behaviour-card.md` (rules R1
 - C5. When the parse carries the field, no other code path changes the carried subject in that turn.
 - C6. When the parse does not carry the field, the turn runs exactly as on main (the $0 L1 replay gate shows zero
   unintended diffs on `--split dev`).
-- C7. (Q3 rec b) On a new ask, the period comes only from the current message even while the customer carries.
-- C8. (Q4 rec a) A new ask closes the bot's open question; the last list stays pickable until a new list replaces it.
+- C7. (Q3 working rule b, owner answer pending; not built yet) On a new ask, the period comes only from the current message even while the customer carries.
+- C8. (Q4 a, owner confirmed 16 Oct) A new ask closes the bot's open question; the last list stays pickable until a new list replaces it.
 
 ## D. The log (design row G)
 

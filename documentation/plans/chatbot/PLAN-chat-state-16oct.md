@@ -1,38 +1,116 @@
 # PLAN: CHAT-STATE - one explicit conversation state for follow-ups
 
-**Status:** Plan (card filed; crew answered Q1/Q2/Q5, owner Q3/Q4 pending; no code until answered). Track: L, LEAD pattern.
+**Status:** Build (card answered: crew Q1/Q2/Q5, owner Q4(a) confirmed; Q3 working rule (b), period-on-new-ask code
+held until the owner answers). Track: L, LEAD pattern.
 **Lane:** CHAT-STATE, branch `crew/chat-state`. Step 1 of the 16 Oct chatbot scale design
 (`crew/state/reports/CHATBOT-SCALE-DESIGN-16oct.html`, sections 2, 3, 4 rows B/C/G, 8 step 1).
+**Docs:** card `chat-state-behaviour-card.md` (rules R1-R13), UAC `chat-state-acceptance-criteria.md`, coder-facing
+design `chat-state-seam-design.md` (file:line seam, skips, risks).
 
 ## Goal
 
-Follow-ups right ~62% today (first asks ~92%). Bar for this step: follow-up slice >= 80% (design step 1),
-owner hand-test bar >= 90% on crew's held-out set over 3 runs, first asks not worse.
+Follow-ups right ~62% today (first asks ~92%). Bar for this step: follow-up TRAIN slice >= 80% over 3 runs (design
+step 1), first asks not worse; crew's held-out bar for the owner hand test is >= 90% (crew-only).
 
-## Shape (from the brief, owner-approved design)
+## Shape
 
-- ONE state record per contact conversation: subject (products / filters / customer / period / report
-  shape), the bot's open question (what it asked + options offered), the last list shown (position ->
-  item), a pending task.
-- Always shown to the parser in full, compact fixed format, never squeezed or cut.
-- Parser outputs CHANGES to it (keep / new subject / add or clear a filter / pick n / answer open
-  question / switch topic); code applies them deterministically and logs state before/after each turn.
-- No word rules in code; parser decides meaning, code executes. Closed candidate lists are step 2
-  (not here). No new WhatsApp messages. Prompts as code: one chain in the repo.
+- State = `Focus` (subject) + `Pending` (open question) + `Focus.last_list` (new, rides inside focus like
+  `Focus.tasks`) + `Focus.tasks` (pending task), in `respond_contacts.session_vars`. No migration.
+- Parser sees it as one fixed four-line block, never trimmed; empty state adds nothing.
+- Parser emits `state_changes` (ops keep / new_subject / set / clear / pick / answer / switch_domain /
+  close_question, each with `axis` / `position`; values stay in today's parse fields). Pure `apply_changes` applies
+  them at one engine seam; when present it is the only carry writer; when absent (prod label, replay corpus) the
+  turn is byte-identical to main.
+- Gate: the parser prompt in use contains `state_changes` (lane label on the dev copy only, never `production`).
+- Every turn's trace `memory` event carries state shown / before / changes / after / rejected.
 
-## Steps
+## Contract (what tests code against)
 
-1. Behaviour card (carry/reset rules table citing owner rulings, 3-5 real examples, edge cases,
-   <= 5 open questions) filed as ONE crew ask. -> `chat-state-behaviour-card.md`
-2. UAC + this plan filled in, then red-first slices (tester -> coder), L1 replay on every slice,
-   follow-up TRAIN slice measured via EVAL-BENCH.
-3. Reviewer + security-reviewer (state store holds customer data; SEC-MCP-AUTH #1742 scope rules).
-4. No owner hand test from this lane alone.
+- `app/services/chatbot/turn/chat_state.py`:
+  - `view(state, open_question) -> dict` and `render(view) -> str` (block format in the seam design section 2).
+  - `apply_changes(state, verdict, *, open_question, domains, kinds, brands, positions_read_elsewhere) -> Applied`
+    with `Applied.valid: bool`, `.state` (a `State` with `state_led` set), `.verdict` (dict, `state_changes`
+    popped), `.log` (`{shown, before, changes, rejected}`).
+- `app/services/chatbot/turn/tail.py::last_list_after(previous, *, question, sections) -> list[dict] | None`.
+- `Focus.last_list` (turn/state.py) and `contracts.Focus.last_list`, wire key `focus.last_list`.
+- `State.state_led: str | None` (never serialised).
+- `head/parser.py`: `PARSE_OUTPUT_JSON_SCHEMA` unchanged; new `PARSE_OUTPUT_JSON_SCHEMA_WITH_STATE`;
+  `ParserConfig.state_block: bool`.
+- `turn/context.py::ContextLayers.state_block: str | None = None`.
 
-## Code map (filled from the A-ARCH digest)
+## Slices (red-first each: `test(red):` commit of tests alone, then code; $0 replay gate on every slice)
 
-TBD
+| Slice | What | Tests (file) | Parser input? |
+|---|---|---|---|
+| S1 | `view` + `render` (pure) | `tests/chatbot/test_chat_state_block.py` | no |
+| S2 | `last_list_after` + `Focus.last_list` wire | `tests/chatbot/test_chat_state_last_list.py` | no |
+| S3 | `apply_changes` (pure), all rules except the period-on-new-ask row | `tests/chatbot/test_chat_state_apply.py` | no |
+| S4 | engine seam + carry skips + trace log | `tests/chatbot/test_chat_state_seam.py` (+ `test_memory_trace_and_usage.py`) | no |
+| S5 | block into context + schema variant + gate + prompt delta (repo file) | `tests/chatbot/test_chat_state_parser_input.py` | YES (lane label live check, 3 TRAIN runs) |
+| S6 | R11/R7 real-name clarify on `[]` / invalid changes | `tests/chatbot/test_chat_state_clarify.py` | trigger needs live parses |
+| S3b | Q3 period rule on new_subject (after owner answer) | add to `test_chat_state_apply.py` | no |
 
-## Slices
+### Test list (captain's; the tester writes from this + the UAC)
 
-TBD after the card is answered.
+S1 block:
+1. Four fixed lines in fixed order (`subject`, `open question`, `last list`, `pending task`), "none" when empty.
+2. Brand, tier, sort, channel and report keys print when set.
+3. 50 products / 33 list rows print in full; no "and N more".
+4. No uuid substring even when rows/options carry uuids (UAC B3).
+5. A roster that is both the open question and the last list prints once; an answered stock task prints once.
+6. Equal inputs give equal text; empty state -> render gives an empty/None block (UAC B2).
+
+S2 last list:
+1. One data section -> positions 1..N in the section's figure order, label/code from the row.
+2. Question options kept with their positions and keys.
+3. No list shown -> previous kept (Q4a); a new list replaces it.
+4. Two sections with rows -> None.
+5. Stored focus without the key reads `last_list` None; `contracts.SessionVars` accepts `focus.last_list`.
+6. Round trip `focus_to_wire` / `focus_from_wire` keeps it.
+
+S3 apply_changes:
+1. keep: focus unchanged, `state_led == "carry"`.
+2. new_subject keeps customers + tier + brands, drops products, filters/specs, report frame; closes pending (R4, R6,
+   #1721 step 7, Q4a). (Period row held: S3b.)
+3. set / clear touch only that axis; `set` with no field for that axis in the parse -> invalid (R1).
+4. pick on the open roster -> `open_question_answer` mode pick + `reference_positions`; pick on a data list -> an
+   entity with that row's code, `current_message` true; pick 14 of 3 -> invalid, state unchanged (R9, C4).
+5. No answer op -> declared `open_question_answer` / `reference_positions` dropped; `answer` -> verdict untouched
+   (R5).
+6. switch_domain drops status / period / sort / report frame, keeps products + customers (R2).
+7. R3/R8: `set product` replacing one held product keeps that row's quantity when the message gave none (#1617).
+8. Entities with `current_message: false` are dropped (no restatement revives the old subject).
+9. Pure: same inputs -> same outputs; no message text read (purity suite covers turn/*.py).
+10. Unknown axis or a kind the registry lacks -> invalid with a logged reason (C4).
+
+S4 seam (stub parser / dry-run mock emission, $0):
+1. Emission without `state_changes` -> same plan, rules_fired and session patch as main.
+2. `[keep]` + inventory hint after SRT1 -> inventory fetch for SRT1; no reset / new_ask_drops_* rules fired.
+3. Bare "2" with the parser picking 1 -> answers 1; no `engine_pick` trace event.
+4. APPLY re-entry gives the same focus as the first pass.
+5. Invalid change -> today's path, `memory.state.rejected` filled.
+6. `memory` trace event carries `state.shown/before/changes/after`; before = the view the parser was shown.
+
+S5 parser input:
+1. Flag off: `assemble()` byte-identical to main at levels off / conversation / full (golden).
+2. Flag on: block present, the five legacy lines absent.
+3. Block over 350 est tokens never trimmed, L2 `dropped` False.
+4. `resolve_config` sets the flag only when the prompt contains `state_changes`.
+5. `parse()` sends `PARSE_OUTPUT_JSON_SCHEMA` (identity) when off, WITH_STATE when on; the extended schema is strict-
+   valid; base schema and `DECLARED_KEYS` unchanged.
+
+S6 clarify: `[]` or an invalid change asks "<held subject> or something else" with real names, never ids; a second
+unresolved turn offers the hand-over (feedback-chatbot-clarify-not-assume loop breaker).
+
+## Measurement
+
+- Every slice: `crew/state/eval/bin/replay-gate.sh <main worktree> <this worktree> --split dev` -> zero unintended
+  diffs (first asks unchanged; the recorded corpus has no `state_changes`).
+- S5 onward: 3 TRAIN runs on `crew/state/eval/cp0/train_followups/` (crew exports; ~$0.7 each) against the lane
+  label; report TRAIN follow-up + first-ask numbers with error bars. Held-out is crew's.
+- Note: the shared dev DB becomes the 15 Oct prod copy ~00:30 17 Oct; republish the lane label after the swap.
+
+## Open
+
+- Q3 (owner): period on a new full ask while the customer carries. Working rule (b). S3b waits.
+- Security review items: stored last-list pick after a scope change (seam design risk 6).
