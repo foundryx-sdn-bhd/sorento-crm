@@ -8,7 +8,6 @@ portal contact is linked to", never the agent's 24-month order debtors.
 """
 from __future__ import annotations
 
-import logging
 import uuid
 from datetime import datetime, timedelta
 
@@ -164,36 +163,35 @@ def _clear_overrides():
 # --------------------------------------------------------------------------- #
 
 
-def test_ac_sa601_sales_agent_for_contact_resolves_the_linked_agent(world):
+def test_ac_sa601_sales_agents_for_contact_resolves_the_linked_agent(world):
     db = world["db"]
-    assert ptr.sales_agent_for_contact(db, world["agent_contact"]).id == world["agent"].id
-    assert ptr.sales_agent_for_contact(db, world["stranger"]) is None
+    assert [a.id for a in ptr.sales_agents_for_contact(db, world["agent_contact"])] == [world["agent"].id]
+    assert ptr.sales_agents_for_contact(db, world["stranger"]) == []
 
 
-def test_ac_sa601_two_links_answer_the_first_by_code_and_warn(world, caplog):
+def test_ac_sa601_two_links_answer_both_by_code(world):
+    """PORTAL-MULTI-AGENT (owner, 16 Oct 2026): a contact linked to two agents is both."""
     db = world["db"]
     second = _agent(db, world["agent_contact"], "AAA")
-    with caplog.at_level(logging.WARNING):
-        picked = ptr.sales_agent_for_contact(db, world["agent_contact"])
-    assert picked.id == second.id  # "ZZTAAA..." sorts before "ZZTLIM..."
-    assert "linked to 2 sales agents" in caplog.text
+    picked = ptr.sales_agents_for_contact(db, world["agent_contact"])
+    assert [a.id for a in picked] == [second.id, world["agent"].id]  # "ZZTAAA..." sorts before "ZZTLIM..."
 
 
 def test_ac_sa601_the_debtor_lookup_goes_through_it(world, monkeypatch):
     db = world["db"]
-    monkeypatch.setattr(ptr, "sales_agent_for_contact", lambda db_, contact_id: None)
+    monkeypatch.setattr(ptr, "sales_agents_for_contact", lambda db_, contact_id: [])
     assert ptr.PriceTagRequestService.lookup_debtors_for_agent(db, world["agent_contact"]) == []
 
 
 def test_ac_sa601_the_new_routes_go_through_it(world, monkeypatch):
     calls = []
-    real = ptr.sales_agent_for_contact
+    real = ptr.sales_agents_for_contact
 
     def spy(db_, contact_id):
         calls.append(contact_id)
         return real(db_, contact_id)
 
-    monkeypatch.setattr(ptr, "sales_agent_for_contact", spy)
+    monkeypatch.setattr(ptr, "sales_agents_for_contact", spy)
     resp = _client(world, world["agent_contact"]).get(BASE)
     assert resp.status_code == 200, resp.text
     assert calls == [world["agent_contact"]]
