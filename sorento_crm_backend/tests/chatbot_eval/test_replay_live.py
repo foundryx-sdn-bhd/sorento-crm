@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 
 import pytest
 from sqlalchemy import text
@@ -483,6 +484,8 @@ PRIOR_1 = "PRIORREPLY-ONE synthetic earlier answer"
 PRIOR_2 = "PRIORREPLY-TWO synthetic latest answer"
 DECOY_LATER = "DECOYLATER-MARKER later prod turn"
 DECOY_TEST = "DECOYTEST-MARKER is_test turn"
+EARLY_PROJECT = "SYN-EARLY-PROJECT"
+LATER_NOTE = "LATERNOTE-MARKER"
 FRAME_SUMMARY = "Asked about stock for SRTWC-SYN and got an answer."
 
 
@@ -510,53 +513,96 @@ def _prompt_text(trace):
                 or False) if any(isinstance(r.get("text"), str) and "Recent conversations" in r["text"] for r in _walk(trace)) else ""
 
 
-@pytest.fixture()
-def recorded_with_history(session_factory, seeded, stub_access, monkeypatch):
-    """A synthetic contact at memory level `full` with two prior prod answers and one closed prod frame, a recorded
-    prod turn made on top of them, then (frame removed, as the stack DB may lack it) a LATER prod turn and an
-    is_test turn that carry unique markers. The recorded row's trace holds the real `context` and `prompt_text`."""
+def _builder(session_factory, seeded, stub_access, monkeypatch, *, early_fact=False, later_fact=False, quote=False,
+             frame_at_minutes=None):
+    """Seed a synthetic contact at memory level `full` with two prior prod answers and one closed prod frame, record a
+    prod turn on top of them, then add decoys (a LATER prod turn and an is_test turn, unique markers) and, when asked,
+    a profile fact that only appears AFTER the recorded turn. `frame_at_minutes`: keep the frame in the DB with that
+    last activity (minutes after the first prior turn); None deletes it, as the stack DB may lack it."""
+    import uuid
     from datetime import datetime, timedelta, timezone
 
     from app.models.conversation_frame import ConversationFrame
-    from tests.chatbot.test_engine import CONTACT_ID, _envelope
+    from tests.chatbot import test_engine as te
+    from tests.chatbot_eval import test_replay as tr
 
-    cid = str(CONTACT_ID)
+    cid = str(te.CONTACT_ID)
     t0 = datetime.now(timezone.utc) - timedelta(hours=2)
     db = seeded
     db.execute(text("UPDATE respond_contacts SET chatbot_memory_level = 'full' WHERE respond_io_id = :c"), {"c": cid})
+    if early_fact:
+        db.execute(text("UPDATE respond_contacts SET chatbot_profile = CAST(:p AS jsonb) WHERE respond_io_id = :c"),
+                   {"c": cid, "p": json.dumps({"facts": [{"key": "project", "value": EARLY_PROJECT, "source": "staff",
+                                                          "last_seen": None}]})})
+    ids = {}
 
-    def add_turn(message_id, message, reply, minutes, is_test=False):
-        env = _envelope().model_dump(mode="json", exclude_none=False)
-        env["message"]["message"]["messageId"] = message_id
+    def add_turn(tag, message, reply, minutes, is_test=False, with_state=False):
+        env = te._envelope().model_dump(mode="json", exclude_none=False)
+        env["message"]["message"]["messageId"] = f"SYN-{tag}"
         env["message"]["message"]["message"]["text"] = message
-        db.add(ChatbotTurn(contact_respond_id=cid, message_id=message_id, envelope=env, status="done", stage="sent",
-                           is_test=is_test, response={"reply": {"text": reply}}, trace=[],
+        trace = [{"kind": "state", "focus": {"products": [], "tag": tag}, "open_question": None, "turn_no": 1}] if with_state else []
+        ids[tag] = str(uuid.uuid4())
+        db.add(ChatbotTurn(id=ids[tag], contact_respond_id=cid, message_id=f"SYN-{tag}", envelope=env, status="done",
+                           stage="sent", is_test=is_test, response={"reply": {"text": reply}}, trace=trace,
                            created_at=t0 + timedelta(minutes=minutes), started_at=t0 + timedelta(minutes=minutes)))
 
-    add_turn("SYN-P1", "synthetic earlier question one", PRIOR_1, 0)
-    add_turn("SYN-P2", "synthetic earlier question two", PRIOR_2, 10)
-    db.add(ConversationFrame(contact_id=cid, space_id="364817", channel="whatsapp", contact_respond_id=cid,
+    add_turn("P1", "synthetic earlier question one", PRIOR_1, 0, with_state=quote)
+    add_turn("P2", "synthetic earlier question two", PRIOR_2, 10, with_state=quote)
+    frame_id = str(uuid.uuid4())
+    db.add(ConversationFrame(id=frame_id, contact_id=cid, space_id="364817", channel="whatsapp", contact_respond_id=cid,
                              domain="inventory", summary=FRAME_SUMMARY, status="closed", is_test=False,
                              last_activity_at=datetime.now() - timedelta(days=3)))
     db.commit()
-    row = _record(session_factory, stub_access, monkeypatch, keep_turn=True)
+    if frame_at_minutes is not None:
+        db.execute(text("UPDATE conversation_frames SET last_activity_at = "
+                        "(CAST(:ts AS timestamptz) AT TIME ZONE current_setting('TimeZone')) WHERE id = :i"),
+                   {"ts": (t0 + timedelta(minutes=frame_at_minutes)).isoformat(), "i": frame_id})
+        db.commit()
+    if quote:
+        real = te._envelope
+
+        def quoting(**kw):
+            d = real(**kw).model_dump(mode="json", exclude_none=False)
+            d["message"]["message"]["replyTo"] = {"id": "SYN-QUOTED-MSG", "sender": {"source": "workflow"},
+                                                  "message": {"type": "text", "text": PRIOR_2}}
+            return engine_mod.Envelope(**d)
+
+        monkeypatch.setattr(tr, "_envelope", quoting)
+    row = tr._record(session_factory, stub_access, monkeypatch, keep_turn=True)
     db = session_factory()
-    db.query(ConversationFrame).delete()
+    if frame_at_minutes is None:
+        db.query(ConversationFrame).delete()
     turn = db.query(ChatbotTurn).filter(ChatbotTurn.id == row["id"]).first()
     turn.created_at = t0 + timedelta(minutes=20)
     db.commit()
     seen = _layer_tokens(row["trace"])
     assert seen["L3"] > 0 and seen["L4"] > 0, f"the synthetic recording has no history layers: {seen}"
     assert PRIOR_2 in _prompt_text(row["trace"]) and "Recent conversations" in _prompt_text(row["trace"])
+    decoy_reply = PRIOR_2 if quote else None
     for k, (marker, minutes, is_test) in enumerate([(DECOY_LATER, 30, False), (DECOY_TEST, 15, True)]):
-        env = _envelope().model_dump(mode="json", exclude_none=False)
-        env["message"]["message"]["messageId"] = f"SYN-D{k}"
+        tag = f"D{k}"
+        env = te._envelope().model_dump(mode="json", exclude_none=False)
+        env["message"]["message"]["messageId"] = f"SYN-{tag}"
         env["message"]["message"]["message"]["text"] = marker
-        db.add(ChatbotTurn(contact_respond_id=cid, message_id=f"SYN-D{k}", envelope=env, status="done", stage="sent",
-                           is_test=is_test, response={"reply": {"text": marker}}, trace=[],
+        ids[tag] = str(uuid.uuid4())
+        db.add(ChatbotTurn(id=ids[tag], contact_respond_id=cid, message_id=f"SYN-{tag}", envelope=env, status="done",
+                           stage="sent", is_test=is_test, response={"reply": {"text": decoy_reply or marker}},
+                           trace=[{"kind": "state", "focus": {"products": [], "tag": tag}, "open_question": None,
+                                   "turn_no": 1}] if quote else [],
                            created_at=t0 + timedelta(minutes=minutes), started_at=t0 + timedelta(minutes=minutes)))
+    if later_fact:
+        db.execute(text("UPDATE respond_contacts SET chatbot_profile = CAST(:p AS jsonb) WHERE respond_io_id = :c"),
+                   {"c": cid, "p": json.dumps({"facts": (
+                       [{"key": "project", "value": EARLY_PROJECT, "source": "staff", "last_seen": None}] if early_fact else [])
+                       + [{"key": "note", "value": LATER_NOTE, "source": "staff", "last_seen": None}]})})
     db.commit()
+    row["_ids"] = ids
     return row
+
+
+@pytest.fixture()
+def recorded_with_history(session_factory, seeded, stub_access, monkeypatch):
+    return _builder(session_factory, seeded, stub_access, monkeypatch)
 
 
 def test_live_context_layers_equal_the_recorded_ones_chosen_exact_because_the_rows_and_times_are_fixed(
@@ -584,3 +630,95 @@ def test_reading_the_history_writes_nothing(session_factory, recorded_with_histo
     before = _turn_count(session_factory)
     go(session_factory, recorded_with_history, n=2)
     assert _turn_count(session_factory) == before
+
+
+# ------------------------------------------------------------------ review round 8
+def _l5(block):
+    m = re.search(r"About this contact:\n[^\n]*", block)
+    return m.group(0) if m else None
+
+
+@pytest.fixture()
+def recorded_profile_before_and_after(session_factory, seeded, stub_access, monkeypatch):
+    return _builder(session_factory, seeded, stub_access, monkeypatch, early_fact=True, later_fact=True)
+
+
+@pytest.fixture()
+def recorded_no_profile_then_a_later_fact(session_factory, seeded, stub_access, monkeypatch):
+    return _builder(session_factory, seeded, stub_access, monkeypatch, later_fact=True)
+
+
+@pytest.fixture()
+def recorded_quoting(session_factory, seeded, stub_access, monkeypatch):
+    return _builder(session_factory, seeded, stub_access, monkeypatch, quote=True)
+
+
+@pytest.fixture()
+def recorded_with_a_newer_frame(session_factory, seeded, stub_access, monkeypatch):
+    return _builder(session_factory, seeded, stub_access, monkeypatch, frame_at_minutes=5)
+
+
+def test_the_about_this_contact_block_is_the_recorded_one_not_the_profile_as_of_now(
+        session_factory, recorded_profile_before_and_after, live_env):
+    recorded_l5 = _l5(_prompt_text(recorded_profile_before_and_after["trace"]))
+    assert recorded_l5 and EARLY_PROJECT in recorded_l5 and LATER_NOTE not in recorded_l5
+    go(session_factory, recorded_profile_before_and_after)
+    block = live_env["parse_calls"][0]
+    assert LATER_NOTE not in block, "a profile fact added after the recorded turn leaked into the parser input"
+    assert _l5(block) == recorded_l5
+
+
+def test_a_recorded_prompt_with_no_about_block_gets_none_even_if_a_fact_exists_now(
+        session_factory, recorded_no_profile_then_a_later_fact, live_env):
+    assert _l5(_prompt_text(recorded_no_profile_then_a_later_fact["trace"])) is None
+    go(session_factory, recorded_no_profile_then_a_later_fact)
+    block = live_env["parse_calls"][0]
+    assert "About this contact:" not in block and LATER_NOTE not in block
+
+
+def _quoted_turn_fact(trace):
+    return next(rec["quoted_turn"] for rec in _walk(trace) if isinstance(rec, dict) and "quoted_turn" in rec)
+
+
+def test_a_quoted_reply_resolves_to_the_prod_turn_before_the_recorded_turn(session_factory, recorded_quoting, live_env):
+    # Observable: the `received` trace record's `quoted_turn` fact (found + turn_id), written by the engine for a quote.
+    ids = recorded_quoting["_ids"]
+    rec = _quoted_turn_fact(recorded_quoting["trace"])
+    assert rec["found"] is True and rec["turn_id"] == ids["P2"], rec
+    out = go(session_factory, recorded_quoting)[0]
+    live = _quoted_turn_fact(out["turn"]["trace"])
+    assert live["found"] is True, live
+    assert live["turn_id"] == ids["P2"], f"resolved to {live['turn_id']}, a decoy or none, not the prod turn before the anchor"
+
+
+def _capture_layers(monkeypatch):
+    from app.services.chatbot.turn import context as context_mod
+
+    seen = []
+    real = context_mod.assemble
+
+    def spy(layers):
+        seen.append(layers)
+        return real(layers)
+
+    monkeypatch.setattr(context_mod, "assemble", spy)
+    return seen
+
+
+def test_a_turn_before_the_newest_read_frame_is_cut_off_from_earlier_messages(
+        session_factory, recorded_with_a_newer_frame, live_env, monkeypatch):
+    seen = _capture_layers(monkeypatch)
+    go(session_factory, recorded_with_a_newer_frame)
+    texts = [m["text"] for m in seen[0].earlier_messages]
+    assert "synthetic earlier question two" in texts, texts
+    assert "synthetic earlier question one" not in texts, "a turn older than the read frame was kept"
+
+
+def test_the_live_turn_number_equals_the_recorded_one_despite_test_and_later_rows(
+        session_factory, recorded_with_history, live_env):
+    def turn_no(trace):
+        return next(rec["turn_no"] for rec in _walk(trace) if isinstance(rec, dict) and "turn_no" in rec
+                    and "quoted_turn" in rec)
+
+    out = go(session_factory, recorded_with_history)[0]
+    assert turn_no(out["turn"]["trace"]) == turn_no(recorded_with_history["trace"])
