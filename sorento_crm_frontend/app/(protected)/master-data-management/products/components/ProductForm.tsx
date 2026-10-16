@@ -24,6 +24,7 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Switch } from '@/components/ui/switch';
@@ -596,21 +597,12 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>List Price *</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           placeholder="0.00"
                           {...field}
                           value={field.value ?? ''}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '') {
-                              field.onChange(0);
-                            } else {
-                              const numValue = parseFloat(value);
-                              field.onChange(isNaN(numValue) ? 0 : numValue);
-                            }
-                          }}
+                          onChange={(e) => field.onChange(e.target.value)}
                         />
                       </FormControl>
                       <FormMessage />
@@ -625,8 +617,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>Cost Price</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           placeholder="0.00"
                           {...field}
@@ -649,8 +640,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>Invoice Price</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           placeholder="0.00"
                           {...field}
@@ -734,8 +724,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>Weight</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           placeholder="0.00"
                           {...field}
@@ -756,8 +745,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Length</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             step="0.01"
                             placeholder="0.00"
                             {...field}
@@ -777,8 +765,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Width</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             step="0.01"
                             placeholder="0.00"
                             {...field}
@@ -798,8 +785,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Height</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             step="0.01"
                             placeholder="0.00"
                             {...field}
@@ -820,8 +806,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                     <FormItem>
                       <FormLabel>Warranty (Months)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           placeholder="0"
                           {...field}
                           value={field.value || ''}
@@ -885,11 +870,10 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Reorder Level</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             placeholder="10"
                             {...field}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                            onChange={(e) => field.onChange(e.target.value)}
                           />
                         </FormControl>
                         <FormMessage />
@@ -904,11 +888,10 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                       <FormItem>
                         <FormLabel>Reorder Quantity</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             placeholder="50"
                             {...field}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                            onChange={(e) => field.onChange(e.target.value)}
                           />
                         </FormControl>
                         <FormMessage />
@@ -926,8 +909,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                         <FormItem>
                           <FormLabel>Max quantity (assistant)</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               min={0}
                               placeholder={
                                 selectedCategoryForChatbotLimits?.chatbot_max_qty != null
@@ -954,8 +936,7 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                         <FormItem>
                           <FormLabel>ETA offset (days)</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
+                            <NumberInput
                               min={0}
                               placeholder={
                                 selectedCategoryForChatbotLimits?.chatbot_eta_offset_days != null

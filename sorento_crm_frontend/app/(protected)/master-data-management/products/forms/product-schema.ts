@@ -1,4 +1,19 @@
 import { z } from 'zod';
+import { numberFieldError, parseNumberDraft, type NumberFieldRules } from '@/lib/number-field';
+
+// A required number the form holds as typed text: empty is refused here (one sentence on
+// the field), never coerced to 0.
+// Typed as number in and out so the form's field types stay what they were.
+function requiredNumber(rules: NumberFieldRules) {
+  const schema = z
+    .unknown()
+    .superRefine((value, ctx) => {
+      const message = numberFieldError(value as string | number | null | undefined, rules);
+      if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    })
+    .transform((value) => parseNumberDraft(value as string | number | null | undefined) as number);
+  return schema as unknown as z.ZodType<number, z.ZodTypeDef, number>;
+}
 
 export const ProductSchema = z.object({
   // Tab 1: Basic Information
@@ -30,9 +45,7 @@ export const ProductSchema = z.object({
   exclude_from_planning: z.boolean(),
 
   // Tab 2: Pricing (coerce strings from API/inputs to numbers)
-  list_price: z.coerce.number()
-    .min(0, { message: 'List price cannot be negative.' })
-    .max(999999999999.99, { message: 'List price is too large.' }),
+  list_price: requiredNumber({ min: 0, max: 999999999999.99 }),
   cost_price: z
     .union([z.coerce.number(), z.null()])
     .optional()
@@ -86,8 +99,8 @@ export const ProductSchema = z.object({
     }),
   has_serial_tracking: z.boolean(),
   has_batch_tracking: z.boolean(),
-  reorder_level: z.coerce.number().int().min(0, { message: 'Reorder level cannot be negative.' }),
-  reorder_quantity: z.coerce.number().int().min(0, { message: 'Reorder quantity cannot be negative.' }),
+  reorder_level: requiredNumber({ min: 0, integer: true }),
+  reorder_quantity: requiredNumber({ min: 0, integer: true }),
   // Chatbot stock ask v2 (PLAN-chatbot-stock-ask-v2-24sep.md S1): X and Y,
   // beside the reorder fields since both drive the same stock-ask journey.
   // .nullable() checks for null BEFORE z.coerce.number() runs, so a cleared
