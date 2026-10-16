@@ -677,7 +677,11 @@ def test_ssr_11b_brand_follow_up_over_a_set_with_twins_lists_every_code_of_the_b
     session_factory, monkeypatch, stub_parser, stub_access, world
 ):
     """SSR-11 + SSR-12: the brand word after a set whose codes include a twin lists every
-    code of that brand (the twin's rows included), none dropped."""
+    code of that brand (the twin's rows included), none dropped. A list limit of 4 equal to
+    the brand's code count: a cut that counts rows instead of codes would drop one."""
+    from app.services.chatbot.lanes.business import answer as answer_mod
+
+    monkeypatch.setattr(answer_mod, "SET_LIST_MAX", 4)
     a, rest = _twin_world(world, other_brand_code=True)
     chat = _dual_chat(session_factory, monkeypatch, stub_parser, stub_access, world)
     chat.say("any wash basin has stock", _set_ask())
