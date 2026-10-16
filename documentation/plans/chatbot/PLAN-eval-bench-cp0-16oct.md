@@ -147,3 +147,15 @@ drawing items.
   finding `unverifiable: <token>` rather than a pass.
 - `summarise(results, bars) -> dict`: per slice and follow-up kind: n, passed, rate; leaks and made-up counts;
   `meets` per the crew rule (mean of runs >= bar; 0 leaks and 0 made-up in every run).
+
+## Ideas follow-ups (crew, 16 Oct; from IDEA-CAPTURE #1625, crew-ask 13 Oct 07:31Z)
+
+- **G1, scored** (follow-up kind `answer`, ideas lane): a short non-number reply ("yes", "2026") to the bot's
+  similar-ideas list keeps the held idea. Pass: `session_vars.ideation` held before the turn
+  (`received.raw.session_vars`; read path `lanes/ideate.py:72-83, 157-161`) is still the same idea after it (no
+  `remembered.raw.session_patch` clearing or replacing it), and the bot does not restart with its "what's your
+  idea?" opener (today's failure).
+- **G2, growth slice** (new behaviour waits per owner D6): a narrowing follow-up right after an idea is created
+  ("only for the Penang branch" after IDEA-9003) must not get "what's your idea?". Reported beside the follow-up
+  bar with its own n, never inside it.
+- Seeds for both come from real ideas-lane conversations in the prod backup; paraphrase variants as for every slice.
