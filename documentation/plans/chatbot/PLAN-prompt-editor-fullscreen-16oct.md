@@ -25,9 +25,12 @@ without losing anything.
   closing Find, a Radix popover or a dialog no longer also drops you out of full screen. This
   applies to the dealer-kit hosts too (Esc with a popover open, or while editing a text layer,
   now takes two presses to leave full screen: one to close, one to exit).
-- Fill-height chain: every flex wrapper between the overlay and the editor carries `min-h-0`
-  (reviewer finding 1: without it the chip editor grew to the prompt's full length); the scroll
-  boxes keep their 320px floor.
+- Fill-height chain: the editor, its wrappers and the Preview grow from a zero basis
+  (`grow basis-0`) with explicit floors (scroll box 320px, editor + toolbar 360px), and the Card
+  sizes to its content (`flex-auto`). Without the zero basis the chip editor grew to the prompt's
+  full length (reviewer finding 1); with `min-h-0` instead of floors, opening Diff at 375 squeezed
+  the wrappers and the 320px box spilled over the chips and the Diff panel (crew audit). Now: Diff
+  closed, the box fills the window; Diff open, it holds 320px and the overlay scrolls.
 - Long lines already wrap (`whitespace-pre-wrap`); section headers (markdown `#`, `== BANNER ==`
   lines as the chatbot parser uses, or short ALL-CAPS lines) are bold in Preview for scanning.
 - Publish / Stage live in Version history, which full screen covers, so the loaded version's
@@ -72,3 +75,14 @@ System > AI Assistant > Prompts > semantic_parser, then chatbot_semantic_parser 
 | Preview fills height; banner headings bold (101 found) | PASS (493px) | PASS (434px) |
 | Stage v4 disabled while dirty; save v5 from full screen, DB row has the edit | PASS | n/a |
 | Console errors | none | none |
+
+### 375 follow-up (crew audit, head after 14919d82)
+
+| Check (chatbot_semantic_parser, full screen) | 375x812 | 1280x800 |
+|---|---|---|
+| Edit, Diff closed: box fills, Save visible | PASS (box 201-591, Save 713-747) | PASS (172-621, Save 701-735) |
+| Edit, Diff open: no overlap, overlay scrolls | PASS (box 237-557, chips 573, Diff 624; was FAIL: overlap) | PASS (172-492, chips 508, Diff 557) |
+| Preview, Diff closed / open | PASS (165-599 / 201-521) | PASS (136-629 / 136-456) |
+| Find jump 26/52; Esc 1 closes Find only, scroll 36013 kept; Esc 2 exits, scroll kept | PASS | PASS (earlier run) |
+| Save from full screen (v6 in DB with the edit); Stage disabled with reason while dirty | PASS | PASS (v5, earlier run) |
+| Horizontal scroll | none (375) | none |

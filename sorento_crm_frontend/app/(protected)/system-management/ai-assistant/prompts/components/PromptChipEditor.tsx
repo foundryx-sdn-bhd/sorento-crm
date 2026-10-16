@@ -501,7 +501,7 @@ export const PromptChipEditor = forwardRef<
   );
 
   return (
-    <div className={cn('space-y-2', fill && 'flex min-h-0 flex-1 flex-col', className)}>
+    <div className={cn('space-y-2', fill && 'flex min-h-[360px] grow basis-0 flex-col', className)}>
       <div className="flex flex-wrap items-center gap-2">
         {!disabled ? (
           <Popover
@@ -553,7 +553,7 @@ export const PromptChipEditor = forwardRef<
         </Button>
       </div>
 
-      <div className={cn('relative', fill && 'flex min-h-0 flex-1 flex-col')}>
+      <div className={cn('relative', fill && 'flex min-h-[320px] grow basis-0 flex-col')}>
         <FindBar controller={find} onDismiss={dismissFind} />
         <div
           ref={ref}
@@ -567,7 +567,7 @@ export const PromptChipEditor = forwardRef<
           data-testid="prompt-chip-editor"
           className={cn(
             'max-h-[70dvh] min-h-[320px] overflow-y-auto overflow-x-hidden whitespace-pre-wrap [overflow-wrap:anywhere] rounded-md border bg-background p-3 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            fill && 'max-h-none flex-1',
+            fill && 'max-h-none grow basis-0',
           )}
           onInput={() => {
             // Typing after a removal makes the removal final: Undo would roll the typing back.

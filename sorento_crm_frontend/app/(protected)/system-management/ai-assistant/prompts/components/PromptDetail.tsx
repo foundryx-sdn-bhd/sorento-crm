@@ -370,7 +370,7 @@ export function PromptDetail({ name }: { name: string }) {
         {/* gap, not space-y: the full-screen wrapper around the card is `display: contents`. */}
         <div className="flex min-w-0 flex-col gap-4">
           <FocusShell active={focus} onExit={() => setFocus(false)} keepMounted>
-          <Card className={cn(focus && 'mb-8 min-h-0 flex-1')}>
+          <Card className={cn(focus && 'mb-8 flex-auto')}>
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-base">
                 Editor{' '}
@@ -439,7 +439,7 @@ export function PromptDetail({ name }: { name: string }) {
               <FocusToggle active={focus} onToggle={setFocus} label="editor" />
               </div>
             </CardHeader>
-            <CardContent className={cn('space-y-3', focus && 'flex min-h-0 flex-1 flex-col')}>
+            <CardContent className={cn('space-y-3', focus && 'flex flex-auto flex-col')}>
               {hasRegistry ? (
                 <Tabs value={editorMode} onValueChange={(v) => setEditorMode(v as 'edit' | 'preview')}>
                   <TabsList shape="pill" size="sm" aria-label="Editor mode">
@@ -460,7 +460,7 @@ export function PromptDetail({ name }: { name: string }) {
                 // look at the preview and the wired panel's Insert still lands there.
                 <div
                   hidden={editorMode === 'preview'}
-                  className={cn(focus && 'flex min-h-0 flex-1 flex-col')}
+                  className={cn(focus && 'flex min-h-[360px] grow basis-0 flex-col')}
                   data-testid="chip-editor-pane"
                 >
                   <PromptChipEditor
@@ -477,8 +477,8 @@ export function PromptDetail({ name }: { name: string }) {
                 <SearchableTextarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  className={cn('min-h-[320px] font-mono text-xs', focus && 'flex-1 resize-none')}
-                  containerClassName={cn(focus && 'flex min-h-0 flex-1 flex-col')}
+                  className={cn('min-h-[320px] font-mono text-xs', focus && 'grow basis-0 resize-none')}
+                  containerClassName={cn(focus && 'flex min-h-[320px] grow basis-0 flex-col')}
                   spellCheck={false}
                   disabled={!canEdit}
                   data-testid="prompt-editor"
@@ -661,7 +661,7 @@ function RenderedPreview({
       aria-readonly="true"
       className={cn(
         'max-h-[70dvh] min-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/20 p-3 font-mono text-xs leading-relaxed',
-        fill && 'max-h-none flex-1',
+        fill && 'max-h-none grow basis-0',
       )}
     >
       {splitTemplate(template, registryNames).map((seg, i) =>
