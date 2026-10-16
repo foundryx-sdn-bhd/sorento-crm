@@ -168,7 +168,8 @@ describe('Brand detail - Chatbot brand weight (R1)', () => {
     expect(payload.chatbot_weight).toBe(0.1);
   });
 
-  // PR #833 round 5 N3: the server takes 0 to 9999, so the record page does too.
+  // PR #833 round 5 N3: the server takes 0 to 9999, so the record page does too. The figure
+  // stays as typed; the check runs on Save.
   it('edit mode: the input is bounded to 0 to 9999 and 10000 cannot be saved', async () => {
     h.brand = brand({ chatbot_weight: 0 });
     await renderDetail();
@@ -179,20 +180,39 @@ describe('Brand detail - Chatbot brand weight (R1)', () => {
     expect(input.max).toBe('9999');
 
     fireEvent.change(input, { target: { value: '10000' } });
-    expect(screen.getByRole('button', { name: /save brand/i })).toBeDisabled();
+    expect(input.value).toBe('10000');
+    expect(screen.getByRole('button', { name: /save brand/i })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /save brand/i }));
+    expect(screen.getByText('Enter 9999 or less')).toBeInTheDocument();
+    expect(h.updateMutate).not.toHaveBeenCalled();
   });
 
-  // PR #833 round 5 pass N-r5-1: the record page says why, in the dialog's own words.
+  it('edit mode: a blank weight is refused with a message, never saved as 0', async () => {
+    h.brand = brand({ chatbot_weight: 3 });
+    await renderDetail();
+    await startEdit();
+
+    const input = screen.getByLabelText('Chatbot brand weight') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /save brand/i }));
+
+    expect(screen.getByText(/^Enter a number between 0 and 9999/)).toBeInTheDocument();
+    expect(h.updateMutate).not.toHaveBeenCalled();
+  });
+
+  // PR #833 round 5 pass N-r5-1: the record page says why, in the dialog's own words, once
+  // Save has been pressed, and the message follows the field from then on.
   it('edit mode: an out of range weight says the same words as the dialog', async () => {
     h.brand = brand({ chatbot_weight: 0 });
     await renderDetail();
     await startEdit();
 
     const input = screen.getByLabelText('Chatbot brand weight') as HTMLInputElement;
-    expect(screen.queryByText('Enter 9999 or less')).toBeNull();
-    expect(screen.queryByText('Enter 0 or more')).toBeNull();
-
     fireEvent.change(input, { target: { value: '10000' } });
+    expect(screen.queryByText('Enter 9999 or less')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /save brand/i }));
     expect(screen.getByText('Enter 9999 or less')).toBeInTheDocument();
 
     fireEvent.change(input, { target: { value: '-1' } });

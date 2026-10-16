@@ -98,7 +98,7 @@ describe('TagSizeControl - custom W/H commit (AC-S1-1)', () => {
     expect(onResize).toHaveBeenCalledWith(60, 52);
   });
 
-  it('a non-numeric draft is discarded on blur without calling onResize', () => {
+  it('a non-numeric draft stays as typed on blur, says why, and does not call onResize', () => {
     const onResize = vi.fn();
     render(
       <TagSizeControl width_mm={60} height_mm={40} presets={PRESETS} onResize={onResize} />,
@@ -109,12 +109,13 @@ describe('TagSizeControl - custom W/H commit (AC-S1-1)', () => {
     fireEvent.blur(screen.getByLabelText('Tag width (mm)'));
 
     expect(onResize).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Tag width (mm)')).toHaveValue(60);
+    expect(screen.getByLabelText('Tag width (mm)')).toHaveValue(null);
+    expect(screen.getByText(/^Enter a number/)).toBeInTheDocument();
   });
 });
 
 describe('TagSizeControl - floor clamp (AC-S1-4)', () => {
-  it('clamps a value below the 10mm floor UP to it, with the same error text as the request designer', () => {
+  it('a value below the 10mm floor stays as typed and is refused with the reason', () => {
     const onResize = vi.fn();
     render(
       <TagSizeControl width_mm={60} height_mm={40} presets={PRESETS} onResize={onResize} />,
@@ -124,7 +125,9 @@ describe('TagSizeControl - floor clamp (AC-S1-4)', () => {
     fireEvent.change(screen.getByLabelText('Tag width (mm)'), { target: { value: '5' } });
     fireEvent.blur(screen.getByLabelText('Tag width (mm)'));
 
-    expect(onResize).toHaveBeenCalledWith(10, 40);
+    expect(onResize).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Tag width (mm)')).toHaveValue(5);
+    expect(screen.getByText('Enter a number of at least 10.')).toBeInTheDocument();
   });
 
   it('a bounds prop with a ceiling refuses a value above it, with the reason shown', () => {
