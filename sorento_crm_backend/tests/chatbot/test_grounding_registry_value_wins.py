@@ -275,3 +275,23 @@ def test_guard_f_a_correctly_typed_finish_synonym_keeps_its_own_words(vdb):
     out = _ground(vdb, "any gun metal basin", _e("basin", "category"), _e("gun metal", "specification", spec_key="finish", spec_value="gunmetal"))["entities"]
     [spec] = _specs(out)
     assert (spec["spec_key"], spec["spec_value"], spec["raw"]) == ("finish", "gunmetal", "gun metal"), spec
+
+
+@pytest.mark.parametrize(
+    "message,raw,key,value,word",
+    [
+        ("any double bowl pnk kitchen sink", "pnk kitchen sink", "bowl_count", 2, "pnk"),
+        ("any 60cm pnk basin", "60cm pnk basin", "dim_width", 600, "pnk"),
+        ("hi", "pnk basin", "mounting", "under_counter", "pnk"),
+        ("", "undrmount basin", "mounting", "under_counter", "undrmount"),
+        (None, "undrmount basin", "mounting", "under_counter", "undrmount"),
+        ("any rimed basin", "rimed basin", "is_rimless", False, "rimed"),
+    ],
+    ids=["j-worded-number", "k-number-mismatch", "l-first-line-only", "m-empty-message", "m-no-message", "n-phraseless-false"],
+)
+def test_guard_jn_numbers_unseen_words_and_phraseless_values_take_mains_path(vdb, message, raw, key, value, word):
+    entity = _e(raw, "category", spec_key=key, spec_value=value)
+    shape = _shape(_ground(vdb, message, entity))
+    assert ("specification", word, "", None) in shape, shape
+    assert not [s for s in shape if s[2] == key], shape
+    assert not [s for s in shape if s[1] in ("No", "Yes")], shape
