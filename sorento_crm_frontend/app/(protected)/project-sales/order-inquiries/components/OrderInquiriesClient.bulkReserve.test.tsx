@@ -181,9 +181,18 @@ function line(
   } as unknown as OrderInquiryWorklistRow;
 }
 
-const CB = line('row-a1', 'CB313', 'SO-A1', '88', 'oi-1', 'OI-2609-0001', { product_id: 'prod-cb' });
-const CKS = line('row-a2', 'CKS1050', 'SO-A2', '44', 'oi-1', 'OI-2609-0001', { product_id: 'prod-cks' });
-const CFH = line('row-b1', 'C-FH14', 'SO-B1', '12', 'oi-2', 'OI-2609-0002', { product_id: 'prod-cfh' });
+const CB = line('row-a1', 'CB313', 'SO-A1', '88', 'oi-1', 'OI-2609-0001', {
+  product_id: 'prod-cb',
+  product_name: 'Basin mixer chrome',
+});
+const CKS = line('row-a2', 'CKS1050', 'SO-A2', '44', 'oi-1', 'OI-2609-0001', {
+  product_id: 'prod-cks',
+  product_name: 'Cistern kit slim',
+});
+const CFH = line('row-b1', 'C-FH14', 'SO-B1', '12', 'oi-2', 'OI-2609-0002', {
+  product_id: 'prod-cfh',
+  product_name: 'Flush handle 14',
+});
 const RSV = line('row-c1', 'RSV-ITEM', 'SO-C1', '40', 'oi-3', 'OI-2609-0003', {
   reserve_state: 'reserved',
   reserved_qty: '40',
@@ -519,9 +528,9 @@ describe('AC-BR-25 / F8 the Reserve (N) confirmation across order inquiries', ()
     await screen.findByText('Reserve 88 @ BRW');
   }
 
-  it('opens "Reserve 3 lines on 2 order inquiries" listing each OI with its Reserve and Reject counts', async () => {
+  async function openThreeLineConfirm() {
     await draftThree();
-    // One of the three becomes a reject, so the second OI reads 0 / 1.
+    // One of the three becomes a reject, so the second OI's only line reads Reserve 0.
     fireEvent.click(within(rowOf('SO-B1')).getByRole('button', { name: 'Undo' }));
     fireEvent.click(within(rowOf('SO-B1')).getByRole('button', { name: 'Reject' }));
     const rejectDialog = await screen.findByRole('dialog', { name: 'Reject 1 line' });
@@ -530,23 +539,70 @@ describe('AC-BR-25 / F8 the Reserve (N) confirmation across order inquiries', ()
     await within(rowOf('SO-B1')).findByText('Reserve 0');
 
     fireEvent.click(reserveButton(3));
-    const dialog = await screen.findByRole('dialog', {
-      name: 'Reserve 3 lines on 2 order inquiries',
-    });
-    expect(cellsOfRow(within(dialog).getByText('OI-2609-0001').closest('tr') as HTMLElement)).toEqual([
-      'OI-2609-0001',
-      '2',
-      '0',
-      '',
-    ]);
-    expect(cellsOfRow(within(dialog).getByText('OI-2609-0002').closest('tr') as HTMLElement)).toEqual([
-      'OI-2609-0002',
-      '0',
-      '1',
-      '',
+    return screen.findByRole('dialog', { name: 'Reserve 3 lines on 2 order inquiries' });
+  }
+
+  const dialogRowOf = (dialog: HTMLElement, itemCode: string) =>
+    within(dialog).getByText(itemCode).closest('tr') as HTMLElement;
+
+  it('opens "Reserve 3 lines on 2 order inquiries" with the line columns, OI no first and Result last', async () => {
+    const dialog = await openThreeLineConfirm();
+    const headers = within(dialog)
+      .getAllByRole('columnheader')
+      .map((header) => header.textContent?.trim());
+    expect(headers).toEqual([
+      'OI no',
+      'Product',
+      'Requested',
+      'Reserve',
+      'Balance to buy',
+      'Location',
+      'Reason',
+      'Result',
     ]);
     expect(within(dialog).getByLabelText(/park notice first/i)).not.toBeChecked();
     expect(within(dialog).queryByText(/notice to purchasing/i)).not.toBeInTheDocument();
+  });
+
+  it('lists every line, one row each, sorted by OI no then grid order, with description, qty, location and reason', async () => {
+    const dialog = await openThreeLineConfirm();
+    const bodyRows = within(dialog).getAllByRole('row').slice(1);
+    expect(bodyRows).toHaveLength(3);
+    expect(bodyRows.map((tr) => cellsOfRow(tr)[0])).toEqual([
+      'OI-2609-0001',
+      'OI-2609-0001',
+      'OI-2609-0002',
+    ]);
+
+    const cb = cellsOfRow(dialogRowOf(dialog, 'CB313'));
+    expect(cb[1]).toContain('CB313');
+    expect(cb[1]).toContain('Basin mixer chrome');
+    expect(cb[2]).toBe('88');
+    expect(cb[3]).toBe('88');
+    expect(cb[5]).toBe('BRW');
+    expect(cb[6]).toBe('');
+    expect(cb[7]).toBe('');
+
+    const cks = cellsOfRow(dialogRowOf(dialog, 'CKS1050'));
+    expect(cks[0]).toBe('OI-2609-0001');
+    expect(cks[1]).toContain('Cistern kit slim');
+    expect(cks[2]).toBe('44');
+    expect(cks[3]).toBe('44');
+    expect(cks[5]).toBe('BRW');
+
+    const cfh = cellsOfRow(dialogRowOf(dialog, 'C-FH14'));
+    expect(cfh[0]).toBe('OI-2609-0002');
+    expect(cfh[1]).toContain('Flush handle 14');
+    expect(cfh[2]).toBe('12');
+    expect(cfh[3]).toBe('0');
+    expect(cfh[6]).toBe('No stock');
+  });
+
+  it('prints the summary line above the grid with Reserve and Reject counts', async () => {
+    const dialog = await openThreeLineConfirm();
+    expect(
+      within(dialog).getByText('3 lines on 2 order inquiries \u00b7 Reserve 2 \u00b7 Reject 1'),
+    ).toBeInTheDocument();
   });
 });
 
@@ -605,13 +661,13 @@ describe('AC-BR-26 / F9 confirming commits once per order inquiry', () => {
     for (const [, payload] of commitSpy.mock.calls) expect(payload.park_notice).toBe(true);
   });
 
-  it('all saved: each OI reads Saved, the footer is only Close, drafts clear, lines refetch, the toast sums up', async () => {
+  it('all saved: each line reads Saved, the footer is only Close, drafts clear, lines refetch, the toast sums up', async () => {
     const dialog = await openConfirm();
     const listCallsBefore = listOrderInquiryWorklist.mock.calls.length;
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reserve and send' }));
 
     await waitFor(() =>
-      expect(within(dialog).getAllByText('Saved')).toHaveLength(3),
+      expect(within(dialog).getAllByText('Saved')).toHaveLength(4),
     );
     expect(within(dialog).queryByRole('button', { name: /^reserve and/i })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
@@ -627,7 +683,7 @@ describe('AC-BR-26 / F9 confirming commits once per order inquiry', () => {
     expect(anyToastCalledWith('Reserved on 3 order inquiries')).toBe(true);
   });
 
-  it('one OI failing: it shows the server message, the others read Saved, only Close remains, failed chips stay and saved ones clear', async () => {
+  it('one OI failing: its line shows the server message, the other lines read Saved, only Close remains, failed chips stay and saved ones clear', async () => {
     commitSpy.mockImplementation(async (id) => {
       if (id === 'oi-2') throw new Error('Row already answered');
       return [{ id: 'rr-1' }];
@@ -636,11 +692,12 @@ describe('AC-BR-26 / F9 confirming commits once per order inquiry', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reserve and send' }));
 
     await waitFor(() => expect(within(dialog).getByText('Row already answered')).toBeInTheDocument());
-    const cell = (no: string) =>
-      cellsOfRow(within(dialog).getByText(no).closest('tr') as HTMLElement)[3];
-    expect(cell('OI-2609-0001')).toBe('Saved');
-    expect(cell('OI-2609-0002')).toBe('Row already answered');
-    expect(cell('OI-2609-0003')).toBe('Saved');
+    const result = (itemCode: string) =>
+      cellsOfRow(within(dialog).getByText(itemCode).closest('tr') as HTMLElement).at(-1);
+    expect(result('CB313')).toBe('Saved');
+    expect(result('CKS1050')).toBe('Saved');
+    expect(result('C-FH14')).toBe('Row already answered');
+    expect(result('NOWH')).toBe('Saved');
     expect(within(dialog).queryByRole('button', { name: /^reserve and/i })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
 
