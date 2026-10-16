@@ -44,9 +44,7 @@ import {
   type SampleRequestDeliveryMode,
   type SampleRequestDetail,
   type SampleRequestGoodsFrom,
-  type SampleRequestLoanUnit,
   type SampleRequestProductHit,
-  type SampleRequestWrite,
 } from '@/types/sampleRequest';
 import { portalBase } from '../lib/portal-paths';
 import {
@@ -581,7 +579,9 @@ export default function SampleRequestForm({
                   <th className="w-[26%] px-2 py-2 text-left">Or (alternative)</th>
                   <th className="w-16 min-w-[3.5rem] px-2 py-2 text-left">Qty</th>
                   <th className="px-2 py-2 text-left">Remarks</th>
-                  <th className="w-10 px-2 py-2" />
+                  <th className="w-10 px-2 py-2">
+                    <span className="sr-only">Remove</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>

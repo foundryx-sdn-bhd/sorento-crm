@@ -104,6 +104,8 @@ export function mapSettingsFromApi(
     // (PLAN-local-buy-routing-toggle.md). Off by default.
     localBuyRoutingEnabled: Boolean(raw.local_buy_routing_enabled),
     borrowFromOrderEnabled: Boolean(raw.borrow_from_order_enabled),
+    sampleRequestRequireProject: Boolean(raw.sample_request_require_project),
+    sampleRequestRequireQuotation: Boolean(raw.sample_request_require_quotation),
     purchaseRequestDefaultApproverUserId:
       (raw.purchase_request_default_approver_user_id as string | null) ?? null,
     purchaseRequestDefaultApproverName:
@@ -227,6 +229,8 @@ function createDefaultSettings(): SystemSetting {
     planGrain: 'product',
     localBuyRoutingEnabled: false,
     borrowFromOrderEnabled: false,
+    sampleRequestRequireProject: false,
+    sampleRequestRequireQuotation: false,
     purchaseRequestDefaultApproverUserId: null,
     purchaseRequestDefaultApproverName: null,
     purchaseRequestDefaultApproverEmail: null,
