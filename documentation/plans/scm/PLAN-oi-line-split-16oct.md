@@ -1,6 +1,6 @@
 # PLAN: split one SO line into delivery tranches in Order Inquiries (OI-LINE-SPLIT)
 
-Status: Review (owner OK on mock v2, 16 Oct 23:47 "Ok proceed"); reviewer READY round 4, hand test next. Track: full (L): migration, new
+Status: Hand test (owner OK on mock v2, 16 Oct 23:47). PR #1749 head c3a4b4acd: CI green, reviewer READY (re-check c3a4b4acd), security ready (c3a4b4acd); hand test filed (laneboard/scripts/1749.md, targeted reseed crew/state/handtest/OI-LINE-SPLIT-reseed/). Waiting on the owner. Track: full (L): migration, new
 endpoint with RBAC, engine change. Lead pattern: tester red tests, one coder (Opus: tangled engine in
 a 13k-line service), reviewer + security-reviewer, browser pass 1280/375. Stacked on #1748
 (OI Excel one sheet; merged into this branch at c1f8f57d8).
@@ -147,3 +147,9 @@ NULL (the base the split was made against, same on every row of one origin), `cr
   640 632 @ 20/11/2026 (old 192); 720 649 @ 02/01/2027 (old 504 @ 20/12/2026); 4816 751 @
   01/01/2030 cancelled. CSK11A: 768 335 @ 02/01/2027, 4817 313 @ 20/11/2026, 544 154 closed. Use it
   for the hand test once the build starts.
+- 17 Oct checkpoint: crew audits closed (AutoCount line labels, target/source move guards, resend
+  netting, drop under pointer + thin autoscroll, keyboard focus, CI test-setup fix). Browser rows on
+  #1749 crew-notes. SO424910 reseeded 3 times (restored to original checksums); every test-Confirm
+  email/delivery/notification cancelled by id (UTC timestamps: never compare with now()). After the
+  owner's step 14 crew cancels that Confirm's email by id. After merge: drop sorento_oils_throwaway,
+  gc worktree, archive plan/UAC/card; #1748 merges first, then merge main + single alembic head.
