@@ -27,6 +27,12 @@ export interface ReserveConfirmLine {
   balance: number | string | null;
   location: string | null;
   reason: string | null;
+  /** Multi-OI mode (the cross-OI Lines page): the product's name, muted under the code. */
+  description?: string | null;
+  /** Multi-OI mode: the order inquiry this line belongs to. */
+  inquiry_no?: string | null;
+  /** Multi-OI mode: set once the commit has answered for this line's order inquiry. */
+  result?: { ok: boolean; message?: string } | null;
 }
 
 const cell = (value: number | string | null | undefined) => (
@@ -40,14 +46,24 @@ const COLUMNS: ColumnDef<ReserveConfirmLine>[] = [
     id: 'product',
     header: 'Product',
     cell: ({ row }) => (
-      <span
-        className="block truncate text-sm font-medium"
-        title={row.original.item_code ?? undefined}
-      >
-        {row.original.item_code}
-      </span>
+      <div className="min-w-0">
+        <span
+          className="block truncate text-sm font-medium"
+          title={row.original.item_code ?? undefined}
+        >
+          {row.original.item_code}
+        </span>
+        {row.original.description ? (
+          <span
+            className="block truncate text-xs text-muted-foreground"
+            title={row.original.description}
+          >
+            {row.original.description}
+          </span>
+        ) : null}
+      </div>
     ),
-    size: 160,
+    size: 180,
     enableSorting: false,
     meta: { headerTitle: 'Product' },
   },
@@ -111,35 +127,21 @@ export interface ReserveConfirmInquiry {
   result?: { ok: boolean; message?: string };
 }
 
-const INQUIRY_COLUMNS: ColumnDef<ReserveConfirmInquiry>[] = [
+/** Multi-OI mode: the line columns, with the order inquiry first and the commit result last. */
+const MULTI_COLUMNS: ColumnDef<ReserveConfirmLine>[] = [
   {
     id: 'inquiry_no',
     header: 'OI no',
     cell: ({ row }) => (
-      <span className="block truncate text-sm font-medium" title={row.original.inquiry_no}>
+      <span className="block truncate text-sm" title={row.original.inquiry_no ?? undefined}>
         {row.original.inquiry_no}
       </span>
     ),
-    size: 160,
+    size: 130,
     enableSorting: false,
     meta: { headerTitle: 'OI no' },
   },
-  {
-    id: 'reserve_count',
-    header: 'Reserve',
-    cell: ({ row }) => cell(row.original.reserve_count),
-    size: 90,
-    enableSorting: false,
-    meta: { headerTitle: 'Reserve', headerClassName: 'text-end', cellClassName: 'text-end' },
-  },
-  {
-    id: 'reject_count',
-    header: 'Reject',
-    cell: ({ row }) => cell(row.original.reject_count),
-    size: 90,
-    enableSorting: false,
-    meta: { headerTitle: 'Reject', headerClassName: 'text-end', cellClassName: 'text-end' },
-  },
+  ...COLUMNS,
   {
     id: 'result',
     header: 'Result',
@@ -152,7 +154,7 @@ const INQUIRY_COLUMNS: ColumnDef<ReserveConfirmInquiry>[] = [
         </span>
       );
     },
-    size: 260,
+    size: 220,
     enableSorting: false,
     meta: { headerTitle: 'Result' },
   },
@@ -164,7 +166,8 @@ const INQUIRY_COLUMNS: ColumnDef<ReserveConfirmInquiry>[] = [
  * the primary button's label follows it. `onConfirm(park)` does the commit.
  *
  * OI-BULK-RESERVE v4 (F8): with `inquiries` it is the cross-OI Lines page's confirmation -
- * one grid row per order inquiry, no recipient line, and once `done` only Close.
+ * one grid row per LINE (`lines`, each with its OI no and result), a summary above it, no
+ * recipient line, and once `done` only Close. `inquiries.length` is the order inquiry count.
  */
 export function ReserveConfirmDialog({
   open,
@@ -193,18 +196,9 @@ export function ReserveConfirmDialog({
   }, [open]);
 
   const table = useReactTable({
-    columns: COLUMNS,
+    columns: inquiries ? MULTI_COLUMNS : COLUMNS,
     data: lines,
     getRowId: (line) => line.row_id,
-    getCoreRowModel: getCoreRowModel(),
-    columnResizeMode: 'onChange',
-    enableColumnResizing: true,
-  });
-
-  const inquiryTable = useReactTable({
-    columns: INQUIRY_COLUMNS,
-    data: inquiries ?? [],
-    getRowId: (inquiry) => inquiry.inquiry_id,
     getCoreRowModel: getCoreRowModel(),
     columnResizeMode: 'onChange',
     enableColumnResizing: true,
@@ -216,14 +210,14 @@ export function ReserveConfirmDialog({
     ? `Notice to purchasing: To ${toName}${ccNames.length ? `, Cc ${ccNames.join(', ')}` : ''}`
     : 'Notice to purchasing: no recipient';
 
-  const lineTotal = (inquiries ?? []).reduce(
-    (sum, inquiry) => sum + inquiry.reserve_count + inquiry.reject_count,
-    0,
-  );
+  const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
+  const inquiryCount = inquiries?.length ?? 0;
+  const lineNoun = plural(lines.length, 'line', 'lines');
   const title = inquiries
-    ? `Reserve ${lineTotal} ${lineTotal === 1 ? 'line' : 'lines'} on ${inquiries.length} ${inquiries.length === 1 ? 'order inquiry' : 'order inquiries'}`
-    : `Reserve ${lines.length} ${lines.length === 1 ? 'line' : 'lines'} on ${inquiryNo}`;
-  const rowCount = inquiries ? inquiries.length : lines.length;
+    ? `Reserve ${lines.length} ${lineNoun} on ${inquiryCount} ${plural(inquiryCount, 'order inquiry', 'order inquiries')}`
+    : `Reserve ${lines.length} ${lineNoun} on ${inquiryNo}`;
+  const rejectCount = lines.filter((line) => Number(line.qty_reserved) === 0).length;
+  const summary = `${lines.length} ${lineNoun} on ${inquiryCount} ${plural(inquiryCount, 'order inquiry', 'order inquiries')} \u00b7 Reserve ${lines.length - rejectCount} \u00b7 Reject ${rejectCount}`;
 
   async function handleConfirm() {
     await onConfirm(park);
@@ -236,15 +230,20 @@ export function ReserveConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <DialogBody className="flex-1 space-y-4 overflow-y-auto">
+          {inquiries ? <p className="text-sm font-medium">{summary}</p> : null}
           <DataGrid
-            table={(inquiries ? inquiryTable : table) as typeof table}
-            recordCount={rowCount}
+            table={table}
+            recordCount={lines.length}
             tableLayout={{
               width: 'fixed',
               columnsResizable: true,
               columnsDraggable: false,
-              // The DialogBody above already owns the scroll viewport.
-              scrollerMaxHeight: false,
+              // The DialogBody above owns the scroll viewport, except for a cross-OI list,
+              // which can run to hundreds of lines: its own bounded scroller keeps the
+              // header in view while the body scrolls.
+              ...(inquiries
+                ? { headerSticky: true, scrollerMaxHeight: 'max-h-[50dvh] overflow-y-auto' }
+                : { scrollerMaxHeight: false }),
             }}
           >
             <DataGridTable />
@@ -272,7 +271,7 @@ export function ReserveConfirmDialog({
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
                 Cancel
               </Button>
-              <Button onClick={handleConfirm} disabled={isPending || rowCount === 0}>
+              <Button onClick={handleConfirm} disabled={isPending || lines.length === 0}>
                 {park
                   ? 'Reserve and park notice'
                   : toName

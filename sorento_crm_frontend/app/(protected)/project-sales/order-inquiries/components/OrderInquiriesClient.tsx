@@ -86,7 +86,10 @@ import { bareLocationCode } from '../../_shared/lib/orderInquiryReserve';
 import type { CommitReservePayload } from '../../_shared/services/orderInquiryReserveService';
 import { BulkRejectReserveDialog } from '../[id]/components/BulkRejectReserveDialog';
 import { ReserveConfirmDialog } from '../[id]/components/ReserveConfirmDialog';
-import type { ReserveConfirmInquiry } from '../[id]/components/ReserveConfirmDialog';
+import type {
+  ReserveConfirmInquiry,
+  ReserveConfirmLine,
+} from '../[id]/components/ReserveConfirmDialog';
 import { ReserveDecideControl } from '../[id]/components/ReserveDecideControl';
 import { ReserveLineForm } from '../[id]/components/ReserveLineForm';
 import type { StagedReserveEntry } from '../[id]/components/orderInquiryHeaderLinesColumns';
@@ -148,6 +151,12 @@ function reserveFilterFrom(value: string | null): OrderInquiryReserveStatus | ''
 interface ReserveDraft {
   row: OrderInquiryWorklistRow;
   entry: StagedReserveEntry;
+}
+
+/** One drafted line as the confirmation prints it, with the order inquiry it commits to. */
+interface DraftLine {
+  inquiryId: string;
+  line: ReserveConfirmLine;
 }
 
 /** "Link selected (2 of 3)", or "Link selected (3)" when every ticked row is eligible
@@ -988,9 +997,10 @@ export function OrderInquiriesClient({
   const [reserveRejectOpen, setReserveRejectOpen] = React.useState(false);
   const [editingRow, setEditingRow] = React.useState<OrderInquiryWorklistRow | null>(null);
   const [reserveConfirmOpen, setReserveConfirmOpen] = React.useState(false);
-  // After a commit the dialog keeps its rows and shows each order inquiry's result.
+  // After a commit the dialog keeps its lines and shows each one's order inquiry result.
   const [commitOutcome, setCommitOutcome] = React.useState<{
     inquiries: ReserveConfirmInquiry[];
+    lines: DraftLine[];
     results: InquiryCommitResult[];
   } | null>(null);
   const commitReserve = useCommitReserveAcrossInquiries();
@@ -1203,6 +1213,29 @@ export function OrderInquiriesClient({
     return [...byInquiry.values()].sort((a, b) => a.inquiry_no.localeCompare(b.inquiry_no));
   }, [drafts]);
 
+  // Every draft is a line of the confirmation, ordered by order inquiry then the order
+  // the answers were drafted in (the sort is stable).
+  const draftLines = React.useMemo<DraftLine[]>(
+    () =>
+      Object.values(drafts)
+        .map(({ row, entry }) => ({
+          inquiryId: row.order_inquiry_id as string,
+          line: {
+            row_id: row.id,
+            item_code: row.item_code ?? null,
+            description: row.product_name ?? null,
+            inquiry_no: row.inquiry_no ?? null,
+            qty_requested: row.requested_qty ?? null,
+            qty_reserved: entry.qty,
+            balance: Math.max(0, Number(row.requested_qty || '0') - entry.qty),
+            location: entry.locationLabel ?? null,
+            reason: entry.reason ?? null,
+          },
+        }))
+        .sort((a, b) => (a.line.inquiry_no ?? '').localeCompare(b.line.inquiry_no ?? '')),
+    [drafts],
+  );
+
   function closeReserveConfirm(next: boolean) {
     // Escape, the overlay and the X are ignored while the commits are in flight, so the
     // outcome always lands in a dialog that is still open.
@@ -1232,7 +1265,7 @@ export function OrderInquiriesClient({
       })),
     );
     const saved = new Set(results.filter((result) => result.ok).map((result) => result.inquiryId));
-    setCommitOutcome({ inquiries: draftInquiries, results });
+    setCommitOutcome({ inquiries: draftInquiries, lines: draftLines, results });
     setDrafts((previous) =>
       Object.fromEntries(
         Object.entries(previous).filter(
@@ -1241,14 +1274,12 @@ export function OrderInquiriesClient({
       ),
     );
   }
-  const confirmInquiries: ReserveConfirmInquiry[] = (
-    commitOutcome?.inquiries ?? draftInquiries
-  ).map((inquiry) => {
-    const result = commitOutcome?.results.find(
-      (candidate) => candidate.inquiryId === inquiry.inquiry_id,
-    );
-    return result ? { ...inquiry, result: { ok: result.ok, message: result.message } } : inquiry;
-  });
+  const confirmLines: ReserveConfirmLine[] = (commitOutcome?.lines ?? draftLines).map(
+    ({ inquiryId, line }) => {
+      const result = commitOutcome?.results.find((candidate) => candidate.inquiryId === inquiryId);
+      return result ? { ...line, result: { ok: result.ok, message: result.message } } : line;
+    },
+  );
 
   /** Confirm (N) (AC-CF-5/7/8): ticked rows by id, or the whole matching scope by
    * `filter` once "Select all N matching" is taken - the endpoint accepts exactly one. */
@@ -2190,13 +2221,13 @@ export function OrderInquiriesClient({
         onOpenChange={setReserveRejectOpen}
         onConfirm={stageReject}
       />
-      {/* Multi-OI mode: `lines` / `inquiryNo` / recipients belong to the single-OI mode. */}
+      {/* Multi-OI mode: `inquiries` selects it (its length is the order inquiry count). */}
       <ReserveConfirmDialog
         open={reserveConfirmOpen}
         onOpenChange={closeReserveConfirm}
         inquiryNo=""
-        lines={[]}
-        inquiries={confirmInquiries}
+        lines={confirmLines}
+        inquiries={commitOutcome?.inquiries ?? draftInquiries}
         done={commitOutcome != null}
         onConfirm={commitDrafts}
         isPending={commitReserve.isPending}
