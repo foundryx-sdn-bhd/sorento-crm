@@ -613,6 +613,7 @@ def _make_salesperson(
     trashed: bool = False,
     role: str | None = "salesperson",
     role_trashed: bool = False,
+    integration: bool = False,
 ) -> None:
     """Link a CRM user holding `role` (None: no role at all) to the seeded contact
     (`CONTACT_ID`). The defaults make a staff user with document access: ACTIVE, not trashed,
@@ -621,6 +622,7 @@ def _make_salesperson(
 
     db = session_factory()
     user = link_user(db, _contact(db), status=status, trashed=trashed, name="ZZT Sales User")
+    user.is_integration = integration
     if role is not None:
         give_role(db, user, role, role_trashed=role_trashed)
     db.commit()
@@ -762,6 +764,9 @@ _NOT_A_SALESPERSON = {
     "portal_user_only": lambda sf: (_seed_bystander_staff(sf), _make_salesperson(sf, role="portal_user")),
     "guest_only": lambda sf: (_seed_bystander_staff(sf), _make_salesperson(sf, role="guest")),
     "no_role": lambda sf: (_seed_bystander_staff(sf), _make_salesperson(sf, role=None)),
+    # Security review 16 Oct: the people lookups' staff definition also excludes integration
+    # (act-as) users, whose integration_* roles carry admin parity.
+    "integration_user": lambda sf: _make_salesperson(sf, role="integration_n8n", integration=True),
 }
 
 #: Owner ruling 16 Oct: any staff role makes an ACTIVE, not trashed linked user staff (the roles
