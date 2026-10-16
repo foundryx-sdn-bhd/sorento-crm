@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/lib/toast';
+import { numberFieldError } from '@/lib/number-field';
 import { OrderFilterFieldSelect } from '@/components/list/OrderFilterFieldSelect';
 import {
   fetchListQueryFields,
@@ -146,6 +147,8 @@ export function ListQueryFilterDialog({
 
   const [rootOp, setRootOp] = useState<'and' | 'or'>('and');
   const [rows, setRows] = useState<Row[]>([]);
+  // Set by a refused Apply; from then on a number box shows its sentence live.
+  const [applyTried, setApplyTried] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -184,6 +187,14 @@ export function ListQueryFilterDialog({
       if (r.op !== 'is_null' && r.op !== 'in' && (r.valueRaw === '' || r.valueRaw === undefined)) {
         toast.error(`Enter a value for ${f.label} (${r.op})`);
         return;
+      }
+      if (f.data_type === 'number' && r.op !== 'is_null' && r.op !== 'in') {
+        const problem = numberFieldError(r.valueRaw);
+        if (problem) {
+          setApplyTried(true);
+          toast.error(problem);
+          return;
+        }
       }
       if (r.op === 'in' && !r.valueRaw.trim()) {
         toast.error(`Enter comma-separated values for ${f.label}`);
@@ -307,6 +318,11 @@ export function ListQueryFilterDialog({
                             <NumberInput
                               placeholder={row.op === 'in' ? 'a, b, c' : 'Value'}
                               value={row.valueRaw}
+                              error={
+                                applyTried && row.op !== 'in' && row.op !== 'is_null'
+                                  ? numberFieldError(row.valueRaw)
+                                  : undefined
+                              }
                               onChange={(e) => updateRow(row.id, { valueRaw: e.target.value })}
                             />
                           ) : (
