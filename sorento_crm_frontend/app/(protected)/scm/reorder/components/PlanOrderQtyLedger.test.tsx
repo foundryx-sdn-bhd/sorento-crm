@@ -678,16 +678,18 @@ describe('order-qty ledger - per-location use stock', () => {
     expect(last.buy).toBe(15);
   });
 
-  it('clamps a location above what it holds - the buy never goes below zero either', () => {
+  it('keeps a figure above what the location holds as typed, says so, and records nothing', () => {
+    // NUMBER-FIELDS: the field never rewrites the typed figure; the over-limit entry shows its
+    // sentence and commits nothing, so the buy never rests on a figure the buyer did not give.
     const l = shortLine();
     const { onDecide } = renderLedger({ line: l, cover: coverForLine(l, twoSources) });
+    const before = onDecide.mock.calls.length;
 
     fireEvent.change(screen.getByLabelText('Use from BRW-BB'), { target: { value: '999' } });
 
-    expect(screen.getByLabelText('Use from BRW-BB')).toHaveValue(5);
-    const last = onDecide.mock.calls.at(-1)![0];
-    expect(last.stock.qty).toBe(6);
-    expect(last.buy).toBe(14);
+    expect(screen.getByLabelText('Use from BRW-BB')).toHaveValue(999);
+    expect(screen.getByText('Enter a whole number between 0 and 5.')).toBeInTheDocument();
+    expect(onDecide.mock.calls.length).toBe(before);
   });
 
   it('records a MoQ-legal buy, the same figure the accept and adjust paths record', () => {
@@ -778,7 +780,7 @@ describe('order-qty ledger - the offered locations, at what they hold', () => {
     expect(last.buy).toBeUndefined(); // the whole gap is covered
   });
 
-  it('refuses more than the row needs, however much the location holds', () => {
+  it('flags more than the row needs, however much the location holds, and records nothing', () => {
     // Review finding 2, round 2: the input was clamped to the location's free stock alone, so
     // 40 could be typed against a gap of 10 - and the 30 units this row never needed were
     // then subtracted from every other row of the product.
@@ -786,12 +788,13 @@ describe('order-qty ledger - the offered locations, at what they hold', () => {
     const { onDecide } = renderLedger({ line: l, cover: coverForLine(l, bigSources) });
 
     const ib = screen.getByLabelText('Use from BRW-IB');
+    const before = onDecide.mock.calls.length;
     fireEvent.change(ib, { target: { value: '40' } });
 
-    expect(ib).toHaveValue(10);
-    const last = onDecide.mock.calls.at(-1)![0];
-    expect(last.stock.qty).toBe(10);
-    expect(last.buy).toBeUndefined();
+    // NUMBER-FIELDS: 40 stays as typed with its sentence; the recorded figure is untouched.
+    expect(ib).toHaveValue(40);
+    expect(screen.getByText('Enter a whole number between 0 and 10.')).toBeInTheDocument();
+    expect(onDecide.mock.calls.length).toBe(before);
   });
 
   it('caps a location at the gap less what the other location already takes', () => {
@@ -802,7 +805,8 @@ describe('order-qty ledger - the offered locations, at what they hold', () => {
     // until the buyer frees some up. Nothing they typed elsewhere is rewritten for them.
     const ntc = screen.getByLabelText('Use from BRW-NTC');
     fireEvent.change(ntc, { target: { value: '6' } });
-    expect(ntc).toHaveValue(0);
+    expect(ntc).toHaveValue(6);
+    expect(ntc).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText('Use from BRW-IB')).toHaveValue(10);
 
     fireEvent.change(screen.getByLabelText('Use from BRW-IB'), { target: { value: '4' } });
