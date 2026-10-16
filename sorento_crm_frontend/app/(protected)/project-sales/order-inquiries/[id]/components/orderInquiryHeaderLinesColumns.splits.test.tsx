@@ -7,7 +7,7 @@
  * The chip may live in any column; every cell is rendered and the text pooled.
  */
 import React from 'react';
-import { renderHook, render, screen } from '@testing-library/react';
+import { renderHook, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
