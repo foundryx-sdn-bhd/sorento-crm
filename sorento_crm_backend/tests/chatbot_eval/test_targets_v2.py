@@ -1320,3 +1320,30 @@ def test_old_dropped_is_reported_in_info_and_not_in_checks_on_a_real_trace():
     r = row2(mem_before=[prod("SRTOLD1", UB)], mem_after=[prod("SRTNEW1", UA)], tools=[TOOL_A])
     res = grade_turn(r, item("followup", "switch", fact="inventory", subject_after=["SRTNEW1"]))
     assert "old_dropped" in res["info"] and "old_dropped" not in res["checks"], (res.get("info"), res["checks"])
+
+
+# ------------------------------------------------------------------ review round 21 (narrowing by warehouse)
+# Real shapes: entity hint `warehouse` (contracts.ENTITY_HINTS) and the memory focus slot `warehouse` (session_state.py).
+def _warehouse_row(entity_raw, memory_raw):
+    v = {"entities": [{"raw": entity_raw, "hint": "warehouse", "canonical_code": entity_raw}], "reference_positions": []}
+    tool = {"name": "crm_inventory_list", "args": {"product_ids": [UA], "warehouse_codes": ["KL"]}}
+    r = row2(verdict=v, mem_after=[prod("SRTA100", UA)], tools=[tool], prev_bot="Stock in all warehouses.",
+             reply="Stock in KL: SRTA100 40 pcs.")
+    for rec in r["trace"]:
+        if rec.get("kind") == "memory":
+            rec["focus"]["after"]["warehouse"] = [{"raw": memory_raw, "hint": "warehouse", "canonical_code": memory_raw}]
+    return r
+
+
+WAREHOUSE_ITEM = dict(subject_after=["SRTA100"], filter={"kind": "warehouse", "value": "KL"})
+
+
+def test_a_warehouse_entity_held_in_memory_counts_as_the_applied_filter():
+    res = grade_turn(_warehouse_row("KL", "KL"), item("followup", "refine", **WAREHOUSE_ITEM))
+    assert res["checks"]["filter"] is True, res["checks"]
+    check(res, True)
+
+
+def test_a_different_warehouse_does_not_match_the_gold_filter():
+    res = grade_turn(_warehouse_row("JB", "JB"), item("followup", "refine", **WAREHOUSE_ITEM))
+    assert res["checks"]["filter"] is False, res["checks"]
