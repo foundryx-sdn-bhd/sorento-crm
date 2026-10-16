@@ -1,6 +1,6 @@
 # PLAN: SET-STOCK-RENDER - chatbot stock answers for a product set read right
 
-Status: Plan, behaviour card CARD-set-stock-render-16oct.md filed 16 Oct, waiting on owner rulings. Size M, LEAD pattern. Not the small fix track:
+Status: Plan, behaviour card CARD-set-stock-render-16oct.md v2 (unified with the code answer, owner direction 16 Oct 17:40) filed for the owner OK. Size M, LEAD pattern. Not the small fix track:
 new reply wording the owner notices.
 
 ## Why
