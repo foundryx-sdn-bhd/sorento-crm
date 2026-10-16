@@ -152,3 +152,18 @@ describe('NumberInput pass-through', () => {
     expect(submitted).toHaveBeenCalledWith({ qty: '12' });
   });
 });
+
+describe('NumberInput message wrapping (fix round 1, finding A)', () => {
+  it('wraps the full sentence under the field even inside a truncating narrow cell', () => {
+    const msg = 'Enter a whole number between 1 and 212.';
+    render(
+      <div className="truncate" style={{ width: 110 }}>
+        <NumberInput aria-label="Qty" error={msg} />
+      </div>,
+    );
+    const el = screen.getByText(msg);
+    expect(el).toHaveClass('whitespace-normal');
+    const cls = el.className;
+    expect(/break-words|wrap-break-word|\[overflow-wrap:anywhere\]/.test(cls)).toBe(true);
+  });
+});
