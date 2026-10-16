@@ -13487,6 +13487,8 @@ def register_order_inquiry_post_commit_dispatch() -> None:
     @event.listens_for(Session, "after_soft_rollback")
     def _discard_pending_changed_with_links(session, previous_transaction):  # noqa: ANN001
         session.info.pop(_CHANGED_WITH_LINKS_PENDING_KEY, None)
+        # OI-LINE-SPLIT: a rolled-back Confirm moved nothing; its moved-split record goes too.
+        session.info.pop(SPLIT_MOVED_KEY, None)
         # A write that never landed has nothing to tell purchasing about either - but ONLY
         # that write. This fires on a nested rollback too, and a batch apply gives each
         # order its own savepoint, so popping the whole queue let a failing order discard a

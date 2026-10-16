@@ -4845,6 +4845,11 @@ def _apply_one_order(
     # session must never swallow this apply's own notices.
     if confirm_lines:
         ProjectOrderInquiryService(db).forget_rows_told_for_saved_lines(str(order.id))
+    # OI-LINE-SPLIT: this order's moved-split record has been read (the netting above, the
+    # email inside the confirm); a long-lived session must never carry it into a later apply.
+    from app.services.project_order_inquiry_service import SPLIT_MOVED_KEY
+
+    db.info.pop(SPLIT_MOVED_KEY, None)
 
     for r in live:
         r.applied_state = PLANNING_CHANGE_STATE_APPLIED
