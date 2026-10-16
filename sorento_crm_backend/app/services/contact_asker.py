@@ -12,8 +12,9 @@
 
 ONE definition, exposed twice: `sql_expr` for the chat dataset (computed at query time from the
 links as they are now, so linking a contact reclassifies its history) and `classify` for the
-route, which runs the same expression for one contact. Core code: it never imports the chatbot
-package (tests/chatbot/test_import_boundary.py).
+route, which runs the same expression for one contact. `is_salesperson_user` is the role arm
+alone, which (not this classification) decides chatbot document access (V1-DOC-SCOPE-SALES).
+Core code: it never imports the chatbot package (tests/chatbot/test_import_boundary.py).
 """
 from __future__ import annotations
 
@@ -43,13 +44,6 @@ def _salesperson_user_clauses(contact_id: Any) -> list:
         roles.c.slug == "salesperson",
         roles.c.is_trashed.is_(False),
     ]
-
-
-def is_salesperson_user(db: Session, contact_id: str) -> bool:
-    """Whether an ACTIVE, not trashed user holding the role `salesperson` is linked to the
-    contact (INTERNAL `respond_contacts.id`) through `users.respond_contact_id`."""
-    clauses = _salesperson_user_clauses(sa.literal(str(contact_id)))
-    return bool(db.execute(sa.select(sa.exists().where(*clauses))).scalar())
 
 
 def salesperson_user_name(contact_respond_id_column: Any) -> Any:
@@ -99,6 +93,15 @@ def _word_for(contact_id: Any) -> Any:
         (dealer, "dealer"),
         else_="unclassified",
     )
+
+
+def is_salesperson_user(db: Session, contact_id: str) -> bool:
+    """True when an ACTIVE, not trashed CRM user linked to the contact (INTERNAL
+    `respond_contacts.id`) holds the not trashed role `salesperson`: the role arm alone.
+    This, not `classify`, decides chatbot document access (V1-DOC-SCOPE-SALES, crew ruling
+    14 Oct 2026): deactivating or trashing the user revokes it, and a `sales_agents.contact_id`
+    link (master data) grants nothing."""
+    return bool(db.execute(sa.select(sa.exists().where(*_salesperson_user_clauses(str(contact_id))))).scalar())
 
 
 def classify(db: Session, contact_id: str) -> str:
