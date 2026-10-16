@@ -358,3 +358,29 @@ def test_head_only_rows_are_counted_missing_in_base_and_unintended():
     res = replay_mod.diff_rows([base], [base, extra])
     assert res["counts"]["skipped"].get("missing_in_base") == 1
     assert ("c2", "t2", "missing_in_base") in res["unintended"]
+
+
+def test_replay_reports_a_duplicate_turn_as_skipped_never_as_an_equal_replay(session_factory, recorded_kept, monkeypatch):
+    existing = _turn_row(session_factory, recorded_kept["id"])
+    monkeypatch.setattr(engine_mod, "_existing_turn", lambda db, **kw: existing)
+    out = replay_mod.replay_rows([recorded_kept], session_factory=session_factory)[0]
+    assert out["skipped"] == "duplicate", out
+    res = replay_mod.diff_rows([out], [out])
+    assert res["diffs"] == []
+    assert res["counts"]["skipped"].get("duplicate") == 1
+
+
+def test_replay_hands_the_engine_a_fresh_message_id(session_factory, recorded_kept, monkeypatch):
+    from app.services.chatbot.contracts import Envelope
+
+    seen: list = []
+    real = engine_mod.run_turn
+
+    def spy(envelope, **kw):
+        seen.append(engine_mod._message_id(envelope))
+        return real(envelope, **kw)
+
+    monkeypatch.setattr(engine_mod, "run_turn", spy)
+    replay_mod.replay_rows([recorded_kept], session_factory=session_factory)
+    recorded_id = engine_mod._message_id(Envelope(**copy.deepcopy(recorded_kept["envelope"])))
+    assert seen and seen[0] != recorded_id, "the replay reused the recorded message id"
