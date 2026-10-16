@@ -496,3 +496,28 @@ def test_get_acting_is_true_while_the_stored_base_matches_and_false_when_it_does
     out = _get(s)
     assert _line(out, s.l200.id)["acting"] is False
     assert _line(out, s.l100.id)["acting"] is False
+
+
+def test_a_non_acting_line_reads_its_current_base_and_can_be_split_again(api):
+    s = _seed(api)
+    first = {"line_id": str(s.l100.id), "splits": [
+        _sp(200, D_301, on=str(s.l100.id)), _sp(101, D_NEW, on=str(s.l100.id))]}
+    assert _put(s, [first]).status_code == 200
+    s.c100.qty_delivered = Decimal("5")  # open qty 301 -> 296
+    s.db.commit()
+
+    l100 = _line(_get(s), s.l100.id)
+    assert l100["acting"] is False
+    assert Decimal(str(l100["base_qty"])) == Decimal("296"), "the CURRENT base"
+    assert l100["base_date"] == D_301.isoformat()
+    assert [Decimal(str(x["qty"])) for x in l100["splits"]] == [200, 101], "stored splits kept"
+
+    # validated against the current base: the old 301 total is refused
+    assert _put(s, [first]).status_code == 422
+    again = {"line_id": str(s.l100.id), "splits": [
+        _sp(196, D_301, on=str(s.l100.id)), _sp(100, D_NEW, on=str(s.l100.id))]}
+    r = _put(s, [again])
+    assert r.status_code == 200, r.text
+    l100 = _line(_get(s), s.l100.id)
+    assert l100["acting"] is True
+    assert Decimal(str(l100["base_qty"])) == Decimal("296")

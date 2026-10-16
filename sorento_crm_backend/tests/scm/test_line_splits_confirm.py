@@ -21,6 +21,7 @@ from app.models.project_so import (
     ACK_ACKNOWLEDGED,
     ACK_CHANGED,
     INQUIRY_CANCELLED,
+    INQUIRY_PLACED,
     IV_CANCEL_BALANCE,
     IV_ORDER,
     OrderInquiryRow,
@@ -462,3 +463,46 @@ def test_apply_path_writes_no_cancel_balance_row_for_the_moved_qty(api):
     s.db.expire_all()
     cancels = [r for r in _live(s, s.line_2, IV_CANCEL_BALANCE) if Decimal(str(r.qty)) == 49]
     assert cancels == [], "no CANCEL_BALANCE row for the moved 49"
+
+
+# ---------------------------------------------------------------------------
+# Round 3
+# ---------------------------------------------------------------------------
+
+
+def test_a_tolerated_savepoint_failure_after_the_move_keeps_the_move(api, emails, monkeypatch):
+    """SO402757 (line 18 to 121): a swallowed `begin_nested()` failure right after the move
+    must not undo it: the sent email still has 2 REMAIN and 49 DELAY, and no CANCEL 49."""
+    original = ProjectOrderInquiryService.derive_bundles
+
+    def derive_after_a_tolerated_failure(self, inquiry_id, *args, **kwargs):
+        try:
+            with self.db.begin_nested():
+                raise RuntimeError("tolerated best-effort failure")
+        except RuntimeError:
+            pass
+        return original(self, inquiry_id, *args, **kwargs)
+
+    monkeypatch.setattr(ProjectOrderInquiryService, "derive_bundles",
+                        derive_after_a_tolerated_failure)
+    s = _so402757(api, with_splits=True)
+    _confirm_both(s)
+    sent = [(ln["qty"], ln["remark"]) for ctx in emails for ln in ctx["lines"]]
+    assert any(q == "2" and r.startswith("REMAIN") for q, r in sent), sent
+    assert any(q == "49" and r.startswith("DELAY") for q, r in sent), sent
+    assert not [r for _q, r in sent if "CANCEL 49" in r], sent
+
+
+def test_demand_rows_subtract_the_moved_qty_when_the_origin_is_not_settled_in_place(api, emails):
+    """The origin's lone placed ORDER row has no link, so it is not settled in place and the
+    line reaches `_oi_demand_rows`: 100 -> 40 with 50 moved to a line that grew by 50 tells
+    CANCEL 10 (the netting's remainder), never the whole cut."""
+    s = _lines(api, [(2, 100, D_2, 40), (18, 82, D_18, 132)], link_first=False)
+    s.no[2][2].state = INQUIRY_PLACED
+    s.db.commit()
+    _split(s, 2, [(50, D_2, "own"), (50, D_18, 18)])
+    sent = _confirm_sent(s, emails)
+    assert any(r.endswith("CANCEL 10") or r == "CANCEL 10" for _q, r in sent), sent
+    assert not [r for _q, r in sent if "CANCEL 60" in r or "CANCEL 40" in r], sent
+    written = [Decimal(str(r.qty)) for r in _live(s, s.no[2][1], IV_CANCEL_BALANCE)]
+    assert written in ([], [Decimal("10")]), written

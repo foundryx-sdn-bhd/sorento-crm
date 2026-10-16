@@ -318,3 +318,29 @@ def test_taken_and_remaining_print_the_exact_figures_on_the_first_split_row(api)
     assert float(first[taken]) == 4.0 and float(first[remaining]) == 6.0, (
         first[taken], first[remaining])
     assert second[taken] in (None, "") and second[remaining] in (None, "")
+
+
+def test_resend_of_a_split_line_that_no_longer_acts_prints_the_current_row(api, monkeypatch, stored):
+    """After a delivery the stored split no longer acts: the Send to purchasing preview
+    prints the current row (one line), not the stale split plan (two)."""
+    from app.models.project_so import OrderInquiry
+    from app.services.oi_handover_resend import OrderInquiryHandoverResend
+    from tests.test_oi_handover_excel import _drain_on_test_connection, _enabled_handover
+    from tests.test_order_inquiry_handover_automation import _register
+
+    _client, world = api
+    _register(world)
+    _drain_on_test_connection(monkeypatch, world)
+    _enabled_handover(world)
+    s = _order(api, [(10, 10, D_A)])
+    _confirm_all(s)
+    _save(s, {10: [_sp(4, D_A, on=_on(s, 10)), _sp(6, D_B, on=_on(s, 10))]})
+    core = s.db.get(type(s.line[10]), s.line[10].id).core_sales_order_line_id
+    from app.models.order import SalesOrderLine
+
+    s.db.get(SalesOrderLine, core).qty_delivered = Decimal("3")
+    s.db.commit()
+    inquiry = world.db.get(OrderInquiry, _order_row(world, s.line[10]).order_inquiry_id)
+    out = OrderInquiryHandoverResend(world.db).preview([str(inquiry.id)], actor_user_id=world.actor)
+    assert out["emails"], out
+    assert out["emails"][0]["line_count"] == 1, "the stale split plan is not printed"
