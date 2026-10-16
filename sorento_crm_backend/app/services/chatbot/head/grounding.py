@@ -805,28 +805,38 @@ def ground(
             keep = _covered_by_class(tokens, vocab)
             grounded, used = ground_words(raw, vocab, keep=keep)
             unheard, used = _unheard_words(db, raw, used, keep)
-            bound = _bound(entity, vocab)
-            entry = next((k for k in vocab.keys if k.key == bound.key), None) if bound is not None else None
-            phrase = bound.words or next((p for p, v in entry.phrases.items() if v == bound.value), None) if entry else None
-            if (
-                bound is not None
-                and entry is not None
-                and entry.data_type != "numeric"
-                and phrase
-                and message
+            accounted = False
+            solo = (
+                bool(message)
                 and len(unheard) == 1
                 and any(_same(unheard[0], t) for t in _words(message))
                 and not [t for i, t in enumerate(tokens) if i not in used and i not in keep and t not in _STOPWORDS]
-                and not any(g.key == bound.key for g in grounded)
-                and not _in_message(bound, entry, message)
-            ):
+            )
+
+            def correction(spec: dict[str, Any]) -> tuple[Grounded, str] | None:
+                bound = _bound(spec, vocab)
+                entry = next((k for k in vocab.keys if k.key == bound.key), None) if bound is not None else None
+                phrase = (bound.words or next((p for p, v in entry.phrases.items() if v == bound.value), None)) if entry else None
+                if bound is None or entry is None or not phrase or entry.data_type == "numeric":
+                    return None
+                if any(g.key == bound.key for g in grounded) or _in_message(bound, entry, message or ""):
+                    return None
+                return bound, phrase
+
+            own = correction(entity) if solo else None
+            if own is not None:
                 # CHAT-FIX F4 (owner, 16 Oct 2026): the parser's registry-valid, phrased,
                 # non-numeric spec is the one unheard word the message holds ("undrmount" ->
                 # under_counter), said in the registry's phrase. Anything else takes the path below.
+                bound, phrase = own
                 grounded = [*grounded, Grounded(bound.key, bound.label, phrase, bound.value, bound.unit, bound.known, bound.words)]
+            elif solo and len([e for e in entities if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() in _SPEC_HINTS and correction(e)]) == 1:
+                # Same ruling, the split shape: one other spec entity is the correction, so the
+                # word is accounted for and not said back.
+                accounted = True
             else:
                 grounded = [*grounded, *(Grounded("", "", word) for word in unheard)]
-            if not grounded:
+            if not grounded and not accounted:
                 fixed = _corrected_class(db, raw, vocab)
                 if fixed != raw:
                     out.append({**entity, "raw": fixed})
