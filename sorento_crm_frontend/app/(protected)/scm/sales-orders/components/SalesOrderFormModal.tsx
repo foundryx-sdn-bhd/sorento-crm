@@ -40,7 +40,7 @@ type LineDraft = { sku: string; qty_ordered: string; uom: string };
 
 /** A picked product needs a quantity above zero. */
 const qtyError = (raw: string) =>
-  numberFieldError(raw) ?? (Number(raw) > 0 ? undefined : 'Enter a number above 0.');
+  numberFieldError(raw, { min: 0, minExclusive: true });
 
 const emptyLine = (): LineDraft => ({ sku: '', qty_ordered: '', uom: '' });
 

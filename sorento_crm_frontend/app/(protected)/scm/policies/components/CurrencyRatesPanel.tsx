@@ -56,7 +56,7 @@ interface Draft {
 
 /** A rate must be a number above zero (a zero rate prices the currency at nothing). */
 function rateError(raw: string) {
-  return numberFieldError(raw) ?? (Number(raw) > 0 ? undefined : 'Enter a number above 0.');
+  return numberFieldError(raw, { min: 0, minExclusive: true });
 }
 
 export function CurrencyRatesPanel() {

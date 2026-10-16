@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { NumberInput } from '@/components/ui/number-input';
-import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
+import { numberFieldError } from '@/lib/number-field';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
@@ -82,9 +82,7 @@ export function AddCompanionRuleModal({
 
   // A ratio has to be a number above zero; the field's own min of 0 is only its floor.
   const ratioError = (): string | undefined => {
-    const base = numberFieldError(ratio);
-    if (base) return base;
-    return (parseNumberDraft(ratio) as number) > 0 ? undefined : 'Enter a number above 0.';
+    return numberFieldError(ratio, { min: 0, minExclusive: true });
   };
   const canSave = hostIds.length > 0 && !create.isPending;
 

@@ -233,9 +233,7 @@ export default function ProductSetDetail({ id }: { id: string }) {
 
   // A member quantity has to be a number above zero; the field's min of 0 is only its floor.
   function quantityProblem(raw: string): string | undefined {
-    const base = numberFieldError(raw, { min: 0 });
-    if (base) return base;
-    return (parseNumberDraft(raw) as number) > 0 ? undefined : 'Enter a number above 0.';
+    return numberFieldError(raw, { min: 0, minExclusive: true });
   }
   const overrideProblem = numberFieldError(overrideDraft, { min: 0, optional: true });
   const canSave = codeDraft.trim().length > 0 && nameDraft.trim().length > 0 && !update.isPending;

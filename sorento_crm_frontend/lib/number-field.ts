@@ -13,6 +13,8 @@ export function parseNumberDraft(raw: string | number | null | undefined): numbe
 
 export type NumberFieldRules = {
   min?: number;
+  /** With `min`: the value must be above it, not equal ("above 0"). */
+  minExclusive?: boolean;
   max?: number;
   integer?: boolean;
   optional?: boolean;
@@ -22,13 +24,13 @@ export function numberFieldError(
   raw: string | number | null | undefined,
   rules: NumberFieldRules = {},
 ): string | undefined {
-  const { min, max, integer, optional } = rules;
+  const { min, max, integer, optional, minExclusive } = rules;
   const value = parseNumberDraft(raw);
   if (value === null) {
     const blank = raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '');
     if (blank && optional) return undefined;
   } else if (
-    (min === undefined || value >= min) &&
+    (min === undefined || (minExclusive ? value > min : value >= min)) &&
     (max === undefined || value <= max) &&
     (!integer || Number.isInteger(value))
   ) {
@@ -36,7 +38,10 @@ export function numberFieldError(
   }
   const noun = integer ? 'a whole number' : 'a number';
   let sentence: string;
-  if (min !== undefined && max !== undefined) sentence = `Enter ${noun} between ${min} and ${max}`;
+  if (min !== undefined && minExclusive) {
+    sentence = `Enter ${noun} above ${min}`;
+    if (max !== undefined) sentence += ` and up to ${max}`;
+  } else if (min !== undefined && max !== undefined) sentence = `Enter ${noun} between ${min} and ${max}`;
   else if (min !== undefined) sentence = `Enter ${noun} of at least ${min}`;
   else if (max !== undefined) sentence = `Enter ${noun} up to ${max}`;
   else sentence = `Enter ${noun}`;

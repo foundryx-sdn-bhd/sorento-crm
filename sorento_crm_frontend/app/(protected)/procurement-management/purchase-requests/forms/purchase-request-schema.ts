@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import { parseNumberDraft } from '@/lib/number-field';
+import { numberFieldError } from '@/lib/number-field';
 
-/** Part 2 routes this through numberFieldError({ min: 0, minExclusive }). */
-export const QUANTITY_SENTENCE = 'Enter a number above 0.';
+export const QUANTITY_RULES = { min: 0, minExclusive: true } as const;
 
 /** Accepts number or string (e.g. from API or input) so "Expected number, received string" is avoided. */
 const quantitySchema = z
@@ -110,12 +109,12 @@ export const PurchaseRequestFormSchema = PurchaseRequestSchema.superRefine(
     // refuses a null, missing or <= 0 line quantity). Sentence per the shared helper.
     data.products.forEach((line, index) => {
       if (!lineHasContent(line)) return;
-      const q = parseNumberDraft(line.quantity);
-      if (q === null || q <= 0) {
+      const sentence = numberFieldError(line.quantity, QUANTITY_RULES);
+      if (sentence) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['products', index, 'quantity'],
-          message: QUANTITY_SENTENCE,
+          message: sentence,
         });
       }
     });

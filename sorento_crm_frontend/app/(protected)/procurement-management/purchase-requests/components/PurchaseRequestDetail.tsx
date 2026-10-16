@@ -88,7 +88,8 @@ import PurchaseRequestAttachmentsSection from './PurchaseRequestAttachmentsSecti
 import PurchaseRequestConversationPanel from './PurchaseRequestConversationPanel';
 import { PurchaseRequestSignoffFooter } from './PurchaseRequestSignoffFooter';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { QUANTITY_SENTENCE } from '../forms/purchase-request-schema';
+import { numberFieldError } from '@/lib/number-field';
+import { QUANTITY_RULES } from '../forms/purchase-request-schema';
 import { usePublicViewLinksEnabled } from '@/hooks/usePublicViewLinksEnabled';
 import {
   purchaseRequestNumberReplyPhrase,
@@ -151,7 +152,7 @@ function PurchaseRequestLineItemsGrid({
         cell: ({ row }) =>
           row.original.quantity ?? (
             <span className="whitespace-normal break-words text-xs text-destructive">
-              {QUANTITY_SENTENCE}
+              {numberFieldError(null, QUANTITY_RULES)}
             </span>
           ),
         size: 100,

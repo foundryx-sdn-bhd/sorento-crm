@@ -55,7 +55,7 @@ import type { BorrowCandidate } from '../../_shared/types/fulfilmentPlanning.typ
  */
 /** A quantity to add must be a number above zero. */
 function qtyError(raw: string) {
-  return numberFieldError(raw) ?? (Number(raw) > 0 ? undefined : 'Enter a number above 0.');
+  return numberFieldError(raw, { min: 0, minExclusive: true });
 }
 
 export function BorrowAddDialog({

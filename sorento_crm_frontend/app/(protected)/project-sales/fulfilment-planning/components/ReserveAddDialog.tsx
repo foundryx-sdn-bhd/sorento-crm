@@ -40,7 +40,7 @@ const NUMBER_COL = 'w-[130px] min-w-[130px] max-w-[130px]';
  */
 /** A quantity to add must be a number above zero. */
 function qtyError(raw: string) {
-  return numberFieldError(raw) ?? (Number(raw) > 0 ? undefined : 'Enter a number above 0.');
+  return numberFieldError(raw, { min: 0, minExclusive: true });
 }
 
 export function ReserveAddDialog({

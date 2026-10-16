@@ -58,7 +58,7 @@ interface Draft {
 
 /** A loadable volume must be a number above zero. */
 function cbmError(raw: string) {
-  return numberFieldError(raw) ?? (Number(raw) > 0 ? undefined : 'Enter a number above 0.');
+  return numberFieldError(raw, { min: 0, minExclusive: true });
 }
 
 const EMPTY: Draft = { id: null, code: '', label: '', cbm: '', is_default: false };
