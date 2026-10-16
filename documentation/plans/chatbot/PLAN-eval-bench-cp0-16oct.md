@@ -251,4 +251,9 @@ Found by the run-1 sanity check and CHAT-STATE's TRAIN root cause; every fix red
   the filter and change the answer, only product-vs-customer clarify menus are allowed, honest none needs a searched
   product); DO-field leaks checked for unlinked askers (6 per run, the known #1648 exposure); new follow-up kind
   "hand over to a person" for yes replies to an escalation offer; empty turns (7 of 1,170) are left out.
+- Crew needless-question policy (17 Oct, rounds 20-25): a quantity question is right only on a stock ask (answer-key
+  fact, or the user's words when the key has no fact, or a pick from a stock picker) when the contact's Stock
+  Visibility mode is availability; product pickers (replied asking product_pick with no answer sections) fail unless the
+  key marks the code ambiguous, except a spec answer that lists matching products; the dealer/end-user price menu is
+  graded unknown. Final 3 runs: follow-ups 72/74/71, code 74, spec 54, attachment 60, access 92, leaks 2 replies/run.
 
