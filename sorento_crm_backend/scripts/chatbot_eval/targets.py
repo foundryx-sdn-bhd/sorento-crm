@@ -134,9 +134,22 @@ def _subject_before(row: dict[str, Any]) -> set[str]:
     return codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products"))
 
 
+def _lookup_subjects(row: dict[str, Any]) -> set[str]:
+    """Subjects named by the lookup's own strings (order numbers, delivery orders, ...): not products, so not in memory."""
+    ids = _uuid_map(row)
+    out: set[str] = set()
+    for env in _looked_up_envelopes(row):
+        for field in ("entities", "product_codes"):
+            for x in env.get(field) or []:
+                if isinstance(x, str):
+                    out.add(ids.get(x.lower()) or ("" if UUID_RE.fullmatch(x) else _key(x)))
+    out.discard("")
+    return out
+
+
 def _subject_after(row: dict[str, Any]) -> set[str]:
     codes = _codes_of(_mem_focus(row, "after").get("products"))
-    return codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products"))
+    return codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products")) or _lookup_subjects(row)
 
 
 def _looked_up_envelopes(row: dict[str, Any]) -> list[dict[str, Any]]:
@@ -344,7 +357,10 @@ def _code_lookup(row, item):
         checks.append(("tool_ran", ran, "The lookup tool did not run for that code."))
         checks.append(("named", code in _key(reply_text(row)), "The reply does not name the code."))
     # asking only counts against the bot when it asked INSTEAD of looking the code up
-    checks.append(("no_clarify", not (clarified and not ran), "The bot asked a clarifying question although the code was clear."))
+    # a code that matches nothing in the data (a typo) may be answered with a did-you-mean: the loader flags it
+    unresolved = bool(gold.get("code_unresolved"))
+    checks.append(("no_clarify", not (clarified and not ran and not unresolved),
+                   "The bot asked a clarifying question although the code was clear."))
     return checks
 
 
