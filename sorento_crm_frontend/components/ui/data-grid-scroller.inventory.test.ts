@@ -175,6 +175,12 @@ const SCROLLER_MAX_HEIGHT_FALSE_SITES = new Map<string, number>([
     1,
   ],
   [
+    'app/(protected)/project-sales/order-inquiries/[id]/components/orderInquiryHeaderLinesColumns.tsx',
+    // OI-LINE-SPLIT (UAC D3): a split line's splits, a few rows in the Lines tab's own
+    // expanded row; the outer Lines grid owns the vertical scroll.
+    1,
+  ],
+  [
     'app/(protected)/project-sales/order-inquiries/components/OrderInquiryDocumentDialog.tsx',
     2, // two PanelDataGrid bodies (PO, SPO) inside one DialogBody that already owns the scroll
   ],

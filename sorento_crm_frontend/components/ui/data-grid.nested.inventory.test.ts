@@ -155,8 +155,8 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'NESTED GRID: the items popover opens from a CELL of this section\'s own grid. It names scrollerMaxHeight="16rem", so the nested default leaves it alone and it keeps its sticky header inside that window',
   ],
   [
-    'app/(protected)/project-sales/fulfilment-planning/components/BoardCellBreakdownDialog.tsx:1306',
-    'Contributing lines, in a dialog opened as a sibling of the board (a hand-rolled matrix). Already scrollerMaxHeight={false}. (Line moved 1223 -> 1251 when the Decision column gained the Verdict actions and the Product column its chip; 1251 -> 1268 when PLAN-oi-decision-trail-ui.md round 2 added a DecisionTrailButton after the verdict chip in the same cell renderer; 1268 -> 1293 when #1362 round 2 gave a fulfilled line its own card in place of the Suggestion card; 1293 -> 1294 when #1362 round 4 imported soLineLabel; 1294 -> 1304 when #1622 showed OrderInquiryRejectedBadge in place of the state pill of a rejected inquiry; the census is keyed by line, so a site that moves is a one-line diff here rather than a silent pass)',
+    'app/(protected)/project-sales/fulfilment-planning/components/BoardCellBreakdownDialog.tsx:1328',
+    'Contributing lines, in a dialog opened as a sibling of the board (a hand-rolled matrix). Already scrollerMaxHeight={false}. (Line moved 1223 -> 1251 when the Decision column gained the Verdict actions and the Product column its chip; 1251 -> 1268 when PLAN-oi-decision-trail-ui.md round 2 added a DecisionTrailButton after the verdict chip in the same cell renderer; 1268 -> 1293 when #1362 round 2 gave a fulfilled line its own card in place of the Suggestion card; 1293 -> 1294 when #1362 round 4 imported soLineLabel; 1294 -> 1304 when #1622 showed OrderInquiryRejectedBadge in place of the state pill of a rejected inquiry; 1306 -> 1328 when OI-LINE-SPLIT added the per-line Split delivery icon; the census is keyed by line, so a site that moves is a one-line diff here rather than a silent pass)',
   ],
   [
     'app/(protected)/project-sales/fulfilment-planning/components/FulfilmentPlanningSheet.tsx:457',
