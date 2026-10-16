@@ -812,7 +812,7 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                       })
                     }
                     fetchOptions={fetchCustomers}
-                    selectedOptions={draft.accountIds.map((id) => ({ value: id, label: labels.current.get(id) ?? id }))}
+                    selectedOptions={draft.accountIds.map((id) => ({ value: id, label: labels.current.get(id) ?? 'Loading' }))}
                     placeholder="Search customers by code or name"
                     clearable
                     wrapOptions
