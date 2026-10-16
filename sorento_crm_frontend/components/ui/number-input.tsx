@@ -14,13 +14,15 @@ type NumberInputProps = Omit<InputProps, 'type' | 'value' | 'onChange'> & {
   onChange?: React.ChangeEventHandler<HTMLInputElement>;
   /** One-sentence message shown under the field; sets aria-invalid. */
   error?: string;
+  /** Extra classes for the message line (e.g. to wrap it inside a flex row). */
+  errorClassName?: string;
 };
 
 /**
  * The one number field. Holds what the operator typed (empty and partial drafts
  * included) and never rewrites it; the screen checks the final value on save.
  */
-function NumberInput({ value, onValueChange, onChange, error, className, id, ...props }: NumberInputProps) {
+function NumberInput({ value, onValueChange, onChange, error, errorClassName, className, id, ...props }: NumberInputProps) {
   const autoId = React.useId();
   const messageId = `${id ?? autoId}-error`;
   const numeric = onValueChange !== undefined;
@@ -58,7 +60,7 @@ function NumberInput({ value, onValueChange, onChange, error, className, id, ...
         aria-describedby={error ? messageId : props['aria-describedby']}
       />
       {error ? (
-        <div id={messageId} data-slot="number-input-error" className={cn('mt-1 text-xs font-normal text-destructive')}>
+        <div id={messageId} data-slot="number-input-error" className={cn('mt-1 text-xs font-normal text-destructive', errorClassName)}>
           {error}
         </div>
       ) : null}

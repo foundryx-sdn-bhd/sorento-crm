@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError } from '@/lib/number-field';
 import {
   EM_DASH,
   fmtDate,
@@ -29,7 +30,6 @@ import {
 import { describePoBook, type PoReceipt } from '../lib/poCover';
 import { moqGap, moqGapNote, type ProductEconomics } from '../lib/productHealth';
 import {
-  clampForecastQty,
   composeMixture,
   daysTerm,
   forecastAddOn,
@@ -149,15 +149,21 @@ function ToggleLine({
 function ForecastAddOnLine({
   checked,
   onToggle,
-  qty,
-  onQtyChange,
+  text,
+  onTextChange,
+  error,
+  label,
   cap,
   detail,
 }: {
   checked: boolean;
   onToggle: () => void;
-  qty: number;
-  onQtyChange: (value: number) => void;
+  /** What the buyer typed, kept as typed (empty and out-of-range included). */
+  text: string;
+  onTextChange: (value: string) => void;
+  error?: string;
+  /** The tick's own accessible name, built from the last valid figure. */
+  label: string;
   cap: number;
   detail: string;
 }) {
@@ -168,21 +174,22 @@ function ForecastAddOnLine({
         checked={checked}
         onCheckedChange={onToggle}
         className="mt-0.5"
-        aria-label={checked ? `Added ${fmtInt(qty)}` : `Add ${fmtInt(qty)}`}
+        aria-label={label}
       />
       <div className="min-w-0 flex-1 space-y-0.5">
         <div
           className={`flex flex-wrap items-baseline gap-1.5 ${checked ? 'font-medium' : 'text-muted-foreground'}`}
         >
           <span>{checked ? 'Added' : '+ Add'}</span>
-          <Input
-            type="number"
+          <NumberInput
             variant="sm"
             min={0}
             max={cap}
             step={1}
-            value={qty}
-            onChange={(e) => onQtyChange(e.target.valueAsNumber)}
+            value={text}
+            error={error}
+            errorClassName="basis-full"
+            onChange={(e) => onTextChange(e.target.value)}
             className="h-6 w-20 tabular-nums"
             aria-label="Forecast add-on quantity"
           />
@@ -228,8 +235,7 @@ function CoverSourceLine({
       <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
         {`${fmtInt(free)} free`}
       </span>
-      <Input
-        type="number"
+      <NumberInput
         variant="sm"
         min={0}
         max={max}
@@ -638,8 +644,17 @@ export function OrderQtyLedger({
   // feedback, 2026-08-12: "what if I don't want to buy 1,200 more, what if 1,500?
   // editable here"). The trend-aware proposal is only ever the STARTING value - once the
   // popover mounts, the buyer's typed figure is the one that gets applied.
+  // The figure in force (the last VALID entry) and, apart from it, what the buyer has typed
+  // in the box: a blank or out-of-range entry stays as typed, shows its message, and
+  // commits nothing, so the recorded buy never rests on a figure the buyer did not give.
   const [forecastQty, setForecastQty] = useState<number>(() => addOn?.qty ?? 0);
+  const [forecastText, setForecastText] = useState<string>(() => String(addOn?.qty ?? 0));
   const forecastCap = forecastQtyCap(addOn?.qty ?? 0);
+  const forecastError = numberFieldError(forecastText, {
+    min: 0,
+    max: forecastCap,
+    integer: true,
+  });
   // `qty` can be 0 (a falling trend ate the whole flat proposal) - that renders a disabled
   // line, never a checkbox, so it can never actually be toggled on.
   const delta = forecastOn ? forecastQty : 0;
@@ -714,6 +729,7 @@ export function OrderQtyLedger({
   const togglePo = () => commit({ stockOn, poOn: !poOn, forecastOn, forecastQty, edits: sourceEdits });
   const toggleForecast = () => {
     const next = !forecastOn;
+    if (next && forecastError) return;
     setForecastOn(next);
     commit({ stockOn, poOn, forecastOn: next, forecastQty, edits: sourceEdits });
   };
@@ -731,10 +747,12 @@ export function OrderQtyLedger({
   };
   // Editing while ticked re-applies immediately - the input IS the edit, there is no
   // separate "Record" step (mirrors the ledger's own UAC B4 non-goal for the toggles).
-  const changeForecastQty = (raw: number) => {
-    const clamped = clampForecastQty(raw, forecastCap);
-    setForecastQty(clamped);
-    if (forecastOn) commit({ stockOn, poOn, forecastOn, forecastQty: clamped, edits: sourceEdits });
+  const changeForecastText = (text: string) => {
+    setForecastText(text);
+    if (numberFieldError(text, { min: 0, max: forecastCap, integer: true })) return;
+    const value = Number(text);
+    setForecastQty(value);
+    if (forecastOn) commit({ stockOn, poOn, forecastOn, forecastQty: value, edits: sourceEdits });
   };
 
   const noCoverAvailable = stockPart <= 0 && cover.coverQty <= 0 && poQty <= 0;
@@ -939,8 +957,10 @@ export function OrderQtyLedger({
               <ForecastAddOnLine
                 checked={forecastOn}
                 onToggle={toggleForecast}
-                qty={forecastQty}
-                onQtyChange={changeForecastQty}
+                text={forecastText}
+                onTextChange={changeForecastText}
+                error={forecastError}
+                label={forecastOn ? `Added ${fmtInt(forecastQty)}` : `Add ${fmtInt(forecastQty)}`}
                 cap={forecastCap}
                 detail={addOnDetail(addOn)}
               />
