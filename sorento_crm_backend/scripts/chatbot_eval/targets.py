@@ -36,7 +36,7 @@ def _kind(row: dict[str, Any], kind: str) -> dict[str, Any]:
     last: dict[str, Any] = {}
     for r in _trace(row):
         if r.get("kind") == kind:
-            last = r
+            last = {**last, **r} if kind == "memory" else r   # memory notes may arrive in parts: later keys win
     return last
 
 
@@ -476,18 +476,62 @@ def _menu_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tupl
     return ("no_menu", ok, "The bot asked a clarifying menu that is not product versus customer.")
 
 
-def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tuple[str, bool, str] | None:
-    """A trailing "how many?" after a lookup, spec, attachment or promo answer is a needless question: the open question
-    after the turn is a stock pick that still owes a quantity (its `owed`, or a stock pick with no quantity yet)."""
+QUANTITY_ASK_RE = re.compile(r"how\s+many|berapa", re.I)
+
+
+def _stock_mode(row: dict[str, Any]) -> str | None:
+    """The contact's resolved Stock Visibility mode, as the stock tool's envelope reports it
+    (`stock_visibility.mode`: availability, compact, detailed); None when no tool result shows it."""
+    def find(x: Any) -> str | None:
+        if isinstance(x, dict):
+            vis = x.get("stock_visibility")
+            if isinstance(vis, dict) and isinstance(vis.get("mode"), str):
+                return vis["mode"]
+            return next((m for v in x.values() if (m := find(v))), None)
+        if isinstance(x, list):
+            return next((m for v in x if (m := find(v))), None)
+        return None
+
+    sources: list[Any] = [t.get("envelope") for t in _tools(row)]
+    for t in row.get("tool_results") or []:
+        result = t.get("result") if isinstance(t, dict) else None
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except ValueError:
+                continue
+        sources.append(result)
+    return next((m for src in sources if (m := find(src))), None)
+
+
+def _quantity_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tuple[str, bool | None, str] | None:
+    """Crew policy: a quantity question ("how many", "berapa", or a quantity owed after the turn) is right only on a
+    stock ask for a contact whose Stock Visibility mode is "availability"; anywhere else it is needless. A stock ask whose
+    mode no tool result shows is unknown."""
+    after = _oq(row)[1]
+    payload = after.get("payload") if isinstance(after, dict) and isinstance(after.get("payload"), dict) else {}
+    owed = (list(after.get("owed") or []) if isinstance(after, dict) else []) + list(payload.get("owed") or [])
+    if not (QUANTITY_ASK_RE.search(reply_text(row)) or "quantity" in owed):
+        return ("no_qty_ask", True, "The bot asked how many although it was not needed.")
+    stock_ask = (gold or {}).get("fact") == "inventory" or "inventory" in _domains(row)
+    if not stock_ask:
+        return ("no_qty_ask", False, "The bot asked how many although it was not needed.")
+    mode = _stock_mode(row)
+    return ("no_qty_ask", None if mode is None else mode == "availability", "The bot asked how many although it was not needed.")
+
+
+def _picker_check(row: dict[str, Any], gold: dict[str, Any] | None = None) -> tuple[str, bool, str] | None:
+    """A variant picker (a product_pick list, a stock picker, a one-option did-you-mean) after the answer is a needless
+    question unless the gold code is ambiguous."""
     if (gold or {}).get("ambiguous"):
         return None
     after = _oq(row)[1]
-    if not isinstance(after, dict):
-        return ("no_qty_ask", True, "The bot asked how many although the question was answered.")
-    payload = after.get("payload") if isinstance(after.get("payload"), dict) else {}
-    owed = list(after.get("owed") or []) + list(payload.get("owed") or [])
-    asks = bool(payload.get("stock_pick")) and ("quantity" in owed or ("stock_qty" in payload and payload["stock_qty"] is None))
-    return ("no_qty_ask", not asks, "The bot asked how many although the question was answered.")
+    return ("no_picker", not (isinstance(after, dict) and after.get("kind") == "product_pick"),
+            "The bot asked which variant although the code was clear.")
+
+
+def _needless(row: dict[str, Any], gold: dict[str, Any], menu: bool = True) -> list[tuple[str, bool | None, str]]:
+    return [c for c in ((_menu_check(row, gold) if menu else None), _quantity_check(row, gold), _picker_check(row, gold)) if c]
 
 
 def _code_lookup(row, item):
@@ -497,9 +541,7 @@ def _code_lookup(row, item):
     checks = []
     if code:
         checks.append(("code", code in _resolved_codes(row), "The bot read a different code than the one asked."))
-    for extra in (_menu_check(row, gold), _quantity_check(row, gold)):
-        if extra:
-            checks.append(extra)
+    checks.extend(_needless(row, gold))
     label = _norm(gold.get("fact_label"))
     if label and label not in KNOWN_FACT_LABELS:   # an attribute ask (weight, ...): the reply needs a value for it
         checks.append(("attribute_value", bool(re.search(re.escape(label.replace("_", " ")) + r"[^\n]{0,40}\d", reply_text(row), re.I)),
@@ -541,10 +583,8 @@ def _subject_check(want: set[str], after: set[str]) -> tuple[str, bool | None, s
 
 def _followup(row, item):
     kind, gold = item.get("kind"), item.get("gold") or {}
-    if kind in ("and_x", "switch"):
-        menu = _menu_check(row, gold)
-        rest = _followup_checks(row, item, kind, gold)
-        return rest + ([menu] if menu else [])
+    if kind in {"and_x", "switch", "refine"}:   # a lookup-type follow-up: no needless question after the answer
+        return _followup_checks(row, item, kind, gold) + _needless(row, gold, menu=kind != "refine")
     return _followup_checks(row, item, kind, gold)
 
 
@@ -634,6 +674,10 @@ def _followup_checks(row, item, kind, gold):
         values |= {_val(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "brand"}
         values |= {_val(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
         values |= {_val(b) for b in (_mem_focus(row, "after").get("brands") or [])}
+        # a warehouse filter: the `warehouse` entities and the memory slot of that name
+        values |= {_val(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "warehouse"}
+        values |= {_val(e.get("canonical_code") or e.get("raw")) for e in (_mem_focus(row, "after").get("warehouse") or [])
+                   if isinstance(e, dict)}
         checks = [
             # narrowing may keep a part of the list: a non-empty subset of the gold subject or of what was held before
             ("subject", (want <= after_subject or bool(after_subject and (after_subject <= want or after_subject <= before_subject)))
@@ -749,7 +793,7 @@ def _spec(row, item):
     reply = reply_text(row)
     shown = bool(CODE_RE.search(reply)) and not COULD_NOT_FIND_RE.search(reply)   # at least one product, no dead end
     checks = [("spec_set", want <= got and bool(want or class_want), "The spec words were not grounded to the expected set."),
-              ("shown", shown, "The reply showed no product."), _menu_check(row), _quantity_check(row, {})]
+              ("shown", shown, "The reply showed no product."), *_needless(row, {})]
     if class_want:  # reported, not part of `passed`: the bot records class words as category entities
         checks.append(("class", all(any(set(v.split()) <= w for w in words) for v in class_want),
                        "The product class was read differently from the one asked."))
@@ -835,8 +879,7 @@ def _attachment(row, item):
     asked += [_type_word(x.get("canonical_code") or x.get("raw") if isinstance(x, dict) else x) for x in from_memory or [] if x]
     asked_ok = bool(asked) and all(_type_ok(a, accepted) for a in asked)
     checks = [("asked_type", asked_ok, "The asked type was read differently from the type requested."),
-              _menu_check(row, gold), _quantity_check(row, gold)]
-    checks = [c for c in checks if c]
+              *_needless(row, gold)]
     if gold.get("none_on_record"):
         checks.append(("none_on_record", not files and sent == 0,
                        "Files were sent although none exist on record."))
@@ -875,7 +918,10 @@ def grade_turn(row: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
                   else "The reply shows a field hidden from the asker." if any(x.startswith("hidden") for x in leaks)
                   else "The reply shows a customer outside the asker's linked customers.")
     passed: bool | None = failed is None
-    if passed and checks and all(ok is None for _, ok, _ in checks):
+    after_q = _oq(row)[1]
+    if isinstance(after_q, dict) and after_q.get("kind") == "tier_pick" and item.get("kind") != "escalation":
+        passed, failed = None, "The bot asked an access question (price tier); the bench cannot judge it."
+    elif passed and checks and all(ok is None for _, ok, _ in checks):
         passed, failed = None, "The bench could not confirm what the bot understood."
     return {
         "item_id": item.get("item_id"), "slice": item["slice"], "kind": item.get("kind"), "passed": passed,
