@@ -11,9 +11,11 @@ import {
   Pencil,
   X,
 } from 'lucide-react';
-import { ColumnDef } from '@tanstack/react-table';
+import { ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DataGrid } from '@/components/ui/data-grid';
+import { DataGridTable } from '@/components/ui/data-grid-table';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
 import {
@@ -228,55 +230,114 @@ function SplitChip({ row }: { row: OrderInquiryWorklistRow }) {
   );
 }
 
+/** Where a split sits, in words: a numbered line, an unnumbered one, or a new line. */
+function sitsOnText(split: OrderInquiryLineSplit, itemCode: string | null | undefined): string {
+  if (split.is_cancel) return '';
+  if (!split.sits_on_line_id) return 'New line (not in AutoCount yet)';
+  if (split.sits_on_line_no != null) return `line ${split.sits_on_line_no}`;
+  return itemCode ? `line ${itemCode}` : 'line';
+}
+
+const SPLIT_COLUMNS = (itemCode: string | null | undefined): ColumnDef<OrderInquiryLineSplit>[] => [
+  {
+    accessorKey: 'qty',
+    header: () => <span className="block text-right">Qty</span>,
+    size: 80,
+    meta: { headerTitle: 'Qty' },
+    cell: ({ row }) => (
+      <span className="block text-right tabular-nums">{formatInquiryQty(row.original.qty)}</span>
+    ),
+  },
+  {
+    accessorKey: 'delivery_date',
+    header: 'Date',
+    size: 110,
+    meta: { headerTitle: 'Date' },
+    cell: ({ row }) => splitDate(row.original.delivery_date),
+  },
+  {
+    accessorKey: 'change',
+    header: 'Change',
+    size: 150,
+    meta: { headerTitle: 'Change' },
+    cell: ({ row }) => (
+      <OrderInquiryVerbPill
+        verb={row.original.change === 'CANCEL BALANCE' ? 'CANCEL_BALANCE' : row.original.change}
+      />
+    ),
+  },
+  {
+    id: 'sits_on',
+    header: 'Sits on',
+    size: 160,
+    meta: { headerTitle: 'Sits on' },
+    cell: ({ row }) => {
+      const text = sitsOnText(row.original, itemCode);
+      return (
+        <span className="block truncate text-muted-foreground" title={text}>
+          {text}
+        </span>
+      );
+    },
+  },
+  {
+    accessorKey: 'remark',
+    header: 'Remark',
+    size: 240,
+    meta: { headerTitle: 'Remark' },
+    cell: ({ row }) => (
+      <span className="block truncate" title={row.original.remark}>
+        {row.original.remark}
+      </span>
+    ),
+  },
+];
+
+function LineSplitsGrid({
+  splits,
+  itemCode,
+}: {
+  splits: OrderInquiryLineSplit[];
+  itemCode: string | null | undefined;
+}) {
+  const columns = React.useMemo(() => SPLIT_COLUMNS(itemCode), [itemCode]);
+  const table = useReactTable({
+    columns,
+    data: splits,
+    getRowId: (split) => split.id,
+    getCoreRowModel: getCoreRowModel(),
+    columnResizeMode: 'onChange',
+    enableColumnResizing: true,
+  });
+  return (
+    <div className="mb-2 max-w-3xl">
+      <DataGrid
+        table={table}
+        recordCount={splits.length}
+        tableLayout={{
+          width: 'fixed',
+          columnsResizable: true,
+          columnsDraggable: false,
+          scrollerMaxHeight: false,
+        }}
+      >
+        <DataGridTable />
+      </DataGrid>
+    </div>
+  );
+}
+
 /** OI-LINE-SPLIT (UAC D3): the splits of the line, read-only: Qty, Date, Change, Sits on,
  * Remark. Nothing when the line is not split. */
-function LineSplitsList({ splits }: { splits: OrderInquiryLineSplit[] }) {
+function LineSplitsList({
+  splits,
+  itemCode,
+}: {
+  splits: OrderInquiryLineSplit[];
+  itemCode: string | null | undefined;
+}) {
   if (splits.length === 0) return null;
-  return (
-    <table className="mb-2 w-full max-w-3xl table-fixed border-collapse text-xs">
-      <colgroup>
-        <col style={{ width: 80 }} />
-        <col style={{ width: 110 }} />
-        <col style={{ width: 150 }} />
-        <col style={{ width: 120 }} />
-        <col />
-      </colgroup>
-      <thead>
-        <tr className="text-left text-muted-foreground">
-          <th className="border-b border-border px-2 py-1.5 text-right font-medium">Qty</th>
-          <th className="border-b border-border px-2 py-1.5 font-medium">Date</th>
-          <th className="border-b border-border px-2 py-1.5 font-medium">Change</th>
-          <th className="border-b border-border px-2 py-1.5 font-medium">Sits on</th>
-          <th className="border-b border-border px-2 py-1.5 font-medium">Remark</th>
-        </tr>
-      </thead>
-      <tbody>
-        {splits.map((split) => (
-          <tr key={split.id}>
-            <td className="border-b border-border px-2 py-1.5 text-right tabular-nums">
-              {formatInquiryQty(split.qty)}
-            </td>
-            <td className="border-b border-border px-2 py-1.5">{splitDate(split.delivery_date)}</td>
-            <td className="border-b border-border px-2 py-1.5">
-              <OrderInquiryVerbPill
-                verb={split.change === 'CANCEL BALANCE' ? 'CANCEL_BALANCE' : split.change}
-              />
-            </td>
-            <td className="truncate border-b border-border px-2 py-1.5 text-muted-foreground">
-              {split.is_cancel
-                ? ''
-                : split.sits_on_line_no != null
-                  ? `line ${split.sits_on_line_no}`
-                  : 'New line (not in AutoCount yet)'}
-            </td>
-            <td className="truncate border-b border-border px-2 py-1.5" title={split.remark}>
-              {split.remark}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+  return <LineSplitsGrid splits={splits} itemCode={itemCode} />;
 }
 
 function reserveChipText(staged: StagedReserveEntry): string {
@@ -540,7 +601,7 @@ export function useOrderInquiryHeaderLinesColumns({
           headerTitle: 'Expand',
           expandedContent: (line: OrderInquiryLineRow) => (
             <div className="px-3 py-2">
-              <LineSplitsList splits={line.splits ?? []} />
+              <LineSplitsList splits={line.splits ?? []} itemCode={line.item_code} />
               {line.product_id ? (
                 <OrderInquiryStockGrid
                   productId={line.product_id}
