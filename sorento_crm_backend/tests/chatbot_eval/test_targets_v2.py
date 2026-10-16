@@ -227,3 +227,37 @@ def test_spec_gold_values_may_be_a_subset_of_the_bots_values():
     missing = row2(verdict=v, mem_extra={"specification": bot})
     check(grade_turn(missing, item("spec", spec=[{"key": "mounting", "value": "under_counter"},
                                                   {"key": "colour", "value": "white"}])), False, "spec")
+
+
+def test_pick_and_tool_target_resolve_uuids_through_row_uuid_codes():
+    v = {"entities": [], "reference_positions": [], "open_question_answer": {"mode": None, "items": [], "picked": []}}
+    gold = dict(position=2, code="srtwc8066s200new")
+    tool_x = {"name": "crm_inventory_list", "args": {"product_ids": [UA]}}
+    ok = row2(verdict=v, mem_after=[], tools=[tool_x])
+    ok["uuid_codes"] = {UA: "SRTWC8066-S-200-NEW"}
+    r = grade_turn(ok, item("followup", "pick", **gold))
+    check(r, True)
+    assert r["checks"].get("tool_target", True) is True
+    bad = row2(verdict=v, mem_after=[], tools=[{"name": "crm_inventory_list", "args": {"product_ids": [UB]}}])
+    bad["uuid_codes"] = {UA: "SRTWC8066-S-200-NEW", UB: "SRTB300"}
+    check(grade_turn(bad, item("followup", "pick", **gold)), False, "position")
+    cl = row2(mem_after=[], tools=[tool_x])
+    cl["uuid_codes"] = {UA: "SRTA100"}
+    check(grade_turn(cl, item("code_lookup", **GOLD_CL)), True)
+
+
+def test_spec_ignores_class_keys_and_compares_values_as_normalised_strings():
+    v = {"entities": [], "reference_positions": []}
+    bot = [{"spec_key": "mounting", "spec_value": "under_counter", "raw": "x"},
+           {"spec_key": "length", "spec_value": 200, "raw": "200"}]
+    gold = [{"key": "class", "value": "basin"}, {"key": "product_type", "value": "sink"},
+            {"key": "furniture_type", "value": "vanity"},
+            {"key": "mounting", "value": "Under Counter"}, {"key": "length", "value": "200"}]
+    r = grade_turn(row2(verdict=v, mem_extra={"specification": bot}), item("spec", spec=gold))
+    check(r, True)
+    assert "class" in r["checks"], "class keys are reported as their own check"
+    wrong_class = grade_turn(row2(verdict=v, mem_extra={"specification": bot}),
+                             item("spec", spec=[{"key": "class", "value": "tap"}, {"key": "mounting", "value": "under_counter"}]))
+    assert wrong_class["passed"] is True and wrong_class["checks"]["class"] is False
+    check(grade_turn(row2(verdict=v, mem_extra={"specification": bot}), item("spec", spec=[{"key": "length", "value": "300"}])),
+          False, "spec")
