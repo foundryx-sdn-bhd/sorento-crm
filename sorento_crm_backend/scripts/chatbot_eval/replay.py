@@ -541,6 +541,32 @@ def _trace_events(row: dict[str, Any]) -> list[dict[str, Any]]:
     return [x for x in row.get("trace") or [] if isinstance(x, dict)]
 
 
+_L3_STARTS = ("Earlier in this conversation", "Recent exchanges", "Previous response")
+# the first line of the layers after L3: L2 (brands and kinds, subject, tasks, question, pending) and L1
+_AFTER_L3 = ("Known brands:", "Product types:", "Product details:", "Promotion kinds:", "Current subject:", "Open task:",
+             "Open question", "Pending:", "reply to:", "Current user message:")
+
+
+def _recorded_l3(row: dict[str, Any]) -> tuple[str, bool] | None:
+    """The recorded prompt's L3 block verbatim and the recorded L3 `dropped` flag; None without a `prompt_text` event."""
+    events = _trace_events(row)
+    prompt = next((e for e in events if e.get("kind") == "prompt_text" and isinstance(e.get("text"), str)), None)
+    if prompt is None:
+        return None
+    lines = prompt["text"].split("\n")
+    start = next((i for i, x in enumerate(lines) if x.startswith(_L3_STARTS)), None)
+    if start is None:
+        return "", False
+    end = next((i for i in range(start, len(lines)) if lines[i].startswith(_AFTER_L3)), len(lines))
+    dropped = False
+    for e in events:
+        layers = e.get("layers") if isinstance(e.get("layers"), list) else []
+        for layer in layers:
+            if isinstance(layer, dict) and layer.get("layer") == "L3":
+                dropped = bool(layer.get("dropped"))
+    return "\n".join(lines[start:end]), dropped
+
+
 def _recorded_history(db: Any, row: dict[str, Any], envelope: Any) -> dict[str, Any] | None:
     """The prod history the recorded turn saw, read as of that turn: the engine's own history reads are scoped to the
     live world (`is_test`) and the newest rows as of now, so a live (dry-run) turn would see none of it, or later turns.
@@ -617,7 +643,7 @@ def _recorded_history(db: Any, row: dict[str, Any], envelope: Any) -> dict[str, 
                                                          ChatbotTurn.is_test.is_(False),
                                                          ChatbotTurn.created_at < anchor).scalar()
     about = re.search(r"About this contact:\n[^\n]*", prompt["text"]) if prompt is not None else None
-    return {"anchor": anchor, "about": about.group(0) if about else "", "turn_number": int(before or 0) + 1,
+    return {"l3": _recorded_l3(row), "anchor": anchor, "about": about.group(0) if about else "", "turn_number": int(before or 0) + 1,
             "previous_reply": previous_reply, "recent": recent, "summaries": summaries, "read_frames": read_frames,
             "earlier_messages": earlier}
 
@@ -637,6 +663,8 @@ def _history_patches(stack: Any, history: dict[str, Any] | None) -> None:
 
     # profile facts are read as of now; the L5 block is the recorded one verbatim (empty when the recorded prompt had none)
     stack.enter_context(mock.patch.object(context_mod, "_render_l5", lambda facts: (history["about"], False)))
+    if history["l3"] is not None:  # L3 is the recorded prompt's block verbatim; without one the as-of DB reads above serve
+        stack.enter_context(mock.patch.object(context_mod, "_render_l3", lambda *a, **k: history["l3"]))
     real_quoted = quoted.resolve_quoted_turn
 
     def quoted_as_of(db: Any, **kwargs: Any) -> Any:
