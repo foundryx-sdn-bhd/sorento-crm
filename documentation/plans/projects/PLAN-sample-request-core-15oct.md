@@ -1,8 +1,7 @@
 # PLAN: SR-CORE - Sample Request (consignment requisition) in project management
 
-Status: Waiting on owner - card SETTLED (owner Q1 16 Oct 00:21, crew Q2-Q5 = (a)); mock v2
-(`mockups/sample-request-core.html`, rebuilt from existing components after owner notes 16 Oct 08:54) awaiting owner OK; UAC drafted; this plan drafted 16 Oct. No product code until
-crew relays the owner's mock OK. Track: full (migration, new permissions, portal ingest). Slice 1 of 3 (SR-STOCK,
+Status: Build - owner OK on mock v2 (16 Oct 09:07, "ok"); card SETTLED (owner Q1 16 Oct 00:21, crew Q2-Q5 = (a)).
+Phase 2 red-first under way. Track: full (migration, new permissions, portal ingest). Slice 1 of 3 (SR-STOCK,
 SR-RETURN follow).
 
 Discovery: `state/reports/SAMPLE-REQUEST-DISCOVERY-15oct.md` (crew), owner rulings 16 Oct 00:10.
@@ -156,3 +155,71 @@ pass. Kill test on the tester's tests.
 - The coordinator role name in prod is not in the repo; the migration grants `process` to admin roles only and the
   admin grants the coordinator. Say so in the hand-test.
 - `products/select` change widens hits for every caller; covered by a test that the old exact-ilike hits remain.
+
+## Contract (Phase 2; tester and coder both build to THIS, names are exact)
+
+Status keys (status engine entity `sample_request`): `draft`, `submitted`, `processing`, `customer_confirmed`,
+`delivered`, `cancelled`. Responses carry `status` (the key) and `status_label` (the graph label).
+
+Enumerations: `delivery_mode` `driver|self_deliver|self_collect`; `loan_unit` `days|months`;
+`goods_from` `demo|new|either`; `source` `staff|portal`.
+
+Write payload (create and draft update, staff and portal alike; every field optional on a draft):
+```
+customer_id, customer_name, project_id, project_title, quotation_version_id, scope_note,
+delivery_date (YYYY-MM-DD), deliver_immediately (bool), delivery_mode,
+ship_to_name, ship_to_address, site_contact_name, site_contact_phone, site_contact_note,
+loan_value (int, default 2), loan_unit (default months), goods_from (default either), purpose,
+board_mounting (bool, default false), board_label,
+lines: [{product_id, alt_product_id, qty (int >= 1, default 1), remark}]   # replaces all lines on update
+```
+Write-time refusals (422 on any write): unknown / inactive / out-of-scope `product_id` or `alt_product_id`
+(code `SAMPLE_REQUEST_PRODUCT_INVALID`), qty < 1, loan_value < 1, enum outside its list, delivery_date together with
+deliver_immediately, `quotation_version_id` of another project (code `SAMPLE_REQUEST_QUOTATION_PROJECT`),
+portal `project_id` not in `projects_for_contact` (code `SAMPLE_REQUEST_PROJECT_NOT_ALLOWED`).
+
+Submit refusals (422, code `SAMPLE_REQUEST_INCOMPLETE`, `message` names the field in plain words, `details.field`
+holds the payload key): customer (`customer_id` or `customer_name`), project (`project_id` or `project_title`;
+only `project_id` when `sample_request_require_project`), quotation (`quotation_version_id`, only when
+`sample_request_require_quotation`), delivery (`delivery_date` or `deliver_immediately`), `delivery_mode`,
+`ship_to_name`, lines (`lines`: at least one line or `board_mounting`; message "Add at least one item"),
+`board_label` when `board_mounting`.
+
+Detail response: every payload field plus `id, request_no, status, status_label, source, salesperson_id,
+salesperson_name, customer_code, project_code, project_name (registered title or typed title), quotation_label,
+request_date, submitted_at, confirmed_at, delivered_at, return_due, cancelled_at, cancel_reason, consignment_no,
+po_no, created_at, updated_at`, and `lines[]` with `id, line_no, product_id, product_code, product_name, brand_name,
+product_active, alt_product_id, alt_product_code, qty, remark`.
+List row: `id, request_no, status, status_label, request_date, submitted_at, delivery_date, deliver_immediately,
+delivery_mode, customer_name, customer_code, project_id, project_name, ship_to_name, salesperson_name, line_count,
+board_mounting`. NEVER `site_contact_phone`, `ship_to_address` (AC-SR-54).
+Lists use the `samples_pos._envelope` shape `{data, pagination: {total, page, limit}, empty}`.
+
+Staff routes (prefix `/api/v1/project-sales`):
+| Method + path | Permission | Notes |
+|---|---|---|
+| `GET /sample-requests` | `projects.sample_requests.view` (all) or `.create` (own only) | `status` (comma list; default `submitted,processing,customer_confirmed`), `project_id`, `q`, `page`, `limit`; sort: immediate first, then `delivery_date` asc |
+| `GET /projects/{project_id}/sample-requests` | view, or create (own) | all statuses |
+| `POST /sample-requests` | create | draft, 201, `source=staff`, `salesperson_id` = caller |
+| `GET /sample-requests/{id}` | view, or owner | |
+| `PUT /sample-requests/{id}` | owner, status `draft` only (409 otherwise) | |
+| `POST /sample-requests/{id}/submit` | owner | draft -> submitted |
+| `POST /sample-requests/{id}/move` `{to, date?, reason?}` | `to=cancelled` from draft/submitted: owner or process; everything else: `.process` | `customer_confirmed` and `delivered` need `date`; cancel from `processing` needs `reason`; illegal edge 409 `SAMPLE_REQUEST_ILLEGAL_MOVE` |
+| `PUT /sample-requests/{id}/internal` `{consignment_no, po_no}` | `.process` | any status but cancelled |
+| `GET /sample-requests/{id}/pdf` | view, or owner | `application/pdf` |
+| `GET /sample-requests/products?q=` | create | active products, folded match on code (dashes/spaces/case ignored) OR ilike on name, top 20 `{id, product_code, product_name, brand_name}` |
+
+Portal routes (prefix `/api/v1/public/portal`, new router mounted BEFORE `portal.router`), all `_assert_visible`
+first (403 `FORM_TYPE_NOT_VISIBLE`), records loaded by `(id, contact_id)` else 404:
+`GET|POST /submissions/sample_request`, `GET|PUT /submissions/sample_request/{id}`,
+`POST /submissions/sample_request/{id}/submit`, `POST /submissions/sample_request/{id}/cancel` (only while
+draft/submitted), `GET /submissions/sample_request/{id}/pdf`, `GET /sample-request/products?q=` (same as staff).
+Portal create sets `source=portal`, `contact_id`, `salesperson_id` = the contact's linked sales agent (or null).
+
+Settings: `system_settings.sample_request_require_project`, `sample_request_require_quotation` (bool, default false),
+in `GET /api/v1/settings/` and `PUT /api/v1/settings/general`, and in `GET /api/v1/settings/app-config` so a
+non-admin form can read them.
+
+Delivered side effect: when `quotation_version_id` is set, one `ProjectSample` for that version with
+`submitted_on = date` (idempotent: a second Delivered never happens, the edge does not exist).
+Activity: one project activity row per status move when `project_id` is set.
