@@ -385,7 +385,12 @@ export function PromptDetail({ name }: { name: string }) {
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
               {focus && canEdit && meta.active && baseRow ? (
-                <>
+                // The reason sits on a wrapper: a disabled Button takes no pointer events, so
+                // its own title would never show.
+                <span
+                  className="flex flex-wrap items-center gap-2"
+                  title={dirty ? 'Save first: this publishes the saved version, not the unsaved edits' : undefined}
+                >
                   {!baseRow.labels.includes('staging') ? (
                     <Button
                       type="button"
@@ -395,7 +400,6 @@ export function PromptDetail({ name }: { name: string }) {
                         setPublishState({ open: true, version: baseRow.version, versionId: baseRow.id, label: 'staging' })
                       }
                       disabled={dirty}
-                      title={dirty ? 'Save first: this publishes the saved version, not the unsaved edits' : undefined}
                       data-testid="fullscreen-publish-staging"
                     >
                       Stage v{baseRow.version}
@@ -410,13 +414,12 @@ export function PromptDetail({ name }: { name: string }) {
                         setPublishState({ open: true, version: baseRow.version, versionId: baseRow.id, label: 'production' })
                       }
                       disabled={dirty}
-                      title={dirty ? 'Save first: this publishes the saved version, not the unsaved edits' : undefined}
                       data-testid="fullscreen-publish-production"
                     >
                       Publish v{baseRow.version}
                     </Button>
                   ) : null}
-                </>
+                </span>
               ) : null}
               <Button
                 type="button"
