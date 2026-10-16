@@ -2,8 +2,8 @@
 
 Starts from the stored v94 text (`alembic/data/chatbot_semantic_parser.v94.txt`, never edited),
 applies the #1574 ablation cuts (imported from `scripts.build_parser_ablation`, minus the ids that
-no longer match v94), then the stage 1 edits (REFERENCE TARGET removed, the section 43
-contradiction, the OUTPUT comma). Each replacement is exact: `old` must occur exactly
+no longer match v94), then the stage 1 edits (the section 43
+contradiction, two missing OUTPUT commas). Each replacement is exact: `old` must occur exactly
 once in the text at the moment it is applied. A skipped cut that starts matching raises too.
 Writes `alembic/data/chatbot_semantic_parser.diet-s1-20261016.txt`.
 
@@ -30,28 +30,6 @@ SKIPPED_ABLATION_IDS = frozenset({
 
 #: (edit_id, old, new) exact replacements, applied in order after the cuts.
 STAGE1_EDITS: list[tuple[str, str, str]] = [
-    # S1-04 (AC7): REFERENCE TARGET section, its OUTPUT value and its cross-reference.
-    (
-        "S1-04a",
-        """== REFERENCE TARGET (which set a positional reply means) ==
-When "Previous response" contains the marker "[<N> did-you-mean suggestions active]" AND the current message refers to item position(s), also set a top-level "reference_target":
-  - "dym"    -> the reply is bare number(s), one or more ("2", "1, 4", "1 and 4"), OR names a suggestion ("suggestion 2", "the 2nd suggestion").
-  - "result" -> the reply explicitly qualifies a result item ("product 2", "the 2nd one", "the 2nd product", "price of the first").
-If the marker is absent, set reference_target = null. reference_positions is unchanged (the raw 1-based positions). Do NOT resolve \u2014 downstream maps the positions to the set named by reference_target.
-
-""",
-        "",
-    ),
-    (
-        "S1-04b",
-        '  "reference_target": "result|dym|null \u2014 WHICH set a positional reply targets; null unless a [<N> did-you-mean suggestions active] marker is present (see REFERENCE TARGET)",\n',
-        '  "reference_target": null,\n',
-    ),
-    (
-        "S1-04c",
-        "keep their existing handling (see REFERENCE TARGET and\n    COMPANY-NAME REPLY).",
-        "keep their existing handling (see COMPANY-NAME REPLY).",
-    ),
     # S1-05 (AC8): one rule for a bare number reply.
     (
         "S1-05",
@@ -63,6 +41,12 @@ If the marker is absent, set reference_target = null. reference_positions is unc
         "S1-06a",
         '  "requested_attributes": []\n  "contains_flyer": false,',
         '  "requested_attributes": [],\n  "contains_flyer": false,',
+    ),
+    # S1-06c (AC9): the missing comma after the asks key.
+    (
+        "S1-06c",
+        '"asks": [] one',
+        '"asks": [], one',
     ),
 ]
 

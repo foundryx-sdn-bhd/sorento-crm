@@ -201,7 +201,8 @@ list of products this way; they do not restate the question each time.
     carry as usual and moves the domain normally.
   - This rule does NOT apply when the bare reply ANSWERS something the assistant just
     offered — a numbered did-you-mean / picker / access-level list, or an escalation
-    offer. Those are picks and keep their existing handling (see COMPANY-NAME REPLY). A bare ordinal like "2" is a pick, never a product code.
+    offer. Those are picks and keep their existing handling (see REFERENCE TARGET and
+    COMPANY-NAME REPLY). A bare ordinal like "2" is a pick, never a product code.
     A value that is NOT one of the offered choices - a company the offer did not list, a code the
     list does not carry - is not an answer to that offer: it re-scopes the question, and this rule
     DOES apply to it.
@@ -540,6 +541,12 @@ A BARE NUMBER - or a number that only follows a lead-in word ("for", "number", "
   - Previous response listed 10 products (positions 1 to 10); "okay how about stock, incoming and PO for 7" -> reference_positions [7], entities [] (never {"raw":"7","hint":"product"}).
 reference_positions is ONLY ever set when "Previous response" actually offered a numbered list to answer - a message read with no such list open names no position at all, whatever number it contains.
 
+== REFERENCE TARGET (which set a positional reply means) ==
+When "Previous response" contains the marker "[<N> did-you-mean suggestions active]" AND the current message refers to item position(s), also set a top-level "reference_target":
+  - "dym"    -> the reply is bare number(s), one or more ("2", "1, 4", "1 and 4"), OR names a suggestion ("suggestion 2", "the 2nd suggestion").
+  - "result" -> the reply explicitly qualifies a result item ("product 2", "the 2nd one", "the 2nd product", "price of the first").
+If the marker is absent, set reference_target = null. reference_positions is unchanged (the raw 1-based positions). Do NOT resolve — downstream maps the positions to the set named by reference_target.
+
 == PERSON-NAME MENTION ==
 If the user message refers to a person by name — in any honorific form, any spelling, partial (given name OR surname only), or reversed order —
 output that surface name string in the top-level "person_mention" key. Otherwise output null.
@@ -696,7 +703,7 @@ false.
   "requested_attributes": [],
   "contains_flyer": false,
   "reference_positions": [],
-  "reference_target": null,
+  "reference_target": "result|dym|null — WHICH set a positional reply targets; null unless a [<N> did-you-mean suggestions active] marker is present (see REFERENCE TARGET)",
   "person_mention": "string_or_null — the surface name the user mentioned, else null",
   "is_active": "true|false|null — lifecycle status filter from current message only, else null",
   "order_status": "outstanding|delivered|null — ORDER delivery-status filter from current message only (order domain), else null",
@@ -708,7 +715,7 @@ false.
   "escalation": { "is_escalation_confirmation": false, "company_pick": "string_or_null — ONLY per COMPANY-NAME REPLY ON AN ESCALATION OFFER, else null" },
   "document": [], the papers the message named: SO|DO|PO|SPO|GRN codes, else []
   "status": "outstanding|delivered|sales_report|null — the delivery/order status axis from the current message only, else null; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below)",
-  "asks": [] one {"domain","intent"} per domain the message names, ONLY when it names more than one; see ASKS
+  "asks": [], one {"domain","intent"} per domain the message names, ONLY when it names more than one; see ASKS
   "topic_reset": false, true only when the message drops the current subject for a new one; see TOPIC RESET
   "anaphora": { "backward_reference": false }
 }

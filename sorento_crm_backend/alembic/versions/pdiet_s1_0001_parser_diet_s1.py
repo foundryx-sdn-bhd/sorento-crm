@@ -1,11 +1,9 @@
 """Publish the PROMPT-DIET stage 1 chatbot parser version, label unmoved
 (documentation/plans/chatbot/prompt-diet-s1-acceptance-criteria.md).
 
-Why: dev v94 (= prod v63 text) minus the PROMPT-ABLATION cuts that still match, the dead
-sections (FLYER FLAG instruction, CORRECTION / DOUBT, REFERENCE TARGET), the section 43
-contradiction, and the banner boxes that only announced OUTPUT keys, which now sit inside the
-OUTPUT object. The text is `alembic/data/chatbot_semantic_parser.diet-s1-20261016.txt`, published
-verbatim.
+Why: dev v94 (= prod v63 text) with the PROMPT-ABLATION cuts that still match re-applied, the
+section 43 contradiction fixed, and two missing OUTPUT commas added. The text is
+`alembic/data/chatbot_semantic_parser.diet-s1-20261016.txt`, published verbatim.
 
 The production label is never moved and `ai_prompt_labels` is never touched: promotion is one
 label move in the Chatbot Console, and the owner decides. To rebuild the data file run
@@ -32,7 +30,7 @@ logger = logging.getLogger("alembic.runtime.migration")
 
 PROMPT_NAME = "chatbot_semantic_parser"
 SOURCE = Path(__file__).resolve().parents[1] / "data" / "chatbot_semantic_parser.diet-s1-20261016.txt"
-MESSAGE = "pdiet_s1_0001: PROMPT-DIET stage 1, v94 text with the #1574 cuts, REFERENCE TARGET removed, the section 43 contradiction and the OUTPUT comma fixed, unlabelled"
+MESSAGE = "pdiet_s1_0001: v94 text with the #1574 cuts re-applied, the section 43 contradiction fixed and two missing OUTPUT commas added (PROMPT-DIET stage 1), unlabelled"
 
 
 def publish(session: Session) -> int | None:
