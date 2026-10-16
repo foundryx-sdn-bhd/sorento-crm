@@ -725,3 +725,109 @@ def test_a_code_in_no_source_and_no_option_is_still_made_up():
     r = row2(reply="Did you mean SRTPICKA1 or SRTNOWHERE9?", state_oq=_picker(["SRTPICKA1"]))
     found = made_up_facts(r)
     assert found == ["made up: SRTNOWHERE9"], found
+
+
+# ------------------------------------------------------------------ review round 12 (grader defects from the TRAIN root cause)
+# CHAT-STATE claims checked against the code: the `state` trace event is added at engine.py:7814 and :10200 from
+# `session_payload(state, answer, ...)`, i.e. the question AFTER the turn (so the `_oq` fallback is real); the 32 KB
+# cap writes {"note": "payload omitted: ..."} (trace.py:99); `option` compares gold text to labels (targets.py ~491).
+def _picks(picked, mode=None):
+    return {"entities": [], "reference_positions": [],
+            "open_question_answer": {"mode": mode, "items": [], "picked": list(picked)}}
+
+
+YES_Q = {"kind": "confirm", "expects": "choice", "payload": {}, "options": [{"label": "Yes"}]}
+COLOUR_Q = {"kind": "product_pick", "expects": "choice", "payload": {}, "asked_at_turn": 1,
+            "options": [{"label": "white", "code": "SRTCOL1"}, {"label": "black", "code": "SRTCOL2"},
+                        {"label": "grey", "code": "SRTCOL3"}]}
+
+
+# 1. the question before the turn never comes from the post-turn state record
+def test_an_unknown_before_question_makes_not_reasked_unknown_not_a_reask():
+    r = row2(verdict=_picks([], mode="yes"), state_oq=YES_Q, oq={"before": None, "after": YES_Q, "writer": "engine"})
+    res = grade_turn(r, item("followup", "answer", option="yes"))
+    assert res["checks"]["not_reasked"] is None, res["checks"]
+    assert res["passed"] is not False, res
+
+
+def test_a_real_reask_with_a_known_before_question_still_fails():
+    r = row2(verdict=_picks([1]), state_oq=COLOUR_Q, oq={"before": COLOUR_Q, "after": COLOUR_Q, "writer": "engine"})
+    res = grade_turn(r, item("followup", "answer", option="white"))
+    assert res["checks"]["not_reasked"] is False and res["passed"] is False, res
+
+
+# 2. a numeric gold option is the 1-based position in the before question's options
+def _numeric(gold_option, picked):
+    r = row2(verdict=_picks(picked), state_oq=COLOUR_Q, oq={"before": COLOUR_Q, "after": None, "writer": "engine"})
+    return grade_turn(r, item("followup", "answer", option=gold_option))
+
+
+def test_a_numeric_gold_option_maps_to_the_option_at_that_position():
+    assert _numeric("3", [3])["checks"]["option"] is True
+    assert _numeric("3.", [3])["checks"]["option"] is True
+
+
+def test_a_wrong_numeric_position_still_fails_and_a_label_gold_still_works():
+    assert _numeric("2", [3])["checks"]["option"] is False
+    assert _numeric("grey", [3])["checks"]["option"] is True
+
+
+# 3a. a boolean spec_value is matched through the entity's raw words
+def test_a_boolean_spec_value_matches_the_gold_filter_through_the_raw_phrase():
+    v = {"entities": [{"raw": "intelligent toilet", "hint": "specification", "spec_key": "is_smart", "spec_value": True}],
+         "reference_positions": []}
+    r = row2(verdict=v, mem_after=[prod("SRTA100", UA)], tools=[TOOL_A])
+    res = grade_turn(r, item("followup", "refine", subject_after=["SRTA100"],
+                             filter={"kind": "spec", "value": "intelligent toilet"}))
+    assert res["checks"]["filter"] is True, res["checks"]
+
+
+def test_a_filter_phrase_in_no_entity_still_fails():
+    v = {"entities": [{"raw": "round basin", "hint": "specification", "spec_key": "is_smart", "spec_value": True}],
+         "reference_positions": []}
+    r = row2(verdict=v, mem_after=[prod("SRTA100", UA)], tools=[TOOL_A])
+    res = grade_turn(r, item("followup", "refine", subject_after=["SRTA100"],
+                             filter={"kind": "spec", "value": "intelligent toilet"}))
+    assert res["checks"]["filter"] is False
+
+
+# 3b. omitted apply and memory payloads make the filter check unknown
+def test_the_filter_check_is_unknown_when_the_apply_and_memory_payloads_were_omitted():
+    r = row2(apply_omitted=True, tools=[TOOL_A])
+    r["trace"] = [e for e in r["trace"] if e.get("kind") != "memory"]
+    res = grade_turn(r, item("followup", "refine", filter={"kind": "spec", "value": "intelligent toilet"}))
+    assert res["checks"]["filter"] is None, res["checks"]
+    assert res["passed"] is not False, res
+
+
+# 4. a typed code the resolver expanded satisfies the new subject
+def _and_x(literal, after_codes, after_q=None, kind="and_x"):
+    r = row2(mem_after=[prod(c, f"00000000-0000-4000-8000-{k:012d}") for k, c in enumerate(after_codes)],
+             oq={"before": None, "after": after_q, "writer": "engine"}, tools=[TOOL_A])
+    return grade_turn(r, item("followup", kind, fact="inventory", subject_after=[literal], code_unresolved=True))
+
+
+def test_codes_that_start_with_the_typed_literal_satisfy_the_new_subject():
+    res = _and_x("CBCH80029", ["CBCH80029B", "CBCH80029M"])
+    assert res["checks"]["new_subject"] is True, res["checks"]
+    assert _and_x("cbch-80029", ["CBCH80029B"])["checks"]["new_subject"] is True
+
+
+def test_a_code_that_does_not_share_the_literal_still_fails_the_new_subject():
+    res = _and_x("CBCH80029", ["XYZ999"])
+    assert res["checks"]["new_subject"] is False, res["checks"]
+
+
+def test_a_which_one_question_whose_options_all_start_with_the_literal_satisfies_the_new_subject():
+    q = {"kind": "product_pick", "expects": "choice", "payload": {}, "asked_at_turn": 2,
+         "options": [{"label": "SRTWC286A", "code": "SRTWC286A"}, {"label": "SRTWC286B", "code": "SRTWC286B"}]}
+    assert _and_x("srtwc286", [], after_q=q)["checks"]["new_subject"] is True
+    mixed = dict(q, options=q["options"] + [{"label": "OTHER1", "code": "OTHER1"}])
+    assert _and_x("srtwc286", [], after_q=mixed)["checks"]["new_subject"] is False
+
+
+def test_a_switch_to_an_unresolved_code_that_expands_to_the_held_family_is_a_new_subject_and_a_change():
+    held = [prod("SRT6538-GM-DIY", UA)]
+    r = row2(mem_before=held, mem_after=held, state_products=held, tools=[TOOL_A])
+    res = grade_turn(r, item("followup", "switch", subject_after=["SRT6538-GM"], code_unresolved=True))
+    assert res["checks"]["new_subject"] is True and res["checks"]["changed"] is True, res["checks"]
