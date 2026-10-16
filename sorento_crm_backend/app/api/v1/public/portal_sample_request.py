@@ -70,7 +70,9 @@ def portal_search_customers(
     db: Session = Depends(get_db),
 ):
     _assert_visible(db, token.contact_id)
-    return svc.portal_customers(db, str(token.contact_id), q)
+    # The same one company submit checks the pick in, so listed and accepted cannot drift.
+    with company_scope(db, frozenset({_resolve_company(db, token)})):
+        return svc.portal_customers(db, str(token.contact_id), q)
 
 
 @router.get("/submissions/sample_request")
