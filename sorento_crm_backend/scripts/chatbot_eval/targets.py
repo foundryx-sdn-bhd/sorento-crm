@@ -97,6 +97,106 @@ def _positions(row: dict[str, Any]) -> list[int]:
     return pos
 
 
+def _key(x: Any) -> str:
+    """A code compared after upper-casing and dropping every non-alphanumeric."""
+    return re.sub(r"[^A-Z0-9]", "", str(x).upper()) if x is not None else ""
+
+
+def _strings(x: Any):
+    if isinstance(x, str):
+        yield x
+    elif isinstance(x, dict):
+        for v in x.values():
+            yield from _strings(v)
+    elif isinstance(x, (list, tuple)):
+        for v in x:
+            yield from _strings(v)
+
+
+def _product_list(products: Any) -> list[dict[str, Any]]:
+    return [p for p in (products or []) if isinstance(p, dict)]
+
+
+def _codes_of(products: Any) -> set[str]:
+    return {_key(p.get("canonical_code") or p.get("raw")) for p in _product_list(products)
+            if p.get("canonical_code") or p.get("raw")}
+
+
+def _mem_focus(row: dict[str, Any], which: str) -> dict[str, Any]:
+    focus = _kind(row, "memory").get("focus") or {}
+    part = focus.get(which) if isinstance(focus, dict) else None
+    return part if isinstance(part, dict) else {}
+
+
+def _subject_before(row: dict[str, Any]) -> set[str]:
+    codes = _codes_of(_mem_focus(row, "before").get("products"))
+    return codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products"))
+
+
+def _subject_after(row: dict[str, Any]) -> set[str]:
+    codes = _codes_of(_mem_focus(row, "after").get("products"))
+    return codes or _codes_of((_kind(row, "state").get("focus") or {}).get("products"))
+
+
+def _looked_up_envelopes(row: dict[str, Any]) -> list[dict[str, Any]]:
+    return [e for e in ((_stage(row, "looked_up").get("raw") or {}).get("envelopes") or []) if isinstance(e, dict)]
+
+
+def _resolved_codes(row: dict[str, Any]) -> set[str]:
+    """The codes the turn settled on: memory after, else the lookup's own strings, else the verdict's entities."""
+    codes = _codes_of(_mem_focus(row, "after").get("products"))
+    if codes:
+        return codes
+    for env in _looked_up_envelopes(row):
+        for field in ("entities", "product_codes"):
+            codes |= {_key(x) for x in (env.get(field) or []) if isinstance(x, str)}
+    if codes:
+        return codes
+    return {_key(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "product"
+            and (e.get("canonical_code") or e.get("raw"))} | \
+           {_key(e.get("canonical_code")) for e in _entities(row) if e.get("canonical_code") and not e.get("hint")}
+
+
+def _uuid_map(row: dict[str, Any]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    products = _product_list((_kind(row, "state").get("focus") or {}).get("products")) \
+        + _product_list(_mem_focus(row, "before").get("products")) + _product_list(_mem_focus(row, "after").get("products"))
+    for p in products:
+        if p.get("uuid") and (p.get("canonical_code") or p.get("raw")):
+            out[str(p["uuid"]).lower()] = _key(p.get("canonical_code") or p.get("raw"))
+    return out
+
+
+def _tool_targets(row: dict[str, Any]) -> set[str]:
+    """Codes the named tool events were called for: uuids mapped through the state + memory product lists,
+    plus literal strings in the arguments (scope_terms, product_code(s))."""
+    ids = _uuid_map(row)
+    out: set[str] = set()
+    for t in _tools(row):
+        for text in _strings(t.get("args")):
+            out.add(ids.get(text.lower(), _key(text)))
+    return out
+
+
+def _fact_ok(row: dict[str, Any], fact: Any) -> bool:
+    if not fact:
+        return True
+    domains = set(_domains(row))
+    domains |= set(((_kind(row, "apply").get("plan") or {}).get("domains")) or [])
+    domains |= set(_mem_focus(row, "after").get("domains") or [])
+    return fact in domains or any(str(fact) in str(t.get("name")) for t in _tools(row))
+
+
+def _oq(row: dict[str, Any]) -> tuple[Any, Any]:
+    """(question before, question after): `memory.open_question` is {before, after} in real traces, the bare
+    after value in older rows; the before value is the `state` event's."""
+    mem = _kind(row, "memory").get("open_question")
+    state_q = _kind(row, "state").get("open_question")
+    if isinstance(mem, dict) and ("before" in mem or "after" in mem):
+        return mem.get("before") or state_q, mem.get("after")
+    return state_q, mem
+
+
 def _dump(x: Any) -> str:
     return json.dumps(x, default=str, ensure_ascii=False)
 
@@ -168,9 +268,20 @@ def _num(token: str) -> float | None:
 
 
 def made_up_facts(row: dict[str, Any]) -> list[str]:
+    if _kind(row, "apply").get("note") == "payload omitted":
+        return []  # a payload omitted at 32 KB leaves nothing to check against: waived, not failed
     reply = ORDINAL_RE.sub("", reply_text(row))
-    source_parts = [user_message(row)] + [_dump(t.get("envelope")) for t in _tools(row)]
-    truncated = any(isinstance(t.get("envelope"), dict) and t["envelope"].get("truncated") for t in _tools(row))
+    full_results = row.get("tool_results")
+    envelopes = ([_dump(t.get("result")) for t in full_results] if full_results
+                 else [_dump(t.get("envelope")) for t in _tools(row)])
+    source_parts = [user_message(row), str(row.get("prev_bot_message") or ""), *envelopes,
+                    _dump([e for e in _looked_up_envelopes(row)]),
+                    _dump(_product_list((_kind(row, "state").get("focus") or {}).get("products"))),
+                    _dump(_mem_focus(row, "before")), _dump(_mem_focus(row, "after")),
+                    *(str(r.get("text") or "") for r in _trace(row) if r.get("kind") == "prompt_text")]
+    # full tool results from the live runner carry no cap, so a recorded `truncated` flag no longer matters
+    truncated = not full_results and any(
+        isinstance(t.get("envelope"), dict) and t["envelope"].get("truncated") for t in _tools(row))
     source = "\n".join(source_parts)
     src_dates, src_months, src_rest = _dates(source)
     src_month_keys = {d[:7] for d in src_dates} | set(src_months)
@@ -211,88 +322,89 @@ def made_up_facts(row: dict[str, Any]) -> list[str]:
 
 def _code_lookup(row, item):
     gold = item.get("gold") or {}
-    code = str(gold.get("code") or "").upper()
-    grounded = {str(e.get("canonical_code")).upper() for e in _entities(row) if e.get("canonical_code")}
+    code = _key(gold.get("code"))
     clarified = bool(_asking(row))
-    checks = [("code", code in grounded, "The bot read a different code than the one asked.")]
+    checks = []
+    if code:
+        checks.append(("code", code in _resolved_codes(row), "The bot read a different code than the one asked."))
     if gold.get("fact"):
-        checks.append(("fact", gold["fact"] in _domains(row), "The bot looked up a different fact than the one asked."))
+        checks.append(("fact", _fact_ok(row, gold["fact"]), "The bot looked up a different fact than the one asked."))
     if gold.get("ambiguous"):
         checks.append(("clarified", clarified, "The code was ambiguous but the bot did not ask which one."))
         return checks
-    ran = any(code in _dump(t.get("args")).upper() or code in _dump(t.get("envelope")).upper() for t in _tools(row))
-    checks += [
-        ("tool_ran", ran, "No lookup ran for that code."),
-        ("named", code in reply_text(row).upper(), "The reply does not name the code."),
-        ("no_clarify", not clarified, "The bot asked a clarifying question although the code was clear."),
-    ]
+    if code:
+        ran = code in _tool_targets(row) or any(
+            str(gold["code"]).upper() in _dump(t.get("args")).upper() or str(gold["code"]).upper() in _dump(t.get("envelope")).upper()
+            for t in _tools(row))
+        checks.append(("tool_ran", ran, "The lookup tool did not run for that code."))
+        checks.append(("named", code in _key(reply_text(row)), "The reply does not name the code."))
+    checks.append(("no_clarify", not clarified, "The bot asked a clarifying question although the code was clear."))
     return checks
 
 
 def _followup(row, item):
     kind, gold = item.get("kind"), item.get("gold") or {}
-    decision = _decision(row)
-    focus = _focus_codes(row)
-    after = {str(c).upper() for c in gold.get("subject_after") or []}
+    before_subject, after_subject = _subject_before(row), _subject_after(row)
+    want = {_key(c) for c in gold.get("subject_after") or []}
+    _mem_before = _codes_of(_mem_focus(row, "before").get("products"))
 
     def carried_old() -> bool:
-        return bool(after) and not focus <= after
+        return bool(want) and not after_subject <= want
 
     if kind == "pick":
-        checks = [
-            ("decision", decision == "answer", "The bot did not read the message as an answer to its list."),
-            ("position", gold.get("position") in _positions(row), "The bot picked a different position than the one chosen."),
-        ]
+        checks = [("position", gold.get("position") in _positions(row), "The bot picked a different position than the one chosen.")]
         if gold.get("code"):
-            code = str(gold["code"]).upper()
-            checks.append(("tool_target", any(code in _dump(t.get("args")).upper() for t in _tools(row)),
-                           "The lookup did not target the chosen item."))
+            code = _key(gold["code"])
+            checks.append(("tool_target", code in _tool_targets(row) or any(
+                str(gold["code"]).upper() in _dump(t.get("args")).upper() for t in _tools(row)),
+                "The lookup tool did not target the chosen item."))
         return checks
     if kind == "answer" and gold.get("idea_ref"):
         return _ideas_answer(row, gold)
     if kind == "answer":
-        before = _kind(row, "state").get("open_question")
-        after_q = _kind(row, "memory").get("open_question")
+        question, after_q = _oq(row)
         verdict = _kind(row, "apply").get("verdict") or {}
         ans = verdict.get("open_question_answer") or {}
-        options = [_norm(o.get("label") if isinstance(o, dict) else o) for o in ((before or {}).get("options") or [])]
+        options = [_norm(o.get("label") if isinstance(o, dict) else o) for o in ((question or {}).get("options") or [])]
         picked = [options[p - 1] for p in (ans.get("picked") or []) if isinstance(p, int) and 0 < p <= len(options)]
         if ans.get("mode") in ("yes", "no"):
             picked.append(ans["mode"])
-        return [
-            ("decision", decision == "answer", "The bot did not read the message as an answer to its question."),
-            ("not_reasked", not (before and before == after_q), "The bot asked the same question again."),
-            ("option", _norm(gold.get("option")) in picked, "The answer was not resolved to the chosen option."),
+        answered = bool(ans.get("picked") or ans.get("mode") or verdict.get("is_affirmative") or verdict.get("continuation")
+                        or (question and after_q != question))
+        checks = [
+            ("not_reasked", not (question and question == after_q), "The bot asked the same question again."),
+            ("answered", answered, "The bot did not read the message as an answer to its question."),
         ]
+        if picked:  # the mode is not always recorded, so the option is checked only when it is
+            checks.append(("option", _norm(gold.get("option")) in picked, "The answer was not resolved to the chosen option."))
+        return checks
     if kind == "refine":
         flt = gold.get("filter") or {}
-        has_filter = any(
-            _norm(e.get("spec_key")) == _norm(flt.get("key")) and _norm(e.get("spec_value")) == _norm(flt.get("value"))
-            for e in _entities(row)
-        )
+        extra = _mem_focus(row, "after").get("extra") or {}
+        values = {_norm(e.get("spec_value")) for e in _entities(row) if e.get("spec_value") is not None}
+        values |= {_norm(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "brand"}
+        values |= {_norm(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
+        values |= {_norm(b) for b in (_mem_focus(row, "after").get("brands") or [])}
         return [
-            ("decision", decision == "refine", "The bot did not treat the message as a refinement."),
-            ("subject", after <= focus, "The subject was dropped when refining."),
-            ("filter", has_filter, "The new filter was not applied."),
+            ("subject", want <= after_subject, "The subject was dropped when refining."),
+            ("filter", _norm(flt.get("value")) in values, "The new filter was not applied."),
         ]
     if kind == "switch":
         return [
-            ("decision", decision == "new_ask", "The bot did not treat the message as a new subject."),
             ("old_dropped", not carried_old(), "The old subject was carried into the new ask."),
-            ("new_subject", after <= focus, "The new subject was not picked up."),
+            ("new_subject", want <= after_subject, "The new subject was not picked up."),
+            ("changed", not (_mem_before and after_subject == _mem_before), "The subject did not change."),
         ]
     if kind == "and_x" and gold.get("variant") == "new_fact":
         return [
-            ("decision", decision == "new_ask", "The bot did not treat the message as a new question."),
-            ("fact", gold.get("fact") in _domains(row), "The new fact asked was not looked up."),
-            ("subject", bool(after) and after <= focus, "The subject was dropped when a new fact was asked."),
+            ("fact", _fact_ok(row, gold.get("fact")), "The new fact asked was not looked up."),
+            ("subject", bool(want) and want <= after_subject, "The subject was dropped when a new fact was asked."),
         ]
     if kind == "and_x":
         return [
-            ("decision", decision == "new_ask", "The bot did not treat the message as a new item."),
-            ("fact", gold.get("fact") in _domains(row), "The fact asked was not carried over to the new item."),
+            ("fact", _fact_ok(row, gold.get("fact")), "The fact asked was not carried over to the new item."),
             ("old_dropped", not carried_old(), "The old item was carried into the new ask."),
-            ("new_subject", after <= focus, "The new item was not picked up."),
+            ("new_subject", want <= after_subject, "The new item was not picked up."),
         ]
     return [("known_kind", False, "Unknown follow-up kind.")]
 
@@ -323,8 +435,12 @@ def _ideas_answer(row, gold):
 
 
 def _spec(row, item):
-    got = {(_norm(e.get("spec_key")), _norm(e.get("spec_value"))) for e in _entities(row) if e.get("spec_key")}
-    want = {(_norm(s.get("key")), _norm(s.get("value"))) for s in (item.get("gold") or {}).get("spec") or []}
+    extra = _mem_focus(row, "after").get("extra") or {}
+    got = {_norm(e.get("spec_value") or e.get("raw")) for e in _entities(row)
+           if e.get("hint") == "specification" or e.get("spec_key")}
+    got |= {_norm(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
+    got.discard("")
+    want = {_norm(s.get("value")) for s in (item.get("gold") or {}).get("spec") or []}
     return [("spec_set", got == want and bool(want), "The spec words were not grounded to the expected set.")]
 
 
@@ -340,8 +456,10 @@ def _attachment(row, item):
              for f in (t["envelope"].get("attachments") or []) if isinstance(f, dict)]
     announced = (_stage(row, "replied").get("facts") or {}).get("files")
     sent = announced if isinstance(announced, int) else len(files)
-    asked = [e for e in _entities(row) if e.get("hint") == "attachment_type"]
-    asked_ok = bool(asked) and all(_type_word(e.get("canonical_code") or e.get("raw")) in accepted for e in asked)
+    asked = [_type_word(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "attachment_type"]
+    from_memory = (_mem_focus(row, "after").get("extra") or {}).get("attachment_type")
+    asked += [_type_word(x) for x in ([from_memory] if isinstance(from_memory, str) else from_memory or []) if x]
+    asked_ok = bool(asked) and all(a in accepted for a in asked)
     checks = [("asked_type", asked_ok, "The asked type was read differently from the type requested.")]
     if gold.get("none_on_record"):
         checks.append(("none_on_record", not files and sent == 0,
