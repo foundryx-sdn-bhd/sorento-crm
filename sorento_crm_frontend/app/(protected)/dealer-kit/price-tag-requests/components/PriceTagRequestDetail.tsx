@@ -1096,7 +1096,6 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
                                 placeholder="No covering promotion"
                                 emptyMessage="No promotion covers this line."
                                 disabled={savingLinePrice === line.id}
-                                error={manualPriceError[line.id]}
                               />
                             ) : (
                               <p className="text-sm font-medium">
@@ -1144,6 +1143,7 @@ export default function PriceTagRequestDetail({ requestId }: Props) {
                                 placeholder="Type a price"
                                 aria-label={`Selling price for ${line.code || line.name}`}
                                 disabled={savingLinePrice === line.id}
+                                error={manualPriceError[line.id]}
                               />
                             ) : (
                               <p className="text-sm font-medium whitespace-nowrap">

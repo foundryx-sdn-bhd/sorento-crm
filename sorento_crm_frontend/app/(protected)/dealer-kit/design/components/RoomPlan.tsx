@@ -595,8 +595,7 @@ export function RoomPlan({
                     aria-label={`Length of wall ${index + 1} in millimetres`}
                     data-dk-wall-input={index}
                     value={editingWall.value}
-                    error={editingWall.error}
-                    errorClassName="mt-2 whitespace-normal text-center text-[110px] leading-tight"
+                    aria-invalid={editingWall.error ? true : undefined}
                     onChange={(event) =>
                       setEditingWall({ index, value: event.target.value })
                     }
@@ -611,6 +610,14 @@ export function RoomPlan({
                     style={{ fontSize: 170, height: boxHeight, width: boxWidth }}
                     className="w-full rounded border-2 border-primary bg-background px-2 text-center text-foreground"
                   />
+                  {editingWall.error ? (
+                    <p
+                      className="text-center leading-tight text-destructive"
+                      style={{ fontSize: 110, marginTop: 20 }}
+                    >
+                      {editingWall.error}
+                    </p>
+                  ) : null}
                 </foreignObject>
               );
             }
