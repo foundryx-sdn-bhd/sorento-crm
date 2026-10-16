@@ -287,3 +287,18 @@ describe('SalesOrderDetail - a blank quantity is pending, never 0', () => {
     expect(cellTexts(rowOf('SRTBASIN16'))).toEqual(rowBefore);
   });
 });
+
+describe('SalesOrderDetail - a negative quantity is pending too (round 2, S-F)', () => {
+  it('shows - in the line Outstanding cell and in the totals, like a blank', () => {
+    open();
+    const qty = screen.getByDisplayValue('16');
+    const tr = rowOf('SRTBASIN16');
+    fireEvent.change(qty, { target: { value: '-5' } });
+    const row = cellTexts(tr);
+    expect(row[6]).toBe('-');
+    const foot = footerTexts();
+    expect(foot).not.toContain('25');
+    expect(foot).not.toContain('-5');
+    expect(foot.filter((t) => t === '-').length).toBeGreaterThanOrEqual(2);
+  });
+});

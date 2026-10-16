@@ -146,4 +146,14 @@ describe('LiveNumberInput', () => {
     await userEvent.click(screen.getByText('elsewhere'));
     expect(screen.getByText(/Enter a/)).toBeInTheDocument();
   });
+
+  it('S-D: a null-valued non-optional box focused then blurred without typing shows no sentence', async () => {
+    const spy = vi.fn();
+    render(<Harness initial={null} rules={{ min: 4 }} spy={spy} />);
+    const input = screen.getByLabelText('Qty') as HTMLInputElement;
+    await userEvent.click(input);
+    await userEvent.click(screen.getByText('elsewhere'));
+    expect(input).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText('Enter a number of at least 4.')).toBeNull();
+  });
 });

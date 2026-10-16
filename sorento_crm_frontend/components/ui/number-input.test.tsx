@@ -196,3 +196,47 @@ describe('NumberInput round 1b', () => {
     expect(input.value).toBe('6');
   });
 });
+
+describe('NumberInput string mode bad input (round 2, S-B)', () => {
+  function StringHarness({ spy }: { spy: (v: string) => void }) {
+    const [v, setV] = useState<string>('5');
+    return (
+      <NumberInput
+        aria-label="Qty"
+        value={v}
+        onChange={(e) => {
+          spy(e.target.value);
+          setV(e.target.value);
+        }}
+      />
+    );
+  }
+
+  it('reports the string NaN to the parent when the browser flags bad input, and keeps the typed text', () => {
+    const spy = vi.fn();
+    render(<StringHarness spy={spy} />);
+    const input = screen.getByLabelText('Qty') as HTMLInputElement;
+    Object.defineProperty(input, 'validity', { value: { badInput: true }, configurable: true });
+    fireEvent.change(input, { target: { value: '' } });
+    expect(spy).toHaveBeenLastCalledWith('NaN');
+  });
+
+  it("given the value 'NaN' it never writes the literal into the box (which would wipe the typed text)", () => {
+    const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!;
+    const writes: string[] = [];
+    Object.defineProperty(HTMLInputElement.prototype, 'value', {
+      configurable: true,
+      get: desc.get,
+      set(v) {
+        writes.push(String(v));
+        desc.set!.call(this, v);
+      },
+    });
+    try {
+      render(<NumberInput aria-label="Qty" value="NaN" onChange={() => {}} />);
+    } finally {
+      Object.defineProperty(HTMLInputElement.prototype, 'value', desc);
+    }
+    expect(writes).not.toContain('NaN');
+  });
+});

@@ -320,7 +320,26 @@ describe('ConvertToPackingListDialog Quantity to place (B4)', () => {
     fireEvent.click(screen.getByRole('button', { name: /convert/i }));
     expect(onConvert).not.toHaveBeenCalled();
     expect(box).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByText('Enter a number above 0 and up to 40.')).toBeInTheDocument();
+    expect(screen.getByText('Enter a number between 0 and 40.')).toBeInTheDocument();
+  });
+
+  it('X1: 0 is valid, leaves the line for the next container and sends {lineId: 0}', () => {
+    const { onConvert } = renderDialog();
+    const box = screen.getByLabelText('Quantity to place for CWCY604') as HTMLInputElement;
+    fireEvent.change(box, { target: { value: '0' } });
+    expect(box).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+    expect(onConvert).toHaveBeenCalledTimes(1);
+    expect(onConvert.mock.calls[0][0].lineQuantities['line-a']).toBe(0);
+  });
+
+  it('X1: over the remaining quantity is refused with the between sentence', () => {
+    const { onConvert } = renderDialog();
+    const box = screen.getByLabelText('Quantity to place for CWCY604') as HTMLInputElement;
+    fireEvent.change(box, { target: { value: '41' } });
+    fireEvent.click(screen.getByRole('button', { name: /convert/i }));
+    expect(onConvert).not.toHaveBeenCalled();
+    expect(screen.getByText('Enter a number between 0 and 40.')).toBeInTheDocument();
   });
 });
 

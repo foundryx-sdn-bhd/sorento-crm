@@ -969,3 +969,44 @@ describe('PurchaseOrderDetail - AutoCount Cancel PO on the lines', () => {
     expect(within(row).queryByText('220')).toBeNull();
   });
 });
+
+describe('PurchaseOrderDetail - a blank or invalid quantity is pending, never 0 (round 2, S-E)', () => {
+  const cells = (tr: HTMLElement) =>
+    Array.from(tr.querySelectorAll('td')).map((td) => (td.textContent ?? '').trim());
+  const footer = () =>
+    Array.from((document.querySelector('tfoot') as HTMLElement).querySelectorAll('td')).map((td) =>
+      (td.textContent ?? '').trim(),
+    );
+
+  function openEditLines() {
+    usePurchaseOrder.mockReturnValue({ data: po(), isLoading: false, isError: false });
+    renderDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    openTab('Lines');
+    return screen.getByLabelText('Qty ordered on CW-BASIN-450') as HTMLInputElement;
+  }
+
+  it.each([
+    ['blank', ''],
+    ['negative', '-5'],
+  ])('a %s qty shows - in Outstanding and in the totals that include it', (_name, typed) => {
+    const box = openEditLines();
+    const tr = box.closest('tr') as HTMLElement;
+    const dashesBefore = footer().filter((t) => t === '-').length;
+    const rowDashesBefore = cells(tr).filter((t) => t === '-').length;
+    fireEvent.change(box, { target: { value: typed } });
+    // Outstanding was 320 and must not become 0.
+    expect(cells(tr).filter((t) => t === '-').length).toBeGreaterThan(rowDashesBefore);
+    expect(cells(tr)).not.toContain('0');
+    expect(footer().filter((t) => t === '-').length).toBeGreaterThanOrEqual(dashesBefore + 2);
+  });
+
+  it('Save is refused with the sentence under the qty box', () => {
+    const box = openEditLines();
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save purchase order' }));
+    expect(updatePurchaseOrderMutateAsync).not.toHaveBeenCalled();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(/^Enter a number above 0\.$/)).toBeInTheDocument();
+  });
+});

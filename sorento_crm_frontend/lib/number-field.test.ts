@@ -103,3 +103,10 @@ describe('numberFieldError round 1b', () => {
   });
 });
 
+
+describe('numberFieldError round 2 (S-B)', () => {
+  it("the string 'NaN' (a screen storing bad input) is invalid even when optional", () => {
+    expect(numberFieldError('NaN', { optional: true })).toBe('Enter a number, or leave it blank.');
+    expect(numberFieldError('NaN', { min: 0 })).toBe('Enter a number of at least 0.');
+  });
+});
