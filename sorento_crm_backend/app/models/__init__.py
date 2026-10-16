@@ -107,6 +107,7 @@ from app.models.chat_facts import (
     ChatLabelAudit,
 )
 from app.models.chatbot_file_link import ChatbotFileLink
+from app.models.chatbot_example import ChatbotExample
 from app.models.conversation_frame import ConversationFrame
 from app.models.chatbot_policy import ChatbotDomain, ChatbotDomainWord, ChatbotEntityKind, ChatbotStatusWord
 from app.models.lookup import LookupSet, LookupOption, LookupOptionKeyword, LookupBinding
@@ -351,6 +352,7 @@ __all__ = [
     "ChatThreadSyncState",
     "ConversationFrame",
     "ChatbotDomain",
+    "ChatbotExample",
     "ChatbotEntityKind",
     "ChatbotStatusWord",
     "ChatbotDomainWord",

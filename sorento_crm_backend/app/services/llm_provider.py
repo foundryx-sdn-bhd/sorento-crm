@@ -492,13 +492,21 @@ class OpenAIProvider:
             cached_tokens=cached_tokens,
         )
 
-    def embed(self, text: str) -> list[float]:
+    def embed(
+        self, text: str, *, timeout: Optional[float] = None, max_retries: Optional[int] = None
+    ) -> list[float]:
         from app.services import llm_cassette
 
         model = "text-embedding-3-small"
+        # Per-call SDK limits, for a caller that sits on a customer's turn (PROMPT-DIET).
+        client_args = {
+            key: value
+            for key, value in (("timeout", timeout), ("max_retries", max_retries))
+            if value is not None
+        }
 
         def live() -> list[float]:
-            resp = self._client().embeddings.create(model=model, input=text)
+            resp = self._client(**client_args).embeddings.create(model=model, input=text)
             return list(resp.data[0].embedding)
 
         return llm_cassette.through(
