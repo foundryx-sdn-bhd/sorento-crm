@@ -1,6 +1,6 @@
 # PLAN: EVAL-BENCH CP0, the bench check against the owner's targets (16 Oct)
 
-Status: Build, CP0 PROVISIONAL (2 of 3 runs, 17 Oct); run 3 waits for the owner's OK (spend $9.41 of $12). Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
+Status: Review, CP0 baseline done on 3 runs (17 Oct, spend $11.96 of $12); review page with crew, then the owner. Parent: `PLAN-eval-bench-16oct.md`. No real customer data in this file; real items,
 gold and the review page live under `crew/state/eval/` (crew-only).
 
 ## The owner's bar (crew relay, 16 Oct)
@@ -247,4 +247,8 @@ Found by the run-1 sanity check and CHAT-STATE's TRAIN root cause; every fix red
   tool was asked about (13 of 14 flips verified by hand); held-out refine has only 10 items.
 - Prod finding: since #1527 (9 Oct) the parser context layer L2 always overflows its cap (a ~630-token catalogue block
   kept whole), so `Current subject` is cut on 169 of 171 recorded prod turns since 10 Oct.
+- Crew ruling 17 Oct: grade outcomes, not understanding (spec must show products of the right type, refine must apply
+  the filter and change the answer, only product-vs-customer clarify menus are allowed, honest none needs a searched
+  product); DO-field leaks checked for unlinked askers (6 per run, the known #1648 exposure); new follow-up kind
+  "hand over to a person" for yes replies to an escalation offer; empty turns (7 of 1,170) are left out.
 
