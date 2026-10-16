@@ -499,3 +499,62 @@ def test_a_plain_second_tier_at_the_same_threshold_is_reported_not_guessed():
     parsed = parse_workbook(buf.getvalue(), year=2026)
     assert parsed.rows[0].status == "not_representable"
     assert "repeats" in parsed.rows[0].reason
+
+
+# --------------------------------------------------------------------------------------- #
+# security review (gate-fail round): the name match cannot be made to eat the server
+# --------------------------------------------------------------------------------------- #
+
+
+def _one_row_workbook(rows):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "ACCOUNT", "Q1"
+    for i, (name, account) in enumerate(rows, start=2):
+        ws.cell(row=i, column=1, value=name)
+        ws.cell(row=i, column=2, value=account)
+        ws.cell(row=i, column=3, value="100,000 - 1%")
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_an_overlong_name_fails_its_row_before_any_match():
+    """B1: a dealer name of unbounded length never reaches the matcher (difflib indexes it)."""
+    from app.services.sales import dealer_target_import as imp
+
+    parsed = imp.parse_workbook(_one_row_workbook([("AB" * 5000, "A/C I")]), year=2026)
+    assert parsed.rows[0].status == "not_representable"
+    assert "characters" in parsed.rows[0].reason
+    assert parsed.schemes == []
+
+
+def test_the_fuzzy_match_runs_once_per_name_and_is_capped(api, monkeypatch):
+    """B2: the same unmatched name on many rows is looked up once; past the cap a row still
+    waits on a pick but gets no suggestions."""
+    import difflib
+
+    from app.services.sales import dealer_target_import as imp
+
+    client, db, company_id = api
+    calls = []
+    real = difflib.get_close_matches
+    monkeypatch.setattr(difflib, "get_close_matches", lambda *a, **k: calls.append(a[0]) or real(*a, **k))
+    monkeypatch.setattr(imp, "MAX_FUZZY_LOOKUPS", 2)
+    rows = [("ZZT NOWHERE ONE", "A/C I")] * 20 + [("ZZT NOWHERE TWO", "A/C I"), ("ZZT NOWHERE THREE", "A/C I")]
+    body = _upload(client, _one_row_workbook(rows), dry_run=True, db=db).json()
+    assert body["summary"]["needs_pick"] == 22
+    assert len(calls) == 2
+    last = body["rows"][-1]
+    assert last["status"] == "needs_pick" and last["suggestions"] == []
+    assert "CUSTOMER CODE" in last["reason"]
+
+
+def test_deeply_nested_picks_are_refused_with_422(api):
+    client, db, company_id = api
+    files = {"file": ("t.xlsx", _one_row_workbook([("X", "A/C I")]),
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    res = client.post(IMPORT, params={"dry_run": "true", "year": 2026}, files=files, data={"picks": "[" * 100000})
+    assert res.status_code == 422

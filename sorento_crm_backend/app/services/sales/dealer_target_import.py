@@ -441,6 +441,8 @@ MAX_SHEET_ROWS = 5_000
 MAX_SHEET_COLS = 300
 MAX_MERGE_AREA = 2_000
 MAX_CELL_TEXT = 500
+#: A dealer name, code or account label; the real ones are under 100 characters.
+MAX_ID_TEXT = 200
 #: The workbook's XML once unzipped; a 10 MB upload that inflates past this is refused.
 MAX_UNZIPPED_BYTES = 150 * 1024 * 1024
 
@@ -708,6 +710,9 @@ def _parse_sheet(grid: _Grid, sheet: str, header: Tuple[int, int], year: int, no
     def cell(r: int, col: Optional[_Column]) -> Optional[str]:
         return (_text(grid.value(r, col.index)) or None) if col else None
 
+    def too_long(*texts: Optional[str]) -> bool:
+        return any(t and len(t) > MAX_ID_TEXT for t in texts)
+
     results: Dict[int, RowResult] = {}
     for r in grid.rows:
         if r < first:
@@ -724,6 +729,17 @@ def _parse_sheet(grid: _Grid, sheet: str, header: Tuple[int, int], year: int, no
             name_in_file=cell(r, by_role["name"]),
             account_in_file=cell(r, by_role["account"]),
         )
+        if too_long(code, res.name_in_file, res.account_in_file):
+            # Security review B1: an unbounded name never reaches the matcher (difflib indexes
+            # it) or the report; the row fails and only a cut of it is echoed back.
+            res.code = (code or "")[:MAX_ID_TEXT] or None
+            res.name_in_file = (res.name_in_file or "")[:MAX_ID_TEXT] or None
+            res.account_in_file = (res.account_in_file or "")[:MAX_ID_TEXT] or None
+            res.key = _row_key(sheet, r, None)
+            res.status = "not_representable"
+            res.reason = f"a name, code or account of more than {MAX_ID_TEXT} characters"
+            results[r] = res
+            continue
         res.key = _row_key(sheet, r, code)
         if not code and not res.name_in_file:
             res.status, res.reason = "not_representable", "no dealer name or customer code on this row"
@@ -1100,6 +1116,9 @@ def _period_tiers(ctx: _Ctx, cols, period_start, kind) -> Tuple[List[SchemeTier]
 _LEGAL_FORM = {"SDN", "BHD", "BERHAD", "SB", "PLT", "LLP"}
 _ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5}
 _MAX_SUGGESTIONS = 3
+#: Distinct names one upload may send to the near-match (security review B2): each one scans
+#: every customer of the company. Past it a row still waits on a pick, with no suggestions.
+MAX_FUZZY_LOOKUPS = 300
 #: A pick names a customer per row; more than the bounded sheets can hold is not a real form.
 MAX_PICKS = MAX_SHEETS * MAX_SHEET_ROWS
 
@@ -1169,6 +1188,8 @@ class _CustomerIndex:
 
         self.by_family: Dict[str, List[_Candidate]] = {}
         self.all: List[_Candidate] = []
+        self._cache: Dict[Tuple[str, Optional[str]], Tuple[Optional[_Candidate], List[_Candidate], bool]] = {}
+        self.fuzzy_lookups = 0
         q = db.query(Customer.id, Customer.customer_code, Customer.customer_name, Customer.account_level).filter(
             Customer.is_active.is_(True)
         )
@@ -1176,9 +1197,20 @@ class _CustomerIndex:
             cand = _Candidate(str(cid), code, name, dealer_key(name), customer_account_keys(name, level))
             self.all.append(cand)
             self.by_family.setdefault(cand.family, []).append(cand)
+        self.families = list(self.by_family)
 
-    def match(self, name: Optional[str], account: Optional[str]) -> Tuple[Optional[_Candidate], List[_Candidate]]:
-        """(the one exact match, or None; up to 3 suggestions when there is none)."""
+    def match(
+        self, name: Optional[str], account: Optional[str]
+    ) -> Tuple[Optional[_Candidate], List[_Candidate], bool]:
+        """(the one exact match or None, up to 3 suggestions when there is none, whether the
+        near-match was skipped for being past `MAX_FUZZY_LOOKUPS`). Cached per name and account,
+        so a dealer's many rows cost one lookup."""
+        key = (dealer_key(name), account_key(account) or (name or "").upper())
+        if key not in self._cache:
+            self._cache[key] = self._match(name, account)
+        return self._cache[key]
+
+    def _match(self, name: Optional[str], account: Optional[str]):
         import difflib
 
         family = dealer_key(name)
@@ -1193,17 +1225,22 @@ class _CustomerIndex:
         else:
             exact = same if len(same) == 1 else [c for c in same if not c.accounts]
         if len(exact) == 1:
-            return exact[0], []
+            return exact[0], [], False
         if len(exact) > 1:
-            return None, exact[:_MAX_SUGGESTIONS]
-        near = difflib.get_close_matches(family, list(self.by_family), n=10, cutoff=0.6) if family else []
+            return None, exact[:_MAX_SUGGESTIONS], False
+        if not family:
+            return None, [], False
+        if self.fuzzy_lookups >= MAX_FUZZY_LOOKUPS:
+            return None, [], True
+        self.fuzzy_lookups += 1
+        near = difflib.get_close_matches(family, self.families, n=10, cutoff=0.6)
         ranked = []
         for fam in near:
             score = difflib.SequenceMatcher(None, family, fam).ratio()
             for c in self.by_family[fam]:
                 ranked.append((-(score + (0.1 if acc and acc in c.accounts else 0)), c.name, c))
         ranked.sort(key=lambda x: (x[0], x[1]))
-        return None, [c for _, _, c in ranked[:_MAX_SUGGESTIONS]]
+        return None, [c for _, _, c in ranked[:_MAX_SUGGESTIONS]], False
 
 
 def _same_name(a: Optional[str], b: Optional[str]) -> bool:
@@ -1261,7 +1298,11 @@ def run(
             valid_ids.append(str(uuid.UUID(v)))
         except ValueError:
             continue
-    by_id = {c.id: c for c in db.query(Customer).filter(Customer.id.in_(valid_ids))} if valid_ids else {}
+    by_id = (
+        {c.id: c for c in db.query(Customer).filter(Customer.id.in_(valid_ids), Customer.is_active.is_(True))}
+        if valid_ids
+        else {}
+    )
     index = _CustomerIndex(db) if any(r.status == "mapped" and not r.code for r in parsed.rows) else None
 
     #: row key -> the CRM customer (code, picked or name-matched)
@@ -1297,7 +1338,7 @@ def run(
                     f'name differs: the file says "{res.name_in_file}", the CRM "{chosen.customer_name}"'
                 )
             continue
-        exact, suggestions = index.match(res.name_in_file, res.account_in_file)
+        exact, suggestions, capped = index.match(res.name_in_file, res.account_in_file)
         if exact is None:
             res.status = "needs_pick"
             res.reason = (
@@ -1306,6 +1347,8 @@ def run(
                 and len(suggestions) > 1
                 else "no customer has this name and account"
             )
+            if capped:
+                res.reason += "; too many unmatched names for suggestions, add a CUSTOMER CODE column"
             res.suggestions = [{"customer_id": s.id, "code": s.code, "name": s.name} for s in suggestions]
             continue
         candidates[res.key] = exact

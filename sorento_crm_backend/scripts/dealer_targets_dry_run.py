@@ -31,6 +31,7 @@ _CATEGORIES = (
     ("not read: no DEALER NAME", "SHEET_NOT_READ"),
     ("no dealer name or customer code", "NO_NAME_OR_CODE"),
     ("no customer has this name", "NO_NAME_MATCH"),
+    ("more than 200 characters", "CELL_TOO_LONG"),
     ("more than one customer has this name", "NAME_MATCHES_SEVERAL"),
     ("picked customer", "PICK_NOT_A_CUSTOMER"),
     ("skipped in the preview", "SKIPPED"),
@@ -121,12 +122,13 @@ def main(argv=None) -> int:
         f"updated {summary['targets_updated']}"
     )
     for note in result["notes"]:
-        print(f"note: {note}")
+        # A sheet's title could name a dealer: masked like any other file text.
+        print(f"note: {_shape(note) if args.masked else note}")
     for row in result["rows"]:
         if args.masked:
             if row["status"] == "mapped":
                 continue
-            line = f"{row['sheet']} row {row['row']}: {_mask(row['reason'])}"
+            line = f"{_shape(row['sheet'], digits=False)} row {row['row']}: {_mask(row['reason'])}"
             if row["status"] == "needs_pick":
                 line += f", {len(row['suggestions'])} suggestion(s)"
             print(line)

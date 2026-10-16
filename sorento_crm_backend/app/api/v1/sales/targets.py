@@ -178,11 +178,11 @@ def import_dealer_targets(
             raise AppException(status_code=422, message="That file is too large.", code="FILE_TOO_LARGE")
         chosen = None
         if picks:
-            if len(picks) > MAX_PICKS_BYTES:
+            if len(picks.encode("utf-8")) > MAX_PICKS_BYTES:
                 raise AppException(status_code=422, message="Too many picks.", code="INVALID_PICKS")
             try:
                 chosen = json.loads(picks)
-            except ValueError as exc:
+            except (ValueError, RecursionError) as exc:
                 raise AppException(status_code=422, message="Picks are not valid JSON.", code="INVALID_PICKS") from exc
         year = year or target_service._today().year
         if dry_run:
