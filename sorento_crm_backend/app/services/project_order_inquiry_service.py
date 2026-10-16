@@ -13503,7 +13503,11 @@ def register_order_inquiry_post_commit_dispatch() -> None:
     def _discard_pending_changed_with_links(session, previous_transaction):  # noqa: ANN001
         session.info.pop(_CHANGED_WITH_LINKS_PENDING_KEY, None)
         # OI-LINE-SPLIT: a rolled-back Confirm moved nothing; its moved-split record goes too.
-        session.info.pop(SPLIT_MOVED_KEY, None)
+        # Only when the OUTERMOST transaction rolls back (the C2 rule above): a tolerated
+        # savepoint failure after the move (the best-effort `_hand_to_purchasing` one) must
+        # not wipe a move whose rows still stand.
+        if previous_transaction.parent is None and not previous_transaction.nested:
+            session.info.pop(SPLIT_MOVED_KEY, None)
         # A write that never landed has nothing to tell purchasing about either - but ONLY
         # that write. This fires on a nested rollback too, and a batch apply gives each
         # order its own savepoint, so popping the whole queue let a failing order discard a
