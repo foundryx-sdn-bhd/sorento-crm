@@ -3827,26 +3827,6 @@ def _oi_demand_rows(
             elif not held_row.redirected_to_pool:
                 cancellable_by_line[line_key] += _dec(held_row.qty)
 
-    # OI-LINE-SPLIT (UAC E1): what the Confirm just MOVED from a cut line onto another line
-    # of the order (`_apply_split_links`) is not a cancel - it is told as its split. Only
-    # what actually moved, never every split sitting elsewhere: a split whose target was
-    # not in the Confirm, did not grow, or that no longer acts moved nothing.
-    #
-    # Needed only where the moved origin did NOT settle in place (a settled line is skipped
-    # above): `_apply_split_links` admits a lone PLACED row with no link, and
-    # `_settle_row_in_place` declines exactly that row (and one whose links were all
-    # received), so the line reaches this netting with its from/to still spanning the moved
-    # qty. `cancellable_by_line` alone does not cap it there: from 100 -> 40 with 50 moved
-    # leaves 40 still held after the netting's own CANCEL 10, and the full drop of 60 would
-    # cancel those 40 too.
-    from app.services.project_order_inquiry_service import explained_by_splits
-
-    linked_out_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
-    for line_id in qty_down_line_ids:
-        moved_out, _moved_in = explained_by_splits(db, line_id)
-        if moved_out > _ZERO:
-            linked_out_by_line[line_id] = moved_out
-
     out: List[dict] = []
     counts: Dict[str, int] = {}
     for r in live_rows:
@@ -3909,10 +3889,11 @@ def _oi_demand_rows(
         elif r.kind == "qty_down":
             from_qty = _dec((r.from_json or {}).get("qty"))
             to_qty = _dec((r.to_json or {}).get("qty"))
-            drop = min(
-                from_qty - to_qty - linked_out_by_line[str(r.project_line_id)],
-                cancellable_by_line[str(r.project_line_id)],
-            )
+            # OI-LINE-SPLIT: a line whose split moved qty to another line never reaches
+            # here - its one live row settles in place (`_split_row` re-reads a placed
+            # row with no link as raised, and a received-link redirect joins the settled
+            # lines too), so nothing it moved is netted as a cancel.
+            drop = min(from_qty - to_qty, cancellable_by_line[str(r.project_line_id)])
             if drop <= _ZERO:
                 continue
             out.append(
