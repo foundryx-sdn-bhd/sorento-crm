@@ -558,3 +558,145 @@ def test_deeply_nested_picks_are_refused_with_422(api):
                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
     res = client.post(IMPORT, params={"dry_run": "true", "year": 2026}, files=files, data={"picks": "[" * 100000})
     assert res.status_code == 422
+
+
+# --------------------------------------------------------------------------------------- #
+# code review (gate-fail round)
+# --------------------------------------------------------------------------------------- #
+
+
+def _wb(fill):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    fill(wb.active)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_a_scheme_whose_pay_to_row_is_skipped_is_not_created(api):
+    """Review B1: DELTA A/C III pays A/C I; skipping A/C I fails A/C III, no target pays it."""
+    client, db, company_id = api
+    rl.seed(db, company_id, _uid, _code)
+    data, s_rows, _ = rl.build()
+    picks = {f"{S}!{s_rows['DELTA:A/C I']}": "skip"}
+    body = _upload(client, data, dry_run=True, db=db, picks=picks).json()
+    d3 = _by(body, S, s_rows["DELTA:A/C III"])
+    assert d3["status"] == "not_representable"
+    assert d3["reason"] == f"shares a target with row {s_rows['DELTA:A/C I']}, which is skipped"
+    assert "!" not in d3["reason"]
+
+
+def test_a_text_only_first_data_row_is_never_read_as_a_header():
+    """Review S1: "PTS TRADING" with tier text under the header is data, not a sub-header."""
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    def fill(ws):
+        ws["A1"], ws["B1"] = "DEALER NAME", "Q1"
+        ws["A2"], ws["B2"] = "PTS TRADING", "300,000 - 2%"
+        ws["A3"], ws["B3"] = "MAY HARDWARE", "200,000 - 1%"
+
+    parsed = parse_workbook(_wb(fill), year=2026)
+    assert [(r.row, r.name_in_file, r.status) for r in parsed.rows] == [
+        (2, "PTS TRADING", "mapped"), (3, "MAY HARDWARE", "mapped"),
+    ]
+
+
+def test_one_cell_paying_a_counted_and_an_uncounted_account_fails():
+    """Review S2: the paired-column path already refuses it; the one-cell path does too."""
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "ACCOUNT", "Q1"
+        ws["A2"], ws["B2"], ws["C2"] = "X", "A/C I", "300,000 A/C I 2% / A/C III 3%"
+        ws["A3"], ws["B3"], ws["C3"] = "X", "A/C III", "100,000 - 1%"
+
+    parsed = parse_workbook(_wb(fill), year=2026)
+    row2 = next(r for r in parsed.rows if r.row == 2)
+    assert row2.status == "not_representable"
+    assert "both" in row2.reason
+
+
+def test_a_rate_above_twenty_percent_is_flagged_and_a_percent_is_no_threshold():
+    """Review S3: 0.5 reads as 50% under the fraction rule; the row says so. A "2%" typed in a
+    Tier threshold column is not a threshold of RM 2."""
+    from app.services.sales.dealer_target_import import parse_workbook
+
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "ACCOUNT", "Q1"
+        ws.merge_cells("C1:D1")
+        ws["C2"], ws["D2"] = "Tier 1", "Tier 1 Incentive"
+        ws["A3"], ws["B3"], ws["C3"], ws["D3"] = "X", "A/C I", 100000, 0.5
+        ws["A4"], ws["B4"], ws["C4"], ws["D4"] = "Y", "A/C I", "2%", 0.02
+
+    parsed = parse_workbook(_wb(fill), year=2026)
+    x, y = parsed.rows
+    assert x.status == "mapped"
+    assert any("50%" in w for w in x.warnings)
+    assert y.status == "not_representable"
+    assert "threshold" in y.reason
+
+
+def test_two_unlabelled_rates_in_one_incentive_cell_fail():
+    from app.services.sales.dealer_target_import import CellError, parse_rate_cell
+
+    import pytest
+
+    with pytest.raises(CellError):
+        parse_rate_cell("2% / 3%")
+
+
+def test_a_typo_in_the_account_cell_says_so(api):
+    client, db, company_id = api
+    rl.seed(db, company_id, _uid, _code)
+    body = _upload(client, _one_row_workbook([("ECHO HOME", "A/C 1")]), dry_run=True, db=db).json()
+    row = body["rows"][0]
+    assert row["status"] == "needs_pick"
+    assert "A/C 1" in row["reason"]
+
+
+def test_two_rows_of_one_file_with_the_same_accounts_and_dates_fail_the_second(api):
+    client, db, company_id = api
+    rl.seed(db, company_id, _uid, _code)
+    rows = [("ECHO HOME", "A/C I"), ("ECHO HOME", "A/C I")]
+
+    def fill(ws):
+        ws["A1"], ws["B1"], ws["C1"] = "DEALER NAME", "ACCOUNT", "Q1"
+        for i, (name, account) in enumerate(rows, start=2):
+            ws.cell(row=i, column=1, value=name)
+            ws.cell(row=i, column=2, value=account)
+            ws.cell(row=i, column=3, value=f"{i}00,000 - 1%")
+        # Two dealers' blocks: a blank NO-less gap keeps them apart as separate rows.
+
+    body = _upload(client, _wb(fill), dry_run=True, db=db).json()
+    statuses = [r["status"] for r in body["rows"]]
+    assert statuses.count("mapped") == 1
+    second = body["rows"][1]
+    assert second["status"] == "not_representable"
+    assert "row 2" in second["reason"]
+
+
+def test_a_refused_scheme_rolls_back_its_dealer_s_other_schemes(api, monkeypatch):
+    """Review S4: no partial dealer on apply. ALPHA's yearly target is refused by the target
+    service; its quarterly target must not be created either."""
+    from app.services.error_handler import AppException
+    from app.services.sales import target_service
+
+    client, db, company_id = api
+    rl.seed(db, company_id, _uid, _code)
+    real = target_service.create_target
+
+    def refuse_alpha_yearly(db_, payload, **kwargs):
+        if payload.name.startswith("Alpha") and payload.name.endswith("yearly"):
+            raise AppException(status_code=422, message="refused for the test", code="X")
+        return real(db_, payload, **kwargs)
+
+    monkeypatch.setattr(target_service, "create_target", refuse_alpha_yearly)
+    data, s_rows, _ = rl.build()
+    body = _upload(client, data, dry_run=False, db=db).json()
+    a1 = _by(body, S, s_rows["ALPHA:A/C I"])
+    assert a1["status"] == "not_representable" and "refused for the test" in a1["reason"]
+    rows = client.get(BASE, params={"subject": "dealer", "all": "true"}).json()["rows"]
+    assert not [r for r in rows if r["name"].startswith("Alpha")]
+    assert body["summary"]["targets_new"] == len(rows)
