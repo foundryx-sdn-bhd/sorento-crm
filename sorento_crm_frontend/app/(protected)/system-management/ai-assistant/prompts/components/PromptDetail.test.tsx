@@ -348,3 +348,112 @@ describe('PromptDetail wired-panel insert (owner hand test #1405, item 2)', () =
     expect(editor.lastChild!.textContent!.endsWith('END')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------
+// PROMPT-EDITOR-FULLSCREEN (owner, 16 Oct: "let me full screen, otherwise
+// this small quite hard to see"). The Editor card goes over the whole window
+// through the dealer-kit FocusShell; the editor must NOT remount on the
+// toggle, or the caret, the scroll and an open Find are lost.
+// ---------------------------------------------------------------------
+
+describe('PromptDetail full screen editor (PROMPT-EDITOR-FULLSCREEN)', () => {
+  const overlay = () => document.querySelector('[data-dk-focus-mode]');
+  const enter = () => fireEvent.click(screen.getByRole('button', { name: 'Full screen editor' }));
+
+  it('puts the editor card over the window and keeps the unsaved text and the same editor node', () => {
+    renderDetail();
+    const editor = screen.getByTestId('prompt-editor') as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: 'Classify {{current_date}} edited.' } });
+    editor.scrollTop = 120;
+    expect(overlay()).toBeNull();
+
+    enter();
+
+    expect(overlay()).not.toBeNull();
+    expect(overlay()!.contains(editor)).toBe(true);
+    // Same element: nothing remounted, so caret and scroll are untouched.
+    expect(screen.getByTestId('prompt-editor')).toBe(editor);
+    expect(editor.value).toBe('Classify {{current_date}} edited.');
+    expect(editor.scrollTop).toBe(120);
+    // Save stays reachable inside the overlay.
+    expect(overlay()!.contains(screen.getByTestId('save-version'))).toBe(true);
+    expect(overlay()!.contains(screen.getByTestId('diff-toggle'))).toBe(true);
+  });
+
+  it('Exit full screen and Esc both leave, and the text survives', () => {
+    renderDetail();
+    const editor = screen.getByTestId('prompt-editor') as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: 'edited once' } });
+    enter();
+    fireEvent.click(screen.getByRole('button', { name: 'Exit full screen editor' }));
+    expect(overlay()).toBeNull();
+    expect(screen.getByTestId('prompt-editor')).toBe(editor);
+
+    enter();
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(overlay()).toBeNull();
+    expect((screen.getByTestId('prompt-editor') as HTMLTextAreaElement).value).toBe('edited once');
+    expect(screen.getByTestId('prompt-editor')).toBe(editor);
+  });
+
+  it('offers Stage / Publish for the loaded version while in full screen', () => {
+    renderDetail();
+    enter();
+    // v2 is already production, so only Stage is offered for it.
+    expect(screen.queryByTestId('fullscreen-publish-production')).toBeNull();
+    fireEvent.click(screen.getByTestId('fullscreen-publish-staging'));
+    expect(screen.getByText('Publish router v2 to staging?')).toBeInTheDocument();
+  });
+
+  describe('with registry variables (chip editor)', () => {
+    beforeEach(() => {
+      usePromptVersions.mockReturnValue({
+        data: { ...META, name: 'chatbot_semantic_parser', registry_variables: ['domains'] },
+        isLoading: false,
+        isError: false,
+      });
+      usePromptVersion.mockReturnValue({
+        data: { ...BASE, template: 'RULES:\ncurrent one {{domains}}\n# Output\ncurrent two' },
+        isLoading: false,
+        isError: false,
+      });
+      useRegistryVariables.mockReturnValue({
+        data: [{ name: 'domains', label: 'Domains', source: 'Chatbot Domains', href: '/x', count: 3, last_changed: null, rendered: 'a | b', used: true }],
+        isLoading: false,
+        isError: false,
+      });
+    });
+
+    it('Find works in full screen, and Esc closes Find without leaving full screen', () => {
+      renderDetail();
+      const editor = screen.getByTestId('prompt-chip-editor');
+      enter();
+      expect(screen.getByTestId('prompt-chip-editor')).toBe(editor);
+      fireEvent.click(screen.getByTestId('open-find'));
+      fireEvent.change(screen.getByTestId('find-input'), { target: { value: 'current' } });
+      expect(screen.getByTestId('find-count')).toHaveTextContent('1/2');
+      fireEvent.keyDown(screen.getByTestId('find-input'), { key: 'Enter' });
+      expect(screen.getByTestId('find-count')).toHaveTextContent('2/2');
+      expect(overlay()!.contains(screen.getByTestId('find-bar'))).toBe(true);
+
+      // Esc on the editor while Find is open closes Find only.
+      fireEvent.keyDown(editor, { key: 'Escape' });
+      expect(screen.queryByTestId('find-bar')).toBeNull();
+      expect(overlay()).not.toBeNull();
+      // A second Esc leaves full screen.
+      fireEvent.keyDown(editor, { key: 'Escape' });
+      expect(overlay()).toBeNull();
+    });
+
+    it('Preview rendered prompt also shows in full screen, with section headers marked', () => {
+      renderDetail();
+      enter();
+      fireEvent.mouseDown(screen.getByTestId('editor-mode-preview'), { button: 0 });
+      const preview = screen.getByTestId('prompt-preview');
+      expect(overlay()!.contains(preview)).toBe(true);
+      const headings = Array.from(preview.querySelectorAll('[data-heading]')).map((n) => n.textContent);
+      expect(headings).toEqual(['RULES:', '# Output']);
+      expect(preview.textContent).toContain('current one a | b');
+    });
+  });
+});
