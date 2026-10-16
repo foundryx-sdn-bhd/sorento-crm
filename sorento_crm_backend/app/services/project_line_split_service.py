@@ -455,11 +455,17 @@ class LineSplitService:
                 )
             plans.append((f, base_qty, base_date, rows))
 
+        before: Dict[str, Any] = {}
+        after: Dict[str, Any] = {}
         for f, base_qty, base_date, rows in plans:
+            label = str(f.line.line_no)
+            before[label] = [_audit_split(split) for split in f.splits]
             for existing in f.splits:
                 self.db.delete(existing)
             if self._is_unsplit(f, base_qty, base_date, rows):
+                after[label] = []
                 continue
+            after[label] = [_audit_split(row) for row in rows]
             for seq, r in enumerate(rows):
                 self.db.add(
                     SOLineSplit(
@@ -478,6 +484,22 @@ class LineSplitService:
                     )
                 )
         self.db.flush()
+        if before != after:
+            # One audit row per save, naming who split what (the split rows themselves are
+            # replaced wholesale and skip the per-row listener).
+            from app.services.audit_service import log_audit
+
+            log_audit(
+                self.db,
+                SOLineSplit.__audit_entity_type__,
+                str(order.id),
+                "UPDATE",
+                old_values={"lines": before},
+                new_values={"lines": after},
+                user_id=actor_user_id,
+                root_entity_type="project_sales_orders",
+                root_entity_id=str(order.id),
+            )
 
     @staticmethod
     def _is_unsplit(
@@ -495,6 +517,21 @@ class LineSplitService:
             and only["delivery_date"] == base_date
             and not only["remark"]
         )
+
+
+def _audit_split(split: Any) -> Dict[str, Any]:
+    """One split as the audit row records it: plain values, no ids."""
+    get = (lambda key: split.get(key)) if isinstance(split, dict) else (
+        lambda key: getattr(split, key, None)
+    )
+    when = get("delivery_date")
+    return {
+        "qty": qty_text(get("qty")),
+        "delivery_date": when.isoformat() if when else None,
+        "is_cancel": bool(get("is_cancel")),
+        "sits_on_line_id": str(get("sits_on_line_id")) if get("sits_on_line_id") else None,
+        "remark": get("remark") or "",
+    }
 
 
 # ---------------------------------------------------------------------- purchasing outputs
