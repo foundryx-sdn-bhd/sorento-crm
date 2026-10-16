@@ -165,3 +165,23 @@ def test_equal_inputs_give_equal_text_and_empty_state_renders_nothing():
     assert first and first == second
 
     assert not chat_state.render(chat_state.view(State(focus=Focus()), None))
+
+
+def test_r5_a_hand_over_offer_is_stated_with_its_kind_and_team_name():
+    """S-OFFER: the parser can read a yes as accepting only if the line says it is an offer."""
+    from app.services.chatbot.turn import chat_state, question as question_mod
+    from app.services.chatbot.turn.pending import ask
+    from app.services.chatbot.turn.state import Focus, State
+
+    offer = ask(
+        "team_pick",
+        [{"position": 1, "label": "incoming stock", "entity_type": "team", "payload": {"team": "purchasing"}}],
+        team="purchasing", expects="yes_no", asked_at_turn=2, payload={"agent": "agent-7f3a", "brand_code": None},
+    )
+    state = State(focus=Focus(), pending=offer, turn_no=3)
+    text = chat_state.render(chat_state.view(state, question_mod.of_pending(offer)))
+    line = next(l for l in text.splitlines() if l.startswith("- open question:"))
+    assert "team_pick" in line, line
+    assert "purchasing" in line.lower(), line
+    assert any(w in line.lower() for w in ("hand", "offer")), line
+    assert "agent-7f3a" not in text

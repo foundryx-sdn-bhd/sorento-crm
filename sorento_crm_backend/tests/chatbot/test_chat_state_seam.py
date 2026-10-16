@@ -553,3 +553,83 @@ def test_s6_new_subject_on_an_empty_state_runs_exactly_as_the_same_emission_with
     plain = (seam.rules_fired, [n for n, _ in seam.turn_calls[-1]], seam.state["focus"])
     seam.say("top 10 hot selling", ranking(state_changes=[_op("new_subject")]), previous={})
     assert (seam.rules_fired, [n for n, _ in seam.turn_calls[-1]], seam.state["focus"]) == plain
+
+
+# --------------------------------------------------------------------------- #
+# Round 5: a hand-over offer is answered, a picked option wins, a replaced product stays gone
+# --------------------------------------------------------------------------- #
+
+
+def _offer_state() -> dict[str, Any]:
+    from app.services.chatbot.turn import pending as pending_mod
+
+    offer = pending_mod.ask(
+        "team_pick",
+        [{"position": 1, "label": "customer service", "entity_type": "team", "payload": {"team": "customer_service"}}],
+        team="customer_service", expects="yes_no", asked_at_turn=2,
+        payload={"agent": None, "brand_code": None},
+    )
+    return {"focus": focus_to_wire(Focus(domains=["inventory"])), "open_question": pending_mod.to_wire(offer)}
+
+
+def test_r5_a_yes_to_a_held_hand_over_offer_runs_the_hand_over_like_main(seam):
+    """[answer] with an affirmative runs exactly the path the same reply takes with no state_changes."""
+    base = dict(domain_hint=None, intent_hint=None, is_affirmative=True,
+                escalation={"is_escalation_confirmation": True, "company_pick": None},
+                open_question_answer={"mode": "yes", "picked": [], "items": [], "qty_for_all": None})
+    seam.say("yes please", _emit(**base), previous=_offer_state())
+    main_rules, main_kinds = seam.rules_fired, [a["kind"] for a in seam.results[-1].actions]
+    assert "answer_pending_accept" in main_rules, main_rules
+    seam.say("yes please", _emit(state_changes=[_op("answer")], **base), previous=_offer_state())
+    assert seam.rules_fired == main_rules
+    assert [a["kind"] for a in seam.results[-1].actions] == main_kinds
+
+
+def _armed_set_page() -> dict[str, Any]:
+    return {"set_key": {"shown": 0}, "other_brands": []}
+
+
+def test_r5_a_declared_roster_pick_is_not_rewritten_by_the_set_count_reader(seam):
+    prev = _roster_state(seam, OWNER_FAMILY[:3])
+    prev["focus"]["set_page"] = _armed_set_page()
+    prev["focus"]["products"] = [
+        {"raw": c, "canonical_code": c, "hint": "product", "uuid": seam.uuid_of[c]} for c in OWNER_FAMILY[:3]
+    ]
+    seam.say(
+        "2",
+        _emit(domain_hint="inventory", intent_hint="check_stock", reference_positions=[2],
+              open_question_answer={"mode": "pick", "picked": [2], "items": [], "qty_for_all": None},
+              state_changes=[_op("pick", position=2)]),
+        previous=prev,
+    )
+    assert seam.stock_ids(seam.turn_calls[-1]) == [seam.uuid_of[OWNER_FAMILY[1]]], seam.rules_fired
+    assert seam.results[-1].ctx["parse"]["output"].get("top_n") is None, "the pick was read as a row count"
+
+
+def test_r5_an_answer_op_picking_a_roster_option_also_survives_the_set_count_reader(seam):
+    prev = _roster_state(seam, OWNER_FAMILY[:3])
+    prev["focus"]["set_page"] = _armed_set_page()
+    prev["focus"]["products"] = [
+        {"raw": c, "canonical_code": c, "hint": "product", "uuid": seam.uuid_of[c]} for c in OWNER_FAMILY[:3]
+    ]
+    seam.say(
+        "3",
+        _emit(domain_hint="inventory", intent_hint="check_stock", reference_positions=[3],
+              open_question_answer={"mode": "pick", "picked": [3], "items": [], "qty_for_all": None},
+              state_changes=[_op("answer")]),
+        previous=prev,
+    )
+    assert seam.stock_ids(seam.turn_calls[-1]) == [seam.uuid_of[OWNER_FAMILY[2]]], seam.rules_fired
+    assert seam.results[-1].ctx["parse"]["output"].get("top_n") is None, "the pick was read as a row count"
+
+
+def test_r5_a_replaced_product_is_not_brought_back_by_a_code_that_cannot_be_settled(seam):
+    prev_turn = _held_srt1(seam)
+    out = seam.say(
+        "ZZQ9999 stock",
+        _emit(domain_hint="inventory", intent_hint="check_stock", domain_in_message=True,
+              entities=[_product("ZZQ9999")], state_changes=[_op("set", "product")]),
+        previous=prev_turn,
+    )
+    assert seam.uuid_of["SRT1"] not in json.dumps(seam.turn_calls[-1], default=str), "the old product answered"
+    assert "ZZQ9999" in ((out.reply or {}).get("text") or "").upper()

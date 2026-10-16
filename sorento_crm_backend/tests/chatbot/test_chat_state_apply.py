@@ -576,3 +576,64 @@ def test_new_subject_with_clear_period_drops_the_held_period():
     out = _apply(_period_state(), verdict(domain_hint="incoming", state_changes=[_op("new_subject"), _op("clear", "period")]))
     assert out.valid is True, out.log.get("rejected")
     assert out.state.focus.date_window is None
+
+
+# --------------------------------------------------------------------------- #
+# Round 5: lenient validation (a malformed part never voids the whole list)
+# --------------------------------------------------------------------------- #
+
+
+def test_r5_repeated_set_product_ops_are_merged_not_rejected():
+    state = State(focus=Focus(products=[_held("SRT1")]), turn_no=3)
+    ents = [entity("SRT2"), entity("SRT3"), entity("SRT4")]
+    out = _apply(state, verdict(entities=ents, state_changes=[_op("set", "product")] * 3))
+    assert out.valid is True, out.log.get("rejected")
+    assert [e["canonical_code"] for e in out.verdict["entities"]] == ["SRT2", "SRT3", "SRT4"]
+
+
+def test_r5_a_set_with_no_value_in_the_parse_is_a_logged_noop_and_the_rest_applies():
+    state = State(focus=Focus(products=[_held("SRT1")]), turn_no=3)
+    brand = entity("sorento", "brand", canonical_code="SORENTO")
+    out = _apply(
+        state, verdict(entities=[brand], state_changes=[_op("set", "channel"), _op("set", "brand")])
+    )
+    assert out.valid is True, out.log.get("rejected")
+    assert [e["canonical_code"] for e in out.verdict["entities"]] == ["SORENTO"]
+    ignored = out.log.get("ignored")
+    assert ignored and ignored[0]["axis"] == "channel" and ignored[0]["reason"], out.log
+
+
+def test_r5_axis_document_is_accepted_for_set_and_clear():
+    state = State(focus=Focus(products=[_held("SRT1")], document=["PO1001"]), turn_no=3)
+    out = _apply(state, verdict(document=["PO2002"], state_changes=[_op("set", "document")]))
+    assert out.valid is True, out.log.get("rejected")
+    assert out.state.focus.document == ["PO2002"] or out.verdict["document"] == ["PO2002"]
+    cleared = _apply(state, verdict(state_changes=[_op("clear", "document")]))
+    assert cleared.valid is True, cleared.log.get("rejected")
+    assert cleared.state.focus.document == []
+
+
+def test_r5_every_subject_key_the_state_block_prints_is_an_accepted_axis():
+    from app.services.chatbot.turn import chat_state
+
+    focus = Focus(
+        products=[_held("SRT1")], customers=[_customer()], brands=["SORENTO"], tier=["dealer"],
+        warehouse=[{"raw": "BRW", "canonical_code": "BRW", "hint": "warehouse"}],
+        sales_channel="dealer", status="open", document=["PO1001"], sort={"by": "date", "dir": "asc"},
+        date_window=dict(WINDOW), domains=["order"], relation="bigger",
+        extra={"attachment_type": [{"raw": "photo", "canonical_code": "photo"}]},
+    )
+    state = State(focus=focus, turn_no=3)
+    printed = list(chat_state.view(state, None)["subject"])
+    assert "attachment_type" in printed and "document" in printed
+    for axis in printed:
+        out = _apply(state, verdict(state_changes=[_op("clear", axis)]))
+        assert out.valid is True, (axis, out.log.get("rejected"))
+
+
+def test_r5_an_unknown_op_or_a_truly_unknown_axis_still_invalidates_with_a_reason():
+    state = State(focus=Focus(products=[_held("SRT1")]), turn_no=3)
+    for change in (_op("teleport"), _op("clear", "gizmo"), _op("set", "gizmo")):
+        out = _apply(state, verdict(entities=[entity("X1")], state_changes=[change]))
+        assert out.valid is False, change
+        assert out.log["rejected"]
