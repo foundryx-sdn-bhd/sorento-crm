@@ -168,3 +168,16 @@ estimated_value, SCM SO edit unit price / discount, ListQueryFilterDialog, RuleB
 PredicateBuilder, OrderForm Trips, PR line Total, ProductSupplierTermsRow, LinkDocumentDialog and the board refuse bad
 input with the sentence on the box. The backend validator touches the portal / external intake, so the
 security-reviewer joins Phase 3.
+
+## Final round 4 (17 Oct: reviewer r4 NOT READY + security review)
+
+Reviewer r4: B1 order schema Trips half (committed 338896328); B2 board bad-input test made to exercise the gate;
+S1 CS routing Save, S2 dealer-kit collection rules (FE + backend validate_tree), S3 planning sheet Confirm never
+reads bad input as 0, S4 lead wizard Next enabled with the sentence on press. Security review (no merge blocker):
+the lane's rule `_numeric` accepts any int (no OverflowError 500); upper bounds on the quantity validators this lane
+added (PR line < 10**13, order line < 10**11, SPO <= 2147483647) so an overflow is a 422, not a 500 with database text;
+adjacent: total_project_value huge exponent and portal huge line figures refused with 4xx. Pre-existing and filed as
+separate lanes: #1753 (raw database error text in handle_internal_error(str(e))), #1754 (SPO allocation PUT and order
+line writes without an edit permission). Browser observations: PR edit top Cancel and product first Update are not
+lane-caused (reviewer r4, compared with main); SPO planner quantities are disabled in all dev data (pre-existing),
+so its timing is covered by tests only.
