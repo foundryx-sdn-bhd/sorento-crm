@@ -79,6 +79,7 @@ describe('contactTagService', () => {
     apiFetch.mockResolvedValue({
       ok: false,
       status: 409,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => ({ detail: 'A tag named "Dealer" already exists.' }),
       text: async () => '',
     } as unknown as Response);
