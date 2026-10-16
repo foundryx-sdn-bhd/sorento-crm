@@ -25,9 +25,10 @@ async function unwrapNamingField<T>(res: Response, fallback: string): Promise<T>
   if (res.ok) return (await res.json()) as T;
   const spare = res.clone();
   const message = await extractApiError(res, fallback);
-  let body: { code?: unknown; details?: { field?: unknown } } | null = null;
+  type Body = { code?: unknown; details?: { field?: unknown } };
+  let body: Body | null = null;
   try {
-    body = (await spare.json()) as typeof body;
+    body = (await spare.json()) as Body;
   } catch {
     body = null;
   }
