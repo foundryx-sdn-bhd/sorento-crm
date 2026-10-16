@@ -141,11 +141,14 @@ export function PurchaseRequestDocumentEditCard({
                     value={f.value ?? null}
                     onValueChange={(v) => {
                       f.onChange(v);
+                      // Re-check a flagged box as it is fixed (the form validates on blur otherwise).
+                      if (form.getFieldState(f.name, form.formState).error) void form.trigger(f.name);
                       if (isSponsorship) {
                         const up = form.getValues(`products.${row.index}.unit_price`);
                         if (v !== null && up != null && up !== '') {
                           form.setValue(`products.${row.index}.total`, (v ?? 0) * Number(up));
                         }
+                        if (v === null) form.setValue(`products.${row.index}.total`, null);
                       }
                     }}
                     className="h-8 w-24"
@@ -186,6 +189,7 @@ export function PurchaseRequestDocumentEditCard({
                           if (v !== null && qty != null && qty !== '') {
                             form.setValue(`products.${row.index}.total`, (v ?? 0) * Number(qty));
                           }
+                          if (v === null) form.setValue(`products.${row.index}.total`, null);
                         }}
                         className="h-8 w-24"
                       />

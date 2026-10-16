@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { parseNumberDraft } from '@/lib/number-field';
+
+/** Part 2 routes this through numberFieldError({ min: 0, minExclusive }). */
+export const QUANTITY_SENTENCE = 'Enter a number above 0.';
 
 /** Accepts number or string (e.g. from API or input) so "Expected number, received string" is avoided. */
 const quantitySchema = z
@@ -70,7 +74,7 @@ function hasValue(v: number | string | null | undefined): boolean {
 /** A line the user has actually touched - mirrors the portal's own
  *  `cleanLineItems` keep-predicate (`line-items.ts`), so a blank filler row from
  *  "Add item" never gets refused for a unit price it was never asked to carry. */
-function lineHasContent(line: {
+export function lineHasContent(line: {
   item_code?: string | null;
   quantity?: number | string | null;
   unit_price?: number | string | null;
@@ -102,6 +106,19 @@ export const PurchaseRequestFormSchema = PurchaseRequestSchema.superRefine(
         message: 'Sales type is required.',
       });
     }
+    // Quantity is required, above 0, on every line that has anything in it (the server
+    // refuses a null, missing or <= 0 line quantity). Sentence per the shared helper.
+    data.products.forEach((line, index) => {
+      if (!lineHasContent(line)) return;
+      const q = parseNumberDraft(line.quantity);
+      if (q === null || q <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['products', index, 'quantity'],
+          message: QUANTITY_SENTENCE,
+        });
+      }
+    });
     // #1227: sponsorship forms only, mandatory unit price on every real line - purchase
     // requests are unchanged. Same idiom as the sales_type rule above.
     if (data.request_type === 'sponsorship_form') {
