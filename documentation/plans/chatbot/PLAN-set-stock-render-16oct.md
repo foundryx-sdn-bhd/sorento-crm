@@ -1,6 +1,6 @@
 # PLAN: SET-STOCK-RENDER - chatbot stock answers for a product set read right
 
-Status: Plan (behaviour card pending owner rulings). Size M, LEAD pattern. Not the small fix track:
+Status: Plan, behaviour card CARD-set-stock-render-16oct.md filed 16 Oct, waiting on owner rulings. Size M, LEAD pattern. Not the small fix track:
 new reply wording the owner notices.
 
 ## Why
@@ -36,9 +36,12 @@ CHAT-ADVISOR-SPIKE-owner-probes-1720.md rows 1 and 4:
 6. Kill test; reviewer subagent; parser-gold TRAIN must not drop; crew held-out; live run on the
    prod prompt (spend cap $3); hand test script; PR.
 
-## Root causes (to verify in step 1)
+## Root causes (verified 16 Oct on main c11f4dcd1)
 
-Filled in from the scouts' file:line evidence.
+All seven claims CONFIRMED, two with moved lines; file:line list in the card's "What happens
+today" (items 1-9). The render lands in `fetch.output_structurer` (fetch.py:3487-3497 rows,
+:3596-3681 set header) over the MCP's structured items; `_stock_compact` (presenters.py:1451)
+is the per-product block to reuse.
 
 ## Design
 
