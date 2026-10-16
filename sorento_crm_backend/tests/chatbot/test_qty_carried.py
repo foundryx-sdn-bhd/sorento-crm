@@ -134,3 +134,14 @@ def test_a_typed_code_with_its_quantity_still_works():
     assert turn_runtime._spec_quantities(lane_out, spec, resolved)["requested_quantities"] == {
         ht.uuid_of(CODE): 10
     }
+
+
+def test_a_code_settled_on_two_rows_keeps_both_with_the_quantity():
+    """Reviewer should-fix: a code two companies' products share is two settled rows;
+    the echo with a quantity keeps both, never only the first."""
+    rows = ht.product_rows(CODE)
+    second = {**rows[0], "uuid": ht.uuid_of(CODE + "-other-company")}
+    state = ht.state(Focus(products=[rows[0], second]), availability_only=True, turn_no=1)
+    out = turn_runtime.without_restated_rows(_bare_count(10), state.focus)
+    assert [e["uuid"] for e in out["entities"]] == [rows[0]["uuid"], second["uuid"]]
+    assert all(e["quantity"] == 10 for e in out["entities"])

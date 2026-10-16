@@ -1,6 +1,6 @@
 # PLAN: accept the parser's quantity on a carried product (QTY-CARRIED)
 
-Status: in progress (small fix track: chatbot code only, no migration, no auth change)
+Status: ready for review, awaiting merge (small fix track: chatbot code only, no migration, no auth change)
 
 ## Problem
 After the parser prompt fix ("A QUANTITY IS A STOCK QUESTION"), a bare count after a product
@@ -19,3 +19,10 @@ carried or typed. Parser output only; no text or keyword matching. No new reply 
 
 ## Tests
 Red-first: carried entity with quantity 10 -> stock answer for 10, no ask.
+
+## Implemented
+Root cause: `turn_runtime.without_restated_rows` dropped a carried entity that echoes a settled
+focus row, taking the parser's quantity with it. An echo carrying a quantity is now kept, one per
+settled row of that code, with that row's uuid. Bare echoes are still dropped.
+Known edge (reviewer nit, not changed): if the parser puts a quantity on only a few echoes of a
+large settled set on a document-word turn, those few replace the axis.
