@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.models.project_so import OrderInquiryRow
+import sqlalchemy as sa
+
+from app.models.project_so import OrderInquiryReserveRequestRow, OrderInquiryRow
 
 from .test_oi_staged_notify import (  # noqa: F401  (`sn` is a pytest fixture)
     _ok,
@@ -24,11 +26,21 @@ SUMMARY = f"{LIST}/summary"
 
 
 def _rows_of(world, inquiry) -> list:
+    """The OI's rows, the ANSWERED one first: the mixed OI's two rows share a `created_at`,
+    so ordering by it left "first" to the random id."""
+    answered = (
+        sa.exists()
+        .where(
+            OrderInquiryReserveRequestRow.row_id == OrderInquiryRow.id,
+            OrderInquiryReserveRequestRow.qty_reserved.isnot(None),
+        )
+        .correlate(OrderInquiryRow)
+    )
     return [
         row.id
         for row in world.db.query(OrderInquiryRow)
         .filter(OrderInquiryRow.order_inquiry_id == inquiry.id)
-        .order_by(OrderInquiryRow.created_at, OrderInquiryRow.id)
+        .order_by(answered.desc(), OrderInquiryRow.created_at, OrderInquiryRow.id)
         .all()
     ]
 
