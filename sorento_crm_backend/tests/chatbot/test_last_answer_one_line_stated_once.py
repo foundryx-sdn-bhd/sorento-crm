@@ -15,7 +15,7 @@ from tests.chatbot import _ht26_fixtures as ht
 from tests.chatbot._turn_helpers import build_policy, verdict
 
 
-def _block(tasks, *, message: str = "ok") -> str:
+def _block(tasks) -> str:
     focus = Focus(tasks=tasks, domains=["inventory"])
     oq = question_mod.open_question(None, tasks)
     lines = parser_mod.open_task_lines(focus, oq)
