@@ -620,12 +620,12 @@ def _bound(entity: dict[str, Any], vocab: Vocabulary) -> Grounded | None:
 
 
 def _in_message(bound: Grounded, entry: _Key, message: str) -> bool:
-    """Whether the message holds a registry phrase of the key stored as the bound value."""
+    """Whether the message holds any non-stopword word of a registry phrase of the key stored as the bound value."""
     said = _words(message)
     for phrase, stored in entry.phrases.items():
         if stored == bound.value:
             parts = _words(phrase)
-            if parts and all(any(_same(w, t) for t in said) for w in parts):
+            if any(w not in _STOPWORDS and any(_same(w, t) for t in said) for w in parts):
                 return True
     return False
 
