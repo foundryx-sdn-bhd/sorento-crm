@@ -214,8 +214,11 @@ def test_b_the_stock_task_is_quantities_or_last_answer():
     obj = _question().open_question(None, (open_task,))
     assert obj["kind"] == "quantities"
     assert obj["owed"] == [2]
-    answered = ht.stock_task([("SRTWC286-SH", 10)], status=task_mod.ANSWERED)
+    answered = ht.stock_task([("SRTWC286-SH", 10), ("SRTWC286-SH-150", 5)], status=task_mod.ANSWERED)
     assert _question().open_question(None, (answered,))["kind"] == "last_answer"
+    # F3 (crew 16 Oct): a one-line delivered answer is stated once, by the "Last answered:" line.
+    one_line = ht.stock_task([("SRTWC286-SH", 10)], status=task_mod.ANSWERED)
+    assert _question().open_question(None, (one_line,)) is None
 
 
 def test_b_an_open_pick_is_the_question_even_with_a_stock_task_behind_it():
