@@ -105,6 +105,14 @@ class LineFacts:
         return str(self.line.id)
 
     @property
+    def line_no(self) -> Optional[int]:
+        """The number staff know the line by: AutoCount's own (the core line's Seq, what the
+        board prints), the mirror's only when there is no core line."""
+        if self.core is not None and self.core.line_no is not None:
+            return self.core.line_no
+        return self.line.line_no
+
+    @property
     def cancelled(self) -> bool:
         return _cancelled(self.core)
 
@@ -376,14 +384,14 @@ class LineSplitService:
                 or f.line_id in sitting_on
             )
         ]
-        listed.sort(key=lambda f: (f.item_code, f.location, f.line.line_no or 0))
+        listed.sort(key=lambda f: (f.item_code, f.location, f.line_no or 0))
         out_lines = []
         for f in listed:
             base_qty, base_date = f.base()
             out_lines.append(
                 {
                     "line_id": f.line_id,
-                    "line_no": f.line.line_no,
+                    "line_no": f.line_no,
                     "item_code": f.item_code,
                     "location": f.location,
                     "base_qty": float(base_qty),
@@ -440,7 +448,7 @@ class LineSplitService:
                 raise AppException(
                     status_code=422,
                     message=(
-                        f"Line {line.line.line_no} is named twice in this save."
+                        f"Line {line.line_no} is named twice in this save."
                         if line is not None
                         else "A line is named twice in this save."
                     ),
@@ -454,7 +462,7 @@ class LineSplitService:
                     message="A line in this save is not on this sales order. Reload and try again.",
                     code="line_split_line_not_on_order",
                 )
-            label = f"Line {f.line.line_no}"
+            label = f"Line {f.line_no}"
             base_qty, base_date = f.base()
             rows: List[Dict[str, Any]] = []
             for split in entry.splits:
@@ -515,7 +523,7 @@ class LineSplitService:
         before: Dict[str, Any] = {}
         after: Dict[str, Any] = {}
         for f, base_qty, base_date, rows in plans:
-            label = str(f.line.line_no)
+            label = str(f.line_no)
             before[label] = [_audit_split(split) for split in f.splits]
             for existing in f.splits:
                 self.db.delete(existing)
@@ -596,6 +604,29 @@ def _audit_split(split: Any) -> Dict[str, Any]:
 # ---------------------------------------------------------------------- purchasing outputs
 
 
+def display_line_nos(db: Session, line_ids: Iterable[str]) -> Dict[str, Optional[int]]:
+    """`mirror line id -> the number staff know it by` (`LineFacts.line_no`'s rule) for
+    many lines in one query: AutoCount's core line number, the mirror's without a core."""
+    from sqlalchemy import func
+
+    wanted = sorted({str(i) for i in line_ids if i})
+    if not wanted:
+        return {}
+    return {
+        str(line_id): line_no
+        for line_id, line_no in db.query(
+            ProjectSalesOrderLine.id,
+            func.coalesce(SalesOrderLine.line_no, ProjectSalesOrderLine.line_no),
+        )
+        .outerjoin(
+            SalesOrderLine,
+            SalesOrderLine.id == ProjectSalesOrderLine.core_sales_order_line_id,
+        )
+        .filter(ProjectSalesOrderLine.id.in_(wanted))
+        .all()
+    }
+
+
 def _fmt_date(value: Optional[date]) -> str:
     """`21/07/2026`, the way the OI email and their sheet spell a date."""
     return value.strftime("%d/%m/%Y") if value else ""
@@ -655,14 +686,7 @@ class SplitOutputs:
             {str(s.so_line_id) for s in splits}
             | {str(s.sits_on_line_id) for s in splits if s.sits_on_line_id}
         )
-        line_nos = {
-            str(line_id): line_no
-            for line_id, line_no in db.query(
-                ProjectSalesOrderLine.id, ProjectSalesOrderLine.line_no
-            )
-            .filter(ProjectSalesOrderLine.id.in_(named))
-            .all()
-        }
+        line_nos = display_line_nos(db, named)
         self.line_nos = line_nos
         wanted_set = set(wanted)
         for s in splits:
