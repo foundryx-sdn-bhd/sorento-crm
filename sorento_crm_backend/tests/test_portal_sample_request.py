@@ -365,6 +365,29 @@ def test_review_s2_customer_must_be_in_the_contacts_debtors(portal):
     assert typed["customer_id"] is None
 
 
+def test_review_portal_put_rechecks_the_customer_only_when_it_changes(portal):
+    """A draft whose debtor later left the agent's book still saves with the same customer;
+    changing to an outside debtor is still 422."""
+    agent = _link_agent(portal, portal.granted)
+    mine = make_customer(portal.db, portal.company_id)
+    mine.sales_agent_id = agent.id
+    stranger = make_customer(portal.db, portal.company_id)
+    portal.db.commit()
+    ok = _create(portal, customer_id=mine.id, customer_name=None)
+
+    mine.sales_agent_id = None  # the debtor leaves the agent's book
+    portal.db.commit()
+
+    c = _as(portal, portal.granted)
+    same = c.put(f"{BASE}/{ok['id']}", json={"customer_id": mine.id, "remarks": f"{MARKER} edit"})
+    assert same.status_code == 200, same.text
+    assert same.json()["customer_id"] == mine.id
+
+    moved = c.put(f"{BASE}/{ok['id']}", json={"customer_id": stranger.id})
+    assert moved.status_code == 422, moved.text
+    assert moved.json().get("code") == "SAMPLE_REQUEST_CUSTOMER_INVALID"
+
+
 def _other_company_product(p):
     # ORM, not raw SQL: text() would bypass the scratch schema's translate map.
     row = make_product(p.db, code="ZZT-OTHERCO-77", name=f"{MARKER} other company item")

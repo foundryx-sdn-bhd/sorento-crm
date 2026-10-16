@@ -152,9 +152,12 @@ def portal_update(
                 svc.assert_portal_project_allowed(
                     db, contact=PortalService(db).get_contact(token), project_id=data["project_id"]
                 )
-            svc.assert_portal_customer_allowed(
-                db, contact_id=token.contact_id, customer_id=data.get("customer_id")
-            )
+            # Only a CHANGED debtor is re-checked: a draft whose debtor later left the
+            # agent's book must still be saveable with the customer it already has.
+            if data.get("customer_id") != req.customer_id:
+                svc.assert_portal_customer_allowed(
+                    db, contact_id=token.contact_id, customer_id=data.get("customer_id")
+                )
             svc.update_draft(db, req, actor=_actor(token), data=data)
             db.commit()
             db.refresh(req)

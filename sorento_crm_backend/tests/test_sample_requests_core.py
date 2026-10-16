@@ -1234,6 +1234,17 @@ def test_delete_draft_refused_for_a_non_owner_and_a_submitted_request(world):
     assert _get(world, draft)["status"] == "draft"
 
 
+def test_review_s1_delete_rechecks_the_draft_state_when_the_window_lapses(world):
+    """S-1: a draft parked for delete, then submitted inside the window, is NOT deleted on lapse."""
+    rid = _draft(world)["id"]
+    parked = _park_delete(world, rid, world.sales)
+    assert parked.status_code == 202, parked.text
+    assert _submit(world, rid).status_code in (200, 201)
+    out = _lapse(world, rid, parked.json()["id"], world.sales).json()
+    assert out["last_outcome"]["status"] == "failed", out["last_outcome"]
+    assert _get(world, rid)["status"] == "submitted"
+
+
 def test_review_list_filters_by_salesperson(world):
     """List Filters popover: ?salesperson_id= narrows the queue to one salesperson."""
     mine = _submitted(world)
