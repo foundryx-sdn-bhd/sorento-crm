@@ -677,3 +677,18 @@ def test_summarise_slice_with_no_known_result_has_zero_rate_and_lowest_and_misse
     assert s["slices"]["spec"]["rate"] == 0.0
     assert s["slices"]["spec"]["lowest"] == 0.0
     assert s["meets"] is False
+
+
+# ------------------------------------------------------------------ review round 6 (meets needs every run)
+def test_summarise_one_known_run_of_three_does_not_meet_the_bar_and_reports_runs_1():
+    from scripts.chatbot_eval.targets import summarise
+    s = summarise([[_r5("spec", None, True)], [_r5("spec", None, None)], [_r5("spec", None, None)]], {"spec": 0.9})
+    assert s["slices"]["spec"]["runs"] == 1
+    assert s["meets"] is False
+
+
+def test_summarise_every_run_known_reports_runs_3_and_meets_as_before():
+    from scripts.chatbot_eval.targets import summarise
+    s = summarise([[_r5("spec", None, True)] for _ in range(3)], {"spec": 0.9})
+    assert s["slices"]["spec"]["runs"] == 3
+    assert s["meets"] is True

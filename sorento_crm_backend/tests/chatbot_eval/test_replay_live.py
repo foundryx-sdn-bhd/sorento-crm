@@ -445,3 +445,30 @@ def test_the_key_never_appears_in_output_rows_or_printed_lines(session_factory, 
     assert KEY not in json.dumps(ok, default=str) + json.dumps(bad, default=str)
     assert KEY not in cap.out + cap.err
     assert LAST4 not in json.dumps(bad, default=str).replace("wrong_key", "")
+
+
+# ------------------------------------------------------------------ review round 6 (the guard fails closed)
+@pytest.mark.parametrize("bad", ["", "   ", "abc", "abcde"])
+def test_cli_rejects_a_require_key_last4_that_is_not_four_non_blank_characters(tmp_path, session_factory, recorded,
+                                                                              live_env, bad):
+    items = tmp_path / "items.jsonl"
+    items.write_text(json.dumps(items_for(recorded)[0]) + "\n")
+    rec = tmp_path / "recorded.jsonl"
+    rec.write_text(json.dumps(recorded) + "\n")
+    with pytest.raises(SystemExit) as exc:
+        replay_mod.main(["live", "--items", str(items), "--recorded", str(rec), "--out", str(tmp_path / "o.jsonl"),
+                         "--max-calls", "10", "--max-usd", "5", "--require-key-last4", bad])
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("bad", ["", "Z", "   ", "abcde", None])
+def test_live_rows_refuses_an_invalid_require_key_last4_before_any_call(session_factory, recorded, live_env,
+                                                                        monkeypatch, bad):
+    real_calls = []
+    monkeypatch.setattr(llm_provider.OpenAIProvider, "chat", lambda self, messages, **kw: real_calls.append(1) or
+                        llm_provider.ChatResult(content="{}", prompt_tokens=1, completion_tokens=1, total_tokens=2,
+                                                cached_tokens=0))
+    with pytest.raises(ValueError):
+        replay_mod.live_rows(items_for(recorded, 2), [recorded], session_factory=session_factory,
+                             max_calls=50, max_usd=10.0, require_key_last4=bad)
+    assert real_calls == [], "a model call went out under an invalid key guard"
