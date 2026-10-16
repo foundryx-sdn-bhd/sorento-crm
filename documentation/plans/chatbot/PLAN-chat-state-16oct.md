@@ -130,7 +130,6 @@ default `assume` -> the slot applies; a second `unclear` right after the bot ask
 ## Open
 
 - Q3 (owner): period rule (refine keeps it, a new question uses its own). Working rule (b). S3b waits.
-- Owner: unclear default ask vs assume (crew rec: ask once). Built as one named default `ask`; storage of the setting
-  (system_settings column like `chatbot_stock_denial_enabled`, app/models/user.py:641, or the CLARIFY-POLICY #1570
-  table) is a crew/owner call.
+- Owner: unclear default ask vs assume (crew rec: ask once). Crew ruling: one named constant `ask` in code, pinned by
+  a test; storage + UI later behind CLARIFY-POLICY #1570.
 - Security review items: stored last-list pick after a scope change (seam design risk 6).

@@ -108,3 +108,5 @@ owner's own probes and prod incidents already in crew reports. Crew can attach m
   The parser states per message which held slots apply (R14 rewritten); unclear -> ask once with real names, default
   ask vs assume is a configurable policy (R15). Pending with the owner: period rule (refine keeps it, a new question
   uses its own) and the unclear default (crew rec: ask once). Build with `ask`; S3b stays open.
+- Crew, 16 Oct ~23:10: the default is ONE named constant `ask` in code, one place, pinned by a test; storage and UI
+  come later behind the clarify-policy work (#1570). An owner change of default is a one-line change.
