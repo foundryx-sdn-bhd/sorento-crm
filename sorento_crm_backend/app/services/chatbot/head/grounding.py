@@ -619,6 +619,22 @@ def _bound(entity: dict[str, Any], vocab: Vocabulary) -> Grounded | None:
     return None
 
 
+def _in_message(bound: Grounded, entry: _Key | None, message: str | None) -> bool:
+    """Whether the message already holds the bound value's own words: a registry phrase
+    of the key stored as that value, or a token that starts with the number."""
+    if not message or entry is None:
+        return False
+    said = _words(message)
+    if entry.data_type == "numeric":
+        return any(t.startswith(str(bound.value)) for t in said)
+    for phrase, stored in entry.phrases.items():
+        if stored == bound.value:
+            parts = _words(phrase)
+            if parts and all(any(_same(w, t) for t in said) for w in parts):
+                return True
+    return False
+
+
 def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
     """A `specification` entity the parser emitted, checked against the registry: a key
     it knows and a value among that key's choices, else grounded from its raw words."""
@@ -795,11 +811,22 @@ def ground(
             grounded, used = ground_words(raw, vocab, keep=keep)
             unheard, used = _unheard_words(db, raw, used, keep)
             bound = _bound(entity, vocab)
-            if bound is not None and len(unheard) == 1 and not any(g.key == bound.key for g in grounded):
+            entry = next((k for k in vocab.keys if k.key == bound.key), None) if bound is not None else None
+            if (
+                bound is not None
+                and len(unheard) == 1
+                and not any(g.key == bound.key for g in grounded)
+                and not _in_message(bound, entry, message)
+            ):
                 # CHAT-FIX F4 (owner, 16 Oct 2026): the parser's registry-valid spec is the one
                 # unheard word ("undrmount" -> under_counter), said in the registry's words.
-                entry = next((k for k in vocab.keys if k.key == bound.key), None)
-                said = bound.words or (_display(entry, bound.value) if entry is not None else bound.said)
+                # Not when the message already holds that spec's own words: it then replaces
+                # no other typed word.
+                said = bound.words
+                if not said and entry is not None:
+                    said = next((p for p, v in entry.phrases.items() if v == bound.value), None) if isinstance(bound.value, bool) else None
+                    said = said or _display(entry, bound.value)
+                said = said or bound.said
                 grounded = [*grounded, Grounded(bound.key, bound.label, said, bound.value, bound.unit, bound.known, bound.words)]
             else:
                 grounded = [*grounded, *(Grounded("", "", word) for word in unheard)]
