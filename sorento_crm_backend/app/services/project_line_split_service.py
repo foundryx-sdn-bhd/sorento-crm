@@ -215,24 +215,26 @@ class LineSplitService:
             (line.product_id or (core.product_id if core is not None else None))
             for line, core in rows
         } - {None}
-        codes = (
-            dict(
-                self.db.query(Product.id, Product.product_code)
+        codes: Dict[str, str] = (
+            {
+                str(product_id): str(code or "")
+                for product_id, code in self.db.query(Product.id, Product.product_code)
                 .filter(Product.id.in_(list(product_ids)))
                 .all()
-            )
+            }
             if product_ids
             else {}
         )
         warehouse_ids = {
             core.warehouse_id for _line, core in rows if core is not None and core.warehouse_id
         }
-        warehouses = (
-            dict(
-                self.db.query(Warehouse.id, Warehouse.warehouse_code)
+        warehouses: Dict[str, str] = (
+            {
+                str(warehouse_id): str(code or "")
+                for warehouse_id, code in self.db.query(Warehouse.id, Warehouse.warehouse_code)
                 .filter(Warehouse.id.in_(list(warehouse_ids)))
                 .all()
-            )
+            }
             if warehouse_ids
             else {}
         )
@@ -243,14 +245,14 @@ class LineSplitService:
         for line, core in rows:
             product_id = line.product_id or (core.product_id if core is not None else None)
             location = line.stock_location or (
-                warehouses.get(core.warehouse_id) if core is not None else None
+                warehouses.get(str(core.warehouse_id)) if core is not None else None
             )
             now_qty = _dec(line.qty if line.qty is not None else getattr(core, "qty_ordered", None))
             out[str(line.id)] = LineFacts(
                 line=line,
                 core=core,
-                item_code=codes.get(product_id) or "",
-                location=location or "",
+                item_code=codes.get(str(product_id), ""),
+                location=str(location or ""),
                 now_qty=now_qty,
                 now_date=line.delivery_date or (core.required_date if core is not None else None),
                 delivered_qty=_dec(getattr(core, "qty_delivered", None)),
@@ -558,7 +560,7 @@ class SplitOutputs:
             elif not v.split.is_cancel and v.sits_on is None:
                 text += " new line"
             elif not v.split.is_cancel and v.sits_on != line_id:
-                text += f" to line {self.line_nos.get(v.sits_on)}"
+                text += f" to line {self.line_nos.get(str(v.sits_on))}"
             if v.split.remark:
                 text += f" ({v.split.remark})"
             pieces.append(text)
