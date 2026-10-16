@@ -1425,7 +1425,15 @@ def with_clarify_answer(verdict: dict[str, Any], message: Any, *, carried: Any) 
 _SET_DESCRIBING_HINTS = frozenset({"product_type", "category", "spec", "specification", "brand", "product"})
 
 
-def with_new_set_words(verdict: dict[str, Any]) -> dict[str, Any]:
+def _typed_in(entity: dict[str, Any], said: set[str]) -> bool:
+    """A specification whose `typed_as` words are all words of the message."""
+    if jsc.nullish_str(entity.get("hint")).strip().lower() != "specification":
+        return False
+    words = re.findall(r"[a-z0-9]+", jsc.nullish_str(entity.get("typed_as")).casefold())
+    return bool(words) and all(w in said for w in words)
+
+
+def with_new_set_words(verdict: dict[str, Any], message: str | None = None) -> dict[str, Any]:
     """The verdict without an EARLIER turn's set words, when this message names a class
     word of its own.
 
@@ -1436,8 +1444,12 @@ def with_new_set_words(verdict: dict[str, Any]) -> dict[str, Any]:
     for the attachment type of a water closet. A new class word starts a new set: the
     earlier class, spec, brand and product entities are dropped. A customer, a location
     or a document from earlier is not part of the set and stays.
+
+    CHAT-FIX F5 (owner, 16 Oct 2026): with `message`, a specification whose `typed_as` words
+    are all words of this message is kept whatever `current_message` says.
     """
     entities = [e for e in (verdict.get("entities") or []) if isinstance(e, dict)]
+    said = set(re.findall(r"[a-z0-9]+", message.casefold())) if isinstance(message, str) else set()
     names_a_class = any(
         e.get("current_message") is True and jsc.nullish_str(e.get("hint")).strip().lower() in CLASS_HINTS
         for e in entities
@@ -1449,6 +1461,7 @@ def with_new_set_words(verdict: dict[str, Any]) -> dict[str, Any]:
         for e in entities
         if e.get("current_message") is True
         or jsc.nullish_str(e.get("hint")).strip().lower() not in _SET_DESCRIBING_HINTS
+        or _typed_in(e, said)
     ]
     if len(kept) == len(entities):
         return verdict

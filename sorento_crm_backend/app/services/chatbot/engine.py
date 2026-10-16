@@ -4727,7 +4727,9 @@ def _run_stages_body(  # noqa: PLR0915
     # an unsettled copy.
     verdict = turn_runtime.without_restated_rows(verdict, state_in.focus)
     # Round 3 W3 on PR #833: a class word of this message's own starts a new set.
-    verdict = turn_runtime.with_new_set_words(verdict)
+    verdict = turn_runtime.with_new_set_words(
+        verdict, message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None
+    )
     # Fix round 8 on PR #833 (owner retest of round 7): every descriptor the parser
     # emitted is grounded against the specification registry, after the clarify answer
     # is substituted (so "p trap" answering "t trap" is read as the choice it is) and

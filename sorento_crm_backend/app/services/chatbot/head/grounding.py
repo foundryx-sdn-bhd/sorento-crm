@@ -817,13 +817,13 @@ def ground(
                 and not [t for i, t in enumerate(tokens) if i not in used and i not in keep and t not in _STOPWORDS]
             )
 
-            def correction(spec: dict[str, Any]) -> tuple[Grounded, str] | None:
+            def correction(spec: dict[str, Any], typed: bool = False) -> tuple[Grounded, str] | None:
                 bound = _bound(spec, vocab)
                 entry = next((k for k in vocab.keys if k.key == bound.key), None) if bound is not None else None
                 phrase = (bound.words or next((p for p, v in entry.phrases.items() if v == bound.value), None)) if entry else None
                 if bound is None or entry is None or not phrase or entry.data_type == "numeric":
                     return None
-                if any(g.key == bound.key for g in grounded) or _in_message(bound, entry, message or ""):
+                if any(g.key == bound.key for g in grounded) or (not typed and _in_message(bound, entry, message or "")):
                     return None
                 return bound, phrase
 
@@ -834,6 +834,11 @@ def ground(
                 # under_counter), said in the registry's phrase. Anything else takes the path below.
                 bound, phrase = own
                 grounded = [*grounded, Grounded(bound.key, bound.label, phrase, bound.value, bound.unit, bound.known, bound.words)]
+            elif solo and len([e for e in entities if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() in _SPEC_HINTS and any(_same(w, unheard[0]) for w in _words(e.get("typed_as"))) and correction(e, True)]) == 1:
+                # CHAT-FIX F5 (owner, 16 Oct 2026; AC-1368 amended, spec hints only): a spec whose
+                # `typed_as` is the parser's own statement of the source word accounts for it,
+                # whatever current_message says. Entities without `typed_as` take F4's rule.
+                accounted = True
             elif (
                 solo
                 and len([e for e in entities if isinstance(e, dict) and str(e.get("hint") or "").strip().lower() in _CLASS_HINTS | {_PRODUCT_HINT}]) == 1

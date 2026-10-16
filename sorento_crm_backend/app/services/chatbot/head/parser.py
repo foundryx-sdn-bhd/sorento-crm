@@ -182,6 +182,14 @@ def _build_json_schema() -> dict[str, Any]:
                         # customer ("Soon Heng account 1" -> 1); null otherwise. Required
                         # like every key here (strict mode).
                         "account": {"type": ["integer", "null"]},
+                        "typed_as": {
+                            "type": ["string", "null"],
+                            "description": (
+                                "The word or words of THIS message's text that name this entity, copied character "
+                                "for character as typed (a misspelling stays misspelt); null when THIS message's "
+                                "text does not name it, whatever earlier turns said."
+                            ),
+                        },
                     },
                     "required": [
                         "raw",
@@ -194,6 +202,7 @@ def _build_json_schema() -> dict[str, Any]:
                         "spec_key",
                         "spec_value",
                         "account",
+                        "typed_as",
                     ],
                 },
             },
