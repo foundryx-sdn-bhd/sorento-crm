@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { requiredNumber } from '@/lib/number-field-schema';
 
 export const shipmentLineSchema = z.object({
   /**
@@ -9,7 +10,7 @@ export const shipmentLineSchema = z.object({
    */
   id: z.string().optional(),
   product_id: z.string().min(1, 'Product is required'),
-  quantity_shipped: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
+  quantity_shipped: requiredNumber({ min: 1, integer: true }),
   /**
    * Carried, never edited here. A mixed container's lines are the only record of which
    * factory loaded what - zod strips a key it does not declare, so leaving this out would
@@ -52,7 +53,7 @@ export const clearanceSchema = z.object({
   coa_permit_no: z.string().optional(),
   // Empty string when cleared, so coerce would turn "" into 0 - a real "0 free
   // days" and "not recorded" must stay distinguishable.
-  free_days_available: z.union([z.coerce.number().int().min(0), z.literal('')]).optional(),
+  free_days_available: z.union([z.literal(''), z.coerce.number().int().min(0, { message: 'Enter a whole number of at least 0, or leave it blank.' })]).optional(),
 });
 
 export type ClearanceSchemaType = z.infer<typeof clearanceSchema>;

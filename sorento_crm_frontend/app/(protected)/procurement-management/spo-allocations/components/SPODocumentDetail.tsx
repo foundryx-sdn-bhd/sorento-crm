@@ -44,6 +44,8 @@ import { DataGridPagination } from '@/components/ui/data-grid-pagination';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
+import { numberFieldError, parseNumberDraft } from '@/lib/number-field';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
@@ -177,6 +179,8 @@ export function SPODocumentDetail({ spoNumber }: { spoNumber: string }) {
 
   const [isEditing, setIsEditing] = useState(false);
   const [lineDrafts, setLineDrafts] = useState<Record<string, LineDraft>>({});
+  // Quantities are checked when Save is pressed; afterwards the messages follow the fields.
+  const [qtyChecked, setQtyChecked] = useState(false);
   const [removedLineIds, setRemovedLineIds] = useState<Set<string>>(new Set());
   const [supplierExpanded, setSupplierExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -274,6 +278,7 @@ export function SPODocumentDetail({ spoNumber }: { spoNumber: string }) {
     for (const line of d.lines) drafts[line.id] = seedDraft(line);
     setLineDrafts(drafts);
     setRemovedLineIds(new Set());
+    setQtyChecked(false);
     setIsEditing(true);
   };
 
@@ -292,8 +297,22 @@ export function SPODocumentDetail({ spoNumber }: { spoNumber: string }) {
     });
   };
 
+  const qtyError = (raw: string) => numberFieldError(raw, { min: 0 });
+
   const handleSave = async () => {
     if (!doc) return;
+    setQtyChecked(true);
+    const quantityProblem = doc.lines.some((l) => {
+      const draft = lineDrafts[l.id];
+      return (
+        !removedLineIds.has(l.id) &&
+        draft &&
+        (qtyError(draft.allocated_quantity) ||
+          qtyError(draft.quantity_received) ||
+          qtyError(draft.quantity_rejected))
+      );
+    });
+    if (quantityProblem) return;
     setSaving(true);
     try {
       const toDelete = [...removedLineIds];
@@ -322,9 +341,9 @@ export function SPODocumentDetail({ spoNumber }: { spoNumber: string }) {
             data: {
               product_id: lineDrafts[l.id].product_id || undefined,
               warehouse_id: lineDrafts[l.id].warehouse_id || null,
-              allocated_quantity: Number(lineDrafts[l.id].allocated_quantity) || 0,
-              quantity_received: Number(lineDrafts[l.id].quantity_received) || 0,
-              quantity_rejected: Number(lineDrafts[l.id].quantity_rejected) || 0,
+              allocated_quantity: parseNumberDraft(lineDrafts[l.id].allocated_quantity) as number,
+              quantity_received: parseNumberDraft(lineDrafts[l.id].quantity_received) as number,
+              quantity_rejected: parseNumberDraft(lineDrafts[l.id].quantity_rejected) as number,
               expected_date: lineDrafts[l.id].expected_date || null,
               supplier_id: lineDrafts[l.id].supplier_id || null,
             },
@@ -502,11 +521,11 @@ export function SPODocumentDetail({ spoNumber }: { spoNumber: string }) {
           if (isEditing) {
             const draft = lineDrafts[line.id];
             return (
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 aria-label={`Allocated qty on ${line.product?.product_code ?? line.id}`}
                 value={draft?.allocated_quantity ?? String(line.allocated_quantity)}
+                error={qtyChecked && draft ? qtyError(draft.allocated_quantity) : undefined}
                 onChange={(e) =>
                   setLineDrafts((prev) => ({
                     ...prev,
@@ -531,11 +550,11 @@ export function SPODocumentDetail({ spoNumber }: { spoNumber: string }) {
           if (isEditing) {
             const draft = lineDrafts[line.id];
             return (
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 aria-label={`Received qty on ${line.product?.product_code ?? line.id}`}
                 value={draft?.quantity_received ?? String(line.quantity_received)}
+                error={qtyChecked && draft ? qtyError(draft.quantity_received) : undefined}
                 onChange={(e) =>
                   setLineDrafts((prev) => ({
                     ...prev,
@@ -601,11 +620,11 @@ export function SPODocumentDetail({ spoNumber }: { spoNumber: string }) {
           if (isEditing) {
             const draft = lineDrafts[line.id];
             return (
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 aria-label={`Rejected qty on ${line.product?.product_code ?? line.id}`}
                 value={draft?.quantity_rejected ?? String(line.quantity_rejected)}
+                error={qtyChecked && draft ? qtyError(draft.quantity_rejected) : undefined}
                 onChange={(e) =>
                   setLineDrafts((prev) => ({
                     ...prev,
@@ -872,7 +891,7 @@ export function SPODocumentDetail({ spoNumber }: { spoNumber: string }) {
     // cells; `filterProductId` / `filterWarehouseId` drive the highlight dot; `doc`
     // feeds the Received cell's document-level GRN fallback.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isEditing, lineDrafts, removedLineIds, warehouses, filterProductId, filterWarehouseId, doc],
+    [isEditing, qtyChecked, lineDrafts, removedLineIds, warehouses, filterProductId, filterWarehouseId, doc],
   );
 
   const table = useReactTable({
