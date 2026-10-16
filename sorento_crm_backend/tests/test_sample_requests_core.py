@@ -1008,6 +1008,10 @@ def test_ac_sr_60_pdf_text_has_board_row_first_and_or_alt(world):
     res = world.api.as_(world.sales).get(f"{SR}/{d['id']}/pdf")
     assert res.status_code == 200, res.text
     text_ = "".join(page.get_text() for page in fitz.open(stream=res.content, filetype="pdf"))
+    # A table cell wraps where the runner's fonts make it wrap, and the extracted text then
+    # carries a newline mid-label ("TOWER A &\nB"). Collapse whitespace so the assertions
+    # read the printed words, not the line breaks of one machine's font metrics.
+    text_ = " ".join(text_.split())
     assert "TOWER A & B" in text_
     assert text_.index("TOWER A & B") < text_.index(world.cat.plain.product_code)
     assert "OR" in text_ and world.cat.plain2.product_code in text_
