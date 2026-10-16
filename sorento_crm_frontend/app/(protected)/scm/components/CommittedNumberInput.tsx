@@ -8,10 +8,12 @@ type CommittedNumberInputProps = Omit<
   NumberInputProps,
   'value' | 'onValueChange' | 'onChange' | 'error'
 > & {
-  /** The figure in force (the last valid entry), held by the screen. */
-  value: number;
-  /** Called only with a figure that passes `rules`; a blank or bad entry is not passed on. */
+  /** The figure in force (the last valid entry), held by the screen; null when there is none. */
+  value: number | null;
+  /** Called only with a figure that passes `rules`; a bad entry is not passed on. */
   onCommit: (value: number) => void;
+  /** Called when the box is emptied and `rules.optional` accepts that as "no value". */
+  onClear?: () => void;
   rules?: NumberFieldRules;
 };
 
@@ -22,21 +24,24 @@ type CommittedNumberInputProps = Omit<
  * valid figure until a valid one is typed. If the screen moves the figure itself, that
  * figure replaces the typed text.
  */
-export function CommittedNumberInput({ value, onCommit, rules, ...props }: CommittedNumberInputProps) {
-  const [draft, setDraft] = React.useState<string | null>(null);
-  const parsed = draft === null ? null : parseNumberDraft(draft);
-  const showDraft = draft !== null && (parsed === null || parsed === value);
-  const error = showDraft ? numberFieldError(draft, rules) : undefined;
+export function CommittedNumberInput({ value, onCommit, onClear, rules, ...props }: CommittedNumberInputProps) {
+  // The typed text, and the figure in force when it was typed: while the screen still holds
+  // that figure (a bad entry was not applied) or has taken this one, the text stays.
+  const [draft, setDraft] = React.useState<{ text: string; base: number | null } | null>(null);
+  const showDraft = draft !== null && (draft.base === value || parseNumberDraft(draft.text) === value);
+  const error = showDraft ? numberFieldError(draft.text, rules) : undefined;
   return (
     <NumberInput
       {...props}
-      value={showDraft ? draft : String(value)}
+      value={showDraft ? draft.text : value === null ? '' : String(value)}
       error={error}
       onChange={(e) => {
         const text = e.target.value;
-        setDraft(text);
+        setDraft({ text, base: showDraft ? draft.base : value });
         if (numberFieldError(text, rules)) return;
-        onCommit(Number(text));
+        const figure = parseNumberDraft(text);
+        if (figure === null) onClear?.();
+        else onCommit(figure);
       }}
     />
   );
