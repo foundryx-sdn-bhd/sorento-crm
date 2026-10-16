@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type ColumnDef, type ExpandedState } from '@tanstack/react-table';
-import { ChevronDown, ChevronRight, Printer, Settings2, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Link2, Printer, Settings2, Trash2 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -134,6 +135,9 @@ function AskDialog({
       <DialogContent className="w-full max-w-md">
         <DialogHeader>
           <DialogTitle>{move.label}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {move.ask === 'date' ? 'Enter the date.' : 'Enter the reason.'}
+          </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-1.5">
           {move.ask === 'date' ? (
@@ -189,6 +193,9 @@ function InternalDialog({
       <DialogContent className="w-full max-w-md">
         <DialogHeader>
           <DialogTitle>Set consignment / PO no</DialogTitle>
+          <DialogDescription className="sr-only">
+            Enter the consignment and PO numbers.
+          </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className="space-y-1.5">
@@ -228,6 +235,9 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
   const { submit, move, saveInternal } = useSampleRequestMutations();
   const canProcess = useHasPermission('projects.sample_requests.process');
   const canCreate = useHasPermission('projects.sample_requests.create');
+  // The history endpoint answers only admins and `view` holders; a salesperson who holds
+  // just `create` would get a 403 toast on every page.
+  const canViewRecord = useHasPermission('projects.sample_requests.view');
   const userId = useEffectiveUserId();
   const [asking, setAsking] = useState<Move | null>(null);
   const [internalOpen, setInternalOpen] = useState(false);
@@ -438,7 +448,18 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
                 }}
               >
                 <Printer className="size-4" />
-                Print
+                Print / Download PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  void navigator.clipboard
+                    .writeText(window.location.href)
+                    .then(() => toast.success('Link copied'))
+                    .catch(() => toast.error('Could not copy the link'));
+                }}
+              >
+                <Link2 className="size-4" />
+                Copy link
               </DropdownMenuItem>
               {canProcess && r.status !== 'cancelled' && (
                 <DropdownMenuItem onSelect={() => setInternalOpen(true)}>
@@ -503,7 +524,7 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
               <p className="text-sm text-muted-foreground">Customer</p>
               <p className="flex flex-wrap items-center gap-2 font-medium">
                 {[r.customer_code, r.customer_name].filter(Boolean).join(' - ') || 'None'}
-                {!r.customer_id && r.customer_name && (
+                {!r.customer_code && r.customer_name && (
                   <Badge variant="secondary">No debtor code</Badge>
                 )}
               </p>
@@ -570,7 +591,9 @@ export default function SampleRequestDetail({ requestId }: { requestId: string }
         </CardContent>
       </Card>
 
-      <AuditTrail entityType="project_sample_requests" entityId={requestId} title="Audit Trail" />
+      {canViewRecord && (
+        <AuditTrail entityType="project_sample_requests" entityId={requestId} title="Audit Trail" />
+      )}
 
       {asking && (
         <AskDialog

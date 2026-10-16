@@ -28,6 +28,7 @@ _PER_RECORD_VIEW_PERMISSION: dict[str, str] = {
     "stock_inquiry": "procurement.stock_inquiries.view",
     "purchase_request": "procurement.purchase_requests.view",
     "product": "master_data.products.view",
+    "project_sample_requests": "projects.sample_requests.view",
     # Packing List detail, Timeline tab (usePackingLists.ts, R17).
     "inbound_shipments": "procurement.packing_lists.view",
 }

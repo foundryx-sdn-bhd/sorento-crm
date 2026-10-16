@@ -1245,6 +1245,17 @@ def test_review_s1_delete_rechecks_the_draft_state_when_the_window_lapses(world)
     assert _get(world, rid)["status"] == "submitted"
 
 
+def test_review_audit_trail_is_readable_with_the_sample_request_view_slug(world):
+    """The detail page's Audit Trail: a non-admin with the view slug (the coordinator) reads the
+    record's history; a salesperson holding only create is still refused (the page hides it)."""
+    rid = _draft(world)["id"]
+    params = {"entity_type": "project_sample_requests", "entity_id": rid}
+    ok = world.api.as_(world.coord).get("/api/v1/audit/logs/", params=params)
+    assert ok.status_code == 200, ok.text
+    no = world.api.as_(world.sales).get("/api/v1/audit/logs/", params=params)
+    assert no.status_code == 403, no.text
+
+
 def test_review_list_filters_by_salesperson(world):
     """List Filters popover: ?salesperson_id= narrows the queue to one salesperson."""
     mine = _submitted(world)

@@ -32,7 +32,7 @@ import { useListStateFromUrl } from '@/hooks/useListStateFromUrl';
 import { useResetPageOnFilterChange } from '@/hooks/useResetPageOnFilterChange';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { buildDetailSearch } from '@/lib/listNavQuery';
-import { formatDate, formatDateInMalaysia } from '@/lib/helpers';
+import { formatDateInMalaysia } from '@/lib/helpers';
 import { getUserLookup } from '@/services/userSelectService';
 import { STATUS_PILL_BASE, statusPillClass } from '@/lib/status-pill';
 import {
@@ -79,7 +79,7 @@ function statusFilterFromParam(param: string | undefined): string {
 
 export function deliveryText(row: Pick<SampleRequestRow, 'deliver_immediately' | 'delivery_date'>) {
   if (row.deliver_immediately) return 'Immediate';
-  return row.delivery_date ? formatDate(new Date(row.delivery_date)) : '-';
+  return row.delivery_date ? formatDateInMalaysia(row.delivery_date) : '-';
 }
 
 export default function SampleRequestsList() {

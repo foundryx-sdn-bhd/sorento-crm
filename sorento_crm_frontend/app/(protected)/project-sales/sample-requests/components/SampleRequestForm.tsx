@@ -151,6 +151,10 @@ export default function SampleRequestForm({
           ...prev,
           project_id: p.id,
           project_label: [p.project_code, p.title].filter(Boolean).join(' - '),
+          // The project's buyer is its originating lead's customer; none when registered directly.
+          ...(p.customer_id && !prev.customer_id
+            ? { customer_id: p.customer_id, customer_label: p.customer_name ?? '' }
+            : {}),
         }));
       })
       .catch(() => undefined);
