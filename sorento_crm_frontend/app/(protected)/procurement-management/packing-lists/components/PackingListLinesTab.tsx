@@ -263,7 +263,7 @@ export function PackingListLinesTab() {
     let amount = 0;
     for (const line of rows) {
       const cells = deriveLineCells(line);
-      qty += Number(line.quantity_shipped || 0);
+      qty += toNum(line.quantity_shipped) ?? 0;
       ctnQty += cells.ctnQty ?? 0;
       if (cells.totalCbm === null) unmeasuredCbm += 1;
       else totalCbm += cells.totalCbm;

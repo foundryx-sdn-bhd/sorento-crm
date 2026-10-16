@@ -118,6 +118,20 @@ export const PurchaseRequestFormSchema = PurchaseRequestSchema.superRefine(
         });
       }
     });
+    // Bad input in a price or total box (NaN) is told with the shared sentence, never saved as blank.
+    data.products.forEach((line, index) => {
+      const fields = data.request_type === 'sponsorship_form' ? (['total'] as const) : (['unit_price', 'total'] as const);
+      for (const key of fields) {
+        const value = line[key];
+        if (typeof value === 'number' && Number.isNaN(value)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['products', index, key],
+            message: numberFieldError(value, { min: 0, optional: true }) as string,
+          });
+        }
+      }
+    });
     // #1227: sponsorship forms only, mandatory unit price on every real line - purchase
     // requests are unchanged. Same idiom as the sales_type rule above.
     if (data.request_type === 'sponsorship_form') {
