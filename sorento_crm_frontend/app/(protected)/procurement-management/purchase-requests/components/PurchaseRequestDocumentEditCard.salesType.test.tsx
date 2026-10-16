@@ -186,3 +186,35 @@ it('SF edit: a blank Sales Type still saves (not required)', async () => {
   expect(data.sales_type ?? null).toBeNull();
   salesOnSf = true;
 });
+
+/** The "Clear selection" button inside the "Sales Type" field, or null. */
+async function salesTypeClear(): Promise<HTMLElement | null> {
+  const select = await salesTypeSelect();
+  let node: HTMLElement | null = select.parentElement;
+  for (let i = 0; node && i < 4; i += 1, node = node.parentElement) {
+    const btn = node.querySelector('[aria-label="Clear selection"]');
+    if (btn) return btn as HTMLElement;
+  }
+  return null;
+}
+
+it('SF edit: an optional Sales Type can be cleared, and saving then sends none', async () => {
+  salesOnSf = true;
+  renderEdit('sponsorship_form');
+  await customerInput();
+  expect(await salesTypeSelect()).toHaveTextContent('Project');
+  const clear = await salesTypeClear();
+  expect(clear, 'no clear button on the SF Sales Type').toBeTruthy();
+
+  fireEvent.pointerDown(clear!); // SearchableSelect clears on pointer down
+  const data = await save();
+
+  expect(data.sales_type ?? null).toBeNull();
+});
+
+it('PR edit: the required Sales Type has no clear button', async () => {
+  renderEdit('purchase_request');
+  expect(await salesTypeSelect()).toHaveTextContent('Project');
+
+  expect(await salesTypeClear()).toBeNull();
+});
