@@ -16,8 +16,10 @@
  */
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from '@/lib/toast';
 import type {
   Project,
   ProjectQuotation,
@@ -48,6 +50,11 @@ const deleteQuotationLine = vi.fn();
 const replaceQuotationLines = vi.fn();
 const recomputeQuotationVersion = vi.fn();
 const judgeQuotationLine = vi.fn();
+// Fix round 2: the service the coder must add to _shared/services/projectService.ts, read through
+// the hook `useQuotationLineImages(productId)` in _shared/hooks/useProjects.ts.
+const getQuotationLineImages = vi.fn();
+// SET-QUOTE-LINE review round: the series' set prices read through this service.
+const getSeriesSetRows = vi.fn(async (..._args: unknown[]) => []);
 
 vi.mock('../../_shared/services/projectService', async (importOriginal) => {
   const actual = await importOriginal<
@@ -64,6 +71,8 @@ vi.mock('../../_shared/services/projectService', async (importOriginal) => {
     replaceQuotationLines: (...args: unknown[]) => replaceQuotationLines(...args),
     recomputeQuotationVersion: (...args: unknown[]) => recomputeQuotationVersion(...args),
     judgeQuotationLine: (...args: unknown[]) => judgeQuotationLine(...args),
+    getQuotationLineImages: (...args: unknown[]) => getQuotationLineImages(...args),
+    getSeriesSetRows: (...args: unknown[]) => getSeriesSetRows(...args),
   };
 });
 
@@ -88,11 +97,38 @@ vi.mock('@/app/(protected)/master-data-management/products/services/productServi
   getProductsForVariantSelect: vi.fn(async () => []),
 }));
 
+vi.mock('@/lib/toast', () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
+}));
+
+// SET-QUOTE-LINE: the picker's set options come from the NEW `getProductSetsForLineSelect`
+// ({ query?, ids? }), and a pick reads the set's detail through `getProductSet`.
+const getProductSetsForLineSelect = vi.fn(async (..._args: unknown[]): Promise<unknown[]> => []);
+const getProductSet = vi.fn();
+vi.mock(
+  '@/app/(protected)/master-data-management/product-sets/services/productSetService',
+  async (importOriginal) => {
+    const actual = await importOriginal<
+      typeof import('@/app/(protected)/master-data-management/product-sets/services/productSetService')
+    >();
+    return {
+      ...actual,
+      getProductSetsForLineSelect: (...args: unknown[]) => getProductSetsForLineSelect(...args),
+      getProductSet: (...args: unknown[]) => getProductSet(...args),
+    };
+  },
+);
+
 // Master data behind the fill: the line snapshots a brand NAME and a unit CODE, so both ids
 // have to resolve before anything lands on a row. Both hooks are cached-forever queries in
 // real life; here they are answered outright so a fill is deterministic.
 vi.mock('@/app/(protected)/master-data-management/shared/hooks/use-brand-select-query', () => ({
-  useBrandSelectQuery: () => ({ data: [{ id: 'b1', brand_name: 'SORENTO' }] }),
+  useBrandSelectQuery: () => ({
+    data: [
+      { id: 'b1', brand_name: 'SORENTO' },
+      { id: 'b2', brand_name: 'MOCHA' },
+    ],
+  }),
 }));
 vi.mock('@/app/(protected)/master-data-management/shared/hooks/use-uom-select-query', () => ({
   useUOMSelectQuery: () => ({
@@ -103,9 +139,96 @@ vi.mock('@/app/(protected)/master-data-management/shared/hooks/use-uom-select-qu
   }),
 }));
 
+// QUOTATION-UX (S6/S7). The stock chip reads the board's stock detail per fulfilment-planning
+// group, and the "Stock at" dropdown derives its groups from the warehouse list. ASSUMED sources
+// the coder must read: `useStockDetail` from `_shared/hooks/useFulfilmentPlanning` and
+// `getWarehouses` from the inventory warehouseService (the one OrderInquiryStockGrid uses).
+const stockByGroup: Record<string, unknown> = {};
+const useStockDetailMock = vi.fn(
+  (_productId: string, _wh: string | null, _lineIds?: string[], group?: string | null) => ({
+    data: group ? stockByGroup[group] : undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+);
+vi.mock('../../_shared/hooks/useFulfilmentPlanning', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../_shared/hooks/useFulfilmentPlanning')>();
+  return {
+    ...actual,
+    useStockDetail: (...args: Parameters<typeof useStockDetailMock>) => useStockDetailMock(...args),
+  };
+});
+vi.mock('@/app/(protected)/inventory-management/warehouses/services/warehouseService', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('@/app/(protected)/inventory-management/warehouses/services/warehouseService')
+  >();
+  return {
+    ...actual,
+    getWarehouses: vi.fn(async () => ({
+      data: [
+        { id: 'w1', warehouse_code: 'MWH-IB' },
+        { id: 'w2', warehouse_code: 'DC1-BB' },
+        { id: 'w3', warehouse_code: 'BRW' },
+      ],
+      total: 3,
+    })),
+  };
+});
+// The viewer is the existing AttachmentPreviewModal; a stub says whether it opened and on what.
+vi.mock('@/components/common/AttachmentPreviewModal', () => ({
+  default: (props: { items: { name: string }[]; startIndex?: number }) => (
+    <div data-testid="attachment-preview-modal">
+      {props.items.map((item) => item.name).join('|')}
+    </div>
+  ),
+}));
+
+// Round-1 fix tests: the real rows component, with the table's own drop handler captured so a
+// drag can be fired without dnd-kit's layout measuring (same idea as SalesOrderLinesTable.reorder).
+const dnd: { dragEnd: ((event: unknown) => void) | null } = { dragEnd: null };
+vi.mock('@/components/ui/data-grid-table-dnd-rows', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/ui/data-grid-table-dnd-rows')>();
+  const Actual = actual.DataGridTableDndRows;
+  return {
+    ...actual,
+    DataGridTableDndRows: (props: React.ComponentProps<typeof Actual>) => {
+      dnd.dragEnd = props.handleDragEnd as unknown as (event: unknown) => void;
+      return <Actual {...props} />;
+    },
+  };
+});
+
+// The real hook, watched: AC-QLG02 asks which listing key the grid remembers its columns under.
+const listingKeysSeen: string[] = [];
+const columnVisibilitySeen: { listingKey: string; visibility: Record<string, boolean> }[] = [];
+vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('@/lib/listing-column-preferences/useListingColumnPreferences')
+  >();
+  return {
+    ...actual,
+    useListingColumnPreferences: (args: {
+      listingKey?: string;
+      table: { getState: () => { columnVisibility?: Record<string, boolean> } };
+    }) => {
+      if (args?.listingKey) {
+        listingKeysSeen.push(args.listingKey);
+        columnVisibilitySeen.push({
+          listingKey: args.listingKey,
+          visibility: { ...(args.table.getState().columnVisibility ?? {}) },
+        });
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actual.useListingColumnPreferences as any)(args);
+    },
+  };
+});
+
 import {
   QuotationVersionEditor,
   describeRecompute,
+  unfinishedStagedLines,
   stagedLinesToBody,
   stagedScopeTotal,
 } from './QuotationVersionEditor';
@@ -276,7 +399,13 @@ function footerText(): string {
 function itemNumbers(): (string | null | undefined)[] {
   return Array.from(screen.getByRole('table').querySelectorAll('tbody tr'))
     .filter((tr) => !tr.querySelector('td[colspan]'))
-    .map((tr) => tr.querySelector('td')?.textContent);
+    // The grid may put a drag-handle cell first in edit mode: the number is the first cell
+    // that reads as one.
+    .map((tr) =>
+      Array.from(tr.querySelectorAll('td'))
+        .map((td) => td.textContent?.trim())
+        .find((text) => /^\d+$/.test(text ?? '')),
+    );
 }
 
 /** Nothing left the browser. Every write path the editor used to own is asserted silent. */
@@ -290,6 +419,8 @@ function expectNothingWritten() {
 beforeEach(() => {
   vi.clearAllMocks();
   session = null;
+  Object.keys(stockByGroup).forEach((key) => delete stockByGroup[key]);
+  window.localStorage.clear();
   listQuotationVersions.mockResolvedValue(VERSIONS);
   listQuotationLines.mockResolvedValue([line()]);
   reviseQuotation.mockResolvedValue(version({ id: 'v3', version_no: 3, is_current: true }));
@@ -404,7 +535,7 @@ describe('QuotationVersionEditor', () => {
     expect(screen.getByText('List RM 1,000.00')).toBeInTheDocument();
   });
 
-  it('marks an off-catalog line as such, since it can never be standard', async () => {
+  it('marks a custom item as such, since it can never be standard', async () => {
     listQuotationLines.mockResolvedValue([
       line({
         product_code: null,
@@ -416,8 +547,11 @@ describe('QuotationVersionEditor', () => {
 
     renderEditor();
 
-    expect(await screen.findByText('Off-catalog')).toBeInTheDocument();
-    expect(screen.getByText('Non-standard')).toBeInTheDocument();
+    expect(await screen.findByTitle('Not a catalogue product')).toBeInTheDocument();
+    expect(screen.queryByText('Off-catalog')).toBeNull();
+    expect(screen.queryByText(/custom/i)).toBeNull();
+    // One word, one pill: the server's non-standard verdict does not add a second.
+    expect(screen.getAllByText('Non-standard')).toHaveLength(1);
   });
 
   /**
@@ -427,20 +561,22 @@ describe('QuotationVersionEditor', () => {
    * dropdown and the line kept insisting it was off-catalog, and non-standard, until the
    * save and the refetch. Both badges were being read off the stored line.
    */
-  it('clears Off-catalog the moment a product is picked, before any save', async () => {
+  it('clears the Non-standard (not a catalogue product) pill the moment a product is picked, before any save', async () => {
     listQuotationLines.mockResolvedValue([
       line({ product_code: null, product_id: null, description: 'BT009', is_non_standard: true }),
     ]);
     await renderEditing();
 
-    expect(screen.getByText('Off-catalog')).toBeInTheDocument();
+    expect(screen.getByTitle('Not a catalogue product')).toBeInTheDocument();
 
     // Pick a product on the line. `Off-catalog` means "no product is linked" and nothing
     // else, so it is a fact about the draft and can be answered here.
     fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
     fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
 
-    await waitFor(() => expect(screen.queryByText('Off-catalog')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByTitle('Not a catalogue product')).not.toBeInTheDocument(),
+    );
   });
 
   it('asks the server for a fresh verdict the moment the product changes - on the spot, not at save', async () => {
@@ -559,34 +695,18 @@ describe('QuotationVersionEditor', () => {
     expect(screen.queryByText(/frozen without any lines|nothing quoted yet/i)).not.toBeInTheDocument();
   });
 
-  it('lays every field of a line out as a column, in the printed order', async () => {
+  it('lays the line out as the grid columns, with no Tech spec, Counts per or Rate only column', async () => {
     await renderEditing();
 
-    // The order matters: the row is filled in reading left to right the way the customer
-    // reads the printed quotation back.
-    const printed = [
-      'Item',
-      // Column B of the client's own issued quotation, immediately after ITEM (S21).
-      'Photo',
-      'Product',
-      'Description',
-      'Tech spec',
-      'Brand',
-      'Qty',
-      'UOM',
-      'Unit price',
-      'Complete set',
-      'Counts per',
-      'Rate only',
-      'Total',
-    ];
-    for (const header of printed) {
+    // UAC grid: the shared DataGrid, columns per the approved mock section 1.
+    expect(document.querySelector('[data-slot="data-grid-table"]')).not.toBeNull();
+    for (const header of ['#', 'Photo', 'Drawing', 'Product', 'Description', 'Brand', 'Qty', 'UOM', 'Rate (RM)', 'Total (RM)']) {
       expect(await screen.findByRole('columnheader', { name: header })).toBeInTheDocument();
     }
-    expect(
-      screen.getAllByRole('columnheader').map((cell) => cell.textContent?.trim()),
-    ).toEqual([...printed, 'Row actions']);
-    // Notes is a paragraph, so it keeps a home off the row rather than a six-character cell.
+    for (const gone of ['Counts per', 'Tech spec', 'Rate only', 'Complete set']) {
+      expect(screen.queryByRole('columnheader', { name: gone })).toBeNull();
+    }
+    // Owner round 7 (F7): lines do not expand; Notes is an icon button on the row.
     expect(screen.getByRole('button', { name: 'Notes on SRT-WC-01' })).toBeInTheDocument();
   });
 
@@ -602,17 +722,19 @@ describe('QuotationVersionEditor', () => {
     await renderEditing();
 
     // What the server sent is on screen, under the name the RESPONSE uses for it.
-    expect(screen.getByRole('textbox', { name: 'Brand on SRT-WC-01' })).toHaveValue('SORENTO');
-    expect(screen.getByRole('textbox', { name: 'Tech spec on SRT-WC-01' })).toHaveValue(
-      'Rimless, 4/2.6L dual flush',
+    expect(screen.getByRole('combobox', { name: 'Brand on SRT-WC-01' })).toHaveTextContent(
+      'SORENTO',
     );
-    expect(screen.getByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toHaveValue(
-      'c/w seat cover',
-    );
+    // Tech spec is no longer a column: the legacy text is carried through the save untouched.
+    expect(screen.queryByRole('textbox', { name: 'Tech spec on SRT-WC-01' })).toBeNull();
+    // Owner round 7 (A2b): no Complete set input anywhere; the stored text still travels in the
+    // save body (asserted below). A row click opens nothing.
+    fireEvent.click(rowOf('SRT-WC-01').querySelector('td') as HTMLElement);
+    expect(screen.queryByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toBeNull();
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Brand on SRT-WC-01' }), {
-      target: { value: 'MOCHA' },
-    });
+    // Brand is a picker over the brand list now; the pick sends the brand NAME.
+    fireEvent.click(screen.getByRole('combobox', { name: 'Brand on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'MOCHA' }));
 
     // The REQUEST calls the brand `brand_snapshot` while the response calls it `brand`. The
     // asymmetry is the API's, and the editor honours it rather than sending its own name.
@@ -847,7 +969,7 @@ describe('QuotationVersionEditor', () => {
       target: { value: '4' },
     });
 
-    expect(await screen.findByText('Needed on an off-catalog line')).toBeInTheDocument();
+    expect(await screen.findByText('A non-standard item needs a description')).toBeInTheDocument();
     expect(description).toHaveAttribute('aria-invalid', 'true');
     expectNothingWritten();
   });
@@ -860,7 +982,7 @@ describe('QuotationVersionEditor', () => {
 
     // Empty is not wrong. Marking a row red the instant it appears would be the screen
     // shouting at somebody for pressing the button it offered them.
-    expect(screen.queryByText('Needed on an off-catalog line')).toBeNull();
+    expect(screen.queryByText('A non-standard item needs a description')).toBeNull();
   });
 
   it('fills the line from the product that was picked', async () => {
@@ -875,7 +997,9 @@ describe('QuotationVersionEditor', () => {
         'Vitreous china counter basin',
       ),
     );
-    expect(screen.getByRole('textbox', { name: 'Brand on SRT-WC-01' })).toHaveValue('SORENTO');
+    expect(screen.getByRole('combobox', { name: 'Brand on SRT-WC-01' })).toHaveTextContent(
+      'SORENTO',
+    );
     expect(screen.getByRole('combobox', { name: 'UOM on SRT-WC-01' })).toHaveTextContent('PCS');
     // And the list price beside the unit price is the picked product's, at once: reading the
     // saved row instead is what left "List RM 0.00" next to a real product.
@@ -1131,9 +1255,10 @@ describe('QuotationVersionEditor', () => {
 
     expect(
       await screen.findByText(
-        /46 lines name products this company's catalogue does not carry/i,
+        /46 lines name products this company's catalogue does not carry.*non-standard/i,
       ),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/off-catalog/i)).toBeNull();
   });
 });
 
@@ -1204,12 +1329,1162 @@ describe('QuotationVersionEditor on a scope not saved yet (AC-QF073)', () => {
         expect.objectContaining({ description_snapshot: 'Grab bar', unit_price: '80.00' }),
       ]),
     );
-    expect(screen.getByText('Off-catalog')).toBeInTheDocument();
+    expect(screen.getByTitle('Not a catalogue product')).toBeInTheDocument();
+    expect(screen.getAllByText('Non-standard')).toHaveLength(1);
     expect(listQuotationVersions).not.toHaveBeenCalled();
     expect(listQuotationLines).not.toHaveBeenCalled();
     expect(judgeQuotationLine).not.toHaveBeenCalled();
     // A revise would write at once; the form never offers it.
     expect(screen.queryByRole('button', { name: /Revise to/ })).toBeNull();
     expectNothingWritten();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// QUOTATION-UX: the lines grid (S6), stock chip (S7), picker, custom item. Through the editor.
+// ---------------------------------------------------------------------------------------------
+
+function ext(overrides: Record<string, unknown>): QuotationLine {
+  return line(overrides as Partial<QuotationLine>);
+}
+
+/** Opens a row/popover trigger the way a user does; works for Radix dropdowns and popovers. */
+function openTrigger(name: string) {
+  const trigger = screen.getByRole('button', { name });
+  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+  fireEvent.click(trigger);
+}
+
+/** The line's table row, found through its Qty cell (a details row has none of its own). */
+function rowOf(label: string): HTMLElement {
+  return screen.getByRole('textbox', { name: `Qty on ${label}` }).closest('tr') as HTMLElement;
+}
+
+/** Owner round 7 (F7): Notes is an icon button on the row that opens a small popover. The
+ *  popover's textarea is named `Note text on ${label}`. */
+async function openNotes(label: string) {
+  openTrigger(`Notes on ${label}`);
+  return screen.findByRole('textbox', { name: `Note text on ${label}` });
+}
+
+/** What a drop of dnd-kit would do: the table's own handler, fired with the two keys. */
+function dragLine(activeId: string, overId: string) {
+  act(() => {
+    dnd.dragEnd!({ active: { id: activeId }, over: { id: overId } });
+  });
+}
+
+async function chooseMenuItem(label: string, item: string) {
+  openTrigger(`Line actions on ${label}`);
+  fireEvent.click(await screen.findByText(item));
+}
+
+function descriptionOrder(): string[] {
+  return screen
+    .getAllByRole('textbox', { name: /^Description on / })
+    .map((el) => (el as HTMLTextAreaElement).value);
+}
+
+const TWO_LINES = [
+  line({ id: 'l1', product_code: 'A-1', description: 'First', sort_order: 0 }),
+  line({ id: 'l2', product_code: 'A-2', description: 'Second', sort_order: 10 }),
+];
+
+describe('QuotationVersionEditor lines grid (QUOTATION-UX)', () => {
+  it('draws the lines in the shared DataGrid with a drag handle per line in edit mode only', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    await renderEditing();
+    expect(document.querySelector('[data-slot="data-grid-table"]')).not.toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Drag to reorder' })).toHaveLength(2);
+  });
+
+  it('offers no drag handles and no grid editors in the read view', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    renderEditor();
+    expect(await screen.findByText('First')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="data-grid-table"]')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Drag to reorder' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Line actions on / })).toBeNull();
+  });
+
+  it('edits the description in a textarea and sends its line breaks in the save body', async () => {
+    await renderEditing();
+    const description = screen.getByRole('textbox', { name: 'Description on SRT-WC-01' });
+    expect(description.tagName).toBe('TEXTAREA');
+    fireEvent.change(description, { target: { value: 'Wall-hung WC\nc/w soft-close seat' } });
+    await waitFor(() =>
+      expect(stagedBody()[0].description_snapshot).toBe('Wall-hung WC\nc/w soft-close seat'),
+    );
+  });
+
+  it('keeps the footer total off rate-only lines and live with edits', async () => {
+    listQuotationLines.mockResolvedValue([
+      line(),
+      line({ id: 'l2', product_code: 'SRT-BIDET-09', unit_price: '500.00', quantity: '1.00', line_total: '500.00', is_rate_only: true }),
+    ]);
+    await renderEditing();
+    expect(footerText()).toContain('RM 9,000.00');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Qty on SRT-WC-01' }), { target: { value: '12' } });
+    await waitFor(() => expect(footerText()).toContain('RM 10,800.00'));
+  });
+
+  it('picks a brand from the brand list, sends its name, and clears it', async () => {
+    listQuotationLines.mockResolvedValue([ext({ brand: 'SORENTO' })]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Brand on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'MOCHA' }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ brand_snapshot: 'MOCHA' }));
+  });
+
+  it('moves a line down and up by dragging, reordering the staged body and the numbers (replaces the Move down/up menu items)', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    await renderEditing();
+    dragLine('l1', 'l2');
+    await waitFor(() => expect(stagedBody().map((l) => l.id)).toEqual(['l2', 'l1']));
+    expect(descriptionOrder()).toEqual(['Second', 'First']);
+    expect(itemNumbers()).toEqual(['1', '2']);
+    dragLine('l1', 'l2');
+    await waitFor(() => expect(stagedBody().map((l) => l.id)).toEqual(['l1', 'l2']));
+    expect(descriptionOrder()).toEqual(['First', 'Second']);
+  });
+
+  it('inserts a line below, a section above, and removes a line from the row menu', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    await renderEditing();
+    await chooseMenuItem('A-1', 'Insert a line below');
+    await waitFor(() => expect(stagedBody()).toHaveLength(3));
+    expect(stagedBody()[1]).not.toHaveProperty('id');
+    expect(stagedBody().map((l) => l.id)).toEqual(['l1', undefined, 'l2']);
+
+    await chooseMenuItem('A-2', 'Insert a section above');
+    expect(await screen.findByRole('textbox', { name: 'Section heading on A-2' })).toBeInTheDocument();
+
+    await chooseMenuItem('A-1', 'Remove line');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restore A-1' })).toBeInTheDocument());
+    expectNothingWritten();
+  });
+
+  it('lists exactly the three row actions, with no Line details, Move up or Move down', async () => {
+    await renderEditing();
+    openTrigger('Line actions on SRT-WC-01');
+    await screen.findByRole('menuitem', { name: 'Remove line' });
+    expect(screen.getAllByRole('menuitem').map((el) => el.textContent?.trim())).toEqual([
+      'Insert a line below',
+      'Insert a section above',
+      'Remove line',
+    ]);
+    for (const gone of ['Line details', 'Move up', 'Move down']) {
+      expect(screen.queryByRole('menuitem', { name: gone })).toBeNull();
+    }
+  });
+
+  it('F7: the Notes icon opens a popover with the Notes box; typing stages notes, other fields are untouched', async () => {
+    listQuotationLines.mockResolvedValue([ext({ unit_type: 'bathroom', complete_set: 'c/w seat', notes: 'Ex-stock' })]);
+    await renderEditing();
+    expect(screen.queryByRole('textbox', { name: 'Note text on SRT-WC-01' })).toBeNull();
+    const box = await openNotes('SRT-WC-01');
+    expect(box).toHaveValue('Ex-stock');
+    fireEvent.change(box, { target: { value: 'Ex-works' } });
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ notes: 'Ex-works', unit_type: 'bathroom', complete_set: 'c/w seat' }));
+  });
+
+  it('F7: the Notes icon is filled (data-has-note) only when the line has a note', async () => {
+    listQuotationLines.mockResolvedValue([
+      ext({ id: 'l1', product_code: 'A-1', notes: 'Ex-stock' }),
+      ext({ id: 'l2', product_code: 'A-2', notes: null, sort_order: 10 }),
+    ]);
+    await renderEditing();
+    expect(screen.getByRole('button', { name: 'Notes on A-1' })).toHaveAttribute('data-has-note', 'true');
+    expect(screen.getByRole('button', { name: 'Notes on A-2' })).toHaveAttribute('data-has-note', 'false');
+  });
+
+  it('A2b: no Priced per or Complete set input exists on a row, expanded or not', async () => {
+    listQuotationLines.mockResolvedValue([ext({ unit_type: 'bathroom', complete_set: 'c/w seat' })]);
+    await renderEditing();
+    fireEvent.click(rowOf('SRT-WC-01').querySelector('td') as HTMLElement);
+    expect(screen.queryByRole('combobox', { name: 'Priced per on SRT-WC-01' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toBeNull();
+    expect(screen.queryByText('Priced per')).toBeNull();
+    expect(screen.queryByText('Complete set')).toBeNull();
+    // what was stored still travels
+    expect(stagedBody()[0]).toMatchObject({ unit_type: 'bathroom', complete_set: 'c/w seat' });
+  });
+});
+
+describe('QuotationVersionEditor custom item (QUOTATION-UX)', () => {
+  it('words a line with no product as Non-standard with a Pick a product placeholder, never Off-catalog', async () => {
+    listQuotationLines.mockResolvedValue([line({ product_code: null, product_id: null, description: 'Bespoke top', is_non_standard: true })]);
+    await renderEditing();
+    expect(screen.getByTitle('Not a catalogue product')).toBeInTheDocument();
+    expect(screen.getAllByText('Non-standard')).toHaveLength(1);
+    expect(screen.getByRole('combobox', { name: /^Product on / })).toHaveTextContent('Pick a product');
+    expect(document.body.textContent).not.toMatch(/off-catalog/i);
+  });
+
+  it('flags a typed-into custom item with no description, and still counts it as unfinished', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
+    await screen.findByRole('textbox', { name: 'Description on line 2' });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Qty on line 2' }), { target: { value: '4' } });
+    expect(await screen.findByText('A non-standard item needs a description')).toBeInTheDocument();
+    expect(unfinishedStagedLines(session?.scopes[QUOTATION.id]?.lines ?? [])).toBeGreaterThan(0);
+  });
+});
+
+const PHOTO = (extra: Record<string, unknown> = {}) => ({
+  state: 'chosen',
+  url: 'https://cdn.test/p.jpg',
+  preview_url: 'https://cdn.test/p-full.jpg',
+  attachment_id: 'a1',
+  filename: 'wc front.jpg',
+  candidate_count: 2,
+  candidates: [
+    { attachment_id: 'a1', filename: 'wc front.jpg', url: 'https://cdn.test/p.jpg', preview_url: 'https://cdn.test/p-full.jpg' },
+    { attachment_id: 'a2', filename: 'wc side.jpg', url: 'https://cdn.test/s.jpg', preview_url: 'https://cdn.test/s-full.jpg' },
+  ],
+  ...extra,
+});
+const DRAWING = (extra: Record<string, unknown> = {}) => ({
+  state: 'default',
+  url: 'https://cdn.test/d.png',
+  preview_url: 'https://cdn.test/d-full.png',
+  attachment_id: 'd1',
+  filename: 'wc drawing 1.png',
+  candidate_count: 2,
+  candidates: [
+    { attachment_id: 'd1', filename: 'wc drawing 1.png', url: 'https://cdn.test/d.png', preview_url: 'https://cdn.test/d-full.png' },
+    { attachment_id: 'd2', filename: 'wc drawing 2.png', url: 'https://cdn.test/d2.png', preview_url: 'https://cdn.test/d2-full.png' },
+  ],
+  ...extra,
+});
+
+describe('QuotationVersionEditor photo and drawing picker (QUOTATION-UX)', () => {
+  it('shows the drawing thumbnail and opens the existing preview modal on click', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1', product_image: PHOTO(), technical_drawing: DRAWING() })]);
+    renderEditor();
+    const drawing = await screen.findByRole('img', { name: 'SRT-WC-01 technical drawing' });
+    expect(drawing).toHaveAttribute('src', 'https://cdn.test/d.png');
+    fireEvent.click(drawing);
+    expect(await screen.findByTestId('attachment-preview-modal')).toBeInTheDocument();
+  });
+
+  it('says no drawing when the product has none', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1', product_image: PHOTO({ candidates: [], candidate_count: 1 }), technical_drawing: { state: 'no_drawings', candidate_count: 0, candidates: [] } })]);
+    renderEditor();
+    expect(await screen.findByText('no drawing')).toBeInTheDocument();
+  });
+
+  it('offers Change photo and Change drawing when several candidates exist, and stages the pick', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1', product_image: PHOTO(), technical_drawing: DRAWING() })]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Change photo on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use wc side.jpg' }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ image_attachment_id: 'a2' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change drawing on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use wc drawing 2.png' }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ image_attachment_id: 'a2', drawing_attachment_id: 'd2' }));
+    expectNothingWritten();
+  });
+
+  it('says Choose photo when no photo is chosen yet', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1', product_image: PHOTO({ state: 'not_chosen', url: null, preview_url: null, attachment_id: null, filename: null }), technical_drawing: DRAWING() })]);
+    await renderEditing();
+    expect(screen.getByRole('button', { name: 'Choose photo on SRT-WC-01' })).toBeInTheDocument();
+  });
+
+  it('clears both picks when the product changes', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1', image_attachment_id: 'a2', drawing_attachment_id: 'd2', product_image: PHOTO(), technical_drawing: DRAWING() })]);
+    await renderEditing();
+    // The stored picks travel with the save until the product changes.
+    expect(stagedBody()[0]).toMatchObject({ image_attachment_id: 'a2', drawing_attachment_id: 'd2' });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Product on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_id: 'p9' }));
+    expect(stagedBody()[0].image_attachment_id ?? null).toBeNull();
+    expect(stagedBody()[0].drawing_attachment_id ?? null).toBeNull();
+  });
+
+  it('offers no Choose or Change buttons in the read view or on a frozen version', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1', product_image: PHOTO(), technical_drawing: DRAWING() })]);
+    renderEditor();
+    await screen.findByRole('img', { name: 'SRT-WC-01 technical drawing' });
+    expect(screen.queryByRole('button', { name: /^(Choose|Change) (photo|drawing) on / })).toBeNull();
+  });
+
+  it('offers none when the product has a single candidate', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1', product_image: PHOTO({ candidate_count: 1, candidates: [PHOTO().candidates[0]] }), technical_drawing: DRAWING({ candidate_count: 1, candidates: [DRAWING().candidates[0]] }) })]);
+    await renderEditing();
+    expect(screen.queryByRole('button', { name: /^(Choose|Change) (photo|drawing) on / })).toBeNull();
+  });
+});
+
+const STOCK_IB = {
+  available_qty: '25',
+  locations: [{ location: 'MWH-IB', where: 'group', available_qty: '25', so_qty: '0', spo_qty: '0', qty_on_hand: '25' }],
+  incoming: [{ spo_number: 'SPO-1001', spo_qty: '5', expected_date: '2026-11-01' }],
+  sales_orders: [],
+  bins: [],
+};
+const STOCK_POOLS = {
+  available_qty: '9',
+  locations: [{ location: 'BRW', where: 'site_pool', available_qty: '9', so_qty: '0', spo_qty: '0', qty_on_hand: '9' }],
+  incoming: [],
+  sales_orders: [],
+  bins: [],
+};
+
+function withStock(ib: Record<string, unknown> = STOCK_IB) {
+  stockByGroup.IB = ib;
+  stockByGroup.BB = { ...STOCK_IB, available_qty: '3' };
+  stockByGroup.pools = STOCK_POOLS;
+}
+
+describe('QuotationVersionEditor stock chip (QUOTATION-UX)', () => {
+  beforeEach(() => {
+    // 10 wanted, a real product behind the line (the chip only exists on a product line).
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1' })]);
+  });
+
+  it('shows available stock for the chosen group, toned by the line quantity', async () => {
+    withStock();
+    await renderEditing();
+    const chip = await screen.findByRole('button', { name: 'Stock on SRT-WC-01' });
+    expect(chip).toHaveTextContent(/25 avail/);
+    expect(chip).toHaveAttribute('data-tone', 'ok');
+    expect(useStockDetailMock).toHaveBeenCalledWith('p1' as never, null, null as never, 'IB');
+  });
+
+  it.each([
+    ['4', 'part'],
+    ['0', 'none'],
+    ['-3', 'none'],
+  ])('tones %s available against 10 wanted as %s', async (available, tone) => {
+    withStock({ ...STOCK_IB, available_qty: available });
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1' })]);
+    await renderEditing();
+    expect(await screen.findByRole('button', { name: 'Stock on SRT-WC-01' })).toHaveAttribute('data-tone', tone);
+  });
+
+  it('lists the groups in Stock at, remembers the pick, and restores it on remount', async () => {
+    withStock();
+    const first = await renderEditing();
+    const select = await screen.findByRole('combobox', { name: 'Stock at' });
+    fireEvent.click(select);
+    fireEvent.click(await screen.findByRole('option', { name: /BB/ }));
+    await waitFor(() => expect(window.localStorage.getItem('quotation-lines.stock-group')).toBe('BB'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Stock on SRT-WC-01' })).toHaveTextContent(/3 avail/));
+    first.unmount();
+    session = null;
+    await renderEditing();
+    expect(await screen.findByRole('button', { name: 'Stock on SRT-WC-01' })).toHaveTextContent(/3 avail/);
+  });
+
+  it('still renders when localStorage throws', async () => {
+    withStock();
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); });
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied'); });
+    try {
+      await renderEditing();
+      expect(await screen.findByRole('combobox', { name: 'Stock at' })).toBeInTheDocument();
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it('opens a popover with the group and pool locations and the incoming SPO numbers', async () => {
+    withStock();
+    await renderEditing();
+    const chip = await screen.findByRole('button', { name: 'Stock on SRT-WC-01' });
+    fireEvent.pointerDown(chip, { button: 0, ctrlKey: false });
+    fireEvent.click(chip);
+    expect((await screen.findAllByText(/MWH-IB/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/BRW/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/SPO-1001/)).toBeInTheDocument();
+    expect(useStockDetailMock).toHaveBeenCalledWith('p1' as never, null, null as never, 'pools');
+  });
+
+  it('gives a custom item no stock button', async () => {
+    withStock();
+    listQuotationLines.mockResolvedValue([line({ product_code: null, product_id: null, description: 'Bespoke top' })]);
+    await renderEditing();
+    expect(screen.queryByRole('button', { name: /^Stock on / })).toBeNull();
+  });
+});
+
+describe('QuotationVersionEditor lines grid, fix round 1 (QUOTATION-UX)', () => {
+  const THREE = [
+    line({ id: 'l1', product_code: 'A-1', description: 'First', sort_order: 0 }),
+    line({ id: 'l2', product_code: 'A-2', description: 'Second', sort_order: 10 }),
+    line({ id: 'l3', product_code: 'A-3', description: 'Third', sort_order: 20, band_label: 'BILL NO 3' }),
+  ];
+
+  it('AC-QLG01: a row drag moves line 3 above line 2, renumbers, and carries its section bar', async () => {
+    listQuotationLines.mockResolvedValue(THREE);
+    await renderEditing();
+    expect(dnd.dragEnd).not.toBeNull();
+
+    act(() => {
+      dnd.dragEnd!({ active: { id: 'l3' }, over: { id: 'l2' } });
+    });
+
+    await waitFor(() => expect(stagedBody().map((l) => l.id)).toEqual(['l1', 'l3', 'l2']));
+    expect(itemNumbers()).toEqual(['1', '2', '3']);
+    // The heading that opened on line 3 travels with line 3: still directly above its row.
+    const heading = screen.getByRole('textbox', { name: 'Section heading on A-3' });
+    const lineRow = screen.getByRole('textbox', { name: 'Qty on A-3' }).closest('tr');
+    expect(heading.closest('tr')?.nextElementSibling).toBe(lineRow);
+    expectNothingWritten();
+  });
+
+  it('AC-QLG01: a drop on itself or outside the table changes nothing', async () => {
+    listQuotationLines.mockResolvedValue(THREE);
+    await renderEditing();
+    act(() => {
+      dnd.dragEnd!({ active: { id: 'l3' }, over: { id: 'l3' } });
+      dnd.dragEnd!({ active: { id: 'l3' }, over: null });
+    });
+    expect(stagedBody().map((l) => l.id)).toEqual(['l1', 'l2', 'l3']);
+  });
+
+  it('shows no stale pick after the product goes A -> B -> A, and saves both picks null', async () => {
+    getProductsForLineSelect.mockResolvedValue([
+      ...PRODUCTS,
+      {
+        id: 'p1',
+        product_code: 'SRT-WC-01',
+        product_name: 'Wall-hung WC',
+        description: 'Wall-hung WC',
+        brand_id: 'b1',
+        base_uom_id: 'u1',
+        list_price: '900.00',
+      },
+    ]);
+    listQuotationLines.mockResolvedValue([
+      ext({
+        product_id: 'p1',
+        image_attachment_id: 'a2',
+        drawing_attachment_id: 'd2',
+        product_image: PHOTO(),
+        technical_drawing: DRAWING(),
+      }),
+    ]);
+    await renderEditing();
+    expect(screen.getByRole('img', { name: 'SRT-WC-01 product photo' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Product on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_id: 'p9' }));
+
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-WC-01/ }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_id: 'p1' }));
+
+    expect(stagedBody()[0].image_attachment_id ?? null).toBeNull();
+    expect(stagedBody()[0].drawing_attachment_id ?? null).toBeNull();
+    // The cells claim nothing the save will not carry.
+    expect(screen.queryByRole('img', { name: /product photo$/ })).toBeNull();
+    expect(screen.queryByRole('img', { name: /technical drawing$/ })).toBeNull();
+  });
+
+  it('AC-QLG02: the grid remembers its columns under projects.projects.view::quotation-lines', async () => {
+    listQuotationLines.mockResolvedValue(THREE);
+    renderEditor();
+    await screen.findByText('First');
+    expect(listingKeysSeen).toContain('projects.projects.view::quotation-lines');
+  });
+
+  it('a frozen line with several candidates shows no count badge and no Choose or Change', async () => {
+    listQuotationLines.mockResolvedValue([
+      ext({
+        version_id: 'v1',
+        product_id: 'p1',
+        product_image: PHOTO({ candidate_count: 3 }),
+        technical_drawing: DRAWING({ candidate_count: 3 }),
+      }),
+    ]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'v1 (frozen)' }));
+    const photo = await screen.findByRole('img', { name: 'SRT-WC-01 product photo' });
+    const drawing = screen.getByRole('img', { name: 'SRT-WC-01 technical drawing' });
+
+    expect(photo.closest('span')?.textContent?.trim()).toBe('');
+    expect(drawing.closest('span')?.textContent?.trim()).toBe('');
+    expect(screen.queryByRole('button', { name: /^(Choose|Change) (photo|drawing) on / })).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------ fix round 2 (QUOTATION-UX)
+
+const NO_PHOTO = () =>
+  PHOTO({ state: 'not_chosen', url: null, preview_url: null, attachment_id: null, filename: null });
+
+describe('QuotationVersionEditor fix round 2 (QUOTATION-UX)', () => {
+  beforeEach(() => {
+    getProductsForLineSelect.mockResolvedValue(PRODUCTS);
+    getQuotationLineImages.mockResolvedValue({
+      product_image: NO_PHOTO(),
+      technical_drawing: DRAWING(),
+    });
+  });
+
+  it('fills Description, Brand and UOM from a select row that carries them (defect 1)', async () => {
+    getProductsForLineSelect.mockResolvedValue([
+      {
+        id: 'p9',
+        product_code: 'SRTWC8356-RL',
+        product_name: 'SORENTO ONE PIECE TOILET',
+        description: 'SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 250MM)  SRTWC8356-RL',
+        brand_id: 'b1',
+        base_uom_id: 'u1',
+        list_price: '560.00',
+      },
+    ]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Product on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRTWC8356-RL/ }));
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Description on SRT-WC-01' })).toHaveValue(
+        'SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 250MM)  SRTWC8356-RL',
+      ),
+    );
+    expect(screen.getByRole('combobox', { name: 'Brand on SRT-WC-01' })).toHaveTextContent('SORENTO');
+    expect(screen.getByRole('combobox', { name: 'UOM on SRT-WC-01' })).toHaveTextContent('PCS');
+  });
+
+  it('shows photo and drawing on a new line once a product is picked, and stages a pick (defect 2)', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Product on line 2' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+
+    await waitFor(() => expect(getQuotationLineImages).toHaveBeenCalledWith('p9'));
+    // The drawing resolves to its default; two photos and none chosen asks for a choice.
+    expect(await screen.findByRole('img', { name: /technical drawing$/ })).toHaveAttribute(
+      'src',
+      'https://cdn.test/d.png',
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /^Choose photo on / }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use wc side.jpg' }));
+    await waitFor(() =>
+      expect(stagedBody()[1]).toMatchObject({ product_id: 'p9', image_attachment_id: 'a2' }),
+    );
+    expectNothingWritten();
+  });
+
+  it('a product change on a saved line resolves the new product\'s cells from the route (defect 2)', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Product on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+    await waitFor(() => expect(getQuotationLineImages).toHaveBeenCalledWith('p9'));
+    expect(await screen.findByRole('img', { name: /technical drawing$/ })).toBeInTheDocument();
+  });
+
+  it('a picked photo and drawing on a saved line show, reach the save body and dirty the scope (defect 3)', async () => {
+    listQuotationLines.mockResolvedValue([
+      ext({ product_id: 'p1', product_image: NO_PHOTO(), technical_drawing: DRAWING() }),
+    ]);
+    await renderEditing();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Choose photo on SRT-WC-01' }));
+    await user.click(await screen.findByRole('button', { name: 'Use wc side.jpg' }));
+    expect(await screen.findByRole('img', { name: 'SRT-WC-01 product photo' })).toHaveAttribute(
+      'src',
+      'https://cdn.test/s.jpg',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Change drawing on SRT-WC-01' }));
+    await user.click(await screen.findByRole('button', { name: 'Use wc drawing 2.png' }));
+    expect(screen.getByRole('img', { name: 'SRT-WC-01 technical drawing' })).toHaveAttribute(
+      'src',
+      'https://cdn.test/d2.png',
+    );
+
+    await waitFor(() =>
+      expect(stagedBody()[0]).toMatchObject({ image_attachment_id: 'a2', drawing_attachment_id: 'd2' }),
+    );
+    expect(session?.isDirty).toBe(true);
+    expect(session?.changedScopes).toHaveLength(1);
+    expectNothingWritten();
+  });
+
+  it('marks an empty custom description as soon as it is left, before anything is typed (defect 4)', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
+    const description = await screen.findByRole('textbox', { name: 'Description on line 2' });
+    expect(screen.queryByText('A non-standard item needs a description')).toBeNull();
+    fireEvent.focus(description);
+    fireEvent.blur(description);
+    expect(await screen.findByText('A non-standard item needs a description')).toBeInTheDocument();
+    expect(description).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('carries a note typed on a never-saved line in the first save body (defect 5)', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
+    await screen.findByRole('textbox', { name: 'Description on line 2' });
+    fireEvent.change(await openNotes('line 2'), { target: { value: 'Ex-works' } });
+    await waitFor(() => expect(stagedBody()[1]).toMatchObject({ notes: 'Ex-works' }));
+  });
+
+  it('labels a never-saved line by its picked product code, and the label survives a reorder', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
+    await screen.findByRole('textbox', { name: 'Description on line 2' });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Product on line 2' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+    await screen.findByRole('textbox', { name: 'Description on SRT-BASIN-02' });
+
+    fireEvent.change(await openNotes('SRT-BASIN-02'), { target: { value: 'c/w trap' } });
+    const keys = (session?.scopes[QUOTATION.id]?.lines ?? []).map((l) => l.key);
+    dragLine(keys[1], keys[0]);
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_id: 'p9' }));
+    expect(stagedBody()[0]).toMatchObject({ notes: 'c/w trap' });
+  });
+
+  describe('console', () => {
+    let errors: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+    afterEach(() => errors.mockRestore());
+
+    it('logs no DOM-nesting error with a section bar and a footer in edit mode (defect 6)', async () => {
+      listQuotationLines.mockResolvedValue([
+        line({ id: 'l1', product_code: 'A-1', description: 'First', band_label: 'BILL NO 1' }),
+        line({ id: 'l2', product_code: 'A-2', description: 'Second', sort_order: 10 }),
+      ]);
+      await renderEditing();
+      expect(footerText()).not.toBe('');
+      const nesting = errors.mock.calls
+        .map((call: unknown[]) => call.map(String).join(' '))
+        .filter((text: string) => /cannot contain a nested|validateDOMNesting/.test(text));
+      expect(nesting).toEqual([]);
+    });
+  });
+});
+
+describe('QuotationVersionEditor fix round 2 part B (QUOTATION-UX)', () => {
+  beforeEach(() => {
+    getQuotationLineImages.mockResolvedValue({
+      product_image: NO_PHOTO(),
+      technical_drawing: DRAWING(),
+    });
+  });
+
+  it('renders the photo and drawing pickers outside the grid so a click cannot land on the row below (defect 3)', async () => {
+    listQuotationLines.mockResolvedValue([
+      ext({ product_id: 'p1', product_image: PHOTO(), technical_drawing: DRAWING() }),
+    ]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Change photo on SRT-WC-01' }));
+    const usePhoto = await screen.findByRole('button', { name: 'Use wc side.jpg' });
+    expect(usePhoto.closest('[data-slot="data-grid-table"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change drawing on SRT-WC-01' }));
+    const useDrawing = await screen.findByRole('button', { name: 'Use wc drawing 2.png' });
+    expect(useDrawing.closest('[data-slot="data-grid-table"]')).toBeNull();
+  });
+
+  it('renders the stock popover outside the grid (defect 3)', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1' })]);
+    withStock();
+    await renderEditing();
+    const chip = await screen.findByRole('button', { name: 'Stock on SRT-WC-01' });
+    fireEvent.pointerDown(chip, { button: 0, ctrlKey: false });
+    fireEvent.click(chip);
+    const spo = await screen.findByText(/SPO-1001/);
+    expect(spo.closest('[data-slot="data-grid-table"]')).toBeNull();
+  });
+
+  it('seeds the staged scope from the fresh rows when a refetch of cached rows is in flight (defect 5)', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    listQuotationLines.mockResolvedValue([line({ complete_set: null })]);
+    const first = render(
+      <QueryClientProvider client={client}>
+        <Harness projectOverrides={{}} editing={false} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(itemNumbers().length).toBeGreaterThan(0));
+    first.unmount();
+
+    listQuotationLines.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve([line({ complete_set: 'c/w seat' })]), 150),
+        ),
+    );
+    await client.invalidateQueries();
+    render(
+      <QueryClientProvider client={client}>
+        <Harness projectOverrides={{}} editing />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(session?.scopes[QUOTATION.id]?.lines ?? null).not.toBeNull());
+    // Give the delayed refetch time to land; the seed must not have frozen the stale rows.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(stagedBody()[0]).toMatchObject({ complete_set: 'c/w seat' });
+  });
+});
+
+describe('QuotationVersionEditor owner hand-test round (QUOTATION-UX)', () => {
+  const rightClick = (el: Element) => fireEvent.contextMenu(el);
+
+  it('row context menu: right-clicking a line row opens the same three items', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    await renderEditing();
+    rightClick(rowOf('A-1').querySelector('td') as HTMLElement);
+    expect(await screen.findByRole('menuitem', { name: 'Insert a line below' })).toBeInTheDocument();
+    expect(screen.getAllByRole('menuitem').map((el) => el.textContent?.trim())).toEqual([
+      'Insert a line below',
+      'Insert a section above',
+      'Remove line',
+    ]);
+  });
+
+  it('Remove line, from the row menu or the right-click menu, strikes through and restores as today', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    await renderEditing();
+    await chooseMenuItem('A-1', 'Remove line');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restore A-1' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Restore A-1' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Restore A-1' })).toBeNull());
+
+    rightClick(rowOf('A-2').querySelector('td') as HTMLElement);
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove line' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restore A-2' })).toBeInTheDocument());
+  });
+
+  it('F7: clicking a row opens no Line details region, however it is clicked', async () => {
+    await renderEditing();
+
+    fireEvent.click(rowOf('SRT-WC-01').querySelector('td') as HTMLElement);
+    fireEvent.click(screen.getByRole('textbox', { name: 'Qty on SRT-WC-01' }));
+
+    expect(screen.queryByRole('region', { name: /line details/i })).toBeNull();
+    expect(screen.queryByText('Line details')).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Note text on SRT-WC-01' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Notes on SRT-WC-01' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Complete set on SRT-WC-01' })).toBeNull();
+  });
+
+  describe('section bar menu', () => {
+    const BANDED = [
+      line({ id: 'l1', product_code: 'A-1', description: 'First', band_label: 'BILL NO 1' }),
+      line({ id: 'l2', product_code: 'A-2', description: 'Second', sort_order: 10 }),
+    ];
+    const barOf = () =>
+      screen.getByRole('textbox', { name: 'Section heading on A-1' }).closest('td') as HTMLElement;
+
+    it('Rename focuses the section heading', async () => {
+      listQuotationLines.mockResolvedValue(BANDED);
+      await renderEditing();
+      rightClick(barOf().firstElementChild as Element);
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+      await waitFor(() =>
+        expect(screen.getByRole('textbox', { name: 'Section heading on A-1' })).toHaveFocus(),
+      );
+    });
+
+    it('Remove section drops the bar, keeps the line, and saves band_label null', async () => {
+      listQuotationLines.mockResolvedValue(BANDED);
+      await renderEditing();
+      rightClick(barOf().firstElementChild as Element);
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove section' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('textbox', { name: 'Section heading on A-1' })).toBeNull(),
+      );
+      expect(screen.getByRole('textbox', { name: 'Qty on A-1' })).toBeInTheDocument();
+      await waitFor(() => expect(stagedBody()[0].band_label ?? null).toBeNull());
+      expect(stagedBody()[0].id).toBe('l1');
+    });
+  });
+
+  it('thumbnails fill their column: w-full and object-contain, no fixed size class', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1', product_image: PHOTO(), technical_drawing: DRAWING() })]);
+    renderEditor();
+    for (const name of ['SRT-WC-01 product photo', 'SRT-WC-01 technical drawing']) {
+      const img = await screen.findByRole('img', { name });
+      expect(img.className).toMatch(/\bw-full\b/);
+      expect(img.className).toMatch(/object-contain/);
+      expect(img.className).not.toMatch(/\bsize-\d+/);
+    }
+  });
+
+  it('puts UOM in its own column right of Qty, and keeps the stock chip under Qty', async () => {
+    withStock();
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1' })]);
+    await renderEditing();
+    const headers = screen
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent?.trim())
+      .filter((text) => Boolean(text) && text !== 'Reorder' && text !== 'Row actions');
+    expect(headers).toEqual(['#', 'Photo', 'Drawing', 'Product', 'Description', 'Brand', 'Qty', 'UOM', 'Rate (RM)', 'Total (RM)']);
+
+    const qtyTd = screen.getByRole('textbox', { name: 'Qty on SRT-WC-01' }).closest('td');
+    const uomTd = screen.getByRole('combobox', { name: 'UOM on SRT-WC-01' }).closest('td');
+    expect(uomTd).not.toBe(qtyTd);
+    expect(qtyTd?.nextElementSibling).toBe(uomTd);
+    expect(within(qtyTd as HTMLElement).getByRole('button', { name: 'Stock on SRT-WC-01' })).toBeInTheDocument();
+  });
+
+  it('a Columns button opens Toggle Columns, and unchecking Brand hides it and reports the visibility', async () => {
+    listQuotationLines.mockResolvedValue(TWO_LINES);
+    renderEditor();
+    await screen.findByText('First');
+    expect(screen.getByRole('columnheader', { name: 'Brand' })).toBeInTheDocument();
+
+    const trigger = screen.getByRole('button', { name: 'Columns' });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
+    expect(await screen.findByText('Toggle Columns')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: /brand/i }));
+
+    await waitFor(() => expect(screen.queryByRole('columnheader', { name: 'Brand' })).toBeNull());
+    const last = columnVisibilitySeen[columnVisibilitySeen.length - 1];
+    expect(last.listingKey).toBe('projects.projects.view::quotation-lines');
+    expect(Object.entries(last.visibility).filter(([id, v]) => /brand/i.test(id) && v === false)).toHaveLength(1);
+  });
+
+  it('keeps the stock popover in the viewport: collision handling and a height cap with scroll', async () => {
+    withStock();
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1' })]);
+    await renderEditing();
+    const chip = await screen.findByRole('button', { name: 'Stock on SRT-WC-01' });
+    fireEvent.pointerDown(chip, { button: 0, ctrlKey: false });
+    fireEvent.click(chip);
+    const content = (await screen.findByText(/SPO-1001/)).closest(
+      '[data-slot="popover-content"]',
+    ) as HTMLElement;
+    expect(content).not.toBeNull();
+    // Radix applies avoidCollisions (default on) and collisionPadding inside the popper; neither
+    // is a DOM attribute, so what is observable is that the content is capped to the room the
+    // popper reports it has and scrolls inside that cap.
+    // The caller's classes land on PopoverContent's inner surface div.
+    const surface = content.firstElementChild as HTMLElement;
+    expect(content.getAttribute('data-avoid-collisions')).not.toBe('false');
+    expect(surface.className).toMatch(/max-h-\[var\(--radix-popover-content-available-height\)\]/);
+    expect(surface.className).toMatch(/overflow-y-auto|overflow-auto/);
+  });
+
+  describe('right-click scope (small round)', () => {
+    const noLineMenu = () => {
+      expect(screen.queryByRole('menuitem', { name: 'Insert a line below' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Remove section' })).toBeNull();
+    };
+
+    it('outside any row or bar (a header cell, Add a line) is not prevented and opens no line menu', async () => {
+      listQuotationLines.mockResolvedValue(TWO_LINES);
+      await renderEditing();
+      const header = screen.getByRole('columnheader', { name: 'Description' });
+      expect(fireEvent.contextMenu(header)).toBe(true);
+      expect(fireEvent.contextMenu(screen.getByRole('button', { name: 'Add a line' }))).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      noLineMenu();
+    });
+
+    it('over an editable control in a row (description, qty, section heading) is not prevented, no menu', async () => {
+      listQuotationLines.mockResolvedValue([
+        line({ id: 'l1', product_code: 'A-1', description: 'First', band_label: 'BILL NO 1' }),
+        line({ id: 'l2', product_code: 'A-2', description: 'Second', sort_order: 10 }),
+      ]);
+      await renderEditing();
+      for (const name of ['Description on A-1', 'Qty on A-1', 'Section heading on A-1']) {
+        expect(fireEvent.contextMenu(screen.getByRole('textbox', { name }))).toBe(true);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      noLineMenu();
+      expect(screen.queryByRole('menuitem')).toBeNull();
+    });
+
+    it('a non-input part of the same row still opens the 3-item line menu, prevented', async () => {
+      listQuotationLines.mockResolvedValue(TWO_LINES);
+      await renderEditing();
+      expect(fireEvent.contextMenu(rowOf('A-1').querySelector('td') as HTMLElement)).toBe(false);
+      await screen.findByRole('menuitem', { name: 'Insert a line below' });
+      expect(screen.getAllByRole('menuitem')).toHaveLength(3);
+    });
+
+    it('the row-actions column header carries the screen-reader text Row actions', async () => {
+      listQuotationLines.mockResolvedValue(TWO_LINES);
+      await renderEditing();
+      const header = screen.getByRole('columnheader', { name: 'Row actions' });
+      expect(header.querySelector('.sr-only')?.textContent).toBe('Row actions');
+    });
+  });
+});
+
+
+// SET-QUOTE-LINE review round: the picker, the Set badge, complete sets, the series set price.
+const SET_REF = {
+  id: 's9',
+  set_code: 'CWC1009-RL',
+  name: 'Water closet set',
+  is_active: true,
+  member_count: 3,
+  list_price: '900.00',
+  complete_sets: 12,
+  parts: [
+    { product_code: 'CWCX1009-RL', quantity: '1' },
+    { product_code: 'CWCY1009', quantity: '1' },
+    { product_code: 'CWC1009-SC', quantity: '2' },
+  ],
+};
+
+const SET_DETAIL = {
+  id: 's9',
+  set_code: 'CWC1009-RL',
+  name: 'Water closet set',
+  price: { resolved: '900.00' },
+  members: [
+    { product_id: 'pa', product_code: 'CWCX1009-RL', quantity: '1', sort_order: 0 },
+    { product_id: 'pb', product_code: 'CWCY1009', quantity: '1', sort_order: 1 },
+    { product_code: 'CWC1009-SC', product_id: 'pc', quantity: '2', sort_order: 2 },
+  ],
+};
+
+function setLine(overrides: Partial<QuotationLine> = {}): QuotationLine {
+  return line({
+    product_id: null,
+    product_set_id: 's9',
+    product_code: 'CWC1009-RL',
+    description: 'Water closet set',
+    uom: 'SET',
+    set_parts: [],
+    ...overrides,
+  } as Partial<QuotationLine>);
+}
+
+describe('QuotationVersionEditor sets (SET-QUOTE-LINE)', () => {
+  beforeEach(() => {
+    getProductSetsForLineSelect.mockResolvedValue([SET_REF]);
+    getProductSet.mockResolvedValue(SET_DETAIL);
+    getSeriesSetRows.mockResolvedValue([]);
+    (QUOTATION as { series_id?: string | null }).series_id = null;
+  });
+
+  async function openPicker() {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    return screen.findAllByRole('option');
+  }
+
+  it('F1: the picker lists the set first, showing ONLY its code on one line (no badge, parts or name)', async () => {
+    const options = await openPicker();
+
+    expect(getProductSetsForLineSelect).toHaveBeenCalled();
+    expect(options[0].textContent?.trim()).toBe('CWC1009-RL');
+    expect(options[0]).not.toHaveTextContent('Set');
+    expect(options[0]).not.toHaveTextContent('parts');
+    expect(options[0]).not.toHaveTextContent('Water closet set');
+    // the product follows the set, and keeps its name beside the code
+    const productAt = options.findIndex((o) => /SRT-BASIN-02/.test(o.textContent ?? ''));
+    expect(productAt).toBeGreaterThan(0);
+    expect(options[productAt].textContent).toMatch(/SRT-BASIN-02.+\S/);
+  });
+
+  it('F1: picking the set stages product_set_id and no product_id', async () => {
+    await openPicker();
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() =>
+      expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9', product_id: null }),
+    );
+  });
+
+  it('F2: a saved set line shows the Set badge and its code in read mode', async () => {
+    listQuotationLines.mockResolvedValue([setLine()]);
+    renderEditor();
+
+    expect(await screen.findByText('CWC1009-RL')).toBeInTheDocument();
+    expect(screen.getByText('Set')).toBeInTheDocument();
+  });
+
+  it('F2: and in edit mode', async () => {
+    listQuotationLines.mockResolvedValue([setLine()]);
+    await renderEditing();
+
+    expect(screen.getByText('Set')).toBeInTheDocument();
+    expect(screen.getAllByText('CWC1009-RL').length).toBeGreaterThan(0);
+  });
+
+  describe('F3 set stock pill', () => {
+    const original = useStockDetailMock.getMockImplementation();
+    const PARTS = [
+      { product_id: 'pa', product_code: 'CWCX1009-RL', quantity: '1', is_driver: true },
+      { product_id: 'pb', product_code: 'CWCY1009', quantity: '1', is_driver: false },
+      { product_id: 'pc', product_code: 'CWC1009-SC', quantity: '2', is_driver: false },
+    ];
+    const stockFor = (available: Record<string, string>) => {
+      useStockDetailMock.mockImplementation(((productId: string, _w: unknown, _l: unknown, group?: string | null) => ({
+        data:
+          group && available[productId] !== undefined
+            ? { ...STOCK_IB, available_qty: available[productId] }
+            : undefined,
+        isLoading: false,
+        isError: false,
+        error: null,
+      })) as never);
+    };
+    afterEach(() => {
+      if (original) useStockDetailMock.mockImplementation(original);
+    });
+
+    it('F3: shows the product stock pill with the complete sets N (smallest part available / part quantity)', async () => {
+      stockFor({ pa: '30', pb: '10', pc: '7' });
+      listQuotationLines.mockResolvedValue([setLine({ set_parts: PARTS })]);
+      await renderEditing();
+
+      const pill = await screen.findByRole('button', { name: 'Stock on CWC1009-RL' });
+      expect(pill).toHaveTextContent('3 avail');
+      expect(pill).toHaveAttribute('data-tone');
+      expect(useStockDetailMock).toHaveBeenCalledWith('pa' as never, null, null as never, 'IB');
+      expect(useStockDetailMock).toHaveBeenCalledWith('pc' as never, null, null as never, 'IB');
+    });
+
+    it('F3: the pill is red (data-tone none) when a part cannot make one set', async () => {
+      stockFor({ pa: '30', pb: '10', pc: '1' });
+      listQuotationLines.mockResolvedValue([setLine({ set_parts: PARTS })]);
+      await renderEditing();
+
+      const pill = await screen.findByRole('button', { name: 'Stock on CWC1009-RL' });
+      expect(pill).toHaveTextContent('0 avail');
+      expect(pill).toHaveAttribute('data-tone', 'none');
+    });
+
+    it('F3: clicking the pill opens a popover listing EACH PART by code with its stock table', async () => {
+      stockFor({ pa: '30', pb: '10', pc: '7' });
+      listQuotationLines.mockResolvedValue([setLine({ set_parts: PARTS })]);
+      await renderEditing();
+
+      const pill = await screen.findByRole('button', { name: 'Stock on CWC1009-RL' });
+      fireEvent.pointerDown(pill, { button: 0, ctrlKey: false });
+      fireEvent.click(pill);
+
+      const popover = within(await screen.findByRole('dialog'));
+      expect(await popover.findByText(/CWCX1009-RL/)).toBeInTheDocument();
+      expect(popover.getByText(/CWCY1009/)).toBeInTheDocument();
+      expect(popover.getByText(/CWC1009-SC/)).toBeInTheDocument();
+      expect(popover.getAllByText(/MWH-IB/).length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('F3: the old "N complete sets" text is gone from the quantity cell', async () => {
+      stockFor({ pa: '30', pb: '10', pc: '7' });
+      listQuotationLines.mockResolvedValue([setLine({ set_parts: PARTS })]);
+      await renderEditing();
+
+      await screen.findByRole('button', { name: 'Stock on CWC1009-RL' });
+      expect(screen.queryByText(/complete sets?$/)).toBeNull();
+    });
+  });
+
+  it('B1: picking a set fills the rate from the series SET price when the series names one', async () => {
+    (QUOTATION as { series_id?: string | null }).series_id = 's1';
+    getSeriesSetRows.mockResolvedValue([
+      {
+        product_set_id: 's9',
+        set_code: 'CWC1009-RL',
+        set_name: 'Water closet set',
+        part_codes: [],
+        selling_price: '1050.00',
+        max_discount_pct: '10.00',
+        derived_floor: '945.00',
+      },
+    ]);
+    await openPicker();
+    await waitFor(() => expect(getSeriesSetRows).toHaveBeenCalledWith('s1'));
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ unit_price: '1050.00' }));
+  });
+
+  it('B1: picking a set leaves the typed rate alone when the series names no price for it', async () => {
+    (QUOTATION as { series_id?: string | null }).series_id = 's1';
+    getSeriesSetRows.mockResolvedValue([]);
+    await renderEditing();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Unit price on SRT-WC-01' }), {
+      target: { value: '777.00' },
+    });
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9' }));
+    expect(stagedBody()[0]).toMatchObject({ unit_price: '777.00' });
+  });
+
+  it('A2b: picking a set sends complete_set = the parts text in the save body', async () => {
+    await openPicker();
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() =>
+      expect(stagedBody()[0]).toMatchObject({
+        product_set_id: 's9',
+        complete_set: 'CWCX1009-RL + CWCY1009 + 2 x CWC1009-SC',
+      }),
+    );
+  });
+
+  it('A2b: switching a set line to a product sends complete_set null', async () => {
+    listQuotationLines.mockResolvedValue([setLine({ complete_set: 'CWCX1009-RL + CWCY1009' })]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_id: 'p9' }));
+    expect(stagedBody()[0]).toMatchObject({ complete_set: null });
+  });
+
+  it('Brand: picking a set never writes an empty brand over a typed one', async () => {
+    listQuotationLines.mockResolvedValue([line({ brand: 'SORENTO' })]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9' }));
+    expect(stagedBody()[0]).toMatchObject({ brand_snapshot: 'SORENTO' });
+  });
+  // Round 2
+
+  it('R2 brand: picking a set on a line with a blank brand fills the brand from the option brand_name at pick', async () => {
+    getProductSetsForLineSelect.mockResolvedValue([{ ...SET_REF, brand_name: 'MOCHA' }]);
+    await openPicker();
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9' }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ brand_snapshot: 'MOCHA' }));
+  });
+
+  it('R2 brand: a typed brand is kept when the picked set carries a brand_name', async () => {
+    getProductSetsForLineSelect.mockResolvedValue([{ ...SET_REF, brand_name: 'MOCHA' }]);
+    listQuotationLines.mockResolvedValue([line({ brand: 'SORENTO' })]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_set_id: 's9' }));
+    await waitFor(() => expect(getProductSetsForLineSelect).toHaveBeenCalledWith({ ids: ['s9'] }));
+    expect(stagedBody()[0]).toMatchObject({ brand_snapshot: 'SORENTO' });
+  });
+
+  it('R2 reject: a failed set lookup during a pick shows an error toast and no unhandled rejection', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    vi.mocked(toast.error).mockClear();
+    try {
+      await openPicker();
+      getProductSetsForLineSelect.mockRejectedValue(new Error('boom'));
+      fireEvent.click(await screen.findByRole('option', { name: /CWC1009-RL/ }));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
   });
 });

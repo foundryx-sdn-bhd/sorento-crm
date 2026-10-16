@@ -401,6 +401,22 @@ describe('StockDebtCellDialog', () => {
     expect(await screen.findByText('Nothing is due here')).toBeInTheDocument();
     switchTab('Supply (0)');
     expect(await screen.findByText('Nothing arrives here')).toBeInTheDocument();
+    expect(screen.getByText('No stock is held or on the way for this column.')).toBeInTheDocument();
+  });
+
+  it('never says no stock is held when a demand row in the column shows cover (STOCK-DEBT-STALE-PIN)', async () => {
+    renderDialog({
+      demand: [CELL.demand[0]],
+      supply: [],
+      demand_total_qty: 12,
+      supply_total_qty: 0,
+    } as StockDebtCell);
+
+    await screen.findByText('SO390918');
+    switchTab('Supply (0)');
+    expect(await screen.findByText('Nothing arrives here')).toBeInTheDocument();
+    expect(screen.getByText('What covers these lines is listed in an earlier column.')).toBeInTheDocument();
+    expect(screen.queryByText(/No stock is held/)).not.toBeInTheDocument();
   });
 
   it('names the product, the column and the balance the reader pressed', async () => {

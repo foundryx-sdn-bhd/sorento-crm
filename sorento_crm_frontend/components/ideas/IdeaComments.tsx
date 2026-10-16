@@ -17,7 +17,7 @@ import {
 } from '@/hooks/useIdeas';
 
 /** Delete is the server-deferred countdown in place of the button (D7), never a dialog. */
-function IdeaCommentDelete({
+export function IdeaCommentDelete({
   ideaId,
   commentId,
   onActive,

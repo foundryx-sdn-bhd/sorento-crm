@@ -161,6 +161,10 @@ def test_a_product_removed_from_the_series_becomes_non_standard_on_recompute():
         series = ProjectSeries(id=_uid(), company_id=company_id, name=f"{MARKER} Premium")
         db.add(series)
         db.flush()
+        # A category the product is not under, so removing the name leaves it outside.
+        pricing.set_series_categories(
+            db, series=series, category_ids=[_category(db, "Elsewhere").id]
+        )
         pricing.set_series_products(db, series=series, product_ids=[product.id])
 
         quotation, version = _scope(db, company_id, owner, series_id=series.id)

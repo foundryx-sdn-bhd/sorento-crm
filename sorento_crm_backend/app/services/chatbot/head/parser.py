@@ -27,6 +27,7 @@ from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
 from app.services.chatbot.turn import task as task_mod
+from app.services.product_compatibility_service import KINDS
 
 logger = logging.getLogger(__name__)
 
@@ -555,8 +556,17 @@ def _build_json_schema() -> dict[str, Any]:
                                 # and the number's unit, when its line says it takes one.
                                 "value": {"type": ["string", "number", "null"]},
                                 "unit": {"type": ["string", "null"]},
+                                # SEAT-AS-PRODUCT (crew v94 check, 13 Oct): the word of THIS
+                                # message asking for a file, as typed, null when none. The
+                                # parser states it; `lanes/business/find.as_linked_products`
+                                # reads it so the relation's own word is never a file ask.
+                                "file_word": {"type": ["string", "null"]},
+                                # CHAT-FIT-LINE: which link kind the other side names, one of
+                                # `product_compatibility_service.KINDS` (generated, so a new
+                                # kind needs no edit here); null when no particular kind.
+                                "kind": {"type": ["string", "null"], "enum": [*KINDS, None]},
                             },
-                            "required": ["key", "value", "unit"],
+                            "required": ["key", "value", "unit", "file_word", "kind"],
                         },
                     },
                 },

@@ -224,6 +224,7 @@ import {
   resolvedCropRect,
   type CropRect,
 } from '@/lib/dealer-kit/image-crop';
+import { codeWithName } from '@/lib/product-display';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -281,9 +282,9 @@ function useShiftKey(): boolean {
  */
 function describeBindingData(data: TagBindingData | null | undefined): string | null {
   if (!data) return null;
-  if (data.kind === 'product') return `${data.product.code} - ${data.product.name}`;
-  if (data.kind === 'set') return `${data.set.set_code} - ${data.set.name}`;
-  return `${data.line.code} - ${data.line.name}`;
+  if (data.kind === 'product') return codeWithName(data.product.code, data.product.name);
+  if (data.kind === 'set') return codeWithName(data.set.set_code, data.set.name);
+  return codeWithName(data.line.code, data.line.name);
 }
 
 /**

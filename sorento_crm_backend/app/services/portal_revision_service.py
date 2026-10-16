@@ -128,7 +128,7 @@ class RevisionAdapter:
     # The fields the PORTAL FORM of this type actually collects, in form order -
     # what the read-only full-form viewer renders. Separate from the edit whitelist
     # because purchase_request and sponsorship_form SHARE one whitelist tuple: read
-    # off that, a sponsorship form would show `sales_type` / `expected_po_date` and a
+    # off that, a sponsorship form would show `purpose` / `expected_po_date` and a
     # purchase request would show `sponsor_subject` / `delivery_address`, neither of
     # which their form ever asked for. The requestor's human-name sibling
     # (salesperson / requested_by) stands in for the contact FK, which never renders.
@@ -298,10 +298,14 @@ _SF_ADAPTER = RevisionAdapter(
         "total_project_value",
         "sponsor_subject",
         "sponsor_subject_other",
+        "sales_type",
         "expected_delivery_date",
         "requested_by",
     ),
-    lookup_fields={"sponsor_subject": "procurement_sponsor_subject"},
+    lookup_fields={
+        "sponsor_subject": "procurement_sponsor_subject",
+        "sales_type": "procurement_sales_type",
+    },
     date_display_fields=("expected_delivery_date",),
     serialize_lines=_serialize_request_lines,
     apply_lines=_apply_request_lines("sponsorship_form"),
@@ -1310,6 +1314,10 @@ class PortalRevisionService:
             return []
         changes: list[dict] = []
         for name in self.editable_fields(adapter.source_entity_type):
+            if name == "customer_id":
+                # An id is never shown (no UUID in the UI); a re-pick reads as the
+                # Customer name change. The snapshot still carries it.
+                continue
             before, after = previous.get(name), current.get(name)
             if before == after:
                 continue

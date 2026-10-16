@@ -184,6 +184,7 @@ const OLD_PATHS: string[] = [
   '/system-management/ai-assistant',
   '/system-management/ai-assistant/prompts',
   '/system-management/ai-assistant/usage',
+  '/system-management/ai-assistant/model-prices',
   '/system-management/ai-assistant/wishlist',
   '/system-management/mcp-tools',
 ];
@@ -274,11 +275,34 @@ describe('menu.config - Stock transfers entry', () => {
 // New gates
 // ---------------------------------------------------------------------------
 
-describe('menu.config - Ideas', () => {
-  it('has permission ideation.board.view', () => {
+describe('menu.config - Ideas (AC-E-01, IDEA-CRM-SIDE)', () => {
+  it('is a group, not a leaf', () => {
     const ideas = findGroup(MENU_SIDEBAR, 'Ideas');
     expect(ideas).toBeDefined();
-    expect(ideas!.permission).toBe('ideation.board.view');
+    expect(ideas!.path).toBeUndefined();
+    expect(ideas!.children?.length).toBeGreaterThan(0);
+  });
+
+  it('has "All ideas" at /ideas and "Roadmap" at /ideas/portal, in that order', () => {
+    const ideas = findGroup(MENU_SIDEBAR, 'Ideas');
+    const kids = (ideas?.children ?? []).map((c) => [c.title, c.path]);
+    expect(kids).toEqual([
+      ['All ideas', '/ideas'],
+      ['Roadmap', '/ideas/portal'],
+    ]);
+  });
+
+  it('gates both children with ideation.board.view', () => {
+    const ideas = findGroup(MENU_SIDEBAR, 'Ideas');
+    for (const child of ideas?.children ?? []) {
+      expect(child.permission).toBe('ideation.board.view');
+    }
+    expect(ideas?.children).toHaveLength(2);
+  });
+
+  it('keeps /ideas reachable from the sidebar', () => {
+    expect(collectPaths(MENU_SIDEBAR).has('/ideas')).toBe(true);
+    expect(collectPaths(MENU_SIDEBAR).has('/ideas/portal')).toBe(true);
   });
 });
 
@@ -509,5 +533,23 @@ describe('menu.config - old paths still resolvable (AC-A2)', () => {
     ]) {
       expect(paths.has(p)).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MODEL-PRICES (MP-1): "Model prices" sits right after "Usage" under AI Assistant
+// ---------------------------------------------------------------------------
+
+describe('menu.config - Model prices entry', () => {
+  it('is the item right after Usage in System > AI Assistant', () => {
+    const system = findGroup(MENU_SIDEBAR, 'System');
+    expect(system).toBeDefined();
+    const ai = findSubGroup(system!, 'AI Assistant');
+    expect(ai).toBeDefined();
+    const titles = ai!.children!.map((c) => c.title);
+    expect(titles[titles.indexOf('Usage') + 1]).toBe('Model prices');
+    const entry = findLeaf(ai!.children!, 'Model prices');
+    expect(entry?.path).toBe('/system-management/ai-assistant/model-prices');
+    expect(entry?.permission).toBe('system.ai_assistant_settings.view');
   });
 });

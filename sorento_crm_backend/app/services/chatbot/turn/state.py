@@ -197,6 +197,12 @@ class Focus:
     # roster and must only PARK a task.
     tasks: tuple[Task, ...] = ()
     extra: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    # SEAT-AS-PRODUCT (crew ruling 13 Oct, the #1626 pattern): while `products` are the
+    # answer to a fit ask, which side they are ("covers" for "seat cover for <WC>", "wcs" for
+    # "WC for <cover>"; "<kind>:<side>" for a mirror / shelf ask, `find.relation_of`), so a bare
+    # next code the parser marks as a continuation repeats that ask in the same direction and a pointer at one of these codes narrows it.
+    # Written by `engine._run_turn` around `find.as_linked_products`; a topic reset drops it.
+    relation: str | None = None
 
 
 @dataclass
@@ -317,6 +323,7 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     # could disagree with it.
     wire["tasks"] = [task_to_wire(task) for task in (focus.tasks or ())]
     wire["extra"] = {k: list(v) for k, v in (focus.extra or {}).items()}
+    wire["relation"] = focus.relation
     return wire
 
 
@@ -385,6 +392,8 @@ def focus_from_wire(raw: Any) -> Focus:
         focus.tasks = tuple(
             task for task in (task_from_wire(row) for row in tasks) if task is not None
         )
+    relation = raw.get("relation")
+    focus.relation = relation if isinstance(relation, str) else None
     extra = raw.get("extra")
     if isinstance(extra, dict):
         focus.extra = {

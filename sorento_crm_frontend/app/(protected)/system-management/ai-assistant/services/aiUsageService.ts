@@ -6,12 +6,18 @@ export interface UsageSummary {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  cost_usd: number;
+  unpriced_calls: number;
+  unknown_cache_calls: number;
 }
 
 export interface UsageByDayItem {
   date: string;
   messages: number;
   tokens: number;
+  cost_usd: number;
+  unpriced_calls: number;
+  unknown_cache_calls: number;
 }
 
 export interface TopUserItem {
@@ -19,6 +25,9 @@ export interface TopUserItem {
   name: string;
   messages: number;
   tokens: number;
+  cost_usd: number;
+  unpriced_calls: number;
+  unknown_cache_calls: number;
 }
 
 export interface TopContactItem {
@@ -27,6 +36,9 @@ export interface TopContactItem {
   phone_number: string | null;
   messages: number;
   tokens: number;
+  cost_usd: number;
+  unpriced_calls: number;
+  unknown_cache_calls: number;
 }
 
 export type AIUsageFeature =
@@ -46,6 +58,11 @@ export interface RecentQueryItem {
   response_time_ms: number;
   tokens: number;
   created_at: string;
+  model?: string | null;
+  cost_usd?: number | null;
+  priced?: boolean;
+  cached_price_missing?: boolean;
+  cache_unknown?: boolean;
 }
 
 export interface QueryDetailToolUsed {

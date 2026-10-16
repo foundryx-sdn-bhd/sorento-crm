@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { GripVertical, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -19,6 +20,8 @@ import {
   type RoutingRule,
 } from './csRoutingMock';
 
+const NO_CS_VALUE = '__no_cs__';
+
 /**
  * R2 - CS-routing predicate rules editor for a contact. Extends the old
  * per-use_case pin table with an ORDERED (drag = priority) list of rules, each
@@ -34,6 +37,8 @@ let ruleSeq = 1000;
 const newRuleId = () => `new-${ruleSeq++}`;
 
 export default function ContactCsRoutingRules({ contactId }: { contactId: string }) {
+  // Every routing write needs contacts.edit; without it the rules are read-only.
+  const canEdit = useHasPermission('user_management.contacts.edit');
   const { data: fetchedRules, isLoading: rulesLoading } = useQuery({
     queryKey: ['cs-routing-rules', contactId],
     queryFn: () => getRoutingRules(contactId),
@@ -58,7 +63,10 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
   }, [fetchedRules]);
 
   const candidateOptions = useMemo(
-    () => candidates.map((c) => ({ value: c.id, label: c.name, description: c.email })),
+    () => [
+      { value: NO_CS_VALUE, label: 'No CS (finish at approval)' },
+      ...candidates.map((c) => ({ value: c.id, label: c.name, description: c.email })),
+    ],
     [candidates],
   );
 
@@ -73,6 +81,7 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
         use_case: 'purchase_request',
         cs_pic_user_id: null,
         cs_pic_name: null,
+        no_cs: false,
         match_conditions: [],
         priority: prev.length,
       },
@@ -127,8 +136,7 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
 
       {candidates.length === 0 ? (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          No customer-service team configured yet. Add members to the customer-service
-          team before creating routing rules.
+          No one can process purchase requests yet.
         </div>
       ) : rules.length === 0 ? (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -157,28 +165,32 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
             getItemValue={(r) => r.id}
             strategy="vertical"
           >
-            <div className="space-y-3">
+            <fieldset disabled={!canEdit} className="min-w-0 space-y-3">
               {rules.map((rule, index) => (
                 <SortableItem key={rule.id} value={rule.id}>
                   <div className="rounded-md border p-3 space-y-3 bg-background">
                     <div className="flex items-center gap-2">
-                      <SortableItemHandle aria-label="Drag to reorder">
-                        <GripVertical className="size-4 text-muted-foreground" />
-                      </SortableItemHandle>
+                      {canEdit ? (
+                        <SortableItemHandle aria-label="Drag to reorder">
+                          <GripVertical className="size-4 text-muted-foreground" />
+                        </SortableItemHandle>
+                      ) : null}
                       <span className="text-xs font-medium text-muted-foreground">
                         Priority {index + 1}
                       </span>
-                      <div className="ms-auto flex items-center gap-2">
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => removeRule(rule.id)}
-                          aria-label="Remove rule"
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
+                      {canEdit ? (
+                        <div className="ms-auto flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => removeRule(rule.id)}
+                            aria-label="Remove rule"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -200,12 +212,13 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
                       </span>
                       <div className="w-full sm:w-72">
                         <SearchableSelect
-                          value={rule.cs_pic_user_id ?? ''}
+                          value={rule.no_cs ? NO_CS_VALUE : (rule.cs_pic_user_id ?? '')}
                           onChange={(v) => {
                             const c = candidates.find((x) => x.id === v);
                             patchRule(rule.id, {
-                              cs_pic_user_id: v || null,
+                              cs_pic_user_id: v === NO_CS_VALUE ? null : v || null,
                               cs_pic_name: c?.name ?? null,
+                              no_cs: v === NO_CS_VALUE,
                             });
                           }}
                           options={candidateOptions}
@@ -222,24 +235,27 @@ export default function ContactCsRoutingRules({ contactId }: { contactId: string
                         onChange={(next: Predicate[]) =>
                           patchRule(rule.id, { match_conditions: next })
                         }
+                        disabled={!canEdit}
                       />
                     </div>
                   </div>
                 </SortableItem>
               ))}
-            </div>
+            </fieldset>
           </Sortable>
         </>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="outline" onClick={addRule} disabled={candidates.length === 0}>
-          <Plus className="size-4" /> Add rule
-        </Button>
-        <Button type="button" onClick={handleSave} disabled={saving || candidates.length === 0}>
-          {saving ? 'Saving…' : 'Save routing rules'}
-        </Button>
-      </div>
+      {canEdit ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" onClick={addRule} disabled={candidates.length === 0}>
+            <Plus className="size-4" /> Add rule
+          </Button>
+          <Button type="button" onClick={handleSave} disabled={saving || candidates.length === 0}>
+            {saving ? 'Saving…' : 'Save routing rules'}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

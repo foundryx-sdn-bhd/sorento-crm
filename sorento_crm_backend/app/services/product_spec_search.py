@@ -37,6 +37,7 @@ from app.services.product_class_signal import (
     stored_class_labels,
 )
 from app.services.product_spec_registry import (
+    CLASS_KEY,
     active_registry,
     merged_allowed_values,
     merged_synonyms,
@@ -451,6 +452,11 @@ def resolve_terms_to_specs_with_spans(
     # free to be read as a measurement.
     spoken_spans: dict[tuple[str, str], list[tuple[int, int]]] = {}
     for row in rows:
+        if row.spec_key == CLASS_KEY:
+            # A class word is read by the class vocabulary (`ClassVocabulary`), which keeps
+            # every class a word names ("bathtub": Bathtub, and Bathtub and Jacuzzi). Read
+            # here it would bind ONE of them, by the one-value-per-key rule below.
+            continue
         for value, synonyms in merged_synonyms(row).items():
             # `_self` names the key, not a value. Reading it as one would resolve
             # `thickness = "_self"`.
@@ -817,14 +823,13 @@ def unknown_spec_values(db: Session, text: str, *, registry_rows=None) -> list[d
     must be no product's name or description (`_names_a_product`). Without that, every
     unknown word before a head word ("deck mounted", "long spout", "grease trap", "click
     clack waste") was said back and nothing was searched."""
-    from app.services.product_class_signal import CLASS_SYNONYMS
-    from app.services.product_spec_registry import display_spec_value
+    from app.services.product_spec_registry import class_synonyms, display_spec_value
 
     tokens = _words_of(text)
     if len(tokens) < 2:
         return []
     rows = active_registry(db) if registry_rows is None else registry_rows
-    class_words = {w for label, syns in CLASS_SYNONYMS.items() for phrase in [label, *syns] for w in _words_of(phrase)}
+    class_words = {w for label, syns in class_synonyms(db).items() for phrase in [label, *syns] for w in _words_of(phrase)}
     known_words = set(class_words) | set(_PHRASE_STOPWORDS)
     shapes: list[tuple[Any, dict[str, list[str]]]] = []
     for row in rows:
@@ -910,6 +915,17 @@ def membership_clause(membership: dict[str, Any]):
         # resolvers returned) exists because a value may be a LIST - two finishes
         # on one product - and `#>>` renders a list as its JSON text.
         stored = ProductSpecifications.values[key]["value"]
+        # Chat fix PR-A (AC-A9): a yes-or-no key. Yes is a product that holds yes; no is
+        # one that does not (derivation only ever SETS yes, so an unread key is no, the
+        # same reading `product_spec_rules.gate_passes` gives it). Both is no filter.
+        flags = {v for v in values if isinstance(v, bool)}
+        if flags:
+            said_yes = func.coalesce(func.lower(stored.astext), "false") == "true"
+            if flags == {True}:
+                key_clauses.append(said_yes)
+            elif flags == {False}:
+                key_clauses.append(~said_yes)
+            continue
         # Fix round 8 on PR #833: a grounded number matches the stored number exactly
         # (a JSON number, never a string that happens to read like one).
         numbers = sorted(v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool))
@@ -949,10 +965,10 @@ def filter_specs(
 ) -> dict:
     """The described set as a MEMBERSHIP clause - shape B's filter leg.
 
-    Any spec entry whose value is a non-empty STRING is membership-defining,
-    whatever its key: their coverage is unambiguous yes/no, so a filter on any
-    of them is safe. A numeric entry is dropped here and still reaches the
-    ranker as a boost, so the customer's number is heard, just not
+    Any spec entry whose value is a non-empty STRING or a yes-or-no value is
+    membership-defining, whatever its key: their coverage is unambiguous yes/no,
+    so a filter on any of them is safe. A numeric entry is dropped here and still
+    reaches the ranker as a boost, so the customer's number is heard, just not
     membership-defining (R27/AC-1352).
 
     `scope_terms` are read the same way, one step earlier: a term the caller's
@@ -999,10 +1015,12 @@ def filter_specs(
     scoping = {t for t in scope_terms}
     terms = free_terms + [t for t in scope_terms if t not in set(free_terms)]
 
-    membership: dict[str, set[str]] = {}
+    membership: dict[str, set] = {}
 
     def _join(key: Any, value: Any) -> None:
-        if key and isinstance(value, str) and value.strip():
+        # A yes-or-no value defines membership like a named choice (chat fix PR-A,
+        # AC-A9: "intelligent closet" is is_smart yes, and dropping it answered every WC).
+        if key and (isinstance(value, bool) or isinstance(value, str) and value.strip()):
             membership.setdefault(str(key), set()).add(value)
 
     for entry in specs or []:
@@ -1046,16 +1064,74 @@ def filter_specs(
             if word not in unrecognized:
                 unrecognized.append(word)
 
+    named_classes = _widen_classes_for_flags(db, membership, scope_terms)
     clause = membership_clause(membership)
 
     return {
         "clause": clause,
-        "class_labels": sorted(membership.get("class", set())),
+        "class_labels": sorted(named_classes or membership.get("class", set())),
+        # The class the header names when a yes-or-no spec widened the class filter
+        # (`_widen_classes_for_flags`): the asked one, never the family it reached.
+        **({"named_classes": sorted(named_classes)} if named_classes else {}),
         "unrecognized_terms": unrecognized,
         # What defined the set, key by key, so a caller can say it back in plain words
         # (owner brief W2 on PR #833). Additive; the clause above is the truth.
-        "membership": {key: sorted(values) for key, values in membership.items() if values},
+        # Sorted as text: one key can hold the boolean and its word ("true") at once.
+        "membership": {key: sorted(values, key=str) for key, values in membership.items() if values},
     }
+
+
+def _widen_classes_for_flags(db: Session, membership: dict[str, set], scope_terms: list[str]) -> set[str] | None:
+    """Fix round 1 F1 (AC-A4, W11 "Any bathtub with massage jet?"): a yes-or-no spec asked
+    with a class reaches the class family its own scope holds.
+
+    The parser reads that ask as category "bathtub" + `has_massage`, and "bathtub" names
+    Bathtub and Bathtub and Jacuzzi, so the Jacuzzi class (most jetted tubs) was cut. When a
+    yes-or-no key held true has a class scope (`applies_when`) that covers every asked class,
+    the class filter widens to the scope's classes the registry ties to the asked ones by a
+    shared word (Bathtub and Bathtub and Jacuzzi share "bathtub", Bathtub and Jacuzzi and
+    Jacuzzi share "jacuzzi"); a scope class sharing no word stays out ("rimless water
+    closet" never reaches urinals). A plain class ask, with no such key, never moves.
+
+    Returns the classes the header names (the asked classes a scope term names by their
+    own label, else every asked class) when the filter widened, else None."""
+    from app.services.product_spec_registry import class_synonyms, configured_scopes
+
+    asked = set(membership.get("class") or ())
+    flags = [
+        key
+        for key, values in membership.items()
+        if key != CLASS_KEY and values and all(isinstance(v, bool) for v in values) and True in values
+    ]
+    if not asked or not flags:
+        return None
+    scopes = configured_scopes(db)
+    words = {
+        str(label).strip().lower(): {str(w).strip().lower() for w in [label, *phrases]}
+        for label, phrases in class_synonyms(db).items()
+    }
+
+    def said(label: str) -> set[str]:
+        return words.get(label.strip().lower(), {label.strip().lower()})
+
+    family = set(asked)
+    for key in flags:
+        scope = {str(c) for c in (scopes.get(key) or {}).get(CLASS_KEY) or []}
+        if not scope or not asked <= scope:
+            continue
+        grew = True
+        while grew:
+            grew = False
+            for label in scope - family:
+                if any(said(label) & said(member) for member in family):
+                    family.add(label)
+                    grew = True
+    if family == asked:
+        return None
+    membership[CLASS_KEY] = family
+    terms = {" ".join(str(t).lower().split()) for t in scope_terms}
+    named = {label for label in asked if " ".join(label.lower().split()) in terms}
+    return named or asked
 
 
 def _is_excluded(values: dict, exclusions: list[dict]) -> bool:

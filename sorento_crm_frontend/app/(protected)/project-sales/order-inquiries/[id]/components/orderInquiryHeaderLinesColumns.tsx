@@ -9,6 +9,7 @@ import {
   ChevronRight,
   History as HistoryIcon,
   Pencil,
+  X,
 } from 'lucide-react';
 import { ColumnDef } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
@@ -214,20 +215,24 @@ function reserveChipText(staged: StagedReserveEntry): string {
   return `Reserve ${staged.qty}`;
 }
 
-function ReserveActionsCell({
+export function ReserveActionsCell({
   row,
   staged,
   onTickReserve,
+  onRejectReserve,
   onEditReserve,
   onAmendReserve,
   onUndoStaged,
+  canAmend = true,
 }: {
   row: OrderInquiryWorklistRow;
   staged?: StagedReserveEntry;
   onTickReserve?: (row: OrderInquiryWorklistRow) => void;
+  onRejectReserve?: (row: OrderInquiryWorklistRow) => void;
   onEditReserve?: (row: OrderInquiryWorklistRow) => void;
   onAmendReserve?: (row: OrderInquiryWorklistRow) => void;
   onUndoStaged?: (rowId: string) => void;
+  canAmend?: boolean;
 }) {
   if (staged) {
     const chipText = reserveChipText(staged);
@@ -266,6 +271,20 @@ function ReserveActionsCell({
         >
           <Check className="size-3.5" aria-hidden />
         </Button>
+        {/* OI-BULK-RESERVE (AC-BR-09): Reserve 0 + one reason, the line's own copy of the
+            strip's Decide > Reject... */}
+        <Button
+          type="button"
+          mode="icon"
+          variant="ghost"
+          size="sm"
+          className="size-6"
+          aria-label="Reject"
+          title="Reject"
+          onClick={() => onRejectReserve?.(row)}
+        >
+          <X className="size-3.5" aria-hidden />
+        </Button>
         <Button
           type="button"
           mode="icon"
@@ -284,7 +303,8 @@ function ReserveActionsCell({
   // 6e.4 (AC-RS-83b): a declined line (CS answered 0) gets the same Amend as a reserved
   // one, so "0 -> up" stays reachable. Its reserve history is the Reserve tab of the
   // line's one History dialog now (owner ruling 26 Sep, G3), not an icon of its own.
-  if (row.reserve_state === 'reserved' || row.reserve_state === 'declined') {
+  // The cross-OI Lines page draws no Amend (OI-BULK-RESERVE v4): `canAmend={false}`.
+  if (canAmend && (row.reserve_state === 'reserved' || row.reserve_state === 'declined')) {
     return (
       <div className="flex items-center gap-1">
         <Button
@@ -371,6 +391,7 @@ export function useOrderInquiryHeaderLinesColumns({
   canReserve,
   stagedByRowId,
   onTickReserve,
+  onRejectReserve,
   onEditReserve,
   onAmendReserve,
   onLineHistoryClick,
@@ -386,6 +407,8 @@ export function useOrderInquiryHeaderLinesColumns({
   stagedByRowId?: Record<string, StagedReserveEntry>;
   /** AC-RS-84: the tick - stages the full requested qty at the default pool, no dialog. */
   onTickReserve?: (row: OrderInquiryWorklistRow) => void;
+  /** OI-BULK-RESERVE (AC-BR-09): the x on a requested line - opens "Reject 1 line". */
+  onRejectReserve?: (row: OrderInquiryWorklistRow) => void;
   /** AC-RS-85: the pencil on a requested line - opens `ReserveLineForm` in reserve mode. */
   onEditReserve?: (row: OrderInquiryWorklistRow) => void;
   /** AC-RS-86: the pencil on a reserved line - opens `ReserveLineForm` in amend mode. */
@@ -612,7 +635,8 @@ export function useOrderInquiryHeaderLinesColumns({
         // saved column preferences appended after Location. Wide enough for the pill
         // plus a staged chip and Undo. No `minSize`: a user who drags it narrower than
         // the icons is choosing that, and can drag it back out again (owner, 24 Sep).
-        size: canReserve ? 410 : 220,
+        // OI-BULK-RESERVE: +28 for the x between the tick and the pen.
+        size: canReserve ? 438 : 220,
         meta: { headerTitle: 'State' },
         cell: ({ row }) => {
           const line = lineOf(row.original);
@@ -689,6 +713,7 @@ export function useOrderInquiryHeaderLinesColumns({
                 row={primary}
                 staged={stagedByRowId?.[primary.id]}
                 onTickReserve={onTickReserve}
+                onRejectReserve={onRejectReserve}
                 onEditReserve={onEditReserve}
                 onAmendReserve={onAmendReserve}
                 onUndoStaged={onUndoStaged}
@@ -704,6 +729,7 @@ export function useOrderInquiryHeaderLinesColumns({
     canReserve,
     stagedByRowId,
     onTickReserve,
+    onRejectReserve,
     onEditReserve,
     onAmendReserve,
     onLineHistoryClick,

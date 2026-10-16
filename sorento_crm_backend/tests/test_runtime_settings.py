@@ -30,6 +30,7 @@ ALL_FIELDS = [
     "connector_ss_callback_url",
     "analytics_ro_database_url",
     "respond_webhook_secret",
+    "do_assume_delivered_before",
 ]
 SECRET_FIELDS = [
     "connector_ss_to_product_secret",

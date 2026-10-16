@@ -168,6 +168,15 @@ class PurchaseOrderService:
         open_lines = 0
         outstanding_qty = 0.0
         lines = []
+        # AC-CANCEL-CRM (owner hand test): which AutoCount Cancel PO documents make up each
+        # line's `qty_cancelled`, and how each was matched. One read for the order.
+        from app.models.autocount_cancel import AutocountCancelLine
+        from app.services.autocount_cancel_ingest_service import cancel_sources
+
+        cancels = cancel_sources(
+            self.db, AutocountCancelLine.purchase_order_line_id,
+            [ln.id for ln in po.lines if getattr(ln, "qty_cancelled", None)],
+        )
         for ln in po.lines:
             # TWO figures, because there are two questions and one number cannot answer both.
             #
@@ -205,7 +214,12 @@ class PurchaseOrderService:
                 "sku": ln.product.product_code if ln.product else "",
                 "product_name": ln.product.product_name if ln.product else "",
                 "qty_ordered": float(ln.qty_ordered or 0),
-                "qty_received": float(ln.qty_received or 0),
+                # AC-CANCEL-CRM: AutoCount Cancel PO adds to TransferedQty (`qty_received`);
+                # what is shown as received leaves it out. Outstanding is unchanged.
+                "qty_received": max(float(ln.qty_received or 0)
+                                    - float(getattr(ln, "qty_cancelled", None) or 0), 0.0),
+                "qty_cancelled": float(getattr(ln, "qty_cancelled", None) or 0),
+                "cancels": cancels.get(str(ln.id), []),
                 "outstanding_qty": line_outstanding,
                 "line_status": ln.line_status,
                 # The line's own override when the book stated one; otherwise the product's

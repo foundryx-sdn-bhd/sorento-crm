@@ -68,7 +68,7 @@ import { IDEAS_KEY, useIdeaMutations, useIdeasQuery } from '@/hooks/useIdeas';
 import { formatDate } from '@/lib/helpers';
 import type { Idea } from '@/types/ideas';
 import { IdeaCaptureModal } from './IdeaCaptureModal';
-import { IdeasBulkMergeDialog } from './IdeasBulkMergeDialog';
+import { IdeaMergeModal } from './IdeaMergeModal';
 import { IdeaStatusBadge } from './IdeaStatusBadge';
 import { IdeasViewToggle } from './IdeasViewToggle';
 import { useIdeasMine } from './IdeasScopeToggle';
@@ -704,12 +704,14 @@ export function IdeasListView({
         </div>
       </Container>
       <IdeaCaptureModal open={captureOpen} onOpenChange={setCaptureOpen} />
-      <IdeasBulkMergeDialog
-        ideas={mergeRows ?? []}
-        open={mergeRows !== null}
-        onOpenChange={(open) => !open && setMergeRows(null)}
-        onMerge={bulk.merge}
-      />
+      {mergeRows ? (
+        <IdeaMergeModal
+          ideas={mergeRows}
+          open
+          onOpenChange={(open) => !open && setMergeRows(null)}
+          onMerged={clearSelection}
+        />
+      ) : null}
     </>
   );
 }

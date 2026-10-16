@@ -18,6 +18,7 @@ import { RowActionsMenu } from '@/components/common/RowActionsMenu';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { useDeferredAction } from '@/hooks/useDeferredAction';
 import type { ProductListItem } from './types/product.types';
+import { distinctName } from '@/lib/product-display';
 
 export interface UseProductActionsOptions {
   /** Where to go once the record is gone (the record page returns to the list). */
@@ -40,7 +41,11 @@ export function useProductActions(
     entityType: 'product',
     entityId: product?.id,
     verb: 'Deleting',
-    subject: product ? `${product.product_name} (${product.product_code})` : '',
+    subject: product
+      ? distinctName(product.product_code, product.product_name)
+        ? `${product.product_name} (${product.product_code})`
+        : product.product_code
+      : '',
     surface,
     watchFromMount: surface === 'inline',
     successMessage: 'Product deleted',

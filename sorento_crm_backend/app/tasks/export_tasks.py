@@ -1397,6 +1397,75 @@ def generate_order_inquiry_worklist_xlsx(
         db.close()
 
 
+def generate_stock_debt_snapshot_xlsx(
+    download_id: str,
+    user_id: str,
+    snapshot_id: str,
+    split: str = "none",
+    show_aux: bool = False,
+    *,
+    company_id: Optional[str] = None,
+) -> dict:
+    """Render a Stock Debt snapshot's workbook from its STORED rows (AC-16) and store it.
+
+    Same shape as `generate_stock_debt_xlsx` below, which carries the notes on `company_id`
+    and on never raising into RQ; the workbook is `StockDebtSnapshotService.export`'s.
+    """
+    db = SessionLocal()
+    from app.models.base import get_company_scope
+
+    caller_scope = get_company_scope(db)
+    if company_id:
+        set_company_scope(db, frozenset({str(company_id)}))
+    svc = DownloadService(db)
+    try:
+        svc.mark_processing(download_id)
+        row = svc.get(download_id)
+        filename = row.filename if row else None
+
+        from app.services.scm.stock_debt_snapshot_service import StockDebtSnapshotService
+
+        file_bytes, content_type, fallback_filename, counts = StockDebtSnapshotService(
+            db
+        ).export(snapshot_id, split=split, show_aux=show_aux)
+        filename = filename or fallback_filename
+
+        provider = default_provider()
+        backend = get_backend(provider)
+        key = f"exports/stock-debt-snapshot-xlsx/{download_id}/{filename}"
+        stored_key, _signed = backend.upload_file(
+            file_content=file_bytes,
+            file_path=key,
+            content_type=content_type,
+        )
+
+        svc.mark_ready(
+            download_id,
+            storage_provider=provider,
+            storage_key=stored_key,
+            filename=filename,
+            row_count=counts["rows"],
+            sheet_count=counts["sheets"],
+        )
+        logger.info(
+            "generate_stock_debt_snapshot_xlsx: download %s ready (%d bytes, %d rows)",
+            download_id, len(file_bytes), counts["rows"],
+        )
+        return {
+            "download_id": download_id, "status": "ready", "bytes": len(file_bytes),
+            "row_count": counts["rows"], "sheet_count": counts["sheets"],
+        }
+    except Exception as e:  # noqa: BLE001 - mark failed, never poison the queue
+        logger.exception(
+            "generate_stock_debt_snapshot_xlsx failed for download %s", download_id
+        )
+        _record_failure(db, svc, download_id, e, "generate_stock_debt_snapshot_xlsx")
+        return {"download_id": download_id, "status": "failed", "error": str(e)}
+    finally:
+        set_company_scope(db, caller_scope)
+        db.close()
+
+
 def generate_stock_debt_xlsx(
     download_id: str, user_id: str, params: dict, *, company_id: Optional[str] = None,
 ) -> dict:

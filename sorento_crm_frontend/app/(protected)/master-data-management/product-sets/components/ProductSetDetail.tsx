@@ -29,6 +29,7 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useProductSet, useUpdateProductSet } from '../hooks/useProductSets';
 import { getProductSetMemberOptions, type ProductSetMemberOption } from '../services/productSetService';
 import type { ProductSetDetail as ProductSetDetailType, ProductSetMember } from '../types/productSet.types';
+import { distinctName } from '@/lib/product-display';
 
 const LIST_PATH = '/master-data-management/product-sets';
 
@@ -474,9 +475,11 @@ export default function ProductSetDetail({ id }: { id: string }) {
                           </span>
                           <span
                             className="truncate text-xs text-muted-foreground"
-                            title={member.description ?? member.product_name ?? ''}
+                            title={member.description ?? distinctName(member.product_code, member.product_name) ?? ''}
                           >
-                            {member.description ?? member.product_name ?? 'No description'}
+                            {member.description ??
+                              distinctName(member.product_code, member.product_name) ??
+                              (member.product_code ? null : 'No description')}
                           </span>
                         </div>
                       </td>

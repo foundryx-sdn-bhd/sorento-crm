@@ -1,11 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { CopyIcon, LoaderCircleIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { formatDate } from '@/lib/helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DatePicker } from '@/components/ui/date-picker';
+import { parseIsoDate, toIsoDate } from '@/components/ui/date-range-picker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -79,6 +82,16 @@ const CARDS: CardSpec[] = [
         label: 'Signing keys',
         hint: "Paste each Respond.io webhook's signing key, one per line.",
         multiline: true,
+      },
+    ],
+  },
+  {
+    key: 'autocount',
+    title: 'AutoCount',
+    fields: [
+      {
+        name: 'do_assume_delivered_before',
+        label: 'Assume DOs delivered before',
       },
     ],
   },
@@ -165,6 +178,62 @@ function RespondWebhookFacts({ data }: { data: RuntimeSettings }) {
   );
 }
 
+/** "Assume DOs delivered before" (DO-BACKFILL-SETTING): a date box, `YYYY-MM-DD` both ways. */
+function CutoverDateField({
+  id,
+  label,
+  field,
+  draft,
+  onDraft,
+  clearButton,
+  deliveredStatusExists,
+}: {
+  id: string;
+  label: string;
+  field: RuntimeSettingField;
+  /** undefined = untouched, null = emptied, else the typed date. */
+  draft: string | null | undefined;
+  onDraft: (next: string | null | undefined) => void;
+  clearButton: ReactNode;
+  deliveredStatusExists: boolean;
+}) {
+  const live = typeof field.value === 'string' ? field.value : null;
+  const saved = field.source === 'db' ? live : null;
+  const shown = draft === undefined ? saved : draft;
+  // One Date per value: DatePicker re-syncs its typed text whenever `value` changes identity.
+  const value = useMemo(() => parseIsoDate(shown), [shown]);
+  const envDate = field.source === 'env' ? parseIsoDate(live) : undefined;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Label htmlFor={id}>{label}</Label>
+        <SourceBadge field={field} />
+      </div>
+      <div className="flex items-center gap-2">
+        <DatePicker
+          id={id}
+          ariaLabel={label}
+          className="flex-1"
+          value={value}
+          placeholder={envDate ? formatDate(envDate) : 'DD/MM/YYYY'}
+          onChange={(d) => {
+            const next = toIsoDate(d);
+            // Back to the saved value: nothing to save. Emptied: clear on Save.
+            onDraft(next === saved ? undefined : next);
+          }}
+        />
+        {clearButton}
+      </div>
+      {!deliveredStatusExists && (
+        <p role="alert" className="text-sm text-destructive">
+          No order status with code delivered exists, so DOs land as New even
+          with a date set.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function RuntimeSettingsCard({
   spec,
   data,
@@ -215,6 +284,31 @@ function RuntimeSettingsCard({
                   : 'Use server default'}
               </Button>
             );
+
+            if (name === 'do_assume_delivered_before') {
+              return (
+                <CutoverDateField
+                  key={name}
+                  id={id}
+                  label={label}
+                  field={field}
+                  draft={
+                    name in draft ? (draft[name] as string | null) : undefined
+                  }
+                  onDraft={(next) =>
+                    setDraft((d) => {
+                      const rest = { ...d };
+                      delete rest[name];
+                      return next === undefined
+                        ? rest
+                        : { ...rest, [name]: next };
+                    })
+                  }
+                  clearButton={clearButton}
+                  deliveredStatusExists={data.delivered_order_status_exists}
+                />
+              );
+            }
 
             if (name === 'chat_topic_labeller_enabled') {
               const checked =

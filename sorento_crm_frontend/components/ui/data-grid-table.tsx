@@ -971,11 +971,21 @@ function DataGridTableFootRowCell<TData>({
   );
 }
 
-function DataGridTableBodyRowExpandded<TData>({ row }: { row: Row<TData> }) {
+function DataGridTableBodyRowExpandded<TData>({
+  row,
+  dndStyle,
+}: {
+  row: Row<TData>;
+  /** The row-drag transform of the line above, so an open detail row moves with its line. */
+  dndStyle?: CSSProperties;
+}) {
   const { props, table } = useDataGrid();
 
   return (
-    <tr className={cn(props.tableLayout?.rowBorder && '[&:not(:last-child)>td]:border-b')}>
+    <tr
+      style={dndStyle}
+      className={cn(props.tableLayout?.rowBorder && '[&:not(:last-child)>td]:border-b')}
+    >
       <td colSpan={row.getVisibleCells().length}>
         {/* AC-RS-70 (`PLAN-oi-request-cs-reserve.md` section 6d G4a): a fixed-layout
             table this wide is as wide as the whole grid, so its own expanded content
@@ -1283,6 +1293,32 @@ function DataGridScroller({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * The drop of a dragged column header: the new order, with column groups kept together, set on
+ * the table (which the listing preferences then persist). Shared by every render path that
+ * offers column drag, so they cannot come to reorder differently.
+ */
+function reorderColumnsOnDragEnd<TData>(table: Table<TData>, event: DragEndEvent) {
+  const { active, over } = event;
+  if (!over) return;
+
+  const columnOrderState = table.getState().columnOrder as string[] | undefined;
+  const leafIds = table.getAllLeafColumns().map((c) => c.id);
+  const rawOrder =
+    Array.isArray(columnOrderState) && columnOrderState.length > 0 ? columnOrderState : leafIds;
+  const effectiveOrder = mergeColumnOrderWithLeafColumns(rawOrder, leafIds);
+  if (!Array.isArray(effectiveOrder) || effectiveOrder.length === 0) return;
+
+  const groups = table
+    .getAllColumns()
+    .filter((column) => column.columns?.length)
+    .map((column) => column.getLeafColumns().map((leaf) => leaf.id));
+
+  const next = moveColumnKeepingGroups(effectiveOrder, String(active.id), String(over.id), groups);
+  if (next === effectiveOrder) return;
+  table.setColumnOrder(next);
+}
+
 function DataGridTable<TData>() {
   const { table, props } = useDataGrid();
   const pagination = table.getState().pagination;
@@ -1299,31 +1335,7 @@ function DataGridTable<TData>() {
   // pinning still works for the lists that ask for it.
 
   if (props.tableLayout?.columnsDraggable) {
-    const handleDragEnd = (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over) return;
-
-      const columnOrderState = table.getState().columnOrder as string[] | undefined;
-      const leafIds = table.getAllLeafColumns().map((c) => c.id);
-      const rawOrder =
-        Array.isArray(columnOrderState) && columnOrderState.length > 0 ? columnOrderState : leafIds;
-      const effectiveOrder = mergeColumnOrderWithLeafColumns(rawOrder, leafIds);
-      if (!Array.isArray(effectiveOrder) || effectiveOrder.length === 0) return;
-
-      const groups = table
-        .getAllColumns()
-        .filter((column) => column.columns?.length)
-        .map((column) => column.getLeafColumns().map((leaf) => leaf.id));
-
-      const next = moveColumnKeepingGroups(
-        effectiveOrder,
-        String(active.id),
-        String(over.id),
-        groups,
-      );
-      if (next === effectiveOrder) return;
-      table.setColumnOrder(next);
-    };
+    const handleDragEnd = (event: DragEndEvent) => reorderColumnsOnDragEnd(table, event);
 
     return (
       <DataGridScroller>
@@ -1449,6 +1461,7 @@ function DataGridTable<TData>() {
 
 export {
   footerGroupsWithContent,
+  reorderColumnsOnDragEnd,
   DataGridScroller,
   headerRowSpan,
   skipMergedLeafHeader,

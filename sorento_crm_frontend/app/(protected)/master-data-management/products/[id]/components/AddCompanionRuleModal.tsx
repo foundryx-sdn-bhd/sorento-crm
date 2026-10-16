@@ -18,6 +18,7 @@ import { useSupplierSelectQuery } from '../../../../procurement-management/suppl
 import { getProductsForVariantSelect } from '../../services/productService';
 import type { ProductVariantRef } from '../../types/product.types';
 import { useCreateCompanionRule } from '../../hooks/useProductCompanions';
+import { codeWithName } from '@/lib/product-display';
 
 interface AddCompanionRuleModalProps {
   open: boolean;
@@ -26,7 +27,7 @@ interface AddCompanionRuleModalProps {
 }
 
 function displayProduct(p: { product_code: string; product_name: string }): string {
-  return `${p.product_code} - ${p.product_name}`;
+  return codeWithName(p.product_code, p.product_name);
 }
 
 /**

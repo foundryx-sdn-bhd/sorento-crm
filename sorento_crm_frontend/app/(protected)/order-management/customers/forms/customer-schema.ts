@@ -18,6 +18,7 @@ export const CustomerSchema = z.object({
   sales_agent_id: z.string().optional().nullable(),
   account_level: z.number().int().min(1).max(9).nullable().optional(),
   customer_group_id: z.string().nullable().optional(),
+  debtor_type: z.enum(['project', 'project_cash', 'cash_sales']).nullable().optional(),
 });
 
 export type CustomerSchemaType = z.infer<typeof CustomerSchema>;

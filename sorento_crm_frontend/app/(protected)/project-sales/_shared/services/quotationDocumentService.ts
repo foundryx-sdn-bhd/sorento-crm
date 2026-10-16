@@ -427,6 +427,24 @@ export async function rejectQuotationDocument(
   return response.json();
 }
 
+/**
+ * The creator reopens a pending or approved quotation to change it. The reason is required and
+ * lands in the project's feed; the document comes back at draft.
+ */
+export async function reviseQuotationApproval(
+  projectId: string,
+  documentId: string,
+  reason: string,
+): Promise<QuotationDocument> {
+  const response = await apiFetch(
+    `${BASE}/projects/${projectId}/quotation-documents/${documentId}/approval-revise`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+  );
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Failed to reopen this quotation'));
+  return response.json();
+}
+
 export async function listQuotationIssues(
   projectId: string,
   documentId: string,

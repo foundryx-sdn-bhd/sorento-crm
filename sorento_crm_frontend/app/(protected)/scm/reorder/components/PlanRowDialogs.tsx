@@ -38,6 +38,7 @@ import {
 import type { PoReceipt } from '../lib/poCover';
 import type { PlanLine } from '../lib/planLine';
 import { isGroupedLine } from '../lib/planLineGrouping';
+import { distinctName } from '@/lib/product-display';
 
 /**
  * Six numbers, six lightboxes (plan 4.6).
@@ -908,8 +909,8 @@ export function PlanRowDialog({
           <DialogTitle className="min-w-0 break-words">{title}</DialogTitle>
           {/* The product name IS the description - Radix wants one, and a second sentence
               explaining the dialog would be an on-screen explanation. */}
-          <DialogDescription className="truncate text-xs" title={line.product_name}>
-            {line.product_name}
+          <DialogDescription className="truncate text-xs" title={distinctName(line.sku, line.product_name) ?? undefined}>
+            {distinctName(line.sku, line.product_name)}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">

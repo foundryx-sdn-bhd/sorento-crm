@@ -125,6 +125,43 @@ class ContactAccessTypeService:
                 codes.append(code)
         return codes
 
+    def translate_names_to_codes_for_caller(
+        self, names: Optional[list[str]], *, contact_id: Optional[str]
+    ) -> Optional[list[str]]:
+        """``translate_names_to_codes``, failing CLOSED for a read made on behalf of a contact.
+
+        SEC-PROMO-ACCESS: a contact-scoped caller (the chatbot through MCP, which sends a
+        non-blank ``contact_id``) whose access list is empty or absent never gets ``None`` (no
+        filter). The MCP layer drops an empty list from the query string, so the route cannot
+        tell "the gate emptied it" from "the caller sent none"; either way the read gets the
+        contact's OWN active access codes (RELEASE-FIX-3), and ``[]`` (nothing) when the id
+        resolves to no contact or the contact holds none. Staff and internal callers send no
+        ``contact_id`` and keep ``None``.
+        """
+        codes = self.translate_names_to_codes(names)
+        key = (contact_id or "").strip()
+        if codes is None and key:
+            from app.services.field_access import resolve_contact_id
+
+            resolved = resolve_contact_id(self.db, key)
+            if not resolved:
+                return []
+            rows = (
+                self.db.query(respond_contact_access_types.c.access_type_code)
+                .join(
+                    ContactAccessType,
+                    ContactAccessType.code == respond_contact_access_types.c.access_type_code,
+                )
+                .filter(
+                    respond_contact_access_types.c.contact_id == resolved,
+                    ContactAccessType.is_active.is_(True),
+                )
+                .order_by(respond_contact_access_types.c.access_type_code.asc())
+                .all()
+            )
+            return [r[0] for r in rows]
+        return codes
+
     def validate_access_levels(self, access_levels: list[str], field_name: str = "access_levels") -> list[str]:
         """Validate codes against the active catalog. Returns normalized (stripped, deduplicated) list."""
         if not access_levels:

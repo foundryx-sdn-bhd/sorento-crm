@@ -898,6 +898,14 @@ class FormSLAOrchestrator:
         if existing:
             return existing
 
+        # No CS outcome: the requestor's winning rule says this form needs no customer
+        # service, so no CS stage starts (no tracker, no team lookup). The form stays
+        # Approved: there is no status change.
+        if self._reads_cs_pin(config) and self._winning_rule_is_no_cs(
+            config, source_entity_id, contact_id
+        ):
+            return None
+
         agent = (
             self.db.query(AccessAgent)
             .filter(AccessAgent.code == config.agent_code)
@@ -969,10 +977,15 @@ class FormSLAOrchestrator:
         # Pin-point override: a salesman (respond_contact) can be pinned to a
         # specific CS PIC per procurement use_case. A valid pin assigns that user
         # directly; any miss falls back to round-robin. The round-robin cursor is
-        # NOT advanced on an override. Complaint never reads the pin table.
+        # NOT advanced on an override. Only the procurement CS stage reads the pin
+        # table: the PIC need not be a member of any team, so team membership can no
+        # longer keep a pinned CS user off the submit or approval stage
+        # (CS-ROUTING-TARGETS). Complaint and stock inquiry never read it.
         # See docs/plans/PLAN-procurement-cs-handoff-and-pinpoint-routing.md.
         if override_assignee is not None:
             assignee = override_assignee  # default-approver wins over round-robin
+        elif not self._reads_cs_pin(config):
+            assignee = agent_svc.get_next_assignee(str(agent.id), team_id)
         else:
             # Pin lookup keys on the REQUESTOR (who the form is for), not the
             # submitter, so a salesman submitting on someone else's behalf still
@@ -985,7 +998,7 @@ class FormSLAOrchestrator:
                 or contact_id
             )
             assignee = self._resolve_pinned_assignee(
-                config.source_entity_type, routing_contact_id, team_id, source_entity_id
+                config.source_entity_type, routing_contact_id, company_id, source_entity_id
             )
             if not assignee:
                 assignee = agent_svc.get_next_assignee(str(agent.id), team_id)
@@ -1073,18 +1086,8 @@ class FormSLAOrchestrator:
     ) -> dict:
         """Return the form header row's own fields as a plain dict (for predicate
         evaluation). Empty dict on any miss - never raises."""
-        src = _ENTITY_NUMBER_SOURCE.get(source_entity_type or "")
-        if not src or not source_entity_id:
-            return {}
-        table = src[0]
         try:
-            from sqlalchemy import text as _sql_text
-
-            row = self.db.execute(
-                _sql_text(f"SELECT row_to_json(t) AS j FROM {table} t WHERE t.id = :id"),
-                {"id": str(source_entity_id)},
-            ).first()
-            return dict(row[0]) if row and row[0] else {}
+            values = self._load_form_field_values_strict(source_entity_type, source_entity_id)
         except Exception:
             logger.warning(
                 "CS pin: failed to load form fields for %s/%s; predicates see no fields.",
@@ -1092,7 +1095,95 @@ class FormSLAOrchestrator:
                 source_entity_id,
                 exc_info=True,
             )
+            try:
+                self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
             return {}
+        return values
+
+    def _load_form_field_values_strict(
+        self, source_entity_type: Optional[str], source_entity_id: Optional[str]
+    ) -> dict:
+        """Same as `_load_form_field_values` but a load failure RAISES, so a caller that
+        must tell "failed" from "loaded, empty" (the No CS check) can."""
+        src = _ENTITY_NUMBER_SOURCE.get(source_entity_type or "")
+        if not src or not source_entity_id:
+            return {}
+        table = src[0]
+        from sqlalchemy import text as _sql_text
+
+        row = self.db.execute(
+            _sql_text(f"SELECT row_to_json(t) AS j FROM {table} t WHERE t.id = :id"),
+            {"id": str(source_entity_id)},
+        ).first()
+        values = dict(row[0]) if row and row[0] else {}
+        if values and source_entity_type in ("purchase_request", "sponsorship_form"):
+            values.update(self._computed_request_values(str(source_entity_id), values))
+        return values
+
+    def _computed_request_values(self, request_id: str, header_values: dict) -> dict:
+        """PR / SF routing values that are not header columns: `product_lines` (has / none,
+        a line counts only with a non-blank item_code) and `customer_debtor_type` (the
+        linked customer's CURRENT type, None when unlinked or blank)."""
+        from sqlalchemy import text as _sql_text
+
+        has_line = self.db.execute(
+            _sql_text(
+                "SELECT 1 FROM purchase_request_lines WHERE purchase_request_id = :id "
+                "AND btrim(coalesce(item_code, '')) <> '' LIMIT 1"
+            ),
+            {"id": request_id},
+        ).first()
+        debtor_type = None
+        customer_id = header_values.get("customer_id")
+        if customer_id:
+            row = self.db.execute(
+                _sql_text("SELECT debtor_type FROM customers WHERE id = :cid"),
+                {"cid": str(customer_id)},
+            ).first()
+            debtor_type = row[0] if row and row[0] else None
+        return {"product_lines": "has" if has_line else "none", "customer_debtor_type": debtor_type}
+
+    def _winning_rule_is_no_cs(
+        self, config: FormSLAConfig, source_entity_id: str, contact_id: Optional[str]
+    ) -> bool:
+        """True when the requestor's winning CS routing rule for this form is "No CS"
+        (cs_pic_user_id NULL). Same contact, same form values, same selection as
+        `_resolve_pinned_assignee`. Never raises: any failure means "not No CS"."""
+        try:
+            from app.models.access import RespondContactCsRouting
+            from app.services.cs_routing_match import select_pin_row
+
+            routing_contact_id = (
+                self._routing_contact_id(config.source_entity_type, source_entity_id) or contact_id
+            )
+            if not routing_contact_id:
+                return False
+            pins = (
+                self.db.query(RespondContactCsRouting)
+                .filter(
+                    RespondContactCsRouting.respond_contact_id == routing_contact_id,
+                    RespondContactCsRouting.use_case == config.source_entity_type,
+                    RespondContactCsRouting.is_active.is_(True),
+                )
+                .all()
+            )
+            if not pins:
+                return False
+            # Strict load: a failure raises into the handler below (False), never "empty".
+            form_values = self._load_form_field_values_strict(
+                config.source_entity_type, source_entity_id
+            )
+            pin = select_pin_row(pins, form_values)
+            return bool(pin) and pin.cs_pic_user_id is None
+        except Exception:
+            logger.warning("No CS check failed for %s; routing as usual.", source_entity_id, exc_info=True)
+            try:
+                self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return False
 
     def _routing_contact_id(
         self,
@@ -1143,11 +1234,27 @@ class FormSLAOrchestrator:
             )
             return None
 
+    @staticmethod
+    def _reads_cs_pin(config: FormSLAConfig) -> bool:
+        """The procurement customer-service stage: the only stage whose assignment
+        honours a salesman's CS routing pin."""
+        from app.services.cs_routing_service import (
+            CS_AGENT_CODE,
+            CS_TEAM_SET_CODE,
+            PINNABLE_USE_CASES,
+        )
+
+        return (
+            getattr(config, "agent_code", None) == CS_AGENT_CODE
+            and getattr(config, "team_set_code", None) == CS_TEAM_SET_CODE
+            and getattr(config, "source_entity_type", None) in PINNABLE_USE_CASES
+        )
+
     def _resolve_pinned_assignee(
         self,
         source_entity_type: Optional[str],
         contact_id: Optional[str],
-        team_id: str,
+        company_id: Optional[str],
         source_entity_id: Optional[str] = None,
     ) -> Optional[dict]:
         """Return the CS PIC pinned for (contact, use_case) whose match-conditions
@@ -1159,15 +1266,17 @@ class FormSLAOrchestrator:
         (``created_at`` tiebreak); an empty condition list is a wildcard. Returns an
         assignee dict shaped like ``get_next_assignee`` so the caller is
         branch-agnostic. Returns None (→ round-robin) when there is no contact, no
-        matching pin, or the chosen user is missing / inactive / not a member of the
-        stage's tier-1 team. Never raises - every failure degrades to round-robin so
-        approval can't 500.
+        matching pin, or the chosen user is not an eligible PIC for ``company_id``
+        (``cs_routing_service.is_eligible_pic``: active, able to process purchase
+        requests, granted the company). Team membership is not required. Never
+        raises - every failure degrades to round-robin so approval can't 500.
         """
         if not contact_id or not source_entity_type:
             return None
         try:
-            from app.models.access import RespondContactCsRouting, TeamMember
-            from app.models.user import User, UserStatus
+            from app.models.access import RespondContactCsRouting
+            from app.models.user import User
+            from app.services import cs_routing_service
             from app.services.cs_routing_match import select_pin_row
 
             pins = (
@@ -1186,30 +1295,18 @@ class FormSLAOrchestrator:
             if not pin:
                 return None
             user_id = pin.cs_pic_user_id
-            member = (
-                self.db.query(TeamMember)
-                .filter(
-                    TeamMember.team_id == team_id,
-                    TeamMember.user_id == user_id,
-                )
-                .first()
-            )
-            if not member:
+            if not cs_routing_service.is_eligible_pic(self.db, user_id, company_id=company_id):
                 logger.warning(
-                    "CS pin: contact %s use_case %s -> user %s not in tier-1 team %s; "
-                    "falling back to round-robin.",
+                    "CS pin: contact %s use_case %s -> user %s is not an eligible PIC "
+                    "for company %s; falling back to round-robin.",
                     contact_id,
                     source_entity_type,
                     user_id,
-                    team_id,
+                    company_id,
                 )
                 return None
             user = self.db.query(User).filter(User.id == user_id).first()
-            if not user or (getattr(user, "status", "") or "").upper() != UserStatus.ACTIVE.value:
-                logger.warning(
-                    "CS pin: user %s missing/inactive; falling back to round-robin.",
-                    user_id,
-                )
+            if not user:
                 return None
             return {
                 "id": user.id,

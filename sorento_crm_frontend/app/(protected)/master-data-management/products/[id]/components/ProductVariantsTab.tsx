@@ -28,6 +28,7 @@ import type { ProductVariantRef } from '../../types/product.types';
 import ProductVariantPickerDialog from './ProductVariantPickerDialog';
 import ProductAlternativesSection from './ProductAlternativesSection';
 import ProductCompatibilitySection from './ProductCompatibilitySection';
+import { codeWithName, distinctName } from '@/lib/product-display';
 
 interface ProductVariantsTabProps {
   /** The current product's id - required for variant curation mutations. */
@@ -243,15 +244,15 @@ export default function ProductVariantsTab({
                   <div className="min-w-0 flex-1">
                     <div
                       className="truncate"
-                      title={`${member.product_code} - ${member.product_name}`}
+                      title={codeWithName(member.product_code, member.product_name)}
                     >
                       <span className="font-medium">{member.product_code}</span>
                     </div>
                     <div
                       className="text-xs text-muted-foreground truncate"
-                      title={member.description || member.product_name}
+                      title={member.description || distinctName(member.product_code, member.product_name) || undefined}
                     >
-                      {member.description || member.product_name}
+                      {member.description || distinctName(member.product_code, member.product_name)}
                     </div>
                   </div>
                 </Link>
@@ -312,13 +313,15 @@ export default function ProductVariantsTab({
               <div className="min-w-0 flex-1">
                 <div
                   className="font-medium truncate"
-                  title={`${variantOf.product_code} - ${variantOf.product_name}`}
+                  title={codeWithName(variantOf.product_code, variantOf.product_name)}
                 >
                   {variantOf.product_code}
                 </div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {variantOf.product_name}
-                </div>
+                {distinctName(variantOf.product_code, variantOf.product_name) ? (
+                  <div className="text-xs text-muted-foreground truncate">
+                    {variantOf.product_name}
+                  </div>
+                ) : null}
               </div>
             </Link>
           ) : (
@@ -374,13 +377,15 @@ export default function ProductVariantsTab({
                     <div className="min-w-0 flex-1">
                       <div
                         className="truncate"
-                        title={`${child.product_code} - ${child.product_name}`}
+                        title={codeWithName(child.product_code, child.product_name)}
                       >
                         {renderCode(child.product_code, productCode)}
                       </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {child.product_name}
-                      </div>
+                      {distinctName(child.product_code, child.product_name) ? (
+                        <div className="text-xs text-muted-foreground truncate">
+                          {child.product_name}
+                        </div>
+                      ) : null}
                     </div>
                   </Link>
                   <Button

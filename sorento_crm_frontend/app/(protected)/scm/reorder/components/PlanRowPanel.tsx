@@ -41,6 +41,7 @@ import {
 import { healthVerdict, suggestedLifecycle, type ProductEconomics } from '../lib/productHealth';
 import type { PoReceipt } from '../lib/poCover';
 import type { PlanRowPriceMode } from '../types/decisions.types';
+import { distinctName } from '@/lib/product-display';
 
 const ApexChart = dynamic(() => import('react-apexcharts').then((mod) => mod.default), {
   ssr: false,
@@ -665,8 +666,8 @@ export function PlanRowPanel({
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{`What left ${line.sku} each month`}</DialogTitle>
-            <DialogDescription className="truncate" title={line.product_name}>
-              {line.product_name}
+            <DialogDescription className="truncate" title={distinctName(line.sku, line.product_name) ?? undefined}>
+              {distinctName(line.sku, line.product_name)}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>

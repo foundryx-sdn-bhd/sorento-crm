@@ -1211,6 +1211,7 @@ class AIExtractService:
                     prompt_tokens=int(result.prompt_tokens or 0),
                     completion_tokens=int(result.completion_tokens or 0),
                     total_tokens=int(result.total_tokens or 0),
+                    cached_tokens=int(getattr(result, "cached_tokens", 0) or 0),
                     tool_calls_count=0,
                     response_time_ms=elapsed_ms,
                     was_answered=answered,

@@ -54,8 +54,15 @@ from app.services.uuid_path_param import validate_uuid_path
 router = APIRouter()
 
 VIEW = "projects.projects.view"
-CREATE = "projects.projects.create"
+# Creating and qualifying a lead take EDIT, the grant that registers a project (owner, 13 Oct):
+# a new project needs its lead, so whoever may register one must be able to create the lead.
+# They used to take "projects.projects.create", which no permission registry defines, so only
+# admins passed.
 EDIT = "projects.projects.edit"
+# Putting a lead or a project in SOMEBODY ELSE'S name is a manager act, as on register
+# (projects.py, project_owner_assign_forbidden). Kept explicit here because EDIT now reaches
+# these routes for every salesperson (security review, 13 Oct).
+MANAGE = "projects.projects.manage"
 DELETE = "projects.projects.delete"
 
 
@@ -233,7 +240,7 @@ async def get_lead(
 @router.post("", response_model=ProjectLeadResponse, status_code=status.HTTP_201_CREATED)
 async def create_lead(
     payload: ProjectLeadCreate,
-    current_user: dict = Depends(require_permission(CREATE)),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
     """Record a sighting. No clash check, deliberately (AC-O3).
@@ -250,6 +257,21 @@ async def create_lead(
     try:
         company_id = acting_company_id(db)
         body = payload.model_dump(exclude_unset=True)
+        # Handing a lead to someone else goes through assign (the acceptance clock, the
+        # notification, the active-user check), never through create.
+        owner = body.get("owner_user_id")
+        if (
+            owner
+            and owner != current_user["id"]
+            and MANAGE not in permission_slugs(db, current_user["id"])
+        ):
+            from app.services.error_handler import AppException
+
+            raise AppException(
+                status_code=403,
+                message="Create the lead, then assign it: only a sales manager can create it in someone else's name.",
+                code="lead_owner_assign_forbidden",
+            )
         new_customer = body.pop("new_customer", None)
         if body.get("customer_id") or new_customer:
             customer = svc.select_or_create_customer(
@@ -451,20 +473,34 @@ async def preview_qualify(
 async def qualify_lead(
     lead_id: str,
     payload: ProjectLeadQualifyRequest,
-    current_user: dict = Depends(require_permission(CREATE)),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
     """Convert to a project. 409 when somebody already holds the development.
 
-    Requires ``.create`` and not just ``.edit``: this is a registration, and it is the
-    same grant that registering directly needs.
+    Requires ``.edit``: this is a registration, and it is the same grant that registering
+    directly (``POST /projects``) needs. The per-lead edit check below still applies.
     """
     try:
         validate_uuid_path(lead_id, resource="Lead")
         lead = svc.get_lead(db, lead_id)
-        svc.assert_can_edit_lead(
-            lead, current_user["id"], permission_slugs(db, current_user["id"])
-        )
+        permissions = permission_slugs(db, current_user["id"])
+        svc.assert_can_edit_lead(lead, current_user["id"], permissions)
+        # The register route's rule: a project lands in someone else's name only by a
+        # manager. The lead's own owner is not "someone else" here, it is the default.
+        owner = payload.owner_user_id
+        if (
+            owner
+            and owner not in (current_user["id"], lead.owner_user_id)
+            and MANAGE not in permissions
+        ):
+            from app.services.error_handler import AppException
+
+            raise AppException(
+                status_code=403,
+                message="Only a sales manager can register a project for someone else.",
+                code="project_owner_assign_forbidden",
+            )
         project = svc.qualify_lead(
             db,
             lead=lead,

@@ -25,20 +25,37 @@ import type { StockDebtExportSplit, StockDebtListResponse } from '../types/stock
 export function StockDebtExportPopover({
   envelope,
   filters,
+  rowCount,
+  onExport,
+  exporting = false,
 }: {
-  envelope: StockDebtListResponse | undefined;
+  /** The live board's loaded list: the rows/sheets preview reads it. */
+  envelope?: StockDebtListResponse | undefined;
   /** The board's current filters, minus paging and split - what the export sends (AC-17). */
-  filters: Omit<StockDebtExportParams, 'split'>;
+  filters?: Omit<StockDebtExportParams, 'split'>;
+  /** Without an `envelope` (a stored snapshot), the row count the preview states. */
+  rowCount?: number;
+  /** Replaces the board's own export: the snapshot page starts its stored workbook instead.
+   *  Call `done` once it has started, so the popover closes. */
+  onExport?: (split: StockDebtExportSplit, done: () => void) => void;
+  exporting?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const [split, setSplit] = React.useState<StockDebtExportSplit>('none');
   const exportMutation = useExportStockDebt();
 
-  const preview = previewStockDebtExport(envelope, split);
+  const preview = envelope
+    ? previewStockDebtExport(envelope, split)
+    : { rows: rowCount ?? 0, sheets: null };
+  const pending = exportMutation.isPending || exporting;
 
   const handleExport = () => {
+    if (onExport) {
+      onExport(split, () => setOpen(false));
+      return;
+    }
     exportMutation.mutate(
-      { ...filters, split },
+      { ...(filters as Omit<StockDebtExportParams, 'split'>), split },
       { onSuccess: () => setOpen(false) },
     );
   };
@@ -68,15 +85,19 @@ export function StockDebtExportPopover({
           </RadioGroup>
         </div>
         <p className="text-xs text-muted-foreground">
-          {preview.rows.toLocaleString()} row{preview.rows === 1 ? '' : 's'},{' '}
-          {preview.sheets.toLocaleString()} sheet{preview.sheets === 1 ? '' : 's'}
+          {preview.rows.toLocaleString()} row{preview.rows === 1 ? '' : 's'}
+          {preview.sheets !== null && (
+            <>
+              , {preview.sheets.toLocaleString()} sheet{preview.sheets === 1 ? '' : 's'}
+            </>
+          )}
         </p>
         <Button
           className="w-full"
           onClick={handleExport}
-          disabled={exportMutation.isPending || preview.rows === 0}
+          disabled={pending || preview.rows === 0}
         >
-          {exportMutation.isPending ? 'Starting…' : 'Export'}
+          {pending ? 'Starting…' : 'Export'}
         </Button>
       </PopoverContent>
     </Popover>

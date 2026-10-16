@@ -138,12 +138,15 @@ _ANY_OF_PERMISSIONS: dict = {
 #: Actions whose ids become an ss URL path: the record id (and `payload.idea_id`) must be a UUID
 #: at park time, so a crafted id is refused here and not ten seconds later (AC-A-10).
 _UUID_ENTITY_ACTIONS = (
+    "llm_model_price.delete",
     "idea.archive",
     "idea.delete",
     "idea_comment.delete",
     "product_alternative.unlink",
     "product_alternatives.reset_auto",
     "product_compatibility.unlink",
+    "quotation_document.delete",
+    "stock_debt_snapshot.delete",
 )
 
 
@@ -189,10 +192,18 @@ def _assert_entity_visible(db: Session, action_key: str, entity_id: str, actor_i
         from app.services.customer_group_service import CustomerGroupService
 
         CustomerGroupService(db).get_group(entity_id)
+    elif action_key == "quotation_document.delete":
+        from app.services.record_actions import assert_quotation_deletable
+
+        assert_quotation_deletable(db, entity_id, actor_id)
     elif action_key == "form_comment.delete":
         from app.services.form_comment_service import FormCommentService
 
         FormCommentService(db).assert_staff_may_delete(entity_id, actor_id)
+    elif action_key == "stock_debt_snapshot.delete":
+        from app.services.scm.stock_debt_snapshot_service import StockDebtSnapshotService
+
+        StockDebtSnapshotService(db).get_own(entity_id, actor_id)
     elif action_key in ("customer.unassign_sales_agent", "customer.remove_from_group"):
         from app.services.contact_customer_service import get_customer_in_scope
 

@@ -7,7 +7,10 @@ import {
   addProductCompatibility,
   getProductCompatibility,
 } from '../services/productCompatibilityService';
-import type { CompatibilityRole } from '../types/productCompatibility.types';
+import type {
+  CompatibilityKind,
+  CompatibilityRole,
+} from '../types/productCompatibility.types';
 
 const compatibilityKey = (productId: string | undefined) => [
   'product-compatibility',
@@ -28,10 +31,12 @@ export function useAddProductCompatibility(productId: string) {
     mutationFn: ({
       otherProductId,
       otherRole,
+      kind,
     }: {
       otherProductId: string;
       otherRole: CompatibilityRole;
-    }) => addProductCompatibility(productId, otherProductId, otherRole),
+      kind: CompatibilityKind;
+    }) => addProductCompatibility(productId, otherProductId, otherRole, kind),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['product-compatibility'] });
       toast.success('Link added');

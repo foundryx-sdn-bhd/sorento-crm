@@ -21,6 +21,7 @@ import { stockTransferActions } from '../../actions';
 import BackToList from '@/components/common/BackToList';
 import { PageHeader } from '@/components/common/PageHeader';
 import { stockTransfersPagerQuery } from '../../hooks/useStockTransfers';
+import { distinctName } from '@/lib/product-display';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -153,7 +154,7 @@ export function StockTransferDetail({ id }: { id: string }) {
             >
               <Field label="Item">
                 {transfer.item_code ?? '-'}
-                {transfer.product_name ? (
+                {distinctName(transfer.item_code, transfer.product_name) ? (
                   <span className="block text-xs text-muted-foreground">
                     {transfer.product_name}
                   </span>

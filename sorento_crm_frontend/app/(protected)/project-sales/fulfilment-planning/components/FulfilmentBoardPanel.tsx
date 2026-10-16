@@ -62,7 +62,11 @@ import {
 import { usePlanningChangeBatchesByIds } from '../../_shared/hooks/usePlanningChanges';
 import { useSoLineAttachmentLookup } from '../../_shared/hooks/useSoLineAttachments';
 import { formatQty } from '../../_shared/lib/money';
-import { canQuickSave, suggestedDecisionFor } from '../../_shared/lib/boardAmend';
+import {
+  awaitsCancelSo,
+  canQuickSave,
+  suggestedDecisionFor,
+} from '../../_shared/lib/boardAmend';
 import {
   annotationsByCell,
   annotationsByLine,
@@ -1506,7 +1510,7 @@ export function FulfilmentBoardPanel({
                 ((contribution.covered &&
                   draftWithoutPreMark[contribution.key]?.verdict === 'rejected') ||
                   (!contribution.covered &&
-                    !contribution.cancelled &&
+                    (!contribution.cancelled || awaitsCancelSo(contribution)) &&
                     batchNamedKeys.has(contribution.key) &&
                     draftWithoutPreMark[contribution.key]?.verdict === 'cancelled')),
             )
@@ -2816,7 +2820,7 @@ export function FulfilmentBoardPanel({
                   No lines to plan on these sales orders
                 </h3>
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                  Every line is cancelled or marked no purchase needed.
+                  Every line is cancelled, fully returned or marked no purchase needed.
                 </p>
               </>
             )}

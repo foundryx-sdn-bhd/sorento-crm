@@ -60,6 +60,7 @@ from app.models.project_so import (
     OrderInquiryReserveEvent,
     OrderInquiryReserveRequest,
     OrderInquiryReserveRequestRow,
+    OrderInquiryReleasedLink,
     OrderInquiryRow,
     OrderInquirySuggestedLink,
     ProjectDeliveryPhase,
@@ -94,8 +95,10 @@ from app.models.projects import (
     ProjectSalesProfile,
     ProjectSample,
     ProjectSeries,
+    ProjectSeriesBrand,
     ProjectSeriesCategory,
     ProjectSeriesProduct,
+    ProjectSeriesSet,
     ProjectStakeholder,
     ProjectTakeoverRequest,
     ProjectTask,
@@ -132,6 +135,9 @@ PURGE_ORDER: List[Type] = [
     # sibling OrderInquiryLink and before the row it hangs off, its own statement so the
     # operator sees the suggestions counted.
     OrderInquirySuggestedLink,
+    # order_inquiry_released_links.row_id CASCADEs off the row; its reserve_request_row_id
+    # is SET NULL. Own statement so the operator sees the released links counted.
+    OrderInquiryReleasedLink,
     # order_inquiry_reserve_events.reserve_request_row_id CASCADEs off the request row
     # (section 6c, `PLAN-oi-request-cs-reserve.md`), so it purges first, its own
     # statement so the operator sees the history counted.
@@ -190,6 +196,8 @@ PURGE_ORDER: List[Type] = [
     PriceFloorRule,
     # --- catalogue the quotations priced from -------------------------------------------
     ProjectSeriesProduct,
+    ProjectSeriesSet,
+    ProjectSeriesBrand,
     ProjectSeriesCategory,
     ProjectSeries,
     # --- everything hanging directly off a project --------------------------------------

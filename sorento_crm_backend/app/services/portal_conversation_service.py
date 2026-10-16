@@ -36,7 +36,7 @@ def _iso(value: Any) -> Optional[str]:
     return value.isoformat() if isinstance(value, datetime) else None
 
 
-def _rows_query(db: Session, agent_id: str, *, q: Optional[str] = None, contact_id: Optional[str] = None):
+def _rows_query(db: Session, agent_ids: list[str], *, q: Optional[str] = None, contact_id: Optional[str] = None):
     """The list, unpaged: one row per contact, with its named customer and latest message."""
     from app.services.stock_ask_service import _owning_agent_column
 
@@ -56,7 +56,7 @@ def _rows_query(db: Session, agent_id: str, *, q: Optional[str] = None, contact_
                 Customer.company_id == RespondContactCustomer.company_id,
             ),
         )
-        .where(_owning_agent_column() == agent_id)
+        .where(_owning_agent_column().in_(list(agent_ids)))
         .distinct(RespondContactCustomer.contact_id)
         .order_by(
             RespondContactCustomer.contact_id,
@@ -134,14 +134,15 @@ def _row(row: Any) -> dict[str, Any]:
 
 def list_for_agent(
     db: Session,
-    agent_id: str,
+    agent_ids: list[str],
     *,
     page: int,
     limit: int,
     q: Optional[str] = None,
 ) -> dict[str, Any]:
-    """The agent's conversations, latest message first, paged like the other portal lists."""
-    stmt = _rows_query(db, agent_id, q=q)
+    """The agents' conversations, latest message first, paged like the other portal lists.
+    `agent_ids` is every active agent the portal contact is linked to (PORTAL-MULTI-AGENT)."""
+    stmt = _rows_query(db, agent_ids, q=q)
     total = int(db.execute(select(func.count()).select_from(stmt.order_by(None).subquery())).scalar() or 0)
     rows = db.execute(stmt.offset((page - 1) * limit).limit(limit)).mappings().all()
     return {
@@ -151,11 +152,11 @@ def list_for_agent(
     }
 
 
-def contact_in_scope(db: Session, agent_id: str, contact_id: str) -> Optional[dict[str, Any]]:
-    """The list row for this contact, or None: a contact that is not a row (another agent's
+def contact_in_scope(db: Session, agent_ids: list[str], contact_id: str) -> Optional[dict[str, Any]]:
+    """The list row for this contact, or None: a contact that is not a row (an unlinked agent's
     customer, no link, no Respond id, no message yet) has no thread to open here."""
     raw = str(contact_id or "").strip()
     if not raw:
         return None
-    row = db.execute(_rows_query(db, agent_id, contact_id=raw)).mappings().first()
+    row = db.execute(_rows_query(db, agent_ids, contact_id=raw)).mappings().first()
     return _row(row) if row else None

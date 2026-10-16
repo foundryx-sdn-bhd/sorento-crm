@@ -10,8 +10,6 @@ ignored (both DOs come back) or rejected as an unknown param, not because of a f
 """
 from __future__ import annotations
 
-import uuid
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -24,6 +22,7 @@ from app.services.company_scope import DEFAULT_COMPANY_ID
 from app.services.company_scope_resolver import apply_company_scope
 
 from tests._mc_lookup_seed import customer, order, order_line, product, warehouse
+from tests._orders_view_seed import orders_view_principal
 from tests._pg_fixture import blank_session, unique_code
 
 BASE = "/api/v1/order-management/orders"
@@ -41,7 +40,8 @@ def client(db):
     def _override_db():
         yield db
 
-    principal = {"id": str(uuid.uuid4()), "email": "zzt-orders-warehouse-codes@test.com"}
+    # A real user holding the grant: the DO read routes are gated on it (#1669).
+    principal = orders_view_principal(db)
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_user] = lambda: principal
     app.dependency_overrides[get_current_user_or_api_key] = lambda: principal

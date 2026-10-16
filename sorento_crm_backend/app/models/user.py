@@ -1,6 +1,6 @@
 """User management models."""
 import enum
-from sqlalchemy import CheckConstraint, Column, String, Boolean, DateTime, ForeignKey, Numeric, Text, Index, Integer, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, Column, String, Boolean, Date, DateTime, ForeignKey, Numeric, Text, Index, Integer, UniqueConstraint, text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
@@ -421,6 +421,8 @@ class SystemSetting(Base):
     connector_ss_callback_url = Column(String(2048), nullable=True)
     analytics_ro_database_url_ciphertext = Column(Text, nullable=True)
     respond_webhook_secret_ciphertext = Column(Text, nullable=True)
+    # DO-BACKFILL-SETTING: the DO-HISTORY cutover (NULL = DO_ASSUME_DELIVERED_BEFORE).
+    do_assume_delivered_before = Column(Date, nullable=True)
 
     # Takeover cooldown: seconds between a takeover confirm and the actual reassignment,
     # during which the original assignee can reject and the initiator can cancel.

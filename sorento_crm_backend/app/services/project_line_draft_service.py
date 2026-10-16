@@ -30,6 +30,8 @@ from app.models.planning_change import PlanningChangeBatch, PlanningChangeRow
 from app.models.product import Product
 from app.models.project_so import (
     DECISION_ACTIVE,
+    INQUIRY_CANCELLED,
+    OrderInquiryRow,
     ProjectSalesOrder,
     ProjectSalesOrderLine,
     SOSupplyDecision,
@@ -164,6 +166,11 @@ def _resolve_core_line(db: Session, sales_order_id: str, line_no: int, item_code
     if order is None:
         raise _bad_line(f"{sales_order_id}|{line_no}|{item_code}")
 
+    # CANCEL-STOP-AT-SO: a line AutoCount cancelled is keyed by its mirror's own `line_no`
+    # outside the demand set numbered below (an order AutoCount cancelled in full has no
+    # demand line left at all). Looked up first so that case resolves; a demand line that
+    # ALSO answers to the key makes it ambiguous, refused rather than guessed.
+    awaiting = _awaiting_cancel_line(db, sales_order_id, line_no, item_code)
     lines = (
         db.query(SalesOrderLine, Product.product_code)
         .join(Product, Product.id == SalesOrderLine.product_id)
@@ -171,6 +178,8 @@ def _resolve_core_line(db: Session, sales_order_id: str, line_no: int, item_code
         .all()
     )
     if not lines:
+        if awaiting is not None:
+            return awaiting
         raise _bad_line(f"{sales_order_id}|{line_no}|{item_code}")
 
     line_ids = [str(line.id) for line, _code in lines]
@@ -206,8 +215,147 @@ def _resolve_core_line(db: Session, sales_order_id: str, line_no: int, item_code
 
     for line, product_code in lines:
         if derived.get(str(line.id)) == line_no and product_code == item_code:
+            if awaiting is not None:
+                raise AppException(
+                    status_code=409,
+                    message="Two lines of this order answer to that line. Reload the board.",
+                    code="board_contribution_line_ambiguous",
+                )
             return line
+    if awaiting is not None:
+        return awaiting
     raise _bad_line(f"{sales_order_id}|{line_no}|{item_code}")
+
+
+# CANCEL-STOP-AT-SO (owner, 14 Oct 23:20): "when SO is cancelled, we trigger the transfer to
+# cancel SO action in fulfilment planning and let the CS confirm themselves". The cancel ingest
+# saves the board's own Transfer to Cancel SO as this line's draft, marked with this source so
+# a cancel that lowers again withdraws only what the sync itself proposed.
+AUTOCOUNT_CANCEL_SOURCE = "autocount_cancel"
+
+
+def awaits_cancel_so(core_line: SalesOrderLine) -> bool:
+    """An AutoCount Cancel SO cancelled the whole line and CS has not transferred it yet: the
+    one cancelled line the board still decides (Transfer to Cancel SO only)."""
+    return (
+        core_line.line_status == "cancelled"
+        and bool(core_line.cancelled_by_cancel_doc)
+        and core_line.cancelled_at is None
+    )
+
+
+def _awaiting_cancel_line(
+    db: Session, sales_order_id: str, line_no: int, item_code: str
+) -> Optional[SalesOrderLine]:
+    """The key of a line the board shows from `_crm_cancelled_rows` (outside the demand set
+    numbered above): its mirror's own `line_no` and its item code, as that read keys it."""
+    found = (
+        db.query(SalesOrderLine)
+        .join(Product, Product.id == SalesOrderLine.product_id)
+        .join(
+            ProjectSalesOrderLine,
+            ProjectSalesOrderLine.core_sales_order_line_id == SalesOrderLine.id,
+        )
+        .join(
+            ProjectSalesOrder,
+            ProjectSalesOrder.id == ProjectSalesOrderLine.project_sales_order_id,
+        )
+        .filter(
+            SalesOrderLine.sales_order_id == sales_order_id,
+            SalesOrderLine.line_status == "cancelled",
+            SalesOrderLine.cancelled_by_cancel_doc.is_(True),
+            SalesOrderLine.cancelled_at.is_(None),
+            ProjectSalesOrder.so_id.isnot(None),
+            ProjectSalesOrderLine.line_no == line_no,
+            Product.product_code == item_code,
+        )
+        .limit(2)
+        .all()
+    )
+    return found[0] if len(found) == 1 else None
+
+
+def propose_autocount_cancel(
+    db: Session, core_line_id: str, doc_no: str, *, actor_user_id: Optional[str]
+) -> bool:
+    """Save Transfer to Cancel SO as the line's pending decision for CS when an AutoCount
+    Cancel SO has just cancelled it and a live order inquiry row still rests on it. Nothing
+    else moves: CS confirms it on the board (`ProjectSupplyService.cancel_lines`) or dismisses
+    it. Replaces whatever was saved on the line, which no longer has anything to supply.
+    True when a proposal was written."""
+    core = db.query(SalesOrderLine).filter(SalesOrderLine.id == str(core_line_id)).one_or_none()
+    if core is None or not awaits_cancel_so(core):
+        return False
+    mirror = (
+        db.query(ProjectSalesOrderLine)
+        .join(
+            ProjectSalesOrder,
+            ProjectSalesOrder.id == ProjectSalesOrderLine.project_sales_order_id,
+        )
+        .filter(
+            ProjectSalesOrderLine.core_sales_order_line_id == str(core.id),
+            ProjectSalesOrder.so_id.isnot(None),
+        )
+        .first()
+    )
+    if mirror is None:
+        return False
+    live = (
+        db.query(OrderInquiryRow.id)
+        .filter(
+            OrderInquiryRow.so_line_id == mirror.id,
+            OrderInquiryRow.state != INQUIRY_CANCELLED,
+        )
+        .first()
+    )
+    if live is None:
+        return False
+    item_code = (
+        db.query(Product.product_code).filter(Product.id == core.product_id).scalar() or ""
+    )
+    row = _row_for(db, str(core.id), company_id=core.company_id)
+    if row is None:
+        row = SOSupplyDecisionDraft(
+            id=str(uuid.uuid4()),
+            core_line_id=str(core.id),
+            sales_order_id=str(core.sales_order_id),
+            company_id=core.company_id,
+        )
+        db.add(row)
+    row.line_no = mirror.line_no
+    row.item_code = item_code
+    row.bucket_key = "no_date"
+    row.decision = {
+        "verdict": "cancelled",
+        "reason": f"AutoCount Cancel SO {doc_no}".strip(),
+        "source": AUTOCOUNT_CANCEL_SOURCE,
+    }
+    row.line_snapshot = _line_snapshot(core)
+    row.saved_by = actor_user_id
+    row.saved_at = datetime.utcnow()
+    db.flush()
+    return True
+
+
+def withdraw_autocount_cancel(db: Session, core_line_ids: Iterable[str]) -> int:
+    """The Cancel SO that proposed Transfer to Cancel SO on these lines no longer cancels them
+    (lowered, voided, re-decided): drop the proposals the sync saved. A decision CS saved
+    themselves stays."""
+    ids = [str(i) for i in core_line_ids if i]
+    if not ids:
+        return 0
+    gone = 0
+    for row in (
+        db.query(SOSupplyDecisionDraft)
+        .filter(SOSupplyDecisionDraft.core_line_id.in_(ids))
+        .all()
+    ):
+        if (row.decision or {}).get("source") == AUTOCOUNT_CANCEL_SOURCE:
+            db.delete(row)
+            gone += 1
+    if gone:
+        db.flush()
+    return gone
 
 
 def _line_snapshot(line: SalesOrderLine) -> Dict[str, Any]:
@@ -267,8 +415,23 @@ def save_draft(
     """
     sales_order_id, line_no, item_code, bucket_key = parse_contribution_key(key)
     core_line = _resolve_core_line(db, sales_order_id, line_no, item_code)
+    # Only the sync marks its own proposal (`propose_autocount_cancel`); a saved decision is
+    # the saver's own, so a reopen never withdraws it.
+    decision = {k: v for k, v in decision.items() if k != "source"}
     verdict = decision.get("verdict")
-    covered = None if verdict == "amended" else _active_coverage(db, core_line)
+    awaiting = awaits_cancel_so(core_line)
+    if awaiting and verdict != "cancelled":
+        # CANCEL-STOP-AT-SO: AutoCount cancelled the line; all that is left is to transfer it.
+        raise AppException(
+            status_code=409,
+            message="This line was cancelled in AutoCount. Only Transfer to Cancel SO applies.",
+            code="board_line_cancelled_in_autocount",
+        )
+    # An AutoCount-cancelled line holds nothing (its owed qty is 0), so an active decision
+    # still naming it does not stand in the way of transferring it.
+    covered = (
+        None if verdict == "amended" or awaiting else _active_coverage(db, core_line)
+    )
     if covered is not None:
         if verdict == "rejected":
             reason = str(decision.get("reason") or "").strip()
@@ -336,7 +499,10 @@ def remove_draft(db: Session, key: str) -> None:
     sales_order_id, line_no, item_code, _bucket = parse_contribution_key(key)
     try:
         core_line = _resolve_core_line(db, sales_order_id, line_no, item_code)
-    except AppException:
+    except AppException as exc:
+        # Two lines answering to one key is a conflict to show, never "already gone".
+        if getattr(exc, "code", None) == "board_contribution_line_ambiguous":
+            raise
         core_line = None
     row = None if core_line is None else _row_for(db, str(core_line.id))
     if row is None:

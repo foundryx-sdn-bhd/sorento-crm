@@ -11,6 +11,12 @@ vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
   useListingColumnPreferences: () => ({ resetToDefaults: vi.fn(), isLoading: false }),
 }));
 
+// The tier actions need `sla_management.sla_policies.edit` (ROUTE-PERM-GATES); this
+// suite is about the grids, so the caller holds it.
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: () => true,
+}));
+
 const TIERS = [
   {
     id: 't-1',

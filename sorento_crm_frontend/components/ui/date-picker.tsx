@@ -16,19 +16,28 @@ function formatDDMMYYYY(value: Date): string {
   return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
 }
 
-/** Parse YYYY-MM-DD or DD/MM/YYYY to local Date; return undefined if invalid or empty. */
+/** A local Date only when it IS that day: `new Date` rolls day 0 or 31 Feb into another one. */
+function realDate(y: number, m: number, d: number): Date | undefined {
+  const date = new Date(y, m - 1, d);
+  return date.getFullYear() === y &&
+    date.getMonth() === m - 1 &&
+    date.getDate() === d
+    ? date
+    : undefined;
+}
+
+/** Parse YYYY-MM-DD or DD/MM/YYYY to local Date; return undefined if invalid or empty.
+ *  ISO needs both digits of month and day, so a half-typed `2026-07-0` is not a date yet. */
 function parseDateInput(value: string): Date | undefined {
   if (!value || value.trim() === '') return undefined;
   const trimmed = value.trim();
-  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmed)) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
     const [y, m, d] = trimmed.split('-').map(Number);
-    const date = new Date(y, m - 1, d);
-    return Number.isNaN(date.getTime()) ? undefined : date;
+    return realDate(y, m, d);
   }
   if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
     const [d, m, y] = trimmed.split('/').map(Number);
-    const date = new Date(y, m - 1, d);
-    return Number.isNaN(date.getTime()) ? undefined : date;
+    return realDate(y, m, d);
   }
   return undefined;
 }

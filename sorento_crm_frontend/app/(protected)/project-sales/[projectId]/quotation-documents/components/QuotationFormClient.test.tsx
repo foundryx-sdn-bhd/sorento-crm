@@ -220,6 +220,7 @@ vi.mock('../[documentId]/components/useQuotationEditSession', async (importOrigi
 });
 
 import { QuotationFormClient } from './QuotationFormClient';
+import { QuotationScopeTabs } from '../[documentId]/components/QuotationScopeTabs';
 
 function project(overrides: Partial<Project> = {}): Project {
   return {
@@ -410,6 +411,47 @@ beforeEach(() => {
 });
 
 describe('QuotationFormClient create', () => {
+  it('defaults Name, Phone and Attn from the project customer (owner, 13 Oct)', async () => {
+    getProject.mockResolvedValue(
+      project({
+        customer_id: 'cust-1',
+        customer_name: 'Gamuda Builders Sdn Bhd',
+        customer_phone: '012-345 6789',
+        customer_attn: 'Lim Wei Ming',
+      }),
+    );
+    renderForm();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Name')).toHaveValue('Gamuda Builders Sdn Bhd'),
+    );
+    expect(screen.getByLabelText('Phone')).toHaveValue('012-345 6789');
+    expect(screen.getByLabelText('Attn')).toHaveValue('Lim Wei Ming');
+  });
+
+  it('falls back to the developer when the project has no customer', async () => {
+    renderForm();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Name')).toHaveValue('Nadi Cergas Sdn Bhd'),
+    );
+    expect(screen.getByLabelText('Attn')).toHaveValue('');
+  });
+
+  it('opens Edit scope from a pen beside the name and shows no series out here (owner, 13 Oct)', async () => {
+    renderForm();
+    const card = await openLines();
+
+    const pen = within(card).getByRole('button', { name: 'Edit scope' });
+    expect(pen).not.toHaveTextContent('Edit scope');
+    expect(pen.querySelector('svg')).not.toBeNull();
+    expect(within(card).queryByText('No series')).toBeNull();
+
+    fireEvent.click(pen);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('textbox', { name: /^Scope/ })).toBeInTheDocument();
+    expect(within(dialog).getByText('Series')).toBeInTheDocument();
+  });
+
   it('AC-QF011/012: opens with the letterhead and one empty scope ready for products', async () => {
     renderForm();
 
@@ -580,7 +622,11 @@ describe('QuotationFormClient create', () => {
     await openLines();
 
     const added = await addScope('Guard House');
-    fireEvent.click(within(added).getByRole('button', { name: 'Remove scope' }));
+    // Owner, 13 Oct: a red destructive button with the trash icon, not an outline one.
+    const remove = within(added).getByRole('button', { name: 'Remove scope' });
+    expect(remove.className).toMatch(/bg-destructive/);
+    expect(remove.querySelector('svg')).not.toBeNull();
+    fireEvent.click(remove);
 
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Guard House' })).toBeNull());
     expect(screen.getByRole('region', { name: 'Scope 1' })).toBeInTheDocument();
@@ -998,5 +1044,71 @@ describe('QuotationFormClient review round (fix round 2)', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Save quotation' })).toBeEnabled(),
     );
+  });
+});
+
+describe('QuotationFormClient scope tab context menu (owner hand test)', () => {
+  const tabOf = (name: string) => screen.getByRole('tab', { name });
+
+  it('right-clicking a scope tab opens Rename and Remove scope', async () => {
+    renderForm();
+    await openLines();
+    fireEvent.contextMenu(tabOf('Scope 1'));
+    expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Remove scope' })).toBeInTheDocument();
+  });
+
+  it('Rename opens the Edit scope dialog for that scope', async () => {
+    renderForm();
+    await openLines();
+    fireEvent.contextMenu(tabOf('Scope 1'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('textbox', { name: /^Scope/ })).toHaveValue('Scope 1');
+    expect(within(dialog).getByText('Series')).toBeInTheDocument();
+  });
+
+  it('Remove scope from the menu has the same staged result as the button: gone now, one PATCH on Save', async () => {
+    renderForm('d1');
+    const card = await waitFor(() => scopeCard('Townhouse'), { timeout: 3000 }).catch(async () => {
+      await openTab('Lines');
+      return waitFor(() => scopeCard('Townhouse'));
+    });
+    expect(card).toBeInTheDocument();
+    fireEvent.contextMenu(tabOf('Townhouse'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove scope' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Townhouse' })).toBeNull());
+    expect(updateQuotationDocument).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save quotation' }));
+    await waitFor(() => expect(updateQuotationDocument).toHaveBeenCalledTimes(1));
+    const body = updateQuotationDocument.mock.calls[0][2];
+    expect(body.remove_scope_ids).toEqual(['q1']);
+    expect(body.scopes).toEqual([]);
+  });
+
+  it('the read page strip (no form handlers) has no context menu', async () => {
+    render(
+      <QuotationScopeTabs
+        scopes={[{ id: 'q1', scope_label: 'Scope 1', scope_total: '9000.00' } as never]}
+        activeScopeId="q1"
+        onSelect={() => {}}
+        canEdit
+      />,
+    );
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'Scope 1' }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('menuitem')).toBeNull();
+  });
+
+  it('right-clicking a scope tab that is not the active one selects it before the menu opens', async () => {
+    renderForm();
+    await openLines();
+    await addScope('Guard House');
+    // Guard House is now active; right-click the other one.
+    expect(screen.getByRole('tab', { name: 'Guard House' })).toHaveAttribute('data-state', 'active');
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'Scope 1' }));
+    await screen.findByRole('menuitem', { name: 'Rename' });
+    expect(screen.getByRole('tab', { name: 'Scope 1' })).toHaveAttribute('data-state', 'active');
   });
 });

@@ -104,16 +104,19 @@ def _types_without_files(
     Each asked type is `{name, keys}` (`turn_runtime.attachment_type_labels`): the presenter
     prints a type's description when it has one, else its name, so both are keys. A type
     with no such entry is never named - it could only ever read as a false gap.
+    A row `fetch._file_rows` grouped carries one "Attachment Type" field per file, and
+    every one of them counts (Mr Loo T7: a label -> value dict kept only the last).
     """
     present: set[tuple[str, str]] = set()
     for fig in figures:
-        fields = {
-            f.get("label"): str(f.get("value") or "").strip()
-            for f in fig.get("fields") or []
-            if isinstance(f, dict)
-        }
-        if fields.get("Product Code") and fields.get("Attachment Type"):
-            present.add((fields["Product Code"].casefold(), fields["Attachment Type"].casefold()))
+        fields = [f for f in fig.get("fields") or [] if isinstance(f, dict)]
+        code = next(
+            (str(f.get("value") or "").strip() for f in fields if f.get("label") == "Product Code"), ""
+        )
+        for f in fields:
+            kind = str(f.get("value") or "").strip() if f.get("label") == "Attachment Type" else ""
+            if code and kind:
+                present.add((code.casefold(), kind.casefold()))
     types = [
         (str(t.get("name")).strip(), {str(k).strip().casefold() for k in t.get("keys") or [] if k})
         for t in asked_types

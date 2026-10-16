@@ -32,7 +32,6 @@ from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
-from app.services.chatbot.lanes.business import find as find_lane
 from app.services.chatbot.lanes.business import low_stock_ask
 from app.services.chatbot.lanes.business import chat_report
 from app.services.chatbot.lanes.business import report_ask
@@ -221,6 +220,7 @@ def _low_stock_not_enabled() -> dict[str, Any]:
         "outcome": "not_found",
         "escalate": True,
         "response": LOW_STOCK_NOT_ENABLED_MESSAGE,
+        "refused": True,
     }
 
 
@@ -606,13 +606,19 @@ def _nothing_live_of_kind(
 
 
 def _fixed_reply(
-    text: str, *, top_selling_asked: str | None = None, required_ask: dict[str, Any] | None = None
+    text: str,
+    *,
+    top_selling_asked: str | None = None,
+    required_ask: dict[str, Any] | None = None,
+    refused: bool = False,
 ) -> dict[str, Any]:
     """One fixed line and nothing else, before any fetch: the refusal and the top
     selling questions. `has_result: True` and no `outstanding_ask` keep it OFF the miss
     lane (no escalate offer) and arm nothing; the carried `focus.status` is what makes
     the next message land on the same ask. `outstanding_report` skips the generic
-    search-scope header."""
+    search-scope header. `refused` marks a refusal (grant, scope, audience): the envelope carries
+    it as its own `refused` key (not `denied`, which has its own composer line), so no fit line
+    opens the reply (CHAT-FIT-LINE AC-23)."""
     structured: dict[str, Any] = {
         "response": text,
         "answers": [],
@@ -639,6 +645,7 @@ def _fixed_reply(
         "delegate": DELEGATE,
         "delegate_payload": {"fetch": item},
         "fetch": item,
+        "refused": refused,
     }
 
 
@@ -683,6 +690,7 @@ def _sales_report_not_enabled() -> dict[str, Any]:
         "delegate": DELEGATE,
         "delegate_payload": {"fetch": item},
         "fetch": item,
+        "refused": True,
     }
 
 
@@ -1454,7 +1462,7 @@ def run_fetch(
         if _OUTSTANDING_SO_GRANT not in granted:
             if trace is not None:
                 trace.add("so_status", {"refused": "not_granted", "needs": _OUTSTANDING_SO_GRANT})
-            return _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            return _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE, refused=True)
         if db is not None:
             from app.services.chatbot import so_status
 
@@ -1494,7 +1502,7 @@ def run_fetch(
         if _OUTSTANDING_SO_GRANT not in granted:
             if trace is not None:
                 trace.add("so_status", {"refused": "not_granted", "needs": _OUTSTANDING_SO_GRANT})
-            refusal = _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            refusal = _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE, refused=True)
             # The refusal is the whole answer: the miss ladder (escalation offer) stands down.
             refusal["fetch"]["so_status"] = True
             return refusal
@@ -1569,7 +1577,7 @@ def run_fetch(
         if _OUTSTANDING_SO_GRANT not in granted:
             if trace is not None:
                 trace.add("so_list", {"refused": "not_granted", "needs": _OUTSTANDING_SO_GRANT})
-            return _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            return _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE, refused=True)
         from app.services.chatbot import so_status
         from app.services.ledger_family import family_words
 
@@ -1689,7 +1697,7 @@ def run_fetch(
                             "dropped": violation.dropped,
                         },
                     )
-                return _fixed_reply(str(customer_scope.get("refusal") or ""))
+                return _fixed_reply(str(customer_scope.get("refusal") or ""), refused=True)
             except Exception:  # noqa: BLE001 - an unprobed tier is "unknown", never "none"
                 logger.warning("chatbot: tier probe did not run", exc_info=True)
                 probe_results.append(None)
@@ -1738,7 +1746,7 @@ def run_fetch(
             if need == chat_report.GRANT:
                 # CA-3: a contact without the Chat analytics reveal is turned away in one line
                 # before any call (the route refuses again, `chat_analytics_not_enabled`).
-                return _fixed_reply(chat_report.NOT_ENABLED)
+                return _fixed_reply(chat_report.NOT_ENABLED, refused=True)
             if need == _SALES_REPORT_GRANT:
                 # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain is refused in the
                 # words every sales figure ask was refused in under `order`.
@@ -1768,15 +1776,6 @@ def run_fetch(
     # ── the read ─────────────────────────────────────────────────────────────
     tool_item = pick.items[0]["json"]
     tool_name = jsc.js_string(tool_item.get("name") or "")
-
-    # CHAT-FIND (PLAN-chat-generic-find-12oct 2.5): the parser's `find.filters` (registry keys
-    # only) pick the generic find tool over the domain's own. Only the products this message
-    # named are its subject; the args are built below by the same transformer.
-    find_items = find_lane.filter_items(parse_output)
-    if find_items:
-        tool_name = find_lane.TOOL
-        tool_item = {"name": tool_name, "_tool_pick": {"source": "find_override"}}
-        entities = find_lane.named_this_turn(parse_output, jsc.array(entities))
 
     # S4 point 2 (PLAN-chatbot-outstanding-report.md), REWRITTEN by R13 (owner ruling,
     # 13 Sep 2026): domain "order" + an outstanding `order_status` picks the report over
@@ -2105,7 +2104,7 @@ def run_fetch(
             # ledgers (`engine._top_selling_dealer_scope`). No picker, no fetch.
             if trace is not None:
                 trace.add("top_selling", {"refused": "customer_not_permitted"})
-            return _fixed_reply(TOP_SELLING_REFUSED_OTHER_CUSTOMER)
+            return _fixed_reply(TOP_SELLING_REFUSED_OTHER_CUSTOMER, refused=True)
         if slot.get("unclear"):
             # Owner retest of round 4 (27 Sep 2026, R6/R8): a message inside a ranking
             # the parser could not place is asked about in one short line, never sent to
@@ -2175,7 +2174,7 @@ def run_fetch(
                  "values": settled.values if settled else None, "line": line},
             )
         if settled is None:
-            return _fixed_reply(line or "")
+            return _fixed_reply(line or "", refused=line == report_ask.DEALER_REFUSAL)
         if not settled.done:
             return _fixed_reply(settled.reply or "", required_ask=settled.slot)
         semantic_input["report_ask_args"] = chat_report.route_args(settled)
@@ -2201,7 +2200,7 @@ def run_fetch(
                  "values": settled.values if settled else None, "line": line},
             )
         if settled is None:
-            return _fixed_reply(line or "")
+            return _fixed_reply(line or "", refused=line == report_ask.DEALER_REFUSAL)
         if not settled.done:
             return _fixed_reply(settled.reply or "", required_ask=settled.slot)
         semantic_input["report_ask_args"] = report_ask.route_args(settled)
@@ -2233,7 +2232,7 @@ def run_fetch(
         if any(isinstance(e, dict) and e.get("entity_type") == "transporter" for e in entities):
             if trace is not None:
                 trace.add("field_reveal", {"refused": "transporter_filter", "tool": tool_name})
-            return _fixed_reply(do_ask.TRANSPORTER_REFUSED)
+            return _fixed_reply(do_ask.TRANSPORTER_REFUSED, refused=True)
 
     trigger = {
         "tool": tool_name,
@@ -2275,13 +2274,6 @@ def run_fetch(
         args = fetch_mod.entity_ids_transformer(trigger, space_id=space_id)
         if dry_run and tool_name == _LOW_STOCK_TOOL:
             args["dry_run"] = True
-        if tool_name == find_lane.TOOL:
-            find_args, ask = find_lane.route_args(args, find_items)
-            if find_args is None:
-                # Card rule 6: nothing to run on (no product named, no value given), so the
-                # filter's own question; never a guess.
-                return _fixed_reply(ask)
-            args = find_args
     except fetch_mod.ScopeViolation as violation:
         # D4: the defence behind the engine's gate. No tool is called.
         if trace is not None:
@@ -2294,7 +2286,7 @@ def run_fetch(
                     "dropped": violation.dropped,
                 },
             )
-        return _fixed_reply(str(customer_scope.get("refusal") or ""))
+        return _fixed_reply(str(customer_scope.get("refusal") or ""), refused=True)
     # DO-ASK-SIMPLIFY rules 3-4 (owner, 2 Oct 2026; every contact, owner 4 Oct): a DO list ask with no
     # range, or a range over 31 days, is answered with one line and fetches nothing.
     # After the customer-scope backstop above (security S2), so the question never
@@ -2439,7 +2431,7 @@ def run_fetch(
         if refusal:
             if trace is not None:
                 trace.add("report_ask", {"refused": envelope.get("status_code")})
-            return _fixed_reply(refusal)
+            return _fixed_reply(refusal, refused=True)
         return _error_fragment(envelope["error"])
 
     # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product

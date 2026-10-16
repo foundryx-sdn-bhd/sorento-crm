@@ -7,6 +7,7 @@
  */
 
 import type { PlanningChangeFromTo } from '@/app/(protected)/project-sales/_shared/types/planningChange.types';
+import type { CancelSource } from '../lib/autocountCancel';
 
 /** Health-state vocabulary. Backend-real: stockout (rendered "Out of stock"), dead,
  *  low (rendered "Low stock" - stocked but net <= demand-aware reorder point, M8-B),
@@ -264,6 +265,8 @@ export type SalesOrderStatus =
 
 export interface SalesOrderLine {
   id: string;
+  /** AC-CONSIGN-CRM: what a Consignment Return handed back; reporting only. */
+  qty_returned?: number;
   /**
    * AutoCount's own line number (`Seq`), kept as it arrives - the address the Lines tab
    * sorts and labels by (PLAN-so-lines-autocount-order.md). `null` for a line AutoCount
@@ -276,6 +279,9 @@ export interface SalesOrderLine {
   qty_ordered: number;
   /** Stamped by create-DO-from-SO (soft link, no hard FK). */
   qty_delivered: number;
+  /** AC-CANCEL-CRM: what AutoCount Cancel SO cancelled on this line, and the documents. */
+  qty_cancelled?: number;
+  cancels?: CancelSource[];
   /** What is still to go out on this line, off the SERVER: `ordered - delivered` floored at
    *  0, and **0 on a closed line** whatever those two say. A book re-upload closes a line by
    *  absence without knowing what shipped, so the subtraction alone reads as the whole
@@ -455,6 +461,8 @@ export interface SalesOrderLineInquiry {
 
 export interface SalesOrder {
   id: string;
+  /** AC-CONSIGN-CRM: 'consignment' for an AutoCount consignment order, else 'sales_order'. */
+  doc_type?: string | null;
   /** Human-readable SO number - shown in the UI (never a UUID). */
   so_number: string;
   order_type: string;
@@ -658,6 +666,9 @@ export interface PurchaseOrderLine {
   product_name: string;
   qty_ordered: number;
   qty_received: number;
+  /** AC-CANCEL-CRM: what AutoCount Cancel PO cancelled on this line, and the documents. */
+  qty_cancelled?: number;
+  cancels?: CancelSource[];
   /** What is still to ARRIVE on this line, off the SERVER: `ordered - received` floored at
    *  0, and **0 on a closed line** whatever those two say. Same rule and same reason as the
    *  sales book's own `outstanding_qty`. */
@@ -906,4 +917,43 @@ export interface PurchaseOrderUpdateData {
     unit_price?: string | null;
     discount?: string | null;
   }[];
+}
+
+/** One DO line placed under a sales-order line (SO-DELIVERIES-VIEW). */
+export interface SoLineDeliveryRow {
+  order_id: string;
+  do_number: string;
+  do_date: string | null;
+  location: string | null;
+  status: string | null;
+  actual_delivery_date: string | null;
+  qty: number;
+}
+
+/** One Cancel SO line placed under a sales-order line; `qty` is null for `group_whole`. */
+export interface SoLineCancelRow {
+  doc_no: string;
+  doc_date: string | null;
+  location: string | null;
+  match_reason: string | null;
+  qty: number | null;
+}
+
+export interface SoLineHistory {
+  line_id: string;
+  deliveries: SoLineDeliveryRow[];
+  cancels: SoLineCancelRow[];
+}
+
+/** A product on two or more lines of the SO: what AutoCount tied to the product, not a line. */
+export interface SoProductGroupHistory {
+  sku: string;
+  line_ids: string[];
+  deliveries: SoLineDeliveryRow[];
+  cancels: SoLineCancelRow[];
+}
+
+export interface SalesOrderDeliveries {
+  lines: SoLineHistory[];
+  groups: SoProductGroupHistory[];
 }

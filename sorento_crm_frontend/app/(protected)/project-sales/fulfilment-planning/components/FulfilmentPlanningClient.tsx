@@ -14,6 +14,7 @@ import {
 } from '@tanstack/react-table';
 import { LayoutGrid, PackageSearch, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ConsignmentBadge } from '@/app/(protected)/scm/lib/docType';
 import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
@@ -306,6 +307,7 @@ export function FulfilmentPlanningClient() {
                   {reference}
                 </span>
               )}
+              <ConsignmentBadge docType={row.original.so_doc_type} size="xs" />
               {/* AC-B7 (`PLAN-scm-board-picks-up-pending-change.md`): the same `Changed` pill
                   the SCM Sales Orders list shows (`SalesOrdersGrid.tsx`), off the same
                   `planning_change_batch_id` - it opens the board on this order and that
