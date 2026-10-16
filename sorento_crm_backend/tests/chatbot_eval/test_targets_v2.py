@@ -207,3 +207,23 @@ def test_a_number_missing_from_tool_results_is_still_made_up():
     r = row2(reply="SRTA100 has 9999 pcs.", tools=[TOOL_A], truncated=True)
     r["tool_results"] = [{"name": "crm_inventory_list", "args": {}, "result": json.dumps({"qty": 4321})}]
     assert any("9999" in f for f in made_up_facts(r))
+
+
+def test_pick_falls_back_to_the_subject_after_when_no_position_is_recorded():
+    v = {"entities": [], "reference_positions": [], "open_question_answer": {"mode": None, "items": [], "picked": []}}
+    gold = dict(position=2, code="srt-a200")
+    ok = row2(verdict=v, mem_after=[prod("SRTA200", UA)], tools=[TOOL_A])
+    check(grade_turn(ok, item("followup", "pick", **gold)), True)
+    bad = row2(verdict=v, mem_after=[prod("SRTB300", UB)], tools=[TOOL_B])
+    check(grade_turn(bad, item("followup", "pick", **gold)), False, "position")
+
+
+def test_spec_gold_values_may_be_a_subset_of_the_bots_values():
+    bot = [{"spec_key": "mounting", "spec_value": "under_counter", "raw": "undermount"},
+           {"spec_key": "bowls", "spec_value": "2", "raw": "double"}]
+    v = {"entities": [], "reference_positions": []}
+    ok = row2(verdict=v, mem_extra={"specification": bot})
+    check(grade_turn(ok, item("spec", spec=[{"key": "mounting", "value": "under_counter"}])), True)
+    missing = row2(verdict=v, mem_extra={"specification": bot})
+    check(grade_turn(missing, item("spec", spec=[{"key": "mounting", "value": "under_counter"},
+                                                  {"key": "colour", "value": "white"}])), False, "spec")
