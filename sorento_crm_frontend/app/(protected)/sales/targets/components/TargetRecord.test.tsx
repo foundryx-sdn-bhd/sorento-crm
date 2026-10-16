@@ -777,6 +777,24 @@ describe('TargetRecord: dealer targets (lane SALES-TARGET-DEALER)', () => {
     expect(document.body.textContent).not.toMatch(UUID);
   });
 
+  it('an account target its dealer target replaces names it, and a replaced period says so', () => {
+    const base = dealerDetail();
+    hooks.useSalesTarget.mockReturnValue({
+      data: dealerDetail({
+        replaced_by: { target_id: 'dealer-1', target_no: 'TGT-000009', name: 'Dealer A 2026 yearly' },
+        periods: base.periods.map((p: { id: string }) => ({ ...p, commission_earned: 0, replaced: p.id === 'q2' })),
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<TargetRecord id="t1" />);
+    openTab('Accounts');
+    expect(screen.getByRole('link', { name: 'TGT-000009 Dealer A 2026 yearly' })).toBeTruthy();
+    openTab('Periods');
+    expect(screen.getByText('Replaced by TGT-000009')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(UUID);
+  });
+
   it('read mode names the dealer, and Periods labels the SO-based figures provisional', () => {
     hooks.useSalesTarget.mockReturnValue({ data: dealerDetail(), isLoading: false, isError: false });
     render(<TargetRecord id="t1" />);

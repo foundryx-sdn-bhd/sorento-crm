@@ -66,11 +66,29 @@ def upgrade() -> None:
         ),
         schema=schema,
     )
+    # Crew ruling 16 Oct (owner ruling 4): an account's own target is replaced by its
+    # dealer's target once that one reaches a tier in the same period.
+    op.add_column(
+        "targets",
+        sa.Column(
+            "replaced_by_target_id",
+            _UUID,
+            sa.ForeignKey(f"{schema}.targets.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        schema=schema,
+    )
     op.drop_constraint("ck_sales_targets_subject_kind", "targets", schema=schema, type_="check")
     op.create_check_constraint(
         "ck_sales_targets_subject_kind",
         "targets",
         "subject_kind IN ('agent', 'team', 'dealer')",
+        schema=schema,
+    )
+    op.create_check_constraint(
+        "ck_sales_targets_replaced_by_dealer",
+        "targets",
+        "replaced_by_target_id IS NULL OR subject_kind = 'dealer'",
         schema=schema,
     )
     op.drop_constraint("ck_sales_targets_subject", "targets", schema=schema, type_="check")
@@ -277,6 +295,7 @@ def downgrade() -> None:
     op.alter_column("target_commission_tiers", "from_pct", nullable=False, schema=schema)
 
     for name in (
+        "ck_sales_targets_replaced_by_dealer",
         "ck_sales_targets_payout_dealer",
         "ck_sales_targets_rounding",
         "ck_sales_targets_threshold_unit",
@@ -298,3 +317,4 @@ def downgrade() -> None:
     op.drop_column("targets", "rounding", schema=schema)
     op.drop_column("targets", "threshold_unit", schema=schema)
     op.drop_column("targets", "payout_customer_id", schema=schema)
+    op.drop_column("targets", "replaced_by_target_id", schema=schema)

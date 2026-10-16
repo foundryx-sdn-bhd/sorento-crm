@@ -86,3 +86,20 @@ One row per sheet data row: `sheet`, `row`, `pick_key` (`<sheet>!<row>`), `code`
 `auto_mapped` (rows matched by name on their own). A target is created only when every row of
 it (and its pay-to account) is mapped. The dry-run script exits non-zero unless every row is
 mapped and every sheet was read (`gate_passes`).
+
+## Second real-file gate (16 Oct): shapes the files really have
+
+- No ACCOUNT column: the account is a suffix of the dealer name cell ("<dealer> A/C I",
+  "<dealer> - A/C III", "<dealer> (A/C IV)"); the reader splits it off. A CRM name with the same
+  bare suffix answers to that account too.
+- `TIER n` beside a plain `INCENTIVE` column: an incentive pairs with the threshold column right
+  before it, else with the same `Tier n`, else with the one incentive of its block.
+- `QUARTERLY (POINT)` over `JAN-MAR` .. `OCT-DEC` plus one `INCENTIVE`: one quarterly points
+  target, that incentive paying every quarter.
+- `Monthly` over `Tier n` / `Tier n Incentive` with no month: the same tiers every month.
+- A column under period words the reader cannot place fails every row with a figure in it.
+- Yearly Tier 1-3 per account beside Tier 4-5 merged over the accounts (crew ruling 16 Oct, from
+  owner ruling 4, one tier scale): one dealer target (Tier 4-5, combined sales, rate per account)
+  plus one target per account (Tier 1-3, its own sales) that names the dealer target in
+  `replaced_by_target_id`. In a period the dealer target reaches a tier, the account target
+  pays nothing; below it, the account target pays its own tier.

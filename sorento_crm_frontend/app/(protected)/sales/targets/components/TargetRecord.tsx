@@ -1057,6 +1057,11 @@ export default function TargetRecord({ id, preset }: { id?: string; preset?: Tar
                             {future || p.commission_earned === null || p.commission_earned === undefined
                               ? '-'
                               : formatFigure(p.commission_earned + (p.bonus_earned ?? 0))}
+                            {p.replaced ? (
+                              <span className="block text-xs text-muted-foreground">
+                                {`Replaced by ${target.replaced_by?.target_no ?? 'the dealer target'}`}
+                              </span>
+                            ) : null}
                           </td>
                         ) : null}
                       </tr>
@@ -1717,6 +1722,15 @@ function DealerAccounts({
           )}
         </Field>
       </div>
+      {target?.replaced_by ? (
+        <div className="sm:w-96">
+          <Field label="Replaced by">
+            <Link href={`/sales/targets/${target.replaced_by.target_id}`} className="text-primary hover:underline">
+              {`${target.replaced_by.target_no} ${target.replaced_by.name}`}
+            </Link>
+          </Field>
+        </div>
+      ) : null}
     </>
   );
 }

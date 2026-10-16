@@ -129,6 +129,8 @@ export interface SalesTargetPeriod {
   ratio_missing?: boolean;
   /** Dealer targets: each counted account's achievement in the period. */
   accounts?: TargetAccount[];
+  /** The dealer target in `replaced_by` reached a tier in this period: this one pays nothing. */
+  replaced?: boolean;
 }
 
 export interface SalesTargetChild {
@@ -173,6 +175,8 @@ export interface SalesTargetDetail {
   /** Dealer targets: the counted accounts and the paid one. */
   accounts?: TargetAccount[];
   payout_account?: TargetAccount | null;
+  /** Dealer targets: the dealer target that replaces this one once it reaches a tier. */
+  replaced_by?: { target_id: string; target_no: string; name: string } | null;
   created_at: string | null;
   updated_at: string | null;
 }

@@ -467,6 +467,8 @@ class SalesTargetCreate(BaseModel):
     customer_ids: Optional[List[UuidStr]] = Field(None, max_length=50)
     #: Dealer targets: the account paid; defaults to the first counted account.
     payout_customer_id: Optional[UuidStr] = None
+    #: Dealer targets: the dealer target that replaces this one in a period it reaches a tier.
+    replaced_by_target_id: Optional[UuidStr] = None
     name: str = Field(..., max_length=120)
     metric: Metric
     basis: Basis = "ordered"
@@ -538,6 +540,8 @@ class SalesTargetUpdate(BaseModel):
     customer_ids: Optional[List[UuidStr]] = Field(None, max_length=50)
     #: Dealer targets: sent as null, payment goes back to the first counted account.
     payout_customer_id: Optional[UuidStr] = None
+    #: Dealer targets: sent as null, the target is no longer replaced.
+    replaced_by_target_id: Optional[UuidStr] = None
     #: Replaces every tier; `[]` removes them.
     tiers: Optional[List[SalesTargetTierIn]] = Field(None, max_length=600)
     #: Every changed figure in one request (F1): this target's periods, or on a team target its
@@ -683,6 +687,15 @@ class SalesTargetPeriodOut(BaseModel):
     ratio_missing: bool = False
     #: Dealer targets: each counted account's achievement in the period.
     accounts: List[SalesTargetAccountOut] = Field(default_factory=list)
+    #: The dealer target named in `replaced_by` reached a tier in this period, so this one pays
+    #: nothing (crew ruling 16 Oct).
+    replaced: bool = False
+
+
+class SalesTargetRef(BaseModel):
+    target_id: str
+    target_no: str
+    name: str
 
 
 class SalesTargetTierRateOut(BaseModel):
@@ -747,6 +760,8 @@ class SalesTargetDetail(BaseModel):
     #: Dealer targets: the counted accounts and the paid one.
     accounts: List[SalesTargetAccountOut] = Field(default_factory=list)
     payout_account: Optional[SalesTargetAccountOut] = None
+    #: Dealer targets: the dealer target that replaces this one once it reaches a tier.
+    replaced_by: Optional[SalesTargetRef] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

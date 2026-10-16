@@ -239,6 +239,9 @@ class Scheme:
     tiers: List[SchemeTier]
     #: "<dealer> <2026 | Dec 2025 to Nov 2026> <quarterly | monthly | yearly>", the kind last.
     name: str = ""
+    #: The key of the dealer scheme that replaces this per-account one once it reaches a tier
+    #: (crew ruling 16 Oct: Tier 1-3 per account, Tier 4-5 on the dealer, one scale).
+    replaced_by: Optional[str] = None
 
 
 @dataclass
@@ -912,9 +915,47 @@ class _Ctx:
         return out
 
 
+def _account_and_dealer_columns(ctx: "_Ctx", cols: List[_Column]):
+    """(per-account columns, dealer columns) when one yearly block holds thresholds that differ
+    per account (Tier 1-3) beside thresholds merged over the accounts (Tier 4-5); else None."""
+    pairs, _ = _pairs(cols, [])
+    per_account: List[_Column] = []
+    dealer: List[_Column] = []
+    for threshold, rate in pairs:
+        values = ctx.per_row(threshold)
+        if not values:
+            continue
+        same = len(values) == len(ctx.rows) and len({_text(v) for v in values.values()}) == 1
+        (dealer if same else per_account).extend(c for c in (threshold, rate) if c is not None)
+    if not per_account or not dealer:
+        return None
+    return per_account, dealer
+
+
 def _group_schemes(ctx: _Ctx, kind: str, points: bool, kind_cols, window_col, by_role) -> List[Scheme]:
-    """The one target of `kind` and unit over `ctx.rows`, or none."""
+    """The one target of `kind` and unit over `ctx.rows`, or none. A yearly block with Tier 1-3
+    per account and Tier 4-5 merged over the accounts is one dealer target plus one target per
+    account that the dealer target replaces once it reaches a tier (crew ruling 16 Oct)."""
     grid, results = ctx.grid, ctx.results
+    if kind == "Y" and len(ctx.rows) > 1:
+        split = _account_and_dealer_columns(ctx, list(kind_cols))
+        if split is not None:
+            per_account, dealer_cols = split
+            dealer = _group_schemes(ctx, kind, points, dealer_cols, window_col, by_role)
+            if not dealer:
+                return []
+            out = list(dealer)
+            for r in ctx.rows:
+                single = _Ctx(grid, ctx.sheet, [r], results, ctx.dealer_labels, ctx.year)
+                for scheme in _group_schemes(single, kind, points, per_account, window_col, by_role):
+                    scheme.replaced_by = dealer[0].key
+                    account = results[r].account_in_file
+                    if account:
+                        scheme.name = scheme.name.replace(
+                            results[r].name_in_file or "", f"{results[r].name_in_file} {account}", 1
+                        )
+                    out.append(scheme)
+            return out
     codes = ctx.keys
     first_name = next((results[r].name_in_file for r in ctx.rows if results[r].name_in_file), codes[0])
 
@@ -1617,8 +1658,13 @@ def run(
         done = []
         try:
             with db.begin_nested():
-                for scheme, ids, payout, match_key, fields in prepared:
+                # A dealer target first, so the account targets it replaces can name it.
+                written: Dict[str, str] = {}
+                for scheme, ids, payout, match_key, fields in sorted(prepared, key=lambda p: p[0].replaced_by is not None):
                     match = existing.get(match_key)
+                    if scheme.replaced_by and scheme.replaced_by not in written:
+                        raise _Refused(scheme, "its dealer target was not written")
+                    fields = {**fields, "replaced_by_target_id": written.get(scheme.replaced_by)}
                     try:
                         if match is not None:
                             target_service.update_target(
@@ -1654,6 +1700,7 @@ def run(
                         message = errors()[0].get("msg", "not valid") if callable(errors) and errors() else str(exc)
                         raise _Refused(scheme, message) from exc
                     done.append((scheme, match, match_key, target))
+                    written[scheme.key] = target.id
         except _Refused as exc:
             fail(f"{exc.scheme.kind}: {exc.message}")
             continue

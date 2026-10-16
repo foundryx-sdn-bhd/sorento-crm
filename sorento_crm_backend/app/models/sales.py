@@ -379,6 +379,13 @@ class SalesTarget(CompanyScopedMixin, Base):
         ForeignKey("customers.id", ondelete="SET NULL"),
         nullable=True,
     )
+    #: Dealer targets (crew ruling 16 Oct, owner ruling 4: one tier scale): an account's own
+    #: target pays nothing in a period its dealer's target (named here) reaches a tier.
+    replaced_by_target_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.targets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     #: What a tier's threshold is in: `pct` of the period's figure (the original tiers),
     #: `amount` (RM, units on a quantity target) or `points` (x the dated point ratio).
     threshold_unit = Column(String(8), nullable=False, default="pct", server_default=text("'pct'"))
@@ -420,6 +427,10 @@ class SalesTarget(CompanyScopedMixin, Base):
         CheckConstraint(
             "payout_customer_id IS NULL OR subject_kind = 'dealer'",
             name="ck_sales_targets_payout_dealer",
+        ),
+        CheckConstraint(
+            "replaced_by_target_id IS NULL OR subject_kind = 'dealer'",
+            name="ck_sales_targets_replaced_by_dealer",
         ),
         CheckConstraint("metric IN ('amount', 'quantity')", name="ck_sales_targets_metric"),
         CheckConstraint("basis IN ('ordered', 'delivered')", name="ck_sales_targets_basis"),
