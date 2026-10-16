@@ -128,8 +128,9 @@ def _is_local(host: Any) -> bool:
     return host in _LOCAL_HOSTS or str(host).startswith("127.")
 
 
-def _guard_network(stack: contextlib.ExitStack, misses: list[dict[str, Any]]) -> None:
-    """Refuse every non-local connect and name lookup; localhost, ::1 and unix sockets (the DB) stay open."""
+def _guard_network(stack: contextlib.ExitStack, misses: list[dict[str, Any]], allow: tuple[str, ...] = ()) -> None:
+    """Refuse every non-local connect and name lookup; localhost, ::1 and unix sockets (the DB) stay open,
+    plus the hosts named in `allow` (live mode: the model host)."""
     import socket
     from unittest import mock
 
@@ -142,7 +143,7 @@ def _guard_network(stack: contextlib.ExitStack, misses: list[dict[str, Any]]) ->
     def check(sock: Any, addr: Any) -> None:
         if getattr(sock, "family", None) == getattr(socket, "AF_UNIX", None) or not isinstance(addr, tuple):
             return
-        if not _is_local(addr[0]):
+        if not _is_local(addr[0]) and str(addr[0]) not in allow:
             raise refuse(addr[0])
 
     def connect(self: Any, addr: Any) -> Any:
@@ -154,7 +155,7 @@ def _guard_network(stack: contextlib.ExitStack, misses: list[dict[str, Any]]) ->
         return real_connect_ex(self, addr)
 
     def getaddrinfo(host: Any, *a: Any, **k: Any) -> Any:
-        if not _is_local(host):
+        if not _is_local(host) and str(host) not in allow:
             raise refuse(host)
         return real_gai(host, *a, **k)
 
@@ -354,6 +355,135 @@ def replay_rows(rows: list[dict[str, Any]], *, session_factory: Callable[[], Any
 
 
 # --------------------------------------------------------------------------- #
+# Live mode: the recorded prod state with the item's own message, parser and model live
+# --------------------------------------------------------------------------- #
+
+MODEL_HOSTS = ("api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com")
+PROVENANCE_KEYS = ("code_sha", "prompt_sha256", "prompt_version", "model", "reasoning_effort")
+
+
+@contextlib.contextmanager
+def _metered(usage: dict[str, Any], total: dict[str, Any]) -> Iterator[None]:
+    """Pass-through wrapper on every provider `chat`: counts calls and tokens and prices them from the `model` kwarg."""
+    from unittest import mock
+
+    from app.services import llm_provider
+    from scripts.chatbot_eval.budget import cost_usd
+
+    def wrap(original: Callable[..., Any]) -> Callable[..., Any]:
+        def chat(self: Any, *args: Any, **kwargs: Any) -> Any:
+            res = original(self, *args, **kwargs)
+            prompt = int(getattr(res, "prompt_tokens", 0) or 0)
+            cached = int(getattr(res, "cached_tokens", 0) or 0)
+            out = int(getattr(res, "completion_tokens", 0) or 0)
+            model = kwargs.get("model") or getattr(self, "default_model", None) or "gpt-5.4-mini"
+            try:
+                usd = cost_usd({"prompt": prompt, "cached": cached, "output": out}, model)
+            except KeyError:  # a model with no price row: counted, not priced
+                usd = 0.0
+            for bucket in (usage, total):
+                bucket["calls"] += 1
+                bucket["prompt_tokens"] += prompt
+                bucket["cached_tokens"] += cached
+                bucket["completion_tokens"] += out
+                bucket["usd"] += usd
+            return res
+
+        return chat
+
+    with contextlib.ExitStack() as stack:
+        for name, cls in vars(llm_provider).items():
+            if inspect.isclass(cls) and cls is not llm_provider.LLMProvider and name.endswith("Provider") and "chat" in vars(cls):
+                stack.enter_context(mock.patch.object(cls, "chat", wrap(cls.chat)))
+        yield
+
+
+def _new_usage() -> dict[str, Any]:
+    return {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0, "usd": 0.0}
+
+
+def _set_text(payload: dict[str, Any], text: str) -> None:
+    node: Any = payload
+    for _ in range(8):
+        if isinstance(node, dict) and isinstance(node.get("text"), str):
+            node["text"] = text
+            return
+        node = node.get("message") if isinstance(node, dict) else None
+
+
+def _live_one(item: dict[str, Any], row: dict[str, Any], factory: Callable[[], Any],
+              total: dict[str, Any]) -> dict[str, Any]:
+    from app.models.chatbot_turn import ChatbotTurn
+    from app.services.chatbot import engine
+    from app.services.chatbot.contracts import Envelope
+
+    out: dict[str, Any] = {"item_id": item["item_id"], "run": item.get("run")}
+    payload = copy.deepcopy(row.get("envelope") or {})
+    payload.update(is_test=True, previous_conversation_state=_recorded_memory(row))
+    payload.pop("mock_reformulator_output", None)
+    _set_text(payload, item["message"])
+    inner = payload.setdefault("message", {}) if isinstance(payload.get("message", {}), dict) else None
+    if inner is not None and isinstance(inner.setdefault("message", {}), dict):
+        key = f"{item['item_id']}|{item.get('run')}"
+        inner["message"]["messageId"] = "live-" + hashlib.sha256(key.encode()).hexdigest()[:16]
+    envelope = Envelope(**payload)
+    usage, misses = _new_usage(), []
+    with contextlib.ExitStack() as stack:
+        _guard_network(stack, misses, MODEL_HOSTS)
+        stack.enter_context(_metered(usage, total))
+        result = engine.run_turn(envelope, session_factory=factory)
+    if getattr(result, "duplicate", False):
+        return {**out, "skipped": "duplicate"}
+    db = factory()
+    turn = db.query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
+    trace = list(turn.trace or []) if turn is not None else []
+    understood = next(((r.get("facts") or {}) for r in trace if isinstance(r, dict) and r.get("stage") == "understood"), {})
+    out.update(
+        provenance={k: understood.get(k) for k in PROVENANCE_KEYS},
+        usage=usage,
+        turn={"envelope": copy.deepcopy(turn.envelope) if turn is not None else None, "trace": trace,
+              "response": copy.deepcopy(turn.response) if turn is not None else None,
+              "branch_kind": result.branch_kind},
+    )
+    if misses:
+        out["misses"] = misses
+    db.close()
+    return out
+
+
+def live_rows(items: list[dict[str, Any]], recorded_rows: list[dict[str, Any]], *,
+              session_factory: Callable[[], Any], max_calls: int, max_usd: float,
+              on_row: Callable[[dict[str, Any]], None] | None = None) -> list[dict[str, Any]]:
+    """Run each item's message through the engine on its recorded state; stop cleanly at a call or spend cap."""
+    by_id = {str(r["id"]): r for r in recorded_rows}
+    total = _new_usage()
+    results: list[dict[str, Any]] = []
+    stopped: str | None = None
+    previous_disable = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+    try:
+        for item in items:
+            if stopped is None:
+                if total["calls"] >= max_calls:
+                    stopped = "max_calls"
+                elif total["usd"] >= max_usd:
+                    stopped = "max_usd"
+            if stopped:
+                res = {"item_id": item["item_id"], "run": item.get("run"), "stopped": stopped}
+            elif str(item.get("recorded_turn_id")) not in by_id:
+                res = {"item_id": item["item_id"], "run": item.get("run"), "skipped": "no_recorded_row"}
+            else:
+                with _rolled_back(session_factory) as factory:
+                    res = _live_one(item, by_id[str(item["recorded_turn_id"])], factory, total)
+            results.append(res)
+            if on_row is not None:
+                on_row(res)
+    finally:
+        logging.disable(previous_disable)
+    return results
+
+
+# --------------------------------------------------------------------------- #
 # Diff
 # --------------------------------------------------------------------------- #
 
@@ -434,6 +564,30 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_live(args: argparse.Namespace) -> int:
+    import app
+
+    if not os.path.abspath(app.__file__).startswith(os.getcwd() + os.sep):
+        print(f"refused: app is imported from {app.__file__}, not from the cwd", file=sys.stderr)
+        return 2
+    from app.database import SessionLocal
+
+    items, recorded = _read(args.items), _read(args.recorded)
+    n = {"run": 0, "stopped": 0, "skipped": 0}
+    with open(args.out, "w") as fh:
+        os.chmod(args.out, 0o600)
+
+        def write(r: dict[str, Any]) -> None:
+            fh.write(json.dumps(r) + "\n")
+            fh.flush()
+            n["stopped" if "stopped" in r else "skipped" if "skipped" in r else "run"] += 1
+
+        live_rows(items, recorded, session_factory=SessionLocal, max_calls=args.max_calls, max_usd=args.max_usd,
+                  on_row=write)
+    print(f"live items {len(items)} run {n['run']} stopped {n['stopped']} skipped {n['skipped']}")
+    return 0
+
+
 def _cmd_diff(args: argparse.Namespace) -> int:
     intended: set[tuple[str, str]] = set()
     if args.intended:
@@ -457,12 +611,18 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--traces", nargs="+", required=True)
     run.add_argument("--out", required=True)
     run.add_argument("--stage", choices=["grounding"], default=None)
+    live = sub.add_parser("live")
+    live.add_argument("--items", required=True)
+    live.add_argument("--recorded", required=True)
+    live.add_argument("--out", required=True)
+    live.add_argument("--max-calls", type=int, required=True)
+    live.add_argument("--max-usd", type=float, required=True)
     diff = sub.add_parser("diff")
     diff.add_argument("base")
     diff.add_argument("head")
     diff.add_argument("--intended")
     args = ap.parse_args(argv)
-    return _cmd_run(args) if args.cmd == "run" else _cmd_diff(args)
+    return {"run": _cmd_run, "live": _cmd_live, "diff": _cmd_diff}[args.cmd](args)
 
 
 if __name__ == "__main__":
