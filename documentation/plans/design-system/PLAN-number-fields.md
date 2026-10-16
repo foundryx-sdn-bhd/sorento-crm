@@ -156,3 +156,15 @@ Decisions:
   the sentence); SO edit treats a negative qty like blank in the totals.
 - Browser passes clear a box with the keyboard and read its value before every press (agent-browser `fill ""` did
   not clear a number box; one accidental parked reserve request on OI-2610-0057 was cancelled in the same run).
+
+## Fix round 3 (17 Oct: reviewer round 3 NOT READY, NaN sweep)
+
+The string-mode 'NaN' hand-off (round 2) was swept over 193 call sites: 173 SAFE, 3 FILTER-SAFE, 17 RISK. Decision: keep
+the central hand-off (bad input is never "no value") and close every RISK site plus the server: portal draft/submit run
+the number checks on Unit price, Total and number fields; the backend refuses non-finite numbers (`'NaN'`,
+`'Infinity'`) on the portal / external purchase request decimals and the rule builder `_numeric` (422, nothing stored;
+blank stays null as today); PackingListLinesTab footer, PurchaseOrderHeaderCard po_amount, LeadWizardDialog
+estimated_value, SCM SO edit unit price / discount, ListQueryFilterDialog, RuleBuilder "between", OrderLinesCard,
+PredicateBuilder, OrderForm Trips, PR line Total, ProductSupplierTermsRow, LinkDocumentDialog and the board refuse bad
+input with the sentence on the box. The backend validator touches the portal / external intake, so the
+security-reviewer joins Phase 3.
