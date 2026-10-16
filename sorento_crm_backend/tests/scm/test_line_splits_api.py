@@ -529,3 +529,71 @@ def test_a_non_acting_line_reads_its_current_base_and_can_be_split_again(api):
     assert l100["acting"] is True
     assert l100["split_state"] == "acting"
     assert Decimal(str(l100["base_qty"])) == Decimal("296")
+
+
+# ---------------------------------------------------------------------------
+# D1: a line AutoCount ADDED in the pending change has base 0 and no implicit own split
+# ---------------------------------------------------------------------------
+
+
+def test_an_added_line_reads_base_zero_and_is_explained_by_what_moves_in(api):
+    from app.services.scm.outstanding_diff import ADDED, Change, Line
+
+    client, world = api
+    db = world.db
+    d16, d32, d48 = date(2026, 10, 7), date(2026, 10, 16), date(2026, 11, 15)
+    core_so = _core_so(db, world.company_id)
+    order = _project_so(db, world.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    c16, l16 = _mirror(db, order, core_so, world.product, world.own_wh,
+                       line_no=16, qty=76, when=d16)
+    db.commit()
+    r = _confirm(client, order.id, [_line_payload(l16.id, buy_qty="76")])
+    assert r.status_code == 200, r.text
+
+    # AutoCount: line 16 76 -> 2 (qty_down) and two ADDED lines, 32 (4) and 48 (10)
+    c16.qty_ordered, l16.qty = Decimal("2"), Decimal("2")
+    c32, l32 = _mirror(db, order, core_so, world.product, world.own_wh,
+                       line_no=32, qty=4, when=d32)
+    c48, l48 = _mirror(db, order, core_so, world.product, world.own_wh,
+                       line_no=48, qty=10, when=d48)
+    db.commit()
+    code, loc = world.product.product_code, world.own_wh.warehouse_code
+    added = lambda qty, when: Change(  # noqa: E731
+        ADDED, core_so.so_number, code, loc, before=None,
+        after=Line(doc_number=core_so.so_number, item_code=code, location=loc,
+                   qty=float(qty), required_date=when, row_ref="1"))
+    batch = _build(world, [
+        _change(QTY_CHANGED, c16, so_number=core_so.so_number,
+                old_date=d16, new_date=d16, old_qty="76", new_qty="2"),
+        added(4, d32), added(10, d48),
+    ], core_so, [str(c16.id), str(c32.id), str(c48.id)])
+    assert batch is not None, "premise: the pending change batch exists"
+
+    s = _So()
+    s.client, s.order = client, order
+    out = _get(s)
+    for lid in (l32.id, l48.id):
+        line = _line(out, lid)
+        assert Decimal(str(line["base_qty"])) == Decimal("0"), "an added line has base 0"
+        assert line["splits"] == [], "and no implicit own split"
+    assert Decimal(str(_line(out, l16.id)["base_qty"])) == Decimal("76")
+
+    body = [{"line_id": str(l16.id), "splits": [
+        _sp(2, d16, on=str(l16.id)),
+        _sp(4, d32, on=str(l32.id)),
+        _sp(10, d48, on=str(l48.id)),
+        _sp(60, None, on=str(l16.id), cancel=True),
+    ]}]
+    r = s.client.put(_url(order.id), json={"lines": body})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert sum(Decimal(str(x["qty"])) for x in _line(out, l16.id)["splits"]) == Decimal("76")
+    for lid, qty in ((l32.id, 4), (l48.id, 10)):
+        line = _line(out, lid)
+        assert Decimal(str(line["base_qty"])) == Decimal("0")
+        moved_in = sum(
+            Decimal(str(x["qty"]))
+            for other in out["lines"] for x in other["splits"]
+            if x["sits_on_line_id"] == str(lid) and not x["is_cancel"]
+        )
+        assert moved_in == Decimal(str(line["now_qty"])) == Decimal(qty), "planned = moved-in only"
