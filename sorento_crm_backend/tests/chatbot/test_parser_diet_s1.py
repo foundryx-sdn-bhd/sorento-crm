@@ -24,6 +24,7 @@ REMOVED_BANNERS = [
     "SALES ANALYSIS", "SPECIFICATIONS", "QUANTITY", "KNOWN BRANDS", "TOP SELLING", "SELF REFERENCE",
 ]
 KEPT_BANNERS = ["CURRENT DATE", "LOW STOCK REPORT FILTERS", "ESCALATION CONFIRMATION"]
+RESTORED = {"C15b", "C15c", "C19a", "C19b", "C19c", "C33c", "C33d", "C41e"}
 MOVED_KEYS = [
     "group_by", "month", "year", "top_n", "sales_channel", "proceed_anyway", "sales_basis",
     "sales_company", "rank_by", "basis", "rank_group", "rank_direction", "self_reference",
@@ -99,11 +100,42 @@ def test_ac3_every_non_skipped_cut_applies_to_v94() -> None:
     abl = importlib.import_module("scripts.build_parser_ablation")
     text = _v94()
     for cut_id, old, new in abl.CUTS:
-        if cut_id in SKIPPED:
+        if cut_id in SKIPPED or cut_id in RESTORED:
             continue
         assert text.count(old) == 1, f"cut {cut_id} does not match v94 exactly once"
         text = text.replace(old, new, 1)
     assert mod.SKIPPED_ABLATION_IDS  # module exists
+
+
+def test_ac3a_restored_ids_exact() -> None:
+    assert set(_diet().RESTORED_ABLATION_IDS) == RESTORED
+
+
+def test_ac3a_restored_text_present() -> None:
+    abl = importlib.import_module("scripts.build_parser_ablation")
+    v94, out = _v94(), _out()
+    found = {cid for cid, _o, _n in abl.CUTS if cid in RESTORED}
+    assert found == RESTORED
+    for cid, old, _new in abl.CUTS:
+        if cid in RESTORED:
+            assert v94.count(old) == 1, f"{cid} old not exactly once in v94"
+            assert old in out, f"{cid} text not restored in output"
+
+
+def test_ac3a_belum_do_line() -> None:
+    line = (
+        '    "no DO yet", "belum DO", "belum keluar DO", "\u8fd8\u6ca1\u51faDO", '
+        '"\u672a\u51faDO" -> "so_outstanding"'
+    )
+    assert line in _out()
+
+
+def test_ac3a_restored_drift_raises(monkeypatch) -> None:
+    mod = _diet()
+    cuts = [(cid, "anchor that is not in v94 qqq", new) if cid == "C19a" else (cid, old, new) for cid, old, new in mod.CUTS]
+    monkeypatch.setattr(mod, "CUTS", cuts)
+    with pytest.raises(ValueError, match="C19a"):
+        mod.build(_v94())
 
 
 def test_ac3_skipped_cut_that_starts_matching_raises(monkeypatch) -> None:
@@ -187,8 +219,8 @@ def test_ac12_required_keys_present() -> None:
         assert f'"{name}"' in out, f"required key {name} lost"
 
 
-def test_ac13_at_least_five_and_a_half_percent_shorter() -> None:
-    assert len(_out()) <= 0.945 * len(_v94())
+def test_ac13_at_least_five_percent_shorter() -> None:
+    assert len(_out()) <= 0.95 * len(_v94())
 
 
 def test_ac14_no_dashes_in_new_text() -> None:
