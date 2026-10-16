@@ -1,0 +1,211 @@
+# Roll production back to an earlier main commit (HA-MEM-DEPLOY-GUARD).
+#
+# Redeploys the images CI already built and pushed for that commit (`<svc>-<sha>`), with the
+# release job's own pieces: the `production` environment approval, the `deploy-production`
+# queue (so it never overlaps a release), the release-tag promotion, the scp of
+# blue_green_deploy.sh and the same public endpoint check. No secret the release job does
+# not already use. Owner steps: documentation/runbooks/memory-and-deploy-guards.md.
+#
+# Code only: the database stays at its current schema. The old colour starts with
+# SKIP_MIGRATIONS=1, which reaches the container only once the prod compose passes it
+# through (runbook step 5). Without that line, a rollback across a migration fails its
+# health check (the old image's alembic does not know the newer revision) and the current
+# colour keeps serving, so it is safe either way.
+name: Rollback production
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character SHA of an earlier main commit that was released"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read   # the released-commit check reads deploy.yml's runs
+
+env:
+  IMAGE_REPO: jayson1004/sorento-crm
+  RELEASE_TAG: 1.0.1
+
+jobs:
+  rollback:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://fe-sorento.foundryx.my
+    # The release job's group: a rollback queues behind a running release and vice versa.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The input reaches the shell through env only, and only the validated value goes on
+      # to the SSH script: a raw `${{ inputs.sha }}` there would be shell injection.
+      - name: Validate the SHA
+        id: target
+        env:
+          SHA: ${{ inputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # [[ =~ ]] matches the whole value; grep would pass a multi-line value one line of
+          # which is a SHA.
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha must be a full 40-character lowercase commit SHA"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$SHA" HEAD; then
+            echo "::error::$SHA is not a commit on main"
+            exit 1
+          fi
+          # build-images pushes `<svc>-<sha>` before the gates finish, so an image can exist
+          # for a release that failed. Only a commit whose release succeeded qualifies.
+          released=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?head_sha=$SHA&branch=main&event=workflow_dispatch&status=success&per_page=1" \
+            --jq '.total_count')
+          if [ "${released:-0}" -lt 1 ]; then
+            echo "::error::$SHA has no successful release run of deploy.yml"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Rolling back to $(git log -1 --format='%h %s' "$SHA")"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check the images exist
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          for svc in frontend backend mcp; do
+            if ! docker buildx imagetools inspect "$IMAGE_REPO:${svc}-${SHA}" > /dev/null; then
+              echo "::error::$IMAGE_REPO:${svc}-${SHA} is not in the registry; only a released commit can be rolled back to"
+              exit 1
+            fi
+          done
+
+      # main's script, not the old commit's: the rollback keeps today's guards.
+      - name: Sync deploy script to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          timeout: 1m
+          source: "scripts/blue_green_deploy.sh"
+          target: "/opt/sorento-crm2"
+          overwrite: true
+          strip_components: 0
+
+      - name: Roll back on the server (blue/green)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          timeout: 2m
+          # Same budget as the release step (worker stop grace, deploy lock wait, dump).
+          command_timeout: 100m
+          script: |
+            set -e
+            cd /opt/sorento-crm2
+            chmod +x ./scripts/blue_green_deploy.sh
+            SKIP_MIGRATIONS=1 IMAGE_TAG="${{ steps.target.outputs.sha }}" ./scripts/blue_green_deploy.sh
+
+      # Only after the server step succeeded (default `success()`): the moving tag names
+      # what is running, so a manual `docker compose up` on the box with no IMAGE_TAG pulls
+      # the rolled-back images, and a failed rollback leaves it on what still runs.
+      - name: Promote the rollback images to the release tag
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          for svc in frontend backend mcp; do
+            docker buildx imagetools create \
+              -t "$IMAGE_REPO:${svc}-${RELEASE_TAG}" \
+              "$IMAGE_REPO:${svc}-${SHA}"
+          done
+
+      - name: Verify public endpoints
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          timeout: 1m
+          command_timeout: 2m
+          script: |
+            set -e
+            # Frontend / backend via host nginx (public domain), with a WAIT.
+            #
+            # The nginx swap (step 4 of blue_green_deploy.sh) points the upstream at the
+            # new colour the moment its container reports healthy, and Next.js then needs
+            # a few seconds more before it answers the first request: on run 34855082817
+            # this check got six 504s over 30 seconds and failed a deploy that was
+            # entirely fine (blue healthy, nginx swapped, worker recreated, alembic at
+            # 511). So it now polls for up to 90 seconds, prints each attempt's code and
+            # the elapsed time, and only then tries local nginx and gives up. 90s plus
+            # the MCP check below sits inside this step's own `command_timeout: 2m`.
+            started=$(date +%s)
+            ok=""
+            while [ $(( $(date +%s) - started )) -lt 90 ]; do
+              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+                https://fe-sorento.foundryx.my/ || true)
+              waited=$(( $(date +%s) - started ))
+              echo "public URL: HTTP ${code:-000} after ${waited}s"
+              case "$code" in
+                2*|3*) ok="yes"; break;;
+              esac
+              sleep 5
+            done
+            if [ -z "$ok" ]; then
+              echo "public URL never answered in 90s, trying local nginx"
+              curl -fsS -o /dev/null http://127.0.0.1/
+            fi
+            # MCP via host nginx (n8n entrypoint, port stays 8765 forever)
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/mcp || true)
+            # 406 expected for plain GET (MCP demands SSE Accept header); means nginx reached MCP.
+            case "$code" in
+              200|405|406) echo "MCP reachable via nginx (HTTP $code)";;
+              *) echo "ERROR: MCP via nginx returned $code"; exit 1;;
+            esac
+
+      - name: Check SMTP configuration
+        id: smtp
+        if: always()
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
+        run: |
+          if [ -n "$SMTP_SERVER" ] && [ -n "$SMTP_PORT" ] && [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ] && [ -n "$OWNER_EMAIL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mail the owner the rollback result
+        if: always() && steps.smtp.outputs.configured == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: ${{ job.status == 'success' && 'Sorento rollback succeeded' || 'Sorento rollback FAILED' }}
+          to: ${{ secrets.OWNER_EMAIL }}
+          from: Sorento Deploy Bot <${{ secrets.SMTP_USERNAME }}>
+          body: |
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}

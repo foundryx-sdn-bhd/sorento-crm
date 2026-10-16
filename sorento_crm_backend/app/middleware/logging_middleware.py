@@ -49,7 +49,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         )
 
         # Skip logging for health check and docs
-        if request.url.path in ["/health", "/docs", "/redoc", "/openapi.json"]:
+        if request.url.path in ["/health", "/health/deep", "/docs", "/redoc", "/openapi.json"]:
             response = await call_next(request)
             response.headers["X-Trace-Id"] = trace_id
             return response
