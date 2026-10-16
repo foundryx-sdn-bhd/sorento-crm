@@ -1,7 +1,6 @@
 # PLAN: split one SO line into delivery tranches in Order Inquiries (OI-LINE-SPLIT)
 
-Status: Plan. Discovery in progress; behaviour card goes to crew as ONE ask before any code; Lavish
-mock next; build only after the owner OKs the mock. Size L (new interactive flow on the OI, likely a
+Status: Plan. Discovery done; behaviour card filed to crew (ask); Lavish mock next; build only after the owner OKs the mock. Size L (new interactive flow on the OI, likely a
 migration for tranche rows). Track: standard (L), lead pattern (tester red tests, coder, reviewer,
 security-reviewer only if auth/RBAC is touched, browser pass 1280/375).
 
@@ -26,6 +25,20 @@ delivery date + remark), before Confirm or inside Confirm.
 3. Lavish mock on SO417636 (business data only).
 4. After owner OK: UAC, tickets, tester red tests, coder, reviewer, browser pass, hand-test script.
 
+## Discovery (summary; full citations in the card)
+
+- One OI row per SO line (owner rule, `project_so.py:1138-1145`); tranches sit under the row.
+- AutoCount edits arrive per DtlKey; reduce + add new lines = unrelated qty_down / added / qty_up
+  change rows (`planning_change_service.py:800-810`); pure split only on same date
+  (`project_order_inquiry_service.py:5308`).
+- Confirm parts must sum to open qty (`project_supply_service.py:6404`); no date per part.
+- Email one row per saved line (`project_order_inquiry_service.py:4280-4295`); Excel one row per OI
+  row, month sheets, no remark (`order_inquiry_worklist_service.py:195-222, 3353-3376`).
+- FE reuse: Sheet, `SupplyBar` (`_shared/components/SupplyBar.tsx:42`), `DataGridTableDndRows`
+  (`components/ui/data-grid-table-dnd-rows.tsx:183`), Kanban/Sortable (`components/ui/sortable.tsx`),
+  `ContextMenu`, `DatePicker`, `Badge`, `Kbd`; quotation lines grid pattern
+  (`[projectId]/components/QuotationLinesGrid.tsx`).
+
 ## Open
 
-- Everything below Step 1 waits on discovery.
+- Card Q1-Q5 (owner); mock v1 after the card.
