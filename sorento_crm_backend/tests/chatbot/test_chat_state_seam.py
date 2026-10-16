@@ -850,3 +850,46 @@ def test_s7_b_carried_customer_shells_with_no_code_and_no_uuid_are_not_persisted
     prev = {"focus": focus_to_wire(Focus(customers=[shell], domains=["order"])), "open_question": None}
     seam.say("delivery?", _order_ask(_op("keep")), previous=prev)
     assert [c for c in seam.state["focus"]["customers"] if not c.get("canonical_code") and not c.get("uuid")] == []
+
+
+def _two_customer_state(good_id: str, good_code: str, bad: dict[str, Any]) -> dict[str, Any]:
+    good = {"raw": "Customer X", "name": "Customer X", "canonical_code": good_code,
+            "hint": "customer", "uuid": good_id, "current_message": False}
+    return {
+        "focus": focus_to_wire(Focus(customers=[bad, good], domains=["order"], date_window=dict(HELD_WINDOW))),
+        "open_question": None,
+    }
+
+
+@pytest.mark.parametrize("field", ["uuid", "uuids"])
+def test_s7_a_non_uuid_customer_key_does_not_break_the_turn_and_only_that_row_is_dropped(seam, field):
+    gid = _seed_real_customer(seam)
+    bad = {"raw": "Customer Z", "canonical_code": "CBAD", "hint": "customer", "current_message": False}
+    bad[field] = "not-a-uuid" if field == "uuid" else ["not-a-uuid"]
+    out = _order_keep(seam, _two_customer_state(gid, _code_of(seam, gid), bad))
+    assert out.error is None, out.error
+    assert ((out.reply or {}).get("text") or "").strip()
+    stored = seam.state["focus"]["customers"]
+    assert [c.get("canonical_code") for c in stored if c.get("canonical_code") == "CBAD"] == []
+    assert [c.get("uuid") for c in stored] == [gid]
+
+
+def test_s7_if_the_hygiene_read_raises_the_turn_completes_and_keyed_rows_are_dropped(seam, monkeypatch):
+    from app.services.chatbot import engine as engine_mod
+
+    gid = _seed_real_customer(seam)
+    calls = {"n": 0}
+    real = engine_mod.business_services.customer_scope
+
+    def flaky(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("scoped read failed")
+        return real(*a, **k)
+
+    monkeypatch.setattr(engine_mod.business_services, "customer_scope", flaky)
+    bad = {"raw": "Customer Z", "canonical_code": "CBAD", "hint": "customer", "uuid": str(uuid.uuid4()),
+           "current_message": False}
+    out = _order_keep(seam, _two_customer_state(gid, _code_of(seam, gid), bad))
+    assert out.error is None, out.error
+    assert [c for c in seam.state["focus"]["customers"] if c.get("uuid")] == []
