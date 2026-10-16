@@ -7,9 +7,10 @@ export interface TagSettingsItem {
   label: string;
   current: unknown;
   expected: unknown;
-  decided_by: string[];
+  /** Null when the viewer may not read the section (the values are withheld). */
+  decided_by: string[] | null;
   conflict: boolean;
-  conflict_tags: { name: string; value: unknown }[];
+  conflict_tags: { name: string; value: unknown }[] | null;
   differs: boolean;
 }
 

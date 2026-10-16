@@ -285,7 +285,7 @@ def _change(cat: Catalog, item: dict) -> dict:
     before, after = raw["current"], raw["expected"]
     added: list = []
     removed: list = []
-    if isinstance(after, frozenset) and isinstance(before, frozenset):
+    if isinstance(after, frozenset) and isinstance(before, frozenset) and not item.get("redacted"):
         added = cts._fmt(cat, item["section"], item["key"], after - before)
         removed = cts._fmt(cat, item["section"], item["key"], before - after)
     return {
@@ -294,7 +294,7 @@ def _change(cat: Catalog, item: dict) -> dict:
         "label": item["label"],
         "before": item["current"],
         "after": item["expected"],
-        "decided_by": item["decided_by"],
+        "decided_by": item["decided_by"] or [],
         "added": added,
         "removed": removed,
     }
@@ -318,7 +318,7 @@ def _cleared_sibling_changes(db: Session, contact, cat: Catalog, items: list[dic
         sibling = _SIBLINGS.get((item["section"], item["key"]))
         if sibling is None or (item["section"], sibling) in present:
             continue
-        if not item["_raw"]["expected"]:
+        if item.get("redacted") or not item["_raw"]["expected"]:
             continue  # an empty list sets nothing, so nothing is cleared
         if reader is None:
             reader = cts._Reader(db, [contact])
@@ -332,12 +332,29 @@ def _cleared_sibling_changes(db: Session, contact, cat: Catalog, items: list[dic
                 "label": cts._label(cat, item["section"], sibling),
                 "before": cts._display(cat, item["section"], sibling, before),
                 "after": "All" if sibling in ("warehouse_ids", "spec_keys") else [],
-                "decided_by": item["decided_by"],
+                "decided_by": item["decided_by"] or [],
                 "added": [],
                 "removed": cts._fmt(cat, item["section"], sibling, before),
             }
         )
     return out
+
+
+def _inherits_both_lists(db: Session, contact, section: str, items: list[dict]) -> bool:
+    from app.models.access import SpecVisibilityPolicy, StockVisibilityPolicy
+    from app.services import spec_visibility as sp
+    from app.services import stock_visibility as sv
+
+    stock = section == "stock_visibility"
+    inc, exc = ("warehouse_ids", "excluded_warehouse_ids") if stock else ("spec_keys", "excluded_spec_keys")
+    if any(i["section"] == section and i["key"] in (inc, exc) for i in items):
+        return False  # the tags set a side, so the other is cleared on write
+    model = StockVisibilityPolicy if stock else SpecVisibilityPolicy
+    if db.query(model.id).filter(model.contact_id == str(contact.id)).first() is not None:
+        return False  # an own row exists and keeps its (valid) lists
+    eff = (sv.resolve_policy(db, str(contact.id)) or sv.default_policy(db)) if stock else sp.resolve_policy(db, str(contact.id))
+    a, b = (eff.warehouse_ids, eff.excluded_warehouse_ids) if stock else (eff.spec_keys, eff.excluded_spec_keys)
+    return a is not None and b is not None
 
 
 def _row(contact_id: str, label: Optional[str], status: str, changes=None, conflicts=None, not_applied=None, error=None):
@@ -363,7 +380,10 @@ def apply_settings(
 
     ids = list(dict.fromkeys(str(c) for c in contact_ids))
     found = {str(c.id): c for c in db.query(RespondContact).filter(RespondContact.id.in_(ids)).all()}
-    evaluated = cts.evaluate(db, list(found.values()), only_tags=only_tags)
+    # The same redaction as the tag-settings read: a section the actor cannot read keeps its generic label
+    # and no values or names (conflict tags included).
+    redact = cts.unreadable_sections(can, is_superadmin)
+    evaluated = cts.evaluate(db, list(found.values()), only_tags=only_tags, redact=redact)
     cat = Catalog(db)
     results: list[dict] = []
     for cid in ids:
@@ -396,6 +416,20 @@ def apply_settings(
             else:
                 title = cts.SECTION_TITLES[i["section"]]
                 not_applied.append({"label": title, "reason": f"You may not change {title}."})
+        # A contact with no policy row of its own, whose RESOLVED policy already holds both an include and an
+        # exclude list (merged across access types / segments), cannot be seeded: hold that section back.
+        for section in ("stock_visibility", "spec_visibility"):
+            group = [i for i in todo if i["section"] == section]
+            if group and _inherits_both_lists(db, contact, section, items):
+                for i in group:
+                    todo.remove(i)
+                title = cts.SECTION_TITLES[section]
+                not_applied.append(
+                    {
+                        "label": title,
+                        "reason": "Inherited settings hold both an include and an exclude list; set one list on the tag.",
+                    }
+                )
         changes = [_change(cat, i) for i in todo]
         changes += _cleared_sibling_changes(db, contact, cat, items, todo)
         if not todo:
@@ -428,7 +462,7 @@ def _audit(db: Session, contact_id: str, actor_id: Optional[str], todo: list[dic
     """One row per changed contact: several writers here are invisible to the ORM listener."""
     from app.services.audit_service import log_audit
 
-    tags = sorted({t for i in todo for t in i["decided_by"]})
+    tags = sorted({t for i in todo for t in i["_raw"]["decided_by"]})
     labels = [i["label"] for i in todo]
     log_audit(
         db,
@@ -437,8 +471,8 @@ def _audit(db: Session, contact_id: str, actor_id: Optional[str], todo: list[dic
         "UPDATE",
         user_id=actor_id,
         description=f"Tag settings applied from {', '.join(tags)}: {', '.join(labels)}",
-        new_values={i["label"]: i["expected"] for i in todo},
-        old_values={i["label"]: i["current"] for i in todo},
+        new_values={i["label"]: i["_raw"]["expected_text"] for i in todo},
+        old_values={i["label"]: i["_raw"]["current_text"] for i in todo},
     )
 
 

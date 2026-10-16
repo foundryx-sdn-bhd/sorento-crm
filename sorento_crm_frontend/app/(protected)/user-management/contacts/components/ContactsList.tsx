@@ -49,7 +49,6 @@ import ContactTagFilters from './ContactTagFilters';
 import ContactTagsCell from './ContactTagsCell';
 import ContactTagSettingsCell from './ContactTagSettingsCell';
 import { tagSettingsLabel } from '../lib/tagSettingsLabel';
-import { contactTagBulkActions } from '../lib/contactTagBulkActions';
 import { BulkActionsMenu } from '@/app/(protected)/scm/components/BulkActionsMenu';
 import { buildContactBulkActions } from '../lib/contactBulkActions';
 import { regionLabel } from '@/lib/packing-list-regions';
@@ -866,8 +865,7 @@ export default function ContactsList() {
             }
             bulkActionsSlot={({ openExport }) => (
               <BulkActionsMenu
-                actions={[
-                  ...buildContactBulkActions(
+                actions={buildContactBulkActions(
                     {
                       selectedCount: selectedContactIds.length,
                       canEdit: canEditContacts,
@@ -884,17 +882,12 @@ export default function ContactsList() {
                         setBulkDisableOutboundOpen(true),
                       onSync: handleBulkSync,
                       onCopyAccess: () => setBulkCopyDialogOpen(true),
+                      onAddTag: () => setBulkTagMode('add'),
+                      onRemoveTag: () => setBulkTagMode('remove'),
+                      onApplyTagSettings: () => setApplyIds(selectedContactIds),
                       onDelete: () => setBulkDeleteDialogOpen(true),
                     },
-                  ),
-                  ...contactTagBulkActions({
-                    count: selectedContactIds.length,
-                    canEdit: canEditContacts,
-                    onAdd: () => setBulkTagMode('add'),
-                    onRemove: () => setBulkTagMode('remove'),
-                    onApply: () => setApplyIds(selectedContactIds),
-                  }),
-                ]}
+                  )}
                 modal={false}
                 // Most items open a dialog: focus belongs to it, not back on the menu trigger.
                 onCloseAutoFocus={(event) => event.preventDefault()}

@@ -157,7 +157,8 @@ class Catalog:
 
     def names(self, name: str, ids: Iterable[str]) -> list[str]:
         m = self._load(name)
-        return sorted(m.get(str(i), f"removed {name.replace('_', ' ')[:-1]}") for i in ids)
+        gone = "unavailable brand" if name == "brands" else f"removed {name.replace('_', ' ')[:-1]}"
+        return sorted(m.get(str(i), gone) for i in ids)
 
     def known(self, name: str) -> set[str]:
         return set(self._load(name))
@@ -797,7 +798,7 @@ def evaluate(
     """
     ids = [str(c.id) for c in contacts]
     tag_map = tag_map if tag_map is not None else tags_by_contact_with_settings(db, ids)
-    cat = Catalog(db)
+    cat = Catalog(db, scope_brands=True)  # names of out-of-scope brands never leave
     reader = _Reader(db, contacts)
     out: dict[str, dict] = {}
     for cid in ids:
@@ -854,6 +855,7 @@ def evaluate(
                     "key": key,
                     "label": SECTION_TITLES[section] if hidden else _label(cat, section, key),
                     "blocked_reason": blocked,
+                    "redacted": hidden,
                     "current": None if hidden else _display(cat, section, key, current),
                     "expected": None if hidden or conflict else _display(cat, section, key, expected),
                     "decided_by": None if hidden else decided,
@@ -861,7 +863,14 @@ def evaluate(
                     "conflict_tags": [] if hidden else conflict_tags,
                     "differs": differs,
                     # Raw (id / code valued) view for the writers; never serialised (response models drop it).
-                    "_raw": {"expected": None if conflict else expected, "current": current},
+                    "_raw": {
+                        "expected": None if conflict else expected,
+                        "current": current,
+                        # Unredacted, for the audit row only (the response carries the redacted view).
+                        "decided_by": decided,
+                        "current_text": _display(cat, section, key, current),
+                        "expected_text": None if conflict else _display(cat, section, key, expected),
+                    },
                 }
             )
         status = "none" if not items else ("differs" if any(i["differs"] for i in items) else "matches")

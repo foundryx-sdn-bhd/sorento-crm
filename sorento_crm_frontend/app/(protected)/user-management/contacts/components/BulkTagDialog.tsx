@@ -212,6 +212,46 @@ export default function BulkTagDialog({
                   </Badge>
                 ) : null}
               </div>
+              <div
+                className="mb-3 flex flex-wrap gap-2"
+                data-testid="bulk-tag-settings-counts"
+              >
+                {(() => {
+                  const settings = applied.results.flatMap((r) =>
+                    r.settings ? [r.settings] : [],
+                  );
+                  const count = (status: string) =>
+                    settings.filter((x) => x.status === status).length;
+                  const conflicts = settings.reduce(
+                    (n, x) => n + (x.conflicts ?? []).length,
+                    0,
+                  );
+                  return (
+                    <>
+                      <Badge
+                        variant="primary"
+                        appearance="light"
+                      >{`${count('changed')} changed`}</Badge>
+                      <Badge
+                        variant="secondary"
+                        appearance="light"
+                      >{`${count('unchanged')} unchanged`}</Badge>
+                      {count('failed') ? (
+                        <Badge
+                          variant="destructive"
+                          appearance="light"
+                        >{`${count('failed')} failed`}</Badge>
+                      ) : null}
+                      {conflicts ? (
+                        <Badge
+                          variant="warning"
+                          appearance="light"
+                        >{`${conflicts} conflict${conflicts === 1 ? '' : 's'}`}</Badge>
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </div>
               <div className="max-h-96 space-y-2 overflow-y-auto">
                 {applied.results.map((row) => (
                   <div key={row.contact_id} className="space-y-1">

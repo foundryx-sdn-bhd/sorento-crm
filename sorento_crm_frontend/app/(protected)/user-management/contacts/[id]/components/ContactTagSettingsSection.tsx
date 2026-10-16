@@ -39,7 +39,7 @@ function ItemRow({ item }: { item: TagSettingsItem }) {
             Conflict
           </Badge>
           <span className="text-muted-foreground">
-            {item.conflict_tags
+            {(item.conflict_tags ?? [])
               .map((t) => `${t.name}: ${show(t.value)}`)
               .join(', ')}
           </span>
@@ -54,9 +54,9 @@ function ItemRow({ item }: { item: TagSettingsItem }) {
             <span className="text-muted-foreground">Tags say </span>
             {show(item.expected)}
           </span>
-          {item.decided_by.length ? (
+          {(item.decided_by ?? []).length ? (
             <span className="text-muted-foreground">
-              Decided by {item.decided_by.join(', ')}
+              Decided by {(item.decided_by ?? []).join(', ')}
             </span>
           ) : null}
         </span>
