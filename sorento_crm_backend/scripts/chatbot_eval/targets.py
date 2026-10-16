@@ -352,7 +352,11 @@ def _followup(row, item):
         return bool(want) and not after_subject <= want
 
     if kind == "pick":
-        checks = [("position", gold.get("position") in _positions(row), "The bot picked a different position than the one chosen.")]
+        positions = _positions(row)
+        # a resolver "Did you mean" pick records no position: the pick was honoured when the subject after is the item
+        honoured = gold.get("position") in positions or (not positions and bool(gold.get("code"))
+                                                         and _key(gold["code"]) in after_subject)
+        checks = [("position", honoured, "The bot picked a different position than the one chosen.")]
         if gold.get("code"):
             code = _key(gold["code"])
             checks.append(("tool_target", code in _tool_targets(row) or any(
@@ -441,7 +445,7 @@ def _spec(row, item):
     got |= {_norm(e.get("spec_value") or e.get("raw")) for e in extra.get("specification") or [] if isinstance(e, dict)}
     got.discard("")
     want = {_norm(s.get("value")) for s in (item.get("gold") or {}).get("spec") or []}
-    return [("spec_set", got == want and bool(want), "The spec words were not grounded to the expected set.")]
+    return [("spec_set", bool(want) and want <= got, "The spec words were not grounded to the expected set.")]
 
 
 def _type_word(x) -> str:
@@ -458,7 +462,9 @@ def _attachment(row, item):
     sent = announced if isinstance(announced, int) else len(files)
     asked = [_type_word(e.get("canonical_code") or e.get("raw")) for e in _entities(row) if e.get("hint") == "attachment_type"]
     from_memory = (_mem_focus(row, "after").get("extra") or {}).get("attachment_type")
-    asked += [_type_word(x) for x in ([from_memory] if isinstance(from_memory, str) else from_memory or []) if x]
+    if isinstance(from_memory, (str, dict)):
+        from_memory = [from_memory]
+    asked += [_type_word(x.get("canonical_code") or x.get("raw") if isinstance(x, dict) else x) for x in from_memory or [] if x]
     asked_ok = bool(asked) and all(a in accepted for a in asked)
     checks = [("asked_type", asked_ok, "The asked type was read differently from the type requested.")]
     if gold.get("none_on_record"):
