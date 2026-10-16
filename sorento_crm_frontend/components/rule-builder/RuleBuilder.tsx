@@ -700,22 +700,23 @@ function ConditionValue({
   }
   if (fact.type === 'boolean') return null;
 
+  const singleValue =
+    typeof condition.value === 'string' || typeof condition.value === 'number'
+      ? String(condition.value)
+      : '';
   return (
     <ValueInput
       inputType={inputType}
       className={cn('h-8', inputType === 'date' ? 'w-36' : 'w-40')}
       placeholder="Value"
-      value={
-        typeof condition.value === 'string' || typeof condition.value === 'number'
-          ? String(condition.value)
-          : ''
-      }
+      value={singleValue}
+      error={memberError(inputType, singleValue)}
       disabled={disabled}
       onChange={(e) =>
         onChange({
           ...condition,
           value:
-            inputType === 'number' && e.target.value !== ''
+            inputType === 'number' && e.target.value !== '' && e.target.value !== 'NaN'
               ? Number(e.target.value)
               : e.target.value,
         })

@@ -16,6 +16,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RuleBuilder } from '@/components/rule-builder/RuleBuilder';
+import { ruleTreeHasBadNumber } from '@/components/rule-builder/ruleTreeBadNumber';
+import { useRuleFacts } from '@/components/rule-builder/useRuleFacts';
 import type { RuleGroup } from '@/components/rule-builder/types';
 import { cn } from '@/lib/utils';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
@@ -153,6 +155,7 @@ export function ProductPickerDialog({
   onSave: (selection: ProductSelection) => void;
 }) {
   const [draft, setDraft] = useState<ProductSelection>(value);
+  const { data: ruleFacts } = useRuleFacts(['product']);
   const {
     value: search,
     setValue: setSearch,
@@ -546,6 +549,7 @@ export function ProductPickerDialog({
           </Button>
           <Button
             onClick={() => {
+              if (ruleTreeHasBadNumber(draft.conditions, ruleFacts)) return;
               onSave(draft);
               onOpenChange(false);
             }}
