@@ -3,7 +3,11 @@
 usage (cwd = the backend dir of the checkout under test):
   python scripts/chatbot_eval/replay.py run --traces FILE... --out OUT.jsonl
   python scripts/chatbot_eval/replay.py live --items F --recorded F --out F --max-calls N --max-usd X --require-key-last4 XXXX
-      (history is read as of the recorded turn (prod world), not as of now)
+      (history is read as of the recorded turn (prod world), not as of now: previous reply, recent exchanges, earlier
+      messages, closed-frame summaries, the About this contact block, the quoted turn and the turn number. The
+      carried-from-earlier line (engine.py:4108), the fallback history list (engine.py:4013 -> memory.py:381) and the
+      handover summary (engine.py:4158 -> memory.py:435) still read the test world as of now; they change only the
+      reply text on rare paths.)
       (live spends only when the provider key ends with --require-key-last4; any other key stops the run at "wrong_key")
       (the guard and meter see only this process: MCP tools run on the stack's backend server with its own key, e.g.
       order search embeds via app/api/v1/external/rag.py:36, and media work runs on the RQ worker; neither is metered here)
@@ -608,9 +612,13 @@ def _recorded_history(db: Any, row: dict[str, Any], envelope: Any) -> dict[str, 
     earlier = [{"created_at": engine._short_day_time(x.created_at), "text": t}
                for x in reversed(earlier_q.order_by(ChatbotTurn.created_at.desc()).limit(3).all())
                if (t := memory_mod._turn_message_text(x))]
-    seen = db.query(func.count(ChatbotTurn.id)).filter(ChatbotTurn.contact_respond_id == str(contact),
-                                                       ChatbotTurn.created_at <= anchor).scalar()
-    return {"turn_number": int(seen or 0) or 1, "previous_reply": previous_reply, "recent": recent, "summaries": summaries, "read_frames": read_frames,
+    # the engine counts this turn's own row too: the prod turns before the anchor, plus one
+    before = db.query(func.count(ChatbotTurn.id)).filter(ChatbotTurn.contact_respond_id == str(contact),
+                                                         ChatbotTurn.is_test.is_(False),
+                                                         ChatbotTurn.created_at < anchor).scalar()
+    about = re.search(r"About this contact:\n[^\n]*", prompt["text"]) if prompt is not None else None
+    return {"anchor": anchor, "about": about.group(0) if about else "", "turn_number": int(before or 0) + 1,
+            "previous_reply": previous_reply, "recent": recent, "summaries": summaries, "read_frames": read_frames,
             "earlier_messages": earlier}
 
 
@@ -624,6 +632,17 @@ def _history_patches(stack: Any, history: dict[str, Any] | None) -> None:
 
     stack.enter_context(mock.patch.object(turn_runtime, "previous_reply_text", lambda *a, **k: history["previous_reply"]))
     stack.enter_context(mock.patch.object(turn_runtime, "recent_exchanges", lambda *a, **k: list(history["recent"])))
+    from app.services.chatbot import quoted
+    from app.services.chatbot.turn import context as context_mod
+
+    # profile facts are read as of now; the L5 block is the recorded one verbatim (empty when the recorded prompt had none)
+    stack.enter_context(mock.patch.object(context_mod, "_render_l5", lambda facts: (history["about"], False)))
+    real_quoted = quoted.resolve_quoted_turn
+
+    def quoted_as_of(db: Any, **kwargs: Any) -> Any:
+        return real_quoted(db, **{**kwargs, "is_test": False, "before": history["anchor"]})
+
+    stack.enter_context(mock.patch.object(quoted, "resolve_quoted_turn", quoted_as_of))
     stack.enter_context(mock.patch.object(turn_runtime, "turn_number", lambda *a, **k: history["turn_number"]))
     real_intake = engine._memory_intake
 
