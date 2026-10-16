@@ -2422,12 +2422,23 @@ Marketing's own work is not part of the form's payload, so it is captured
                 "source": "customer",
             }
 
-        # Source 2: debtors from orders for these agents within last 24 months.
+        # Source 2: debtors from orders for these agents within last 24 months. A code is
+        # unique per company only, so an agent with a company matches its code there; a
+        # shared agent (no company) matches its code in every company.
+        from sqlalchemy import and_, or_
+
         cutoff = date.today() - timedelta(days=730)  # ~24 months
         orders = (
             db.query(Order.debtor_code, Order.debtor_name)
             .filter(
-                Order.agent.in_([a.sales_agent for a in agents]),
+                or_(
+                    *(
+                        Order.agent == a.sales_agent
+                        if a.company_id is None
+                        else and_(Order.agent == a.sales_agent, Order.company_id == a.company_id)
+                        for a in agents
+                    )
+                ),
                 Order.order_date >= cutoff,
                 Order.debtor_code.isnot(None),
             )
