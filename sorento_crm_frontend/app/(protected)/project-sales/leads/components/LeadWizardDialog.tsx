@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -298,9 +299,8 @@ export function LeadWizardDialog({
 
                 <div className="space-y-1.5">
                   <Label htmlFor="lead-value">Rough value (RM)</Label>
-                  <Input
+                  <NumberInput
                     id="lead-value"
-                    type="number"
                     min={0}
                     value={estimatedValue}
                     onChange={(event) => setEstimatedValue(event.target.value)}

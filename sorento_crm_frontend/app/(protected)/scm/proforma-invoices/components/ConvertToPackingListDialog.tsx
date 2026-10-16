@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridTable } from '@/components/ui/data-grid-table';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -324,8 +324,7 @@ export function ConvertToPackingListDialog({
             />
           ) : (
             <div className="flex items-center gap-1.5">
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 max={row.original.line.remaining_qty}
                 value={quantities[row.original.line.id] ?? String(row.original.line.remaining_qty)}

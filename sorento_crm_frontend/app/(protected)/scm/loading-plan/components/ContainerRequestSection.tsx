@@ -28,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatDateInMalaysia } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
 import { EM_DASH, fmtInt } from '../../lib/format';
+import { CommittedNumberInput } from '../../components/CommittedNumberInput';
 import { describeWindow } from '../../reorder/lib/runListing';
 import { useContainerRequestBuild, useContainerRequestHistory } from '../../hooks/useFulfilment';
 import type {
@@ -426,15 +427,12 @@ export function ContainerRequestSection({
       return <span className="tabular-nums">{fmtInt(value)}</span>;
     }
     return (
-      <Input
-        type="number"
+      <CommittedNumberInput
         min={0}
+        rules={{ min: 0 }}
         className="h-8 w-24 tabular-nums"
         value={value}
-        onChange={(e) => {
-          const next = Math.max(0, Number(e.target.value) || 0);
-          onQtyChangeRef.current(original.row_key, next);
-        }}
+        onCommit={(next) => onQtyChangeRef.current(original.row_key, next)}
       />
     );
   }, []);

@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -21,6 +22,7 @@ import {
   FULFILMENT_FACTOR_ORDER,
   fulfilmentFactorLabel,
 } from '../lib/labels';
+import { numberFieldError, type NumberFieldRules } from '@/lib/number-field';
 import { DEFAULT_TBA_DATE_FROM } from '../types/policy.types';
 import {
   useFulfilmentPriority,
@@ -35,6 +37,13 @@ function todayIso(): string {
     .toISOString()
     .slice(0, 10);
 }
+
+// The rules each number is held to on Save. The weights carry no upper bound the backend
+// enforces, so none is invented here (the `max` on the input only steers the spinner).
+const WEIGHT_RULES: NumberFieldRules = { min: 0 };
+const TRANSFER_DAYS_RULES: NumberFieldRules = { min: 0, integer: true };
+const WINDOW_DAYS_RULES: NumberFieldRules = { min: 0, max: 365, integer: true };
+const POOL_SHARE_RULES: NumberFieldRules = { min: 0, max: 100, integer: true };
 
 /**
  * The ranking that decides both what goes in a container and which purchase-order line
@@ -80,6 +89,10 @@ export function FulfilmentPriorityPanel() {
   const [overdueGraceDays, setOverdueGraceDays] = useState('0');
   const [overdueDeadDays, setOverdueDeadDays] = useState('0');
   const [formError, setFormError] = useState<string | null>(null);
+  // Set once Save found a bad number: every field's sentence then follows its value live.
+  const [showErrors, setShowErrors] = useState(false);
+  const fieldError = (raw: string, rules: NumberFieldRules) =>
+    showErrors ? numberFieldError(raw, rules) : undefined;
 
   useEffect(() => {
     if (!data) return;
@@ -124,7 +137,8 @@ export function FulfilmentPriorityPanel() {
     const parsedFactors: Record<string, number> = {};
     for (const key of FULFILMENT_FACTOR_ORDER) {
       const value = Number(factors[key]);
-      if (!Number.isFinite(value) || value < 0) {
+      if (numberFieldError(factors[key], WEIGHT_RULES)) {
+        setShowErrors(true);
         setFormError(`${fulfilmentFactorLabel(key)} weight must be 0 or more.`);
         return;
       }
@@ -141,7 +155,8 @@ export function FulfilmentPriorityPanel() {
     const parsedClasses: Record<string, number> = {};
     for (const key of FULFILMENT_CLASS_ORDER) {
       const value = Number(classWeights[key]);
-      if (!Number.isFinite(value) || value < 0) {
+      if (numberFieldError(classWeights[key], WEIGHT_RULES)) {
+        setShowErrors(true);
         setFormError(
           `${FULFILMENT_CLASS_LABEL[key]} weight must be 0 or more.`,
         );
@@ -175,7 +190,8 @@ export function FulfilmentPriorityPanel() {
     // `transfer_days_negative` coded 422 mirrored here so the message sits beside the
     // field instead of arriving as a toast after a round trip.
     const parsedTransferDays = Number(transferDays);
-    if (!Number.isFinite(parsedTransferDays) || parsedTransferDays < 0) {
+    if (numberFieldError(transferDays, TRANSFER_DAYS_RULES)) {
+      setShowErrors(true);
       setFormError('Transfer days between bins must be 0 or more.');
       return;
     }
@@ -183,21 +199,15 @@ export function FulfilmentPriorityPanel() {
     // R-B (2 Sep ruling, AC-1.2): 0 is valid for both (0 days = nothing is immediate,
     // 0 % = the pool never gives a share) - only out-of-range is refused.
     const parsedImmediateWindowDays = Number(immediateWindowDays);
-    if (
-      !Number.isFinite(parsedImmediateWindowDays) ||
-      parsedImmediateWindowDays < 0 ||
-      parsedImmediateWindowDays > 365
-    ) {
+    if (numberFieldError(immediateWindowDays, WINDOW_DAYS_RULES)) {
+      setShowErrors(true);
       setFormError('Immediate window (days) must be between 0 and 365.');
       return;
     }
 
     const parsedPoolSharePct = Number(poolSharePct);
-    if (
-      !Number.isFinite(parsedPoolSharePct) ||
-      parsedPoolSharePct < 0 ||
-      parsedPoolSharePct > 100
-    ) {
+    if (numberFieldError(poolSharePct, POOL_SHARE_RULES)) {
+      setShowErrors(true);
       setFormError('Pool share (%) must be between 0 and 100.');
       return;
     }
@@ -205,21 +215,15 @@ export function FulfilmentPriorityPanel() {
     // R-O (3 Sep ruling): 0 is valid for both (no grace at all, and every late document
     // dead on the day), and out-of-range is refused with the backend's own 0-365 bound.
     const parsedOverdueGraceDays = Number(overdueGraceDays);
-    if (
-      !Number.isFinite(parsedOverdueGraceDays) ||
-      parsedOverdueGraceDays < 0 ||
-      parsedOverdueGraceDays > 365
-    ) {
+    if (numberFieldError(overdueGraceDays, WINDOW_DAYS_RULES)) {
+      setShowErrors(true);
       setFormError('Overdue grace (days) must be between 0 and 365.');
       return;
     }
 
     const parsedOverdueDeadDays = Number(overdueDeadDays);
-    if (
-      !Number.isFinite(parsedOverdueDeadDays) ||
-      parsedOverdueDeadDays < 0 ||
-      parsedOverdueDeadDays > 365
-    ) {
+    if (numberFieldError(overdueDeadDays, WINDOW_DAYS_RULES)) {
+      setShowErrors(true);
       setFormError('Overdue dead after (days) must be between 0 and 365.');
       return;
     }
@@ -293,14 +297,14 @@ export function FulfilmentPriorityPanel() {
                     >
                       {fulfilmentFactorLabel(key)}
                     </Label>
-                    <Input
+                    <NumberInput
                       id={`fulfilment-factor-${key}`}
-                      type="number"
                       min={0}
                       max={10}
                       step={0.5}
                       inputMode="decimal"
                       value={factors[key] ?? ''}
+                      error={fieldError(factors[key] ?? '', WEIGHT_RULES)}
                       onChange={(e) =>
                         setFactors((prev) => ({
                           ...prev,
@@ -324,14 +328,14 @@ export function FulfilmentPriorityPanel() {
                     >
                       {FULFILMENT_CLASS_LABEL[key]}
                     </Label>
-                    <Input
+                    <NumberInput
                       id={`fulfilment-class-${key}`}
-                      type="number"
                       min={0}
                       max={10}
                       step={0.5}
                       inputMode="decimal"
                       value={classWeights[key] ?? ''}
+                      error={fieldError(classWeights[key] ?? '', WEIGHT_RULES)}
                       onChange={(e) =>
                         setClassWeights((prev) => ({
                           ...prev,
@@ -419,13 +423,13 @@ export function FulfilmentPriorityPanel() {
                   >
                     Transfer days between bins
                   </Label>
-                  <Input
+                  <NumberInput
                     id="fulfilment-transfer-days"
-                    type="number"
                     min={0}
                     step={1}
                     inputMode="numeric"
                     value={transferDays}
+                    error={fieldError(transferDays, TRANSFER_DAYS_RULES)}
                     onChange={(e) => setTransferDays(e.target.value)}
                     className="w-full"
                   />
@@ -441,14 +445,14 @@ export function FulfilmentPriorityPanel() {
                   >
                     Immediate window (days)
                   </Label>
-                  <Input
+                  <NumberInput
                     id="fulfilment-immediate-window-days"
-                    type="number"
                     min={0}
                     max={365}
                     step={1}
                     inputMode="numeric"
                     value={immediateWindowDays}
+                    error={fieldError(immediateWindowDays, WINDOW_DAYS_RULES)}
                     onChange={(e) => setImmediateWindowDays(e.target.value)}
                     className="w-full"
                   />
@@ -465,14 +469,14 @@ export function FulfilmentPriorityPanel() {
                   >
                     Pool share (%)
                   </Label>
-                  <Input
+                  <NumberInput
                     id="fulfilment-pool-share-pct"
-                    type="number"
                     min={0}
                     max={100}
                     step={1}
                     inputMode="numeric"
                     value={poolSharePct}
+                    error={fieldError(poolSharePct, POOL_SHARE_RULES)}
                     onChange={(e) => setPoolSharePct(e.target.value)}
                     className="w-full"
                   />
@@ -488,14 +492,14 @@ export function FulfilmentPriorityPanel() {
                   >
                     Overdue grace (days)
                   </Label>
-                  <Input
+                  <NumberInput
                     id="fulfilment-overdue-grace-days"
-                    type="number"
                     min={0}
                     max={365}
                     step={1}
                     inputMode="numeric"
                     value={overdueGraceDays}
+                    error={fieldError(overdueGraceDays, WINDOW_DAYS_RULES)}
                     onChange={(e) => setOverdueGraceDays(e.target.value)}
                     className="w-full"
                   />
@@ -511,14 +515,14 @@ export function FulfilmentPriorityPanel() {
                   >
                     Overdue dead after (days)
                   </Label>
-                  <Input
+                  <NumberInput
                     id="fulfilment-overdue-dead-days"
-                    type="number"
                     min={0}
                     max={365}
                     step={1}
                     inputMode="numeric"
                     value={overdueDeadDays}
+                    error={fieldError(overdueDeadDays, WINDOW_DAYS_RULES)}
                     onChange={(e) => setOverdueDeadDays(e.target.value)}
                     className="w-full"
                   />

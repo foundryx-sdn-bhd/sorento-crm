@@ -26,7 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridTable } from '@/components/ui/data-grid-table';
@@ -613,8 +613,7 @@ function candidateColumns({
         const take = takeFor(candidate);
         const overLine = toNumber(take) > toNumber(candidate.remaining);
         return (
-          <Input
-            type="number"
+          <NumberInput
             min={0}
             step="any"
             value={take}

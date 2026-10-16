@@ -39,6 +39,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/common/SearchableSelect';
 import { useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
@@ -78,6 +79,7 @@ import type {
 } from '../../../types/scm.types';
 import BackToList from '@/components/common/BackToList';
 import { codeWithName, distinctName } from '@/lib/product-display';
+import { numberFieldError } from '@/lib/number-field';
 
 /**
  * The purchase-order detail, built section for section as the twin of `SalesOrderDetail`.
@@ -527,8 +529,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
           if (isEditing) {
             const draft = lineDrafts[row.original.id];
             return (
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 aria-label={`Qty ordered on ${row.original.sku}`}
                 value={draft?.qty_ordered ?? String(row.original.qty_ordered)}
@@ -657,8 +658,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
           if (isEditing) {
             const draft = draftOrRow(lineDrafts, row.original);
             return (
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 step="0.01"
                 aria-label={`Unit price on ${row.original.sku}`}
@@ -693,8 +693,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
           if (isEditing) {
             const draft = draftOrRow(lineDrafts, row.original);
             return (
-              <Input
-                type="number"
+              <NumberInput
                 min={0}
                 step="0.01"
                 aria-label={`Discount on ${row.original.sku}`}
@@ -979,6 +978,17 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
     });
     if (cleanedLines.some((l) => !l.sku || !(Number(l.qty_ordered) > 0))) {
       return setError('Every line needs a product and a quantity above zero.');
+    }
+    // The price and discount may stay blank (blank clears the figure), but a typed one is
+    // never negative.
+    if (
+      cleanedLines.some(
+        (l) =>
+          numberFieldError(l.unit_price, { min: 0, optional: true }) ||
+          numberFieldError(l.discount, { min: 0, optional: true }),
+      )
+    ) {
+      return setError('A unit price or discount cannot be negative.');
     }
     const linesUnchanged =
       originalLineSignatureRef.current !== null &&

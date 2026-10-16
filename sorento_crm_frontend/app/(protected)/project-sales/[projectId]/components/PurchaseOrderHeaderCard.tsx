@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -230,9 +231,8 @@ export function PurchaseOrderHeaderCard({
                 label="PO amount (RM)"
                 hint="Only needed when you are not entering lines."
               >
-                <Input
+                <NumberInput
                   id="po-amount"
-                  type="number"
                   step="0.01"
                   min="0"
                   value={po.po_amount ?? ''}

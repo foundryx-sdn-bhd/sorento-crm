@@ -216,19 +216,22 @@ function CoverSourceLine({
   code,
   free,
   max,
-  qty,
-  onQtyChange,
+  text,
+  error,
+  onTextChange,
 }: {
   code: string;
   /** What the location holds - a fact about the location, stated as such. */
   free: number;
   /** What this field may actually be set to: `free`, capped by what the row still needs. */
   max: number;
-  qty: number;
-  onQtyChange: (value: number) => void;
+  /** What the buyer typed, kept as typed (empty and over-limit included). */
+  text: string;
+  error?: string;
+  onTextChange: (value: string) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 text-xs">
+    <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs">
       <span className="min-w-0 flex-1 truncate" title={code}>
         {code}
       </span>
@@ -240,8 +243,10 @@ function CoverSourceLine({
         min={0}
         max={max}
         step={1}
-        value={qty}
-        onChange={(e) => onQtyChange(e.target.valueAsNumber)}
+        value={text}
+        error={error}
+        errorClassName="basis-full text-end"
+        onChange={(e) => onTextChange(e.target.value)}
         className="h-6 w-20 shrink-0 tabular-nums"
         aria-label={`Use from ${code}`}
       />
@@ -610,6 +615,8 @@ export function OrderQtyLedger({
     return defaultSourceEdits(cover);
   };
   const [sourceEdits, setSourceEdits] = useState<SourceEdits>(seedEdits);
+  // What the buyer typed in each location's box, apart from the figure in force above.
+  const [sourceTexts, setSourceTexts] = useState<Record<string, string>>({});
   // Re-seed when the OFFER itself changes - another row's decision can free a location up or
   // spend it down while this popover is open, and a newly offered location left out of the
   // edits map would silently render as 0 with no way to tell it from a deliberate zero. The
@@ -621,6 +628,7 @@ export function OrderQtyLedger({
     if (seededFor.current === offerKey) return;
     seededFor.current = offerKey;
     setSourceEdits(seedEdits());
+    setSourceTexts({});
     // `seedEdits` closes over the current cover/decision, which is what a re-seed wants.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offerKey]);
@@ -735,13 +743,16 @@ export function OrderQtyLedger({
   };
   // Editing a location re-applies immediately, exactly as the forecast input does: the
   // input IS the edit, there is no separate Record step in this ledger (UAC B4).
-  const changeSourceQty = (warehouseId: string, raw: number) => {
-    // What the LOCATION holds free, and what the ROW still needs once the other locations are
-    // counted - the second half was missing, so 40 could be typed against a gap of 10 and the
-    // 30 units this row could never use were withdrawn from every other row of the product.
-    const max = maxSourceEdit(cover, warehouseId, sourceEdits);
-    const clamped = Number.isFinite(raw) ? Math.max(0, Math.min(max, Math.floor(raw))) : 0;
-    const edits = { ...sourceEdits, [warehouseId]: clamped };
+  const sourceRules = (warehouseId: string) => ({
+    min: 0,
+    max: maxSourceEdit(cover, warehouseId, sourceEdits),
+    integer: true,
+  });
+  const changeSourceText = (warehouseId: string, text: string) => {
+    setSourceTexts((prev) => ({ ...prev, [warehouseId]: text }));
+    // Blank, partial or over-limit: stays as typed, shows its sentence, records nothing.
+    if (numberFieldError(text, sourceRules(warehouseId))) return;
+    const edits = { ...sourceEdits, [warehouseId]: Number(text) };
     setSourceEdits(edits);
     if (stockOn) commit({ stockOn, poOn, forecastOn, forecastQty, edits });
   };
@@ -921,8 +932,12 @@ export function OrderQtyLedger({
                             code={s.warehouse_code}
                             free={s.qty}
                             max={maxSourceEdit(cover, s.warehouse_id, sourceEdits)}
-                            qty={sourceEdits[s.warehouse_id] ?? 0}
-                            onQtyChange={(v) => changeSourceQty(s.warehouse_id, v)}
+                            text={sourceTexts[s.warehouse_id] ?? String(sourceEdits[s.warehouse_id] ?? 0)}
+                            error={numberFieldError(
+                              sourceTexts[s.warehouse_id] ?? String(sourceEdits[s.warehouse_id] ?? 0),
+                              sourceRules(s.warehouse_id),
+                            )}
+                            onTextChange={(v) => changeSourceText(s.warehouse_id, v)}
                           />
                         ))}
                       </div>

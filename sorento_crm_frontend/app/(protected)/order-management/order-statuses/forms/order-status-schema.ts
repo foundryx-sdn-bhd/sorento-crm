@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { requiredNumber } from '@/lib/number-field-schema';
 
 export const OrderStatusSchema = z.object({
   status_code: z
@@ -13,10 +14,7 @@ export const OrderStatusSchema = z.object({
     .min(1, { message: 'Status name is required.' })
     .max(100, { message: 'Status name must not exceed 100 characters.' }),
   description: z.string().max(2000, { message: 'Description must not exceed 2000 characters.' }).optional().nullable(),
-  sequence: z
-    .number()
-    .int({ message: 'Sequence must be a whole number.' })
-    .min(0, { message: 'Sequence cannot be negative.' }),
+  sequence: requiredNumber({ min: 0, integer: true }),
   is_final_status: z.boolean(),
 });
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import {
   Popover,
@@ -11,6 +11,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
+import { numberFieldError } from '@/lib/number-field';
 import { useDeadStockDays, useSaveDeadStockDays } from '../hooks/useScmDashboard';
 
 /**
@@ -28,15 +29,24 @@ export function DeadStockSettings() {
 
   // Sync the input to the loaded value whenever the popover (re)opens.
   useEffect(() => {
-    if (open && data != null) setValue(String(data));
+    if (open && data != null) {
+      setValue(String(data));
+      setShowErrors(false);
+    }
   }, [open, data]);
 
+  const [showErrors, setShowErrors] = useState(false);
   const parsed = Number(value);
-  const valid = Number.isInteger(parsed) && parsed >= 1 && parsed <= 3650;
+  const error = numberFieldError(value, { min: 1, max: 3650, integer: true });
+  const valid = !error;
   const dirty = data != null && parsed !== data;
 
   const onSave = async () => {
-    if (!valid || !dirty) return;
+    if (!valid) {
+      setShowErrors(true);
+      return;
+    }
+    if (!dirty) return;
     await save.mutateAsync(parsed);
     setOpen(false);
   };
@@ -63,13 +73,13 @@ export function DeadStockSettings() {
           {isLoading ? (
             <Skeleton className="h-9 w-full" />
           ) : (
-            <Input
+            <NumberInput
               id="dead-stock-days"
-              type="number"
               min={1}
               max={3650}
               inputMode="numeric"
               value={value}
+              error={showErrors || value !== '' ? error : undefined}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void onSave();
@@ -78,10 +88,6 @@ export function DeadStockSettings() {
             />
           )}
 
-          {!valid && value !== '' ? (
-            <p className="text-xs text-scm-stockout">Enter a whole number between 1 and 3650.</p>
-          ) : null}
-
           <div className="flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
               Cancel
@@ -89,7 +95,7 @@ export function DeadStockSettings() {
             <Button
               size="sm"
               onClick={() => void onSave()}
-              disabled={!valid || !dirty || save.isPending}
+              disabled={(valid && !dirty) || save.isPending}
             >
               {save.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
               Save dead stock window

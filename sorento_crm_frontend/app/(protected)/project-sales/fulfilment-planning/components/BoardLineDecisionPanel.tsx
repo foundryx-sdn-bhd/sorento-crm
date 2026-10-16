@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -903,8 +903,7 @@ export function BoardLineDecisionPanel({
                         key={row.key}
                         className="flex flex-wrap items-center gap-2"
                       >
-                        <Input
-                          type="number"
+                        <NumberInput
                           min="0"
                           step="any"
                           value={row.qty}
@@ -966,8 +965,7 @@ export function BoardLineDecisionPanel({
                 draft.borrow.map((row, index) => (
                   <div key={row.key} className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Input
-                        type="number"
+                      <NumberInput
                         min="0"
                         step="any"
                         value={row.qty}
@@ -1031,8 +1029,7 @@ export function BoardLineDecisionPanel({
                   bought the switch states the quantity, so the box steps aside. */}
               {!buying && (
                 <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    type="number"
+                  <NumberInput
                     min="0"
                     step="any"
                     value={draft.buy_qty}

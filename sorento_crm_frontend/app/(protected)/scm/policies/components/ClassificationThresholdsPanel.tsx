@@ -5,7 +5,7 @@ import { LoaderCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardHeading, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useClassification, useSaveClassification } from '../hooks/usePolicies';
@@ -109,28 +109,28 @@ export function ClassificationThresholdsPanel() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label className="mb-1 block">Class A ≤ (% of cumulative value)</Label>
-              <Input type="number" min={1} max={99} inputMode="numeric" value={abcA} onChange={(e) => setAbcA(e.target.value)} />
+              <NumberInput min={1} max={99} inputMode="numeric" value={abcA} onChange={(e) => setAbcA(e.target.value)} />
               <p className="mt-1 text-2xs text-muted-foreground">
                 Items making up the top share of value are class A.
               </p>
             </div>
             <div>
               <Label className="mb-1 block">Class B ≤ (% of cumulative value)</Label>
-              <Input type="number" min={1} max={99} inputMode="numeric" value={abcB} onChange={(e) => setAbcB(e.target.value)} />
+              <NumberInput min={1} max={99} inputMode="numeric" value={abcB} onChange={(e) => setAbcB(e.target.value)} />
               <p className="mt-1 text-2xs text-muted-foreground">
                 The next share up to this cut is class B; the remainder is class C.
               </p>
             </div>
             <div>
               <Label className="mb-1 block">Class X ≤ (demand CV)</Label>
-              <Input type="number" min={0} step="0.05" inputMode="decimal" value={xyzX} onChange={(e) => setXyzX(e.target.value)} />
+              <NumberInput min={0} step="0.05" inputMode="decimal" value={xyzX} onChange={(e) => setXyzX(e.target.value)} />
               <p className="mt-1 text-2xs text-muted-foreground">
                 Coefficient of variation. Lower = steadier demand. Items at/under this are class X.
               </p>
             </div>
             <div>
               <Label className="mb-1 block">Class Y ≤ (demand CV)</Label>
-              <Input type="number" min={0} step="0.05" inputMode="decimal" value={xyzY} onChange={(e) => setXyzY(e.target.value)} />
+              <NumberInput min={0} step="0.05" inputMode="decimal" value={xyzY} onChange={(e) => setXyzY(e.target.value)} />
               <p className="mt-1 text-2xs text-muted-foreground">
                 Items above X but at/under this are class Y; anything higher is class Z.
               </p>
