@@ -251,3 +251,12 @@ no existence leak; UAC AC-SR-41 updated). `ProjectDetailClient.tsx` exports `TAB
 - Comments for the owning salesperson: the form comment thread is gated on `projects.sample_requests.view`
   (`services/form_comment_service.py` VIEW_PERMISSION), so a salesperson holding only `create` gets no Comments tab.
   An owner rule in the comment service would let them talk to the coordinator on their own request.
+
+## Owner hand test 1 (16 Oct, on b4f9bd2a): layout FAIL
+
+Owner: drop the section-by-section form; follow the Purchase Request / Sponsorship Form / Stock Inquiry layout, product
+lines in a table, searchable customer. Mock v3 (`mockups/sample-request-form-v3.html`): staff and portal create/edit use
+the PR/SF document card (header grid on top in the paper form's order, the PR line table with a product search box per
+row plus an "Or" column and the board as row 1, the paper footer fields below). Stock Inquiry's bordered form is
+single-product (no line table) and Order Inquiry has no create form, so PR/SF is the template. Rebuild waits for the
+owner's OK. Prepared fixes already on the branch: impersonated `/portal/sample_request/*` routes, portal date dd/mm/yyyy.
