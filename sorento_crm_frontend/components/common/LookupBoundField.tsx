@@ -13,6 +13,9 @@ export interface LookupBoundFieldProps {
   renderFallback: () => React.ReactNode;
   /** Show a clear (x) button; set it on an optional field. */
   clearable?: boolean;
+  /** Pre-select the binding's default on an empty NEW form (default on). Turn it off where
+   *  the form edits a stored record, so an empty stored value is never quietly filled. */
+  applyDefault?: boolean;
 }
 
 export default function LookupBoundField({
@@ -23,6 +26,7 @@ export default function LookupBoundField({
   placeholder,
   renderFallback,
   clearable = false,
+  applyDefault = true,
 }: LookupBoundFieldProps) {
   const { data, isLoading } = useLookupOptionsByBinding(table, column);
 
@@ -41,6 +45,7 @@ export default function LookupBoundField({
   }
   const defaultValue = data?.default_value ?? null;
   useEffect(() => {
+    if (!applyDefault) return;
     if (appliedDefaultRef.current) return;
     if (!startedEmptyRef.current) return; // edit form - leave the existing value
     if ((value ?? '').trim()) return; // something already set it
@@ -50,7 +55,7 @@ export default function LookupBoundField({
     }
     appliedDefaultRef.current = true;
     onChange(defaultValue);
-  }, [defaultValue, options, value, onChange]);
+  }, [applyDefault, defaultValue, options, value, onChange]);
 
   if (isLoading || !data) return <>{renderFallback()}</>;
   if (!hasBinding) return <>{renderFallback()}</>;

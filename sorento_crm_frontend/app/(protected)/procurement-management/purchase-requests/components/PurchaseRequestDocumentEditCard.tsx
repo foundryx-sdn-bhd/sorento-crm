@@ -475,7 +475,6 @@ export function PurchaseRequestDocumentEditCard({
               </DocField>
             )}
 
-
             {isSponsorship && (
               <>
                 <DocField label="Total Project Value" className="sm:col-span-2">
@@ -574,6 +573,9 @@ export function PurchaseRequestDocumentEditCard({
                         onChange={field.onChange}
                         placeholder="Select sales type"
                         clearable={isSponsorship}
+                        // An existing SF with no sales type stays blank: the edit card mounts
+                        // before the form reset, so the new-form default would otherwise fill it.
+                        applyDefault={!isSponsorship}
                         renderFallback={() => (
                           <SearchableSelect
                             key={field.value || 'empty'}
