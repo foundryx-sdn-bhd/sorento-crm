@@ -8198,7 +8198,7 @@ class PurchaseRequestService:
             "contact_id",
             "space_id",
             "products",
-            "sales_type",  # project / cash_sales - required for PR (SF omits it); routes CS
+            "sales_type",  # project / cash_sales - required for PR (optional on SF); routes CS
         ),
         "sponsorship_form": (
             "sponsor_subject",

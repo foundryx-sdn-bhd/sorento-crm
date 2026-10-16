@@ -55,7 +55,7 @@ def _upgraded():
         outer = raw.begin()
         try:
             raw.exec_driver_sql(f'CREATE SCHEMA "{scratch}"')
-            conn = raw.execution_options(schema_translate_map={"sales": scratch})
+            conn = raw.execution_options(schema_translate_map={None: None, "sales": scratch})
             _run(conn, m1.upgrade)
             _run(conn, m2.upgrade)
             _run(conn, m3.upgrade)
@@ -473,7 +473,7 @@ def test_downgrade_keeps_schema_and_permissions():
         outer = raw.begin()
         try:
             raw.exec_driver_sql(f'CREATE SCHEMA "{scratch}"')
-            conn = raw.execution_options(schema_translate_map={"sales": scratch})
+            conn = raw.execution_options(schema_translate_map={None: None, "sales": scratch})
             _run(conn, m1.upgrade)
             _run(conn, m2.upgrade)
             _run(conn, m3.upgrade)

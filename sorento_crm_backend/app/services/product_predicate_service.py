@@ -30,7 +30,7 @@ from typing import Any, Callable
 
 from sqlalchemy import String as _String
 from sqlalchemy import cast as _cast
-from sqlalchemy import case, exists, func, literal_column, or_, true
+from sqlalchemy import and_, case, exists, func, literal_column, or_, true
 from sqlalchemy.dialects.postgresql import ARRAY as _ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session, aliased
@@ -873,15 +873,19 @@ def resolve_product_set(
     ``breakdown_key`` names the key to break the set down by (a value the registry does
     not know is said back beside the values the set does hold).
 
-    The described set is the UNION of ``product_ids`` (ids LOOKUP already
-    matched by name or code prefix) and the ``class`` / ``product_type`` /
-    ``brand`` membership `filter_specs` derives from ``specs`` / ``free_terms``
-    / ``scope_terms`` - attribute-first asks, work item C3, AC-1306/1308. Either
-    alone is enough to describe the set; when both are given a product only
-    needs ONE of them. ``brand`` scopes the WHOLE set on top of that union
-    (D3): it reads `Product.brand_id` live, not the spec-derived echo, so it is
-    correct even when a product's brand changed since its spec row was last
-    derived.
+    The described set is ``product_ids`` (ids LOOKUP already matched by name or
+    code prefix) and the ``class`` / ``product_type`` / ``brand`` membership
+    `filter_specs` derives from ``specs`` / ``free_terms`` / ``scope_terms`` -
+    attribute-first asks, work item C3, AC-1306/1308. Either alone is enough to
+    describe the set. A name match stands in for WHAT the product is (its class,
+    type or brand, `_SET_NOUN_KEYS`), so on those keys a product needs ONE of
+    the two ("which tap has cert": a code with TAP in it, or a class-Tap
+    product); a property asked of the set (a trap, a finish) holds for every
+    member, name-matched or not (chat fix PR-A, AC-A8: "any P-trap WC?" counts
+    the P-trap water closets, never every name match beside them, dev 220
+    against 183). ``brand`` scopes the WHOLE set on top of that (D3): it reads
+    `Product.brand_id` live, not the spec-derived echo, so it is correct even
+    when a product's brand changed since its spec row was last derived.
 
     ``scope_terms`` (C2 repair) is membership-ONLY - a caller-derived class word
     ("tap" out of "which tap has cert") that must scope the set but must NEVER
@@ -975,8 +979,8 @@ def resolve_product_set(
     # What the caller has to RANK against, not merely what defines membership.
     # `specs`-only calls (structural bindings, no customer words) fall to the
     # deterministic listing below - `search_specs` drops any candidate with no
-    # positive evidence, which would silently evict a product that only
-    # qualified through `product_ids`, the OTHER half of the union.
+    # positive evidence, which would silently evict a product that qualified
+    # through `product_ids` alone (no spec clause beside it).
     rank_by_words = bool([t for t in (free_terms or []) if t and t.strip()])
     if verdict["clause"] is None and described_given and not product_ids:
         # Words were given and none named a class/product_type/brand, and there
@@ -1001,6 +1005,17 @@ def resolve_product_set(
     parent = aliased(Product)
     family = func.coalesce(parent.product_code, Product.product_code)
 
+    # What the set IS (class, type, brand) and what is asked OF it (every other key),
+    # apart: a name match answers the first, never the second (AC-A8).
+    from app.services.product_spec_search import membership_clause
+
+    membership_keys = verdict.get("membership") or {}
+    what_clause = membership_clause({k: v for k, v in membership_keys.items() if k in _SET_NOUN_KEYS})
+    property_clause = membership_clause({k: v for k, v in membership_keys.items() if k not in _SET_NOUN_KEYS})
+
+    def _holds(clause: ColumnElement) -> ColumnElement:
+        return exists().where(ProductSpecifications.product_id == Product.id, clause)
+
     def _base(query, *, with_legs: bool = True):
         query = (
             query.select_from(Product)
@@ -1009,15 +1024,14 @@ def resolve_product_set(
         )
         described: list[ColumnElement] = []
         if product_ids:
-            described.append(Product.id.in_(list(product_ids)))
-        if verdict["clause"] is not None:
-            described.append(
-                exists().where(
-                    ProductSpecifications.product_id == Product.id, verdict["clause"]
-                )
-            )
+            named = Product.id.in_(list(product_ids))
+            described.append(named if what_clause is None else or_(named, _holds(what_clause)))
+        elif what_clause is not None:
+            described.append(_holds(what_clause))
+        if property_clause is not None:
+            described.append(_holds(property_clause))
         if described:
-            query = query.filter(described[0] if len(described) == 1 else or_(*described))
+            query = query.filter(and_(*described))
         if brand:
             query = query.join(Brand, Brand.id == Product.brand_id).filter(
                 func.lower(Brand.brand_name) == brand.strip().lower()
@@ -1142,7 +1156,13 @@ def resolve_product_set(
                             _bound_spec_matches(
                                 values,
                                 list(specs or [])
-                                + [{"key": "class", "value": label} for label in verdict["class_labels"]],
+                                # The class filter as counted: a yes-or-no spec may have
+                                # widened it past the class the header names (F1).
+                                + [
+                                    {"key": "class", "value": label}
+                                    for label in (verdict.get("membership") or {}).get("class")
+                                    or verdict["class_labels"]
+                                ],
                             )
                         ),
                         # No customer words were scored here, so nothing was
@@ -1165,7 +1185,9 @@ def resolve_product_set(
     # CODE, never through `filter_specs`' own membership binding) still has a
     # real class the header should say, and the candidates already carry it.
     class_labels = set(verdict["class_labels"])
-    for row in candidates:
+    for row in candidates if not verdict.get("named_classes") else ():
+        # A class filter a yes-or-no spec widened names the asked class (F1), never the
+        # family its candidates span.
         value = row.get("class")
         if value:
             class_labels.add(str(value))

@@ -6210,8 +6210,16 @@ def _run_stages_body(  # noqa: PLR0915
             and isinstance(resolver_payload, dict)
             and (answer_parse_output or {}).get("domain_hint") == "promotion"
         ):
+            # The levels the promotions read is made at; a contact with tiers whose list the
+            # tier gate emptied (a dealer lacking the asked brand) is an empty list, never
+            # "no filter" (reviewer R1). No tier at all (staff) is None.
+            tier = resolver_payload.get("tier_gate")
+            entitled = isinstance(tier, dict) and bool(tier.get("entitled_tiers") or tier.get("entitled_unknown"))
             ask_back = turn_runtime.promo_subject_ask_back(
-                answer_parse_output or {}, db, resolver_payload.get("gate")
+                answer_parse_output or {},
+                db,
+                resolver_payload.get("gate"),
+                access_levels=list(tier.get("access_levels_recomposed") or []) if entitled else None,
             )
             if ask_back:
                 from app.services.chatbot.turn import pending as pending_mod
