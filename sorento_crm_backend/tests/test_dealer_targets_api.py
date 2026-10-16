@@ -601,3 +601,34 @@ def test_replaced_by_refuses_an_agent_target_itself_and_a_chain(api):
     assert client.patch(f"{BASE}/{top['id']}", json={"replaced_by_target_id": top["id"]}).status_code == 422
     chained = client.post(BASE, json=_yearly([a1], tiers, replaced_by_target_id=mid["id"]))
     assert chained.status_code == 422, chained.text
+
+
+def test_a_target_others_point_at_cannot_itself_be_replaced(api):
+    """Security review (gate 2) S2: no chain from either end."""
+    client, db, company_id = api
+    a1 = _customer(db, company_id, "ZZT CHAIN 2", level=1)
+    tiers = [{"threshold": 1, "rate": 1}]
+    b = client.post(BASE, json=_yearly([a1], tiers)).json()
+    c = client.post(BASE, json=_yearly([a1], tiers)).json()
+    assert client.post(BASE, json=_yearly([a1], tiers, replaced_by_target_id=b["id"])).status_code == 201
+    res = client.patch(f"{BASE}/{b['id']}", json={"replaced_by_target_id": c["id"]})
+    assert res.status_code == 422, res.text
+
+
+def test_the_dealer_list_reads_each_replacing_target_once(api, monkeypatch):
+    """Security review (gate 2) S1: accounts sharing one dealer target do not recompute it."""
+    from app.services.sales import target_service
+
+    client, db, company_id = api
+    dealer, _own = _replacing_pair(client, db, company_id, 1300000)
+    a = _customer(db, company_id, "ZZT REPL MORE", level=4)
+    for _ in range(3):
+        res = client.post(BASE, json=_yearly([a], [{"threshold": 1, "rate": 1}], replaced_by_target_id=dealer["id"]))
+        assert res.status_code == 201, res.text
+    calls = []
+    real = target_service._achieved_by_account
+    monkeypatch.setattr(target_service, "_achieved_by_account", lambda *a, **k: calls.append(1) or real(*a, **k))
+    rows = client.get(BASE, params={"subject": "dealer", "all": "true", "on": "2026-06-01"}).json()["rows"]
+    replaced = [r for r in rows if r["name"] == "ZZT yearly" and r["commission_earned"] == 0]
+    assert len(replaced) >= 4
+    assert len(calls) <= 2

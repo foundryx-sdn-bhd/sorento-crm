@@ -788,9 +788,9 @@ def _parse_sheet(grid: _Grid, sheet: str, header: Tuple[int, int], year: int, no
             name_in_file=cell(r, by_role["name"]),
             account_in_file=cell(r, by_role["account"]),
         )
-        if res.name_in_file and not res.account_in_file:
+        if res.name_in_file and not res.account_in_file and not too_long(res.name_in_file):
             # The real files carry the account as a SUFFIX of the dealer name cell ("<dealer>
-            # A/C I"), with no ACCOUNT column (gate 2, item 1).
+            # A/C I"), with no ACCOUNT column (gate 2, item 1). After the length check.
             res.name_in_file, res.account_in_file = split_account_suffix(res.name_in_file)
         if too_long(code, res.name_in_file, res.account_in_file):
             # Security review B1: an unbounded name never reaches the matcher (difflib indexes
@@ -1271,18 +1271,21 @@ MAX_FUZZY_LOOKUPS = 300
 MAX_PICKS = MAX_SHEETS * MAX_SHEET_ROWS
 
 
-_ACCOUNT_SUFFIX = re.compile(
-    r"[\s\-\u2013(\[]*\bA\s*/\s*C\.?\s*([IVX]+|\d+)\s*[)\]]?\s*$", re.IGNORECASE
-)
+#: Possessive quantifiers and no leading class: linear on any text (security review gate 2 B1:
+#: the earlier form backtracked quadratically on a long run of spaces).
+_ACCOUNT_SUFFIX = re.compile(r"\bA\s*+/\s*+C\.?\s*+([IVX]++|\d++)\s*+[)\]]?\s*+\Z", re.IGNORECASE)
 
 
 def split_account_suffix(name: str) -> Tuple[str, Optional[str]]:
     """("<dealer>", "A/C <n>") from "<dealer> A/C <n>" (also "- A/C III", "(A/C I)"); the name
     whole and None when it carries no such suffix."""
     m = _ACCOUNT_SUFFIX.search(name or "")
-    if not m or not name[: m.start()].strip():
+    if not m:
         return name, None
-    return name[: m.start()].strip(" -"), f"A/C {m.group(1).upper()}"
+    head = name[: m.start()].rstrip(" -\u2013([")
+    if not head.strip():
+        return name, None
+    return head, f"A/C {m.group(1).upper()}"
 
 
 def dealer_key(name: Optional[str]) -> str:

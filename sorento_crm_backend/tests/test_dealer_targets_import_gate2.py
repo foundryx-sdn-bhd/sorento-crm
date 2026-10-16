@@ -297,3 +297,20 @@ def test_apply_links_each_account_target_to_its_dealer_target(api):
     owns = [d for d in details if len(d["accounts"]) == 1]
     assert len(owns) == 3
     assert all(d["replaced_by"]["target_no"] == dealer["target_no"] for d in owns)
+
+
+def test_the_account_suffix_reader_is_linear():
+    """Security review (gate 2) B1: the suffix regex never backtracks on a long run of spaces."""
+    import time
+
+    from app.services.sales.dealer_target_import import customer_account_keys, dealer_key, split_account_suffix
+
+    bad = " " * 167 + "A/C 1" + " " * 328 + "x"
+    started = time.monotonic()
+    for _ in range(50):
+        split_account_suffix(bad)
+        dealer_key(bad[:255])
+        customer_account_keys(bad[:255], None)
+    assert time.monotonic() - started < 0.5
+    assert split_account_suffix("X - A/C III ") == ("X", "A/C III")
+    assert split_account_suffix("Y (A/C 2)") == ("Y", "A/C 2")

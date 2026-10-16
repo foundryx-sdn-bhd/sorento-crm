@@ -211,9 +211,15 @@ def _write_replaced_by(db: Session, target: SalesTarget, replaced_by_id: Optiona
         return
     if target.subject_kind != "dealer":
         raise _unprocessable("Only a dealer target can be replaced by another.", "INVALID_SUBJECT")
-    other = db.query(SalesTarget).filter(SalesTarget.id == replaced_by_id).first()
+    # Both rows locked, so two requests cannot link A to B and B to A at once.
+    other = db.query(SalesTarget).filter(SalesTarget.id == replaced_by_id).with_for_update().first()
     if other is None or other.subject_kind != "dealer" or other.id == target.id:
         raise _unprocessable("Pick another dealer target to replace this one.", "INVALID_REPLACED_BY")
+    db.query(SalesTarget.id).filter(SalesTarget.id == target.id).with_for_update().first()
+    if db.query(SalesTarget.id).filter(SalesTarget.replaced_by_target_id == target.id).first():
+        raise _unprocessable(
+            "Other targets are replaced by this one, so it cannot be replaced itself.", "INVALID_REPLACED_BY"
+        )
     if other.replaced_by_target_id:
         raise _unprocessable(
             "That dealer target is itself replaced by another; pick the top one.", "INVALID_REPLACED_BY"
@@ -221,33 +227,47 @@ def _write_replaced_by(db: Session, target: SalesTarget, replaced_by_id: Optiona
     target.replaced_by_target_id = other.id
 
 
-def _replacing_reached(db: Session, target: SalesTarget, periods: List[SalesTargetPeriod]) -> Dict[str, bool]:
+def _replacing_reached(
+    db: Session, target: SalesTarget, periods: List[SalesTargetPeriod], cache: Optional[dict] = None
+) -> Dict[str, bool]:
     """{period id: True} where the dealer target that replaces `target` reached a main tier in
-    a period covering it. Empty for a target nobody replaces."""
+    a period covering it. Empty for a target nobody replaces. `cache` (one per list read) holds
+    each replacing target's periods once (security review gate 2 S1)."""
     if not target.replaced_by_target_id:
         return {}
-    other = db.query(SalesTarget).filter(SalesTarget.id == target.replaced_by_target_id).first()
+    cache = {} if cache is None else cache
+    key = target.replaced_by_target_id
+    if key not in cache:
+        cache[key] = _reached_by_period(db, key)
+    return {
+        p.id: any(
+            reached
+            for start, end, reached in cache[key]
+            if start <= p.period_start and end >= p.period_end
+        )
+        for p in periods
+    }
+
+
+def _reached_by_period(db: Session, target_id: str) -> List[Tuple[date, date, bool]]:
+    """(start, end, a main tier reached) per period of one target."""
+    other = db.query(SalesTarget).filter(SalesTarget.id == target_id).first()
     if other is None:
-        return {}
+        return []
     o_periods = _periods(db, other.id)
     by_account = _achieved_by_account(db, other.company_id, [(other, p) for p in o_periods])
     tiers = _tiers(db, other.id)
     engine = _engine_tiers(tiers, _tier_rates(db, [t.id for t in tiers]))
     starts = [t.period_start for t in tiers]
     ratios = point_ratios(db) if other.threshold_unit == "points" else []
-    reached = {
-        op.id: period_payout(other, op, engine, starts, by_account.get(op.id, {}), ratios).tier_reached
-        is not None
-        for op in o_periods
-    }
-    return {
-        p.id: any(
-            reached[op.id]
-            for op in o_periods
-            if op.period_start <= p.period_start and op.period_end >= p.period_end
+    return [
+        (
+            op.period_start,
+            op.period_end,
+            period_payout(other, op, engine, starts, by_account.get(op.id, {}), ratios).tier_reached is not None,
         )
-        for p in periods
-    }
+        for op in o_periods
+    ]
 
 
 _ZERO_PAYOUT = commission_service.Payout(Decimal("0"), Decimal("0"), [], None, False)
@@ -1613,12 +1633,14 @@ def list_all_targets(
         ratio = ratio_on(ratios, period.period_end)
         return period.target_value * ratio if ratio is not None else period.target_value
 
+    replacing_cache: dict = {}
+
     def current_commission(target: SalesTarget, periods: List[SalesTargetPeriod]) -> Optional[float]:
         tiers = tiers_of.get(target.id, [])
         now = next((p for p in periods if p.period_start <= on <= p.period_end), None)
         if not tiers or now is None:
             return None
-        if _replacing_reached(db, target, [now]).get(now.id):
+        if _replacing_reached(db, target, [now], replacing_cache).get(now.id):
             return 0.0
         payout = period_payout(
             target, now, _engine_tiers(tiers, rates), [t.period_start for t in tiers],
