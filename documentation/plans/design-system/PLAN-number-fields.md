@@ -127,7 +127,12 @@ Decisions:
   valid keystrokes commit, blank/invalid never commit and never rewrite the box, message at blur then live.
 - Bad input ("1e") is invalid, never "no value", even on optional fields (`onValueChange(NaN)`).
 - `minExclusive` rule: "Enter a number above 0." from the shared helper, no hand-written copies.
-- OrderLinesCard add-line Quantity stays OPTIONAL (Q3; backend schemas/order.py:314).
+- OrderLinesCard add-line Quantity is REQUIRED (min 0, 0 allowed): the schema field is Optional (schemas/order.py:314)
+  but the column order_lines.quantity is NOT NULL (models/order.py:556), so a blank can only become 0 or a 500.
+- Backend (crew, 17 Oct): internal PR create / PUT / update-and-reply reject a line qty that is null, missing or
+  <= 0 (422); order-management order lines reject an explicit null (0 still allowed: 4267 of 116487 dev lines are 0);
+  SPO allocation update rejects an explicit null qty (422, today a 500). External PR intake: pending crew ruling.
+  Not in scope (follow-ups): quotation / project PO line update turns null into 1; gt=0 on int line qtys.
 - ConvertToPackingListDialog "Quantity to place" is required (blank used to place the full remaining silently).
 - System-health field rules equal the backend bounds; packing list quantity_shipped is a whole number.
 - `lib/whole-number-range.ts` keeps its stricter format check and takes its sentence from `numberFieldError`.
