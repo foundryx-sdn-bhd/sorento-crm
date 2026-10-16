@@ -184,3 +184,80 @@ def test_ac6_a_verdict_with_no_descriptor_is_returned_unchanged(vdb):
     out, notes = __import__("app.services.chatbot.head.grounding", fromlist=["ground"]).ground(vdb, verdict, message="any basin")
     assert out["entities"] == verdict["entities"], out
     assert not [e for e in out["entities"] if e["hint"] == "specification"], out
+
+
+# --------------------------------------------------------------------------- #
+# Guards (fix round on PR #1737): the class branch binds one unheard word only,   #
+# invalid values and synonyms stay as they are                                    #
+# --------------------------------------------------------------------------- #
+
+
+def _shape(out) -> list[tuple[Any, ...]]:
+    """The specification entities only: a class entity keeps the parser's own keys."""
+    return [(e["hint"], e["raw"], e.get("spec_key"), e.get("spec_value")) for e in out["entities"] if e["hint"] == "specification"]
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [("mounting", "flushmount"), ("zzt_not_a_key", "under_counter")],
+    ids=["value-not-a-choice", "unknown-key"],
+)
+def test_guard_a_an_invalid_parser_spec_on_a_class_entity_leaves_the_unheard_word_unknown(vdb, key, value):
+    message = "any undrmount chrome basin"
+    entity = _e("undrmount chrome basin", "category", spec_key=key, spec_value=value)
+    shape = _shape(_ground(vdb, message, entity))
+    assert ("specification", "undrmount", "", None) in shape, shape
+    assert not [s for s in shape if s[2] == "mounting"], shape
+
+
+def test_guard_b_a_spec_already_heard_binds_once_and_the_extra_unheard_word_stays_unknown(vdb):
+    message = "any pnk undermount basin"
+    entity = _e("pnk undermount basin", "category", spec_key="mounting", spec_value="under_counter")
+    shape = _shape(_ground(vdb, message, entity))
+    assert [s for s in shape if s[2] == "mounting" and s[3] == "under_counter"] and len([s for s in shape if s[2] == "mounting"]) == 1, shape
+    assert ("specification", "pnk", "", None) in shape, shape
+
+
+def test_guard_c_two_unheard_words_and_one_parser_spec_guess_no_binding(vdb):
+    message = "any undrmount pnk basin"
+    entity = _e("undrmount pnk basin", "category", spec_key="mounting", spec_value="under_counter")
+    shape = _shape(_ground(vdb, message, entity))
+    assert not [s for s in shape if s[3] is not None], shape
+    assert ("specification", "undrmount", "", None) in shape, shape
+    assert ("specification", "pnk", "", None) in shape, shape
+
+
+def test_guard_d_a_non_registry_adjective_is_handled_as_before(vdb):
+    message = "any cheap undermount basin"
+    entity = _e("cheap undermount basin", "category", spec_key="mounting", spec_value="under_counter")
+    shape = _shape(_ground(vdb, message, entity))
+    assert [s for s in shape if s[2] == "mounting" and s[3] == "under_counter"], shape
+    assert ("specification", "cheap", "", None) in shape, shape
+
+
+def test_guard_e_a_boolean_spec_on_a_class_entity_is_said_in_the_registrys_words(vdb):
+    entity = _e("rimles basin", "category", spec_key="is_rimless", spec_value=True)
+    out = _ground(vdb, "any rimles basin", entity)["entities"]
+    [spec] = [e for e in _specs(out) if e["spec_key"] == "is_rimless"]
+    assert spec["spec_value"] is True, out
+    assert spec["raw"] != "rimles basin" and "rimles" not in spec["raw"].replace("rimless", ""), spec
+
+
+def test_guard_e_a_numeric_spec_on_a_class_entity_is_said_as_the_displayed_value(vdb):
+    entity = _e("600mm wdth basin", "category", spec_key="dim_width", spec_value=600)
+    out = _ground(vdb, "any 600mm wdth basin", entity)["entities"]
+    [spec] = [e for e in _specs(out) if e["spec_key"] == "dim_width"]
+    assert spec["spec_value"] == 600, out
+    assert spec["raw"] != "600mm wdth basin" and "wdth" not in spec["raw"] and "600" in spec["raw"], spec
+
+
+def test_guard_f_a_correctly_typed_synonym_keeps_its_own_words(vdb):
+    out = _ground(vdb, "any undermount basin", _e("basin", "category"), _e("undermount", "specification", spec_key="mounting", spec_value="under_counter"))["entities"]
+    [spec] = _specs(out)
+    assert (spec["spec_key"], spec["spec_value"], spec["raw"]) == ("mounting", "under_counter", "undermount"), spec
+
+
+def test_guard_f_a_correctly_typed_finish_synonym_keeps_its_own_words(vdb):
+    out = _ground(vdb, "any gun metal basin", _e("basin", "category"), _e("gun metal", "specification", spec_key="finish", spec_value="gunmetal"))["entities"]
+    [spec] = _specs(out)
+    assert (spec["spec_key"], spec["spec_value"], spec["raw"]) == ("finish", "gunmetal", "gun metal"), spec
