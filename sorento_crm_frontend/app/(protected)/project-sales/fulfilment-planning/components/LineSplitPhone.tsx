@@ -47,12 +47,22 @@ export function LineSplitPhone({
   handlers: SplitRowHandlers;
 }) {
   const splits = splitsOf(line).slice().sort(byDate);
+  // The picked line's chip in view: the row starts from the focused line's group, and a
+  // pick further along scrolls its chip in rather than leaving it off screen.
+  const pickedRef = React.useRef<HTMLButtonElement>(null);
+  React.useEffect(() => {
+    pickedRef.current?.scrollIntoView?.({
+      block: 'nearest',
+      inline: 'nearest',
+    });
+  }, [line.lineId]);
   return (
     <div className="space-y-3">
       <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
         {lines.map((candidate) => (
           <Button
             key={candidate.lineId}
+            ref={candidate.lineId === line.lineId ? pickedRef : undefined}
             type="button"
             size="sm"
             variant={candidate.lineId === line.lineId ? 'primary' : 'outline'}

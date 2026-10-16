@@ -676,6 +676,11 @@ export function LineSplitDialog({
     save.mutate(toPayload(cleaned), { onSuccess: () => onOpenChange(false) });
   };
 
+  // The phone's line chips in group order, the focused line's group first.
+  const phoneLines = React.useMemo(
+    () => groups.flatMap((group) => group.lines),
+    [groups],
+  );
   const selected = byId(selectedLineId) ?? lines?.[0] ?? null;
   const selectedGroup = selected
     ? groups.find((group) => group.lines.includes(selected))
@@ -759,7 +764,7 @@ export function LineSplitDialog({
               selected && selectedGroup ? (
                 <div className="min-w-0 flex-1 overflow-auto p-4">
                   <LineSplitPhone
-                    lines={lines}
+                    lines={phoneLines}
                     line={selected}
                     groupLines={selectedGroup.lines}
                     onPick={zoomTo}

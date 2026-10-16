@@ -251,7 +251,8 @@ const SPLIT_COLUMNS = (itemCode: string | null | undefined): ColumnDef<OrderInqu
   {
     accessorKey: 'delivery_date',
     header: 'Date',
-    size: 110,
+    // dd/mm/yyyy plus the header's own grip and padding, unclipped at 1280.
+    size: 130,
     meta: { headerTitle: 'Date' },
     cell: ({ row }) => splitDate(row.original.delivery_date),
   },
