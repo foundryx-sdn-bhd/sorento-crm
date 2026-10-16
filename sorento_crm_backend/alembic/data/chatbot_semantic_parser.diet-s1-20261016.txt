@@ -594,8 +594,11 @@ Companies OFFERED in the pending offer: the companies the Previous response offe
 order_status filters ORDER records by delivery progress. Set it ONLY from the CURRENT
 message's own words (any language), and ONLY for order / order_enquiries queries; never
 carry it over from prior state.
-  - "outstanding" -> orders NOT yet delivered: "outstanding", "pending", "not delivered", "open orders".
-  - "delivered"   -> orders ALREADY delivered: "delivered", "completed", "done".
+  - "outstanding" -> orders NOT yet delivered: "outstanding", "pending", "not delivered",
+    "undelivered", "not yet delivered", "still pending", "open orders", "belum hantar",
+    "belum sampai", "tak hantar lagi".
+  - "delivered"   -> orders ALREADY delivered: "delivered", "completed", "done",
+    "sudah hantar", "sudah sampai".
   - null -> DEFAULT. No delivery-status qualifier in the current message -> return all.
 Never infer from context; only the current message's explicit words.
 A STATUS VALUE MEANS THE ORDER DOMAIN. Whenever you set "status" to a value at all -
@@ -753,8 +756,8 @@ A message that names no count -> null. Never carry it over.
 "so_outstanding" is a SALES ORDER that is ordered but has NO delivery order yet. It is NOT
 the same as "outstanding", which is a DO already created and not yet delivered.
   - "SO outstanding", "outstanding SO", "outstanding sales order", "ordered but no DO",
-    "no DO yet" -> "so_outstanding"
-  - "outstanding DO", "not delivered yet" -> "outstanding" (unchanged)
+    "no DO yet", "belum DO", "belum keluar DO", "还没出DO", "未出DO" -> "so_outstanding"
+  - "outstanding DO", "not delivered yet", "belum hantar" -> "outstanding" (unchanged)
   - "outstanding SO", "SO outstanding", "outstanding sales order" is order_status "so_outstanding" under domain_hint "order" / intent_hint "check_order", NEVER purchase_order / check_po; check_po needs a PO or supplier word.
 The full set is now: outstanding|delivered|so_outstanding|do_outstanding|outstanding_both|null. Order domain only, and
 still only from the current message's explicit words.
@@ -766,7 +769,7 @@ returns.
   - "delivery order outstanding", "DO outstanding", "outstanding DO" when paired with
     the word "outstanding" (never a bare "outstanding DO" alone, which stays
     "outstanding" - the OLD undelivered-order bucket), "pending delivery order",
-    "pending DO", "DO pending" together with an explicit
+    "pending DO", "DO pending", "belum DO keluar" together with an explicit
     outstanding/pending word -> "do_outstanding"
   - "both" / "both SO and DO" / "sales order and delivery order outstanding" said
     together with an outstanding/backlog/pending word -> "outstanding_both"
@@ -1021,7 +1024,7 @@ That is NOT a top selling list ("Top N selling items"): a number never picks a r
   - the basis: "ordered" -> ranking_refine true, basis "ordered"; "by outstanding" ->
     ranking_refine true, basis "outstanding"
   - the measure: "by quantity" -> ranking_refine true, measure "qty"
-  - an answer to an open basis question is never order_status "delivered"
+  - 已送货 -> basis "delivered" (送货, 已转DO), 已订购 -> basis "ordered" (下单, 订单), 未交 -> basis "outstanding" (未送); an answer to an open basis question is never order_status "delivered"
   - the channel: "dealer only" -> ranking_refine true, sales_channel "dealer"; a brand or category word only: ranking_refine true, that entity
 each with order_status "sales_ranking", group_by null, entities [] (except the brand or category refine), every other key null.
 A message naming its own axis or subject is a NEW ask: ranking_refine false; top_n and dates
@@ -1447,8 +1450,8 @@ The number of rows asked for, from the CURRENT message only ("top 10" -> 10, "to
   - the message names neither -> null (the bot asks; NEVER guess)
 
 == BASIS: which sale is counted ==
-  - "delivered", "transferred to DO" -> "delivered"
-  - "ordered", "by order", "booked" -> "ordered"
+  - "delivered", "transferred to DO", "sudah hantar" -> "delivered"
+  - "ordered", "by order", "booked", "tempahan" -> "ordered"
   - a word that could mean either, e.g. "top orders" -> "unclear"
   - "selling" / "sold" with no basis word -> null (the default, delivered)
 
